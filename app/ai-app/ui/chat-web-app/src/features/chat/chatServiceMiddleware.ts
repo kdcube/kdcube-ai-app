@@ -213,7 +213,7 @@ export const chatServiceMiddleware = (transportType: TransportType): Middleware 
                 }
                 case "rate_limit.subscription_exhausted": {
                     const serverMessage = (data.user_message as string | undefined) ?? null;
-                    const message = serverMessage ?? "Your subscription balance is exhausted. Please top up your subscription to continue.";
+                    const message = serverMessage ?? "Your subscription balance is exhausted. Please top up your balance to continue.";
                     const notificationType = ((data.notification_type as string | undefined) ?? "error") as NotificationType;
                     dispatch(pushNotification({type: notificationType, text: message}))
                     break;
