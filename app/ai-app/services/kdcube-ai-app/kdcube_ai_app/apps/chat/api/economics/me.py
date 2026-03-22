@@ -61,6 +61,9 @@ async def get_my_budget_breakdown(
     if not base_policy:
         raise HTTPException(status_code=404, detail=f"No quota policy for plan_id={resolved_plan_id}")
 
+    # This widget defaults to project-wide economics scope. We intentionally use
+    # __project__ here so the breakdown matches runtime enforcement aggregated
+    # across apps/bundles in the workspace, not the currently selected default bundle.
     resolved_bundle_id = bundle_id or GLOBAL_BUNDLE_ID
 
     from kdcube_ai_app.apps.chat.sdk.infra.economics.user_budget import UserBudgetBreakdownService
