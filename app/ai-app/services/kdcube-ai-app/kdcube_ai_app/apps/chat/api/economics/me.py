@@ -12,6 +12,7 @@ from kdcube_ai_app.auth.sessions import UserSession
 from kdcube_ai_app.apps.chat.api.resolvers import require_auth
 from kdcube_ai_app.apps.chat.sdk.config import get_settings, get_secret
 from kdcube_ai_app.apps.chat.sdk.infra.economics.stripe import StripeEconomicsAdminService
+from kdcube_ai_app.infra.plugin.bundle_registry import resolve_bundle_async
 
 from .stripe_router import router, _get_stripe, _get_control_plane_manager, REF_PROVIDER, REF_MODEL
 
@@ -22,6 +23,7 @@ me_router = APIRouter()
 
 @me_router.get("/me/budget-breakdown")
 async def get_my_budget_breakdown(
+        bundle_id: str | None = Query(None, description="Optional bundle id for bundle-scoped rolling windows"),
         session: UserSession = Depends(require_auth(RequireUser())),
 ):
     """Budget breakdown for the currently authenticated user."""
@@ -56,6 +58,14 @@ async def get_my_budget_breakdown(
     if not base_policy:
         raise HTTPException(status_code=404, detail=f"No quota policy for plan_id={resolved_plan_id}")
 
+    resolved_bundle_id = bundle_id
+    if not resolved_bundle_id:
+        try:
+            spec_resolved = await resolve_bundle_async(None, override=None)
+            resolved_bundle_id = getattr(spec_resolved, "id", None) if spec_resolved else None
+        except Exception:
+            logger.exception("[get_my_budget_breakdown] Failed to resolve default bundle id")
+
     from kdcube_ai_app.apps.chat.sdk.infra.economics.user_budget import UserBudgetBreakdownService
     svc = UserBudgetBreakdownService(
         pg_pool=pg_pool,
@@ -74,7 +84,7 @@ async def get_my_budget_breakdown(
         base_policy=base_policy,
         include_expired_override=True,
         reservations_limit=50,
-        bundle_ids=None,
+        bundle_ids=[resolved_bundle_id] if resolved_bundle_id else None,
     )
 
 
