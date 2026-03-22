@@ -698,12 +698,12 @@ class BaseEntrypoint:
             self.logger.log(f"Error loading ai_bundles by user {user_id}: {traceback.format_exc()}", "ERROR")
         return [default_html]
 
-    def user_billing(self, user_id: Optional[str] = None, **kwargs):
+    def economic_usage(self, user_id: Optional[str] = None, **kwargs):
         user_type = self.user_type_from_comm_ctx(self.comm)
         if user_type == "anonymous":
             return ["<p>No permission. Please log in.</p>"]
 
-        self.logger.log(f"[user_billing]. Generating User Billing Dashboard for user {user_id} ({user_type})")
+        self.logger.log(f"[economic_usage]. Generating User Billing Dashboard for user {user_id} ({user_type})")
 
         default_content = "<p>No user billing interface available.</p>"
         default_html = f"<div style='margin: 0; position: absolute'>{default_content}</div>"
@@ -724,7 +724,7 @@ class BaseEntrypoint:
             html = self._render_dashboard_html(content=output_content, title="Billing & Plans")
             return [html]
         except Exception:
-            self.logger.log(f"Error loading user_billing by user {user_id}: {traceback.format_exc()}", "ERROR")
+            self.logger.log(f"Error loading economic_usage by user {user_id}: {traceback.format_exc()}", "ERROR")
         return [default_html]
 
     def configuration_defaults(self) -> Dict[str, Any]:
