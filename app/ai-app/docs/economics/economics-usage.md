@@ -90,8 +90,8 @@ Request lineage:
 
 Tracks (quota counters are global per tenant/project; accounting still uses bundle = product):
 - Concurrency: ZSET lock (members have expiry timestamps)
-- Requests: day / rolling‑30‑day / total counters
-- Tokens: rolling‑hour / day / rolling‑30‑day counters
+- Requests: rolling‑day / rolling‑30‑day / total counters
+- Tokens: rolling‑hour / rolling‑day / rolling‑30‑day counters
 - Last turn: `last_turn_tokens`, `last_turn_at`
 - Bundle index: `kdcube:economics:rl:bundles:{subject_id}` (set of bundle IDs, 90‑day TTL)
 
@@ -101,8 +101,8 @@ Policy source:
 
 Window semantics:
 - Hourly tokens: **rolling 60‑minute** window (minute buckets).
+- Daily requests/tokens: **rolling 24‑hour** window. API fields still use `requests_today` / `tokens_today` names for backward compatibility.
 - Monthly requests/tokens: **rolling 30‑day** window anchored to first usage per tenant/project.
-- Daily: calendar day (UTC).
 
 ### D) Project budget (money) (PostgreSQL + Redis analytics)
 **Module:** `ProjectBudgetLimiter`
@@ -137,8 +137,8 @@ Process:
 
 2) Read current counters from Redis (global quota scope):
    - Global quota counters use bundle id `__project__` in Redis keys.
-    - reqs: day / rolling‑30‑day / total
-    - toks: rolling‑hour / day / rolling‑30‑day
+    - reqs: rolling‑day / rolling‑30‑day / total
+    - toks: rolling‑hour / rolling‑day / rolling‑30‑day
 
 3) Check policy violations:
     - requests_per_day / month / total
@@ -155,8 +155,52 @@ Output:
 
 Important semantics:
 - Token limits are **post‑paid**: checks are based on committed counters from previous turns.
-- Hourly window is rolling; monthly is rolling 30‑day (anchored to first usage per tenant/project).
+- Hourly, daily, and monthly windows are all rolling.
 - Concurrency lock is released at commit (or forced release on error).
+
+## Customer-facing billing widget
+
+The customer widget at `apps/chat/api/economics/UserBillingDashboard.tsx` is intended to explain the user-facing side of economics for the currently loaded app.
+
+- `GET /api/economics/me/budget-breakdown` resolves the effective plan for the authenticated user.
+- If `bundle_id` is not supplied, the backend resolves the current default app bundle with `resolve_bundle_async(None, override=None)` and uses that bundle to compute bundle-scoped reset windows.
+- The widget should present:
+  - `Last 60 minutes`, `Last 24 hours`, and `Rolling 30-day window` usage,
+  - remaining headroom for each window,
+  - reset timestamps for bundle-scoped rolling windows,
+  - personal lifetime credit balance,
+  - the rule that requests larger than remaining plan quota require personal credits for the overflow.
+
+This is important because app/project budget alone does not explain a blocked free user: a user can still be blocked when plan headroom is low and personal credits are zero, even if project budget remains available.
+
+## Diagnostics script
+
+For one-user investigations, use:
+
+- `apps/chat/sdk/infra/economics/profile_user_economics.py`
+
+Purpose:
+- profile one user’s current quota state,
+- show current usage, remaining headroom, and reset timing,
+- show wallet / subscription / project budget context,
+- simulate whether a typical next turn would overflow plan quota and require personal credits.
+
+Typical usage:
+
+```bash
+python /app/kdcube_ai_app/apps/chat/sdk/infra/economics/profile_user_economics.py \
+  --tenant <tenant> \
+  --project <project> \
+  --user-id <user_id> \
+  --role registered \
+  --rl-bundle-id __project__ \
+  --reservation-amount-dollars 2.0
+```
+
+Notes:
+- Run it inside the processor container or any environment that has the same economics config, Redis, and PostgreSQL access as the running service.
+- `--rl-bundle-id` should usually remain `__project__` because quota counters are global per tenant/project.
+- The script is diagnostic: token counters and balances are authoritative, while some USD/token conversions are reference-price estimates.
 
 ---
 
