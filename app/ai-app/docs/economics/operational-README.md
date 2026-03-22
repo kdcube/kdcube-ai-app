@@ -42,9 +42,15 @@ Plan quotas are seeded once by a master bundle:
 
 Window semantics (global per tenant/project):
 - Hourly tokens: rolling 60‑minute window (minute buckets).
+- Daily requests/tokens: rolling 24‑hour window. API fields still use `requests_today` / `tokens_today`.
 - Monthly requests/tokens: rolling 30‑day window anchored to first usage per tenant/project.
-- Daily: calendar day (UTC).
 - Reservation floor is configured per bundle via props `economics.reservation_amount_dollars`.
+
+Customer billing widget:
+- `GET /api/economics/me/budget-breakdown` accepts an optional `bundle_id`.
+- If omitted, the backend resolves the currently loaded default app bundle via `resolve_bundle_async(None, override=None)` and returns bundle-scoped reset windows for that app.
+- The customer widget should use this endpoint rather than relying on frontend-patched bundle ids.
+- The widget labels should match the rolling limiter semantics: `Last 60 minutes`, `Last 24 hours`, and `Rolling 30-day window`.
 
 Funding split (runtime):
 - If a user has a subscription **and** a wallet, subscription balance is reserved up to available and wallet covers overflow for that turn.
@@ -191,6 +197,7 @@ Recommended routine checks:
 - Subscription balances for paid users: `GET /api/economics/admin/subscriptions/user/{user_id}`
 - Expired reservation cleanup: `POST /api/economics/admin/subscriptions/reservations/reap-all`
 - Project budget balance: `GET /api/economics/admin/app-budget/status`
+- One-user usage diagnosis: run `apps/chat/sdk/infra/economics/profile_user_economics.py` inside the processor container.
 
 ## Redis Keys Reference
 

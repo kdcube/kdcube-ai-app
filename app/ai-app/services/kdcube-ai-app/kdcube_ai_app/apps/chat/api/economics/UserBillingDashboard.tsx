@@ -62,13 +62,24 @@ interface QuotaBreakdown {
         tokens_this_hour: number;
         tokens_today: number;
         tokens_this_month: number;
+        tokens_this_hour_usd?: number | null;
+        tokens_today_usd?: number | null;
+        tokens_this_month_usd?: number | null;
     };
+    reset_windows?: {
+        bundle_id?: string | null;
+        hour_reset_at?: string | null;
+        month_reset_at?: string | null;
+    } | null;
     remaining: {
         requests_today: number | null;
         requests_this_month: number | null;
         tokens_this_hour: number | null;
         tokens_today: number | null;
         tokens_this_month: number | null;
+        tokens_this_hour_usd?: number | null;
+        tokens_today_usd?: number | null;
+        tokens_this_month_usd?: number | null;
         percentage_used: number | null;
     };
     lifetime_credits: {
@@ -82,9 +93,12 @@ interface QuotaBreakdown {
         has_subscription?: boolean;
         active?: boolean;
         plan_id?: string | null;
+        status?: string | null;
         period_start?: string | null;
         period_end?: string | null;
         available_usd: number;
+        available_tokens?: number;
+        spent_usd?: number;
     } | null;
 }
 
@@ -357,6 +371,48 @@ const LoadingSpinner = () => (
     </div>
 );
 
+function formatCount(value: number | null | undefined): string {
+    if (value == null) return '∞';
+    return value.toLocaleString();
+}
+
+function formatUsd(value: number | null | undefined): string {
+    const amount = Number(value || 0);
+    return `$${amount.toFixed(2)}`;
+}
+
+function formatUsdMaybe(value: number | null | undefined): string {
+    if (value == null) return 'unlimited';
+    return formatUsd(value);
+}
+
+function formatDateTime(value: string | null | undefined): string {
+    if (!value) return 'Not available';
+    return new Date(value).toLocaleString();
+}
+
+const MetricRow: React.FC<{
+    label: string;
+    used: number;
+    limit: number | null | undefined;
+    remaining: number | null | undefined;
+    usedUsd?: number | null;
+    remainingUsd?: number | null;
+}> = ({ label, used, limit, remaining, usedUsd, remainingUsd }) => (
+    <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
+        <div className="flex items-center justify-between gap-3 text-sm">
+            <span className="text-gray-500">{label}</span>
+            <span className="font-medium text-gray-900">{formatCount(used)} / {formatCount(limit)}</span>
+        </div>
+        <div className="mt-1 flex items-center justify-between gap-3 text-xs text-gray-500">
+            <span>Remaining: {formatCount(remaining)}</span>
+            {(usedUsd != null || remainingUsd != null) && (
+                <span>Used {formatUsd(usedUsd)} • Left {formatUsdMaybe(remainingUsd)}</span>
+            )}
+        </div>
+    </div>
+);
+
 // =============================================================================
 // Main Component
 // =============================================================================
@@ -464,6 +520,10 @@ const UserBillingDashboard: React.FC = () => {
     if (!settings.getAccessToken()) return <div className="p-6 text-center text-gray-500">Not authenticated. Please log in.</div>;
 
     const currentPlanId = breakdown?.plan_id || subscription?.plan_id || 'free';
+    const scopedBundleId = breakdown?.reset_windows?.bundle_id || '';
+    const availablePersonalCreditsUsd = breakdown?.lifetime_credits?.available_usd || 0;
+    const availablePersonalCreditTokens = breakdown?.lifetime_credits?.tokens_available || 0;
+    const hasPersonalOverflowCover = availablePersonalCreditTokens > 0;
 
     return (
         <div className="min-h-screen bg-gray-50/50 p-4 md:p-8 font-sans text-gray-900">
@@ -505,7 +565,13 @@ const UserBillingDashboard: React.FC = () => {
                                         Active Subscription
                                     </div>
                                 )}
-                                <div className="mt-6 space-y-3">
+                                <div className="mt-6 rounded-xl border border-sky-100 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+                                    <div className="font-semibold">Usage windows are rolling</div>
+                                    <p className="mt-1 text-sky-800">
+                                        The hourly numbers below are for the last 60 minutes, the daily numbers are for the last 24 hours, and the monthly numbers are for a rolling 30-day window{scopedBundleId ? ' for this app' : ''}.
+                                    </p>
+                                </div>
+                                <div className="mt-6 space-y-4">
                                     {subscription?.started_at && (
                                         <div className="flex justify-between text-sm">
                                             <span className="text-gray-500">Started</span>
@@ -518,34 +584,75 @@ const UserBillingDashboard: React.FC = () => {
                                             <span className="font-medium">{new Date(subscription.next_charge_at).toLocaleString()}</span>
                                         </div>
                                     )}
-                                    <div className="border-t border-gray-100 pt-3">
-                                        <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Hourly</div>
-                                        <div className="flex justify-between text-sm">
-                                            <span className="text-gray-500">Tokens</span>
-                                            <span className="font-medium">{breakdown.current_usage.tokens_this_hour.toLocaleString()} / {breakdown.effective_policy.tokens_per_hour?.toLocaleString() || '∞'}</span>
+                                    <div className="border-t border-gray-100 pt-4">
+                                        <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Last 60 minutes</div>
+                                        <MetricRow
+                                            label="Tokens"
+                                            used={breakdown.current_usage.tokens_this_hour}
+                                            limit={breakdown.effective_policy.tokens_per_hour}
+                                            remaining={breakdown.remaining.tokens_this_hour}
+                                            usedUsd={breakdown.current_usage.tokens_this_hour_usd}
+                                            remainingUsd={breakdown.remaining.tokens_this_hour_usd}
+                                        />
+                                        {breakdown.reset_windows?.hour_reset_at && (
+                                            <div className="mt-2 text-xs text-gray-500">
+                                                Hourly window resets at {formatDateTime(breakdown.reset_windows.hour_reset_at)}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="border-t border-gray-100 pt-4">
+                                        <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Last 24 hours</div>
+                                        <MetricRow
+                                            label="Requests"
+                                            used={breakdown.current_usage.requests_today}
+                                            limit={breakdown.effective_policy.requests_per_day}
+                                            remaining={breakdown.remaining.requests_today}
+                                        />
+                                        <div className="mt-2">
+                                            <MetricRow
+                                                label="Tokens"
+                                                used={breakdown.current_usage.tokens_today}
+                                                limit={breakdown.effective_policy.tokens_per_day}
+                                                remaining={breakdown.remaining.tokens_today}
+                                                usedUsd={breakdown.current_usage.tokens_today_usd}
+                                                remainingUsd={breakdown.remaining.tokens_today_usd}
+                                            />
                                         </div>
                                     </div>
-                                    <div className="border-t border-gray-100 pt-3">
-                                        <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Daily</div>
-                                        <div className="flex justify-between text-sm mb-1.5">
-                                            <span className="text-gray-500">Requests</span>
-                                            <span className="font-medium">{breakdown.current_usage.requests_today} / {breakdown.effective_policy.requests_per_day || '∞'}</span>
+                                    <div className="border-t border-gray-100 pt-4">
+                                        <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Rolling 30-day window</div>
+                                        <MetricRow
+                                            label="Requests"
+                                            used={breakdown.current_usage.requests_this_month}
+                                            limit={breakdown.effective_policy.requests_per_month}
+                                            remaining={breakdown.remaining.requests_this_month}
+                                        />
+                                        <div className="mt-2">
+                                            <MetricRow
+                                                label="Tokens"
+                                                used={breakdown.current_usage.tokens_this_month}
+                                                limit={breakdown.effective_policy.tokens_per_month}
+                                                remaining={breakdown.remaining.tokens_this_month}
+                                                usedUsd={breakdown.current_usage.tokens_this_month_usd}
+                                                remainingUsd={breakdown.remaining.tokens_this_month_usd}
+                                            />
                                         </div>
-                                        <div className="flex justify-between text-sm">
-                                            <span className="text-gray-500">Tokens</span>
-                                            <span className="font-medium">{breakdown.current_usage.tokens_today.toLocaleString()} / {breakdown.effective_policy.tokens_per_day?.toLocaleString() || '∞'}</span>
-                                        </div>
+                                        {breakdown.reset_windows?.month_reset_at && (
+                                            <div className="mt-2 text-xs text-gray-500">
+                                                Rolling 30-day window resets at {formatDateTime(breakdown.reset_windows.month_reset_at)}
+                                            </div>
+                                        )}
                                     </div>
-                                    <div className="border-t border-gray-100 pt-3">
-                                        <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Monthly</div>
-                                        <div className="flex justify-between text-sm mb-1.5">
-                                            <span className="text-gray-500">Requests</span>
-                                            <span className="font-medium">{breakdown.current_usage.requests_this_month} / {breakdown.effective_policy.requests_per_month || '∞'}</span>
-                                        </div>
-                                        <div className="flex justify-between text-sm">
-                                            <span className="text-gray-500">Tokens</span>
-                                            <span className="font-medium">{breakdown.current_usage.tokens_this_month.toLocaleString()} / {breakdown.effective_policy.tokens_per_month?.toLocaleString() || '∞'}</span>
-                                        </div>
+                                    <div className={`rounded-xl border px-4 py-3 text-sm ${hasPersonalOverflowCover ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
+                                        <div className="font-semibold">If one request is larger than your remaining plan tokens</div>
+                                        <p className="mt-1">
+                                            The part above your remaining plan quota is covered by personal credits. You currently have {formatUsd(availablePersonalCreditsUsd)} ({formatCount(availablePersonalCreditTokens)} tokens) available.
+                                        </p>
+                                        {!hasPersonalOverflowCover && (
+                                            <p className="mt-1">
+                                                If a request is larger than the remaining plan quota shown above, you will need to wait for the rolling window reset or add funds.
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
                                 {subscription?.status === 'active' && subscription?.provider === 'stripe' && (
@@ -591,6 +698,26 @@ const UserBillingDashboard: React.FC = () => {
                                 <div className="text-sm text-gray-500 mb-6">
                                     {breakdown.lifetime_credits?.tokens_available.toLocaleString() || 0} tokens available
                                 </div>
+                                <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                                    <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
+                                        <div className="text-xs font-semibold uppercase tracking-wider text-gray-400">Purchased</div>
+                                        <div className="mt-1 text-sm font-medium text-gray-900">
+                                            {formatCount(breakdown.lifetime_credits?.tokens_purchased || 0)} tokens
+                                        </div>
+                                    </div>
+                                    <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
+                                        <div className="text-xs font-semibold uppercase tracking-wider text-gray-400">Consumed</div>
+                                        <div className="mt-1 text-sm font-medium text-gray-900">
+                                            {formatCount(breakdown.lifetime_credits?.tokens_consumed || 0)} tokens
+                                        </div>
+                                    </div>
+                                    <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
+                                        <div className="text-xs font-semibold uppercase tracking-wider text-gray-400">Available</div>
+                                        <div className="mt-1 text-sm font-medium text-gray-900">
+                                            {formatUsd(breakdown.lifetime_credits?.available_usd || 0)}
+                                        </div>
+                                    </div>
+                                </div>
                                 
                                 <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
                                     <label className="block text-xs font-semibold text-gray-700 mb-2">Top up balance (USD)</label>
@@ -608,6 +735,31 @@ const UserBillingDashboard: React.FC = () => {
                                     </div>
                                 </div>
                             </Card>
+                            {breakdown.subscription_balance?.has_subscription && (
+                                <Card className="p-6">
+                                    <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">Subscription Balance</h3>
+                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                                        <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
+                                            <div className="text-xs font-semibold uppercase tracking-wider text-gray-400">Available</div>
+                                            <div className="mt-1 text-sm font-medium text-gray-900">
+                                                {formatUsd(breakdown.subscription_balance.available_usd)}
+                                            </div>
+                                        </div>
+                                        <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
+                                            <div className="text-xs font-semibold uppercase tracking-wider text-gray-400">Spent This Period</div>
+                                            <div className="mt-1 text-sm font-medium text-gray-900">
+                                                {formatUsd(breakdown.subscription_balance.spent_usd)}
+                                            </div>
+                                        </div>
+                                        <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
+                                            <div className="text-xs font-semibold uppercase tracking-wider text-gray-400">Period Ends</div>
+                                            <div className="mt-1 text-sm font-medium text-gray-900">
+                                                {formatDateTime(breakdown.subscription_balance.period_end)}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </Card>
+                            )}
                         </div>
 
                         {/* Available Plans */}
