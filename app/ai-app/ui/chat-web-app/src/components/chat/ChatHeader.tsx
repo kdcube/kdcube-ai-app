@@ -23,19 +23,15 @@ const ChatHeader = () => {
         dispatch(logOut())
     }, [dispatch]);
 
-    return  useMemo(() => {
+    return useMemo(() => {
         return (
-            <div className="bg-white border-b border-gray-200 px-6 py-4">
+            <div className="bg-white border-b border-gray-200 px-4 py-2">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center">
-                        <div
-                            className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg mr-3 flex items-center justify-center">
-
-                            <Bot size={20} className="text-white"/>
-                        </div>
+                        <img src={"/img/logo.svg"} alt={"KDCube Logo"} className={"w-14 h-14"}/>
                         <div>
                             <h1 className="text-xl font-semibold text-gray-900">
-                                AI Assistant
+                                KDCube
                             </h1>
                         </div>
                     </div>
