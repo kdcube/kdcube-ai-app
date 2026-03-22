@@ -17,6 +17,12 @@ _REGISTRY: Dict[str, Dict[str, Any]] = {}
 _DEFAULT_ID: Optional[str] = None
 logger = logging.getLogger(__name__)
 
+
+async def _load_store_registry(runtime_redis, tenant: str, project: str):
+    from kdcube_ai_app.infra.plugin.bundle_store import load_registry as _load_store_registry_impl
+
+    return await _load_store_registry_impl(runtime_redis, tenant, project)
+
 @dataclass
 class BundleSpec:
     id: str
@@ -439,3 +445,79 @@ async def load_registry(redis, logger):
         logger.info(f"Bundle mapping synced from Redis: {len(persisted.bundles)} bundles (default={persisted.default_bundle_id})")
     except Exception as _e:
         logger.warning(f"Could not sync bundles from Redis; using env-only: {_e}")
+
+
+def get_registry_redis_client(runtime_ctx) -> Optional[object]:
+    """
+    Best-effort access to the Redis client used by chat ingress/API surfaces.
+    """
+    redis_client = getattr(runtime_ctx, "redis_async", None)
+    if redis_client is not None:
+        return redis_client
+    middleware = getattr(runtime_ctx, "middleware", None)
+    return getattr(middleware, "redis", None)
+
+
+async def load_persisted_registry_from_runtime_ctx(
+    runtime_ctx,
+    tenant: str,
+    project: str,
+) -> Optional[object]:
+    """
+    Read the persisted bundle registry for the given tenant/project directly
+    from Redis-backed storage without touching the process-local registry.
+    """
+    redis_client = get_registry_redis_client(runtime_ctx)
+    if not redis_client:
+        logger.error(
+            "Bundle registry unavailable: no Redis client on runtime context "
+            "(tenant=%s project=%s)",
+            tenant,
+            project,
+        )
+        return None
+
+    try:
+        reg = await _load_store_registry(redis_client, tenant, project)
+    except Exception as e:
+        logger.warning(
+            "Failed to load bundle registry from Redis (tenant=%s project=%s): %s",
+            tenant,
+            project,
+            e,
+        )
+        return None
+
+    if reg and reg.bundles:
+        return reg
+
+    logger.error(
+        "Bundle registry missing/empty in Redis (tenant=%s project=%s)",
+        tenant,
+        project,
+    )
+    return None
+
+
+async def resolve_default_bundle_id_from_runtime_ctx(
+    runtime_ctx,
+    tenant: str,
+    project: str,
+) -> Optional[str]:
+    reg = await load_persisted_registry_from_runtime_ctx(runtime_ctx, tenant, project)
+    if not reg:
+        return None
+
+    default_bundle_id = getattr(reg, "default_bundle_id", None)
+    bundles = getattr(reg, "bundles", None) or {}
+    if default_bundle_id and default_bundle_id in bundles:
+        return default_bundle_id
+
+    logger.error(
+        "Default bundle id missing or invalid in Redis registry "
+        "(tenant=%s project=%s default=%s)",
+        tenant,
+        project,
+        default_bundle_id,
+    )
+    return None
