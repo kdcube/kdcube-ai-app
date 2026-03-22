@@ -155,11 +155,17 @@ class SettingsManager {
     }
 
     getAccessToken(): string | null {
-        return this.settings.accessToken === this.PLACEHOLDER_ACCESS_TOKEN ? null : this.settings.accessToken;
+        if (this.settings.accessToken === this.PLACEHOLDER_ACCESS_TOKEN || !this.settings.accessToken) {
+            return null;
+        }
+        return this.settings.accessToken;
     }
 
     getIdToken(): string | null {
-        return this.settings.idToken === this.PLACEHOLDER_ID_TOKEN ? null : this.settings.idToken;
+        if (this.settings.idToken === this.PLACEHOLDER_ID_TOKEN || !this.settings.idToken) {
+            return null;
+        }
+        return this.settings.idToken;
     }
 
     getIdTokenHeader(): string {
@@ -188,9 +194,6 @@ class SettingsManager {
 
     setupParentListener(): Promise<boolean> {
         const identity = "CONTROL_PLANE_ADMIN";
-        const inIframe = window.parent && window.parent !== window;
-
-        console.log('[UserBilling] Initializing setupParentListener. In iframe:', inIframe);
 
         window.addEventListener('message', (event: MessageEvent) => {
             if (event.data.type === 'CONN_RESPONSE' || event.data.type === 'CONFIG_RESPONSE') {
@@ -217,9 +220,7 @@ class SettingsManager {
             }
         });
 
-        // If we are in an iframe, we ALWAYS want to ask the parent for the latest tokens/ID
-        if (inIframe) {
-            console.log('[UserBilling] In iframe, sending CONFIG_REQUEST...');
+        if (this.hasPlaceholderSettings()) {
             window.parent.postMessage({
                 type: 'CONFIG_REQUEST',
                 data: {
@@ -243,10 +244,9 @@ class SettingsManager {
                     resolve(true);
                 });
             });
-        } else {
-            console.log('[UserBilling] Not in iframe, using placeholder/patched settings');
-            return Promise.resolve(!this.hasPlaceholderSettings());
         }
+
+        return Promise.resolve(!this.hasPlaceholderSettings());
     }
 }
 
@@ -517,7 +517,6 @@ const UserBillingDashboard: React.FC = () => {
     };
 
     if (configStatus === 'initializing') return <LoadingSpinner />;
-    if (!settings.getAccessToken()) return <div className="p-6 text-center text-gray-500">Not authenticated. Please log in.</div>;
 
     const currentPlanId = breakdown?.plan_id || subscription?.plan_id || 'free';
     const availablePersonalCreditsUsd = breakdown?.lifetime_credits?.available_usd || 0;
