@@ -33,7 +33,7 @@ from kdcube_ai_app.apps.middleware.token_extract import (
     resolve_socket_auth_tokens,
 )
 from kdcube_ai_app.apps.chat.api.resolvers import get_auth_manager
-from kdcube_ai_app.infra.plugin.bundle_store import load_registry as _load_store_registry
+from kdcube_ai_app.infra.plugin.bundle_registry import load_persisted_registry_from_runtime_ctx
 
 from kdcube_ai_app.auth.AuthManager import AuthenticationError, PRIVILEGED_ROLES
 
@@ -44,23 +44,7 @@ async def _load_registry_from_redis(app, tenant: str, project: str):
     Ingress must never update bundles. It only reads registry from Redis
     to validate bundle IDs and fetch the default bundle id.
     """
-    redis_client = getattr(app.state, "redis_async", None)
-    if not redis_client:
-        logger.error("Ingress has no redis_async; cannot load bundles (tenant=%s project=%s)", tenant, project)
-        return None
-    try:
-        reg = await _load_store_registry(redis_client, tenant, project)
-        if reg and reg.bundles:
-            return reg
-        logger.error(
-            "Bundle registry missing/empty in Redis (tenant=%s project=%s)",
-            tenant,
-            project,
-        )
-        return None
-    except Exception as e:
-        logger.warning("Failed to load bundles from Redis. %s", e)
-        return None
+    return await load_persisted_registry_from_runtime_ctx(app.state, tenant, project)
 
 
 TransportKind = Literal["sse", "socket"]
