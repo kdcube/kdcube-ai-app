@@ -149,6 +149,24 @@ def update_env_value(env_file: EnvFile, key: str, value: str) -> None:
     env_file.entries = parse_env(env_file.lines)
 
 
+def comment_env_key(env_file: EnvFile, key: str, fallback_value: Optional[str] = None) -> None:
+    active_re = re.compile(rf"^({re.escape(key)})=(.*)$")
+    commented_re = re.compile(rf"^#\s*({re.escape(key)})=(.*)$")
+    for idx, line in enumerate(env_file.lines):
+        active_match = active_re.match(line)
+        if active_match:
+            env_file.lines[idx] = f"# {active_match.group(1)}={active_match.group(2)}"
+            env_file.entries = parse_env(env_file.lines)
+            return
+        commented_match = commented_re.match(line)
+        if commented_match:
+            # Keep an existing commented example line as-is.
+            return
+    if fallback_value is not None:
+        env_file.lines.append(f"# {key}={fallback_value}")
+        env_file.entries = parse_env(env_file.lines)
+
+
 def update_if_placeholder(env_file: EnvFile, key: str, value: str) -> None:
     current = env_file.entries.get(key, (None, None))[1]
     if is_placeholder(current):
@@ -296,26 +314,34 @@ def _load_json_file(path: Path) -> Dict[str, object]:
 def load_gateway_descriptor(path: Path) -> Dict[str, object]:
     try:
         text = path.read_text()
-    except Exception:
-        return {}
+    except Exception as exc:
+        raise SystemExit(f"Failed to read gateway descriptor: {path}\n{exc}") from exc
     try:
         data = json.loads(text)
-        return data if isinstance(data, dict) else {}
-    except Exception:
+        if isinstance(data, dict):
+            return data
+        raise SystemExit(f"Gateway descriptor must contain a JSON object at top level: {path}")
+    except json.JSONDecodeError:
         pass
     try:
         data = yaml.safe_load(text)
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
+        if isinstance(data, dict):
+            return data
+        raise SystemExit(f"Gateway descriptor must contain a YAML mapping at top level: {path}")
+    except yaml.YAMLError as exc:
+        raise SystemExit(f"Failed to parse gateway descriptor YAML: {path}\n{exc}") from exc
 
 
 def load_release_descriptor(path: Path) -> Dict[str, object]:
     try:
         data = yaml.safe_load(path.read_text())
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
+        if isinstance(data, dict):
+            return data
+        raise SystemExit(f"Descriptor must contain a YAML mapping at top level: {path}")
+    except yaml.YAMLError as exc:
+        raise SystemExit(f"Failed to parse YAML descriptor: {path}\n{exc}") from exc
+    except Exception as exc:
+        raise SystemExit(f"Failed to read descriptor: {path}\n{exc}") from exc
 
 
 def save_release_descriptor(path: Path, data: Dict[str, object]) -> None:
@@ -1691,14 +1717,18 @@ def gather_configuration(
 
         for key in ("COGNITO_USER_POOL_ID", "COGNITO_APP_CLIENT_ID", "COGNITO_SERVICE_CLIENT_ID"):
             current_val = env_ingress.entries.get(key, (None, None))[1]
+            descriptor_applied = False
             if use_descriptor_auth:
                 if key == "COGNITO_USER_POOL_ID" and descriptor_pool and not is_placeholder(descriptor_pool):
                     current_val = descriptor_pool
+                    descriptor_applied = True
                 elif key == "COGNITO_APP_CLIENT_ID" and descriptor_app and not is_placeholder(descriptor_app):
                     current_val = descriptor_app
+                    descriptor_applied = True
                 elif key == "COGNITO_SERVICE_CLIENT_ID" and descriptor_service and not is_placeholder(descriptor_service):
                     current_val = descriptor_service
-            if force_prompt or is_placeholder(current_val):
+                    descriptor_applied = True
+            if (force_prompt and not descriptor_applied) or is_placeholder(current_val):
                 current_val = ask(console, key, default=current_val or "")
             update_env_value(env_ingress, key, current_val or "")
             update_env_value(env_proc, key, current_val or "")
@@ -1767,6 +1797,7 @@ def gather_configuration(
 
             domain_raw = _get_nested(assembly_data, "domain")
             proxy_domain = normalize_domain_host(domain_raw, keep_port=False) if isinstance(domain_raw, str) else ""
+            has_explicit_domain = bool(proxy_domain)
 
             if not proxy_domain:
                 ui_port = str(
@@ -1789,6 +1820,9 @@ def gather_configuration(
                 keyprefix = keyprefix.replace("<TENANT>", tenant).replace("<PROJECT>", project)
             update_env_value(env_proxy, "REDIS_KEYPREFIX", keyprefix)
 
+            if has_explicit_domain:
+                # Keep the sample localhost line only as a commented example when a real DNS name is configured.
+                comment_env_key(env_proxy, "TOKEN_COOKIES_DOMAIN", fallback_value="localhost")
 
             token_masq = proxy_login_cfg.get("token_masquerade")
             if token_masq is None:
