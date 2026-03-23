@@ -1,7 +1,7 @@
 ---
 id: ks:docs/ops/ec2/dockercompose-deployment-README.md
 title: "Dockercompose Deployment"
-summary: "EC2 docker‑compose deployment for platform + custom UI + bundles (customer‑repo driven)."
+summary: "EC2 docker‑compose deployment for platform + custom UI + bundles using descriptor-driven compose setup."
 tags: ["ops", "ec2", "docker-compose", "deployment", "custom-ui", "bundles"]
 keywords: ["docker compose", "dc-infra", "bundles.yaml", "frontend config", "nginx", "bundles mount", "env files", "host folders"]
 see_also:
@@ -11,17 +11,17 @@ see_also:
 ---
 # EC2 Docker‑Compose Deployment (Custom UI + Bundles)
 
-This doc consolidates the **customer‑repo EC2 compose** notes into a single platform‑side reference.
-Use it when deploying **KDCube platform + custom UI + bundles** on an EC2 host.
+This doc consolidates the **descriptor-driven EC2 compose** notes into a single platform-side reference.
+Use it when deploying **KDCube platform + a custom UI repo + bundles** on an EC2 host.
 
 ---
 
 ## Prerequisites
 
-Two repos must be checked out on the EC2 host:
+Two repos are typically involved on the EC2 host:
 
 - **Platform repo** (KDCube): services + compose + dockerfiles
-- **Customer repo**: UI + bundles + nginx config
+- **Custom app repo**: UI sources, optional UI/nginx templates, and optional custom bundles
 
 ---
 
@@ -45,14 +45,14 @@ Use:
 - `.env.postgres.setup` (only if DB setup is needed)
 - `.env.proxylogin` (optional)
 
-**Customer repo:**
+**Custom app repo:**
 - `.env.ui.build`
 
 ---
 
 ## UI build + runtime config
 
-UI build inputs (customer repo):
+UI build inputs (custom app repo):
 - `Dockerfile_UI`
 - `nginx_ui.conf`
 
@@ -60,7 +60,7 @@ UI build inputs (customer repo):
 At runtime, docker‑compose mounts:
 
 ```
-PATH_TO_FRONTEND_CONFIG_JSON=<customer-repo>/ops/<...>/config.json
+PATH_TO_FRONTEND_CONFIG_JSON=<generated runtime config path>
 ```
 
 This becomes:
@@ -68,8 +68,17 @@ This becomes:
 /usr/share/nginx/html/config.json
 ```
 
-For ECS later:
-- `FRONTEND_CONFIG_JSON` **or** `FRONTEND_CONFIG_S3_URL`
+The CLI generates this runtime config from:
+- `frontend.frontend_config` if provided in `assembly.yaml`
+- otherwise a built-in default based on auth mode (`hardcoded`, `cognito`, `delegated`)
+
+The generated config always patches:
+- `tenant`
+- `project`
+- `routesPrefix` from `proxy.route_prefix`
+
+For delegated defaults, if root `company` is set in `assembly.yaml`, the CLI also
+fills `auth.totpAppName` and `auth.totpIssuer`.
 
 ---
 
@@ -78,7 +87,7 @@ For ECS later:
 Set this in the platform compose `.env` so bundles are mounted into chat‑proc:
 
 ```
-HOST_BUNDLES_PATH=<customer-repo>/path/to/bundles
+HOST_BUNDLES_PATH=<custom-app-repo>/path/to/bundles
 ```
 
 ### Bundle shared local storage (optional)
@@ -147,17 +156,27 @@ Alternatively, use `GIT_HTTP_TOKEN` for HTTPS auth.
 
 ## Nginx proxy config
 
-Customer repo provides nginx templates (dev/prod). Example:
+The CLI selects the runtime proxy template from platform-shipped nginx configs
+based on:
+- auth mode (`simple`, `cognito`, `delegated`)
+- `proxy.ssl`
+- compose mode (`custom-ui-managed-infra`)
 
-- `<customer-repo>/ops/<...>/nginx_proxy.conf`
+For delegated auth with SSL enabled, it uses:
+- `deployment/docker/custom-ui-managed-infra/nginx/conf/nginx_proxy_ssl_delegated_auth.conf`
 
-Point to it via:
-```
-NGINX_PROXY_CONFIG_FILE_PATH=<customer-repo>/ops/<...>/nginx_proxy.conf
-```
+For non-SSL delegated auth, it uses:
+- `deployment/docker/custom-ui-managed-infra/nginx/conf/nginx_proxy_delegated.conf`
 
-For non‑SSL dev, prefer the HTTP‑only config. For SSL deployments, use the
-SSL templates (cognito/delegated auth) and ensure certs are mounted.
+The runtime proxy config is generated into the workdir `config/` folder.
+The CLI patches:
+- `routesPrefix` from `proxy.route_prefix`
+- `YOUR_DOMAIN_NAME` from root `domain` when `proxy.ssl: true`
+
+This means `domain` is required for automated SSL proxy rendering.
+The default SSL templates assume Let’s Encrypt certs live at:
+- `/etc/letsencrypt/live/<domain>/fullchain.pem`
+- `/etc/letsencrypt/live/<domain>/privkey.pem`
 
 ---
 
@@ -186,6 +205,11 @@ dc-infra build postgres-setup && dc-infra run --rm postgres-setup
 # Start services
 dc-infra up -d
 ```
+
+If you use the CLI instead of managing `.env` files by hand, the recommended flow is:
+1. provide `assembly.yaml`, `secrets.yaml`, `gateway.yaml`, `bundles.yaml`, and optionally `bundles.secrets.yaml`
+2. let the CLI render `config/.env*`, runtime frontend config, and runtime nginx config
+3. run compose with the generated workdir
 
 ---
 

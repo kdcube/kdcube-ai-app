@@ -14,6 +14,12 @@ see_also:
 This guide shows how to run **git‑defined bundles** using docker‑compose
 (`all_in_one_kdcube` or `custom-ui-managed-infra`).
 
+When you use the CLI with `assembly.yaml`, it can also generate:
+- runtime frontend `config.json`
+- runtime nginx proxy config
+
+from descriptor data plus optional templates.
+
 ---
 
 ## 1) Host paths (.env in compose folder)
@@ -42,6 +48,13 @@ If you use `all_in_one_kdcube`, nginx configs are mounted from
 cp nginx/conf/nginx_ui.conf ./config/nginx_ui.conf
 cp nginx/conf/nginx_proxy.conf ./config/nginx_proxy.conf
 ```
+
+If you use the CLI instead of managing compose env files by hand:
+- `frontend.frontend_config` is optional
+- `frontend.nginx_ui_config` is optional
+- `proxy.route_prefix` is applied to both frontend `routesPrefix` and runtime nginx config
+- `proxy.ssl: true` + root `domain` also patches `YOUR_DOMAIN_NAME` in the runtime
+  nginx SSL config and default Let’s Encrypt cert paths
 
 ---
 
@@ -100,6 +113,13 @@ BUNDLES_FORCE_ENV_ON_STARTUP=0
 - The processor reads bundles from `bundles.yaml`.
 - Redis is the runtime source of truth; `BUNDLES_FORCE_ENV_ON_STARTUP=1`
   performs a one‑time overwrite.
+- For custom UI compose, `PATH_TO_FRONTEND_CONFIG_JSON` should point to the
+  generated runtime config file, not directly to a source template.
+- If `frontend.frontend_config` is omitted in `assembly.yaml`, the CLI falls back
+  to a built-in template based on auth mode:
+  - `simple` -> `config.hardcoded.json`
+  - `cognito` -> `config.cognito.json`
+  - `delegated` -> `config.delegated.json`
 - To enforce gateway config from env on every restart, set
   `GATEWAY_CONFIG_FORCE_ENV_ON_STARTUP=1` in ingress/proc/metrics env.
 - If using **public repos**, you can omit the SSH variables.

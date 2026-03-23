@@ -69,8 +69,8 @@ frontend:
   ui_env_build_relative: "ui/chat-web-app/.env.ui.build"  # optional
   domain: "chat.example.com"                      # optional
 
-domain: "chat.example.com"                        # optional root domain (used for proxylogin URLs)
-
+domain: "chat.example.com"                        # required when proxy.ssl=true; used for proxylogin URLs and nginx SSL server_name/cert paths
+company: "Example Inc."                           # optional; used for delegated frontend defaults and proxylogin/password-reset metadata
 auth:
   type: "delegated"  # "simple" | "cognito" | "delegated"
   cognito:
@@ -89,7 +89,7 @@ auth:
     http_urlbase: "http://localhost:5174/auth"
 
 proxy:
-  ssl: false                # when true, CLI picks SSL nginx templates
+  ssl: false                # when true, CLI picks SSL nginx templates and applies `domain` to nginx server_name/cert paths
   route_prefix: "/chatbot"  # overrides frontend routesPrefix + nginx routing prefix
 
 ports:
@@ -178,6 +178,11 @@ Optional:
 - `ui_env_build_relative`: build‑time env file path (relative to repo root)
 - `frontend.domain`: deployment domain (informational for now)
 - `domain`: root domain used when expanding `YOUR_DOMAIN` in proxylogin URLs
+- `domain`: root domain used when expanding `YOUR_DOMAIN` in proxylogin URLs.
+  When `proxy.ssl: true`, the CLI also applies it to nginx `server_name` and
+  Let’s Encrypt cert paths, assuming:
+  - `/etc/letsencrypt/live/<domain>/fullchain.pem`
+  - `/etc/letsencrypt/live/<domain>/privkey.pem`
 - `paths.*`: local-only host path overrides. The CLI will write these into the
   workdir copy of the descriptor when needed; they are not required in the
   public template.
@@ -196,6 +201,16 @@ Optional:
   project, and auth values.
   If no frontend repo is cloned, the `frontend_config` path is resolved relative
   to the descriptor location on disk.
+- If `frontend_config` is omitted, the CLI generates a built-in default based on
+  auth mode:
+  - `simple` -> `config.hardcoded.json`
+  - `cognito` -> `config.cognito.json`
+  - `delegated` -> `config.delegated.json`
+- When `auth.type: delegated` and the built-in delegated config is used, the CLI
+  also applies:
+  - `proxy.route_prefix` -> frontend `routesPrefix`
+  - root `company` -> delegated `totpAppName` / `totpIssuer` when present
+- If `nginx_ui_config` is omitted, the CLI falls back to the built-in `nginx_ui.conf`.
 - If `platform.ref` is present, the CLI offers **assembly-descriptor** as an
   install source (pulls that tag from DockerHub).
 

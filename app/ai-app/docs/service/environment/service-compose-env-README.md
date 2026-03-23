@@ -29,7 +29,7 @@ Folder: `deployment/docker/all_in_one_kdcube`
 | `sample_env/.env.proxylogin` | Proxylogin env (optional) |
 | `sample_env/.env.frontend` | Frontend env (optional) |
 | `nginx/conf/nginx_ui.conf` | UI nginx config (mounted at runtime) |
-| `nginx/conf/nginx_proxy.conf` | Proxy nginx config (mounted at runtime) |
+| `nginx/conf/nginx_proxy*.conf` | Proxy nginx templates used for the runtime-mounted proxy config |
 
 ### 2) `custom-ui-managed-infra` (custom UI + managed DB/Redis)
 Folder: `deployment/docker/custom-ui-managed-infra`
@@ -55,13 +55,36 @@ These are used by compose for mounts/builds. See `sample_env/.env` in the target
 | `UI_BUILD_CONTEXT` | UI repo root for Docker build |
 | `UI_DOCKERFILE_PATH` | UI Dockerfile path (relative to `UI_BUILD_CONTEXT`) |
 | `UI_SOURCE_PATH` | UI source dir (relative) |
-| `NGINX_UI_CONFIG_FILE_PATH` | Nginx config used by UI image |
-| `PATH_TO_FRONTEND_CONFIG_JSON` | Runtime config JSON mounted to UI container |
+| `NGINX_UI_CONFIG_FILE_PATH` | UI nginx config used by the UI image build. If omitted in `assembly.yaml`, CLI falls back to built-in `nginx_ui.conf`. |
+| `PATH_TO_FRONTEND_CONFIG_JSON` | Generated runtime config JSON mounted to UI container as `/config.json` |
 | `PROXY_BUILD_CONTEXT` | Proxy build context |
 | `PROXY_DOCKERFILE_PATH` | Proxy Dockerfile path |
-| `NGINX_PROXY_CONFIG_FILE_PATH` | Proxy nginx config used at runtime |
+| `NGINX_PROXY_CONFIG_FILE_PATH` | Proxy nginx template selected for the runtime copy |
+| `NGINX_PROXY_RUNTIME_CONFIG_PATH` | Runtime nginx config file mounted into the proxy container |
 | `KDCUBE_CONFIG_DIR/nginx_ui.conf` | UI nginx config mount (all_in_one_kdcube) |
-| `KDCUBE_CONFIG_DIR/nginx_proxy.conf` | Proxy nginx config mount (all_in_one_kdcube) |
+| `KDCUBE_CONFIG_DIR/nginx_proxy*.conf` | Proxy nginx runtime config mount (all_in_one_kdcube) |
+
+Frontend/runtime config behavior:
+- If `frontend.frontend_config` is provided in `assembly.yaml`, the CLI uses it as
+  the template for the generated runtime `config.json`.
+- If it is omitted, the CLI falls back to a built-in template by auth mode:
+  - `simple` -> `config.hardcoded.json`
+  - `cognito` -> `config.cognito.json`
+  - `delegated` -> `config.delegated.json`
+- The generated runtime config patches:
+  - `tenant`
+  - `project`
+  - `routesPrefix` from `proxy.route_prefix`
+- For delegated defaults, root `company` also fills:
+  - `auth.totpAppName`
+  - `auth.totpIssuer`
+
+Proxy/runtime config behavior:
+- The CLI copies the selected nginx proxy template into the workdir config folder.
+- It patches `routesPrefix` from `proxy.route_prefix`.
+- If `proxy.ssl: true` and root `domain` is set, it also replaces `YOUR_DOMAIN_NAME`
+  in the runtime nginx SSL config and default Let’s Encrypt cert paths under
+  `/etc/letsencrypt/live/<domain>/...`.
 
 ## Per‑Service Env (ingress/proc/metrics)
 

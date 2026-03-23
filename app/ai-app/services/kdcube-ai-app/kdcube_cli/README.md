@@ -106,10 +106,10 @@ When you run `kdcube-setup`, the **wizard** performs the steps below:
 3) Copies nginx configs into `config/` for runtime overrides:
    - `nginx_ui.conf`
    - runtime proxy config (based on selected auth mode)
-4) Selects **auth mode** (simple or cognito) and writes:
+4) Selects **auth mode** (simple, cognito, or delegated) and writes:
    - `AUTH_PROVIDER` in `.env.ingress` + `.env.proc`
    - Cognito fields when applicable (see below)
-5) Generates frontend runtime config (hardcoded or cognito).
+5) Generates frontend runtime config based on auth mode or descriptor template.
 6) Creates local data folders for Postgres/Redis/exec workspace/bundle storage.
 7) Optionally builds images and starts `docker compose up -d`.
 
@@ -134,12 +134,22 @@ The wizard prompts for an auth mode and updates both backend and frontend config
 
 **Delegated**
 - `AUTH_PROVIDER=cognito`
+- Frontend config: `frontend.config.delegated.json`
 - Uses the delegated proxy template (proxylogin) while still validating tokens via Cognito.
+- If `assembly.yaml` provides `company`, the generated delegated config uses it for:
+  - `auth.totpAppName`
+  - `auth.totpIssuer`
 
 ### Routes prefix & nginx proxy
 The frontend config includes `routesPrefix` (default: `/chatbot`).
 The wizard patches the **runtime proxy config** in `config/` so nginx uses the
 same prefix. This keeps `/chatbot` (or any custom prefix) consistent between UI and proxy.
+
+If `proxy.ssl: true` and `assembly.domain` is set, the wizard also patches the
+runtime nginx SSL config so `YOUR_DOMAIN_NAME` becomes the configured domain in:
+- `server_name`
+- `/etc/letsencrypt/live/<domain>/fullchain.pem`
+- `/etc/letsencrypt/live/<domain>/privkey.pem`
 
 ### Secrets (third services tokens)
 The wizard **does not** write OpenAI/Anthropic/Brave keys to `.env` files.
@@ -223,9 +233,9 @@ Example workdir layout:
 │  ├─ .env.metrics
 │  ├─ .env.postgres.setup
 │  ├─ .env.proxylogin
-│  ├─ frontend.config.hardcoded.json
+│  ├─ frontend.config.<mode>.json
 │  ├─ nginx_ui.conf
-│  └─ nginx_proxy.conf
+│  └─ nginx_proxy*.conf
 ├─ data/
 │  ├─ postgres/
 │  ├─ redis/
@@ -359,13 +369,23 @@ Minimal example:
 ```yaml
 frontend:
   build:
-    repo: "git@github.com:org/private-ui.git"
+    repo: "git@github.com:org/private-app.git"
     ref: "ui-v2026.02.22"
     dockerfile: "ops/docker/Dockerfile_UI"
     src: "ui/chat-web-app"
-  image: "registry/private-ui:2026.02.22"  # optional; if set, CLI skips UI build
-  frontend_config: "ops/docker/config.cognito.json"
+  image: "registry/private-app-ui:2026.02.22"  # optional; if set, CLI skips UI build
+  frontend_config: "ops/docker/config.delegated.json"  # optional
+  nginx_ui_config: "ops/docker/nginx_ui.conf"          # optional
 ```
+
+Frontend/runtime config behavior:
+- If `frontend.frontend_config` is provided, the CLI uses it as the template for the
+  generated runtime `config.json` and patches tenant/project/auth/routesPrefix values.
+- If it is omitted, the CLI falls back to a built-in template by auth mode:
+  - `simple` -> `config.hardcoded.json`
+  - `cognito` -> `config.cognito.json`
+  - `delegated` -> `config.delegated.json`
+- If `frontend.nginx_ui_config` is omitted, the CLI falls back to the built-in `nginx_ui.conf`.
 
 How to activate:
 1) Run `kdcube-setup`
@@ -406,9 +426,9 @@ LLM keys are **not** stored in files; they live only in the secrets sidecar.
    - `/srv/kdcube-local/config/.env.metrics`
    - `/srv/kdcube-local/config/.env.postgres.setup`
    - `/srv/kdcube-local/config/.env.proxylogin`
-   - `/srv/kdcube-local/config/frontend.config.hardcoded.json`
+   - `/srv/kdcube-local/config/frontend.config.<mode>.json`
    - `/srv/kdcube-local/config/nginx_ui.conf`
-   - `/srv/kdcube-local/config/nginx_proxy.conf`
+   - `/srv/kdcube-local/config/nginx_proxy*.conf`
 3) Start compose from `deployment/docker/all_in_one_kdcube`:
 
 ```bash
@@ -427,7 +447,7 @@ Open the UI:
 - The wizard auto‑saves after major sections, so if you exit early (Ctrl+C) most
   values entered so far are preserved in `config/` and will appear as defaults next run.
 
-Tip: you can edit `workdir/config/nginx_ui.conf` and `workdir/config/nginx_proxy.conf`
+Tip: you can edit `workdir/config/nginx_ui.conf` and the selected `workdir/config/nginx_proxy*.conf`
 without rebuilding images (they are mounted into the containers at runtime).
 
 ## UI config source of truth
