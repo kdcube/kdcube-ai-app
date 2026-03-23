@@ -403,6 +403,26 @@ def normalize_routes_prefix(value: Optional[str]) -> str:
     return prefix
 
 
+def normalize_domain_host(value: Optional[str], *, keep_port: bool = False) -> str:
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+    if "://" in raw:
+        from urllib.parse import urlparse
+
+        parsed = urlparse(raw)
+        host = parsed.netloc or parsed.path
+    else:
+        host = raw
+    host = host.split("/")[0].strip()
+    if not keep_port and host.startswith("[") and "]" in host:
+        closing = host.find("]")
+        return host[: closing + 1]
+    if not keep_port and ":" in host:
+        return host.split(":", 1)[0]
+    return host
+
+
 def sync_nginx_proxy_config(target_path: Path, ai_app_root: Path, template_rel: str) -> None:
     repo_root = ai_app_root.parent.parent
     src = repo_root / template_rel
@@ -428,6 +448,19 @@ def update_nginx_routes_prefix(path: Path, routes_prefix: str) -> None:
         path.write_text(updated)
 
 
+def update_nginx_ssl_domain(path: Path, domain: str) -> None:
+    domain = normalize_domain_host(domain)
+    if not domain or not path.exists():
+        return
+    try:
+        current = path.read_text()
+    except Exception:
+        return
+    updated = current.replace("YOUR_DOMAIN_NAME", domain)
+    if updated != current:
+        path.write_text(updated)
+
+
 def write_frontend_config(
     path: Path,
     tenant: str,
@@ -439,6 +472,7 @@ def write_frontend_config(
     cognito_user_pool_id: Optional[str] = None,
     cognito_app_client_id: Optional[str] = None,
     routes_prefix: Optional[str] = None,
+    company_name: Optional[str] = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     template_data: Dict[str, object] = {}
@@ -479,6 +513,15 @@ def write_frontend_config(
         if cognito_app_client_id:
             oidc_cfg["client_id"] = cognito_app_client_id
         auth["oidcConfig"] = oidc_cfg
+    elif auth_type == "delegated":
+        if "token" in auth:
+            auth.pop("token", None)
+        if company_name:
+            if auth.get("totpAppName") in (None, "", "COMPANY_NAME", "<COMPANY_NAME>"):
+                auth["totpAppName"] = company_name
+            if auth.get("totpIssuer") in (None, "", "COMPANY_NAME", "<COMPANY_NAME>"):
+                auth["totpIssuer"] = company_name
+        auth.setdefault("apiBase", "/auth/")
     merged["auth"] = auth
 
     path.write_text(json.dumps(merged, indent=2) + "\n")
@@ -1596,17 +1639,7 @@ def gather_configuration(
                 return ""
 
             domain_raw = _get_nested(assembly_data, "domain")
-            proxy_domain = ""
-            if isinstance(domain_raw, str) and domain_raw.strip():
-                raw = domain_raw.strip()
-                if "://" in raw:
-                    from urllib.parse import urlparse
-
-                    parsed = urlparse(raw)
-                    proxy_domain = parsed.netloc or parsed.path
-                else:
-                    proxy_domain = raw
-                proxy_domain = proxy_domain.split("/")[0]
+            proxy_domain = normalize_domain_host(domain_raw, keep_port=False) if isinstance(domain_raw, str) else ""
 
             if not proxy_domain:
                 ui_port = str(
@@ -2519,6 +2552,9 @@ def gather_configuration(
         update_env_value(env_main, "UI_ENV_BUILD_RELATIVE", ui_env_build_rel_final)
     ensure_ui_env_build_file(console, ui_build_context_final, ui_env_build_rel_final)
 
+    company_name_raw = _get_nested(assembly_data, "company")
+    company_name = company_name_raw.strip() if isinstance(company_name_raw, str) else None
+
     if auth_provider == "simple":
         frontend_template = ctx.ai_app_root / "deployment/docker/all_in_one_kdcube/frontend/config.hardcoded.json"
         compose_ui_config = ctx.config_dir / "frontend.config.hardcoded.json"
@@ -2535,8 +2571,12 @@ def gather_configuration(
                 else "app/ai-app/deployment/docker/all_in_one_kdcube/nginx/conf/nginx_proxy.conf"
             )
     else:
-        frontend_template = ctx.ai_app_root / "deployment/docker/all_in_one_kdcube/frontend/config.cognito.json"
-        compose_ui_config = ctx.config_dir / "frontend.config.cognito.json"
+        if auth_mode == "delegated":
+            frontend_template = ctx.ai_app_root / "deployment/docker/all_in_one_kdcube/frontend/config.delegated.json"
+            compose_ui_config = ctx.config_dir / "frontend.config.delegated.json"
+        else:
+            frontend_template = ctx.ai_app_root / "deployment/docker/all_in_one_kdcube/frontend/config.cognito.json"
+            compose_ui_config = ctx.config_dir / "frontend.config.cognito.json"
         if ctx.docker_dir.name == "custom-ui-managed-infra":
             if auth_mode == "delegated":
                 defaults["nginx_proxy_config"] = (
@@ -2582,6 +2622,7 @@ def gather_configuration(
         cognito_user_pool_id=cognito_user_pool_id_val,
         cognito_app_client_id=cognito_app_client_id_val,
         routes_prefix=proxy_route_prefix or None,
+        company_name=company_name,
     )
     routes_prefix = proxy_route_prefix or normalize_routes_prefix(_load_json_file(compose_ui_config).get("routesPrefix"))
     runtime_proxy_path = env_main.entries.get("NGINX_PROXY_RUNTIME_CONFIG_PATH", (None, None))[1]
@@ -2598,6 +2639,15 @@ def gather_configuration(
     runtime_proxy = Path(runtime_proxy_path).expanduser()
     sync_nginx_proxy_config(runtime_proxy, ctx.ai_app_root, defaults["nginx_proxy_config"])
     update_nginx_routes_prefix(runtime_proxy, routes_prefix)
+    if proxy_ssl_enabled:
+        ssl_domain = normalize_domain_host(_as_str(_get_nested(assembly_data, "domain")))
+        if ssl_domain:
+            update_nginx_ssl_domain(runtime_proxy, ssl_domain)
+        else:
+            console.print(
+                "[yellow]proxy.ssl is enabled but assembly.domain is empty; "
+                "the generated nginx SSL config will keep YOUR_DOMAIN_NAME placeholders.[/yellow]"
+            )
     desired_frontend_path = str(compose_ui_config)
     current_frontend_path = env_main.entries.get("PATH_TO_FRONTEND_CONFIG_JSON", (None, None))[1]
     if is_placeholder(current_frontend_path) or not current_frontend_path:
@@ -2620,12 +2670,16 @@ def gather_configuration(
             cognito_region=cognito_region_val,
             cognito_user_pool_id=cognito_user_pool_id_val,
             cognito_app_client_id=cognito_app_client_id_val,
+            routes_prefix=proxy_route_prefix or None,
+            company_name=company_name,
         )
     except Exception:
         pass
 
     if auth_provider == "simple":
         dev_ui_config = ctx.ai_app_root / "ui/chat-web-app/public/private/config.hardcoded.json"
+    elif auth_mode == "delegated":
+        dev_ui_config = ctx.ai_app_root / "ui/chat-web-app/public/private/config.delegated.json"
     else:
         dev_ui_config = ctx.ai_app_root / "ui/chat-web-app/public/private/config.cognito.demo.json"
     write_frontend_config(
@@ -2636,6 +2690,8 @@ def gather_configuration(
         cognito_region=cognito_region_val,
         cognito_user_pool_id=cognito_user_pool_id_val,
         cognito_app_client_id=cognito_app_client_id_val,
+        routes_prefix=proxy_route_prefix or None,
+        company_name=company_name,
     )
 
     proxy_build_context = env_main.entries.get("PROXY_BUILD_CONTEXT", (None, None))[1]

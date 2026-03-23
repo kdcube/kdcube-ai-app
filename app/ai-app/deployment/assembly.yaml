@@ -2,7 +2,8 @@ config:
   version: "2026.3.10.209"
 
 release_name: "local-default"
-domain: ""
+domain: ""   # required when proxy.ssl=true; used for proxylogin URLs and nginx SSL server_name/cert paths
+company: ""
 
 context:
   tenant: "demo-tenant"
@@ -61,7 +62,7 @@ auth:
     http_urlbase: "https://YOUR_DOMAIN/auth"
 
 proxy:
-  ssl: false
+  ssl: false   # when true, CLI uses SSL nginx templates and applies `domain` to LetsEncrypt paths under /etc/letsencrypt/live/<domain>/
   route_prefix: "/chatbot"
 
 ports:

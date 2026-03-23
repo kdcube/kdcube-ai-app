@@ -36,8 +36,8 @@ Default workdir: `~/.kdcube/kdcube-runtime`
 - `config/`
   - `.env` (compose variables)
   - `.env.ingress` / `.env.proc` / `.env.metrics` / `.env.postgres.setup` / `.env.proxylogin`
-  - `nginx_ui.conf`, `nginx_proxy.conf`
-  - `frontend.config.hardcoded.json`
+  - `nginx_ui.conf`, selected runtime `nginx_proxy*.conf`
+  - selected runtime `frontend.config.<mode>.json`
 - `data/`
   - `postgres/`, `redis/`, `kdcube-storage/`, `exec-workspace/`, `bundle-storage/`, `bundles/`
 - `logs/`
@@ -223,6 +223,31 @@ flowchart LR
 ## Managed infra (custom compose)
 If you set LLM keys directly in `.env.proc` for a managed‑infra setup, those
 values still work and take precedence. The sidecar is used only when env keys are missing.
+
+## Frontend and proxy runtime files
+When the CLI is driven by `assembly.yaml`:
+- `frontend.frontend_config` is optional
+- `frontend.nginx_ui_config` is optional
+
+If `frontend.frontend_config` is provided, the CLI uses it as the template for the
+generated runtime `config.json`. If omitted, it falls back to a built-in template:
+- `simple` -> `config.hardcoded.json`
+- `cognito` -> `config.cognito.json`
+- `delegated` -> `config.delegated.json`
+
+The generated runtime config always patches:
+- `tenant`
+- `project`
+- `routesPrefix` from `proxy.route_prefix`
+
+For delegated defaults, if root `company` is set in `assembly.yaml`, the CLI also
+fills:
+- `auth.totpAppName`
+- `auth.totpIssuer`
+
+If `proxy.ssl: true` and `domain` is set, the runtime nginx proxy config is also
+patched so `YOUR_DOMAIN_NAME` is replaced in `server_name` and the default
+Let’s Encrypt cert paths under `/etc/letsencrypt/live/<domain>/...`.
 
 ## Limits (local dev)
 - Docker network isolation does **not** protect secrets from a host user with Docker access.

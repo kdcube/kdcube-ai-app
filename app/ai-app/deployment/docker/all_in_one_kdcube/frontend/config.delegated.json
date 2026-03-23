@@ -1,0 +1,11 @@
+{
+  "auth": {
+    "authType": "delegated",
+    "totpAppName": "COMPANY_NAME",
+    "totpIssuer": "COMPANY_NAME",
+    "apiBase": "/auth/"
+  },
+  "tenant": "TENANT_ID",
+  "project": "PROJECT_ID",
+  "routesPrefix": "/chatbot"
+}
