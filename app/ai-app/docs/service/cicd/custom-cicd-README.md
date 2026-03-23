@@ -3,19 +3,19 @@ id: ks:docs/service/cicd/custom-cicd-README.md
 title: "Custom CICD"
 summary: "Two‑repo CI/CD plan covering build outputs, image mapping, assembly.yaml + bundles.yaml flow, and ECS/EC2 deployment steps."
 tags: ["service", "cicd", "deployment", "ecs", "ec2", "docker-compose", "images", "bundles", "release", "frontend"]
-keywords: ["two-repo", "platform repo", "customer repo", "assembly.yaml", "bundles.yaml", "bundle packaging", "image mapping", "ecs task definitions", "compose envs", "AGENTIC_BUNDLES_JSON"]
+keywords: ["two-repo", "platform repo", "custom app repo", "assembly.yaml", "bundles.yaml", "bundle packaging", "image mapping", "ecs task definitions", "compose envs", "AGENTIC_BUNDLES_JSON"]
 see_also:
   - ks:docs/service/cicd/release-bundle-README.md
   - ks:docs/service/cicd/assembly-descriptor-README.md
   - ks:docs/service/cicd/secrets-descriptor-README.md
   - ks:docs/service/cicd/release-README.md
 ---
-# Custom CI/CD (Open Source + Customer Repo)
+# Custom CI/CD (Open Source + Custom App Repo)
 
 This document is a practical plan for a **two‑repo** CI/CD setup:
 
-- **Platform repo (open source):** `kdcube-ai-app`  
-- **Customer repo (closed):** bundles + frontend + proxy config
+- **Platform repo (open source):** `kdcube-ai-app`
+- **Custom app repo (private):** bundles + frontend + optional UI/nginx templates
 
 Goal: keep **docker‑compose (EC2)** working during transition, while preparing **ECS** deployment.
 
@@ -45,20 +45,20 @@ Before GitHub Actions can build and publish releases, ensure these are set:
 4. **Assembly + Bundles files**
    - `assembly.yaml` must exist and contain:
      - `platform.ref` (PEP440‑compatible; used as tag + CLI version)
-   - `bundles.yaml` should exist in the customer repo to define bundle list.
+  - `bundles.yaml` should exist in the custom app repo to define bundle list.
 
 ---
 
 ## TL;DR (1‑page CI/CD Flow)
 
-**Inputs (customer repo):**
+**Inputs (custom app repo):**
 - `assembly.yaml` (pins platform tag + frontend tag)
 - `bundles.yaml` (bundle list + refs)
 - `bundles.secrets.yaml` (optional; bundle secrets for local/dev)
 
 **CI (build phase):**
 1. Checkout **platform repo** at `platform.ref`.
-2. Checkout **customer repo** at `bundles.yaml` refs + `frontend.ref`.
+2. Checkout **custom app repo** at `bundles.yaml` refs + `frontend.ref`.
 3. For each bundle entry → copy `<subdir>/<id>` into `/bundles/<id>`.
 4. Generate **runtime descriptor** (`AGENTIC_BUNDLES_JSON`) with `path=/bundles` and `module=...entrypoint`.
 5. Build + push images:
@@ -125,7 +125,7 @@ flowchart LR
 - `kdcube-web-proxy` (nginx/openresty proxy)
 - `proxylogin` (auth proxy for delegated flows)
 
-**Customer images (built from customer repo):**
+**Custom app images (built from custom app repo):**
 
 - `kdcube-web-ui` (frontend bundle)
 - `kdcube-chat-proc-bundled` (processor image with bundles baked in)
@@ -149,13 +149,13 @@ Use Dockerfiles from `deployment/docker/custom-ui-managed-infra`.
 | `proxylogin` | `app/ai-app/deployment/docker/custom-ui-managed-infra/Dockerfile_ProxyLogin` |
 | `py-code-exec` | `app/ai-app/deployment/docker/custom-ui-managed-infra/Dockerfile_Exec` |
 
-**Customer repo (closed):**
+**Custom app repo (private):**
 
 | Image | Dockerfile |
 | --- | --- |
-| `kdcube-web-ui` | `<customer-repo>/ops/.../Dockerfile_UI` |
-| `kdcube-chat-proc-bundled` | `<customer-repo>/ops/.../Dockerfile_ChatProcBundled` (base = `kdcube-chat-proc`) |
-| `kdcube-exec-bundled` | `<customer-repo>/ops/.../Dockerfile_ExecBundled` (base = `py-code-exec`) |
+| `kdcube-web-ui` | `<custom-app-repo>/ops/.../Dockerfile_UI` |
+| `kdcube-chat-proc-bundled` | `<custom-app-repo>/ops/.../Dockerfile_ChatProcBundled` (base = `kdcube-chat-proc`) |
+| `kdcube-exec-bundled` | `<custom-app-repo>/ops/.../Dockerfile_ExecBundled` (base = `py-code-exec`) |
 
 ---
 
@@ -198,18 +198,30 @@ Minimal example:
 ```yaml
 frontend:
   build:
-    repo: "private-ui-repo"
+    repo: "git@github.com:org/private-app.git"
     ref: "ui-v2026.02.22"
     dockerfile: "ops/docker/Dockerfile_UI"
     src: "ui/chat-web-app"
-  image: "registry/private-ui:2026.02.22"  # optional; if set, CLI uses this image
-  frontend_config: "ops/docker/config.cognito.json"
+  image: "registry/private-app-ui:2026.02.22"  # optional; if set, CLI uses this image
+  frontend_config: "ops/docker/config.delegated.json"  # optional
+  nginx_ui_config: "ops/docker/nginx_ui.conf"          # optional
 ```
 
 For local compose (custom‑ui‑managed‑infra), the CLI will:
 - use `image` if present (skip UI build),
 - otherwise clone the UI repo and build it,
-- generate runtime `config.json` from `frontend_config`.
+- generate runtime `config.json` from `frontend_config` if provided.
+
+If `frontend_config` is omitted, the CLI falls back to a built-in template:
+- `simple` -> `config.hardcoded.json`
+- `cognito` -> `config.cognito.json`
+- `delegated` -> `config.delegated.json`
+
+If `nginx_ui_config` is omitted, the CLI falls back to the built-in `nginx_ui.conf`.
+
+When `proxy.ssl: true` and `domain` is set in `assembly.yaml`, the CLI also patches
+the runtime nginx SSL config so `YOUR_DOMAIN_NAME` is replaced in `server_name`
+and the default Let’s Encrypt cert paths under `/etc/letsencrypt/live/<domain>/...`.
 
 Details are documented in:  
 [docs/service/cicd/assembly-descriptor-README.md](assembly-descriptor-README.md)
@@ -379,17 +391,17 @@ or provide it via a mounted volume at the path expected by the UI build.
 
 ---
 
-## 9) Bundles in Customer Repo (No Git Bundles Yet)
+## 9) Bundles in Custom App Repo (No Git Bundles Yet)
 
 Because Git‑based bundle fetching is not finished yet, **bundles must be baked into a processor image** for ECS.
 
 Recommended approach:
 
 1. Use the platform `kdcube-chat-proc` image as the base.
-2. Copy bundles from the customer repo into `/bundles`.
+2. Copy bundles from the custom app repo into `/bundles`.
 3. Set `AGENTIC_BUNDLES_ROOT=/bundles`.
 
-Example Dockerfile (customer repo):
+Example Dockerfile (custom app repo):
 
 ```dockerfile
 FROM <registry>/kdcube-chat-proc:<version>
@@ -406,7 +418,7 @@ This produces `kdcube-chat-proc-bundled`, which ECS can run without host mounts.
 
 ### Bundle Descriptor Ownership + Versioning (Now)
 
-**Owner:** the customer repo owns the **bundle descriptor** (`AGENTIC_BUNDLES_JSON`) and controls bundle versions.  
+**Owner:** the custom app repo owns the **bundle descriptor** (`AGENTIC_BUNDLES_JSON`) and controls bundle versions.  
 **Platform repo** only provides the loader + runtime.
 
 **Recommended (today):**
@@ -467,7 +479,7 @@ The processor spawns the **code‑exec** image on demand. The exec image needs a
   - Copy bundles into `/bundles`
   - Set `PY_CODE_EXEC_IMAGE` to this bundled tag
 
-Example Dockerfile (customer repo):
+Example Dockerfile (custom app repo):
 
 ```dockerfile
 FROM <registry>/py-code-exec:<version>
