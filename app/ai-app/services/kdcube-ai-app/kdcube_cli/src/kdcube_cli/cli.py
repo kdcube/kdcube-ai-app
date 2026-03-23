@@ -284,6 +284,14 @@ def _select_option(console: Console, title: str, options: list[str], default_ind
         raw = os.environ.get("KDCUBE_CLI_PLAIN_PROMPTS", "").strip().lower()
         return raw not in {"", "0", "false", "no"}
 
+    def _use_alt_screen() -> bool:
+        raw = os.environ.get("KDCUBE_CLI_ALT_SCREEN", "").strip().lower()
+        if raw in {"1", "true", "yes", "on"}:
+            return True
+        if raw in {"0", "false", "no", "off"}:
+            return False
+        return any(os.environ.get(name) for name in ("SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"))
+
     def _prompt_numbered() -> str:
         console.print(f"[bold]{title}[/bold]")
         for i, option in enumerate(options, start=1):
@@ -322,21 +330,31 @@ def _select_option(console: Console, title: str, options: list[str], default_ind
             else:
                 text.append("  " + option)
             text.append("\n")
-        text.append("\nUse ↑/↓ and Enter.", style="dim")
+        text.append("\nUse ↑/↓ and Enter. Press q to exit.", style="dim")
         return Panel(text, title="Select")
 
-    with Live(_render(), console=console, refresh_per_second=30, transient=True) as live:
+    with Live(
+        _render(),
+        console=console,
+        screen=_use_alt_screen(),
+        transient=True,
+        auto_refresh=False,
+        redirect_stdout=False,
+        redirect_stderr=False,
+    ) as live:
         while True:
             k = readkey()
             if k in (key.UP, "k"):
                 idx = (idx - 1) % len(options)
             elif k in (key.DOWN, "j"):
                 idx = (idx + 1) % len(options)
-            elif k in (key.ENTER, "\r"):
+            elif k in (key.ENTER, "\r", "\n"):
                 return options[idx]
+            elif k in ("q", key.ESC):
+                raise KeyboardInterrupt
             elif k in (key.CTRL_C, "\x03"):
                 raise KeyboardInterrupt
-            live.update(_render())
+            live.update(_render(), refresh=True)
 
 def _extract_platform_ref(text: str) -> str | None:
     in_platform = False
