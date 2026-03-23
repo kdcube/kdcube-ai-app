@@ -41,6 +41,9 @@ langchain-community==0.4.1
 langchain-openai==1.1.6
 langchain-core==1.2.6
 jsonschema
+
+# Excel generation
+openpyxl
 # ------------------------------------------------------------
 # Legacy bundle runtime + tools (keep if /integrations runs here)
 # ------------------------------------------------------------
@@ -80,6 +83,5 @@ jsonschema
 # python-docx
 # python-pptx
 # xlsxwriter
-# openpyxl
 # geopy
 # folium
