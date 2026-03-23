@@ -281,6 +281,14 @@ def _parse_secret_pairs(items: list[str]) -> dict[str, str]:
 
 
 def _select_option(console: Console, title: str, options: list[str], default_index: int = 0) -> str:
+    def _debug_enabled() -> bool:
+        raw = os.environ.get("KDCUBE_CLI_DEBUG_SELECTOR", "").strip().lower()
+        return raw not in {"", "0", "false", "no"}
+
+    def _debug(msg: str) -> None:
+        if _debug_enabled():
+            console.print(f"[yellow][selector-debug][/yellow] {msg}")
+
     def _plain_prompt_enabled() -> bool:
         raw = os.environ.get("KDCUBE_CLI_PLAIN_PROMPTS", "").strip().lower()
         return raw not in {"", "0", "false", "no"}
@@ -315,17 +323,21 @@ def _select_option(console: Console, title: str, options: list[str], default_ind
         return options[int(choice) - 1]
 
     if not sys.stdin.isatty() or not sys.stdout.isatty():
+        _debug("path=numbered reason=non-tty")
         return _prompt_numbered()
 
     if _plain_prompt_enabled():
+        _debug("path=numbered reason=forced-plain")
         return _prompt_numbered()
 
     if not console.is_terminal or console.is_jupyter or os.environ.get("TERM", "").lower() == "dumb":
+        _debug("path=numbered reason=terminal-capability")
         return _prompt_numbered()
 
     try:
         from readchar import readkey, key
     except Exception:
+        _debug("path=numbered reason=readchar-import-failed")
         return _prompt_numbered()
 
     idx = max(0, min(default_index, len(options) - 1))
@@ -344,6 +356,13 @@ def _select_option(console: Console, title: str, options: list[str], default_ind
         return Panel(text, title="Select")
 
     if _use_manual_redraw():
+        _debug(
+            "path=manual-redraw "
+            f"TERM={os.environ.get('TERM','')} "
+            f"SSH_TTY={bool(os.environ.get('SSH_TTY'))} "
+            f"STY={bool(os.environ.get('STY'))} "
+            f"TMUX={bool(os.environ.get('TMUX'))}"
+        )
         def _capture() -> tuple[str, int]:
             with console.capture() as capture:
                 console.print(_render())
@@ -363,6 +382,7 @@ def _select_option(console: Console, title: str, options: list[str], default_ind
 
         while True:
             k = readkey()
+            _debug(f"key={k!r}")
             if k in (key.UP, "k"):
                 idx = (idx - 1) % len(options)
             elif k in (key.DOWN, "j"):
@@ -385,8 +405,15 @@ def _select_option(console: Console, title: str, options: list[str], default_ind
         redirect_stdout=False,
         redirect_stderr=False,
     ) as live:
+        _debug(
+            "path=live "
+            f"screen={_use_alt_screen()} "
+            f"TERM={os.environ.get('TERM','')} "
+            f"SSH_TTY={bool(os.environ.get('SSH_TTY'))}"
+        )
         while True:
             k = readkey()
+            _debug(f"key={k!r}")
             if k in (key.UP, "k"):
                 idx = (idx - 1) % len(options)
             elif k in (key.DOWN, "j"):
