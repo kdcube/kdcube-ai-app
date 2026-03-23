@@ -23,6 +23,15 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.table import Table
 from rich.text import Text
+from kdcube_cli.tty_keys import (
+    KEY_DOWN,
+    KEY_ENTER,
+    KEY_EOF,
+    KEY_ESCAPE,
+    KEY_INTERRUPT,
+    KEY_UP,
+    read_tty_key,
+)
 
 
 ENV_FILES = [
@@ -1259,11 +1268,6 @@ def select_option(console: Console, title: str, options: List[str], default_inde
     if not console.is_terminal or console.is_jupyter or os.environ.get("TERM", "").lower() == "dumb":
         _debug("path=numbered reason=terminal-capability")
         return _prompt_numbered()
-    try:
-        from readchar import readkey, key
-    except Exception:
-        _debug("path=numbered reason=readchar-import-failed")
-        return _prompt_numbered()
 
     idx = max(0, min(default_index, len(options) - 1))
 
@@ -1306,17 +1310,19 @@ def select_option(console: Console, title: str, options: List[str], default_inde
         sys.stdout.flush()
 
         while True:
-            k = readkey()
+            k = read_tty_key()
             _debug(f"key={k!r}")
-            if k in (key.UP, "k"):
+            if k in (KEY_UP, "k"):
                 idx = (idx - 1) % len(options)
-            elif k in (key.DOWN, "j"):
+            elif k in (KEY_DOWN, "j"):
                 idx = (idx + 1) % len(options)
-            elif k in (key.ENTER, "\r", "\n"):
-                return options[idx]
-            elif k in ("q", key.ESC):
+            elif k == KEY_EOF:
                 raise KeyboardInterrupt
-            elif k in (key.CTRL_C, "\x03"):
+            elif k == KEY_ENTER:
+                return options[idx]
+            elif k in ("q", KEY_ESCAPE):
+                raise KeyboardInterrupt
+            elif k == KEY_INTERRUPT:
                 raise KeyboardInterrupt
             rendered, _ = _capture()
             _rewrite(rendered, line_count)
@@ -1339,17 +1345,19 @@ def select_option(console: Console, title: str, options: List[str], default_inde
             f"TMUX={bool(os.environ.get('TMUX'))}"
         )
         while True:
-            k = readkey()
+            k = read_tty_key()
             _debug(f"key={k!r}")
-            if k in (key.UP, "k"):
+            if k in (KEY_UP, "k"):
                 idx = (idx - 1) % len(options)
-            elif k in (key.DOWN, "j"):
+            elif k in (KEY_DOWN, "j"):
                 idx = (idx + 1) % len(options)
-            elif k in (key.ENTER, "\r", "\n"):
-                return options[idx]
-            elif k in ("q", key.ESC):
+            elif k == KEY_EOF:
                 raise KeyboardInterrupt
-            elif k in (key.CTRL_C, "\x03"):
+            elif k == KEY_ENTER:
+                return options[idx]
+            elif k in ("q", KEY_ESCAPE):
+                raise KeyboardInterrupt
+            elif k == KEY_INTERRUPT:
                 raise KeyboardInterrupt
             live.update(_render(), refresh=True)
 
