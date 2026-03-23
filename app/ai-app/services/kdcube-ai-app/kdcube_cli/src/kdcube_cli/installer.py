@@ -1206,7 +1206,15 @@ def select_option(console: Console, title: str, options: List[str], default_inde
 
     def _debug(msg: str) -> None:
         if _debug_enabled():
-            console.print(f"[yellow][selector-debug][/yellow] {msg}")
+            try:
+                debug_path = Path(
+                    os.environ.get("KDCUBE_CLI_DEBUG_SELECTOR_PATH", "/tmp/kdcube-cli-selector.log")
+                )
+                debug_path.parent.mkdir(parents=True, exist_ok=True)
+                with debug_path.open("a", encoding="utf-8") as fh:
+                    fh.write(f"[installer] {msg}\n")
+            except Exception:
+                pass
 
     def _plain_prompt_enabled() -> bool:
         raw = os.environ.get("KDCUBE_CLI_PLAIN_PROMPTS", "").strip().lower()
@@ -1326,7 +1334,9 @@ def select_option(console: Console, title: str, options: List[str], default_inde
             "path=live "
             f"screen={_use_alt_screen()} "
             f"TERM={os.environ.get('TERM','')} "
-            f"SSH_TTY={bool(os.environ.get('SSH_TTY'))}"
+            f"SSH_TTY={bool(os.environ.get('SSH_TTY'))} "
+            f"STY={bool(os.environ.get('STY'))} "
+            f"TMUX={bool(os.environ.get('TMUX'))}"
         )
         while True:
             k = readkey()
