@@ -101,7 +101,7 @@ kdcube env init \
 - `<workdir>/config/.env.metrics`
 - `<workdir>/config/.env.postgres.setup`
 - `<workdir>/config/.env.proxylogin` (optional)
-- `<workdir>/config/frontend.config.hardcoded.json`
+- `<workdir>/config/frontend.config.<mode>.json`
 
 **Folders created:**
 - `<workdir>/data/*` (same subfolders as above)
@@ -116,6 +116,16 @@ When `assembly.yaml` contains a `frontend` section, the CLI uses
 - `frontend.build` → clone repo and build UI
 
 The CLI also generates runtime `config.json` from `frontend_config`.
+If `frontend_config` is omitted, it falls back to a built-in template based on auth mode:
+- `simple` -> `config.hardcoded.json`
+- `cognito` -> `config.cognito.json`
+- `delegated` -> `config.delegated.json`
+
+If `nginx_ui_config` is omitted, the CLI falls back to the built-in `nginx_ui.conf`.
+
+When `proxy.ssl: true` and `assembly.domain` is set, the CLI also patches the
+runtime nginx SSL config so `YOUR_DOMAIN_NAME` is replaced in `server_name` and
+default Let’s Encrypt cert paths under `/etc/letsencrypt/live/<domain>/...`.
 See: [docs/service/cicd/assembly-descriptor-README.md](assembly-descriptor-README.md)
 
 If `platform.ref` is present in the descriptor, the install source selector
