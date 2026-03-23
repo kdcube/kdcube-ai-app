@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from rich.console import Console
+from rich.control import Control
 from rich.live import Live
 from rich.panel import Panel
 from rich.prompt import Prompt
@@ -1211,6 +1212,15 @@ def select_option(console: Console, title: str, options: List[str], default_inde
             return False
         return any(os.environ.get(name) for name in ("SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"))
 
+    def _use_manual_redraw() -> bool:
+        raw = os.environ.get("KDCUBE_CLI_MANUAL_REDRAW", "").strip().lower()
+        if raw in {"1", "true", "yes", "on"}:
+            return True
+        if raw in {"0", "false", "no", "off"}:
+            return False
+        term = os.environ.get("TERM", "").lower()
+        return bool(os.environ.get("STY") or os.environ.get("TMUX") or term.startswith("screen"))
+
     def _prompt_numbered() -> str:
         console.print(f"[bold]{title}[/bold]")
         for i, option in enumerate(options, start=1):
@@ -1249,6 +1259,33 @@ def select_option(console: Console, title: str, options: List[str], default_inde
             text.append("\n")
         text.append("\nUse ↑/↓ and Enter. Press q to exit.", style="dim")
         return Panel(text, title="Select")
+
+    if _use_manual_redraw():
+        try:
+            console.show_cursor(False)
+            while True:
+                console.print(Control.home(), end="")
+                console.print(Control.clear(), end="")
+                console.print(_render())
+                k = readkey()
+                if k in (key.UP, "k"):
+                    idx = (idx - 1) % len(options)
+                elif k in (key.DOWN, "j"):
+                    idx = (idx + 1) % len(options)
+                elif k in (key.ENTER, "\r", "\n"):
+                    console.print(Control.home(), end="")
+                    console.print(Control.clear(), end="")
+                    return options[idx]
+                elif k in ("q", key.ESC):
+                    console.print(Control.home(), end="")
+                    console.print(Control.clear(), end="")
+                    raise KeyboardInterrupt
+                elif k in (key.CTRL_C, "\x03"):
+                    console.print(Control.home(), end="")
+                    console.print(Control.clear(), end="")
+                    raise KeyboardInterrupt
+        finally:
+            console.show_cursor(True)
 
     with Live(
         _render(),
