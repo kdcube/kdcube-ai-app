@@ -13,6 +13,7 @@ no Redis or database required. Works in sandbox (ISO runtime) too.
 
 import pytest
 from unittest.mock import MagicMock
+from kdcube_ai_app.infra.service_hub.inventory import Config
 
 
 def pytest_addoption(parser):
@@ -46,25 +47,28 @@ def bundle(bundle_id):
         Initialized bundle instance ready for testing
     """
     try:
-        from kdcube_ai_app.infra.plugin.bundle_store import (
-            _reserved_bundle_entry,
-            _discover_example_bundle_ids,
-        )
+        from pathlib import Path
+        from kdcube_ai_app.infra.plugin.bundle_store import _examples_root
         from kdcube_ai_app.infra.plugin.agentic_loader import (
             AgenticBundleSpec,
             _resolve_module,
             _discover_decorated,
         )
 
-        entry = _reserved_bundle_entry(bundle_id)
-        if entry is None:
-            available = sorted(_discover_example_bundle_ids())
-            pytest.skip(
-                f"Bundle '{bundle_id}' not found. "
-                f"Available: {', '.join(available)}"
-            )
+        root = _examples_root()
+        # Exact match first, then prefix match (e.g. "openrouter-data" -> "openrouter-data@2026-03-11")
+        candidates = [
+            d for d in sorted(root.iterdir())
+            if d.is_dir()
+            and (d.name == bundle_id or d.name.startswith(bundle_id + "@"))
+            and (d / "entrypoint.py").exists()
+        ]
+        if not candidates:
+            available = sorted(d.name for d in root.iterdir() if d.is_dir() and (d / "entrypoint.py").exists())
+            pytest.skip(f"Bundle '{bundle_id}' not found. Available: {', '.join(available)}")
 
-        spec = AgenticBundleSpec(path=entry.path, module=entry.module or "entrypoint")
+        bundle_dir = candidates[-1]  # latest version if multiple
+        spec = AgenticBundleSpec(path=str(bundle_dir), module="entrypoint")
         mod = _resolve_module(spec)
         chosen = _discover_decorated(mod)
 
@@ -82,7 +86,7 @@ def bundle(bundle_id):
             pytest.skip(f"Bundle '{bundle_id}' uses factory pattern, not supported in tests")
 
         instance = bundle_cls(
-            config=MagicMock(),
+            config=Config(),
             pg_pool=None,
             redis=MagicMock(),
             comm_context=MagicMock(),
