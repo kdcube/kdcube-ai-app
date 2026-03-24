@@ -385,12 +385,16 @@ frontend:
     ref: "ui-v2026.02.22"
     dockerfile: "ops/docker/Dockerfile_UI"
     src: "ui/chat-web-app"
-  image: "registry/private-app-ui:2026.02.22"  # optional; if set, CLI skips UI build
+  image: "registry/private-app-ui:2026.02.22"  # optional prebuilt UI image; if set, CLI writes KDCUBE_UI_IMAGE and skips the local web-ui build
   frontend_config: "ops/docker/config.delegated.json"  # optional
   nginx_ui_config: "ops/docker/nginx_ui.conf"          # optional
 ```
 
 Frontend/runtime config behavior:
+- `frontend.image` is optional. When present, the CLI writes `KDCUBE_UI_IMAGE` and treats the UI as a prebuilt image override.
+- If `frontend.image` is omitted but `frontend.build` is present, the CLI clones/uses the frontend source repo and builds `web-ui` locally from `build.repo`, `build.ref`, `build.dockerfile`, and `build.src`.
+- `frontend.build.image_name` is not used by the CLI installer. That field belongs to the ECS customer CI/CD flow, not the local docker-compose flow.
+
 - If `frontend.frontend_config` is provided, the CLI uses it as the template for the
   generated runtime `config.json` and patches tenant/project/auth/routesPrefix values.
 - If it is omitted, the CLI falls back to a built-in template by auth mode:
