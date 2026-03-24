@@ -51,9 +51,7 @@ class TestBundleInitialization:
 
     def test_event_filter_initialized_if_provided(self, bundle):
         """Event filter initialized (if provided)."""
-        # Bundle may or may not have event_filter
-        # If it has one, it should be callable
         if hasattr(bundle, "_event_filter"):
             event_filter = bundle._event_filter
             if event_filter is not None:
-                assert callable(event_filter)
+                assert hasattr(event_filter, "allow_event") and callable(event_filter.allow_event)
