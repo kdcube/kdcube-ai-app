@@ -229,17 +229,14 @@ const reduceCodeExecEvents = (events: SubsystemEvent[], executionId: string): Co
         executionId: executionId
     };
 
+    const codeTextEvents: SubsystemEvent[] = []
+
     itemEvents.forEach(event => {
         switch (event.data.subtype) {
             case CodeExecCodeSubsystemEventDataSubtype:
-                content.program = {
-                    name: event.data.name,
-                    title: event.data.title,
-                    timestamp: event.timestamp,
-                    language: (event.data as CodeExecCodeSubsystemEventData).language,
-                    content: (event.data as CodeExecCodeSubsystemEventData).text,
-                }
+                codeTextEvents.push(event)
                 break
+
             case CodeExecProgramNameSubsystemEventDataSubtype:
                 content.name = {
                     name: event.data.name,
@@ -274,6 +271,22 @@ const reduceCodeExecEvents = (events: SubsystemEvent[], executionId: string): Co
                 break
         }
     })
+
+    if (codeTextEvents.length > 0) {
+        codeTextEvents.sort((a, b) => {
+            return a.index - b.index
+        })
+        const firstEvent = codeTextEvents[0]
+        content.program = {
+            name: firstEvent.data.name,
+            title: firstEvent.data.title,
+            timestamp: firstEvent.timestamp,
+            language: (firstEvent.data as CodeExecCodeSubsystemEventData).language,
+            content: codeTextEvents.map(event => {
+                return (event.data as CodeExecCodeSubsystemEventData).text
+            }).join()
+        }
+    }
 
     return {
         artifactType: CodeExecArtifactType,
