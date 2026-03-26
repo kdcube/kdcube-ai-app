@@ -488,9 +488,10 @@ def ensure_repo(console: Console, repo: str, target: Path) -> None:
         console.print(f"Repo already exists at {target}")
         return
 
+    normalized_repo = installer_mod.normalize_git_repo_source(repo)
     target.parent.mkdir(parents=True, exist_ok=True)
-    console.print(f"Cloning {repo} to {target}")
-    run(["git", "clone", repo, str(target)])
+    console.print(f"Cloning {normalized_repo} to {target}")
+    run(["git", "clone", normalized_repo, str(target)])
 
 
 def _read_install_meta(workdir: Path) -> dict | None:

@@ -154,6 +154,16 @@ When an assembly descriptor is provided, the wizard writes non‑secret values
 back into `assembly.yaml` (tenant/project, auth, infra, paths) and then renders
 `.env*` from it. The assembly file becomes the source of truth for local config.
 
+Repo field contract:
+
+- `platform.repo` and `frontend.build.repo` should use a cloneable repo spec:
+  - `git@github.com:org/repo.git`
+  - `https://github.com/org/repo.git`
+  - `org/repo`
+- older single-name values such as `kdcube-ai-app` are still accepted for
+  backward compatibility, but new descriptors should use one of the cloneable
+  forms above
+
 ### 2.4 Bundles descriptor (optional)
 
 You can provide a **bundles descriptor** (`bundles.yaml`) and an optional

@@ -278,6 +278,15 @@ The wizard prompts for this as **Assembly descriptor path**.
    and uses the copied file as the source of truth.
 2) Choose whether to apply the **Frontend** section (build or image).
 
+Repo field contract:
+- `platform.repo` and `frontend.build.repo` should use a cloneable repo spec:
+  - `git@github.com:org/repo.git`
+  - `https://github.com/org/repo.git`
+  - `org/repo`
+- older single-name values such as `kdcube-ai-app` are still accepted for
+  backward compatibility, but new descriptors should use one of the cloneable
+  forms above
+
 When an assembly descriptor is provided, the wizard **writes non‑secret values back**
 into `assembly.yaml` (tenant/project, auth, infra, paths) and then renders `.env*`
 from it. This makes `assembly.yaml` the source of truth for install‑time config.
@@ -393,6 +402,7 @@ frontend:
 Frontend/runtime config behavior:
 - `frontend.image` is optional. When present, the CLI writes `KDCUBE_UI_IMAGE` and treats the UI as a prebuilt image override.
 - If `frontend.image` is omitted but `frontend.build` is present, the CLI clones/uses the frontend source repo and builds `web-ui` locally from `build.repo`, `build.ref`, `build.dockerfile`, and `build.src`.
+- `frontend.build.repo` accepts SSH URLs, HTTPS URLs, and `owner/repo` shorthand.
 - `frontend.build.image_name` is not used by the CLI installer. That field belongs to the ECS customer CI/CD flow, not the local docker-compose flow.
 
 - If `frontend.frontend_config` is provided, the CLI uses it as the template for the
