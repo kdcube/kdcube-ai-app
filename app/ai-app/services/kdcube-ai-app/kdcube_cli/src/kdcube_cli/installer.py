@@ -403,8 +403,32 @@ def is_git_repo(path: Path) -> bool:
     return path.is_dir() and (path / ".git").is_dir()
 
 
+def normalize_git_repo_source(repo: str) -> str:
+    cleaned = (repo or "").strip()
+    if not cleaned:
+        return cleaned
+
+    repo_path = Path(cleaned).expanduser()
+    if repo_path.exists():
+        return cleaned
+
+    if cleaned.startswith(("git@", "ssh://", "http://", "https://")):
+        return cleaned
+
+    if re.match(r"^[^/\s]+/[^/\s]+(?:\.git)?$", cleaned):
+        return f"https://github.com/{cleaned}" if cleaned.endswith(".git") else f"https://github.com/{cleaned}.git"
+
+    # Backward compatibility for older descriptors that used a single repo name
+    # such as "kdcube-ai-app" for the default KDCube platform source.
+    if re.match(r"^[A-Za-z0-9_.-]+$", cleaned):
+        return f"https://github.com/kdcube/{cleaned}.git"
+
+    return cleaned
+
+
 def git_clone_or_update(console: Console, repo: str, ref: Optional[str], dest: Path) -> Path:
-    repo_path = Path(repo).expanduser()
+    normalized_repo = normalize_git_repo_source(repo)
+    repo_path = Path(normalized_repo).expanduser()
     if repo_path.exists():
         console.print(f"[dim]Using local frontend repo:[/dim] {repo_path}")
         return repo_path.resolve()
@@ -416,7 +440,7 @@ def git_clone_or_update(console: Console, repo: str, ref: Optional[str], dest: P
         except Exception:
             pass
     else:
-        subprocess.run(["git", "clone", repo, str(dest)], check=True)
+        subprocess.run(["git", "clone", normalized_repo, str(dest)], check=True)
     if ref:
         try:
             subprocess.run(["git", "checkout", ref], cwd=dest, check=True)
