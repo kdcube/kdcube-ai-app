@@ -1,27 +1,7 @@
 platform:
   repo: "kdcube-ai-app"
-  ref: "2026.3.25.1215"
+  ref: "2026.3.26.1101"
   description: |
-    This release is centered on deployment reliability for descriptor-driven installs, better bundle-aware API behavior, and cleaner runtime configuration for MCP, economics, and conversation surfaces.
-
-    The largest operational improvement is in the local/EC2 CLI deployment flow. Descriptor-driven installs now correctly support delegated-auth frontend defaults, SSL proxy domain rendering, proxylogin defaults, and custom frontend builds without requiring hand-maintained nginx/UI config files. For custom UI builds, the CLI now stages the nginx UI config into the actual frontend build context instead of passing a platform-repo path that Docker cannot see from the customer/frontend repo context. This fixes a real class of deployment failures where `web-ui` image builds broke on `COPY ${NGINX_UI_CONFIG_FILE_PATH}` even though the descriptor itself was valid. The CLI also now fails loudly on invalid descriptor YAML/JSON instead of silently falling back to prompts, no longer re-prompts Cognito IDs when the assembly descriptor already supplied them, comments out `TOKEN_COOKIES_DOMAIN` in generated proxylogin envs when a real DNS domain is configured, and adds an explicit `kdcube-setup --stop` path for shutting down rendered compose stacks.
-
-    The CLI terminal experience was also hardened substantially for real SSH usage. Banner rendering now degrades more safely on narrow terminals, selector input no longer relies on `readchar`, and key handling now reads directly from the controlling TTY. The selector flow was adjusted repeatedly for SSH, `screen`, and `tmux` sessions, and debug logging to file was added to make broken PTY/input chains diagnosable instead of opaque. While this is not a feature headline, it removes a major source of friction when using the deployment wizard on remote Ubuntu/EC2 hosts.
-
-    On the runtime side, bundle-aware behavior is now more consistent across APIs. Ingress-side default bundle resolution was previously inconsistent: some request paths read the current default bundle from Redis, while others fell back to stale process-local registry state. This release moves ingress/API default bundle resolution onto the Redis-backed registry helpers, and the conversations API now accepts an optional `bundle_id`, defaults it from Redis when omitted, and propagates that scope into the actual conversation query path. Conversation details and fetch responses now also expose top-level `bundle_id`, and timeline/title lookups are scoped consistently by bundle instead of mixing bundle-filtered and unfiltered retrieval paths.
-
-    MCP configuration is also cleaner and more platform-native in this release. Bundle props can now drive MCP service configuration directly through `mcp.services`, including named-secret-backed auth configuration, rather than forcing the integration to depend on a raw `MCP_SERVICES` environment variable contract. The runtime can export the effective MCP config into isolated execution, and the docs now describe `auth.secret` and `${secret:...}` usage as first-class bundle configuration patterns instead of local shell conventions.
-
-    Economics and usage reporting were refined as well. Budget/usage APIs and UI wording now consistently emphasize project-wide quota scope where that is the true enforcement boundary, and the usage widget integration path was improved. The release also includes related economics UX and profiling improvements, including better visibility of usage data and clearer handling of bundle/project scope in supporting API surfaces.
-
-    Key areas:
-      - Descriptor-driven CLI installs for delegated auth, SSL proxying, and custom frontend builds
-      - Correct staging of nginx UI config into custom frontend Docker build contexts
-      - Proxylogin env generation fixes for real-domain deployments
-      - SSH/screen/tmux hardening for interactive CLI usage
-      - Redis-backed default bundle resolution across ingress/API paths
-      - Bundle-scoped conversations listing/details/fetch behavior
-      - MCP service configuration from bundle props with named secrets
-      - Project-scope economics usage and budget reporting improvements
+    Frontend: exec widget fixed
 config:
-    version: "2026.3.25.1215"
+    version: "2026.3.26.1101"
