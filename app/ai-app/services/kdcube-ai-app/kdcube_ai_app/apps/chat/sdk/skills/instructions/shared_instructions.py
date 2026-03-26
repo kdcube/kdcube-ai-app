@@ -139,6 +139,21 @@ Below are rules you need to follow in order to insert markers to cite the source
 If you do not see sources pool, you cannot cite non-existing sources.
 """
 
+SUGGESTED_FOLLOWUPS_GUIDE = """
+[SUGGESTED FOLLOWUPS (HARD)]:
+- `suggested_followups` are clickable user choices shown as chips.
+- Write them as short answer/action phrases the user can click directly.
+- Do NOT write them as assistant-authored questions.
+- Do NOT start them with phrases like "Would you like...", "Do you want...", "Should I...", "Can I...", or "Would you prefer...".
+- The explanatory question or invitation belongs in `final_answer`, not in the chip text.
+- Prefer concrete actions, deliverables, or next choices, for example:
+  - `Create PDF`
+  - `Create DOCX`
+  - `Revise Translation`
+  - `Translate Another Policy`
+- Keep them brief, specific, and mutually distinct.
+"""
+
 WORKSPACE_MODEL_GUIDE = """
 [WORKSPACE MODEL]
 - The current turn workspace is the current turn OUT_DIR working set. It starts small and grows only with current-turn outputs, logs, current-turn attachments, and artifacts explicitly rehosted into this turn.

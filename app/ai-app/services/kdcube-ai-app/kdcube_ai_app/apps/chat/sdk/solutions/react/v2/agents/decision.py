@@ -34,6 +34,7 @@ from kdcube_ai_app.apps.chat.sdk.skills.instructions.shared_instructions import 
     PATHS_EXTENDED_GUIDE,
     INTERNAL_NOTES_PRODUCER,
     INTERNAL_NOTES_CONSUMER,
+    SUGGESTED_FOLLOWUPS_GUIDE,
 )
 
 WORK_WITH_DOCUMENTS_AND_IMAGES = """
@@ -237,9 +238,6 @@ Maintain a natural, progressive dialogue:
 - Avoid redundant questions.
 - Ask only for the missing info you need to proceed.
 - When you are done for this turn, close with a clear final_answer and actionable suggested_followups.
-
-Followups are clickable suggestions. Make them specific and action-oriented
-(e.g., “Share your budget range”, “Pick a neighborhood”, “Find more options”).
 """
 
     sys_1 = f"""
@@ -252,6 +250,7 @@ You are the Decision module inside a ReAct loop.
 {ATTACHMENT_AWARENESS_IMPLEMENTER}
 {ELABORATION_NO_CLARIFY}
 {CITATION_TOKENS}
+{SUGGESTED_FOLLOWUPS_GUIDE}
 {WORKSPACE_MODEL_GUIDE}
 {SCENARIO_FAILURE_STRICTNESS}
 {PATHS_EXTENDED_GUIDE}
