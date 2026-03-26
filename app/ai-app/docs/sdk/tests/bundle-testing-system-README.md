@@ -1,199 +1,99 @@
 ---
 title: "Bundle Testing System"
-summary: "Auto-discovery and execution of pytest bundle tests by react.doc agent."
-tags: ["sdk", "testing", "bundle", "architecture", "react.doc"]
-keywords: ["bundle tests", "pytest", "test discovery", "test execution", "react.doc"]
+summary: "How to run pytest bundle tests for any bundle by ID."
+tags: ["sdk", "testing", "bundle", "pytest"]
+keywords: ["bundle tests", "pytest", "test discovery", "--bundle-id"]
 see_also:
-  - ks:docs/sdk/bundle-tests-README.md
+  - ks:docs/sdk/tests/bundle-tests-README.md
   - ks:docs/sdk/bundle/bundle-dev-README.md
 ---
 
 # Bundle Testing System
 
-Actual pytest tests stored in the SDK codebase. React.doc agent auto-discovers and runs them.
+Tests for bundles live in the SDK codebase and work with any bundle via the `--bundle-id` parameter.
 
-## Architecture
-
-```
-Pytest Test Files (actual Python code)
-  └─ kdcube_ai_app/apps/chat/sdk/bundle_tests/
-       ├─ test_initialization.py
-       ├─ test_configuration.py
-       ├─ test_graph_construction.py
-       ├─ test_error_handling.py
-       ├─ test_accounting.py
-       ├─ conftest.py (shared fixtures)
-       └─ ...
-
-          ↓
-
-Test Registry/Discovery
-  └─ react.doc scans bundle_tests/ directory
-       ├─ Lists available test files
-       ├─ Extracts test names
-       └─ Builds test catalog
-
-          ↓
-
-React.doc Agent Execution
-  ├─ User: "Test bundle X"
-  ├─ react.doc searches knowledge for test catalog
-  ├─ react.doc selects relevant tests
-  ├─ Runs: pytest bundle_tests/test_X.py -v
-  ├─ Parses output
-  └─ Reports results to user
-```
-
-## Test Files Location
+## Test files location
 
 ```
-kdcube_ai_app/
-  apps/
-    chat/
-      sdk/
-        bundle_tests/
-          __init__.py
-          conftest.py                    ← Shared fixtures
-
-          test_initialization.py         ← Category: Init
-          test_configuration.py          ← Category: Config
-          test_graph_construction.py     ← Category: Graph
-          test_bundlestate.py            ← Category: State
-          test_error_handling.py         ← Category: Errors
-          test_event_streaming.py        ← Category: Events
-          test_accounting.py             ← Category: Accounting
-          test_storage.py                ← Category: Storage
-          test_model_routing.py          ← Category: Models
-          test_execution_flow.py         ← Category: Integration
-
-          fixtures/
-            __init__.py
-            mock_config.py               ← Mock Config
-            mock_services.py             ← Mock services
-            bundle_state.py              ← BundleState factory
+kdcube_ai_app/apps/chat/sdk/bundle_tests/
+  conftest.py                          ← shared fixtures, --bundle-id option
+  test_initialization.py
+  test_configuration.py
+  test_graph.py
+  test_bundle_state.py
+  test_error_handling.py
+  test_event_streaming.py
+  test_accounting.py
+  test_storage.py
+  test_model_routing.py
+  test_execution_flow.py
+  test_custom_tools_registration.py
+  test_custom_tools_execution.py
+  test_custom_tools_storage.py
+  test_custom_tools_integration.py
+  test_custom_skills_registration.py
+  test_custom_skills_manifest.py
+  test_custom_skills_visibility.py
+  test_custom_skills_execution.py
+  test_storage_cloud.py
+  test_storage_local_fs.py
+  test_storage_redis.py
+  test_storage_integration.py
 ```
 
-## How react.doc Runs Tests
+## Running tests
 
-### User Request
-```
-"Test the openrouter-data bundle"
-```
-
-### react.doc Agent Flow
-
-**Step 1: Search for test information**
-```
-search_knowledge(query="bundle tests openrouter-data pytest")
-
-Returns docs that reference testing and test categories
-```
-
-**Step 2: Understand test structure**
-```
-From knowledge docs, learns:
-- Tests are in: kdcube_ai_app/apps/chat/sdk/bundle_tests/
-- Test categories: initialization, configuration, graph, errors, accounting, etc.
-- How to run: pytest <test_file> -v
-```
-
-**Step 3: Run relevant tests**
+Run all tests for a specific bundle:
 ```bash
-cd kdcube_ai_app/
-pytest apps/chat/sdk/bundle_tests/test_initialization.py -v
-pytest apps/chat/sdk/bundle_tests/test_configuration.py -v
-pytest apps/chat/sdk/bundle_tests/test_error_handling.py -v
-# ... etc
+cd app/ai-app/services/kdcube-ai-app
+pytest kdcube_ai_app/apps/chat/sdk/bundle_tests/ --bundle-id=react.doc -v --tb=short
 ```
 
-**Step 4: Collect results**
-```
-test_initialization.py::test_entrypoint_init_with_valid_config PASSED
-test_initialization.py::test_configuration_property PASSED
-test_configuration.py::test_config_merge PASSED
-test_error_handling.py::test_report_error PASSED
-test_accounting.py::test_usage_tracked PASSED
-...
+Run a specific category:
+```bash
+pytest kdcube_ai_app/apps/chat/sdk/bundle_tests/test_initialization.py --bundle-id=react.doc -v
 ```
 
-**Step 5: Report to user**
-```
-Bundle: openrouter-data
-Status: ✓ ALL TESTS PASSED (15/15)
-
-✓ Initialization (3 tests)
-✓ Configuration (2 tests)
-✓ Graph Construction (3 tests)
-✓ Error Handling (4 tests)
-✓ Accounting (3 tests)
-
-Recommendation: Bundle ready for use
+Run only storage tests:
+```bash
+pytest kdcube_ai_app/apps/chat/sdk/bundle_tests/test_storage*.py --bundle-id=react.doc -v
 ```
 
-## How react.doc Knows to Run Tests
+## Available bundle IDs
 
-react.doc learns about tests from **knowledge space documentation** that describes:
-1. Where tests are located (SDK path)
-2. How to run them (pytest command)
-3. What categories exist
-4. What each test verifies
+- `react.doc`
+- `react`
+- `react.mcp`
+- `openrouter-data`
+- `eco`
 
-This documentation is in `/docs/sdk/bundle-tests-README.md` and `/docs/sdk/tests/bundle-testing-system-README.md`.
+If a bundle ID is not found, tests are **skipped** (not failed) with a message listing available bundles.
 
-React.doc reads these docs, understands the structure, then runs the actual pytest files.
+## How it works
 
-## Execution Flow Summary
+The `conftest.py` registers a `--bundle-id` CLI option. When a test runs, it:
+1. Finds the bundle directory under `sdk/examples/bundles/` by ID (supports prefix match, e.g. `openrouter-data` matches `openrouter-data@2026-03-11`)
+2. Loads the bundle class from `entrypoint.py`
+3. Initializes it with mock `redis` and `comm_context` — no real infrastructure needed
 
-```
-User Request
-  ↓
-react.doc reads: /docs/sdk/bundle-tests-README.md
-              + /docs/sdk/tests/bundle-testing-system-README.md
-  ↓
-Understands:
-  - Tests in: kdcube_ai_app/apps/chat/sdk/bundle_tests/
-  - How to run: pytest <file> -v
-  - Categories: initialization, config, graph, errors, etc.
-  ↓
-Executes:
-  pytest apps/chat/sdk/bundle_tests/test_*.py -v --tb=short
-  ↓
-Parses output:
-  PASSED: 15/15 tests
-  ✓ Categories passing
-  ✗ Categories failing
-  ↓
-Reports to user:
-  "Bundle X: PASSED (15/15 tests)"
-```
+Tests are self-contained and run locally without Redis or a database.
 
-## File Structure
+## Running from exec_tools (in-container)
 
-```
-docs/sdk/
-  └─ tests/
-      └─ bundle-testing-system-README.md (this file - DOCUMENTATION ONLY)
+When running inside the container (e.g. via react.doc's `exec_tools.execute_code_python`):
 
-kdcube_ai_app/apps/chat/sdk/
-  └─ bundle_tests/
-      ├─ __init__.py
-      ├─ conftest.py
-      ├─ test_initialization.py (ACTUAL TESTS)
-      ├─ test_configuration.py
-      ├─ test_graph_construction.py
-      ├─ test_bundlestate.py
-      ├─ test_error_handling.py
-      ├─ test_event_streaming.py
-      ├─ test_accounting.py
-      ├─ test_storage.py
-      ├─ test_model_routing.py
-      └─ test_execution_flow.py
+```python
+import subprocess, sys, os
+
+result = subprocess.run(
+    [sys.executable, "-m", "pytest",
+     "/opt/app/kdcube_ai_app/apps/chat/sdk/bundle_tests/",
+     "--bundle-id=react.doc",
+     "-v", "--tb=short"],
+    capture_output=True, text=True,
+    cwd="/opt/app"
+)
+print(result.stdout + result.stderr)
 ```
 
-## Summary
-
-- **Tests**: Real Python pytest files in SDK codebase
-- **Documentation**: Describes what tests verify and how to run
-- **react.doc**: Reads docs, understands structure, runs pytest, reports results
-- **No changes needed**: react.doc uses existing knowledge access + subprocess execution
-- **Simple and maintainable**: Tests are just pytest, not embedded in docs
+Always use `cwd="/opt/app"` so pytest picks up `conftest.py` and the `--bundle-id` flag.

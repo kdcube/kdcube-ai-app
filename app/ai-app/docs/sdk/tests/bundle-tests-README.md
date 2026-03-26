@@ -1,200 +1,165 @@
 ---
 title: "Bundle Tests"
-summary: "Checklist of tests to verify a bundle works correctly and integrates with the platform."
-tags: ["sdk", "bundle", "testing", "qa"]
+summary: "Checklist of tests that verify a bundle works correctly."
+tags: ["sdk", "bundle", "testing"]
 keywords: ["bundle tests", "verification", "integration", "error handling", "accounting"]
 see_also:
   - ks:docs/sdk/bundle/bundle-dev-README.md
-  - ks:docs/sdk/bundle/bundle-platform-properties-README.md
+  - ks:docs/sdk/tests/bundle-testing-system-README.md
 ---
 
-# Bundle Tests Checklist
+# Bundle Tests
 
-Write these tests to verify your bundle works correctly.
+Tests that verify a bundle works correctly from initialization to response.
 
-## 1. Initialization Tests
+## How to run
 
-Test that the bundle starts up correctly.
+```bash
+cd app/ai-app/services/kdcube-ai-app
+pytest kdcube_ai_app/apps/chat/sdk/bundle_tests/ --bundle-id=react.doc -v
+```
 
-- [ ] Bundle initializes with valid config, redis, and comm_context
-- [ ] LangGraph compiles after initialization
-- [ ] `configuration` property returns dict with `role_models`
-- [ ] Bundle handles None redis (falls back to defaults)
-- [ ] Event filter initialized (if provided)
+Replace `react.doc` with any available bundle ID: `react`, `openrouter-data`, `eco`.
 
-## 2. Configuration Tests
+---
 
-Test that bundle settings work correctly.
+## Test categories
 
-- [ ] Default `role_models` applied from code
-- [ ] External config overrides respected
-- [ ] `bundle_prop("role_models.solver.model")` returns correct model
-- [ ] Missing config paths return None (no KeyError)
-- [ ] `refresh_bundle_props()` merges Redis overrides
-- [ ] Redis overrides take precedence over defaults
+### 1. Initialization
+**File:** `test_initialization.py`
 
-## 3. Graph Tests
+- Bundle initializes with valid config, redis, comm_context
+- LangGraph compiles after initialization
+- `configuration` property returns dict with `role_models`
+- Bundle handles None redis (falls back to defaults)
+- Event filter initialized (if provided)
 
-Test that the LangGraph works.
+### 2. Configuration
+**File:** `test_configuration.py`
 
-- [ ] `_build_graph()` returns compiled StateGraph
-- [ ] Graph can be invoked with valid BundleState
-- [ ] Graph produces output with `final_answer`
-- [ ] Graph produces `followups` list
-- [ ] All nodes connected (no orphans)
-- [ ] Execution completes in < 30 seconds
+- Default `role_models` applied from code
+- External config overrides respected
+- `bundle_prop("some.path")` returns correct value
+- Missing config paths return None, not KeyError
+- `refresh_bundle_props()` merges Redis overrides
+- Redis overrides take precedence over defaults
 
-## 4. BundleState Tests
+### 3. Graph
+**File:** `test_graph.py`
 
-Test that request/response state is handled correctly.
+- `_build_graph()` returns compiled StateGraph
+- Graph can be invoked with valid BundleState
+- Graph produces `final_answer` and `followups`
+- All nodes connected (no orphans)
+- Build completes fast (< 1s)
 
-- [ ] All required fields preserved (request_id, tenant, project, user)
-- [ ] `final_answer` populated after execution
-- [ ] `followups` populated after execution
-- [ ] `error_message` set if error occurs
-- [ ] `attachments` field handled correctly
-- [ ] State doesn't leak between requests
+### 4. BundleState
+**File:** `test_bundle_state.py`
 
-## 5. Error Handling Tests
+- All required fields preserved: `request_id`, `tenant`, `project`, `user`
+- `final_answer` populated after execution
+- `followups` populated after execution
+- `error_message` set if error occurs
+- `attachments` handled correctly
+- State doesn't leak between requests
 
-Test that errors are caught and reported properly.
+### 5. Error Handling
+**File:** `test_error_handling.py`
 
-- [ ] Node exceptions caught (not propagated)
-- [ ] `error_message` set in state when error occurs
-- [ ] `chat.error` event emitted
-- [ ] Error message is user-friendly (no stack trace)
-- [ ] `EconomicsLimitException` NOT caught (re-raised)
-- [ ] Multiple errors don't cascade (first one reported)
-- [ ] Error doesn't crash system
+- Node exceptions caught, not propagated
+- `error_message` set in state when error occurs
+- `chat.error` event emitted
+- Error message is user-friendly (no stack trace)
+- `EconomicsLimitException` NOT caught (re-raised)
+- Error doesn't crash the system
 
-## 6. Event Streaming Tests
+### 6. Event Streaming
+**File:** `test_event_streaming.py`
 
-Test that events flow correctly to client.
+- First event has `status="running"` or `status="started"`
+- Last event has `status="done"` or `status="error"`
+- Events include model name and metadata
+- Event filter applied before emit (if provided)
+- Events in logical order: start → processing → done
 
-- [ ] First event has `status="running"` or `status="started"`
-- [ ] Last event has `status="done"` or `status="error"`
-- [ ] Events include model name and metadata
-- [ ] Event filter applied before emit (if provided)
-- [ ] No events emitted after done/error
-- [ ] Events in logical order (start → processing → done)
+### 7. Accounting
+**File:** `test_accounting.py`
 
-## 7. Accounting Tests
+- LLM calls wrapped in accounting context
+- Done event includes `usage` dict
+- `usage` contains `prompt_tokens`, `completion_tokens`, `total_tokens`
+- Multiple LLM calls tracked separately
+- Over-budget requests rejected with `EconomicsLimitException`
 
-Test that cost tracking works.
+### 8. Storage
+**File:** `test_storage.py`
 
-- [ ] LLM calls wrapped in accounting context
-- [ ] Done event includes `usage` dict
-- [ ] `usage` contains `prompt_tokens`, `completion_tokens`, `total_tokens`
-- [ ] Multiple LLM calls tracked separately
-- [ ] Budget pre-check enforced (if using economics)
-- [ ] Over-budget requests rejected with `EconomicsLimitException`
+- `bundle_storage_root()` returns correct path
+- Path includes tenant/project/bundle_id
+- `on_bundle_load()` creates storage directories (if implemented)
+- Redis unavailable → graceful fallback to defaults
 
-## 8. Storage & Props Tests
+### 9. Model Routing
+**File:** `test_model_routing.py`
 
-Test that local storage and config work.
+- Default model used if no override
+- Config override respected
+- Redis override respected (takes precedence)
+- Switching models works (Claude → OpenRouter, etc.)
 
-- [ ] `bundle_storage_root()` returns correct path
-- [ ] Path includes tenant/project/bundle_id
-- [ ] `on_bundle_load()` creates storage directories (if implemented)
-- [ ] Knowledge space files accessible (if using ks: paths)
-- [ ] Redis unavailable → graceful fallback to defaults
+### 10. Execution Flow
+**File:** `test_execution_flow.py`
 
-## 9. Model Routing Tests
+- Sequential requests work (no state leakage)
+- Multiple concurrent requests don't interfere
 
-Test that model selection works.
+### 11. Custom Tools
+**Files:** `test_custom_tools_registration.py`, `test_custom_tools_execution.py`, `test_custom_tools_storage.py`, `test_custom_tools_integration.py`
 
-- [ ] Default model used if no override
-- [ ] Config override respected
-- [ ] Redis override respected (takes precedence)
-- [ ] Model slug passed to LLM correctly
-- [ ] Switching models works (Claude → OpenRouter, etc.)
+- Tool registers with Tools Subsystem correctly
+- Tool accessible via `bundle.get_tool("tool_name")`
+- Tool executes with valid inputs and returns expected output
+- Tool errors caught and reported (not propagated)
+- Tool ID format correct: `<alias>.<tool_name>` or `mcp.<alias>.<tool_name>`
+- Multiple custom tools don't conflict
 
-## 10. Integration Flow Test
+### 12. Custom Skills
+**Files:** `test_custom_skills_registration.py`, `test_custom_skills_manifest.py`, `test_custom_skills_visibility.py`, `test_custom_skills_execution.py`
 
-Test complete request → response flow.
+- Skill registers with Skills Subsystem correctly
+- `SKILL.md` file exists with valid frontmatter
+- `tools.yaml` and `sources.yaml` valid (if provided)
+- Skill visibility controlled via `AGENTS_CONFIG`
+- Skill instruction injected into LLM prompt
 
-- [ ] `run(ChatTaskPayload)` returns dict with `final_answer`
-- [ ] `execute_core(state, thread_id, params)` returns state with answer
-- [ ] Sequential requests work (no state leakage)
-- [ ] Multiple concurrent requests don't interfere
-- [ ] Response time acceptable (< 30s for simple queries)
+### 13. Storage: Cloud (S3)
+**File:** `test_storage_cloud.py`
 
-## 11. Agent Request/Response Test
+- Read/write files from S3
+- File paths include tenant/project/bundle_id
+- Non-existent files return proper error (not crash)
+- Path traversal rejected
 
-Test that requests reach agent and responses are returned correctly.
+### 14. Storage: Local FS
+**File:** `test_storage_local_fs.py`
 
-- [ ] Bundle receives user message (ChatTaskPayload)
-- [ ] Message reaches entrypoint.run()
-- [ ] LangGraph executes completely
-- [ ] final_answer written to state
-- [ ] Response sent back to user via SSE
-- [ ] Client receives complete message
-- [ ] No message loss or corruption
-- [ ] Multi-turn conversation preserves context
-- [ ] Error messages reach client
-- [ ] Timeout handled gracefully (> 30s)
+- Read/write to local FS
+- Temporary files cleaned up after execution
+- Isolation between different bundle instances
 
-## 12. Custom Tools Tests
+### 15. Storage: Redis Cache
+**File:** `test_storage_redis.py`
 
-Test custom tools that extend bundle functionality through the Tools Subsystem.
+- Bundle reads/writes config via Redis
+- TTL set correctly (`KV_CACHE_TTL_SECONDS`)
+- Namespace isolation works (tenant/project/bundle)
+- Redis unavailable → fallback to defaults
+- Expired/missing keys handled gracefully
 
-- [ ] Tool registers with Tools Subsystem correctly
-- [ ] Tool accessible via `bundle.get_tool("tool_name")`
-- [ ] Tool accepts required parameters (bundle_config, redis, comm_context)
-- [ ] Tool executes with valid inputs
-- [ ] Tool returns expected output format
-- [ ] Tool errors caught and reported (not propagated)
-- [ ] Tool ID format correct (`<alias>.<tool_name>` or `mcp.<alias>.<tool_name>`)
-- [ ] Tool descriptor entry is complete (metadata, params, output)
-- [ ] Tool callable from LangGraph nodes
-- [ ] Multiple custom tools don't conflict
+### 16. Storage: Integration
+**File:** `test_storage_integration.py`
 
-## 13. Custom Skills Tests
-
-Test custom skills that extend bundle functionality through the Skills Subsystem.
-
-- [ ] Skill registers with Skills Subsystem correctly
-- [ ] Skill accessible via `bundle.get_skill("skill_name")`
-- [ ] Skill initializes without errors
-- [ ] `SKILL.md` file exists with valid frontmatter
-- [ ] `tools.yaml` metadata is valid (if provided)
-- [ ] `sources.yaml` citations are correct (if provided)
-- [ ] Skill visibility controlled via `AGENTS_CONFIG`
-- [ ] Skill appears for enabled agents
-- [ ] Skill hidden from disabled agents
-- [ ] Skill instruction injected into LLM prompt
-- [ ] Skill callable from LangGraph nodes
-
-## 14. Storage Tests
-
-Test bundle storage integration (Cloud Storage, Local FS, Redis Cache).
-
-### Cloud Storage (S3) Tests
-- [ ] Bundle can read files from S3
-- [ ] Bundle can write files to S3
-- [ ] File paths include tenant/project/bundle_id
-- [ ] S3 unavailable handled gracefully
-- [ ] Non-existent files return proper error (not crash)
-
-### Local Filesystem Tests
-- [ ] Bundle can read from local FS
-- [ ] Bundle can write to local FS
-- [ ] Temporary files cleaned up after execution
-- [ ] No leftover files after bundle crash
-- [ ] Local FS full handled gracefully
-
-### Redis Cache Tests
-- [ ] Bundle reads config from Redis
-- [ ] Bundle writes config to Redis
-- [ ] TTL set correctly (`KV_CACHE_TTL_SECONDS`)
-- [ ] Namespace isolation works (tenant/project/bundle)
-- [ ] Redis unavailable → fallback to defaults
-- [ ] Expired keys return None (not crash)
-- [ ] Missing keys handled gracefully
-
-### Storage Integration Tests
-- [ ] Multi-storage workflow works (Redis → Local FS → Cloud)
-- [ ] Storage fallback chain follows expected order
-- [ ] Storage paths properly scoped to bundle context
-- [ ] Cross-tenant access prevented
-- [ ] Concurrent storage access works
+- Multi-storage workflow works (Redis → Local FS → Cloud)
+- Storage paths properly scoped to bundle context
+- Cross-tenant access prevented
+- Concurrent storage access works

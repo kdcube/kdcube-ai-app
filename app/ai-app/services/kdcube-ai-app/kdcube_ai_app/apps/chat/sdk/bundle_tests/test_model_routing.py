@@ -34,17 +34,6 @@ class TestModelRouting:
                 f"Role '{role}' from configuration not applied to config.role_models"
             )
 
-    def test_bundle_prop_returns_model_for_first_role(self, bundle):
-        """bundle_prop() resolves model slug for the first configured role."""
-        role_models = (bundle.configuration or {}).get("role_models") or {}
-        if not role_models:
-            pytest.skip("No role_models defined in configuration")
-
-        first_role = next(iter(role_models))
-        expected = role_models[first_role]["model"]
-        got = bundle.bundle_prop(f"role_models.{first_role}.model")
-        assert got == expected
-
     def test_bundle_props_override_changes_model_slug(self, bundle):
         """Directly overriding bundle_props changes the model returned by bundle_prop()."""
         original = dict(bundle.bundle_props)
@@ -97,19 +86,3 @@ class TestModelRouting:
     def test_config_role_models_is_dict(self, bundle):
         """config.role_models is always a dict (never None after init)."""
         assert isinstance(bundle.config.role_models, dict)
-
-    def test_switching_model_slug_in_bundle_props(self, bundle):
-        """Switching model slug in bundle_props is reflected in bundle_prop()."""
-        role_models = (bundle.configuration or {}).get("role_models") or {}
-        if not role_models:
-            pytest.skip("No role_models defined in configuration")
-
-        first_role = next(iter(role_models))
-        original = dict(bundle.bundle_props)
-        try:
-            bundle.bundle_props = {
-                "role_models": {first_role: {"provider": "openrouter", "model": "switched-model-slug"}}
-            }
-            assert bundle.bundle_prop(f"role_models.{first_role}.model") == "switched-model-slug"
-        finally:
-            bundle.bundle_props = original
