@@ -54,12 +54,12 @@ and `bundles.secrets.yaml` for bundle secrets.
 release_name: "prod-2026-02-22"
 
 platform:
-  repo: "kdcube-ai-app"
+  repo: "git@github.com:kdcube/kdcube-ai-app.git"
   ref: "v0.3.2"          # tag or commit
 
 frontend:
   build:
-    repo: "private-ui-repo"
+    repo: "git@github.com:org/private-ui.git"
     ref: "ui-v2026.02.22"  # tag or commit
     dockerfile: "ops/docker/Dockerfile_UI"
     src: "ui/chat-web-app"
@@ -163,7 +163,10 @@ The `frontend` section is used by `kdcube-setup` to build a customer UI when
 you run **custom‑ui‑managed‑infra** compose. It is ignored by runtime services.
 
 Required (build mode):
-- `build.repo`: frontend git repo (SSH or HTTPS)
+- `build.repo`: frontend git repo. Recommended forms:
+  - `git@github.com:org/repo.git`
+  - `https://github.com/org/repo.git`
+  - `org/repo`
 - `build.ref`: git tag or commit (or branch for dev)
 - `build.dockerfile`: path to Dockerfile_UI (relative to repo root)
 - `build.src`: path to UI source (relative to repo root)
@@ -190,6 +193,16 @@ Optional:
 - `aws.profile`: used to set `AWS_PROFILE` in services.
 - `aws.ec2`: when true, the CLI sets EC2-safe defaults (`AWS_SDK_LOAD_CONFIG=1`,
   `AWS_EC2_METADATA_DISABLED=false`, and `NO_PROXY=169.254.169.254,localhost,127.0.0.1`).
+
+`platform.repo` follows the same clone-source shape. Recommended forms:
+
+- `git@github.com:kdcube/kdcube-ai-app.git`
+- `https://github.com/kdcube/kdcube-ai-app.git`
+- `kdcube/kdcube-ai-app`
+
+Older single-name values such as `kdcube-ai-app` are still accepted by the CLI
+for backward compatibility, but new descriptors should use a cloneable repo
+specification.
 
 **CLI behavior:**
 - If `frontend.build` is provided, clones the frontend repo into
