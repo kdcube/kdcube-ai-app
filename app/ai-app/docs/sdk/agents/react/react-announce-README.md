@@ -65,16 +65,16 @@ the agent to use `react.read(path)` to restore truncated context.
 
 [ACTIVE PLANS]
   - plans: 2 visible
-    • plan_id=plan:turn_1:abcd1234
-      snapshot_ref=ar:plan.latest:plan:turn_1:abcd1234
+    • plan_id=plan_alpha
+      snapshot_ref=ar:plan.latest:plan_alpha
       created_turn=turn_1
       created_ts=2026-02-07T19:10:00Z
       last_update_turn=turn_1
       last_update_ts=2026-02-07T19:22:10Z
       ✓ [1] gather sources
       □ [2] draft report
-    • plan_id=plan:turn_3:efgh5678 (current)
-      snapshot_ref=ar:plan.latest:plan:turn_3:efgh5678
+    • plan_id=plan_beta (current)
+      snapshot_ref=ar:plan.latest:plan_beta
       created_turn=turn_3
       created_ts=2026-02-10T13:50:00Z
       last_update_turn=turn_3
@@ -87,3 +87,4 @@ the agent to use `react.read(path)` to restore truncated context.
 - ANNOUNCE is the active plan presentation layer; React does not rely on a separate persistent `react.plan.active` tail artifact.
 - Closed, complete, and superseded plans are excluded from ANNOUNCE.
 - Announce is not cached and is re‑rendered each decision round.
+- The example uses simplified plan ids (`plan_alpha`, `plan_beta`) for readability. Real runtime-generated `plan_id` values may look like `plan:turn_3:efgh5678`, and the matching stable alias would then be `ar:plan.latest:plan:turn_3:efgh5678`.

@@ -168,6 +168,20 @@ def test_timeline_renders_plan_calls_but_hides_internal_plan_snapshots():
                 ensure_ascii=False,
             ),
         ),
+        tl._block(
+            type="react.tool.result",
+            author="react",
+            turn_id=ctx.turn_id,
+            ts=ctx.started_at,
+            mime="text/markdown",
+            path="tc:turn_plan.tc_plan.result",
+            text="\n".join([
+                "mode: new",
+                f"plan_id: {plan.plan_id}",
+                f"latest_snapshot_ref: ar:plan.latest:{plan.plan_id}",
+            ]),
+            meta={"tool_call_id": "tc_plan", "render_role": "summary"},
+        ),
         build_plan_block(snap=plan, turn_id="turn_plan", ts=ctx.started_at),
         build_plan_ack_block(
             ack_items=[{"step": 1, "status": "done", "text": "collect metrics"}],
@@ -180,9 +194,12 @@ def test_timeline_renders_plan_calls_but_hides_internal_plan_snapshots():
     rendered = _run(tl.render(cache_last=True))
     text_dump = "\n".join(b.get("text", "") for b in rendered if b.get("type") == "text")
 
-    assert "[PLAN CALL tc_plan].call react.plan" in text_dump
-    assert f"new_plan_id: {plan.plan_id}" in text_dump
-    assert f"new_snapshot_ref: ar:plan.latest:{plan.plan_id}" in text_dump
+    assert "[TOOL CALL tc_plan].call react.plan" in text_dump
+    assert '"mode": "new"' in text_dump
+    assert '"steps": [' in text_dump
+    assert "[TOOL RESULT tc_plan].summary react.plan" in text_dump
+    assert f"plan_id: {plan.plan_id}" in text_dump
+    assert f"latest_snapshot_ref: ar:plan.latest:{plan.plan_id}" in text_dump
     assert "[AI Agent say]: Create the investigation plan." in text_dump
     assert '"origin_turn_id": "turn_plan"' not in text_dump
     assert "ar:turn_plan.react.plan.ack.1" not in text_dump

@@ -236,6 +236,9 @@ Planning (optional, use react.plan only when it helps).
 - mode="new": create a new plan with ordered steps.
 - mode="update": target an existing `plan_id`, supersede it, and issue a replacement plan with new steps.
 - mode="close": explicitly close a target `plan_id` when it is no longer relevant.
+- For update/close, `plan_id` is the stable identifier of the plan lineage you want to affect.
+- If `plan_id` is omitted for update/close, runtime defaults to the latest active plan.
+- There is no separate "activate an old plan" mode. If you want to revisit an older plan, inspect it via its `plan_id` / `snapshot_ref`, then either keep working from it cognitively or issue a new replacement plan.
 
 Your goal is to make best-effort progress toward the plan this turn without inventing facts.
 Use tools to gather evidence; if progress is blocked, vague, or would benefit from user input,
@@ -320,8 +323,9 @@ Remember, you build the user timeline which allows them to efficiently stay in t
 - If multiple steps are resolved in the same round, acknowledge all of them.
 - Use `notes` for step acknowledgements and short next‑round intent.
 - When acting, include in `notes` the step you are currently working on (e.g., "… [2] Draft report — in progress").
-- Open plans are listed in ANNOUNCE with their `plan_id` and `snapshot_ref`.
+- ANNOUNCE shows only the last few open plans, each with `plan_id` and `snapshot_ref`.
 - If you need the full latest snapshot for a plan, read `ar:plan.latest:<plan_id>`.
+- Do not expect raw `react.plan` JSON snapshots or raw `react.plan.ack` blocks to be your main plan UI. Your primary plan signals are: notes, plan tool calls, ANNOUNCE, and `ar:plan.latest:<plan_id>`.
 - Your acknowledgements appear back in internal plan event blocks as `plan_ack`.
 
 [FINALIZING TURN (EXIT/COMPLETE ONLY)]
@@ -340,7 +344,7 @@ Remember, you build the user timeline which allows them to efficiently stay in t
   Once the skill is 'read' you see it with 💡banner which denotes the expanded skill content in the timeline.
 
 [REACT EVENTS, TOOL CALLS AND TOOL RESULTS, ARTIFACTS]
-Timeline artifacts may also exist directly under `ar:` paths, not only as prompts/completions. In particular, compacted historical plan snapshots are readable this way:
+Timeline artifacts may also exist directly under `ar:` paths, not only as prompts/completions. In particular, plan snapshots are readable through the stable alias:
   ar:plan.latest:<plan_id>
 Each tool call is saved under:
   tc:<turn_id>.<tool_call_id>.call
@@ -452,7 +456,10 @@ It is preferable to use react.write for streaming large content and use renderin
    react.write params must be in order: path (use nice name), channel, content, kind.
    So: when you need to record an artifact, call react.write.
    The params MUST be STRICTLY ordered: path, channel, content, kind.
-5a) If you need a plan, call react.plan with mode=new/update/close and steps. Plans appear in ANNOUNCE and drive step acknowledgements.
+5a) If you need a plan, call react.plan with mode=new/update/close.
+   - `steps` are required for new/update.
+   - `plan_id` is used to target update/close (and may also be provided for update explicitly even when obvious).
+   Plans appear in ANNOUNCE and drive step acknowledgements.
    
 6) Use react.patch to update an existing file. react.patch params must be in order: path, channel, patch, kind.
    

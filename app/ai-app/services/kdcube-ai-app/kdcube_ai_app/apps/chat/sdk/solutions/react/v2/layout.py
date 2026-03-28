@@ -255,60 +255,7 @@ def build_timeline_render_directive(
             return {"skip": True}
         return {"skip": False}
 
-    if btype != "react.tool.call":
-        return {"skip": False}
-
-    text = block.get("text")
-    payload = None
-    if isinstance(text, str) and text.strip() and (block.get("mime") or "").strip() == "application/json":
-        try:
-            payload = json.loads(text)
-        except Exception:
-            payload = None
-    if not isinstance(payload, dict):
-        return {"skip": False}
-
-    tool_id = str(payload.get("tool_id") or block.get("tool_id") or "").strip()
-    if tool_id != "react.plan":
-        return {"skip": False}
-
-    ts = str(block.get("ts") or "").strip()
-    path = str(block.get("path") or "").strip()
-    tool_call_id = str(
-        payload.get("tool_call_id")
-        or block.get("call_id")
-        or (((block.get("meta") or {}) if isinstance(block.get("meta"), dict) else {}).get("tool_call_id") or "")
-    ).strip()
-    mode = str((payload.get("params") or {}).get("mode") or "").strip()
-    target_plan_id = str(payload.get("target_plan_id") or "").strip()
-    target_snapshot = str(payload.get("target_snapshot_ref") or "").strip()
-    new_plan_id = str(payload.get("new_plan_id") or "").strip()
-    new_snapshot = str(payload.get("new_snapshot_ref") or "").strip()
-    steps = payload.get("params", {}).get("steps") if isinstance(payload.get("params"), dict) else None
-
-    lines: List[str] = []
-    if ts:
-        lines.append(f"[ts: {ts}]")
-    header = f"[PLAN CALL {tool_call_id or 'tc_????'}].call react.plan"
-    lines.append(header)
-    if path:
-        lines.append(path)
-    if mode:
-        lines.append(f"mode: {mode}")
-    if target_plan_id:
-        lines.append(f"target_plan_id: {target_plan_id}")
-    if target_snapshot:
-        lines.append(f"target_snapshot_ref: {target_snapshot}")
-    if new_plan_id:
-        lines.append(f"new_plan_id: {new_plan_id}")
-    if new_snapshot:
-        lines.append(f"new_snapshot_ref: {new_snapshot}")
-    if isinstance(steps, list) and steps:
-        lines.append("steps:")
-        for step in steps:
-            if isinstance(step, str) and step.strip():
-                lines.append(f"- {step.strip()}")
-    return {"skip": False, "text": "\n".join(lines).strip()}
+    return {"skip": False}
 
 
 def build_announce_text(
