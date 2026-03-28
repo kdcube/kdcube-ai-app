@@ -336,7 +336,7 @@ type: react.plan
 mime: application/json
 path: ar:turn_...react.plan.<plan_id>
 text: {
-  "plan_id": "plan:turn_...:abcd",
+  "plan_id": "plan_alpha",
   "steps": ["...", "..."],
   "status": {"1":"done","2":"pending"},
   "created_ts": "...",

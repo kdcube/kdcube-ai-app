@@ -35,7 +35,7 @@ This document describes how the session view is derived from the timeline when c
 - The most recent M turns are guaranteed intact (no pruning).
 - Hidden blocks keep a short replacement text (no per-block `react.read` hint).
 - User/assistant blocks are eligible for pruning when they are older than `keep_recent_turns` (they remain intact in the recent windows).
-- If compaction also ran, older plan history may still remain directly reopenable through carried `ar:<turn_id>.react.plan.history.<plan_id>.snapshot` refs that sit after the summary boundary.
+- If compaction also ran, older plan history may still remain directly reopenable through stable `ar:plan.latest:<plan_id>` refs that sit behind the visible history summaries.
 - A system notice is appended when pruning runs:
   - Announce stack: `[SYSTEM MESSAGE] Context was pruned...`
   - Timeline block: `type=system.message`, `meta.kind=cache_ttl_pruned`
