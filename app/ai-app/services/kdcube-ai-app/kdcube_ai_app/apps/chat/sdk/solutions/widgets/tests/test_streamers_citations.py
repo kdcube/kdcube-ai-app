@@ -26,6 +26,13 @@ class _Collector:
             if e.get("marker") == marker and e.get("text")
         )
 
+    def text_for_artifact(self, artifact_name: str) -> str:
+        return "".join(
+            e.get("text", "")
+            for e in self.events
+            if e.get("artifact_name") == artifact_name and e.get("text")
+        )
+
 
 def _chunk_text(text: str, size: int = 13):
     return [text[i:i + size] for i in range(0, len(text), size)]
@@ -163,6 +170,102 @@ async def test_timeline_streamer_streams_notes_on_tool_call():
     rendered = collector.text_for_marker("timeline_text")
     assert "[[S:" not in rendered
     assert "https://example.com/1" in rendered
+
+
+@pytest.mark.asyncio
+async def test_timeline_streamer_emits_new_plan_to_timeline_text():
+    payload = {
+        "action": "call_tool",
+        "notes": "Implement stable plan-id based lifecycle and hot-render visibility.",
+        "tool_call": {
+            "tool_id": "react.plan",
+            "params": {
+                "mode": "new",
+                "steps": [
+                    "Add plan lifecycle fields/helpers for targeted close/update/supersede and stable latest-snapshot alias resolution",
+                    "Change react.plan tool semantics and visible tool-call payloads to include explicit plan ids/refs",
+                    "Adjust timeline/ANNOUNCE rendering and TTL pruning so hot view shows notes + plan tool calls + open-plan announce, not raw plan snapshots/acks",
+                ],
+            },
+        },
+    }
+
+    collector = _Collector()
+    streamer = TimelineStreamer(
+        emit_delta=collector.emit,
+        agent="test.agent",
+        sources_list=[],
+    )
+
+    for chunk in _chunk_text(_json_stream_payload(payload), size=17):
+        await streamer.feed(chunk)
+    await streamer.finish()
+
+    rendered = collector.text_for_artifact("timeline_text.react.plan")
+    assert "• New Plan" in rendered
+    assert "└ Implement stable plan-id based lifecycle and hot-render visibility." in rendered
+    assert "□ Add plan lifecycle fields/helpers for targeted close/update/supersede and stable latest-snapshot alias resolution" in rendered
+    assert "□ Change react.plan tool semantics and visible tool-call payloads to include explicit plan ids/refs" in rendered
+
+
+@pytest.mark.asyncio
+async def test_timeline_streamer_emits_updated_and_closed_plan_to_timeline_text():
+    update_payload = {
+        "action": "call_tool",
+        "notes": "Refocus the work on the final answer path.",
+        "tool_call": {
+            "tool_id": "react.plan",
+            "params": {
+                "mode": "update",
+                "plan_id": "plan_alpha",
+                "steps": [
+                    "Draft the answer",
+                    "Verify citations",
+                ],
+            },
+        },
+    }
+    close_payload = {
+        "action": "call_tool",
+        "tool_call": {
+            "tool_id": "react.plan",
+            "params": {
+                "mode": "close",
+                "plan_id": "plan_alpha",
+            },
+        },
+    }
+
+    collector = _Collector()
+    streamer = TimelineStreamer(
+        emit_delta=collector.emit,
+        agent="test.agent",
+        sources_list=[],
+        plan_artifact_name="timeline_text.react.plan.case",
+    )
+
+    for chunk in _chunk_text(_json_stream_payload(update_payload), size=19):
+        await streamer.feed(chunk)
+    await streamer.finish()
+    rendered = collector.text_for_artifact("timeline_text.react.plan.case")
+    assert "• Updated Plan" in rendered
+    assert "└ Refocus the work on the final answer path." in rendered
+    assert "□ Draft the answer" in rendered
+    assert "□ Verify citations" in rendered
+
+    collector = _Collector()
+    streamer = TimelineStreamer(
+        emit_delta=collector.emit,
+        agent="test.agent",
+        sources_list=[],
+        plan_artifact_name="timeline_text.react.plan.case",
+    )
+    for chunk in _chunk_text(_json_stream_payload(close_payload), size=19):
+        await streamer.feed(chunk)
+    await streamer.finish()
+    rendered = collector.text_for_artifact("timeline_text.react.plan.case")
+    assert "• Closed Plan" in rendered
+    assert "└ Close plan `plan_alpha`." in rendered
 
 
 @pytest.mark.asyncio

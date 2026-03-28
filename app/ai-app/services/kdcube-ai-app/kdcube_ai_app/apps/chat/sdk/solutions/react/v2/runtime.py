@@ -350,6 +350,7 @@ class ReactSolverV2:
         agent: Optional[str] = None,
         notes_artifact_name: Optional[str] = None,
         final_answer_artifact_name: Optional[str] = None,
+        plan_artifact_name: Optional[str] = None,
     ) -> tuple[Callable[[str], Awaitable[None]], TimelineStreamer]:
         sources_getter = None
         if self.ctx_browser:
@@ -361,6 +362,7 @@ class ReactSolverV2:
             sources_getter=sources_getter,
             notes_artifact_name=notes_artifact_name or "timeline_text.react.decision",
             final_answer_artifact_name=final_answer_artifact_name or "react.final_answer",
+            plan_artifact_name=plan_artifact_name or "timeline_text.react.plan",
         )
         return self._wrap_json_streamer(streamer, sources_list=sources_list), streamer
 
@@ -896,6 +898,7 @@ class ReactSolverV2:
             agent=timeline_agent,
             notes_artifact_name=f"timeline_text.react.decision.{iteration}",
             final_answer_artifact_name=f"react.final_answer.{iteration}",
+            plan_artifact_name=f"timeline_text.react.plan.{iteration}",
         )
 
         async def _hub_on_json(text: str, completed: bool = False, **_kwargs):
