@@ -17,7 +17,7 @@ This doc describes how the **announce** block is used for ReAct v2.
 - An **ephemeral tail block** added by the runtime for each decision round.
 - Contains ANNOUNCE️:
   - iteration
-  - current plan with status markers
+  - open-plan summary with plan ids, snapshot refs, and status markers (if any exist)
   - authoritative temporal context (UTC + user timezone)
   - optional system notices (e.g., cache TTL pruning)
 
@@ -47,7 +47,7 @@ the agent to use `react.read(path)` to restore truncated context.
 - Allows downstream agents (final answer generator) to see the **last ℹ️ ANNOUNCE ℹ️**
   via the persisted contribution block.
 
-## Example (single plan)
+## Example (open plans)
 ```
 ╔══════════════════════════════════════╗
 ║  ANNOUNCE — Iteration 3/15           ║
@@ -63,15 +63,27 @@ the agent to use `react.read(path)` to restore truncated context.
   current_utc_date: 2026-02-10
   All relative dates MUST be interpreted against this context.
 
-[ACTIVE PLAN]
-  - plans:
-    • plan #1 (current) last=2026-02-07T19:22:10Z
+[ACTIVE PLANS]
+  - plans: 2 visible
+    • plan_id=plan:turn_1:abcd1234
+      snapshot_ref=ar:plan.latest:plan:turn_1:abcd1234
+      created_turn=turn_1
+      created_ts=2026-02-07T19:10:00Z
+      last_update_turn=turn_1
+      last_update_ts=2026-02-07T19:22:10Z
       ✓ [1] gather sources
       □ [2] draft report
-  - plan_status: done=1 failed=0 pending=1
-  - plan_complete: false
+    • plan_id=plan:turn_3:efgh5678 (current)
+      snapshot_ref=ar:plan.latest:plan:turn_3:efgh5678
+      created_turn=turn_3
+      created_ts=2026-02-10T13:50:00Z
+      last_update_turn=turn_3
+      last_update_ts=2026-02-10T13:54:00Z
+      □ [1] draft answer
+      □ [2] verify citations
 ```
 
 ## Notes
-- Only the latest plan is shown in ACTIVE PLAN.
+- ANNOUNCE is the active plan presentation layer; React does not rely on a separate persistent `react.plan.active` tail artifact.
+- Closed, complete, and superseded plans are excluded from ANNOUNCE.
 - Announce is not cached and is re‑rendered each decision round.

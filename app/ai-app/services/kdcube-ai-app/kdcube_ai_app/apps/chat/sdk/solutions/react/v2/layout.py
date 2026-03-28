@@ -11,12 +11,18 @@ from typing import Dict, Any, List, Tuple, Optional
 
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.proto import RuntimeCtx
 from kdcube_ai_app.apps.chat.sdk.tools import citations as citations_module
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.plan import collect_plan_snapshots, PlanSnapshot
+from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.plan import (
+    collect_plan_snapshots,
+    PlanSnapshot,
+    plan_snapshot_ref,
+)
 
 from kdcube_ai_app.apps.chat.sdk.skills.skills_registry import skills_gallery_text
 from kdcube_ai_app.apps.chat.sdk.util import _wrap_lines, _shorten, token_count
 from kdcube_ai_app.tools.content_type import is_text_mime_type
 import re
+
+MAX_VISIBLE_OPEN_PLANS = 4
 
 
 
@@ -151,6 +157,160 @@ def build_assistant_completion_blocks(
     )]
 
 
+def build_turn_header_text(*, turn_id: str, started_at: str) -> str:
+    turn_id = (turn_id or "").strip()
+    started_at = (started_at or "").strip()
+    if started_at:
+        return "\n".join([
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+            f"TURN {turn_id} (started at {started_at})",
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        ])
+    return "\n".join([
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        f"TURN {turn_id}",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    ])
+
+
+def _plan_sort_key(snap: PlanSnapshot) -> Tuple[str, str]:
+    return (
+        (snap.last_ts or snap.created_ts or "").strip(),
+        snap.plan_id,
+    )
+
+
+def _open_plan_snapshots(blocks: List[Dict[str, Any]]) -> List[PlanSnapshot]:
+    plans_by_id, order = collect_plan_snapshots(blocks)
+    snapshots: List[PlanSnapshot] = []
+    for pid in order:
+        snap = PlanSnapshot.from_any(plans_by_id.get(pid) or {})
+        if snap and snap.is_active():
+            snapshots.append(snap)
+    snapshots.sort(key=_plan_sort_key)
+    return snapshots
+
+
+def build_announce_plan_lines(
+    *,
+    timeline_blocks: List[Dict[str, Any]],
+    max_visible: int = MAX_VISIBLE_OPEN_PLANS,
+) -> List[str]:
+    lines: List[str] = ["[ACTIVE PLANS]"]
+    try:
+        snapshots = _open_plan_snapshots(timeline_blocks)
+        if not snapshots:
+            lines.append("  - plans: none")
+            return lines
+        visible = snapshots[-max(1, int(max_visible or 1)) :]
+        lines.append(f"  - plans: {len(visible)} visible")
+        for idx, snap in enumerate(visible, start=1):
+            tags: List[str] = []
+            if idx == len(visible):
+                tags.append("current")
+            suffix = f" ({', '.join(tags)})" if tags else ""
+            lines.append(f"    • plan_id={snap.plan_id}{suffix}")
+            snapshot_ref = plan_snapshot_ref(snap.plan_id)
+            if snapshot_ref:
+                lines.append(f"      snapshot_ref={snapshot_ref}")
+            if snap.origin_turn_id:
+                lines.append(f"      created_turn={snap.origin_turn_id}")
+            if snap.created_ts:
+                lines.append(f"      created_ts={snap.created_ts}")
+            last_turn = snap.last_ack_turn_id or snap.origin_turn_id
+            if last_turn:
+                lines.append(f"      last_update_turn={last_turn}")
+            last_ts = snap.last_ts or snap.created_ts
+            if last_ts:
+                lines.append(f"      last_update_ts={last_ts}")
+            for step_idx, step in enumerate(snap.steps or [], start=1):
+                lines.append(f"      {snap.status_mark(step_idx)} [{step_idx}] {step}")
+    except Exception:
+        lines = ["[ACTIVE PLANS]", "  - plans: none"]
+    return lines
+
+
+def build_timeline_render_directive(
+    *,
+    block: Dict[str, Any],
+    call_id_to_tool_id: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
+    """
+    Layout-owned render contract for timeline blocks that need special model-facing
+    formatting or should stay internal.
+    """
+    btype = (block.get("type") or "").strip()
+    if btype in {"react.plan", "react.plan.ack"}:
+        return {"skip": True}
+
+    if btype == "react.notice":
+        text = block.get("text")
+        payload = None
+        if isinstance(text, str) and text.strip():
+            try:
+                payload = json.loads(text)
+            except Exception:
+                payload = None
+        if isinstance(payload, dict) and str(payload.get("code") or "").strip() == "plan_closed":
+            return {"skip": True}
+        return {"skip": False}
+
+    if btype != "react.tool.call":
+        return {"skip": False}
+
+    text = block.get("text")
+    payload = None
+    if isinstance(text, str) and text.strip() and (block.get("mime") or "").strip() == "application/json":
+        try:
+            payload = json.loads(text)
+        except Exception:
+            payload = None
+    if not isinstance(payload, dict):
+        return {"skip": False}
+
+    tool_id = str(payload.get("tool_id") or block.get("tool_id") or "").strip()
+    if tool_id != "react.plan":
+        return {"skip": False}
+
+    ts = str(block.get("ts") or "").strip()
+    path = str(block.get("path") or "").strip()
+    tool_call_id = str(
+        payload.get("tool_call_id")
+        or block.get("call_id")
+        or (((block.get("meta") or {}) if isinstance(block.get("meta"), dict) else {}).get("tool_call_id") or "")
+    ).strip()
+    mode = str((payload.get("params") or {}).get("mode") or "").strip()
+    target_plan_id = str(payload.get("target_plan_id") or "").strip()
+    target_snapshot = str(payload.get("target_snapshot_ref") or "").strip()
+    new_plan_id = str(payload.get("new_plan_id") or "").strip()
+    new_snapshot = str(payload.get("new_snapshot_ref") or "").strip()
+    steps = payload.get("params", {}).get("steps") if isinstance(payload.get("params"), dict) else None
+
+    lines: List[str] = []
+    if ts:
+        lines.append(f"[ts: {ts}]")
+    header = f"[PLAN CALL {tool_call_id or 'tc_????'}].call react.plan"
+    lines.append(header)
+    if path:
+        lines.append(path)
+    if mode:
+        lines.append(f"mode: {mode}")
+    if target_plan_id:
+        lines.append(f"target_plan_id: {target_plan_id}")
+    if target_snapshot:
+        lines.append(f"target_snapshot_ref: {target_snapshot}")
+    if new_plan_id:
+        lines.append(f"new_plan_id: {new_plan_id}")
+    if new_snapshot:
+        lines.append(f"new_snapshot_ref: {new_snapshot}")
+    if isinstance(steps, list) and steps:
+        lines.append("steps:")
+        for step in steps:
+            if isinstance(step, str) and step.strip():
+                lines.append(f"- {step.strip()}")
+    return {"skip": False, "text": "\n".join(lines).strip()}
+
+
 def build_announce_text(
     *,
     iteration: int,
@@ -235,40 +395,7 @@ def build_announce_text(
 
     if show_plan:
         lines.append("")
-        lines.append("[ACTIVE PLAN]")
-        try:
-            plans_by_id, order = collect_plan_snapshots(timeline_blocks)
-            if order:
-                lines.append("  - plans:")
-                snapshots: List[PlanSnapshot] = []
-                for pid in order:
-                    snap = PlanSnapshot.from_any(plans_by_id.get(pid) or {})
-                    if snap:
-                        snapshots.append(snap)
-                for idx, snap in enumerate(snapshots, start=1):
-                    suffix = " (current)" if idx == len(snapshots) else ""
-                    last_ts = snap.last_ts or snap.created_ts
-                    header = f"    • plan #{idx}{suffix}"
-                    if last_ts:
-                        header += f" last={last_ts}"
-                    lines.append(header)
-                    for step_idx, step in enumerate(snap.steps or [], start=1):
-                        mark = snap.status_mark(step_idx)
-                        lines.append(f"      {mark} [{step_idx}] {step}")
-                current_snap = snapshots[-1] if snapshots else None
-                if current_snap:
-                    summary = current_snap.plan_summary()
-                    lines.append(
-                        f"  - plan_status: done={summary.get('done')} failed={summary.get('failed')} pending={summary.get('pending')}"
-                    )
-                    lines.append(f"  - plan_complete: {str(bool(summary.get('complete'))).lower()}")
-                    last_ts = current_snap.last_ts or current_snap.created_ts
-                    if last_ts:
-                        lines.append(f"  - plan_last_update: {last_ts}")
-            else:
-                lines.append("  - plans: none")
-        except Exception:
-            lines.append("  - plans: none")
+        lines.extend(build_announce_plan_lines(timeline_blocks=timeline_blocks))
 
     if feedback_updates and mode != "turn_finalize":
         updates = [u for u in (feedback_updates or []) if isinstance(u, dict)]
