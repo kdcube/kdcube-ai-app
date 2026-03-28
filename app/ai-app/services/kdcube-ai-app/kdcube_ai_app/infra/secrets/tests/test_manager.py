@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from kdcube_ai_app.infra.secrets import (
     AwsSecretsManagerSecretsManager,
     SecretsManagerConfig,
@@ -29,16 +31,47 @@ def test_aws_sm_secret_path_matches_existing_runtime_contract():
         SecretsManagerConfig(
             provider="aws-sm",
             component="proc",
-            aws_sm_prefix="kdcube",
+            aws_sm_prefix="kdcube/demo/demo-march",
         )
     )
 
-    assert manager._secret_id("services.openai.api_key") == "kdcube/services/openai/api_key"
+    assert manager._secret_id("services.openai.api_key") == "kdcube/demo/demo-march/services/openai/api_key"
     assert (
         manager._secret_id("bundles.react@2026-03-15.secrets.openai.api_key")
-        == "kdcube/bundles/react@2026-03-15/secrets/openai/api_key"
+        == "kdcube/demo/demo-march/bundles/react@2026-03-15/secrets/openai/api_key"
     )
     assert (
         manager._secret_id("bundles.react@2026-03-15.secrets.__keys")
-        == "kdcube/bundles/react@2026-03-15/secrets/__keys"
+        == "kdcube/demo/demo-march/bundles/react@2026-03-15/secrets/__keys"
     )
+
+
+def test_build_secrets_manager_config_defaults_prefix_from_tenant_and_project(monkeypatch):
+    reset_secrets_manager_cache()
+
+    config = build_secrets_manager_config(
+        SimpleNamespace(
+            TENANT="demo",
+            PROJECT="demo-march",
+        )
+    )
+
+    assert config.tenant == "demo"
+    assert config.project == "demo-march"
+    assert config.aws_sm_prefix == "kdcube/demo/demo-march"
+
+
+def test_build_secrets_manager_config_prefers_explicit_prefix_from_settings():
+    reset_secrets_manager_cache()
+
+    config = build_secrets_manager_config(
+        SimpleNamespace(
+            TENANT="demo",
+            PROJECT="demo-march",
+            SECRETS_SM_PREFIX="kdcube/custom/prefix",
+        )
+    )
+
+    assert config.tenant == "demo"
+    assert config.project == "demo-march"
+    assert config.aws_sm_prefix == "kdcube/custom/prefix"
