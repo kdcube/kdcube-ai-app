@@ -41,6 +41,9 @@ import {getChatPagePath} from "../chat/configHelper.ts";
 import {showDebugControls} from "../../BuildConfig.ts";
 import DebugPanel from "../debugPanel/DebugPanel.tsx";
 import {selectCurrentBundle} from "../bundles/bundlesSlice.ts";
+import ResizableContainer from "../../components/ResizableContainer.tsx";
+import {readParam, writeParam} from "../settingsStorage/settingsStorage.ts";
+import {selectAppUser} from "../auth/authSlice.ts";
 
 interface MenuButtonProps {
     children: ReactNode | ReactNode[];
@@ -344,13 +347,15 @@ const ChatSidePanel = () => {
         }
     }, [visiblePanel])
 
+    const user = useAppSelector(selectAppUser)
+
+    const onPanelResize = useCallback((size: number) => {
+        writeParam("sidePanelWidth", size, user ? user.username : null);
+    }, [user])
+
     return useMemo(() => {
-        let panelWidth = 800
-        switch (visiblePanel) {
-            case "conversations":
-                panelWidth = 500
-                break
-        }
+
+        const initialPanelWidth = readParam("sidePanelWidth", 400) as number
 
         return <div
             ref={parentRef}
@@ -422,7 +427,8 @@ const ChatSidePanel = () => {
                 className={`h-full border-r border-gray-200 bg-white relative ${visiblePanel ? "pointer-events-auto" : "pointer-events-none"}`}>
                 <AnimatedExpander contentRef={sidePanelContentRef} className={"h-full"}
                                   expanded={visiblePanel !== null}>
-                    <div className={"h-full"} ref={sidePanelContentRef} style={{width: `${panelWidth}px`}}>
+                    {/*<div className={"h-full"} ref={sidePanelContentRef} style={{width: `${panelWidth}px`}}>*/}
+                    <ResizableContainer ref={sidePanelContentRef} onResize={onPanelResize} initialSize={initialPanelWidth} minSize={300} className={"h-full"}>
                         <ConversationsPanel visible={visiblePanel === "conversations"}
                                             className={"w-full h-full absolute left-0 top-0"}/>
                         <EconomicsPanel visible={visiblePanel === "economics"}
@@ -439,11 +445,12 @@ const ChatSidePanel = () => {
                                             className={"w-full h-full absolute left-0 top-0"}/>
                         {showDebugControls && <DebugPanel visible={visiblePanel === "debug"}
                                                           className={"w-full h-full absolute left-0 top-0"}/>}
-                    </div>
+                    </ResizableContainer>
+                    {/*</div>*/}
                 </AnimatedExpander>
             </div>
         </div>
-    }, [dispatch, onPanelButtonClick, visiblePanel])
+    }, [dispatch, onPanelButtonClick, onPanelResize, visiblePanel])
 }
 
 export default ChatSidePanel;
