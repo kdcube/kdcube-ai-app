@@ -150,7 +150,7 @@ After TTL pruning, the session view looks like this (system message appended at 
   assistant.completion
 
 [SYSTEM MESSAGE] Context was pruned because the session TTL (300s) was exceeded.
-Use react.read(path) to restore a logical path (fi:/ar:/so:/sk:).
+Use react.read(path) to restore a logical path (fi:/ar:/so:/sk:), including plan aliases like ar:plan.latest:<plan_id>.
 ```
 
 When plan-history refs are present after compaction, those `ar:` refs are usually the smoothest way to reopen an older compacted plan in the same turn.
