@@ -1,4 +1,4 @@
-import {ReactNode, RefObject, useEffect, useMemo, useState} from "react";
+import {ReactNode, RefObject, useEffect, useMemo, useRef, useState} from "react";
 import {motion} from "motion/react";
 
 interface AnimatedExpanderProps {
@@ -17,6 +17,16 @@ const AnimatedExpander = ({
                               expanded = true
                           }: AnimatedExpanderProps) => {
     const [contentSize, setContentSize] = useState({width: 0, height: 0});
+
+    const wasExpanded = useRef(expanded);
+    const [animating, setAnimating] = useState(true);
+
+    useEffect(() => {
+        if (wasExpanded.current !== expanded) {
+            setAnimating(true);
+        }
+        wasExpanded.current = expanded;
+    }, [expanded]);
 
     useEffect(() => {
         const observer = new ResizeObserver(() => {
@@ -49,15 +59,20 @@ const AnimatedExpander = ({
             content.height = contentSize.height;
         }
 
-
         return <motion.div
             className={`overflow-hidden ${className ?? ""}`}
             initial={expanded ? zero : content}
             animate={expanded ? content : zero}
+            transition={animating ? undefined : {duration: 0}}
+            onAnimationComplete={() => {
+                if (animating) {
+                    setAnimating(false)
+                }
+            }}
         >
             {children}
         </motion.div>
-    }, [children, className, contentSize, expanded, direction]);
+    }, [direction, className, expanded, animating, children, contentSize.width, contentSize.height]);
 }
 
 export default AnimatedExpander;

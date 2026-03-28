@@ -1,4 +1,5 @@
 import {Indexed, Timestamped} from "../types/common.ts";
+import sha256 from 'crypto-js/sha256';
 
 export function cn(...classes: Array<string | false | null | undefined>) {
     return classes.filter(Boolean).join(' ');
@@ -66,4 +67,9 @@ export function sortTimestamped<T extends Timestamped>(arr: T[], copy: boolean =
     const result = copy ? arr.concat() : arr;
     arr.sort((a, b) => timeSortPredicate(a.timestamp, b.timestamp));
     return result;
+}
+
+export function sha(message: string) {
+    const hashArray = Array.from(new Uint8Array(sha256(message).words));
+    return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
 }
