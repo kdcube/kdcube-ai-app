@@ -1786,13 +1786,13 @@ class Timeline:
             from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.plan import (
                 build_compacted_plan_history_blocks,
                 build_plan_carry_block,
-                latest_active_plan_snapshot,
+                latest_current_plan_snapshot,
                 latest_plan_snapshot_by_id,
             )
         except Exception:
             build_compacted_plan_history_blocks = None
             build_plan_carry_block = None
-            latest_active_plan_snapshot = None
+            latest_current_plan_snapshot = None
             latest_plan_snapshot_by_id = None
         sys_est = max(1, int(len(system_text or "") / 4))
         block_est = self._estimate_blocks_tokens(blocks)
@@ -1917,9 +1917,9 @@ class Timeline:
         )
 
         active_plan_before = None
-        if latest_active_plan_snapshot is not None:
+        if latest_current_plan_snapshot is not None:
             try:
-                active_plan_before = latest_active_plan_snapshot(blocks)
+                active_plan_before = latest_current_plan_snapshot(blocks)
             except Exception:
                 active_plan_before = None
 

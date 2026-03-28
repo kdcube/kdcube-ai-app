@@ -13,6 +13,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.proto import RuntimeCtx
 from kdcube_ai_app.apps.chat.sdk.tools import citations as citations_module
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.plan import (
     collect_plan_snapshots,
+    latest_current_plan_snapshot,
     PlanSnapshot,
     plan_snapshot_ref,
 )
@@ -196,9 +197,10 @@ def build_announce_plan_lines(
     timeline_blocks: List[Dict[str, Any]],
     max_visible: int = MAX_VISIBLE_OPEN_PLANS,
 ) -> List[str]:
-    lines: List[str] = ["[ACTIVE PLANS]"]
+    lines: List[str] = ["[OPEN PLANS]"]
     try:
         snapshots = _open_plan_snapshots(timeline_blocks)
+        current_snap = latest_current_plan_snapshot(timeline_blocks)
         if not snapshots:
             lines.append("  - plans: none")
             return lines
@@ -206,7 +208,7 @@ def build_announce_plan_lines(
         lines.append(f"  - plans: {len(visible)} visible")
         for idx, snap in enumerate(visible, start=1):
             tags: List[str] = []
-            if idx == len(visible):
+            if current_snap and snap.plan_id == current_snap.plan_id:
                 tags.append("current")
             suffix = f" ({', '.join(tags)})" if tags else ""
             lines.append(f"    • plan_id={snap.plan_id}{suffix}")
@@ -226,7 +228,7 @@ def build_announce_plan_lines(
             for step_idx, step in enumerate(snap.steps or [], start=1):
                 lines.append(f"      {snap.status_mark(step_idx)} [{step_idx}] {step}")
     except Exception:
-        lines = ["[ACTIVE PLANS]", "  - plans: none"]
+        lines = ["[OPEN PLANS]", "  - plans: none"]
     return lines
 
 

@@ -63,7 +63,7 @@ the agent to use `react.read(path)` to restore truncated context.
   current_utc_date: 2026-02-10
   All relative dates MUST be interpreted against this context.
 
-[ACTIVE PLANS]
+[OPEN PLANS]
   - plans: 2 visible
     • plan_id=plan_alpha
       snapshot_ref=ar:plan.latest:plan_alpha
@@ -84,7 +84,9 @@ the agent to use `react.read(path)` to restore truncated context.
 ```
 
 ## Notes
-- ANNOUNCE is the active plan presentation layer; React does not rely on a separate persistent `react.plan.active` tail artifact.
+- ANNOUNCE is the open/current plan presentation layer; React does not rely on a separate persistent `react.plan.active` tail artifact.
 - Closed, complete, and superseded plans are excluded from ANNOUNCE.
+- An open plan is not automatically current. Only explicitly current plans carry the `(current)` tag.
+- If a plan is shown without `(current)`, React must activate it before acknowledging any of its steps.
 - Announce is not cached and is re‑rendered each decision round.
 - The example uses simplified plan ids (`plan_alpha`, `plan_beta`) for readability. Real runtime-generated `plan_id` values may look like `plan:turn_3:efgh5678`, and the matching stable alias would then be `ar:plan.latest:plan:turn_3:efgh5678`.

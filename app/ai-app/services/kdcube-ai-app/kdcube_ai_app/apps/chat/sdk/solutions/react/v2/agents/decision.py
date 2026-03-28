@@ -239,6 +239,11 @@ Planning (optional, use react.plan only when it helps).
 - mode="close": explicitly close a target `plan_id` when it is no longer relevant.
 - For activate/replace/close, `plan_id` is required and must come from ANNOUNCE or another visible plan reference.
 - `steps` are required for new/replace.
+- Freshly created plans and replacement plans become current immediately.
+- The current plan remains current across turns until it is closed, completed, replaced, or another open plan is activated.
+- ANNOUNCE lists open plans, but only the plan tagged `(current)` is current.
+- If you do not see `(current)` on a plan, do NOT acknowledge it; activate it first.
+- If the current plan completes or is closed, another open plan does NOT become current automatically.
 - If you want to continue an older open plan, do NOT just start writing step-status notes for it. First call `react.plan(mode="activate", plan_id=...)` so it becomes the current lineage.
 - Important: step-status notes are applied before the tool call of that round. So do not combine progress acknowledgements with a `react.plan` lifecycle change in the same decision. Activate/replace/close first; acknowledge progress in a later round.
 
@@ -461,7 +466,9 @@ It is preferable to use react.write for streaming large content and use renderin
 5a) If you need a plan, call react.plan with mode=new/activate/replace/close.
    - `steps` are required for new/replace.
    - `plan_id` is required for activate/replace/close.
+   - Fresh new/replace plans become current automatically.
    - If you want to continue an older open plan, activate it first and acknowledge progress in a later round.
+   - If a plan is open but not tagged `(current)` in ANNOUNCE, you cannot ACK it yet.
    Plans appear in ANNOUNCE and drive step acknowledgements.
    
 6) Use react.patch to update an existing file. react.patch params must be in order: path, channel, patch, kind.
