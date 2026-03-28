@@ -4,9 +4,15 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.timeline import Timeline
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.proto import RuntimeCtx
+from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.plan import (
+    build_plan_ack_block,
+    build_plan_block,
+    create_plan_snapshot,
+)
 
 
 def _run(coro):
@@ -116,10 +122,67 @@ def test_timeline_rendering_with_attachment_and_tool_blocks():
     doc_blocks = [b for b in rendered if b.get("type") == "document"]
     assert all(b.get("type") in {"text", "document", "image"} for b in rendered)
 
-    assert any("[TURN turn_123]" in b.get("text", "") for b in text_blocks)
+    assert any("TURN turn_123" in b.get("text", "") for b in text_blocks)
     assert any("[path: ar:turn_123.user.prompt]" in b.get("text", "") for b in text_blocks)
     assert any("turn_123/attachments/menu.pdf" in b.get("text", "") for b in text_blocks)
     assert any("fi:turn_123.user.attachments/notes.txt" in b.get("text", "") for b in text_blocks)
     assert any("hello notes" in b.get("text", "") for b in text_blocks)
     assert any("fi:turn_123.files/draft.md" in b.get("text", "") for b in text_blocks)
     assert doc_blocks, "Expected a document block for the PDF attachment"
+
+
+def test_timeline_renders_plan_calls_but_hides_internal_plan_snapshots():
+    ctx = RuntimeCtx(turn_id="turn_plan", started_at="2026-02-09T00:00:00Z")
+    tl = Timeline(runtime=ctx)
+
+    plan = create_plan_snapshot(
+        plan={"steps": ["collect metrics", "compare trends"]},
+        turn_id="turn_plan",
+        created_ts=ctx.started_at,
+    )
+    tl.blocks.extend([
+        tl._block(type="turn.header", author="system", turn_id=ctx.turn_id, ts=ctx.started_at, text="[TURN turn_plan]"),
+        tl._block(
+            type="react.notes",
+            author="react",
+            turn_id=ctx.turn_id,
+            ts=ctx.started_at,
+            path="ar:turn_plan.react.notes.tc_plan",
+            text="Create the investigation plan.",
+        ),
+        tl._block(
+            type="react.tool.call",
+            author="react",
+            turn_id=ctx.turn_id,
+            ts=ctx.started_at,
+            mime="application/json",
+            path="tc:turn_plan.tc_plan.call",
+            text=json.dumps(
+                {
+                    "tool_id": "react.plan",
+                    "tool_call_id": "tc_plan",
+                    "params": {"mode": "new", "steps": ["collect metrics", "compare trends"]},
+                    "new_plan_id": plan.plan_id,
+                    "new_snapshot_ref": f"ar:plan.latest:{plan.plan_id}",
+                },
+                ensure_ascii=False,
+            ),
+        ),
+        build_plan_block(snap=plan, turn_id="turn_plan", ts=ctx.started_at),
+        build_plan_ack_block(
+            ack_items=[{"step": 1, "status": "done", "text": "collect metrics"}],
+            turn_id="turn_plan",
+            ts=ctx.started_at,
+            iteration=1,
+        ),
+    ])
+
+    rendered = _run(tl.render(cache_last=True))
+    text_dump = "\n".join(b.get("text", "") for b in rendered if b.get("type") == "text")
+
+    assert "[PLAN CALL tc_plan].call react.plan" in text_dump
+    assert f"new_plan_id: {plan.plan_id}" in text_dump
+    assert f"new_snapshot_ref: ar:plan.latest:{plan.plan_id}" in text_dump
+    assert "[AI Agent say]: Create the investigation plan." in text_dump
+    assert '"origin_turn_id": "turn_plan"' not in text_dump
+    assert "ar:turn_plan.react.plan.ack.1" not in text_dump

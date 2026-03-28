@@ -833,11 +833,15 @@ def apply_cache_ttl_pruning(
             continue
 
         btype = (blk.get("type") or "").strip()
+        if btype in {"react.notes", "react.plan.history"}:
+            continue
         if path.startswith("sk:"):
             rep = _build_skill_prune_message(path)
         elif btype == "react.tool.call":
             payload = _parse_json(blk.get("text") or "") or {}
             tool_id = _coerce_tool_id(blk, payload)
+            if tool_id == "react.plan":
+                continue
             view = _get_view(tool_id)
             rep = view.build_call_replacement(tool_call_block=blk, payload=payload, cfg=cfg)
         elif btype == "react.tool.result" and (path.startswith("tc:") or path.startswith("so:")):

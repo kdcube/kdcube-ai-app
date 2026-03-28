@@ -53,7 +53,7 @@ CODEGEN_BEST_PRACTICES_V2 = """
   However, if the source artifacts have complex structure and reusing them programmatically is error prone, 
   make sure the needed, for code generation, artifacts are visible in the context so you can properly write the needed content in code.  
 - For programmatic access inside the snippet, use ctx_tools.fetch_ctx only for the logical context objects it supports:
-  ar:<turn_id>.user.prompt, ar:<turn_id>.assistant.completion, tc:<turn_id>.<call_id>.call, tc:<turn_id>.<call_id>.result, and so:sources_pool[...].
+  ar:<turn_id>.user.prompt, ar:<turn_id>.assistant.completion, ar:plan.latest:<plan_id>, tc:<turn_id>.<call_id>.call, tc:<turn_id>.<call_id>.result, and so:sources_pool[...].
   It does NOT support fi:, ks:, sk:, or su:.
   fetch_ctx returns a canonical artifact dict: {path, kind, mime, sources_used, filepath?, text|base64}.
 - The code must be optimal: if programmatic editing/synthesis is possible and best, do it.
@@ -230,12 +230,12 @@ CRITICAL: Filesystem paths can be used in exec snippets, in react.write, react.p
 
     PLANNING = """
 Planning (optional, use react.plan only when it helps).
-- Use react.plan to create or update a plan. It appears in ANNOUNCE immediately.
+- Use react.plan to create, replace, or close a plan. Open plans appear in ANNOUNCE immediately.
 - Use it when the work is multi-step, ambiguous, or likely to span turns.
 - If the current plan still applies, do NOT call react.plan (treat it as active).
-- mode="new": create a new plan with ordered stwo sections: THINKING (≤240 toteps.
-- mode="update": replace the current plan with updated steps.
-- mode="close": clear the current plan when it is no longer relevant.
+- mode="new": create a new plan with ordered steps.
+- mode="update": target an existing `plan_id`, supersede it, and issue a replacement plan with new steps.
+- mode="close": explicitly close a target `plan_id` when it is no longer relevant.
 
 Your goal is to make best-effort progress toward the plan this turn without inventing facts.
 Use tools to gather evidence; if progress is blocked, vague, or would benefit from user input,
@@ -320,8 +320,9 @@ Remember, you build the user timeline which allows them to efficiently stay in t
 - If multiple steps are resolved in the same round, acknowledge all of them.
 - Use `notes` for step acknowledgements and short next‑round intent.
 - When acting, include in `notes` the step you are currently working on (e.g., "… [2] Draft report — in progress").
-- You can see the current plan in the react.plan block and in the ANNOUNCE section (plan checklist).
-  Your acknowledgements appear back in the tool result/event blocks as `plan_ack`.
+- Open plans are listed in ANNOUNCE with their `plan_id` and `snapshot_ref`.
+- If you need the full latest snapshot for a plan, read `ar:plan.latest:<plan_id>`.
+- Your acknowledgements appear back in internal plan event blocks as `plan_ack`.
 
 [FINALIZING TURN (EXIT/COMPLETE ONLY)]
 - If you need to show results to the user, you MUST call react.write (channel=timeline_text or canvas) before exiting.
@@ -339,6 +340,8 @@ Remember, you build the user timeline which allows them to efficiently stay in t
   Once the skill is 'read' you see it with 💡banner which denotes the expanded skill content in the timeline.
 
 [REACT EVENTS, TOOL CALLS AND TOOL RESULTS, ARTIFACTS]
+Timeline artifacts may also exist directly under `ar:` paths, not only as prompts/completions. In particular, compacted historical plan snapshots are readable this way:
+  ar:plan.latest:<plan_id>
 Each tool call is saved under:
   tc:<turn_id>.<tool_call_id>.call
 Each tool result is saved under:

@@ -22,8 +22,14 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.proto import RuntimeCtx
 
 from kdcube_ai_app.apps.chat.sdk.tools import citations as citations_module
 from kdcube_ai_app.apps.chat.sdk.util import token_count, isoz, ts_key
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.plan import build_active_plan_blocks
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.layout import build_sources_pool_text
+from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.layout import (
+    build_sources_pool_text,
+    build_turn_header_text,
+    build_timeline_render_directive,
+)
+from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.plan import (
+    latest_plan_block_by_id,
+)
 
 TIMELINE_KIND = "conv.timeline.v1"
 SOURCES_POOL_KIND = "conv:sources_pool"
@@ -623,6 +629,28 @@ def resolve_artifact_from_timeline(timeline: Dict[str, Any], path: str) -> Optio
         return {"kind": "sources_pool", "items": resolve_sources_pool_selector(timeline, p)}
 
     blocks = _collect_blocks(timeline)
+    if p.startswith("ar:plan.latest:"):
+        plan_id = p[len("ar:plan.latest:") :].strip()
+        latest_block = latest_plan_block_by_id(blocks, plan_id, include_preserved=True)
+        if not isinstance(latest_block, dict):
+            return None
+        meta = latest_block.get("meta") if isinstance(latest_block.get("meta"), dict) else {}
+        art: Dict[str, Any] = {
+            "path": p,
+            "kind": "display",
+            "mime": (latest_block.get("mime") or "application/json").strip(),
+            "sources_used": [],
+            "text": latest_block.get("text") if isinstance(latest_block.get("text"), str) else "",
+            "source_path": (latest_block.get("path") or "").strip(),
+        }
+        if latest_block.get("ts"):
+            art["ts"] = latest_block.get("ts")
+        for key, val in meta.items():
+            if key in art or val is None:
+                continue
+            art[key] = val
+        return art
+
     meta: Dict[str, Any] = {}
     # meta may be encoded in react.tool.result json blocks
     meta_block_meta: Dict[str, Any] = {}
@@ -1633,15 +1661,6 @@ class Timeline:
         if not include_sources and not include_announce:
             return blocks
         tail: List[Dict[str, Any]] = []
-        if include_announce:
-            try:
-                tail.extend(build_active_plan_blocks(
-                    blocks=list(blocks or []),
-                    current_turn_id=self.runtime.turn_id or "",
-                    current_ts=self.runtime.started_at or "",
-                ))
-            except Exception:
-                pass
         if include_sources:
             try:
                 sources_text = build_sources_pool_text(sources_pool=list(self.sources_pool or []))
@@ -1763,6 +1782,18 @@ class Timeline:
     ) -> List[Dict[str, Any]]:
         if not blocks:
             return []
+        try:
+            from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.plan import (
+                build_compacted_plan_history_blocks,
+                build_plan_carry_block,
+                latest_active_plan_snapshot,
+                latest_plan_snapshot_by_id,
+            )
+        except Exception:
+            build_compacted_plan_history_blocks = None
+            build_plan_carry_block = None
+            latest_active_plan_snapshot = None
+            latest_plan_snapshot_by_id = None
         sys_est = max(1, int(len(system_text or "") / 4))
         block_est = self._estimate_blocks_tokens(blocks)
         total_est = sys_est + block_est
@@ -1885,12 +1916,66 @@ class Timeline:
             meta=meta,
         )
 
+        active_plan_before = None
+        if latest_active_plan_snapshot is not None:
+            try:
+                active_plan_before = latest_active_plan_snapshot(blocks)
+            except Exception:
+                active_plan_before = None
+
+        history_index_block = None
+        history_preserved_blocks: List[Dict[str, Any]] = []
+        if build_compacted_plan_history_blocks is not None:
+            try:
+                excluded_plan_ids = {active_plan_before.plan_id} if active_plan_before and active_plan_before.plan_id else set()
+                history_index_block, history_preserved_blocks = build_compacted_plan_history_blocks(
+                    blocks=compacted_blocks,
+                    turn_id=summary_turn_id or self.runtime.turn_id or "",
+                    ts=summary_block.get("ts") or "",
+                    exclude_plan_ids=excluded_plan_ids,
+                )
+            except Exception:
+                history_index_block = None
+                history_preserved_blocks = []
+
         updated_blocks = list(blocks)
+        inserted_blocks = 1
         updated_blocks.insert(cut_index, summary_block)
+        insert_pos = cut_index + 1
+        if history_index_block:
+            updated_blocks.insert(insert_pos, history_index_block)
+            insert_pos += 1
+            inserted_blocks += 1
+        if history_preserved_blocks:
+            for preserved_block in history_preserved_blocks:
+                updated_blocks.insert(insert_pos, preserved_block)
+                insert_pos += 1
+            inserted_blocks += len(history_preserved_blocks)
+        if active_plan_before and build_plan_carry_block is not None:
+            try:
+                retained_snap = (
+                    latest_plan_snapshot_by_id(updated_blocks[insert_pos:], active_plan_before.plan_id)
+                    if latest_plan_snapshot_by_id is not None
+                    else None
+                )
+            except Exception:
+                retained_snap = None
+            if not retained_snap or retained_snap.plan_id != active_plan_before.plan_id:
+                carry_turn_id = summary_turn_id or self.runtime.turn_id or active_plan_before.last_ack_turn_id or active_plan_before.origin_turn_id
+                carry_ts = active_plan_before.last_ts or active_plan_before.created_ts or ""
+                updated_blocks.insert(
+                    insert_pos,
+                    build_plan_carry_block(
+                        snap=active_plan_before,
+                        turn_id=carry_turn_id or "",
+                        ts=carry_ts,
+                    ),
+                )
+                inserted_blocks += 1
         self.blocks = list(updated_blocks)
         self.update_timestamp()
         if self.current_turn_offset is not None and cut_index <= self.current_turn_offset:
-            self.current_turn_offset += 1
+            self.current_turn_offset += inserted_blocks
 
         if self.runtime.save_summary:
             try:
@@ -2398,6 +2483,14 @@ class Timeline:
             path = (b.get("path") or "").strip()
             meta = b.get("meta") if isinstance(b.get("meta"), dict) else {}
             extra_text_blocks: List[str] = []
+            directive = build_timeline_render_directive(
+                block=b,
+                call_id_to_tool_id=call_id_to_tool_id,
+            )
+            if directive.get("skip"):
+                continue
+            if isinstance(directive.get("text"), str):
+                text = directive.get("text")
             # Round boundaries (open/close)
             round_id = _extract_round_id(b)
             if round_id and round_id != current_round_id:
@@ -2441,18 +2534,7 @@ class Timeline:
                 round_idx = 0
                 turn_id = b.get("turn_id") or ""
                 started_at = ts
-                if started_at:
-                    text = "\n".join([
-                        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-                        f"TURN {turn_id} (started at {started_at})",
-                        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-                    ])
-                else:
-                    text = "\n".join([
-                        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-                        f"TURN {turn_id}",
-                        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-                    ])
+                text = build_turn_header_text(turn_id=turn_id, started_at=started_at)
             elif btype == "user.prompt":
                 lines = []
                 ts_line = _ts_line(ts)
@@ -2579,46 +2661,48 @@ class Timeline:
                 tool_id = ""
                 tool_call_id = ""
                 params = None
-                if isinstance(payload, dict):
+                if isinstance(directive.get("text"), str):
+                    text = directive.get("text")
+                elif isinstance(payload, dict):
                     tool_id = (payload.get("tool_id") or "").strip()
                     tool_call_id = (payload.get("tool_call_id") or "").strip()
                     params = payload.get("params")
-                meta_local = b.get("meta") if isinstance(b.get("meta"), dict) else {}
-                if not tool_call_id:
-                    tool_call_id = (meta_local.get("tool_call_id") or b.get("call_id") or "").strip()
-                if not tool_call_id:
-                    tool_call_id = _call_id_from_path(path)
-                short_id = _short_tc_id(tool_call_id)
-                lines = [""]
-                ts_line = _ts_line(ts)
-                if ts_line:
-                    lines.append(ts_line)
-                header = f"[TOOL CALL {short_id}].call"
-                if tool_id:
-                    header += f" {tool_id}"
-                lines.append(header)
-                if path:
-                    lines.append(path)
-                if isinstance(params, dict):
-                    params_out = dict(params)
-                    if isinstance(params_out.get("content"), str):
-                        content_val = params_out.get("content") or ""
-                        content_lower = content_val.lower()
-                        has_see_ref = any(
-                            token in content_lower
-                            for token in ("see fi:", "see so:", "see sk:", "see ar:", "see tc:")
-                        )
-                        if (not has_see_ref) and len(content_val) > 100:
-                            file_path = _derive_file_context_path(
-                                turn_id=str(b.get("turn_id") or ""),
-                                raw_path=str(params_out.get("path") or ""),
+                    meta_local = b.get("meta") if isinstance(b.get("meta"), dict) else {}
+                    if not tool_call_id:
+                        tool_call_id = (meta_local.get("tool_call_id") or b.get("call_id") or "").strip()
+                    if not tool_call_id:
+                        tool_call_id = _call_id_from_path(path)
+                    short_id = _short_tc_id(tool_call_id)
+                    lines = [""]
+                    ts_line = _ts_line(ts)
+                    if ts_line:
+                        lines.append(ts_line)
+                    header = f"[TOOL CALL {short_id}].call"
+                    if tool_id:
+                        header += f" {tool_id}"
+                    lines.append(header)
+                    if path:
+                        lines.append(path)
+                    if isinstance(params, dict):
+                        params_out = dict(params)
+                        if isinstance(params_out.get("content"), str):
+                            content_val = params_out.get("content") or ""
+                            content_lower = content_val.lower()
+                            has_see_ref = any(
+                                token in content_lower
+                                for token in ("see fi:", "see so:", "see sk:", "see ar:", "see tc:")
                             )
-                            suffix = f"... [truncated; see {file_path}]" if file_path else "... [truncated]"
-                            params_out["content"] = content_val[:100] + suffix
-                    lines.append("Params:\n" + json.dumps(params_out, ensure_ascii=False, indent=2))
-                elif params is not None:
-                    lines.append("Params:\n" + json.dumps(params, ensure_ascii=False, indent=2))
-                text = "\n".join([l for l in lines if l is not None]).strip()
+                            if (not has_see_ref) and len(content_val) > 100:
+                                file_path = _derive_file_context_path(
+                                    turn_id=str(b.get("turn_id") or ""),
+                                    raw_path=str(params_out.get("path") or ""),
+                                )
+                                suffix = f"... [truncated; see {file_path}]" if file_path else "... [truncated]"
+                                params_out["content"] = content_val[:100] + suffix
+                        lines.append("Params:\n" + json.dumps(params_out, ensure_ascii=False, indent=2))
+                    elif params is not None:
+                        lines.append("Params:\n" + json.dumps(params, ensure_ascii=False, indent=2))
+                    text = "\n".join([l for l in lines if l is not None]).strip()
             elif btype == "react.tool.result":
                 mime_val = (b.get("mime") or "").strip()
                 meta_local = b.get("meta") if isinstance(b.get("meta"), dict) else {}
