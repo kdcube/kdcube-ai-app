@@ -165,6 +165,9 @@ class ReactDecisionOutV2(BaseModel):
 
     notes: str = ""
 
+    # TEMPORARY SINGLE-TOOL LIMIT:
+    # ReactDecisionOutV2 currently supports exactly one tool call object per decision.
+    # Remove/update this when multi-tool decisions are introduced.
     tool_call: Optional[ToolCallDecisionV2] = None
 
     final_answer: Optional[str] = None
@@ -186,6 +189,10 @@ def build_decision_system_text(
         "  \"final_answer\": \"(required for complete/exit)\",\n"
         "  \"suggested_followups\": [\"optional suggested follow-ups\"]\n"
         "}\n"
+        "\n"
+        "TEMPORARY CURRENT LIMIT: emit at most ONE tool_call object in this JSON.\n"
+        "Do NOT emit a sequence/array/list of tool calls in one decision.\n"
+        "If multiple tools are needed, emit one tool call now and use later rounds for the rest.\n"
     )
 
     artifacts_and_paths = """
