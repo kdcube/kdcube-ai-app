@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from kdcube_ai_app.infra.secrets import (
     AwsSecretsManagerSecretsManager,
     SecretsManagerConfig,
@@ -45,12 +47,31 @@ def test_aws_sm_secret_path_matches_existing_runtime_contract():
 
 
 def test_build_secrets_manager_config_defaults_prefix_from_tenant_and_project(monkeypatch):
-    monkeypatch.delenv("SECRETS_AWS_SM_PREFIX", raising=False)
-    monkeypatch.delenv("SECRETS_SM_PREFIX", raising=False)
-    monkeypatch.setenv("TENANT_ID", "demo")
-    monkeypatch.setenv("PROJECT_ID", "demo-march")
     reset_secrets_manager_cache()
 
-    config = build_secrets_manager_config()
+    config = build_secrets_manager_config(
+        SimpleNamespace(
+            TENANT="demo",
+            PROJECT="demo-march",
+        )
+    )
 
+    assert config.tenant == "demo"
+    assert config.project == "demo-march"
     assert config.aws_sm_prefix == "kdcube/demo/demo-march"
+
+
+def test_build_secrets_manager_config_prefers_explicit_prefix_from_settings():
+    reset_secrets_manager_cache()
+
+    config = build_secrets_manager_config(
+        SimpleNamespace(
+            TENANT="demo",
+            PROJECT="demo-march",
+            SECRETS_SM_PREFIX="kdcube/custom/prefix",
+        )
+    )
+
+    assert config.tenant == "demo"
+    assert config.project == "demo-march"
+    assert config.aws_sm_prefix == "kdcube/custom/prefix"
