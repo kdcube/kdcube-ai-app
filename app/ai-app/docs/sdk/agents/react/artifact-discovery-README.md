@@ -29,7 +29,7 @@ For bundle namespace browsing such as `ks:` via generated exec code, the relevan
 Stable identifier used in `react.read` / `fetch_ctx`. Examples:
 - `ar:<turn_id>.user.prompt`
 - `ar:<turn_id>.assistant.completion`
-- `ar:plan.latest:<plan_id>`
+- `ar:plan.latest:<plan_id>` (stable latest snapshot of a plan lineage)
 - `fi:<turn_id>.files/<relpath>`
 - `fi:<turn_id>.user.attachments/<name>`
 - `fi:logs/docker.err.log`

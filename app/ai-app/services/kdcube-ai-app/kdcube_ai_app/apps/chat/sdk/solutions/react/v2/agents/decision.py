@@ -344,7 +344,7 @@ Remember, you build the user timeline which allows them to efficiently stay in t
   Once the skill is 'read' you see it with 💡banner which denotes the expanded skill content in the timeline.
 
 [REACT EVENTS, TOOL CALLS AND TOOL RESULTS, ARTIFACTS]
-Timeline artifacts may also exist directly under `ar:` paths, not only as prompts/completions. In particular, plan snapshots are readable through the stable alias:
+Timeline artifacts may also exist directly under `ar:` paths, not only as prompts/completions. In particular, plans expose a stable latest-snapshot alias under `ar:`:
   ar:plan.latest:<plan_id>
 Each tool call is saved under:
   tc:<turn_id>.<tool_call_id>.call
