@@ -1111,13 +1111,11 @@ class ReactSolverV2:
             plan_steps = state.get("plan_steps") or []
             if not plan_steps and self.ctx_browser:
                 try:
-                    from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.plan import collect_plan_snapshots, PlanSnapshot
-                    plans_by_id, order = collect_plan_snapshots(self.ctx_browser.timeline.blocks)
-                    if order:
-                        snap = PlanSnapshot.from_any(plans_by_id.get(order[-1]) or {})
-                        if snap and snap.steps:
-                            plan_steps = list(snap.steps)
-                            state["plan_steps"] = plan_steps
+                    from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.plan import latest_active_plan_snapshot
+                    snap = latest_active_plan_snapshot(self.ctx_browser.timeline.blocks)
+                    if snap and snap.steps:
+                        plan_steps = list(snap.steps)
+                        state["plan_steps"] = plan_steps
                 except Exception:
                     pass
             try:

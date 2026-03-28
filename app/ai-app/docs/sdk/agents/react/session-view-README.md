@@ -35,6 +35,7 @@ This document describes how the session view is derived from the timeline when c
 - The most recent M turns are guaranteed intact (no pruning).
 - Hidden blocks keep a short replacement text (no per-block `react.read` hint).
 - User/assistant blocks are eligible for pruning when they are older than `keep_recent_turns` (they remain intact in the recent windows).
+- If compaction also ran, older plan history may still remain directly reopenable through carried `ar:<turn_id>.react.plan.history.<plan_id>.snapshot` refs that sit after the summary boundary.
 - A system notice is appended when pruning runs:
   - Announce stack: `[SYSTEM MESSAGE] Context was pruned...`
   - Timeline block: `type=system.message`, `meta.kind=cache_ttl_pruned`
@@ -151,6 +152,8 @@ After TTL pruning, the session view looks like this (system message appended at 
 [SYSTEM MESSAGE] Context was pruned because the session TTL (300s) was exceeded.
 Use react.read(path) to restore a logical path (fi:/ar:/so:/sk:).
 ```
+
+When plan-history refs are present after compaction, those `ar:` refs are usually the smoothest way to reopen an older compacted plan in the same turn.
 
 ## Timeline Persistence (what is stored)
 

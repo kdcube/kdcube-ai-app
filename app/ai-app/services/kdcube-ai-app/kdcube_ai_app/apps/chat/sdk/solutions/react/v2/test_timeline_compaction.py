@@ -2,7 +2,15 @@
 
 import pytest
 
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.timeline import Timeline
+from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.plan import (
+    build_plan_block,
+    create_plan_snapshot,
+    latest_plan_snapshot,
+)
+from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.timeline import (
+    Timeline,
+    resolve_artifact_from_timeline,
+)
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.proto import RuntimeCtx
 
 
@@ -23,11 +31,10 @@ async def test_compaction_inserts_summary_and_keeps_cut_block(monkeypatch):
     async def _fake_prefix(*args, **kwargs):
         return "PREFIX"
 
-    # Patch summarizers used by Timeline
-    import kdcube_ai_app.apps.chat.sdk.solutions.react.v2.timeline as tl_mod
+    import kdcube_ai_app.apps.chat.sdk.tools.backends.summary.conv_progressive_summary as summary_mod
 
-    monkeypatch.setattr(tl_mod, "summarize_context_blocks_progressive", _fake_summary)
-    monkeypatch.setattr(tl_mod, "summarize_turn_prefix_progressive", _fake_prefix)
+    monkeypatch.setattr(summary_mod, "summarize_context_blocks_progressive", _fake_summary)
+    monkeypatch.setattr(summary_mod, "summarize_turn_prefix_progressive", _fake_prefix)
 
     runtime = RuntimeCtx(turn_id="turn_1", max_tokens=200)
     tl = Timeline(runtime=runtime, svc=object())
@@ -71,10 +78,10 @@ async def test_split_turn_prefix_summary(monkeypatch):
     async def _fake_prefix(*args, **kwargs):
         return "PREFIX"
 
-    import kdcube_ai_app.apps.chat.sdk.solutions.react.v2.timeline as tl_mod
+    import kdcube_ai_app.apps.chat.sdk.tools.backends.summary.conv_progressive_summary as summary_mod
 
-    monkeypatch.setattr(tl_mod, "summarize_context_blocks_progressive", _fake_summary)
-    monkeypatch.setattr(tl_mod, "summarize_turn_prefix_progressive", _fake_prefix)
+    monkeypatch.setattr(summary_mod, "summarize_context_blocks_progressive", _fake_summary)
+    monkeypatch.setattr(summary_mod, "summarize_turn_prefix_progressive", _fake_prefix)
 
     runtime = RuntimeCtx(turn_id="turn_2", max_tokens=120)
     tl = Timeline(runtime=runtime, svc=object())
@@ -139,10 +146,10 @@ async def test_compaction_after_existing_summary(monkeypatch):
     async def _fake_prefix(*args, **kwargs):
         return "PREFIX"
 
-    import kdcube_ai_app.apps.chat.sdk.solutions.react.v2.timeline as tl_mod
+    import kdcube_ai_app.apps.chat.sdk.tools.backends.summary.conv_progressive_summary as summary_mod
 
-    monkeypatch.setattr(tl_mod, "summarize_context_blocks_progressive", _fake_summary)
-    monkeypatch.setattr(tl_mod, "summarize_turn_prefix_progressive", _fake_prefix)
+    monkeypatch.setattr(summary_mod, "summarize_context_blocks_progressive", _fake_summary)
+    monkeypatch.setattr(summary_mod, "summarize_turn_prefix_progressive", _fake_prefix)
 
     runtime = RuntimeCtx(turn_id="turn_5", max_tokens=120)
     tl = Timeline(runtime=runtime, svc=object())
@@ -188,10 +195,10 @@ async def test_compaction_preserves_tool_call_boundary(monkeypatch):
     async def _fake_prefix(*args, **kwargs):
         return "PREFIX"
 
-    import kdcube_ai_app.apps.chat.sdk.solutions.react.v2.timeline as tl_mod
+    import kdcube_ai_app.apps.chat.sdk.tools.backends.summary.conv_progressive_summary as summary_mod
 
-    monkeypatch.setattr(tl_mod, "summarize_context_blocks_progressive", _fake_summary)
-    monkeypatch.setattr(tl_mod, "summarize_turn_prefix_progressive", _fake_prefix)
+    monkeypatch.setattr(summary_mod, "summarize_context_blocks_progressive", _fake_summary)
+    monkeypatch.setattr(summary_mod, "summarize_turn_prefix_progressive", _fake_prefix)
 
     runtime = RuntimeCtx(turn_id="turn_tool", max_tokens=60)
     tl = Timeline(runtime=runtime, svc=object())
@@ -226,10 +233,10 @@ async def test_compaction_keeps_cache_points_after_render(monkeypatch):
     async def _fake_prefix(*args, **kwargs):
         return "PREFIX"
 
-    import kdcube_ai_app.apps.chat.sdk.solutions.react.v2.timeline as tl_mod
+    import kdcube_ai_app.apps.chat.sdk.tools.backends.summary.conv_progressive_summary as summary_mod
 
-    monkeypatch.setattr(tl_mod, "summarize_context_blocks_progressive", _fake_summary)
-    monkeypatch.setattr(tl_mod, "summarize_turn_prefix_progressive", _fake_prefix)
+    monkeypatch.setattr(summary_mod, "summarize_context_blocks_progressive", _fake_summary)
+    monkeypatch.setattr(summary_mod, "summarize_turn_prefix_progressive", _fake_prefix)
 
     runtime = RuntimeCtx(turn_id="turn_cache", max_tokens=60)
     tl = Timeline(runtime=runtime, svc=object())
@@ -244,3 +251,136 @@ async def test_compaction_keeps_cache_points_after_render(monkeypatch):
     rendered = await tl.render(cache_last=False, system_text="sys", include_sources=False)
     # At least one cache marker should exist
     assert any(isinstance(b, dict) and b.get("cache") for b in rendered)
+
+
+@pytest.mark.asyncio
+async def test_compaction_preserves_latest_active_plan(monkeypatch):
+    async def _fake_summary(*args, **kwargs):
+        return "SUMMARY"
+
+    async def _fake_prefix(*args, **kwargs):
+        return "PREFIX"
+
+    import kdcube_ai_app.apps.chat.sdk.tools.backends.summary.conv_progressive_summary as summary_mod
+
+    monkeypatch.setattr(summary_mod, "summarize_context_blocks_progressive", _fake_summary)
+    monkeypatch.setattr(summary_mod, "summarize_turn_prefix_progressive", _fake_prefix)
+
+    runtime = RuntimeCtx(turn_id="turn_current", max_tokens=80)
+    tl = Timeline(runtime=runtime, svc=object())
+    active_snap = create_plan_snapshot(
+        plan={"steps": ["gather sources", "draft report"]},
+        turn_id="turn_old",
+        created_ts="2026-02-09T00:00:00Z",
+    )
+    active_plan_block = build_plan_block(
+        snap=active_snap,
+        turn_id="turn_old",
+        ts="2026-02-09T00:00:00Z",
+    )
+    blocks = [
+        _blk(btype="turn.header", text="[TURN turn_old]", turn_id="turn_old"),
+        _blk(btype="user.prompt", text="old ask" * 20, turn_id="turn_old"),
+        active_plan_block,
+        _blk(btype="assistant.completion", text="old reply" * 20, turn_id="turn_old"),
+        _blk(btype="turn.header", text="[TURN turn_current]", turn_id="turn_current"),
+        _blk(btype="user.prompt", text="new ask" * 5, turn_id="turn_current"),
+    ]
+
+    updated = await tl.sanitize_context_blocks(
+        system_text="sys",
+        blocks=blocks,
+        max_tokens=30,
+        keep_recent_turns=0,
+        force=True,
+    )
+
+    latest = latest_plan_snapshot(updated)
+    assert latest is not None
+    assert latest.plan_id == active_snap.plan_id
+    assert latest.is_active()
+
+    summary_idx = next(i for i, b in enumerate(updated) if b.get("type") == "conv.range.summary")
+    assert any(
+        isinstance(b, dict)
+        and b.get("type") == "react.plan"
+        and summary_idx < idx
+        and (b.get("meta") or {}).get("preserved_by_compaction")
+        for idx, b in enumerate(updated)
+    )
+
+
+@pytest.mark.asyncio
+async def test_compaction_carries_historical_plan_refs(monkeypatch):
+    async def _fake_summary(*args, **kwargs):
+        return "SUMMARY"
+
+    async def _fake_prefix(*args, **kwargs):
+        return "PREFIX"
+
+    import kdcube_ai_app.apps.chat.sdk.tools.backends.summary.conv_progressive_summary as summary_mod
+
+    monkeypatch.setattr(summary_mod, "summarize_context_blocks_progressive", _fake_summary)
+    monkeypatch.setattr(summary_mod, "summarize_turn_prefix_progressive", _fake_prefix)
+
+    runtime = RuntimeCtx(turn_id="turn_current", max_tokens=90)
+    tl = Timeline(runtime=runtime, svc=object())
+
+    old_snap = create_plan_snapshot(
+        plan={"steps": ["collect metrics", "compare trends"]},
+        turn_id="turn_old",
+        created_ts="2026-02-09T00:00:00Z",
+    )
+    current_snap = create_plan_snapshot(
+        plan={"steps": ["draft answer"]},
+        turn_id="turn_live",
+        created_ts="2026-02-10T00:00:00Z",
+    )
+    blocks = [
+        _blk(btype="turn.header", text="[TURN turn_old]", turn_id="turn_old"),
+        build_plan_block(snap=old_snap, turn_id="turn_old", ts="2026-02-09T00:00:00Z"),
+        {
+            "type": "react.plan.ack",
+            "turn_id": "turn_old",
+            "ts": "2026-02-09T00:01:00Z",
+            "path": "ar:turn_old.react.plan.ack.1",
+            "text": "✓ 1. collect metrics",
+            "meta": {"iteration": 1},
+        },
+        {
+            "type": "react.notes",
+            "turn_id": "turn_old",
+            "ts": "2026-02-09T00:02:00Z",
+            "path": "ar:turn_old.react.notes.tc_old",
+            "text": "Need to revisit the trend break later.",
+            "meta": {"tool_call_id": "tc_old"},
+        },
+        _blk(btype="assistant.completion", text="old reply" * 20, turn_id="turn_old"),
+        _blk(btype="turn.header", text="[TURN turn_live]", turn_id="turn_live"),
+        build_plan_block(snap=current_snap, turn_id="turn_live", ts="2026-02-10T00:00:00Z"),
+        _blk(btype="assistant.completion", text="current reply", turn_id="turn_live"),
+        _blk(btype="turn.header", text="[TURN turn_current]", turn_id="turn_current"),
+        _blk(btype="user.prompt", text="new ask" * 5, turn_id="turn_current"),
+    ]
+
+    updated = await tl.sanitize_context_blocks(
+        system_text="sys",
+        blocks=blocks,
+        max_tokens=35,
+        keep_recent_turns=0,
+        force=True,
+    )
+
+    history_blocks = [b for b in updated if b.get("type") == "react.plan.history"]
+    assert history_blocks, "historical plan refs block not inserted"
+    history_text = history_blocks[0].get("text") or ""
+    assert "collect metrics" in history_text
+    assert "react.plan.history" in history_blocks[0].get("path", "")
+    assert f"snapshot_ref: ar:plan.latest:{old_snap.plan_id}" in history_text
+
+    persisted = tl._blocks_for_persist()
+    snapshot_ref = f"ar:plan.latest:{old_snap.plan_id}"
+    snapshot_art = resolve_artifact_from_timeline({"blocks": persisted, "sources_pool": []}, snapshot_ref)
+
+    assert snapshot_art and old_snap.plan_id in (snapshot_art.get("text") or "")
+    assert "latest_note_preview: Need to revisit the trend break later." in history_text
