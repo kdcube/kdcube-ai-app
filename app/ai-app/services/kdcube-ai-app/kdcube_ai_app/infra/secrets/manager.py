@@ -48,27 +48,14 @@ def _normalize_provider_name(provider: Optional[str], *, url: Optional[str] = No
     return "in-memory"
 
 
-def _default_aws_sm_prefix(settings: Any | None = None) -> str:
-    explicit = _first_non_empty(
-        getattr(settings, "SECRETS_AWS_SM_PREFIX", None),
-        getattr(settings, "SECRETS_SM_PREFIX", None),
-        os.getenv("SECRETS_AWS_SM_PREFIX"),
-        os.getenv("SECRETS_SM_PREFIX"),
-    )
+def _default_aws_sm_prefix(
+    *,
+    explicit: Optional[str] = None,
+    tenant: Optional[str] = None,
+    project: Optional[str] = None,
+) -> str:
     if explicit:
         return explicit
-
-    tenant = _first_non_empty(
-        getattr(settings, "TENANT", None),
-        os.getenv("TENANT_ID"),
-        os.getenv("DEFAULT_TENANT"),
-    )
-    project = _first_non_empty(
-        getattr(settings, "PROJECT", None),
-        os.getenv("PROJECT_ID"),
-        os.getenv("DEFAULT_PROJECT_NAME"),
-        os.getenv("CHAT_WEB_APP_PROJECT"),
-    )
     if tenant and project:
         return f"kdcube/{tenant}/{project}"
     return "kdcube"
@@ -92,6 +79,8 @@ class SecretsManagerWriteError(SecretsManagerError):
 class SecretsManagerConfig:
     provider: str
     component: str
+    tenant: Optional[str] = None
+    project: Optional[str] = None
     url: Optional[str] = None
     token: Optional[str] = None
     admin_token: Optional[str] = None
@@ -316,9 +305,17 @@ def build_secrets_manager_config(settings: Any | None = None) -> SecretsManagerC
         ),
         url=url,
     )
+    tenant = _first_non_empty(getattr(settings, "TENANT", None))
+    project = _first_non_empty(getattr(settings, "PROJECT", None))
+    explicit_prefix = _first_non_empty(
+        getattr(settings, "SECRETS_AWS_SM_PREFIX", None),
+        getattr(settings, "SECRETS_SM_PREFIX", None),
+    )
     return SecretsManagerConfig(
         provider=provider,
         component=component,
+        tenant=tenant,
+        project=project,
         url=url,
         token=_first_non_empty(
             getattr(settings, "SECRETS_TOKEN", None),
@@ -339,7 +336,11 @@ def build_secrets_manager_config(settings: Any | None = None) -> SecretsManagerC
             getattr(settings, "AWS_PROFILE", None),
             os.getenv("AWS_PROFILE"),
         ),
-        aws_sm_prefix=_default_aws_sm_prefix(settings),
+        aws_sm_prefix=_default_aws_sm_prefix(
+            explicit=explicit_prefix,
+            tenant=tenant,
+            project=project,
+        ),
     )
 
 
