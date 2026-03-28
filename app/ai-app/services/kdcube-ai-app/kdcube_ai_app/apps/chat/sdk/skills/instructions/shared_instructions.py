@@ -197,6 +197,10 @@ Physical → Logical mapping:
   physical: (none)
   logical : ar:<turn_id>.assistant.completion
   meaning : full text of the assistant completion in that turn
+- Compacted plan history refs:
+  physical: (none)
+  logical : ar:plan.latest:<plan_id>
+  meaning : stable alias for the latest visible snapshot of a plan lineage; use it with react.read or fetch_ctx
 - User attachment:
   physical: <turn_id>/attachments/<name>
   logical : fi:<turn_id>.user.attachments/<name>
@@ -253,6 +257,7 @@ PATHS_EXTENDED_GUIDE = """
 - Messages:
     - `ar:<turn_id>.user.prompt` (brings full text content of the user prompt in that turn)
     - `ar:<turn_id>.assistant.completion` (brings full text content of the assistant completion in that turn)
+    - `ar:plan.latest:<plan_id>` (brings the latest snapshot of that plan lineage into visible context)
 - User attachments:
     - `fi:<turn_id>.user.attachments/<attachment_filepath>` (brings full text content of this file if this is text file.
       For pdf/image files, they will be attached as multimodal attachments. Filepath can be / and . delimited. relative path)
