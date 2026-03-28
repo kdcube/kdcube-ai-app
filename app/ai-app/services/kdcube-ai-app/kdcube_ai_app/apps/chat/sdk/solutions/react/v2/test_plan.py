@@ -13,6 +13,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.plan import (
     build_plan_block,
     create_plan_snapshot,
     latest_active_plan_snapshot,
+    latest_current_plan_snapshot,
     plan_snapshot_ref,
     latest_plan_snapshot,
 )
@@ -220,7 +221,7 @@ async def test_react_plan_activate_makes_older_open_plan_current() -> None:
 
     assert out["plan_id"] == old_snap.plan_id
     assert out["plan_steps"] == old_snap.steps
-    assert latest_active_plan_snapshot(ctx_browser.timeline.blocks).plan_id == old_snap.plan_id
+    assert latest_current_plan_snapshot(ctx_browser.timeline.blocks).plan_id == old_snap.plan_id
 
     status_map, out_blocks = apply_plan_updates(
         notes="✓ [1] collect metrics",
@@ -236,6 +237,69 @@ async def test_react_plan_activate_makes_older_open_plan_current() -> None:
     assert len(payloads) == 1
     assert payloads[0]["plan_id"] == old_snap.plan_id
     assert payloads[0]["status"] == {"1": "done"}
+
+
+def test_completed_current_plan_does_not_auto_activate_other_open_plan() -> None:
+    older_open = create_plan_snapshot(
+        plan={"steps": ["write greeting", "list colors", "count to five"]},
+        turn_id="turn_1",
+        created_ts="2026-03-28T10:00:00Z",
+    )
+    older_open.current = False
+    current_plan = create_plan_snapshot(
+        plan={"steps": ["inspect announce", "verify reread"]},
+        turn_id="turn_2",
+        created_ts="2026-03-28T10:05:00Z",
+    )
+    current_plan.update_status({"1": "done"}, ts="2026-03-28T10:06:00Z", turn_id="turn_2")
+    blocks = [
+        build_plan_block(snap=older_open, turn_id="turn_1", ts="2026-03-28T10:00:00Z"),
+        build_plan_block(snap=current_plan, turn_id="turn_2", ts="2026-03-28T10:06:00Z"),
+    ]
+
+    status_map, out_blocks = apply_plan_updates(
+        notes="✓ [2] verify reread",
+        plan_steps=list(current_plan.steps),
+        status_map={"1": "done"},
+        timeline_blocks=blocks,
+        turn_id="turn_3",
+        iteration=3,
+        ts="2026-03-28T10:07:00Z",
+    )
+
+    assert status_map == {"1": "done", "2": "done"}
+    updated_blocks = blocks + out_blocks
+    assert latest_current_plan_snapshot(updated_blocks) is None
+    assert latest_active_plan_snapshot(updated_blocks).plan_id == older_open.plan_id
+
+    announce_text = build_announce_text(
+        iteration=1,
+        max_iterations=6,
+        started_at="2026-03-28T10:07:00Z",
+        timezone="UTC",
+        timeline_blocks=updated_blocks,
+        constraints=None,
+        feedback_updates=None,
+        feedback_incorporated=False,
+        mode="full",
+    )
+    assert "[OPEN PLANS]" in announce_text
+    assert f"plan_id={older_open.plan_id}" in announce_text
+    assert f"plan_id={current_plan.plan_id}" not in announce_text
+    older_line = next(line for line in announce_text.splitlines() if older_open.plan_id in line)
+    assert "(current)" not in older_line
+
+    ignored_status, ignored_blocks = apply_plan_updates(
+        notes="✓ [2] list colors",
+        plan_steps=list(older_open.steps),
+        status_map={},
+        timeline_blocks=updated_blocks,
+        turn_id="turn_4",
+        iteration=4,
+        ts="2026-03-28T10:08:00Z",
+    )
+    assert ignored_status == {}
+    assert ignored_blocks == []
 
 
 @pytest.mark.asyncio

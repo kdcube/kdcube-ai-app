@@ -92,6 +92,13 @@ The model does **not** normally rely on:
 
 Those internal blocks still exist in the timeline, but the renderer does not expose them directly as the main plan UX.
 
+Current-vs-open rule:
+
+- ANNOUNCE lists open plans.
+- Only the plan tagged `(current)` is the current plan.
+- Only the current plan may receive step acknowledgements.
+- If an open plan is not tagged `(current)`, React must activate it before acknowledging its steps.
+
 ## 4) Stable reread handle
 
 Every plan lineage has a stable latest-snapshot alias:
@@ -166,7 +173,7 @@ latest_snapshot_ref: ar:plan.latest:plan_alpha
 So the model can learn the stable latest-snapshot handle directly from the tool result, and ANNOUNCE then shows the open plan:
 
 ```text
-[ACTIVE PLANS]
+[OPEN PLANS]
   - plans: 1 visible
     • plan_id=plan_alpha (current)
       snapshot_ref=ar:plan.latest:plan_alpha
@@ -210,6 +217,7 @@ Important:
 - status-marker notes are applied only in rounds that are not also changing plan lifecycle
 - if the model is calling `react.plan(mode="activate"|"replace"|"close"|"new")`, it should use `notes` only for short explanation in that round
 - if it wants to acknowledge progress on an older plan, it should first activate that plan, then acknowledge progress in a later round
+- if the current plan completes or is closed, another unfinished open plan does not become current automatically
 
 There is a reserved structured tool `react.plan_ack`, but it is not published to the model yet.
 
@@ -222,6 +230,8 @@ Use when starting a fresh plan.
 - creates a new lineage
 - assigns a new `plan_id`
 - stores ordered `steps`
+- becomes current immediately
+- stays current across turns until it is closed, completed, replaced, or another open plan is activated
 - appears in ANNOUNCE immediately
 
 ### 7.2 `mode="activate"`
@@ -269,6 +279,7 @@ Current semantics:
 - target an existing `plan_id`
 - runtime appends a terminal snapshot for that old lineage with `superseded_*`
 - runtime appends a new lineage with a new `plan_id`
+- the new lineage becomes current immediately
 
 So `replace` means:
 
@@ -353,7 +364,7 @@ Multiple open plans can exist in history at once.
 That is why ANNOUNCE is important:
 
 - it shows the last few open plans
-- marks the newest one as current
+- marks the explicit current one, if there is one
 - gives each visible open plan:
   - `plan_id`
   - `snapshot_ref`
@@ -367,6 +378,8 @@ Current ANNOUNCE policy:
 - current implementation uses `N = 4`
 
 So the model should not assume ANNOUNCE is a complete dump of all historical plan lineages.
+It also should not assume that an open plan shown in ANNOUNCE is current unless it is explicitly tagged `(current)`.
+If no plan is tagged `(current)`, there is currently no plan that can receive acknowledgements.
 
 ## 10) How the model should manage plans
 
@@ -399,6 +412,12 @@ react.plan(mode="activate", plan_id="<older_open_plan_id>")
 ```
 
 Then, in a later round, acknowledge progress on that now-current plan in `notes`.
+
+This rule is strict:
+
+- if a plan is visible in ANNOUNCE but does not have `(current)`, do not acknowledge it yet
+- first activate it
+- then acknowledge it in a later round
 
 ### If a plan is no longer relevant and should disappear from open plans
 
@@ -465,12 +484,13 @@ That is how the model is expected to rediscover older plans on a cold timeline.
 
 ## 12) Cross-turn behavior
 
-Runtime rehydrates only the latest active lineage automatically.
+Runtime rehydrates only the current open lineage automatically.
 
 That means:
 
-- if a plan is still the newest open plan, it comes back naturally on the next turn
+- if a current plan is still open, it comes back naturally on the next turn
 - older open or historical plans are not auto-activated
+- if the current plan completes or is closed, there may be no current plan at all until React explicitly activates one
 - the model must inspect them explicitly if they become relevant
 
 This keeps cross-turn behavior simple while still allowing deliberate recovery of older work.

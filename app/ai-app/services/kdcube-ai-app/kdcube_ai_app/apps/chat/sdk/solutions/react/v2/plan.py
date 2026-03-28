@@ -19,6 +19,7 @@ class PlanSnapshot:
     last_ts: str = ""
     origin_turn_id: str = ""
     last_turn_id: str = ""
+    current: bool = False
     last_ack_turn_id: str = ""
     last_ack_ts: str = ""
     closed_ts: str = ""
@@ -36,6 +37,7 @@ class PlanSnapshot:
             "last_ts": self.last_ts,
             "origin_turn_id": self.origin_turn_id,
             "last_turn_id": self.last_turn_id,
+            "current": self.current,
             "last_ack_turn_id": self.last_ack_turn_id,
             "last_ack_ts": self.last_ack_ts,
             "closed_ts": self.closed_ts,
@@ -58,6 +60,7 @@ class PlanSnapshot:
                 last_ts=str(raw.get("last_ts") or ""),
                 origin_turn_id=str(raw.get("origin_turn_id") or ""),
                 last_turn_id=str(raw.get("last_turn_id") or ""),
+                current=bool(raw.get("current")),
                 last_ack_turn_id=str(raw.get("last_ack_turn_id") or ""),
                 last_ack_ts=str(raw.get("last_ack_ts") or ""),
                 closed_ts=str(raw.get("closed_ts") or ""),
@@ -132,7 +135,24 @@ class PlanSnapshot:
     def is_active(self) -> bool:
         return not self.is_closed() and not self.is_superseded() and not self.is_complete()
 
+    def is_current(self) -> bool:
+        return bool(self.current)
+
+    def is_current_open(self) -> bool:
+        return self.is_current() and self.is_active()
+
+    def set_current(
+        self,
+        *,
+        current: bool,
+        ts: Optional[str] = None,
+        turn_id: Optional[str] = None,
+    ) -> None:
+        self.current = bool(current)
+        self.touch(ts=ts, turn_id=turn_id)
+
     def close(self, *, ts: Optional[str] = None, turn_id: Optional[str] = None) -> None:
+        self.current = False
         self.touch(ts=ts, turn_id=turn_id)
         if ts:
             self.closed_ts = ts
@@ -146,6 +166,7 @@ class PlanSnapshot:
         turn_id: Optional[str] = None,
         by_plan_id: Optional[str] = None,
     ) -> None:
+        self.current = False
         self.touch(ts=ts, turn_id=turn_id)
         if ts:
             self.superseded_ts = ts
@@ -221,6 +242,7 @@ def create_plan_snapshot(*, plan: Any, turn_id: str, created_ts: str) -> PlanSna
         last_ts=created_ts,
         origin_turn_id=turn_id,
         last_turn_id=turn_id,
+        current=True,
     )
 
 
@@ -239,6 +261,7 @@ def build_plan_block(*, snap: PlanSnapshot, turn_id: str, ts: str) -> Dict[str, 
             "origin_turn_id": snap.origin_turn_id,
             "created_ts": snap.created_ts,
             "last_turn_id": snap.last_turn_id,
+            "current": snap.current,
             "last_ack_turn_id": snap.last_ack_turn_id,
             "last_ack_ts": snap.last_ack_ts,
             "last_ts": snap.last_ts,
@@ -266,6 +289,7 @@ def build_plan_carry_block(*, snap: PlanSnapshot, turn_id: str, ts: str) -> Dict
             "origin_turn_id": snap.origin_turn_id,
             "created_ts": snap.created_ts,
             "last_turn_id": snap.last_turn_id,
+            "current": snap.current,
             "last_ack_turn_id": snap.last_ack_turn_id,
             "last_ack_ts": snap.last_ack_ts,
             "last_ts": snap.last_ts,
@@ -320,6 +344,12 @@ def apply_plan_status_updates(
     if not updates:
         return status_map, blocks
 
+    snap = latest_current_plan_snapshot(timeline_blocks)
+    if not snap or not snap.is_current_open():
+        return status_map, blocks
+
+    current_steps = list(snap.steps or []) if snap.steps else list(plan_steps or [])
+
     new_updates: Dict[str, str] = {}
     for k, v in updates.items():
         if status_map.get(k) != v:
@@ -335,7 +365,7 @@ def apply_plan_status_updates(
     ack_items = []
     for k, v in new_updates.items():
         idx = int(k) - 1
-        step_text = plan_steps[idx] if 0 <= idx < len(plan_steps) else ""
+        step_text = current_steps[idx] if 0 <= idx < len(current_steps) else ""
         ack_items.append({
             "step": int(k),
             "status": v,
@@ -349,19 +379,17 @@ def apply_plan_status_updates(
             iteration=iteration,
         ))
 
-    # Updated plan snapshot block (latest open plan)
-    snap = latest_active_plan_snapshot(timeline_blocks)
-    if snap and snap.is_active():
-        snap.update_status(
-            dict(status_map),
-            ts=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            turn_id=str(turn_id or ""),
-        )
-        blocks.append(build_plan_block(
-            snap=snap,
-            turn_id=turn_id,
-            ts=ts or time.time(),
-        ))
+    # Updated current plan snapshot block.
+    snap.update_status(
+        dict(status_map),
+        ts=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        turn_id=str(turn_id or ""),
+    )
+    blocks.append(build_plan_block(
+        snap=snap,
+        turn_id=turn_id,
+        ts=ts or time.time(),
+    ))
 
     return status_map, blocks
 
@@ -414,6 +442,7 @@ def collect_plan_snapshots(blocks: List[Dict[str, Any]]) -> Tuple[Dict[str, Dict
                 "created_ts",
                 "last_ts",
                 "last_turn_id",
+                "current",
                 "last_ack_turn_id",
                 "last_ack_ts",
                 "closed_ts",
@@ -489,6 +518,19 @@ def latest_active_plan_snapshot(blocks: List[Dict[str, Any]]) -> Optional[PlanSn
     return candidates[-1]
 
 
+def latest_current_plan_snapshot(blocks: List[Dict[str, Any]]) -> Optional[PlanSnapshot]:
+    plans_by_id, order = collect_plan_snapshots(blocks)
+    candidates: List[PlanSnapshot] = []
+    for pid in order:
+        snap = PlanSnapshot.from_any(plans_by_id.get(pid) or {})
+        if snap and snap.is_current_open():
+            candidates.append(snap)
+    if not candidates:
+        return None
+    candidates.sort(key=_plan_sort_key)
+    return candidates[-1]
+
+
 def latest_plan_snapshot(blocks: List[Dict[str, Any]]) -> Optional[PlanSnapshot]:
     plans_by_id, order = collect_plan_snapshots(blocks)
     snapshots: List[PlanSnapshot] = []
@@ -508,8 +550,8 @@ def close_latest_plan_snapshot(
     turn_id: str,
     ts: str,
 ) -> Optional[PlanSnapshot]:
-    snap = latest_active_plan_snapshot(blocks)
-    if not snap or not snap.is_active():
+    snap = latest_current_plan_snapshot(blocks)
+    if not snap or not snap.is_current_open():
         return None
     snap.close(ts=ts, turn_id=turn_id)
     return snap
@@ -539,7 +581,21 @@ def activate_plan_snapshot(
     snap = latest_plan_snapshot_by_id(blocks, plan_id)
     if not snap or not snap.is_active():
         return None
-    snap.touch(ts=ts, turn_id=turn_id)
+    snap.set_current(current=True, ts=ts, turn_id=turn_id)
+    return snap
+
+
+def deactivate_plan_snapshot(
+    *,
+    blocks: List[Dict[str, Any]],
+    plan_id: str,
+    turn_id: str,
+    ts: str,
+) -> Optional[PlanSnapshot]:
+    snap = latest_plan_snapshot_by_id(blocks, plan_id)
+    if not snap or not snap.is_current_open():
+        return None
+    snap.set_current(current=False, ts=ts, turn_id=turn_id)
     return snap
 
 
@@ -567,10 +623,13 @@ def build_active_plan_blocks(
     plans_by_id, order = collect_plan_snapshots(blocks)
     if not plans_by_id:
         return []
-    pid = order[-1]
+    snap = latest_current_plan_snapshot(blocks)
+    if not snap:
+        return []
+    pid = snap.plan_id
     p = plans_by_id.get(pid) or {}
     snap = PlanSnapshot.from_any(p)
-    if snap and not snap.is_active():
+    if snap and not snap.is_current_open():
         return []
     if snap:
         header = f"[ACTIVE PLAN] id={snap.plan_id}"
@@ -593,6 +652,7 @@ def build_active_plan_blocks(
             "plan_id": pid,
             "origin_turn_id": p.get("origin_turn_id"),
             "last_turn_id": p.get("last_turn_id"),
+            "current": p.get("current"),
             "last_ack_turn_id": p.get("last_ack_turn_id"),
             "last_ack_ts": p.get("last_ack_ts"),
             "last_ts": p.get("last_ts"),
@@ -635,6 +695,7 @@ def _plan_snapshot_from_block(
             "created_ts",
             "last_ts",
             "last_turn_id",
+            "current",
             "last_ack_turn_id",
             "last_ack_ts",
             "closed_ts",

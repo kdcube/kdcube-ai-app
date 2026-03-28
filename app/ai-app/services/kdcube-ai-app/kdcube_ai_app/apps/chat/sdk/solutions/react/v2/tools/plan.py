@@ -10,7 +10,8 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.plan import (
     build_plan_block,
     close_plan_snapshot,
     create_plan_snapshot,
-    latest_active_plan_snapshot,
+    deactivate_plan_snapshot,
+    latest_current_plan_snapshot,
     plan_snapshot_ref,
     supersede_plan_snapshot,
 )
@@ -27,7 +28,10 @@ TOOL_SPEC = {
         "Manage plan lineages for this turn. "
         "Use mode='new' to start a plan, 'activate' to make an older open plan current, "
         "'replace' to supersede a plan and start a new one, or 'close' to retire a plan. "
-        "Plans are shown in ANNOUNCE and used for step acknowledgements."
+        "New and replacement plans become current immediately and remain current across turns until they are "
+        "closed, completed, replaced, or another open plan is activated. "
+        "Open plans do not become current automatically just because the old current plan ended. "
+        "Only the current plan may receive step acknowledgements."
     ),
     "args": {
         "mode": "str. One of: new | activate | replace | close.",
@@ -103,6 +107,7 @@ async def handle_react_plan(*, react: Any, ctx_browser: Any, state: Dict[str, An
     turn_id = ctx_browser.runtime_ctx.turn_id or ""
     started_at = ctx_browser.runtime_ctx.started_at or ""
     timeline_blocks = list(getattr(ctx_browser.timeline, "blocks", []) or [])
+    current_snap = latest_current_plan_snapshot(timeline_blocks)
 
     if mode not in {"new", "activate", "replace", "close"}:
         tool_call_block(
@@ -177,6 +182,15 @@ async def handle_react_plan(*, react: Any, ctx_browser: Any, state: Dict[str, An
     if mode == "new":
         plan_obj = {"steps": [s.strip() for s in steps]}
         new_snap = create_plan_snapshot(plan=plan_obj, turn_id=turn_id, created_ts=started_at)
+        if current_snap and current_snap.plan_id != new_snap.plan_id:
+            demoted = deactivate_plan_snapshot(
+                blocks=timeline_blocks,
+                plan_id=current_snap.plan_id,
+                turn_id=turn_id,
+                ts=started_at,
+            )
+            if demoted:
+                add_block(ctx_browser, build_plan_block(snap=demoted, turn_id=turn_id, ts=started_at))
         tool_call_block(
             ctx_browser=ctx_browser,
             tool_call_id=tool_call_id,
@@ -206,6 +220,15 @@ async def handle_react_plan(*, react: Any, ctx_browser: Any, state: Dict[str, An
         return state
 
     if mode == "activate":
+        if current_snap and current_snap.plan_id != requested_plan_id:
+            demoted = deactivate_plan_snapshot(
+                blocks=timeline_blocks,
+                plan_id=current_snap.plan_id,
+                turn_id=turn_id,
+                ts=started_at,
+            )
+            if demoted:
+                add_block(ctx_browser, build_plan_block(snap=demoted, turn_id=turn_id, ts=started_at))
         tool_call_block(
             ctx_browser=ctx_browser,
             tool_call_id=tool_call_id,
@@ -257,6 +280,15 @@ async def handle_react_plan(*, react: Any, ctx_browser: Any, state: Dict[str, An
     if mode == "replace":
         plan_obj = {"steps": [s.strip() for s in steps]}
         new_snap = create_plan_snapshot(plan=plan_obj, turn_id=turn_id, created_ts=started_at)
+        if current_snap and current_snap.plan_id != requested_plan_id and current_snap.plan_id != new_snap.plan_id:
+            demoted = deactivate_plan_snapshot(
+                blocks=timeline_blocks,
+                plan_id=current_snap.plan_id,
+                turn_id=turn_id,
+                ts=started_at,
+            )
+            if demoted:
+                add_block(ctx_browser, build_plan_block(snap=demoted, turn_id=turn_id, ts=started_at))
         tool_payload = {
             "tool_id": "react.plan",
             "tool_call_id": tool_call_id,
@@ -360,7 +392,7 @@ async def handle_react_plan(*, react: Any, ctx_browser: Any, state: Dict[str, An
         target_snapshot_ref=plan_snapshot_ref(requested_plan_id),
     )
     refreshed_blocks = list(getattr(ctx_browser.timeline, "blocks", []) or [])
-    active_after = latest_active_plan_snapshot(refreshed_blocks)
+    active_after = latest_current_plan_snapshot(refreshed_blocks)
     if active_after:
         state["plan_id"] = active_after.plan_id
         state["plan_ts"] = active_after.created_ts

@@ -1114,8 +1114,8 @@ class ReactSolverV2:
             plan_steps = state.get("plan_steps") or []
             if not plan_steps and self.ctx_browser:
                 try:
-                    from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.plan import latest_active_plan_snapshot
-                    snap = latest_active_plan_snapshot(self.ctx_browser.timeline.blocks)
+                    from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.plan import latest_current_plan_snapshot
+                    snap = latest_current_plan_snapshot(self.ctx_browser.timeline.blocks)
                     if snap and snap.steps:
                         plan_steps = list(snap.steps)
                         state["plan_steps"] = plan_steps
@@ -1137,6 +1137,23 @@ class ReactSolverV2:
                         state["plan_status"] = status_map
                     if plan_blocks and self.ctx_browser:
                         self.ctx_browser.contribute(blocks=plan_blocks)
+                    if self.ctx_browser:
+                        from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.plan import latest_current_plan_snapshot
+                        current_snap = latest_current_plan_snapshot(self.ctx_browser.timeline.blocks)
+                        if current_snap:
+                            state["plan_id"] = current_snap.plan_id
+                            state["plan_ts"] = current_snap.created_ts
+                            state["plan_origin_turn_id"] = current_snap.origin_turn_id
+                            state["plan_last_ts"] = current_snap.last_ts
+                            state["plan_steps"] = list(current_snap.steps or [])
+                            state["plan_status"] = dict(current_snap.status or {})
+                        else:
+                            state["plan_id"] = ""
+                            state["plan_ts"] = ""
+                            state["plan_origin_turn_id"] = ""
+                            state["plan_last_ts"] = ""
+                            state["plan_steps"] = []
+                            state["plan_status"] = {}
             except Exception:
                 pass
 
