@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Awaitable, Callable, Dict, List, Optional, Any
 
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.tools.common import infer_format_from_path
@@ -602,6 +603,7 @@ class TimelineStreamer:
             sources_getter: Optional[Callable[[], List[Dict[str, object]]]] = None,
             stream_notes: bool = True,
             stream_final_answer: bool = True,
+        stream_plan: bool = True,
         notes_xpath: str = "notes",
         final_answer_xpath: str = "final_answer",
         notes_marker: str = "timeline_text",
@@ -610,6 +612,9 @@ class TimelineStreamer:
         final_answer_format: str = "markdown",
         notes_artifact_name: str = "timeline_text.react.decision",
         final_answer_artifact_name: str = "react.final_answer",
+        plan_marker: str = "timeline_text",
+        plan_format: str = "markdown",
+        plan_artifact_name: str = "timeline_text.react.plan",
     ) -> None:
         self.emit_delta = emit_delta
         self.agent = agent
@@ -634,6 +639,17 @@ class TimelineStreamer:
                 "marker": final_answer_marker,
                 "format": final_answer_format,
                 "artifact_name": final_answer_artifact_name,
+                "use_citations": True,
+                "index": 0,
+                "started": False,
+            })
+        if stream_plan:
+            self.targets.append({
+                "name": "plan",
+                "xpath": "",
+                "marker": plan_marker,
+                "format": plan_format,
+                "artifact_name": plan_artifact_name,
                 "use_citations": True,
                 "index": 0,
                 "started": False,
@@ -668,6 +684,7 @@ class TimelineStreamer:
         self.tool_id_parent, self.tool_id_key = self._split_path(self.tool_id_xpath)
         self.action_value: Optional[str] = None
         self.tool_id_value: Optional[str] = None
+        self.raw_json_buffer: str = ""
 
         self.citation_map = citations_module.build_citation_map_from_sources(sources_list or [])
         self.citation_states: Dict[str, citations_module.CitationStreamState] = {}
@@ -822,6 +839,82 @@ class TimelineStreamer:
             return t
         return None
 
+    def _parse_stream_payload(self) -> Optional[Dict[str, Any]]:
+        raw = (self.raw_json_buffer or "").strip()
+        if not raw:
+            return None
+        if "```" in raw:
+            fenced = raw
+            start = fenced.find("```")
+            if start >= 0:
+                fenced = fenced[start + 3:]
+                fenced = fenced.lstrip()
+                if fenced.startswith("json"):
+                    fenced = fenced[4:]
+                end = fenced.rfind("```")
+                if end >= 0:
+                    fenced = fenced[:end]
+                raw = fenced.strip()
+        try:
+            payload = json.loads(raw)
+        except Exception:
+            return None
+        return payload if isinstance(payload, dict) else None
+
+    @staticmethod
+    def _first_nonempty_line(text: str) -> str:
+        for raw in (text or "").splitlines():
+            line = raw.strip()
+            if line:
+                return line
+        return ""
+
+    def _format_plan_timeline_text(self, payload: Dict[str, Any]) -> str:
+        action = str(payload.get("action") or "").strip()
+        tool_call = payload.get("tool_call") if isinstance(payload.get("tool_call"), dict) else {}
+        tool_id = str(tool_call.get("tool_id") or "").strip()
+        if action != "call_tool" or tool_id != "react.plan":
+            return ""
+        params = tool_call.get("params") if isinstance(tool_call.get("params"), dict) else {}
+        mode = str(params.get("mode") or "").strip().lower()
+        if mode not in {"new", "update", "close"}:
+            return ""
+        target_plan_id = str(params.get("plan_id") or "").strip()
+        steps = [str(s).strip() for s in (params.get("steps") or []) if isinstance(s, str) and str(s).strip()]
+        title = {
+            "new": "• New Plan",
+            "update": "• Updated Plan",
+            "close": "• Closed Plan",
+        }.get(mode, "• Plan")
+        summary = self._first_nonempty_line(str(payload.get("notes") or ""))
+        list_steps = list(steps)
+        if not summary:
+            if list_steps:
+                summary = list_steps[0]
+                list_steps = list_steps[1:]
+            elif mode == "close" and target_plan_id:
+                summary = f"Close plan `{target_plan_id}`."
+            elif mode == "update" and target_plan_id:
+                summary = f"Replace plan `{target_plan_id}`."
+            elif mode == "new":
+                summary = "Start a new plan."
+        lines = [title]
+        if summary:
+            lines.append(f"└ {summary}")
+        if mode in {"new", "update"}:
+            for step in list_steps:
+                lines.append(f"  □ {step}")
+        return "\n".join(lines).strip()
+
+    async def _maybe_emit_plan_target(self) -> None:
+        payload = self._parse_stream_payload()
+        if not payload:
+            return
+        text = self._format_plan_timeline_text(payload)
+        if not text:
+            return
+        await self.emit_full("plan", text)
+
     async def _emit_chunk(self, text: str) -> None:
         if not text or not self.streaming_target:
             return
@@ -895,6 +988,7 @@ class TimelineStreamer:
     async def feed(self, chunk: str) -> None:
         if not chunk:
             return
+        self.raw_json_buffer += chunk
 
         for ch in chunk:
             if self.in_string:
@@ -1055,3 +1149,4 @@ class TimelineStreamer:
                 completed=True,
             )
             t["index"] = int(t.get("index") or 0) + 1
+        await self._maybe_emit_plan_target()
