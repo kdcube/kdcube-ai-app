@@ -1,65 +1,52 @@
 ---
 id: ks:docs/sdk/agents/react/plan-README.md
 title: "Plan"
-summary: "How React v2 creates, supersedes, rereads, and closes plans across turns."
+summary: "How React v2 stores plans, shows them to the model, and lets the model create, supersede, close, and reread them."
 tags: ["sdk", "agents", "react", "plan"]
-keywords: ["plan blocks", "announce", "plan lifecycle", "active plan", "plan acknowledgements"]
+keywords: ["plan_id", "announce", "snapshot_ref", "superseded", "close", "notes acknowledgements"]
 see_also:
   - ks:docs/sdk/agents/react/react-announce-README.md
-  - ks:docs/sdk/agents/react/react-round-README.md
+  - ks:docs/sdk/agents/react/timeline-README.md
   - ks:docs/sdk/agents/react/context-caching-README.md
 ---
-# Plan tracking (react v2)
+# React Plan Model
 
-React v2 treats plans as explicit timeline artifacts.
+This document explains the current React v2 plan mechanism from scratch:
 
-- There is no separate persistent plan store.
-- Cross-turn plan truth lives in `react.plan` blocks on the timeline.
-- The per-turn runtime state only keeps a short working copy of the current plan steps/status.
+- what is stored internally
+- what the model actually sees
+- how the model should manage plans
+- how plans behave across turns, pruning, and compaction
 
-## 1) What creates and updates a plan
+The important distinction is:
 
-In the current runtime, plans are created and replaced through the `react.plan` tool:
+- **internal state** is append-only timeline data
+- **model-facing state** is the rendered timeline plus ANNOUNCE
 
-- `mode="new"`: create a fresh plan snapshot
-- `mode="update"`: replace the current plan with a new snapshot
-- `mode="close"`: close the latest active plan so it no longer resurfaces in later turns
+The model should reason from the rendered contract, not from assumptions about raw internal blocks.
 
-Important:
+## 1) Core idea
 
-- `active` is not a `react.plan` tool mode.
-- “Keep the current plan active” means: do not call `react.plan`; the runtime will continue showing the latest active snapshot from the timeline.
+React plans are timeline-backed lineages.
 
-Progress updates are separate from `react.plan` calls:
+- A plan lineage has a stable `plan_id`.
+- The runtime stores plan state as append-only `react.plan` snapshots.
+- The latest snapshot for a given `plan_id` is the current truth for that lineage.
+- The model does **not** manage raw snapshots directly in the normal rendered timeline.
 
-- the decision agent acknowledges step progress in `notes`
-- runtime parses those marks
-- runtime appends a `react.plan.ack` block
-- runtime appends a new `react.plan` block for the same `plan_id` with merged status
+There is no separate database or plan store outside the timeline.
 
-There is also a reserved structured acknowledgement path, `react.plan_ack`, implemented in the plan tool module for future use. It is not published in the current React tool catalog yet.
+## 2) Internal representation
 
-Model-facing view:
-
-- the model sees `react.notes`
-- the model sees `react.plan` tool calls with `tc:` paths, `plan_id`, and stable `snapshot_ref`
-- the model does **not** rely on raw rolling `react.plan` JSON snapshots or `react.plan.ack` blocks in the rendered timeline
-- open plans are summarized in ANNOUNCE
-- any plan snapshot can be reread through the stable alias `ar:plan.latest:<plan_id>`
-
-## 2) Timeline model
-
-### Plan snapshot block
-
-Plans are persisted as JSON timeline blocks:
+Internally, plans are persisted as timeline blocks of type `react.plan`.
 
 ```text
-type: "react.plan"
-mime: "application/json"
-path: "ar:<turn_id>.react.plan.<plan_id>"
+type: react.plan
+path: ar:<turn_id>.react.plan.<plan_id>
+mime: application/json
 ```
 
-A snapshot contains:
+Each snapshot carries:
 
 - `plan_id`
 - `steps`
@@ -75,185 +62,399 @@ A snapshot contains:
 - `superseded_turn_id`
 - `superseded_by_plan_id`
 
-Stable reread handle:
+Progress acknowledgements are also stored internally as:
+
+```text
+type: react.plan.ack
+path: ar:<turn_id>.react.plan.ack.<iteration>
+mime: text/markdown
+```
+
+These ack blocks are runtime machinery. They are not the primary model-facing representation.
+
+## 3) What the model actually sees
+
+The model-facing contract is intentionally narrower than the internal storage.
+
+The model normally sees:
+
+1. `react.notes`
+2. `react.plan` tool-call blocks
+3. ANNOUNCE plan summaries
+4. `react.plan.history` blocks after compaction
+5. stable reread handles: `ar:plan.latest:<plan_id>`
+
+The model does **not** normally rely on:
+
+- raw `react.plan` JSON snapshot blocks
+- raw `react.plan.ack` blocks
+
+Those internal blocks still exist in the timeline, but the renderer does not expose them directly as the main plan UX.
+
+## 4) Stable reread handle
+
+Every plan lineage has a stable latest-snapshot alias:
 
 ```text
 ar:plan.latest:<plan_id>
 ```
 
-This alias resolves to the latest visible snapshot for that plan lineage, regardless of which turn originally emitted it.
+This is the important handle for the model.
 
-### Plan acknowledgement block
+Important:
 
-Readable progress acknowledgements are also persisted:
+- the alias does **not** have a separate turn-id segment
+- `plan_id` is the whole suffix after `ar:plan.latest:`
+- current runtime-generated `plan_id` values often happen to include the origin turn id inside the id text itself
+- the model should treat `plan_id` as an opaque stable identifier, not parse it structurally
+- examples below use simplified ids like `plan_alpha` for readability
+- in real runtime output today, a generated id may look like `plan:turn_12:abcd1234`, and the matching stable alias would then be `ar:plan.latest:plan:turn_12:abcd1234`
 
-```text
-type: "react.plan.ack"
-mime: "text/markdown"
-path: "ar:<turn_id>.react.plan.ack.<iteration>"
-```
+Use it when:
+
+- the plan is not currently expanded in visible context
+- the model knows the `plan_id`
+- the model wants the latest snapshot for that lineage
 
 Example:
 
 ```text
-✓ 1. gather sources
-… 2. draft summary
-✗ 3. render chart
+react.read(["ar:plan.latest:<plan_id>"])
 ```
 
-## 3) Turn-local vs cross-turn state
+This returns the latest snapshot for that lineage, regardless of which turn last updated it.
 
-Inside a single turn, runtime keeps:
+Dedup behavior:
 
-- `plan_steps`
-- `plan_status`
+- if the current timeline already contains an equivalent visible block at the same alias path, `react.read` may report it under `exists_in_visible_context` instead of re-emitting the snapshot payload
+- this is not based on “was read sometime earlier” in the abstract; it is based on the current timeline block set, compared by logical path plus normalized block content
+- hidden/pruned copies do not block reread emission, because `react.read` re-emits the alias block as visible content
 
-This is only a working cache for the current turn.
+## 5) What the model sees when it creates a plan
 
-Cross-turn behavior is driven by timeline snapshots:
+When the model calls `react.plan(mode="new")`, the rendered timeline shows:
 
-- if the current turn has no in-memory `plan_steps`, runtime rehydrates them from the latest active `react.plan` snapshot on the timeline
-- completed or closed plans are not rehydrated as active plans
-- the latest active plan snapshot is carried forward across compaction so it is not lost when older history is summarized away
-- older compacted plans are not resumed automatically, but compaction carries a lightweight history index plus stable `snapshot_ref`s so the agent can inspect them again with `react.read(...)`
+1. the normal tool call
+2. a tool-result summary carrying the stable latest-snapshot handle
 
-So the authoritative history is the timeline, while `plan_steps` / `plan_status` are just the turn-local working copy.
+It does not show the raw internal snapshot block directly.
 
-## 4) Lifecycle
-
-### Create (`mode="new"`)
-
-`react.plan(mode="new")`:
-
-- creates a fresh `PlanSnapshot`
-- assigns a new `plan_id`
-- records `origin_turn_id` and `created_ts`
-- stores ordered `steps`
-- starts with empty `status`
-
-This snapshot becomes the current active plan.
-
-### Replace / switch (`mode="update"`)
-
-`react.plan(mode="update")` targets an existing `plan_id`.
-
-It does two append-only things:
-
-1. appends a terminal snapshot for the targeted old plan, marking it `superseded`
-2. appends a fresh replacement plan with:
-   - a new `plan_id`
-   - a fresh ordered `steps` list
-   - empty step status
-
-So `update` does not mutate the old plan in place and does not leave the old plan looking unfinished forever. The newest open snapshot becomes the current plan.
-
-### Maintain
-
-If the current plan still applies, the agent should not call `react.plan`.
-
-In that case:
-
-- the latest active snapshot remains visible in ANNOUNCE
-- runtime can rehydrate its `steps` on later turns
-- step progress can continue through `notes` acknowledgements
-
-### Acknowledge progress
-
-When `notes` contains lines such as:
+Example:
 
 ```text
-✓ [1] gather sources
-… [2] draft summary
-✗ [3] render chart
+[AI Agent say]: Create a plan for the investigation.
+
+[TOOL CALL tc_plan_1].call react.plan
+tc:turn_12.tc_plan_1.call
+Params:
+{
+  "mode": "new",
+  "steps": [
+    "collect metrics",
+    "compare trends",
+    "draft answer"
+  ]
+}
+
+[TOOL RESULT tc_plan_1].summary react.plan
+mode: new
+plan_id: plan_alpha
+latest_snapshot_ref: ar:plan.latest:plan_alpha
 ```
 
-runtime:
+So the model can learn the stable latest-snapshot handle directly from the tool result, and ANNOUNCE then shows the open plan:
+
+```text
+[ACTIVE PLANS]
+  - plans: 1 visible
+    • plan_id=plan_alpha (current)
+      snapshot_ref=ar:plan.latest:plan_alpha
+      created_turn=turn_12
+      created_ts=2026-03-28T10:00:00Z
+      last_update_turn=turn_12
+      last_update_ts=2026-03-28T10:00:00Z
+      □ [1] collect metrics
+      □ [2] compare trends
+      □ [3] draft answer
+```
+
+That is the intended model-facing surface.
+
+## 6) How progress is tracked
+
+Progress is not primarily driven by another tool call.
+
+The model acknowledges step progress in `notes`, for example:
+
+```text
+✓ [1] collect metrics
+… [2] compare trends — in progress
+```
+
+Runtime then:
 
 1. parses those markers
-2. appends a `react.plan.ack` block
-3. loads the latest plan snapshot
-4. merges the new status marks into that snapshot
-5. appends a new `react.plan` block with the same `plan_id`
+2. appends internal `react.plan.ack`
+3. appends a new internal `react.plan` snapshot for the same `plan_id`
 
-So:
+Model-facing effect:
 
-- explicit `update` creates a new plan snapshot
-- progress acknowledgements keep updating the current snapshot lineage with the same `plan_id`
+- ANNOUNCE updates the visible step markers
+- the stable alias `ar:plan.latest:<plan_id>` now resolves to the newer snapshot
 
-### Complete
+So the model should think of `notes` as the normal progress-reporting mechanism.
 
-A plan is treated as complete when all of its steps are no longer pending.
+There is a reserved structured tool `react.plan_ack`, but it is not published to the model yet.
 
-Completed plans remain in timeline history, but they are not treated as active plans in later turns.
+## 7) Lifecycle operations
 
-### Close (`mode="close"`)
+### 7.1 `mode="new"`
 
-`react.plan(mode="close")`:
+Use when starting a fresh plan.
 
-- targets an explicit `plan_id` when provided (otherwise defaults to the latest active plan)
-- clears turn-local `plan_steps` / `plan_status` for that active lineage
-- appends a closing `react.plan` snapshot for that `plan_id`
-- records `closed_ts` and `closed_turn_id`
+- creates a new lineage
+- assigns a new `plan_id`
+- stores ordered `steps`
+- appears in ANNOUNCE immediately
 
-This is how React discards a plan without pretending it completed successfully.
+### 7.2 `mode="update"`
 
-After close:
+Use when replacing an existing plan with a new one.
 
-- the plan remains in timeline history
-- it is no longer shown as active in ANNOUNCE
-- later turns do not rehydrate it as the current plan
+Current semantics:
 
-## 5) ANNOUNCE behavior
+- target an existing `plan_id`
+- runtime appends a terminal snapshot for that old lineage with `superseded_*`
+- runtime appends a new lineage with a new `plan_id`
 
-ANNOUNCE is rebuilt every decision round from timeline state.
+So `update` means:
 
-ANNOUNCE now shows only the last N open plans (currently 4), not every historical lineage.
+- “this old plan is no longer the open plan”
+- “here is the replacement plan”
 
-For each visible open plan it shows:
+This matters because old plans should not remain forever as ambiguous unfinished work.
 
-- `plan_id`
-- stable `snapshot_ref`
-- created turn / timestamp
-- last update turn / timestamp
-- current step markers
+Rendered example:
 
-Closed, complete, and superseded plans are excluded from ANNOUNCE.
+```text
+[TOOL CALL tc_plan_9].call react.plan
+tc:turn_18.tc_plan_9.call
+Params:
+{
+  "mode": "update",
+  "plan_id": "plan_alpha",
+  "steps": [
+    "draft answer",
+    "verify citations"
+  ]
+}
 
-## 6) What “active plan” really means
+[TOOL RESULT tc_plan_9].summary react.plan
+mode: update
+target_plan_id: plan_alpha
+target_snapshot_ref: ar:plan.latest:plan_alpha
+plan_id: plan_beta
+latest_snapshot_ref: ar:plan.latest:plan_beta
+```
 
-In the current React v2 runtime, “active plan” is derived, not explicitly stored as a separate mode.
+After execution:
 
-It means:
+- `plan_alpha` is marked superseded internally
+- the replacement plan appears in ANNOUNCE with its own `plan_id`
+- the stable reread handle for the new plan is `ar:plan.latest:<new_plan_id>`
 
-- latest snapshot for that `plan_id`
-- not closed
-- not superseded
-- not complete
+### 7.3 `mode="close"`
 
-That is why older plans can stay on the timeline while only one plan is resumed across turns.
+Use when a plan should stop being open without being replaced.
 
-## 7) Compaction and historical plans
+Current semantics:
 
-Compaction treats plans in two different ways:
+- target a `plan_id`
+- runtime appends a terminal snapshot with `closed_*`
+- the lineage stays in history
+- the lineage disappears from ANNOUNCE open-plan view
 
-- the latest active plan is carried forward as a live `react.plan` snapshot so cross-turn continuation still works
-- older compacted plans are exposed through a visible `react.plan.history` block plus stable `ar:plan.latest:<plan_id>` snapshot refs
+Rendered example:
 
-That preserved snapshot ref is for inspection, not automatic resume.
+```text
+[TOOL CALL tc_plan_10].call react.plan
+tc:turn_19.tc_plan_10.call
+Params:
+{
+  "mode": "close",
+  "plan_id": "plan_beta"
+}
 
-So after compaction:
+[TOOL RESULT tc_plan_10].summary react.plan
+mode: close
+target_plan_id: plan_beta
+target_snapshot_ref: ar:plan.latest:plan_beta
+plan_id: plan_beta
+latest_snapshot_ref: ar:plan.latest:plan_beta
+```
 
-- React still resumes only one active plan automatically
-- older plans stay directly reopenable with `react.read([...])` on the carried history snapshot ref
-- this lets the agent assess whether an older line of work is relevant again in the same turn without waiting for a later turn
+## 8) What “open plan” means
 
-## 8) Efficiency notes
+A plan lineage is considered open only if its latest snapshot is:
 
-The current implementation is lightweight:
+- not `closed`
+- not `superseded`
+- not `complete`
 
-- explicit plan operations are sparse
-- per-turn working state only stores the current step list and step-status deltas
-- cross-turn recovery reads the latest plan snapshot from the timeline instead of maintaining a separate persistent plan cache
-- if compaction would cut away the latest active plan snapshot, runtime carries that snapshot forward into the retained window
+So an old lineage can remain in history but still be excluded from ANNOUNCE because its latest snapshot is terminal.
 
-The main cost is scanning timeline plan blocks when ANNOUNCE is rebuilt or when plan history is rendered, which is usually small because plan blocks are rare compared with ordinary conversation blocks.
+## 9) Multiple open plans
+
+Multiple open plans can exist in history at once.
+
+That is why ANNOUNCE is important:
+
+- it shows the last few open plans
+- marks the newest one as current
+- gives each visible open plan:
+  - `plan_id`
+  - `snapshot_ref`
+  - created turn/time
+  - last update turn/time
+  - current step markers
+
+Current ANNOUNCE policy:
+
+- show only the last **N** open plans
+- current implementation uses `N = 4`
+
+So the model should not assume ANNOUNCE is a complete dump of all historical plan lineages.
+
+## 10) How the model should manage plans
+
+This is the intended behavior for the model.
+
+### If the current plan still applies
+
+Do not call `react.plan` again.
+
+- keep working
+- acknowledge progress in `notes`
+- rely on ANNOUNCE for current visible status
+
+### If the current plan is wrong and must be replaced
+
+Call:
+
+```text
+react.plan(mode="update", plan_id="<old_plan_id>", steps=[...])
+```
+
+This explicitly retires the old lineage and creates the replacement.
+
+### If a plan is no longer relevant and should disappear from open plans
+
+Call:
+
+```text
+react.plan(mode="close", plan_id="<plan_id>")
+```
+
+### If an older plan may matter again
+
+1. get the `plan_id` from ANNOUNCE or `react.plan.history`
+2. inspect its latest snapshot if needed:
+
+```text
+react.read(["ar:plan.latest:<plan_id>"])
+```
+
+If the alias-backed snapshot is already present as an equivalent visible block in the current timeline, `react.read` may only emit the status/result block and mark it as already present instead of repeating the full snapshot payload.
+
+3. decide whether to:
+   - keep it in mind as relevant history
+   - close it
+   - or supersede it with a new plan
+
+Important:
+
+- there is no separate “activate old plan” mode
+- revisiting an older plan is a reasoning decision by the model
+- if the model wants a new current plan, it should issue an explicit replacement plan
+
+## 11) Hot timeline vs cold timeline
+
+### Hot timeline
+
+When history is still hot and not compacted away:
+
+- the model sees plan tool calls where they happened
+- the model sees notes where they happened
+- ANNOUNCE shows current open plans
+
+### Cold / compacted timeline
+
+When older history has been compacted:
+
+- older raw blocks are not the main signal anymore
+- the model may see a visible `react.plan.history` block
+- that block includes step skeletons, statuses, and stable `snapshot_ref`s
+
+Example:
+
+```text
+[COMPACTED PLAN HISTORY]
+Older plans were compacted out of the main visible stream.
+Use react.read([...]) on the refs below if one becomes relevant again.
+
+- plan #1 id=plan_alpha (unfinished) last=2026-03-28T10:08:00Z
+  ✓ [1] collect metrics
+  … [2] compare trends
+  snapshot_ref: ar:plan.latest:plan_alpha
+  latest_note_preview: Need to revisit the trend break later.
+```
+
+That is how the model is expected to rediscover older plans on a cold timeline.
+
+## 12) Cross-turn behavior
+
+Runtime rehydrates only the latest active lineage automatically.
+
+That means:
+
+- if a plan is still the newest open plan, it comes back naturally on the next turn
+- older open or historical plans are not auto-activated
+- the model must inspect them explicitly if they become relevant
+
+This keeps cross-turn behavior simple while still allowing deliberate recovery of older work.
+
+## 13) What is internal vs model-facing
+
+This distinction is important.
+
+Internal:
+
+- rolling `react.plan` JSON snapshots
+- `react.plan.ack`
+- append-only terminal snapshots for `closed` / `superseded`
+
+Model-facing:
+
+- `react.notes`
+- `react.plan` tool-call blocks
+- ANNOUNCE plan list
+- `react.plan.history`
+- `ar:plan.latest:<plan_id>`
+
+If you are reasoning about the agent behavior, reason from the model-facing layer first.
+
+## 14) Efficiency and limitations
+
+The current mechanism is efficient enough for normal use:
+
+- plan blocks are sparse
+- latest state is derived by scanning plan snapshots
+- stable alias resolution avoids exposing every rolling `ar:<turn_id>.react.plan...` path to the model
+
+Current limitations:
+
+- no explicit “activate older plan” tool mode
+- ANNOUNCE shows only the last few open plans
+- progress acknowledgements are still parsed from `notes`
+
+Those are known constraints of the current design, not accidental behavior.

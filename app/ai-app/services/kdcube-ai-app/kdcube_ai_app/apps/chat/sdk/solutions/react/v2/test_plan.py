@@ -114,6 +114,9 @@ async def test_react_plan_close_persists_closed_snapshot() -> None:
     assert closed_payload["plan_id"] == snap.plan_id
     assert closed_payload["closed_ts"] == "2026-03-28T10:05:00Z"
     assert closed_payload["closed_turn_id"] == "turn_2"
+    result_blocks = [b for b in ctx_browser.contributed if b.get("type") == "react.tool.result"]
+    assert result_blocks
+    assert any(f"latest_snapshot_ref: {plan_snapshot_ref(snap.plan_id)}" in (b.get("text") or "") for b in result_blocks)
 
     announce_text = build_announce_text(
         iteration=1,
@@ -214,6 +217,9 @@ async def test_react_plan_update_supersedes_target_and_announce_shows_only_new_o
         if b.get("type") == "react.plan" and old_snap.plan_id in (b.get("text") or "")
     ]
     assert old_payloads and old_payloads[0]["superseded_by_plan_id"] == out["plan_id"]
+    result_blocks = [b for b in ctx_browser.contributed if b.get("type") == "react.tool.result"]
+    assert any(f"target_snapshot_ref: {plan_snapshot_ref(old_snap.plan_id)}" in (b.get("text") or "") for b in result_blocks)
+    assert any(f"latest_snapshot_ref: {plan_snapshot_ref(out['plan_id'])}" in (b.get("text") or "") for b in result_blocks)
 
     announce_text = build_announce_text(
         iteration=1,

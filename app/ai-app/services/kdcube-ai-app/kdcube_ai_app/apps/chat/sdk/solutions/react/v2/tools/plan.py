@@ -2,7 +2,6 @@
 # Copyright (c) 2025 Elena Viter
 
 from __future__ import annotations
-
 from typing import Any, Dict, List
 
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.plan import (
@@ -18,6 +17,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.tools.common import (
     tool_call_block,
     notice_block,
     add_block,
+    tc_result_path,
 )
 
 TOOL_SPEC = {
@@ -53,6 +53,42 @@ PLAN_ACK_TOOL_SPEC = {
     },
     "returns": "plan acknowledgement stored in timeline; state updated",
 }
+
+
+def _add_plan_result_summary(
+    *,
+    ctx_browser: Any,
+    tool_call_id: str,
+    mode: str,
+    plan_id: str = "",
+    target_plan_id: str = "",
+    latest_snapshot_ref: str = "",
+    target_snapshot_ref: str = "",
+) -> None:
+    turn_id = ctx_browser.runtime_ctx.turn_id or ""
+    lines: List[str] = []
+    if mode:
+        lines.append(f"mode: {mode}")
+    if target_plan_id:
+        lines.append(f"target_plan_id: {target_plan_id}")
+    if target_snapshot_ref:
+        lines.append(f"target_snapshot_ref: {target_snapshot_ref}")
+    if plan_id:
+        lines.append(f"plan_id: {plan_id}")
+    if latest_snapshot_ref:
+        lines.append(f"latest_snapshot_ref: {latest_snapshot_ref}")
+    add_block(ctx_browser, {
+        "turn": turn_id,
+        "type": "react.tool.result",
+        "call_id": tool_call_id,
+        "mime": "text/markdown",
+        "path": tc_result_path(turn_id=turn_id, call_id=tool_call_id),
+        "text": "\n".join(lines).strip(),
+        "meta": {
+            "tool_call_id": tool_call_id,
+            "render_role": "summary",
+        },
+    })
 
 
 async def handle_react_plan(*, react: Any, ctx_browser: Any, state: Dict[str, Any], tool_call_id: str) -> Dict[str, Any]:
@@ -156,6 +192,15 @@ async def handle_react_plan(*, react: Any, ctx_browser: Any, state: Dict[str, An
             if old_snap:
                 add_block(ctx_browser, build_plan_block(snap=old_snap, turn_id=turn_id, ts=started_at))
         add_block(ctx_browser, build_plan_block(snap=new_snap, turn_id=turn_id, ts=started_at))
+        _add_plan_result_summary(
+            ctx_browser=ctx_browser,
+            tool_call_id=tool_call_id,
+            mode=mode,
+            plan_id=new_snap.plan_id,
+            target_plan_id=target_plan_id if mode == "update" else "",
+            latest_snapshot_ref=plan_snapshot_ref(new_snap.plan_id),
+            target_snapshot_ref=plan_snapshot_ref(target_plan_id) if mode == "update" and target_plan_id else "",
+        )
         state["plan_id"] = new_snap.plan_id
         state["plan_ts"] = new_snap.created_ts
         state["plan_origin_turn_id"] = new_snap.origin_turn_id
@@ -205,6 +250,15 @@ async def handle_react_plan(*, react: Any, ctx_browser: Any, state: Dict[str, An
                 turn_id=turn_id,
                 ts=started_at,
             ),
+        )
+        _add_plan_result_summary(
+            ctx_browser=ctx_browser,
+            tool_call_id=tool_call_id,
+            mode=mode,
+            plan_id=snap.plan_id,
+            target_plan_id=target_plan_id,
+            latest_snapshot_ref=plan_snapshot_ref(snap.plan_id),
+            target_snapshot_ref=plan_snapshot_ref(target_plan_id) if target_plan_id else "",
         )
     refreshed_blocks = list(getattr(ctx_browser.timeline, "blocks", []) or [])
     active_after = latest_active_plan_snapshot(refreshed_blocks)

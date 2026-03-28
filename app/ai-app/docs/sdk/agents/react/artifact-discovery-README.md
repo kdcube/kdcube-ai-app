@@ -29,7 +29,7 @@ For bundle namespace browsing such as `ks:` via generated exec code, the relevan
 Stable identifier used in `react.read` / `fetch_ctx`. Examples:
 - `ar:<turn_id>.user.prompt`
 - `ar:<turn_id>.assistant.completion`
-- `ar:<turn_id>.react.plan.history.<plan_id>.snapshot`
+- `ar:plan.latest:<plan_id>`
 - `fi:<turn_id>.files/<relpath>`
 - `fi:<turn_id>.user.attachments/<name>`
 - `fi:logs/docker.err.log`
@@ -121,7 +121,7 @@ The rewrite is recorded as a **protocol notice** in the timeline so the agent ca
 **react.read / fetch_ctx**
 - Accept logical path (fi:/ar:/so:/su:/tc:).
 - Resolve artifact by logical path; return canonical artifact payload.
-- For plan-related `ar:` paths, the recovery handle to use is the carried compacted-plan snapshot ref: `.snapshot`.
+- For plan-related `ar:` paths, the recovery handle to use is the stable latest-snapshot alias: `ar:plan.latest:<plan_id>`.
 - For `fi:` paths, `react.read` **rehosts** the file into OUT_DIR and reconstructs the
   metadata block from `meta.digest` (if present). It then emits:
   - metadata digest block (text only)
