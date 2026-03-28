@@ -129,6 +129,8 @@ class Settings(BaseSettings):
     SECRETS_URL: str | None = None
     SECRETS_TOKEN: str | None = None
     SECRETS_ADMIN_TOKEN: str | None = None
+    SECRETS_AWS_SM_PREFIX: str | None = None
+    SECRETS_SM_PREFIX: str | None = None
     LINK_PREVIEW_ENABLED: bool = Field(default=True)
 
     # Postgres
