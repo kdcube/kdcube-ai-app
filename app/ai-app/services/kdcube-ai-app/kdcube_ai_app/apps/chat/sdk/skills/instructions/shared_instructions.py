@@ -197,10 +197,10 @@ Physical → Logical mapping:
   physical: (none)
   logical : ar:<turn_id>.assistant.completion
   meaning : full text of the assistant completion in that turn
-- Compacted plan history refs:
+- Plan latest snapshot alias:
   physical: (none)
   logical : ar:plan.latest:<plan_id>
-  meaning : stable alias for the latest visible snapshot of a plan lineage; use it with react.read or fetch_ctx
+  meaning : stable alias for the latest snapshot of a plan lineage; use it with react.read or fetch_ctx
 - User attachment:
   physical: <turn_id>/attachments/<name>
   logical : fi:<turn_id>.user.attachments/<name>
