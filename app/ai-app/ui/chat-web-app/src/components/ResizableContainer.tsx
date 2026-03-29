@@ -17,10 +17,18 @@ interface ResizableContainerProps {
     initialSize?: number;
     minSize?: number;
     ref?: RefObject<HTMLDivElement | null>
-    onResize?: (size:number) => void;
+    onResize?: (size: number) => void;
 }
 
-const ResizableContainer = ({children, className, ref, onResize, initialSize = 200, minSize = 100, position = "right"}: ResizableContainerProps) => {
+const ResizableContainer = ({
+                                children,
+                                className,
+                                ref,
+                                onResize,
+                                initialSize = 200,
+                                minSize = 100,
+                                position = "right"
+                            }: ResizableContainerProps) => {
     const contentContainerRef = useRef<HTMLDivElement | null>(null);
 
     const [isResizing, setIsResizing] = useState(false);
@@ -98,20 +106,22 @@ const ResizableContainer = ({children, className, ref, onResize, initialSize = 2
                 break;
             case "right":
                 resizeLine = <div
-                    className={"h-full absolute right-0 w-2 cursor-col-resize translate-x-1 hover:bg-gray-200"}
+                    className={"h-full absolute right-0 top-0 w-2 cursor-col-resize translate-x-1 hover:bg-gray-200"}
                     onMouseDown={onMouseDown}
                     onMouseUp={onMouseUp}
                 >&nbsp;</div>;
                 break;
         }
 
-        return <div className={`relative ${className ?? ""}`} ref={ref} style={containerStyle}>
-            <div className={"h-full w-full"} ref={contentContainerRef}>
+        return <div className={`${className ?? ""}`} ref={ref} style={containerStyle}>
+            <div className={"h-full w-full relative"} ref={contentContainerRef}>
                 {children}
+                <div id={"blocker"}
+                     className={`top-0 left-0 bg-transparent absolute w-full h-full ${isResizing ? "" : "hidden"}`}/>
                 {resizeLine}
             </div>
         </div>
-    }, [children, className, containerSize, onMouseDown, onMouseUp, position, ref])
+    }, [children, className, containerSize, isResizing, onMouseDown, onMouseUp, position, ref])
 }
 
 export default ResizableContainer;
