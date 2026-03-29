@@ -96,37 +96,36 @@ services:
     networks:
       - kdcube-secrets
 
-#  neo4j:
-#    image: neo4j:5
-#    container_name: kdcube-neo4j
-#    env_file:
-#      - path: ${KDCUBE_CONFIG_DIR:-./config}/.env.backend
-#        required: false
-#    environment:
-#      NEO4J_AUTH: "${N4J_USER:-neo4j}/${N4J_PASSWORD:-neo4jpassword}"
-#      NEO4J_server_memory_pagecache_size: ${N4J_PAGECACHE:-1G}
-#      NEO4J_server_memory_heap_initial__size: ${N4J_HEAP_INITIAL:-512m}
-#      NEO4J_server_memory_heap_max__size: ${N4J_HEAP_MAX:-1G}
-#      NEO4J_PLUGINS: '["apoc"]'
-#      NEO4J_dbms_security_procedures_unrestricted: "apoc.*"
-#      NEO4J_dbms_security_procedures_allowlist: "apoc.*"
-#    volumes:
-#      - ${KDCUBE_DATA_DIR:-./data}/neo4j/data:/data
-#      - ${KDCUBE_DATA_DIR:-./data}/neo4j/logs:/logs
-#      - ${KDCUBE_DATA_DIR:-./data}/neo4j/plugins:/plugins
-#      - ${KDCUBE_DATA_DIR:-./data}/neo4j/import:/var/lib/neo4j/import
-#    healthcheck:
-#      # Uses container env (note the $$ for compose escaping)
-#      test: [ "CMD-SHELL", "cypher-shell -a bolt://localhost:7687 -u $$N4J_USER -p $$N4J_PASSWORD 'RETURN 1' || exit 1" ]
-#      interval: 15s
-#      timeout: 10s
-#      retries: 20
-#    networks:
-#      - kdcube-internal
-#    # Expose if you want to use Neo4j Browser locallly
-#    ports:
-#      - "127.0.0.1:7474:7474" # HTTP (Neo4j Browser)
-#      - "127.0.0.1:7687:7687" # Bolt
+  neo4j:
+    image: neo4j:5
+    container_name: kdcube-neo4j
+    env_file:
+      - path: ${KDCUBE_CONFIG_DIR:-./config}/.env
+        required: false
+    environment:
+      NEO4J_AUTH: "${N4J_USER:-neo4j}/${N4J_PASSWORD:-neo4jpassword}"
+      NEO4J_server_memory_pagecache_size: ${N4J_PAGECACHE:-512m}
+      NEO4J_server_memory_heap_initial__size: ${N4J_HEAP_INITIAL:-256m}
+      NEO4J_server_memory_heap_max__size: ${N4J_HEAP_MAX:-512m}
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: "apoc.*"
+      NEO4J_dbms_security_procedures_allowlist: "apoc.*"
+    volumes:
+      - ${KDCUBE_DATA_DIR:-./data}/neo4j/data:/data
+      - ${KDCUBE_DATA_DIR:-./data}/neo4j/logs:/logs
+      - ${KDCUBE_DATA_DIR:-./data}/neo4j/plugins:/plugins
+      - ${KDCUBE_DATA_DIR:-./data}/neo4j/import:/var/lib/neo4j/import
+    healthcheck:
+      test: [ "CMD-SHELL", "cypher-shell -a bolt://localhost:7687 -u $${N4J_USER:-neo4j} -p $${N4J_PASSWORD:-neo4jpassword} 'RETURN 1' || exit 1" ]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+    restart: unless-stopped
+    networks:
+      - kdcube-internal
+    ports:
+      - "127.0.0.1:7475:7474"   # Remapped: Neo4j Desktop uses 7474
+      - "127.0.0.1:7687:7687"
 
   clamav:
     image: clamav/clamav:stable
@@ -147,60 +146,70 @@ services:
     ports:
       - "127.0.0.1:3310:3310"
 
-  #  kb:
-  #    image: kdcube-kb:latest
-  #    container_name: kdcube-kb
-  #    build:
-  #      context: ../../..
-  #      dockerfile: deployment/docker/all_in_one_kdcube/Dockerfile_KB
-  #    profiles:
-  #      - optional  # Not started by default
-  #    env_file:
-  #      - path: ${KDCUBE_CONFIG_DIR:-./config}/.env.backend
-  #        required: false
-  #    environment:
-  #      - REDIS_HOST=redis
-  #      - POSTGRES_HOST=postgres-db
-  #      - LOG_FILE_PREFIX=kb
-  #    volumes:
-  #      - ${KDCUBE_DATA_DIR:-./data}/kdcube-storage:/kdcube-storage
-  #      - ${KDCUBE_DATA_DIR:-./data}/exec-workspace:/exec-workspace
-  #      - ${KDCUBE_LOGS_DIR:-./logs}/kb:/logs
-  #    depends_on:
-  #      postgres-setup:
-  #        condition: service_completed_successfully
-  #      redis:
-  #        condition: service_healthy
-  #    networks:
-  #      - kdcube-internal
-  #
-  #  dramatiq:
-  #    image: kdcube-dramatiq:latest
-  #    container_name: kdcube-dramatiq
-  #    build:
-  #      context: ../../..
-  #      dockerfile: deployment/docker/all_in_one_kdcube/Dockerfile_Dramatiq
-  #    profiles:
-  #      - optional  # Not started by default
-  #    env_file:
-  #      - path: ${KDCUBE_CONFIG_DIR:-./config}/.env.backend
-  #        required: false
-  #    environment:
-  #      - REDIS_HOST=redis
-  #      - POSTGRES_HOST=postgres-db
-  #      - LOG_FILE_PREFIX=dramatiq
-  #    volumes:
-  #      - ${KDCUBE_DATA_DIR:-./data}/kdcube-storage:/kdcube-storage
-  #      - ${KDCUBE_LOGS_DIR:-./logs}/dramatiq:/logs
-  #    depends_on:
-  #      postgres-setup:
-  #        condition: service_completed_successfully
-  #      redis:
-  #        condition: service_healthy
-  #      kb:
-  #        condition: service_started
-  #    networks:
-  #      - kdcube-internal
+  kb:
+    image: kdcube-kb:latest
+    build:
+      context: ../../..
+      dockerfile: deployment/docker/all_in_one_kdcube/Dockerfile_KB
+    env_file:
+      - path: ${KDCUBE_CONFIG_DIR:-./config}/.env.kb
+        required: false
+    environment:
+      - REDIS_HOST=redis
+      - POSTGRES_HOST=postgres-db
+      - LOG_FILE_PREFIX=kb
+      - SECRETS_TOKEN=${SECRETS_TOKEN_PROC:-}
+    volumes:
+      - ${KDCUBE_DATA_DIR:-./data}/kdcube-storage:/kdcube-storage
+      - ${KDCUBE_DATA_DIR:-./data}/exec-workspace:/exec-workspace
+      - ${KDCUBE_LOGS_DIR:-./logs}/kb:/logs
+      - type: bind
+        source: ${HOME}/.aws
+        target: /home/appuser/.aws
+        read_only: true
+    depends_on:
+      postgres-setup:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      kdcube-secrets:
+        condition: service_started
+    networks:
+      - kdcube-internal
+      - kdcube-secrets
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  dramatiq:
+    image: kdcube-dramatiq:latest
+    build:
+      context: ../../..
+      dockerfile: deployment/docker/all_in_one_kdcube/Dockerfile_Dramatiq
+    env_file:
+      - path: ${KDCUBE_CONFIG_DIR:-./config}/.env.kb
+        required: false
+    environment:
+      - REDIS_HOST=redis
+      - POSTGRES_HOST=postgres-db
+      - LOG_FILE_PREFIX=dramatiq
+      - SECRETS_TOKEN=${SECRETS_TOKEN_PROC:-}
+    volumes:
+      - ${KDCUBE_DATA_DIR:-./data}/kdcube-storage:/kdcube-storage
+      - ${KDCUBE_LOGS_DIR:-./logs}/dramatiq:/logs
+      - type: bind
+        source: ${HOME}/.aws
+        target: /home/appuser/.aws
+        read_only: true
+    depends_on:
+      postgres-setup:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      kb:
+        condition: service_started
+    networks:
+      - kdcube-internal
+      - kdcube-secrets
 
   chat-ingress:
     image: kdcube-chat-ingress:latest
@@ -213,7 +222,7 @@ services:
     environment:
       - REDIS_HOST=redis
       - POSTGRES_HOST=postgres-db
-      - APP_NEO4J_URI=bolt://neo4j:7687
+      - APP_NEO4J_URI=bolt://host.docker.internal:7690
       - CLAMAV_HOST=clamav
       - CLAMAV_PORT=3310
       - LOG_FILE_PREFIX=chat-ingress
@@ -253,7 +262,7 @@ services:
     environment:
       - REDIS_HOST=redis
       - POSTGRES_HOST=postgres-db
-      - APP_NEO4J_URI=bolt://neo4j:7687
+      - APP_NEO4J_URI=bolt://host.docker.internal:7690
       - LOG_FILE_PREFIX=chat-proc
       - GATEWAY_COMPONENT=proc
       - HOST_KDCUBE_STORAGE_PATH=${HOST_KDCUBE_STORAGE_PATH}

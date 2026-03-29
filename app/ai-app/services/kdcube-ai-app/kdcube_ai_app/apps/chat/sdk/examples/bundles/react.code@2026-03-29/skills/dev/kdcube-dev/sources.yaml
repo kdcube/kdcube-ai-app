@@ -1,0 +1,17 @@
+# External reference sources for the KDCube Framework Developer skill
+sources:
+  - name: "KDCube SDK Docs"
+    root: "ks:docs/sdk"
+    description: "SDK documentation — agents, bundles, skills, tools, MCP"
+
+  - name: "KDCube Service Docs"
+    root: "ks:docs/service"
+    description: "Platform service documentation — auth, accounting, gateway"
+
+  - name: "Deployment Configs"
+    root: "ks:deploy"
+    description: "Docker compose, env files, Dockerfiles, nginx configs"
+
+  - name: "Source Code"
+    root: "ks:src"
+    description: "KDCube AI App source code"

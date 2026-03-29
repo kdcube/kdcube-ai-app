@@ -1,0 +1,20 @@
+# Recommended tools for the KDCube Framework Developer skill
+recommended:
+  # Documentation search
+  - react.search_knowledge
+  - react.read
+
+  # Code graph exploration
+  - code_graph.code_search
+  - code_graph.class_footprint
+  - code_graph.show_architecture
+  - code_graph.trace_call_chain
+  - code_graph.find_references
+  - code_graph.impact_analysis
+  - code_graph.find_docs_for_code
+
+  # Source code access
+  - io_tools.read_file
+
+  # Code execution for validation
+  - exec_tools.execute_code_python
