@@ -440,7 +440,7 @@ def code_search(query: str, search_type: str = "hybrid", limit: int = 10) -> str
                            node.docstring AS docstring,
                            score
                     ORDER BY score DESC LIMIT $limit
-                """, query=query, limit=limit).data()
+                """, parameters={"query": query, "limit": limit}).data()
                 results.extend([{**r, "source": "fulltext"} for r in ft_records])
 
         if search_type in ("vector", "hybrid"):
@@ -457,7 +457,7 @@ def code_search(query: str, search_type: str = "hybrid", limit: int = 10) -> str
                                    labels(node)[0] AS type,
                                    node.docstring AS docstring,
                                    score
-                        """, limit=limit, embedding=embedding).data()
+                        """, parameters={"limit": limit, "embedding": embedding}).data()
                         results.extend([{**r, "source": "vector"} for r in vec_records])
                     except Exception:
                         pass  # Index may not exist yet

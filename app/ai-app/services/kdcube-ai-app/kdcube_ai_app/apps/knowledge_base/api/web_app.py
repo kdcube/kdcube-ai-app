@@ -99,7 +99,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="KB API", description="KB API", lifespan=lifespan)
 
-configure_cors(app)
+allowed_origins = configure_cors(app)
 
 # ================================================================================
 #                            KB INITIALIZATION

@@ -1388,6 +1388,30 @@ class ReactSolverV2:
 
     async def _tool_execution_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         state = await ReactRound.execute(react=self, state=state)
+        iteration = max(0, int(state.get("iteration", 1)) - 1)
+        tool_id = state.get("last_tool_id") or "unknown"
+        # Build rich event data: params from decision + truncated result
+        decision = state.get("last_decision") or {}
+        tool_call = decision.get("tool_call") or {}
+        params = tool_call.get("params") or {}
+        raw_result = state.get("last_tool_result") or []
+        # Truncate result to keep event payload reasonable
+        result_preview = json.dumps(raw_result, default=str, ensure_ascii=False)
+        if len(result_preview) > 2000:
+            result_preview = result_preview[:2000] + "…"
+        await emit_event(
+            comm=self.comm,
+            etype="solver.react.tool_execution",
+            title=f"ReAct Round ({iteration}). Tool Execution: {tool_id}",
+            step=f"react({iteration}).tool_execution",
+            data={
+                "tool_id": tool_id,
+                "params": params,
+                "result_count": len(raw_result) if isinstance(raw_result, list) else 1,
+                "result": result_preview,
+            },
+            agent=f"solver.react({iteration}).tool_execution",
+        )
         pending_sources = state.pop("pending_sources", None)
         if pending_sources:
             try:

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Elena Viter
 #
-# ── tools/react_tools.py ──
+# -- tools/react_tools.py --
 # Bundle-local tool: react.search_knowledge
 #
 # Provides the LLM agent with the ability to search the knowledge space
@@ -11,7 +11,7 @@
 #
 # The knowledge resolver is loaded via importlib with a shared module name
 # (_kdcube_react_code_knowledge_resolver) so that this file and entrypoint.py
-# both access the same KNOWLEDGE_ROOT global state.
+# both access the same KNOWLEDGE_ROOT and SEARCH_ENABLED global state.
 
 from __future__ import annotations
 
@@ -70,9 +70,12 @@ class ReactDocTools:
     ) -> Annotated[list[dict] | None, "List of hits with ks: paths + titles."]:
         if not query or not str(query).strip():
             return []
+        # Check SEARCH_ENABLED module-level global (set by entrypoint)
+        knowledge_resolver = _load_knowledge_resolver()
+        if not getattr(knowledge_resolver, "SEARCH_ENABLED", True):
+            return []
         root_sel = (root or "ks:docs").strip()
         try:
-            knowledge_resolver = _load_knowledge_resolver()
             result = knowledge_resolver.search_knowledge(
                 query=str(query).strip(),
                 root=root_sel,

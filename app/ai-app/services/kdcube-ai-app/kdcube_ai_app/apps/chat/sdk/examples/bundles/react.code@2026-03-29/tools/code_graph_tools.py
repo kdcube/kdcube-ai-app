@@ -1,16 +1,19 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Elena Viter
 #
-# ── tools/code_graph_tools.py ──
+# -- tools/code_graph_tools.py --
 # Semantic Kernel plugin exposing code knowledge graph tools to the ReAct agent.
 # Wraps CodeGraphClient methods as @kernel_function tools.
-# The client instance is shared via sys.modules['_kdcube_code_graph_client'].
+# The client instance is shared via the _kdcube_code_graph_state module
+# (importlib pattern, same as knowledge/resolver.py KNOWLEDGE_ROOT).
 
 from __future__ import annotations
 
 import json
 import sys
 import logging
+import importlib.util
+from pathlib import Path
 from typing import Annotated, Any
 
 import semantic_kernel as sk
@@ -25,12 +28,34 @@ logger = logging.getLogger(__name__)
 _GRAPH_UNAVAILABLE = "Code graph is not available. APP_GRAPH_ENABLED may be false or Neo4j is not running."
 
 
-def _get_client():
-    """Retrieve the shared CodeGraphClient from sys.modules."""
-    mod = sys.modules.get("_kdcube_code_graph_client")
-    if mod is None:
+def _load_code_graph_state():
+    """
+    Load shared code graph state by file path.
+    Uses a shared module name so that entrypoint.py and this file
+    access the same CLIENT global.
+    """
+    module_name = "_kdcube_code_graph_state"
+    if module_name in sys.modules:
+        return sys.modules[module_name]
+    bundle_root = Path(__file__).resolve().parent.parent
+    state_path = bundle_root / "tools" / "_code_graph_state.py"
+    if not state_path.exists():
         return None
-    return getattr(mod, "client", None)
+    spec = importlib.util.spec_from_file_location(module_name, str(state_path))
+    if not spec or not spec.loader:
+        return None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = mod
+    spec.loader.exec_module(mod)  # type: ignore
+    return mod
+
+
+def _get_client():
+    """Retrieve the shared CodeGraphClient from the state module."""
+    state = _load_code_graph_state()
+    if state is None:
+        return None
+    return getattr(state, "CLIENT", None)
 
 
 def _format_result(data: dict[str, Any]) -> str:
@@ -39,7 +64,7 @@ def _format_result(data: dict[str, Any]) -> str:
 
 
 class CodeGraphTools:
-    """Code knowledge graph tools — structural code exploration via Neo4j."""
+    """Code knowledge graph tools -- structural code exploration via Neo4j."""
 
     @kernel_function(
         name="code_search",
@@ -50,7 +75,7 @@ class CodeGraphTools:
     )
     async def code_search(
         self,
-        query: Annotated[str, "Search query — class name, method name, or keyword (e.g. 'BaseEntrypoint', 'conversation store')."],
+        query: Annotated[str, "Search query -- class name, method name, or keyword (e.g. 'BaseEntrypoint', 'conversation store')."],
         limit: Annotated[int, "Max results to return."] = 10,
     ) -> Annotated[str, "JSON array of matching code symbols with scores."]:
         client = _get_client()

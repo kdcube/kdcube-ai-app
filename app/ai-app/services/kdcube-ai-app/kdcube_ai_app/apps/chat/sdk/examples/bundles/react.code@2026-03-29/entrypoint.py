@@ -151,11 +151,22 @@ class ReactCodeWorkflow(BaseEntrypoint):
                     from kdcube_ai_app.apps.chat.sdk.retrieval.code_graph_client import NullCodeGraphClient
                     code_graph = NullCodeGraphClient()
 
-            # Store client on shared module for tool access
-            import types
-            shared_mod = types.ModuleType("_kdcube_code_graph_client")
-            shared_mod.client = code_graph  # type: ignore[attr-defined]
-            sys.modules["_kdcube_code_graph_client"] = shared_mod
+            # Read feature toggles from bundle props
+            features = self.bundle_prop("features", default={})
+            enable_code_graph = features.get("enable_code_graph", True)
+            enable_knowledge_search = features.get("enable_knowledge_search", True)
+
+            # When code graph feature is disabled, swap to null client
+            if not enable_code_graph:
+                from kdcube_ai_app.apps.chat.sdk.retrieval.code_graph_client import NullCodeGraphClient
+                code_graph = NullCodeGraphClient()
+
+            # Store client on shared module for tool access (importlib pattern)
+            code_graph_state = _load_code_graph_state()
+            code_graph_state.CLIENT = code_graph
+
+            # Store knowledge search flag on resolver module global
+            knowledge_resolver.SEARCH_ENABLED = bool(enable_knowledge_search)
 
             try:
                 orch = WithReactCodeWorkflow(
@@ -452,6 +463,10 @@ class ReactCodeWorkflow(BaseEntrypoint):
         knowledge.setdefault("validate_refs", True)
         knowledge.setdefault("tests_root", "")
         config["knowledge"] = knowledge
+        features = dict(config.get("features") or {})
+        features.setdefault("enable_knowledge_search", True)
+        features.setdefault("enable_code_graph", True)
+        config["features"] = features
         return config
 
     async def execute_core(self, *, state: Dict[str, Any], thread_id: str, params: Dict[str, Any]):
@@ -467,6 +482,26 @@ def _load_knowledge_resolver():
     spec = importlib.util.spec_from_file_location(module_name, str(resolver_path))
     if not spec or not spec.loader:
         raise ImportError(f"Cannot load knowledge resolver: {resolver_path}")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = mod
+    spec.loader.exec_module(mod)  # type: ignore
+    return mod
+
+
+def _load_code_graph_state():
+    """
+    Load shared code graph state by file path.
+    Uses a shared module name (_kdcube_code_graph_state) so that
+    entrypoint.py and code_graph_tools.py access the same CLIENT global.
+    """
+    module_name = "_kdcube_code_graph_state"
+    if module_name in sys.modules:
+        return sys.modules[module_name]
+    bundle_root = pathlib.Path(__file__).resolve().parent
+    state_path = bundle_root / "tools" / "_code_graph_state.py"
+    spec = importlib.util.spec_from_file_location(module_name, str(state_path))
+    if not spec or not spec.loader:
+        raise ImportError(f"Cannot load code graph state: {state_path}")
     mod = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = mod
     spec.loader.exec_module(mod)  # type: ignore

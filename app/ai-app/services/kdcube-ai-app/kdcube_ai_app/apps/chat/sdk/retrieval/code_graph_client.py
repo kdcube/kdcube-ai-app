@@ -231,7 +231,7 @@ class CodeGraphClient:
 
     async def _run(self, cypher: str, **params) -> List[Dict[str, Any]]:
         async with self._session() as session:
-            result = await session.run(cypher, **params)
+            result = await session.run(cypher, parameters=params)
             return [record.data() async for record in result]
 
     async def ping(self) -> Dict[str, Any]:

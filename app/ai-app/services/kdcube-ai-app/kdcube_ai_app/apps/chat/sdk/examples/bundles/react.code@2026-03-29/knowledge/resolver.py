@@ -33,6 +33,10 @@ except Exception:
 
 KNOWLEDGE_ROOT: Optional[pathlib.Path] = None
 
+# Set by entrypoint.orchestrate(); read by tools/react_tools.py.
+# When False, search_knowledge() returns empty results.
+SEARCH_ENABLED: bool = True
+
 
 class ExecNamespaceResolutionError(RuntimeError):
     def __init__(self, *, code: str, message: str):
