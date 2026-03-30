@@ -1,7 +1,7 @@
 ---
 id: ks:docs/sdk/agents/react/agent-workspace-collboration-README.md
 title: "Agent Workspace Collaboration"
-summary: "How react.read, react.write, react.patch, and react.search_files cooperate over the versioned OUT_DIR workspace."
+summary: "How react.read, react.write, react.patch, and react.search_files cooperate across current-turn OUT_DIR, conversation artifacts, and read-only bundle knowledge space."
 tags: ["sdk", "agents", "react", "workspace", "artifacts", "files"]
 keywords: ["outdir", "workdir", "react.read", "react.search_files", "react.patch", "versioned workspace"]
 see_also:
@@ -12,13 +12,29 @@ see_also:
 # Agent Workspace Collaboration
 
 This document explains the working model the React agent should use when combining the filesystem tools.
+It is about the **current** agent model, not the future shared mutable workspace design.
 
 ## Core model
 
-The agent does **not** work against one mutable flat directory. It works against a **versioned OUT_DIR**:
-- Assistant-created files are namespaced by turn: `turn_<id>/files/<subpath>`
-- User attachments are namespaced by turn: `turn_<id>/attachments/<subpath>`
-- Runtime-owned folders such as `logs/` also live in OUT_DIR
+The agent does **not** work against one mutable flat directory. It reasons across these surfaces:
+
+```text
+1) CURRENT TURN OUT_DIR (physical)
+   out/turn_<id>/files/...
+   out/turn_<id>/attachments/...
+   out/logs/...
+
+2) CONVERSATION ARTIFACT MEMORY (logical)
+   ar:...  tc:...  so:...  su:...
+   fi:<older_turn>.files/...
+   fi:<older_turn>.user.attachments/...
+
+3) BUNDLE KNOWLEDGE SPACE (logical, read-only)
+   ks:<bundle-defined-path>/...
+
+4) FUTURE COLLABORATIVE WORKSPACES (not active yet)
+   out/workspaces/<name>/...
+```
 
 This gives two properties at once:
 - history is preserved in place
@@ -28,6 +44,7 @@ The logical workspace view is:
 - for `files/<subpath>`: the latest relevant turn version
 - for `attachments/<subpath>`: the attached artifact under its original turn namespace
 - for non-versioned OUT_DIR folders like `logs/`: the physical OUT_DIR file itself
+- for `ks:`: a read-only logical namespace owned by the bundle, not a directory under OUT_DIR
 
 ## Read / search / write responsibilities
 
@@ -39,10 +56,14 @@ The logical workspace view is:
 - also supports any readable OUT_DIR file via:
   - `fi:<outdir-relative-path>`
   - example: `fi:logs/docker.err.log`
+- also supports exact `ks:` paths:
+  - `ks:<relpath>`
+  - example: `ks:<bundle-defined-path>`
 
 `react.search_files`
 - searches under `outdir` or `workdir`
 - returns discovery metadata only
+- does not browse `ks:` or conversation artifact memory
 - result shape:
   - `root`
   - `hits[]`
@@ -59,6 +80,24 @@ The logical workspace view is:
 - updates an existing file in the current turn file namespace
 - historical `turn_X/files/...` references are treated as source material and patched into the current turn output
 
+## Knowledge space browsing
+
+`ks:` is not part of the current-turn OUT_DIR tree.
+
+Current rules:
+- if the exact `ks:` path is known, `react.read` can load it directly
+- `react.search_files` does not browse `ks:`
+- directory-style `ks:` browsing is only possible inside isolated exec if the bundle exposes a namespace resolver/helper
+
+When exec-time `ks:` browsing exists:
+1. code starts from a logical ref such as `ks:<bundle-defined-root>`
+2. the bundle resolver returns an exec-local physical path
+3. code inspects descendants under that path
+4. code emits logical refs such as `ks:<bundle-defined-root>/foo/bar.py`
+5. the agent later uses `react.read` on those logical refs
+
+If no resolver exists, `ks:` is still readable by exact path, but not browseable as a directory tree from normal React tools.
+
 ## Safe collaboration rules
 
 The intended cooperation pattern is:
@@ -71,6 +110,11 @@ This keeps:
 - discovery separate from loading
 - loading separate from mutation
 - turn history preserved
+
+## Not current yet
+
+The current React agent does **not** yet have a shared mutable multi-turn workspace under `out/workspaces/<name>/...`.
+That collaborative or git-backed workspace model is future design, not current behavior.
 
 ## Current limitations
 
