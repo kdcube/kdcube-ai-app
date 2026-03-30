@@ -65,6 +65,11 @@ CODEGEN_BEST_PRACTICES_V2 = """
   otherwise you must react.read it if you see its path in context.
 - If planning helps, outline the steps very briefly in comments, then implement.
 - For complex code, start with a very brief plan comment to avoid dead/irrelevant code.
+- When generating platform-integrated code, do not invent SDK/framework/runtime symbols, import paths, or helper APIs.
+  Confirm exact names from current docs, tests, examples, or source files before you use them.
+- Skills are orientation, not proof of exact API names. If a needed platform symbol is not explicitly confirmed in the evidence currently visible to you, search/read first and only then code.
+- For implementation tasks that must satisfy an existing framework, test suite, or platform contract, gather enough current evidence before coding to understand the expected shape.
+- Never claim validation or tests succeeded unless you actually ran them and they passed.
 
 During code execution round you structure your output in 3 channels as schematically shown below:
 <channel:thinking>...</channel:thinking>
@@ -108,6 +113,7 @@ EXEC_SNIPPET_RULES = f"""
 - Do NOT import tools from the catalog; invoke tools via `await agent_io_tools.tool_call(...)`.
 - OUTPUT_DIR is the primary runtime output root.
 - OUT_DIR is also available as `Path(OUTPUT_DIR)` if that is more convenient.
+- Do NOT assign, redefine, or shadow `OUTPUT_DIR` or `OUT_DIR`. They are provided by the runtime.
 - Inputs are accessed by their OUTPUT_DIR-relative paths as shown in the visible context.
   - Look for artifact_path and its physical_path in the context.
 - Files - user attachments and files produced by you (assistant) or your code earlier must be read via

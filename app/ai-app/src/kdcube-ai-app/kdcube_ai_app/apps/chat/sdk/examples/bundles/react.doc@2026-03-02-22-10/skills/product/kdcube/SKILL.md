@@ -52,6 +52,10 @@ Bundle-authoring rule:
   read `sk:tests.bundles` as well before answering or generating code.
 - Keep this product skill loaded for the platform/runtime model, and keep the tests skill loaded for the
   current bundle contract and validation workflow.
+- Do not write platform-integrated code from skills alone. Before writing code, read the relevant current
+  docs/examples/source that define the requested SDK pattern.
+- Use only platform symbols, import paths, runtime types, and helper APIs that you have confirmed from
+  current docs or source. Do not invent them.
 
 ## Knowledge space navigation
 This bundle exposes a read‑only knowledge space:
