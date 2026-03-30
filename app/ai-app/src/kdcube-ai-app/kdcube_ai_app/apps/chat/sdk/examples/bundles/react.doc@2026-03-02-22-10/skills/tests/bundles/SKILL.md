@@ -37,11 +37,14 @@ Companion loading rule:
 - For bundle tasks, load this skill together with `sk:product.kdcube`.
 - `sk:product.kdcube` gives the platform/runtime model.
 - `sk:tests.bundles` gives the current bundle contract and validation expectations.
-- Before writing code, read the actual fixture material, not only this skill.
+- This skill alone is not the contract. Before writing code, read the actual fixture material, not only this skill.
 - Use the tests to understand the expected contract first, then write code to satisfy that contract.
 - When platform or framework symbols are needed, confirm them from current docs/examples/source before coding.
 - Do not invent platform symbols or import paths.
 - Prefer the smallest implementation that can satisfy the currently confirmed contract; validate early, then expand.
+- For bundle authoring/modification, do not start with `react.write` or `react.patch` after reading only skills.
+  First read the actual current tests that define the contract.
+- If the bundle uses platform-integrated SDK/runtime/agent patterns, also read at least one current source/example/doc file that proves that pattern before writing code.
 
 ## Where the tests are
 
@@ -62,19 +65,23 @@ Instead:
 
 1. Read this skill if it is relevant:
    - `react.read(["sk:tests.bundles"])`
-2. If needed, open the fixture docs:
+2. Read the actual fixture material before writing bundle code:
    - start from `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/tests`
-   - discover the relevant README / pytest files by browsing from generated exec code
-3. In generated exec code:
+   - discover the relevant README / pytest files by browsing from generated exec code if the exact file is not already known
+   - bring the exact discovered file(s) back into visible context with `react.read(...)`
+3. In generated exec code, if discovery is needed:
    - resolve `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/tests` with `bundle_data.resolve_namespace(...)`
    - browse the returned `physical_path` recursively
-   - identify the relevant descendant pytest files for bundle validation
-   - run pytest on the discovered test file(s)
-4. Set environment variable `BUNDLE_UNDER_TEST` to the generated bundle root.
-5. Write the pytest results to `OUTPUT_DIR/...` so they come back to the agent clearly.
+   - identify the relevant descendant README / pytest files for bundle validation
+   - emit exact logical refs or a short listing into `OUTPUT_DIR/...`
+4. Only after the tests are actually read, write or patch the bundle code.
+5. Set environment variable `BUNDLE_UNDER_TEST` to the generated bundle root.
+6. Write the pytest results to `OUTPUT_DIR/...` so they come back to the agent clearly.
 
 Implementation strategy:
 - read the tests first to understand the minimum required shape
+- if exact test paths are not obvious, do a narrow browse of the tests subtree first and then read the exact discovered files
+- for platform-integrated bundle code, read at least one current source/example/doc file that proves the needed SDK pattern before implementing it
 - implement the smallest version that can satisfy that shape
 - run the smoke test early
 - only add non-essential structure after the minimal contract passes

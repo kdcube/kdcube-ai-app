@@ -52,13 +52,16 @@ Bundle-authoring rule:
   read `sk:tests.bundles` as well before answering or generating code.
 - Keep this product skill loaded for the platform/runtime model, and keep the tests skill loaded for the
   current bundle contract and validation workflow.
-- Do not write platform-integrated code from skills alone. Before writing code, read the relevant current
-  docs/examples/source that define the requested SDK pattern.
+- Do not write platform-integrated code from skills alone.
+- For bundle code generation or modification, do not start with file writes after reading only skills.
+  Before the first write, read the current tests that define the contract and the current docs/examples/source
+  that define the requested SDK pattern.
 - Use only platform symbols, import paths, runtime types, and helper APIs that you have confirmed from
   current docs or source. Do not invent them.
 - Be economical: read the smallest relevant set of exact docs/source/example files that can confirm the requested pattern.
 - If docs mention candidate code paths, treat those paths as the next files to read.
 - If the exact file is still unclear, browse a small relevant subtree in exec and then read the exact discovered files.
+- For SDK-integrated bundle work, current tests and current source/examples outrank skill prose.
 
 ## Knowledge space navigation
 This bundle exposes a read‑only knowledge space:
@@ -107,13 +110,14 @@ When a doc references files and the exact `ks:` path is unclear:
 1. If the mapping is obvious, derive the exact logical path and `react.read` it directly.
 2. If the mapping is not obvious or you need to browse descendants, use isolated exec with `execute_code_python(...)`.
 3. Inside generated code, call `bundle_data.resolve_namespace(...)` on a real subtree such as `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk`, `ks:deployment`, or another exact `ks:` base relevant to the task.
-4. Browse the returned exec-local `physical_path`.
+4. Browse the returned exec-local `physical_path` narrowly and economically.
 5. Emit exact logical refs such as `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/execution.py` or `ks:deployment/docker/local-infra-stack/docker-compose.yml` into an OUTPUT_DIR file or short `user.log` note.
-6. Back in the React loop, call `react.read(...)` on those emitted logical refs.
+6. Back in the React loop, call `react.read(...)` on those emitted logical refs before coding against them.
 
 For implementation tasks:
 - prefer current source/examples over prose when exact symbol names matter
 - if a requested integration is still uncertain after docs, read one or more current example/source files before coding
+- if the relevant source/example file is not yet known, use a small exec browse to discover candidate files and then read the exact discovered files
 - if examples differ, start from the smallest implementation that matches the confirmed contract and extend only after validation
 
 `bundle_data.resolve_namespace(...)` is exec-only. It is not a normal planning-time tool.
