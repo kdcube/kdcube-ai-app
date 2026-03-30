@@ -37,6 +37,11 @@ Example bundle-under-test layout:
 - `tools_descriptor.py`
 - `skills_descriptor.py`
 
+Current entrypoint contract:
+- import `BaseEntrypoint` from `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/entrypoint.py`
+- or import `BaseEntrypointWithEconomics` from `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/entrypoint_with_economic.py`
+- do not use legacy imports such as `kdcube_ai_app.apps.chat.sdk.workflow`
+
 ## How the agent should use this
 
 1. Keep a logical base such as `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/tests`.
