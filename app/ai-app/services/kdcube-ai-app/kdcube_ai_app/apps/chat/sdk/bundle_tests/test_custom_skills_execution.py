@@ -16,21 +16,17 @@ import pathlib
 import pytest
 
 
-def _skill_dirs_for_bundle(bundle) -> list[tuple[pathlib.Path, str]]:
+def _skill_dirs_for_bundle(bundle, bundle_id) -> list[tuple[pathlib.Path, str]]:
     """Return [(skill_dir, qualified_id), ...] for the bundle."""
     try:
         from kdcube_ai_app.infra.plugin.bundle_store import _examples_root
         root = _examples_root()
-        bundle_id = getattr(bundle, "BUNDLE_ID", None) or ""
-        short_id = bundle_id.split(".")[-1] if bundle_id else ""
 
         candidates = [
             d for d in sorted(root.iterdir())
             if d.is_dir()
             and (
-                d.name == short_id
-                or d.name.startswith(short_id + "@")
-                or d.name == bundle_id
+                d.name == bundle_id
                 or d.name.startswith(bundle_id + "@")
             )
         ]
@@ -74,9 +70,9 @@ def _load_skill_spec_from_dir(skill_dir: pathlib.Path):
 class TestSkillInstructionLoading:
     """Verify that skill instructions are loaded from SKILL.md."""
 
-    def test_skill_md_body_is_non_empty_instruction(self, bundle):
+    def test_skill_md_body_is_non_empty_instruction(self, bundle, bundle_id):
         """SKILL.md body (after frontmatter) is non-empty instruction text."""
-        for skill_dir, _ in _skill_dirs_for_bundle(bundle):
+        for skill_dir, _ in _skill_dirs_for_bundle(bundle, bundle_id):
             text = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
             end = text.find("---", 3)
             body = text[end + 3:].strip() if end != -1 else text.strip()
@@ -84,9 +80,9 @@ class TestSkillInstructionLoading:
                 f"{skill_dir.name}/SKILL.md must have non-empty instruction body"
             )
 
-    def test_skill_body_contains_useful_content(self, bundle):
+    def test_skill_body_contains_useful_content(self, bundle, bundle_id):
         """SKILL.md body is at least 20 characters (not just placeholder)."""
-        for skill_dir, _ in _skill_dirs_for_bundle(bundle):
+        for skill_dir, _ in _skill_dirs_for_bundle(bundle, bundle_id):
             text = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
             end = text.find("---", 3)
             body = text[end + 3:].strip() if end != -1 else text.strip()
@@ -118,9 +114,9 @@ class TestGetSkillHelper:
         result = get_skill("")
         assert result is None
 
-    def test_get_skill_resolves_registered_skill(self, bundle):
+    def test_get_skill_resolves_registered_skill(self, bundle, bundle_id):
         """get_skill() returns a SkillSpec for a skill that exists in the bundle."""
-        dirs = _skill_dirs_for_bundle(bundle)
+        dirs = _skill_dirs_for_bundle(bundle, bundle_id)
         if not dirs:
             pytest.skip("No skills found")
 
@@ -145,9 +141,9 @@ class TestGetSkillHelper:
             f"expected a SkillSpec for bundle skill"
         )
 
-    def test_skill_spec_has_id_and_namespace(self, bundle):
+    def test_skill_spec_has_id_and_namespace(self, bundle, bundle_id):
         """SkillSpec loaded from bundle has non-empty id and namespace."""
-        dirs = _skill_dirs_for_bundle(bundle)
+        dirs = _skill_dirs_for_bundle(bundle, bundle_id)
         if not dirs:
             pytest.skip("No skills found")
 

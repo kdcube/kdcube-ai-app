@@ -15,23 +15,19 @@ from __future__ import annotations
 import pytest
 
 
-def _load_agents_config(bundle) -> dict:
+def _load_agents_config(bundle, bundle_id) -> dict:
     """Return AGENTS_CONFIG from the bundle's skills_descriptor, or skip."""
     try:
         from kdcube_ai_app.infra.plugin.bundle_store import _examples_root
         import importlib.util
 
         root = _examples_root()
-        bundle_id = getattr(bundle, "BUNDLE_ID", None) or ""
-        short_id = bundle_id.split(".")[-1] if bundle_id else ""
 
         candidates = [
             d for d in sorted(root.iterdir())
             if d.is_dir() and (d / "skills_descriptor.py").exists()
             and (
-                d.name == short_id
-                or d.name.startswith(short_id + "@")
-                or d.name == bundle_id
+                d.name == bundle_id
                 or d.name.startswith(bundle_id + "@")
             )
         ]
@@ -55,20 +51,20 @@ def _load_agents_config(bundle) -> dict:
 class TestAgentsConfigStructure:
     """Verify AGENTS_CONFIG has the correct structure."""
 
-    def test_agents_config_is_dict(self, bundle):
+    def test_agents_config_is_dict(self, bundle, bundle_id):
         """AGENTS_CONFIG is a dict."""
-        cfg = _load_agents_config(bundle)
+        cfg = _load_agents_config(bundle, bundle_id)
         assert isinstance(cfg, dict)
 
-    def test_agents_config_keys_are_strings(self, bundle):
+    def test_agents_config_keys_are_strings(self, bundle, bundle_id):
         """AGENTS_CONFIG keys (agent role names) are strings."""
-        cfg = _load_agents_config(bundle)
+        cfg = _load_agents_config(bundle, bundle_id)
         for key in cfg:
             assert isinstance(key, str), f"AGENTS_CONFIG key must be str, got {type(key)}"
 
-    def test_agents_config_values_are_dicts(self, bundle):
+    def test_agents_config_values_are_dicts(self, bundle, bundle_id):
         """AGENTS_CONFIG values are dicts (may be empty)."""
-        cfg = _load_agents_config(bundle)
+        cfg = _load_agents_config(bundle, bundle_id)
         for role, val in cfg.items():
             assert isinstance(val, dict), (
                 f"AGENTS_CONFIG[{role!r}] must be a dict, got {type(val)}"

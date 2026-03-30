@@ -16,21 +16,17 @@ import pathlib
 import pytest
 
 
-def _skill_dirs(bundle) -> list[pathlib.Path]:
+def _skill_dirs(bundle, bundle_id) -> list[pathlib.Path]:
     """Return list of skill directories for the bundle, or skip."""
     try:
         from kdcube_ai_app.infra.plugin.bundle_store import _examples_root
         root = _examples_root()
-        bundle_id = getattr(bundle, "BUNDLE_ID", None) or ""
-        short_id = bundle_id.split(".")[-1] if bundle_id else ""
 
         candidates = [
             d for d in sorted(root.iterdir())
             if d.is_dir()
             and (
-                d.name == short_id
-                or d.name.startswith(short_id + "@")
-                or d.name == bundle_id
+                d.name == bundle_id
                 or d.name.startswith(bundle_id + "@")
             )
         ]
@@ -71,42 +67,42 @@ def _parse_frontmatter(path: pathlib.Path) -> dict:
 class TestSkillMdFrontmatter:
     """Verify SKILL.md files have required frontmatter."""
 
-    def test_skill_md_has_frontmatter(self, bundle):
+    def test_skill_md_has_frontmatter(self, bundle, bundle_id):
         """Every SKILL.md has a YAML frontmatter block."""
-        for skill_dir in _skill_dirs(bundle):
+        for skill_dir in _skill_dirs(bundle, bundle_id):
             skill_md = skill_dir / "SKILL.md"
             text = skill_md.read_text(encoding="utf-8")
             assert text.startswith("---"), (
                 f"{skill_md}: SKILL.md must start with '---' frontmatter block"
             )
 
-    def test_skill_md_frontmatter_has_name(self, bundle):
+    def test_skill_md_frontmatter_has_name(self, bundle, bundle_id):
         """SKILL.md frontmatter has a 'name' field."""
-        for skill_dir in _skill_dirs(bundle):
+        for skill_dir in _skill_dirs(bundle, bundle_id):
             fm = _parse_frontmatter(skill_dir / "SKILL.md")
             assert fm.get("name"), (
                 f"{skill_dir.name}/SKILL.md frontmatter missing 'name'"
             )
 
-    def test_skill_md_frontmatter_has_id(self, bundle):
+    def test_skill_md_frontmatter_has_id(self, bundle, bundle_id):
         """SKILL.md frontmatter has an 'id' field."""
-        for skill_dir in _skill_dirs(bundle):
+        for skill_dir in _skill_dirs(bundle, bundle_id):
             fm = _parse_frontmatter(skill_dir / "SKILL.md")
             assert fm.get("id"), (
                 f"{skill_dir.name}/SKILL.md frontmatter missing 'id'"
             )
 
-    def test_skill_md_frontmatter_has_description(self, bundle):
+    def test_skill_md_frontmatter_has_description(self, bundle, bundle_id):
         """SKILL.md frontmatter has a 'description' field."""
-        for skill_dir in _skill_dirs(bundle):
+        for skill_dir in _skill_dirs(bundle, bundle_id):
             fm = _parse_frontmatter(skill_dir / "SKILL.md")
             assert fm.get("description"), (
                 f"{skill_dir.name}/SKILL.md frontmatter missing 'description'"
             )
 
-    def test_skill_md_has_body_content(self, bundle):
+    def test_skill_md_has_body_content(self, bundle, bundle_id):
         """SKILL.md has content after the frontmatter block."""
-        for skill_dir in _skill_dirs(bundle):
+        for skill_dir in _skill_dirs(bundle, bundle_id):
             skill_md = skill_dir / "SKILL.md"
             text = skill_md.read_text(encoding="utf-8")
             end = text.find("---", 3)
@@ -119,10 +115,10 @@ class TestSkillMdFrontmatter:
 class TestToolsYaml:
     """Verify tools.yaml is valid when present."""
 
-    def test_tools_yaml_parses_as_dict_or_list(self, bundle):
+    def test_tools_yaml_parses_as_dict_or_list(self, bundle, bundle_id):
         """tools.yaml parses as a list or dict when present."""
         import yaml
-        for skill_dir in _skill_dirs(bundle):
+        for skill_dir in _skill_dirs(bundle, bundle_id):
             tools_path = skill_dir / "tools.yaml"
             if not tools_path.exists():
                 continue
@@ -135,27 +131,33 @@ class TestToolsYaml:
 class TestSourcesYaml:
     """Verify sources.yaml is valid when present."""
 
-    def test_sources_yaml_parses_as_list(self, bundle):
-        """sources.yaml parses as a list when present."""
+    def test_sources_yaml_parses_as_list(self, bundle, bundle_id):
+        """sources.yaml parses as a list or a dict with 'sources' key when present."""
         import yaml
-        for skill_dir in _skill_dirs(bundle):
+        for skill_dir in _skill_dirs(bundle, bundle_id):
             sources_path = skill_dir / "sources.yaml"
             if not sources_path.exists():
                 continue
             data = yaml.safe_load(sources_path.read_text(encoding="utf-8"))
-            # sources.yaml can be a list or None (empty file)
-            assert data is None or isinstance(data, list), (
-                f"{sources_path}: sources.yaml must be a list"
-            )
+            # sources.yaml can be None, a plain list, or a dict with a 'sources' key
+            if isinstance(data, dict):
+                assert "sources" in data and isinstance(data["sources"], list), (
+                    f"{sources_path}: sources.yaml dict must have a 'sources' list"
+                )
+            else:
+                assert data is None or isinstance(data, list), (
+                    f"{sources_path}: sources.yaml must be a list or dict with 'sources'"
+                )
 
-    def test_each_source_has_required_fields(self, bundle):
+    def test_each_source_has_required_fields(self, bundle, bundle_id):
         """Each entry in sources.yaml has at least 'title' or 'url'."""
         import yaml
-        for skill_dir in _skill_dirs(bundle):
+        for skill_dir in _skill_dirs(bundle, bundle_id):
             sources_path = skill_dir / "sources.yaml"
             if not sources_path.exists():
                 continue
-            data = yaml.safe_load(sources_path.read_text(encoding="utf-8")) or []
+            raw = yaml.safe_load(sources_path.read_text(encoding="utf-8"))
+            data = raw["sources"] if isinstance(raw, dict) and "sources" in raw else (raw or [])
             for i, src in enumerate(data):
                 if not isinstance(src, dict):
                     continue
