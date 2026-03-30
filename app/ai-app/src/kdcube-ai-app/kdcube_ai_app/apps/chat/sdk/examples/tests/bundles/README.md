@@ -24,6 +24,10 @@ Start from:
 - `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/tests`
 
 Then browse the exec-visible subtree and inspect the discovered README / pytest files that are relevant.
+Treat that resolved path as the subtree root, not as a directory that necessarily contains pytest files directly.
+
+Current reusable smoke test location:
+- `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/tests/bundles/test_generated_bundle_smoke.py`
 
 ## Expected input
 
@@ -46,9 +50,14 @@ Current entrypoint contract:
 
 1. Keep a logical base such as `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/tests`.
 2. Use exec-only namespace resolution on that base to get an exec-visible physical path.
-3. Browse that subtree, identify the relevant pytest file, and run it under that physical path.
-4. Set `BUNDLE_UNDER_TEST` to the generated bundle root path.
-5. Write the pytest result summary to an `OUTPUT_DIR` file.
+3. Treat the resolved physical path as the subtree root.
+4. Prefer the known reusable smoke test file:
+   `bundles/test_generated_bundle_smoke.py`
+5. If exact-path usage is not appropriate, browse that subtree recursively and identify the relevant descendant pytest file.
+   Do not use a non-recursive top-level glob such as `test_root.glob("test_*.py")`.
+6. Run pytest on the chosen test file.
+7. Set `BUNDLE_UNDER_TEST` to the generated bundle root path.
+8. Write the pytest result summary to an `OUTPUT_DIR` file.
 
 ## Example pytest command in generated exec code
 
@@ -59,6 +68,14 @@ import sys
 
 env = dict(os.environ)
 env["BUNDLE_UNDER_TEST"] = str(bundle_root)
+
+preferred = test_root / "bundles" / "test_generated_bundle_smoke.py"
+if preferred.exists():
+    test_file = preferred
+else:
+    candidates = sorted(test_root.rglob("test_*.py"))
+    assert candidates, f"No pytest files found under {test_root}"
+    test_file = candidates[0]
 
 proc = subprocess.run(
     [sys.executable, "-m", "pytest", str(test_file)],

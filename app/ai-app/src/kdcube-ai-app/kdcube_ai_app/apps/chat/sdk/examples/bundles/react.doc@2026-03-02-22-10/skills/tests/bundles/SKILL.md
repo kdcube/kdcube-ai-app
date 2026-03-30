@@ -51,6 +51,7 @@ Instead:
 - keep `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/tests` as the logical base
 - use generated exec code plus `bundle_data.resolve_namespace(...)` to browse the subtree
 - inspect the discovered README / pytest files that are relevant
+- treat the resolved directory as a subtree root, not as a directory that necessarily contains pytest files directly
 
 ## How to use them
 
@@ -61,8 +62,8 @@ Instead:
    - discover the relevant README / pytest files by browsing from generated exec code
 3. In generated exec code:
    - resolve `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/tests` with `bundle_data.resolve_namespace(...)`
-   - browse the returned `physical_path`
-   - identify the relevant pytest files for bundle validation
+   - browse the returned `physical_path` recursively
+   - identify the relevant descendant pytest files for bundle validation
    - run pytest on the discovered test file(s)
 4. Set environment variable `BUNDLE_UNDER_TEST` to the generated bundle root.
 5. Write the pytest results to `OUTPUT_DIR/...` so they come back to the agent clearly.
@@ -103,12 +104,55 @@ In generated exec code, do roughly this:
 
 1. define `logical_base = "ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/tests"`
 2. resolve it with `bundle_data.resolve_namespace(logical_base)`
-3. browse under `Path(res["ret"]["physical_path"])` and select the relevant pytest file(s)
-4. run:
+3. treat `Path(res["ret"]["physical_path"])` as the subtree root
+4. first prefer the known reusable smoke test:
+   - `test_root / "bundles" / "test_generated_bundle_smoke.py"`
+5. if you need discovery instead of the known exact file, search recursively:
+   - `sorted(test_root.rglob("test_*.py"))`
+   - do **not** use a non-recursive top-level glob like `test_root.glob("test_*.py")`
+6. run:
    - `python -m pytest <discovered_test_file>`
-5. set:
+7. set:
    - `BUNDLE_UNDER_TEST=<generated bundle root>`
-6. write:
+8. write:
    - test summary
    - stdout/stderr
    into files under `OUTPUT_DIR`
+
+Concrete execution sketch:
+
+```python
+from pathlib import Path
+import os
+import subprocess
+import sys
+
+logical_base = "ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/tests"
+res = await agent_io_tools.tool_call(
+    fn=bundle_data.resolve_namespace,
+    params={"logical_ref": logical_base},
+    call_reason="Resolve bundle test fixtures path",
+    tool_id="bundle_data.resolve_namespace",
+)
+
+assert res.get("ok"), res
+test_root = Path(res["ret"]["physical_path"])
+
+preferred = test_root / "bundles" / "test_generated_bundle_smoke.py"
+if preferred.exists():
+    test_file = preferred
+else:
+    candidates = sorted(test_root.rglob("test_*.py"))
+    assert candidates, f"No pytest files found under {test_root}"
+    test_file = candidates[0]
+
+env = dict(os.environ)
+env["BUNDLE_UNDER_TEST"] = str(bundle_root)
+
+proc = subprocess.run(
+    [sys.executable, "-m", "pytest", str(test_file), "-v", "--tb=short"],
+    text=True,
+    capture_output=True,
+    env=env,
+)
+```
