@@ -110,6 +110,11 @@ class MyWorkflow(BaseEntrypoint):
         return await self.graph.ainvoke(state, config={"configurable": {"thread_id": thread_id}})
 ```
 
+Canonical imports:
+- non-economics bundles: `kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint.BaseEntrypoint`
+- economics-aware bundles: `kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint_with_economic.BaseEntrypointWithEconomics`
+- do not use `kdcube_ai_app.apps.chat.sdk.workflow`; that legacy path is not part of the current SDK contract
+
 Model defaults live in `entrypoint.configuration` (`role_models`, `embedding`, etc).
 Runtime overrides are applied via `bundle_props` (`bundles.yaml` + admin UI).
 If you override `configuration`, call `super().configuration()` and use

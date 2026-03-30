@@ -42,7 +42,20 @@ def _load_submodule(package_name: str, path: pathlib.Path, submodule: str):
     assert spec and spec.loader, f"Cannot create module spec for {path}"
     module = importlib.util.module_from_spec(spec)
     sys.modules[full_name] = module
-    spec.loader.exec_module(module)  # type: ignore[attr-defined]
+    try:
+        spec.loader.exec_module(module)  # type: ignore[attr-defined]
+    except ModuleNotFoundError as exc:
+        missing = str(getattr(exc, "name", "") or "").strip()
+        if missing == "kdcube_ai_app.apps.chat.sdk.workflow":
+            raise AssertionError(
+                "entrypoint.py uses removed legacy import "
+                "`kdcube_ai_app.apps.chat.sdk.workflow`. "
+                "Use `from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint "
+                "import BaseEntrypoint` or "
+                "`from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint_with_economic "
+                "import BaseEntrypointWithEconomics`."
+            ) from exc
+        raise
     return module
 
 

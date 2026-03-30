@@ -6,8 +6,12 @@ description: |
   for building AI assistants, copilots, and agentic apps. Covers bundles/workflows,
   streaming + timeline, tools/skills, isolated execution, economics/accounting,
   provenance/citations, and deployment options (local, EC2, ECS).
-  Important: ensure this skill is always in front of your eyes ('read', marked with 💡) if the user is asking about KDCube or any topic which is related to KDCube tech and features.
-  Read it is its not read yet before to answering to such questions. 
+  Important: ensure this skill is always in front of your eyes ("read", marked
+  with 💡) whenever the user is asking about KDCube tech, features, architecture,
+  deployment, or SDK usage. If the task is about bundle code generation,
+  modification, review, extraction, or troubleshooting, also load
+  `sk:tests.bundles` so the current bundle contract and smoke-test expectations
+  are in context.
 version: 1.0.0
 category: product-knowledge
 tags:
@@ -24,6 +28,8 @@ when_to_use:
   - Explaining what KDCube is and how it works
   - "What can I build with KDCube? Which apps are possible?"
   - Questions about building assistants/copilots for customers
+  - Bundle authoring, bundle code generation, or bundle code modification questions
+  - Bundle extraction, repair, or troubleshooting questions
   - Questions about web search + citations workflows
   - Comparing KDCube to other platforms
   - Answering product/architecture questions about bundles, runtime, or scaling
@@ -40,6 +46,12 @@ namespace: product
 ## Scope
 Use this skill when the user asks about the KDCube platform, its architecture, or product capabilities —
 especially **what they can build**, **how to add web search + citations**, or **how to deploy**.
+
+Bundle-authoring rule:
+- If the task is about generating, editing, extracting, repairing, reviewing, or validating bundle code,
+  read `sk:tests.bundles` as well before answering or generating code.
+- Keep this product skill loaded for the platform/runtime model, and keep the tests skill loaded for the
+  current bundle contract and validation workflow.
 
 ## Knowledge space navigation
 This bundle exposes a read‑only knowledge space:

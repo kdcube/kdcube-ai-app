@@ -3,8 +3,9 @@ name: bundles
 id: bundles
 description: |
   Draft guidance for validating generated bundles against a small reusable pytest smoke suite.
-  Use this skill when the task is to generate or modify a bundle and then verify that the bundle
-  still has the minimum required structure and importability before handoff.
+  Use this skill whenever the task is about bundle code generation, modification, extraction,
+  repair, review, or validation and the agent needs the current bundle contract and smoke-test
+  expectations in front of it.
 version: 1.0.0
 category: testing
 tags:
@@ -16,6 +17,8 @@ tags:
 when_to_use:
   - The user asks to generate a new bundle
   - The user asks to modify an existing bundle and verify it still works
+  - The user asks to review, repair, extract, or troubleshoot a bundle
+  - The user asks how a bundle should be structured or imported
   - The agent needs a quick bundle smoke test before handoff
   - The agent needs to locate the reusable bundle test fixtures in react.doc
 author: kdcube
@@ -28,6 +31,12 @@ namespace: tests
 ## Purpose
 
 This skill tells you where the draft reusable bundle smoke tests live and how to run them from isolated exec.
+Keep it loaded whenever bundle code is being authored or discussed in detail, not only when pytest is about to run.
+
+Companion loading rule:
+- For bundle tasks, load this skill together with `sk:product.kdcube`.
+- `sk:product.kdcube` gives the platform/runtime model.
+- `sk:tests.bundles` gives the current bundle contract and validation expectations.
 
 ## Where the tests are
 
@@ -82,6 +91,11 @@ It also checks that:
 - `skills_descriptor.py` imports successfully
 - `entrypoint.py` defines non-empty `BUNDLE_ID`
 - `entrypoint.py` exposes a bundle workflow class derived from `BaseEntrypoint`
+
+Current entrypoint import contract:
+- use `from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import BaseEntrypoint`
+- or `from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint_with_economic import BaseEntrypointWithEconomics`
+- do not generate or keep legacy imports like `from kdcube_ai_app.apps.chat.sdk.workflow import AIWorkflow`
 
 ## Draft execution pattern
 
