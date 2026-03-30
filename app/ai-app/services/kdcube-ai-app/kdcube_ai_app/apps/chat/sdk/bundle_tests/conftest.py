@@ -85,8 +85,10 @@ def bundle(bundle_id):
         if bundle_cls is None:
             pytest.skip(f"Bundle '{bundle_id}' uses factory pattern, not supported in tests")
 
+        config = Config()
+        config.ai_bundle_spec = MagicMock(id=bundle_id)
         instance = bundle_cls(
-            config=Config(),
+            config=config,
             pg_pool=None,
             redis=MagicMock(),
             comm_context=MagicMock(),

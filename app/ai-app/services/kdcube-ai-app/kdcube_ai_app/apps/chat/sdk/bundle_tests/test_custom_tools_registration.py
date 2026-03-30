@@ -15,7 +15,7 @@ from __future__ import annotations
 import pytest
 
 
-def _load_tools_descriptor(bundle):
+def _load_tools_descriptor(bundle, bundle_id):
     """Return the tools_descriptor module for the bundle, or skip."""
     try:
         from pathlib import Path
@@ -23,17 +23,12 @@ def _load_tools_descriptor(bundle):
         from kdcube_ai_app.infra.plugin.agentic_loader import AgenticBundleSpec, _resolve_module
 
         root = _examples_root()
-        bundle_id = getattr(bundle, "BUNDLE_ID", None) or ""
-        # Strip platform prefix (e.g. "kdcube.bundle.eco" -> "eco")
-        short_id = bundle_id.split(".")[-1] if bundle_id else ""
 
         candidates = [
             d for d in sorted(root.iterdir())
             if d.is_dir() and (d / "tools_descriptor.py").exists()
             and (
-                d.name == short_id
-                or d.name.startswith(short_id + "@")
-                or d.name == bundle_id
+                d.name == bundle_id
                 or d.name.startswith(bundle_id + "@")
             )
         ]
@@ -55,22 +50,22 @@ def _load_tools_descriptor(bundle):
 class TestCustomToolsRegistration:
     """Verify tools_descriptor structure and tool ID conventions."""
 
-    def test_tools_specs_is_a_list(self, bundle):
+    def test_tools_specs_is_a_list(self, bundle, bundle_id):
         """TOOLS_SPECS is a list (may be empty for bundles with no module tools)."""
-        mod = _load_tools_descriptor(bundle)
+        mod = _load_tools_descriptor(bundle, bundle_id)
         assert hasattr(mod, "TOOLS_SPECS"), "tools_descriptor must define TOOLS_SPECS"
         assert isinstance(mod.TOOLS_SPECS, list)
 
-    def test_each_tool_spec_has_alias(self, bundle):
+    def test_each_tool_spec_has_alias(self, bundle, bundle_id):
         """Every entry in TOOLS_SPECS has an 'alias' key."""
-        mod = _load_tools_descriptor(bundle)
+        mod = _load_tools_descriptor(bundle, bundle_id)
         for i, spec in enumerate(mod.TOOLS_SPECS):
             assert "alias" in spec, f"TOOLS_SPECS[{i}] is missing 'alias'"
             assert spec["alias"], f"TOOLS_SPECS[{i}]['alias'] must be non-empty"
 
-    def test_each_tool_spec_has_module_or_ref(self, bundle):
+    def test_each_tool_spec_has_module_or_ref(self, bundle, bundle_id):
         """Every entry in TOOLS_SPECS has either 'module' or 'ref'."""
-        mod = _load_tools_descriptor(bundle)
+        mod = _load_tools_descriptor(bundle, bundle_id)
         for i, spec in enumerate(mod.TOOLS_SPECS):
             has_module = bool(spec.get("module"))
             has_ref = bool(spec.get("ref"))
@@ -78,17 +73,17 @@ class TestCustomToolsRegistration:
                 f"TOOLS_SPECS[{i}] must have 'module' or 'ref'"
             )
 
-    def test_tool_aliases_are_unique(self, bundle):
+    def test_tool_aliases_are_unique(self, bundle, bundle_id):
         """All aliases in TOOLS_SPECS are unique."""
-        mod = _load_tools_descriptor(bundle)
+        mod = _load_tools_descriptor(bundle, bundle_id)
         aliases = [s["alias"] for s in mod.TOOLS_SPECS if s.get("alias")]
         assert len(aliases) == len(set(aliases)), (
             f"Duplicate aliases in TOOLS_SPECS: {[a for a in aliases if aliases.count(a) > 1]}"
         )
 
-    def test_mcp_tool_specs_is_a_list(self, bundle):
+    def test_mcp_tool_specs_is_a_list(self, bundle, bundle_id):
         """MCP_TOOL_SPECS is a list (may be empty)."""
-        mod = _load_tools_descriptor(bundle)
+        mod = _load_tools_descriptor(bundle, bundle_id)
         if not hasattr(mod, "MCP_TOOL_SPECS"):
             pytest.skip("Bundle has no MCP_TOOL_SPECS")
         assert isinstance(mod.MCP_TOOL_SPECS, list)
@@ -119,16 +114,16 @@ class TestCustomToolsRegistration:
 class TestToolRuntimeConfig:
     """Verify TOOL_RUNTIME config in tools_descriptor."""
 
-    def test_tool_runtime_is_dict_when_present(self, bundle):
+    def test_tool_runtime_is_dict_when_present(self, bundle, bundle_id):
         """TOOL_RUNTIME is a dict when defined."""
-        mod = _load_tools_descriptor(bundle)
+        mod = _load_tools_descriptor(bundle, bundle_id)
         if not hasattr(mod, "TOOL_RUNTIME"):
             pytest.skip("Bundle has no TOOL_RUNTIME")
         assert isinstance(mod.TOOL_RUNTIME, dict)
 
-    def test_tool_runtime_values_are_valid_strings(self, bundle):
+    def test_tool_runtime_values_are_valid_strings(self, bundle, bundle_id):
         """TOOL_RUNTIME values are 'none', 'local', or 'docker'."""
-        mod = _load_tools_descriptor(bundle)
+        mod = _load_tools_descriptor(bundle, bundle_id)
         if not hasattr(mod, "TOOL_RUNTIME"):
             pytest.skip("Bundle has no TOOL_RUNTIME")
         valid = {"none", "local", "docker"}

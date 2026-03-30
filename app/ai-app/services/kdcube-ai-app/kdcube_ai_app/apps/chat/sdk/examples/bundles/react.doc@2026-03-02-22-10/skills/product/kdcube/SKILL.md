@@ -7,8 +7,8 @@ description: |
   streaming + timeline, tools/skills, isolated execution, economics/accounting,
   provenance/citations, and deployment options (local, EC2, ECS).
   Important: ensure this skill is always in front of your eyes ('read', marked with 💡) if the user is asking about KDCube or any topic which is related to KDCube tech and features.
-  Read it is its not read yet before to answering to such questions. 
-version: 1.0.0
+  Read it is its not read yet before to answering to such questions.
+version: 1.1.0
 category: product-knowledge
 tags:
   - kdcube
@@ -20,6 +20,9 @@ tags:
   - web-search
   - multi-tenant
   - deployment
+  - testing
+  - sdk
+  - development
 when_to_use:
   - Explaining what KDCube is and how it works
   - "What can I build with KDCube? Which apps are possible?"
@@ -30,8 +33,11 @@ when_to_use:
   - Questions how to build on or integrate with KDCube
   - Questions about multi‑tenant hosting or deployment options (EC2/ECS/compose)
   - Questions about cost controls, budgets, or accounting
+  - Questions about how to build, structure, or validate a bundle
+  - Questions about the bundle SDK, entrypoint, skills, or tools
 author: kdcube
 created: 2026-03-02
+updated: 2026-03-30
 namespace: product
 ---
 
@@ -66,6 +72,33 @@ Docs and sources are pulled from the repo configured in bundle props (`knowledge
 - Domain‑specific agents with custom tools/skills and isolated execution
 - Streaming chat apps with live widgets and provenance
 - Admin/ops dashboards and monitoring flows via bundles
+
+## Bundle structure
+
+A bundle is a directory with at minimum:
+- `entrypoint.py` — declares `BUNDLE_ID`, decorates the class with `@agentic_workflow`, builds the LangGraph, overrides `configuration`
+- `skills_descriptor.py` — optional, declares `CUSTOM_SKILLS_ROOT` and `AGENTS_CONFIG`
+- `tools_descriptor.py` — optional, declares `TOOLS_SPECS`, `MCP_TOOL_SPECS`, `TOOL_RUNTIME`
+- `skills/<namespace>/<skill_id>/SKILL.md` — optional skill prompt templates
+
+Key base class: `BaseEntrypoint` (from `kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint`).
+Override `configuration` to set `role_models`. Override `execute_core()` to run the graph.
+
+## Bundle testing
+
+Every bundle has a shared test suite at `kdcube_ai_app/apps/chat/sdk/bundle_tests/`.
+Tests cover initialization, LangGraph compilation, configuration, model routing, state handling,
+error handling, event streaming, skills, tools, storage, and Redis props.
+
+**After writing or modifying a bundle, always run the tests.**
+For full instructions on running tests, load: `react.read(["sk:tests.bundles"])`
+
+Key facts about the test suite:
+- No network, no database, no LLM API calls needed — tests run fully offline
+- `redis` and `comm_context` are mocked automatically
+- Select the bundle with `--bundle-id=<BUNDLE_ID>` (matches the `BUNDLE_ID` constant in `entrypoint.py`)
+- `SKIPPED` results are normal when a feature (skills, tools) is absent in the bundle
+- `FAILED` results always indicate a real problem that must be fixed
 
 ## Deployment options
 - Local dev (run services directly)
