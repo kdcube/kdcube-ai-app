@@ -37,6 +37,10 @@ Companion loading rule:
 - For bundle tasks, load this skill together with `sk:product.kdcube`.
 - `sk:product.kdcube` gives the platform/runtime model.
 - `sk:tests.bundles` gives the current bundle contract and validation expectations.
+- Before writing code, read the actual fixture material, not only this skill.
+- Use the tests to understand the expected contract first, then write code to satisfy that contract.
+- When platform or framework symbols are needed, confirm them from current docs/examples/source before coding.
+- Do not invent platform symbols or import paths.
 
 ## Where the tests are
 
@@ -97,6 +101,7 @@ Current entrypoint import contract:
 - use `from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import BaseEntrypoint`
 - or `from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint_with_economic import BaseEntrypointWithEconomics`
 - do not generate or keep legacy imports like `from kdcube_ai_app.apps.chat.sdk.workflow import AIWorkflow`
+- do not claim the bundle passes unless pytest was actually run and returned success
 
 ## Draft execution pattern
 
