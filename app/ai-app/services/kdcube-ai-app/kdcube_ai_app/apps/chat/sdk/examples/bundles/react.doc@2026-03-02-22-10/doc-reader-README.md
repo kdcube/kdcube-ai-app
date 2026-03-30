@@ -231,7 +231,8 @@ Important:
 The **product skill** (`skills/product/kdcube/SKILL.md`) tells the agent to:
 1) Read `ks:index.md` for entry points.
 2) Search + read docs from `ks:docs/...`.
-3) Read referenced code via `ks:src/...` when a detail needs verification.
+3) Read referenced code/deploy files via exact `ks:` paths when the mapping is obvious.
+4) If the exact source/deploy path is unclear, use generated exec code plus `bundle_data.resolve_namespace(...)` to browse the namespace and emit the exact follow-up `ks:` refs before calling `react.read(...)`.
 
 Tool registration:
 - The bundle defines `react.search_knowledge` in `tools/react_tools.py`.

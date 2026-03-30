@@ -24,16 +24,70 @@ The workspace is execution state. Canonical conversation state still lives in ti
 
 ## Effective agent workspace model
 
-The agent works with a **versioned workspace**, not a single mutable project tree:
+The agent does **not** perceive one flat filesystem. It reasons across several surfaces:
+
+```text
+VISIBLE / ADDRESSABLE WORKSPACE MODEL
+
+1) CURRENT TURN OUT_DIR (physical; current-turn execution surface)
+   out/
+     turn_<current_turn>/
+       files/           # only normal writable namespace for react tools
+       attachments/     # current-turn attachments and rehosted copies pulled into this turn
+     logs/              # runtime logs and diagnostics
+     timeline.json
+     ...
+   work/                # exec scratch only; not stable collaboration state
+
+2) CONVERSATION ARTIFACT MEMORY (logical; cross-turn; not a browsable folder)
+   ar:...  tc:...  so:...  su:...
+   fi:<older_turn>.files/...
+   fi:<older_turn>.user.attachments/...
+
+3) BUNDLE KNOWLEDGE SPACE `ks:` (logical; read-only virtual folder)
+   ks:<bundle-defined-path>/...
+   ...
+
+4) FUTURE COLLABORATIVE WORKSPACES (planned; not active in current React agent)
+   out/workspaces/<name>/...
+```
+
+Current behavior:
 - History is preserved physically under `out/turn_<id>/files/...` and `out/turn_<id>/attachments/...`.
 - Writes for the current turn go only to `out/<current_turn>/files/...`.
 - Reads can target:
   - versioned turn artifacts and attachments
   - any readable file already present under `out/` (for example `out/logs/docker.err.log`)
+  - exact logical `ks:` paths via `react.read`
 - The practical mental model is:
   - `turn_<id>/files/...` and `turn_<id>/attachments/...` preserve origin and history
   - the latest visible version of a file path is the current logical workspace view
   - runtime folders like `logs/` are part of OUT_DIR but are not part of the turn-versioned file namespace
+  - `ks:` is not inside OUT_DIR at all; it is a bundle-owned read-only virtual space
+
+### Knowledge space and exec-time path resolution
+
+`ks:` is readable by logical path, for example `react.read(["ks:<bundle-defined-path>"])`.
+
+Important constraints:
+- `react.search_files` does not browse `ks:`.
+- `fetch_ctx` does not support `ks:`.
+- `ks:` becomes a physical directory tree only inside isolated exec **if** the bundle exposes a namespace resolver/helper for it.
+
+When such a resolver exists, the generated code flow is:
+1. start from a logical ref such as `ks:<bundle-defined-root>`
+2. call the bundle/helper resolver inside exec
+3. receive an exec-local physical path
+4. browse descendants in code
+5. emit discovered logical refs like `ks:<bundle-defined-root>/foo/bar.py` back into OUT_DIR artifacts or logs so the agent can later call `react.read` on them
+
+If the bundle does **not** expose a resolver for directory-style browsing, then `ks:` remains readable only by exact logical path or by bundle-specific search tools. It is not a normal browseable filesystem from standard React tools.
+
+### Future collaborative workspaces
+
+The current React agent does **not** yet have a shared mutable workspace that overwrites files across turns.
+
+The planned future model is a named collaborative workspace under something like `out/workspaces/<name>/...`, potentially git-backed. Until tooling explicitly exposes that surface, treat it as future design only.
 
 ## Lifecycle at a glance
 

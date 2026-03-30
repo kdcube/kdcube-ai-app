@@ -49,9 +49,24 @@ This bundle exposes a read‑only knowledge space:
 - Use `react.read(["ks:src/<path>"])` to open referenced source files.
 - Use `react.read(["ks:deploy/<path>"])` to open deployment artifacts (compose, env examples, ECS/EC2 docs).
 The index is generated on bundle startup by scanning `docs/` and capturing each doc’s front‑matter.
-Doc pages may include inline code refs (backticked `kdcube_ai_app/...`) that are resolvable via `ks:src/...`.
+Doc pages may include inline code refs (backticked `kdcube_ai_app/...`) or deploy refs relative to the configured deploy root.
 Docs and sources are pulled from the repo configured in bundle props (`knowledge.repo`, `knowledge.ref`,
 `knowledge.docs_root`, `knowledge.src_root`, `knowledge.deploy_root`).
+
+Important limitations:
+- `react.search_knowledge` primarily indexes docs metadata, not the whole source tree.
+- Source and deploy files are often reachable by exact `ks:src/...` or `ks:deploy/...` path, but not always surfaced in advance.
+- If the exact `ks:` path is not obvious, do not guess repeatedly.
+
+When a doc references source/deploy files and the exact `ks:` path is unclear:
+1. If the mapping is obvious, derive the exact logical path and `react.read` it directly.
+2. If the mapping is not obvious or you need to browse descendants, use isolated exec with `execute_code_python(...)`.
+3. Inside generated code, call `bundle_data.resolve_namespace("ks:src")` or `bundle_data.resolve_namespace("ks:deploy")`.
+4. Browse the returned exec-local `physical_path`.
+5. Emit exact logical refs such as `ks:src/foo/bar.py` or `ks:deploy/docker/docker-compose.yaml` into an OUTPUT_DIR file or short `user.log` note.
+6. Back in the React loop, call `react.read(...)` on those emitted logical refs.
+
+`bundle_data.resolve_namespace(...)` is exec-only. It is not a normal planning-time tool.
 
 ## Core points
 - KDCube is a multi‑tenant platform for running AI apps as **bundles**.
@@ -79,4 +94,6 @@ When this skill is loaded via `react.read("sk:product.kdcube")`, those sources a
 
 ## When unsure
 Search the knowledge space first (`react.search_knowledge` + `react.read`). If the needed
-info is not in the knowledge space, use `web_tools.web_search` and cite sources.
+info is not in the knowledge space, or the exact `ks:` file path is still unclear after direct reads,
+use exec-time namespace resolution as described above. If the needed info is still not in bundle knowledge,
+use `web_tools.web_search` and cite sources.
