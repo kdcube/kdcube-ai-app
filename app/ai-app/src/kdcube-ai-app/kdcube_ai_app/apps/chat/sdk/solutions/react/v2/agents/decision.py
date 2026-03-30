@@ -71,6 +71,9 @@ CODEGEN_BEST_PRACTICES_V2 = """
 - For implementation tasks that must satisfy an existing framework, test suite, or platform contract, gather enough current evidence before coding to understand the expected shape.
 - Be economical when gathering evidence: read the smallest relevant set of exact docs/tests/source/example files that can confirm the needed contract.
 - If candidate source paths are mentioned in docs or tests, read those exact files before browsing wider trees.
+- For bundle code generation or modification against the current SDK/platform contract, do not start with react.write/react.patch after reading only skills.
+  Before the first code/file write, read the actual current tests that define the contract and at least one current doc/source/example file that proves the requested integration pattern.
+- If the exact test/source file is not yet known, first do a small evidence-gathering step to discover exact paths, then read those exact files before coding.
 - Prefer the smallest implementation that can satisfy the currently confirmed contract; validate early, then extend.
 - Never claim validation or tests succeeded unless you actually ran them and they passed.
 
@@ -117,6 +120,7 @@ EXEC_SNIPPET_RULES = f"""
 - OUTPUT_DIR is the primary runtime output root.
 - OUT_DIR is also available as `Path(OUTPUT_DIR)` if that is more convenient.
 - Do NOT assign, redefine, or shadow `OUTPUT_DIR` or `OUT_DIR`. They are provided by the runtime.
+- Do NOT substitute hard-coded paths such as `Path(\"/workspace/out\")` for `OUTPUT_DIR` / `OUT_DIR`.
 - Inputs are accessed by their OUTPUT_DIR-relative paths as shown in the visible context.
   - Look for artifact_path and its physical_path in the context.
 - Files - user attachments and files produced by you (assistant) or your code earlier must be read via
