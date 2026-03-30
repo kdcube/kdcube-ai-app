@@ -42,7 +42,7 @@ This document records the current state and the recommended near-term boundary.
 | What is the current turn workspace? | Temporary `out/` working set for this turn | Easy to confuse with the whole conversation artifact memory | State explicitly that turn OUT_DIR is ephemeral and hydrated on demand |
 | What is `fi:`? | Logical addressing into conversation artifact memory, plus current-turn materializations | Looks filesystem-like but is not a browsable tree | Keep `fi:` as artifact addressing and retrieval, not browsing |
 | Where is browsing actually needed? | In `ks:` today and future named workspaces later | We do not yet have a fluent, safe way to inspect browseable roots from code | Use isolated exec plus an explicit namespace resolver, not a generic `list_space` tool |
-| How does `react.doc` look to the agent today? | Docs and deploy are searchable; `src` is readable only by exact path; tests are exposed as exact `ks:tests/...` reads plus `sk:tests.bundles` guidance | Source-first and test-first browsing still require resolver + exec, and `src` still has no search surface | Keep tests as exact-read only; improve source discovery separately |
+| How does `react.doc` look to the agent today? | Docs and deployment are searchable; `src` is readable only by exact path; test fixtures are exposed as exact `ks:src/kdcube-ai-app/.../examples/tests/...` reads plus `sk:tests.bundles` guidance | Source-first and test-first browsing still require resolver + exec, and `src` still has no search surface | Keep test fixtures as exact-read only; improve source discovery separately |
 | Is public exec enough for scripted inspection? | Partially; it still requires a non-empty file contract | Probe tasks are awkward but still possible | Short-term: use a tiny summary artifact plus program log; later maybe expose a separate probe tool |
 | Where should semantics live? | Repeated across docs, tool docs, shared instructions, decision prompt, skill | Drift risk | Keep tool args in tool modules, keep mental model in shared instructions, keep bundle-specific entry points in skills |
 
@@ -200,9 +200,9 @@ The `react.doc` bundle currently tells the agent to:
 - use `react.search_knowledge(query=..., root="ks:docs")`
 - open docs with `react.read(["ks:docs/<path>"])`
 - open referenced code with `react.read(["ks:src/<path>"])`
-- search deploy docs with `react.search_knowledge(query=..., root="ks:deploy")`
-- open deploy files with `react.read(["ks:deploy/<path>"])`
-- read reusable test fixtures with exact `react.read(["ks:tests/<path>"])`
+- search deployment docs with `react.search_knowledge(query=..., root="ks:deployment")`
+- open deployment files with `react.read(["ks:deployment/<path>"])`
+- read reusable test fixtures with exact `react.read(["ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/tests/<path>"])`
 - load bundle-test execution guidance from `react.read(["sk:tests.bundles"])`
 
 The knowledge index currently builds entries from:
@@ -218,9 +218,9 @@ This means the agent currently sees this shape:
 | Surface in `react.doc` | Listed in `ks:index.md` | Searchable via `react.search_knowledge` | Readable via `react.read` if exact path is known | Comment |
 | --- | --- | --- | --- | --- |
 | `ks:docs/...` | yes | yes | yes | good |
-| `ks:deploy/...` | yes | yes | yes | good |
+| `ks:deployment/...` | yes | yes | yes | good |
 | `ks:src/...` | no | no | yes | path must be guessed or learned from a doc |
-| `ks:tests/...` | mentioned as exact-read guidance | no | yes | exact paths only; browse in exec if needed |
+| `ks:src/kdcube-ai-app/.../examples/tests/...` | mentioned as exact-read guidance | no | yes | exact paths only; browse in exec if needed |
 | `sk:tests.bundles` | yes | n/a | yes | instruction entrypoint for how to run the reusable smoke tests |
 
 ### What this is good for
@@ -433,9 +433,9 @@ Browseable space:
 ```
 
 Follow-up pattern:
-- resolver input logical_ref: `ks:src`
-- discovered relative path in code: `foo/bar.py`
-- emitted logical ref for later `react.read(...)`: `ks:src/foo/bar.py`
+- resolver input logical_ref: `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk`
+- discovered relative path in code: `runtime/execution.py`
+- emitted logical ref for later `react.read(...)`: `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/execution.py`
 
 Not browseable as a directory:
 
@@ -451,8 +451,8 @@ Not browseable as a directory:
 
 For `react.doc`, a selector like:
 - `ks:docs`
-- `ks:src`
-- `ks:deploy`
+- `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk`
+- `ks:deployment`
 
 may all resolve to different physical subtrees under that bundle's readonly data root.
 
@@ -492,9 +492,9 @@ flowchart LR
 | Root | Current state | Planned state |
 | --- | --- | --- |
 | `ks:docs` | indexed | keep |
-| `ks:deploy` | indexed for docs | keep |
+| `ks:deployment` | indexed for docs | keep |
 | `ks:src` | readable only by exact path | add manifests and searchable index entries |
-| tests | exact-read `ks:tests/...`, with `sk:tests.bundles` as the instruction entrypoint | keep exact-read only; do not add search indexing |
+| test fixtures | exact-read `ks:src/kdcube-ai-app/.../examples/tests/...`, with `sk:tests.bundles` as the instruction entrypoint | keep exact-read only; do not add search indexing |
 
 ### Important constraint
 
@@ -529,7 +529,7 @@ That preserves token economy and keeps navigation deliberate.
 ### Phase 2: make `react.doc` copilot-capable
 
 1. Improve `ks:src` discovery without forcing full source-tree indexing.
-2. Keep `ks:tests` as exact-read content mounted from `knowledge.tests_root`.
+2. Keep test fixtures as exact-read content under `ks:src/kdcube-ai-app/.../examples/tests/...`.
 3. Use `sk:tests.bundles` to tell the agent where the reusable test fixtures live and how to run them from isolated exec.
 4. Update `ks:index.md` to mention docs, deploy, source areas, and exact-read tests.
 
@@ -608,8 +608,8 @@ Meaning:
 - the resolver input logical_ref is the logical base that generated code should use if it wants the agent to continue later with `react.read(...)`
 
 Practical rule for generated code:
-- if code resolves `ks:src` and finds a useful file `foo/bar.py` under the returned `physical_path`, it should emit logical ref `ks:src/foo/bar.py` in an `OUTPUT_DIR` file or short `user.log` note
-- the agent can then use `react.read(["ks:src/foo/bar.py"])` in a later step
+- if code resolves `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk` and finds a useful file `runtime/execution.py` under the returned `physical_path`, it should emit logical ref `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/execution.py` in an `OUTPUT_DIR` file or short `user.log` note
+- the agent can then use `react.read(["ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/execution.py"])` in a later step
 
 For `react.doc`, this could be a bundle-local tool under:
 - `tools/`

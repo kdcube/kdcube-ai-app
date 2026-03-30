@@ -162,7 +162,7 @@ bundles:
     - id: "react.mcp@2026-03-09"
       repo: "git@github.com:kdcube/kdcube-ai-app.git"
       ref: "v0.4.0"
-      subdir: "app/ai-app/services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles"
+      subdir: "app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles"
       module: "react.mcp@2026-03-09.entrypoint"
 ```
 

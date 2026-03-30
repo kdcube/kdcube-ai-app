@@ -10,7 +10,7 @@ from pathlib import Path
 def _bootstrap_sys_path() -> None:
     here = Path(__file__).resolve()
     ai_app_root = here.parents[3]
-    services_root = ai_app_root / "services/kdcube-ai-app"
+    services_root = ai_app_root / "src/kdcube-ai-app"
     if services_root.exists():
         sys.path.insert(0, str(services_root))
     cli_src = services_root / "kdcube_cli" / "src"

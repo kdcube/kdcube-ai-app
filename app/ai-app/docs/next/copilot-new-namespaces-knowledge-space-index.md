@@ -92,7 +92,7 @@ ks:<id>  ->  loader returns {text, mime, links}
 ### Example resolution strategies
 
 - ks:docs/platform/react → file on disk
-- ks:deploy/docker/all_in_one_kdcube/docker-compose.yaml → deployment artifact
+- ks:deployment/docker/all_in_one_kdcube/docker-compose.yaml → deployment artifact
 - ks:kb/123456 → Postgres/Neo4j lookup
 - ks:article/CVE-2024-1234 → KB row
 

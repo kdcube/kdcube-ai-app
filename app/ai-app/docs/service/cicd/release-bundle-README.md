@@ -54,7 +54,7 @@ bundles:
       name: "ReAct (example)"
       repo: "git@github.com:kdcube/kdcube-ai-app.git"
       ref: "v0.3.2"
-      subdir: "app/ai-app/services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles"
+      subdir: "app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles"
       module: "react@2026-02-10-02-44.entrypoint"
 ```
 
@@ -75,14 +75,14 @@ bundles:
     - id: "react@2026-02-10-02-44"
       repo: "git@github.com:kdcube/kdcube-ai-app.git"
       ref: "v0.3.2"
-      subdir: "app/ai-app/services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles"
+      subdir: "app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles"
       module: "react@2026-02-10-02-44.entrypoint"
       config:
         knowledge:
           repo: "git@github.com:kdcube/kdcube-ai-app.git"
           ref: "v0.3.2"
           docs_root: "app/ai-app/docs"
-          src_root: "app/ai-app/services/kdcube-ai-app/kdcube_ai_app"
+          src_root: "app/ai-app/src/kdcube-ai-app/kdcube_ai_app"
           deploy_root: "app/ai-app/deployment"
           validate_refs: true
 ```

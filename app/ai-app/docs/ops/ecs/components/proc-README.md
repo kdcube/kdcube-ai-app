@@ -103,9 +103,9 @@ See:
 
 ## 4. How ECS Task Protection Works For Proc
 
-When `ECS_AGENT_URI` is present, proc builds `EcsTaskScaleInProtection` in [task_protection.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/services/kdcube-ai-app/kdcube_ai_app/infra/aws/task_protection.py). Otherwise it uses a no-op helper.
+When `ECS_AGENT_URI` is present, proc builds `EcsTaskScaleInProtection` in [task_protection.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/infra/aws/task_protection.py). Otherwise it uses a no-op helper.
 
-At execution start, [processor.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/services/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py) wraps the turn in:
+At execution start, [processor.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py) wraps the turn in:
 
 ```python
 async with self._task_scale_in_protection.hold(label=protection_label):

@@ -39,7 +39,7 @@ base/economics entrypoints and exec runtime, see:
 ## Reference bundle (start here)
 
 Reference implementation:
-`services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44`
+`src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44`
 
 Key files:
 - `entrypoint.py` — bundle entrypoint (decorated workflow)
@@ -417,8 +417,8 @@ Runtime:
 Example path:
 ```
 ks:docs/README.md
-ks:src/apps/chat/sdk/solutions/react/v2/runtime.py
-ks:deploy/docker/all_in_one_kdcube/docker-compose.yaml
+ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/runtime.py
+ks:deployment/docker/all_in_one_kdcube/docker-compose.yaml
 ```
 
 See:
@@ -514,7 +514,7 @@ Bundles can define an **event filter** (bundle‑level outbound firewall) to con
 which events are visible to non‑privileged users.
 
 Example:
-- `services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44/event_filter.py`
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44/event_filter.py`
 
 Docs:
 - [docs/service/comm/comm-system.md](../../service/comm/comm-system.md) (event types + filtering)
@@ -580,7 +580,7 @@ Docs:
 ## Custom skills (bundle‑local)
 
 Use `skills_descriptor.py` to register bundle‑specific skills. Example:
-- Bundle: `services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44`
+- Bundle: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44`
 - Skill: `skills/product`
 - Descriptor: `skills_descriptor.py`
 
@@ -633,11 +633,11 @@ export AGENTIC_BUNDLES_ROOT=/bundles
 ## Examples
 
 - ReAct Agent:
-  `services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44`
+  `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44`
 - Iso Runtime Demo:
-  `services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/with-isoruntime@2026-02-16-14-00`
+  `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/with-isoruntime@2026-02-16-14-00`
 - Economics Demo:
-  `services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/eco@2026-02-18-15-06`
+  `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/eco@2026-02-18-15-06`
 
 ---
 
@@ -658,11 +658,11 @@ export AGENTIC_BUNDLES_ROOT=/bundles
 
 ## References (code)
 
-- Bundle loader + cache: `services/kdcube-ai-app/kdcube_ai_app/infra/plugin/agentic_loader.py`
-- Bundle registry: `services/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_registry.py`
-- Task processor: `services/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py`
-- Integrations ops API: `services/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/integrations.py`
-- Base entrypoint: `services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/entrypoint.py`
-- Protocol types: `services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/protocol.py`
-- Base workflow: `services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/base_workflow.py`
-- Event filter example: `services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44/event_filter.py`
+- Bundle loader + cache: `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/agentic_loader.py`
+- Bundle registry: `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_registry.py`
+- Task processor: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py`
+- Integrations ops API: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/integrations.py`
+- Base entrypoint: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/entrypoint.py`
+- Protocol types: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/protocol.py`
+- Base workflow: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/base_workflow.py`
+- Event filter example: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44/event_filter.py`

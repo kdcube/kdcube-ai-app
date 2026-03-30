@@ -46,7 +46,7 @@ The most important platform rule is:
 - before start: replay may be safe
 - after start: replay is not safe by default
 
-In [processor.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/services/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py), proc writes a started marker before communicator start and before bundle execution proceeds.
+In [processor.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py), proc writes a started marker before communicator start and before bundle execution proceeds.
 
 That marker means:
 
@@ -63,7 +63,7 @@ This is why proc distinguishes:
 
 ## 3. ECS Task Protection Layer
 
-When proc runs on ECS and `ECS_AGENT_URI` is available, [task_protection.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/services/kdcube-ai-app/kdcube_ai_app/infra/aws/task_protection.py) activates ECS task scale-in protection.
+When proc runs on ECS and `ECS_AGENT_URI` is available, [task_protection.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/infra/aws/task_protection.py) activates ECS task scale-in protection.
 
 High-level flow:
 
@@ -97,13 +97,13 @@ What it does not buy us:
 
 If shutdown still begins, proc switches from "avoid selection" to "finish cleanly if possible".
 
-In [web_app.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/services/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/web_app.py):
+In [web_app.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/web_app.py):
 
 - the app marks itself draining
 - `/health` returns unhealthy
 - `processor.stop_processing()` stops new intake and waits for active tasks
 
-In [processor.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/services/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py), drain means:
+In [processor.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py), drain means:
 
 - queue/config/reaper loops stop taking new work
 - inflight tasks are not intentionally cancelled by normal drain

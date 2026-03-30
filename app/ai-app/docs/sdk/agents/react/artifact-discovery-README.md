@@ -158,9 +158,9 @@ The rewrite is recorded as a **protocol notice** in the timeline so the agent ca
   - `browseable: bool`
 - Use the resolver input logical_ref itself as the logical base if generated code wants the agent to follow up later with `react.read(...)`.
 - Example:
-  - set `logical_base = "ks:src"` and resolve it
+  - set `logical_base = "ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk"` and resolve it
   - code inspects files under the returned `physical_path`
-  - if code finds `foo/bar.py`, it should emit logical ref `ks:src/foo/bar.py` in an `OUTPUT_DIR` file or short `user.log` note
+  - if code finds `runtime/execution.py`, it should emit logical ref `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/execution.py` in an `OUTPUT_DIR` file or short `user.log` note
 - The returned `physical_path` is an exec-runtime path only.
 - It is not an artifact `physical_path`, not an OUT_DIR-relative path, and not a valid input to normal react tools.
 - Generated code must respect `access` exactly; for example, `access='r'` means browse/read only.

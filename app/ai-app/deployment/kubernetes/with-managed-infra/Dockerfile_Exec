@@ -13,7 +13,7 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Install Python deps
-COPY services/kdcube-ai-app/requirements-chat.txt requirements.txt
+COPY src/kdcube-ai-app/requirements-chat.txt requirements.txt
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
@@ -33,7 +33,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # --- App code ---
 # Copy app to /opt/app so kdcube_ai_app is at /opt/app/kdcube_ai_app
-COPY services/kdcube-ai-app/ /opt/app/
+COPY src/kdcube-ai-app/ /opt/app/
 
 WORKDIR /workspace
 

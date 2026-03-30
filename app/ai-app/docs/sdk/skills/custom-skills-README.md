@@ -25,7 +25,7 @@ For full details, see:
 2. Add a `skills_descriptor.py` to register skills.
 
 Example bundle:
-- `services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44`
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44`
 
 Files:
 - `skills/product`
@@ -152,6 +152,6 @@ For exact code paths and full runtime flow, see:
 
 ## References (code)
 
-- Example bundle: `services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44`
-- Descriptor: `services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44/skills_descriptor.py`
-- Example skill: `services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44/skills/product`
+- Example bundle: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44`
+- Descriptor: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44/skills_descriptor.py`
+- Example skill: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44/skills/product`

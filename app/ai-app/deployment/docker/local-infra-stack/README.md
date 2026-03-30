@@ -1,5 +1,5 @@
 ---
-id: ks:deploy/docker/local-infra-stack/README.md
+id: ks:deployment/docker/local-infra-stack/README.md
 title: "Local Infra Stack (Docker Compose)"
 summary: "Run Postgres, Redis, ClamAV, and proxylogin locally for KDCube development."
 tags: ["deployment", "docker", "infra", "postgres", "redis", "clamav", "proxylogin"]

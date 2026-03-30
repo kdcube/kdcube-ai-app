@@ -33,7 +33,7 @@ Readiness:
 - `503` when draining
 
 Code:
-- `services/kdcube-ai-app/kdcube_ai_app/apps/chat/api/web_app.py`
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/api/web_app.py`
 
 ---
 
@@ -54,7 +54,7 @@ Readiness:
 - `503` when draining or bundles not ready
 
 Code:
-- `services/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/web_app.py`
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/web_app.py`
 
 ---
 
@@ -70,7 +70,7 @@ Readiness:
 - `200` when healthy
 
 Code:
-- `services/kdcube-ai-app/kdcube_ai_app/apps/metrics/web_app.py`
+- `src/kdcube-ai-app/kdcube_ai_app/apps/metrics/web_app.py`
 
 ---
 
@@ -91,7 +91,7 @@ Readiness:
 - `503` when unavailable
 
 Code:
-- `services/kdcube-ai-app/kdcube_ai_app/apps/knowledge_base/api/web_app.py`
+- `src/kdcube-ai-app/kdcube_ai_app/apps/knowledge_base/api/web_app.py`
 
 ---
 

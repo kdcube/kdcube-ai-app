@@ -3,7 +3,7 @@ id: ks:docs/sdk/bundle/bundle-interfaces-README.md
 title: "Bundle Interfaces"
 summary: "Bundle interface surface: communicator streaming, widgets/panels, and operations API."
 tags: ["sdk", "bundle", "interfaces", "streaming", "sse", "widgets", "operations", "communicator", "knowledge"]
-keywords: ["SSE", "Socket.IO", "Communicator", "operations API", "bundle widgets", "React panels", "artifacts", "attachments", "knowledge space", "ks:deploy"]
+keywords: ["SSE", "Socket.IO", "Communicator", "operations API", "bundle widgets", "React panels", "artifacts", "attachments", "knowledge space", "ks:deployment"]
 see_also:
   - ks:docs/sdk/bundle/bundle-dev-README.md
   - ks:docs/sdk/bundle/bundle-ops-README.md
@@ -154,10 +154,11 @@ Bundles can emit files (artifacts) and citations. The platform stores them and
 emits references through SSE so clients can render downloads and previews.
 
 Bundles can also expose **knowledge space files** (read‑only) via `react.read`.
-Common namespaces:
+`ks:` is one bundle-defined logical path space rooted at the bundle's prepared knowledge root.
+Common real-path examples in this repo:
 - `ks:docs/<path>` — documentation
-- `ks:src/<path>` — source files
-- `ks:deploy/<path>` — deployment artifacts (compose, env, Dockerfiles)
+- `ks:src/kdcube-ai-app/<path>` — source files
+- `ks:deployment/<path>` — deployment artifacts (compose, env, Dockerfiles)
 
 See `bundle-dev-README.md` for how these roots are configured.
 
@@ -169,6 +170,6 @@ Docs:
 
 ## References (code)
 
-- Integrations ops API: `services/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/integrations.py`
-- Example widget: `services/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/AIBundleDashboard.tsx`
-- Base entrypoint: `services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/entrypoint.py`
+- Integrations ops API: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/integrations.py`
+- Example widget: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/AIBundleDashboard.tsx`
+- Base entrypoint: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/entrypoint.py`
