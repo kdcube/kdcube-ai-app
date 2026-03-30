@@ -54,7 +54,7 @@ Descriptions are condensed from the comments in those sample files.
 | `HOST_EXEC_WORKSPACE_PATH` | Temporary workspace for code execution (Docker-in-Docker) |
 | `AGENTIC_BUNDLES_ROOT` | Mount path for bundles inside the container DO NOT CHANGE unless you modify AGENTIC_BUNDLES_JSON references |
 | `BUNDLE_STORAGE_ROOT` | Shared bundle storage root inside the container (knowledge space root) |
-| `UI_BUILD_CONTEXT` | Root of the KDCube ai-app directory (contains deployment/, ui/, services/) This works on Linux/Mac. For Windows, use a Windows-safe path (e.g., D:/path/to/kdcube-ai-app/app/ai-app) |
+| `UI_BUILD_CONTEXT` | Root of the KDCube ai-app directory (contains deployment/, ui/, src/) This works on Linux/Mac. For Windows, use a Windows-safe path (e.g., D:/path/to/kdcube-ai-app/app/ai-app) |
 | `UI_DOCKERFILE_PATH` | Path to Dockerfile_UI (relative to UI_BUILD_CONTEXT) |
 | `UI_SOURCE_PATH` | Path to UI source code (relative to UI_BUILD_CONTEXT) This directory should contain package.json and your UI application |
 | `NGINX_UI_CONFIG_FILE_PATH` | Path to nginx configuration for UI (relative to UI_BUILD_CONTEXT) This configures how nginx serves your built UI application |
@@ -761,7 +761,7 @@ Control plane schema
 
 Deploy the economics schema before enabling control plane endpoints:
 
-- [deploy-kdcube-control-plane.sql](../../services/kdcube-ai-app/kdcube_ai_app/ops/deployment/sql/control_plane/deploy-kdcube-control-plane.sql)
+- [deploy-kdcube-control-plane.sql](../../src/kdcube-ai-app/kdcube_ai_app/ops/deployment/sql/control_plane/deploy-kdcube-control-plane.sql)
 
 Plan quota seeding
 

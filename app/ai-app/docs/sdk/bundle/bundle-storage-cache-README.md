@@ -112,5 +112,5 @@ See:
 
 ## References (code)
 
-- Storage: `services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/storage/ai_bundle_storage.py`
-- KV cache: `services/kdcube-ai-app/kdcube_ai_app/infra/service_hub/cache.py`
+- Storage: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/storage/ai_bundle_storage.py`
+- KV cache: `src/kdcube-ai-app/kdcube_ai_app/infra/service_hub/cache.py`

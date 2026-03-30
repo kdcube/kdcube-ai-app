@@ -60,7 +60,7 @@ Reference:
 ### What lives under KDCube storage
 - **Accounting (raw events)** — per service / bundle / turn  
   See accounting system and layout:
-  https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/services/kdcube-ai-app/kdcube_ai_app/infra/accounting/__init__.py
+  https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/infra/accounting/__init__.py
 - **Analytics aggregates** — daily/weekly/monthly accounting summaries  
   See: https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/storage/sdk-store-README.md
 - **Conversation artifacts & attachments** — per turn, per user  

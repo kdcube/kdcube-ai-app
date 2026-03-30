@@ -58,7 +58,7 @@ Example: `react.doc`
 
 ### What the agent calls
 
-The public tool is `exec_tools.execute_code_python(...)` in [exec_tools.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tools/exec_tools.py).
+The public tool is `exec_tools.execute_code_python(...)` in [exec_tools.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tools/exec_tools.py).
 
 Current public contract:
 

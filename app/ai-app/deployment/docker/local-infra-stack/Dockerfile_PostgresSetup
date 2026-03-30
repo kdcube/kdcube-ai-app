@@ -13,11 +13,11 @@ RUN groupadd --gid 1000 appuser && \
 WORKDIR /app
 
 # Minimal deps for the deploy script
-COPY services/kdcube-ai-app/requirements-dbdeploy.txt .
+COPY src/kdcube-ai-app/requirements-dbdeploy.txt .
 RUN pip install --no-cache-dir -r requirements-dbdeploy.txt
 
 # Copy sources (run from source, not as a package)
-COPY --chown=appuser:appuser services/kdcube-ai-app/ .
+COPY --chown=appuser:appuser src/kdcube-ai-app/ .
 
 # Run as non-root
 USER appuser

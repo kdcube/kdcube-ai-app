@@ -278,5 +278,5 @@ SecRule REQUEST_HEADERS:Content-Type "application/json" \
 
 - Proxy config: `deployment/proxy/nginx.conf`
 - Auth unmask service: `proxylogin` (internal service, `/v1/unmask`)
-- Chat ingress: `services/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/`
-- Chat processor: `services/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py`
+- Chat ingress: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/`
+- Chat processor: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py`

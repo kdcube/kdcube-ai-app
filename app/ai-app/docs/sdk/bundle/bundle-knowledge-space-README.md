@@ -141,7 +141,7 @@ The usual pattern is:
 ## Example bundle
 
 Reference example:
-`services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react.doc@2026-03-02-22-10`
+`src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react.doc@2026-03-02-22-10`
 
 That bundle exposes one particular `ks:` layout for its own use case, but that layout is **example-specific**, not part of the general bundle contract.
 

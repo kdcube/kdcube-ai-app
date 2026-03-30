@@ -196,5 +196,5 @@ Without step 3, OpenResty will fail to start because the SSL/delegated-auth conf
 - Proxy Dockerfile: `deployment/docker/Dockerfile_ProxyOpenResty`
 - All-in-one compose: `deployment/docker/all_in_one_kdcube/docker-compose.yml`
 - EC2 compose: `deployment/docker/custom-ui-managed-infra/docker-compose.yml`
-- Chat ingress: `services/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/`
-- Chat processor: `services/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py`
+- Chat ingress: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/`
+- Chat processor: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py`

@@ -15,7 +15,7 @@ This document describes the `rate_limit.*` server-sent events emitted by
 
 All user-facing text (`user_message` field) is defined in one place:
 
-> **[`kdcube_ai_app/apps/chat/sdk/infra/economics/events_resources.py`](../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/infra/economics/events_resources.py)**
+> **[`kdcube_ai_app/apps/chat/sdk/infra/economics/events_resources.py`](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/infra/economics/events_resources.py)**
 
 Edit that file to change what users see — no entrypoint logic needs to change.
 

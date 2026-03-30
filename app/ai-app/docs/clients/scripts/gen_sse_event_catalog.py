@@ -60,7 +60,7 @@ def _fmt_list(items: Iterable[str]) -> str:
 
 
 def _build_catalog(root: Path) -> str:
-    chat_root = root / "services" / "kdcube-ai-app" / "kdcube_ai_app" / "apps" / "chat"
+    chat_root = root / "src" / "kdcube-ai-app" / "kdcube_ai_app" / "apps" / "chat"
     py_files = _collect_py_files(chat_root)
 
     event_types: Set[str] = set()
