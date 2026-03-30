@@ -145,7 +145,7 @@ dev experiments only.
 ## Local MCP server example: `web_search`
 
 Server module:
-- [`kdcube_ai_app/apps/chat/sdk/tools/mcp/web_search/web_search_server.py`](../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tools/mcp/web_search/web_search_server.py)
+- [`kdcube_ai_app/apps/chat/sdk/tools/mcp/web_search/web_search_server.py`](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tools/mcp/web_search/web_search_server.py)
 
 Run server (stdio):
 

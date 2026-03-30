@@ -284,11 +284,11 @@ Workspace (`work/` + `out/`) is execution state and diagnostics. Use it for runt
 ## Code map
 
 Primary implementation points:
-- workspace origin: [`kdcube_ai_app/apps/chat/sdk/solutions/react/v2/browser.py`](../../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/browser.py)
-- root selection: [`kdcube_ai_app/apps/chat/sdk/solutions/infra.py`](../../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/infra.py)
-- tool call index/files: [`kdcube_ai_app/apps/chat/sdk/runtime/tool_index.py`](../../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/tool_index.py), [`kdcube_ai_app/apps/chat/sdk/tools/io_tools.py`](../../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tools/io_tools.py)
-- local timeline file writes: [`kdcube_ai_app/apps/chat/sdk/solutions/react/v2/timeline.py`](../../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/timeline.py)
-- lightweight distributed snapshot: [`kdcube_ai_app/apps/chat/sdk/solutions/react/v2/solution_workspace.py`](../../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/solution_workspace.py)
-- snapshot upload/path conventions: [`kdcube_ai_app/apps/chat/sdk/runtime/external/distributed_snapshot.py`](../../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/external/distributed_snapshot.py)
-- remote restore/upload entrypoint: [`kdcube_ai_app/apps/chat/sdk/runtime/isolated/py_code_exec_entry.py`](../../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/isolated/py_code_exec_entry.py)
-- Fargate launch + merge-back: [`kdcube_ai_app/apps/chat/sdk/runtime/external/fargate.py`](../../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/external/fargate.py)
+- workspace origin: [`kdcube_ai_app/apps/chat/sdk/solutions/react/v2/browser.py`](../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/browser.py)
+- root selection: [`kdcube_ai_app/apps/chat/sdk/solutions/infra.py`](../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/infra.py)
+- tool call index/files: [`kdcube_ai_app/apps/chat/sdk/runtime/tool_index.py`](../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/tool_index.py), [`kdcube_ai_app/apps/chat/sdk/tools/io_tools.py`](../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tools/io_tools.py)
+- local timeline file writes: [`kdcube_ai_app/apps/chat/sdk/solutions/react/v2/timeline.py`](../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/timeline.py)
+- lightweight distributed snapshot: [`kdcube_ai_app/apps/chat/sdk/solutions/react/v2/solution_workspace.py`](../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/solution_workspace.py)
+- snapshot upload/path conventions: [`kdcube_ai_app/apps/chat/sdk/runtime/external/distributed_snapshot.py`](../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/external/distributed_snapshot.py)
+- remote restore/upload entrypoint: [`kdcube_ai_app/apps/chat/sdk/runtime/isolated/py_code_exec_entry.py`](../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/isolated/py_code_exec_entry.py)
+- Fargate launch + merge-back: [`kdcube_ai_app/apps/chat/sdk/runtime/external/fargate.py`](../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/external/fargate.py)

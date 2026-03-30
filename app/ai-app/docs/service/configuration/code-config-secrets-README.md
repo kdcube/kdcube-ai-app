@@ -83,16 +83,6 @@ See:
 When you add a new secret:
 
 1) Add it to `deployment/secrets.yaml` (dot‑path key).
-2) Update docs: `secrets-descriptor-README.md`.
-3) If you must support legacy env vars, add an alias mapping in
-   `apps/chat/sdk/config.py` (`_SECRET_ALIASES`).
-4) Use `get_secret("dot.path.key")` in code.
-
-## 6) OpenRouter (next step)
-
-OpenRouter wiring is **planned** but not yet fully supported across the infra.
-Do not enable it by default. When it is ready, it will use:
-
-- Provider: `openrouter`
-- Secret: `services.openrouter.api_key`
-- Optional base URL: `OPENROUTER_BASE_URL` (default: `https://openrouter.ai/api/v1`)
+2) If you must support legacy env vars, add an alias mapping in
+   `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/config.py` (`_SECRET_ALIASES`).
+3) Use `get_secret("dot.path.key")` in code.

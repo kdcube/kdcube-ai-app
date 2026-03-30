@@ -303,7 +303,7 @@ POST /admin/integrations/bundles/<bundle_id>/props
       "repo": "git@github.com:kdcube/kdcube-ai-app.git",
       "ref": "v0.3.2",
       "docs_root": "app/ai-app/docs",
-      "src_root": "app/ai-app/services/kdcube-ai-app/kdcube_ai_app",
+      "src_root": "app/ai-app/src/kdcube-ai-app/kdcube_ai_app",
       "deploy_root": "app/ai-app/deployment",
       "validate_refs": true
     }
@@ -322,14 +322,14 @@ bundles:
     - id: "react@2026-02-10-02-44"
       repo: "git@github.com:kdcube/kdcube-ai-app.git"
       ref: "v0.3.2"
-      subdir: "app/ai-app/services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles"
+      subdir: "app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles"
       module: "react@2026-02-10-02-44.entrypoint"
       config:
         knowledge:
           repo: "git@github.com:kdcube/kdcube-ai-app.git"
           ref: "v0.3.2"
           docs_root: "app/ai-app/docs"
-          src_root: "app/ai-app/services/kdcube-ai-app/kdcube_ai_app"
+          src_root: "app/ai-app/src/kdcube-ai-app/kdcube_ai_app"
           deploy_root: "app/ai-app/deployment"
           validate_refs: true
 ```
@@ -429,8 +429,8 @@ These control the periodic cleanup that removes stale bundle module caches:
 
 ## References (code)
 
-- Bundle registry: `services/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_registry.py`
-- Git bundle resolver: `services/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`
-- Bundle store (Redis): `services/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_store.py`
-- Task processor + config listener: `services/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py`
-- Integrations API: `services/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/integrations.py`
+- Bundle registry: `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_registry.py`
+- Git bundle resolver: `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`
+- Bundle store (Redis): `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_store.py`
+- Task processor + config listener: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py`
+- Integrations API: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/integrations.py`

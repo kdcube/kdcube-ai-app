@@ -21,7 +21,7 @@ This document defines the **initial CLI surface** and behavior. The CLI is for:
 - **Compose users** running the all‑in‑one stack.
 - **Release tooling** (validate and render assembly descriptors).
 
-CLI root (code): `services/kdcube-ai-app/kdcube_cli`
+CLI root (code): `src/kdcube-ai-app/kdcube_cli`
 
 ---
 
@@ -82,9 +82,9 @@ kdcube env init \
 - `deployment/docker/local-infra-stack/.env`
 - `deployment/docker/local-infra-stack/.env.postgres.setup`
 - `deployment/docker/local-infra-stack/.env.proxylogin`
-- `services/kdcube-ai-app/kdcube_ai_app/apps/chat/api/.env.ingress`
-- `services/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/.env.proc`
-- `services/kdcube-ai-app/kdcube_ai_app/apps/metrics/.env.metrics`
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/api/.env.ingress`
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/.env.proc`
+- `src/kdcube-ai-app/kdcube_ai_app/apps/metrics/.env.metrics`
 - `ui/chat-web-app/public/private/config.hardcoded.json` (generated UI config)
 
 **Folders created (default set):**

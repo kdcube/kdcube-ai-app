@@ -125,7 +125,7 @@ Actions:
 Start chat service (loads `.env` from `app/ai-app`):
 ```bash
 cd /Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app
-PYTHONPATH=/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/services/kdcube-ai-app \
+PYTHONPATH=/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/src/kdcube-ai-app \
 python -m kdcube_ai_app.apps.chat.api.web_app
 ```
 

@@ -27,21 +27,21 @@ It drives the frontend “exec” panel that shows:
 
 Core implementation:
 
-- [exec.py](../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/widgets/exec.py)
+- [exec.py](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/widgets/exec.py)
 
 ## Where It Is Wired
 
 Decision streaming (3‑channel LLM stream):
 
-- [decision.py](../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/agents/decision.py)
+- [decision.py](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/agents/decision.py)
 
 Runtime wiring and subscriptions:
 
-- [runtime.py](../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/runtime.py)
+- [runtime.py](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/runtime.py)
 
 Execution status updates (same widget instance):
 
-- [execution.py](../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/execution.py)
+- [execution.py](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/execution.py)
 
 Channeled streaming protocol:
 
@@ -228,7 +228,7 @@ The frontend widget should:
 ## Related Docs
 
 - [channeled-streamer-README.md](channeled-streamer-README.md)
-- [decision.py](../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/agents/decision.py)
-- [runtime.py](../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/runtime.py)
-- [exec.py](../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/widgets/exec.py)
-- [execution.py](../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/execution.py)
+- [decision.py](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/agents/decision.py)
+- [runtime.py](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/runtime.py)
+- [exec.py](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/widgets/exec.py)
+- [execution.py](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/execution.py)

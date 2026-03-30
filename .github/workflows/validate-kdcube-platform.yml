@@ -3,7 +3,7 @@ name: Validate KDCube Platform
 on:
   pull_request:
     paths:
-      - "app/ai-app/services/kdcube-ai-app/**"
+      - " app/ai-app/src/kdcube-ai-app/**"
       - "app/ai-app/ui/chat-web-app/**"
       - "scripts/ci/check.sh"
       - "Makefile"
@@ -13,7 +13,7 @@ on:
   #   branches:
   #     - main
   #   paths:
-  #     - "app/ai-app/services/kdcube-ai-app/**"
+  #     - " app/ai-app/src/kdcube-ai-app/**"
   #     - "app/ai-app/ui/chat-web-app/**"
   #     - "scripts/ci/check.sh"
   #     - "Makefile"
@@ -32,7 +32,7 @@ jobs:
       - name: Install backend dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r app/ai-app/services/kdcube-ai-app/requirements-chat.txt
+          python -m pip install -r  app/ai-app/src/kdcube-ai-app/requirements-chat.txt
 
       - name: Run backend checks
         run: bash scripts/ci/check.sh backend
