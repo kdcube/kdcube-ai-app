@@ -6,6 +6,8 @@ tags: ["sdk", "bundle", "development", "workflow", "entrypoint", "tools", "skill
 keywords: ["agentic_workflow", "BaseEntrypoint", "tools_descriptor", "skills_descriptor", "operations API", "on_bundle_load", "knowledge space", "event_filter"]
 see_also:
   - ks:docs/sdk/bundle/bundle-index-README.md
+  - ks:docs/sdk/bundle/bundle-lifecycle-README.md
+  - ks:docs/sdk/bundle/bundle-config-README.md
   - ks:docs/sdk/bundle/bundle-interfaces-README.md
   - ks:docs/sdk/bundle/bundle-ops-README.md
   - ks:docs/sdk/bundle/bundle-platform-properties-README.md
@@ -14,10 +16,18 @@ see_also:
 
 This guide is for **bundle developers** who build workflows, tools, and UI experiences on top of the KDCube Chat SDK.
 
+Read these first:
+- lifecycle and storage surfaces:
+  [docs/sdk/bundle/bundle-lifecycle-README.md](bundle-lifecycle-README.md)
+- bundle config and secrets:
+  [docs/sdk/bundle/bundle-config-README.md](bundle-config-README.md)
+- optional React `ks:` integration:
+  [docs/sdk/bundle/bundle-knowledge-space-README.md](bundle-knowledge-space-README.md)
+
 If you need **ops/runtime config** (registry, env vars, git bundles, assembly descriptors), see:
 [docs/sdk/bundle/bundle-ops-README.md](bundle-ops-README.md).
 
-If you need **bundle config/secrets** (properties and secret keys), see:
+If you need the platform/source-of-truth config format (`bundles.yaml`, secrets files), see:
 [docs/service/configuration/bundle-configuration-README.md](../../service/configuration/bundle-configuration-README.md).
 
 If you need the list of **platform-reserved bundle property paths** interpreted by

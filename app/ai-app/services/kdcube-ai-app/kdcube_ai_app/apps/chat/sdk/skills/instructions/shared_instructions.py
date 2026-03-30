@@ -156,15 +156,46 @@ SUGGESTED_FOLLOWUPS_GUIDE = """
 
 WORKSPACE_MODEL_GUIDE = """
 [WORKSPACE MODEL]
-- The current turn workspace is the current turn OUT_DIR working set. It starts small and grows only with current-turn outputs, logs, current-turn attachments, and artifacts explicitly rehosted into this turn.
+The agent should reason about FOUR distinct spaces, not one flat filesystem:
+
+```text
+VISIBLE / ADDRESSABLE WORKSPACE MODEL
+
+1) CURRENT TURN OUT_DIR (physical; current-turn execution surface)
+   out/
+     turn_<current_turn>/
+       files/           # only normal writable namespace for react tools
+       attachments/     # current-turn attachments and rehosted copies pulled into this turn
+     logs/              # runtime logs and diagnostics
+     timeline.json
+     ...
+   work/                # exec scratch only; not stable collaboration state
+
+2) CONVERSATION ARTIFACT MEMORY (logical; cross-turn; not a browsable folder)
+   ar:...  tc:...  so:...  su:...
+   fi:<older_turn>.files/...
+   fi:<older_turn>.user.attachments/...
+
+3) BUNDLE KNOWLEDGE SPACE `ks:` (logical; read-only virtual folder)
+   ks:<bundle-defined-path>/...
+   ...
+
+4) FUTURE COLLABORATIVE WORKSPACES (planned; not active in current React agent)
+   out/workspaces/<name>/...
+```
+
+- Current turn OUT_DIR starts small and grows only with current-turn outputs, logs, current-turn attachments, and artifacts explicitly rehosted into this turn.
 - Conversation artifact memory is broader than the current turn workspace. Historical artifacts live in timeline blocks, turn logs, sources pool, summaries, and hosting, and are pulled into the current turn only when needed.
 - `fi:` is a logical artifact reference and retrieval handle. It is not a general browsable filesystem for the whole conversation history.
-- `ks:` is a read-only permanent space exposed by the loaded bundle. It is separate from turn OUT_DIR. Access it through exact `ks:` paths, bundle search tools, and bundle-specific helpers if they exist.
-- Some bundles may expose exec-only namespace resolver helpers for custom browseable spaces. Those helpers are for generated code inside isolated exec only, not for normal planning-time tool use.
-- If generated code uses a namespace resolver, treat the resolver input logical_ref as the logical base. The returned physical_path is exec-local only.
-- `react.search_files` is only for current-turn physical spaces such as `outdir`, `outdir/<subdir>`, `workdir`, and `workdir/<subdir>`. It does not browse conversation artifact memory.
-- `workdir` is scratch for isolated execution, not stable collaboration state.
+- `ks:` belongs to the loaded bundle, is read-only, and is separate from turn OUT_DIR. Use exact `ks:` paths with `react.read` when you already know the path. Do not treat `ks:` as part of OUT_DIR.
+- `react.search_files` is only for current-turn physical spaces such as `outdir`, `outdir/<subdir>`, `workdir`, and `workdir/<subdir>`. It does not browse conversation artifact memory and does not browse `ks:`.
+- Some bundles may expose exec-only namespace resolver helpers for browseable spaces such as `ks:`. Those helpers are for generated code inside isolated exec only, not for normal planning-time tool use.
+- If exec code uses a namespace resolver, treat the resolver input `logical_ref` as the logical base. The returned `physical_path` is exec-local only.
+- If exec code browses a resolved `ks:` root and finds descendants, emit the corresponding logical refs such as `ks:<bundle-defined-root>/foo/bar.py` so the agent can later read them normally.
+- If the bundle does not expose a resolver for directory-style `ks:` browsing, then `ks:` is still readable by exact path with `react.read`, but it is not browseable as a directory tree from normal react tools.
 - Write only to the current turn `files/` namespace. Do not treat older turn files as mutable in place.
+- `workdir` is scratch for isolated execution, not stable collaboration state.
+- Future collaborative workspaces may later live under `out/workspaces/<name>/...`, but the current React agent does not have that writable/shared workspace model yet. Do not assume it exists unless the runtime/tooling explicitly exposes it.
 - If you need deeper filesystem-style exploration than the current tools expose, use isolated code or bundle-specific helpers when available. Never assume host shell access.
 """
 
@@ -242,7 +273,7 @@ HARD:
 - Exec code reads and writes PHYSICAL OUTPUT_DIR-relative paths.
 - Bundle namespace resolvers used inside exec return exec-local physical paths plus access mode. Those physical paths are not valid inputs to react.read or other normal react tools.
 - If exec code browses a resolved namespace root and finds useful descendants, emit logical refs by combining the original resolver input logical_ref with the discovered relative path.
-- Example: resolve `ks:src`, inspect the returned directory in exec, find `foo/bar.py`, then emit `ks:src/foo/bar.py` in an OUTPUT_DIR file or short user.log note so the agent can later call `react.read(["ks:src/foo/bar.py"])`.
+- Example: resolve `ks:<bundle-defined-root>`, inspect the returned directory in exec, find `foo/bar.py`, then emit `ks:<bundle-defined-root>/foo/bar.py` in an OUTPUT_DIR file or short user.log note so the agent can later call `react.read(["ks:<bundle-defined-root>/foo/bar.py"])`.
 - If you have a physical path, derive logical as above before calling react.read.
 - react.search_files returns `root` plus hits with `path`, `size_bytes`, and optional `logical_path`.
 - `path` is relative to the searched root and does not include that root prefix.
@@ -304,9 +335,9 @@ Using unsupported logical namespaces with fetch_ctx returns an error rather than
 - Keep the original resolver input `logical_ref` as the logical base.
 - If code browses descendants under the returned `physical_path`, emit follow-up logical refs by combining that original `logical_ref` with the discovered relative path.
 - Example:
-  - input `logical_ref = "ks:src"`
+  - input `logical_ref = "ks:<bundle-defined-root>"`
   - discovered relative path `foo/bar.py`
-  - emit logical ref `ks:src/foo/bar.py`
+  - emit logical ref `ks:<bundle-defined-root>/foo/bar.py`
 - Emit those logical refs in an `OUTPUT_DIR` file or short `user.log` note so the agent can later use `react.read(...)`.
 
 #### react.search_files results

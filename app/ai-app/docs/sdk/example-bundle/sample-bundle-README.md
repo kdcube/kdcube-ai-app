@@ -11,6 +11,11 @@ This bundle is a **ReAct agent with MCP tool integration**. It extends the base
 `react@2026-02-10-02-44` bundle by replacing the native Python `web_tools` module
 with external tool servers connected through MCP (Model Context Protocol).
 
+For the shared SDK model behind this example, see:
+- [../bundle/bundle-lifecycle-README.md](../bundle/bundle-lifecycle-README.md)
+- [../bundle/bundle-config-README.md](../bundle/bundle-config-README.md)
+- [../bundle/bundle-knowledge-space-README.md](../bundle/bundle-knowledge-space-README.md)
+
 Motivation:
 - decouple tool implementations from the bundle (tools live in separate processes/services)
 - allow third-party MCP servers (StackOverflow, custom docs, local dev tools)
@@ -30,7 +35,8 @@ The bundles are **nearly identical**. Only `tools_descriptor.py` differs:
 
 ## How it works (high-level)
 
-1) **Bundle registers as `react`** via `@agentic_workflow(name="react")` in `entrypoint.py`.
+1) **Bundle registers the workflow class under the logical name `react`** via `@agentic_workflow(name="react")` in `entrypoint.py`.
+   The delivery/registry bundle id is still `react.mcp@2026-03-09`.
 
 2) **Entrypoint builds a single-node LangGraph** (`orchestrate`) that lazily initializes
    all SDK services and delegates to `WithReactWorkflow.process()`.
@@ -154,6 +160,8 @@ export AGENTIC_BUNDLES_JSON='{
 
 - MCP connector configuration: [sample-bundle-configuration-README.md](sample-bundle-configuration-README.md)
 - Bundle properties and integrations: [sample-bundle-properties-README.md](sample-bundle-properties-README.md)
+- Bundle lifecycle: [../bundle/bundle-lifecycle-README.md](../bundle/bundle-lifecycle-README.md)
+- Bundle configuration: [../bundle/bundle-config-README.md](../bundle/bundle-config-README.md)
 - SDK MCP integration: [docs/sdk/tools/mcp-README.md](../../tools/mcp-README.md)
 - Bundle developer guide: [docs/sdk/bundle/bundle-dev-README.md](../bundle-dev-README.md)
 - Base react bundle: `sdk/examples/bundles/react@2026-02-10-02-44/`

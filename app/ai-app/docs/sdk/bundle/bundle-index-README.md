@@ -1,7 +1,7 @@
 ---
 id: ks:docs/sdk/bundle/bundle-index-README.md
 title: "Bundle Index"
-summary: "Quick index of bundle docs by persona (developer vs ops)."
+summary: "Bundle documentation index for lifecycle, config, storage, React integration, interfaces, and ops."
 tags: ["sdk", "bundle", "docs", "index", "developer", "ops"]
 keywords: ["bundle docs index", "bundle developer guide", "bundle ops guide", "interfaces", "storage", "release"]
 see_also:
@@ -11,17 +11,26 @@ see_also:
 ---
 # Bundle Docs Index
 
-Use this index to find the right doc by persona.
+Use this index to find the right bundle doc by topic.
 
 ## Bundle developers
 
-- Authoring + SDK usage: [[docs/sdk/bundle/bundle-dev-README.md](bundle-dev-README.md)](bundle-dev-README.md)
+- Start here: [[docs/sdk/bundle/bundle-dev-README.md](bundle-dev-README.md)](bundle-dev-README.md)
+- Lifecycle, instance model, and storage surfaces: [[docs/sdk/bundle/bundle-lifecycle-README.md](bundle-lifecycle-README.md)](bundle-lifecycle-README.md)
+- Bundle configuration and secrets: [[docs/sdk/bundle/bundle-config-README.md](bundle-config-README.md)](bundle-config-README.md)
+- Reserved platform property paths: [[docs/sdk/bundle/bundle-platform-properties-README.md](bundle-platform-properties-README.md)](bundle-platform-properties-README.md)
 - Bundle outbound firewall: [[docs/sdk/bundle/bundle-firewall-README.md](bundle-firewall-README.md)](bundle-firewall-README.md)
 - Storage + cache: [[docs/sdk/bundle/bundle-storage-cache-README.md](bundle-storage-cache-README.md)](bundle-storage-cache-README.md)
+- Bundle knowledge space (`ks:`): [[docs/sdk/bundle/bundle-knowledge-space-README.md](bundle-knowledge-space-README.md)](bundle-knowledge-space-README.md)
 - Interfaces (widgets + ops): [[docs/sdk/bundle/bundle-interfaces-README.md](bundle-interfaces-README.md)](bundle-interfaces-README.md)
 - Custom tools (bundle‑local): [[docs/sdk/tools/custom-tools-README.md](../tools/custom-tools-README.md)](../tools/custom-tools-README.md)
 - Custom skills (bundle‑local): [[docs/sdk/skills/custom-skills-README.md](../skills/custom-skills-README.md)](../skills/custom-skills-README.md)
-- Bundle properties and secrets: [[bundle-configuration-README.md](../../service/configuration/bundle-configuration-README.md)](../../service/configuration/bundle-configuration-README.md)
+
+## React bundle integration
+
+- React workspace model: [[docs/sdk/agents/react/react-turn-workspace-README.md](../agents/react/react-turn-workspace-README.md)](../agents/react/react-turn-workspace-README.md)
+- React workspace collaboration: [[docs/sdk/agents/react/agent-workspace-collboration-README.md](../agents/react/agent-workspace-collboration-README.md)](../agents/react/agent-workspace-collboration-README.md)
+
 ## Ops / deployment
 
 - Registry, env vars, git delivery: [[docs/sdk/bundle/bundle-ops-README.md](bundle-ops-README.md)](bundle-ops-README.md)
