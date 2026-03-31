@@ -94,15 +94,25 @@ const ResizableContainer = ({
         let resizeLine = null
         switch (position) {
             case "top":
-                resizeLine = <div className={"w-full absolute top-0 h-2 cursor-row-resize translate-y-1"}>&nbsp;</div>;
+                resizeLine =
+                    <div className={"w-full absolute top-0 h-2 cursor-row-resize translate-y-1"}
+                         onMouseDown={onMouseDown}
+                         onMouseUp={onMouseUp}
+                    >&nbsp;</div>;
                 break;
             case "bottom":
                 resizeLine =
-                    <div className={"w-full absolute bottom-0 h-2 cursor-row-resize -translate-y-1"}>&nbsp;</div>;
+                    <div className={"w-full absolute bottom-0 h-2 cursor-row-resize -translate-y-1"}
+                         onMouseDown={onMouseDown}
+                         onMouseUp={onMouseUp}
+                    >&nbsp;</div>;
                 break;
             case "left":
                 resizeLine =
-                    <div className={"h-full absolute left-0 w-2 cursor-col-resize -translate-x-1"}>&nbsp;</div>;
+                    <div className={"h-full absolute left-0 w-2 cursor-col-resize -translate-x-1"}
+                         onMouseDown={onMouseDown}
+                         onMouseUp={onMouseUp}
+                    >&nbsp;</div>;
                 break;
             case "right":
                 resizeLine = <div
