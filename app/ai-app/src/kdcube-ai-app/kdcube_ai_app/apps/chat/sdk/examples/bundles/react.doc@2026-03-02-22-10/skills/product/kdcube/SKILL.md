@@ -24,6 +24,8 @@ tags:
   - web-search
   - multi-tenant
   - deployment
+  - sdk
+  - development
 when_to_use:
   - Explaining what KDCube is and how it works
   - "What can I build with KDCube? Which apps are possible?"
@@ -36,6 +38,8 @@ when_to_use:
   - Questions how to build on or integrate with KDCube
   - Questions about multi‑tenant hosting or deployment options (EC2/ECS/compose)
   - Questions about cost controls, budgets, or accounting
+  - Questions about how to build, structure, or validate a bundle
+  - Questions about the bundle SDK, entrypoint, skills, or tools
 author: kdcube
 created: 2026-03-02
 namespace: product
@@ -153,11 +157,27 @@ Advertised roots for this bundle:
   - not indexed for search
   - exact-readable when the concrete path is known
   - browseable in exec if you resolve it
-- `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/tests`
-  - reusable test fixtures
+- `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tests/bundle`
+  - current bundle pytest suite
   - not indexed for search
   - exact-readable when the concrete path is known
   - browseable in exec if you resolve it
+
+## Bundle structure anchors
+
+When reasoning about a bundle, keep these common anchors in mind:
+- `entrypoint.py`
+  - defines `BUNDLE_ID`
+  - exposes the workflow class discovered by the bundle loader
+- `tools_descriptor.py`
+  - declares custom tool registrations when the bundle exposes tools
+- `skills_descriptor.py`
+  - declares custom skill registrations when the bundle exposes skills
+- `skills/<namespace>/<skill_id>/SKILL.md`
+  - optional skill prompts shipped by the bundle
+
+These are common bundle structure anchors, not proof of exact implementation details.
+For exact base classes, imports, decorators, and runtime symbols, confirm them from current docs/examples/source before coding.
 
 When a doc references files and the exact `ks:` path is unclear:
 1. If the mapping is obvious, derive the exact logical path and `react.read` it directly.

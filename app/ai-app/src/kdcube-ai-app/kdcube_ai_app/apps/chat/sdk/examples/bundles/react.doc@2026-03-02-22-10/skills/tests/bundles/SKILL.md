@@ -2,11 +2,10 @@
 name: bundles
 id: bundles
 description: |
-  Draft guidance for validating generated bundles against a small reusable pytest smoke suite.
-  Use this skill whenever the task is about bundle code generation, modification, extraction,
-  repair, review, or validation and the agent needs the current bundle contract and smoke-test
-  expectations in front of it.
-version: 1.0.0
+  Guidance for using the current parameterized bundle pytest suite as contract evidence
+  and validation material when generating, modifying, extracting, repairing, reviewing,
+  or troubleshooting bundles.
+version: 1.1.0
 category: testing
 tags:
   - bundles
@@ -19,8 +18,8 @@ when_to_use:
   - The user asks to modify an existing bundle and verify it still works
   - The user asks to review, repair, extract, or troubleshoot a bundle
   - The user asks how a bundle should be structured or imported
-  - The agent needs a quick bundle smoke test before handoff
-  - The agent needs to locate the reusable bundle test fixtures in react.doc
+  - The agent needs the current bundle pytest suite and its expectations in front of it
+  - The agent needs to locate or run the bundle tests exposed by react.doc
 author: kdcube
 created: 2026-03-20
 namespace: tests
@@ -30,14 +29,14 @@ namespace: tests
 
 ## Purpose
 
-This skill tells you where the draft reusable bundle smoke tests live and how to run them from isolated exec.
+This skill tells you where the current parameterized bundle pytest suite lives and how to use it from isolated exec.
 Keep it loaded whenever bundle code is being authored or discussed in detail, not only when pytest is about to run.
 
 Companion loading rule:
 - For bundle tasks, load this skill together with `sk:product.kdcube`.
 - `sk:product.kdcube` gives the platform/runtime model.
-- `sk:tests.bundles` gives the current bundle contract and validation expectations.
-- This skill alone is not the contract. Before writing code, read the actual fixture material, not only this skill.
+- `sk:tests.bundles` gives the current test contract and validation workflow.
+- This skill alone is not the contract. Before writing code, read the actual current test files, not only this skill.
 - Use the tests to understand the expected contract first, then write code to satisfy that contract.
 - When platform or framework symbols are needed, confirm them from current docs/examples/source before coding.
 - Do not invent platform symbols or import paths.
@@ -50,66 +49,103 @@ Companion loading rule:
 
 Before the first bundle file write, make sure all of the following are true:
 
-- You have read the actual current pytest/README material that defines the bundle contract.
-- You know the exact test file you plan to run, or you have a concrete discovery plan to find it.
+- You have read the actual current pytest material that defines the relevant contract.
+- You know the exact test file or small subset you plan to run, or you have a concrete discovery plan to find it.
 - For every requested platform-integrated feature, you have read at least one current source/example/doc file that proves the needed pattern.
 - The exact import paths and runtime symbols you intend to use are confirmed in visible evidence.
-- You know the smallest bundle shape that should pass the current contract.
+- You know the smallest bundle shape that should pass the relevant current tests.
 
 If any item above is still missing, do not write bundle code yet. Gather the missing evidence first.
 
 ## Where the tests are
 
-The reusable test fixtures are exposed by `react.doc` under their real knowledge-space path:
-- `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/tests/...`
+The current bundle pytest suite is exposed by `react.doc` under its real knowledge-space path:
+- `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tests/bundle/...`
 
 That is a real path under one common `ks:` root, not a separate test-only namespace.
 
 These files are intentionally **not** indexed for `react.search_knowledge`.
-Do not assume one fixed file path up front.
+Do not assume one fixed single smoke-test file up front.
 Instead:
-- keep `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/tests` as the logical base
+- keep `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tests/bundle` as the logical base
 - use generated exec code plus `bundle_data.resolve_namespace(...)` to browse the subtree
-- inspect the discovered README / pytest files that are relevant
-- treat the resolved directory as a subtree root, not as a directory that necessarily contains pytest files directly
+- inspect the exact pytest files that are relevant
+- treat the resolved directory as a pytest suite root
+
+This suite includes `conftest.py`, which defines:
+- bundle selection by folder via `BUNDLE_UNDER_TEST` or `--bundle-path`
+- bundle id derivation from the selected bundle folder for internal routing/config use
+- shared Redis / Postgres / comm-context fixtures
+
+## What the current suite covers
+
+| Area | File(s) |
+|---|---|
+| Initialization | `test_initialization.py` |
+| Configuration | `test_configuration.py` |
+| LangGraph structure | `test_graph.py` |
+| BundleState fields | `test_bundle_state.py` |
+| Error handling | `test_error_handling.py` |
+| Event streaming | `test_event_streaming.py` |
+| Token accounting | `test_accounting.py` |
+| Model routing | `test_model_routing.py` |
+| Sequential requests / execution flow | `test_execution_flow.py` |
+| Custom tools execution | `test_custom_tools_execution.py` |
+| Custom tools integration | `test_custom_tools_integration.py` |
+| Custom tools registration | `test_custom_tools_registration.py` |
+| Custom tools storage behavior | `test_custom_tools_storage.py` |
+| Custom skills execution | `test_custom_skills_execution.py` |
+| Custom skills manifest/schema | `test_custom_skills_manifest.py` |
+| Custom skills registration | `test_custom_skills_registration.py` |
+| Custom skills visibility | `test_custom_skills_visibility.py` |
+| Storage core behavior | `test_storage.py` |
+| Cloud storage | `test_storage_cloud.py` |
+| Local FS storage | `test_storage_local_fs.py` |
+| Redis storage | `test_storage_redis.py` |
+| Storage integration | `test_storage_integration.py` |
+
+Interpretation rule:
+- not every file in this suite is relevant to every bundle task
+- choose the smallest relevant subset of tests for the user’s requested feature set
+- when unsure, read the exact candidate tests first and let them tell you whether they apply
 
 ## How to use them
 
 1. Read this skill if it is relevant:
    - `react.read(["sk:tests.bundles"])`
-2. Read the actual fixture material before writing bundle code:
-   - start from `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/tests`
-   - discover the relevant README / pytest files by browsing from generated exec code if the exact file is not already known
+2. Read the actual current test files before writing bundle code:
+   - start from `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tests/bundle`
+   - discover the relevant pytest files by browsing from generated exec code if the exact file is not already known
    - bring the exact discovered file(s) back into visible context with `react.read(...)`
 3. In generated exec code, if discovery is needed:
-   - resolve `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/tests` with `bundle_data.resolve_namespace(...)`
-   - browse the returned `physical_path` recursively
-   - identify the relevant descendant README / pytest files for bundle validation
+   - resolve `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tests/bundle` with `bundle_data.resolve_namespace(...)`
+   - browse the returned `physical_path`
+   - identify the relevant pytest files for bundle validation
    - emit exact logical refs or a short listing into `OUTPUT_DIR/...`
 4. Only after the tests are actually read, write or patch the bundle code.
-5. Set environment variable `BUNDLE_UNDER_TEST` to the generated bundle root.
+5. Run the narrowest exact file or subset that validates the current step.
 6. Write the pytest results to `OUTPUT_DIR/...` so they come back to the agent clearly.
 
 Implementation strategy:
 - read the tests first to understand the minimum required shape
-- if exact test paths are not obvious, do a narrow browse of the tests subtree first and then read the exact discovered files
+- if exact test paths are not obvious, do a narrow browse of the test subtree first and then read the exact discovered files
 - for platform-integrated bundle code, read at least one current source/example/doc file that proves the needed SDK pattern before implementing it
 - implement the smallest version that can satisfy that shape
-- run the smoke test early
-- only add non-essential structure after the minimal contract passes
+- run the most relevant tests early
+- only add non-essential structure after the current contract passes
 
 ## Default authoring loop
 
 Use this as the normal workflow for bundle generation, repair, and modification:
 
-1. Read the tests and fixture README first.
+1. Read the tests first.
 2. Read the current source/examples/docs that prove the requested feature patterns.
 3. If exact files are still unknown, use a small exec browse to discover candidate files, then `react.read` the exact discovered paths.
 4. Write the smallest implementation that should satisfy both the tests and the explicit user request.
-5. Run the smoke test immediately.
+5. Run the relevant test subset immediately.
 6. If it fails, read the exact traceback and the exact failing test/source/import targets before patching.
-7. Repeat with small corrections until the smoke test passes.
-8. Only then add optional polish, additional helpers, or non-essential features.
+7. Repeat with small corrections until the relevant test subset passes.
+8. Only then broaden validation or add optional polish.
 
 Do not jump from skills directly to large speculative code generation.
 Do not patch repeatedly from guesses when the traceback already tells you what exact file or import to inspect.
@@ -118,7 +154,7 @@ Do not patch repeatedly from guesses when the traceback already tells you what e
 
 When preparing to write or repair a bundle, use this exploration strategy:
 
-1. Read the tests and their README first.
+1. Read the tests first.
 2. Extract any exact file paths, import paths, symbol names, or structural expectations from the tests.
 3. If the tests imply a platform pattern that is still unclear, read the current source/example/doc files that prove that pattern.
 4. If exact files are still unknown, use isolated exec to search the relevant subtree like you would locally:
@@ -140,48 +176,61 @@ This means:
 That path is valid only inside isolated exec.
 
 If you need later follow-up with `react.read(...)`, keep the original logical base:
-- logical base: `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/tests`
+- logical base: `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tests/bundle`
 - discovered relative path: whatever the exec-time browse step found
 - follow-up logical ref: `f"{logical_base}/{relative_path}"`
 
-## Expected bundle-under-test contract
+## How to choose and run tests
 
-The current draft smoke test expects:
-- `__init__.py`
-- `entrypoint.py`
-- `tools_descriptor.py`
-- `skills_descriptor.py`
+This suite is a normal pytest tree with a shared `conftest.py`.
+It runs against the selected bundle folder, not against a bundle id lookup.
 
-It also checks that:
-- `entrypoint.py` imports successfully
-- `tools_descriptor.py` imports successfully
-- `skills_descriptor.py` imports successfully
-- `entrypoint.py` defines non-empty `BUNDLE_ID`
-- `entrypoint.py` exposes a bundle workflow class derived from `BaseEntrypoint`
+Normal strategy:
+- read the specific files that match the requested feature
+- run the narrowest exact file or small subset that validates the current step
+- only run the whole directory when broad regression coverage is actually useful
 
-Current entrypoint import contract:
-- use `from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import BaseEntrypoint`
-- or `from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint_with_economic import BaseEntrypointWithEconomics`
-- do not generate or keep legacy imports like `from kdcube_ai_app.apps.chat.sdk.workflow import AIWorkflow`
-- do not claim the bundle passes unless pytest was actually run and returned success
+Useful patterns:
+- minimal bundle shape:
+  - `test_initialization.py`
+  - `test_configuration.py`
+  - `test_graph.py`
+- custom tools:
+  - `test_custom_tools_*.py`
+- custom skills:
+  - `test_custom_skills_*.py`
+- storage:
+  - `test_storage*.py`
+- broad regression sweep:
+  - the whole directory
+
+Example run shapes:
+- one exact file:
+  - `BUNDLE_UNDER_TEST=/abs/path/to/bundle python -m pytest <resolved_test_root>/test_initialization.py -v --tb=short`
+- a small subset:
+  - `BUNDLE_UNDER_TEST=/abs/path/to/bundle python -m pytest <resolved_test_root>/test_initialization.py <resolved_test_root>/test_configuration.py <resolved_test_root>/test_graph.py -v --tb=short`
+- the whole current suite:
+  - `BUNDLE_UNDER_TEST=/abs/path/to/bundle python -m pytest <resolved_test_root> -v --tb=short`
+
+Interpreting results:
+- `N passed` means the executed subset passed
+- `SKIPPED` can be normal when a bundle or optional feature is absent for the selected bundle id
+- `FAILED` means there is a real problem to inspect
+- do not claim validation passed unless pytest was actually run and returned success
 
 ## Draft execution pattern
 
 In generated exec code, do roughly this:
 
-1. define `logical_base = "ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/tests"`
+1. define `logical_base = "ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tests/bundle"`
 2. resolve it with `bundle_data.resolve_namespace(logical_base)`
-3. treat `Path(res["ret"]["physical_path"])` as the subtree root
-4. first prefer the known reusable smoke test:
-   - `test_root / "bundles" / "test_generated_bundle_smoke.py"`
-5. if you need discovery instead of the known exact file, search recursively:
+3. treat `Path(res["ret"]["physical_path"])` as the suite root
+4. if you need discovery instead of a known exact file, collect candidates:
    - `sorted(test_root.rglob("test_*.py"))`
-   - do **not** use a non-recursive top-level glob like `test_root.glob("test_*.py")`
+5. choose the smallest relevant exact file or subset
 6. run:
-   - `python -m pytest <discovered_test_file>`
-7. set:
-   - `BUNDLE_UNDER_TEST=<generated bundle root>`
-8. write:
+   - `python -m pytest <chosen_test_file_or_dir>`
+7. write:
    - test summary
    - stdout/stderr
    into files under `OUTPUT_DIR`
@@ -194,32 +243,40 @@ import os
 import subprocess
 import sys
 
-logical_base = "ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/tests"
+logical_base = "ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tests/bundle"
 res = await agent_io_tools.tool_call(
     fn=bundle_data.resolve_namespace,
     params={"logical_ref": logical_base},
-    call_reason="Resolve bundle test fixtures path",
+    call_reason="Resolve bundle pytest suite",
     tool_id="bundle_data.resolve_namespace",
 )
 
 assert res.get("ok"), res
 test_root = Path(res["ret"]["physical_path"])
 
-preferred = test_root / "bundles" / "test_generated_bundle_smoke.py"
-if preferred.exists():
-    test_file = preferred
-else:
-    candidates = sorted(test_root.rglob("test_*.py"))
-    assert candidates, f"No pytest files found under {test_root}"
-    test_file = candidates[0]
+candidates = sorted(test_root.rglob("test_*.py"))
+assert candidates, f"No pytest files found under {test_root}"
+
+# Choose the smallest relevant file once you know which capability you are validating.
+test_file = next(
+    (p for p in candidates if p.name == "test_initialization.py"),
+    candidates[0],
+)
 
 env = dict(os.environ)
 env["BUNDLE_UNDER_TEST"] = str(bundle_root)
-
 proc = subprocess.run(
-    [sys.executable, "-m", "pytest", str(test_file), "-v", "--tb=short"],
+    [
+        sys.executable,
+        "-m",
+        "pytest",
+        str(test_file),
+        "-v",
+        "--tb=short",
+    ],
     text=True,
     capture_output=True,
     env=env,
+    cwd=str(test_root),
 )
 ```
