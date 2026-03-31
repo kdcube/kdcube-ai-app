@@ -153,7 +153,8 @@ class BaseEntrypoint:
                     if candidate.exists():
                         root = candidate
                 if root.exists():
-                    sha = compute_dir_sha256(root, skip_files=set())
+                    from kdcube_ai_app.apps.chat.sdk.runtime.external.distributed_snapshot import _SKIP_DIRS_DEFAULT
+                    sha = compute_dir_sha256(root, skip_dirs={*_SKIP_DIRS_DEFAULT, "node_modules"}, skip_files={"package-lock.json"})
                     # Always use content hash as authoritative version
                     self.config.ai_bundle_spec.version = sha[:12]
             except Exception:
@@ -211,7 +212,86 @@ class BaseEntrypoint:
           - redis
           - logger
         """
+        self._ensure_ui_build()
         return None
+
+    def _ensure_ui_build(self) -> None:
+        """
+        Build the bundle's custom UI if `ui.main_view` is configured in bundle_props.
+        Uses a signature (src_folder|build_command) to skip rebuilding when nothing changed.
+        Output goes to <bundle_storage_root>/ui/.
+        Bundles can override this method to customise the build behaviour.
+        """
+        import subprocess
+        import traceback as _tb
+
+        ui_cfg = (self.bundle_props or {}).get("ui") or {}
+        main_view = ui_cfg.get("main_view") or {}
+        src_folder = (main_view.get("src_folder") or "").strip()
+        build_command = (main_view.get("build_command") or "").strip()
+
+        if not src_folder or not build_command:
+            return
+
+        storage_root = self.bundle_storage_root()
+        if not storage_root:
+            self.logger.log("[bundle.ui] build skipped: storage_root unavailable", "WARNING")
+            return
+
+        bundle_root = self._bundle_root()
+        if not bundle_root:
+            self.logger.log("[bundle.ui] build skipped: bundle_root unavailable", "WARNING")
+            return
+
+        # Resolve src_folder: absolute as-is, relative → relative to bundle_root
+        src_path = pathlib.Path(src_folder)
+        if not src_path.is_absolute():
+            src_path = (pathlib.Path(bundle_root) / src_folder).resolve()
+        else:
+            src_path = src_path.resolve()
+
+        if not src_path.exists():
+            self.logger.log(f"[bundle.ui] build skipped: src_folder not found: {src_folder!r}", "WARNING")
+            return
+
+        build_dest = storage_root / "ui"
+        sig_path = storage_root / ".ui.signature"
+        signature = f"{src_path}|{build_command}"
+
+        try:
+            if sig_path.read_text(encoding="utf-8").strip() == signature and (build_dest / "index.html").exists():
+                self.logger.log(f"[bundle.ui] build skipped: signature cache hit storage={storage_root}", "INFO")
+                return
+        except Exception:
+            pass
+
+        build_dest.mkdir(parents=True, exist_ok=True)
+        final_command = build_command.replace("<VI_BUILD_DEST_ABSOLUTE_PATH>", str(build_dest))
+        self.logger.log(f"[bundle.ui] build start: src={src_path} dest={build_dest}", "INFO")
+        try:
+            result = subprocess.run(
+                final_command,
+                shell=True,
+                cwd=str(src_path),
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+            if result.returncode != 0:
+                self.logger.log(
+                    f"[bundle.ui] build failed (exit={result.returncode}):\n{result.stderr[-2000:]}",
+                    "ERROR",
+                )
+                return
+            sig_path.write_text(f"{signature}\n", encoding="utf-8")
+            self.logger.log(
+                f"[bundle.ui] build done: dest={build_dest} index_html={(build_dest / 'index.html').exists()}",
+                "INFO",
+            )
+        except subprocess.TimeoutExpired:
+            self.logger.log("[bundle.ui] build failed: timeout after 600s", "ERROR")
+        except Exception:
+            self.logger.log(f"[bundle.ui] build failed:\n{_tb.format_exc()}", "ERROR")
 
     def bundle_storage_root(self) -> Optional[pathlib.Path]:
         """
