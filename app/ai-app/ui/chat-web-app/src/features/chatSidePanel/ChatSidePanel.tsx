@@ -7,6 +7,7 @@ import {
     CirclePlus,
     CreditCard,
     Database,
+    LayoutDashboard,
     LoaderCircle,
     MessageSquareMore,
     MessagesSquare,
@@ -43,7 +44,7 @@ import DebugPanel from "../debugPanel/DebugPanel.tsx";
 import {selectCurrentBundle} from "../bundles/bundlesSlice.ts";
 import ResizableContainer from "../../components/ResizableContainer.tsx";
 import {readParam, writeParam} from "../settingsStorage/settingsStorage.ts";
-import {selectAppUser} from "../auth/authSlice.ts";
+import {selectAppUser, selectAuthToken, selectIdToken} from "../auth/authSlice.ts";
 
 interface MenuButtonProps {
     children: ReactNode | ReactNode[];
@@ -188,6 +189,48 @@ const IFrameSrcDocPanel = ({visible, srcDoc, className}: IFrameSrcDocPanelProps)
     }, [className, srcDoc, visible])
 }
 
+interface IFrameSrcPanelProps {
+    visible: boolean;
+    src: string;
+    className?: string;
+}
+
+const IFrameSrcPanel = ({visible, src, className}: IFrameSrcPanelProps) => {
+    return useMemo(() => {
+        return <motion.div
+            className={className}
+            style={{pointerEvents: visible ? "auto" : 'none'}}
+            initial={{opacity: visible ? 0 : 1}}
+            animate={{opacity: visible ? 1 : 0}}
+        >
+            <div className={"w-full h-full flex flex-col"}>
+                <iframe
+                    src={src}
+                    className={"w-full h-full border-0"}
+                />
+            </div>
+        </motion.div>
+    }, [className, src, visible])
+}
+
+const EchoUIPanel = ({visible, className}: WidgetPanelProps) => {
+    const tenant = useAppSelector(selectTenant);
+    const project = useAppSelector(selectProject);
+    const authToken = useAppSelector(selectAuthToken);
+    const idToken = useAppSelector(selectIdToken);
+
+    return useMemo(() => {
+        let src = `/api/integrations/static/${tenant}/${project}/echo.ui@2026-03-30/`;
+        const params = new URLSearchParams();
+        if (authToken) params.append("bearer_token", authToken);
+        if (idToken) params.append("id_token", idToken);
+        const qs = params.toString();
+        if (qs) src += `?${qs}`;
+
+        return <IFrameSrcPanel visible={visible} src={src} className={className}/>
+    }, [tenant, project, authToken, idToken, visible, className]);
+}
+
 interface PanelLoadingProps {
     className?: string;
 }
@@ -329,6 +372,7 @@ type Panels =
     | "conv_browser"
     | "redis_browser"
     | "economic_usage"
+    | "echo_ui"
     | "debug"
     | null
 
@@ -414,6 +458,13 @@ const ChatSidePanel = () => {
                 >
                     <IconContainer icon={Database} size={1.5}/>
                 </MenuButton>
+                <MenuButton
+                    onClick={() => {
+                        onPanelButtonClick("echo_ui");
+                    }}
+                >
+                    <IconContainer icon={LayoutDashboard} size={1.5}/>
+                </MenuButton>
                 {showDebugControls && <MenuButton
                     onClick={() => {
                         onPanelButtonClick("debug");
@@ -443,6 +494,8 @@ const ChatSidePanel = () => {
                                            className={"w-full h-full absolute left-0 top-0"}/>
                         <EconomicUsagePanel visible={visiblePanel === "economic_usage"}
                                             className={"w-full h-full absolute left-0 top-0"}/>
+                        <EchoUIPanel visible={visiblePanel === "echo_ui"}
+                                     className={"w-full h-full absolute left-0 top-0"}/>
                         {showDebugControls && <DebugPanel visible={visiblePanel === "debug"}
                                                           className={"w-full h-full absolute left-0 top-0"}/>}
                     </ResizableContainer>
