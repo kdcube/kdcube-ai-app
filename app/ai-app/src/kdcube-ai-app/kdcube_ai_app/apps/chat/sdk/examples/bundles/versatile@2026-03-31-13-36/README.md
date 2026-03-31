@@ -71,7 +71,7 @@ Important request shape:
 
 ```json
 {
-  "bundle_id": "versatile",
+  "bundle_id": "versatile@2026-03-31-13-36",
   "data": {
     "recency": 10,
     "kwords": "language timezone"
@@ -94,6 +94,7 @@ The bundle includes:
   - `io_tools`
   - `ctx_tools`
   - `exec_tools`
+  - `web_tools`
   - `rendering_tools`
 - Bundle-local tools:
   - `preferences`
