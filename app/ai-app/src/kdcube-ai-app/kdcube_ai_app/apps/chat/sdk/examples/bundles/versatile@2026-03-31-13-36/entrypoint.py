@@ -149,37 +149,49 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
             tsx_path = Path(bundle_root) / "ui" / "PreferencesBrowser.tsx"
             content = tsx_path.read_text(encoding="utf-8")
             rendered = content.replace("__PREFERENCES_JSON__", json.dumps(payload))
+            actor = getattr(self.comm_context, "actor", None)
+            bundle_spec = getattr(getattr(self, "config", None), "ai_bundle_spec", None)
             rendered = patch_dashboard(
                 input_content=rendered,
                 base_url=f"http://localhost:{os.environ.get('CHAT_APP_PORT') or '8010'}",
+                default_tenant=getattr(actor, "tenant_id", None) or self.settings.TENANT,
+                default_project=getattr(actor, "project_id", None) or self.settings.PROJECT,
+                default_app_bundle_id=getattr(bundle_spec, "id", None) or BUNDLE_ID,
                 access_token=None,
-                default_tenant=self.settings.TENANT,
-                default_project=self.settings.PROJECT,
-                default_app_bundle_id=self.config.ai_bundle_spec.id,
+                id_token=None,
+                id_token_header="X-ID-Token",
             )
             return [self._render_dashboard_html(content=rendered, title="Preferences Browser")]
         except Exception:
             self.logger.log(traceback.format_exc(), "ERROR")
             return ["<p>Unable to render the preferences widget right now.</p>"]
 
-    def preferences_widget_data(self, user_id: Optional[str] = None, **kwargs):
+    def preferences_widget_data(
+        self,
+        user_id: Optional[str] = None,
+        fingerprint: Optional[str] = None,
+        **kwargs,
+    ):
         storage_root = self._preferences_storage_root()
         if not storage_root:
             return {
                 "ok": False,
                 "error": "Bundle storage is not configured for this bundle.",
+                "user_id": user_id or fingerprint or "anonymous",
+                "current": {},
+                "recent": [],
+                "matched_count": 0,
             }
 
-        target_user = user_id or getattr(self.comm, "user_id", None) or "anonymous"
+        target_user = user_id or fingerprint or getattr(self.comm, "user_id", None) or "anonymous"
         payload = build_widget_payload(storage_root=storage_root, user_id=target_user)
-        return {
-            "ok": True,
-            **payload,
-        }
+        payload["ok"] = True
+        return payload
 
     async def preferences_exec_report(
         self,
         user_id: Optional[str] = None,
+        fingerprint: Optional[str] = None,
         recency: int = 10,
         kwords: str = "",
         **kwargs,
@@ -209,7 +221,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
         workdir = op_root / "work"
         outdir = op_root / "out"
         exec_id = f"preferences-{uuid.uuid4().hex[:10]}"
-        target_user = user_id or getattr(self.comm, "user_id", None) or "anonymous"
+        target_user = user_id or fingerprint or getattr(self.comm, "user_id", None) or "anonymous"
         try:
             report_recency = max(1, min(100, int(recency)))
         except Exception:
