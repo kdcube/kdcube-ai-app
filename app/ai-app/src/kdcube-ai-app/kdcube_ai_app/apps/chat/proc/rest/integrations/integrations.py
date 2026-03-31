@@ -207,12 +207,12 @@ def _deep_merge_props(base: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, 
 
 
 async def _load_bundle_props_defaults(
-    *,
-    bundle_id: str,
-    tenant: str,
-    project: str,
-    request: Request,
-    session: UserSession,
+        *,
+        bundle_id: str,
+        tenant: str,
+        project: str,
+        request: Request,
+        session: UserSession,
 ) -> Dict[str, Any]:
     from kdcube_ai_app.infra.plugin.bundle_registry import resolve_bundle_async
 
@@ -290,10 +290,10 @@ async def _load_bundle_props_defaults(
 
 @admin_router.get("/admin/integrations/bundles")
 async def get_available_bundles(
-    request: Request,
-    tenant: Optional[str] = None,
-    project: Optional[str] = None,
-    session: UserSession = Depends(require_auth(RequireUser())),
+        request: Request,
+        tenant: Optional[str] = None,
+        project: Optional[str] = None,
+        session: UserSession = Depends(require_auth(RequireUser())),
 ):
     """
     Returns configured bundles for selection in the UI.
@@ -339,11 +339,11 @@ async def get_available_bundles(
 
 @admin_router.get("/admin/integrations/bundles/{bundle_id}/props")
 async def get_bundle_props(
-    bundle_id: str,
-    request: Request,
-    tenant: Optional[str] = None,
-    project: Optional[str] = None,
-    session: UserSession = Depends(auth_without_pressure()),
+        bundle_id: str,
+        request: Request,
+        tenant: Optional[str] = None,
+        project: Optional[str] = None,
+        session: UserSession = Depends(auth_without_pressure()),
 ):
     settings = get_settings()
     tenant_id = tenant or settings.TENANT
@@ -381,10 +381,10 @@ async def get_bundle_props(
 
 @admin_router.post("/admin/integrations/bundles/{bundle_id}/props", status_code=200)
 async def set_bundle_props(
-    bundle_id: str,
-    payload: BundlePropsUpdateRequest,
-    request: Request,
-    session: UserSession = Depends(auth_without_pressure()),
+        bundle_id: str,
+        payload: BundlePropsUpdateRequest,
+        request: Request,
+        session: UserSession = Depends(auth_without_pressure()),
 ):
     settings = get_settings()
     tenant_id = payload.tenant or settings.TENANT
@@ -430,10 +430,10 @@ async def set_bundle_props(
 
 @admin_router.post("/admin/integrations/bundles/{bundle_id}/props/reset-code", status_code=200)
 async def reset_bundle_props_from_code(
-    bundle_id: str,
-    payload: BundlePropsResetRequest,
-    request: Request,
-    session: UserSession = Depends(auth_without_pressure()),
+        bundle_id: str,
+        payload: BundlePropsResetRequest,
+        request: Request,
+        session: UserSession = Depends(auth_without_pressure()),
 ):
     settings = get_settings()
     tenant_id = payload.tenant or settings.TENANT
@@ -472,10 +472,10 @@ async def reset_bundle_props_from_code(
 
 @admin_router.post("/admin/integrations/bundles/{bundle_id}/secrets", status_code=200)
 async def set_bundle_secrets(
-    bundle_id: str,
-    payload: BundleSecretsUpdateRequest,
-    request: Request,
-    session: UserSession = Depends(auth_without_pressure()),
+        bundle_id: str,
+        payload: BundleSecretsUpdateRequest,
+        request: Request,
+        session: UserSession = Depends(auth_without_pressure()),
 ):
     settings = get_settings()
     try:
@@ -558,11 +558,11 @@ async def set_bundle_secrets(
 
 @admin_router.get("/admin/integrations/bundles/{bundle_id}/secrets")
 async def get_bundle_secrets(
-    bundle_id: str,
-    request: Request,
-    tenant: Optional[str] = None,
-    project: Optional[str] = None,
-    session: UserSession = Depends(auth_without_pressure()),
+        bundle_id: str,
+        request: Request,
+        tenant: Optional[str] = None,
+        project: Optional[str] = None,
+        session: UserSession = Depends(auth_without_pressure()),
 ):
     settings = get_settings()
     tenant_id = tenant or settings.TENANT
@@ -595,9 +595,9 @@ async def get_bundle_secrets(
 
 @admin_router.post("/admin/integrations/bundles", status_code=200)
 async def admin_set_bundles(
-    payload: AdminBundlesUpdateRequest,
-    request: Request,
-    session: UserSession = Depends(auth_without_pressure()),
+        payload: AdminBundlesUpdateRequest,
+        request: Request,
+        session: UserSession = Depends(auth_without_pressure()),
 ):
     return await _do_set_bundles(payload, request, session)
 
@@ -627,9 +627,9 @@ async def internal_set_bundles(payload: AdminBundlesUpdateRequest, request: Requ
 
 
 async def _do_set_bundles(
-    payload: AdminBundlesUpdateRequest,
-    request: Request,
-    session: UserSession,
+        payload: AdminBundlesUpdateRequest,
+        request: Request,
+        session: UserSession,
 ):
     """Shared implementation for admin and internal bundle update endpoints."""
     settings = get_settings()
@@ -693,9 +693,9 @@ async def _do_set_bundles(
 
 @admin_router.post("/admin/integrations/bundles/reset-env", status_code=200)
 async def admin_reset_bundles_from_env(
-    request: Request,
-    session: UserSession = Depends(auth_without_pressure()),
-    payload: Optional[BundleResetEnvRequest] = None,
+        request: Request,
+        session: UserSession = Depends(auth_without_pressure()),
+        payload: Optional[BundleResetEnvRequest] = None,
 ):
     settings = get_settings()
     from kdcube_ai_app.infra.plugin.bundle_store import reset_registry_from_env
@@ -742,9 +742,9 @@ async def admin_reset_bundles_from_env(
 
 @admin_router.post("/admin/integrations/bundles/cleanup", status_code=200)
 async def admin_cleanup_bundles(
-    payload: BundleCleanupRequest,
-    request: Request,
-    session: UserSession = Depends(auth_without_pressure()),
+        payload: BundleCleanupRequest,
+        request: Request,
+        session: UserSession = Depends(auth_without_pressure()),
 ):
     settings = get_settings()
     tenant_id = payload.tenant or settings.TENANT
@@ -793,22 +793,21 @@ async def admin_cleanup_bundles(
     return result
 
 
-@router.get("/static/{tenant}/{project}/{bundle_id}/{path:path}")
-async def bundle_static_asset(
-    tenant: str,
-    project: str,
-    bundle_id: str,
-    path: str,
-    request: Request,
-    session: UserSession = Depends(require_auth(RequireUser())),
+async def serve_static_asset(
+        tenant: str,
+        project: str,
+        bundle_id: str,
+        request: Request,
+        path: str = "index.html",
+        session: UserSession = Depends(require_auth(RequireUser())),
 ):
     """
-    Serve static assets built by BaseEntrypoint._ensure_ui_build().
-    Files are read from <bundle_storage_root>/ui/<path>.
+        Serve static assets built by BaseEntrypoint._ensure_ui_build().
+        Files are read from <bundle_storage_root>/ui/<path>.
 
-    URL: GET /api/integrations/static/{tenant}/{project}/{bundle_id}/{path}
-    No authentication required — this endpoint serves a browser-facing SPA.
-    """
+        URL: GET /api/integrations/static/{tenant}/{project}/{bundle_id}/{path}
+        No authentication required — this endpoint serves a browser-facing SPA.
+        """
     from fastapi.responses import FileResponse
     from kdcube_ai_app.infra.plugin.bundle_storage import storage_for_spec
 
@@ -828,7 +827,8 @@ async def bundle_static_asset(
                 _root = _candidate
         if _root.exists():
             from kdcube_ai_app.apps.chat.sdk.runtime.external.distributed_snapshot import _SKIP_DIRS_DEFAULT
-            spec.version = compute_dir_sha256(_root, skip_dirs={*_SKIP_DIRS_DEFAULT, "node_modules"}, skip_files={"package-lock.json"})[:12]
+            spec.version = compute_dir_sha256(_root, skip_dirs={*_SKIP_DIRS_DEFAULT, "node_modules"},
+                                              skip_files={"package-lock.json"})[:12]
     except Exception:
         pass
 
@@ -884,14 +884,38 @@ async def bundle_static_asset(
     return response
 
 
+@router.get("/static/{tenant}/{project}/{bundle_id}")
+async def bundle_static_asset(
+        tenant: str,
+        project: str,
+        bundle_id: str,
+        request: Request,
+        session: UserSession = Depends(require_auth(RequireUser())),
+):
+    return await serve_static_asset(tenant=tenant, project=project, bundle_id=bundle_id, request=request,
+                                    session=session)
+
+@router.get("/static/{tenant}/{project}/{bundle_id}/{path:path}")
+async def bundle_static_asset(
+        tenant: str,
+        project: str,
+        bundle_id: str,
+        path: str,
+        request: Request,
+        session: UserSession = Depends(require_auth(RequireUser())),
+):
+    return await serve_static_asset(tenant=tenant, project=project, bundle_id=bundle_id, path=path, request=request,
+                                    session=session)
+
+
 @router.post("/bundles/{tenant}/{project}/operations/{operation}")
 async def call_bundle_op(
-    tenant: str,
-    project: str,
-    request: Request,
-    payload: BundleSuggestionsRequest = Body(default_factory=BundleSuggestionsRequest),
-    operation: str = "suggestions",  # news, etc.
-    session: UserSession = Depends(require_auth(RequireUser())),
+        tenant: str,
+        project: str,
+        request: Request,
+        payload: BundleSuggestionsRequest = Body(default_factory=BundleSuggestionsRequest),
+        operation: str = "suggestions",  # news, etc.
+        session: UserSession = Depends(require_auth(RequireUser())),
 ):
     """
     Load (or reuse singleton) bundle instance and call its operation (e.g. suggestions()).
@@ -920,22 +944,24 @@ async def call_bundle_op(
 
 
 async def _call_bundle_op_inner(
-    *,
-    tenant: str,
-    project: str,
-    payload: BundleSuggestionsRequest,
-    request: Request,
-    operation: str,
-    session: UserSession,
+        *,
+        tenant: str,
+        project: str,
+        payload: BundleSuggestionsRequest,
+        request: Request,
+        operation: str,
+        session: UserSession,
 ):
     settings = get_settings()
     cfg_req = payload.config_request or ConfigRequest()
 
     # Ensure model defaults exist
     if not cfg_req.selected_model:
-        cfg_req.selected_model = (namespaces.CONFIG.AGENTIC.DEFAULT_LLM_MODEL_CONFIG or {}).get("model_name", "gpt-4o-mini")
+        cfg_req.selected_model = (namespaces.CONFIG.AGENTIC.DEFAULT_LLM_MODEL_CONFIG or {}).get("model_name",
+                                                                                                "gpt-4o-mini")
     if not cfg_req.selected_embedder:
-        cfg_req.selected_embedder = (namespaces.CONFIG.AGENTIC.DEFAULT_EMBEDDING_MODEL_CONFIG or {}).get("model_name", "gpt-4o-mini")
+        cfg_req.selected_embedder = (namespaces.CONFIG.AGENTIC.DEFAULT_EMBEDDING_MODEL_CONFIG or {}).get("model_name",
+                                                                                                         "gpt-4o-mini")
     if not cfg_req.openai_api_key:
         cfg_req.openai_api_key = settings.OPENAI_API_KEY
     if not cfg_req.claude_api_key:
