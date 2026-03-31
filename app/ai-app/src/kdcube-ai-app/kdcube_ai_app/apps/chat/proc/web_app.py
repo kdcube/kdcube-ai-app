@@ -61,6 +61,7 @@ from kdcube_ai_app.infra.rendering.link_preview import close_shared_link_preview
 from kdcube_ai_app.infra.rendering.shared_browser import close_shared_browser
 
 from kdcube_ai_app.apps.chat.emitters import ChatRelayCommunicator
+from kdcube_ai_app.apps.chat.processor import prefetch_git_bundles
 from kdcube_ai_app.apps.chat.ingress.resolvers import (
     get_fastapi_adapter,
     get_fast_api_accounting_binder,
@@ -82,11 +83,6 @@ from kdcube_ai_app.apps.chat.sdk.infra.economics.policy import EconomicsLimitExc
 from kdcube_ai_app.apps.chat.proc.rest.integrations import mount_integrations_routers
 from kdcube_ai_app.infra.namespaces import CONFIG
 from kdcube_ai_app.infra.plugin.bundle_registry import get_all as _get_bundle_registry
-from kdcube_ai_app.infra.plugin.git_bundle import (
-    ensure_git_bundle_async,
-    GitBundleCooldown,
-    compute_git_bundle_paths,
-)
 from kdcube_ai_app.infra.availability.shutdown_diagnostics import (
     install_uvicorn_shutdown_diagnostics,
     log_shutdown_diagnostics,
@@ -234,46 +230,8 @@ async def _prefetch_git_bundles_loop(app) -> None:
     Prefetch git bundles once on startup to gate readiness.
     No retries here; config updates or restarts trigger a new resolution.
     """
-    errors: dict[str, str] = {}
     try:
-        reg = _get_bundle_registry()
-        force_pull = os.environ.get("BUNDLE_GIT_ALWAYS_PULL", "0").lower() in {"1", "true", "yes"}
-        for bid, entry in reg.items():
-            repo = entry.get("repo")
-            if not repo:
-                continue
-            # If a path already exists and we are not forcing pulls, skip.
-            path_val = (entry.get("path") or "").strip()
-            if not path_val:
-                try:
-                    paths = compute_git_bundle_paths(
-                        bundle_id=bid,
-                        git_url=repo,
-                        git_ref=entry.get("ref"),
-                        git_subdir=entry.get("subdir"),
-                    )
-                    path_val = str(paths.bundle_root)
-                except Exception:
-                    path_val = ""
-            if path_val and not force_pull:
-                try:
-                    if Path(path_val).exists():
-                        continue
-                except Exception:
-                    pass
-            try:
-                await ensure_git_bundle_async(
-                    bundle_id=bid,
-                    git_url=repo,
-                    git_ref=entry.get("ref"),
-                    git_subdir=entry.get("subdir"),
-                    bundles_root=None,
-                    atomic=os.environ.get("BUNDLE_GIT_ATOMIC", "1").lower() in {"1", "true", "yes"},
-                )
-            except GitBundleCooldown as e:
-                errors[bid] = str(e)
-            except Exception as e:
-                errors[bid] = str(e)
+        errors = await prefetch_git_bundles()
         if not errors:
             app.state.bundle_git_ready = True
             app.state.bundle_git_errors = {}
