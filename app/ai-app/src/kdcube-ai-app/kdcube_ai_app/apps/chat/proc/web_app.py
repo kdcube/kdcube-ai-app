@@ -61,6 +61,7 @@ from kdcube_ai_app.infra.rendering.link_preview import close_shared_link_preview
 from kdcube_ai_app.infra.rendering.shared_browser import close_shared_browser
 
 from kdcube_ai_app.apps.chat.emitters import ChatRelayCommunicator
+from kdcube_ai_app.apps.chat.processor import prefetch_git_bundles
 from kdcube_ai_app.apps.chat.ingress.resolvers import (
     get_fastapi_adapter,
     get_fast_api_accounting_binder,
@@ -82,11 +83,6 @@ from kdcube_ai_app.apps.chat.sdk.infra.economics.policy import EconomicsLimitExc
 from kdcube_ai_app.apps.chat.proc.rest.integrations import mount_integrations_routers
 from kdcube_ai_app.infra.namespaces import CONFIG
 from kdcube_ai_app.infra.plugin.bundle_registry import get_all as _get_bundle_registry
-from kdcube_ai_app.infra.plugin.git_bundle import (
-    ensure_git_bundle_async,
-    GitBundleCooldown,
-    compute_git_bundle_paths,
-)
 from kdcube_ai_app.infra.availability.shutdown_diagnostics import (
     install_uvicorn_shutdown_diagnostics,
     log_shutdown_diagnostics,
@@ -222,51 +218,20 @@ def _git_resolution_enabled() -> bool:
     return os.environ.get("BUNDLE_GIT_RESOLUTION_ENABLED", "1").lower() in {"1", "true", "yes", "on"}
 
 
+def _bundles_preload_enabled() -> bool:
+    try:
+        return bool(get_settings().BUNDLES_PRELOAD_ON_START)
+    except Exception:
+        return os.environ.get("BUNDLES_PRELOAD_ON_START", "0").lower() in {"1", "true", "yes", "on"}
+
+
 async def _prefetch_git_bundles_loop(app) -> None:
     """
     Prefetch git bundles once on startup to gate readiness.
     No retries here; config updates or restarts trigger a new resolution.
     """
-    errors: dict[str, str] = {}
     try:
-        reg = _get_bundle_registry()
-        force_pull = os.environ.get("BUNDLE_GIT_ALWAYS_PULL", "0").lower() in {"1", "true", "yes"}
-        for bid, entry in reg.items():
-            repo = entry.get("repo")
-            if not repo:
-                continue
-            # If a path already exists and we are not forcing pulls, skip.
-            path_val = (entry.get("path") or "").strip()
-            if not path_val:
-                try:
-                    paths = compute_git_bundle_paths(
-                        bundle_id=bid,
-                        git_url=repo,
-                        git_ref=entry.get("ref"),
-                        git_subdir=entry.get("subdir"),
-                    )
-                    path_val = str(paths.bundle_root)
-                except Exception:
-                    path_val = ""
-            if path_val and not force_pull:
-                try:
-                    if Path(path_val).exists():
-                        continue
-                except Exception:
-                    pass
-            try:
-                await ensure_git_bundle_async(
-                    bundle_id=bid,
-                    git_url=repo,
-                    git_ref=entry.get("ref"),
-                    git_subdir=entry.get("subdir"),
-                    bundles_root=None,
-                    atomic=os.environ.get("BUNDLE_GIT_ATOMIC", "1").lower() in {"1", "true", "yes"},
-                )
-            except GitBundleCooldown as e:
-                errors[bid] = str(e)
-            except Exception as e:
-                errors[bid] = str(e)
+        errors = await prefetch_git_bundles()
         if not errors:
             app.state.bundle_git_ready = True
             app.state.bundle_git_errors = {}
@@ -276,6 +241,67 @@ async def _prefetch_git_bundles_loop(app) -> None:
     except Exception as e:
         app.state.bundle_git_ready = False
         app.state.bundle_git_errors = {"_internal": str(e)}
+
+
+async def _preload_bundles_loop(app) -> None:
+    """
+    Eagerly load all configured bundle modules and run on_bundle_load hooks.
+    Runs after git prefetch (modules must exist on disk before import).
+    Sets app.state.bundles_preload_ready=True when done regardless of
+    individual bundle failures, so a broken bundle does not block startup.
+    """
+    from kdcube_ai_app.infra.plugin.agentic_loader import preload_bundle_async
+    from kdcube_ai_app.infra.plugin.bundle_registry import ADMIN_BUNDLE_ID, resolve_bundle
+
+    # Git repos must be cloned before we can import Python modules from them.
+    git_task = getattr(app.state, "bundle_git_task", None)
+    if git_task is not None:
+        try:
+            await git_task
+        except Exception:
+            pass  # git errors already logged in _prefetch_git_bundles_loop
+
+    settings = get_settings()
+    reg = _get_bundle_registry()
+    total = 0
+    ok = 0
+    errors: dict[str, str] = {}
+
+    for bid, entry in reg.items():
+        if bid == ADMIN_BUNDLE_ID:
+            continue
+        path = (entry.get("path") or "").strip()
+        if not path:
+            logger.warning("[Bundles] Preload skip (no path): id=%s", bid)
+            continue
+        total += 1
+        spec = AgenticBundleSpec(
+            path=path,
+            module=entry.get("module"),
+            singleton=bool(entry.get("singleton", False)),
+        )
+        bundle_spec = resolve_bundle(bid)
+        try:
+            await preload_bundle_async(
+                spec,
+                bundle_spec,
+                tenant=settings.TENANT,
+                project=settings.PROJECT,
+                pg_pool=app.state.pg_pool,
+                redis=app.state.redis_async,
+            )
+            ok += 1
+            logger.info("[Bundles] Preloaded: id=%s path=%s", bid, path)
+        except Exception as e:
+            errors[bid] = str(e)
+            logger.exception("[Bundles] Preload failed: id=%s", bid)
+
+    logger.info(
+        "[Bundles] Preload complete: total=%s ok=%s failed=%s",
+        total, ok, len(errors),
+    )
+    app.state.bundles_preload_ready = True
+    app.state.bundles_preload_errors = errors
 
 
 async def _safe_shutdown_step(name: str, coro, timeout: float = 5.0) -> None:
@@ -565,6 +591,13 @@ async def lifespan(app: FastAPI):
                 app.state.bundle_git_ready = False
                 app.state.bundle_git_task = asyncio.create_task(_prefetch_git_bundles_loop(app))
 
+        app.state.bundles_preload_ready = True
+        app.state.bundles_preload_errors = {}
+        app.state.bundles_preload_task = None
+        if _bundles_preload_enabled():
+            app.state.bundles_preload_ready = False
+            app.state.bundles_preload_task = asyncio.create_task(_preload_bundles_loop(app))
+
         await processor.start_processing()
     except Exception:
         logger.exception("Could not start processor service")
@@ -609,6 +642,13 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
         app.state.bundle_git_task = None
+    if getattr(app.state, "bundles_preload_task", None):
+        app.state.bundles_preload_task.cancel()
+        try:
+            await app.state.bundles_preload_task
+        except asyncio.CancelledError:
+            pass
+        app.state.bundles_preload_task = None
     if hasattr(app.state, "redis_monitor"):
         await _safe_shutdown_step("redis_monitor.stop", app.state.redis_monitor.stop(), timeout=5.0)
     if hasattr(app.state, "pg_pool"):
@@ -680,17 +720,22 @@ async def gateway_middleware(request: Request, call_next):
 @app.get("/health")
 async def health():
     draining = getattr(app.state, "draining", False)
-    bundles_ready = getattr(app.state, "bundle_git_ready", True)
-    bundle_errors = getattr(app.state, "bundle_git_errors", {}) or {}
+    bundles_git_ready = getattr(app.state, "bundle_git_ready", True)
+    bundle_git_errors = getattr(app.state, "bundle_git_errors", {}) or {}
+    bundles_preload_ready = getattr(app.state, "bundles_preload_ready", True)
+    bundles_preload_errors = getattr(app.state, "bundles_preload_errors", {}) or {}
+    ready = bundles_git_ready and bundles_preload_ready
     payload = {
-        "status": "draining" if draining else ("ok" if bundles_ready else "not_ready"),
+        "status": "draining" if draining else ("ok" if ready else "not_ready"),
         "draining": draining,
         "service": "chat-proc",
         "instance_id": INSTANCE_ID,
-        "bundles_git_ready": bundles_ready,
-        "bundles_git_errors": bundle_errors,
+        "bundles_git_ready": bundles_git_ready,
+        "bundles_git_errors": bundle_git_errors,
+        "bundles_preload_ready": bundles_preload_ready,
+        "bundles_preload_errors": bundles_preload_errors,
     }
-    if draining or not bundles_ready:
+    if draining or not ready:
         return JSONResponse(status_code=503, content=payload)
     return payload
 

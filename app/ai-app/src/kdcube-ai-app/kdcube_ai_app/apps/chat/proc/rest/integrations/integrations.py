@@ -97,6 +97,7 @@ class BundleSuggestionsRequest(BaseModel):
     bundle_id: Optional[str] = None
     conversation_id: Optional[str] = None
     config_request: Optional[ConfigRequest] = None
+    data: Optional[Dict[str, Any]] = None
 
 
 class AdminBundlesUpdateRequest(BaseModel):
@@ -792,6 +793,97 @@ async def admin_cleanup_bundles(
     return result
 
 
+@router.get("/static/{tenant}/{project}/{bundle_id}/{path:path}")
+async def bundle_static_asset(
+    tenant: str,
+    project: str,
+    bundle_id: str,
+    path: str,
+    request: Request,
+    session: UserSession = Depends(require_auth(RequireUser())),
+):
+    """
+    Serve static assets built by BaseEntrypoint._ensure_ui_build().
+    Files are read from <bundle_storage_root>/ui/<path>.
+
+    URL: GET /api/integrations/static/{tenant}/{project}/{bundle_id}/{path}
+    No authentication required — this endpoint serves a browser-facing SPA.
+    """
+    from fastapi.responses import FileResponse
+    from kdcube_ai_app.infra.plugin.bundle_storage import storage_for_spec
+
+    spec = await resolve_bundle_async(bundle_id, override=None)
+    if not spec:
+        raise HTTPException(status_code=404, detail=f"Bundle '{bundle_id}' not found")
+
+    # Mirror BaseEntrypoint._apply_configuration_overrides: use dir content hash as
+    # authoritative version so the storage path matches what _ensure_ui_build() used.
+    try:
+        import pathlib as _pathlib
+        from kdcube_ai_app.apps.chat.sdk.runtime.external.distributed_snapshot import compute_dir_sha256
+        _root = _pathlib.Path(spec.path)
+        if spec.module:
+            _candidate = _root / spec.module.split(".")[0]
+            if _candidate.exists():
+                _root = _candidate
+        if _root.exists():
+            from kdcube_ai_app.apps.chat.sdk.runtime.external.distributed_snapshot import _SKIP_DIRS_DEFAULT
+            spec.version = compute_dir_sha256(_root, skip_dirs={*_SKIP_DIRS_DEFAULT, "node_modules"}, skip_files={"package-lock.json"})[:12]
+    except Exception:
+        pass
+
+    storage_root = storage_for_spec(spec=spec, tenant=tenant, project=project, ensure=False)
+    ui_root = storage_root / "ui" if storage_root else None
+
+    if not ui_root or not ui_root.exists():
+        raise HTTPException(status_code=404, detail=f"Bundle '{bundle_id}' does not have a UI defined")
+
+    # Prevent path traversal
+    try:
+        target = (ui_root / path).resolve()
+        target.relative_to(ui_root.resolve())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid path")
+
+    # Directory → try index.html
+    if target.is_dir():
+        target = target / "index.html"
+
+    # Missing file → SPA fallback (client-side routing)
+    if not target.exists():
+        target = ui_root / "index.html"
+        if not target.exists():
+            raise HTTPException(status_code=404, detail="Not found")
+
+    # Serve and set auth cookies if tokens are present (for subsequent iframe resource requests)
+    response = FileResponse(str(target))
+
+    auth_header = request.headers.get("authorization")
+    id_token = request.headers.get(namespaces.CONFIG.ID_TOKEN_HEADER_NAME)
+
+    if auth_header and auth_header.lower().startswith("bearer "):
+        bearer = auth_header[7:].strip()
+        response.set_cookie(
+            namespaces.CONFIG.AUTH_TOKEN_COOKIE_NAME,
+            bearer,
+            httponly=True,
+            samesite="lax",
+            secure=True,
+            max_age=3600,  # 1 hour
+        )
+    if id_token:
+        response.set_cookie(
+            namespaces.CONFIG.ID_TOKEN_COOKIE_NAME,
+            id_token,
+            httponly=True,
+            samesite="lax",
+            secure=True,
+            max_age=3600,  # 1 hour
+        )
+
+    return response
+
+
 @router.post("/bundles/{tenant}/{project}/operations/{operation}")
 async def call_bundle_op(
     tenant: str,
@@ -924,10 +1016,11 @@ async def _call_bundle_op_inner(
     try:
         user_id = session.user_id or session.fingerprint
         fn = getattr(workflow, operation)
+        extra = payload.data or {}
         if inspect.iscoroutinefunction(fn):
-            result = await fn(user_id=user_id, fingerprint=session.fingerprint)
+            result = await fn(user_id=user_id, fingerprint=session.fingerprint, **extra)
         else:
-            result = fn(user_id=user_id, fingerprint=session.fingerprint)
+            result = fn(user_id=user_id, fingerprint=session.fingerprint, **extra)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"{operation}() failed: {e}")
 

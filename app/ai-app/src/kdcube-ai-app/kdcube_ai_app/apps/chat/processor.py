@@ -12,6 +12,7 @@ import time
 import traceback
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional, Dict, Any, Iterable
 
 from kdcube_ai_app.apps.chat.sdk.config import get_settings
@@ -22,6 +23,12 @@ from kdcube_ai_app.infra.availability.health_and_heartbeat import MultiprocessDi
 from kdcube_ai_app.infra.aws.task_protection import build_task_scale_in_protection
 from kdcube_ai_app.infra.metrics.rolling_stats import record_metric
 from kdcube_ai_app.infra.namespaces import REDIS
+from kdcube_ai_app.infra.plugin.bundle_registry import get_all as _get_bundle_registry
+from kdcube_ai_app.infra.plugin.git_bundle import (
+    ensure_git_bundle_async,
+    GitBundleCooldown,
+    compute_git_bundle_paths,
+)
 from kdcube_ai_app.storage.storage import create_storage_backend
 from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload, ServiceCtx, ConversationCtx
 from kdcube_ai_app.apps.chat.emitters import ChatRelayCommunicator, ChatCommunicator
@@ -36,6 +43,60 @@ QUEUE_CALL_TIMEOUT_SEC = 2.0
 CONFIG_GET_MESSAGE_TIMEOUT_SEC = 1.0
 CONFIG_CALL_TIMEOUT_SEC = 5.0
 INFLIGHT_REAPER_INTERVAL_SEC = 5.0
+
+
+async def prefetch_git_bundles() -> dict[str, str]:
+    """
+    Resolve configured git-backed bundles into the local bundle store once.
+
+    Returns a mapping of bundle_id -> error string for bundles that could not be
+    prepared. Existing bundle paths are skipped unless BUNDLE_GIT_ALWAYS_PULL is
+    enabled.
+    """
+    errors: dict[str, str] = {}
+    reg = _get_bundle_registry()
+    force_pull = os.environ.get("BUNDLE_GIT_ALWAYS_PULL", "0").lower() in {"1", "true", "yes"}
+
+    for bid, entry in reg.items():
+        repo = entry.get("repo")
+        if not repo:
+            continue
+
+        path_val = (entry.get("path") or "").strip()
+        if not path_val:
+            try:
+                paths = compute_git_bundle_paths(
+                    bundle_id=bid,
+                    git_url=repo,
+                    git_ref=entry.get("ref"),
+                    git_subdir=entry.get("subdir"),
+                )
+                path_val = str(paths.bundle_root)
+            except Exception:
+                path_val = ""
+
+        if path_val and not force_pull:
+            try:
+                if Path(path_val).exists():
+                    continue
+            except Exception:
+                pass
+
+        try:
+            await ensure_git_bundle_async(
+                bundle_id=bid,
+                git_url=repo,
+                git_ref=entry.get("ref"),
+                git_subdir=entry.get("subdir"),
+                bundles_root=None,
+                atomic=os.environ.get("BUNDLE_GIT_ATOMIC", "1").lower() in {"1", "true", "yes"},
+            )
+        except GitBundleCooldown as e:
+            errors[bid] = str(e)
+        except Exception as e:
+            errors[bid] = str(e)
+
+    return errors
 
 
 class EnhancedChatRequestProcessor:
