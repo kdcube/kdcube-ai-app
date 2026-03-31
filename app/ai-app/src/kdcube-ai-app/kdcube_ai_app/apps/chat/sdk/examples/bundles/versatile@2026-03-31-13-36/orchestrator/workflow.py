@@ -1,5 +1,4 @@
 import traceback
-from pathlib import Path
 from typing import Any, Dict
 
 from kdcube_ai_app.apps.chat.emitters import ChatCommunicator
@@ -79,7 +78,6 @@ class VersatileWorkflow(BaseWorkflow):
 
     async def process(self, payload: dict) -> Dict[str, Any]:
         scratchpad = await self.construct_turn_and_scratchpad(payload)
-        self._capture_preferences_from_turn(text=payload.get("text") or "")
         await self.start_turn(scratchpad)
 
         try:
@@ -152,6 +150,7 @@ class VersatileWorkflow(BaseWorkflow):
                     except Exception:
                         pass
                 await self.persist_user_message(scratchpad)
+                self._capture_preferences_from_turn(text=payload.get("text") or "")
 
                 state["route"] = scratchpad.route
                 state["gate_payload"] = gate_payload
