@@ -3,6 +3,7 @@ import {RootState} from "../../app/store.ts";
 import {bundlesApiSlice} from "./bundlesAPI.ts";
 import {BundlesState} from "./types.ts";
 import {ConversationState} from "../chat/chatTypes.ts";
+import {loadConversation} from "../chat/chatStateSlice.ts";
 
 const bundlesSlice = createSlice({
     name: "bundles",
@@ -17,7 +18,7 @@ const bundlesSlice = createSlice({
         }
     },
     extraReducers: (builder) => {
-        builder.addCase(setCurrentBundle.type, (state, action) => {
+        builder.addCase(loadConversation.type, (state, action) => {
             state.currentBundle = (action as PayloadAction<ConversationState>).payload.conversationBundleId
         }).addMatcher(isAnyOf(bundlesApiSlice.endpoints.getBundlesList.matchFulfilled), (state, action) => {
             if (state.currentBundle === null) {
