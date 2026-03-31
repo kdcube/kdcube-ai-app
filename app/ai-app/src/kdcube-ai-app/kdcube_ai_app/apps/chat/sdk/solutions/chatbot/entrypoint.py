@@ -268,6 +268,18 @@ class BaseEntrypoint:
         build_dest.mkdir(parents=True, exist_ok=True)
         final_command = build_command.replace("<VI_BUILD_DEST_ABSOLUTE_PATH>", str(build_dest))
         self.logger.log(f"[bundle.ui] build start: src={src_path} dest={build_dest}", "INFO")
+
+        env = os.environ.copy()
+        # Source nvm's bin dir explicitly
+        nvm_bin = os.path.expanduser("~/.nvm/versions/node")
+        if os.path.exists(nvm_bin):
+            # Find the active version
+            for version_dir in sorted(os.listdir(nvm_bin), reverse=True):
+                bin_path = os.path.join(nvm_bin, version_dir, "bin")
+                if os.path.exists(os.path.join(bin_path, "npm")):
+                    env["PATH"] = bin_path + ":" + env.get("PATH", "")
+                    break
+
         try:
             result = subprocess.run(
                 final_command,
@@ -276,6 +288,7 @@ class BaseEntrypoint:
                 capture_output=True,
                 text=True,
                 timeout=600,
+                env=env
             )
             if result.returncode != 0:
                 self.logger.log(
