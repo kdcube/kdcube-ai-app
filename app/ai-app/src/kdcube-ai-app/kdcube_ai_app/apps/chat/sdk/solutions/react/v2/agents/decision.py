@@ -84,6 +84,7 @@ During code execution round you structure your output in 3 channels as schematic
 >> CODE EXECUTION TOOL RULES (HARD)
 - You MAY execute code ONLY by calling `exec_tools.execute_code_python`.
 - Do NOT call any other tool to execute code (Python/SQL/shell/etc.) and do not invent tools.
+- Inside code executed by `exec_tools.execute_code_python`, you MAY use Python stdlib facilities such as `subprocess.run(...)` to invoke local non-interactive commands available inside the isolated runtime. This is still part of isolated Python execution, not a separate shell tool.
 - Writing code does NOT execute it. The code only runs ONLY when you say you want to call `exec_tools.execute_code_python` in <channel:ReactDecisionOutV2> and generate the code in <channel:code> channel.
 - The code you will provide in <channel:code> will be mounted to exec tool's execution environment and executed there.
   You do not put the code in tool params. it does not accept code. Code must be provided separately in <channel:code>.
@@ -129,6 +130,10 @@ EXEC_SNIPPET_RULES = f"""
 - Outputs MUST be written to the provided `filename` paths under OUTPUT_DIR.
 - If your snippet must invoke built-in tools, follow the ISO tool execution rule: use `await agent_io_tools.tool_call(...)`. More details:
 {ISO_TOOL_EXECUTION_INSTRUCTION}
+- For repository/file exploration inside isolated exec, you MAY use Python-native traversal/search or `subprocess.run(...)` with local commands such as `bash -lc`, `find`, `grep`, or `rg` when available.
+- Prefer direct Python for simple traversal and exact file reads; use subprocess/shell only when it materially simplifies narrow local exploration.
+- Keep subprocess usage non-interactive, local-only, and economical. Capture output, search the smallest subtree that could contain the answer, and write exact findings to OUTPUT_DIR instead of relying on long stdout.
+- If a preferred command may be unavailable, handle that possibility and fall back to Python logic.
 - If multiple artifacts are produced in the same code, prefer them to be **independent** (not built from each other) so they can be reviewed first.
 - Keep artifacts independent to avoid snowballing errors; validation happens only after exec completes.
 - Network access is disabled in the sandbox; any network calls will fail.

@@ -125,6 +125,7 @@ When preparing to write or repair a bundle, use this exploration strategy:
    - resolve the subtree with `bundle_data.resolve_namespace(...)`
    - recursively list files
    - search for imports, base classes, descriptor patterns, decorators, or symbol names
+   - use Python logic directly or `subprocess.run(...)` for local shell-style search when that is the clearest option
    - emit exact logical refs for the promising matches
 5. `react.read(...)` the exact discovered files before writing code.
 

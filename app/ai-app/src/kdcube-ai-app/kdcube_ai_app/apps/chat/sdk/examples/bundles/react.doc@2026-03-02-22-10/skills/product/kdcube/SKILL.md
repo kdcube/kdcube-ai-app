@@ -95,7 +95,7 @@ What you can use:
 - isolated exec with `execute_code_python(...)`
   - use this when you need filesystem-style browsing or search under a `ks:` subtree
   - inside exec, resolve the relevant subtree with `bundle_data.resolve_namespace(...)`
-  - then use Python to do the kind of exploration you would normally do locally with `find`, `rg`, or small helper scripts
+  - then use Python or `subprocess.run(...)` to do the kind of exploration you would normally do locally with `find`, `rg`, `grep`, or small helper scripts
 
 Typical exploration operations in exec:
 - recursive file listing under a narrow subtree
@@ -110,6 +110,11 @@ Exploration rule:
 - first reduce the uncertainty to exact files
 - then `react.read(...)` those exact files
 - only after that write or patch code
+
+Exec exploration note:
+- If shell-style local search is the clearest approach, it is acceptable to run it from Python with `subprocess.run(...)` inside isolated exec.
+- Keep that search narrow, non-interactive, and local to the resolved subtree.
+- Emit exact logical refs or compact search artifacts, then return to `react.read(...)` before coding.
 
 ## Knowledge space navigation
 This bundle exposes a read‑only knowledge space:
@@ -164,6 +169,7 @@ When a doc references files and the exact `ks:` path is unclear:
 
 If the task is exploratory and you would normally use local shell search:
 - do the same search logic in exec code instead
+- using Python directly or `subprocess.run(...)` for local commands available in the isolated runtime
 - keep the search subtree narrow
 - return exact logical refs, not only vague summaries
 - then read the exact files into visible context before making implementation decisions
