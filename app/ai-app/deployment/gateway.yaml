@@ -12,6 +12,7 @@ gateway:
       - "^.*/conversations/[^/]+/[^/]+/feedback/conversations-in-period$"
     proc:
       - "^.*/integrations/bundles/[^/]+/[^/]+/operations/[^/]+$"
+      - "^.*/integrations/static/[^/]+/[^/]+/[^/]+/.*$"
 
   bypass_throttling_patterns:
     ingress:

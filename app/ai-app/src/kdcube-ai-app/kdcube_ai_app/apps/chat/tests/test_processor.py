@@ -1,6 +1,8 @@
 import asyncio
 import json
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -315,6 +317,92 @@ async def test_stop_processing_waits_for_inflight_task_without_cancelling():
     assert task_cancelled is False
     assert processor.get_current_load() == 0
     assert processor.get_runtime_metadata()["active_tasks"] == 0
+
+
+@pytest.mark.asyncio
+async def test_prefetch_git_bundles_skips_existing_paths(monkeypatch, tmp_path):
+    bundle_root = tmp_path / "bundle-ready"
+    bundle_root.mkdir()
+    ensure_calls = []
+
+    monkeypatch.setattr(
+        processor_mod,
+        "_get_bundle_registry",
+        lambda: {
+            "bundle.ready": {
+                "repo": "https://example.invalid/repo.git",
+                "path": str(bundle_root),
+            }
+        },
+    )
+
+    async def _ensure_git_bundle_async(**kwargs):
+        ensure_calls.append(kwargs)
+
+    monkeypatch.setattr(processor_mod, "ensure_git_bundle_async", _ensure_git_bundle_async)
+
+    errors = await processor_mod.prefetch_git_bundles()
+
+    assert errors == {}
+    assert ensure_calls == []
+
+
+@pytest.mark.asyncio
+async def test_prefetch_git_bundles_resolves_missing_paths_and_collects_errors(monkeypatch):
+    ensure_calls = []
+
+    monkeypatch.setattr(
+        processor_mod,
+        "_get_bundle_registry",
+        lambda: {
+            "bundle.ok": {
+                "repo": "https://example.invalid/ok.git",
+                "ref": "main",
+                "subdir": "bundle",
+            },
+            "bundle.cooldown": {
+                "repo": "https://example.invalid/cooldown.git",
+            },
+            "bundle.fail": {
+                "repo": "https://example.invalid/fail.git",
+            },
+        },
+    )
+
+    monkeypatch.setattr(
+        processor_mod,
+        "compute_git_bundle_paths",
+        lambda **kwargs: SimpleNamespace(bundle_root=Path(f"/tmp/{kwargs['bundle_id']}")),
+    )
+
+    async def _ensure_git_bundle_async(**kwargs):
+        ensure_calls.append(kwargs)
+        if kwargs["bundle_id"] == "bundle.cooldown":
+            raise processor_mod.GitBundleCooldown("cooldown")
+        if kwargs["bundle_id"] == "bundle.fail":
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr(processor_mod, "ensure_git_bundle_async", _ensure_git_bundle_async)
+
+    old_atomic = os.environ.get("BUNDLE_GIT_ATOMIC")
+    try:
+        os.environ["BUNDLE_GIT_ATOMIC"] = "1"
+        errors = await processor_mod.prefetch_git_bundles()
+    finally:
+        if old_atomic is None:
+            os.environ.pop("BUNDLE_GIT_ATOMIC", None)
+        else:
+            os.environ["BUNDLE_GIT_ATOMIC"] = old_atomic
+
+    assert errors == {
+        "bundle.cooldown": "cooldown",
+        "bundle.fail": "boom",
+    }
+    assert [call["bundle_id"] for call in ensure_calls] == [
+        "bundle.ok",
+        "bundle.cooldown",
+        "bundle.fail",
+    ]
 
 
 @pytest.mark.asyncio

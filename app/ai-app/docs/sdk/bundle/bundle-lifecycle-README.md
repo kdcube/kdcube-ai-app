@@ -3,7 +3,7 @@ id: ks:docs/sdk/bundle/bundle-lifecycle-README.md
 title: "Bundle Lifecycle"
 summary: "How a bundle is discovered, loaded, initialized, invoked, and what storage/config surfaces are available across those phases."
 tags: ["sdk", "bundle", "lifecycle", "storage", "configuration", "entrypoint"]
-keywords: ["agentic_workflow", "on_bundle_load", "execute_core", "pre_run_hook", "post_run_hook", "singleton", "bundle_props", "bundle_storage_root"]
+keywords: ["agentic_workflow", "on_bundle_load", "execute_core", "pre_run_hook", "post_run_hook", "singleton", "bundle_props", "bundle_storage_root", "ui", "main_view", "_ensure_ui_build"]
 see_also:
   - ks:docs/sdk/bundle/bundle-dev-README.md
   - ks:docs/sdk/bundle/bundle-config-README.md
@@ -132,6 +132,55 @@ Bundle code can access request identity through the request context:
 - conversation and turn ids
 
 This context is request-bound. Do not cache it as durable bundle state.
+
+## Custom bundle UI
+
+A bundle can ship a custom frontend (a Vite/React SPA) that is built once at load time
+and served to the browser as a standalone panel.
+
+### How it works
+
+1. Configure `ui.main_view` in `bundle_props` (code defaults or `bundles.yaml`):
+
+```python
+@property
+def configuration(self):
+    return {
+        "ui": {
+            "main_view": {
+                "src_folder": "ui-src",          # relative to bundle root
+                "build_command": "npm install && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build",
+            }
+        }
+    }
+```
+
+2. `on_bundle_load(...)` calls `_ensure_ui_build()` which:
+   - resolves `src_folder` relative to the bundle root
+   - runs `build_command` (with `<VI_BUILD_DEST_ABSOLUTE_PATH>` substituted)
+   - stores the build output under `<bundle_storage_root>/ui/`
+   - writes a `.ui.signature` file so the build is skipped on subsequent loads if nothing changed
+
+3. The built SPA is served by the processor's static endpoint:
+
+```
+GET /api/integrations/static/{tenant}/{project}/{bundle_id}/{path}
+```
+
+The endpoint computes the content hash of the bundle directory (same algorithm as
+`_apply_configuration_overrides`) to locate the correct `bundle_storage_root`, then
+returns files from its `ui/` subdirectory. Missing paths fall back to `index.html`
+for client-side routing.
+
+### Notes
+
+- The UI is built per process per tenant/project (same cadence as `on_bundle_load`).
+- `node_modules/` and `package-lock.json` are excluded from the content hash so that
+  `npm install` during the build does not change the hash.
+- The built UI typically communicates back to the backend through the bundle operations
+  endpoint (`POST /api/integrations/bundles/{tenant}/{project}/operations/{operation}`)
+  and receives runtime config (base URL, auth tokens, tenant/project) via `postMessage`
+  from the host frame.
 
 ## React integration
 

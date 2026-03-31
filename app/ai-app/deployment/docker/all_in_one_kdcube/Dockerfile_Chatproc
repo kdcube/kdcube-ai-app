@@ -58,6 +58,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN which docker && docker --version
 
+# Install Node.js + npm for bundle UI builds (BaseEntrypoint._ensure_ui_build)
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/* \
+    && node --version && npm --version
+
 COPY --from=builder /opt/venv /opt/venv
 
 RUN python -m playwright install --with-deps chromium
