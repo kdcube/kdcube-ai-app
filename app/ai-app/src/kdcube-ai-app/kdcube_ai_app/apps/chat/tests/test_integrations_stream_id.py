@@ -3,10 +3,12 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from fastapi.responses import HTMLResponse
 from starlette.datastructures import Headers
 from starlette.requests import Request
 
 from kdcube_ai_app.apps.chat.proc.rest.integrations import integrations
+from kdcube_ai_app.infra.plugin import bundle_storage
 from kdcube_ai_app.infra.namespaces import CONFIG
 from kdcube_ai_app.apps.middleware.gateway import (
     STATE_STREAM_ID,
@@ -199,3 +201,37 @@ async def test_call_bundle_op_inner_uses_default_bundle_when_omitted(monkeypatch
     assert captured["comm_context"].routing.bundle_id == "bundle.default"
     assert result["bundle_id"] == "bundle.default"
     assert result["ping"] == {"pong": True}
+
+
+@pytest.mark.asyncio
+async def test_serve_static_asset_builds_ui_on_first_request(monkeypatch, tmp_path):
+    bundle_root = tmp_path / "bundle"
+    bundle_root.mkdir()
+    storage_root = tmp_path / "storage"
+
+    async def _resolve_bundle_async(bundle_id, override=None):
+        del override
+        return SimpleNamespace(id=bundle_id, path=str(bundle_root), module="entrypoint", singleton=False, version="v1")
+
+    async def _load_bundle_props_defaults(**kwargs):
+        del kwargs
+        ui_root = storage_root / "ui"
+        ui_root.mkdir(parents=True, exist_ok=True)
+        (ui_root / "index.html").write_text("<html><head></head><body>Echo UI</body></html>", encoding="utf-8")
+        return {"ui": {"main_view": {"src_folder": "ui-src"}}}
+
+    monkeypatch.setattr(integrations, "resolve_bundle_async", _resolve_bundle_async)
+    monkeypatch.setattr(integrations, "_load_bundle_props_defaults", _load_bundle_props_defaults)
+    monkeypatch.setattr(bundle_storage, "storage_for_spec", lambda **kwargs: storage_root)
+
+    response = await integrations.serve_static_asset(
+        tenant="tenant-a",
+        project="project-a",
+        bundle_id="echo.ui@2026-03-30",
+        request=_request(),
+        session=_session(),
+    )
+
+    assert isinstance(response, HTMLResponse)
+    assert "Echo UI" in response.body.decode("utf-8")
+    assert '/api/integrations/static/tenant-a/project-a/echo.ui@2026-03-30/' in response.body.decode("utf-8")
