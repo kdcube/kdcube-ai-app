@@ -63,7 +63,9 @@ class PreferenceTools:
         description=(
             "Return stored user preferences, choices, interests, and profile facts for the current user. "
             "Use this early on preference-sensitive turns before personalizing advice, recommendations, formatting, "
-            "follow-up actions, or repeated task behavior."
+            "follow-up actions, or repeated task behavior. Also use this first when the user asks what you remember "
+            "about them or asks for remembered facts like city, location, timezone, preferred name, answer style, "
+            "diet, dislikes, or interests."
         ),
     )
     async def get_preferences(
@@ -110,7 +112,8 @@ class PreferenceTools:
         description=(
             "Capture one or more durable user preferences, choices, interests, constraints, or profile facts from "
             "a short natural-language note or quoted user text. Use this when the user reveals information that "
-            "should influence future turns."
+            "should influence future turns, especially profile facts like city, location, timezone, preferred name, "
+            "tastes, constraints, answer style, or recurring choices."
         ),
     )
     async def capture_preferences(
@@ -185,7 +188,8 @@ class PreferenceTools:
         name="set_preference",
         description=(
             "Store or update a single explicit durable preference or user fact for the current user. "
-            "Use this for structured corrections or when you already know the exact key/value to save."
+            "Use this for structured corrections or when you already know the exact key/value to save, especially "
+            "when the user is correcting remembered facts or explicitly telling you what should persist."
         ),
     )
     async def set_preference(

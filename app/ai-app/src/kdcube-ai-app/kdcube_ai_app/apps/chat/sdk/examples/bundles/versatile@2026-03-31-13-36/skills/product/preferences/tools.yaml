@@ -1,7 +1,10 @@
 tools:
   - id: preferences.get_preferences
-    role: load stored user preferences
-    why: Check whether the current user already has known preferences relevant to the response.
+    role: load stored user memory before personalized or memory-check answers
+    why: Use this first when the user asks what is remembered or when city, location, timezone, preferred name, style, diet, interests, or recurring choices might matter.
+  - id: preferences.capture_preferences
+    role: capture durable preferences from natural user language
+    why: Save newly revealed profile facts and durable choices in the same turn instead of trusting short-term chat memory.
   - id: preferences.set_preference
     role: save explicit durable preferences
-    why: Persist a user preference when the user clearly states it and it should influence future answers.
+    why: Persist a precise correction or explicit structured value when the user clearly states what should be remembered.
