@@ -140,8 +140,9 @@ Doc pages should mention real `app/ai-app`-relative paths such as `src/...`, `de
 The bundle prepares one common root from the repo configured in bundle props (`knowledge.repo`, `knowledge.ref`, `knowledge.root`).
 
 Important limitations:
-- `react.search_knowledge` primarily indexes docs metadata, not the whole source tree.
-- Source, deployment, and test files are readable by exact `ks:<real-relative-path>` only when the correct path is known.
+- `react.search_knowledge` primarily indexes docs metadata and deployment markdown, not the whole source tree.
+- Source and test files under `ks:src/...` are part of the same common knowledge root, but they are not currently part of the `react.search_knowledge` index.
+- Source, deployment, and test files are readable by exact `ks:<real-relative-path>` when the correct path is known.
 - If the exact `ks:` path is not obvious, do not guess repeatedly.
 
 Advertised roots for this bundle:

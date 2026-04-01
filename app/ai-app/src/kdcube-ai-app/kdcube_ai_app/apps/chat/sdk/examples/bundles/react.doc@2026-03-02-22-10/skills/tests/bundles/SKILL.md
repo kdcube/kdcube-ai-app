@@ -62,7 +62,7 @@ If any item above is still missing, do not write bundle code yet. Gather the mis
 
 ## Where the tests are
 
-The current bundle pytest suite is exposed by `react.doc` under its real knowledge-space path:
+The current shared bundle pytest suite lives at this real knowledge-space path:
 - `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tests/bundle/...`
 
 Normal docs start point before reading individual tests:
@@ -70,10 +70,21 @@ Normal docs start point before reading individual tests:
 - then `ks:docs/sdk/bundle/bundle-reference-versatile-README.md`
 - then `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/README.md`
 
-That is a real path under one common `ks:` root, not a separate test-only namespace.
+Important distinction:
+- `ks:` is one common prepared knowledge root.
+- `ks:docs`, `ks:deployment`, and `ks:src/...` are just different paths under that one root.
+- `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tests/bundle/...` is therefore a normal path inside the same common knowledge space, not a separate test-only namespace.
 
-These files are intentionally **not** indexed for `react.search_knowledge`.
-Do not assume one fixed single smoke-test file up front.
+Current search behavior:
+- `react.search_knowledge(...)` currently indexes docs metadata and deployment markdown.
+- It does **not** currently index the `ks:src/...` source trees, including the shared pytest suite under `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tests/bundle`.
+- This is a search-scope rule, not a namespace rule.
+
+Practical implication:
+- if you already know the exact test path, use `react.read(...)`
+- if you do not yet know the exact test file, browse the test subtree from isolated exec
+- do not assume one fixed single smoke-test file up front
+
 Instead:
 - keep `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tests/bundle` as the logical base
 - use generated exec code plus `bundle_data.resolve_namespace(...)` to browse the subtree
@@ -84,6 +95,20 @@ This suite includes `conftest.py`, which defines:
 - bundle selection by folder via `BUNDLE_UNDER_TEST` or `--bundle-path`
 - bundle id derivation from the selected bundle folder for internal routing/config use
 - shared Redis / Postgres / comm-context fixtures
+
+There is also a default runner for full bundle validation:
+- `python -m kdcube_ai_app.apps.chat.sdk.tests.bundle.run_bundle_suite --bundle-path /abs/path/to/bundle`
+
+That runner:
+- always runs the shared SDK bundle suite under `sdk/tests/bundle`
+- automatically adds `<bundle>/tests` when the bundle defines bundle-local tests
+- keeps `BUNDLE_UNDER_TEST` set for the shared suite
+
+Important nuance:
+- bundle-local tests under `<bundle>/tests` are valid and encouraged for reference-bundle or package-specific behavior
+- those tests are not magically injected into the shared suite by pytest itself
+- the default runner is what makes the combined validation automatic
+- bundle-local tests should be self-contained or define their own local `conftest.py` if they need local fixtures
 
 ## What the current suite covers
 
@@ -202,6 +227,7 @@ Normal strategy:
 - read the specific files that match the requested feature
 - run the narrowest exact file or small subset that validates the current step
 - only run the whole directory when broad regression coverage is actually useful
+- for broad bundle validation, prefer the bundle suite runner so bundle-local tests are included automatically when present
 
 Useful patterns:
 - minimal bundle shape:
@@ -218,12 +244,17 @@ Useful patterns:
   - the whole directory
 
 Example run shapes:
+- default broad validation with automatic bundle-local test inclusion:
+  - `PYTHONPATH=app/ai-app/src/kdcube-ai-app python -m kdcube_ai_app.apps.chat.sdk.tests.bundle.run_bundle_suite --bundle-path /abs/path/to/bundle -v --tb=short`
 - one exact file:
   - `BUNDLE_UNDER_TEST=/abs/path/to/bundle python -m pytest <resolved_test_root>/test_initialization.py -v --tb=short`
 - a small subset:
   - `BUNDLE_UNDER_TEST=/abs/path/to/bundle python -m pytest <resolved_test_root>/test_initialization.py <resolved_test_root>/test_configuration.py <resolved_test_root>/test_graph.py -v --tb=short`
 - the whole current suite:
   - `BUNDLE_UNDER_TEST=/abs/path/to/bundle python -m pytest <resolved_test_root> -v --tb=short`
+
+If bundle-local tests exist and you are not using the runner, include them explicitly:
+- `BUNDLE_UNDER_TEST=/abs/path/to/bundle python -m pytest <resolved_test_root> /abs/path/to/bundle/tests -v --tb=short`
 
 Interpreting results:
 - `N passed` means the executed subset passed
