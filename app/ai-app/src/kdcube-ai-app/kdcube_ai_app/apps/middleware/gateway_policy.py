@@ -40,7 +40,9 @@ class GatewayPolicyResolver:
         r"^/conversations/[^/]+/[^/]+/turns-with-feedbacks$",
         r"^/conversations/[^/]+/[^/]+/feedback/conversations-in-period$",
         r"^/integrations/bundles/[^/]+/[^/]+/operations/[^/]+$",
+        r"^/integrations/bundles/[^/]+/[^/]+/[^/]+/operations/[^/]+$",
         r"^/api/integrations/bundles/[^/]+/[^/]+/operations/[^/]+$",
+        r"^/api/integrations/bundles/[^/]+/[^/]+/[^/]+/operations/[^/]+$",
     )
 
     def __init__(self, guarded_rest_patterns: Optional[Iterable[str]] = None):

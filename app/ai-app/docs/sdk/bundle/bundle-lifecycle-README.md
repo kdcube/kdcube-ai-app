@@ -187,9 +187,12 @@ for client-side routing.
 - `node_modules/` and `package-lock.json` are excluded from the content hash so that
   `npm install` during the build does not change the hash.
 - The built UI typically communicates back to the backend through the bundle operations
-  endpoint (`POST /api/integrations/bundles/{tenant}/{project}/operations/{operation}`)
+  endpoint (`POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/{operation}`)
   and receives runtime config (base URL, auth tokens, tenant/project) via `postMessage`
   from the host frame.
+- Legacy callers may still use
+  `POST /api/integrations/bundles/{tenant}/{project}/operations/{operation}`.
+  When `bundle_id` is omitted there, proc resolves the current default bundle id.
 - That UI is a normal platform client. If it needs bundle-originated progress or
   step events to target one exact connected peer, it must follow the client
   communication contract and propagate the connected peer id on REST requests.

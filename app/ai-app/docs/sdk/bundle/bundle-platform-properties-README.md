@@ -26,6 +26,13 @@ Effective precedence remains:
 2. `bundles.yaml`
 3. runtime/admin overrides
 
+Important:
+- the bundle delivery id used in integrations routes is not a bundle prop
+- bundle-specific clients should call
+  `/api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/{operation}`
+- the legacy omitted-bundle route still exists for generic platform callers and
+  resolves the current default bundle id when `bundle_id` is not supplied
+
 If proc runs with `BUNDLES_FORCE_ENV_ON_STARTUP=1`, the descriptor-backed props layer is rebuilt
 authoritatively from `bundles.yaml`, so removed keys are deleted from Redis on env reset.
 
