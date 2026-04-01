@@ -196,7 +196,7 @@ The widget is not a static mockup. It follows the real platform integration patt
 - it requests runtime config from the parent frame with `CONFIG_REQUEST`
 - it accepts `baseUrl`, `accessToken`, `idToken`, `idTokenHeader`, `defaultTenant`, `defaultProject`, and `defaultAppBundleId`
 - it calls the bundle backend through:
-  - `POST /api/integrations/bundles/{tenant}/{project}/operations/preferences_widget_data`
+  - `POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/preferences_widget_data`
 - it sends `credentials: "include"` and forwards bearer / ID-token headers when present
 
 This integration shape matters. If a bundle widget talks to bundle or platform REST APIs, keep the config/auth wiring aligned with the platform examples instead of inventing a different handshake.
@@ -210,10 +210,10 @@ Reference backend endpoint:
 
 The widget uses the platform iframe config handshake and then calls:
 
-- `POST /api/integrations/bundles/{tenant}/{project}/operations/preferences_widget_data`
-- `POST /api/integrations/bundles/{tenant}/{project}/operations/preferences_canvas_data`
-- `POST /api/integrations/bundles/{tenant}/{project}/operations/preferences_canvas_save`
-- `POST /api/integrations/bundles/{tenant}/{project}/operations/preferences_exec_report`
+- `POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/preferences_widget_data`
+- `POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/preferences_canvas_data`
+- `POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/preferences_canvas_save`
+- `POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/preferences_exec_report`
 
 Important request shape:
 

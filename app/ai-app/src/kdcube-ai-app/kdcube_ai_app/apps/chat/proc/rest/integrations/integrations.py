@@ -113,6 +113,7 @@ _LOCALHOST = {"127.0.0.1", "::1"}
 
 class BundleSuggestionsRequest(BaseModel):
     conversation_id: Optional[str] = None
+    bundle_id: Optional[str] = None
     config_request: Optional[ConfigRequest] = None
     data: Optional[Dict[str, Any]] = None
 
@@ -921,6 +922,47 @@ async def call_bundle_op(
     Load (or reuse singleton) bundle instance and call its operation (e.g. suggestions()).
     Returns generic JSON from the bundle.
     """
+    return await _call_bundle_op_limited(
+        tenant=tenant,
+        project=project,
+        bundle_id=bundle_id,
+        payload=payload,
+        request=request,
+        operation=operation,
+        session=session,
+    )
+
+
+@router.post("/bundles/{tenant}/{project}/operations/{operation}")
+async def call_bundle_op_default(
+        tenant: str,
+        project: str,
+        operation: str,
+        request: Request,
+        payload: BundleSuggestionsRequest = Body(default_factory=BundleSuggestionsRequest),
+        session: UserSession = Depends(require_auth(RequireUser())),
+):
+    return await _call_bundle_op_limited(
+        tenant=tenant,
+        project=project,
+        bundle_id=None,
+        payload=payload,
+        request=request,
+        operation=operation,
+        session=session,
+    )
+
+
+async def _call_bundle_op_limited(
+        *,
+        tenant: str,
+        project: str,
+        bundle_id: Optional[str],
+        payload: BundleSuggestionsRequest,
+        request: Request,
+        operation: str,
+        session: UserSession,
+):
     sem = _get_integrations_semaphore()
     if sem:
         async with sem:
@@ -944,11 +986,34 @@ async def call_bundle_op(
     )
 
 
+def _resolve_requested_bundle_id(
+        *,
+        path_bundle_id: Optional[str],
+        payload: BundleSuggestionsRequest,
+) -> str:
+    if path_bundle_id and str(path_bundle_id).strip():
+        return str(path_bundle_id).strip()
+
+    payload_bundle_id = str(payload.bundle_id or "").strip()
+    if payload_bundle_id:
+        return payload_bundle_id
+
+    cfg_bundle_id = str(getattr(payload.config_request, "agentic_bundle_id", "") or "").strip()
+    if cfg_bundle_id:
+        return cfg_bundle_id
+
+    default_bundle_id = str(get_default_id() or "").strip()
+    if default_bundle_id:
+        return default_bundle_id
+
+    raise HTTPException(status_code=404, detail="No bundle_id provided and no default bundle is configured")
+
+
 async def _call_bundle_op_inner(
         *,
         tenant: str,
         project: str,
-        bundle_id: str,
+        bundle_id: Optional[str],
         payload: BundleSuggestionsRequest,
         request: Request,
         operation: str,
@@ -969,7 +1034,8 @@ async def _call_bundle_op_inner(
     if not cfg_req.claude_api_key:
         cfg_req.claude_api_key = settings.ANTHROPIC_API_KEY
 
-    cfg_req.agentic_bundle_id = bundle_id
+    requested_bundle_id = _resolve_requested_bundle_id(path_bundle_id=bundle_id, payload=payload)
+    cfg_req.agentic_bundle_id = requested_bundle_id
 
     tenant_id = cfg_req.tenant or tenant or settings.TENANT
     project_id = cfg_req.project or project or settings.PROJECT

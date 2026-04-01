@@ -256,7 +256,8 @@ class BaseEntrypoint:
 
         build_dest = storage_root / "ui"
         sig_path = storage_root / ".ui.signature"
-        signature = f"{src_path}|{build_command}"
+        bundle_delivery_id = str(getattr(getattr(self.config, "ai_bundle_spec", None), "id", "") or "")
+        signature = f"{src_path}|{build_command}|{bundle_delivery_id}"
 
         try:
             if sig_path.read_text(encoding="utf-8").strip() == signature and (build_dest / "index.html").exists():
@@ -270,6 +271,9 @@ class BaseEntrypoint:
         self.logger.log(f"[bundle.ui] build start: src={src_path} dest={build_dest}", "INFO")
 
         env = os.environ.copy()
+        if bundle_delivery_id:
+            env["VI_BUNDLE_ID"] = bundle_delivery_id
+            env["VITE_BUNDLE_ID"] = bundle_delivery_id
         # Source nvm's bin dir explicitly
         nvm_bin = os.path.expanduser("~/.nvm/versions/node")
         if os.path.exists(nvm_bin):

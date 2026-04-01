@@ -11,6 +11,7 @@ gateway:
       - "^.*/conversations/[^/]+/[^/]+/turns-with-feedbacks$"
       - "^.*/conversations/[^/]+/[^/]+/feedback/conversations-in-period$"
     proc:
+      - "^.*/integrations/bundles/[^/]+/[^/]+/operations/[^/]+$"
       - "^.*/integrations/bundles/[^/]+/[^/]+/[^/]+/operations/[^/]+$"
       - "^.*/integrations/static/[^/]+/[^/]+/[^/]+/.*$"
 

@@ -149,15 +149,14 @@ export const widgetPanelsApiSlice = createApi({
             project: string,
         }>({
             query: ({tenant, project}: GetWidgetParams) => {
+                const bundleId = "versatile@2026-03-31-13-36";
                 return {
-                    url: `/api/integrations/bundles/${tenant}/${project}/operations/preferences_widget`,
+                    url: `/api/integrations/bundles/${tenant}/${project}/${bundleId}/operations/preferences_widget`,
                     method: 'POST',
                     headers: [
                         ["Content-Type", "application/json"]
                     ],
-                    body: JSON.stringify({
-                        bundle_id: "versatile@2026-03-31-13-36"
-                    })
+                    body: "{}"
                 }
             },
             transformResponse(res: VersatilePreferencesResponse) {

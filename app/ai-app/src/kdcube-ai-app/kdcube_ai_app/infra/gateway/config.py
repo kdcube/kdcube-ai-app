@@ -41,6 +41,7 @@ DEFAULT_GUARDED_REST_PATTERNS = [
     r"^/conversations/[^/]+/[^/]+/turns-with-feedbacks$",
     r"^/conversations/[^/]+/[^/]+/feedback/conversations-in-period$",
     r"^/integrations/bundles/[^/]+/[^/]+/operations/[^/]+$",
+    r"^/integrations/bundles/[^/]+/[^/]+/[^/]+/operations/[^/]+$",
 ]
 
 class GatewayProfile(Enum):

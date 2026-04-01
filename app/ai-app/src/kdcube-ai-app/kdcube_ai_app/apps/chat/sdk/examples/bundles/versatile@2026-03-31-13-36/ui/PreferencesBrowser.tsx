@@ -277,12 +277,12 @@ async function fetchPreferencesPayload(): Promise<WidgetPayload> {
         throw new Error('Widget configuration is incomplete: tenant/project are not available.');
     }
 
-    const url = `${settings.getBaseUrl()}/api/integrations/bundles/${tenant}/${project}/operations/preferences_widget_data`;
+    const url = `${settings.getBaseUrl()}/api/integrations/bundles/${tenant}/${project}/${bundleId}/operations/preferences_widget_data`;
     const response = await fetch(url, {
         method: 'POST',
         credentials: 'include',
         headers: makeAuthHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ bundle_id: bundleId }),
+        body: '{}',
     });
 
     if (!response.ok) {
@@ -302,12 +302,12 @@ async function fetchPreferencesCanvas(): Promise<PreferencesCanvasPayload> {
         throw new Error('Widget configuration is incomplete: tenant/project are not available.');
     }
 
-    const url = `${settings.getBaseUrl()}/api/integrations/bundles/${tenant}/${project}/operations/preferences_canvas_data`;
+    const url = `${settings.getBaseUrl()}/api/integrations/bundles/${tenant}/${project}/${bundleId}/operations/preferences_canvas_data`;
     const response = await fetch(url, {
         method: 'POST',
         credentials: 'include',
         headers: makeAuthHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ bundle_id: bundleId }),
+        body: '{}',
     });
 
     if (!response.ok) {
@@ -327,13 +327,12 @@ async function savePreferencesCanvas(documentText: string): Promise<PreferencesC
         throw new Error('Widget configuration is incomplete: tenant/project are not available.');
     }
 
-    const url = `${settings.getBaseUrl()}/api/integrations/bundles/${tenant}/${project}/operations/preferences_canvas_save`;
+    const url = `${settings.getBaseUrl()}/api/integrations/bundles/${tenant}/${project}/${bundleId}/operations/preferences_canvas_save`;
     const response = await fetch(url, {
         method: 'POST',
         credentials: 'include',
         headers: makeAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
-            bundle_id: bundleId,
             data: {
                 document_text: documentText,
             },
@@ -357,13 +356,12 @@ async function fetchPreferencesExecReport(reportOptions: ExecReportOptions): Pro
         throw new Error('Widget configuration is incomplete: tenant/project are not available.');
     }
 
-    const url = `${settings.getBaseUrl()}/api/integrations/bundles/${tenant}/${project}/operations/preferences_exec_report`;
+    const url = `${settings.getBaseUrl()}/api/integrations/bundles/${tenant}/${project}/${bundleId}/operations/preferences_exec_report`;
     const response = await fetch(url, {
         method: 'POST',
         credentials: 'include',
         headers: makeAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
-            bundle_id: bundleId,
             data: {
                 recency: reportOptions.recency,
                 kwords: reportOptions.kwords,
@@ -534,7 +532,7 @@ function PreferencesBrowser() {
                                 <strong> {data.user_id}</strong>.
                             </p>
                             <p style={{ margin: "10px 0 0", fontSize: "13px", opacity: 0.68 }}>
-                                Operation: <code>POST /api/integrations/bundles/&lt;tenant&gt;/&lt;project&gt;/operations/preferences_widget_data</code>
+                                Operation: <code>POST /api/integrations/bundles/&lt;tenant&gt;/&lt;project&gt;/&lt;bundle_id&gt;/operations/preferences_widget_data</code>
                             </p>
                         </div>
                         <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
@@ -634,7 +632,7 @@ function PreferencesBrowser() {
                             <div>
                                 <h2 style={{ margin: "0 0 8px" }}>Exec report</h2>
                                 <p style={{ margin: 0, opacity: 0.72 }}>
-                                    Generated through <code>POST /api/integrations/bundles/&lt;tenant&gt;/&lt;project&gt;/operations/preferences_exec_report</code>
+                                    Generated through <code>POST /api/integrations/bundles/&lt;tenant&gt;/&lt;project&gt;/&lt;bundle_id&gt;/operations/preferences_exec_report</code>
                                 </p>
                                 <p style={{ margin: "8px 0 0", opacity: 0.64, fontSize: "13px" }}>
                                     Sent data: <code>{'{"recency": ..., "kwords": ...}'}</code>
@@ -706,7 +704,7 @@ function PreferencesBrowser() {
                                 preference state.
                             </p>
                             <p style={{ margin: "8px 0 0", fontSize: "13px", opacity: 0.66 }}>
-                                Operation: <code>POST /api/integrations/bundles/&lt;tenant&gt;/&lt;project&gt;/operations/preferences_canvas_save</code>
+                                Operation: <code>POST /api/integrations/bundles/&lt;tenant&gt;/&lt;project&gt;/&lt;bundle_id&gt;/operations/preferences_canvas_save</code>
                             </p>
                             {canvas?.path ? (
                                 <p style={{ margin: "8px 0 0", fontSize: "13px", opacity: 0.66 }}>
