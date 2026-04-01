@@ -104,13 +104,15 @@ What the bundle has in this path:
 
 Important current communicator rule for REST operations:
 - communicator is available
-- if the request carries `KDC-Stream-ID`, the runtime maps it into
-  `routing.socket_id`
+- if the request carries the `KDC-Stream-ID` HTTP header, meaning the header
+  that identifies the connected peer/stream which issued the request, the
+  runtime maps that value into `routing.socket_id`
 - that lets communicator target the initiating SSE / Socket.IO peer directly
 - if the header is absent, the request remains session-scoped
 
 Practical consequence:
-- with `KDC-Stream-ID`, peer-to-peer delivery is possible
+- with the `KDC-Stream-ID` peer-identification header, peer-to-peer delivery is
+  possible
 - without it, all clients listening on that session receive the event
 - if nobody is listening on that session, nobody receives it
 
@@ -205,8 +207,9 @@ Current routing rules:
 That is why:
 - queued chat turns can target one client when the request path carried that
   identity
-- REST bundle operations can target one client when `KDC-Stream-ID` is carried
-  with the HTTP request; otherwise they broadcast to the session room
+- REST bundle operations can target one client when the `KDC-Stream-ID` header,
+  which identifies the connected peer, is carried with the HTTP request;
+  otherwise they broadcast to the session room
 
 ## Shared browser, cache, and retrieval from tools
 
@@ -255,5 +258,6 @@ This is the same browser service used by rendering-oriented SDK tools.
 - Use `get_comm()` or `_COMMUNICATOR` when a tool needs chat-side event
   emission.
 - If you want a REST-triggered bundle/tool event to reach the initiating peer
-  only, make sure the request carries `KDC-Stream-ID`.
+  only, make sure the request carries the `KDC-Stream-ID` header for that
+  connected peer.
 - Assume isolated runtime reconstructs only the documented portable contract.
