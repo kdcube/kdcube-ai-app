@@ -853,7 +853,20 @@ async def serve_static_asset(
     ui_root = storage_root / "ui" if storage_root else None
 
     if not ui_root or not ui_root.exists():
-        raise HTTPException(status_code=404, detail=f"Bundle '{bundle_id}' does not have a UI defined")
+        # Build-on-first-request for bundles that expose ui.main_view but were not
+        # instantiated yet in this proc. This triggers on_bundle_load(), which in
+        # turn calls BaseEntrypoint._ensure_ui_build().
+        await _load_bundle_props_defaults(
+            bundle_id=bundle_id,
+            tenant=tenant,
+            project=project,
+            request=request,
+            session=session,
+        )
+        storage_root = storage_for_spec(spec=spec, tenant=tenant, project=project, ensure=False)
+        ui_root = storage_root / "ui" if storage_root else None
+        if not ui_root or not ui_root.exists():
+            raise HTTPException(status_code=404, detail=f"Bundle '{bundle_id}' does not have a UI defined")
 
     # Prevent path traversal
     try:
