@@ -87,6 +87,10 @@ Communicator behavior in this path:
 
 Bundle operations invoked by REST currently go through:
 
+`GET|POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/{operation}`
+
+Also available for backward compatibility:
+
 `POST /api/integrations/bundles/{tenant}/{project}/operations/{operation}`
 
 Relevant code:
@@ -96,7 +100,8 @@ Current flow:
 1. REST request resolves `bundle_id`
 2. runtime creates `ChatTaskPayload`
 3. `get_workflow_instance(...)` creates or reuses the entrypoint
-4. runtime calls `workflow.<operation>(user_id=..., fingerprint=..., **payload.data)`
+4. proc resolves decorated `@api` alias + method first, then falls back to same-name method lookup for undecorated bundles
+5. runtime calls the resolved method with `user_id=..., fingerprint=..., **kwargs`
 
 What the bundle has in this path:
 - `self.comm`

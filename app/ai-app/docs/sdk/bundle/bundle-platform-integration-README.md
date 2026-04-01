@@ -25,8 +25,19 @@ The goal is to make bundle integration points:
 - **role-aware**
 - **backward compatible**
 
-This is intentionally written as a **target design** that implementation can
-roll out in phases.
+This is intentionally written as a phased design, but the first backend slice is
+already implemented.
+
+Current implementation status:
+- decorator metadata is live in `agentic_loader.py`
+- bundle interface manifest discovery is live
+- `GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}` is live
+- `GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/widgets` is live
+- `GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/widgets/{alias}` is live
+- `GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/{alias}` is live
+- operations already prefer decorated `@api` aliases and still fall back to same-name method lookup for undecorated bundles
+- widget fetch is already decorator-only
+- `@on_message` metadata exists, but streaming dispatch is still migration mode and still falls back to `run()`
 
 ---
 
@@ -34,15 +45,14 @@ roll out in phases.
 
 Today:
 - bundle discovery relies on `@agentic_workflow` on the entrypoint class
-- streaming requests eventually call `workflow.run(...)`
-- integrations operations call `getattr(workflow, operation)` directly
-- widgets are bundle-specific conventions rather than a discovered platform contract
+- streaming requests still eventually call `workflow.run(...)`
+- integrations operations can now resolve `@api` metadata first, then fall back to same-name method lookup
+- widgets can now be discovered as a platform contract through `@ui_widget`
 
-This works, but it has three problems:
-- the platform does not know which methods are intentionally public
-- widgets are not discoverable in a standard way
-- the same entrypoint class has multiple responsibilities, but only one of them
-  (`@agentic_workflow`) is currently declared explicitly
+This still leaves open migration work:
+- streaming dispatch is not yet decorator-driven
+- legacy broad operation exposure still exists for backward compatibility
+- full bundle frontend entrypoints are not yet resolved through `@ui_main`
 
 ---
 
@@ -86,11 +96,11 @@ Method-level decorators define which entrypoint methods are intended to be:
 
 ### 2.3 Backward compatibility first
 
-The first rollout must be **recognition-first**, not **enforcement-first**.
+The rollout must stay **recognition-first**, not **enforcement-first**.
 
 That means:
-- existing bundles without the new decorators must continue to work
-- the platform may **prefer** decorated methods when present
+- existing bundles without the new decorators continue to work
+- the platform prefers decorated methods when present
 - old fallback behavior remains until the migration is complete
 
 Examples:
@@ -114,9 +124,12 @@ Proposed decorator:
 
 ```python
 @ui_widget(
-    icon="heroicons-outline:adjustments-horizontal",
+    icon={
+        "tailwind": "heroicons-outline:adjustments-horizontal",
+        "lucide": "SlidersHorizontal",
+    },
     alias="preferences",
-    allowed_roles=["registered", "privileged"],
+    roles=["registered", "privileged"],
 )
 def preferences_widget(self, **kwargs):
     ...
@@ -126,6 +139,11 @@ Purpose:
 - declares a widget as platform-discoverable
 - provides display metadata for bundle widget listings
 - provides the public widget alias used in REST routes
+
+Icon rules:
+- preferred shape is a provider map such as `{"tailwind": "...", "lucide": "..."}`
+- current supported providers are `tailwind` and `lucide`
+- legacy string icons are still accepted and are normalized to `{"tailwind": "<value>"}` for backward compatibility
 
 ### 3.2 `@api(...)`
 
@@ -203,14 +221,9 @@ class APIEndpointSpec:
 class UIWidgetSpec:
     method_name: str
     alias: str
-    tw_icon: str
-    allowed_roles: tuple[str, ...] = ()
+    icon: dict[str, str]
+    roles: tuple[str, ...] = ()
 ```
-
-Notes:
-- the decorator can keep `icon=...` in its signature if that is the nicer
-  authoring API
-- the stored dataclass field should still be `tw_icon`
 
 ### 4.3 `OnMessageSpec`
 
@@ -270,10 +283,10 @@ Recommended rules:
 - `@ui_main` must be unique
 - `@on_message` must be unique
 
-The platform should expose helper functions such as:
-- `get_bundle_interface_manifest(...)`
-- `resolve_bundle_api_method(...)`
-- `resolve_bundle_widget_method(...)`
+The platform now exposes helper functions such as:
+- `discover_bundle_interface_manifest(...)`
+- `resolve_bundle_api_endpoint(...)`
+- `resolve_bundle_widget(...)`
 - `resolve_bundle_message_method(...)`
 
 ---
@@ -300,8 +313,11 @@ Returns bundle integration metadata visible to the current user, for example:
   "ui_widgets": [
     {
       "alias": "preferences",
-      "tw_icon": "heroicons-outline:adjustments-horizontal",
-      "allowed_roles": ["registered", "privileged"]
+      "icon": {
+        "tailwind": "heroicons-outline:adjustments-horizontal",
+        "lucide": "SlidersHorizontal"
+      },
+      "roles": ["registered", "privileged"]
     }
   ],
   "api_endpoints": [
@@ -324,10 +340,13 @@ POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/{alias}
 GET  /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/{alias}
 ```
 
-Semantics:
-- `POST`: body JSON is forwarded as kwargs
+Current semantics:
+- `POST`: `payload.data` is forwarded as kwargs
 - `GET`: query params are forwarded as kwargs
 - request/session context still comes from `self.comm`
+- decorated aliases are resolved first
+- if an alias exists only for another method, the endpoint returns `405`
+- if no decorated alias exists, proc still falls back to same-name method lookup for backward compatibility
 
 Backward-compatible legacy route:
 
@@ -358,6 +377,10 @@ GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/widgets/{alias}
 This resolves the `@ui_widget` method by alias and returns the widget payload
 for the platform to embed.
 
+Current semantics:
+- widget fetch is already decorator-only
+- unauthorized widget aliases are rejected by role filtering before invocation
+
 ---
 
 ## 7) Dispatch behavior
@@ -384,13 +407,14 @@ sequenceDiagram
   B-->>UI: stream events through communicator
 ```
 
-Migration rule:
-- first prefer `@on_message` if present
-- otherwise preserve current `run()` fallback
+Current status:
+- `@on_message` metadata exists
+- processor-side streaming dispatch has not switched yet
+- streaming still preserves the current `run()` fallback
 
 ### 7.2 Operations dispatch
 
-Target behavior:
+Current behavior:
 
 ```mermaid
 sequenceDiagram
@@ -409,9 +433,11 @@ sequenceDiagram
   API-->>W: JSON response
 ```
 
+This phase is already live for REST operations.
+
 ### 7.3 Widget dispatch
 
-Target behavior:
+Current behavior:
 
 ```mermaid
 sequenceDiagram
@@ -420,12 +446,14 @@ sequenceDiagram
   participant B as Bundle Instance
 
   UI->>API: GET widgets
-  API-->>UI: alias + tw_icon + allowed_roles
+  API-->>UI: alias + icon + roles
   UI->>API: GET widgets/{alias}
   API->>B: create per-request bundle instance
   API->>B: call resolved @ui_widget method
   B-->>UI: widget payload / html
 ```
+
+This phase is already live for widgets.
 
 Widgets should use the same auth/config handshake already shown in:
 - `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/AIBundleDashboard.tsx`
@@ -444,7 +472,7 @@ Rules:
   roles
 
 Decorator fields:
-- widgets use `allowed_roles`
+- widgets use `roles`
 - API methods use `roles`
 
 The role strings should align with the existing gateway/session role model.
@@ -457,6 +485,8 @@ The first backend phase should be conservative.
 
 ### Phase 1: recognition and new read endpoints
 
+Status: implemented.
+
 Implement:
 - decorator dataclasses and decorators in `agentic_loader.py`
 - decorator discovery helpers
@@ -467,10 +497,12 @@ Implement:
 
 Behavior:
 - widget endpoints use decorator-based discovery immediately
-- operations may still fall back to old same-name method lookup
+- operations still fall back to old same-name method lookup when no decorator metadata exists
 - streaming still falls back to `run()`
 
 ### Phase 2: prefer declarative dispatch
+
+Status: pending.
 
 Implement:
 - processor resolves `@on_message` first
@@ -478,6 +510,8 @@ Implement:
 - alias support becomes the normal routing model
 
 ### Phase 3: tighten exposure rules
+
+Status: pending.
 
 After migration:
 - public REST operations should require `@api`
@@ -492,20 +526,20 @@ When authoring bundles:
 - use `@agentic_workflow` on the entrypoint class
 - add `@api` to methods that are intentionally public over REST
 - add `@ui_widget` to widget-producing methods
-- later, add `@on_message` when you want a message handler other than implicit `run()`
+- treat undecorated REST methods as legacy compatibility only
+- add `@on_message` when you want to be ready for future message-handler dispatch
 - use `self.comm` for platform request/session context
 - use kwargs for UI/business inputs forwarded from GET/POST requests
 
 The reference bundle for this model is:
 - `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36`
 
-As implementation lands, this bundle should become the canonical example that
-demonstrates:
+The reference bundle already demonstrates:
 - `@api`
 - `@ui_widget`
 - widget → operations calls
-- main UI entrypoint if defined
-- message handler declaration if different from `run()`
+- future `@ui_main` if defined
+- future message handler declaration if different from `run()`
 
 ---
 

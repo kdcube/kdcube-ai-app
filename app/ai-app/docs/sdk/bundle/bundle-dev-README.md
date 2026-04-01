@@ -99,8 +99,12 @@ Specialized examples only when the task is narrower than the full reference:
 Related runtime entrypoints:
 - Processor task runner: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py` (loads bundle + calls `run`)
 - Integrations API: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/integrations.py`
-  - `POST /bundles/{tenant}/{project}/operations/{operation}` invokes `workflow.<operation>(...)`
-  - future declarative routing is described in [docs/sdk/bundle/bundle-platform-integration-README.md](bundle-platform-integration-README.md)
+  - `GET /bundles/{tenant}/{project}/{bundle_id}` returns bundle interface metadata discovered from decorators
+  - `GET /bundles/{tenant}/{project}/{bundle_id}/widgets` lists decorated widgets
+  - `GET /bundles/{tenant}/{project}/{bundle_id}/widgets/{alias}` resolves a decorated widget
+  - `GET|POST /bundles/{tenant}/{project}/{bundle_id}/operations/{operation}` resolves decorated `@api` methods first
+  - the legacy `POST /bundles/{tenant}/{project}/operations/{operation}` route still exists for backward compatibility
+  - the current declarative routing phase is described in [docs/sdk/bundle/bundle-platform-integration-README.md](bundle-platform-integration-README.md)
 - Base entrypoint features: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/entrypoint.py`
   - Admin React apps like `ai_bundles`, `svc_gateway` can be exposed from bundles
 
@@ -509,7 +513,13 @@ Primary runtime input:
 - Passed into the workflow via `run(...)` / `execute_core(...)`
 
 Operation inputs:
-- `POST /bundles/{tenant}/{project}/operations/{operation}` passes JSON body as kwargs to `workflow.<operation>(...)`.
+- preferred routes:
+  - `GET /bundles/{tenant}/{project}/{bundle_id}/operations/{operation}`
+  - `POST /bundles/{tenant}/{project}/{bundle_id}/operations/{operation}`
+- when the method is decorated with `@api`, proc resolves by alias and HTTP method first
+- `POST` forwards `payload.data` as kwargs
+- `GET` forwards query params as kwargs
+- legacy `POST /bundles/{tenant}/{project}/operations/{operation}` still exists and still resolves the default bundle when `bundle_id` is omitted
 
 Outputs:
 - Streaming events (deltas, steps, widgets) via `ChatCommunicator`.
@@ -692,7 +702,11 @@ Bundles can expose **React panels** and **operations**:
 - Base entrypoint: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/entrypoint.py`
   - Admin panels like `ai_bundles`, `svc_gateway` are exported as bundle apps.
 - Integrations API: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/integrations.py`
-  - `POST /bundles/{tenant}/{project}/operations/{operation}` calls `workflow.<operation>(...)`.
+  - `GET /bundles/{tenant}/{project}/{bundle_id}` returns declarative bundle interface metadata
+  - `GET /bundles/{tenant}/{project}/{bundle_id}/widgets` lists decorated widgets
+  - `GET /bundles/{tenant}/{project}/{bundle_id}/widgets/{alias}` fetches a decorated widget
+  - `GET|POST /bundles/{tenant}/{project}/{bundle_id}/operations/{operation}` resolves decorated `@api` methods first
+  - legacy `POST /bundles/{tenant}/{project}/operations/{operation}` still exists for compatibility
 
 Docs:
 - [docs/sdk/bundle/bundle-interfaces-README.md](bundle-interfaces-README.md)
