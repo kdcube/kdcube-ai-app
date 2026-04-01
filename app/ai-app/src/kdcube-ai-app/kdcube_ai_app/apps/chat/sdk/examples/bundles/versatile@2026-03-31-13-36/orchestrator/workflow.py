@@ -17,7 +17,7 @@ from langgraph.graph import END, START, StateGraph
 
 from .. import skills_descriptor, tools_descriptor
 from ..agents.gate import GateOut as MinimalGateOut, gate_stream
-from ..preferences_store import auto_capture_preferences, ensure_preferences_root
+from ..preferences_store import auto_capture_preferences, build_preferences_storage
 from ..resources.service_messages.resources import get_friendly_error_message
 
 
@@ -61,13 +61,21 @@ class VersatileWorkflow(BaseWorkflow):
         return scratchpad
 
     def _capture_preferences_from_turn(self, *, text: str) -> None:
-        storage_root = getattr(self.runtime_ctx, "bundle_storage", None)
-        if not storage_root or not self.bundle_prop("preferences.auto_capture", True):
+        if not self.bundle_prop("preferences.auto_capture", True):
             return
         user_id = getattr(self.runtime_ctx, "user_id", None) or "anonymous"
         try:
-            root = ensure_preferences_root(Path(storage_root))
-            captured = auto_capture_preferences(root.parent, user_id, text=text, source="chat")
+            bundle_id = getattr(getattr(self.config, "ai_bundle_spec", None), "id", None) or "versatile"
+            tenant = getattr(self.runtime_ctx, "tenant", None)
+            project = getattr(self.runtime_ctx, "project", None)
+            if not tenant or not project:
+                return
+            storage = build_preferences_storage(
+                tenant=tenant,
+                project=project,
+                bundle_id=bundle_id,
+            )
+            captured = auto_capture_preferences(storage, user_id, text=text, source="chat")
             if captured:
                 self.logger.log(
                     f"[versatile] captured {len(captured)} preference observation(s) for {user_id}",

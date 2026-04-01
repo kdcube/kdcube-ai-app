@@ -13,8 +13,7 @@ It intentionally demonstrates the main SDK bundle surfaces together in one place
 | Economics / quotas                     | `entrypoint.py` via `BaseEntrypointWithEconomics` and `app_quota_policies`                 |
 | Bundle-local tools                     | `tools/preference_tools.py`                                                                |
 | Bundle-local skills                    | `skills/product/preferences/SKILL.md`                                                      |
-| Shared local bundle storage            | `preferences_store.py`, `entrypoint.py:on_bundle_load`, `orchestrator/workflow.py`         |
-| Storage backend (`AIBundleStorage`)    | `tools/preference_tools.py:export_preferences_snapshot`                                    |
+| Shared bundle storage backend          | `preferences_store.py`, `entrypoint.py`, `orchestrator/workflow.py`, `tools/preference_tools.py` |
 | MCP tools                              | `tools_descriptor.py`                                                                      |
 | Direct isolated exec from bundle code  | `entrypoint.py:preferences_exec_report`                                                    |
 | Custom TSX widget                      | `ui/PreferencesBrowser.tsx`, `entrypoint.py:preferences_widget`                            |
@@ -23,17 +22,18 @@ It intentionally demonstrates the main SDK bundle surfaces together in one place
 
 - The workflow is a normal gate → solver React loop.
 - The bundle heuristically captures preference statements from user messages while the chat is running.
-- Preferences are stored per user under the shared bundle storage root.
+- Preferences are stored per user in the shared bundle storage backend (`AIBundleStorage`).
 - The solver can consult those preferences with the bundle-local tool:
   - `preferences.get_preferences(recency, kwords)`
-- Explicit updates can also be written through:
+- Natural-language capture and structured updates can be written through:
+  - `preferences.capture_preferences(text, source)`
   - `preferences.set_preference(key, value, source)`
 - A storage-backend snapshot can be exported through:
   - `preferences.export_preferences_snapshot(filename)`
 
 ## Preference storage layout
 
-Inside `bundle_storage_root()`:
+Inside the bundle storage backend root:
 
 ```text
 preferences/
@@ -43,13 +43,17 @@ preferences/
       events.jsonl
 ```
 
-This keeps the bundle readable for humans:
+These bundle-storage keys stay readable for humans:
 - `current.json` is the latest materialized view
 - `events.jsonl` is the append-only observation history
 
+The widget also exposes `current.json` as a simplified collaborative JSON canvas.
+Users edit plain key/value JSON in the browser, and the bundle normalizes it back
+into the structured stored form used by the agent tools.
+
 ## Widget + operations
 
-This bundle exposes two entrypoint operations:
+This bundle exposes four entrypoint operations:
 
 - `preferences_widget`
   - reads current preference data
@@ -58,9 +62,16 @@ This bundle exposes two entrypoint operations:
 - `preferences_widget_data`
   - returns the current widget payload as JSON for the authenticated iframe client
   - is called by the widget through the integrations operations API
+- `preferences_canvas_data`
+  - returns the collaborative preferences document as editable JSON text
+  - exposes the bundle-storage key for the current user's `current.json`
+- `preferences_canvas_save`
+  - accepts edited JSON text from the widget
+  - normalizes the document back into the structured `current.json` store
+  - appends change/remove events so the history remains visible to the bundle
 - `preferences_exec_report`
   - runs a tiny report job through the isolated exec runtime
-  - writes a markdown report artifact from bundle storage content
+  - writes a markdown report artifact from shared bundle preference content
   - is wired to the widget's `Run Exec Report` button through the same integrations
 operations API
 
@@ -86,6 +97,8 @@ Reference backend endpoint:
 The widget uses the platform iframe config handshake and then calls:
 
 - `POST /api/integrations/bundles/{tenant}/{project}/operations/preferences_widget_data`
+- `POST /api/integrations/bundles/{tenant}/{project}/operations/preferences_canvas_data`
+- `POST /api/integrations/bundles/{tenant}/{project}/operations/preferences_canvas_save`
 - `POST /api/integrations/bundles/{tenant}/{project}/operations/preferences_exec_report`
 
 Important request shape:
@@ -104,6 +117,9 @@ The integrations endpoint forwards `data` as keyword arguments to the bundle
 method. In this bundle:
 - `preferences_widget_data(...)` uses the per-request `self.comm` context and
   ignores extra params
+- `preferences_canvas_data(...)` loads the current collaborative JSON document
+- `preferences_canvas_save(document_text=...)` saves the edited collaborative
+  JSON document back into the structured preference store
 - `preferences_exec_report(recency=..., kwords=...)` consumes forwarded values
   and falls back to defaults when they are absent
 
@@ -132,7 +148,7 @@ The bundle includes:
 The bundle ships one bundle-local skill:
 
 - `product.preferences`
-  - teaches the solver when to consult stored user preferences before personalizing an answer
+  - teaches the solver to consult and update durable user memory before personalizing an answer
 
 ## Minimal vs versatile
 
@@ -143,8 +159,8 @@ The bundle ships one bundle-local skill:
 | Custom skills | optional | yes |
 | Economics | optional | yes |
 | MCP | optional | yes |
-| Shared local storage | optional | yes |
-| Storage backend snapshot | optional | yes |
+| Shared bundle storage backend | optional | yes |
+| Storage backend snapshot/export | optional | yes |
 | Direct isolated exec from bundle code | optional | yes |
 | Widget / operations | optional | yes |
 
