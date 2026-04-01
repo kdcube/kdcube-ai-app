@@ -193,6 +193,9 @@ So the child runtime still sees the same three classes of data:
 
 These are the intended starting points this bundle advertises to the agent.
 They are real app-relative paths under one common `ks:` root, not special platform namespaces.
+The search/index rules are separate from the namespace rules:
+- `ks:src/...` paths are still normal paths under the same common `ks:` root
+- but `react.search_knowledge(...)` currently indexes docs metadata and deployment markdown, not the whole `ks:src/...` tree
 
 | Logical base                                                      | Intended content                         | `react.search_knowledge`  | `react.read`                     | Exec browsing via `bundle_data.resolve_namespace(...)` |
 |-------------------------------------------------------------------|------------------------------------------|---------------------------|----------------------------------|--------------------------------------------------------|
