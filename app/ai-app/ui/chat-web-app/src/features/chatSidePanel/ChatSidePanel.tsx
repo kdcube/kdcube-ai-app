@@ -46,7 +46,7 @@ import DebugPanel from "../debugPanel/DebugPanel.tsx";
 import {selectCurrentBundle} from "../bundles/bundlesSlice.ts";
 import ResizableContainer from "../../components/ResizableContainer.tsx";
 import {readParam, writeParam} from "../settingsStorage/settingsStorage.ts";
-import {selectAppUser, selectAuthToken, selectIdToken} from "../auth/authSlice.ts";
+import {selectAppUser} from "../auth/authSlice.ts";
 
 interface MenuButtonProps {
     children: ReactNode | ReactNode[];
@@ -218,19 +218,11 @@ const IFrameSrcPanel = ({visible, src, className}: IFrameSrcPanelProps) => {
 const EchoUIPanel = ({visible, className}: WidgetPanelProps) => {
     const tenant = useAppSelector(selectTenant);
     const project = useAppSelector(selectProject);
-    const authToken = useAppSelector(selectAuthToken);
-    const idToken = useAppSelector(selectIdToken);
 
     return useMemo(() => {
-        let src = `/api/integrations/static/${tenant}/${project}/echo.ui@2026-03-30/`;
-        const params = new URLSearchParams();
-        if (authToken) params.append("bearer_token", authToken);
-        if (idToken) params.append("id_token", idToken);
-        const qs = params.toString();
-        if (qs) src += `?${qs}`;
-
+        const src = `/api/integrations/static/${tenant}/${project}/echo.ui@2026-03-30/`;
         return <IFrameSrcPanel visible={visible} src={src} className={className}/>
-    }, [tenant, project, authToken, idToken, visible, className]);
+    }, [tenant, project, visible, className]);
 }
 
 interface PanelLoadingProps {
