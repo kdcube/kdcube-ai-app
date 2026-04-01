@@ -37,6 +37,30 @@ def _make_storage(tmp_path: Path) -> AIBundleStorage:
     )
 
 
+def _bind_tool_subsystem(tools_mod, *, user_id: str | None = None, service_user: str | None = None):
+    tools_mod.bind_integrations(
+        {
+            "tool_subsystem": type(
+                "_ToolSubsystem",
+                (),
+                {
+                    "comm": type(
+                        "_Comm",
+                        (),
+                        {
+                            "tenant": "demo-tenant",
+                            "project": "demo-project",
+                            "user_id": user_id,
+                            "service": {"user": service_user} if service_user is not None else {},
+                        },
+                    )(),
+                    "bundle_spec": type("_BundleSpec", (), {"id": "versatile@2026-03-31-13-36"})(),
+                },
+            )()
+        }
+    )
+
+
 def test_preferences_canvas_save_normalizes_document_and_appends_events(tmp_path):
     prefs = _load_preferences_store_module()
     storage = _make_storage(tmp_path)
@@ -116,27 +140,7 @@ def test_preference_tools_scope_falls_back_to_service_user(tmp_path, monkeypatch
             return storage
 
     monkeypatch.setattr(tools_mod, "store_mod", _StoreModule)
-    tools_mod.bind_integrations(
-        {
-            "tool_subsystem": type(
-                "_ToolSubsystem",
-                (),
-                {
-                    "comm": type(
-                        "_Comm",
-                        (),
-                        {
-                            "tenant": "demo-tenant",
-                            "project": "demo-project",
-                            "user_id": None,
-                            "service": {"user": "fp-user-1"},
-                        },
-                    )(),
-                    "bundle_spec": type("_BundleSpec", (), {"id": "versatile@2026-03-31-13-36"})(),
-                },
-            )()
-        }
-    )
+    _bind_tool_subsystem(tools_mod, user_id=None, service_user="fp-user-1")
 
     scope = tools_mod._scope()
     assert scope["user_id"] == "fp-user-1"
@@ -167,27 +171,7 @@ async def test_preference_tools_get_preferences_returns_canonical_envelope(tmp_p
         get_preferences_snapshot = staticmethod(prefs.get_preferences_snapshot)
 
     monkeypatch.setattr(tools_mod, "store_mod", _StoreModule)
-    tools_mod.bind_integrations(
-        {
-            "tool_subsystem": type(
-                "_ToolSubsystem",
-                (),
-                {
-                    "comm": type(
-                        "_Comm",
-                        (),
-                        {
-                            "tenant": "demo-tenant",
-                            "project": "demo-project",
-                            "user_id": None,
-                            "service": {"user": "fp-user-1"},
-                        },
-                    )(),
-                    "bundle_spec": type("_BundleSpec", (), {"id": "versatile@2026-03-31-13-36"})(),
-                },
-            )()
-        }
-    )
+    _bind_tool_subsystem(tools_mod, user_id=None, service_user="fp-user-1")
 
     result = await tools_mod.PreferenceTools().get_preferences(recency=10, kwords="location")
 
@@ -195,3 +179,48 @@ async def test_preference_tools_get_preferences_returns_canonical_envelope(tmp_p
     assert result["error"] is None
     assert result["ret"]["user_id"] == "fp-user-1"
     assert result["ret"]["current"]["location"]["value"] == "Wuppertal"
+
+
+@pytest.mark.asyncio
+async def test_export_preferences_snapshot_uses_bundle_secret_for_signature(tmp_path, monkeypatch):
+    prefs = _load_preferences_store_module()
+    tools_mod = _load_preference_tools_module()
+    storage = _make_storage(tmp_path)
+
+    prefs.append_preference_event(
+        storage,
+        "fp-user-1",
+        key="location",
+        value="Wuppertal",
+        source="chat",
+        origin="auto_capture",
+        evidence="I am in Wuppertal",
+    )
+
+    class _StoreModule:
+        build_preferences_storage = staticmethod(lambda **_: storage)
+        get_preferences_snapshot = staticmethod(prefs.get_preferences_snapshot)
+
+    monkeypatch.setattr(tools_mod, "store_mod", _StoreModule)
+    monkeypatch.setattr(
+        tools_mod,
+        "get_secret",
+        lambda key, default=None: "snapshot-secret" if key.endswith(".preferences.snapshot_hmac_key") else default,
+    )
+    _bind_tool_subsystem(tools_mod, user_id=None, service_user="fp-user-1")
+
+    result = await tools_mod.PreferenceTools().export_preferences_snapshot(filename="user-preferences.json")
+
+    assert result["ok"] is True
+    assert result["ret"]["signed"] is True
+    assert result["ret"]["signature_algorithm"] == "hmac-sha256"
+    assert result["ret"]["signature_secret_key"] == (
+        "bundles.versatile@2026-03-31-13-36.secrets.preferences.snapshot_hmac_key"
+    )
+    assert result["ret"]["signature_key"] == "preferences/exports/fp-user-1/user-preferences.json.sig.json"
+
+    signature_doc = json.loads(storage.read(result["ret"]["signature_key"], as_text=True))
+    assert signature_doc["algorithm"] == "hmac-sha256"
+    assert signature_doc["secret_key"] == result["ret"]["signature_secret_key"]
+    assert signature_doc["signed_key"] == result["ret"]["key"]
+    assert signature_doc["signature"]

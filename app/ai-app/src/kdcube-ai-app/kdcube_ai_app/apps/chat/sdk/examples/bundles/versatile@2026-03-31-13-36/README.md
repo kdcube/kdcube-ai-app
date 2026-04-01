@@ -11,6 +11,8 @@ It intentionally demonstrates the main SDK bundle surfaces together in one place
 | Minimal bundle contract                | `entrypoint.py`, `orchestrator/workflow.py`, `tools_descriptor.py`, `skills_descriptor.py` |
 | React workflow                         | `entrypoint.py`, `orchestrator/workflow.py`, `agents/gate.py`                              |
 | Economics / quotas                     | `entrypoint.py` via `BaseEntrypointWithEconomics` and `app_quota_policies`                 |
+| Bundle props / effective config        | `entrypoint.py`, `orchestrator/workflow.py`                                                |
+| Bundle secrets via `get_secret(...)`   | `tools/preference_tools.py`                                                                |
 | Bundle-local tools                     | `tools/preference_tools.py`                                                                |
 | Bundle-local skills                    | `skills/product/preferences/SKILL.md`                                                      |
 | Shared bundle storage backend          | `preferences_store.py`, `entrypoint.py`, `orchestrator/workflow.py`, `tools/preference_tools.py` |
@@ -30,6 +32,7 @@ It intentionally demonstrates the main SDK bundle surfaces together in one place
   - `preferences.set_preference(key, value, source)`
 - A storage-backend snapshot can be exported through:
   - `preferences.export_preferences_snapshot(filename)`
+  - when secret `bundles.<bundle_id>.secrets.preferences.snapshot_hmac_key` is configured, the export is also signed and a `.sig.json` sidecar is written
 
 ## Preference storage layout
 
@@ -51,6 +54,117 @@ The widget also exposes `current.json` as a simplified collaborative JSON canvas
 Users edit plain key/value JSON in the browser, and the bundle normalizes it back
 into the structured stored form used by the agent tools.
 
+## Bundle props and secrets
+
+This reference bundle intentionally demonstrates the real split between:
+
+- bundle props for non-secret behavior/configuration
+- bundle secrets for credentials or signing material
+
+### Non-secret props
+
+This bundle reads effective props with `self.bundle_prop(...)`.
+
+Concrete examples already used by `versatile`:
+
+- `self.bundle_prop("preferences.auto_capture", True)` in `orchestrator/workflow.py`
+- `self.bundle_prop("execution.runtime")` in `entrypoint.py`
+- `self.bundle_prop("mcp.services")` in `entrypoint.py`
+
+Those effective props come from the normal platform merge:
+
+1. code defaults in `entrypoint.configuration`
+2. `bundles.yaml`
+3. runtime/admin props overrides
+
+Example `bundles.yaml` snippet:
+
+```yaml
+bundles:
+  version: "1"
+  items:
+    - id: "versatile@2026-03-31-13-36"
+      config:
+        preferences:
+          auto_capture: true
+          widget_max_events: 15
+        execution:
+          runtime:
+            mode: docker
+        mcp:
+          services:
+            mcpServers:
+              docs:
+                transport: http
+                url: https://mcp.internal.example.com
+```
+
+### Secrets
+
+This bundle demonstrates real secret usage in
+`tools/preference_tools.py:export_preferences_snapshot(...)`.
+
+It reads the bundle secret:
+
+```text
+bundles.<bundle_id>.secrets.preferences.snapshot_hmac_key
+```
+
+If that key exists, the bundle:
+
+- signs the exported snapshot with `get_secret(...)`
+- writes a JSON signature sidecar next to the snapshot
+- returns only metadata about the signature, never the secret value itself
+
+Example `bundles.secrets.yaml` snippet for CLI/CI provisioning:
+
+```yaml
+bundles:
+  version: "1"
+  items:
+    - id: "versatile@2026-03-31-13-36"
+      secrets:
+        preferences:
+          snapshot_hmac_key: null
+```
+
+The CLI injects that into the configured secrets provider using the dot-path key:
+
+```text
+bundles.versatile@2026-03-31-13-36.secrets.preferences.snapshot_hmac_key
+```
+
+Bundle code reads it with:
+
+```python
+from kdcube_ai_app.apps.chat.sdk.config import get_secret
+
+snapshot_hmac_key = get_secret(
+    "bundles.versatile@2026-03-31-13-36.secrets.preferences.snapshot_hmac_key"
+)
+```
+
+Secrets-manager configuration:
+
+- local/dev sidecar:
+  - `SECRETS_PROVIDER=secrets-service`
+  - `SECRETS_URL=http://kdcube-secrets:7777`
+  - if you provision bundle secrets via `bundles.secrets.yaml`, keep read tokens non-expiring:
+    - `SECRETS_TOKEN_TTL_SECONDS=0`
+    - `SECRETS_TOKEN_MAX_USES=0`
+- AWS Secrets Manager:
+  - `SECRETS_PROVIDER=aws-sm`
+  - `SECRETS_AWS_SM_PREFIX` or `SECRETS_SM_PREFIX` sets the provider prefix
+- process-local testing:
+  - `SECRETS_PROVIDER=in-memory`
+
+Important:
+
+- bundle props are normal config and belong in `bundles.yaml`
+- bundle secrets belong in `bundles.secrets.yaml` and in the configured secrets provider
+- `bundles.yaml` env reset is authoritative; `bundles.secrets.yaml` is currently upsert-only
+- admin UI for bundle secrets is write-only for values; it shows known keys but not secret contents
+
 ## Widget + operations
 
 This bundle exposes four entrypoint operations:
@@ -58,7 +172,7 @@ This bundle exposes four entrypoint operations:
 - `preferences_widget`
   - reads current preference data
   - renders `ui/PreferencesBrowser.tsx`
-- returns iframe-ready HTML
+  - returns iframe-ready HTML
 - `preferences_widget_data`
   - returns the current widget payload as JSON for the authenticated iframe client
   - is called by the widget through the integrations operations API
@@ -155,8 +269,10 @@ The bundle ships one bundle-local skill:
 | Shape | Required to pass the basic suite | Demonstrated here |
 | --- | --- | --- |
 | Minimal bundle | entrypoint, compiled graph, role models, tools descriptor, skills descriptor | yes |
+| Bundle props / effective config | required for real deployments | yes |
 | Custom tools | optional | yes |
 | Custom skills | optional | yes |
+| Bundle secrets via `get_secret(...)` | optional | yes |
 | Economics | optional | yes |
 | MCP | optional | yes |
 | Shared bundle storage backend | optional | yes |

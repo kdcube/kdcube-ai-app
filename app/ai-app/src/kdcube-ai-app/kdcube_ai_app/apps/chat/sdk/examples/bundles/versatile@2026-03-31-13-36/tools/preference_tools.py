@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 from pathlib import Path
 from typing import Annotated, Any, Dict
 
 import semantic_kernel as sk
+from kdcube_ai_app.apps.chat.sdk.config import get_secret
 from .. import preferences_store as store_mod
 
 try:
@@ -35,6 +38,12 @@ def _error_result(*, code: str, message: str, where: str, managed: bool, ret: An
         },
         "ret": ret,
     }
+
+
+def _bundle_secret_path(scope: Dict[str, Any], *parts: str) -> str:
+    suffix = ".".join(str(part).strip(".") for part in parts if str(part).strip("."))
+    base = f"bundles.{scope['bundle_id']}.secrets"
+    return f"{base}.{suffix}" if suffix else base
 
 
 def _scope() -> Dict[str, Any]:
@@ -231,7 +240,9 @@ class PreferenceTools:
         description=(
             "Write the current user's preference snapshot to the bundle storage backend "
             "(for example localfs or S3) and return the stored key. Returns an envelope: {ok, error, ret} "
-            "where ret contains key, root_uri, current_count, and event_count."
+            "where ret contains key, root_uri, current_count, event_count, and signature metadata. "
+            "If bundle secret bundles.<bundle_id>.secrets.preferences.snapshot_hmac_key is configured, "
+            "the exported snapshot is signed with HMAC-SHA256 and a .sig.json sidecar is written."
         ),
     )
     async def export_preferences_snapshot(
@@ -242,13 +253,49 @@ class PreferenceTools:
         key_leaf = Path(filename or "preferences-snapshot.json").name
         snapshot = dict(store_mod.get_preferences_snapshot(scope["storage"], scope["user_id"]))
         snapshot["user_id"] = scope["user_id"]
+        snapshot["bundle_id"] = scope["bundle_id"]
         key = f"preferences/exports/{scope['user_id']}/{key_leaf}"
-        scope["storage"].write(key, json.dumps(snapshot, indent=2), mime="application/json")
+        snapshot_text = json.dumps(snapshot, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
+        scope["storage"].write(key, snapshot_text, mime="application/json")
+
+        signature_secret_key = _bundle_secret_path(scope, "preferences", "snapshot_hmac_key")
+        signature_value = get_secret(signature_secret_key)
+        signature_key = f"{key}.sig.json"
+        signed = False
+        if signature_value:
+            signature = hmac.new(
+                signature_value.encode("utf-8"),
+                snapshot_text.encode("utf-8"),
+                hashlib.sha256,
+            ).hexdigest()
+            scope["storage"].write(
+                signature_key,
+                json.dumps(
+                    {
+                        "algorithm": "hmac-sha256",
+                        "signed_key": key,
+                        "secret_key": signature_secret_key,
+                        "signature": signature,
+                    },
+                    indent=2,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ) + "\n",
+                mime="application/json",
+            )
+            signed = True
+        else:
+            signature_key = None
+
         return _ok_ret_result({
             "key": key,
             "root_uri": scope["storage"].root_uri,
             "current_count": len(snapshot["current"]),
             "event_count": len(snapshot["items"]),
+            "signed": signed,
+            "signature_algorithm": "hmac-sha256" if signed else None,
+            "signature_key": signature_key,
+            "signature_secret_key": signature_secret_key,
         })
 
 

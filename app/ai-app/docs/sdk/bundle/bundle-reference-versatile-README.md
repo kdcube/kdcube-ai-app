@@ -1,9 +1,9 @@
 ---
 id: ks:docs/sdk/bundle/bundle-reference-versatile-README.md
 title: "Versatile Reference Bundle"
-summary: "Primary full-feature bundle reference for bundle builders: React workflow, economics, custom tools, custom skills, storage, MCP, widget, and isolated exec."
-tags: ["sdk", "bundle", "reference", "example", "react", "economics", "mcp", "storage", "widget", "exec"]
-keywords: ["versatile bundle", "reference bundle", "bundle example", "custom tools", "custom skills", "preferences", "isolated exec", "AIBundleStorage"]
+summary: "Primary full-feature bundle reference for bundle builders: React workflow, economics, props, secrets, custom tools, custom skills, storage, MCP, widget, and isolated exec."
+tags: ["sdk", "bundle", "reference", "example", "react", "economics", "configuration", "secrets", "mcp", "storage", "widget", "exec"]
+keywords: ["versatile bundle", "reference bundle", "bundle example", "bundle props", "bundle secrets", "get_secret", "custom tools", "custom skills", "preferences", "isolated exec", "AIBundleStorage"]
 see_also:
   - ks:docs/sdk/bundle/bundle-index-README.md
   - ks:docs/sdk/bundle/bundle-dev-README.md
@@ -43,7 +43,9 @@ That is still useful for narrow investigation, but it is a poor starting point f
 | Economics / quotas | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/entrypoint.py` |
 | Bundle-local tools | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/tools/preference_tools.py` |
 | Bundle-local skill | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/skills/product/preferences/SKILL.md` |
-| Shared local storage model | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/preferences_store.py` |
+| Bundle props / effective config | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/entrypoint.py`, `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/orchestrator/workflow.py` |
+| Bundle secrets via `get_secret(...)` | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/tools/preference_tools.py` |
+| Shared bundle storage model | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/preferences_store.py` |
 | Storage backend snapshot | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/tools/preference_tools.py` |
 | MCP connector surface | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/tools_descriptor.py` |
 | Widget surface | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/ui/PreferencesBrowser.tsx` |
@@ -55,12 +57,14 @@ That is still useful for narrow investigation, but it is a poor starting point f
 | --- | --- | --- |
 | Entrypoint + compiled graph | required | yes |
 | Role models / configuration | required | yes |
+| Bundle props / effective config | required for real deployments | yes |
 | Tools descriptor | required for tool-aware solver | yes |
 | Skills descriptor | required for skill-aware solver | yes |
 | Bundle-local tools | optional | yes |
 | Bundle-local skills | optional | yes |
+| Bundle secrets via `get_secret(...)` | optional | yes |
 | Economics | optional | yes |
-| Shared local bundle storage | optional | yes |
+| Shared bundle storage | optional | yes |
 | Storage backend export | optional | yes |
 | MCP connectors | optional | yes |
 | Widget / operations | optional | yes |
@@ -76,10 +80,11 @@ Recommended reading order:
 4. `skills_descriptor.py`
 5. `tools/preference_tools.py`
 6. `preferences_store.py`
-7. `ui/PreferencesBrowser.tsx`
-8. bundle pytest files under:
+7. the “Bundle props and secrets” section in the bundle README
+8. `ui/PreferencesBrowser.tsx`
+9. bundle pytest files under:
    `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tests/bundle`
-9. bundle-local tests under:
+10. bundle-local tests under:
    `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/tests`
 
 ## When to branch to specialized examples
