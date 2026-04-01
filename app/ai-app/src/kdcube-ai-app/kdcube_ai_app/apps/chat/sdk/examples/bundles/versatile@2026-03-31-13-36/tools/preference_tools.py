@@ -104,7 +104,10 @@ class PreferenceTools:
             for key, value in sorted(current.items()):
                 summary_lines.append(f"- {key}: {value.get('value')}")
         else:
-            summary_lines.append("No stored preferences yet.")
+            if view.get("has_any_preferences"):
+                summary_lines.append("No stored preferences matched the provided keywords.")
+            else:
+                summary_lines.append("No stored preferences yet.")
         if items:
             summary_lines.append("")
             summary_lines.append("Recent observations:")

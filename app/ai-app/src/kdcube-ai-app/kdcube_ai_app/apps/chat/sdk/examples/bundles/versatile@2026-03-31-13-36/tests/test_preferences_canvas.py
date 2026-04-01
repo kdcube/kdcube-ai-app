@@ -182,6 +182,44 @@ async def test_preference_tools_get_preferences_returns_canonical_envelope(tmp_p
 
 
 @pytest.mark.asyncio
+async def test_preference_tools_get_preferences_treats_comma_keywords_as_alternatives(tmp_path, monkeypatch):
+    prefs = _load_preferences_store_module()
+    tools_mod = _load_preference_tools_module()
+    storage = _make_storage(tmp_path)
+
+    prefs.append_preference_event(
+        storage,
+        "fp-user-1",
+        key="location",
+        value="Wuppertal",
+        source="chat",
+        origin="auto_capture",
+        evidence="I am in Wuppertal",
+    )
+
+    class _StoreModule:
+        build_preferences_storage = staticmethod(lambda **_: storage)
+        get_preferences_view = staticmethod(prefs.get_preferences_view)
+        load_current_preferences = staticmethod(prefs.load_current_preferences)
+        auto_capture_preferences = staticmethod(prefs.auto_capture_preferences)
+        append_preference_event = staticmethod(prefs.append_preference_event)
+        get_preferences_snapshot = staticmethod(prefs.get_preferences_snapshot)
+
+    monkeypatch.setattr(tools_mod, "store_mod", _StoreModule)
+    _bind_tool_subsystem(tools_mod, user_id=None, service_user="fp-user-1")
+
+    result = await tools_mod.PreferenceTools().get_preferences(
+        recency=10,
+        kwords="city, location, timezone",
+    )
+
+    assert result["ok"] is True
+    assert result["ret"]["matched_count"] == 1
+    assert result["ret"]["current"]["location"]["value"] == "Wuppertal"
+    assert "No stored preferences yet." not in result["ret"]["summary"]
+
+
+@pytest.mark.asyncio
 async def test_export_preferences_snapshot_uses_bundle_secret_for_signature(tmp_path, monkeypatch):
     prefs = _load_preferences_store_module()
     tools_mod = _load_preference_tools_module()
