@@ -481,31 +481,35 @@ def get_preferences_view(
     events = snapshot["items"]
     keywords = _normalize_keywords(kwords)
 
-    def _matches(event: Dict[str, Any]) -> bool:
+    def _matches_keywords(haystack: str) -> bool:
         if not keywords:
             return True
+        lowered = haystack.lower()
+        return any(keyword in lowered for keyword in keywords)
+
+    def _matches(event: Dict[str, Any]) -> bool:
         haystack = " ".join(
             [
                 str(event.get("key") or ""),
                 str(event.get("value") or ""),
                 str(event.get("evidence") or ""),
             ]
-        ).lower()
-        return all(keyword in haystack for keyword in keywords)
+        )
+        return _matches_keywords(haystack)
 
     matched = [event for event in reversed(events) if _matches(event)]
     limited = matched[: max(1, int(recency or 10))]
     current_subset = {
         key: value
         for key, value in current.items()
-        if not keywords
-        or all(keyword in f"{key} {value.get('value', '')}".lower() for keyword in keywords)
+        if _matches_keywords(f"{key} {value.get('value', '')}")
     }
     return {
         "current": current_subset,
         "items": limited,
         "keywords": keywords,
         "matched_count": len(matched),
+        "has_any_preferences": bool(current or events),
     }
 
 
