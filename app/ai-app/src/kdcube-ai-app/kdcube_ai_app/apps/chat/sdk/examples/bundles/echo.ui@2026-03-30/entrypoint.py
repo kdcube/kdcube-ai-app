@@ -59,8 +59,10 @@ class EchoUIBundle(BaseEntrypoint):
                     "src_folder": "ui-src",
                     # npm build command; <VI_BUILD_DEST_ABSOLUTE_PATH> is replaced
                     # by BaseEntrypoint._ensure_ui_build() with the actual output path
-                    # inside bundle local storage. The build also receives
-                    # VI_BUNDLE_ID / VITE_BUNDLE_ID with the resolved delivery id.
+                    # inside bundle local storage. The resolved delivery id is
+                    # passed separately through the build environment as
+                    # VI_BUNDLE_ID / VITE_BUNDLE_ID, so it does not need to
+                    # appear literally in the shell command string.
                     "build_command": (
                         "npm install && "
                         "OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build"
