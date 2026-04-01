@@ -2,24 +2,20 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import sys
 from pathlib import Path
 
 import pytest
 
+from kdcube_ai_app.apps.chat.sdk.runtime.dynamic_module_loader import load_dynamic_module_for_path
 from kdcube_ai_app.apps.chat.sdk.storage.ai_bundle_storage import AIBundleStorage
 
 
+def _bundle_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
 def _load_preferences_store_module():
-    root = Path(__file__).resolve().parents[1]
-    module_path = (
-        root
-        / "sdk"
-        / "examples"
-        / "bundles"
-        / "versatile@2026-03-31-13-36"
-        / "preferences_store.py"
-    )
+    module_path = _bundle_root() / "preferences_store.py"
     spec = importlib.util.spec_from_file_location("versatile_preferences_store_test", module_path)
     module = importlib.util.module_from_spec(spec)
     assert spec is not None and spec.loader is not None
@@ -28,35 +24,7 @@ def _load_preferences_store_module():
 
 
 def _load_preference_tools_module():
-    root = Path(__file__).resolve().parents[1]
-    bundle_root = (
-        root
-        / "sdk"
-        / "examples"
-        / "bundles"
-        / "versatile@2026-03-31-13-36"
-    )
-    module_path = bundle_root / "tools" / "preference_tools.py"
-    pkg_name = "_test_bundle_versatile"
-    if pkg_name not in sys.modules:
-        pkg_spec = importlib.machinery.ModuleSpec(pkg_name, loader=None, is_package=True)
-        pkg_mod = importlib.util.module_from_spec(pkg_spec)
-        pkg_mod.__path__ = [str(bundle_root)]  # type: ignore[attr-defined]
-        pkg_mod.__package__ = pkg_name
-        sys.modules[pkg_name] = pkg_mod
-    tools_pkg_name = f"{pkg_name}.tools"
-    if tools_pkg_name not in sys.modules:
-        tools_pkg_spec = importlib.machinery.ModuleSpec(tools_pkg_name, loader=None, is_package=True)
-        tools_pkg_mod = importlib.util.module_from_spec(tools_pkg_spec)
-        tools_pkg_mod.__path__ = [str(bundle_root / 'tools')]  # type: ignore[attr-defined]
-        tools_pkg_mod.__package__ = tools_pkg_name
-        sys.modules[tools_pkg_name] = tools_pkg_mod
-    spec = importlib.util.spec_from_file_location(f"{tools_pkg_name}.preference_tools", module_path)
-    module = importlib.util.module_from_spec(spec)
-    assert spec is not None and spec.loader is not None
-    module.__package__ = tools_pkg_name
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
+    _mod_name, module = load_dynamic_module_for_path(_bundle_root() / "tools" / "preference_tools.py")
     return module
 
 
