@@ -112,7 +112,6 @@ _LOCALHOST = {"127.0.0.1", "::1"}
 
 
 class BundleSuggestionsRequest(BaseModel):
-    bundle_id: Optional[str] = None
     conversation_id: Optional[str] = None
     config_request: Optional[ConfigRequest] = None
     data: Optional[Dict[str, Any]] = None
@@ -872,33 +871,16 @@ async def serve_static_asset(
         if not target.exists():
             raise HTTPException(status_code=404, detail="Not found")
 
-    # Serve and set auth cookies if tokens are present (for subsequent iframe resource requests)
-    response = FileResponse(str(target))
+    # For index.html: inject <base> so that relative asset paths (./assets/...)
+    # resolve correctly when the HTML is embedded via srcDoc in an iframe.
+    if target.name == "index.html":
+        from fastapi.responses import HTMLResponse
+        base_href = f"/api/integrations/static/{tenant}/{project}/{bundle_id}/"
+        content = target.read_text(encoding="utf-8")
+        content = content.replace("<head>", f"<head><base href=\"{base_href}\">", 1)
+        return HTMLResponse(content=content)
 
-    auth_header = request.headers.get("authorization")
-    id_token = request.headers.get(namespaces.CONFIG.ID_TOKEN_HEADER_NAME)
-
-    if auth_header and auth_header.lower().startswith("bearer "):
-        bearer = auth_header[7:].strip()
-        response.set_cookie(
-            namespaces.CONFIG.AUTH_TOKEN_COOKIE_NAME,
-            bearer,
-            httponly=True,
-            samesite="lax",
-            secure=True,
-            max_age=3600,  # 1 hour
-        )
-    if id_token:
-        response.set_cookie(
-            namespaces.CONFIG.ID_TOKEN_COOKIE_NAME,
-            id_token,
-            httponly=True,
-            samesite="lax",
-            secure=True,
-            max_age=3600,  # 1 hour
-        )
-
-    return response
+    return FileResponse(str(target))
 
 
 @router.get("/static/{tenant}/{project}/{bundle_id}")
@@ -925,26 +907,27 @@ async def bundle_static_asset(
                                     session=session)
 
 
-@router.post("/bundles/{tenant}/{project}/operations/{operation}")
+@router.post("/bundles/{tenant}/{project}/{bundle_id}/operations/{operation}")
 async def call_bundle_op(
         tenant: str,
         project: str,
+        bundle_id: str,
+        operation: str,
         request: Request,
         payload: BundleSuggestionsRequest = Body(default_factory=BundleSuggestionsRequest),
-        operation: str = "suggestions",  # news, etc.
         session: UserSession = Depends(require_auth(RequireUser())),
 ):
     """
     Load (or reuse singleton) bundle instance and call its operation (e.g. suggestions()).
     Returns generic JSON from the bundle.
     """
-    settings = get_settings()
     sem = _get_integrations_semaphore()
     if sem:
         async with sem:
             return await _call_bundle_op_inner(
                 tenant=tenant,
                 project=project,
+                bundle_id=bundle_id,
                 payload=payload,
                 request=request,
                 operation=operation,
@@ -953,6 +936,7 @@ async def call_bundle_op(
     return await _call_bundle_op_inner(
         tenant=tenant,
         project=project,
+        bundle_id=bundle_id,
         payload=payload,
         request=request,
         operation=operation,
@@ -964,6 +948,7 @@ async def _call_bundle_op_inner(
         *,
         tenant: str,
         project: str,
+        bundle_id: str,
         payload: BundleSuggestionsRequest,
         request: Request,
         operation: str,
@@ -984,8 +969,7 @@ async def _call_bundle_op_inner(
     if not cfg_req.claude_api_key:
         cfg_req.claude_api_key = settings.ANTHROPIC_API_KEY
 
-    if payload.bundle_id:
-        cfg_req.agentic_bundle_id = payload.bundle_id
+    cfg_req.agentic_bundle_id = bundle_id
 
     tenant_id = cfg_req.tenant or tenant or settings.TENANT
     project_id = cfg_req.project or project or settings.PROJECT
