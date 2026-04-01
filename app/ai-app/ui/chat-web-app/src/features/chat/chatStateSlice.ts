@@ -284,7 +284,7 @@ const reduceCodeExecEvents = (events: SubsystemEvent[], executionId: string): Co
             language: (firstEvent.data as CodeExecCodeSubsystemEventData).language,
             content: codeTextEvents.map(event => {
                 return (event.data as CodeExecCodeSubsystemEventData).text
-            }).join()
+            }).join("")
         }
     }
 
