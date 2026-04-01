@@ -29,7 +29,7 @@ graph LR
   COMM -->|SSE/Socket.IO| UI
 
   UI -->|"iframe widget"| WIDGET["Bundle Widget (TSX/HTML)"]
-  WIDGET -->|"POST /api/integrations/bundles/.../operations/{op}"| OPS["Integrations API"]
+  WIDGET -->|"POST /api/integrations/bundles/.../{bundle_id}/operations/{op}"| OPS["Integrations API"]
   OPS -->|invoke workflow op| BUNDLE
 
   UI -->|React panel def| PANEL[Bundle App: ai_bundles / svc_gateway]
@@ -212,16 +212,29 @@ client code and should follow:
 Widgets can call bundle-defined operations via the integrations endpoint:
 
 ```
-POST /api/integrations/bundles/{tenant}/{project}/operations/{op}
+POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/{op}
 ```
 
 The `{op}` is a method name on the bundle entrypoint (e.g., `suggestions`, `price_model`, or any custom op). The SDK resolves the bundle and calls the operation with the user context.
+
+Preferred rule:
+- bundle-specific clients and widgets should use the explicit `/{bundle_id}/operations/{op}` route
+- generic platform callers may still use the legacy route without `bundle_id`
+
+Legacy route:
+
+```
+POST /api/integrations/bundles/{tenant}/{project}/operations/{op}
+```
+
+When that legacy route is used:
+- body `bundle_id` is honored if provided
+- otherwise proc resolves the current default bundle id
 
 Current POST body shape:
 
 ```json
 {
-  "bundle_id": "my.bundle",
   "conversation_id": null,
   "config_request": null,
   "data": {
@@ -237,7 +250,6 @@ Example:
 
 ```json
 {
-  "bundle_id": "versatile@2026-03-31-13-36",
   "data": {
     "recency": 10,
     "kwords": "timezone email"
@@ -256,8 +268,12 @@ This allows UI → backend → bundle round-trips without exposing a separate se
 
 Important:
 - today this endpoint is POST-only
-- widgets should call it with the real tenant/project scope and the intended `bundle_id`
+- widgets should call it with the real tenant/project scope and the intended `bundle_id` in the path
 - the integration wiring should match the reference widgets above without ad-hoc deviations
+
+Legacy note:
+- if a caller still uses the legacy route without `/{bundle_id}/`, body `bundle_id`
+  is still accepted there for backward compatibility
 - if the bundle operation may emit communicator events that should go back only
   to the initiating peer, the request must also carry the configured stream-id
   header (default `KDC-Stream-ID`) with the already-connected peer id
@@ -274,7 +290,7 @@ sequenceDiagram
     Widget->>Host: CONFIG_REQUEST(identity, requestedFields)
     Host-->>Widget: CONFIG_RESPONSE(baseUrl, tokens, tenant, project, bundle_id)
 
-    Widget->>API: POST /api/integrations/bundles/{tenant}/{project}/operations/{op}
+    Widget->>API: POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/{op}
     Note over Widget,API: credentials: include<br/>Authorization / ID token headers when present<br/>body includes bundle_id
     API->>Bundle: invoke workflow.<op>(user_id=..., fingerprint=...)
     Bundle-->>API: JSON result

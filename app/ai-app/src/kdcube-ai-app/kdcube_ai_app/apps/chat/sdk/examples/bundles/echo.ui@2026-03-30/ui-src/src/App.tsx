@@ -21,8 +21,8 @@ const PLACEHOLDER_ID_TOKEN_HEADER = '{{ID_TOKEN_HEADER}}'
 const PLACEHOLDER_TENANT = '{{DEFAULT_TENANT}}'
 const PLACEHOLDER_PROJECT = '{{DEFAULT_PROJECT}}'
 
-// This bundle always knows its own ID.
-const BUNDLE_ID = 'echo.ui@2026-03-30'
+// Bundles built through the SDK UI pipeline receive their delivery id at build time.
+const BUNDLE_ID = import.meta.env.VITE_BUNDLE_ID || 'echo.ui@2026-03-30'
 
 class SettingsManager {
   private settings: AppSettings = {

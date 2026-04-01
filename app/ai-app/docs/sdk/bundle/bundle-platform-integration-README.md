@@ -329,6 +329,18 @@ Semantics:
 - `GET`: query params are forwarded as kwargs
 - request/session context still comes from `self.comm`
 
+Backward-compatible legacy route:
+
+```text
+POST /api/integrations/bundles/{tenant}/{project}/operations/{alias}
+```
+
+Legacy semantics:
+- if the request body provides `bundle_id`, proc resolves that bundle
+- otherwise proc resolves the current default bundle id
+- generic platform panels may still use this route while bundle-specific clients
+  should prefer the explicit `/{bundle_id}/operations/...` form
+
 ### 6.3 Widgets list
 
 ```text
