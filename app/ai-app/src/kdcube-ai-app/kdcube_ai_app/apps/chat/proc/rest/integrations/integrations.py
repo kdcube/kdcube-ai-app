@@ -37,7 +37,16 @@ from kdcube_ai_app.infra.plugin.bundle_store import (
     BundlesRegistry,
     BundleEntry,
 )
-from kdcube_ai_app.infra.plugin.agentic_loader import AgenticBundleSpec, get_workflow_instance
+from kdcube_ai_app.infra.plugin.agentic_loader import (
+    AgenticBundleSpec,
+    APIEndpointSpec,
+    BundleInterfaceManifest,
+    UIWidgetSpec,
+    discover_bundle_interface_manifest,
+    get_workflow_instance,
+    resolve_bundle_api_endpoint,
+    resolve_bundle_widget,
+)
 from kdcube_ai_app.infra.secrets import SecretsManagerError, SecretsManagerWriteError, get_secrets_manager
 import kdcube_ai_app.infra.namespaces as namespaces
 
@@ -102,6 +111,36 @@ def _build_rest_bundle_routing(*, request: Request, session_id: str, bundle_id: 
         bundle_id=bundle_id,
         socket_id=_request_stream_id(request),
     )
+
+
+def _session_role_names(session: UserSession) -> set[str]:
+    names: set[str] = set()
+    user_type = str(getattr(getattr(session, "user_type", None), "value", "") or "").strip()
+    if user_type:
+        names.add(user_type)
+    for item in getattr(session, "roles", None) or []:
+        text = str(item or "").strip()
+        if text:
+            names.add(text)
+    return names
+
+
+def _roles_visible(required_roles: tuple[str, ...] | list[str] | None, session: UserSession) -> bool:
+    roles = tuple(str(role or "").strip() for role in (required_roles or ()) if str(role or "").strip())
+    if not roles:
+        return True
+    if "super-admin" in roles and "kdcube:role:super-admin" in _session_role_names(session):
+        return True
+    current = _session_role_names(session)
+    return any(role in current for role in roles)
+
+
+def _visible_widget_specs(manifest: BundleInterfaceManifest, session: UserSession) -> list[UIWidgetSpec]:
+    return [spec for spec in manifest.ui_widgets if _roles_visible(spec.roles, session)]
+
+
+def _visible_api_specs(manifest: BundleInterfaceManifest, session: UserSession) -> list[APIEndpointSpec]:
+    return [spec for spec in manifest.api_endpoints if _roles_visible(spec.roles, session)]
 
 
 router = APIRouter()
@@ -966,6 +1005,160 @@ async def call_bundle_op_default(
     )
 
 
+@router.get("/bundles/{tenant}/{project}/{bundle_id}")
+async def get_bundle_interface(
+        tenant: str,
+        project: str,
+        bundle_id: str,
+        request: Request,
+        session: UserSession = Depends(require_auth(RequireUser())),
+):
+    payload = BundleSuggestionsRequest()
+    workflow, spec_resolved, tenant_id, project_id = await _load_bundle_workflow(
+        tenant=tenant,
+        project=project,
+        bundle_id=bundle_id,
+        payload=payload,
+        request=request,
+        session=session,
+    )
+    manifest = discover_bundle_interface_manifest(workflow, bundle_id=spec_resolved.id)
+    visible_widgets = _visible_widget_specs(manifest, session)
+    visible_apis = _visible_api_specs(manifest, session)
+    return {
+        "status": "ok",
+        "tenant": tenant_id,
+        "project": project_id,
+        "bundle_id": spec_resolved.id,
+        "ui_widgets": [
+            {
+                "alias": spec.alias,
+                "icon": spec.icon,
+                "roles": list(spec.roles),
+            }
+            for spec in visible_widgets
+        ],
+        "api_endpoints": [
+            {
+                "alias": spec.alias,
+                "http_method": spec.http_method,
+                "roles": list(spec.roles),
+            }
+            for spec in visible_apis
+        ],
+        "ui_main": (
+            {"method_name": manifest.ui_main.method_name}
+            if manifest.ui_main
+            else None
+        ),
+        "on_message": (
+            {"method_name": manifest.on_message.method_name}
+            if manifest.on_message
+            else None
+        ),
+    }
+
+
+@router.get("/bundles/{tenant}/{project}/{bundle_id}/widgets")
+async def list_bundle_widgets(
+        tenant: str,
+        project: str,
+        bundle_id: str,
+        request: Request,
+        session: UserSession = Depends(require_auth(RequireUser())),
+):
+    payload = BundleSuggestionsRequest()
+    workflow, spec_resolved, tenant_id, project_id = await _load_bundle_workflow(
+        tenant=tenant,
+        project=project,
+        bundle_id=bundle_id,
+        payload=payload,
+        request=request,
+        session=session,
+    )
+    manifest = discover_bundle_interface_manifest(workflow, bundle_id=spec_resolved.id)
+    return {
+        "status": "ok",
+        "tenant": tenant_id,
+        "project": project_id,
+        "bundle_id": spec_resolved.id,
+        "ui_widgets": [
+            {
+                "alias": spec.alias,
+                "icon": spec.icon,
+                "roles": list(spec.roles),
+            }
+            for spec in _visible_widget_specs(manifest, session)
+        ],
+    }
+
+
+@router.get("/bundles/{tenant}/{project}/{bundle_id}/widgets/{widget_alias}")
+async def fetch_bundle_widget(
+        tenant: str,
+        project: str,
+        bundle_id: str,
+        widget_alias: str,
+        request: Request,
+        session: UserSession = Depends(require_auth(RequireUser())),
+):
+    payload = BundleSuggestionsRequest()
+    workflow, spec_resolved, tenant_id, project_id = await _load_bundle_workflow(
+        tenant=tenant,
+        project=project,
+        bundle_id=bundle_id,
+        payload=payload,
+        request=request,
+        session=session,
+    )
+    widget_spec = resolve_bundle_widget(workflow, alias=widget_alias, bundle_id=spec_resolved.id)
+    if widget_spec is None:
+        raise HTTPException(status_code=404, detail=f"Bundle does not define widget {widget_alias}")
+    if not _roles_visible(widget_spec.roles, session):
+        raise HTTPException(status_code=403, detail=f"Bundle widget {widget_alias} is not visible to this user")
+
+    fn = getattr(workflow, widget_spec.method_name)
+    extra = _get_query_kwargs(request)
+    user_id = session.user_id or session.fingerprint
+    if inspect.iscoroutinefunction(fn):
+        result = await fn(user_id=user_id, fingerprint=session.fingerprint, **extra)
+    else:
+        result = fn(user_id=user_id, fingerprint=session.fingerprint, **extra)
+    return {
+        "status": "ok",
+        "tenant": tenant_id,
+        "project": project_id,
+        "bundle_id": spec_resolved.id,
+        "widget": {
+            "alias": widget_spec.alias,
+            "icon": widget_spec.icon,
+            "roles": list(widget_spec.roles),
+        },
+        widget_alias: result,
+    }
+
+
+@router.get("/bundles/{tenant}/{project}/{bundle_id}/operations/{operation}")
+async def call_bundle_op_get(
+        tenant: str,
+        project: str,
+        bundle_id: str,
+        operation: str,
+        request: Request,
+        session: UserSession = Depends(require_auth(RequireUser())),
+):
+    payload = BundleSuggestionsRequest()
+    return await _call_bundle_op_limited(
+        tenant=tenant,
+        project=project,
+        bundle_id=bundle_id,
+        payload=payload,
+        request=request,
+        operation=operation,
+        session=session,
+    )
+
+
 async def _call_bundle_op_limited(
         *,
         tenant: str,
@@ -1022,20 +1215,28 @@ def _resolve_requested_bundle_id(
     raise HTTPException(status_code=404, detail="No bundle_id provided and no default bundle is configured")
 
 
-async def _call_bundle_op_inner(
+def _get_query_kwargs(request: Request) -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
+    for key in request.query_params.keys():
+        values = request.query_params.getlist(key)
+        if not values:
+            continue
+        out[key] = values[0] if len(values) == 1 else values
+    return out
+
+
+async def _load_bundle_workflow(
         *,
         tenant: str,
         project: str,
         bundle_id: Optional[str],
         payload: BundleSuggestionsRequest,
         request: Request,
-        operation: str,
         session: UserSession,
-):
+) -> tuple[Any, Any, str, str]:
     settings = get_settings()
     cfg_req = payload.config_request or ConfigRequest()
 
-    # Ensure model defaults exist
     if not cfg_req.selected_model:
         cfg_req.selected_model = (namespaces.CONFIG.AGENTIC.DEFAULT_LLM_MODEL_CONFIG or {}).get("model_name",
                                                                                                 "gpt-4o-mini")
@@ -1054,12 +1255,10 @@ async def _call_bundle_op_inner(
     project_id = cfg_req.project or project or settings.PROJECT
     request_id = str(uuid.uuid4())
 
-    # 1) Resolve bundle from registry
     spec_resolved = await resolve_bundle_async(cfg_req.agentic_bundle_id, override=None)
     if not spec_resolved:
         raise HTTPException(status_code=404, detail=f"Bundle {cfg_req.agentic_bundle_id} not found")
 
-    # 2) Build workflow config
     wf_config = create_workflow_config(cfg_req)
     wf_config.ai_bundle_spec = spec_resolved
 
@@ -1116,14 +1315,51 @@ async def _call_bundle_op_inner(
         except Exception:
             raise HTTPException(status_code=500, detail=f"Failed to load bundle: {e}")
 
-    # 4) Call op() if available (support sync/async)
-    if not hasattr(workflow, operation) or not callable(getattr(workflow, operation)):
+    return workflow, spec_resolved, tenant_id, project_id
+
+
+async def _call_bundle_op_inner(
+        *,
+        tenant: str,
+        project: str,
+        bundle_id: Optional[str],
+        payload: BundleSuggestionsRequest,
+        request: Request,
+        operation: str,
+        session: UserSession,
+):
+    workflow, spec_resolved, tenant_id, project_id = await _load_bundle_workflow(
+        tenant=tenant,
+        project=project,
+        bundle_id=bundle_id,
+        payload=payload,
+        request=request,
+        session=session,
+    )
+
+    request_method = str(getattr(request, "method", "POST") or "POST").upper()
+    endpoint_spec, allowed_methods = resolve_bundle_api_endpoint(
+        workflow,
+        alias=operation,
+        http_method=request_method,
+        bundle_id=spec_resolved.id,
+    )
+    if endpoint_spec is None:
+        if allowed_methods:
+            raise HTTPException(
+                status_code=405,
+                detail=f"Bundle operation {operation} does not support {request_method}. Allowed: {', '.join(allowed_methods)}",
+            )
         raise HTTPException(status_code=404, detail=f"Bundle does not support operation {operation}")
+    if not _roles_visible(endpoint_spec.roles, session):
+        raise HTTPException(status_code=403, detail=f"Bundle operation {operation} is not visible to this user")
 
     try:
         user_id = session.user_id or session.fingerprint
-        fn = getattr(workflow, operation)
+        fn = getattr(workflow, endpoint_spec.method_name)
         extra = payload.data or {}
+        if request_method == "GET":
+            extra = _get_query_kwargs(request)
         if inspect.iscoroutinefunction(fn):
             result = await fn(user_id=user_id, fingerprint=session.fingerprint, **extra)
         else:

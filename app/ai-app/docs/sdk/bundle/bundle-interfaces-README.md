@@ -134,7 +134,18 @@ Client rule:
 
 ## 1) Exposing a widget from a bundle
 
-Bundles can expose a widget by implementing an entrypoint method that returns a list of HTML strings. The SDK will embed the widget in an iframe on the client.
+Bundles can expose a widget by implementing an entrypoint method that returns a list of HTML strings. The SDK embeds the widget in an iframe on the client.
+
+Preferred pattern now:
+- decorate the widget method with `@ui_widget(alias=..., icon=..., roles=...)`
+- prefer a provider-aware icon map such as `icon={"tailwind": "...", "lucide": "SlidersHorizontal"}`
+- let the platform discover it through:
+  - `GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/widgets`
+  - `GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/widgets/{alias}`
+
+The older convention of directly calling a same-name method still exists in some
+code paths, but widgets should now be treated as declarative bundle interface
+surface, not ad hoc method exposure.
 
 Example pattern (see `kdcube_ai_app/apps/chat/proc/rest/integrations/AIBundleDashboard.tsx` for a widget):
 - Resolve bundle root from `ai_bundle_spec`.
@@ -212,10 +223,13 @@ client code and should follow:
 Widgets can call bundle-defined operations via the integrations endpoint:
 
 ```
+GET  /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/{op}
 POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/{op}
 ```
 
-The `{op}` is a method name on the bundle entrypoint (e.g., `suggestions`, `price_model`, or any custom op). The SDK resolves the bundle and calls the operation with the user context.
+The `{op}` is the public operation alias. When the bundle uses `@api(...)`, proc
+resolves the decorated alias and HTTP method first. During migration, undecorated
+same-name methods may still be called as a compatibility fallback.
 
 Preferred rule:
 - bundle-specific clients and widgets should use the explicit `/{bundle_id}/operations/{op}` route
@@ -267,7 +281,7 @@ async def preferences_exec_report(self, recency: int = 10, kwords: str = "", **k
 This allows UI → backend → bundle round-trips without exposing a separate service.
 
 Important:
-- today this endpoint is POST-only
+- the explicit `/{bundle_id}/operations/{op}` route supports both `GET` and `POST`
 - widgets should call it with the real tenant/project scope and the intended `bundle_id` in the path
 - the integration wiring should match the reference widgets above without ad-hoc deviations
 
@@ -290,13 +304,23 @@ sequenceDiagram
     Widget->>Host: CONFIG_REQUEST(identity, requestedFields)
     Host-->>Widget: CONFIG_RESPONSE(baseUrl, tokens, tenant, project, bundle_id)
 
-    Widget->>API: POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/{op}
-    Note over Widget,API: credentials: include<br/>Authorization / ID token headers when present<br/>body includes bundle_id
-    API->>Bundle: invoke workflow.<op>(user_id=..., fingerprint=...)
+    Widget->>API: GET/POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/{op}
+    Note over Widget,API: credentials: include<br/>Authorization / ID token headers when present
+    API->>Bundle: resolve decorated @api alias or legacy same-name method
     Bundle-->>API: JSON result
     API-->>Widget: {status, tenant, project, bundle_id, op: result}
     Widget->>Widget: render / refresh UI state
 ```
+
+Declarative discovery endpoints for widgets:
+
+```text
+GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}
+GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/widgets
+GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/widgets/{alias}
+```
+
+These endpoints expose the bundle's declared widget/API surface to the client.
 
 Concrete example:
 - parent-frame config handshake:
