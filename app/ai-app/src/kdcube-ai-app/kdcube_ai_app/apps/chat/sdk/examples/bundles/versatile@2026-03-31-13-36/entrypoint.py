@@ -23,7 +23,7 @@ from kdcube_ai_app.apps.chat.sdk.tools.exec_tools import (
 )
 from kdcube_ai_app.apps.chat.sdk.viz.patch_platform_dashboard import patch_dashboard
 from kdcube_ai_app.apps.chat.sdk.storage.ai_bundle_storage import AIBundleStorage
-from kdcube_ai_app.infra.plugin.agentic_loader import agentic_workflow
+from kdcube_ai_app.infra.plugin.agentic_loader import agentic_workflow, api, ui_widget
 from kdcube_ai_app.infra.service_hub.inventory import BundleState, Config
 
 from . import tools_descriptor
@@ -155,6 +155,14 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
         root.mkdir(parents=True, exist_ok=True)
         return root
 
+    @ui_widget(
+        icon={
+            "tailwind": "heroicons-outline:adjustments-horizontal",
+            "lucide": "SlidersHorizontal",
+        },
+        alias="preferences",
+        roles=("registered", "privileged", "free", "payasyougo", "admin"),
+    )
     def preferences_widget(self, user_id: Optional[str] = None, **kwargs):
         storage = self._preferences_storage()
         if not storage:
@@ -187,6 +195,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
             self.logger.log(traceback.format_exc(), "ERROR")
             return ["<p>Unable to render the preferences widget right now.</p>"]
 
+    @api(alias="preferences_widget_data")
     def preferences_widget_data(
         self,
         user_id: Optional[str] = None,
@@ -209,6 +218,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
         payload["ok"] = True
         return payload
 
+    @api(alias="preferences_canvas_data")
     def preferences_canvas_data(
         self,
         user_id: Optional[str] = None,
@@ -233,6 +243,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
         payload["ok"] = True
         return payload
 
+    @api(alias="preferences_canvas_save")
     def preferences_canvas_save(
         self,
         user_id: Optional[str] = None,
@@ -281,6 +292,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
         payload["ok"] = True
         return payload
 
+    @api(alias="preferences_exec_report")
     async def preferences_exec_report(
         self,
         user_id: Optional[str] = None,

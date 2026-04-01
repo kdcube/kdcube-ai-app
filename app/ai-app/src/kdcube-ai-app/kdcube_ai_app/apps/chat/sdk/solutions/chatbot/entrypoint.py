@@ -27,6 +27,7 @@ from kdcube_ai_app.apps.chat.sdk.infra.economics.policy import EconomicsLimitExc
 from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
 from kdcube_ai_app.apps.chat.sdk.runtime.exec_runtime_config import normalize_exec_runtime_config
 from kdcube_ai_app.apps.chat.sdk.viz.patch_platform_dashboard import patch_dashboard
+from kdcube_ai_app.infra.plugin.agentic_loader import ui_widget
 from kdcube_ai_app.infra.service_hub.inventory import (
     APP_STATE_KEYS,
     AgentLogger,
@@ -612,6 +613,14 @@ class BaseEntrypoint:
         transpiler = ClientSideTSXTranspiler()
         return transpiler.tsx_to_html(content, title=title)
 
+    @ui_widget(
+        icon={
+            "tailwind": "heroicons-outline:currency-dollar",
+            "lucide": "CircleDollarSign",
+        },
+        alias="opex",
+        roles=("privileged",),
+    )
     def opex(self, user_id: Optional[str] = None, **kwargs):
         user_type = self._ensure_privileged(user_id=user_id, feature="opex")
         if not user_type:
@@ -641,6 +650,14 @@ class BaseEntrypoint:
                 self.logger.log(f"Error loading opex by user {user_id}: {traceback.format_exc()}", "ERROR")
         return [default_html]
 
+    @ui_widget(
+        icon={
+            "tailwind": "heroicons-outline:currency-dollar",
+            "lucide": "CircleDollarSign",
+        },
+        alias="control_plane",
+        roles=("privileged",),
+    )
     def control_plane(self, user_id: Optional[str] = None, **kwargs):
         user_type = self._ensure_privileged(user_id=user_id, feature="control_plane")
         if not user_type:
@@ -670,6 +687,14 @@ class BaseEntrypoint:
                 self.logger.log(f"Error loading control_plane by user {user_id}: {traceback.format_exc()}", "ERROR")
         return [default_html]
 
+    @ui_widget(
+        icon={
+            "tailwind": "heroicons-outline:chat-bubble-left-right",
+            "lucide": "MessageSquareMore",
+        },
+        alias="conversation_browser",
+        roles=("privileged",),
+    )
     def conversation_browser(self, user_id: Optional[str] = None, **kwargs):
         user_type = self._ensure_privileged(user_id=user_id, feature="conversation_browser")
         if not user_type:
@@ -705,6 +730,14 @@ class BaseEntrypoint:
                 )
         return [default_html]
 
+    @ui_widget(
+        icon={
+            "tailwind": "heroicons-outline:arrows-right-left",
+            "lucide": "ArrowLeftRight",
+        },
+        alias="svc_gateway",
+        roles=("privileged",),
+    )
     def svc_gateway(self, user_id: Optional[str] = None, **kwargs):
         user_type = self._ensure_privileged(user_id=user_id, feature="svc_gateway")
         if not user_type:
@@ -735,6 +768,14 @@ class BaseEntrypoint:
                 self.logger.log(f"Error loading svc_gateway by user {user_id}: {traceback.format_exc()}", "ERROR")
         return [default_html]
 
+    @ui_widget(
+        icon={
+            "tailwind": "heroicons-outline:circle-stack",
+            "lucide": "Database",
+        },
+        alias="redis_browser",
+        roles=("privileged",),
+    )
     def redis_browser(self, user_id: Optional[str] = None, **kwargs):
         user_type = self._ensure_privileged(user_id=user_id, feature="redis_browser")
         if not user_type:
@@ -764,6 +805,14 @@ class BaseEntrypoint:
                 self.logger.log(f"Error loading redis browser by user {user_id}: {traceback.format_exc()}", "ERROR")
         return [default_html]
 
+    @ui_widget(
+        icon={
+            "tailwind": "heroicons-outline:cpu-chip",
+            "lucide": "Bot",
+        },
+        alias="ai_bundles",
+        roles=("privileged",),
+    )
     def ai_bundles(self, user_id: Optional[str] = None, **kwargs):
         user_type = self._ensure_privileged(user_id=user_id, feature="ai_bundles")
         if not user_type:
@@ -795,6 +844,14 @@ class BaseEntrypoint:
             self.logger.log(f"Error loading ai_bundles by user {user_id}: {traceback.format_exc()}", "ERROR")
         return [default_html]
 
+    @ui_widget(
+        icon={
+            "tailwind": "heroicons-outline:credit-card",
+            "lucide": "CreditCard",
+        },
+        alias="economic_usage",
+        roles=(),
+    )
     def economic_usage(self, user_id: Optional[str] = None, **kwargs):
         user_type = self.user_type_from_comm_ctx(self.comm)
         if user_type == "anonymous":

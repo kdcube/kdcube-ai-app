@@ -25,6 +25,93 @@ from kdcube_ai_app.infra.service_hub.inventory import AgentLogger
 
 AGENTIC_ROLE_ATTR = "__agentic_role__"
 AGENTIC_META_ATTR = "__agentic_meta__"
+API_METHOD_ATTR = "__bundle_api_method__"
+UI_WIDGET_ATTR = "__bundle_ui_widget__"
+ON_MESSAGE_ATTR = "__bundle_on_message__"
+UI_MAIN_ATTR = "__bundle_ui_main__"
+
+
+@dataclass(frozen=True)
+class APIEndpointSpec:
+    method_name: str
+    alias: str
+    http_method: str = "POST"
+    roles: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class UIWidgetSpec:
+    method_name: str
+    alias: str
+    icon: dict[str, str]
+    roles: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class OnMessageSpec:
+    method_name: str
+
+
+@dataclass(frozen=True)
+class UIMainSpec:
+    method_name: str
+
+
+@dataclass(frozen=True)
+class BundleInterfaceManifest:
+    bundle_id: str
+    ui_widgets: tuple[UIWidgetSpec, ...] = ()
+    api_endpoints: tuple[APIEndpointSpec, ...] = ()
+    ui_main: UIMainSpec | None = None
+    on_message: OnMessageSpec | None = None
+
+
+def _clean_alias(value: str | None, default: str) -> str:
+    alias = str(value or "").strip()
+    return alias or default
+
+
+def _tuple_str(values: Any) -> tuple[str, ...]:
+    if not values:
+        return ()
+    if isinstance(values, (str, bytes)):
+        raw = [values]
+    else:
+        raw = list(values)
+    out: list[str] = []
+    for item in raw:
+        text = str(item or "").strip()
+        if text:
+            out.append(text)
+    return tuple(out)
+
+
+def _normalize_http_method(value: str | None) -> str:
+    method = str(value or "POST").strip().upper() or "POST"
+    if method not in {"GET", "POST"}:
+        raise ValueError(f"Unsupported bundle api method: {method}")
+    return method
+
+
+def _normalize_icon_spec(value: Any) -> dict[str, str]:
+    if value is None:
+        return {}
+    if isinstance(value, str):
+        text = value.strip()
+        return {"tailwind": text} if text else {}
+    if not isinstance(value, dict):
+        raise ValueError("Bundle widget icon must be a string or a dict of provider -> icon name")
+    out: dict[str, str] = {}
+    for raw_key, raw_value in value.items():
+        key = str(raw_key or "").strip().lower()
+        if key == "lucid":
+            key = "lucide"
+        if key not in {"tailwind", "lucide"}:
+            raise ValueError(f"Unsupported widget icon provider: {raw_key}")
+        text = str(raw_value or "").strip()
+        if text:
+            out[key] = text
+    return out
 
 def agentic_workflow_factory(
         *,
@@ -67,6 +154,70 @@ def agentic_workflow(
         })
         return cls
     return _wrap
+
+
+def api(
+        *,
+        method: str = "POST",
+        alias: str | None = None,
+        roles: List[str] | Tuple[str, ...] | None = None,
+):
+    http_method = _normalize_http_method(method)
+
+    def _wrap(fn):
+        setattr(
+            fn,
+            API_METHOD_ATTR,
+            APIEndpointSpec(
+                method_name=getattr(fn, "__name__", "api_method"),
+                alias=_clean_alias(alias, getattr(fn, "__name__", "api_method")),
+                http_method=http_method,
+                roles=_tuple_str(roles),
+            ),
+        )
+        return fn
+
+    return _wrap
+
+
+def ui_widget(
+        *,
+        icon: str | Dict[str, str],
+        alias: str | None = None,
+        roles: List[str] | Tuple[str, ...] | None = None,
+):
+    def _wrap(fn):
+        setattr(
+            fn,
+            UI_WIDGET_ATTR,
+            UIWidgetSpec(
+                method_name=getattr(fn, "__name__", "widget"),
+                alias=_clean_alias(alias, getattr(fn, "__name__", "widget")),
+                icon=_normalize_icon_spec(icon),
+                roles=_tuple_str(roles),
+            ),
+        )
+        return fn
+
+    return _wrap
+
+
+def on_message(fn):
+    setattr(
+        fn,
+        ON_MESSAGE_ATTR,
+        OnMessageSpec(method_name=getattr(fn, "__name__", "run")),
+    )
+    return fn
+
+
+def ui_main(fn):
+    setattr(
+        fn,
+        UI_MAIN_ATTR,
+        UIMainSpec(method_name=getattr(fn, "__name__", "main_ui")),
+    )
+    return fn
 
 
 # --------------------------------------------------------------------------------------
@@ -382,6 +533,133 @@ def _instantiate_symbol(kind: str, symbol: Any, config: Any, extra_kwargs: Dict[
     else:
         # classes to be constructed
         return symbol(config, **call_kwargs)
+
+# --------------------------------------------------------------------------------------
+# Declarative integration discovery
+# --------------------------------------------------------------------------------------
+
+def _iter_bundle_callable_members(target: Any):
+    cls = target if isinstance(target, type) else target.__class__
+    for name, member in inspect.getmembers(cls, predicate=callable):
+        if name.startswith("__"):
+            continue
+        try:
+            fn = inspect.unwrap(member)
+        except Exception:
+            fn = member
+        yield name, fn
+
+
+def discover_bundle_interface_manifest(target: Any, *, bundle_id: str | None = None) -> BundleInterfaceManifest:
+    cls = target if isinstance(target, type) else target.__class__
+    resolved_bundle_id = str(bundle_id or getattr(cls, "BUNDLE_ID", None) or getattr(target, "BUNDLE_ID", None) or "").strip()
+
+    api_endpoints: list[APIEndpointSpec] = []
+    ui_widgets: list[UIWidgetSpec] = []
+    ui_main_spec: UIMainSpec | None = None
+    on_message_spec: OnMessageSpec | None = None
+    seen_api: set[tuple[str, str]] = set()
+    seen_widgets: set[str] = set()
+
+    for member_name, fn in _iter_bundle_callable_members(target):
+        api_spec = getattr(fn, API_METHOD_ATTR, None)
+        if isinstance(api_spec, APIEndpointSpec):
+            resolved = APIEndpointSpec(
+                method_name=member_name,
+                alias=api_spec.alias,
+                http_method=api_spec.http_method,
+                roles=tuple(api_spec.roles or ()),
+            )
+            api_key = (resolved.alias, resolved.http_method)
+            if api_key in seen_api:
+                raise ValueError(f"Duplicate bundle api alias detected: {resolved.alias} [{resolved.http_method}]")
+            seen_api.add(api_key)
+            api_endpoints.append(resolved)
+
+        widget_spec = getattr(fn, UI_WIDGET_ATTR, None)
+        if isinstance(widget_spec, UIWidgetSpec):
+            resolved = UIWidgetSpec(
+                method_name=member_name,
+                alias=widget_spec.alias,
+                icon=dict(widget_spec.icon or {}),
+                roles=tuple(widget_spec.roles or ()),
+            )
+            if resolved.alias in seen_widgets:
+                raise ValueError(f"Duplicate bundle widget alias detected: {resolved.alias}")
+            seen_widgets.add(resolved.alias)
+            ui_widgets.append(resolved)
+
+        current_ui_main = getattr(fn, UI_MAIN_ATTR, None)
+        if isinstance(current_ui_main, UIMainSpec):
+            resolved = UIMainSpec(method_name=member_name)
+            if ui_main_spec and ui_main_spec.method_name != resolved.method_name:
+                raise ValueError("Multiple @ui_main methods detected on bundle entrypoint")
+            ui_main_spec = resolved
+
+        current_on_message = getattr(fn, ON_MESSAGE_ATTR, None)
+        if isinstance(current_on_message, OnMessageSpec):
+            resolved = OnMessageSpec(method_name=member_name)
+            if on_message_spec and on_message_spec.method_name != resolved.method_name:
+                raise ValueError("Multiple @on_message methods detected on bundle entrypoint")
+            on_message_spec = resolved
+
+    api_endpoints.sort(key=lambda item: (item.alias, item.http_method, item.method_name))
+    ui_widgets.sort(key=lambda item: (item.alias, item.method_name))
+    return BundleInterfaceManifest(
+        bundle_id=resolved_bundle_id,
+        ui_widgets=tuple(ui_widgets),
+        api_endpoints=tuple(api_endpoints),
+        ui_main=ui_main_spec,
+        on_message=on_message_spec,
+    )
+
+
+def resolve_bundle_api_endpoint(
+        target: Any,
+        *,
+        alias: str,
+        http_method: str = "POST",
+        bundle_id: str | None = None,
+) -> tuple[APIEndpointSpec | None, tuple[str, ...]]:
+    manifest = discover_bundle_interface_manifest(target, bundle_id=bundle_id)
+    resolved_method = _normalize_http_method(http_method)
+    candidates = [spec for spec in manifest.api_endpoints if spec.alias == alias]
+    if candidates:
+        for spec in candidates:
+            if spec.http_method == resolved_method:
+                return spec, tuple(sorted({item.http_method for item in candidates}))
+        return None, tuple(sorted({item.http_method for item in candidates}))
+
+    if hasattr(target, alias) and callable(getattr(target, alias)):
+        return APIEndpointSpec(
+            method_name=alias,
+            alias=alias,
+            http_method=resolved_method,
+            roles=(),
+        ), ()
+    return None, ()
+
+
+def resolve_bundle_widget(
+        target: Any,
+        *,
+        alias: str,
+        bundle_id: str | None = None,
+) -> UIWidgetSpec | None:
+    manifest = discover_bundle_interface_manifest(target, bundle_id=bundle_id)
+    for spec in manifest.ui_widgets:
+        if spec.alias == alias:
+            return spec
+    return None
+
+
+def resolve_bundle_message_method(
+        target: Any,
+        *,
+        bundle_id: str | None = None,
+) -> OnMessageSpec | None:
+    return discover_bundle_interface_manifest(target, bundle_id=bundle_id).on_message
+
 
 # --------------------------------------------------------------------------------------
 # Public API
