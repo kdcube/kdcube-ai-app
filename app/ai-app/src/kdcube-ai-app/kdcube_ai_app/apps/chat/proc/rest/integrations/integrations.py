@@ -855,33 +855,16 @@ async def serve_static_asset(
         if not target.exists():
             raise HTTPException(status_code=404, detail="Not found")
 
-    # Serve and set auth cookies if tokens are present (for subsequent iframe resource requests)
-    response = FileResponse(str(target))
+    # For index.html: inject <base> so that relative asset paths (./assets/...)
+    # resolve correctly when the HTML is embedded via srcDoc in an iframe.
+    if target.name == "index.html":
+        from fastapi.responses import HTMLResponse
+        base_href = f"/api/integrations/static/{tenant}/{project}/{bundle_id}/"
+        content = target.read_text(encoding="utf-8")
+        content = content.replace("<head>", f"<head><base href=\"{base_href}\">", 1)
+        return HTMLResponse(content=content)
 
-    auth_header = request.headers.get("authorization")
-    id_token = request.headers.get(namespaces.CONFIG.ID_TOKEN_HEADER_NAME)
-
-    if auth_header and auth_header.lower().startswith("bearer "):
-        bearer = auth_header[7:].strip()
-        response.set_cookie(
-            namespaces.CONFIG.AUTH_TOKEN_COOKIE_NAME,
-            bearer,
-            httponly=True,
-            samesite="lax",
-            secure=True,
-            max_age=3600,  # 1 hour
-        )
-    if id_token:
-        response.set_cookie(
-            namespaces.CONFIG.ID_TOKEN_COOKIE_NAME,
-            id_token,
-            httponly=True,
-            samesite="lax",
-            secure=True,
-            max_age=3600,  # 1 hour
-        )
-
-    return response
+    return FileResponse(str(target))
 
 
 @router.get("/static/{tenant}/{project}/{bundle_id}")
