@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 import traceback
 import uuid
 from pathlib import Path
@@ -16,12 +17,12 @@ from kdcube_ai_app.apps.chat.sdk.runtime.tool_subsystem import create_tool_subsy
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint_with_economic import (
     BaseEntrypointWithEconomics,
 )
-from kdcube_ai_app.apps.chat.sdk.viz.patch_platform_dashboard import patch_dashboard
 from kdcube_ai_app.apps.chat.sdk.tools.exec_tools import (
     build_exec_output_contract,
     run_exec_tool,
 )
 from kdcube_ai_app.apps.chat.sdk.viz.patch_platform_dashboard import patch_dashboard
+from kdcube_ai_app.apps.chat.sdk.storage.ai_bundle_storage import AIBundleStorage
 from kdcube_ai_app.infra.plugin.agentic_loader import agentic_workflow
 from kdcube_ai_app.infra.service_hub.inventory import BundleState, Config
 
@@ -29,8 +30,11 @@ from . import tools_descriptor
 from .event_filter import BundleEventFilter
 from .orchestrator.workflow import VersatileWorkflow
 from .preferences_store import (
+    build_preferences_storage,
+    build_preferences_canvas_document,
+    get_preferences_snapshot,
     build_widget_payload,
-    ensure_preferences_root,
+    save_preferences_canvas_document,
 )
 
 BUNDLE_ID = "versatile"
@@ -124,21 +128,37 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
     def on_bundle_load(self, **kwargs) -> None:
         storage_root = self.bundle_storage_root()
         if storage_root:
-            ensure_preferences_root(storage_root)
             (storage_root / "_ops").mkdir(parents=True, exist_ok=True)
         return None
 
-    def _preferences_storage_root(self) -> Optional[Path]:
-        storage_root = self.bundle_storage_root()
-        if not storage_root:
+    def _preferences_storage(self) -> Optional[AIBundleStorage]:
+        actor = getattr(self.comm_context, "actor", None)
+        bundle_spec = getattr(getattr(self, "config", None), "ai_bundle_spec", None)
+        tenant = getattr(actor, "tenant_id", None) or getattr(self.comm, "tenant", None) or self.settings.TENANT
+        project = getattr(actor, "project_id", None) or getattr(self.comm, "project", None) or self.settings.PROJECT
+        bundle_id = getattr(bundle_spec, "id", None) or BUNDLE_ID
+        if not tenant or not project or not bundle_id:
             return None
-        ensure_preferences_root(storage_root)
-        return storage_root
+        return build_preferences_storage(
+            tenant=tenant,
+            project=project,
+            bundle_id=bundle_id,
+        )
+
+    def _preferences_ops_root(self) -> Path:
+        storage_root = self.bundle_storage_root()
+        if storage_root:
+            root = storage_root / "_ops"
+            root.mkdir(parents=True, exist_ok=True)
+            return root
+        root = Path(tempfile.gettempdir()) / "kdcube-versatile-ops"
+        root.mkdir(parents=True, exist_ok=True)
+        return root
 
     def preferences_widget(self, user_id: Optional[str] = None, **kwargs):
-        storage_root = self._preferences_storage_root()
-        if not storage_root:
-            return ["<p>Bundle storage is not configured for this bundle.</p>"]
+        storage = self._preferences_storage()
+        if not storage:
+            return ["<p>Bundle storage backend is not configured for this bundle.</p>"]
 
         bundle_root = self._bundle_root()
         if not bundle_root:
@@ -146,7 +166,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
 
         try:
             target_user = user_id or getattr(self.comm, "user_id", None) or "anonymous"
-            payload = build_widget_payload(storage_root=storage_root, user_id=target_user)
+            payload = build_widget_payload(storage=storage, user_id=target_user)
             tsx_path = Path(bundle_root) / "ui" / "PreferencesBrowser.tsx"
             content = tsx_path.read_text(encoding="utf-8")
             rendered = content.replace("__PREFERENCES_JSON__", json.dumps(payload))
@@ -173,11 +193,11 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
         fingerprint: Optional[str] = None,
         **kwargs,
     ):
-        storage_root = self._preferences_storage_root()
-        if not storage_root:
+        storage = self._preferences_storage()
+        if not storage:
             return {
                 "ok": False,
-                "error": "Bundle storage is not configured for this bundle.",
+                "error": "Bundle storage backend is not configured for this bundle.",
                 "user_id": user_id or fingerprint or "anonymous",
                 "current": {},
                 "recent": [],
@@ -185,7 +205,79 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
             }
 
         target_user = user_id or fingerprint or getattr(self.comm, "user_id", None) or "anonymous"
-        payload = build_widget_payload(storage_root=storage_root, user_id=target_user)
+        payload = build_widget_payload(storage=storage, user_id=target_user)
+        payload["ok"] = True
+        return payload
+
+    def preferences_canvas_data(
+        self,
+        user_id: Optional[str] = None,
+        fingerprint: Optional[str] = None,
+        **kwargs,
+    ):
+        storage = self._preferences_storage()
+        target_user = user_id or fingerprint or getattr(self.comm, "user_id", None) or "anonymous"
+        if not storage:
+            return {
+                "ok": False,
+                "error": "Bundle storage backend is not configured for this bundle.",
+                "user_id": target_user,
+                "path": None,
+                "document_format": "json",
+                "document_text": "{}\n",
+                "changed_keys": [],
+                "removed_keys": [],
+            }
+
+        payload = build_preferences_canvas_document(storage=storage, user_id=target_user)
+        payload["ok"] = True
+        return payload
+
+    def preferences_canvas_save(
+        self,
+        user_id: Optional[str] = None,
+        fingerprint: Optional[str] = None,
+        document_text: Optional[str] = None,
+        content: Optional[str] = None,
+        text: Optional[str] = None,
+        **kwargs,
+    ):
+        storage = self._preferences_storage()
+        target_user = user_id or fingerprint or getattr(self.comm, "user_id", None) or "anonymous"
+        if not storage:
+            return {
+                "ok": False,
+                "error": "Bundle storage backend is not configured for this bundle.",
+                "user_id": target_user,
+            }
+
+        raw_document = document_text
+        if raw_document is None:
+            raw_document = content
+        if raw_document is None:
+            raw_document = text
+        if raw_document is None and "document" in kwargs:
+            raw_document = kwargs.get("document")
+        if raw_document is None:
+            return {
+                "ok": False,
+                "error": "document_text is required.",
+                "user_id": target_user,
+            }
+
+        try:
+            payload = save_preferences_canvas_document(
+                storage=storage,
+                user_id=target_user,
+                document_text=str(raw_document),
+            )
+        except ValueError as exc:
+            return {
+                "ok": False,
+                "error": str(exc),
+                "user_id": target_user,
+            }
+
         payload["ok"] = True
         return payload
 
@@ -197,11 +289,11 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
         kwords: str = "",
         **kwargs,
     ):
-        storage_root = self._preferences_storage_root()
-        if not storage_root:
+        storage = self._preferences_storage()
+        if not storage:
             return {
                 "ok": False,
-                "error": "Bundle storage is not configured for this bundle.",
+                "error": "Bundle storage backend is not configured for this bundle.",
             }
 
         tool_subsystem, _ = create_tool_subsystem_with_mcp(
@@ -218,7 +310,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
             mcp_env_json=os.environ.get("MCP_SERVICES") or "",
         )
 
-        op_root = storage_root / "_ops" / "preferences_exec_report"
+        op_root = self._preferences_ops_root() / "preferences_exec_report"
         workdir = op_root / "work"
         outdir = op_root / "out"
         exec_id = f"preferences-{uuid.uuid4().hex[:10]}"
@@ -228,10 +320,13 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
         except Exception:
             report_recency = 10
         report_keywords = str(kwords or "").strip()
+        snapshot = get_preferences_snapshot(storage=storage, user_id=target_user)
+        current = snapshot.get("current") or {}
+        events = snapshot.get("items") or []
         contract_items = [
             {
                 "filename": "turn_preferences_exec/files/preferences_exec_report.md",
-                "description": "Markdown report generated from bundle-local preference history.",
+                "description": "Markdown report generated from shared bundle preference history.",
             }
         ]
         output_contract, contract, err = build_exec_output_contract(contract_items)
@@ -245,26 +340,8 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
 from pathlib import Path
 import json
 
-store_root = Path(BUNDLE_STORAGE_DIR)
-preferences_root = store_root / "preferences"
-user_root = preferences_root / "users" / {json.dumps(target_user)}
-current_path = user_root / "current.json"
-events_path = user_root / "events.jsonl"
-
-current = {{}}
-if current_path.exists():
-    current = json.loads(current_path.read_text(encoding="utf-8"))
-
-events = []
-if events_path.exists():
-    for raw_line in events_path.read_text(encoding="utf-8").splitlines():
-        raw_line = raw_line.strip()
-        if not raw_line:
-            continue
-        try:
-            events.append(json.loads(raw_line))
-        except Exception:
-            pass
+current = json.loads({json.dumps(json.dumps(current, ensure_ascii=False))})
+events = json.loads({json.dumps(json.dumps(events, ensure_ascii=False))})
 
 report_keywords = {json.dumps(report_keywords)}
 keyword_tokens = [token.lower() for token in report_keywords.split() if token.strip()]
@@ -298,9 +375,9 @@ lines = [
 
 if current:
     for key, item in sorted(current.items()):
-        if keywords:
+        if keyword_tokens:
             haystack = f"{{key}} {{item.get('value', '')}}".lower()
-            if not all(keyword in haystack for keyword in keywords):
+            if not all(keyword in haystack for keyword in keyword_tokens):
                 continue
         lines.append(f"- {{key}}: {{item.get('value')}}")
 else:
@@ -333,7 +410,7 @@ print(f"wrote {{report_path}}")
             logger=self.logger,
             exec_id=exec_id,
             exec_runtime=normalize_exec_runtime_config(self.bundle_prop("execution.runtime")),
-            bundle_storage_dir=str(storage_root),
+            bundle_storage_dir=str(self.bundle_storage_root()) if self.bundle_storage_root() else None,
         )
         return {
             "ok": bool(envelope.get("ok")),

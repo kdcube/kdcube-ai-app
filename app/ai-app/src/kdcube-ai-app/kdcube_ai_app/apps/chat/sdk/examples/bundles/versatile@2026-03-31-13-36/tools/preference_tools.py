@@ -8,9 +8,6 @@ from typing import Annotated, Any, Dict
 
 import semantic_kernel as sk
 
-from kdcube_ai_app.apps.chat.sdk.storage.ai_bundle_storage import AIBundleStorage
-from kdcube_ai_app.infra.plugin.bundle_storage import storage_for_spec
-
 try:
     from semantic_kernel.functions import kernel_function
 except Exception:
@@ -45,20 +42,18 @@ def _scope() -> Dict[str, Any]:
         raise RuntimeError("preferences tools are not bound to the current tool subsystem")
     comm = _TOOL_SUBSYSTEM.comm
     spec = _TOOL_SUBSYSTEM.bundle_spec
-    storage_root = storage_for_spec(
-        spec=spec,
-        tenant=getattr(comm, "tenant", None),
-        project=getattr(comm, "project", None),
-        ensure=True,
+    store_mod = _load_store_module()
+    storage = store_mod.build_preferences_storage(
+        tenant=getattr(comm, "tenant", None) or "unknown",
+        project=getattr(comm, "project", None) or "unknown",
+        bundle_id=getattr(spec, "id", None) or "versatile",
     )
-    if storage_root is None:
-        raise RuntimeError("bundle storage root is unavailable")
     return {
         "tenant": getattr(comm, "tenant", None),
         "project": getattr(comm, "project", None),
         "user_id": getattr(comm, "user_id", None) or "anonymous",
         "bundle_id": getattr(spec, "id", None) or "versatile",
-        "storage_root": storage_root,
+        "storage": storage,
     }
 
 
@@ -66,8 +61,9 @@ class PreferenceTools:
     @kernel_function(
         name="get_preferences",
         description=(
-            "Return stored user preferences for the current user. "
-            "Use this before personalizing advice, suggestions, or follow-up actions."
+            "Return stored user preferences, choices, interests, and profile facts for the current user. "
+            "Use this early on preference-sensitive turns before personalizing advice, recommendations, formatting, "
+            "follow-up actions, or repeated task behavior."
         ),
     )
     async def get_preferences(
@@ -78,7 +74,7 @@ class PreferenceTools:
         scope = _scope()
         store_mod = _load_store_module()
         view = store_mod.get_preferences_view(
-            scope["storage_root"],
+            scope["storage"],
             scope["user_id"],
             recency=max(1, int(recency or 10)),
             kwords=kwords,
@@ -110,8 +106,87 @@ class PreferenceTools:
         }
 
     @kernel_function(
+        name="capture_preferences",
+        description=(
+            "Capture one or more durable user preferences, choices, interests, constraints, or profile facts from "
+            "a short natural-language note or quoted user text. Use this when the user reveals information that "
+            "should influence future turns."
+        ),
+    )
+    async def capture_preferences(
+        self,
+        text: Annotated[
+            str,
+            "Short natural-language note, quoted user statement, or semicolon-separated key:value pairs to store.",
+        ],
+        source: Annotated[str, "Short source label for this capture, for example agent_memory or chat."] = "agent_memory",
+    ) -> Dict[str, Any]:
+        scope = _scope()
+        store_mod = _load_store_module()
+        raw_text = str(text or "").strip()
+        if not raw_text:
+            return {
+                "ok": False,
+                "error": "capture_preferences requires non-empty text",
+                "captured": [],
+                "current": store_mod.load_current_preferences(scope["storage"], scope["user_id"]),
+            }
+
+        captured = list(
+            store_mod.auto_capture_preferences(
+                scope["storage"],
+                scope["user_id"],
+                text=raw_text,
+                source=str(source or "agent_memory").strip() or "agent_memory",
+            )
+        )
+
+        if not captured:
+            for clause in raw_text.replace("\n", ";").split(";"):
+                clause = clause.strip()
+                if not clause:
+                    continue
+                if ":" in clause:
+                    key, value = clause.split(":", 1)
+                elif "=" in clause:
+                    key, value = clause.split("=", 1)
+                else:
+                    continue
+                key = key.strip().lower().replace(" ", "_")
+                value = value.strip()
+                if not key or not value:
+                    continue
+                captured.append(
+                    store_mod.append_preference_event(
+                        scope["storage"],
+                        scope["user_id"],
+                        key=key,
+                        value=value,
+                        source=str(source or "agent_memory").strip() or "agent_memory",
+                        origin="tool_capture",
+                        evidence=raw_text,
+                    )
+                )
+
+        return {
+            "ok": True,
+            "user_id": scope["user_id"],
+            "captured": captured,
+            "captured_count": len(captured),
+            "current": store_mod.load_current_preferences(scope["storage"], scope["user_id"]),
+            "summary": (
+                f"Captured {len(captured)} durable preference/item(s)."
+                if captured
+                else "No durable preference patterns were captured from the provided text."
+            ),
+        }
+
+    @kernel_function(
         name="set_preference",
-        description="Store or update an explicit preference for the current user.",
+        description=(
+            "Store or update a single explicit durable preference or user fact for the current user. "
+            "Use this for structured corrections or when you already know the exact key/value to save."
+        ),
     )
     async def set_preference(
         self,
@@ -122,7 +197,7 @@ class PreferenceTools:
         scope = _scope()
         store_mod = _load_store_module()
         event = store_mod.append_preference_event(
-            scope["storage_root"],
+            scope["storage"],
             scope["user_id"],
             key=str(key).strip(),
             value=str(value).strip(),
@@ -134,7 +209,7 @@ class PreferenceTools:
             "ok": True,
             "user_id": scope["user_id"],
             "event": event,
-            "current": store_mod.load_current_preferences(scope["storage_root"], scope["user_id"]),
+            "current": store_mod.load_current_preferences(scope["storage"], scope["user_id"]),
         }
 
     @kernel_function(
@@ -151,23 +226,14 @@ class PreferenceTools:
         scope = _scope()
         store_mod = _load_store_module()
         key_leaf = Path(filename or "preferences-snapshot.json").name
-        snapshot = {
-            "user_id": scope["user_id"],
-            "current": store_mod.load_current_preferences(scope["storage_root"], scope["user_id"]),
-            "items": store_mod.load_preference_events(scope["storage_root"], scope["user_id"]),
-        }
-        storage = AIBundleStorage(
-            tenant=scope["tenant"],
-            project=scope["project"],
-            ai_bundle_id=scope["bundle_id"],
-            storage_uri=None,
-        )
+        snapshot = dict(store_mod.get_preferences_snapshot(scope["storage"], scope["user_id"]))
+        snapshot["user_id"] = scope["user_id"]
         key = f"preferences/exports/{scope['user_id']}/{key_leaf}"
-        storage.write(key, json.dumps(snapshot, indent=2), mime="application/json")
+        scope["storage"].write(key, json.dumps(snapshot, indent=2), mime="application/json")
         return {
             "ok": True,
             "key": key,
-            "root_uri": storage.root_uri,
+            "root_uri": scope["storage"].root_uri,
             "current_count": len(snapshot["current"]),
             "event_count": len(snapshot["items"]),
         }
