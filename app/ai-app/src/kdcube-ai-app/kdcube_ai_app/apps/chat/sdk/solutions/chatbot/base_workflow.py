@@ -721,24 +721,70 @@ class BaseWorkflow():
         outdir_raw = str(getattr(runtime_ctx, "outdir", "") or "").strip()
         if not outdir_raw:
             return None
+        turn_id = str(getattr(runtime_ctx, "turn_id", "") or "").strip()
         from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.git_workspace import publish_current_turn_git_workspace
         try:
-            return await asyncio.to_thread(
+            result = await asyncio.to_thread(
                 publish_current_turn_git_workspace,
                 runtime_ctx=runtime_ctx,
                 outdir=pathlib.Path(outdir_raw),
                 logger=self.logger,
             )
+            self._contribute_workspace_publish_event(
+                status="succeeded",
+                payload=result,
+            )
+            return result
         except Exception as exc:
             self.logger.log(traceback.format_exc(), level="ERROR")
+            self._contribute_workspace_publish_event(
+                status="failed",
+                payload={
+                    "turn_id": turn_id,
+                    "workspace_implementation": "git",
+                    "message": str(exc),
+                    "error": exc.__class__.__name__,
+                },
+            )
             raise TurnPhaseError(
                 "Failed to save git workspace progress.",
                 code="workspace_publish_failed",
                 data={
                     "workspace_implementation": "git",
-                    "turn_id": str(getattr(runtime_ctx, "turn_id", "") or ""),
+                    "turn_id": turn_id,
                 },
             ) from exc
+
+    def _contribute_workspace_publish_event(
+        self,
+        *,
+        status: str,
+        payload: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        if not self.ctx_browser or not getattr(self.ctx_browser, "timeline", None):
+            return
+        runtime_ctx = getattr(self.ctx_browser, "runtime_ctx", None)
+        turn_id = str(getattr(runtime_ctx, "turn_id", "") or "").strip()
+        if not turn_id:
+            return
+        ts = datetime.datetime.utcnow().isoformat() + "Z"
+        body = {
+            "status": status,
+            "turn_id": turn_id,
+            "workspace_implementation": str(getattr(runtime_ctx, "workspace_implementation", "") or ""),
+            **dict(payload or {}),
+        }
+        block = self.ctx_browser.timeline.block(
+            type="react.workspace.publish",
+            author="react.workspace",
+            turn_id=turn_id,
+            ts=ts,
+            mime="application/json",
+            path=f"ar:{turn_id}.react.workspace.publish",
+            text=json.dumps(body, ensure_ascii=False, indent=2),
+            meta={"status": status},
+        )
+        self.ctx_browser.contribute(blocks=[block])
 
     async def _summarize_user_attachments(self, scratchpad: CTurnScratchpad) -> None:
         if not (scratchpad.user_attachments or []):
@@ -1402,6 +1448,11 @@ class BaseWorkflow():
                     self.ctx_browser.contribute(blocks=list(post_blocks))
             except Exception:
                 pass
+        if ok:
+            if on_flush_completed_hook:
+                await on_flush_completed_hook(scratchpad)
+            await self._publish_git_workspace_if_needed()
+
         # Save turn log (always) - v2
         try:
             contrib_log = []
@@ -1488,11 +1539,6 @@ class BaseWorkflow():
             level="INFO",
         )
 
-        # MEMORY management. post-answer reconciliation (cadenced). Only if turn finished w/ service error.
-        if ok:
-            if on_flush_completed_hook:
-                await on_flush_completed_hook(scratchpad)
-            await self._publish_git_workspace_if_needed()
         tl_blocks = 0
         sp_len = 0
         if self.ctx_browser and self.ctx_browser.timeline:

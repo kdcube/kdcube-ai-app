@@ -1,7 +1,7 @@
 ---
 id: ks:docs/sdk/agents/react/design/git-based-isolated-workspace-README.md
 title: "Draft: Git-Based Isolated Workspace"
-summary: "Draft design and implementation notes for git-backed React workspaces, immutable per-turn version refs, explicit workspace pull, sparse current-turn repos, and point-wise hosted binary hydration."
+summary: "Draft design and implementation notes for git-backed React workspaces, immutable per-turn version refs, explicit workspace pull, sparse current-turn repos, point-wise hosted binary hydration, and strict lineage-only git isolation."
 draft: true
 status: draft
 tags: ["sdk", "agents", "react", "design", "workspace", "git", "artifacts"]
@@ -38,6 +38,7 @@ The main design choices in this draft are:
 - **keep hosted storage as the authoritative layer for binary artifacts**
 - **do not eagerly materialize whole projects**
 - **introduce explicit workspace hydration via `react.pull(paths=[fi:...])`**
+- **make lineage-only git metadata isolation part of the contract**
 
 The intent is to give React a natural local git workspace it can inspect,
 diff, and commit against, while keeping network, pull, and push out of the
@@ -51,7 +52,10 @@ Current implementation status:
 - git publish failure is treated as turn failure
 - exact non-text `.files/...` refs are treated as hosted/custom artifacts, not as git blobs
 - folder pulls remain text-only
+- ANNOUNCE exposes a compact `[WORKSPACE]` operational summary
+- detailed publish metadata is persisted as an internal `react.workspace.publish` block
 - hosted artifacts and execution snapshots remain available through ConversationStore/RN flows
+- strict lineage-only git metadata isolation is the required design target and still needs implementation hardening
 
 ---
 
@@ -133,6 +137,8 @@ But the agent is instructed differently:
 - React can work in a normal local git repo/worktree during a turn.
 - React can use `git log`, `git diff`, `git show`, `git status`, and `git commit` locally.
 - React cannot pull or push from exec.
+- The git metadata visible inside exec is limited to the assigned lineage and explicitly prepared version refs only.
+- Git tools running inside exec cannot enumerate or inspect other users' branches, tags, refs, or broader remote metadata.
 - React can explicitly hydrate the needed workspace slice with `react.pull(paths=[fi:...])`.
 - `fi:` keeps the same syntax and uses `turn_...` as the version id.
 - The system can resolve `fi:<turn_id>.files/...` to the correct snapshot in the current lineage.
@@ -149,6 +155,7 @@ But the agent is instructed differently:
 - Automatic eager full-workspace activation for every turn
 - Implicit inference of binary membership in a pulled folder
 - Removing the custom non-git workspace backend
+- Allowing exec-visible repositories to expose shared/global git metadata outside the current lineage
 
 ---
 
@@ -274,6 +281,11 @@ This design is intentionally isolated:
 - no cross-user merge story in this phase
 - only one agent commits on a lineage at a time
 
+Isolation goes beyond network:
+- the git repository visible to exec must contain only the assigned lineage branch and the explicitly prepared immutable version refs
+- exec must not see other users' branches, other conversations' branches, unrelated tags, or broader remote metadata
+- a setup that removes network but still exposes a broader shared git cache through local metadata is not sufficient
+
 If another conversation later needs the same project history, that should be
 designed as a separate problem. It is not part of this first workspace model.
 
@@ -287,6 +299,10 @@ This repo:
 - is used by engineering/runtime outside exec
 - uses the same auth contract already supported for git bundle loading
 - is not something React fetches from directly inside isolated exec
+
+Important design rule:
+- `REACT_WORKSPACE_GIT_REPO` is an engineering input, not an exec-visible privilege surface
+- the exec-visible repo must not keep a remote or local metadata shape that allows inspection beyond the assigned lineage
 
 ---
 
@@ -341,12 +357,28 @@ Exec properties:
 - selected historical version refs available locally
 - workspace content is hydrated explicitly, not eagerly
 - hosted binaries are not pulled automatically with workspace slices
+- no non-lineage branches/tags/refs visible in local git metadata
+- no exec-visible remote pointing at a broader shared cache repo
+
+Required implementation shape:
+- engineering may use a broader shared cache repo outside exec as an optimization
+- but exec must receive either:
+  - a lineage-only local mirror, or
+  - a turn repo with no broader remote metadata attached
+
+In other words:
+- the repo used by git tools inside exec must itself be lineage-scoped
+- not merely a lineage checkout layered over a broader metadata source
 
 Current implemented behavior:
 - the current turn root `out/turn_<current_turn>/` is bootstrapped as a sparse local git repo
 - if the lineage branch already exists, its history is available locally there
 - the sparse worktree starts empty; runtime does not eagerly materialize project files
 - isolated exec preserves `.git` when referenced paths come from a git-backed turn root
+
+Current hardening gap:
+- implementation still needs to ensure the exec-visible repo cannot inspect broader cached git metadata through its configured remote/local repository shape
+- this doc treats lineage-only metadata visibility as the required end state
 
 The agent can:
 - inspect repository structure
@@ -359,6 +391,9 @@ The agent cannot:
 - push
 - inspect other users' branches/history
 - participate in any merge workflow
+
+This must be true mechanically, not only by instruction:
+- git commands running on the local workspace should not have non-lineage refs available to inspect
 
 ### 5.2 Explicit workspace hydration via `react.pull`
 
@@ -425,6 +460,29 @@ React should be taught:
 
 Engineering may also expose these scope names in ANNOUNCE for convenience.
 
+### 5.5 Compact workspace state in ANNOUNCE
+
+Implemented rule:
+- ANNOUNCE carries a compact `[WORKSPACE]` section so React can orient itself without reading raw git internals first
+
+Current content includes:
+- `implementation`
+- `current_turn_root`
+- `materialized_turn_roots`
+- `current_turn_scopes`
+- in `git` mode:
+  - `repo_mode`
+  - `repo_status`
+- compact publish state:
+  - `current_turn_publish`
+  - `last_published_turn`
+  - `publish_error` only on failure
+
+Important rule:
+- raw `commit_sha`, `lineage_ref`, and `version_ref` stay out of ANNOUNCE unless there is a failure that requires immediate agent attention
+
+This keeps ANNOUNCE operational and short while still teaching sparse-workspace behavior every round.
+
 ---
 
 ## 6) How `fi:` Resolves and How `react.pull` Uses It
@@ -459,6 +517,10 @@ Important implemented split in `git` mode:
 - text-like `.files/...` refs are resolved from git snapshots
 - non-text exact `.files/...` refs are routed through the hosted/custom artifact path
 - attachments remain hosted/custom artifacts only
+
+So the current agent-facing rule is:
+- pull folders for git-tracked text trees
+- pull binaries only by exact logical ref
 
 ### 6.1 `react.pull` contract
 
@@ -688,6 +750,11 @@ Current implemented publication seam:
 - it is skipped for `custom` workspace mode
 - publish failure now fails the turn instead of being logged and ignored
 
+Isolation requirement for the engineering seam:
+- any broader shared cache repo is an engineering-only optimization layer
+- before exec starts, engineering must materialize a lineage-only git view for the turn
+- exec-visible `.git` state must not allow discovery of non-lineage refs/history
+
 ---
 
 ## 10) Integration Points
@@ -721,6 +788,10 @@ Current role:
 Important implemented rule:
 - non-text `.files/...` exact refs stay on the hosted/custom artifact path
 - git hydration is text-first and folder pulls stay text-only
+
+Required hardening rule:
+- current-turn git bootstrap must end in an exec-visible repo whose metadata is lineage-only
+- using a broader shared cache is acceptable only outside exec
 
 ### 10.2 `external.py`
 
@@ -764,9 +835,12 @@ Current role:
 
 Future role:
 - initialize current lineage repo for the turn
-- optionally expose current top-level workspace scopes in ANNOUNCE
 - support alternate instructions that explain the new workspace pull model
 - finalize commit/publication handoff to engineering after local commit is produced
+
+Current implemented behavior:
+- ANNOUNCE now includes compact workspace state and publish status
+- raw publish metadata remains in internal event blocks instead of the visible announce surface
 
 ### 10.5a `base_workflow.py`
 
@@ -777,6 +851,10 @@ Current role:
 Important rule:
 - publication is part of successful turn finish, not isolated exec
 - publish failure fails the turn because canonical git-backed workspace progress was not fully saved
+
+Publication observability is now split into:
+- compact agent-facing status in ANNOUNCE
+- full internal metadata in `react.workspace.publish`
 
 ### 10.6 `resources.py`
 
@@ -790,6 +868,7 @@ Future role:
 Important rule:
 - user-facing download stays hosted
 - internal workspace hydration should use storage/logical resolution, not user-facing HTTP whenever possible
+- this continues to work in `git` mode because hosted artifacts remain the canonical source for non-text files and explicit execution artifacts
 
 ### 10.7 Patch / write tooling
 
@@ -813,12 +892,15 @@ The new instruction surfaces that will need alternate variants are:
 
 The alternate instructions should teach:
 - the workspace is git-backed
+- read `[WORKSPACE]` in ANNOUNCE first
+- if current-turn local files are enough, work directly there
 - React must explicitly pull the needed slice with `react.pull(paths=[fi:...])`
+- if historical content by turn id is needed, use `react.pull(fi:...)`
 - `fi:` stays the reference syntax
 - pulled folders contain git-tracked textual content
 - binaries are not included automatically in folder pulls
 - if a binary is needed, it must be referenced point-wise by exact logical ref
-- local git history inspection is available
+- if current-lineage history/diff/status is needed, use local git commands in the current-turn repo
 - local commit is allowed
 - no pull/push/network in exec
 
@@ -857,10 +939,12 @@ This keeps the agent contract simple and close to what React already knows.
 - point-wise hosted-binary hydration with non-text `.files/...` kept off the git path
 - alternate instruction set behind runtime config
 - host-side publication of lineage branch and per-turn version ref on successful git-mode turn finish
+- compact `[WORKSPACE]` announce state
+- internal `react.workspace.publish` event blocks for full publish metadata
 
 ### Remaining hardening / follow-up work
 
-- surface workspace publish metadata more explicitly in turn observability if needed
+- harden exec-visible git metadata isolation so the current-turn repo cannot inspect non-lineage refs/history
 - define retry/repair policy for remote publish failures
 - document operational expectations for the remote workspace repo lifecycle more explicitly
 - add optional later pointer metadata only if binary membership must become implicit in workspace snapshots
@@ -887,6 +971,21 @@ Current implemented answer:
 
 This keeps turn identity stable without forcing a synthetic extra commit every time.
 
+### 13.4 How should lineage-only isolation be enforced mechanically?
+
+Required answer direction:
+- do not rely only on "no network" or on agent instructions
+- exec-visible git state must be lineage-only by construction
+
+Preferred implementation options:
+- prepare a lineage-only bare mirror and point the turn repo only at that mirror
+- or remove `origin` from the exec-visible repo entirely after bootstrapping
+- or otherwise rewrite the local repo so only the assigned lineage branch and selected version refs remain reachable
+
+The requirement is:
+- git tools running inside exec can operate only on the assigned lineage content and metadata
+- nothing broader
+
 ---
 
 ## 14) Recommended Next Step
@@ -900,7 +999,6 @@ Continue from the already implemented foundation:
 
 Priority follow-up items:
 - harden publish failure handling and recovery
-- decide whether to expose publish metadata into turn logs / timeline
 - keep validating parity with `custom` mode while `git` mode stabilizes
 - `react.pull(...)` implementation
 - current-turn slice materialization

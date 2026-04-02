@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -5,6 +6,21 @@ import pytest
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot import base_workflow as workflow_mod
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.base_workflow import BaseWorkflow
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.proto import RuntimeCtx
+
+
+class _TimelineStub:
+    def block(self, **kwargs):
+        return dict(kwargs)
+
+
+class _CtxBrowserStub:
+    def __init__(self, runtime_ctx):
+        self.runtime_ctx = runtime_ctx
+        self.timeline = _TimelineStub()
+        self.contributed = []
+
+    def contribute(self, blocks):
+        self.contributed.extend(list(blocks or []))
 
 
 def _payload(*, tenant: str, project: str, user_id: str = "u1", turn_id: str = "turn-1"):
@@ -140,11 +156,16 @@ async def test_publish_git_workspace_if_needed_calls_publisher_in_git_mode(monke
         outdir=str(tmp_path / "out"),
         workspace_implementation="git",
     )
+    wf.ctx_browser = _CtxBrowserStub(wf.runtime_ctx)
 
     result = await wf._publish_git_workspace_if_needed()
 
     assert result == {"commit_sha": "abc123"}
     assert calls == {"turn_id": "turn-42", "outdir": str(tmp_path / "out")}
+    assert wf.ctx_browser.contributed
+    payload = json.loads(wf.ctx_browser.contributed[-1]["text"])
+    assert payload["status"] == "succeeded"
+    assert payload["commit_sha"] == "abc123"
 
 
 @pytest.mark.asyncio
@@ -188,6 +209,7 @@ async def test_publish_git_workspace_if_needed_raises_turn_phase_error_on_publis
         outdir=str(tmp_path / "out"),
         workspace_implementation="git",
     )
+    wf.ctx_browser = _CtxBrowserStub(wf.runtime_ctx)
 
     with pytest.raises(workflow_mod.TurnPhaseError) as exc_info:
         await wf._publish_git_workspace_if_needed()
@@ -198,3 +220,7 @@ async def test_publish_git_workspace_if_needed_raises_turn_phase_error_on_publis
         "turn_id": "turn-42",
     }
     assert logs
+    assert wf.ctx_browser.contributed
+    payload = json.loads(wf.ctx_browser.contributed[-1]["text"])
+    assert payload["status"] == "failed"
+    assert payload["error"] == "RuntimeError"

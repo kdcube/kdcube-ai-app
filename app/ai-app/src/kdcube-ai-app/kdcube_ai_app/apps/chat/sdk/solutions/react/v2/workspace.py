@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 import pathlib
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 WORKSPACE_IMPLEMENTATION_CUSTOM = "custom"
@@ -225,6 +225,86 @@ def workspace_lineage_branch_ref(runtime_ctx: Any) -> str:
         f"refs/heads/kdcube/{segs['tenant']}/{segs['project']}/"
         f"{segs['user_id']}/{segs['conversation_id']}"
     )
+
+
+def workspace_turn_root(*, runtime_ctx: Any) -> pathlib.Path:
+    outdir = pathlib.Path(str(getattr(runtime_ctx, "outdir", "") or "").strip())
+    turn_id = str(getattr(runtime_ctx, "turn_id", "") or "").strip()
+    if not outdir or not turn_id:
+        return pathlib.Path("")
+    return outdir / turn_id
+
+
+def list_materialized_turn_roots(*, runtime_ctx: Any) -> List[str]:
+    outdir_raw = str(getattr(runtime_ctx, "outdir", "") or "").strip()
+    if not outdir_raw:
+        return []
+    outdir = pathlib.Path(outdir_raw)
+    if not outdir.exists():
+        return []
+    names: List[str] = []
+    for child in outdir.iterdir():
+        if not child.is_dir():
+            continue
+        name = child.name
+        if not name.startswith("turn_"):
+            continue
+        names.append(name)
+    names.sort()
+    return names
+
+
+def summarize_current_turn_scopes(*, runtime_ctx: Any) -> List[Dict[str, Any]]:
+    turn_root = workspace_turn_root(runtime_ctx=runtime_ctx)
+    files_root = turn_root / "files"
+    if not files_root.exists():
+        return []
+    out: List[Dict[str, Any]] = []
+    for child in sorted(files_root.iterdir(), key=lambda p: p.name.lower()):
+        if child.is_file():
+            out.append({"scope": child.name, "files": 1, "kind": "file"})
+            continue
+        if not child.is_dir():
+            continue
+        file_count = 0
+        for nested in child.rglob("*"):
+            if nested.is_file():
+                file_count += 1
+        out.append({"scope": f"{child.name}/", "files": file_count, "kind": "dir"})
+    return out
+
+
+def latest_workspace_publish_event(
+    blocks: List[Dict[str, Any]],
+    *,
+    turn_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    for blk in reversed(blocks or []):
+        if not isinstance(blk, dict):
+            continue
+        if (blk.get("type") or "").strip() != "react.workspace.publish":
+            continue
+        blk_turn = str(blk.get("turn_id") or blk.get("turn") or "").strip()
+        if turn_id and blk_turn != turn_id:
+            continue
+        payload: Dict[str, Any] = {}
+        text = blk.get("text")
+        if isinstance(text, str) and text.strip():
+            try:
+                parsed = json.loads(text)
+                if isinstance(parsed, dict):
+                    payload.update(parsed)
+            except Exception:
+                pass
+        meta = blk.get("meta") if isinstance(blk.get("meta"), dict) else {}
+        if "status" not in payload and meta.get("status"):
+            payload["status"] = meta.get("status")
+        if "turn_id" not in payload and blk_turn:
+            payload["turn_id"] = blk_turn
+        if payload:
+            return payload
+        return {"turn_id": blk_turn, "status": str(meta.get("status") or "").strip()}
+    return None
 
 
 def physical_to_logical_artifact_path(path: str) -> str:
