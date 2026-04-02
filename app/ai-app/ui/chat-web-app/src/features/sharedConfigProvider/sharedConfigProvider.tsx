@@ -1,15 +1,17 @@
 import {useEffect} from "react";
 import {chatAPIBasePath} from "../../BuildConfig.ts";
-import {useAppSelector} from "../../app/store.ts";
-import {selectIdTokenHeaderName, selectProject, selectTenant} from "../chat/chatSettingsSlice.ts";
+import {store, useAppSelector} from "../../app/store.ts";
+import {selectIdTokenHeaderName, selectProject, selectTenant, selectUseAuthCookies} from "../chat/chatSettingsSlice.ts";
 import {selectAuthToken, selectIdToken} from "../auth/authSlice.ts";
+import {selectStreamId} from "../chat/chatStateSlice.ts";
 
-const useSharedConfigProvider = ()=> {
+const useSharedConfigProvider = () => {
     const tenant = useAppSelector(selectTenant);
     const project = useAppSelector(selectProject);
     const authToken = useAppSelector(selectAuthToken)
     const idToken = useAppSelector(selectIdToken)
     const idTokenHeaderName = useAppSelector(selectIdTokenHeaderName)
+    const streamId = useAppSelector(selectStreamId);
 
     useEffect(() => {
         const onIFrameRequest = (event: MessageEvent) => {
@@ -25,13 +27,17 @@ const useSharedConfigProvider = ()=> {
                 const baseUrl = window.location.origin + chatAPIBasePath
                 const configMap: Record<string, () => unknown> = {
                     'baseUrl': () => baseUrl,
-                    'accessToken': () => authToken,
-                    'idToken': () => idToken,
-                    'idTokenHeader': () => idTokenHeaderName,
                     'defaultTenant': () => tenant,
                     'defaultProject': () => project,
-                    'defaultAppBundleId': () => null
+                    'defaultAppBundleId': () => null,
+                    'streamId': () => streamId
                 };
+
+                if (!selectUseAuthCookies(store.getState())) {
+                    configMap['accessToken'] = () => authToken
+                    configMap['idToken'] = () => idToken
+                    configMap['idTokenHeader'] = () => idTokenHeaderName
+                }
 
                 const config = requestedFields.reduce((result, field) => {
                     if (field in configMap) {

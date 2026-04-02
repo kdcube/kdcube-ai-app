@@ -7,6 +7,7 @@ export type ArtifactComponentProps = {
     contentRef: RefObject<HTMLDivElement | null>
 }
 
+export type ArtifactNameGenerator = (artifact: UnknownArtifact) => string
 export type ArtifactLinkGenerator = (artifact: UnknownArtifact) => CanvasItemLink
 export type ArtifactComponent = ComponentType<ArtifactComponentProps>
 export type ArtifactLinkComparator = (link: CanvasItemLink, artifact: UnknownArtifact) => boolean
@@ -18,10 +19,10 @@ export type ArtifactSaveHandler = (artifact: UnknownArtifact, contentRef?: RefOb
 export interface CanvasExtension {
     component: ArtifactComponent
     linkGenerator: ArtifactLinkGenerator
-    artifactLinkComparator: ArtifactLinkComparator
-    artifactTitleGenerator: ArtifactTitleGenerator
-    artifactCopyHandler?: ArtifactCopyHandler | null
-    artifactSaveHandler?: ArtifactSaveHandler | null
+    linkComparator: ArtifactLinkComparator
+    titleGenerator: ArtifactTitleGenerator
+    copyHandler?: ArtifactCopyHandler | null
+    saveHandler?: ArtifactSaveHandler | null
 }
 
 const canvasExtensions: Record<string, CanvasExtension> = {}
@@ -50,17 +51,17 @@ export const getCanvasItemLinkGenerator = (artifactType: string): ArtifactLinkGe
 }
 
 export const getArtifactLinkComparator = (artifactType: string): ArtifactLinkComparator => {
-    return canvasExtensions[artifactType].artifactLinkComparator;
+    return canvasExtensions[artifactType].linkComparator;
 }
 
 export const getArtifactTitleGenerator = (artifactType: string): ArtifactTitleGenerator => {
-    return canvasExtensions[artifactType].artifactTitleGenerator;
+    return canvasExtensions[artifactType].titleGenerator;
 }
 
 export const getArtifactCopyHandler = (artifactType: string): ArtifactCopyHandler | undefined | null => {
-    return canvasExtensions[artifactType].artifactCopyHandler;
+    return canvasExtensions[artifactType].copyHandler;
 }
 
 export const getArtifactSaveHandler = (artifactType: string): ArtifactSaveHandler | undefined | null => {
-    return canvasExtensions[artifactType].artifactSaveHandler;
+    return canvasExtensions[artifactType].saveHandler;
 }

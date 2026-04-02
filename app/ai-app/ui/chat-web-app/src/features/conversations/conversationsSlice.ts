@@ -31,6 +31,18 @@ const conversationsSlice = createSlice({
         },
         conversationStatusUpdateRequired: (state) => {
             state.conversationStatusUpdateRequired = true
+        },
+        removeConversation: (state, action: PayloadAction<string>) => {
+            if (state.conversationDescriptors) {
+                const idx = state.conversationDescriptors.findIndex(c => c.id === action.payload)
+                if (idx > -1) {
+                    state.conversationDescriptors.splice(idx, 1)
+                } else {
+                    console.warn(`trying to remove non existing conversation - ${state.conversationDescriptors}`)
+                }
+            } else {
+                console.warn(`trying to remove conversation (${state.conversationDescriptors}) before conversation list is loaded`)
+            }
         }
     },
     extraReducers: builder => {
@@ -55,6 +67,7 @@ export const {
     setConversationDescriptorsLoadingError,
     setConversationLoading,
     conversationStatusUpdateRequired,
+    removeConversation,
 } = conversationsSlice.actions
 export const selectConversationDescriptors = (state: RootState) => state.conversations.conversationDescriptors
 export const selectConversationDescriptorsLoading = (state: RootState) => state.conversations.conversationsDescriptorsLoading

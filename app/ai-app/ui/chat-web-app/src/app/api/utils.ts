@@ -1,6 +1,9 @@
 import {handleContentDownload} from "../../components/shared.ts";
 import {getDefaultAuthToken, getDefaultIdToken, getIdTokenHeaderName} from "../../features/auth/helpers.ts";
 import {chatAPIBasePath} from "../../BuildConfig.ts";
+import {selectStreamIdHeaderName, selectUseAuthCookies} from "../../features/chat/chatSettingsSlice.ts";
+import {store} from "../store.ts";
+import {selectStreamId} from "../../features/chat/chatStateSlice.ts";
 
 export function appendHeader(name: string, value: string, headers?: HeadersInit) {
     if (!headers) {
@@ -30,12 +33,27 @@ export function appendCredentials(headers?: HeadersInit, accessToken?: string | 
     return headers;
 }
 
-export function appendDefaultCredentialsHeader(headers?: HeadersInit, overrideAccessToken?: string | null, overrideIddToken?: string | null) {
-    return appendCredentials(headers, overrideAccessToken ?? getDefaultAuthToken(), overrideIddToken ?? getDefaultIdToken());
+export function appendStreamIdHeader(headers?: HeadersInit) {
+    headers = headers ?? {}
+    const state = store.getState();
+    const streamId = selectStreamId(state)
+    if (streamId) {
+        headers = appendHeader(selectStreamIdHeaderName(state), streamId, headers)
+    }
+    return headers;
+}
+
+export function appendDefaultHeaders(headers?: HeadersInit) {
+    headers = headers ?? {}
+    if (!selectUseAuthCookies(store.getState())) {
+        headers = appendCredentials(headers, getDefaultAuthToken(), getDefaultIdToken());
+    }
+    headers = appendStreamIdHeader(headers);
+    return headers;
 }
 
 export const getResourceByRN = async (rn: string) => {
-    const headers = appendDefaultCredentialsHeader([["Content-Type", "application/json"]]);
+    const headers = appendDefaultHeaders([["Content-Type", "application/json"]]);
     const res = await fetch(
         `${chatAPIBasePath}/api/cb/resources/by-rn`,
         {method: "POST", headers, body: JSON.stringify({rn: rn})}
@@ -46,8 +64,8 @@ export const getResourceByRN = async (rn: string) => {
     return await res.json();
 };
 
-export const downloadBlob = async (path: string, accessToken?: string | null, idToken?: string | null) => {
-    const headers = appendDefaultCredentialsHeader({}, accessToken, idToken);
+export const downloadBlob = async (path: string) => {
+    const headers = appendDefaultHeaders({});
     const res = await fetch(
         `${chatAPIBasePath}${path}`,
         {headers}

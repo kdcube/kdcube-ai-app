@@ -1,5 +1,5 @@
 import {createApi, fetchBaseQuery} from "@reduxjs/toolkit/query/react";
-import {appendDefaultCredentialsHeader} from "../../app/api/utils.ts";
+import {appendDefaultHeaders} from "../../app/api/utils.ts";
 import {ChatScope} from "../chat/chatTypes.ts";
 import {BundlesInfo, BundlesResponse} from "./types.ts";
 
@@ -13,7 +13,7 @@ export const bundlesApiSlice = createApi({
     reducerPath: 'bundlesAPI',
     baseQuery: fetchBaseQuery({
         prepareHeaders(headers) {
-            return appendDefaultCredentialsHeader(headers) as Headers;
+            return appendDefaultHeaders(headers) as Headers;
         }
     }),
     tagTypes: ["bundles", "bundle_ui"],

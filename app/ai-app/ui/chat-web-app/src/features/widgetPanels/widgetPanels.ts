@@ -8,7 +8,7 @@ import {
     RedisBrowserResponse,
     VersatilePreferencesResponse
 } from "./types.ts";
-import {appendDefaultCredentialsHeader} from "../../app/api/utils.ts";
+import {appendDefaultHeaders} from "../../app/api/utils.ts";
 import {ChatScope} from "../chat/chatTypes.ts";
 
 const EconomicsTag = "economics"
@@ -25,7 +25,7 @@ export const widgetPanelsApiSlice = createApi({
     reducerPath: 'widgetPanels',
     baseQuery: fetchBaseQuery({
         prepareHeaders(headers) {
-            return appendDefaultCredentialsHeader(headers) as Headers;
+            return appendDefaultHeaders(headers) as Headers;
         }
     }),
     tagTypes: [EconomicsTag, AIBundlesTag, GatewayTag, ConversationBrowserTag, RedisBrowserTag, EconomicUsageTag, VersatilePreferencesTag],

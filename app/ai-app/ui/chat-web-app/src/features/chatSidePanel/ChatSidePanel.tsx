@@ -1,4 +1,4 @@
-import {ReactNode, useCallback, useEffect, useMemo, useRef, useState} from "react";
+import {ReactNode, useCallback, useMemo, useRef, useState} from "react";
 import {
     ArrowLeftRight,
     Bot,
@@ -7,46 +7,28 @@ import {
     CirclePlus,
     CreditCard,
     Database,
-    LayoutDashboard,
-    LoaderCircle,
     MessageSquareMore,
     MessagesSquare,
-    Search,
     SlidersHorizontal
 } from "lucide-react";
 import IconContainer from "../../components/IconContainer.tsx";
 import AnimatedExpander from "../../components/AnimatedExpander.tsx";
-import {motion} from "motion/react";
 import {useAppDispatch, useAppSelector} from "../../app/store.ts";
-import {
-    selectConversationDescriptors,
-    selectConversationDescriptorsLoading,
-    selectConversationDescriptorsLoadingError
-} from "../conversations/conversationsSlice.ts";
-import {formatDateToLocalString} from "../../utils/dateTimeUtils.ts";
-import {ConversationDescriptor} from "../conversations/conversationsTypes.ts";
-import {timeSortPredicate} from "../../utils/utils.ts";
-import {useNavigate} from "react-router-dom";
-import {loadConversationList} from "../conversations/conversationsMiddleware.ts";
 import {newConversation} from "../chat/chatStateSlice.ts";
-import {
-    GetWidgetParams,
-    useLazyGetAIBundlesWidgetQuery,
-    useLazyGetConversationBrowserWidgetQuery,
-    useLazyGetEconomicsWidgetQuery,
-    useLazyGetEconomicUsageWidgetQuery,
-    useLazyGetGatewayWidgetQuery,
-    useLazyGetRedisBrowserWidgetQuery,
-    useLazyGetVersatilePreferencesWidgetQuery,
-} from "../widgetPanels/widgetPanels.ts";
-import {selectProject, selectTenant} from "../chat/chatSettingsSlice.ts";
-import {getChatPagePath} from "../chat/configHelper.ts";
 import {showDebugControls} from "../../BuildConfig.ts";
 import DebugPanel from "../debugPanel/DebugPanel.tsx";
-import {selectCurrentBundle} from "../bundles/bundlesSlice.ts";
 import ResizableContainer from "../../components/ResizableContainer.tsx";
 import {readParam, writeParam} from "../settingsStorage/settingsStorage.ts";
 import {selectAppUser} from "../auth/authSlice.ts";
+import {ConversationsPanel} from "./ConversationsPanel.tsx";
+import {
+    AIBundlesPanel,
+    ConvBrowserPanel,
+    EconomicsPanel,
+    EconomicUsagePanel,
+    GatewayPanel,
+    RedisBrowserPanel, VersatilePreferencesPanel
+} from "./GenericPanels.tsx";
 
 interface MenuButtonProps {
     children: ReactNode | ReactNode[];
@@ -67,304 +49,9 @@ const MenuButton = ({children, onClick}: MenuButtonProps) => {
     }, [children, onClick])
 }
 
-interface ConversationMenuItemProps {
-    conversation: ConversationDescriptor;
-}
-
-const ConversationMenuItem = ({conversation}: ConversationMenuItemProps) => {
-    const navigate = useNavigate();
-
-    return useMemo(() => {
-        const href = getChatPagePath() + "/" + conversation.id;
-        return <div className={"mx-2.5 mt-2 px-2 py-1 text-md hover:bg-gray-100 rounded-md cursor-pointer"}>
-            <a
-                href={href}
-                onClick={e => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    navigate(href)
-                }}
-            >
-                <p>{conversation.title ?? "Unnamed conversation"}</p>
-                {conversation.lastActivity && (<p className={"text-sm"}>
-                    {formatDateToLocalString(new Date(conversation.lastActivity))}
-                </p>)}
-            </a>
-        </div>
-    }, [conversation, navigate]);
-}
-
-interface ConversationsPanelProps {
-    visible: boolean;
-    className?: string;
-}
-
-const ConversationsPanel = ({visible, className}: ConversationsPanelProps) => {
-    const dispatch = useAppDispatch();
-    const conversations = useAppSelector(selectConversationDescriptors);
-
-    const processedConversations = useMemo(() => {
-        return conversations ? conversations.concat().sort((a, b) => timeSortPredicate(a.lastActivity, b.lastActivity)).reverse() : null;
-
-    }, [conversations]);
-
-    const conversationsLoading = useAppSelector(selectConversationDescriptorsLoading);
-    const conversationsLoadingError = useAppSelector(selectConversationDescriptorsLoadingError);
-
-    const [searchFor, setSearchFor] = useState("");
-
-    const currentBundle = useAppSelector(selectCurrentBundle);
-
-    useEffect(() => {
-        if (currentBundle && visible) {
-            dispatch(loadConversationList())
-        }
-    }, [currentBundle, dispatch, visible]);
-
-    return useMemo(() => {
-        return <motion.div
-            className={className}
-            initial={{
-                opacity: visible ? 0 : 1,
-            }}
-            animate={{
-                opacity: visible ? 1 : 0,
-            }}
-        >
-            <div className={"w-full h-full flex flex-col"}>
-                <h1 className={"text-xl mx-auto mt-2 ml-2.5"}>Conversations</h1>
-                {conversationsLoading && !conversations && (
-                    <div>loading</div>
-                )}
-                {conversationsLoadingError && (
-                    <div>error</div>
-                )}
-                {processedConversations && processedConversations.length > 0 && (
-                    <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-                        <div
-                            className="p-1.5 mx-2 border bg-white border-gray-200 transition-all rounded-md flex flex-row items-center focus-within:border-gray-800">
-                            <IconContainer icon={Search} size={1}/>
-                            <input name={"convSearch"} type={"text"}
-                                   className={"flex-1 ml-2 focus:outline-none"}
-                                   placeholder={"Search"} value={searchFor}
-                                   onChange={e => setSearchFor(e.target.value)}/>
-                        </div>
-                        <div className={"flex-1 min-h-0 overflow-y-auto mr-2 mt-1 mb-2"}>
-                            {processedConversations.map((conversation) => (
-                                <ConversationMenuItem conversation={conversation} key={conversation.id}/>
-                            ))}
-                        </div>
-                    </div>
-                )}
-            </div>
-        </motion.div>
-    }, [className, visible, conversationsLoading, conversations, conversationsLoadingError, processedConversations, searchFor])
-}
-
-interface IFrameSrcDocPanelProps {
-    visible: boolean;
-    srcDoc: string;
-    className?: string;
-}
-
-const IFrameSrcDocPanel = ({visible, srcDoc, className}: IFrameSrcDocPanelProps) => {
-    return useMemo(() => {
-        return <motion.div
-            className={className}
-            style={{
-                pointerEvents: visible ? "auto" : 'none',
-            }}
-            initial={{
-                opacity: visible ? 0 : 1,
-            }}
-            animate={{
-                opacity: visible ? 1 : 0,
-            }}
-        >
-            <div className={"w-full h-full flex flex-col"}>
-                <iframe
-                    srcDoc={srcDoc}
-                    className={"w-full h-full border-0"}
-                />
-            </div>
-        </motion.div>
-    }, [className, srcDoc, visible])
-}
-
-interface IFrameSrcPanelProps {
-    visible: boolean;
-    src: string;
-    className?: string;
-}
-
-const IFrameSrcPanel = ({visible, src, className}: IFrameSrcPanelProps) => {
-    return useMemo(() => {
-        return <motion.div
-            className={className}
-            style={{pointerEvents: visible ? "auto" : 'none'}}
-            initial={{opacity: visible ? 0 : 1}}
-            animate={{opacity: visible ? 1 : 0}}
-        >
-            <div className={"w-full h-full flex flex-col"}>
-                <iframe
-                    src={src}
-                    className={"w-full h-full border-0"}
-                />
-            </div>
-        </motion.div>
-    }, [className, src, visible])
-}
-
-const EchoUIPanel = ({visible, className}: WidgetPanelProps) => {
-    const tenant = useAppSelector(selectTenant);
-    const project = useAppSelector(selectProject);
-
-    return useMemo(() => {
-        const src = `/api/integrations/static/${tenant}/${project}/echo.ui@2026-03-30/`;
-        return <IFrameSrcPanel visible={visible} src={src} className={className}/>
-    }, [tenant, project, visible, className]);
-}
-
-interface PanelLoadingProps {
-    className?: string;
-}
-
-const PanelLoading = ({className}: PanelLoadingProps) => {
-    return useMemo(() => {
-        return <div className={className}>
-            <div className={"w-full h-full flex text-gray-200"}>
-                <IconContainer icon={LoaderCircle} className={"animate-spin duration-200"} containerClassName={"m-auto"}
-                               size={4}/>
-            </div>
-        </div>
-    }, [className])
-}
-
-interface PanelLoadingProps {
-    className?: string;
-}
-
-const PanelLoadingError = ({className}: PanelLoadingProps) => {
-    return useMemo(() => {
-        return <div className={className}>
-            <div className={"w-full h-full flex text-gray-600 p-2"}>
-                <div>Sorry, an error has occurred</div>
-            </div>
-        </div>
-    }, [className])
-}
-
-interface GenericWidgetPanelProps {
-    visible: boolean;
-    className?: string;
-    trigger: (params: GetWidgetParams, preferCache?: boolean) => void;
-    reloadOnShow?: boolean;
-    lastArg: {
-        data?: string | undefined;
-        isFetching: boolean;
-        isError: boolean;
-        isUninitialized: boolean;
-    }
-}
-
-const GenericPanel = ({visible, className, trigger, lastArg, reloadOnShow}: GenericWidgetPanelProps) => {
-    const wasVisible = useRef(visible);
-
-    const {data, isFetching, isError, isUninitialized} = useMemo(() => {
-        return lastArg
-    }, [lastArg]);
-
-    const tenant = useAppSelector(selectTenant);
-    const project = useAppSelector(selectProject);
-
-    useEffect(() => {
-        if (!wasVisible.current && reloadOnShow && visible) {
-            trigger({tenant, project}, false);
-        } else if (visible && isUninitialized) {
-            trigger({tenant, project}, true)
-        }
-        wasVisible.current = visible;
-    }, [isUninitialized, project, reloadOnShow, tenant, trigger, visible]);
-
-    return useMemo(() => {
-        if (visible) {
-            if (isFetching) {
-                return <PanelLoading className={className}/>
-            }
-            if (isError) {
-                return <PanelLoadingError className={className}/>
-            }
-        }
-
-        if (!isFetching && !isError) {
-            return <IFrameSrcDocPanel visible={visible} className={className} srcDoc={data as string}/>
-        }
-
-        return null
-    }, [className, data, isError, isFetching, visible])
-}
-
 export interface WidgetPanelProps {
     visible: boolean;
     className?: string;
-}
-
-const EconomicsPanel = ({visible, className}: WidgetPanelProps) => {
-    const [trigger, lastArg] = useLazyGetEconomicsWidgetQuery();
-
-    return useMemo(() => {
-        return <GenericPanel trigger={trigger} lastArg={lastArg} visible={visible} className={className}/>
-    }, [trigger, lastArg, visible, className]);
-}
-
-const AIBundlesPanel = ({visible, className}: WidgetPanelProps) => {
-    const [trigger, lastArg] = useLazyGetAIBundlesWidgetQuery();
-
-    return useMemo(() => {
-        return <GenericPanel trigger={trigger} lastArg={lastArg} visible={visible} className={className}/>
-    }, [trigger, lastArg, visible, className]);
-}
-
-const GatewayPanel = ({visible, className}: WidgetPanelProps) => {
-    const [trigger, lastArg] = useLazyGetGatewayWidgetQuery();
-
-    return useMemo(() => {
-        return <GenericPanel trigger={trigger} lastArg={lastArg} visible={visible} className={className}/>
-    }, [trigger, lastArg, visible, className]);
-}
-
-const ConvBrowserPanel = ({visible, className}: WidgetPanelProps) => {
-    const [trigger, lastArg] = useLazyGetConversationBrowserWidgetQuery();
-
-    return useMemo(() => {
-        return <GenericPanel trigger={trigger} lastArg={lastArg} visible={visible} className={className}/>
-    }, [trigger, lastArg, visible, className]);
-}
-
-const RedisBrowserPanel = ({visible, className}: WidgetPanelProps) => {
-    const [trigger, lastArg] = useLazyGetRedisBrowserWidgetQuery();
-
-    return useMemo(() => {
-        return <GenericPanel trigger={trigger} lastArg={lastArg} visible={visible} className={className}/>
-    }, [trigger, lastArg, visible, className]);
-}
-
-const EconomicUsagePanel = ({visible, className}: WidgetPanelProps) => {
-    const [trigger, lastArg] = useLazyGetEconomicUsageWidgetQuery();
-
-    return useMemo(() => {
-        return <GenericPanel trigger={trigger} lastArg={lastArg} visible={visible} className={className}
-                             reloadOnShow={true}/>
-    }, [trigger, lastArg, visible, className]);
-}
-
-const VersatilePreferencesPanel = ({visible, className}: WidgetPanelProps) => {
-    const [trigger, lastArg] = useLazyGetVersatilePreferencesWidgetQuery();
-
-    return useMemo(() => {
-        return <GenericPanel trigger={trigger} lastArg={lastArg} visible={visible} className={className}
-                             reloadOnShow={true}/>
-    }, [trigger, lastArg, visible, className]);
 }
 
 type Panels =
@@ -376,7 +63,6 @@ type Panels =
     | "redis_browser"
     | "economic_usage"
     | "versatile_preferences"
-    | "echo_ui"
     | "debug"
     | null
 
@@ -469,13 +155,6 @@ const ChatSidePanel = () => {
                 >
                     <IconContainer icon={SlidersHorizontal} size={1.5}/>
                 </MenuButton>
-                <MenuButton
-                    onClick={() => {
-                        onPanelButtonClick("echo_ui");
-                    }}
-                >
-                    <IconContainer icon={LayoutDashboard} size={1.5}/>
-                </MenuButton>
                 {showDebugControls && <MenuButton
                     onClick={() => {
                         onPanelButtonClick("debug");
@@ -490,7 +169,8 @@ const ChatSidePanel = () => {
                 <AnimatedExpander contentRef={sidePanelContentRef} className={"h-full"}
                                   expanded={visiblePanel !== null}>
                     {/*<div className={"h-full"} ref={sidePanelContentRef} style={{width: `${panelWidth}px`}}>*/}
-                    <ResizableContainer ref={sidePanelContentRef} onResize={onPanelResize} initialSize={initialPanelWidth} minSize={300} className={"h-full"}>
+                    <ResizableContainer ref={sidePanelContentRef} onResize={onPanelResize}
+                                        initialSize={initialPanelWidth} minSize={300} className={"h-full"}>
                         <ConversationsPanel visible={visiblePanel === "conversations"}
                                             className={"w-full h-full absolute left-0 top-0"}/>
                         <EconomicsPanel visible={visiblePanel === "economics"}
@@ -507,8 +187,6 @@ const ChatSidePanel = () => {
                                             className={"w-full h-full absolute left-0 top-0"}/>
                         <VersatilePreferencesPanel visible={visiblePanel === "versatile_preferences"}
                                                    className={"w-full h-full absolute left-0 top-0"}/>
-                        <EchoUIPanel visible={visiblePanel === "echo_ui"}
-                                     className={"w-full h-full absolute left-0 top-0"}/>
                         {showDebugControls && <DebugPanel visible={visiblePanel === "debug"}
                                                           className={"w-full h-full absolute left-0 top-0"}/>}
                     </ResizableContainer>

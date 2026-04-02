@@ -9,6 +9,7 @@ import {
 } from "./chatBase.ts";
 import {Manager, Socket} from "socket.io-client";
 import {ChatServiceEnvelope} from "../chat/serviceEventTypes.ts";
+import {v4 as uuidv4} from "uuid";
 
 type EngineKey = string;
 const managers = new Map<EngineKey, Manager>();
@@ -69,6 +70,8 @@ class SocketIOChat extends ChatBase {
     }
 
     public override connect(sessionId?: string | null): void {
+        this._streamId = uuidv4();
+
         new Promise<void>((resolve) => {
             if (this._socket.connected) {
                 console.info("Already connected");

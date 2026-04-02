@@ -1,11 +1,5 @@
 import {Middleware, UnknownAction} from "@reduxjs/toolkit";
-import {
-    ChatBase,
-    ChatEventHandlers,
-    ChatMessage,
-    ChatRequest,
-
-} from "../chatController/chatBase.ts";
+import {ChatBase, ChatEventHandlers, ChatMessage, ChatRequest,} from "../chatController/chatBase.ts";
 import {v4 as uuidv4} from "uuid";
 import {AppDispatch, AppStore, RootState} from "../../app/store.ts";
 import SocketIOChat from "../chatController/socketIOChat.ts";
@@ -14,11 +8,13 @@ import {
     chatConnected,
     chatDelta,
     chatDisconnected,
-    chatStarted, clearUserAttachments,
+    chatStarted,
+    clearUserAttachments,
     clearUserInput,
     conversationStatus,
     disconnect,
-    getUserAttachmentFile, lockInput,
+    getUserAttachmentFile,
+    lockInput,
     newTurn,
     selectChatConnected,
     selectChatStayConnected,
@@ -36,13 +32,22 @@ import {fetchUserProfile, selectUserProfile} from "../profile/profile.ts";
 import SSEChat from "../chatController/sseChat.ts";
 import {UserAttachmentDescription, UserMessageRequest} from "./chatTypes.ts";
 import {selectAuthToken, selectIdToken, setCredentials} from "../auth/authSlice.ts";
-import {selectIdTokenHeaderName, selectProject, selectTenant} from "./chatSettingsSlice.ts";
+import {
+    selectIdTokenHeaderName,
+    selectProject,
+    selectStreamIdHeaderName,
+    selectTenant,
+    selectUseAuthCookies
+} from "./chatSettingsSlice.ts";
 import {pushNotification} from "../popupNotifications/popupsSlice.ts";
 import {NotificationType} from "../popupNotifications/types.ts";
 import {
     ChatServiceEnvelope,
-    ChatServiceMessageTrait, PopupShow, PopupShowType,
-    RateLimitPayload, UserInputAttachmentRejectedType,
+    ChatServiceMessageTrait,
+    PopupShow,
+    PopupShowType,
+    RateLimitPayload,
+    UserInputAttachmentRejectedType,
     UserInputLockTraitType
 } from "./serviceEventTypes.ts";
 import {selectCurrentBundle} from "../bundles/bundlesSlice.ts";
@@ -156,12 +161,14 @@ export const chatServiceMiddleware = (transportType: TransportType): Middleware 
             const tenant = selectTenant(state)
             const project = selectProject(state)
             const baseUrl = window.location.origin
+            const streamIdHeaderName = selectStreamIdHeaderName(state)
             switch (transportType) {
                 case "sse":
                     transport = new SSEChat({
                         baseUrl,
                         tenant,
                         project,
+                        streamIdHeaderName
                     })
                     break;
                 case "websocket":
@@ -169,6 +176,7 @@ export const chatServiceMiddleware = (transportType: TransportType): Middleware 
                         baseUrl,
                         tenant,
                         project,
+                        streamIdHeaderName
                     })
                     break;
                 default:
@@ -301,7 +309,7 @@ export const chatServiceMiddleware = (transportType: TransportType): Middleware 
         //move parsers and other logic here
         const eventHandlers: ChatEventHandlers = {
             onConnect: () => {
-                dispatch(chatConnected())
+                dispatch(chatConnected(transport.streamId))
             },
             onDisconnect: () => {
                 dispatch(chatDisconnected())
@@ -340,18 +348,21 @@ export const chatServiceMiddleware = (transportType: TransportType): Middleware 
 
         const tryConnect = (store: AppStore) => {
             const state = store.getState() as RootState;
+            const dispatch = store.dispatch
             if (selectChatConnected(state) || !selectChatStayConnected(state)) {
                 return;
             }
             const sessionId = selectUserProfile(state)?.sessionId
             if (!sessionId) {
-                store.dispatch(fetchUserProfile())
+                dispatch(fetchUserProfile())
                 return
             }
             transport.eventHandlers = eventHandlers;
-            transport.authToken = selectAuthToken(state);
-            transport.idToken = selectIdToken(state);
-            transport.idHeaderName = selectIdTokenHeaderName(state);
+            if (!selectUseAuthCookies(state)) {
+                transport.authToken = selectAuthToken(state);
+                transport.idToken = selectIdToken(state);
+                transport.idHeaderName = selectIdTokenHeaderName(state);
+            }
             transport.connect(sessionId);
         }
 
@@ -453,9 +464,10 @@ export const chatServiceMiddleware = (transportType: TransportType): Middleware 
                     break
                 case setCredentials.type: {
                     const state = store.getState() as RootState;
-                    if (transport) {
-                        transport.authToken = selectAuthToken(state)
-                        transport.idToken = selectIdToken(state)
+                    if (transport && !selectUseAuthCookies(state)) {
+                        transport.authToken = selectAuthToken(state);
+                        transport.idToken = selectIdToken(state);
+                        transport.idHeaderName = selectIdTokenHeaderName(state);
                     }
                     break
                 }

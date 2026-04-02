@@ -1,5 +1,5 @@
 import {createApi, fetchBaseQuery} from "@reduxjs/toolkit/query/react";
-import {appendDefaultCredentialsHeader} from "../../app/api/utils.ts";
+import {appendDefaultHeaders} from "../../app/api/utils.ts";
 
 export interface Question {
     type: "question";
@@ -20,7 +20,7 @@ export const suggestedQuestionsApiSlice = createApi({
     reducerPath: 'suggestedQuestions',
     baseQuery: fetchBaseQuery({
         prepareHeaders(headers) {
-            return appendDefaultCredentialsHeader(headers) as Headers;
+            return appendDefaultHeaders(headers) as Headers;
         }
     }),
     tagTypes: ['suggestedQuestions'],
