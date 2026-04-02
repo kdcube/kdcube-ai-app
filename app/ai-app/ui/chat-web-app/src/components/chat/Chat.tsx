@@ -99,7 +99,7 @@ const SingleChatApp: React.FC = () => {
         if (bundleUI) {
             return <div className={"flex-1 flex flex-col h-full"}>
                 <iframe
-                    src={`/api/integrations/static/${tenant}/${project}/${bundleId}/`}
+                    srcDoc={bundleUI}
                     className={"w-full h-full border-0"}
                 />
             </div>
@@ -116,7 +116,7 @@ const SingleChatApp: React.FC = () => {
                 </ChatCanvasContext>
             </div>
         </div>
-    }, [bundleUI, tenant, project, bundleId, canvasItemLink, chatCanvasContextValue, lastArg.isLoading, lastArg.isUninitialized])
+    }, [bundleUI, canvasItemLink, chatCanvasContextValue, lastArg.isLoading, lastArg.isUninitialized])
 
     const dispatch = useAppDispatch();
     const stayConnected = useAppSelector(selectChatStayConnected)
