@@ -16,6 +16,12 @@ secrets:
 storage:
   kdcube: "s3://../data/kdcube"
   bundles: "s3://../data/kdcube"
+  workspace:
+    type: git
+    repo: "" # repo url
+
+
+
 
 notifications:
   email:
