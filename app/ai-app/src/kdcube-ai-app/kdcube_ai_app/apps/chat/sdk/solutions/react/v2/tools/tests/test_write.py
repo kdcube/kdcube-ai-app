@@ -93,3 +93,27 @@ async def test_write_resolves_ref_content_before_materializing(tmp_path):
     assert out_file.read_text() == "graph TD\nA-->B\n"
     result_blocks = [b for b in ctx.timeline.blocks if b.get("path") == "fi:turn_cur.files/b1-german-knowledge-resent.mmd"]
     assert any((b.get("text") or "") == "graph TD\nA-->B\n" for b in result_blocks)
+
+
+@pytest.mark.asyncio
+async def test_write_relative_files_path_stays_in_single_files_namespace(tmp_path):
+    runtime = RuntimeCtx(turn_id="turn_cur", outdir=str(tmp_path), workdir=str(tmp_path))
+    ctx = FakeBrowser(runtime)
+    state = {
+        "last_decision": {
+            "tool_call": {
+                "params": {
+                    "path": "files/demo_proj/README.md",
+                    "channel": "canvas",
+                    "content": "# Demo\n",
+                    "kind": "file",
+                }
+            }
+        },
+        "outdir": str(tmp_path),
+    }
+
+    await handle_react_write(react=FakeReact(), ctx_browser=ctx, state=state, tool_call_id="c5")
+
+    assert (tmp_path / "turn_cur" / "files" / "demo_proj" / "README.md").read_text() == "# Demo\n"
+    assert not (tmp_path / "turn_cur" / "files" / "files" / "demo_proj" / "README.md").exists()

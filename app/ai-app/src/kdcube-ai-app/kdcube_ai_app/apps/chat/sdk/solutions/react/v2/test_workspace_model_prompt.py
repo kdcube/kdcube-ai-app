@@ -22,6 +22,11 @@ def test_get_workspace_implementation_guide_git_mentions_git_backed_mode():
     assert "git-backed workspace lineage snapshot" in guide
     assert "local git repo" in guide
     assert "git pull" in guide
+    assert "active lineage workspace" in guide
+    assert "historical snapshot view" in guide
+    assert "react.checkout(version=" in guide
+    assert "rare case" in guide
+    assert "turn_<current_turn>/files/..." in guide
 
 
 def test_build_decision_system_text_uses_selected_workspace_implementation():
@@ -36,3 +41,7 @@ def test_build_decision_system_text_uses_selected_workspace_implementation():
     assert "local git repo" in text
     assert "Workspace activation is explicit" in text
     assert "do NOT auto-materialize old files" in text
+    assert "active workspace for ongoing project state" in text
+    assert "react.checkout(version=" in text
+    assert "rare case" in text
+    assert "turn_<current_turn>/files/..." in text

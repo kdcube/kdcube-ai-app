@@ -1,160 +1,338 @@
 ---
 id: ks:docs/sdk/agents/react/flow-README.md
 title: "Flow"
-summary: "High‑level turn lifecycle and runtime flow for React v2."
-tags: ["sdk", "agents", "react", "flow", "timeline"]
-keywords: ["turn lifecycle", "gate", "single agent loop", "timeline flow"]
+summary: "End-to-end React v2 turn flow from turn start through workspace bootstrap, timeline and sources-pool load, tool execution, optional distributed exec packaging, and turn finish."
+tags: ["sdk", "agents", "react", "flow", "timeline", "workspace"]
+keywords:
+  [
+    "turn lifecycle",
+    "workspace bootstrap",
+    "sources pool",
+    "announce",
+    "react.pull",
+    "distributed exec",
+    "fargate",
+    "turn finish",
+  ]
 see_also:
-  - ks:docs/sdk/agents/react/feedback-README.md
   - ks:docs/sdk/agents/react/react-announce-README.md
-  - ks:docs/sdk/agents/react/react-context-README.md
+  - ks:docs/sdk/agents/react/react-turn-workspace-README.md
+  - ks:docs/sdk/agents/react/source-pool-README.md
+  - ks:docs/sdk/agents/react/external-exec-README.md
 ---
-# End‑to‑end flow (react v2)
+# End-to-end flow (React v2)
 
-This document provides a high‑level view of the turn lifecycle and how the React runtime
-interacts with the timeline. We currently support a **single agent loop** on the shared
-timeline (React). Gate is optional and only runs on new conversations to set the title.
+This document shows the full React v2 turn lifecycle:
 
-## ASCII diagram
+- turn start
+- workspace bootstrap
+- timeline + sources-pool load
+- prompt and attachment contribution
+- optional gate pass
+- React decision/tool loop
+- optional isolated/distributed exec packaging
+- turn finish, persistence, and optional git workspace publish
 
-```
-┌────────────────────────────────────────────────────────────────────────────┐
-│ Turn start                                                                 │
-│  - BaseWorkflow.start_turn                                                   │
-│  - ctx_browser.load_timeline() -> _ensure_workspace() -> Timeline.load/persist│
-│  - contribute user prompt + attachments                                      │
-└───────────────┬────────────────────────────────────────────────────────────┘
-                │
-                ▼
-┌────────────────────────────────────────────────────────────────────────────┐
-│ Gate agent (optional; new conversation only)                                 │
-│  - timeline.render(include_sources=false, include_announce=false)            │
-│  - emits gate block (+ clarifications) into timeline                         │
-└───────────────┬────────────────────────────────────────────────────────────┘
-                │
-                ▼
-┌────────────────────────────────────────────────────────────────────────────┐
-│ ReAct runtime                                                                │
-│  - decision loop uses timeline.render(include_sources=true, include_announce=true)
-│  - each tool call contributes:                                               │
-│      • react.tool.call                                                      │
-│      • react.tool.result (+ artifacts blocks)                               │
-│      • react.notice on protocol/errors                                      │
-│  - plan acknowledgements add:                                                │
-│      • react.plan.ack (text)                                                 │
-│      • updated react.plan (JSON snapshot)                                    │
-│  - final answer produced by React and stored as assistant.completion          │
-└───────────────┬────────────────────────────────────────────────────────────┘
-                │
-                ▼
-┌────────────────────────────────────────────────────────────────────────────┐
-│ Turn end                                                                     │
-│  - persist timeline                                                          │
-│  - write turn_log (current‑turn blocks only)                                 │
-└────────────────────────────────────────────────────────────────────────────┘
-```
+The reference implementation is still the single-agent React loop. Gate is optional and runs only for new conversations.
 
-## Mermaid diagram
+## High-level lifecycle
 
 ```mermaid
 flowchart TD
-    A[Turn start: load_timeline + user prompt/attachments] --> B[Gate agent optional]
-    B --> C[ReAct runtime single agent loop]
-    C --> D[Persist timeline + turn_log]
-
-    B -->|contribute gate/clarifications| T1[(Timeline)]
-    C -->|tool call/result blocks + plans + assistant completion| T1
+    A[BaseWorkflow.start_turn] --> B[Build RuntimeCtx]
+    B --> C[ContextBrowser.load_timeline]
+    C --> D[Ensure workspace]
+    D --> E[Load latest timeline artifact]
+    E --> F[Load latest sources-pool artifact]
+    F --> G[Initialize in-memory Timeline]
+    G --> H[Contribute user prompt and attachments]
+    H --> I{New conversation?}
+    I -->|yes| J[Optional Gate]
+    I -->|no| K[React decision loop]
+    J --> K
+    K --> L{Tool call?}
+    L -->|normal tool| M[Emit react.tool.call / react.tool.result]
+    L -->|exec tool| N[Prepare exec runtime]
+    M --> K
+    N --> O{Local isolated or distributed/Fargate?}
+    O -->|local isolated| P[Run exec locally]
+    O -->|distributed| Q[Build snapshot and launch remote exec]
+    P --> R[Merge results into turn state]
+    Q --> R
+    R --> K
+    K --> S[assistant.completion]
+    S --> T[BaseWorkflow.finish_turn]
+    T --> U[Persist timeline artifact]
+    U --> V[Persist sources-pool artifact]
+    V --> W[Persist turn log]
+    W --> X{workspace_implementation = git?}
+    X -->|yes| Y[Publish lineage branch + immutable version ref]
+    X -->|no| Z[Turn complete]
+    Y --> Z
 ```
 
-## Referent flow (current)
+## Start-of-turn sequence
 
-The reference implementation is:
-`kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44/orchestrator/workflow.py`
+### 1. Runtime context is built
 
-Key points:
-- Gate runs only for new conversations (title extraction).
-- React is the sole agent loop.
-- No coordinator or separate final‑answer generator.
+`BaseWorkflow.start_turn(...)` builds `RuntimeCtx`.
 
-## Turn Start With `workspace_implementation=git`
+Important fields include:
+- `turn_id`
+- `tenant`
+- `project`
+- `user_id`
+- `conversation_id`
+- `workspace_implementation`
+- `workspace_git_repo` when `workspace_implementation="git"`
 
-When a turn starts in `git` workspace mode, the important sequence is:
+### 2. Workspace is prepared before timeline load completes
 
-1. `BaseWorkflow.start_turn(...)` prepares `RuntimeCtx`
-   - includes:
-     - `turn_id`
-     - `user_id`
-     - `conversation_id`
-     - `workspace_implementation="git"`
-     - `workspace_git_repo`
+`ContextBrowser.load_timeline()` begins by calling `_ensure_workspace()`.
 
-2. `ContextBrowser.load_timeline()` begins
-   - before loading timeline payloads, it calls `_ensure_workspace()`
+#### `custom` workspace mode
 
-3. `_ensure_workspace()` bootstraps the current turn workspace
-   - if `workspace_implementation != "git"`, nothing special happens here
-   - if `workspace_implementation == "git"`, runtime calls:
-     - `ensure_current_turn_git_workspace(...)`
+No special git bootstrap happens here.
 
-4. `ensure_current_turn_git_workspace(...)` prepares the local repo surface
-   - resolves the shared workspace cache under:
-     - `.react_workspace_git/<tenant>__<project>__<user>__<conversation>/repo`
-   - clones the configured workspace repo if the cache repo does not exist yet
-   - otherwise updates the cache repo remote URL and fetches from origin
-   - tries to fetch the current conversation lineage branch into a local lineage ref
-   - creates the current turn root:
-     - `out/<turn_id>/`
-   - initializes that turn root as a real local git repo
-   - configures local git identity
-   - enables sparse checkout with an empty sparse spec
-   - adds the cache repo as local `origin`
-   - if a lineage branch exists:
-     - fetches it into local branch `workspace`
-     - checks out `workspace`
-   - if no lineage branch exists yet:
-     - checks out an orphan `workspace` branch
+The workspace remains the normal turn-local execution tree and historical files are activated explicitly through `react.pull(...)`.
 
-5. Timeline load continues
-   - latest timeline artifact is loaded
-   - latest sources pool is loaded
-   - the in-memory `Timeline` is initialized
+#### `git` workspace mode
 
-6. User prompt and attachments are contributed to the current turn
+`ensure_current_turn_git_workspace(...)` prepares a sparse local repo for the current turn.
 
-### Important semantic rule
+Current behavior:
+- a lineage-only bare mirror is maintained under:
+  - `.react_workspace_git/<tenant>__<project>__<user>__<conversation>/lineage.git`
+- that mirror points at `REACT_WORKSPACE_GIT_REPO`
+- the mirror fetches only the current lineage branch into local `refs/heads/workspace`
+- the current turn root is created under:
+  - `out/<turn_id>/`
+- that turn root is initialized as a real local git repo
+- sparse checkout is enabled with an empty sparse spec
+- the turn repo fetches only the mirror's `workspace` branch
+- the turn repo keeps no configured remote
 
-At this point, in `git` mode:
-- the current turn already has a real local git repo
-- lineage history may already be available locally
+Important semantic rule:
+- the repo shell/history may exist at turn start
 - the worktree is still sparse
-- project files are **not** eagerly materialized just because the repo exists
+- project content is not eagerly materialized
+- React must still activate historical/project slices explicitly with `react.pull(...)`
 
-React must still bring content in intentionally:
-- via `react.pull(paths=[fi:...])`
-- or by using local git commands against the current-turn repo when appropriate
+### 3. Timeline and sources pool are loaded
 
-### What React sees operationally
+After workspace preparation:
+- latest `artifact:conv:timeline` is loaded
+- latest `artifact:conv:sources_pool` is loaded
+- the in-memory `Timeline` is initialized
+- the current-turn header is ensured
 
-During the decision loop, ANNOUNCE now includes a compact `[WORKSPACE]` section
-that summarizes:
-- implementation
-- current turn root
-- materialized turn roots
-- current turn scopes
+This is important because the React prompt surface is not only timeline blocks. The sources pool is also reattached at start and remains part of the active context layout.
+
+### 4. User prompt and attachments are contributed
+
+The current turn receives:
+- user prompt block
+- any attachment/file contributions
+
+At this point the new turn is ready for the agent loop.
+
+## What React sees before acting
+
+By the time the decision loop starts, React can see:
+- the current timeline view
+- the latest sources pool
+- ANNOUNCE
+
+ANNOUNCE now includes a compact `[WORKSPACE]` section. It is the operational workspace orientation surface.
+
+Current `[WORKSPACE]` content is compact and may include:
+- `implementation`
+- `current_turn_root`
+- `materialized_turn_roots`
+- `current_turn_scopes`
 - in `git` mode:
   - `repo_mode`
   - `repo_status`
-  - compact publish state
+- compact publish status
 
-This is the intended orientation surface for sparse-workspace behavior.
+The intended sparse-workspace behavior is:
+1. read `[WORKSPACE]` first
+2. if already-local files are enough, work directly there
+3. if historical/project files are needed, call `react.pull(...)`
+4. in `git` mode, use local git commands only after understanding that the worktree may still be sparse
 
-### What does **not** happen automatically
+## Gate and decision loop
 
-When a turn starts in `git` mode, runtime does **not**:
-- check out the whole project tree into the current turn
-- pull hosted binaries as part of folder activation
-- expose other users' or other conversations' history
-- allow networked `git pull` / `git fetch` / `git push` from exec
+### Optional gate
 
-That is deliberate. The repo is prepared at turn start, but content hydration
-remains explicit and narrow.
+For new conversations, Gate may run first to establish title or clarifications.
+
+Gate contributes its own blocks to the same timeline.
+
+### React decision loop
+
+React is the main single-agent loop.
+
+It renders with:
+- timeline
+- sources pool
+- ANNOUNCE
+
+Typical loop behavior:
+- produce tool call
+- runtime emits `react.tool.call`
+- tool executes
+- runtime emits `react.tool.result`
+- React continues until it emits final answer
+
+Plans and notices are also added as timeline blocks when relevant.
+
+## Workspace activation during the loop
+
+Historical/project content is not assumed to be present locally.
+
+The canonical activation tool is:
+
+```json
+{"tool_id":"react.pull","params":{"paths":["fi:<turn_id>.files/<scope>/<path-or-prefix>"]}}
+```
+
+Rules:
+- folder pulls bring git-tracked text content only
+- exact binary refs may be pulled point-wise
+- historical files are not auto-hydrated for exec or cross-turn patching
+- if React wants historical files, it must pull them first
+
+This rule is enforced in runtime and stated in the agent instructions.
+
+Important distinction:
+- `react.pull(...)` materializes a historical snapshot view under the referenced version path such as:
+  - `out/<older_turn>/files/...`
+- the active editable workspace in `git` mode remains:
+  - `out/<current_turn>/files/...`
+- React should treat `out/<current_turn>/files/...` as its main project tree for the turn.
+
+If React intentionally wants the active current-turn workspace itself to start
+from a historical version, it should use:
+
+```json
+{"tool_id":"react.checkout","params":{"version":"<turn_id>"}}
+```
+
+`react.checkout(...)` replaces the active current-turn `workspace` branch state
+with the requested version and requires a clean repo.
+This is a rare whole-workspace reset operation, not the normal way to use
+history.
+
+## Exec tool branch
+
+When React calls the Python exec tool, there are two broad paths:
+
+- local isolated execution
+- distributed execution such as Fargate
+
+In both cases the semantic contract returned to React is the same. What changes is how the workspace is packaged and executed.
+
+### Local isolated exec
+
+Runtime prepares the local exec environment and runs the code without remote transport.
+
+If referenced paths belong to a git-backed turn root:
+- the whole `out/<turn_id>/` tree is copied into the exec snapshot
+- this preserves `.git`
+
+That allows local git commands inside exec to work against the current lineage repo without exposing broader metadata.
+
+### Distributed/Fargate exec
+
+When remote execution is selected, runtime first builds a lightweight exec snapshot with `build_exec_snapshot_workspace(...)`.
+
+Current snapshot behavior:
+- copy full `work/`
+- build filtered `out/timeline.json`
+- include the current sources pool in that filtered snapshot
+- include only referenced files needed by code or `fetch_ctx`
+- if a referenced path belongs to a git-backed turn root, copy the whole `out/<turn_id>/` tree so `.git` survives remotely
+- write `out/exec_snapshot_manifest.json`
+
+Then:
+- snapshot zips are uploaded
+- remote executor restores them into `/workspace/work` and `/workspace/out`
+- code runs remotely
+- output zips are uploaded back
+- host merges results back selectively
+
+Important merge rules:
+- `logs/*` are appended
+- `turn_*` trees are copied back
+- `timeline.json` is not overwritten
+- `sources_pool.json` is not overwritten
+
+So timeline and sources-pool authority stays on host-side conversation state, while remote exec still returns produced artifacts and workspace outputs.
+
+### Exec branch sequence
+
+```mermaid
+sequenceDiagram
+    participant R as React
+    participant H as Host runtime
+    participant X as Local isolated exec
+    participant F as Remote/Fargate exec
+    participant S as Object storage
+
+    R->>H: call exec tool
+    H->>H: build exec input from workdir/outdir/timeline/sources pool
+    alt local isolated
+        H->>X: run code directly
+        X-->>H: files + logs + status
+    else distributed/Fargate
+        H->>H: build_exec_snapshot_workspace(...)
+        H->>S: upload input/work.zip + input/out.zip
+        H->>F: launch remote exec with snapshot URIs
+        F->>S: restore input snapshot
+        F->>F: execute code
+        F->>S: upload output/work.zip + output/out.zip
+        H->>S: download outputs
+        H->>H: merge logs + turn_* outputs back
+    end
+    H-->>R: tool result envelope
+```
+
+## Turn finish
+
+After React emits its final answer:
+
+1. `assistant.completion` is added
+2. `BaseWorkflow.finish_turn(...)` runs
+3. timeline artifact is persisted
+4. sources-pool artifact is persisted
+5. turn log is persisted
+
+If `workspace_implementation="git"`:
+- current-turn text workspace is staged
+- a local commit is created if needed
+- lineage branch is published
+- immutable version ref for the current `turn_id` is published
+- if publish fails, the turn fails
+
+Publish observability is split:
+- compact status in ANNOUNCE
+- full metadata in internal `react.workspace.publish` blocks
+
+## End-state guarantees
+
+At the end of a successful turn:
+- timeline is authoritative for conversational history
+- sources pool is authoritative for source memory
+- turn log is authoritative for current-turn auditability
+- in `git` mode, textual workspace state is authoritative in the workspace git lineage
+- hosted storage remains authoritative for binary artifacts and distributed exec snapshots
+
+## Key operational rules
+
+- React must not assume historical/project files are already local
+- `react.pull(...)` is the explicit activation tool
+- in `git` mode, the turn repo is sparse by default
+- git tools in exec can only operate on lineage-scoped metadata
+- source pool is loaded at turn start and persisted again at turn finish
+- distributed exec transports a filtered execution snapshot, not the full conversation state
