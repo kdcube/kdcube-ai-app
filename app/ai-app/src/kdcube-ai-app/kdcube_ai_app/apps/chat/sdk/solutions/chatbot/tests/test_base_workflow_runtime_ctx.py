@@ -77,3 +77,41 @@ def test_resolve_mcp_services_config_prefers_bundle_props_over_env(monkeypatch):
             }
         }
     }
+
+
+def test_runtime_ctx_carries_workspace_git_repo(monkeypatch, tmp_path):
+    resolved_storage = tmp_path / "bundle-storage" / "tenant-a" / "project-a" / "react.doc__main"
+
+    def _fake_storage_for_spec(*, spec, tenant=None, project=None, ensure=True):
+        if ensure:
+            resolved_storage.mkdir(parents=True, exist_ok=True)
+        return resolved_storage
+
+    monkeypatch.setenv("REACT_WORKSPACE_GIT_REPO", "git@github.com:org/agentic-workspace.git")
+    monkeypatch.setattr(
+        "kdcube_ai_app.infra.plugin.bundle_storage.storage_for_spec",
+        _fake_storage_for_spec,
+    )
+    monkeypatch.setattr(workflow_mod, "build_comm_from_comm_context", lambda *args, **kwargs: SimpleNamespace(delta=lambda *a, **k: None))
+    monkeypatch.setattr(workflow_mod, "build_relay_from_env", lambda: None)
+    workflow_mod.get_settings.cache_clear()
+    try:
+        wf = BaseWorkflow(
+            conv_idx=SimpleNamespace(),
+            kb=SimpleNamespace(),
+            store=SimpleNamespace(),
+            comm=SimpleNamespace(delta=lambda *a, **k: None),
+            model_service=SimpleNamespace(),
+            conv_ticket_store=SimpleNamespace(),
+            config=SimpleNamespace(
+                ai_bundle_spec=SimpleNamespace(id="react.doc@2026-03-02-22-10"),
+                max_tokens=512,
+            ),
+            comm_context=_payload(tenant="tenant-a", project="project-a", turn_id="turn-3"),
+            ctx_client=SimpleNamespace(),
+        )
+
+        assert wf.runtime_ctx.workspace_git_repo == "git@github.com:org/agentic-workspace.git"
+        assert wf.runtime_ctx.bundle_storage == str(resolved_storage)
+    finally:
+        workflow_mod.get_settings.cache_clear()

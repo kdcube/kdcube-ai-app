@@ -42,6 +42,7 @@ from kdcube_ai_app.apps.chat.sdk.runtime.tool_subsystem import create_tool_subsy
 from kdcube_ai_app.apps.chat.sdk.runtime.user_inputs import ingest_user_attachments
 from kdcube_ai_app.apps.chat.sdk.runtime.scratchpad import CTurnScratchpad
 from kdcube_ai_app.apps.chat.sdk.skills.skills_registry import SkillsSubsystem
+from kdcube_ai_app.apps.chat.sdk.config import get_settings
 from kdcube_ai_app.apps.chat.sdk.util import (truncate_text_by_tokens, _to_jsonable,
                                               ensure_event_markdown, _to_json_safe, _jd,  _now_ms,
                                               _tstart, _tend)
@@ -137,6 +138,7 @@ class BaseWorkflow():
         self.message_resources_fn = message_resources_fn or (lambda err_code, fallback=None: None)
         self.answer_system_prompt = answer_system_prompt
         # Runtime context + context browser are constructed once per workflow instance
+        settings = get_settings()
         try:
             self.runtime_ctx = RuntimeCtx(
                 tenant=self.comm_context.actor.tenant_id,
@@ -149,6 +151,7 @@ class BaseWorkflow():
                 bundle_id=self.config.ai_bundle_spec.id,
                 max_tokens=getattr(self.config, "max_tokens", None),
                 bundle_storage=self._resolve_runtime_ctx_bundle_storage(),
+                workspace_git_repo=settings.REACT_WORKSPACE_GIT_REPO,
                 continuation_source=self.continuation_source,
             )
             self.ctx_browser = ContextBrowser(
@@ -159,7 +162,7 @@ class BaseWorkflow():
             )
             self._sync_runtime_ctx_bundle_props()
         except Exception:
-            self.runtime_ctx = RuntimeCtx()
+            self.runtime_ctx = RuntimeCtx(workspace_git_repo=settings.REACT_WORKSPACE_GIT_REPO)
             self.runtime_ctx.continuation_source = self.continuation_source
             self.ctx_browser = ContextBrowser(
                 ctx_client=self.ctx_client,

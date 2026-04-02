@@ -164,6 +164,7 @@ class Settings(BaseSettings):
     REDIS_DB: int = Field(default=0)
 
     STORAGE_PATH: str | None = Field(default=None, alias="KDCUBE_STORAGE_PATH")
+    REACT_WORKSPACE_GIT_REPO: str | None = None
 
     TENANT: str = Field(default="home", alias="TENANT_ID")
     PROJECT: str = Field(default="default-project", alias="PROJECT_ID")
