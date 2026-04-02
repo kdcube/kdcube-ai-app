@@ -1,4 +1,4 @@
-import {appendDefaultCredentialsHeader} from "../../app/api/utils.ts";
+import {appendDefaultHeaders} from "../../app/api/utils.ts";
 import {createSlice} from "@reduxjs/toolkit";
 import {createAppAsyncThunk} from "../../app/withTypes.ts";
 import {RootState} from "../../app/store.ts";
@@ -71,7 +71,7 @@ export const fetchUserProfile = createAppAsyncThunk('userProfile/fetch', async (
 
     const response = await fetch(`${chatAPIBasePath}/profile`, {
         method: "GET",
-        headers: appendDefaultCredentialsHeader({"Content-Type":"application/json"}),
+        headers: appendDefaultHeaders({"Content-Type":"application/json"}),
     })
 
     return response.json()

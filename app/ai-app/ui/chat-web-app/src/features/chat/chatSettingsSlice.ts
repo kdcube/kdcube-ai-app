@@ -26,7 +26,15 @@ const chatSettingsSlice = createSlice({
                 auth: {authType: "none"},
                 tenant: "default",
                 project: "default",
-                routesPrefix: ""
+                routesPrefix: "",
+                streamIdHeaderName: "KDC-Stream-ID",
+                useAuthCookies: true,
+                authCookieName: "__Secure-LATC",
+                idCookieName: "__Secure-LITC",
+                authCookieOpts: {
+                    secure: true,
+                    sameSite: "Strict"
+                }
             }
         }
     },
@@ -60,6 +68,11 @@ export const selectTenant = (state: RootState) => state.chatSettings.settings.te
 export const selectProject = (state: RootState) => state.chatSettings.settings.project
 export const selectRoutesPrefix = (state: RootState) => state.chatSettings.settings.routesPrefix
 export const selectChatPath = (state: RootState) => state.chatSettings.settings.routesPrefix + "/chat"
+export const selectUseAuthCookies = (state: RootState) => state.chatSettings.settings.useAuthCookies
+export const selectAuthCookieName = (state: RootState) => state.chatSettings.settings.authCookieName
+export const selectIdCookieName = (state: RootState) => state.chatSettings.settings.idCookieName
+export const selectAuthCookieOpts = (state: RootState) => state.chatSettings.settings.authCookieOpts
+export const selectStreamIdHeaderName = (state: RootState) => state.chatSettings.settings.streamIdHeaderName
 export const selectIdTokenHeaderName = (state: RootState) => {
     return ((state.chatSettings.settings.auth as unknown) as Record<string, string | undefined>).idTokenHeaderName ?? null
 }

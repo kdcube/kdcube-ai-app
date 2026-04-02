@@ -1,10 +1,16 @@
 import {Middleware, PayloadAction, UnknownAction} from "@reduxjs/toolkit";
 import CognitoAuth from "./cognitoAuth.ts";
 import {AppStore, RootState} from "../../app/store.ts";
-import {loadChatSettings, selectAuthConfig} from "../chat/chatSettingsSlice.ts";
+import {
+    loadChatSettings,
+    selectAuthConfig,
+    selectAuthCookieName,
+    selectAuthCookieOpts,
+    selectIdCookieName, selectUseAuthCookies
+} from "../chat/chatSettingsSlice.ts";
 import {AuthAction, setCredentials} from "./authSlice.ts";
 import {HardcodedAuthConfig} from "./authTypes.ts";
-import {CookieOptions, removeCookie, setCookie} from "../../utils/cookies.ts";
+import {removeCookie, setCookie} from "../../utils/cookies.ts";
 
 export const LOG_IN = "auth/LogIn"
 
@@ -69,12 +75,7 @@ export interface WithActionHandler {
     handleAction: HandleAction
 }
 
-export const authMiddleware = (useCookies: boolean = true,
-                               authCookieName: string = "__Secure-LATC", idCookieName: string = "__Secure-LITC",
-                               cookieOpts: CookieOptions = {
-                                   secure: true,
-                                   sameSite: "Strict"
-                               }): Middleware => {
+export const authMiddleware = (): Middleware => {
     let handler: HandleAction | null = null;
     return ((store) => (next: (action: unknown) => unknown) => (action: unknown) => {
         next(action)
@@ -83,11 +84,11 @@ export const authMiddleware = (useCookies: boolean = true,
         let handlerParent: WithActionHandler | null = null
 
         const removeAuthCookie = () => {
-            removeCookie(authCookieName)
+            removeCookie(selectAuthCookieName(store.getState()))
         }
 
         const removeIdCookie = () => {
-            removeCookie(idCookieName)
+            removeCookie(selectIdCookieName(store.getState()))
         }
 
         const removeCookies = () => {
@@ -96,11 +97,11 @@ export const authMiddleware = (useCookies: boolean = true,
         }
 
         const setAuthToken = (token: string) => {
-            setCookie(authCookieName, token, cookieOpts)
+            setCookie(selectAuthCookieName(store.getState()), token, selectAuthCookieOpts(store.getState()))
         }
 
         const setIdToken = (idToken: string) => {
-            setCookie(idCookieName, idToken, cookieOpts)
+            setCookie(selectIdCookieName(store.getState()), idToken, selectAuthCookieOpts(store.getState()))
         }
 
         switch ((action as UnknownAction).type) {
@@ -133,7 +134,7 @@ export const authMiddleware = (useCookies: boolean = true,
                 handler(store as AppStore, action as AuthActions);
                 break;
             case setCredentials.type:
-                if (useCookies) {
+                if (selectUseAuthCookies(store.getState())) {
                     switch (authConfig.authType) {
                         case "hardcoded":
                         case "cognito": {

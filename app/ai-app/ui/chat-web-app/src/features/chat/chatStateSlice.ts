@@ -327,7 +327,8 @@ const chatStateSlice = createSlice({
             userInputLocked: false,
             userInputLockMessage: null,
             userMessage: "",
-            userAttachments: []
+            userAttachments: [],
+            streamId: null
         }
     },
     reducers: {
@@ -340,11 +341,13 @@ const chatStateSlice = createSlice({
         setConversationId(state, action: PayloadAction<string | null>) {
             state.conversationId = action.payload
         },
-        chatConnected: (state) => {
+        chatConnected: (state, action: PayloadAction<string | null>) => {
             state.connected = true
+            state.streamId = action.payload
         },
         chatDisconnected: (state) => {
             state.connected = false
+            state.streamId = null
         },
         chatStarted(state, action: PayloadAction<ChatStartEnvelope>) {
             const turnId = action.payload.conversation.turn_id;
@@ -866,6 +869,7 @@ export const selectUserAttachments = (state: RootState) => state.chatState.userA
 export const selectConversationId = (state: RootState) => state.chatState.conversationId
 export const selectConversationTitle = (state: RootState) => state.chatState.conversationTitle
 export const selectIsNewConversation = (state: RootState) => state.chatState.turnOrder.length === 0
+export const selectStreamId = (state: RootState) => state.chatState.streamId
 
 
 export default chatStateSlice.reducer

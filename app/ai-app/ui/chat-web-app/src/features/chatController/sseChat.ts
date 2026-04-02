@@ -20,7 +20,6 @@ interface SSEChatOptions extends ChatOptions {
 class SSEChat extends ChatBase {
     private _eventSource: EventSource | null = null;
     private readonly _baseUrl: string;
-    private _streamId: string | null = null;
     _connecting = false;
 
     constructor(options: SSEChatOptions) {
@@ -138,7 +137,7 @@ class SSEChat extends ChatBase {
         url.searchParams.set("stream_id", this._streamId);
 
         const makeHeaders = (base?: HeadersInit): Headers => {
-            return this.addTZHeader(this.addCredentialsHeader(base));
+            return this.addTZHeader(this.addStreamIdHeader(this.addCredentialsHeader(base)));
         };
 
         if (attachments && attachments.length) {
