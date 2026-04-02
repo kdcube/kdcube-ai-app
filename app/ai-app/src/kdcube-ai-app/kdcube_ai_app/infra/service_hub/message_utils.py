@@ -7,6 +7,8 @@
 from typing import Any, Optional, List
 from langchain_core.messages import BaseMessage
 
+from kdcube_ai_app.infra.service_hub.multimodality import normalize_image_base64_for_model
+
 
 def extract_message_blocks(msg: BaseMessage) -> Optional[list]:
     addkw = getattr(msg, "additional_kwargs", {}) or {}
@@ -38,6 +40,12 @@ def normalize_blocks(blocks: list, default_cache_ctrl: dict | None = None) -> li
             media_type = src.get("media_type") or b.get("media_type")
             data = src.get("data") or b.get("data")
             default_media = "image/png" if btype == "image" else "application/pdf"
+            if btype == "image" and data:
+                normalized = normalize_image_base64_for_model(
+                    data,
+                    media_type=media_type or default_media,
+                )
+                data = normalized.get("base64") or data
             blk = {
                 "type": btype,
                 "source": {
