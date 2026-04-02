@@ -28,6 +28,7 @@ import os
 import pathlib
 import signal
 import importlib
+import sys
 import time
 from typing import Any, Dict, List, Optional
 
@@ -381,7 +382,7 @@ def _bootstrap_supervisor_runtime(
             module_name = alias_to_module[alias]
             logger.log(f"[supervisor.bootstrap] resolving {alias} from library module {module_name}", "INFO")
             try:
-                spec_obj = _importlib_util.find_spec(module_name)
+                spec_obj = importlib.util.find_spec(module_name)
                 if spec_obj and spec_obj.origin:
                     path = spec_obj.origin
                     logger.log(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import os
 import tempfile
@@ -32,8 +33,11 @@ from .orchestrator.workflow import VersatileWorkflow
 from .preferences_store import (
     build_preferences_storage,
     build_preferences_canvas_document,
+    export_preferences_canvas_xlsx,
     get_preferences_snapshot,
+    import_preferences_canvas_xlsx,
     build_widget_payload,
+    save_preferences_canvas_entries,
     save_preferences_canvas_document,
 )
 
@@ -233,7 +237,8 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
                 "error": "Bundle storage backend is not configured for this bundle.",
                 "user_id": target_user,
                 "path": None,
-                "document_format": "json",
+                "document_format": "entries",
+                "entries": [],
                 "document_text": "{}\n",
                 "changed_keys": [],
                 "removed_keys": [],
@@ -249,6 +254,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
         user_id: Optional[str] = None,
         fingerprint: Optional[str] = None,
         document_text: Optional[str] = None,
+        entries: Optional[list[dict[str, Any]]] = None,
         content: Optional[str] = None,
         text: Optional[str] = None,
         **kwargs,
@@ -262,27 +268,112 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
                 "user_id": target_user,
             }
 
-        raw_document = document_text
-        if raw_document is None:
-            raw_document = content
-        if raw_document is None:
-            raw_document = text
-        if raw_document is None and "document" in kwargs:
-            raw_document = kwargs.get("document")
-        if raw_document is None:
+        try:
+            if entries is not None:
+                payload = save_preferences_canvas_entries(
+                    storage=storage,
+                    user_id=target_user,
+                    entries=entries,
+                )
+            else:
+                raw_document = document_text
+                if raw_document is None:
+                    raw_document = content
+                if raw_document is None:
+                    raw_document = text
+                if raw_document is None and "document" in kwargs:
+                    raw_document = kwargs.get("document")
+                if raw_document is None:
+                    return {
+                        "ok": False,
+                        "error": "entries or document_text is required.",
+                        "user_id": target_user,
+                    }
+
+                payload = save_preferences_canvas_document(
+                    storage=storage,
+                    user_id=target_user,
+                    document_text=str(raw_document),
+                )
+        except ValueError as exc:
             return {
                 "ok": False,
-                "error": "document_text is required.",
+                "error": str(exc),
+                "user_id": target_user,
+            }
+
+        payload["ok"] = True
+        return payload
+
+    @api(alias="preferences_canvas_export_excel")
+    def preferences_canvas_export_excel(
+        self,
+        user_id: Optional[str] = None,
+        fingerprint: Optional[str] = None,
+        filename: Optional[str] = None,
+        **kwargs,
+    ):
+        storage = self._preferences_storage()
+        target_user = user_id or fingerprint or getattr(self.comm, "user_id", None) or "anonymous"
+        if not storage:
+            return {
+                "ok": False,
+                "error": "Bundle storage backend is not configured for this bundle.",
                 "user_id": target_user,
             }
 
         try:
-            payload = save_preferences_canvas_document(
+            raw = export_preferences_canvas_xlsx(storage=storage, user_id=target_user)
+        except RuntimeError as exc:
+            return {
+                "ok": False,
+                "error": str(exc),
+                "user_id": target_user,
+            }
+
+        safe_name = Path(filename or f"{target_user}-preferences.xlsx").name or "preferences.xlsx"
+        return {
+            "ok": True,
+            "user_id": target_user,
+            "filename": safe_name,
+            "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "content_b64": base64.b64encode(raw).decode("ascii"),
+        }
+
+    @api(alias="preferences_canvas_import_excel")
+    def preferences_canvas_import_excel(
+        self,
+        user_id: Optional[str] = None,
+        fingerprint: Optional[str] = None,
+        content_b64: Optional[str] = None,
+        **kwargs,
+    ):
+        storage = self._preferences_storage()
+        target_user = user_id or fingerprint or getattr(self.comm, "user_id", None) or "anonymous"
+        if not storage:
+            return {
+                "ok": False,
+                "error": "Bundle storage backend is not configured for this bundle.",
+                "user_id": target_user,
+            }
+
+        raw_content = content_b64 or kwargs.get("file_b64") or kwargs.get("content")
+        if not raw_content:
+            return {
+                "ok": False,
+                "error": "content_b64 is required.",
+                "user_id": target_user,
+            }
+
+        try:
+            binary = base64.b64decode(str(raw_content), validate=True)
+            entries = import_preferences_canvas_xlsx(binary)
+            payload = save_preferences_canvas_entries(
                 storage=storage,
                 user_id=target_user,
-                document_text=str(raw_document),
+                entries=entries,
             )
-        except ValueError as exc:
+        except (ValueError, RuntimeError) as exc:
             return {
                 "ok": False,
                 "error": str(exc),

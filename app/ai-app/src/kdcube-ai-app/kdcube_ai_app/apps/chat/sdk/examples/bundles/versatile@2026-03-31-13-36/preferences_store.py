@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import re
 from datetime import datetime, timezone
@@ -77,6 +78,16 @@ def _load_json(storage: AIBundleStorage, key: str, default: Any) -> Any:
         return _load_json_text(str(storage.read(key, as_text=True)), default)
     except Exception:
         return default
+
+
+def _openpyxl_exports():
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill
+        from openpyxl import load_workbook
+    except Exception as exc:
+        raise RuntimeError(f"Excel support is unavailable: {exc}") from exc
+    return openpyxl, load_workbook, Font, PatternFill
 
 
 def _write_current_preferences(
@@ -243,6 +254,75 @@ def _public_event_view(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return out
 
 
+def _canvas_author(*, origin: Any = None, source: Any = None) -> str:
+    origin_text = str(origin or "").strip().lower()
+    source_text = str(source or "").strip().lower()
+    if origin_text.startswith("user") or source_text in {"preferences_canvas", "user", "manual_user"}:
+        return "user"
+    return "assistant"
+
+
+def _value_to_canvas_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def _parse_canvas_text_value(text: Any, previous_value: Any = None) -> Any:
+    raw = str(text or "")
+    if previous_value is not None and raw == _value_to_canvas_text(previous_value):
+        return previous_value
+    candidate = raw.strip()
+    if not candidate:
+        return ""
+    if candidate[0] in "[{\"" or candidate in {"true", "false", "null"}:
+        try:
+            return json.loads(candidate)
+        except Exception:
+            return raw
+    if re.fullmatch(r"-?\d+", candidate):
+        try:
+            return int(candidate)
+        except Exception:
+            return raw
+    if re.fullmatch(r"-?\d+\.\d+", candidate):
+        try:
+            return float(candidate)
+        except Exception:
+            return raw
+    return raw
+
+
+def build_preferences_canvas_entries(
+    storage: AIBundleStorage,
+    user_id: str | None,
+) -> List[Dict[str, Any]]:
+    current = get_preferences_snapshot(storage, user_id)["current"]
+    entries: List[Dict[str, Any]] = []
+    for key, item in current.items():
+        entries.append(
+            {
+                "key": key,
+                "label": key,
+                "text": _value_to_canvas_text(item.get("value")),
+                "updated_at": item.get("updated_at"),
+                "author": _canvas_author(origin=item.get("origin"), source=item.get("source")),
+                "origin": item.get("origin"),
+                "source": item.get("source"),
+                "evidence": item.get("evidence", ""),
+                "raw_value": item.get("value"),
+            }
+        )
+    entries.sort(key=lambda item: (str(item.get("updated_at") or ""), str(item.get("label") or "")))
+    return entries
+
+
 def get_preferences_snapshot(
     storage: AIBundleStorage,
     user_id: str | None,
@@ -269,7 +349,8 @@ def build_preferences_canvas_document(
     return {
         "user_id": user_id or "anonymous",
         "path": key,
-        "document_format": "json",
+        "document_format": "entries",
+        "entries": build_preferences_canvas_entries(storage, user_id),
         "document_text": json.dumps(
             current,
             indent=2,
@@ -324,6 +405,90 @@ def _normalize_canvas_entry(
         "origin": "user_canvas",
         "evidence": "Saved from collaborative preferences canvas",
     }
+
+
+def export_preferences_canvas_xlsx(
+    storage: AIBundleStorage,
+    user_id: str | None,
+) -> bytes:
+    openpyxl, _load_workbook, Font, PatternFill = _openpyxl_exports()
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Preferences"
+
+    header = ["label", "text", "updated_at", "author", "source", "origin", "evidence"]
+    ws.append(header)
+    for cell in ws[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill(start_color="506a5d", end_color="506a5d", fill_type="solid")
+
+    for entry in build_preferences_canvas_entries(storage, user_id):
+        ws.append([
+            entry.get("label") or "",
+            entry.get("text") or "",
+            entry.get("updated_at") or "",
+            entry.get("author") or "",
+            entry.get("source") or "",
+            entry.get("origin") or "",
+            entry.get("evidence") or "",
+        ])
+
+    ws.column_dimensions["A"].width = 24
+    ws.column_dimensions["B"].width = 48
+    ws.column_dimensions["C"].width = 24
+    ws.column_dimensions["D"].width = 12
+    ws.column_dimensions["E"].width = 20
+    ws.column_dimensions["F"].width = 20
+    ws.column_dimensions["G"].width = 36
+
+    out = io.BytesIO()
+    wb.save(out)
+    return out.getvalue()
+
+
+def import_preferences_canvas_xlsx(data: bytes) -> List[Dict[str, Any]]:
+    _openpyxl, load_workbook, _Font, _PatternFill = _openpyxl_exports()
+    wb = load_workbook(io.BytesIO(data), data_only=True)
+    ws = wb["Preferences"] if "Preferences" in wb.sheetnames else wb.active
+
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        return []
+
+    header = [str(cell or "").strip().lower() for cell in rows[0]]
+    index_by_name = {name: idx for idx, name in enumerate(header) if name}
+    label_idx = index_by_name.get("label")
+    text_idx = index_by_name.get("text")
+    if label_idx is None and index_by_name.get("key") is None:
+        raise ValueError("Excel import requires a label column.")
+    if text_idx is None:
+        raise ValueError("Excel import requires a text column.")
+
+    entries: List[Dict[str, Any]] = []
+    for row in rows[1:]:
+        label_value = row[label_idx] if label_idx is not None and label_idx < len(row) else None
+        if label_value is None and "key" in index_by_name:
+            key_idx = index_by_name["key"]
+            label_value = row[key_idx] if key_idx < len(row) else None
+        text_value = row[text_idx] if text_idx < len(row) else None
+        label = str(label_value or "").strip()
+        text = str(text_value or "").strip()
+        if not label and not text:
+            continue
+        if not label or not text:
+            raise ValueError("Each imported Excel row must contain both label and text.")
+        evidence_idx = index_by_name.get("evidence")
+        evidence = ""
+        if evidence_idx is not None and evidence_idx < len(row):
+            evidence = str(row[evidence_idx] or "").strip()
+        entries.append(
+            {
+                "label": label,
+                "text": text,
+                "evidence": evidence or "Imported from Excel notebook",
+            }
+        )
+    return entries
 
 
 def save_preferences_canvas_document(
@@ -386,6 +551,113 @@ def save_preferences_canvas_document(
                 source="preferences_canvas",
                 origin="user_canvas_remove",
                 evidence="Removed from collaborative preferences canvas",
+                captured_at=updated_at,
+            )
+        )
+
+    _write_current_preferences(storage, user_id, normalized)
+    _write_preference_events(storage, user_id, events)
+
+    document = build_preferences_canvas_document(storage, user_id)
+    document.update(
+        {
+            "changed_keys": changed_keys,
+            "removed_keys": removed_keys,
+        }
+    )
+    return document
+
+
+def save_preferences_canvas_entries(
+    storage: AIBundleStorage,
+    user_id: str | None,
+    *,
+    entries: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    if not isinstance(entries, list):
+        raise ValueError("entries must be a list.")
+
+    current = _public_current_view(load_current_preferences(storage, user_id))
+    updated_at = _utc_now()
+    normalized: Dict[str, Dict[str, Any]] = {}
+    changed_keys: List[str] = []
+    removed_keys: List[str] = []
+    seen_keys: set[str] = set()
+
+    for raw_entry in entries:
+        if not isinstance(raw_entry, dict):
+            raise ValueError("Each canvas entry must be an object.")
+        key = _canonical_preference_key(raw_entry.get("label") or raw_entry.get("key"))
+        if not key:
+            continue
+        if key in seen_keys:
+            raise ValueError(f"Duplicate preference label is not allowed: {key}")
+        seen_keys.add(key)
+
+        previous_key = _canonical_preference_key(raw_entry.get("key"))
+        previous = current.get(previous_key) if previous_key else None
+        if previous is None:
+            previous = current.get(key)
+
+        text = str(raw_entry.get("text") or "")
+        value = _parse_canvas_text_value(text, previous.get("value") if previous else None)
+        evidence = (
+            str(raw_entry.get("evidence") or "").strip()
+            or "Edited in collaborative preferences notebook"
+        )
+
+        unchanged = (
+            previous_key == key
+            and isinstance(previous, dict)
+            and text == _value_to_canvas_text(previous.get("value"))
+        )
+        if unchanged:
+            normalized[key] = {
+                "value": previous.get("value"),
+                "updated_at": previous.get("updated_at") or updated_at,
+                "source": previous.get("source") or "preferences_canvas",
+                "origin": previous.get("origin") or "user",
+                "evidence": previous.get("evidence", ""),
+            }
+        else:
+            normalized[key] = {
+                "value": value,
+                "updated_at": updated_at,
+                "source": "preferences_canvas",
+                "origin": "user",
+                "evidence": evidence,
+            }
+            changed_keys.append(key)
+
+        if previous_key and previous_key != key and previous_key not in removed_keys:
+            removed_keys.append(previous_key)
+
+    for key in current.keys():
+        if key not in normalized and key not in removed_keys:
+            removed_keys.append(str(key))
+
+    events = load_preference_events(storage, user_id)
+    for key in changed_keys:
+        entry = normalized[key]
+        events.append(
+            _build_preference_event(
+                key=key,
+                value=entry.get("value"),
+                source="preferences_canvas",
+                origin="user",
+                evidence=entry.get("evidence") or "Edited in collaborative preferences notebook",
+                captured_at=updated_at,
+            )
+        )
+
+    for key in removed_keys:
+        events.append(
+            _build_preference_event(
+                key=key,
+                value=None,
+                source="preferences_canvas",
+                origin="user_remove",
+                evidence="Removed from collaborative preferences notebook",
                 captured_at=updated_at,
             )
         )

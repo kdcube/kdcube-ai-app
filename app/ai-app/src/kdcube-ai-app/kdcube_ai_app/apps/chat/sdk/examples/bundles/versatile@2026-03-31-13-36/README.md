@@ -50,9 +50,21 @@ These bundle-storage keys stay readable for humans:
 - `current.json` is the latest materialized view
 - `events.jsonl` is the append-only observation history
 
-The widget also exposes `current.json` as a simplified collaborative JSON canvas.
-Users edit plain key/value JSON in the browser, and the bundle normalizes it back
-into the structured stored form used by the agent tools.
+The widget also exposes `current.json` as a simplified collaborative notebook.
+Each preference is rendered as one editable line with:
+
+- read-only timestamp
+- author badge (`user` or `assistant`)
+- editable label
+- editable text
+
+When a user edits a line, the bundle rewrites it as a fresh user-authored entry
+with a new timestamp and appends the corresponding history events in
+`events.jsonl`.
+
+The same notebook can also be exported to Excel and imported back from Excel.
+The spreadsheet uses one row per preference line with columns like label, text,
+timestamp, author, source, origin, and evidence.
 
 ## Bundle props and secrets
 
@@ -177,12 +189,18 @@ This bundle exposes four entrypoint operations:
   - returns the current widget payload as JSON for the authenticated iframe client
   - is called by the widget through the integrations operations API
 - `preferences_canvas_data`
-  - returns the collaborative preferences document as editable JSON text
-  - exposes the bundle-storage key for the current user's `current.json`
+  - returns the collaborative preferences notebook entries for the current user
+  - still exposes the bundle-storage key for the underlying `current.json`
 - `preferences_canvas_save`
-  - accepts edited JSON text from the widget
-  - normalizes the document back into the structured `current.json` store
+  - accepts edited notebook entries from the widget
+  - rewrites them back into the structured `current.json` store
   - appends change/remove events so the history remains visible to the bundle
+- `preferences_canvas_export_excel`
+  - exports the current notebook as an `.xlsx` workbook
+  - returns a browser-downloadable payload for the widget
+- `preferences_canvas_import_excel`
+  - accepts an uploaded `.xlsx` workbook from the widget
+  - imports notebook rows and rewrites them as fresh user-authored entries
 - `preferences_exec_report`
   - runs a tiny report job through the isolated exec runtime
   - writes a markdown report artifact from shared bundle preference content
@@ -213,6 +231,8 @@ The widget uses the platform iframe config handshake and then calls:
 - `POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/preferences_widget_data`
 - `POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/preferences_canvas_data`
 - `POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/preferences_canvas_save`
+- `POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/preferences_canvas_export_excel`
+- `POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/preferences_canvas_import_excel`
 - `POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/preferences_exec_report`
 
 Important request shape:
@@ -231,9 +251,12 @@ The integrations endpoint forwards `data` as keyword arguments to the bundle
 method. In this bundle:
 - `preferences_widget_data(...)` uses the per-request `self.comm` context and
   ignores extra params
-- `preferences_canvas_data(...)` loads the current collaborative JSON document
-- `preferences_canvas_save(document_text=...)` saves the edited collaborative
-  JSON document back into the structured preference store
+- `preferences_canvas_data(...)` loads the current collaborative notebook lines
+- `preferences_canvas_save(entries=...)` saves the edited notebook lines back
+  into the structured preference store
+- `preferences_canvas_export_excel(...)` returns a base64 `.xlsx` payload for download
+- `preferences_canvas_import_excel(content_b64=...)` imports uploaded `.xlsx` rows
+  and rewrites them into the notebook
 - `preferences_exec_report(recency=..., kwords=...)` consumes forwarded values
   and falls back to defaults when they are absent
 

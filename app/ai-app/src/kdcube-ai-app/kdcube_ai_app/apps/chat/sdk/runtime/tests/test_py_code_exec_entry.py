@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 import json
+import types
 import pathlib
 import sys
 
 from kdcube_ai_app.apps.chat.sdk.runtime.isolated.py_code_exec_entry import (
+    _bootstrap_supervisor_runtime,
     _ensure_dynamic_package_chain,
     _hydrate_runtime_payload_from_secret,
 )
@@ -76,3 +78,59 @@ def test_ensure_dynamic_package_chain_creates_parent_packages(tmp_path):
     assert tools_name in sys.modules
     assert pathlib.Path(sys.modules[root_name].__path__[0]).resolve() == bundle_root.resolve()  # type: ignore[attr-defined]
     assert pathlib.Path(sys.modules[tools_name].__path__[0]).resolve() == tools_dir.resolve()  # type: ignore[attr-defined]
+
+
+def test_bootstrap_supervisor_runtime_resolves_library_module_specs_without_explicit_paths(
+    tmp_path,
+    monkeypatch,
+):
+    logger = _CaptureLogger()
+    loaded: list[tuple[str, str]] = []
+    bootstrapped: dict[str, object] = {}
+
+    def _fake_loader(module_name: str, file_path: str):
+        mod = types.ModuleType(module_name)
+        mod.__file__ = file_path
+        sys.modules[module_name] = mod
+        loaded.append((module_name, file_path))
+        return mod
+
+    monkeypatch.setattr(
+        "kdcube_ai_app.apps.chat.sdk.runtime.isolated.py_code_exec_entry.load_dynamic_module_from_file",
+        _fake_loader,
+    )
+    monkeypatch.setattr(
+        "kdcube_ai_app.apps.chat.sdk.runtime.isolated.py_code_exec_entry.bootstrap_bind_all",
+        lambda ps_str, module_names, bootstrap_env=False: bootstrapped.update(
+            {
+                "ps_str": ps_str,
+                "module_names": list(module_names),
+                "bootstrap_env": bootstrap_env,
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        "kdcube_ai_app.apps.chat.sdk.runtime.isolated.py_code_exec_entry.get_comm",
+        lambda: None,
+    )
+
+    runtime_globals = {
+        "PORTABLE_SPEC_JSON": "{\"ok\": true}",
+        "TOOL_ALIAS_MAP": {"io_tools": "dyn_io_tools_test"},
+        "TOOL_MODULE_FILES": {},
+        "RAW_TOOL_SPECS": [
+            {
+                "alias": "io_tools",
+                "module": "kdcube_ai_app.apps.chat.sdk.tools.io_tools",
+            }
+        ],
+    }
+
+    _bootstrap_supervisor_runtime(runtime_globals, [], logger, tmp_path)
+
+    assert loaded
+    assert loaded[0][0] == "dyn_io_tools_test"
+    assert loaded[0][1].endswith("/kdcube_ai_app/apps/chat/sdk/tools/io_tools.py")
+    assert bootstrapped["ps_str"] == "{\"ok\": true}"
+    assert "dyn_io_tools_test" in bootstrapped["module_names"]
+    assert any("resolved library module: io_tools" in msg for _, msg in logger.messages)
