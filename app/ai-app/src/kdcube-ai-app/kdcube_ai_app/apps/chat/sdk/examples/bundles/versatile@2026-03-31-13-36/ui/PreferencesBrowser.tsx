@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 interface AppSettings {
     baseUrl: string;
@@ -10,51 +10,22 @@ interface AppSettings {
     defaultAppBundleId: string;
 }
 
-interface PreferenceValue {
-    value?: unknown;
-    updated_at?: string;
-    source?: string;
-    origin?: string;
-    evidence?: string;
-}
-
-interface PreferenceEvent {
-    captured_at?: string;
-    key?: string;
-    value?: unknown;
-    source?: string;
-    origin?: string;
-    evidence?: string;
-}
-
 interface WidgetPayload {
     ok?: boolean;
     error?: string;
     user_id?: string;
-    current?: Record<string, PreferenceValue>;
-    recent?: PreferenceEvent[];
-    matched_count?: number;
 }
 
-interface ExecArtifact {
-    path?: string;
-    mime?: string;
-    size_bytes?: number;
-}
-
-interface ExecReportPayload {
-    ok?: boolean;
-    error?: unknown;
-    report_text?: string;
-    items?: ExecArtifact[];
-    out_dyn?: Record<string, unknown>;
-    recency?: number;
-    keywords?: string;
-}
-
-interface ExecReportOptions {
-    recency: number;
-    kwords: string;
+interface CanvasEntry {
+    key?: string;
+    label?: string;
+    text?: string;
+    updated_at?: string | null;
+    author?: string;
+    origin?: string;
+    source?: string;
+    evidence?: string;
+    raw_value?: unknown;
 }
 
 interface PreferencesCanvasPayload {
@@ -64,9 +35,41 @@ interface PreferencesCanvasPayload {
     path?: string | null;
     document_format?: string;
     document_text?: string;
+    entries?: CanvasEntry[];
     last_modified?: number | string | null;
     changed_keys?: string[];
     removed_keys?: string[];
+}
+
+interface ExecArtifact {
+    path?: string;
+    mime?: string;
+    size_bytes?: number;
+}
+
+interface ExecOutputFile {
+    type?: string;
+    path?: string;
+    filename?: string;
+    mime?: string;
+    text?: string;
+}
+
+interface ExecReportPayload {
+    ok?: boolean;
+    error?: unknown;
+    report_text?: string;
+    items?: ExecArtifact[];
+    out_dyn?: Record<string, ExecOutputFile | unknown>;
+}
+
+interface ExcelExportPayload {
+    ok?: boolean;
+    error?: string;
+    user_id?: string;
+    filename?: string;
+    mime?: string;
+    content_b64?: string;
 }
 
 const INITIAL_DATA: WidgetPayload = __PREFERENCES_JSON__;
@@ -244,15 +247,18 @@ function makeAuthHeaders(base?: HeadersInit): Headers {
     return headers;
 }
 
-function normalizePayload(payload: WidgetPayload | null | undefined): WidgetPayload {
-    return {
-        ok: payload?.ok ?? true,
-        error: payload?.error,
-        user_id: payload?.user_id ?? INITIAL_DATA.user_id ?? 'anonymous',
-        current: payload?.current ?? INITIAL_DATA.current ?? {},
-        recent: payload?.recent ?? INITIAL_DATA.recent ?? [],
-        matched_count: payload?.matched_count ?? INITIAL_DATA.matched_count ?? 0,
-    };
+function normalizeCanvasEntries(entries: CanvasEntry[] | null | undefined): CanvasEntry[] {
+    return (entries || []).map((entry) => ({
+        key: String(entry?.key || entry?.label || ''),
+        label: String(entry?.label || entry?.key || ''),
+        text: String(entry?.text || ''),
+        updated_at: entry?.updated_at ?? null,
+        author: entry?.author || 'assistant',
+        origin: entry?.origin || '',
+        source: entry?.source || '',
+        evidence: entry?.evidence || '',
+        raw_value: entry?.raw_value,
+    }));
 }
 
 function normalizeCanvasPayload(payload: PreferencesCanvasPayload | null | undefined): PreferencesCanvasPayload {
@@ -261,15 +267,16 @@ function normalizeCanvasPayload(payload: PreferencesCanvasPayload | null | undef
         error: payload?.error,
         user_id: payload?.user_id ?? INITIAL_DATA.user_id ?? 'anonymous',
         path: payload?.path ?? null,
-        document_format: payload?.document_format ?? 'json',
+        document_format: payload?.document_format ?? 'entries',
         document_text: payload?.document_text ?? '{}\n',
+        entries: normalizeCanvasEntries(payload?.entries),
         last_modified: payload?.last_modified ?? null,
         changed_keys: payload?.changed_keys ?? [],
         removed_keys: payload?.removed_keys ?? [],
     };
 }
 
-async function fetchPreferencesPayload(): Promise<WidgetPayload> {
+async function postBundleOperation<T>(operation: string, data: Record<string, unknown> = {}): Promise<T> {
     const tenant = settings.getTenant();
     const project = settings.getProject();
     const bundleId = settings.getBundleId();
@@ -277,12 +284,12 @@ async function fetchPreferencesPayload(): Promise<WidgetPayload> {
         throw new Error('Widget configuration is incomplete: tenant/project are not available.');
     }
 
-    const url = `${settings.getBaseUrl()}/api/integrations/bundles/${tenant}/${project}/${bundleId}/operations/preferences_widget_data`;
+    const url = `${settings.getBaseUrl()}/api/integrations/bundles/${tenant}/${project}/${bundleId}/operations/${operation}`;
     const response = await fetch(url, {
         method: 'POST',
         credentials: 'include',
         headers: makeAuthHeaders({ 'Content-Type': 'application/json' }),
-        body: '{}',
+        body: JSON.stringify({ data }),
     });
 
     if (!response.ok) {
@@ -291,115 +298,165 @@ async function fetchPreferencesPayload(): Promise<WidgetPayload> {
     }
 
     const json = await response.json();
-    return normalizePayload(json.preferences_widget_data ?? json);
+    return (json[operation] ?? json) as T;
 }
 
 async function fetchPreferencesCanvas(): Promise<PreferencesCanvasPayload> {
-    const tenant = settings.getTenant();
-    const project = settings.getProject();
-    const bundleId = settings.getBundleId();
-    if (!tenant || !project) {
-        throw new Error('Widget configuration is incomplete: tenant/project are not available.');
-    }
-
-    const url = `${settings.getBaseUrl()}/api/integrations/bundles/${tenant}/${project}/${bundleId}/operations/preferences_canvas_data`;
-    const response = await fetch(url, {
-        method: 'POST',
-        credentials: 'include',
-        headers: makeAuthHeaders({ 'Content-Type': 'application/json' }),
-        body: '{}',
-    });
-
-    if (!response.ok) {
-        const detail = await response.text().catch(() => response.statusText);
-        throw new Error(`${response.status}: ${detail}`);
-    }
-
-    const json = await response.json();
-    return normalizeCanvasPayload(json.preferences_canvas_data ?? json);
+    const payload = await postBundleOperation<PreferencesCanvasPayload>('preferences_canvas_data');
+    return normalizeCanvasPayload(payload);
 }
 
-async function savePreferencesCanvas(documentText: string): Promise<PreferencesCanvasPayload> {
-    const tenant = settings.getTenant();
-    const project = settings.getProject();
-    const bundleId = settings.getBundleId();
-    if (!tenant || !project) {
-        throw new Error('Widget configuration is incomplete: tenant/project are not available.');
-    }
-
-    const url = `${settings.getBaseUrl()}/api/integrations/bundles/${tenant}/${project}/${bundleId}/operations/preferences_canvas_save`;
-    const response = await fetch(url, {
-        method: 'POST',
-        credentials: 'include',
-        headers: makeAuthHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({
-            data: {
-                document_text: documentText,
-            },
-        }),
-    });
-
-    if (!response.ok) {
-        const detail = await response.text().catch(() => response.statusText);
-        throw new Error(`${response.status}: ${detail}`);
-    }
-
-    const json = await response.json();
-    return normalizeCanvasPayload(json.preferences_canvas_save ?? json);
+async function savePreferencesCanvas(entries: CanvasEntry[]): Promise<PreferencesCanvasPayload> {
+    const payload = await postBundleOperation<PreferencesCanvasPayload>('preferences_canvas_save', { entries });
+    return normalizeCanvasPayload(payload);
 }
 
-async function fetchPreferencesExecReport(reportOptions: ExecReportOptions): Promise<ExecReportPayload> {
-    const tenant = settings.getTenant();
-    const project = settings.getProject();
-    const bundleId = settings.getBundleId();
-    if (!tenant || !project) {
-        throw new Error('Widget configuration is incomplete: tenant/project are not available.');
-    }
-
-    const url = `${settings.getBaseUrl()}/api/integrations/bundles/${tenant}/${project}/${bundleId}/operations/preferences_exec_report`;
-    const response = await fetch(url, {
-        method: 'POST',
-        credentials: 'include',
-        headers: makeAuthHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({
-            data: {
-                recency: reportOptions.recency,
-                kwords: reportOptions.kwords,
-            },
-        }),
+async function fetchPreferencesExecReport(): Promise<ExecReportPayload> {
+    return await postBundleOperation<ExecReportPayload>('preferences_exec_report', {
+        recency: 10,
+        kwords: '',
     });
+}
 
-    if (!response.ok) {
-        const detail = await response.text().catch(() => response.statusText);
-        throw new Error(`${response.status}: ${detail}`);
+async function exportPreferencesExcel(): Promise<ExcelExportPayload> {
+    return await postBundleOperation<ExcelExportPayload>('preferences_canvas_export_excel');
+}
+
+async function importPreferencesExcel(contentB64: string): Promise<PreferencesCanvasPayload> {
+    const payload = await postBundleOperation<PreferencesCanvasPayload>('preferences_canvas_import_excel', {
+        content_b64: contentB64,
+    });
+    return normalizeCanvasPayload(payload);
+}
+
+function formatStamp(value: string | null | undefined): string {
+    if (!value) {
+        return 'time unknown';
     }
+    try {
+        return new Date(value).toLocaleString();
+    } catch {
+        return String(value);
+    }
+}
 
-    const json = await response.json();
-    return (json.preferences_exec_report ?? json) as ExecReportPayload;
+function tinyActionStyle(danger = false): Record<string, string | number> {
+    return {
+        border: 'none',
+        background: 'transparent',
+        padding: 0,
+        cursor: 'pointer',
+        color: danger ? '#a13e35' : '#385447',
+        fontSize: '12px',
+        lineHeight: 1.1,
+    };
+}
+
+function pillStyle(kind: 'stamp' | 'label' | 'user' | 'assistant'): Record<string, string | number> {
+    if (kind === 'label') {
+        return {
+            background: '#efe6d3',
+            color: '#624d1f',
+        };
+    }
+    if (kind === 'user') {
+        return {
+            background: '#ddeee0',
+            color: '#214428',
+        };
+    }
+    if (kind === 'assistant') {
+        return {
+            background: '#ebe6fb',
+            color: '#4c4275',
+        };
+    }
+    return {
+        background: '#f4efe5',
+        color: '#675a46',
+    };
+}
+
+function entryKey(entry: CanvasEntry, index: number): string {
+    return `${entry.key || entry.label || 'entry'}-${index}`;
+}
+
+function decodeBase64ToBlob(contentB64: string, mime: string): Blob {
+    const bytes = atob(contentB64);
+    const data = new Uint8Array(bytes.length);
+    for (let index = 0; index < bytes.length; index += 1) {
+        data[index] = bytes.charCodeAt(index);
+    }
+    return new Blob([data], { type: mime });
+}
+
+function downloadBlob(blob: Blob, filename: string): void {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+}
+
+function findExecReportFile(payload: ExecReportPayload): ExecOutputFile | null {
+    const values = Object.values(payload.out_dyn || {});
+    for (const value of values) {
+        if (!value || typeof value !== 'object') {
+            continue;
+        }
+        const candidate = value as ExecOutputFile;
+        if ((candidate.type || '') !== 'file') {
+            continue;
+        }
+        if (typeof candidate.text !== 'string' || !candidate.text) {
+            continue;
+        }
+        return candidate;
+    }
+    return null;
+}
+
+async function fileToBase64(file: File): Promise<string> {
+    const buffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let index = 0; index < bytes.length; index += 1) {
+        binary += String.fromCharCode(bytes[index]);
+    }
+    return btoa(binary);
 }
 
 function PreferencesBrowser() {
+    const importInputRef = useRef<HTMLInputElement | null>(null);
     const [ready, setReady] = useState(false);
-    const [query, setQuery] = useState('');
-    const [data, setData] = useState<WidgetPayload>(() => normalizePayload(INITIAL_DATA));
-    const [canvas, setCanvas] = useState<PreferencesCanvasPayload | null>(null);
-    const [canvasText, setCanvasText] = useState('{\n}\n');
-    const [canvasLoading, setCanvasLoading] = useState(false);
-    const [canvasSaving, setCanvasSaving] = useState(false);
-    const [canvasSavedAt, setCanvasSavedAt] = useState<string | null>(null);
+    const [canvas, setCanvas] = useState<PreferencesCanvasPayload>(() => normalizeCanvasPayload({
+        user_id: INITIAL_DATA.user_id,
+        entries: [],
+    }));
+    const [entries, setEntries] = useState<CanvasEntry[]>([]);
     const [loading, setLoading] = useState(false);
+    const [saving, setSaving] = useState(false);
     const [reportLoading, setReportLoading] = useState(false);
+    const [excelBusy, setExcelBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [lastSync, setLastSync] = useState<string | null>(null);
+    const [editingIndex, setEditingIndex] = useState<number | null>(null);
+    const [draftLabel, setDraftLabel] = useState('');
+    const [draftText, setDraftText] = useState('');
+    const [newLabel, setNewLabel] = useState('');
+    const [newText, setNewText] = useState('');
     const [report, setReport] = useState<ExecReportPayload | null>(null);
-    const [reportRecency, setReportRecency] = useState('10');
 
-    async function refreshPreferences() {
+    async function loadCanvas() {
         setLoading(true);
         setError(null);
         try {
-            const payload = await fetchPreferencesPayload();
-            setData(payload);
+            const payload = await fetchPreferencesCanvas();
+            setCanvas(payload);
+            setEntries(normalizeCanvasEntries(payload.entries));
             setLastSync(new Date().toISOString());
         } catch (err) {
             setError(err instanceof Error ? err.message : String(err));
@@ -408,33 +465,78 @@ function PreferencesBrowser() {
         }
     }
 
-    async function loadCanvas() {
-        setCanvasLoading(true);
+    async function persistEntries(nextEntries: CanvasEntry[]): Promise<boolean> {
+        setSaving(true);
         setError(null);
         try {
-            const payload = await fetchPreferencesCanvas();
+            const payload = await savePreferencesCanvas(nextEntries);
             setCanvas(payload);
-            setCanvasText(payload.document_text || '{}\n');
+            setEntries(normalizeCanvasEntries(payload.entries));
+            setEditingIndex(null);
+            setDraftLabel('');
+            setDraftText('');
+            setLastSync(new Date().toISOString());
+            return true;
         } catch (err) {
             setError(err instanceof Error ? err.message : String(err));
+            return false;
         } finally {
-            setCanvasLoading(false);
+            setSaving(false);
         }
     }
 
-    async function saveCanvas() {
-        setCanvasSaving(true);
+    function beginEdit(index: number) {
+        const entry = entries[index];
+        setEditingIndex(index);
+        setDraftLabel(String(entry?.label || ''));
+        setDraftText(String(entry?.text || ''));
         setError(null);
-        try {
-            const payload = await savePreferencesCanvas(canvasText);
-            setCanvas(payload);
-            setCanvasText(payload.document_text || canvasText);
-            setCanvasSavedAt(new Date().toISOString());
-            await refreshPreferences();
-        } catch (err) {
-            setError(err instanceof Error ? err.message : String(err));
-        } finally {
-            setCanvasSaving(false);
+    }
+
+    async function applyEdit(index: number) {
+        const label = draftLabel.trim();
+        const text = draftText.trim();
+        if (!label || !text) {
+            setError('Both label and text are required.');
+            return;
+        }
+        const nextEntries = entries.map((entry, currentIndex) => (
+            currentIndex === index
+                ? {
+                    ...entry,
+                    label,
+                    text,
+                    author: 'user',
+                }
+                : entry
+        ));
+        await persistEntries(nextEntries);
+    }
+
+    async function removeEntry(index: number) {
+        await persistEntries(entries.filter((_, currentIndex) => currentIndex !== index));
+    }
+
+    async function addEntry() {
+        const label = newLabel.trim();
+        const text = newText.trim();
+        if (!label || !text) {
+            setError('Both label and text are required.');
+            return;
+        }
+        const saved = await persistEntries(entries.concat([
+            {
+                key: '',
+                label,
+                text,
+                author: 'user',
+                origin: 'user',
+                source: 'preferences_canvas',
+            },
+        ]));
+        if (saved) {
+            setNewLabel('');
+            setNewText('');
         }
     }
 
@@ -442,11 +544,15 @@ function PreferencesBrowser() {
         setReportLoading(true);
         setError(null);
         try {
-            const payload = await fetchPreferencesExecReport({
-                recency: Math.max(1, Number.parseInt(reportRecency || '10', 10) || 10),
-                kwords: query.trim(),
-            });
+            const payload = await fetchPreferencesExecReport();
             setReport(payload);
+            const reportFile = findExecReportFile(payload);
+            if (reportFile) {
+                downloadBlob(
+                    new Blob([reportFile.text || ''], { type: reportFile.mime || 'text/markdown;charset=utf-8' }),
+                    reportFile.filename || 'preferences_exec_report.md',
+                );
+            }
         } catch (err) {
             setError(err instanceof Error ? err.message : String(err));
         } finally {
@@ -454,401 +560,413 @@ function PreferencesBrowser() {
         }
     }
 
+    async function downloadExcel() {
+        setExcelBusy(true);
+        setError(null);
+        try {
+            const payload = await exportPreferencesExcel();
+            if (!payload.ok || !payload.content_b64) {
+                throw new Error(payload.error || 'Excel export failed.');
+            }
+            const blob = decodeBase64ToBlob(
+                payload.content_b64,
+                payload.mime || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            );
+            downloadBlob(blob, payload.filename || 'preferences.xlsx');
+        } catch (err) {
+            setError(err instanceof Error ? err.message : String(err));
+        } finally {
+            setExcelBusy(false);
+        }
+    }
+
+    async function onImportFileSelected(event: React.ChangeEvent<HTMLInputElement>) {
+        const file = event.target.files?.[0];
+        if (!file) {
+            return;
+        }
+        setExcelBusy(true);
+        setError(null);
+        try {
+            const contentB64 = await fileToBase64(file);
+            const payload = await importPreferencesExcel(contentB64);
+            setCanvas(payload);
+            setEntries(normalizeCanvasEntries(payload.entries));
+            setEditingIndex(null);
+            setDraftLabel('');
+            setDraftText('');
+            setLastSync(new Date().toISOString());
+        } catch (err) {
+            setError(err instanceof Error ? err.message : String(err));
+        } finally {
+            event.target.value = '';
+            setExcelBusy(false);
+        }
+    }
+
     useEffect(() => {
         settings.setupParentListener().then(() => {
             setReady(true);
-            void Promise.all([refreshPreferences(), loadCanvas()]);
+            void loadCanvas();
         });
     }, []);
 
-    const currentEntries = useMemo(
-        () => Object.entries(data.current || {}),
-        [data.current],
-    );
-    const recent = data.recent || [];
-    const filterValue = query.trim().toLowerCase();
-
-    const visibleCurrent = useMemo(
-        () => currentEntries.filter(([key, value]) => {
-            const haystack = `${key} ${value?.value || ''}`.toLowerCase();
-            return !filterValue || haystack.includes(filterValue);
-        }),
-        [currentEntries, filterValue],
-    );
-
-    const visibleRecent = useMemo(
-        () => recent.filter((item) => {
-            const haystack = `${item.key || ''} ${item.value || ''} ${item.evidence || ''}`.toLowerCase();
-            return !filterValue || haystack.includes(filterValue);
-        }),
-        [recent, filterValue],
-    );
-    const canvasDirty = useMemo(
-        () => canvasText !== (canvas?.document_text || '{\n}\n'),
-        [canvas, canvasText],
-    );
-
     if (!ready) {
         return (
-            <div style={{ padding: '24px', fontFamily: 'ui-sans-serif, system-ui, sans-serif', color: '#53605a' }}>
-                Loading widget configuration…
+            <div style={{ padding: '24px', color: '#52605a', fontFamily: 'ui-sans-serif, system-ui, sans-serif' }}>
+                Loading widget configuration...
             </div>
         );
     }
 
+    const userId = canvas.user_id || INITIAL_DATA.user_id || 'anonymous';
+
     return (
-        <div style={{
-            fontFamily: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-            minHeight: "100vh",
-            margin: 0,
-            background: "linear-gradient(160deg, #f6f4ee 0%, #f3efe2 45%, #e8f0ed 100%)",
-            color: "#18231d",
-            padding: "24px",
-            boxSizing: "border-box",
-        }}>
-            <div style={{
-                maxWidth: "1100px",
-                margin: "0 auto",
-                display: "grid",
-                gap: "18px",
-            }}>
-                <section style={{
-                    background: "rgba(255,255,255,0.78)",
-                    border: "1px solid rgba(24,35,29,0.12)",
-                    borderRadius: "24px",
-                    padding: "24px",
-                    boxShadow: "0 24px 64px rgba(24,35,29,0.08)",
-                }}>
-                    <div style={{ display: "flex", gap: "12px", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
-                        <div>
-                            <div style={{ fontSize: "13px", textTransform: "uppercase", letterSpacing: "0.12em", opacity: 0.6 }}>
-                                Versatile Bundle Widget
-                            </div>
-                            <h1 style={{ margin: "8px 0 6px", fontSize: "32px", lineHeight: 1.1 }}>
-                                Preference Browser
-                            </h1>
-                            <p style={{ margin: 0, maxWidth: "720px", opacity: 0.8 }}>
-                                This widget refreshes bundle-backed preferences through the integrations operations API for
-                                <strong> {data.user_id}</strong>.
-                            </p>
-                            <p style={{ margin: "10px 0 0", fontSize: "13px", opacity: 0.68 }}>
-                                Operation: <code>POST /api/integrations/bundles/&lt;tenant&gt;/&lt;project&gt;/&lt;bundle_id&gt;/operations/preferences_widget_data</code>
-                            </p>
-                        </div>
-                        <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
-                            <input
-                                value={query}
-                                onChange={(event) => setQuery(event.target.value)}
-                                placeholder="Filter by key, value, or evidence"
-                                style={{
-                                    minWidth: "260px",
-                                    padding: "12px 16px",
-                                    borderRadius: "999px",
-                                    border: "1px solid rgba(24,35,29,0.18)",
-                                    outline: "none",
-                                    fontSize: "14px",
-                                    background: "rgba(255,255,255,0.92)",
-                                }}
-                            />
-                            <button
-                                type="button"
-                                onClick={refreshPreferences}
-                                disabled={loading}
-                                style={{
-                                    padding: "12px 18px",
-                                    borderRadius: "999px",
-                                    border: "none",
-                                    background: loading ? "#6d7f75" : "#18231d",
-                                    color: "#fff",
-                                    cursor: loading ? "default" : "pointer",
-                                    fontSize: "14px",
-                                }}
-                            >
-                                {loading ? 'Refreshing…' : 'Refresh'}
-                            </button>
-                            <input
-                                type="number"
-                                min="1"
-                                step="1"
-                                value={reportRecency}
-                                onChange={(event) => setReportRecency(event.target.value)}
-                                aria-label="Exec report recency"
-                                style={{
-                                    width: "100px",
-                                    padding: "12px 14px",
-                                    borderRadius: "999px",
-                                    border: "1px solid rgba(24,35,29,0.18)",
-                                    outline: "none",
-                                    fontSize: "14px",
-                                    background: "rgba(255,255,255,0.92)",
-                                }}
-                            />
-                            <button
-                                type="button"
-                                onClick={runExecReport}
-                                disabled={reportLoading}
-                                style={{
-                                    padding: "12px 18px",
-                                    borderRadius: "999px",
-                                    border: "1px solid rgba(24,35,29,0.14)",
-                                    background: reportLoading ? "#d9ded7" : "#f7faf7",
-                                    color: "#18231d",
-                                    cursor: reportLoading ? "default" : "pointer",
-                                    fontSize: "14px",
-                                }}
-                            >
-                                {reportLoading ? 'Running report…' : 'Run Exec Report'}
-                            </button>
-                        </div>
-                    </div>
-                    {lastSync ? (
-                        <div style={{ marginTop: "12px", fontSize: "12px", opacity: 0.62 }}>
-                            Last sync: {lastSync}
-                        </div>
-                    ) : null}
-                    {error ? (
-                        <div style={{
-                            marginTop: "14px",
-                            padding: "12px 14px",
-                            borderRadius: "16px",
-                            background: "rgba(140, 29, 48, 0.08)",
-                            border: "1px solid rgba(140, 29, 48, 0.14)",
-                            color: "#7a1730",
-                            fontSize: "14px",
-                        }}>
-                            {error}
-                        </div>
-                    ) : null}
-                </section>
-
-                {report ? (
-                    <section style={{
-                        background: "rgba(255,255,255,0.84)",
-                        border: "1px solid rgba(24,35,29,0.12)",
-                        borderRadius: "24px",
-                        padding: "22px",
-                    }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
-                            <div>
-                                <h2 style={{ margin: "0 0 8px" }}>Exec report</h2>
-                                <p style={{ margin: 0, opacity: 0.72 }}>
-                                    Generated through <code>POST /api/integrations/bundles/&lt;tenant&gt;/&lt;project&gt;/&lt;bundle_id&gt;/operations/preferences_exec_report</code>
-                                </p>
-                                <p style={{ margin: "8px 0 0", opacity: 0.64, fontSize: "13px" }}>
-                                    Sent data: <code>{'{"recency": ..., "kwords": ...}'}</code>
-                                </p>
-                                <p style={{ margin: "8px 0 0", opacity: 0.64, fontSize: "13px" }}>
-                                    Applied: recency=<code>{report.recency ?? 'n/a'}</code>, keywords=<code>{report.keywords || '(none)'}</code>
-                                </p>
-                            </div>
-                            <div style={{ fontSize: "13px", opacity: 0.68 }}>
-                                Status: {report.ok ? 'ok' : 'error'}
-                            </div>
-                        </div>
-                        {report.error ? (
-                            <div style={{
-                                marginTop: "14px",
-                                padding: "12px 14px",
-                                borderRadius: "16px",
-                                background: "rgba(140, 29, 48, 0.08)",
-                                border: "1px solid rgba(140, 29, 48, 0.14)",
-                                color: "#7a1730",
-                                fontSize: "14px",
-                                whiteSpace: "pre-wrap",
-                            }}>
-                                {typeof report.error === 'string' ? report.error : JSON.stringify(report.error, null, 2)}
-                            </div>
-                        ) : null}
-                        {report.report_text ? (
-                            <pre style={{
-                                marginTop: "16px",
-                                padding: "16px",
-                                borderRadius: "18px",
-                                background: "#f6f8f6",
-                                border: "1px solid rgba(24,35,29,0.08)",
-                                overflowX: "auto",
-                                whiteSpace: "pre-wrap",
-                            }}>
-                                {report.report_text}
-                            </pre>
-                        ) : null}
-                        {report.items && report.items.length > 0 ? (
-                            <div style={{ marginTop: "16px" }}>
-                                <div style={{ fontSize: "12px", textTransform: "uppercase", letterSpacing: "0.08em", opacity: 0.58 }}>
-                                    Artifacts
-                                </div>
-                                <ul style={{ margin: "10px 0 0", paddingLeft: "18px" }}>
-                                    {report.items.map((item, index) => (
-                                        <li key={`${item.path || 'artifact'}-${index}`} style={{ marginBottom: "6px" }}>
-                                            <code>{item.path || '(unknown path)'}</code>
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        ) : null}
-                    </section>
-                ) : null}
-
-                <section style={{
-                    background: "rgba(255,255,255,0.86)",
-                    border: "1px solid rgba(24,35,29,0.12)",
-                    borderRadius: "24px",
-                    padding: "22px",
-                }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
-                        <div>
-                            <h2 style={{ margin: "0 0 8px" }}>Collaborative preferences canvas</h2>
-                            <p style={{ margin: 0, opacity: 0.76, maxWidth: "760px" }}>
-                                Edit the user-facing preferences document as simple JSON. Saving normalizes it back into the
-                                bundle’s structured <code>current.json</code>, so both the user and the agent work from the same
-                                preference state.
-                            </p>
-                            <p style={{ margin: "8px 0 0", fontSize: "13px", opacity: 0.66 }}>
-                                Operation: <code>POST /api/integrations/bundles/&lt;tenant&gt;/&lt;project&gt;/&lt;bundle_id&gt;/operations/preferences_canvas_save</code>
-                            </p>
-                            {canvas?.path ? (
-                                <p style={{ margin: "8px 0 0", fontSize: "13px", opacity: 0.66 }}>
-                                    Storage path: <code>{canvas.path}</code>
-                                </p>
-                            ) : null}
-                        </div>
-                        <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
-                            <button
-                                type="button"
-                                onClick={loadCanvas}
-                                disabled={canvasLoading}
-                                style={{
-                                    padding: "12px 18px",
-                                    borderRadius: "999px",
-                                    border: "1px solid rgba(24,35,29,0.14)",
-                                    background: canvasLoading ? "#d9ded7" : "#f7faf7",
-                                    color: "#18231d",
-                                    cursor: canvasLoading ? "default" : "pointer",
-                                    fontSize: "14px",
-                                }}
-                            >
-                                {canvasLoading ? 'Loading…' : 'Reload canvas'}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={saveCanvas}
-                                disabled={canvasSaving}
-                                style={{
-                                    padding: "12px 18px",
-                                    borderRadius: "999px",
-                                    border: "none",
-                                    background: canvasSaving ? "#6d7f75" : "#1d4d3a",
-                                    color: "#fff",
-                                    cursor: canvasSaving ? "default" : "pointer",
-                                    fontSize: "14px",
-                                }}
-                            >
-                                {canvasSaving ? 'Saving…' : 'Save canvas'}
-                            </button>
-                        </div>
-                    </div>
-                    <div style={{ marginTop: "14px", display: "flex", gap: "14px", flexWrap: "wrap", fontSize: "12px", opacity: 0.66 }}>
-                        <span>Status: {canvasDirty ? 'unsaved changes' : 'synced'}</span>
-                        {canvasSavedAt ? <span>Last save: {canvasSavedAt}</span> : null}
-                        {canvas?.changed_keys && canvas.changed_keys.length > 0 ? (
-                            <span>Changed: {canvas.changed_keys.join(', ')}</span>
-                        ) : null}
-                        {canvas?.removed_keys && canvas.removed_keys.length > 0 ? (
-                            <span>Removed: {canvas.removed_keys.join(', ')}</span>
-                        ) : null}
-                    </div>
-                    <textarea
-                        value={canvasText}
-                        onChange={(event) => setCanvasText(event.target.value)}
-                        spellCheck={false}
+        <div
+            style={{
+                minHeight: '100vh',
+                margin: 0,
+                padding: '16px',
+                boxSizing: 'border-box',
+                background: '#efe6d6',
+                color: '#1e251f',
+                fontFamily: 'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+            }}
+        >
+            <div style={{ maxWidth: '880px', margin: '0 auto' }}>
+                <section
+                    style={{
+                        position: 'relative',
+                        overflow: 'hidden',
+                        background: '#fffdf7',
+                        border: '1px solid rgba(76, 58, 34, 0.14)',
+                        borderRadius: '20px',
+                        boxShadow: '0 18px 45px rgba(81, 59, 26, 0.08)',
+                    }}
+                >
+                    <div
                         style={{
-                            marginTop: "16px",
-                            width: "100%",
-                            minHeight: "320px",
-                            padding: "18px",
-                            borderRadius: "18px",
-                            border: "1px solid rgba(24,35,29,0.12)",
-                            background: "#fbfcfb",
-                            color: "#18231d",
-                            fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-                            fontSize: "13px",
-                            lineHeight: 1.6,
-                            boxSizing: "border-box",
-                            resize: "vertical",
+                            position: 'absolute',
+                            inset: 0,
+                            backgroundImage:
+                                'repeating-linear-gradient(to bottom, transparent 0, transparent 39px, rgba(76, 124, 200, 0.13) 39px, rgba(76, 124, 200, 0.13) 40px)',
+                            pointerEvents: 'none',
                         }}
                     />
-                </section>
-
-                <section style={{ display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: "18px" }}>
-                    <div style={{
-                        background: "rgba(255,255,255,0.86)",
-                        border: "1px solid rgba(24,35,29,0.12)",
-                        borderRadius: "24px",
-                        padding: "22px",
-                    }}>
-                        <h2 style={{ marginTop: 0 }}>Current snapshot</h2>
-                        {visibleCurrent.length === 0 ? (
-                            <p style={{ opacity: 0.72 }}>No current preferences matched the filter.</p>
-                        ) : (
-                            <div style={{ display: "grid", gap: "12px" }}>
-                                {visibleCurrent.map(([key, value]) => (
-                                    <div key={key} style={{
-                                        padding: "14px 16px",
-                                        borderRadius: "18px",
-                                        background: "#f8faf8",
-                                        border: "1px solid rgba(24,35,29,0.08)",
-                                    }}>
-                                        <div style={{ fontSize: "12px", textTransform: "uppercase", letterSpacing: "0.08em", opacity: 0.6 }}>
-                                            {key}
-                                        </div>
-                                        <div style={{ fontSize: "18px", marginTop: "4px" }}>{String(value?.value ?? '')}</div>
-                                        <div style={{ fontSize: "12px", marginTop: "8px", opacity: 0.65 }}>
-                                            {value?.origin || 'unknown'} • {value?.updated_at || 'unknown time'}
-                                        </div>
-                                        {value?.evidence ? (
-                                            <div style={{ marginTop: "10px", fontSize: "13px", opacity: 0.78 }}>
-                                                {value.evidence}
-                                            </div>
-                                        ) : null}
-                                    </div>
-                                ))}
+                    <div
+                        style={{
+                            position: 'absolute',
+                            top: 0,
+                            bottom: 0,
+                            left: '28px',
+                            width: '2px',
+                            background: 'rgba(190, 72, 72, 0.34)',
+                            pointerEvents: 'none',
+                        }}
+                    />
+                    <div style={{ position: 'relative', padding: '16px 18px 18px 42px' }}>
+                        <div
+                            style={{
+                                display: 'flex',
+                                alignItems: 'flex-start',
+                                justifyContent: 'space-between',
+                                gap: '12px',
+                                flexWrap: 'wrap',
+                                marginBottom: '10px',
+                            }}
+                        >
+                            <div>
+                                <div
+                                    style={{
+                                        fontSize: '11px',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.14em',
+                                        opacity: 0.56,
+                                        marginBottom: '4px',
+                                    }}
+                                >
+                                    Collaborative preferences
+                                </div>
+                                <div style={{ fontSize: '24px', lineHeight: 1.1, marginBottom: '4px' }}>
+                                    Preferences notebook
+                                </div>
+                                <div style={{ fontSize: '13px', opacity: 0.74, maxWidth: '540px' }}>
+                                    Each line is one preference note. Assistant-captured notes stay read-only except for
+                                    label and text. If you edit a line, it is rewritten as a fresh user note.
+                                </div>
                             </div>
-                        )}
-                    </div>
-
-                    <div style={{
-                        background: "rgba(255,255,255,0.86)",
-                        border: "1px solid rgba(24,35,29,0.12)",
-                        borderRadius: "24px",
-                        padding: "22px",
-                    }}>
-                        <h2 style={{ marginTop: 0 }}>Recent observations</h2>
-                        {visibleRecent.length === 0 ? (
-                            <p style={{ opacity: 0.72 }}>No recent observations matched the filter.</p>
-                        ) : (
-                            <div style={{ display: "grid", gap: "12px" }}>
-                                {visibleRecent.map((item, index) => (
-                                    <div key={`${item.captured_at}-${index}`} style={{
-                                        padding: "14px 16px",
-                                        borderRadius: "18px",
-                                        background: "#f4f7f5",
-                                        border: "1px solid rgba(24,35,29,0.08)",
-                                    }}>
-                                        <div style={{ fontWeight: 600 }}>
-                                            {item.key}: {String(item.value)}
-                                        </div>
-                                        <div style={{ fontSize: "12px", marginTop: "6px", opacity: 0.72 }}>
-                                            {item.origin} • {item.source} • {item.captured_at}
-                                        </div>
-                                        {item.evidence ? (
-                                            <div style={{ marginTop: "10px", fontSize: "13px", opacity: 0.8 }}>
-                                                {item.evidence}
-                                            </div>
-                                        ) : null}
-                                    </div>
-                                ))}
+                            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: '12px', opacity: 0.66 }}>
+                                    {entries.length} lines for <strong>{userId}</strong>
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={() => void downloadExcel()}
+                                    disabled={excelBusy}
+                                    style={tinyActionStyle()}
+                                >
+                                    {excelBusy ? 'Working...' : 'Excel'}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => importInputRef.current?.click()}
+                                    disabled={excelBusy}
+                                    style={tinyActionStyle()}
+                                >
+                                    Import
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => void runExecReport()}
+                                    disabled={reportLoading}
+                                    style={tinyActionStyle()}
+                                >
+                                    {reportLoading ? 'Running report...' : 'Report'}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => void loadCanvas()}
+                                    disabled={loading || saving}
+                                    style={tinyActionStyle()}
+                                >
+                                    {loading ? 'Refreshing...' : 'Refresh'}
+                                </button>
                             </div>
-                        )}
+                        </div>
+
+                        <input
+                            ref={importInputRef}
+                            type="file"
+                            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            onChange={(event) => void onImportFileSelected(event)}
+                            style={{ display: 'none' }}
+                        />
+
+                        {error ? (
+                            <div
+                                style={{
+                                    marginBottom: '8px',
+                                    padding: '8px 10px',
+                                    borderRadius: '10px',
+                                    border: '1px solid rgba(150, 49, 39, 0.18)',
+                                    background: 'rgba(170, 58, 45, 0.08)',
+                                    color: '#8b2e25',
+                                    fontSize: '13px',
+                                }}
+                            >
+                                {error}
+                            </div>
+                        ) : null}
+
+                        {lastSync ? (
+                            <div style={{ marginBottom: '8px', fontSize: '12px', opacity: 0.58 }}>
+                                last sync {formatStamp(lastSync)}
+                            </div>
+                        ) : null}
+
+                        <div style={{ display: 'grid', gap: '2px' }}>
+                            {entries.length === 0 ? (
+                                <div style={{ minHeight: '40px', display: 'flex', alignItems: 'center', fontSize: '14px', opacity: 0.62 }}>
+                                    No saved lines yet. Add the first preference below.
+                                </div>
+                            ) : null}
+
+                            {entries.map((entry, index) => (
+                                <div
+                                    key={entryKey(entry, index)}
+                                    style={{
+                                        minHeight: '40px',
+                                        display: 'flex',
+                                        alignItems: 'flex-start',
+                                        gap: '10px',
+                                        padding: '7px 0',
+                                        flexWrap: 'wrap',
+                                    }}
+                                >
+                                    {editingIndex === index ? (
+                                        <>
+                                            <input
+                                                value={draftLabel}
+                                                onChange={(event) => setDraftLabel(event.target.value)}
+                                                placeholder="label"
+                                                style={{
+                                                    width: '150px',
+                                                    border: 'none',
+                                                    borderBottom: '1px solid rgba(71, 57, 37, 0.25)',
+                                                    background: 'transparent',
+                                                    padding: '4px 0',
+                                                    fontSize: '13px',
+                                                    outline: 'none',
+                                                }}
+                                            />
+                                            <textarea
+                                                value={draftText}
+                                                onChange={(event) => setDraftText(event.target.value)}
+                                                rows={1}
+                                                placeholder="text"
+                                                style={{
+                                                    flex: '1 1 260px',
+                                                    border: 'none',
+                                                    borderBottom: '1px solid rgba(71, 57, 37, 0.25)',
+                                                    background: 'transparent',
+                                                    padding: '4px 0',
+                                                    fontSize: '16px',
+                                                    lineHeight: 1.5,
+                                                    fontFamily: '"Bradley Hand", "Segoe Print", "Comic Sans MS", cursive',
+                                                    outline: 'none',
+                                                    resize: 'vertical',
+                                                }}
+                                            />
+                                            <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px' }}>
+                                                <button type="button" onClick={() => void applyEdit(index)} style={tinyActionStyle()}>
+                                                    Save
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setEditingIndex(null)}
+                                                    style={tinyActionStyle()}
+                                                >
+                                                    Cancel
+                                                </button>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span style={{ ...pillStyle('stamp'), borderRadius: '999px', padding: '3px 8px', fontSize: '11px' }}>
+                                                {formatStamp(entry.updated_at)}
+                                            </span>
+                                            <span
+                                                style={{
+                                                    ...pillStyle(entry.author === 'user' ? 'user' : 'assistant'),
+                                                    borderRadius: '999px',
+                                                    padding: '3px 8px',
+                                                    fontSize: '11px',
+                                                }}
+                                            >
+                                                {entry.author || 'assistant'}
+                                            </span>
+                                            <span style={{ ...pillStyle('label'), borderRadius: '999px', padding: '3px 8px', fontSize: '11px' }}>
+                                                {entry.label || 'note'}
+                                            </span>
+                                            <div
+                                                style={{
+                                                    flex: '1 1 260px',
+                                                    fontSize: '18px',
+                                                    lineHeight: 1.5,
+                                                    fontFamily: '"Bradley Hand", "Segoe Print", "Comic Sans MS", cursive',
+                                                    whiteSpace: 'pre-wrap',
+                                                    color: '#32453a',
+                                                    paddingTop: '1px',
+                                                }}
+                                            >
+                                                {entry.text}
+                                            </div>
+                                            <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px' }}>
+                                                <button type="button" onClick={() => beginEdit(index)} style={tinyActionStyle()}>
+                                                    Edit
+                                                </button>
+                                                <button type="button" onClick={() => void removeEntry(index)} style={tinyActionStyle(true)}>
+                                                    Delete
+                                                </button>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            ))}
+
+                            <div
+                                style={{
+                                    minHeight: '40px',
+                                    display: 'flex',
+                                    alignItems: 'flex-start',
+                                    gap: '10px',
+                                    padding: '7px 0',
+                                    flexWrap: 'wrap',
+                                }}
+                            >
+                                <span style={{ ...pillStyle('user'), borderRadius: '999px', padding: '3px 8px', fontSize: '11px' }}>
+                                    user
+                                </span>
+                                <input
+                                    value={newLabel}
+                                    onChange={(event) => setNewLabel(event.target.value)}
+                                    placeholder="label"
+                                    style={{
+                                        width: '150px',
+                                        border: 'none',
+                                        borderBottom: '1px solid rgba(71, 57, 37, 0.25)',
+                                        background: 'transparent',
+                                        padding: '4px 0',
+                                        fontSize: '13px',
+                                        outline: 'none',
+                                    }}
+                                />
+                                <textarea
+                                    value={newText}
+                                    onChange={(event) => setNewText(event.target.value)}
+                                    rows={1}
+                                    placeholder="write a new preference line"
+                                    style={{
+                                        flex: '1 1 260px',
+                                        border: 'none',
+                                        borderBottom: '1px solid rgba(71, 57, 37, 0.25)',
+                                        background: 'transparent',
+                                        padding: '4px 0',
+                                        fontSize: '16px',
+                                        lineHeight: 1.5,
+                                        fontFamily: '"Bradley Hand", "Segoe Print", "Comic Sans MS", cursive',
+                                        outline: 'none',
+                                        resize: 'vertical',
+                                    }}
+                                />
+                                <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px' }}>
+                                    <button
+                                        type="button"
+                                        onClick={() => void addEntry()}
+                                        disabled={saving}
+                                        style={tinyActionStyle()}
+                                    >
+                                        {saving ? 'Saving...' : 'Add line'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {report ? (
+                            <div
+                                style={{
+                                    marginTop: '12px',
+                                    paddingTop: '10px',
+                                    borderTop: '1px dashed rgba(74, 59, 34, 0.18)',
+                                }}
+                            >
+                                <div style={{ fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.12em', opacity: 0.54 }}>
+                                    Exec report
+                                </div>
+                                {report.report_text ? (
+                                    <pre
+                                        style={{
+                                            margin: '8px 0 0',
+                                            whiteSpace: 'pre-wrap',
+                                            fontSize: '12px',
+                                            lineHeight: 1.5,
+                                            fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace',
+                                            color: '#3f463f',
+                                            background: 'rgba(255, 255, 255, 0.55)',
+                                            borderRadius: '10px',
+                                            padding: '10px 12px',
+                                            overflowX: 'auto',
+                                        }}
+                                    >
+                                        {report.report_text}
+                                    </pre>
+                                ) : (
+                                    <div style={{ marginTop: '6px', fontSize: '13px', opacity: 0.68 }}>
+                                        Report completed with no inline text.
+                                    </div>
+                                )}
+                            </div>
+                        ) : null}
                     </div>
                 </section>
             </div>
