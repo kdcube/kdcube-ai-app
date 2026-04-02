@@ -93,9 +93,14 @@ def test_preferences_canvas_save_normalizes_document_and_appends_events(tmp_path
     assert result["path"].endswith("preferences/users/user-1/current.json")
 
 
-def test_preferences_canvas_document_is_simplified_for_human_editing(tmp_path):
+def test_preferences_canvas_document_is_simplified_for_human_editing(tmp_path, monkeypatch):
     prefs = _load_preferences_store_module()
     storage = _make_storage(tmp_path)
+    times = iter([
+        "2026-04-02T09:00:00+00:00",
+        "2026-04-02T09:01:00+00:00",
+    ])
+    monkeypatch.setattr(prefs, "_utc_now", lambda: next(times))
 
     prefs.append_preference_event(
         storage,
@@ -117,6 +122,10 @@ def test_preferences_canvas_document_is_simplified_for_human_editing(tmp_path):
     )
 
     doc = prefs.build_preferences_canvas_document(storage, "user-1")
+    assert doc["document_format"] == "entries"
+    assert doc["entries"][0]["label"] == "preferred_name"
+    assert doc["entries"][0]["author"] == "assistant"
+    assert doc["entries"][1]["label"] == "timezone"
     parsed = json.loads(doc["document_text"])
     assert parsed["preferred_name"]["value"] == "Elena"
     assert parsed["preferred_name"]["updated_at"]
@@ -124,6 +133,136 @@ def test_preferences_canvas_document_is_simplified_for_human_editing(tmp_path):
     assert parsed["timezone"]["value"] == "Europe/Berlin"
     assert parsed["timezone"]["updated_at"]
     assert doc["path"].endswith("preferences/users/user-1/current.json")
+
+
+def test_preferences_canvas_entries_present_notebook_friendly_rows(tmp_path, monkeypatch):
+    prefs = _load_preferences_store_module()
+    storage = _make_storage(tmp_path)
+    times = iter([
+        "2026-04-02T09:00:00+00:00",
+        "2026-04-02T09:02:00+00:00",
+    ])
+    monkeypatch.setattr(prefs, "_utc_now", lambda: next(times))
+
+    prefs.append_preference_event(
+        storage,
+        "user-1",
+        key="[p]_preferred_name",
+        value="Elena",
+        source="chat",
+        origin="auto_capture",
+        evidence="call me Elena",
+    )
+    prefs.append_preference_event(
+        storage,
+        "user-1",
+        key="fish_preference",
+        value={"style": "fresh", "priority": "high"},
+        source="preferences_canvas",
+        origin="user",
+        evidence="Edited in collaborative preferences notebook",
+    )
+
+    entries = prefs.build_preferences_canvas_entries(storage, "user-1")
+
+    assert [entry["label"] for entry in entries] == ["preferred_name", "fish_preference"]
+    assert entries[0]["author"] == "assistant"
+    assert entries[0]["text"] == "Elena"
+    assert entries[1]["author"] == "user"
+    assert '"priority": "high"' in entries[1]["text"]
+
+
+def test_preferences_canvas_entries_edit_rewrites_timestamp_and_origin(tmp_path, monkeypatch):
+    prefs = _load_preferences_store_module()
+    storage = _make_storage(tmp_path)
+
+    prefs.append_preference_event(
+        storage,
+        "user-1",
+        key="location",
+        value="Berlin",
+        source="chat",
+        origin="auto_capture",
+        evidence="I am in Berlin",
+    )
+
+    monkeypatch.setattr(prefs, "_utc_now", lambda: "2026-04-02T10:15:00+00:00")
+
+    result = prefs.save_preferences_canvas_entries(
+        storage,
+        "user-1",
+        entries=[
+            {
+                "key": "location",
+                "label": "city",
+                "text": "Wuppertal",
+            }
+        ],
+    )
+
+    current = prefs.load_current_preferences(storage, "user-1")
+    assert "location" not in current
+    assert current["city"]["value"] == "Wuppertal"
+    assert current["city"]["updated_at"] == "2026-04-02T10:15:00+00:00"
+    assert current["city"]["origin"] == "user"
+    assert current["city"]["source"] == "preferences_canvas"
+    assert result["changed_keys"] == ["city"]
+    assert result["removed_keys"] == ["location"]
+    assert result["entries"][0]["label"] == "city"
+    assert result["entries"][0]["author"] == "user"
+    assert result["entries"][0]["updated_at"] == "2026-04-02T10:15:00+00:00"
+
+    events = prefs.load_preference_events(storage, "user-1")
+    assert events[-2]["key"] == "city"
+    assert events[-2]["origin"] == "user"
+    assert events[-1]["key"] == "location"
+    assert events[-1]["origin"] == "user_remove"
+
+
+def test_preferences_canvas_excel_export_and_import_roundtrip(tmp_path, monkeypatch):
+    prefs = _load_preferences_store_module()
+    storage = _make_storage(tmp_path)
+    times = iter([
+        "2026-04-02T09:00:00+00:00",
+        "2026-04-02T09:02:00+00:00",
+        "2026-04-02T10:15:00+00:00",
+    ])
+    monkeypatch.setattr(prefs, "_utc_now", lambda: next(times))
+
+    prefs.append_preference_event(
+        storage,
+        "user-1",
+        key="location",
+        value="Wuppertal",
+        source="chat",
+        origin="auto_capture",
+        evidence="I am in Wuppertal",
+    )
+    prefs.append_preference_event(
+        storage,
+        "user-1",
+        key="food_preference",
+        value="fresh fish",
+        source="preferences_canvas",
+        origin="user",
+        evidence="Edited in collaborative preferences notebook",
+    )
+
+    workbook = prefs.export_preferences_canvas_xlsx(storage, "user-1")
+    imported = prefs.import_preferences_canvas_xlsx(workbook)
+
+    assert [entry["label"] for entry in imported] == ["location", "food_preference"]
+    assert imported[0]["text"] == "Wuppertal"
+    assert imported[1]["text"] == "fresh fish"
+
+    result = prefs.save_preferences_canvas_entries(storage, "user-1", entries=imported)
+    current = prefs.load_current_preferences(storage, "user-1")
+
+    assert {entry["label"] for entry in result["entries"]} == {"location", "food_preference"}
+    assert current["location"]["value"] == "Wuppertal"
+    assert current["location"]["origin"] == "user"
+    assert current["location"]["updated_at"] == "2026-04-02T10:15:00+00:00"
+    assert current["food_preference"]["value"] == "fresh fish"
 
 
 def test_preference_tools_scope_falls_back_to_service_user(tmp_path, monkeypatch):
