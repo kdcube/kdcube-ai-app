@@ -28,6 +28,7 @@ This document summarizes runtime configuration fields for the React runtime (`Ru
 - `workdir`: working directory for this run.
 - `outdir`: output directory for this run.
 - `bundle_storage`: optional per-bundle managed storage directory for bundle-owned data such as cloned repos, built indexes, and other readonly data prepared by the bundle.
+- `workspace_git_repo`: optional remote git repo URL used as the authoritative backup/version-control store for React's git-backed workspace lineage snapshots.
 - `model_service`: model service handle.
 - `knowledge_search_fn`: bundle‑supplied search function for `react.search_knowledge`.
 - `knowledge_read_fn`: bundle‑supplied resolver for `react.read(ks:...)` paths.
@@ -38,6 +39,7 @@ This document summarizes runtime configuration fields for the React runtime (`Ru
 - `debug_log_announce`: emit announce blocks in debug logs.
 - `debug_log_sources_pool`: emit sources pool in debug logs.
 - `debug_timeline`: when `true`, write the fully rendered model context to `debug/rendering/` (one file per render).
+- `workspace_model`: workspace prompt mode. `legacy` keeps the current implicit/rehost model. `git_pull` teaches the agent to activate versioned `fi:` workspace slices explicitly with `react.pull(...)`.
 - `session`: session-level configuration (see below).
 - `cache`: cache-related limits (see below).
 
@@ -51,6 +53,19 @@ This document summarizes runtime configuration fields for the React runtime (`Ru
 - In isolated exec, the corresponding exec-visible env var is `BUNDLE_STORAGE_DIR`.
 - Isolated exec can derive the same directory from bundle spec + tenant + project when `RuntimeCtx.bundle_storage` is missing, but that is a fallback for robustness, not the primary contract.
 - Many tests and synthetic runtime constructions use `RuntimeCtx()` directly, so code must not assume `bundle_storage` is always populated outside real workflow initialization.
+
+### `workspace_git_repo` semantics
+
+- `workspace_git_repo` is a runtime hint, not a local filesystem path.
+- It should come from `REACT_WORKSPACE_GIT_REPO`.
+- It identifies the remote repo engineering uses to persist conversation-scoped workspace lineage history.
+- React itself should not treat it as a repo to clone/fetch from inside exec; exec remains network-isolated.
+- Authentication should reuse the same git auth environment already used by bundle git loading:
+  - `GIT_HTTP_TOKEN`
+  - `GIT_HTTP_USER`
+  - `GIT_SSH_KEY_PATH`
+  - `GIT_SSH_KNOWN_HOSTS`
+  - `GIT_SSH_STRICT_HOST_KEY_CHECKING`
 
 ## RuntimeSessionConfig (RuntimeCtx.session)
 
