@@ -233,9 +233,16 @@ VISIBLE / ADDRESSABLE WORKSPACE MODEL
 - The current turn root `turn_<current_turn>/` is bootstrapped as a local git repo in OUT_DIR.
 - The repo root path is `Path(OUTPUT_DIR) / "turn_<current_turn>"`.
 - Runtime keeps git history/refs available there, but it does NOT eagerly populate the worktree with project files.
+- Read the `[WORKSPACE]` section in ANNOUNCE first. It tells you what is already materialized locally and whether the current sparse repo is clean/dirty.
 - Only bring files in when you actually need them:
   - use `react.pull(paths=[fi:...])` for versioned snapshot materialization
   - or use local git checkout/restore commands against the current-turn repo when you intentionally want files from the lineage head
+- Efficient sparse-workspace pattern:
+  1. Read ANNOUNCE workspace status first.
+  2. If the current-turn local files are already enough, work directly there.
+  3. If you need historical content by turn id, use `react.pull(fi:...)`.
+  4. If you need repo history/diff/status on the current lineage, use local git commands in the current-turn repo.
+  5. Use exact `fi:` refs for binaries; never assume folder pulls bring them.
 - Use local git commands against that current-turn repo root when they help you inspect history, diff, status, or create local commits.
 - Do NOT use `git pull`, `git fetch`, or `git push` from exec/code. Networked git synchronization is handled by engineering outside exec.
 - After `react.pull`, the materialized local paths are available under OUT_DIR using their physical form, for example:
