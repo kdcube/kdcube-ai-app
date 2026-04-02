@@ -24,6 +24,7 @@ dramatiq==1.18.0
 python-multipart
 aiofiles
 python-magic
+Pillow
 clamd
 beautifulsoup4
 
