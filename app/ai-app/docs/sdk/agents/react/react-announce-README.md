@@ -18,6 +18,7 @@ This doc describes how the **announce** block is used for ReAct v2.
 - Contains ANNOUNCE️:
   - iteration
   - open-plan summary with plan ids, snapshot refs, and status markers (if any exist)
+  - compact workspace status
   - authoritative temporal context (UTC + user timezone)
   - optional system notices (e.g., cache TTL pruning)
 
@@ -41,6 +42,28 @@ This doc describes how the **announce** block is used for ReAct v2.
 When cache TTL pruning occurs, the render path appends a one-time announce block
 containing a system notice. It appears after the budget section and advises
 the agent to use `react.read(path)` to restore truncated context.
+
+## Workspace state in ANNOUNCE
+ANNOUNCE may include a compact `[WORKSPACE]` section.
+
+Its purpose is operational guidance, not full git/debug observability.
+
+It can include:
+- `implementation: custom|git`
+- `current_turn_root`
+- `materialized_turn_roots`
+- `current_turn_scopes`
+- in `git` mode only:
+  - `repo_mode`
+  - `repo_status`
+- publish state:
+  - `current_turn_publish`
+  - `last_published_turn`
+  - `publish_error` only when the current turn publish failed
+
+Important rule:
+- ANNOUNCE should stay compact
+- raw git refs, commit shas, and other low-level publish metadata do not belong here unless there is a failure that React must react to immediately
 
 ## Why it exists
 - Keeps high‑frequency state updates out of the cached timeline.
@@ -81,6 +104,17 @@ the agent to use `react.read(path)` to restore truncated context.
       last_update_ts=2026-02-10T13:54:00Z
       □ [1] draft answer
       □ [2] verify citations
+
+[WORKSPACE]
+  implementation: git
+  current_turn_root: turn_1775153963506_m1wj6f/
+  materialized_turn_roots: turn_1775153855448_qryil1, turn_1775153963506_m1wj6f (current)
+  current_turn_scopes:
+    - docs/ (2 files)
+    - src/ (5 files)
+  repo_mode: sparse git repo
+  repo_status: dirty
+  current_turn_publish: pending
 ```
 
 ## Notes
@@ -89,4 +123,5 @@ the agent to use `react.read(path)` to restore truncated context.
 - An open plan is not automatically current. Only explicitly current plans carry the `(current)` tag.
 - If a plan is shown without `(current)`, React must activate it before acknowledging any of its steps.
 - Announce is not cached and is re‑rendered each decision round.
+- The `[WORKSPACE]` section is intentionally brief; detailed publish metadata belongs in internal event blocks, not the visible announce surface.
 - The example uses simplified plan ids (`plan_alpha`, `plan_beta`) for readability. Real runtime-generated `plan_id` values may look like `plan:turn_3:efgh5678`, and the matching stable alias would then be `ar:plan.latest:plan:turn_3:efgh5678`.

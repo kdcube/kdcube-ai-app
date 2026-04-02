@@ -40,6 +40,7 @@ Blocks are dicts with:
 - `react.decision.raw` (raw ReactDecisionOutV2 JSON; only on schema error retry)
 - `react.completion`
 - `react.plan.ack`
+- `react.workspace.publish`
 - `conv.range.summary` (summary of earlier turns)
 - `system.message` (system notices persisted in the timeline)
 - `stage.gate`
@@ -147,6 +148,37 @@ On **schema error** retries, we store the raw JSON the model produced so it can 
 Summary blocks include:
 - `type`: `conv.range.summary`
 - `meta.covered_turn_ids`: list of turn ids summarized
+
+### Workspace publish event (react.workspace.publish)
+Successful and failed git-workspace publication is captured as an internal event block:
+- `type`: `react.workspace.publish`
+- `author`: `react.workspace`
+- `mime`: `application/json`
+- `path`: `ar:<turn_id>.react.workspace.publish`
+- `text`: JSON payload with high-signal publish status and metadata
+- `meta.status`: `succeeded` or `failed`
+
+This block is:
+- persisted in the timeline
+- excluded from normal model render
+- intended for observability and runtime recovery, not for user-facing narration
+
+Typical fields in `text`:
+- `turn_id`
+- `workspace_implementation`
+- `status`
+- on success:
+  - `commit_sha`
+  - `lineage_ref`
+  - `version_ref`
+- on failure:
+  - `message`
+  - `error`
+
+ANNOUNCE may surface only a compact derivative of this state, for example:
+- `current_turn_publish: pending|succeeded|failed`
+- `last_published_turn: ...`
+- `publish_error: ...` on failure
 
 ## System messages
 `system.message` blocks are persisted system notices that should be rendered in the model context.

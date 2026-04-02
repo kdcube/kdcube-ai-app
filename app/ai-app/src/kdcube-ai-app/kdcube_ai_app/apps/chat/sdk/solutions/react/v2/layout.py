@@ -7,6 +7,7 @@ import json
 import datetime
 import time
 import urllib.parse
+import pathlib
 from typing import Dict, Any, List, Tuple, Optional
 
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.proto import RuntimeCtx
@@ -16,6 +17,12 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.plan import (
     latest_current_plan_snapshot,
     PlanSnapshot,
     plan_snapshot_ref,
+)
+from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.workspace import (
+    get_workspace_implementation,
+    list_materialized_turn_roots,
+    summarize_current_turn_scopes,
+    latest_workspace_publish_event,
 )
 
 from kdcube_ai_app.apps.chat.sdk.skills.skills_registry import skills_gallery_text
@@ -242,7 +249,7 @@ def build_timeline_render_directive(
     formatting or should stay internal.
     """
     btype = (block.get("type") or "").strip()
-    if btype in {"react.plan", "react.plan.ack"}:
+    if btype in {"react.plan", "react.plan.ack", "react.workspace.publish"}:
         return {"skip": True}
 
     if btype == "react.notice":
@@ -260,6 +267,85 @@ def build_timeline_render_directive(
     return {"skip": False}
 
 
+def build_announce_workspace_lines(
+    *,
+    runtime_ctx: Optional[RuntimeCtx],
+    timeline_blocks: List[Dict[str, Any]],
+) -> List[str]:
+    if runtime_ctx is None:
+        return []
+    impl = get_workspace_implementation(runtime_ctx)
+    turn_id = str(getattr(runtime_ctx, "turn_id", "") or "").strip()
+    lines: List[str] = ["[WORKSPACE]"]
+    lines.append(f"  implementation: {impl}")
+    if turn_id:
+        lines.append(f"  current_turn_root: {turn_id}/")
+
+    try:
+        roots = list_materialized_turn_roots(runtime_ctx=runtime_ctx)
+    except Exception:
+        roots = []
+    if roots:
+        labels = []
+        for root in roots[-6:]:
+            if root == turn_id:
+                labels.append(f"{root} (current)")
+            else:
+                labels.append(root)
+        lines.append(f"  materialized_turn_roots: {', '.join(labels)}")
+    else:
+        lines.append("  materialized_turn_roots: none")
+
+    try:
+        scopes = summarize_current_turn_scopes(runtime_ctx=runtime_ctx)
+    except Exception:
+        scopes = []
+    if scopes:
+        lines.append("  current_turn_scopes:")
+        for item in scopes[:6]:
+            scope = str(item.get("scope") or "").strip()
+            files = int(item.get("files") or 0)
+            lines.append(f"    - {scope} ({files} file{'s' if files != 1 else ''})")
+    else:
+        lines.append("  current_turn_scopes: none")
+
+    if impl == "git":
+        try:
+            from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.git_workspace import describe_current_turn_git_repo
+            outdir = getattr(runtime_ctx, "outdir", None)
+            repo_info = describe_current_turn_git_repo(
+                runtime_ctx=runtime_ctx,
+                outdir=pathlib.Path(str(outdir or "")),
+            )
+        except Exception:
+            repo_info = {}
+        repo_mode = str(repo_info.get("repo_mode") or "").strip()
+        repo_status = str(repo_info.get("repo_status") or "").strip()
+        if repo_mode:
+            lines.append(f"  repo_mode: {repo_mode}")
+        if repo_status:
+            lines.append(f"  repo_status: {repo_status}")
+
+    current_publish = latest_workspace_publish_event(timeline_blocks, turn_id=turn_id) if turn_id else None
+    any_publish = latest_workspace_publish_event(timeline_blocks)
+    if current_publish:
+        status = str(current_publish.get("status") or "").strip() or "unknown"
+        lines.append(f"  current_turn_publish: {status}")
+        if status == "failed":
+            msg = str(current_publish.get("message") or current_publish.get("error") or "").strip()
+            if msg:
+                lines.append(f"  publish_error: {_shorten(msg, 120)}")
+    else:
+        lines.append("  current_turn_publish: pending")
+        if any_publish:
+            last_turn = str(any_publish.get("turn_id") or "").strip()
+            last_status = str(any_publish.get("status") or "").strip() or "unknown"
+            if last_turn and last_turn != turn_id:
+                lines.append(f"  last_published_turn: {last_turn} ({last_status})")
+
+    return lines
+
+
 def build_announce_text(
     *,
     iteration: int,
@@ -267,6 +353,7 @@ def build_announce_text(
     started_at: Optional[str],
     timezone: Optional[str],
     timeline_blocks: List[Dict[str, Any]],
+    runtime_ctx: Optional[RuntimeCtx] = None,
     constraints: Optional[List[str]] = None,
     feedback_updates: Optional[List[Dict[str, Any]]] = None,
     feedback_incorporated: bool = False,
@@ -345,6 +432,14 @@ def build_announce_text(
     if show_plan:
         lines.append("")
         lines.extend(build_announce_plan_lines(timeline_blocks=timeline_blocks))
+
+    workspace_lines = build_announce_workspace_lines(
+        runtime_ctx=runtime_ctx,
+        timeline_blocks=timeline_blocks,
+    )
+    if workspace_lines:
+        lines.append("")
+        lines.extend(workspace_lines)
 
     if feedback_updates and mode != "turn_finalize":
         updates = [u for u in (feedback_updates or []) if isinstance(u, dict)]

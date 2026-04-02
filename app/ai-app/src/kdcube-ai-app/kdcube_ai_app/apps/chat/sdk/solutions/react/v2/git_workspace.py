@@ -25,6 +25,37 @@ def _workspace_cache_root(*, runtime_ctx: Any, outdir: pathlib.Path) -> pathlib.
     return root / f"{segs['tenant']}__{segs['project']}__{segs['user_id']}__{segs['conversation_id']}"
 
 
+def describe_current_turn_git_repo(
+    *,
+    runtime_ctx: Any,
+    outdir: pathlib.Path,
+) -> Dict[str, Any]:
+    turn_id = str(getattr(runtime_ctx, "turn_id", "") or "").strip()
+    if not turn_id:
+        return {}
+    turn_root = pathlib.Path(outdir) / turn_id
+    if not (turn_root / ".git").exists():
+        return {
+            "repo_mode": "sparse git repo",
+            "repo_status": "uninitialized",
+        }
+    repo_status = "unknown"
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(turn_root), "status", "--short", "--untracked-files=all"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        repo_status = "clean" if not (proc.stdout or "").strip() else "dirty"
+    except Exception:
+        repo_status = "unavailable"
+    return {
+        "repo_mode": "sparse git repo",
+        "repo_status": repo_status,
+    }
+
+
 def _run_git_capture(repo_root: pathlib.Path, args: List[str], *, env: Optional[Dict[str, str]] = None) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["git", "-C", str(repo_root), *args],
