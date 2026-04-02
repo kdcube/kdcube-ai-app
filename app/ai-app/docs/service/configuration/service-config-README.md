@@ -559,6 +559,14 @@ Conversation artifacts and turn workspace:
 |-------------------------|---------|---------------------------------------------------------------|
 | `KDCUBE_STORAGE_PATH`   | ✅       | Storage root (local FS `file:///...` or `s3://bucket/path`)   |
 | `CB_BUNDLE_STORAGE_URL` | ➖       | Bundle storage URL (proc only; defaults to storage path)      |
+| `REACT_WORKSPACE_GIT_REPO` | ➖    | Remote git repo used as the authoritative backup/version store for React git-backed workspace lineages (proc/runtime only) |
+
+`REACT_WORKSPACE_GIT_REPO` uses the same git authentication contract already supported for git bundle loading:
+- `GIT_HTTP_TOKEN`
+- `GIT_HTTP_USER`
+- `GIT_SSH_KEY_PATH`
+- `GIT_SSH_KNOWN_HOSTS`
+- `GIT_SSH_STRICT_HOST_KEY_CHECKING`
 
 ### ClamAV (Ingress only)
 
@@ -608,6 +616,7 @@ Conversation artifacts and turn workspace:
 | `PY_CODE_EXEC_TIMEOUT`      | _(unset)_  | Exec timeout (seconds)                                                                                                                                                                      |
 | `PY_CODE_EXEC_NETWORK_MODE` | _(unset)_  | Docker network mode                                                                                                                                                                         |
 | `EXEC_WORKSPACE_ROOT`       | _(auto)_   | Local workspace root for per‑turn workdir/outdir. Defaults to `/exec-workspace` inside Docker or `/tmp` on host. Path is created if missing and **must be writable** or the request fails.  |
+| `REACT_WORKSPACE_GIT_REPO`  | _(unset)_  | React git-backed workspace remote. The runtime carries it into `RuntimeCtx.workspace_git_repo` so React can reason about the authoritative workspace backup without trying to fetch from exec. |
 | `FARGATE_EXEC_ENABLED`      | `0`        | Enable distributed exec via ECS/Fargate. When disabled, `EXEC_RUNTIME_MODE=fargate` cannot launch tasks.                                                                                  |
 | `FARGATE_CLUSTER`           | _(unset)_  | ECS cluster ARN/name for distributed exec tasks.                                                                                                                                           |
 | `FARGATE_TASK_DEFINITION`   | _(unset)_  | ECS task definition for distributed exec tasks.                                                                                                                                            |
