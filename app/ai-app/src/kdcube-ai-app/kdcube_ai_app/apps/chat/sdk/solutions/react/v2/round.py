@@ -160,6 +160,8 @@ class ReactRound:
             return await react_tools.handle_react_read(ctx_browser=ctx_browser, state=state, tool_call_id=tool_call_id)
         if tool_id == "react.pull":
             return await react_tools.handle_react_pull(ctx_browser=ctx_browser, state=state, tool_call_id=tool_call_id)
+        if tool_id == "react.checkout":
+            return await react_tools.handle_react_checkout(ctx_browser=ctx_browser, state=state, tool_call_id=tool_call_id)
         if tool_id == "react.patch":
             return await react_tools.handle_react_patch(react=react, ctx_browser=ctx_browser, state=state, tool_call_id=tool_call_id)
         if tool_id == "react.memsearch":

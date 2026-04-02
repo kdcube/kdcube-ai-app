@@ -6,6 +6,9 @@ import subprocess
 import pytest
 
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.git_workspace import (
+    checkout_current_turn_git_workspace,
+    _ensure_local_version_ref,
+    _ensure_workspace_repo,
     ensure_current_turn_git_workspace,
     publish_current_turn_git_workspace,
 )
@@ -14,6 +17,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.solution_workspace import (
     build_exec_snapshot_workspace,
     rehost_files_from_timeline,
 )
+from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.tools.checkout import handle_react_checkout
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.tools.tests.helpers import FakeBrowser
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.workspace import hydrate_workspace_paths
 
@@ -185,6 +189,30 @@ def _init_git_workspace_repo(tmp_path):
         check=True,
         capture_output=True,
     )
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "update-ref",
+            "refs/heads/kdcube/demo-tenant/demo-project/other-user/conversation-2",
+            "HEAD",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "update-ref",
+            "refs/kdcube/demo-tenant/demo-project/other-user/conversation-2/versions/turn_other",
+            "HEAD",
+        ],
+        check=True,
+        capture_output=True,
+    )
     return repo
 
 
@@ -251,6 +279,36 @@ def test_ensure_current_turn_git_workspace_bootstraps_lineage_branch(tmp_path, m
         text=True,
     )
     assert (proc.stdout or "").strip() == ""
+    proc_remote = subprocess.run(
+        ["git", "-C", str(turn_root), "remote"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert (proc_remote.stdout or "").strip() == ""
+    proc_refs = subprocess.run(
+        ["git", "-C", str(turn_root), "show-ref"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    refs_output = proc_refs.stdout or ""
+    assert "other-user" not in refs_output
+    lineage_repo = (
+        outdir.parent
+        / ".react_workspace_git"
+        / "demo-tenant__demo-project__admin-user__conversation-1"
+        / "lineage.git"
+    )
+    proc_lineage_refs = subprocess.run(
+        ["git", "-C", str(lineage_repo), "show-ref"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    lineage_refs_output = proc_lineage_refs.stdout or ""
+    assert "refs/heads/workspace" in lineage_refs_output
+    assert "other-user" not in lineage_refs_output
 
 
 def test_publish_current_turn_git_workspace_pushes_lineage_and_version_refs(tmp_path, monkeypatch):
@@ -307,6 +365,146 @@ def test_publish_current_turn_git_workspace_pushes_lineage_and_version_refs(tmp_
     assert (show_version.stdout or "") == "print('new')\n"
 
 
+def test_publish_current_turn_git_workspace_skips_transient_and_ignored_files(tmp_path, monkeypatch):
+    monkeypatch.setenv("GIT_HTTP_TOKEN", "test-token")
+    monkeypatch.setenv("GIT_HTTP_USER", "x-access-token")
+    outdir = tmp_path / "out"
+    outdir.mkdir(parents=True, exist_ok=True)
+    remote_repo = _init_git_workspace_repo(tmp_path)
+    runtime = RuntimeCtx(
+        turn_id="turn_ctx",
+        outdir=str(outdir),
+        workdir=str(tmp_path / "work"),
+        tenant="demo-tenant",
+        project="demo-project",
+        user_id="admin-user",
+        conversation_id="conversation-1",
+        workspace_implementation="git",
+        workspace_git_repo=str(remote_repo),
+    )
+
+    turn_root = ensure_current_turn_git_workspace(runtime_ctx=runtime, outdir=outdir)
+    (turn_root / ".gitignore").write_text(".ignored.txt\n", encoding="utf-8")
+    (turn_root / "files" / "demo_proj").mkdir(parents=True, exist_ok=True)
+    (turn_root / "files" / "demo_proj" / "LICENSE").write_text("MIT\n", encoding="utf-8")
+    (turn_root / "files" / "demo_proj" / ".ignored.txt").write_text("skip\n", encoding="utf-8")
+    (turn_root / "files" / "demo_proj" / ".pytest_cache" / "v" / "cache").mkdir(parents=True, exist_ok=True)
+    (turn_root / "files" / "demo_proj" / ".pytest_cache" / "README.md").write_text("cache\n", encoding="utf-8")
+
+    result = publish_current_turn_git_workspace(runtime_ctx=runtime, outdir=outdir)
+
+    assert result["committed"] is True
+    show_license = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(remote_repo),
+            "show",
+            "refs/heads/kdcube/demo-tenant/demo-project/admin-user/conversation-1:files/demo_proj/LICENSE",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert (show_license.stdout or "") == "MIT\n"
+    ignored_missing = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(remote_repo),
+            "show",
+            "refs/heads/kdcube/demo-tenant/demo-project/admin-user/conversation-1:files/demo_proj/.ignored.txt",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert ignored_missing.returncode != 0
+    cache_missing = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(remote_repo),
+            "show",
+            "refs/heads/kdcube/demo-tenant/demo-project/admin-user/conversation-1:files/demo_proj/.pytest_cache/README.md",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert cache_missing.returncode != 0
+
+
+def test_checkout_current_turn_git_workspace_materializes_requested_version(tmp_path, monkeypatch):
+    monkeypatch.setenv("GIT_HTTP_TOKEN", "test-token")
+    monkeypatch.setenv("GIT_HTTP_USER", "x-access-token")
+    outdir = tmp_path / "out"
+    outdir.mkdir(parents=True, exist_ok=True)
+    runtime = RuntimeCtx(
+        turn_id="turn_ctx",
+        outdir=str(outdir),
+        workdir=str(tmp_path / "work"),
+        tenant="demo-tenant",
+        project="demo-project",
+        user_id="admin-user",
+        conversation_id="conversation-1",
+        workspace_implementation="git",
+        workspace_git_repo=str(_init_git_workspace_repo(tmp_path)),
+    )
+
+    turn_root = ensure_current_turn_git_workspace(runtime_ctx=runtime, outdir=outdir)
+    assert not (turn_root / "files" / "projectA" / "src" / "app.py").exists()
+
+    result = checkout_current_turn_git_workspace(
+        runtime_ctx=runtime,
+        outdir=outdir,
+        version_id="turn_prev",
+    )
+
+    assert result["checked_out_version"] == "turn_prev"
+    assert (turn_root / "files" / "projectA" / "src" / "app.py").read_text(encoding="utf-8") == "print('git')\n"
+    assert (turn_root / "files" / "projectA" / "docs" / "readme.md").read_text(encoding="utf-8") == "# readme\n"
+
+
+@pytest.mark.asyncio
+async def test_react_checkout_rejects_dirty_workspace(tmp_path, monkeypatch):
+    monkeypatch.setenv("GIT_HTTP_TOKEN", "test-token")
+    monkeypatch.setenv("GIT_HTTP_USER", "x-access-token")
+    outdir = tmp_path / "out"
+    outdir.mkdir(parents=True, exist_ok=True)
+    runtime = RuntimeCtx(
+        turn_id="turn_ctx",
+        outdir=str(outdir),
+        workdir=str(tmp_path / "work"),
+        tenant="demo-tenant",
+        project="demo-project",
+        user_id="admin-user",
+        conversation_id="conversation-1",
+        workspace_implementation="git",
+        workspace_git_repo=str(_init_git_workspace_repo(tmp_path)),
+    )
+    ctx = FakeBrowser(runtime)
+    turn_root = ensure_current_turn_git_workspace(runtime_ctx=runtime, outdir=outdir)
+    (turn_root / "files" / "projectA").mkdir(parents=True, exist_ok=True)
+    (turn_root / "files" / "projectA" / "scratch.md").write_text("dirty\n", encoding="utf-8")
+
+    state = {
+        "last_decision": {
+            "tool_call": {
+                "params": {
+                    "version": "turn_prev",
+                }
+            }
+        },
+        "outdir": str(outdir),
+    }
+
+    await handle_react_checkout(ctx_browser=ctx, state=state, tool_call_id="checkout1")
+
+    assert state.get("retry_decision") is True
+    assert any((b.get("text") or "").startswith("react.checkout.dirty:") for b in ctx.timeline.blocks if b.get("type") == "react.notice")
+
+
 @pytest.mark.asyncio
 async def test_hydrate_workspace_paths_git_folder_pull_materializes_text_only(tmp_path, monkeypatch):
     monkeypatch.setenv("GIT_HTTP_TOKEN", "test-token")
@@ -336,6 +534,87 @@ async def test_hydrate_workspace_paths_git_folder_pull_materializes_text_only(tm
     assert "turn_prev/files/projectA" not in result["missing"]
     assert not (outdir / "turn_prev" / "files" / "projectA" / "assets" / "logo.bin").exists()
     assert (outdir / "turn_prev" / "files" / "projectA" / "src" / "app.py").read_text(encoding="utf-8") == "print('git')\n"
+
+
+@pytest.mark.asyncio
+async def test_hydrate_workspace_paths_git_dedupes_version_fetch_per_turn(tmp_path, monkeypatch):
+    monkeypatch.setenv("GIT_HTTP_TOKEN", "test-token")
+    monkeypatch.setenv("GIT_HTTP_USER", "x-access-token")
+    outdir = tmp_path / "out"
+    runtime = RuntimeCtx(
+        turn_id="turn_ctx",
+        outdir=str(outdir),
+        workdir=str(tmp_path / "work"),
+        tenant="demo-tenant",
+        project="demo-project",
+        user_id="admin-user",
+        conversation_id="conversation-1",
+        workspace_implementation="git",
+        workspace_git_repo=str(_init_git_workspace_repo(tmp_path)),
+    )
+    ctx = FakeBrowser(runtime)
+
+    import kdcube_ai_app.apps.chat.sdk.solutions.react.v2.git_workspace as gw
+
+    original = gw._ensure_local_version_ref
+    calls: list[str] = []
+
+    def _wrapped(*, repo_root, runtime_ctx, version_id):
+        calls.append(version_id)
+        return original(repo_root=repo_root, runtime_ctx=runtime_ctx, version_id=version_id)
+
+    monkeypatch.setattr(gw, "_ensure_local_version_ref", _wrapped)
+
+    result = await hydrate_workspace_paths(
+        ctx_browser=ctx,
+        paths=[
+            "turn_prev/files/projectA/src/app.py",
+            "turn_prev/files/projectA/docs/readme.md",
+        ],
+        outdir=outdir,
+    )
+
+    assert result["errors"] == []
+    assert calls == ["turn_prev"]
+    assert (outdir / "turn_prev" / "files" / "projectA" / "src" / "app.py").read_text(encoding="utf-8") == "print('git')\n"
+    assert (outdir / "turn_prev" / "files" / "projectA" / "docs" / "readme.md").read_text(encoding="utf-8") == "# readme\n"
+
+
+def test_ensure_local_version_ref_skips_refetch_when_local_ref_exists(tmp_path, monkeypatch):
+    monkeypatch.setenv("GIT_HTTP_TOKEN", "test-token")
+    monkeypatch.setenv("GIT_HTTP_USER", "x-access-token")
+    outdir = tmp_path / "out"
+    outdir.mkdir(parents=True, exist_ok=True)
+    runtime = RuntimeCtx(
+        turn_id="turn_ctx",
+        outdir=str(outdir),
+        workdir=str(tmp_path / "work"),
+        tenant="demo-tenant",
+        project="demo-project",
+        user_id="admin-user",
+        conversation_id="conversation-1",
+        workspace_implementation="git",
+        workspace_git_repo=str(_init_git_workspace_repo(tmp_path)),
+    )
+
+    repo_root = _ensure_workspace_repo(runtime_ctx=runtime, outdir=outdir)
+    local_ref = _ensure_local_version_ref(repo_root=repo_root, runtime_ctx=runtime, version_id="turn_prev")
+
+    real_run = subprocess.run
+    fetch_calls: list[list[str]] = []
+
+    def _wrapped_run(args, *run_args, **run_kwargs):
+        cmd = list(args)
+        if cmd[:4] == ["git", "-C", str(repo_root), "fetch"]:
+            fetch_calls.append(cmd)
+        return real_run(args, *run_args, **run_kwargs)
+
+    monkeypatch.setattr(subprocess, "run", _wrapped_run)
+
+    local_ref_again = _ensure_local_version_ref(repo_root=repo_root, runtime_ctx=runtime, version_id="turn_prev")
+
+    assert local_ref_again == local_ref
+    assert fetch_calls == []
 
 
 @pytest.mark.asyncio

@@ -48,6 +48,7 @@ Current implementation status:
 - `REACT_WORKSPACE_IMPLEMENTATION=custom|git` is implemented and wired through `RuntimeCtx`
 - `react.pull(paths=[fi:...])` is implemented for both workspace backends
 - `git` mode bootstraps the current turn as a sparse local git repo
+- `git` mode bootstraps that repo from a lineage-only bare mirror, not from a broader shared cache clone
 - successful `git` turns publish the lineage branch and immutable per-turn version ref on host-side turn finish
 - git publish failure is treated as turn failure
 - exact non-text `.files/...` refs are treated as hosted/custom artifacts, not as git blobs
@@ -55,7 +56,7 @@ Current implementation status:
 - ANNOUNCE exposes a compact `[WORKSPACE]` operational summary
 - detailed publish metadata is persisted as an internal `react.workspace.publish` block
 - hosted artifacts and execution snapshots remain available through ConversationStore/RN flows
-- strict lineage-only git metadata isolation is the required design target and still needs implementation hardening
+- exec-visible git metadata is lineage-only by construction: the turn repo has no configured remote and no other-user refs are fetched into it
 
 ---
 
@@ -282,7 +283,8 @@ This design is intentionally isolated:
 - only one agent commits on a lineage at a time
 
 Isolation goes beyond network:
-- the git repository visible to exec must contain only the assigned lineage branch and the explicitly prepared immutable version refs
+- the git repository visible to exec must contain only the assigned lineage branch
+- immutable version refs are resolved in the lineage-only mirror outside exec and are used to materialize explicit `react.pull(...)` requests
 - exec must not see other users' branches, other conversations' branches, unrelated tags, or broader remote metadata
 - a setup that removes network but still exposes a broader shared git cache through local metadata is not sufficient
 
@@ -354,17 +356,15 @@ Exec properties:
 - no network
 - local git repo available
 - branch history available for the current lineage only
-- selected historical version refs available locally
+- selected historical version refs available in the lineage-only mirror outside exec
 - workspace content is hydrated explicitly, not eagerly
 - hosted binaries are not pulled automatically with workspace slices
 - no non-lineage branches/tags/refs visible in local git metadata
 - no exec-visible remote pointing at a broader shared cache repo
 
 Required implementation shape:
-- engineering may use a broader shared cache repo outside exec as an optimization
-- but exec must receive either:
-  - a lineage-only local mirror, or
-  - a turn repo with no broader remote metadata attached
+- engineering keeps a lineage-only bare mirror outside exec
+- exec receives a turn repo with no remote configured and no broader metadata attached
 
 In other words:
 - the repo used by git tools inside exec must itself be lineage-scoped
@@ -375,9 +375,8 @@ Current implemented behavior:
 - if the lineage branch already exists, its history is available locally there
 - the sparse worktree starts empty; runtime does not eagerly materialize project files
 - isolated exec preserves `.git` when referenced paths come from a git-backed turn root
-
-Current hardening gap:
-- implementation still needs to ensure the exec-visible repo cannot inspect broader cached git metadata through its configured remote/local repository shape
+- a lineage-only bare mirror is kept outside exec under `.react_workspace_git/.../lineage.git`
+- the turn repo fetches only the mirror's `workspace` branch and keeps no configured remote
 - this doc treats lineage-only metadata visibility as the required end state
 
 The agent can:
@@ -408,7 +407,7 @@ versioned workspace into local execution space.
 
 Phase-1 semantics:
 - input is one or more `fi:` paths or prefixes
-- text/git-tracked content is hydrated from the git snapshot resolved by `<turn_id>`
+- text/git-tracked content is hydrated from the git snapshot resolved by `<turn_id>` in the lineage-only mirror
 - exact binary refs may be hydrated point-wise from hosting if explicitly requested
 - binaries are not inferred as part of a pulled folder
 
@@ -417,6 +416,19 @@ The important rule is:
 - the system should not materialize the whole project tree by default
 
 This keeps large projects and long conversations manageable.
+
+`react.pull(...)` does not replace the active current-turn workspace. It creates
+explicit historical compatibility views under the referenced version path.
+
+If React intentionally wants to replace the active current-turn workspace so
+that `files/...` now begins from a specific historical version, it should use:
+
+```json
+{"tool_id":"react.checkout","params":{"version":"<turn_id>"}}
+```
+
+`react.checkout(...)` is available only in `git` mode and requires a clean
+current-turn repo.
 
 ### 5.3 Current-turn writable root stays familiar
 
@@ -429,6 +441,7 @@ familiar turn-local root:
 
 That path represents:
 - the current editable local worktree content that has been activated for this turn
+- the main workspace tree React should treat as "the project" for the current turn
 
 Historical versions mentioned by explicit `fi:<older_turn>...` references can be
 pulled lazily as compatibility views under:
@@ -439,6 +452,13 @@ pulled lazily as compatibility views under:
 
 Those historical trees are read-only compatibility hydrations, not the primary
 editable workspace.
+
+`react.checkout(...)` is a rare whole-workspace replacement operation. The
+normal mental model is:
+- keep working in `<current_turn>/files/...`
+- pull historical slices explicitly when needed
+- avoid resetting the whole workspace unless the task really requires starting
+  the active tree from a historical version
 
 ### 5.4 Top-level scopes
 
@@ -944,7 +964,6 @@ This keeps the agent contract simple and close to what React already knows.
 
 ### Remaining hardening / follow-up work
 
-- harden exec-visible git metadata isolation so the current-turn repo cannot inspect non-lineage refs/history
 - define retry/repair policy for remote publish failures
 - document operational expectations for the remote workspace repo lifecycle more explicitly
 - add optional later pointer metadata only if binary membership must become implicit in workspace snapshots
@@ -973,16 +992,14 @@ This keeps turn identity stable without forcing a synthetic extra commit every t
 
 ### 13.4 How should lineage-only isolation be enforced mechanically?
 
-Required answer direction:
+Current implemented answer:
 - do not rely only on "no network" or on agent instructions
-- exec-visible git state must be lineage-only by construction
+- keep a lineage-only bare mirror outside exec
+- bootstrap the turn repo from that mirror
+- keep no configured remote in the exec-visible turn repo
+- resolve immutable version refs in the mirror and materialize them through `react.pull(...)`
 
-Preferred implementation options:
-- prepare a lineage-only bare mirror and point the turn repo only at that mirror
-- or remove `origin` from the exec-visible repo entirely after bootstrapping
-- or otherwise rewrite the local repo so only the assigned lineage branch and selected version refs remain reachable
-
-The requirement is:
+The requirement remains:
 - git tools running inside exec can operate only on the assigned lineage content and metadata
 - nothing broader
 

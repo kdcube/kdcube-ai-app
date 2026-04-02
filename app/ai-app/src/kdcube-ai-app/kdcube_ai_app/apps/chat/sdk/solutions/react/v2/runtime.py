@@ -522,6 +522,7 @@ class ReactSolverV2:
             react_tool_ids = {
                 "react.read",
                 "react.pull",
+                "react.checkout",
                 "react.write",
                 "react.plan",
                 "react.hide",
@@ -539,6 +540,7 @@ class ReactSolverV2:
         if tool_id in {
             "react.read",
             "react.pull",
+            "react.checkout",
             "react.write",
             "react.plan",
             "react.hide",
@@ -550,6 +552,8 @@ class ReactSolverV2:
                 allowed_params.update({"paths"})
             elif tool_id == "react.pull":
                 allowed_params.update({"paths"})
+            elif tool_id == "react.checkout":
+                allowed_params.update({"version"})
             elif tool_id == "react.plan":
                 allowed_params.update({"mode", "steps", "plan_id"})
             elif tool_id == "react.hide":

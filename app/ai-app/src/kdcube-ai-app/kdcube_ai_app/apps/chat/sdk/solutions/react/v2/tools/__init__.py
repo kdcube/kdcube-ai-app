@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .read import TOOL_SPEC as READ_SPEC, handle_react_read
     from .pull import TOOL_SPEC as PULL_SPEC, handle_react_pull
+    from .checkout import TOOL_SPEC as CHECKOUT_SPEC, handle_react_checkout
     from .write import TOOL_SPEC as WRITE_SPEC, handle_react_write
     from .patch import TOOL_SPEC as PATCH_SPEC, handle_react_patch
     from .memsearch import TOOL_SPEC as MEMSEARCH_SPEC, handle_react_memsearch
@@ -32,6 +33,7 @@ imports. Static type checkers are satisfied via `TYPE_CHECKING` imports above.
 __all__ = [
     "READ_SPEC",
     "PULL_SPEC",
+    "CHECKOUT_SPEC",
     "WRITE_SPEC",
     "PATCH_SPEC",
     "MEMSEARCH_SPEC",
@@ -41,6 +43,7 @@ __all__ = [
     "EXTERNAL_SPEC",
     "handle_react_read",
     "handle_react_pull",
+    "handle_react_checkout",
     "handle_react_write",
     "handle_react_patch",
     "handle_react_memsearch",
@@ -55,6 +58,8 @@ _LAZY_ATTRS = {
     "handle_react_read": ("read", "handle_react_read"),
     "PULL_SPEC": ("pull", "TOOL_SPEC"),
     "handle_react_pull": ("pull", "handle_react_pull"),
+    "CHECKOUT_SPEC": ("checkout", "TOOL_SPEC"),
+    "handle_react_checkout": ("checkout", "handle_react_checkout"),
     "WRITE_SPEC": ("write", "TOOL_SPEC"),
     "handle_react_write": ("write", "handle_react_write"),
     "PATCH_SPEC": ("patch", "TOOL_SPEC"),
