@@ -18,11 +18,17 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.workspace import (
 from kdcube_ai_app.infra.plugin.git_bundle import _build_git_env
 from kdcube_ai_app.infra.service_hub.inventory import AgentLogger
 
+_SKIP_WORKSPACE_DIRS = {".git", "__pycache__", ".pytest_cache", "node_modules", ".venv", "logs", "executed_programs"}
+
 
 def _workspace_cache_root(*, runtime_ctx: Any, outdir: pathlib.Path) -> pathlib.Path:
     root = pathlib.Path(outdir).parent / ".react_workspace_git"
     segs = workspace_lineage_segments(runtime_ctx)
     return root / f"{segs['tenant']}__{segs['project']}__{segs['user_id']}__{segs['conversation_id']}"
+
+
+def _workspace_lineage_repo_root(*, runtime_ctx: Any, outdir: pathlib.Path) -> pathlib.Path:
+    return _workspace_cache_root(runtime_ctx=runtime_ctx, outdir=outdir) / "lineage.git"
 
 
 def describe_current_turn_git_repo(
@@ -77,14 +83,32 @@ def _ensure_workspace_repo(
     log = logger or AgentLogger("react.workspace.git")
     env = _build_git_env()
     cache_root = _workspace_cache_root(runtime_ctx=runtime_ctx, outdir=outdir)
-    repo_root = cache_root / "repo"
+    repo_root = _workspace_lineage_repo_root(runtime_ctx=runtime_ctx, outdir=outdir)
     cache_root.mkdir(parents=True, exist_ok=True)
-    if not (repo_root / ".git").exists():
+    if not (repo_root / "HEAD").exists():
         subprocess.run(
-            ["git", "clone", "--no-checkout", repo_url, str(repo_root)],
+            ["git", "init", "--bare", str(repo_root)],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(repo_root), "remote", "add", "origin", repo_url],
             check=True,
             capture_output=True,
             env=env,
+        )
+        try:
+            subprocess.run(
+                ["git", "-C", str(repo_root), "config", "--unset-all", "remote.origin.fetch"],
+                check=True,
+                capture_output=True,
+            )
+        except subprocess.CalledProcessError:
+            pass
+        subprocess.run(
+            ["git", "-C", str(repo_root), "config", "remote.origin.tagOpt", "--no-tags"],
+            check=True,
+            capture_output=True,
         )
     else:
         try:
@@ -96,15 +120,6 @@ def _ensure_workspace_repo(
             )
         except Exception:
             pass
-    try:
-        subprocess.run(
-            ["git", "-C", str(repo_root), "fetch", "--all", "--tags", "--prune", "--force"],
-            check=True,
-            capture_output=True,
-            env=env,
-        )
-    except Exception as exc:
-        log.log(f"[react.workspace.git] fetch failed: {exc}", level="WARNING")
     return repo_root
 
 
@@ -126,8 +141,10 @@ def _ensure_local_version_ref(*, repo_root: pathlib.Path, runtime_ctx: Any, vers
     if not remote_ref:
         raise ValueError("missing_workspace_version_ref")
     local_ref = f"refs/kdcube-local/versions/{version_id}"
+    if _git_has_ref(repo_root=repo_root, ref_name=local_ref):
+        return local_ref
     subprocess.run(
-        ["git", "-C", str(repo_root), "fetch", "origin", f"+{remote_ref}:{local_ref}"],
+        ["git", "-C", str(repo_root), "fetch", "--no-tags", "origin", f"+{remote_ref}:{local_ref}"],
         check=True,
         capture_output=True,
         env=env,
@@ -140,14 +157,10 @@ def _ensure_local_lineage_branch_ref(*, repo_root: pathlib.Path, runtime_ctx: An
     remote_ref = workspace_lineage_branch_ref(runtime_ctx)
     if not remote_ref:
         return ""
-    segs = workspace_lineage_segments(runtime_ctx)
-    local_ref = (
-        "refs/kdcube-local/lineages/"
-        f"{segs['tenant']}/{segs['project']}/{segs['user_id']}/{segs['conversation_id']}"
-    )
+    local_ref = "refs/heads/workspace"
     try:
         subprocess.run(
-            ["git", "-C", str(repo_root), "fetch", "origin", f"+{remote_ref}:{local_ref}"],
+            ["git", "-C", str(repo_root), "fetch", "--no-tags", "origin", f"+{remote_ref}:{local_ref}"],
             check=True,
             capture_output=True,
             env=env,
@@ -157,6 +170,21 @@ def _ensure_local_lineage_branch_ref(*, repo_root: pathlib.Path, runtime_ctx: An
             return local_ref
         return ""
     return local_ref
+
+
+def _fetch_ref_into_turn_repo(
+    *,
+    turn_root: pathlib.Path,
+    source_repo_root: pathlib.Path,
+    source_ref: str,
+    target_ref: str,
+) -> str:
+    subprocess.run(
+        ["git", "-C", str(turn_root), "fetch", "--no-tags", str(source_repo_root), f"+{source_ref}:{target_ref}"],
+        check=True,
+        capture_output=True,
+    )
+    return target_ref
 
 
 def _workspace_commit_identity(runtime_ctx: Any) -> tuple[str, str]:
@@ -212,25 +240,13 @@ def ensure_current_turn_git_workspace(
         check=True,
         capture_output=True,
     )
-    try:
-        subprocess.run(
-            ["git", "-C", str(turn_root), "remote", "add", "origin", str(repo_root)],
-            check=True,
-            capture_output=True,
-        )
-    except subprocess.CalledProcessError:
-        subprocess.run(
-            ["git", "-C", str(turn_root), "remote", "set-url", "origin", str(repo_root)],
-            check=True,
-            capture_output=True,
-        )
     sparse_file = turn_root / ".git" / "info" / "sparse-checkout"
     sparse_file.parent.mkdir(parents=True, exist_ok=True)
     sparse_file.write_text("", encoding="utf-8")
 
     if lineage_ref:
         subprocess.run(
-            ["git", "-C", str(turn_root), "fetch", "origin", f"+{lineage_ref}:refs/heads/workspace"],
+            ["git", "-C", str(turn_root), "fetch", "--no-tags", str(repo_root), f"+{lineage_ref}:refs/heads/workspace"],
             check=True,
             capture_output=True,
         )
@@ -330,12 +346,39 @@ def _git_has_staged_changes(*, repo_root: pathlib.Path) -> bool:
     return proc.returncode != 0
 
 
+def _git_is_dirty(*, repo_root: pathlib.Path) -> bool:
+    proc = subprocess.run(
+        ["git", "-C", str(repo_root), "status", "--porcelain", "--untracked-files=all"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return bool((proc.stdout or "").strip())
+
+
 def _file_is_text_like(path: pathlib.Path) -> bool:
     try:
         data = path.read_bytes()
     except Exception:
         return False
     return _blob_is_text_like(data=data, path_hint=str(path))
+
+
+def _workspace_path_is_skipped(path: pathlib.Path, *, turn_root: pathlib.Path) -> bool:
+    try:
+        rel = path.relative_to(turn_root)
+    except Exception:
+        rel = path
+    return any(part in _SKIP_WORKSPACE_DIRS for part in rel.parts)
+
+
+def _git_path_is_ignored(*, repo_root: pathlib.Path, rel_path: str) -> bool:
+    proc = subprocess.run(
+        ["git", "-C", str(repo_root), "check-ignore", "-q", "--no-index", "--", rel_path],
+        check=False,
+        capture_output=True,
+    )
+    return proc.returncode == 0
 
 
 def _stage_current_turn_text_workspace(*, turn_root: pathlib.Path) -> None:
@@ -351,9 +394,14 @@ def _stage_current_turn_text_workspace(*, turn_root: pathlib.Path) -> None:
     for path in files_root.rglob("*"):
         if not path.is_file():
             continue
+        if _workspace_path_is_skipped(path, turn_root=turn_root):
+            continue
         if not _file_is_text_like(path):
             continue
-        text_paths.append(str(path.relative_to(turn_root)))
+        rel_path = str(path.relative_to(turn_root))
+        if _git_path_is_ignored(repo_root=turn_root, rel_path=rel_path):
+            continue
+        text_paths.append(rel_path)
     if not text_paths:
         return
     for idx in range(0, len(text_paths), 128):
@@ -407,25 +455,25 @@ def publish_current_turn_git_workspace(
 
     head_sha = _git_head_sha(repo_root=turn_root)
     subprocess.run(
-        ["git", "-C", str(turn_root), "push", "origin", f"HEAD:{lineage_ref}"],
+        ["git", "-C", str(turn_root), "push", str(repo_root), "HEAD:refs/heads/workspace"],
         check=True,
         capture_output=True,
     )
     subprocess.run(
-        ["git", "-C", str(turn_root), "push", "origin", f"{head_sha}:{version_ref}"],
+        ["git", "-C", str(turn_root), "push", str(repo_root), f"{head_sha}:refs/kdcube-local/versions/{turn_id}"],
         check=True,
         capture_output=True,
     )
 
     env = _build_git_env()
     subprocess.run(
-        ["git", "-C", str(repo_root), "push", "origin", f"{lineage_ref}:{lineage_ref}"],
+        ["git", "-C", str(repo_root), "push", "origin", f"refs/heads/workspace:{lineage_ref}"],
         check=True,
         capture_output=True,
         env=env,
     )
     subprocess.run(
-        ["git", "-C", str(repo_root), "push", "origin", f"{version_ref}:{version_ref}"],
+        ["git", "-C", str(repo_root), "push", "origin", f"refs/kdcube-local/versions/{turn_id}:{version_ref}"],
         check=True,
         capture_output=True,
         env=env,
@@ -436,6 +484,69 @@ def publish_current_turn_git_workspace(
         "lineage_ref": lineage_ref,
         "version_ref": version_ref,
         "committed": committed,
+    }
+
+
+def checkout_current_turn_git_workspace(
+    *,
+    runtime_ctx: Any,
+    outdir: pathlib.Path,
+    version_id: str,
+    logger: Optional[AgentLogger] = None,
+) -> Dict[str, Any]:
+    version = str(version_id or "").strip()
+    if not version:
+        raise ValueError("missing_version_id")
+    log = logger or AgentLogger("react.workspace.git")
+    turn_root = ensure_current_turn_git_workspace(
+        runtime_ctx=runtime_ctx,
+        outdir=outdir,
+        logger=log,
+    )
+    if _git_is_dirty(repo_root=turn_root):
+        raise ValueError("workspace_checkout_dirty")
+    repo_root = _ensure_workspace_repo(
+        runtime_ctx=runtime_ctx,
+        outdir=outdir,
+        logger=log,
+    )
+    local_ref = _ensure_local_version_ref(
+        repo_root=repo_root,
+        runtime_ctx=runtime_ctx,
+        version_id=version,
+    )
+    checkout_ref = _fetch_ref_into_turn_repo(
+        turn_root=turn_root,
+        source_repo_root=repo_root,
+        source_ref=local_ref,
+        target_ref=f"refs/kdcube-local/checkout/{version}",
+    )
+    subprocess.run(
+        ["git", "-C", str(turn_root), "sparse-checkout", "set", "--cone", "files"],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(turn_root), "checkout", "-f", "workspace"],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(turn_root), "reset", "--hard", checkout_ref],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(turn_root), "clean", "-fd", "--", "files"],
+        check=True,
+        capture_output=True,
+    )
+    return {
+        "turn_root": str(turn_root),
+        "checked_out_version": version,
+        "version_ref": workspace_version_ref(runtime_ctx, version),
+        "workspace_ref": "refs/heads/workspace",
+        "checkout_ref": checkout_ref,
     }
 
 
@@ -461,23 +572,34 @@ async def hydrate_files_from_git_workspace(
     missing: List[str] = []
     errors: List[str] = []
     seen_targets: set[str] = set()
+    version_refs: Dict[str, str] = {}
+    version_errors: Dict[str, str] = {}
 
     for physical in paths:
         if not isinstance(physical, str) or "/files/" not in physical:
             continue
         turn_id, rel = physical.split("/files/", 1)
         tree_path = f"files/{rel}".strip("/")
-        try:
-            local_ref = await asyncio.to_thread(
-                _ensure_local_version_ref,
-                repo_root=repo_root,
-                runtime_ctx=runtime_ctx,
-                version_id=turn_id,
-            )
-        except Exception as exc:
+        if turn_id in version_errors:
             missing.append(physical)
-            errors.append(f"version_ref_unavailable:{turn_id}:{exc}")
+            errors.append(version_errors[turn_id])
             continue
+        local_ref = version_refs.get(turn_id, "")
+        if not local_ref:
+            try:
+                local_ref = await asyncio.to_thread(
+                    _ensure_local_version_ref,
+                    repo_root=repo_root,
+                    runtime_ctx=runtime_ctx,
+                    version_id=turn_id,
+                )
+                version_refs[turn_id] = local_ref
+            except Exception as exc:
+                err = f"version_ref_unavailable:{turn_id}:{exc}"
+                version_errors[turn_id] = err
+                missing.append(physical)
+                errors.append(err)
+                continue
 
         target_root = pathlib.Path(outdir) / turn_id / "files"
         if await asyncio.to_thread(_git_path_is_file, repo_root=repo_root, ref_name=local_ref, tree_path=tree_path):

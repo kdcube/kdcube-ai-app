@@ -13,14 +13,17 @@ class FakeBrowser:
     def contribute(self, blocks, persist=True):
         self.timeline.blocks.extend(blocks or [])
 
-    def contribute_notice(self, *, code, message, extra=None, call_id=None):
-        self.contribute([{
+    def contribute_notice(self, *, code, message, extra=None, call_id=None, meta=None):
+        block = {
             "type": "react.notice",
             "call_id": call_id,
             "text": f"{code}:{message}",
             "meta": extra or {},
             "turn_id": self.runtime_ctx.turn_id or "",
-        }])
+        }
+        if meta:
+            block["meta"] = {**block.get("meta", {}), **meta}
+        self.contribute([block])
 
     def timeline_artifacts(self, paths):
         return self.timeline.materialize_show_artifacts(paths)

@@ -85,6 +85,15 @@ def normalize_physical_path(
         return raw, raw, False
     rel = raw
     rewritten = False
+    if raw.startswith("files/"):
+        rel = raw[len("files/"):]
+        rewritten = True
+    elif raw.startswith("attachments/"):
+        rel = raw[len("attachments/"):]
+        physical = f"{turn_id}/attachments/{rel}" if turn_id else rel
+        if physical != raw:
+            rewritten = True
+        return physical, rel, rewritten
     if "/files/" in raw and raw.startswith("turn_"):
         rel = raw.split("/files/", 1)[1]
         rewritten = True

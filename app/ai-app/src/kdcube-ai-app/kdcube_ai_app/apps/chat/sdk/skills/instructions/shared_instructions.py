@@ -193,6 +193,13 @@ VISIBLE / ADDRESSABLE WORKSPACE MODEL
 - `react.read` still works on logical paths. Use it to inspect text context. Use `react.pull` when execution/code needs the local file.
 - Exec/code and historical cross-turn patching do NOT auto-materialize old files for you. If a historical file is not already local, `react.pull(...)` must happen first.
 - Write only to the current turn `files/` namespace. Older pulled versions are local readonly inputs unless you copy/regenerate content into the current turn.
+- For current-turn writes, patches, render outputs, and exec-produced files, prefer the concise current-turn form:
+  - `files/<scope>/<path>`
+  Runtime binds that to the current turn automatically.
+- Keep the workspace tidy by choosing a meaningful scope and reusing it across turns for the same project:
+  - `files/bookbot/...`
+  - `files/demo_proj/...`
+- Reserve `files/tmp/...` only for disposable scratch outputs.
 - `react.search_files` searches local physical spaces (`outdir`, `outdir/<subdir>`, `workdir`, `workdir/<subdir>`). It does not browse logical snapshot memory directly.
 - `ks:` remains read-only and separate from OUT_DIR. Use `react.read` or bundle-specific tools for it.
 - `workdir` is scratch, not durable collaboration state.
@@ -234,16 +241,22 @@ VISIBLE / ADDRESSABLE WORKSPACE MODEL
 - The current turn root `turn_<current_turn>/` is bootstrapped as a local git repo in OUT_DIR.
 - The repo root path is `Path(OUTPUT_DIR) / "turn_<current_turn>"`.
 - Runtime keeps git history/refs available there, but it does NOT eagerly populate the worktree with project files.
+- In git mode, that current-turn repo is the active lineage workspace for ongoing project work.
+- Your main workspace, as you should mentally organize and inspect it, is `turn_<current_turn>/files/...`.
+- Treat `turn_<current_turn>/files/...` as the authoritative project tree for the turn.
+- `react.pull(fi:<older_turn>.files/...)` creates a version-scoped historical snapshot view under `turn_<older_turn>/files/...`; it does NOT implicitly replace or activate the current-turn worktree.
+- Use `react.checkout(version="<turn_id>")` only in the rare case when you intentionally want to replace the whole active current-turn workspace with a historical version.
 - Read the `[WORKSPACE]` section in ANNOUNCE first. It tells you what is already materialized locally and whether the current sparse repo is clean/dirty.
 - Only bring files in when you actually need them:
-  - use `react.pull(paths=[fi:...])` for versioned snapshot materialization
-  - or use local git checkout/restore commands against the current-turn repo when you intentionally want files from the lineage head
+  - use `react.pull(paths=[fi:...])` when you need a specific historical version by turn id
+  - use local git checkout/restore commands against the current-turn repo when you intentionally want files from the current lineage head in the active workspace
 - Efficient sparse-workspace pattern:
   1. Read ANNOUNCE workspace status first.
   2. If the current-turn local files are already enough, work directly there.
-  3. If you need historical content by turn id, use `react.pull(fi:...)`.
-  4. If you need repo history/diff/status on the current lineage, use local git commands in the current-turn repo.
+  3. If you need historical content by turn id for comparison or explicit reuse, use `react.pull(fi:...)`.
+  4. If you are continuing the current project state, treat the current-turn repo as authoritative and use local git commands in that repo.
   5. Use exact `fi:` refs for binaries; never assume folder pulls bring them.
+- `react.checkout(...)` is exceptional. Prefer staying in `turn_<current_turn>/files/...` and pulling specific historical views instead of resetting the whole workspace.
 - Exec/code and historical cross-turn patching do NOT auto-materialize old files for you. If a historical file is not already local, `react.pull(...)` must happen first.
 - Use local git commands against that current-turn repo root when they help you inspect history, diff, status, or create local commits.
 - Do NOT use `git pull`, `git fetch`, or `git push` from exec/code. Networked git synchronization is handled by engineering outside exec.
@@ -252,6 +265,13 @@ VISIBLE / ADDRESSABLE WORKSPACE MODEL
   - `turn_123/attachments/template.xlsx`
 - `react.read` still works on logical paths. Use it to inspect text context. Use `react.pull` when execution/code needs the local file.
 - Write only to the current turn `files/` namespace. Older pulled versions are local readonly inputs unless you copy/regenerate content into the current turn.
+- For current-turn writes, patches, render outputs, and exec-produced files, prefer the concise current-turn form:
+  - `files/<scope>/<path>`
+  Runtime binds that to the current turn automatically.
+- Keep the workspace tidy by choosing a meaningful scope and reusing it across turns for the same project:
+  - `files/bookbot/...`
+  - `files/demo_proj/...`
+- Reserve `files/tmp/...` only for disposable scratch outputs.
 - `react.search_files` searches local physical spaces (`outdir`, `outdir/<subdir>`, `workdir`, `workdir/<subdir>`). It does not browse logical snapshot memory directly.
 - `ks:` remains read-only and separate from OUT_DIR. Use `react.read` or bundle-specific tools for it.
 - `workdir` is scratch, not durable collaboration state.
