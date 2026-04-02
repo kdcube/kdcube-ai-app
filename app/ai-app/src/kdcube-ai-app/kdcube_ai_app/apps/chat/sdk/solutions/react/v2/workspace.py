@@ -26,6 +26,7 @@ _CODE_PATH_RE = re.compile(r"(turn_[A-Za-z0-9_]+/(files|attachments)/[^\s'\"\)\]
 _REL_FILES_RE = re.compile(r"(?<![A-Za-z0-9_])files/[^\s'\"\)\];,]+")
 _REL_ATTACHMENTS_RE = re.compile(r"(?<![A-Za-z0-9_])attachments/[^\s'\"\)\];,]+")
 _FETCH_CTX_PATH_RE = re.compile(r"([a-z]{2}:[A-Za-z0-9_./\\-]+)")
+_TURN_ROOT_RE = re.compile(r"\b(turn_[A-Za-z0-9_]+)\b")
 
 
 def normalize_workspace_implementation(value: Any) -> str:
@@ -97,6 +98,20 @@ def extract_fetch_ctx_paths(code: str) -> List[str]:
             continue
         seen.add(p)
         out.append(p)
+    return out
+
+
+def extract_workspace_turn_roots(code: str) -> List[str]:
+    if not isinstance(code, str) or not code.strip():
+        return []
+    out: List[str] = []
+    seen = set()
+    for m in _TURN_ROOT_RE.finditer(code):
+        turn_id = m.group(1)
+        if not turn_id or turn_id in seen:
+            continue
+        seen.add(turn_id)
+        out.append(turn_id)
     return out
 
 
@@ -204,6 +219,14 @@ def workspace_version_ref(runtime_ctx: Any, version_id: str) -> str:
     )
 
 
+def workspace_lineage_branch_ref(runtime_ctx: Any) -> str:
+    segs = workspace_lineage_segments(runtime_ctx)
+    return (
+        f"refs/heads/kdcube/{segs['tenant']}/{segs['project']}/"
+        f"{segs['user_id']}/{segs['conversation_id']}"
+    )
+
+
 async def hydrate_workspace_paths(
     *,
     ctx_browser: Any,
@@ -268,4 +291,3 @@ async def hydrate_workspace_paths(
     result["missing"] = list(dict.fromkeys(result["missing"]))
     result["errors"] = list(dict.fromkeys(result["errors"]))
     return result
-
