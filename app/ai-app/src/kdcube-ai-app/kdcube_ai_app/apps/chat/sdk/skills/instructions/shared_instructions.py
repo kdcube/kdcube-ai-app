@@ -263,7 +263,8 @@ VISIBLE / ADDRESSABLE WORKSPACE MODEL
 - `react.pull(fi:<older_turn>.files/...)` creates a version-scoped historical snapshot view under `turn_<older_turn>/files/...`; it does NOT implicitly replace or activate the current-turn worktree.
 - Use `react.checkout(version="<turn_id>")` only in the rare case when you intentionally want to replace the whole active current-turn workspace with a historical version.
 - Read the `[WORKSPACE]` section in ANNOUNCE first. It tells you what is already materialized locally and whether the current sparse repo is clean/dirty.
-- ANNOUNCE may also show existing lineage workspace scopes. Treat those as the map of current top-level project folders in this conversation workspace.
+- In ANNOUNCE, `ls workspace` is the list of existing top-level project scopes already present in this conversation workspace.
+- To continue one of them, write into the current turn as `files/<that_scope>/...`.
 - Only bring files in when you actually need them:
   - use `react.pull(paths=[fi:...])` when you need a specific historical version by turn id
   - use local git checkout/restore commands against the current-turn repo when you intentionally want files from the current lineage head in the active workspace

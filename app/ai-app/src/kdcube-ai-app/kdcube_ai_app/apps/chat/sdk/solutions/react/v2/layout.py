@@ -332,13 +332,14 @@ def build_announce_workspace_lines(
         if repo_status:
             lines.append(f"  repo_status: {repo_status}")
         if lineage_scopes:
-            lines.append("  lineage_workspace_scopes:")
+            lines.append("  ls workspace:")
             for item in lineage_scopes[:6]:
                 scope = str(item.get("scope") or "").strip()
                 files = int(item.get("files") or 0)
                 lines.append(f"    - {scope} ({files} file{'s' if files != 1 else ''})")
+            lines.append("  continue_one_by_writing_to: files/<that_scope>/... in current turn")
         else:
-            lines.append("  lineage_workspace_scopes: none")
+            lines.append("  ls workspace: none")
 
     current_publish = latest_workspace_publish_event(timeline_blocks, turn_id=turn_id) if turn_id else None
     any_publish = latest_workspace_publish_event(timeline_blocks)
