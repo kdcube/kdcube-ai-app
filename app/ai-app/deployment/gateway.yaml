@@ -13,6 +13,7 @@ gateway:
     proc:
       - "^.*/integrations/bundles/[^/]+/[^/]+/operations/[^/]+$"
       - "^.*/integrations/bundles/[^/]+/[^/]+/[^/]+/operations/[^/]+$"
+      - "^.*/integrations/bundles/[^/]+/[^/]+/[^/]+/widgets/[^/]+$"
       - "^.*/integrations/static/[^/]+/[^/]+/[^/]+/.*$"
 
   bypass_throttling_patterns:
