@@ -16,6 +16,11 @@ def test_build_announce_text_includes_git_workspace_summary(tmp_path):
     (outdir / "turn_122" / "files").mkdir(parents=True, exist_ok=True)
 
     subprocess.run(["git", "init", str(turn_root)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(turn_root), "config", "user.name", "Test User"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(turn_root), "config", "user.email", "test@example.com"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(turn_root), "checkout", "-b", "workspace"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(turn_root), "add", "."], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(turn_root), "commit", "-m", "init"], check=True, capture_output=True)
 
     runtime = RuntimeCtx(
         turn_id="turn_123",
@@ -54,6 +59,51 @@ def test_build_announce_text_includes_git_workspace_summary(tmp_path):
     assert "current_turn_scopes:" in announce_text
     assert "- projectA/ (1 file)" in announce_text
     assert "repo_mode: sparse git repo" in announce_text
-    assert "repo_status: dirty" in announce_text
+    assert "repo_status: clean" in announce_text
+    assert "lineage_workspace_scopes:" in announce_text
+    assert "- projectA/ (1 file)" in announce_text
     assert "current_turn_publish: pending" in announce_text
     assert "last_published_turn: turn_122 (succeeded)" in announce_text
+
+
+def test_build_announce_text_includes_lineage_scopes_even_when_current_turn_is_sparse(tmp_path):
+    outdir = tmp_path / "out"
+    turn_root = outdir / "turn_123"
+    (turn_root / "files" / "customer_portal" / "src").mkdir(parents=True, exist_ok=True)
+    (turn_root / "files" / "customer_portal" / "src" / "app.py").write_text("print('hi')\n", encoding="utf-8")
+
+    subprocess.run(["git", "init", str(turn_root)], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(turn_root), "config", "user.name", "Test User"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(turn_root), "config", "user.email", "test@example.com"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(turn_root), "checkout", "-b", "workspace"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(turn_root), "add", "."], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(turn_root), "commit", "-m", "init"], check=True, capture_output=True)
+    for child in (turn_root / "files").iterdir():
+        if child.is_dir():
+            import shutil
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+
+    runtime = RuntimeCtx(
+        turn_id="turn_123",
+        outdir=str(outdir),
+        workspace_implementation="git",
+    )
+
+    announce_text = build_announce_text(
+        iteration=1,
+        max_iterations=6,
+        started_at="2026-04-02T10:00:00Z",
+        timezone="UTC",
+        runtime_ctx=runtime,
+        timeline_blocks=[],
+        constraints=None,
+        feedback_updates=None,
+        feedback_incorporated=False,
+        mode="full",
+    )
+
+    assert "current_turn_scopes: none" in announce_text
+    assert "lineage_workspace_scopes:" in announce_text
+    assert "- customer_portal/ (1 file)" in announce_text
