@@ -150,6 +150,7 @@ Current `[WORKSPACE]` content is compact and may include:
 - `current_turn_root`
 - `materialized_turn_roots`
 - `current_turn_scopes`
+- in `git` mode, `lineage_workspace_scopes`
 - in `git` mode:
   - `repo_mode`
   - `repo_status`
@@ -160,6 +161,8 @@ The intended sparse-workspace behavior is:
 2. if already-local files are enough, work directly there
 3. if historical/project files are needed, call `react.pull(...)`
 4. in `git` mode, use local git commands only after understanding that the worktree may still be sparse
+5. when continuing an existing project, keep working inside the established top-level scope unless you are intentionally renaming the project scope
+6. if `[WORKSPACE]` shows existing top-level scopes for the project you are continuing, keep editing inside that established scope instead of inventing a sibling folder
 
 ## Gate and decision loop
 

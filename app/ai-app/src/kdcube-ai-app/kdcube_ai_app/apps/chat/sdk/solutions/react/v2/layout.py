@@ -312,19 +312,33 @@ def build_announce_workspace_lines(
     if impl == "git":
         try:
             from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.git_workspace import describe_current_turn_git_repo
+            from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.git_workspace import summarize_current_turn_git_lineage_scopes
             outdir = getattr(runtime_ctx, "outdir", None)
             repo_info = describe_current_turn_git_repo(
                 runtime_ctx=runtime_ctx,
                 outdir=pathlib.Path(str(outdir or "")),
             )
+            lineage_scopes = summarize_current_turn_git_lineage_scopes(
+                runtime_ctx=runtime_ctx,
+                outdir=pathlib.Path(str(outdir or "")),
+            )
         except Exception:
             repo_info = {}
+            lineage_scopes = []
         repo_mode = str(repo_info.get("repo_mode") or "").strip()
         repo_status = str(repo_info.get("repo_status") or "").strip()
         if repo_mode:
             lines.append(f"  repo_mode: {repo_mode}")
         if repo_status:
             lines.append(f"  repo_status: {repo_status}")
+        if lineage_scopes:
+            lines.append("  lineage_workspace_scopes:")
+            for item in lineage_scopes[:6]:
+                scope = str(item.get("scope") or "").strip()
+                files = int(item.get("files") or 0)
+                lines.append(f"    - {scope} ({files} file{'s' if files != 1 else ''})")
+        else:
+            lines.append("  lineage_workspace_scopes: none")
 
     current_publish = latest_workspace_publish_event(timeline_blocks, turn_id=turn_id) if turn_id else None
     any_publish = latest_workspace_publish_event(timeline_blocks)

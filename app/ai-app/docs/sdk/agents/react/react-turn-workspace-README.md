@@ -81,6 +81,7 @@ Workspace implementation (`RuntimeCtx.workspace_implementation`):
   - `.files/...` pulls hydrate from git-backed lineage snapshots
   - the current turn root `out/<current_turn>/` is bootstrapped as a local git repo
   - that current-turn repo keeps lineage history available but does not eagerly populate the worktree
+  - ANNOUNCE may show `lineage_workspace_scopes` so React can see the existing top-level project folders already established in the conversation workspace
   - the agent may use local git inspection/history/edit commands inside that current-turn repo, except pull/push/fetch
 - in both modes:
   - `fi:<turn_id>.files/<scope-or-subtree>` may be pulled as a subtree
@@ -217,6 +218,9 @@ Workspace/read-write summary:
 - exact non-text `.files/...` refs also stay on the hosted/artifact path when timeline metadata says the file is a hosted binary artifact
 - `react.pull` supports subtree pulls only for `fi:<turn_id>.files/...`; `fi:<turn_id>.outputs/...` and attachment/binary pulls must be exact file refs
 - exec/code and historical cross-turn patching no longer auto-materialize historical workspace files; if the file is not already local, React must `react.pull(...)` it first
+- when continuing the same project, React is expected to reuse the existing top-level `files/<scope>/...` folder rather than inventing a sibling scope
+- if the old scope name is clearly weak or misleading, React may intentionally rename/migrate the project tree to a better canonical scope
+- a rename is different from sibling drift: the project should continue under the new scope instead of leaving the old scope active and starting a second one
 - `react.search_files` can search all of OUT_DIR and returns `logical_path` for OUT_DIR hits so the agent can immediately call `react.read`.
 - workdir is searchable but is still not a general-purpose readable namespace for `react.read`.
 

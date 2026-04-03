@@ -201,12 +201,16 @@ VISIBLE / ADDRESSABLE WORKSPACE MODEL
   - `files/<scope>/<path>` for durable workspace/project state
   - `outputs/<scope>/<path>` for non-workspace produced artifacts
   Runtime binds both to the current turn automatically.
-- Keep the workspace tidy by choosing a meaningful scope and reusing it across turns for the same project:
-  - `files/bookbot/...`
-  - `files/demo_proj/...`
+- Keep the workspace tidy by reusing an existing top-level scope when you are continuing the same project:
+  - `files/customer_portal/...`
+  - `files/analytics_dashboard/...`
+- If ANNOUNCE or the visible local workspace already shows `files/<scope>/...` scopes, continue inside the matching existing scope instead of inventing a sibling scope.
+- If the old scope name is clearly weak, temporary, or misleading, you may rename the project to a better canonical scope.
+- Treat that as a real rename/migration of the project tree, not as a sibling continuation.
+- Only create a genuinely separate new top-level scope when the user explicitly wants a separate project or fork.
 - Keep produced artifacts equally tidy:
-  - `outputs/bookbot/report.md`
-  - `outputs/demo_proj/test_results.txt`
+  - `outputs/customer_portal/report.md`
+  - `outputs/analytics_dashboard/test_results.txt`
 - Reserve `outputs/tmp/...` only for disposable scratch outputs.
 - `react.search_files` searches local physical spaces (`outdir`, `outdir/<subdir>`, `workdir`, `workdir/<subdir>`). It does not browse logical snapshot memory directly.
 - `ks:` remains read-only and separate from OUT_DIR. Use `react.read` or bundle-specific tools for it.
@@ -259,6 +263,7 @@ VISIBLE / ADDRESSABLE WORKSPACE MODEL
 - `react.pull(fi:<older_turn>.files/...)` creates a version-scoped historical snapshot view under `turn_<older_turn>/files/...`; it does NOT implicitly replace or activate the current-turn worktree.
 - Use `react.checkout(version="<turn_id>")` only in the rare case when you intentionally want to replace the whole active current-turn workspace with a historical version.
 - Read the `[WORKSPACE]` section in ANNOUNCE first. It tells you what is already materialized locally and whether the current sparse repo is clean/dirty.
+- ANNOUNCE may also show existing lineage workspace scopes. Treat those as the map of current top-level project folders in this conversation workspace.
 - Only bring files in when you actually need them:
   - use `react.pull(paths=[fi:...])` when you need a specific historical version by turn id
   - use local git checkout/restore commands against the current-turn repo when you intentionally want files from the current lineage head in the active workspace
@@ -282,12 +287,16 @@ VISIBLE / ADDRESSABLE WORKSPACE MODEL
   - `files/<scope>/<path>` for durable workspace/project state
   - `outputs/<scope>/<path>` for non-workspace produced artifacts
   Runtime binds both to the current turn automatically.
-- Keep the workspace tidy by choosing a meaningful scope and reusing it across turns for the same project:
-  - `files/bookbot/...`
-  - `files/demo_proj/...`
+- Keep the workspace tidy by reusing an existing top-level scope when you are continuing the same project:
+  - `files/customer_portal/...`
+  - `files/analytics_dashboard/...`
+- If ANNOUNCE or the visible local workspace already shows `files/<scope>/...` scopes, continue inside the matching existing scope instead of inventing a sibling scope.
+- If the old scope name is clearly weak, temporary, or misleading, you may rename the project to a better canonical scope.
+- Treat that as a real rename/migration of the project tree, not as a sibling continuation.
+- Only create a genuinely separate new top-level scope when the user explicitly wants a separate project or fork.
 - Keep produced artifacts equally tidy:
-  - `outputs/bookbot/report.md`
-  - `outputs/demo_proj/test_results.txt`
+  - `outputs/customer_portal/report.md`
+  - `outputs/analytics_dashboard/test_results.txt`
 - Reserve `outputs/tmp/...` only for disposable scratch outputs.
 - `react.search_files` searches local physical spaces (`outdir`, `outdir/<subdir>`, `workdir`, `workdir/<subdir>`). It does not browse logical snapshot memory directly.
 - `ks:` remains read-only and separate from OUT_DIR. Use `react.read` or bundle-specific tools for it.

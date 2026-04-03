@@ -62,6 +62,52 @@ def describe_current_turn_git_repo(
     }
 
 
+def summarize_current_turn_git_lineage_scopes(
+    *,
+    runtime_ctx: Any,
+    outdir: pathlib.Path,
+) -> List[Dict[str, Any]]:
+    turn_id = str(getattr(runtime_ctx, "turn_id", "") or "").strip()
+    if not turn_id:
+        return []
+    turn_root = pathlib.Path(outdir) / turn_id
+    if not (turn_root / ".git").exists():
+        return []
+    try:
+        subprocess.run(
+            ["git", "-C", str(turn_root), "rev-parse", "--verify", "workspace"],
+            check=True,
+            capture_output=True,
+        )
+    except subprocess.CalledProcessError:
+        return []
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(turn_root), "ls-tree", "-r", "--name-only", "workspace", "--", "files"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError:
+        return []
+
+    counts: Dict[str, int] = {}
+    for line in (proc.stdout or "").splitlines():
+        raw = line.strip()
+        if not raw.startswith("files/"):
+            continue
+        rel = raw[len("files/"):].strip("/")
+        if not rel:
+            continue
+        top = rel.split("/", 1)[0]
+        counts[top] = counts.get(top, 0) + 1
+
+    out: List[Dict[str, Any]] = []
+    for scope in sorted(counts.keys(), key=str.lower):
+        out.append({"scope": f"{scope}/", "files": counts[scope], "kind": "dir"})
+    return out
+
+
 def _run_git_capture(repo_root: pathlib.Path, args: List[str], *, env: Optional[Dict[str, str]] = None) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["git", "-C", str(repo_root), *args],

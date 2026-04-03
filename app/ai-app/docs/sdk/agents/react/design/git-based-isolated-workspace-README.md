@@ -54,6 +54,7 @@ Current implementation status:
 - exact non-text `.files/...` refs are treated as hosted/custom artifacts, not as git blobs
 - folder pulls remain text-only
 - ANNOUNCE exposes a compact `[WORKSPACE]` operational summary
+- in `git` mode that summary may expose `lineage_workspace_scopes` so React can see the existing top-level project folders before it decides where to write
 - detailed publish metadata is persisted as an internal `react.workspace.publish` block
 - hosted artifacts and execution snapshots remain available through ConversationStore/RN flows
 - exec-visible git metadata is lineage-only by construction: the turn repo has no configured remote and no other-user refs are fetched into it
@@ -490,6 +491,7 @@ Current content includes:
 - `current_turn_root`
 - `materialized_turn_roots`
 - `current_turn_scopes`
+- `lineage_workspace_scopes`
 - in `git` mode:
   - `repo_mode`
   - `repo_status`
@@ -500,6 +502,12 @@ Current content includes:
 
 Important rule:
 - raw `commit_sha`, `lineage_ref`, and `version_ref` stay out of ANNOUNCE unless there is a failure that requires immediate agent attention
+
+React should use this section not only to understand sparsity, but also to avoid fragmenting one project into multiple sibling top-level folders:
+- when continuing an existing project, reuse the matching established `files/<scope>/...` tree
+- if the current scope name is clearly weak or misleading, a deliberate rename/migration to a better canonical scope is allowed
+- a rename should replace the active project scope, not create sibling drift into a second top-level folder
+- create a genuinely separate new top-level scope only when the user explicitly asks for a separate project or fork
 
 This keeps ANNOUNCE operational and short while still teaching sparse-workspace behavior every round.
 
