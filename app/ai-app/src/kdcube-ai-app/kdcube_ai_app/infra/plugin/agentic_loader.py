@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import logging
 import sys
 import inspect
 import types
@@ -18,6 +19,7 @@ from typing import Callable, Optional, Tuple, Any, Dict, List
 
 from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
 from kdcube_ai_app.infra.service_hub.inventory import AgentLogger
+_log = logging.getLogger("kdcube.plugin.loader")
 
 # --------------------------------------------------------------------------------------
 # Public decorators — the ONLY way to mark workflow factory/class and optional init
@@ -238,6 +240,7 @@ class AgenticBundleSpec:
 
 _module_cache: Dict[str, types.ModuleType] = {}
 _singleton_cache: Dict[str, Tuple[Any, types.ModuleType]] = {}
+_manifest_cache: Dict[str, "BundleInterfaceManifest"] = {}
 _bundle_load_done: set[str] = set()
 _bundle_load_inflight: set[str] = set()
 _bundle_load_lock = threading.Lock()
@@ -424,7 +427,19 @@ def _load_from_sys_with_path_on_syspath(container_path: Path, module: str) -> ty
     if root not in sys.path:
         sys.path.insert(0, root)
     try:
-        return importlib.import_module(module)
+        mod = importlib.import_module(module)
+        # Guard against sys.modules cache returning a module from a *different* bundle.
+        # Multiple bundles can share the same module name (e.g. "entrypoint"); the first
+        # one wins in sys.modules and all subsequent bundles get the wrong module back.
+        # Verify the loaded module actually lives inside container_path.
+        mod_file = getattr(mod, "__file__", None) or getattr(mod, "__path__", [None])[0]
+        if mod_file and not str(Path(mod_file).resolve()).startswith(root + "/"):
+            _log.info(
+                "[bundle.loader] sys.modules collision: module=%r cached from %r, expected inside %r — reloading via direct file",
+                module, mod_file, root,
+            )
+            return _load_module_from_dir(container_path, module)
+        return mod
     except ModuleNotFoundError as e:
         # Only fallback if the *requested* module is missing.
         missing = (e.name or "").split(".")[0]
@@ -540,9 +555,17 @@ def _instantiate_symbol(kind: str, symbol: Any, config: Any, extra_kwargs: Dict[
 
 def _iter_bundle_callable_members(target: Any):
     cls = target if isinstance(target, type) else target.__class__
+    _bundle_attrs = (API_METHOD_ATTR, UI_WIDGET_ATTR, ON_MESSAGE_ATTR, UI_MAIN_ATTR)
     for name, member in inspect.getmembers(cls, predicate=callable):
         if name.startswith("__"):
             continue
+        # If the member itself carries a bundle decorator attribute, yield it directly.
+        # This handles @api as the outermost decorator (attribute lives on the wrapper,
+        # not on the unwrapped function that inspect.unwrap would reach).
+        if any(hasattr(member, attr) for attr in _bundle_attrs):
+            yield name, member
+            continue
+        # Otherwise unwrap to find @api applied as an inner decorator beneath functools.wraps.
         try:
             fn = inspect.unwrap(member)
         except Exception:
@@ -743,6 +766,16 @@ def get_workflow_instance(
         redis=redis,
     )
 
+    # Cache interface manifest (once per spec key — path::module)
+    if key not in _manifest_cache:
+        try:
+            bundle_id_hint = getattr(getattr(config, "ai_bundle_spec", None), "id", None) or ""
+            _manifest_cache[key] = discover_bundle_interface_manifest(
+                instance, bundle_id=bundle_id_hint
+            )
+        except Exception:
+            _log.warning("[manifest.cache] Failed to build manifest for key=%s", key, exc_info=True)
+
     if final_singleton:
         _singleton_cache[key] = (instance, mod)
 
@@ -799,6 +832,44 @@ def clear_agentic_caches() -> None:
     """Utility for tests/dev hot-reload."""
     _module_cache.clear()
     _singleton_cache.clear()
+    _manifest_cache.clear()
+
+
+def get_cached_manifest(spec: AgenticBundleSpec) -> "BundleInterfaceManifest | None":
+    """Return the cached BundleInterfaceManifest for spec, or None if not yet loaded."""
+    return _manifest_cache.get(_cache_key(spec))
+
+
+def load_bundle_manifest(
+        spec: AgenticBundleSpec,
+        *,
+        bundle_id: str = "",
+) -> "BundleInterfaceManifest":
+    """
+    Load (or reuse cached) module, discover the entrypoint class via
+    @agentic_workflow, and return its BundleInterfaceManifest.
+
+    Deliberately avoids instantiating the workflow so it never needs
+    DB connections, LLM keys, or a comm_context.  Safe to call from
+    listing endpoints on a cold cache.
+
+    Result is stored in _manifest_cache under the same key used by
+    get_workflow_instance, so a later real request won't re-discover.
+    """
+    key = _cache_key(spec)
+    if key in _manifest_cache:
+        return _manifest_cache[key]
+
+    mod = _resolve_module(spec)
+    chosen = _discover_decorated(mod)
+    if not chosen:
+        raise AttributeError(
+            f"No @agentic_workflow class found in module '{mod.__name__}'"
+        )
+    _, _, symbol = chosen  # (kind, meta, class_or_factory)
+    manifest = discover_bundle_interface_manifest(symbol, bundle_id=bundle_id)
+    _manifest_cache[key] = manifest
+    return manifest
 
 def evict_inactive_specs(
         *,
@@ -818,6 +889,10 @@ def evict_inactive_specs(
         if key not in active_keys:
             _singleton_cache.pop(key, None)
             evicted_singletons += 1
+
+    for key in list(_manifest_cache.keys()):
+        if key not in active_keys:
+            _manifest_cache.pop(key, None)
 
     for key, mod in list(_module_cache.items()):
         if key in active_keys:

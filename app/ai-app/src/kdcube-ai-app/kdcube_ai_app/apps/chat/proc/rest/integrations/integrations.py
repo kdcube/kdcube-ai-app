@@ -42,8 +42,11 @@ from kdcube_ai_app.infra.plugin.agentic_loader import (
     APIEndpointSpec,
     BundleInterfaceManifest,
     UIWidgetSpec,
+    cache_key_for_spec,
     discover_bundle_interface_manifest,
+    get_cached_manifest,
     get_workflow_instance,
+    load_bundle_manifest,
     resolve_bundle_api_endpoint,
     resolve_bundle_widget,
 )
@@ -344,6 +347,73 @@ async def _load_bundle_props_defaults(
     return defaults
 
 
+async def _get_bundle_manifest(
+        *,
+        bundle_id: str,
+        tenant: str,
+        project: str,
+        request: Request,
+        session: UserSession,
+) -> Optional[BundleInterfaceManifest]:
+    """
+    Return BundleInterfaceManifest for bundle_id.
+    Reads from _manifest_cache when available (populated by get_workflow_instance).
+    Falls back to loading the bundle on-demand when the cache is cold.
+    """
+    spec_resolved = await resolve_bundle_async(bundle_id, override=None)
+    if not spec_resolved:
+        return None
+    spec = AgenticBundleSpec(
+        path=spec_resolved.path,
+        module=spec_resolved.module,
+        singleton=bool(spec_resolved.singleton),
+    )
+    cached = get_cached_manifest(spec)
+    if cached is not None:
+        return cached
+    # Fallback: load module and discover class without instantiation.
+    try:
+        return load_bundle_manifest(spec, bundle_id=spec_resolved.id)
+    except Exception:
+        logger.warning("[bundle_manifest] Failed to load manifest for %s", bundle_id, exc_info=True)
+        return None
+
+
+def _manifest_to_descriptor(manifest: BundleInterfaceManifest) -> Dict[str, Any]:
+    """Serialise a full (unfiltered) manifest to a plain dict."""
+    return {
+        "apis": [
+            {"alias": s.alias, "http_method": s.http_method, "roles": list(s.roles)}
+            for s in manifest.api_endpoints
+        ],
+        "widgets": [
+            {"alias": s.alias, "icon": s.icon, "roles": list(s.roles)}
+            for s in manifest.ui_widgets
+        ],
+        "on_message": manifest.on_message.method_name if manifest.on_message else None,
+    }
+
+
+def _manifest_to_descriptor_filtered(
+        manifest: BundleInterfaceManifest,
+        session: UserSession,
+) -> Dict[str, Any]:
+    """Serialise a manifest filtered to the roles visible to session."""
+    return {
+        "apis": [
+            {"alias": s.alias, "http_method": s.http_method, "roles": list(s.roles)}
+            for s in manifest.api_endpoints
+            if _roles_visible(s.roles, session)
+        ],
+        "widgets": [
+            {"alias": s.alias, "icon": s.icon, "roles": list(s.roles)}
+            for s in manifest.ui_widgets
+            if _roles_visible(s.roles, session)
+        ],
+        "on_message": manifest.on_message.method_name if manifest.on_message else None,
+    }
+
+
 @admin_router.get("/admin/integrations/bundles")
 async def get_available_bundles(
         request: Request,
@@ -370,25 +440,92 @@ async def get_available_bundles(
         else:
             raise HTTPException(status_code=503, detail="Failed to load bundles registry for tenant/project")
 
+    bundles_out = {}
+    for bid, entry in reg.bundles.items():
+        manifest = await _get_bundle_manifest(
+            bundle_id=bid,
+            tenant=tenant_id,
+            project=project_id,
+            request=request,
+            session=session,
+        )
+        descriptor: Dict[str, Any] = {
+            "id": bid,
+            "name": entry.name,
+            "description": entry.description,
+            "path": entry.path,
+            "module": entry.module,
+            "singleton": bool(entry.singleton),
+            "version": getattr(entry, "version", None),
+            "repo": getattr(entry, "repo", None),
+            "ref": getattr(entry, "ref", None),
+            "subdir": getattr(entry, "subdir", None),
+            "git_commit": getattr(entry, "git_commit", None),
+        }
+        if manifest is not None:
+            descriptor.update(_manifest_to_descriptor(manifest))
+        bundles_out[bid] = descriptor
+
     return {
         "tenant": tenant_id,
         "project": project_id,
-        "available_bundles": {
-            bid: {
-                "id": bid,
-                "name": entry.name,
-                "description": entry.description,
-                "path": entry.path,
-                "module": entry.module,
-                "singleton": bool(entry.singleton),
-                "version": getattr(entry, "version", None),
-                "repo": getattr(entry, "repo", None),
-                "ref": getattr(entry, "ref", None),
-                "subdir": getattr(entry, "subdir", None),
-                "git_commit": getattr(entry, "git_commit", None),
-            }
-            for bid, entry in reg.bundles.items()
-        },
+        "available_bundles": bundles_out,
+        "default_bundle_id": reg.default_bundle_id,
+    }
+
+
+@router.get("/bundles")
+async def get_bundles(
+        request: Request,
+        tenant: Optional[str] = None,
+        project: Optional[str] = None,
+        session: UserSession = Depends(require_auth(RequireUser())),
+):
+    """
+    Non-admin bundle listing for registered users.
+    Returns bundle descriptors with apis/widgets/on_message filtered by the
+    caller's roles. Origin fields (path, module, repo, ref, subdir, git_commit)
+    are omitted.
+    """
+    settings = get_settings()
+    tenant_id = tenant or settings.TENANT
+    project_id = project or settings.PROJECT
+    try:
+        redis = _get_app_redis(request)
+        reg = await load_registry(redis, tenant_id, project_id)
+    except Exception:
+        if tenant_id == settings.TENANT and project_id == settings.PROJECT:
+            reg = BundlesRegistry(
+                default_bundle_id=get_default_id(),
+                bundles={bid: BundleEntry(**info) for bid, info in get_all().items()},
+            )
+        else:
+            raise HTTPException(status_code=503, detail="Failed to load bundles registry for tenant/project")
+
+    bundles_out = {}
+    for bid, entry in reg.bundles.items():
+        manifest = await _get_bundle_manifest(
+            bundle_id=bid,
+            tenant=tenant_id,
+            project=project_id,
+            request=request,
+            session=session,
+        )
+        descriptor: Dict[str, Any] = {
+            "id": bid,
+            "name": entry.name,
+            "description": entry.description,
+            "singleton": bool(entry.singleton),
+            "version": getattr(entry, "version", None),
+        }
+        if manifest is not None:
+            descriptor.update(_manifest_to_descriptor_filtered(manifest, session))
+        bundles_out[bid] = descriptor
+
+    return {
+        "tenant": tenant_id,
+        "project": project_id,
+        "available_bundles": bundles_out,
         "default_bundle_id": reg.default_bundle_id,
     }
 
