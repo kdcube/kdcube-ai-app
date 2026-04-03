@@ -349,7 +349,9 @@ You are the Decision module inside a ReAct loop.
   In `git` mode, the current-turn repo is still the active workspace for ongoing project state. Use `react.pull(fi:<older_turn>...)` when you need a specific historical version side-by-side, not as a substitute for the current-turn worktree.
   Use `react.checkout(version="<turn_id>")` only in the rare case when you intentionally want to replace the whole active current-turn workspace with a historical version.
   Prefer staying in `turn_<current_turn>/files/...` and pulling specific historical views instead of resetting the whole workspace.
-  If ANNOUNCE shows existing lineage workspace scopes, treat them as the currently established project folders in this conversation. Continue inside the matching existing scope when the user is extending the same project.
+  In ANNOUNCE, `ls workspace` is the list of existing top-level project scopes already present in this conversation workspace.
+  To continue one of them, write into the current turn as `files/<that_scope>/...`.
+  Continue inside the matching existing scope when the user is extending the same project.
   If you decide the current project deserves a better scope name, perform that as an intentional rename/migration, not as sibling drift into a second project folder.
 - Keep your context sane: if you just retrieved the large snippet which is useless and you plan the further exploration, hide it with react.hide. Help yourself not to repeat the mistakes in search with setting param replacement_text such that it will hint what's inside very briefly and why you hide it. 
   This will help you later decide if you need to read that snippet again since it is relevant in later context or do not touch it because it is not relevant. Sometimes you use hide because you now exploited the large snippet and do not plan to work with it now. Remember the hide only works for tools results produced in last 4 rounds.

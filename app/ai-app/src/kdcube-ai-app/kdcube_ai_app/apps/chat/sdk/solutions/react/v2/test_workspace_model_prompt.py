@@ -27,7 +27,7 @@ def test_get_workspace_implementation_guide_git_mentions_git_backed_mode():
     assert "react.checkout(version=" in guide
     assert "rare case" in guide
     assert "turn_<current_turn>/files/..." in guide
-    assert "lineage workspace scopes" in guide
+    assert "ls workspace" in guide
     assert "existing top-level scope" in guide
 
 
@@ -48,3 +48,4 @@ def test_build_decision_system_text_uses_selected_workspace_implementation():
     assert "rare case" in text
     assert "turn_<current_turn>/files/..." in text
     assert "existing top-level scope" in text
+    assert "ls workspace" in text
