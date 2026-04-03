@@ -3,151 +3,36 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
 import {
-  BUILT_BUNDLE_ID,
-  createLocalId,
-  getClientTimezone,
-  makeAuthHeaders,
-  settings,
-} from './settings'
+  downloadBlobAsFile,
+  downloadHostedFile,
+  downloadResourceByRN,
+  fetchConversationById,
+  listBundleConversations,
+  openChatStream,
+  requestConversationStatus,
+  submitChatMessage,
+} from './service'
+import type {
+  BannerTone,
+  ChatCompleteEnvelope,
+  ChatDeltaEnvelope,
+  ChatErrorEnvelope,
+  ChatHistoryItem,
+  ChatServiceEnvelope,
+  ChatStartEnvelope,
+  ChatStepEnvelope,
+  ConversationArtifactDTO,
+  ConversationDTO,
+  ConversationSummary,
+  ConvStatusEnvelope,
+  RateLimitPayload,
+  StepStatus,
+} from './service'
+import { BUILT_BUNDLE_ID, createLocalId, settings } from './settings'
 
 type ConnectionState = 'booting' | 'connecting' | 'connected' | 'disconnected'
-type BannerTone = 'info' | 'warning' | 'error'
 type TurnState = 'pending' | 'running' | 'completed' | 'error'
-type StepStatus = 'started' | 'running' | 'completed' | 'error' | 'skipped'
 type TurnTab = 'overview' | 'timeline' | 'steps' | 'downloads'
-
-interface ServiceInfo {
-  request_id: string
-  tenant?: string | null
-  project?: string | null
-  user?: string | null
-}
-
-interface ConversationInfo {
-  session_id: string
-  conversation_id: string
-  turn_id: string
-}
-
-interface BaseEnvelope {
-  type: string
-  timestamp: string
-  service: ServiceInfo
-  conversation: ConversationInfo
-  event: {
-    agent?: string | null
-    step: string
-    status: StepStatus
-    title?: string | null
-    markdown?: string
-  }
-  data?: Record<string, unknown>
-}
-
-interface ChatStartEnvelope extends BaseEnvelope {
-  type: 'chat.start'
-}
-
-interface ChatStepEnvelope extends BaseEnvelope {
-  type: 'chat.step'
-}
-
-interface ChatDeltaEnvelope extends BaseEnvelope {
-  type: 'chat.delta'
-  delta: {
-    text: string
-    marker: 'thinking' | 'answer' | 'canvas' | 'timeline_text' | 'subsystem' | string
-    index: number
-    completed?: boolean
-  }
-  extra: Record<string, unknown>
-}
-
-interface ChatCompleteEnvelope extends BaseEnvelope {
-  type: 'chat.complete'
-  data: {
-    final_answer?: string
-    followups?: string[]
-    error_message?: string
-    [key: string]: unknown
-  }
-}
-
-interface ChatErrorEnvelope extends BaseEnvelope {
-  type: 'chat.error'
-  data: {
-    error?: string
-    [key: string]: unknown
-  }
-}
-
-interface ConvStatusEnvelope {
-  type: 'conv.status'
-  timestamp: string
-  conversation: ConversationInfo
-  data: {
-    state: 'idle' | 'in_progress' | 'error'
-    current_turn_id?: string | null
-  }
-}
-
-interface RateLimitPayload {
-  retry_after_sec?: number | null
-  reset_text?: string | null
-  user_message?: string | null
-  notification_type?: BannerTone | null
-}
-
-interface ChatServiceEnvelope {
-  type: string
-  data?: {
-    rate_limit?: RateLimitPayload
-    user_message?: string
-    notification_type?: BannerTone
-    reason?: string
-    has_personal_budget?: boolean
-    usd_short?: number
-    [key: string]: unknown
-  }
-}
-
-interface ConversationSummary {
-  id: string
-  title?: string | null
-  startedAt?: number | null
-  lastActivityAt?: number | null
-}
-
-interface ConversationListResponse {
-  items?: Array<{
-    conversation_id: string
-    last_activity_at?: string | null
-    started_at?: string | null
-    title?: string | null
-  }>
-}
-
-interface ConversationArtifactDTO {
-  type: string
-  ts?: string
-  data?: {
-    text?: string
-    payload?: Record<string, unknown>
-    meta?: Record<string, unknown>
-  }
-}
-
-interface ConversationTurnDTO {
-  turn_id: string
-  artifacts: ConversationArtifactDTO[]
-}
-
-interface ConversationDTO {
-  conversation_id: string
-  conversation_title?: string | null
-  bundle_id?: string | null
-  turns: ConversationTurnDTO[]
-}
 
 interface Banner {
   id: string
@@ -489,68 +374,8 @@ function prettyJson(value: unknown): string {
   }
 }
 
-function buildRequestHeaders(base?: HeadersInit): Headers {
-  const headers = makeAuthHeaders(base)
-  const tz = getClientTimezone()
-  if (tz.tz) headers.set('X-User-Timezone', tz.tz)
-  headers.set('X-User-UTC-Offset', String(tz.utcOffsetMin))
-  return headers
-}
-
-function resolveAbsoluteUrl(path: string): string {
-  if (/^https?:\/\//i.test(path)) return path
-  const base = settings.getBaseUrl()
-  return `${base}${path.startsWith('/') ? path : `/${path}`}`
-}
-
-function downloadBlobAsFile(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  anchor.rel = 'noopener'
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
-}
-
-async function fetchResourceByRN(rn: string): Promise<{ metadata?: { download_url?: string } }> {
-  const response = await fetch(`${settings.getBaseUrl()}/api/cb/resources/by-rn`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: buildRequestHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ rn }),
-  })
-  if (!response.ok) {
-    const detail = await response.text().catch(() => response.statusText)
-    throw new Error(`Failed to resolve resource (${response.status}): ${detail}`)
-  }
-  return response.json()
-}
-
-async function downloadResourceByRN(rn: string, filename: string): Promise<void> {
-  const resource = await fetchResourceByRN(rn)
-  const downloadUrl = resource.metadata?.download_url
-  if (!downloadUrl) {
-    throw new Error('Resource metadata did not include a download URL.')
-  }
-
-  const response = await fetch(resolveAbsoluteUrl(downloadUrl), {
-    method: 'GET',
-    credentials: 'include',
-    headers: buildRequestHeaders(),
-  })
-  if (!response.ok) {
-    const detail = await response.text().catch(() => response.statusText)
-    throw new Error(`Failed to download resource (${response.status}): ${detail}`)
-  }
-
-  downloadBlobAsFile(await response.blob(), filename)
-}
-
-function buildChatHistory(turns: ChatTurn[]): Array<{ role: 'user'; content: string; timestamp: string; id: number }> {
-  return turns.reduce<Array<{ role: 'user'; content: string; timestamp: string; id: number }>>((items, turn) => {
+function buildChatHistory(turns: ChatTurn[]): ChatHistoryItem[] {
+  return turns.reduce<ChatHistoryItem[]>((items, turn) => {
     if (!turn.userMessage.trim()) return items
     items.push({
       role: 'user',
@@ -1704,16 +1529,7 @@ function DownloadsPanel({
         return
       }
       if (attachment.hostedUri) {
-        const response = await fetch(resolveAbsoluteUrl(attachment.hostedUri), {
-          method: 'GET',
-          credentials: 'include',
-          headers: buildRequestHeaders(),
-        })
-        if (!response.ok) {
-          const detail = await response.text().catch(() => response.statusText)
-          throw new Error(`Failed to download attachment (${response.status}): ${detail}`)
-        }
-        downloadBlobAsFile(await response.blob(), attachment.name)
+        await downloadHostedFile(attachment.hostedUri, attachment.name)
         return
       }
       throw new Error('Attachment download metadata is missing.')
@@ -2210,30 +2026,8 @@ export default function App() {
     })
   }, [conversationQuery, state.conversations])
 
-  const fetchProfile = async (): Promise<string> => {
-    if (sessionIdRef.current) return sessionIdRef.current
-    const response = await fetch(`${settings.getBaseUrl()}/profile`, {
-      method: 'GET',
-      credentials: 'include',
-      headers: buildRequestHeaders({ 'Content-Type': 'application/json' }),
-    })
-    if (!response.ok) {
-      const detail = await response.text().catch(() => response.statusText)
-      throw new Error(`Unable to fetch profile (${response.status}): ${detail}`)
-    }
-    const data = (await response.json()) as { session_id?: string | null }
-    if (!data.session_id) {
-      throw new Error('Profile did not include a session id.')
-    }
-    sessionIdRef.current = data.session_id
-    setState((previous) => ({ ...previous, sessionId: data.session_id || null }))
-    return data.session_id
-  }
-
   const refreshConversationList = async () => {
-    const tenant = settings.getTenant()
-    const project = settings.getProject()
-    if (!tenant || !project || !bundleId) return
+    if (!bundleId) return
 
     setState((previous) => ({
       ...previous,
@@ -2242,27 +2036,7 @@ export default function App() {
     }))
 
     try {
-      const params = new URLSearchParams()
-      params.set('bundle_id', bundleId)
-      const response = await fetch(
-        `${settings.getBaseUrl()}/api/cb/conversations/${tenant}/${project}?${params.toString()}`,
-        {
-          method: 'GET',
-          credentials: 'include',
-          headers: buildRequestHeaders({ 'Content-Type': 'application/json' }),
-        },
-      )
-      if (!response.ok) {
-        const detail = await response.text().catch(() => response.statusText)
-        throw new Error(`Failed to load conversations (${response.status}): ${detail}`)
-      }
-      const data = (await response.json()) as ConversationListResponse
-      const conversations = (data.items || []).map((item) => ({
-        id: item.conversation_id,
-        title: item.title || null,
-        startedAt: item.started_at ? Date.parse(item.started_at) : null,
-        lastActivityAt: item.last_activity_at ? Date.parse(item.last_activity_at) : null,
-      }))
+      const conversations = await listBundleConversations(bundleId)
       setState((previous) => ({
         ...previous,
         conversations,
@@ -2279,26 +2053,17 @@ export default function App() {
     }
   }
 
-  const requestConversationStatus = async (conversationId: string) => {
+  const requestConversationStatusForCurrentStream = async (conversationId: string) => {
     const streamId = streamIdRef.current
     if (!streamId) return
     try {
-      await fetch(`${settings.getBaseUrl()}/sse/conv_status.get`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: buildRequestHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ conversation_id: conversationId, stream_id: streamId }),
-      })
+      await requestConversationStatus(conversationId, streamId)
     } catch (error) {
       console.warn('Unable to request conversation status', error)
     }
   }
 
   const loadConversation = async (conversationId: string) => {
-    const tenant = settings.getTenant()
-    const project = settings.getProject()
-    if (!tenant || !project) return
-
     setState((previous) => ({
       ...previous,
       conversationLoadingId: conversationId,
@@ -2307,21 +2072,7 @@ export default function App() {
     }))
 
     try {
-      const response = await fetch(
-        `${settings.getBaseUrl()}/api/cb/conversations/${tenant}/${project}/${conversationId}/fetch`,
-        {
-          method: 'POST',
-          credentials: 'include',
-          headers: buildRequestHeaders({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({ materialize: true }),
-        },
-      )
-      if (!response.ok) {
-        const detail = await response.text().catch(() => response.statusText)
-        throw new Error(`Failed to fetch conversation (${response.status}): ${detail}`)
-      }
-
-      const conversation = (await response.json()) as ConversationDTO
+      const conversation = await fetchConversationById(conversationId)
       const turns = hydrateHistoricalConversation(conversation)
 
       setState((previous) => ({
@@ -2335,7 +2086,7 @@ export default function App() {
       }))
 
       if (stateRef.current.connection === 'connected') {
-        void requestConversationStatus(conversation.conversation_id)
+        void requestConversationStatusForCurrentStream(conversation.conversation_id)
       }
     } catch (error) {
       const message = messageForError(error)
@@ -2368,116 +2119,79 @@ export default function App() {
     connectPromiseRef.current = null
   }
 
-  const bindEventSource = (eventSource: EventSource) => {
-    const bind = <T,>(eventName: string, handler: (payload: T) => void) => {
-      eventSource.addEventListener(eventName, (event: MessageEvent) => {
-        try {
-          handler(JSON.parse(event.data) as T)
-        } catch (error) {
-          console.error('Malformed SSE event', eventName, error)
+  const handleServiceEvent = (env: ChatServiceEnvelope) => {
+    const data = (env.data || {}) as Record<string, unknown>
+    const rateLimit = (env.data?.rate_limit || null) as RateLimitPayload | null
+
+    let tone: BannerTone = (rateLimit?.notification_type || data.notification_type || 'warning') as BannerTone
+    let message = ''
+
+    switch (env.type) {
+      case 'rate_limit.warning':
+      case 'rate_limit.denied':
+      case 'rate_limit.post_run_exceeded':
+        message = rateLimit?.user_message || fallbackRateLimitMessage(rateLimit || undefined, data)
+        break
+      case 'rate_limit.no_funding':
+        tone = (data.notification_type as BannerTone | undefined) || 'error'
+        message = (data.user_message as string | undefined) || 'This service is not available for your account type.'
+        break
+      case 'rate_limit.subscription_exhausted':
+        tone = (data.notification_type as BannerTone | undefined) || 'error'
+        message =
+          (data.user_message as string | undefined) ||
+          'Your subscription balance is exhausted. Top up your balance to continue.'
+        break
+      case 'rate_limit.project_exhausted': {
+        tone = 'error'
+        const hasPersonalBudget = Boolean(data.has_personal_budget)
+        const usdShort = typeof data.usd_short === 'number' ? data.usd_short : null
+        if (hasPersonalBudget && usdShort && usdShort > 0) {
+          message = `Project budget exhausted. You need $${usdShort.toFixed(2)} more in personal credits to run this request.`
+        } else if (!hasPersonalBudget) {
+          message = 'Project budget exhausted. Please contact your administrator to add funds.'
+        } else {
+          message = 'Project budget exhausted. Unable to process this request.'
         }
-      })
+        break
+      }
+      case 'rate_limit.attachment_failure':
+        tone = (data.notification_type as BannerTone | undefined) || 'error'
+        message = (data.user_message as string | undefined) || 'Attachment was rejected.'
+        break
+      case 'rate_limit.lane_switch':
+      case 'economics.user_underfunded_absorbed':
+        return
+      default:
+        message =
+          rateLimit?.user_message ||
+          (data.user_message as string | undefined) ||
+          `${env.type}: service message received`
     }
 
-    bind<ChatStartEnvelope>('chat_start', (env) => {
-      setState((previous) => applyChatStart(previous, env))
-    })
+    setState((previous) => {
+      let next = addBanner(previous, tone, message)
+      const shouldLockInput =
+        tone === 'error' &&
+        env.type !== 'rate_limit.attachment_failure' &&
+        env.type !== 'rate_limit.warning'
 
-    bind<ChatStepEnvelope>('chat_step', (env) => {
-      setState((previous) => applyChatStep(previous, env))
-    })
-
-    bind<ChatDeltaEnvelope>('chat_delta', (env) => {
-      setState((previous) => applyChatDelta(previous, env))
-    })
-
-    bind<ChatCompleteEnvelope>('chat_complete', (env) => {
-      setState((previous) => applyChatComplete(previous, env))
-      void refreshConversationList()
-    })
-
-    bind<ChatErrorEnvelope>('chat_error', (env) => {
-      setState((previous) => applyChatError(previous, env))
-    })
-
-    bind<ConvStatusEnvelope>('conv_status', (env) => {
-      setState((previous) => applyConvStatus(previous, env))
-    })
-
-    bind<ChatServiceEnvelope>('chat_service', (env) => {
-      const data = (env.data || {}) as Record<string, unknown>
-      const rateLimit = (env.data?.rate_limit || null) as RateLimitPayload | null
-
-      let tone: BannerTone = (rateLimit?.notification_type || data.notification_type || 'warning') as BannerTone
-      let message = ''
-
-      switch (env.type) {
-        case 'rate_limit.warning':
-        case 'rate_limit.denied':
-        case 'rate_limit.post_run_exceeded':
-          message = rateLimit?.user_message || fallbackRateLimitMessage(rateLimit || undefined, data)
-          break
-        case 'rate_limit.no_funding':
-          tone = (data.notification_type as BannerTone | undefined) || 'error'
-          message = (data.user_message as string | undefined) || 'This service is not available for your account type.'
-          break
-        case 'rate_limit.subscription_exhausted':
-          tone = (data.notification_type as BannerTone | undefined) || 'error'
-          message =
-            (data.user_message as string | undefined) ||
-            'Your subscription balance is exhausted. Top up your balance to continue.'
-          break
-        case 'rate_limit.project_exhausted': {
-          tone = 'error'
-          const hasPersonalBudget = Boolean(data.has_personal_budget)
-          const usdShort = typeof data.usd_short === 'number' ? data.usd_short : null
-          if (hasPersonalBudget && usdShort && usdShort > 0) {
-            message = `Project budget exhausted. You need $${usdShort.toFixed(2)} more in personal credits to run this request.`
-          } else if (!hasPersonalBudget) {
-            message = 'Project budget exhausted. Please contact your administrator to add funds.'
-          } else {
-            message = 'Project budget exhausted. Unable to process this request.'
-          }
-          break
+      if (shouldLockInput) {
+        next = {
+          ...next,
+          inputLocked: true,
+          inputLockMessage: message,
         }
-        case 'rate_limit.attachment_failure':
-          tone = (data.notification_type as BannerTone | undefined) || 'error'
-          message = (data.user_message as string | undefined) || 'Attachment was rejected.'
-          break
-        case 'rate_limit.lane_switch':
-        case 'economics.user_underfunded_absorbed':
-          return
-        default:
-          message =
-            rateLimit?.user_message ||
-            (data.user_message as string | undefined) ||
-            `${env.type}: service message received`
       }
 
-      setState((previous) => {
-        let next = addBanner(previous, tone, message)
-        const shouldLockInput =
-          tone === 'error' &&
-          env.type !== 'rate_limit.attachment_failure' &&
-          env.type !== 'rate_limit.warning'
-
-        if (shouldLockInput) {
-          next = {
-            ...next,
-            inputLocked: true,
-            inputLockMessage: message,
-          }
+      if (env.type === 'rate_limit.attachment_failure') {
+        next = {
+          ...next,
+          composerFiles: [],
         }
+      }
 
-        if (env.type === 'rate_limit.attachment_failure') {
-          next = {
-            ...next,
-            composerFiles: [],
-          }
-        }
-
-        return next
-      })
+      return next
     })
   }
 
@@ -2493,59 +2207,52 @@ export default function App() {
 
     connectPromiseRef.current = (async () => {
       setState((previous) => ({ ...previous, connection: 'connecting' }))
-      const sessionId = await fetchProfile()
-      const streamId = createLocalId('stream')
-      streamIdRef.current = streamId
-
-      await new Promise<void>((resolve, reject) => {
-        const url = new URL(`${settings.getBaseUrl()}/sse/stream`)
-        url.searchParams.set('user_session_id', sessionId)
-        url.searchParams.set('stream_id', streamId)
-        if (settings.getTenant()) url.searchParams.set('tenant', settings.getTenant())
-        if (settings.getProject()) url.searchParams.set('project', settings.getProject())
-        if (settings.getAccessToken()) url.searchParams.set('bearer_token', settings.getAccessToken()!)
-        if (settings.getIdToken()) url.searchParams.set('id_token', settings.getIdToken()!)
-
-        const eventSource = new EventSource(url.toString(), { withCredentials: true })
-        eventSourceRef.current = eventSource
-        bindEventSource(eventSource)
-
-        let opened = false
-        const timeout = window.setTimeout(() => {
-          if (!opened) {
-            eventSource.close()
-            if (eventSourceRef.current === eventSource) eventSourceRef.current = null
-            streamIdRef.current = null
-            reject(new Error('Timed out connecting to the event stream.'))
-          }
-        }, 8000)
-
-        eventSource.addEventListener('open', () => {
-          opened = true
-          window.clearTimeout(timeout)
-          setState((previous) => ({ ...previous, connection: 'connected' }))
-          if (stateRef.current.conversationId) {
-            void requestConversationStatus(stateRef.current.conversationId)
-          }
-          resolve()
-        })
-
-        eventSource.addEventListener('error', () => {
-          if (!opened) {
-            window.clearTimeout(timeout)
-            eventSource.close()
-            if (eventSourceRef.current === eventSource) eventSourceRef.current = null
-            streamIdRef.current = null
-            reject(new Error('Unable to open the event stream.'))
-            return
-          }
+      const transport = await openChatStream({
+        sessionId: sessionIdRef.current,
+        onChatStart: (env) => {
+          setState((previous) => applyChatStart(previous, env))
+        },
+        onChatStep: (env) => {
+          setState((previous) => applyChatStep(previous, env))
+        },
+        onChatDelta: (env) => {
+          setState((previous) => applyChatDelta(previous, env))
+        },
+        onChatComplete: (env) => {
+          setState((previous) => applyChatComplete(previous, env))
+          void refreshConversationList()
+        },
+        onChatError: (env) => {
+          setState((previous) => applyChatError(previous, env))
+        },
+        onConversationStatus: (env) => {
+          setState((previous) => applyConvStatus(previous, env))
+        },
+        onChatService: handleServiceEvent,
+        onDisconnect: () => {
           setState((previous) => ({ ...previous, connection: 'disconnected' }))
-        })
+        },
       })
+
+      eventSourceRef.current = transport.eventSource
+      streamIdRef.current = transport.streamId
+      sessionIdRef.current = transport.sessionId
+      setState((previous) => ({
+        ...previous,
+        connection: 'connected',
+        sessionId: transport.sessionId,
+      }))
+      if (stateRef.current.conversationId) {
+        void requestConversationStatusForCurrentStream(stateRef.current.conversationId)
+      }
     })()
 
     try {
       await connectPromiseRef.current
+    } catch (error) {
+      resetTransport()
+      setState((previous) => ({ ...previous, connection: 'disconnected' }))
+      throw error
     } finally {
       connectPromiseRef.current = null
     }
@@ -2598,49 +2305,15 @@ export default function App() {
       if (!streamId) {
         throw new Error('No SSE stream is available.')
       }
-
-      const messagePayload = {
-        message: {
-          message: draftText,
-          chat_history: buildChatHistory(stateRef.current.turns),
-          project: settings.getProject(),
-          tenant: settings.getTenant(),
-          turn_id: turnId,
-          conversation_id: conversationId,
-          bundle_id: bundleId,
-        },
-        attachment_meta: draftFiles.map((file) => ({ filename: file.name })),
-      }
-
-      const url = new URL(`${settings.getBaseUrl()}/sse/chat`)
-      url.searchParams.set('stream_id', streamId)
-
-      let response: Response
-      if (draftFiles.length > 0) {
-        const form = new FormData()
-        form.set('message', JSON.stringify(messagePayload))
-        form.set('attachment_meta', JSON.stringify(draftFiles.map((file) => ({ filename: file.name }))))
-        draftFiles.forEach((file) => form.append('files', file, file.name))
-        response = await fetch(url, {
-          method: 'POST',
-          credentials: 'include',
-          headers: buildRequestHeaders(),
-          body: form,
-        })
-      } else {
-        response = await fetch(url, {
-          method: 'POST',
-          credentials: 'include',
-          headers: buildRequestHeaders({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify(messagePayload),
-        })
-      }
-
-      if (!response.ok) {
-        const detail = await response.text().catch(() => response.statusText)
-        throw new Error(`sse/chat failed (${response.status}) ${detail}`)
-      }
-      await response.json().catch(() => null)
+      await submitChatMessage({
+        streamId,
+        bundleId,
+        conversationId,
+        turnId,
+        text: draftText,
+        files: draftFiles,
+        chatHistory: buildChatHistory(stateRef.current.turns),
+      })
       void refreshConversationList()
     } catch (error) {
       const text = messageForError(error)
