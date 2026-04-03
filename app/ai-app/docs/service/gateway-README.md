@@ -378,7 +378,9 @@ Notes:
     "^/conversations/[^/]+/[^/]+/[^/]+/fetch$",
     "^/conversations/[^/]+/[^/]+/turns-with-feedbacks$",
     "^/conversations/[^/]+/[^/]+/feedback/conversations-in-period$",
+    "^/integrations/bundles/[^/]+/[^/]+/operations/[^/]+$",
     "^/integrations/bundles/[^/]+/[^/]+/[^/]+/operations/[^/]+$",
+    "^/integrations/bundles/[^/]+/[^/]+/[^/]+/widgets/[^/]+$",
     "^/api/cb/conversations/[^/]+/[^/]+$",
     "^/api/opex/total$"
   ],
@@ -453,7 +455,9 @@ GATEWAY_CONFIG_JSON='{
     "^/conversations/[^/]+/[^/]+/[^/]+/fetch$",
     "^/conversations/[^/]+/[^/]+/turns-with-feedbacks$",
     "^/conversations/[^/]+/[^/]+/feedback/conversations-in-period$",
+    "^/integrations/bundles/[^/]+/[^/]+/operations/[^/]+$",
     "^/integrations/bundles/[^/]+/[^/]+/[^/]+/operations/[^/]+$",
+    "^/integrations/bundles/[^/]+/[^/]+/[^/]+/widgets/[^/]+$",
     "^/api/cb/conversations/[^/]+/[^/]+$",
     "^/api/opex/total$"
   ],
@@ -523,7 +527,9 @@ Use these if you want client-side boot calls to count toward the gateway limits.
 ```json
 {
   "guarded_rest_patterns": [
+    "^/integrations/bundles/[^/]+/[^/]+/operations/[^/]+$",
     "^/integrations/bundles/[^/]+/[^/]+/[^/]+/operations/[^/]+$",
+    "^/integrations/bundles/[^/]+/[^/]+/[^/]+/widgets/[^/]+$",
     "^/api/cb/conversations/[^/]+/[^/]+$",
     "^/api/opex/total$"
   ]
