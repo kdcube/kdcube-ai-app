@@ -22,7 +22,7 @@ from langgraph.graph import StateGraph, START, END
 
 from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
 from kdcube_ai_app.infra.service_hub.inventory import Config, BundleState
-from kdcube_ai_app.infra.plugin.agentic_loader import agentic_workflow
+from kdcube_ai_app.infra.plugin.agentic_loader import agentic_workflow, api
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import BaseEntrypoint
 
 BUNDLE_ID = "echo.ui"
@@ -83,7 +83,14 @@ class EchoUIBundle(BaseEntrypoint):
         g.add_edge("echo", END)
         return g.compile()
 
-    async def echo(self, *, text: str = "", user_id: str = "", fingerprint: str = "", **kwargs) -> Dict[str, Any]:
+    @api(alias="echo")
+    async def echo(
+            self,
+            *,
+            text: str = "",
+            user_id: str = "",
+            fingerprint: str = "",
+            **kwargs) -> Dict[str, Any]:
         return {"text": text}
 
     async def execute_core(
