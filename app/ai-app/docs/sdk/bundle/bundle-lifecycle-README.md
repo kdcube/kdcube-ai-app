@@ -40,7 +40,7 @@ Do **not** rely on Python instance fields as durable cross-request state.
 
 ```mermaid
 flowchart TD
-    R[Bundle registry entry] --> D[@agentic_workflow discovery]
+    R[Bundle registry entry] --> D["@agentic_workflow discovery"]
     D --> I[Instantiate entrypoint]
     I --> L[on_bundle_load once per process per tenant/project]
     L --> Q[Incoming turn or operation request]
