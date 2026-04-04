@@ -5,12 +5,25 @@ platform:
     This release focuses on making React a much stronger coding and bundle-building agent while
     continuing the broader bundle-interface and custom-UI rollout.
 
-    React now supports explicit workspace activation through `react.pull(...)`, split workspace
-    backends (`custom` and `git`), sparse git-backed current-turn repositories, lineage-isolated git
-    history, exact hosted binary fallback, turn-end workspace publish, and clearer ANNOUNCE guidance
-    around continuing project scopes cleanly. The workspace model now separates durable
-    `files/...` state from non-workspace `outputs/...` artifacts, and isolated exec supports
-    internal-only artifacts that remain agent-visible without being emitted to the user.
+    A major part of this release is the new React SDK workspace model. React now supports two
+    explicit workspace backends (`custom` and `git`) behind one stable agent contract based on
+    logical refs and explicit activation. Historical or cross-turn workspace content is no longer
+    assumed to be present locally: the agent must pull what it needs intentionally through
+    `react.pull(...)`, and the runtime enforces that model instead of auto-hydrating old files for
+    exec or patch operations.
+
+    The git backend is now a real coding workspace, not just snapshot copying. Current turns start
+    as sparse git-backed repos with lineage-isolated history, exact version-ref hydration, end-of-
+    turn publish, and branch isolation designed so exec-visible code can only inspect the assigned
+    lineage. The workspace model also now distinguishes durable project state in `files/...` from
+    non-workspace artifacts in `outputs/...`, supports explicit checkout for rare whole-workspace
+    switches, routes hosted binary pulls outside git, and surfaces compact workspace status in
+    ANNOUNCE so the agent can continue project scopes more deliberately.
+
+    The surrounding runtime was tightened to match that model: ignored/transient files are excluded
+    from workspace publish, publish failures fail the turn, exact ref writes are resolved before
+    materialization, and isolated exec supports internal-only artifacts that remain agent-visible
+    without being emitted to the user.
 
     The bundle platform and UI surface also moved forward. The versatile reference bundle now has a
     modularized main-view service layer, KDCube copilot bundle naming was clarified, and the
