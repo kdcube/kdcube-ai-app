@@ -58,6 +58,11 @@ class _DecoratedWorkflow:
     async def save_preferences(self, **kwargs):
         return kwargs
 
+    @api(method="POST", alias="public_ping", route="public")
+    async def public_ping(self, **kwargs):
+        return kwargs
+
+    @api(method="POST", alias="preferences_widget", route="operations", roles=("registered",))
     @ui_widget(
         icon={
             "tailwind": "heroicons-outline:adjustments-horizontal",
@@ -87,10 +92,15 @@ def test_discover_bundle_interface_manifest_returns_declarative_specs():
         "tailwind": "heroicons-outline:adjustments-horizontal",
         "lucide": "SlidersHorizontal",
     }
-    assert [(item.alias, item.http_method) for item in manifest.api_endpoints] == [
-        ("prefs_save", "POST"),
-        ("prefs_view", "GET"),
-    ]
+    assert {
+        (item.alias, item.http_method, item.route)
+        for item in manifest.api_endpoints
+    } == {
+        ("preferences_widget", "POST", "operations"),
+        ("prefs_save", "POST", "operations"),
+        ("prefs_view", "GET", "operations"),
+        ("public_ping", "POST", "public"),
+    }
     assert manifest.ui_main and manifest.ui_main.method_name == "main_ui"
     assert manifest.on_message and manifest.on_message.method_name == "handle_message"
 
@@ -98,13 +108,45 @@ def test_discover_bundle_interface_manifest_returns_declarative_specs():
 def test_resolve_bundle_api_endpoint_prefers_decorated_alias_and_method():
     workflow = _DecoratedWorkflow()
 
-    get_spec, allowed = resolve_bundle_api_endpoint(workflow, alias="prefs_view", http_method="GET", bundle_id="bundle.demo")
+    get_spec, allowed = resolve_bundle_api_endpoint(
+        workflow,
+        alias="prefs_view",
+        http_method="GET",
+        route="operations",
+        bundle_id="bundle.demo",
+    )
     assert get_spec and get_spec.method_name == "preferences_view"
     assert allowed == ("GET",)
 
-    missing_post, allowed = resolve_bundle_api_endpoint(workflow, alias="prefs_view", http_method="POST", bundle_id="bundle.demo")
+    missing_post, allowed = resolve_bundle_api_endpoint(
+        workflow,
+        alias="prefs_view",
+        http_method="POST",
+        route="operations",
+        bundle_id="bundle.demo",
+    )
     assert missing_post is None
     assert allowed == ("GET",)
+
+    public_spec, allowed = resolve_bundle_api_endpoint(
+        workflow,
+        alias="public_ping",
+        http_method="POST",
+        route="public",
+        bundle_id="bundle.demo",
+    )
+    assert public_spec and public_spec.method_name == "public_ping"
+    assert allowed == ("POST",)
+
+    wrong_route, allowed = resolve_bundle_api_endpoint(
+        workflow,
+        alias="public_ping",
+        http_method="POST",
+        route="operations",
+        bundle_id="bundle.demo",
+    )
+    assert wrong_route is None
+    assert allowed == ()
 
     widget = resolve_bundle_widget(workflow, alias="preferences", bundle_id="bundle.demo")
     assert widget and widget.method_name == "preferences_widget"
@@ -112,6 +154,7 @@ def test_resolve_bundle_api_endpoint_prefers_decorated_alias_and_method():
 
 def test_string_widget_icon_is_normalized_to_tailwind_provider():
     class _LegacyWidgetWorkflow:
+        @api(alias="legacy_widget", route="operations")
         @ui_widget(icon="heroicons-outline:swatch", alias="legacy")
         def legacy_widget(self, **kwargs):
             return kwargs
@@ -149,7 +192,15 @@ async def test_get_bundle_interface_and_widgets_use_decorators(monkeypatch):
     assert manifest["bundle_id"] == "bundle.demo"
     assert manifest["ui_widgets"][0]["alias"] == "preferences"
     assert manifest["ui_widgets"][0]["icon"]["lucide"] == "SlidersHorizontal"
-    assert manifest["api_endpoints"][0]["alias"] == "prefs_save"
+    assert {
+        (item["alias"], item["http_method"], item["route"])
+        for item in manifest["api_endpoints"]
+    } == {
+        ("preferences_widget", "POST", "operations"),
+        ("prefs_save", "POST", "operations"),
+        ("prefs_view", "GET", "operations"),
+        ("public_ping", "POST", "public"),
+    }
 
     widgets = await integrations.list_bundle_widgets(
         tenant="tenant-a",
@@ -199,8 +250,105 @@ async def test_call_bundle_op_inner_supports_decorated_get_api(monkeypatch):
             query_string=b"value=Wuppertal",
         ),
         operation="prefs_view",
+        route="operations",
         session=_session(),
     )
 
     assert captured["kwargs"]["value"] == "Wuppertal"
     assert result["prefs_view"] == {"ok": True, "value": "Wuppertal"}
+
+
+@pytest.mark.asyncio
+async def test_call_bundle_op_inner_supports_widget_compat_api(monkeypatch):
+    async def _load_bundle_workflow(**kwargs):
+        del kwargs
+        return _DecoratedWorkflow(), SimpleNamespace(id="bundle.demo"), "tenant-a", "project-a"
+
+    monkeypatch.setattr(integrations, "_load_bundle_workflow", _load_bundle_workflow)
+
+    result = await integrations._call_bundle_op_inner(
+        tenant="tenant-a",
+        project="project-a",
+        bundle_id="bundle.demo",
+        payload=integrations.BundleSuggestionsRequest(),
+        request=_request(
+            method="POST",
+            path="/api/integrations/bundles/tenant-a/project-a/bundle.demo/operations/preferences_widget",
+        ),
+        operation="preferences_widget",
+        route="operations",
+        session=_session(),
+    )
+
+    assert result["preferences_widget"] == ["<p>fp-1</p>"]
+
+
+@pytest.mark.asyncio
+async def test_call_bundle_op_inner_rejects_undeclared_method_without_api(monkeypatch):
+    class _Workflow:
+        async def legacy_callable(self, **kwargs):
+            return kwargs
+
+    async def _load_bundle_workflow(**kwargs):
+        del kwargs
+        return _Workflow(), SimpleNamespace(id="bundle.demo"), "tenant-a", "project-a"
+
+    monkeypatch.setattr(integrations, "_load_bundle_workflow", _load_bundle_workflow)
+
+    with pytest.raises(integrations.HTTPException) as exc:
+        await integrations._call_bundle_op_inner(
+            tenant="tenant-a",
+            project="project-a",
+            bundle_id="bundle.demo",
+            payload=integrations.BundleSuggestionsRequest(),
+            request=_request(
+                method="POST",
+                path="/api/integrations/bundles/tenant-a/project-a/bundle.demo/operations/legacy_callable",
+            ),
+            operation="legacy_callable",
+            route="operations",
+            session=_session(),
+        )
+
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_call_bundle_op_inner_enforces_public_vs_operations_route(monkeypatch):
+    async def _load_bundle_workflow(**kwargs):
+        del kwargs
+        return _DecoratedWorkflow(), SimpleNamespace(id="bundle.demo"), "tenant-a", "project-a"
+
+    monkeypatch.setattr(integrations, "_load_bundle_workflow", _load_bundle_workflow)
+
+    public_result = await integrations._call_bundle_op_inner(
+        tenant="tenant-a",
+        project="project-a",
+        bundle_id="bundle.demo",
+        payload=integrations.BundleSuggestionsRequest(),
+        request=_request(
+            method="POST",
+            path="/api/integrations/bundles/tenant-a/project-a/bundle.demo/public/public_ping",
+        ),
+        operation="public_ping",
+        route="public",
+        session=_session(),
+    )
+    assert public_result["public_ping"] == {"user_id": "user-1", "fingerprint": "fp-1"}
+
+    with pytest.raises(integrations.HTTPException) as exc:
+        await integrations._call_bundle_op_inner(
+            tenant="tenant-a",
+            project="project-a",
+            bundle_id="bundle.demo",
+            payload=integrations.BundleSuggestionsRequest(),
+            request=_request(
+                method="POST",
+                path="/api/integrations/bundles/tenant-a/project-a/bundle.demo/operations/public_ping",
+            ),
+            operation="public_ping",
+            route="operations",
+            session=_session(),
+        )
+
+    assert exc.value.status_code == 404

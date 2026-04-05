@@ -19,6 +19,7 @@ from kdcube_ai_app.apps.chat.sdk.config import get_settings
 from kdcube_ai_app.apps.chat.continuations import build_conversation_continuation_source
 from kdcube_ai_app.apps.chat.sdk.continuations import bind_current_conversation_continuation_source
 from kdcube_ai_app.apps.chat.sdk.context.retrieval.ctx_rag import ContextRAGClient
+from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import bind_current_request_context
 from kdcube_ai_app.infra.availability.health_and_heartbeat import MultiprocessDistributedMiddleware, logger
 from kdcube_ai_app.infra.aws.task_protection import build_task_scale_in_protection
 from kdcube_ai_app.infra.metrics.rolling_stats import record_metric
@@ -1120,14 +1121,15 @@ class EnhancedChatRequestProcessor:
                             "conversation_id": payload.routing.conversation_id,
                             "turn_id": payload.routing.turn_id,
                         }):
-                            with bind_current_conversation_continuation_source(continuation_source):
-                                result = await asyncio.wait_for(
-                                    self.chat_handler(
-                                        payload,
+                            with bind_current_request_context(payload, comm=comm):
+                                with bind_current_conversation_continuation_source(continuation_source):
+                                    result = await asyncio.wait_for(
+                                        self.chat_handler(
+                                            payload,
 
-                                    ),
-                                    timeout=self.task_timeout_sec,
-                                )
+                                        ),
+                                        timeout=self.task_timeout_sec,
+                                    )
 
                 result = result or {}
                 success = True

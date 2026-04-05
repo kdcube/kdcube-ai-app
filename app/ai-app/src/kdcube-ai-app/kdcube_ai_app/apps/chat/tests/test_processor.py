@@ -9,6 +9,10 @@ import pytest
 
 import kdcube_ai_app.apps.chat.processor as processor_mod
 from kdcube_ai_app.apps.chat.processor import EnhancedChatRequestProcessor
+from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import (
+    get_current_comm,
+    get_current_request_context,
+)
 
 
 class _FakePool:
@@ -596,3 +600,48 @@ async def test_process_task_promotes_next_continuation_to_ready_queue(_patch_pro
     assert conversation_ctx.calls[-1]["new_state"] == "in_progress"
     assert conversation_ctx.calls[-1]["last_turn_id"] == "turn-next"
     assert relay.conv_status_calls[-1]["kwargs"]["completion"] == "queued_next"
+
+
+@pytest.mark.asyncio
+async def test_process_task_binds_runtime_request_context(_patch_processor_dependencies):
+    redis = _MinimalRedis()
+    captured = {}
+
+    async def _handler(_payload):
+        current = get_current_request_context()
+        current_comm = get_current_comm()
+        captured["before"] = (
+            getattr(getattr(current, "user", None), "user_id", None),
+            getattr(getattr(current, "routing", None), "socket_id", None),
+            current_comm is not None,
+        )
+        await asyncio.sleep(0)
+        current = get_current_request_context()
+        current_comm = get_current_comm()
+        captured["after"] = (
+            getattr(getattr(current, "user", None), "user_id", None),
+            getattr(getattr(current, "routing", None), "socket_id", None),
+            current_comm is not None,
+        )
+        return {}
+
+    processor = _build_processor(redis, handler=_handler)
+    task_payload = _build_task_payload("ctx-task")
+    raw_payload = json.dumps(task_payload).encode("utf-8")
+    inflight_key = "queue:inflight:registered"
+    lock_key = "lock:ctx-task"
+    redis.seed_list(inflight_key, [raw_payload])
+    redis.lock_ttls[lock_key] = 300
+    processor._current_load = 1
+
+    task_data = dict(task_payload)
+    task_data["_lock_key"] = lock_key
+    task_data["_raw_payload"] = raw_payload
+    task_data["_ready_queue_key"] = "queue:registered"
+    task_data["_inflight_queue_key"] = inflight_key
+    task_data["_queue_wait_ms"] = 10
+
+    await processor._process_task(task_data)
+
+    assert captured["before"] == ("user-1", "socket-1", True)
+    assert captured["after"] == ("user-1", "socket-1", True)

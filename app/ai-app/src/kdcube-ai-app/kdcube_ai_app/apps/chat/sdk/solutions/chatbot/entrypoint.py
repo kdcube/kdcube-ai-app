@@ -12,6 +12,7 @@ import os
 import pathlib
 import time
 import traceback
+from contextvars import ContextVar
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -27,7 +28,7 @@ from kdcube_ai_app.apps.chat.sdk.infra.economics.policy import EconomicsLimitExc
 from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
 from kdcube_ai_app.apps.chat.sdk.runtime.exec_runtime_config import normalize_exec_runtime_config
 from kdcube_ai_app.apps.chat.sdk.viz.patch_platform_dashboard import patch_dashboard
-from kdcube_ai_app.infra.plugin.agentic_loader import on_message, ui_widget
+from kdcube_ai_app.infra.plugin.agentic_loader import api, on_message, ui_widget
 from kdcube_ai_app.infra.service_hub.inventory import (
     APP_STATE_KEYS,
     AgentLogger,
@@ -45,6 +46,8 @@ from kdcube_ai_app.storage.storage import create_storage_backend
 from kdcube_ai_app.infra.accounting.calculator import RateCalculator
 from kdcube_ai_app.apps.chat.sdk.viz.tsx_transpiler import ClientSideTSXTranspiler
 from kdcube_ai_app.infra.service_hub.cache import create_kv_cache_from_env
+
+_REQUEST_LOCAL_UNSET = object()
 
 
 class BaseEntrypoint:
@@ -69,11 +72,19 @@ class BaseEntrypoint:
         self.settings = get_settings()
         self.pg_pool = pg_pool
         self.redis = redis
-        self.comm_context = comm_context
+        self._comm_context: Optional[ChatTaskPayload] = comm_context
         self._event_filter = event_filter
         self._continuation_source = continuation_source
 
         self._comm: Optional[ChatCommunicator] = None
+        self._comm_context_cv: ContextVar[object] = ContextVar(
+            f"bundle_comm_context_{id(self)}",
+            default=_REQUEST_LOCAL_UNSET,
+        )
+        self._comm_cv: ContextVar[object] = ContextVar(
+            f"bundle_comm_{id(self)}",
+            default=_REQUEST_LOCAL_UNSET,
+        )
         self._conv_idx = None
         self._kb = None
         self._store = None
@@ -94,6 +105,17 @@ class BaseEntrypoint:
     def continuation_source(self) -> Optional[Any]:
         return self._continuation_source or get_current_conversation_continuation_source()
 
+    @property
+    def comm_context(self) -> Optional[ChatTaskPayload]:
+        bound = self._comm_context_cv.get()
+        if bound is not _REQUEST_LOCAL_UNSET:
+            return bound
+        return self._comm_context
+
+    @comm_context.setter
+    def comm_context(self, value: Optional[ChatTaskPayload]) -> None:
+        self._comm_context = value
+
     def rebind_request_context(
         self,
         *,
@@ -105,8 +127,8 @@ class BaseEntrypoint:
         Refresh request-bound state on cached singleton workflows.
         """
         if comm_context is not None:
-            self.comm_context = comm_context
-            self._comm = None
+            self._comm_context_cv.set(comm_context)
+            self._comm_cv.set(None)
         if pg_pool is not None:
             self.pg_pool = pg_pool
         if redis is not None:
@@ -426,16 +448,26 @@ class BaseEntrypoint:
 
     @property
     def comm(self) -> ChatCommunicator:
-        if self._comm:
+        bound_comm = self._comm_cv.get()
+        if bound_comm is not _REQUEST_LOCAL_UNSET:
+            if bound_comm is not None:
+                return bound_comm
+        elif self._comm:
             return self._comm
-        if not self.comm_context:
+
+        current_comm_context = self.comm_context
+        if not current_comm_context:
             raise RuntimeError("Workflow cannot build communicator: task missing")
-        self._comm = build_comm_from_comm_context(
-            self.comm_context,
+        built = build_comm_from_comm_context(
+            current_comm_context,
             relay=build_relay_from_env(),
             event_filter=self._event_filter,
         )
-        return self._comm
+        if bound_comm is not _REQUEST_LOCAL_UNSET:
+            self._comm_cv.set(built)
+        else:
+            self._comm = built
+        return built
 
     @classmethod
     def project_app_state(cls, state: Dict[str, Any]) -> Dict[str, Any]:
@@ -614,6 +646,7 @@ class BaseEntrypoint:
         transpiler = ClientSideTSXTranspiler()
         return transpiler.tsx_to_html(content, title=title)
 
+    @api(route="operations", roles=("privileged",))
     @ui_widget(
         icon={
             "tailwind": "heroicons-outline:currency-dollar",
@@ -651,6 +684,7 @@ class BaseEntrypoint:
                 self.logger.log(f"Error loading opex by user {user_id}: {traceback.format_exc()}", "ERROR")
         return [default_html]
 
+    @api(route="operations", roles=("privileged",))
     @ui_widget(
         icon={
             "tailwind": "heroicons-outline:currency-dollar",
@@ -688,6 +722,7 @@ class BaseEntrypoint:
                 self.logger.log(f"Error loading control_plane by user {user_id}: {traceback.format_exc()}", "ERROR")
         return [default_html]
 
+    @api(route="operations", roles=("privileged",))
     @ui_widget(
         icon={
             "tailwind": "heroicons-outline:chat-bubble-left-right",
@@ -731,6 +766,7 @@ class BaseEntrypoint:
                 )
         return [default_html]
 
+    @api(route="operations", roles=("privileged",))
     @ui_widget(
         icon={
             "tailwind": "heroicons-outline:arrows-right-left",
@@ -769,6 +805,7 @@ class BaseEntrypoint:
                 self.logger.log(f"Error loading svc_gateway by user {user_id}: {traceback.format_exc()}", "ERROR")
         return [default_html]
 
+    @api(route="operations", roles=("privileged",))
     @ui_widget(
         icon={
             "tailwind": "heroicons-outline:circle-stack",
@@ -806,6 +843,7 @@ class BaseEntrypoint:
                 self.logger.log(f"Error loading redis browser by user {user_id}: {traceback.format_exc()}", "ERROR")
         return [default_html]
 
+    @api(route="operations", roles=("privileged",))
     @ui_widget(
         icon={
             "tailwind": "heroicons-outline:cpu-chip",
@@ -845,6 +883,7 @@ class BaseEntrypoint:
             self.logger.log(f"Error loading ai_bundles by user {user_id}: {traceback.format_exc()}", "ERROR")
         return [default_html]
 
+    @api(route="operations", roles=())
     @ui_widget(
         icon={
             "tailwind": "heroicons-outline:credit-card",

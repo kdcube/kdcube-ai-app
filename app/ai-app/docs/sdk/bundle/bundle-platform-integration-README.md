@@ -1,9 +1,9 @@
 ---
 id: ks:docs/sdk/bundle/bundle-platform-integration-README.md
 title: "Bundle Platform Integration"
-summary: "Design for declarative bundle integration points: API methods, widgets, UI main entrypoint, and message entrypoint discovery."
-tags: ["sdk", "bundle", "integration", "decorators", "widgets", "operations", "streaming", "design"]
-keywords: ["agentic_workflow", "bundle_id decorator", "api decorator", "ui_widget", "ui_main", "on_message", "bundle manifest", "integrations widgets", "integrations operations"]
+summary: "Current declarative bundle integration contract: supported decorators, manifest metadata, REST routes, and UI/static integration."
+tags: ["sdk", "bundle", "integration", "decorators", "widgets", "operations", "ui", "manifest"]
+keywords: ["agentic_workflow", "bundle_id decorator", "api decorator", "ui_widget", "ui_main", "on_message", "bundle manifest", "integrations widgets", "integrations operations", "public route"]
 see_also:
   - ks:docs/sdk/bundle/bundle-interfaces-README.md
   - ks:docs/sdk/bundle/bundle-dev-README.md
@@ -12,135 +12,98 @@ see_also:
 ---
 # Bundle Platform Integration
 
-This doc is the **design contract** for how bundles integrate with the platform
-outside the core `run()` workflow:
-- bundle API methods exposed over REST
-- bundle widgets exposed to the frontend
-- bundle main UI entrypoint
-- bundle message entrypoint used by SSE / Socket.IO processing
+This document describes the bundle integration contract that is implemented now.
+It covers:
 
-The goal is to make bundle integration points:
-- **declarative**
-- **discoverable**
-- **role-aware**
-- **backward compatible**
+- class and method decorators supported by the bundle loader
+- bundle interface manifest discovery
+- REST routing for bundle operations and public operations
+- widget discovery and widget fetch
+- bundle main UI entrypoints and static asset serving
 
-This is intentionally written as a phased design, but the first backend slice is
-already implemented.
+All of this is implemented in:
 
-Current implementation status:
-- decorator metadata is live in `agentic_loader.py`
-- bundle interface manifest discovery is live
-- `GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}` is live
-- `GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/widgets` is live
-- `GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/widgets/{alias}` is live
-- `GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/{alias}` is live
-- operations already prefer decorated `@api` aliases and still fall back to same-name method lookup for undecorated bundles
-- widget fetch is already decorator-only
-- `@on_message` metadata exists, but streaming dispatch is still migration mode and still falls back to `run()`
-
----
-
-## 1) Current behavior
-
-Today:
-- bundle discovery relies on `@agentic_workflow` on the entrypoint class
-- streaming requests still eventually call `workflow.run(...)`
-- integrations operations can now resolve `@api` metadata first, then fall back to same-name method lookup
-- widgets can now be discovered as a platform contract through `@ui_widget`
-
-This still leaves open migration work:
-- streaming dispatch is not yet decorator-driven
-- legacy broad operation exposure still exists for backward compatibility
-- full bundle frontend entrypoints are not yet resolved through `@ui_main`
-
----
-
-## 2) Core design rules
-
-### 2.1 Bundle instance model
-
-The bundle instance remains **per request**.
-
-That means:
-- one bundle instance for each SSE / Socket.IO message request
-- one bundle instance for each `integrations/operations/...` REST request
-- one bundle instance for each widget fetch request
-
-Request context is attached to the instance and is available through `self.comm`.
-
-Bundle methods should treat `self.comm` as the authoritative request/session
-context for:
-- user id
-- fingerprint
-- tenant / project
-- roles
-- permissions
-- request metadata
-
-Forwarded REST inputs are for **business parameters**, not for reconstructing
-platform context.
-
-### 2.2 Public integration points must be declared
-
-The platform should discover public bundle integration points from decorators,
-not from broad `hasattr(...)` probing.
-
-`@agentic_workflow` remains the class-level decorator that marks the entrypoint.
-
-Method-level decorators define which entrypoint methods are intended to be:
-- message handlers
-- REST API operations
-- widgets
-- main UI entrypoints
-
-### 2.3 Backward compatibility first
-
-The rollout must stay **recognition-first**, not **enforcement-first**.
-
-That means:
-- existing bundles without the new decorators continue to work
-- the platform prefers decorated methods when present
-- old fallback behavior remains until the migration is complete
-
-Examples:
-- streaming may keep falling back to `run()` when no `@on_message` method is declared
-- operations may keep falling back to same-name method lookup when no `@api` metadata exists
-
----
-
-## 3) Decorators to add
-
-These decorators should live in the same module as `@agentic_workflow`:
 - `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/agentic_loader.py`
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/integrations.py`
 
-That keeps all bundle entrypoint discovery metadata in one place.
+## 1) Supported decorators
 
-### 3.0 `@bundle_id(...)`
+Bundles currently use these decorators:
 
-Declares the bundle's canonical ID from within the entrypoint class.
+- `@agentic_workflow(...)`
+- `@bundle_id(...)`
+- `@api(...)`
+- `@ui_widget(...)`
+- `@ui_main`
+- `@on_message`
+
+These decorators are metadata for the bundle interface surface. They are not
+deployment config.
+
+### 1.1 `@bundle_id(...)`
+
+Declares the canonical bundle ID on the entrypoint class.
 
 ```python
-@agentic_workflow(name="My Bundle")
-@bundle_id("my-bundle@1.0.0")
-class MyBundle(BaseEntrypoint):
+from kdcube_ai_app.infra.plugin.agentic_loader import agentic_workflow, bundle_id
+
+@agentic_workflow(name="My Bundle", version="1.0.0")
+@bundle_id("my.bundle@1.0.0")
+class MyBundle:
     ...
 ```
 
-Rules:
-- class-level decorator; applies before `@agentic_workflow`
-- the declared ID overrides the directory name when the example bundle
-  registry is built at startup
-- if both `@bundle_id` and a registry config entry exist, the registry
-  config entry takes precedence (external deployment config wins)
-- the value is stored as `cls.__bundle_id__` and is read by
-  `discover_bundle_interface_manifest` and `get_declared_bundle_id`
+Use it when the code should declare its own stable bundle identity.
 
-### 3.1 `@ui_widget(...)`
+### 1.2 `@api(...)`
 
-Marks a method as a widget endpoint that returns widget content for the platform.
+Marks a method as a remotely callable bundle operation.
 
-Proposed decorator:
+Current signature:
+
+```python
+@api(
+    method="POST",
+    alias="preferences_exec_report",
+    route="operations",
+    roles=("registered",),
+)
+async def preferences_exec_report(self, **kwargs):
+    ...
+```
+
+Current fields:
+
+- `method`
+  - `GET` or `POST`
+  - default: `POST`
+- `alias`
+  - public operation alias in the URL
+  - default: Python method name
+- `route`
+  - `operations` or `public`
+  - default: `operations`
+- `roles`
+  - tuple/list of visible roles
+  - empty means visible to any caller that can reach that route
+
+Important current rule:
+
+- only methods decorated with `@api(...)` are remotely callable through bundle
+  operation routes
+- same-name fallback for undecorated methods is no longer part of the HTTP
+  contract
+
+Route mapping:
+
+- `@api(route="operations")` is callable through
+  `/api/integrations/bundles/.../operations/{alias}`
+- `@api(route="public")` is callable through
+  `/api/integrations/bundles/.../public/{alias}`
+
+### 1.3 `@ui_widget(...)`
+
+Marks a method as a discoverable widget endpoint.
 
 ```python
 @ui_widget(
@@ -149,63 +112,37 @@ Proposed decorator:
         "lucide": "SlidersHorizontal",
     },
     alias="preferences",
-    roles=["registered", "privileged"],
+    roles=("registered", "privileged"),
 )
 def preferences_widget(self, **kwargs):
     ...
 ```
 
-Purpose:
-- declares a widget as platform-discoverable
-- provides display metadata for bundle widget listings
-- provides the public widget alias used in REST routes
+Current fields:
 
-Icon rules:
-- preferred shape is a provider map such as `{"tailwind": "...", "lucide": "..."}`
-- current supported providers are `tailwind` and `lucide`
-- legacy string icons are still accepted and are normalized to `{"tailwind": "<value>"}` for backward compatibility
+- `icon`
+  - preferred shape is a provider map
+  - supported providers: `tailwind`, `lucide`
+  - legacy string icons are normalized to `{"tailwind": "<value>"}`
+- `alias`
+  - widget alias used by widget discovery/fetch
+  - default: Python method name
+- `roles`
+  - widget visibility roles
 
-### 3.2 `@api(...)`
+Current rule:
 
-Marks a method as a public REST operation.
+- widget list and widget fetch are driven only by `@ui_widget(...)`
 
-Proposed decorator:
+If the same widget method must also be callable through `/operations/...`,
+decorate it with both `@ui_widget(...)` and `@api(route="operations", ...)`.
 
-```python
-@api(method="POST", alias="preferences_exec_report", roles=["registered"])
-async def preferences_exec_report(self, recency: int = 10, kwords: str = "", **kwargs):
-    ...
-```
+That is the current compatibility pattern for widgets that are still loaded
+through operation calls in existing clients.
 
-Rules:
-- default HTTP method is `POST`
-- alias defaults to method name if omitted
-- `roles` is optional
-- kwargs come from request body (`POST`) or query params (`GET`)
+### 1.4 `@ui_main`
 
-### 3.3 `@on_message`
-
-Marks the method that should handle streaming message requests.
-
-Proposed decorator:
-
-```python
-@on_message
-async def run(self, **kwargs):
-    ...
-```
-
-Why this exists:
-- it makes the streaming entrypoint explicit
-- later, SSE / Socket.IO processing can resolve the message handler via metadata
-  instead of assuming `run()`
-
-### 3.4 `@ui_main`
-
-Marks the method that returns the main UI HTML for the bundle, if the bundle has
-one.
-
-Proposed decorator:
+Marks the method that declares the bundle's main iframe UI surface.
 
 ```python
 @ui_main
@@ -213,17 +150,33 @@ def main_ui(self, **kwargs):
     ...
 ```
 
-This is the future stable surface for full bundle frontend entrypoints.
+Current behavior:
 
----
+- the bundle manifest reports `ui_main`
+- proc serves the built UI assets from the bundle static route
+- build-on-first-request is supported for bundles that have a UI defined but
+  were not yet built in the current proc
 
-## 4) Metadata model
+### 1.5 `@on_message`
 
-The decorator attributes should be stored as **dataclasses**, not loose dicts.
+Marks the bundle message handler metadata.
 
-This makes discovery safer and allows the platform to return a typed manifest.
+```python
+@on_message
+async def run(self, **params):
+    ...
+```
 
-### 4.1 `APIEndpointSpec`
+Current practical pattern:
+
+- base entrypoints already decorate `run()` with `@on_message`
+- manifest discovery reports the message handler method name
+
+## 2) Metadata model
+
+The loader stores interface metadata as typed dataclasses.
+
+### 2.1 `APIEndpointSpec`
 
 ```python
 @dataclass(frozen=True)
@@ -231,10 +184,11 @@ class APIEndpointSpec:
     method_name: str
     alias: str
     http_method: str = "POST"
+    route: str = "operations"
     roles: tuple[str, ...] = ()
 ```
 
-### 4.2 `UIWidgetSpec`
+### 2.2 `UIWidgetSpec`
 
 ```python
 @dataclass(frozen=True)
@@ -245,7 +199,7 @@ class UIWidgetSpec:
     roles: tuple[str, ...] = ()
 ```
 
-### 4.3 `OnMessageSpec`
+### 2.3 `OnMessageSpec`
 
 ```python
 @dataclass(frozen=True)
@@ -253,7 +207,7 @@ class OnMessageSpec:
     method_name: str
 ```
 
-### 4.4 `UIMainSpec`
+### 2.4 `UIMainSpec`
 
 ```python
 @dataclass(frozen=True)
@@ -261,9 +215,7 @@ class UIMainSpec:
     method_name: str
 ```
 
-### 4.5 Aggregate manifest
-
-The bundle loader should be able to produce an aggregate manifest:
+### 2.5 `BundleInterfaceManifest`
 
 ```python
 @dataclass(frozen=True)
@@ -275,60 +227,39 @@ class BundleInterfaceManifest:
     on_message: OnMessageSpec | None = None
 ```
 
-This metadata is **derived from code**. It should not be copied into
-`AgenticBundleSpec` or bundle registry entries.
+Discovery helpers currently exposed by the loader:
 
-Why:
-- registry/spec data is deployment configuration
-- interface metadata is entrypoint code metadata
-- they change for different bundle versions and should be rediscovered from the
-  actual loaded bundle
-
----
-
-## 5) Discovery rules
-
-Discovery should happen after the bundle entrypoint class is resolved through
-`@agentic_workflow`.
-
-The loader should inspect the decorated entrypoint class and collect:
-- the bundle ID from `@bundle_id` (falls back to registry config or directory name)
-- all `@api` methods
-- all `@ui_widget` methods
-- zero or one `@ui_main`
-- zero or one `@on_message`
-
-Recommended rules:
-- method alias defaults to Python method name if alias is omitted
-- duplicate aliases for the same category are invalid
-- `@ui_main` must be unique
-- `@on_message` must be unique
-
-The platform now exposes helper functions such as:
 - `discover_bundle_interface_manifest(...)`
 - `resolve_bundle_api_endpoint(...)`
 - `resolve_bundle_widget(...)`
 - `resolve_bundle_message_method(...)`
 
----
+## 3) Current REST and static routes
 
-## 6) REST surface to add
-
-Bundle id should be part of the request path for the new integration routes.
-
-That avoids the current ambiguity where the body supplies `bundle_id`.
-
-### 6.1 Bundle manifest
+### 3.1 Bundle manifest
 
 ```text
 GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}
 ```
 
-Returns bundle integration metadata visible to the current user, for example:
+Returns bundle interface metadata visible to the current user.
+
+Current response shape includes:
+
+- `ui_widgets`
+- `api_endpoints`
+  - includes `alias`
+  - includes `http_method`
+  - includes `route`
+  - includes `roles`
+- `ui_main`
+- `on_message`
+
+Example:
 
 ```json
 {
-  "bundle_id": "versatile",
+  "bundle_id": "versatile@2026-03-31-13-36",
   "tenant": "demo-tenant",
   "project": "demo-project",
   "ui_widgets": [
@@ -345,260 +276,183 @@ Returns bundle integration metadata visible to the current user, for example:
     {
       "alias": "preferences_exec_report",
       "http_method": "POST",
+      "route": "operations",
       "roles": ["registered"]
     }
   ],
   "ui_main": {
     "method_name": "main_ui"
+  },
+  "on_message": {
+    "method_name": "run"
   }
 }
 ```
 
-### 6.2 Operations
+### 3.2 Operations route
 
 ```text
-POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/{alias}
 GET  /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/{alias}
+POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/{alias}
 ```
 
-Current semantics:
-- `POST`: `payload.data` is forwarded as kwargs
-- `GET`: query params are forwarded as kwargs
-- request/session context still comes from `self.comm`
-- decorated aliases are resolved first
-- if an alias exists only for another method, the endpoint returns `405`
-- if no decorated alias exists, proc still falls back to same-name method lookup for backward compatibility
+Current rules:
 
-Backward-compatible legacy route:
+- only `@api(..., route="operations")` methods are callable here
+- `POST` forwards `payload.data` as kwargs
+- `GET` forwards query params as kwargs
+- request/session context still comes from platform session and `self.comm`
+- if the alias exists for a different HTTP method on the same route, proc
+  returns `405`
+- if the alias is not declared for route `operations`, proc returns `404`
+
+### 3.3 Public route
+
+```text
+GET  /api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/{alias}
+POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/{alias}
+```
+
+Current rules:
+
+- only `@api(..., route="public")` methods are callable here
+- route matching is strict; an `operations` method is not callable through
+  `/public/...`
+
+### 3.4 Legacy no-bundle-id operations route
 
 ```text
 POST /api/integrations/bundles/{tenant}/{project}/operations/{alias}
 ```
 
-Legacy semantics:
-- if the request body provides `bundle_id`, proc resolves that bundle
-- otherwise proc resolves the current default bundle id
-- generic platform panels may still use this route while bundle-specific clients
-  should prefer the explicit `/{bundle_id}/operations/...` form
+This route still exists for backward compatibility.
 
-### 6.3 Widgets list
+Current rules:
+
+- it still resolves only declared `@api(..., route="operations")` methods
+- `bundle_id` may come from the body
+- otherwise the current default bundle is used
+
+### 3.5 Widgets list
 
 ```text
 GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/widgets
 ```
 
-Returns only widget metadata visible to the current user.
+Returns only `@ui_widget(...)` metadata visible to the current user.
 
-### 6.4 Widget fetch
+### 3.6 Widget fetch
 
 ```text
 GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/widgets/{alias}
 ```
 
-This resolves the `@ui_widget` method by alias and returns the widget payload
-for the platform to embed.
+Current rules:
 
-Current semantics:
-- widget fetch is already decorator-only
-- unauthorized widget aliases are rejected by role filtering before invocation
+- resolves only `@ui_widget(...)` aliases
+- applies role visibility before invocation
+- does not use operation routing
 
----
+### 3.7 Bundle static UI
 
-## 7) Dispatch behavior
-
-### 7.1 Streaming dispatch
-
-Target behavior:
-
-```mermaid
-sequenceDiagram
-  participant UI as Client UI
-  participant ING as Ingress
-  participant PROC as Processor
-  participant B as Bundle Instance
-
-  UI->>ING: SSE / Socket.IO message
-  ING->>PROC: enqueue task
-  PROC->>B: create per-request bundle instance
-  alt @on_message exists
-    PROC->>B: call decorated message handler
-  else
-    PROC->>B: call run()
-  end
-  B-->>UI: stream events through communicator
+```text
+GET /api/integrations/static/{tenant}/{project}/{bundle_id}
+GET /api/integrations/static/{tenant}/{project}/{bundle_id}/{path}
 ```
-
-Current status:
-- `@on_message` metadata exists
-- processor-side streaming dispatch has not switched yet
-- streaming still preserves the current `run()` fallback
-
-### 7.2 Operations dispatch
 
 Current behavior:
 
-```mermaid
-sequenceDiagram
-  participant W as Widget / REST Client
-  participant API as Integrations API
-  participant B as Bundle Instance
+- serves assets built under the bundle's UI storage root
+- supports SPA fallback to `index.html`
+- injects `<base>` into `index.html` so relative assets resolve correctly
+- can trigger a build on first request if the UI was not yet built in the
+  current proc
 
-  W->>API: GET/POST operations/{alias}
-  API->>B: create per-request bundle instance
-  alt decorated @api alias exists
-    API->>B: call resolved method
-  else
-    API->>B: fallback same-name getattr (migration only)
-  end
-  B-->>API: JSON result
-  API-->>W: JSON response
-```
+This is the route used for bundle main-view apps embedded in the host UI.
 
-This phase is already live for REST operations.
+## 4) Role visibility
 
-### 7.3 Widget dispatch
+Role visibility is enforced by the platform integration layer.
 
 Current behavior:
 
-```mermaid
-sequenceDiagram
-  participant UI as Host UI
-  participant API as Integrations API
-  participant B as Bundle Instance
+- manifest endpoints filter widgets and API endpoints by declared roles
+- direct widget fetch rejects unauthorized widget aliases
+- operations/public routes reject unauthorized `@api(...)` aliases
 
-  UI->>API: GET widgets
-  API-->>UI: alias + icon + roles
-  UI->>API: GET widgets/{alias}
-  API->>B: create per-request bundle instance
-  API->>B: call resolved @ui_widget method
-  B-->>UI: widget payload / html
-```
+Bundle methods should still enforce business-level authorization when needed,
+but route-level visibility is already enforced from decorator metadata.
 
-This phase is already live for widgets.
+## 5) Authoring rules
 
-Widgets should use the same auth/config handshake already shown in:
-- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/AIBundleDashboard.tsx`
-- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/ui/PreferencesBrowser.tsx`
-- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/ui-src/src/App.tsx`
+Use these rules for new bundles:
 
----
+1. Decorate every remotely callable method with `@api(...)`.
+2. Use `route="operations"` for authenticated/internal bundle operations.
+3. Use `route="public"` only for intentionally public endpoints.
+4. Decorate every widget method with `@ui_widget(...)`.
+5. If a widget method is also called through `/operations/...`, add
+   `@api(route="operations", alias="<operation-alias>")` to the same method.
+6. Use `@ui_main` when the bundle has a main iframe application.
+7. Use `@on_message` on the bundle message handler. The base entrypoints already
+   do this on `run()`.
 
-## 8) Role filtering
+Important current rule:
 
-The platform, not the widget, must enforce role visibility.
+- do not rely on undecorated same-name method exposure for HTTP routes
 
-Rules:
-- widget list endpoints return only widgets allowed for the current user
-- direct widget fetch rejects unauthorized aliases
-- operations reject calls when the current user does not satisfy the declared
-  roles
+## 6) Reference implementations
 
-Decorator fields:
-- widgets use `roles`
-- API methods use `roles`
+Primary reference bundle:
 
-The role strings should align with the existing gateway/session role model.
-
----
-
-## 9) First implementation phase
-
-The first backend phase should be conservative.
-
-### Phase 1: recognition and new read endpoints
-
-Status: implemented.
-
-Implement:
-- decorator dataclasses and decorators in `agentic_loader.py`
-- decorator discovery helpers
-- `GET` support for bundle operations
-- bundle manifest endpoint
-- widget list endpoint
-- widget fetch endpoint
-
-Behavior:
-- widget endpoints use decorator-based discovery immediately
-- operations still fall back to old same-name method lookup when no decorator metadata exists
-- streaming still falls back to `run()`
-
-### Phase 2: prefer declarative dispatch
-
-Status: pending.
-
-Implement:
-- processor resolves `@on_message` first
-- operations resolve `@api` first
-- alias support becomes the normal routing model
-
-### Phase 3: tighten exposure rules
-
-Status: pending.
-
-After migration:
-- public REST operations should require `@api`
-- public widgets should require `@ui_widget`
-- raw `hasattr(...)` exposure should be considered legacy fallback only
-
----
-
-## 10) Guidance for bundle authors
-
-When authoring bundles:
-- use `@agentic_workflow` on the entrypoint class
-- add `@api` to methods that are intentionally public over REST
-- add `@ui_widget` to widget-producing methods
-- treat undecorated REST methods as legacy compatibility only
-- add `@on_message` when you want to be ready for future message-handler dispatch
-- use `self.comm` for platform request/session context
-- use kwargs for UI/business inputs forwarded from GET/POST requests
-
-The reference bundle for this model is:
 - `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36`
 
-The reference bundle already demonstrates:
-- `@api`
-- `@ui_widget`
-- widget → operations calls
-- a built `ui.main_view` custom panel under `ui-src/`
-- future message handler declaration if different from `run()`
+Smaller custom main-view example:
 
----
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/echo.ui@2026-03-30`
 
-## 11) Design decisions
+Relevant code:
 
-### Why not store widget/API metadata in bundle registry?
-
-Because registry data is deployment/configuration state, while interface metadata
-is part of the bundle code contract.
-
-### Why keep fallback behavior at first?
-
-Because existing bundles already rely on:
-- implicit `run()`
-- direct operation method lookup
-
-Breaking those immediately would slow migration and bundle adoption.
-
-### Why require bundle id in the path?
-
-Because bundle selection is part of the route identity, not just request body
-data. This makes:
-- GET support natural
-- routing clearer
-- frontend integration simpler
-
----
-
-## References
-
-- Bundle loader decorators:
+- decorator implementation:
   `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/agentic_loader.py`
-- Processor runtime dispatch:
-  `src/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py`
-- Integrations controller:
+- integrations controller:
   `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/integrations.py`
-- Current widget/API integration examples:
-  `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/AIBundleDashboard.tsx`
-  `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/ui/PreferencesBrowser.tsx`
-  `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/ui-src/src/App.tsx`
+- base entrypoint widget and `@on_message` usage:
+  `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/entrypoint.py`
+
+## 7) Practical examples
+
+### 7.1 Normal authenticated operation
+
+```python
+@api(alias="preferences_exec_report", route="operations", roles=("registered",))
+async def preferences_exec_report(self, **kwargs):
+    ...
+```
+
+### 7.2 Public webhook-style operation
+
+```python
+@api(alias="telegram_webhook", route="public")
+async def telegram_webhook(self, **kwargs):
+    ...
+```
+
+### 7.3 Widget plus operation compatibility
+
+```python
+@api(alias="preferences_widget", route="operations", roles=("registered",))
+@ui_widget(
+    alias="preferences",
+    icon={"tailwind": "heroicons-outline:adjustments-horizontal"},
+    roles=("registered",),
+)
+def preferences_widget(self, **kwargs):
+    ...
+```
+
+This pattern is appropriate when:
+
+- the platform should list/fetch the method as a widget by widget alias
+- an existing client still calls the same method through `/operations/...`
+

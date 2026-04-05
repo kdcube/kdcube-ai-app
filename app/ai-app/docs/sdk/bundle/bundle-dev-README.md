@@ -103,9 +103,11 @@ Related runtime entrypoints:
   - `GET /bundles/{tenant}/{project}/{bundle_id}` returns bundle interface metadata discovered from decorators
   - `GET /bundles/{tenant}/{project}/{bundle_id}/widgets` lists decorated widgets
   - `GET /bundles/{tenant}/{project}/{bundle_id}/widgets/{alias}` resolves a decorated widget
-  - `GET|POST /bundles/{tenant}/{project}/{bundle_id}/operations/{operation}` resolves decorated `@api` methods first
+  - `GET|POST /bundles/{tenant}/{project}/{bundle_id}/operations/{operation}` resolves only `@api(..., route="operations")`
+  - `GET|POST /bundles/{tenant}/{project}/{bundle_id}/public/{operation}` resolves only `@api(..., route="public")`
   - the legacy `POST /bundles/{tenant}/{project}/operations/{operation}` route still exists for backward compatibility
-  - the current declarative routing phase is described in [docs/sdk/bundle/bundle-platform-integration-README.md](bundle-platform-integration-README.md)
+  - widget methods still fetched through `/operations/...` should carry both `@ui_widget(...)` and `@api(..., route="operations")`
+  - the current decorator contract is described in [docs/sdk/bundle/bundle-platform-integration-README.md](bundle-platform-integration-README.md)
 - Base entrypoint features: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/entrypoint.py`
   - Admin React apps like `ai_bundles`, `svc_gateway` can be exposed from bundles
 
@@ -170,6 +172,27 @@ Model defaults live in `entrypoint.configuration` (`role_models`, `embedding`, e
 Runtime overrides are applied via `bundle_props` (`bundles.yaml` + admin UI).
 If you override `configuration`, call `super().configuration()` and use
 `setdefault` for defaults so external overrides still win.
+
+### Declarative interface decorators
+
+The current bundle interface surface is explicit and decorator-driven:
+
+- `@bundle_id("my.bundle@version")` declares the canonical bundle id
+- `@api(...)` exposes a method through the integrations HTTP surface
+  - `route="operations"` is the default
+  - use `route="public"` only for operations intentionally reachable from the public route
+- `@ui_widget(...)` declares a widget for `/widgets`
+- `@ui_main` declares the main iframe UI entrypoint for `/static/...`
+- `@on_message` marks the turn handler metadata used by the processor path
+
+Important rules:
+
+- only methods decorated with `@api(...)` are remotely callable through `/operations` or `/public`
+- same-name undeclared methods are not part of the HTTP contract
+- if a widget method is still called through `/operations/...`, decorate it with both `@ui_widget(...)` and `@api(..., route="operations")`
+
+Full contract:
+- [docs/sdk/bundle/bundle-platform-integration-README.md](bundle-platform-integration-README.md)
 
 ### Canonical turn error propagation
 
@@ -516,10 +539,13 @@ Operation inputs:
 - preferred routes:
   - `GET /bundles/{tenant}/{project}/{bundle_id}/operations/{operation}`
   - `POST /bundles/{tenant}/{project}/{bundle_id}/operations/{operation}`
-- when the method is decorated with `@api`, proc resolves by alias and HTTP method first
+  - `GET /bundles/{tenant}/{project}/{bundle_id}/public/{operation}`
+  - `POST /bundles/{tenant}/{project}/{bundle_id}/public/{operation}`
+- `/operations/...` resolves only declared `@api(..., route="operations")` methods
+- `/public/...` resolves only declared `@api(..., route="public")` methods
 - `POST` forwards `payload.data` as kwargs
 - `GET` forwards query params as kwargs
-- legacy `POST /bundles/{tenant}/{project}/operations/{operation}` still exists and still resolves the default bundle when `bundle_id` is omitted
+- legacy `POST /bundles/{tenant}/{project}/operations/{operation}` still exists and still resolves the default bundle when `bundle_id` is omitted, but it still calls only declared `@api(..., route="operations")` methods
 
 Outputs:
 - Streaming events (deltas, steps, widgets) via `ChatCommunicator`.
@@ -705,7 +731,8 @@ Bundles can expose **React panels** and **operations**:
   - `GET /bundles/{tenant}/{project}/{bundle_id}` returns declarative bundle interface metadata
   - `GET /bundles/{tenant}/{project}/{bundle_id}/widgets` lists decorated widgets
   - `GET /bundles/{tenant}/{project}/{bundle_id}/widgets/{alias}` fetches a decorated widget
-  - `GET|POST /bundles/{tenant}/{project}/{bundle_id}/operations/{operation}` resolves decorated `@api` methods first
+  - `GET|POST /bundles/{tenant}/{project}/{bundle_id}/operations/{operation}` resolves only declared `@api(..., route="operations")`
+  - `GET|POST /bundles/{tenant}/{project}/{bundle_id}/public/{operation}` resolves only declared `@api(..., route="public")`
   - legacy `POST /bundles/{tenant}/{project}/operations/{operation}` still exists for compatibility
 
 Docs:

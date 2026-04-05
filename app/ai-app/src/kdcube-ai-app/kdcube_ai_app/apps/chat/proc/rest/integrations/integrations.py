@@ -14,6 +14,7 @@ from typing import Optional, Dict, Any, Set
 from fastapi import APIRouter, Depends, HTTPException, Request, Body
 from pydantic import BaseModel
 
+from kdcube_ai_app.apps.chat.emitters import build_comm_from_comm_context
 from kdcube_ai_app.apps.chat.ingress.resolvers import require_auth, auth_without_pressure, get_user_session_dependency
 from kdcube_ai_app.apps.middleware.gateway import STATE_STREAM_ID, extract_stream_id
 from kdcube_ai_app.auth.AuthManager import RequireUser
@@ -27,6 +28,7 @@ from kdcube_ai_app.apps.chat.sdk.protocol import (
     ChatTaskUser,
     ChatTaskRequest,
 )
+from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import bind_current_request_context
 from kdcube_ai_app.infra.plugin.bundle_registry import (
     resolve_bundle_async,
     get_all,
@@ -114,6 +116,36 @@ def _build_rest_bundle_routing(*, request: Request, session_id: str, bundle_id: 
         bundle_id=bundle_id,
         socket_id=_request_stream_id(request),
     )
+
+
+def _unpack_loaded_bundle_workflow(result: tuple[Any, ...]) -> tuple[Any, Any, str, str, Optional[ChatTaskPayload]]:
+    if len(result) == 5:
+        workflow, spec_resolved, tenant_id, project_id, comm_context = result
+        return workflow, spec_resolved, tenant_id, project_id, comm_context
+    if len(result) == 4:
+        workflow, spec_resolved, tenant_id, project_id = result
+        return workflow, spec_resolved, tenant_id, project_id, None
+    raise ValueError(f"Unexpected _load_bundle_workflow result shape: {len(result)}")
+
+
+def _resolve_bound_runtime_comm(*, workflow: Any, comm_context: Optional[ChatTaskPayload]):
+    if comm_context is None:
+        return None
+    descriptor = getattr(type(workflow), "comm", None)
+    if isinstance(descriptor, property):
+        try:
+            candidate = getattr(workflow, "comm")
+            if candidate is not None:
+                return candidate
+        except Exception:
+            pass
+    try:
+        return build_comm_from_comm_context(
+            comm_context,
+            event_filter=getattr(workflow, "_event_filter", None),
+        )
+    except Exception:
+        return None
 
 
 def _session_role_names(session: UserSession) -> set[str]:
@@ -383,7 +415,7 @@ def _manifest_to_descriptor(manifest: BundleInterfaceManifest) -> Dict[str, Any]
     """Serialise a full (unfiltered) manifest to a plain dict."""
     return {
         "apis": [
-            {"alias": s.alias, "http_method": s.http_method, "roles": list(s.roles)}
+            {"alias": s.alias, "http_method": s.http_method, "route": s.route, "roles": list(s.roles)}
             for s in manifest.api_endpoints
         ],
         "widgets": [
@@ -401,7 +433,7 @@ def _manifest_to_descriptor_filtered(
     """Serialise a manifest filtered to the roles visible to session."""
     return {
         "apis": [
-            {"alias": s.alias, "http_method": s.http_method, "roles": list(s.roles)}
+            {"alias": s.alias, "http_method": s.http_method, "route": s.route, "roles": list(s.roles)}
             for s in manifest.api_endpoints
             if _roles_visible(s.roles, session)
         ],
@@ -1109,7 +1141,7 @@ async def call_bundle_op_public(
 ):
     """
     Public (no authentication required) bundle operation endpoint.
-    The bundle method must declare the caller's role in @api(roles=(...)) to be accessible.
+    The bundle method must declare @api(route="public", ...) to be accessible.
     """
     return await _call_bundle_op_limited(
         tenant=tenant,
@@ -1118,6 +1150,7 @@ async def call_bundle_op_public(
         payload=payload,
         request=request,
         operation=operation,
+        route="public",
         session=session,
     )
 
@@ -1139,6 +1172,7 @@ async def call_bundle_op_public_get(
         payload=payload,
         request=request,
         operation=operation,
+        route="public",
         session=session,
     )
 
@@ -1164,6 +1198,7 @@ async def call_bundle_op(
         payload=payload,
         request=request,
         operation=operation,
+        route="operations",
         session=session,
     )
 
@@ -1184,6 +1219,7 @@ async def call_bundle_op_default(
         payload=payload,
         request=request,
         operation=operation,
+        route="operations",
         session=session,
     )
 
@@ -1197,13 +1233,15 @@ async def get_bundle_interface(
         session: UserSession = Depends(require_auth(RequireUser())),
 ):
     payload = BundleSuggestionsRequest()
-    workflow, spec_resolved, tenant_id, project_id = await _load_bundle_workflow(
-        tenant=tenant,
-        project=project,
-        bundle_id=bundle_id,
-        payload=payload,
-        request=request,
-        session=session,
+    workflow, spec_resolved, tenant_id, project_id, _comm_context = _unpack_loaded_bundle_workflow(
+        await _load_bundle_workflow(
+            tenant=tenant,
+            project=project,
+            bundle_id=bundle_id,
+            payload=payload,
+            request=request,
+            session=session,
+        )
     )
     manifest = discover_bundle_interface_manifest(workflow, bundle_id=spec_resolved.id)
     visible_widgets = _visible_widget_specs(manifest, session)
@@ -1225,6 +1263,7 @@ async def get_bundle_interface(
             {
                 "alias": spec.alias,
                 "http_method": spec.http_method,
+                "route": spec.route,
                 "roles": list(spec.roles),
             }
             for spec in visible_apis
@@ -1251,13 +1290,15 @@ async def list_bundle_widgets(
         session: UserSession = Depends(require_auth(RequireUser())),
 ):
     payload = BundleSuggestionsRequest()
-    workflow, spec_resolved, tenant_id, project_id = await _load_bundle_workflow(
-        tenant=tenant,
-        project=project,
-        bundle_id=bundle_id,
-        payload=payload,
-        request=request,
-        session=session,
+    workflow, spec_resolved, tenant_id, project_id, _comm_context = _unpack_loaded_bundle_workflow(
+        await _load_bundle_workflow(
+            tenant=tenant,
+            project=project,
+            bundle_id=bundle_id,
+            payload=payload,
+            request=request,
+            session=session,
+        )
     )
     manifest = discover_bundle_interface_manifest(workflow, bundle_id=spec_resolved.id)
     return {
@@ -1286,13 +1327,15 @@ async def fetch_bundle_widget(
         session: UserSession = Depends(require_auth(RequireUser())),
 ):
     payload = BundleSuggestionsRequest()
-    workflow, spec_resolved, tenant_id, project_id = await _load_bundle_workflow(
-        tenant=tenant,
-        project=project,
-        bundle_id=bundle_id,
-        payload=payload,
-        request=request,
-        session=session,
+    workflow, spec_resolved, tenant_id, project_id, comm_context = _unpack_loaded_bundle_workflow(
+        await _load_bundle_workflow(
+            tenant=tenant,
+            project=project,
+            bundle_id=bundle_id,
+            payload=payload,
+            request=request,
+            session=session,
+        )
     )
     widget_spec = resolve_bundle_widget(workflow, alias=widget_alias, bundle_id=spec_resolved.id)
     if widget_spec is None:
@@ -1303,10 +1346,12 @@ async def fetch_bundle_widget(
     fn = getattr(workflow, widget_spec.method_name)
     extra = _get_query_kwargs(request)
     user_id = session.user_id or session.fingerprint
-    if inspect.iscoroutinefunction(fn):
-        result = await fn(user_id=user_id, fingerprint=session.fingerprint, **extra)
-    else:
-        result = fn(user_id=user_id, fingerprint=session.fingerprint, **extra)
+    runtime_comm = _resolve_bound_runtime_comm(workflow=workflow, comm_context=comm_context)
+    with bind_current_request_context(comm_context, comm=runtime_comm):
+        if inspect.iscoroutinefunction(fn):
+            result = await fn(user_id=user_id, fingerprint=session.fingerprint, **extra)
+        else:
+            result = fn(user_id=user_id, fingerprint=session.fingerprint, **extra)
     return {
         "status": "ok",
         "tenant": tenant_id,
@@ -1338,6 +1383,7 @@ async def call_bundle_op_get(
         payload=payload,
         request=request,
         operation=operation,
+        route="operations",
         session=session,
     )
 
@@ -1350,6 +1396,7 @@ async def _call_bundle_op_limited(
         payload: BundleSuggestionsRequest,
         request: Request,
         operation: str,
+        route: str,
         session: UserSession,
 ):
     sem = _get_integrations_semaphore()
@@ -1362,6 +1409,7 @@ async def _call_bundle_op_limited(
                 payload=payload,
                 request=request,
                 operation=operation,
+                route=route,
                 session=session,
             )
     return await _call_bundle_op_inner(
@@ -1371,6 +1419,7 @@ async def _call_bundle_op_limited(
         payload=payload,
         request=request,
         operation=operation,
+        route=route,
         session=session,
     )
 
@@ -1416,7 +1465,7 @@ async def _load_bundle_workflow(
         payload: BundleSuggestionsRequest,
         request: Request,
         session: UserSession,
-) -> tuple[Any, Any, str, str]:
+) -> tuple[Any, Any, str, str, ChatTaskPayload]:
     settings = get_settings()
     cfg_req = payload.config_request or ConfigRequest()
 
@@ -1498,7 +1547,7 @@ async def _load_bundle_workflow(
         except Exception:
             raise HTTPException(status_code=500, detail=f"Failed to load bundle: {e}")
 
-    return workflow, spec_resolved, tenant_id, project_id
+    return workflow, spec_resolved, tenant_id, project_id, comm_context
 
 
 async def _call_bundle_op_inner(
@@ -1509,15 +1558,18 @@ async def _call_bundle_op_inner(
         payload: BundleSuggestionsRequest,
         request: Request,
         operation: str,
+        route: str,
         session: UserSession,
 ):
-    workflow, spec_resolved, tenant_id, project_id = await _load_bundle_workflow(
-        tenant=tenant,
-        project=project,
-        bundle_id=bundle_id,
-        payload=payload,
-        request=request,
-        session=session,
+    workflow, spec_resolved, tenant_id, project_id, comm_context = _unpack_loaded_bundle_workflow(
+        await _load_bundle_workflow(
+            tenant=tenant,
+            project=project,
+            bundle_id=bundle_id,
+            payload=payload,
+            request=request,
+            session=session,
+        )
     )
 
     request_method = str(getattr(request, "method", "POST") or "POST").upper()
@@ -1525,6 +1577,7 @@ async def _call_bundle_op_inner(
         workflow,
         alias=operation,
         http_method=request_method,
+        route=route,
         bundle_id=spec_resolved.id,
     )
     if endpoint_spec is None:
@@ -1543,10 +1596,12 @@ async def _call_bundle_op_inner(
         extra = payload.data or {}
         if request_method == "GET":
             extra = _get_query_kwargs(request)
-        if inspect.iscoroutinefunction(fn):
-            result = await fn(user_id=user_id, fingerprint=session.fingerprint, **extra)
-        else:
-            result = fn(user_id=user_id, fingerprint=session.fingerprint, **extra)
+        runtime_comm = _resolve_bound_runtime_comm(workflow=workflow, comm_context=comm_context)
+        with bind_current_request_context(comm_context, comm=runtime_comm):
+            if inspect.iscoroutinefunction(fn):
+                result = await fn(user_id=user_id, fingerprint=session.fingerprint, **extra)
+            else:
+                result = fn(user_id=user_id, fingerprint=session.fingerprint, **extra)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"{operation}() failed: {e}")
 

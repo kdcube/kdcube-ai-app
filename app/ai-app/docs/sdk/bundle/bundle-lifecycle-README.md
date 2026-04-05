@@ -43,8 +43,8 @@ flowchart TD
     R[Bundle registry entry] --> D["@agentic_workflow discovery"]
     D --> I[Instantiate entrypoint]
     I --> L[on_bundle_load once per process per tenant/project]
-    L --> Q[Incoming turn or operation request]
-    Q --> B[Refresh request context + bundle props]
+    L --> Q[Incoming turn or REST operation request]
+    Q --> B[Build request routing/comm_context + refresh bundle props]
     B --> P[pre_run_hook]
     P --> E[execute_core]
     E --> O[post_run_hook]
@@ -57,8 +57,8 @@ flowchart TD
 | Discovery | Proc startup / bundle load | Loader imports the bundle module and finds the class decorated with `@agentic_workflow` |
 | Instantiation | Per request by default | Entrypoint instance is created with `config`, `comm_context`, `pg_pool`, `redis` |
 | One-time init | Once per process per tenant/project | `on_bundle_load(...)` may prepare indexes, local caches, repos, or other bundle-local assets |
-| Request prep | Every invocation | Request-bound context is refreshed, bundle props are loaded/merged, hooks can run |
-| Execution | Every invocation | `execute_core(...)` handles the turn or operation |
+| Request prep | Every invocation | Request-bound routing/identity is rebuilt, singleton instances are rebound, bundle props are loaded/merged, hooks can run |
+| Execution | Every invocation | `execute_core(...)` handles the chat turn or bundle operation |
 | Completion | Every invocation | `post_run_hook(...)` can finalize bookkeeping |
 
 ## Instance lifetime
@@ -76,10 +76,19 @@ The registry may enable `singleton=true`.
 
 If that happens:
 - the entrypoint instance may be reused
+- the singleton cache is by loaded bundle spec in the current proc, not by request
+- the same singleton instance may therefore serve multiple turns and REST operations over time
 - `rebind_request_context(...)` refreshes request-bound objects such as `comm_context`
 - `on_bundle_load(...)` still runs only once per process per tenant/project
 
 Even with singleton reuse, you should still treat runtime memory as ephemeral and non-authoritative.
+
+Important:
+- singleton reuse does **not** make `self.comm`, current actor, current user, current conversation, or current turn durable
+- those are per-invocation surfaces and must be treated as request-local
+- do not cache request-bound values from one call and reuse them in another
+- platform does not serialize singleton invocations for you; bundle code may still be used concurrently
+- what the platform guarantees is that request execution context is rebound per invocation and must not live as shared singleton state
 
 ## Entrypoint methods and timing
 
@@ -89,12 +98,56 @@ Even with singleton reuse, you should still treat runtime memory as ephemeral an
 | `pre_run_hook(state=...)` | every invocation | last-minute validation or reconciliation |
 | `execute_core(state=..., thread_id=..., params=...)` | every invocation | main bundle logic |
 | `post_run_hook(state=..., result=...)` | every invocation | final bookkeeping |
-| `rebind_request_context(...)` | singleton reuse only | refresh request-local handles on cached instance |
+| `rebind_request_context(...)` | singleton reuse only | refresh request-local handles on cached instance before the current call runs |
 
 Important:
 - `on_bundle_load(...)` is intended to be deterministic and idempotent
 - do not store request-local state there
 - use storage for durable state, not instance fields
+
+## Request-bound communicator and REST operations
+
+Bundle operations use the same request-bound communicator model as normal chat turns.
+
+For each REST call to:
+- `/bundles/{tenant}/{project}/{bundle_id}/operations/{operation}`
+- `/bundles/{tenant}/{project}/{bundle_id}/public/{operation}`
+
+proc builds a fresh `ChatTaskPayload` from the current request/session:
+- tenant and project
+- user/session identity
+- request id
+- bundle id
+- stream/socket id when the client propagated it
+
+That `comm_context` is passed into `get_workflow_instance(...)`.
+
+What happens next depends on instance lifetime:
+
+- non-singleton bundle:
+  - a fresh entrypoint instance is created for the request
+  - `self.comm_context` is request-local from the start
+  - `self.comm` is built from that request context
+- singleton bundle:
+  - the cached instance is reused
+  - before the operation runs, `rebind_request_context(...)` refreshes request-local state
+  - for `BaseEntrypoint`, rebinding updates task-local request context so `self.comm_context` / `self.comm` resolve against the current invocation instead of shared instance state
+  - the shared singleton object may still hold bundle-owned shared state, but request execution context must be treated as per-invocation only
+
+So yes: the bundle does receive a request-specific communicator for REST calls, but it is passed indirectly through `comm_context`, not as a separate operation argument.
+
+Practical rule:
+- inside bundle code, use `self.comm` / `self.comm_context` as request-bound surfaces
+- if the bundle is singleton, never retain an old communicator reference across requests
+
+For custom singleton bundles that do not use `BaseEntrypoint`, the platform now
+also exposes request-local helpers via `kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx`:
+- `get_current_request_context()`
+- `get_current_comm()`
+
+Those helpers are bound by the platform for queued `run(...)` execution and for
+REST/widget invocation paths. Use them instead of storing request execution
+context on the shared singleton object.
 
 ## Storage and isolation surfaces
 
