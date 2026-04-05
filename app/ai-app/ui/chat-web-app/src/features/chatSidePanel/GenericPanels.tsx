@@ -49,8 +49,7 @@ export const EconomicUsagePanel = ({visible, className}: WidgetPanelProps) => {
     const [trigger, lastArg] = useLazyGetEconomicUsageWidgetQuery();
 
     return useMemo(() => {
-        return <GenericPanel trigger={trigger} lastArg={lastArg} visible={visible} className={className}
-                             reloadOnShow={true}/>
+        return <GenericPanel trigger={trigger} lastArg={lastArg} visible={visible} className={className}/>
     }, [trigger, lastArg, visible, className]);
 }
 
@@ -58,7 +57,6 @@ export const VersatilePreferencesPanel = ({visible, className}: WidgetPanelProps
     const [trigger, lastArg] = useLazyGetVersatilePreferencesWidgetQuery();
 
     return useMemo(() => {
-        return <GenericPanel trigger={trigger} lastArg={lastArg} visible={visible} className={className}
-                             reloadOnShow={true}/>
+        return <GenericPanel trigger={trigger} lastArg={lastArg} visible={visible} className={className}/>
     }, [trigger, lastArg, visible, className]);
 }
