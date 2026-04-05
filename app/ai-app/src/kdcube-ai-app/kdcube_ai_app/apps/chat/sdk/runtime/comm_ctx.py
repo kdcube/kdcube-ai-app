@@ -4,13 +4,17 @@
 # kdcube_ai_app/apps/chat/sdk/runtime/comm_ctx.py
 from __future__ import annotations
 
+from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Optional, Dict, Any
 
 from kdcube_ai_app.apps.chat.emitters import ChatCommunicator
+from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
 
 # Public: holds the communicator for the *current execution context*
 COMM_CV: ContextVar[object | None] = ContextVar("COMM_CV", default=None)
+REQUEST_CONTEXT_CV: ContextVar[ChatTaskPayload | None] = ContextVar("REQUEST_CONTEXT_CV", default=None)
+_BIND_COMM_UNSET = object()
 
 def set_comm(comm: object) -> None:
     """Register the ChatCommunicator singleton for this context."""
@@ -19,6 +23,43 @@ def set_comm(comm: object) -> None:
 def get_comm() -> Optional[object|ChatCommunicator]:
     """Get the ChatCommunicator singleton (or None if not initialized)."""
     return COMM_CV.get()
+
+
+def get_current_comm() -> Optional[object | ChatCommunicator]:
+    """Public alias for the current execution communicator."""
+    return get_comm()
+
+
+def set_current_request_context(request_context: ChatTaskPayload | None) -> None:
+    """Register the ChatTaskPayload for the current execution context."""
+    REQUEST_CONTEXT_CV.set(request_context)
+
+
+def get_current_request_context() -> Optional[ChatTaskPayload]:
+    """Get the current request/task payload bound to this execution context."""
+    return REQUEST_CONTEXT_CV.get()
+
+
+@contextmanager
+def bind_current_request_context(
+    request_context: ChatTaskPayload | None,
+    *,
+    comm: object | ChatCommunicator | None = _BIND_COMM_UNSET,
+):
+    """
+    Bind request-local execution context for the lifetime of one invocation.
+    ContextVar binding is task-local and survives across awaits within that task.
+    """
+    req_token = REQUEST_CONTEXT_CV.set(request_context)
+    comm_token = None
+    if comm is not _BIND_COMM_UNSET:
+        comm_token = COMM_CV.set(comm)
+    try:
+        yield request_context
+    finally:
+        if comm_token is not None:
+            COMM_CV.reset(comm_token)
+        REQUEST_CONTEXT_CV.reset(req_token)
 
 async def delta(text: str, index: int, marker: str = "answer", completed: bool = False, **kwargs) -> None:
     """Convenience: emit a delta if communicator is present."""
@@ -49,10 +90,21 @@ async def error(message: str, data: Dict[str, Any] | None = None) -> None:
 # serialize the COMM_CV object itself (not JSON-safe). Keep tiny helpers:
 
 def snapshot_ctxvars() -> dict:
-    # marker only; actual communicator is rebuilt from spec
-    return {"COMM_PRESENT": COMM_CV.get() is not None}
+    request_context = REQUEST_CONTEXT_CV.get()
+    if request_context is not None and hasattr(request_context, "model_dump"):
+        request_context = request_context.model_dump()
+    # communicator itself is rebuilt from spec in child runtimes
+    return {
+        "COMM_PRESENT": COMM_CV.get() is not None,
+        "REQUEST_CONTEXT": request_context,
+    }
 
 def restore_ctxvars(payload: dict) -> None:
-    # no-op: communicator is reconstructed by bootstrap and set via set_comm(...)
-    return
-
+    raw_request_context = (payload or {}).get("REQUEST_CONTEXT")
+    if raw_request_context:
+        try:
+            REQUEST_CONTEXT_CV.set(ChatTaskPayload.model_validate(raw_request_context))
+        except Exception:
+            REQUEST_CONTEXT_CV.set(None)
+    else:
+        REQUEST_CONTEXT_CV.set(None)

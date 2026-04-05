@@ -39,6 +39,7 @@ class APIEndpointSpec:
     method_name: str
     alias: str
     http_method: str = "POST"
+    route: str = "operations"
     roles: tuple[str, ...] = ()
 
 
@@ -94,6 +95,13 @@ def _normalize_http_method(value: str | None) -> str:
     if method not in {"GET", "POST"}:
         raise ValueError(f"Unsupported bundle api method: {method}")
     return method
+
+
+def _normalize_api_route(value: str | None) -> str:
+    route = str(value or "operations").strip().lower() or "operations"
+    if route not in {"operations", "public"}:
+        raise ValueError(f"Unsupported bundle api route: {route}")
+    return route
 
 
 def _normalize_icon_spec(value: Any) -> dict[str, str]:
@@ -185,9 +193,11 @@ def api(
         *,
         method: str = "POST",
         alias: str | None = None,
+        route: str = "operations",
         roles: List[str] | Tuple[str, ...] | None = None,
 ):
     http_method = _normalize_http_method(method)
+    resolved_route = _normalize_api_route(route)
 
     def _wrap(fn):
         setattr(
@@ -197,6 +207,7 @@ def api(
                 method_name=getattr(fn, "__name__", "api_method"),
                 alias=_clean_alias(alias, getattr(fn, "__name__", "api_method")),
                 http_method=http_method,
+                route=resolved_route,
                 roles=_tuple_str(roles),
             ),
         )
@@ -621,11 +632,15 @@ def discover_bundle_interface_manifest(target: Any, *, bundle_id: str | None = N
                 method_name=member_name,
                 alias=api_spec.alias,
                 http_method=api_spec.http_method,
+                route=api_spec.route,
                 roles=tuple(api_spec.roles or ()),
             )
-            api_key = (resolved.alias, resolved.http_method)
+            api_key = (resolved.alias, resolved.http_method, resolved.route)
             if api_key in seen_api:
-                raise ValueError(f"Duplicate bundle api alias detected: {resolved.alias} [{resolved.http_method}]")
+                raise ValueError(
+                    f"Duplicate bundle api alias detected: {resolved.alias} "
+                    f"[{resolved.http_method}] route={resolved.route}"
+                )
             seen_api.add(api_key)
             api_endpoints.append(resolved)
 
@@ -656,7 +671,7 @@ def discover_bundle_interface_manifest(target: Any, *, bundle_id: str | None = N
                 raise ValueError("Multiple @on_message methods detected on bundle entrypoint")
             on_message_spec = resolved
 
-    api_endpoints.sort(key=lambda item: (item.alias, item.http_method, item.method_name))
+    api_endpoints.sort(key=lambda item: (item.alias, item.route, item.http_method, item.method_name))
     ui_widgets.sort(key=lambda item: (item.alias, item.method_name))
     return BundleInterfaceManifest(
         bundle_id=resolved_bundle_id,
@@ -672,24 +687,18 @@ def resolve_bundle_api_endpoint(
         *,
         alias: str,
         http_method: str = "POST",
+        route: str = "operations",
         bundle_id: str | None = None,
 ) -> tuple[APIEndpointSpec | None, tuple[str, ...]]:
     manifest = discover_bundle_interface_manifest(target, bundle_id=bundle_id)
     resolved_method = _normalize_http_method(http_method)
-    candidates = [spec for spec in manifest.api_endpoints if spec.alias == alias]
+    resolved_route = _normalize_api_route(route)
+    candidates = [spec for spec in manifest.api_endpoints if spec.alias == alias and spec.route == resolved_route]
     if candidates:
         for spec in candidates:
             if spec.http_method == resolved_method:
                 return spec, tuple(sorted({item.http_method for item in candidates}))
         return None, tuple(sorted({item.http_method for item in candidates}))
-
-    if hasattr(target, alias) and callable(getattr(target, alias)):
-        return APIEndpointSpec(
-            method_name=alias,
-            alias=alias,
-            http_method=resolved_method,
-            roles=(),
-        ), ()
     return None, ()
 
 
