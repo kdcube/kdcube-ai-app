@@ -69,7 +69,7 @@ interface GenericWidgetPanelProps {
     visible: boolean;
     className?: string;
     trigger: (params: GetWidgetParams, preferCache?: boolean) => void;
-    reloadOnShow?: boolean;
+    useCached?: boolean;
     lastArg: {
         data?: string | undefined;
         isFetching: boolean;
@@ -78,7 +78,7 @@ interface GenericWidgetPanelProps {
     }
 }
 
-export const GenericPanel = ({visible, className, trigger, lastArg, reloadOnShow}: GenericWidgetPanelProps) => {
+export const GenericPanel = ({visible, className, trigger, lastArg, useCached = false}: GenericWidgetPanelProps) => {
     const wasVisible = useRef(visible);
 
     const {data, isFetching, isError, isUninitialized} = useMemo(() => {
@@ -89,13 +89,13 @@ export const GenericPanel = ({visible, className, trigger, lastArg, reloadOnShow
     const project = useAppSelector(selectProject);
 
     useEffect(() => {
-        if (!wasVisible.current && reloadOnShow && visible) {
+        if (!wasVisible.current && !useCached && visible) {
             trigger({tenant, project}, false);
         } else if (visible && isUninitialized) {
             trigger({tenant, project}, true)
         }
         wasVisible.current = visible;
-    }, [isUninitialized, project, reloadOnShow, tenant, trigger, visible]);
+    }, [isUninitialized, project, useCached, tenant, trigger, visible]);
 
     return useMemo(() => {
         if (visible) {
