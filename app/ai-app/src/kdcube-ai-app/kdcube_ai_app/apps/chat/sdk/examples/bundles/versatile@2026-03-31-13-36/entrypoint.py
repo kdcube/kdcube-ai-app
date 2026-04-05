@@ -161,6 +161,11 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
         root.mkdir(parents=True, exist_ok=True)
         return root
 
+    @api(
+        alias="preferences_widget",
+        route="operations",
+        roles=("registered", "privileged", "free", "payasyougo", "admin"),
+    )
     @ui_widget(
         icon={
             "tailwind": "heroicons-outline:adjustments-horizontal",

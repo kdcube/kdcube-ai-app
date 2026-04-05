@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -8,7 +9,12 @@ from starlette.datastructures import Headers
 from starlette.requests import Request
 
 from kdcube_ai_app.apps.chat.proc.rest.integrations import integrations
+from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import (
+    get_current_comm,
+    get_current_request_context,
+)
 from kdcube_ai_app.infra.plugin import bundle_storage
+from kdcube_ai_app.infra.plugin.agentic_loader import api
 from kdcube_ai_app.infra.namespaces import CONFIG
 from kdcube_ai_app.apps.middleware.gateway import (
     STATE_STREAM_ID,
@@ -105,6 +111,7 @@ async def test_call_bundle_op_inner_preserves_request_stream_id(monkeypatch):
         return SimpleNamespace(ai_bundle_spec=None)
 
     class _Workflow:
+        @api(alias="ping")
         async def ping(self, **kwargs):
             captured["kwargs"] = dict(kwargs)
             return {"pong": True}
@@ -139,6 +146,7 @@ async def test_call_bundle_op_inner_preserves_request_stream_id(monkeypatch):
         ),
         request=_request(stream_id="stream-xyz"),
         operation="ping",
+        route="operations",
         session=_session(),
     )
 
@@ -148,6 +156,74 @@ async def test_call_bundle_op_inner_preserves_request_stream_id(monkeypatch):
     assert captured["kwargs"]["foo"] == "bar"
     assert result["bundle_id"] == "bundle.demo"
     assert result["ping"] == {"pong": True}
+
+
+@pytest.mark.asyncio
+async def test_call_bundle_op_inner_binds_runtime_request_context(monkeypatch):
+    captured = {}
+
+    async def _resolve_bundle_async(bundle_id, override=None):
+        del override
+        return SimpleNamespace(id=bundle_id, path="/tmp/demo", module="entrypoint", singleton=True)
+
+    def _create_workflow_config(_cfg_req):
+        return SimpleNamespace(ai_bundle_spec=None)
+
+    class _Workflow:
+        @api(alias="ping")
+        async def ping(self, **kwargs):
+            del kwargs
+            current = get_current_request_context()
+            current_comm = get_current_comm()
+            captured["before"] = (
+                getattr(getattr(current, "user", None), "user_id", None),
+                getattr(getattr(current, "routing", None), "socket_id", None),
+                current_comm is not None,
+            )
+            await asyncio.sleep(0)
+            current = get_current_request_context()
+            current_comm = get_current_comm()
+            captured["after"] = (
+                getattr(getattr(current, "user", None), "user_id", None),
+                getattr(getattr(current, "routing", None), "socket_id", None),
+                current_comm is not None,
+            )
+            return {"pong": True}
+
+    workflow = _Workflow()
+
+    def _get_workflow_instance(spec, wf_config, comm_context=None, redis=None):
+        del spec, wf_config, comm_context, redis
+        return workflow, None
+
+    monkeypatch.setattr(
+        integrations,
+        "get_settings",
+        lambda: SimpleNamespace(
+            OPENAI_API_KEY=None,
+            ANTHROPIC_API_KEY=None,
+            TENANT="tenant-a",
+            PROJECT="project-a",
+        ),
+    )
+    monkeypatch.setattr(integrations, "resolve_bundle_async", _resolve_bundle_async)
+    monkeypatch.setattr(integrations, "create_workflow_config", _create_workflow_config)
+    monkeypatch.setattr(integrations, "get_workflow_instance", _get_workflow_instance)
+    monkeypatch.setattr(integrations, "get_default_id", lambda: None)
+
+    await integrations._call_bundle_op_inner(
+        tenant="tenant-a",
+        project="project-a",
+        bundle_id=None,
+        payload=integrations.BundleSuggestionsRequest(bundle_id="bundle.demo"),
+        request=_request(stream_id="stream-ctx"),
+        operation="ping",
+        route="operations",
+        session=_session(),
+    )
+
+    assert captured["before"] == ("user-1", "stream-ctx", True)
+    assert captured["after"] == ("user-1", "stream-ctx", True)
 
 
 @pytest.mark.asyncio
@@ -163,6 +239,7 @@ async def test_call_bundle_op_inner_uses_default_bundle_when_omitted(monkeypatch
         return SimpleNamespace(ai_bundle_spec=None)
 
     class _Workflow:
+        @api(alias="ping")
         async def ping(self, **kwargs):
             captured["kwargs"] = dict(kwargs)
             return {"pong": True}
@@ -194,6 +271,7 @@ async def test_call_bundle_op_inner_uses_default_bundle_when_omitted(monkeypatch
         payload=integrations.BundleSuggestionsRequest(data={"foo": "bar"}),
         request=_request(stream_id="stream-default"),
         operation="ping",
+        route="operations",
         session=_session(),
     )
 

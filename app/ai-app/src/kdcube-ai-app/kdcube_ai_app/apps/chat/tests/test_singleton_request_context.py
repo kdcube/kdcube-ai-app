@@ -1,4 +1,7 @@
+import asyncio
 from types import SimpleNamespace
+
+import pytest
 
 from kdcube_ai_app.apps.chat.sdk.protocol import (
     ChatTaskActor,
@@ -92,3 +95,47 @@ def test_singleton_workflow_rebinds_request_context(monkeypatch):
     assert second.user_type_from_comm_ctx(second.comm) == "privileged"
 
     clear_agentic_caches()
+
+
+@pytest.mark.asyncio
+async def test_singleton_entrypoint_keeps_comm_context_task_local(monkeypatch):
+    monkeypatch.setattr(entrypoint_mod, "get_settings", lambda: SimpleNamespace(TENANT="demo", PROJECT="demo-project"))
+    monkeypatch.setattr(entrypoint_mod, "create_kv_cache_from_env", lambda: None)
+    monkeypatch.setattr(
+        entrypoint_mod,
+        "build_comm_from_comm_context",
+        lambda payload, **kwargs: SimpleNamespace(
+            user_id=payload.user.user_id,
+            service={"user_obj": {"user_type": payload.user.user_type}},
+        ),
+    )
+
+    class _ProbeEntrypoint(entrypoint_mod.BaseEntrypoint):
+        async def execute_core(self, *, state, thread_id, params):
+            del state, thread_id, params
+            return {}
+
+        async def probe(self, pause: float) -> tuple[str | None, str | None, str | None, str | None]:
+            before_user = getattr(self.comm, "user_id", None)
+            before_ctx = getattr(getattr(self.comm_context, "user", None), "user_id", None)
+            await asyncio.sleep(pause)
+            after_user = getattr(self.comm, "user_id", None)
+            after_ctx = getattr(getattr(self.comm_context, "user", None), "user_id", None)
+            return before_user, before_ctx, after_user, after_ctx
+
+    ep = _ProbeEntrypoint(config=_DummyConfig(bundle_id="bundle.probe"), comm_context=_ctx(user_type="registered", user_id="seed"))
+
+    async def _call(ctx: ChatTaskPayload, pause: float):
+        ep.rebind_request_context(comm_context=ctx)
+        return await ep.probe(pause)
+
+    first_ctx = _ctx(user_type="registered", user_id="user-a")
+    second_ctx = _ctx(user_type="privileged", user_id="user-b")
+
+    first, second = await asyncio.gather(
+        _call(first_ctx, 0.05),
+        _call(second_ctx, 0.0),
+    )
+
+    assert first == ("user-a", "user-a", "user-a", "user-a")
+    assert second == ("user-b", "user-b", "user-b", "user-b")
