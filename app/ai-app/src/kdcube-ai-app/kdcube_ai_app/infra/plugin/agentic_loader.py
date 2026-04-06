@@ -72,6 +72,7 @@ class UIMainSpec:
 @dataclass(frozen=True)
 class BundleInterfaceManifest:
     bundle_id: str
+    allowed_roles: tuple[str, ...] = ()
     ui_widgets: tuple[UIWidgetSpec, ...] = ()
     api_endpoints: tuple[APIEndpointSpec, ...] = ()
     ui_main: UIMainSpec | None = None
@@ -191,17 +192,25 @@ def agentic_workflow(
         name: str | None = None,
         version: str | None = None,
         priority: int = 100,
+        allowed_roles: List[str] | Tuple[str, ...] | None = None,
 ):
     """
     Mark a CLASS as the bundle's workflow CLASS.
     Recommended signature (flexible):
         class(config, *, communicator=None, step_emitter=None, delta_emitter=None)
     Only the kwargs present in the __init__ signature will be passed.
+
+    allowed_roles: optional list of non-derived (external) role names such as
+        "kdcube:role:<custom-role>" that restrict bundle visibility in the
+        bundle listing. Only users whose raw roles (kdcube:role:* entries from
+        the session) intersect with allowed_roles will see this bundle.
+        Empty or None means visible to all authenticated users.
     """
     def _wrap(cls):
         setattr(cls, AGENTIC_ROLE_ATTR, "workflow_class")
         setattr(cls, AGENTIC_META_ATTR, {
-            "name": name, "version": version, "priority": priority
+            "name": name, "version": version, "priority": priority,
+            "allowed_roles": _tuple_str(allowed_roles),
         })
         return cls
     return _wrap
@@ -715,10 +724,14 @@ def discover_bundle_interface_manifest(target: Any, *, bundle_id: str | None = N
                 raise ValueError("Multiple @on_message methods detected on bundle entrypoint")
             on_message_spec = resolved
 
+    meta = getattr(cls, AGENTIC_META_ATTR, {}) or {}
+    allowed_roles: tuple[str, ...] = _tuple_str(meta.get("allowed_roles"))
+
     api_endpoints.sort(key=lambda item: (item.alias, item.route, item.http_method, item.method_name))
     ui_widgets.sort(key=lambda item: (item.alias, item.method_name))
     return BundleInterfaceManifest(
         bundle_id=resolved_bundle_id,
+        allowed_roles=allowed_roles,
         ui_widgets=tuple(ui_widgets),
         api_endpoints=tuple(api_endpoints),
         ui_main=ui_main_spec,
