@@ -81,7 +81,7 @@ So the agent experience remains coherent:
 ### 3.1 ANNOUNCE
 
 The existing ephemeral tail block documented in:
-- [react-announce-README.md](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/docs/sdk/agents/react/react-announce-README.md)
+- [react-announce-README.md](../react-announce-README.md)
 
 ANNOUNCE is:
 - re-rendered each decision round
@@ -424,8 +424,8 @@ Document and teach:
 - `channel:work-summary`
 
 Primary files:
-- [decision.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/agents/decision.py)
-- [runtime.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/runtime.py)
+- [decision.py](../../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/agents/decision.py)
+- [runtime.py](../../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/runtime.py)
 
 ### Step 2
 
@@ -433,7 +433,7 @@ Add durable block support:
 - `conv.working.summary`
 
 Primary file:
-- [timeline.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/timeline.py)
+- [timeline.py](../../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/timeline.py)
 
 ### Step 3
 

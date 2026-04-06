@@ -18,7 +18,6 @@ import {getCanvasArtifactTypes, getCanvasItemLinkGenerator} from "../../features
 import useSharedConfigProvider from "../../features/sharedConfigProvider/sharedConfigProvider.tsx";
 import ConversationHeader from "../../features/conversationHeader/ConversationHeader.tsx";
 import {selectCurrentBundle} from "../../features/bundles/bundlesSlice.ts";
-import {useLazyGetBundleUIQuery} from "../../features/bundles/bundlesAPI.ts";
 import {selectProject, selectTenant} from "../../features/chat/chatSettingsSlice.ts";
 import {connectChat} from "../../features/chat/chatServiceMiddleware.ts";
 
@@ -26,32 +25,26 @@ const SingleChatApp: React.FC = () => {
     const currentTurn = useAppSelector(selectCurrentTurn);
     const conversationId = useAppSelector(selectConversationId);
     const chatCanvasRef = useRef<HTMLDivElement>(null);
+    const bundleIframeRef = useRef<HTMLIFrameElement>(null);
     const [canvasItemLink, setCanvasItemLink] = useState<CanvasItemLink | null>(null);
     const [overrideCanvasItemLink, setOverrideCanvasItemLink] = useState<boolean>(false);
+    const [bundleUiAvailable, setBundleUiAvailable] = useState<boolean | null>(null);
     const tenant = useAppSelector(selectTenant)
     const project = useAppSelector(selectProject)
     const bundleId = useAppSelector(selectCurrentBundle);
-    const [trigger, lastArg] = useLazyGetBundleUIQuery()
 
     useSharedConfigProvider()
 
-    useEffect(() => {
-        if (bundleId) {
-            trigger({
-                tenant,
-                project,
-                bundleId,
-            })
-        }
-    }, [bundleId, project, tenant, trigger]);
-
-    const bundleUI = useMemo(() => {
-        console.log(lastArg)
-        if (!bundleId || !lastArg.isSuccess) {
+    const bundleUIUrl = useMemo(() => {
+        if (!bundleId || !tenant || !project) {
             return null;
         }
-        return lastArg.data
-    }, [bundleId, lastArg])
+        return `/api/integrations/static/${tenant}/${project}/${bundleId}`;
+    }, [bundleId, project, tenant])
+
+    useEffect(() => {
+        setBundleUiAvailable(bundleUIUrl ? null : false);
+    }, [bundleUIUrl]);
 
     const lastCanvasItem = useMemo(() => {
         if (currentTurn == null) return null;
@@ -84,6 +77,20 @@ const SingleChatApp: React.FC = () => {
         setCanvasItemLink(link);
     }, [currentTurn])
 
+    const handleBundleIframeLoad = useCallback(() => {
+        const doc = bundleIframeRef.current?.contentDocument;
+        if (!doc) {
+            setBundleUiAvailable(true);
+            return;
+        }
+        const text = (doc.body?.innerText || "").trim();
+        if (text === '{"detail":"Not found"}' || text.includes('"detail":"Not found"')) {
+            setBundleUiAvailable(false);
+            return;
+        }
+        setBundleUiAvailable(true);
+    }, [])
+
     const chatCanvasContextValue = useMemo<ChatCanvasContextValue>(() => {
         return {
             showItem,
@@ -92,15 +99,15 @@ const SingleChatApp: React.FC = () => {
     }, [canvasItemLink, showItem])
 
     const chatInterface = useMemo(() => {
-        if (lastArg.isUninitialized || lastArg.isLoading) {
-            return null
-        }
-
-        if (bundleUI) {
+        if (bundleUIUrl && bundleUiAvailable !== false) {
             return <div className={"flex-1 flex flex-col h-full"}>
                 <iframe
-                    srcDoc={bundleUI}
+                    ref={bundleIframeRef}
+                    src={bundleUIUrl}
                     className={"w-full h-full border-0"}
+                    title={`bundle-ui-${bundleId}`}
+                    onLoad={handleBundleIframeLoad}
+                    style={{visibility: bundleUiAvailable === true ? "visible" : "hidden"}}
                 />
             </div>
         }
@@ -116,7 +123,7 @@ const SingleChatApp: React.FC = () => {
                 </ChatCanvasContext>
             </div>
         </div>
-    }, [bundleUI, canvasItemLink, chatCanvasContextValue, lastArg.isLoading, lastArg.isUninitialized])
+    }, [bundleId, bundleUIUrl, bundleUiAvailable, canvasItemLink, chatCanvasContextValue, handleBundleIframeLoad])
 
     const dispatch = useAppDispatch();
     const stayConnected = useAppSelector(selectChatStayConnected)

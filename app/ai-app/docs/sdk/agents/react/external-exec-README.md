@@ -17,8 +17,8 @@ This page focuses on the React-agent view of external execution.
 
 For the runtime/deployment internals, see:
 
-- [exec-logging-error-propagation-README.md](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/docs/exec/exec-logging-error-propagation-README.md)
-- [distributed-exec-README.md](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/docs/exec/distributed-exec-README.md)
+- [exec-logging-error-propagation-README.md](../../../exec/exec-logging-error-propagation-README.md)
+- [distributed-exec-README.md](../../../exec/distributed-exec-README.md)
 
 ### Bundle code vs bundle readonly data
 
@@ -58,7 +58,7 @@ Example: `kdcube.copilot`
 
 ### What the agent calls
 
-The public tool is `exec_tools.execute_code_python(...)` in [exec_tools.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tools/exec_tools.py).
+The public tool is `exec_tools.execute_code_python(...)` in [exec_tools.py](../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tools/exec_tools.py).
 
 Current public contract:
 

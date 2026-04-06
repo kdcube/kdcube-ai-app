@@ -165,11 +165,11 @@ But the agent is instructed differently:
 ## 2) Current Model and Why It Is Not Enough
 
 Relevant current files:
-- [solution_workspace.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/solution_workspace.py)
-- [runtime.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/runtime.py)
-- [external.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/tools/external.py)
-- [read.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/tools/read.py)
-- [timeline.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/timeline.py)
+- [solution_workspace.py](../../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/solution_workspace.py)
+- [runtime.py](../../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/runtime.py)
+- [external.py](../../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/tools/external.py)
+- [read.py](../../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/tools/read.py)
+- [timeline.py](../../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/timeline.py)
 
 Current behavior:
 - relative `files/...` paths are rewritten into the current turn
@@ -640,7 +640,7 @@ That is explicitly deferred.
 ### 7.5 User-facing download path remains hosted
 
 User downloads and previews still remain handled through hosted resources, e.g.:
-- [resources.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/resources/resources.py)
+- [resources.py](../../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/resources/resources.py)
 
 Engineering should prefer internal storage resolution for hydration rather than
 loopback HTTP, but the same logical artifact model remains relevant.
@@ -912,8 +912,8 @@ This workspace paradigm must be introduced behind an explicit runtime/config
 switch so production can revert quickly to the current model if needed.
 
 The new instruction surfaces that will need alternate variants are:
-- [decision.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/agents/decision.py)
-- [shared_instructions.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/skills/instructions/shared_instructions.py)
+- [decision.py](../../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/agents/decision.py)
+- [shared_instructions.py](../../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/skills/instructions/shared_instructions.py)
 
 The alternate instructions should teach:
 - the workspace is git-backed
@@ -1013,11 +1013,11 @@ The requirement remains:
 ## 14) Recommended Next Step
 
 Continue from the already implemented foundation:
-1. [git_workspace.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/git_workspace.py)
-2. [workspace.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/workspace.py)
-3. [solution_workspace.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/solution_workspace.py)
-4. [base_workflow.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/base_workflow.py)
-5. [shared_instructions.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/skills/instructions/shared_instructions.py)
+1. [git_workspace.py](../../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/git_workspace.py)
+2. [workspace.py](../../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/workspace.py)
+3. [solution_workspace.py](../../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/solution_workspace.py)
+4. [base_workflow.py](../../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/base_workflow.py)
+5. [shared_instructions.py](../../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/skills/instructions/shared_instructions.py)
 
 Priority follow-up items:
 - harden publish failure handling and recovery
