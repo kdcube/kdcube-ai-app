@@ -22,7 +22,7 @@ class EventBase(BaseModel):
 
 
 class ExternalLogEvent(EventBase):
-    level:   Literal["error", "warn"]
+    level:   Literal["error", "warn", "info"]
     message: str
     args:    list[Any]
 
