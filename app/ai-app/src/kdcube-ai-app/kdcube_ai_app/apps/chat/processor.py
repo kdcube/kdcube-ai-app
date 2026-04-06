@@ -915,12 +915,18 @@ class EnhancedChatRequestProcessor:
                             _discover_example_bundle_ids,
                             cleanup_old_shared_example_bundles,
                         )
+                        from kdcube_ai_app.infra.plugin.bundle_storage import (
+                            cleanup_old_bundle_storage_async,
+                            resolve_bundle_storage_root,
+                            storage_for_spec,
+                        )
                         from kdcube_ai_app.infra.plugin.git_bundle import (
                             cleanup_old_git_bundles_async,
                             resolve_bundles_root,
                             bundle_dir_for_git,
                         )
                         from kdcube_ai_app.infra.plugin.bundle_refs import get_active_paths
+                        from types import SimpleNamespace
 
                         active_specs = []
                         for _bid, entry in (get_all() or {}).items():
@@ -945,15 +951,42 @@ class EnhancedChatRequestProcessor:
                                 project=project,
                             )
                             bundles = get_all() or {}
+                            active_storage_paths = []
+                            for _bid, entry in bundles.items():
+                                try:
+                                    spec = SimpleNamespace(
+                                        id=_bid,
+                                        git_commit=entry.get("git_commit"),
+                                        ref=entry.get("ref"),
+                                        version=entry.get("version"),
+                                    )
+                                    storage_path = storage_for_spec(
+                                        spec=spec,
+                                        tenant=tenant,
+                                        project=project,
+                                        ensure=False,
+                                    )
+                                    if storage_path is not None:
+                                        active_storage_paths.append(str(storage_path))
+                                except Exception:
+                                    continue
                             for _bid, entry in bundles.items():
                                 repo = entry.get("repo")
                                 if not repo:
-                                    continue
-                                base_dir = bundle_dir_for_git(_bid, entry.get("ref"))
-                                await cleanup_old_git_bundles_async(
-                                    bundle_id=base_dir,
-                                    bundles_root=resolve_bundles_root(),
-                                    active_paths=active_paths,
+                                    pass
+                                else:
+                                    base_dir = bundle_dir_for_git(_bid, entry.get("ref"))
+                                    await cleanup_old_git_bundles_async(
+                                        bundle_id=base_dir,
+                                        bundles_root=resolve_bundles_root(),
+                                        active_paths=active_paths,
+                                    )
+                                await cleanup_old_bundle_storage_async(
+                                    bundle_id=_bid,
+                                    tenant=tenant,
+                                    project=project,
+                                    storage_root=resolve_bundle_storage_root(),
+                                    active_paths=active_storage_paths,
                                 )
                             for _bid in _discover_example_bundle_ids():
                                 cleanup_old_shared_example_bundles(
