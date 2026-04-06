@@ -71,6 +71,89 @@ def get_secret(key: str, default: str | None = None) -> str | None:
     return default
 
 
+def _resolve_current_user_bundle_scope(
+    *,
+    user_id: str | None = None,
+    bundle_id: str | None = None,
+) -> tuple[str | None, str | None]:
+    resolved_user_id = str(user_id or "").strip() or None
+    resolved_bundle_id = str(bundle_id or "").strip() or None
+    from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import get_current_request_context
+
+    ctx = get_current_request_context()
+    if ctx is not None:
+        if resolved_user_id is None:
+            resolved_user_id = str(getattr(getattr(ctx, "user", None), "user_id", None) or "").strip() or None
+        if resolved_bundle_id is None:
+            resolved_bundle_id = str(getattr(getattr(ctx, "routing", None), "bundle_id", None) or "").strip() or None
+    return resolved_user_id, resolved_bundle_id
+
+
+def get_user_secret(
+    key: str,
+    *,
+    bundle_id: str | None = None,
+    user_id: str | None = None,
+    default: str | None = None,
+) -> str | None:
+    resolved_user_id, resolved_bundle_id = _resolve_current_user_bundle_scope(
+        user_id=user_id,
+        bundle_id=bundle_id,
+    )
+    if not resolved_user_id:
+        return default
+    settings = get_settings()
+    try:
+        value = get_secrets_manager(settings).get_user_secret(
+            user_id=resolved_user_id,
+            bundle_id=resolved_bundle_id,
+            key=key,
+        )
+    except Exception:
+        value = None
+    return value or default
+
+
+def set_user_secret(
+    key: str,
+    value: str,
+    *,
+    bundle_id: str | None = None,
+    user_id: str | None = None,
+) -> None:
+    resolved_user_id, resolved_bundle_id = _resolve_current_user_bundle_scope(
+        user_id=user_id,
+        bundle_id=bundle_id,
+    )
+    if not resolved_user_id:
+        raise RuntimeError("Current user id is unavailable for user-scoped secret write")
+    get_secrets_manager(get_settings()).set_user_secret(
+        user_id=resolved_user_id,
+        bundle_id=resolved_bundle_id,
+        key=key,
+        value=value,
+    )
+
+
+def delete_user_secret(
+    key: str,
+    *,
+    bundle_id: str | None = None,
+    user_id: str | None = None,
+) -> None:
+    resolved_user_id, resolved_bundle_id = _resolve_current_user_bundle_scope(
+        user_id=user_id,
+        bundle_id=bundle_id,
+    )
+    if not resolved_user_id:
+        raise RuntimeError("Current user id is unavailable for user-scoped secret delete")
+    get_secrets_manager(get_settings()).delete_user_secret(
+        user_id=resolved_user_id,
+        bundle_id=resolved_bundle_id,
+        key=key,
+    )
+
+
 def log_secret_statuses(force: bool = False) -> None:
     if force:
         _SECRET_LOGGED.clear()

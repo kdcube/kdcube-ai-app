@@ -3,6 +3,8 @@
 
 from .manager import (
     AwsSecretsManagerSecretsManager,
+    build_user_secret_key,
+    build_user_secret_metadata_key,
     InMemorySecretsManager,
     ISecretsManager,
     SecretsFileSecretsManager,
@@ -18,6 +20,8 @@ from .manager import (
 
 __all__ = [
     "AwsSecretsManagerSecretsManager",
+    "build_user_secret_key",
+    "build_user_secret_metadata_key",
     "InMemorySecretsManager",
     "ISecretsManager",
     "SecretsFileSecretsManager",

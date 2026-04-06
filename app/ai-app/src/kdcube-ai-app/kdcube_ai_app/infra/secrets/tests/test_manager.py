@@ -53,6 +53,10 @@ def test_aws_sm_secret_path_matches_existing_runtime_contract():
         manager._secret_id("bundles.kdcube.copilot@2026-04-03-19-05.secrets.telegram.webhook_secret")
         == "kdcube/demo/demo-march/bundles/kdcube.copilot@2026-04-03-19-05/secrets/telegram/webhook_secret"
     )
+    assert (
+        manager._secret_id("users.user-1.bundles.rms@06-04-26-156.secrets.anthropic.api_key")
+        == "kdcube/demo/demo-march/users/user-1/bundles/rms@06-04-26-156/secrets/anthropic/api_key"
+    )
 
 
 def test_build_secrets_manager_config_defaults_prefix_from_tenant_and_project(monkeypatch):
@@ -227,6 +231,43 @@ def test_secrets_file_manager_writes_global_and_bundle_yaml(tmp_path, monkeypatc
         is None
     )
     assert manager.get_secret("bundles.kdcube.copilot@2026-04-03-19-05.secrets.__keys") is None
+
+
+def test_secrets_file_manager_reads_and_writes_user_bundle_secrets(tmp_path, monkeypatch):
+    global_file = tmp_path / "secrets.yaml"
+    monkeypatch.setenv("SECRETS_PROVIDER", "secrets-file")
+    monkeypatch.setenv("GLOBAL_SECRETS_YAML", global_file.resolve().as_uri())
+    reset_secrets_manager_cache()
+
+    manager = get_secrets_manager(
+        SimpleNamespace(
+            TENANT="demo",
+            PROJECT="demo-march",
+            SECRETS_PROVIDER="secrets-file",
+            GLOBAL_SECRETS_YAML=global_file.resolve().as_uri(),
+        )
+    )
+
+    manager.set_user_secret(
+        user_id="user-1",
+        bundle_id="rms@06-04-26-156",
+        key="anthropic.api_key",
+        value="sk-user",
+    )
+
+    assert (
+        manager.get_user_secret(
+            user_id="user-1",
+            bundle_id="rms@06-04-26-156",
+            key="anthropic.api_key",
+        )
+        == "sk-user"
+    )
+    text = global_file.read_text(encoding="utf-8")
+    assert "users:" in text
+    assert "user-1:" in text
+    assert "rms@06-04-26-156" in text
+    assert "sk-user" in text
 
 
 class _FakeSyncRedis:

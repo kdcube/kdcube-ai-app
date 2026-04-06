@@ -96,16 +96,16 @@ These layers are complementary:
 
 See:
 
-- [processor-arch-README.md](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/docs/arch/proc/processor-arch-README.md)
-- [longrun-protection-README.md](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/docs/arch/proc/longrun-protection-README.md)
+- [processor-arch-README.md](../../../arch/proc/processor-arch-README.md)
+- [longrun-protection-README.md](../../../arch/proc/longrun-protection-README.md)
 
 ---
 
 ## 4. How ECS Task Protection Works For Proc
 
-When `ECS_AGENT_URI` is present, proc builds `EcsTaskScaleInProtection` in [task_protection.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/infra/aws/task_protection.py). Otherwise it uses a no-op helper.
+When `ECS_AGENT_URI` is present, proc builds `EcsTaskScaleInProtection` in [task_protection.py](../../../../src/kdcube-ai-app/kdcube_ai_app/infra/aws/task_protection.py). Otherwise it uses a no-op helper.
 
-At execution start, [processor.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py) wraps the turn in:
+At execution start, [processor.py](../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py) wraps the turn in:
 
 ```python
 async with self._task_scale_in_protection.hold(label=protection_label):
@@ -175,7 +175,7 @@ The shutdown budget is derived from:
 - `PROC_CONTAINER_STOP_TIMEOUT_SEC`
 - optional `PROC_UVICORN_GRACEFUL_SHUTDOWN_TIMEOUT_SEC`
 
-See [ecs-service-README.md](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/docs/arch/ecs-service-README.md) for the exact timeout interaction.
+See [ecs-service-README.md](../../../arch/ecs-service-README.md) for the exact timeout interaction.
 
 ---
 

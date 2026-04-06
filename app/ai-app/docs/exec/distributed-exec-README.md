@@ -195,7 +195,7 @@ This is why runtime-specific failures such as:
 - Fargate timeout
 - secret/bundle/snapshot restore failure
 
-still appear to the agent through the same final `report_text` / `error` path documented in [exec-logging-error-propagation-README.md](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/docs/exec/exec-logging-error-propagation-README.md).
+still appear to the agent through the same final `report_text` / `error` path documented in [exec-logging-error-propagation-README.md](exec-logging-error-propagation-README.md).
 
 ### 3. Runtime — exec task side (`py_code_exec_entry.py`)
 

@@ -41,6 +41,9 @@ class _FakeSecretsManager:
     def delete_secret(self, key):
         self.metadata.pop(key, None)
 
+    def get_secret(self, key):
+        return self.metadata.get(key)
+
 
 def _request_with_redis(redis):
     state = SimpleNamespace(redis_async=redis)
@@ -94,3 +97,38 @@ async def test_set_bundle_secrets_uses_provider_and_tracks_known_keys(monkeypatc
     assert json.loads(
         redis.data["kdcube:config:bundles:secrets:tenant-a:project-a:bundle@1"]
     ) == []
+
+
+@pytest.mark.asyncio
+async def test_set_current_user_bundle_secrets_uses_current_user_scope(monkeypatch):
+    redis = _FakeRedis()
+    request = _request_with_redis(redis)
+    session = SimpleNamespace(username="tester", user_id="user-1")
+    manager = _FakeSecretsManager()
+
+    monkeypatch.setattr(integrations, "get_settings", lambda: SimpleNamespace(TENANT="tenant-a", PROJECT="project-a"))
+    monkeypatch.setattr(integrations, "get_secrets_manager", lambda _settings: manager)
+    monkeypatch.setattr(integrations, "get_secret", lambda key: manager.get_secret(key))
+
+    result = await integrations.set_current_user_bundle_secrets(
+        "tenant-a",
+        "project-a",
+        "bundle@1",
+        integrations.UserBundleSecretsUpdateRequest(
+            mode="set",
+            secrets={"anthropic": {"api_key": "sk-user"}},
+        ),
+        request,
+        session,
+    )
+
+    expected_key = "users.user-1.bundles.bundle@1.secrets.anthropic.api_key"
+    expected_meta = "users.user-1.bundles.bundle@1.secrets.__keys"
+    assert result["mode"] == "set"
+    assert manager.set_many_calls == [{expected_key: "sk-user"}]
+    assert json.loads(manager.metadata[expected_meta]) == [expected_key]
+    assert json.loads(
+        redis.data["kdcube:config:bundles:user-secrets:tenant-a:project-a:bundle@1:user-1"]
+    ) == [expected_key]
+    assert "keys" not in result
+    assert "stored_keys" not in result
