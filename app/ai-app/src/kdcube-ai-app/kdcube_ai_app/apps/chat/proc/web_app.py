@@ -85,6 +85,7 @@ from kdcube_ai_app.apps.chat.ingress.resolvers import (
 )
 from kdcube_ai_app.apps.chat.sdk.config import get_settings, log_secret_statuses
 from kdcube_ai_app.apps.chat.sdk.infra.economics.policy import EconomicsLimitException
+from kdcube_ai_app.apps.chat.sdk.runtime.local_sidecars import shutdown_all_local_sidecars
 from kdcube_ai_app.apps.chat.proc.rest.integrations import mount_integrations_routers
 from kdcube_ai_app.infra.namespaces import CONFIG
 from kdcube_ai_app.infra.plugin.bundle_registry import get_all as _get_bundle_registry
@@ -686,6 +687,11 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
         app.state.bundle_cleanup_task = None
+    await _safe_shutdown_step(
+        "bundle_sidecars.shutdown",
+        shutdown_all_local_sidecars(terminate_timeout_sec=10.0, kill_timeout_sec=3.0),
+        timeout=20.0,
+    )
     if getattr(app.state, "bundle_git_task", None):
         app.state.bundle_git_task.cancel()
         try:

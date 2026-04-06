@@ -27,6 +27,12 @@ from kdcube_ai_app.apps.chat.sdk.continuations import get_current_conversation_c
 from kdcube_ai_app.apps.chat.sdk.infra.economics.policy import EconomicsLimitException
 from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
 from kdcube_ai_app.apps.chat.sdk.runtime.exec_runtime_config import normalize_exec_runtime_config
+from kdcube_ai_app.apps.chat.sdk.runtime.local_sidecars import (
+    LocalSidecarHandle,
+    ensure_local_sidecar as ensure_runtime_local_sidecar,
+    get_local_sidecar as get_runtime_local_sidecar,
+    stop_local_sidecar as stop_runtime_local_sidecar,
+)
 from kdcube_ai_app.apps.chat.sdk.viz.patch_platform_dashboard import patch_dashboard
 from kdcube_ai_app.infra.plugin.agentic_loader import api, on_message, ui_widget
 from kdcube_ai_app.infra.service_hub.inventory import (
@@ -350,6 +356,87 @@ class BaseEntrypoint:
             )
         except Exception:
             return None
+
+    def _bundle_runtime_scope(self) -> tuple[str, str, str]:
+        bundle_spec = getattr(self.config, "ai_bundle_spec", None)
+        bundle_id = str(getattr(bundle_spec, "id", None) or self.BUNDLE_ID or "").strip()
+        tenant = str(getattr(getattr(self.comm_context, "actor", None), "tenant_id", None) or "").strip()
+        project = str(getattr(getattr(self.comm_context, "actor", None), "project_id", None) or "").strip()
+        return bundle_id, tenant, project
+
+    def get_local_sidecar(self, name: str) -> Optional[LocalSidecarHandle]:
+        bundle_id, tenant, project = self._bundle_runtime_scope()
+        if not bundle_id:
+            return None
+        return get_runtime_local_sidecar(
+            bundle_id=bundle_id,
+            tenant=tenant,
+            project=project,
+            name=name,
+        )
+
+    def ensure_local_sidecar(
+        self,
+        *,
+        name: str,
+        command: list[str] | tuple[str, ...],
+        cwd: str | os.PathLike[str] | None = None,
+        env: Optional[Dict[str, Any]] = None,
+        host: str = "127.0.0.1",
+        port: Optional[int] = 0,
+        ready_path: Optional[str] = None,
+        ready_timeout_sec: float = 30.0,
+    ) -> LocalSidecarHandle:
+        """
+        Ensure a process-local sidecar service is running for this bundle scope.
+
+        The sidecar is shared only within the current proc worker for the
+        bundle/tenant/project triple and is terminated automatically during proc
+        lifespan shutdown.
+        """
+        bundle_id, tenant, project = self._bundle_runtime_scope()
+        if not bundle_id:
+            raise RuntimeError("Bundle id is unavailable for local sidecar startup")
+
+        bundle_root = self._bundle_root()
+        storage_root = self.bundle_storage_root()
+        merged_env: Dict[str, Any] = {
+            "KDCUBE_BUNDLE_ID": bundle_id,
+            "KDCUBE_TENANT": tenant,
+            "KDCUBE_PROJECT": project,
+        }
+        if bundle_root:
+            merged_env["KDCUBE_BUNDLE_ROOT"] = bundle_root
+        if storage_root:
+            merged_env["KDCUBE_BUNDLE_STORAGE_ROOT"] = str(storage_root)
+        if env:
+            merged_env.update(env)
+
+        effective_cwd = cwd or bundle_root
+        return ensure_runtime_local_sidecar(
+            bundle_id=bundle_id,
+            tenant=tenant,
+            project=project,
+            name=name,
+            command=list(command),
+            cwd=effective_cwd,
+            env={str(k): str(v) for k, v in merged_env.items() if v is not None},
+            host=host,
+            port=port,
+            ready_path=ready_path,
+            ready_timeout_sec=ready_timeout_sec,
+        )
+
+    def stop_local_sidecar(self, name: str) -> None:
+        bundle_id, tenant, project = self._bundle_runtime_scope()
+        if not bundle_id:
+            return
+        stop_runtime_local_sidecar(
+            bundle_id=bundle_id,
+            tenant=tenant,
+            project=project,
+            name=name,
+        )
 
     @staticmethod
     def get_prop_path(data: Dict[str, Any], path: str, default: Any = None) -> Any:

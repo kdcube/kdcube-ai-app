@@ -3,9 +3,12 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from starlette.requests import Request
 
 from kdcube_ai_app.apps.chat.proc.rest.integrations import integrations
+from kdcube_ai_app.apps.chat.sdk.runtime.http_ops import BundleBinaryResponse
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import BaseEntrypoint
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint_with_economic import BaseEntrypointWithEconomics
 from kdcube_ai_app.infra.plugin.agentic_loader import (
@@ -286,6 +289,92 @@ async def test_call_bundle_op_inner_supports_widget_compat_api(monkeypatch):
     )
 
     assert result["preferences_widget"] == ["<p>fp-1</p>"]
+
+
+def test_parse_bundle_request_payload_supports_multipart_files():
+    captured: dict[str, object] = {}
+    app = FastAPI()
+
+    @app.post("/upload")
+    async def upload(request: Request):
+        payload, uploaded_files = await integrations._parse_bundle_request_payload(request)
+        captured["payload"] = payload
+        captured["uploaded_files"] = uploaded_files
+        return {"ok": True}
+
+    client = TestClient(app)
+    response = client.post(
+        "/upload",
+        data={
+            "payload": '{"conversation_id":"conv-1","data":{"project_code":"PRJ"}}',
+        },
+        files={
+            "file": ("notes.txt", b"hello from rms", "text/plain"),
+        },
+    )
+
+    assert response.status_code == 200
+    payload = captured["payload"]
+    uploaded_files = captured["uploaded_files"]
+    assert isinstance(payload, integrations.BundleSuggestionsRequest)
+    assert payload.conversation_id == "conv-1"
+    assert payload.data == {"project_code": "PRJ"}
+    assert len(uploaded_files) == 1
+    assert uploaded_files[0].filename == "notes.txt"
+    assert uploaded_files[0].content_type == "text/plain"
+    assert uploaded_files[0].content == b"hello from rms"
+
+
+@pytest.mark.asyncio
+async def test_call_bundle_op_inner_passes_uploaded_files_and_returns_binary_response(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class _Workflow:
+        @api(method="POST", alias="download_bundle", route="operations")
+        async def download_bundle(self, **kwargs):
+            captured["kwargs"] = dict(kwargs)
+            return BundleBinaryResponse(
+                content=b"zip-bytes",
+                filename="bundle.zip",
+                media_type="application/zip",
+            )
+
+    async def _load_bundle_workflow(**kwargs):
+        del kwargs
+        return _Workflow(), SimpleNamespace(id="bundle.demo"), "tenant-a", "project-a"
+
+    monkeypatch.setattr(integrations, "_load_bundle_workflow", _load_bundle_workflow)
+
+    response = await integrations._call_bundle_op_inner(
+        tenant="tenant-a",
+        project="project-a",
+        bundle_id="bundle.demo",
+        payload=integrations.BundleSuggestionsRequest(data={"project_code": "PRJ"}),
+        uploaded_files=[
+            integrations.BundleUploadedFile(
+                filename="archive.zip",
+                content_type="application/zip",
+                content=b"abc",
+                field_name="file",
+            )
+        ],
+        request=_request(
+            method="POST",
+            path="/api/integrations/bundles/tenant-a/project-a/bundle.demo/operations/download_bundle",
+        ),
+        operation="download_bundle",
+        route="operations",
+        session=_session(),
+    )
+
+    assert response.status_code == 200
+    assert response.media_type == "application/zip"
+    assert response.body == b"zip-bytes"
+    assert response.headers["content-disposition"] == 'attachment; filename="bundle.zip"'
+    kwargs = captured["kwargs"]
+    assert kwargs["project_code"] == "PRJ"
+    assert len(kwargs["uploaded_files"]) == 1
+    assert kwargs["uploaded_files"][0].filename == "archive.zip"
 
 
 @pytest.mark.asyncio
