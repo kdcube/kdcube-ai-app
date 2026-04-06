@@ -230,6 +230,22 @@ def _visible_api_specs(manifest: BundleInterfaceManifest, session: UserSession) 
     return [spec for spec in manifest.api_endpoints if _roles_visible(spec.roles, session)]
 
 
+def _user_raw_roles(session: UserSession) -> set[str]:
+    """Raw (externally defined) roles: kdcube:role:* entries from session.roles."""
+    return {
+        r for r in (session.roles or [])
+        if isinstance(r, str) and r.startswith("kdcube:role:")
+    }
+
+
+def _bundle_allowed_for_session(manifest: "BundleInterfaceManifest | None", session: UserSession) -> bool:
+    """Bundle-level access check based on allowed_roles declared on @agentic_workflow.
+    No allowed_roles (empty) means the bundle is visible to all authenticated users."""
+    if manifest is None or not manifest.allowed_roles:
+        return True
+    return bool(_user_raw_roles(session) & set(manifest.allowed_roles))
+
+
 router = APIRouter()
 admin_router = APIRouter()
 internal_router = APIRouter()
@@ -698,6 +714,8 @@ async def get_bundles(
             request=request,
             session=session,
         )
+        if not _bundle_allowed_for_session(manifest, session):
+            continue
         descriptor: Dict[str, Any] = {
             "id": bid,
             "name": entry.name,
