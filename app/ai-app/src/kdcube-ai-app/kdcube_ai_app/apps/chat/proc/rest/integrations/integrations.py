@@ -10,10 +10,12 @@ import logging
 import uuid
 from dataclasses import asdict
 from datetime import datetime
-from typing import Optional, Dict, Any, Set
+from typing import Optional, Dict, Any, Set, List, Tuple
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Body
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from kdcube_ai_app.apps.chat.emitters import build_comm_from_comm_context
 from kdcube_ai_app.apps.chat.ingress.resolvers import require_auth, auth_without_pressure, get_user_session_dependency
@@ -30,6 +32,11 @@ from kdcube_ai_app.apps.chat.sdk.protocol import (
     ChatTaskRequest,
 )
 from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import bind_current_request_context
+from kdcube_ai_app.apps.chat.sdk.runtime.http_ops import (
+    BundleBinaryResponse,
+    BundleFileResponse,
+    BundleUploadedFile,
+)
 from kdcube_ai_app.infra.plugin.bundle_registry import (
     resolve_bundle_async,
     get_all,
@@ -230,6 +237,95 @@ class BundleSuggestionsRequest(BaseModel):
     bundle_id: Optional[str] = None
     config_request: Optional[ConfigRequest] = None
     data: Optional[Dict[str, Any]] = None
+
+
+def _attachment_headers(*, filename: Optional[str], headers: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    out = dict(headers or {})
+    if filename and "content-disposition" not in {str(key).lower(): value for key, value in out.items()}:
+        out["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return out
+
+
+def _coerce_bundle_http_response(result: Any):
+    if isinstance(result, Response):
+        return result
+    if isinstance(result, BundleBinaryResponse):
+        return Response(
+            content=result.content,
+            media_type=result.media_type,
+            headers=_attachment_headers(filename=result.filename, headers=result.headers),
+            status_code=result.status_code,
+        )
+    if isinstance(result, BundleFileResponse):
+        return FileResponse(
+            result.path,
+            media_type=result.media_type,
+            filename=result.filename,
+            headers=_attachment_headers(filename=result.filename, headers=result.headers),
+            status_code=result.status_code,
+        )
+    return None
+
+
+async def _parse_bundle_request_payload(request: Request) -> Tuple[BundleSuggestionsRequest, List[BundleUploadedFile]]:
+    method = str(getattr(request, "method", "POST") or "POST").upper()
+    if method == "GET":
+        return BundleSuggestionsRequest(), []
+
+    content_type = str(request.headers.get("content-type") or "").lower()
+    if "multipart/form-data" not in content_type:
+        try:
+            raw_body = await request.json()
+        except Exception:
+            raw_body = {}
+        if not raw_body:
+            return BundleSuggestionsRequest(), []
+        return BundleSuggestionsRequest.model_validate(raw_body), []
+
+    form = await request.form()
+    payload_data: Dict[str, Any] = {}
+    payload_raw = form.get("payload")
+    if isinstance(payload_raw, str) and payload_raw.strip():
+        try:
+            payload_data = json.loads(payload_raw)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid multipart payload JSON: {exc}") from exc
+    else:
+        data_raw = form.get("data")
+        if isinstance(data_raw, str) and data_raw.strip():
+            try:
+                payload_data["data"] = json.loads(data_raw)
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail=f"Invalid multipart data JSON: {exc}") from exc
+
+        conversation_id = form.get("conversation_id")
+        if isinstance(conversation_id, str) and conversation_id.strip():
+            payload_data["conversation_id"] = conversation_id.strip()
+        bundle_id = form.get("bundle_id")
+        if isinstance(bundle_id, str) and bundle_id.strip():
+            payload_data["bundle_id"] = bundle_id.strip()
+        config_raw = form.get("config_request")
+        if isinstance(config_raw, str) and config_raw.strip():
+            try:
+                payload_data["config_request"] = json.loads(config_raw)
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail=f"Invalid multipart config_request JSON: {exc}") from exc
+
+    uploaded_files: List[BundleUploadedFile] = []
+    for field_name, value in form.multi_items():
+        if not isinstance(value, (UploadFile, StarletteUploadFile)):
+            continue
+        raw = await value.read()
+        uploaded_files.append(
+            BundleUploadedFile(
+                filename=value.filename or "file",
+                content_type=value.content_type or "application/octet-stream",
+                content=raw or b"",
+                field_name=str(field_name or "file"),
+            )
+        )
+
+    return BundleSuggestionsRequest.model_validate(payload_data or {}), uploaded_files
 
 
 class AdminBundlesUpdateRequest(BaseModel):
@@ -1177,18 +1273,19 @@ async def call_bundle_op_public(
         bundle_id: str,
         operation: str,
         request: Request,
-        payload: BundleSuggestionsRequest = Body(default_factory=BundleSuggestionsRequest),
         session: UserSession = Depends(get_user_session_dependency()),
 ):
     """
     Public (no authentication required) bundle operation endpoint.
     The bundle method must declare @api(route="public", ...) to be accessible.
     """
+    payload, uploaded_files = await _parse_bundle_request_payload(request)
     return await _call_bundle_op_limited(
         tenant=tenant,
         project=project,
         bundle_id=bundle_id,
         payload=payload,
+        uploaded_files=uploaded_files,
         request=request,
         operation=operation,
         route="public",
@@ -1211,6 +1308,7 @@ async def call_bundle_op_public_get(
         project=project,
         bundle_id=bundle_id,
         payload=payload,
+        uploaded_files=[],
         request=request,
         operation=operation,
         route="public",
@@ -1225,18 +1323,19 @@ async def call_bundle_op(
         bundle_id: str,
         operation: str,
         request: Request,
-        payload: BundleSuggestionsRequest = Body(default_factory=BundleSuggestionsRequest),
         session: UserSession = Depends(require_auth(RequireUser())),
 ):
     """
     Load (or reuse singleton) bundle instance and call its operation (e.g. suggestions()).
     Returns generic JSON from the bundle.
     """
+    payload, uploaded_files = await _parse_bundle_request_payload(request)
     return await _call_bundle_op_limited(
         tenant=tenant,
         project=project,
         bundle_id=bundle_id,
         payload=payload,
+        uploaded_files=uploaded_files,
         request=request,
         operation=operation,
         route="operations",
@@ -1250,14 +1349,15 @@ async def call_bundle_op_default(
         project: str,
         operation: str,
         request: Request,
-        payload: BundleSuggestionsRequest = Body(default_factory=BundleSuggestionsRequest),
         session: UserSession = Depends(require_auth(RequireUser())),
 ):
+    payload, uploaded_files = await _parse_bundle_request_payload(request)
     return await _call_bundle_op_limited(
         tenant=tenant,
         project=project,
         bundle_id=None,
         payload=payload,
+        uploaded_files=uploaded_files,
         request=request,
         operation=operation,
         route="operations",
@@ -1423,6 +1523,7 @@ async def call_bundle_op_get(
         project=project,
         bundle_id=bundle_id,
         payload=payload,
+        uploaded_files=[],
         request=request,
         operation=operation,
         route="operations",
@@ -1436,11 +1537,13 @@ async def _call_bundle_op_limited(
         project: str,
         bundle_id: Optional[str],
         payload: BundleSuggestionsRequest,
+        uploaded_files: Optional[List[BundleUploadedFile]] = None,
         request: Request,
         operation: str,
         route: str,
         session: UserSession,
 ):
+    uploaded_files = list(uploaded_files or [])
     sem = _get_integrations_semaphore()
     if sem:
         async with sem:
@@ -1449,6 +1552,7 @@ async def _call_bundle_op_limited(
                 project=project,
                 bundle_id=bundle_id,
                 payload=payload,
+                uploaded_files=uploaded_files,
                 request=request,
                 operation=operation,
                 route=route,
@@ -1459,6 +1563,7 @@ async def _call_bundle_op_limited(
         project=project,
         bundle_id=bundle_id,
         payload=payload,
+        uploaded_files=uploaded_files,
         request=request,
         operation=operation,
         route=route,
@@ -1656,11 +1761,13 @@ async def _call_bundle_op_inner(
         project: str,
         bundle_id: Optional[str],
         payload: BundleSuggestionsRequest,
+        uploaded_files: Optional[List[BundleUploadedFile]] = None,
         request: Request,
         operation: str,
         route: str,
         session: UserSession,
 ):
+    uploaded_files = list(uploaded_files or [])
     workflow, spec_resolved, tenant_id, project_id, comm_context = _unpack_loaded_bundle_workflow(
         await _load_bundle_workflow(
             tenant=tenant,
@@ -1702,6 +1809,9 @@ async def _call_bundle_op_inner(
         extra = payload.data or {}
         if request_method == "GET":
             extra = _get_query_kwargs(request)
+        elif uploaded_files:
+            extra = dict(extra or {})
+            extra["uploaded_files"] = uploaded_files
         runtime_comm = _resolve_bound_runtime_comm(workflow=workflow, comm_context=comm_context)
         with bind_current_request_context(comm_context, comm=runtime_comm):
             if inspect.iscoroutinefunction(fn):
@@ -1710,6 +1820,10 @@ async def _call_bundle_op_inner(
                 result = fn(user_id=user_id, fingerprint=session.fingerprint, **extra)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"{operation}() failed: {e}")
+
+    http_response = _coerce_bundle_http_response(result)
+    if http_response is not None:
+        return http_response
 
     return {
         "status": "ok",
