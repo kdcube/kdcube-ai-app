@@ -55,7 +55,42 @@ class MyBundle:
 
 Use it when the code should declare its own stable bundle identity.
 
-### 1.2 `@api(...)`
+### 1.2 `@agentic_workflow(...)` — bundle-level `allowed_roles`
+
+The `@agentic_workflow` decorator accepts an optional `allowed_roles` parameter
+that restricts which users can see the bundle in the bundle listing.
+
+```python
+@agentic_workflow(
+    name="Finance Copilot",
+    version="1.0.0",
+    allowed_roles=("kdcube:role:finance-team", "kdcube:role:super-admin"),
+)
+@bundle_id("finance.copilot@1.0.0")
+class FinanceCopilot:
+    ...
+```
+
+Current fields relevant to access control:
+
+- `allowed_roles`
+  - tuple/list of non-derived (externally defined) role names
+  - must use `kdcube:role:<name>` format — Cognito group IDs
+  - do **not** use derived platform types here (`"registered"`, `"privileged"`)
+  - empty or omitted means the bundle is visible to all authenticated users
+  - OR semantics: user passes if at least one of their raw roles matches
+
+Current behavior:
+
+- `GET /api/integrations/bundles` (non-admin) filters out bundles whose
+  `allowed_roles` do not intersect with the calling user's raw roles
+  (entries in the session that start with `kdcube:role:`)
+- `GET /api/admin/integrations/bundles` is not filtered — admin always
+  sees all bundles regardless of `allowed_roles`
+- A bundle with no `allowed_roles` is always included for any authenticated
+  user (backwards-compatible default)
+
+### 1.3 `@api(...)`
 
 Marks a method as a remotely callable bundle operation.
 
@@ -230,11 +265,15 @@ class UIMainSpec:
 @dataclass(frozen=True)
 class BundleInterfaceManifest:
     bundle_id: str
+    allowed_roles: tuple[str, ...] = ()
     ui_widgets: tuple[UIWidgetSpec, ...] = ()
     api_endpoints: tuple[APIEndpointSpec, ...] = ()
     ui_main: UIMainSpec | None = None
     on_message: OnMessageSpec | None = None
 ```
+
+`allowed_roles` is populated from the `allowed_roles` argument of
+`@agentic_workflow`. Empty tuple means no restriction.
 
 Discovery helpers currently exposed by the loader:
 
@@ -385,13 +424,31 @@ This is the route used for bundle main-view apps embedded in the host UI.
 
 ## 4) Role visibility
 
-Role visibility is enforced by the platform integration layer.
+Role visibility is enforced by the platform integration layer at two levels.
 
-Current behavior:
+### 4.1 Bundle-level filtering (`allowed_roles` on `@agentic_workflow`)
 
-- manifest endpoints filter widgets and API endpoints by declared roles
-- direct widget fetch rejects unauthorized widget aliases
-- operations/public routes reject unauthorized `@api(...)` aliases
+Applies to the bundle listing endpoint (`GET /api/integrations/bundles`).
+
+- The platform compares the user's **raw roles** — `session.roles` entries
+  that start with `kdcube:role:` — against the bundle's `allowed_roles`.
+- Raw roles are externally defined: they are Cognito group IDs propagated
+  directly from the ID token without transformation.
+- Derived platform types (`"registered"`, `"privileged"`, `"paid"`) are
+  **not** considered for this check.
+- A bundle is included in the listing if the intersection is non-empty
+  (OR semantics).
+- A bundle with empty `allowed_roles` is always included.
+- Admin listing (`GET /api/admin/integrations/bundles`) is not filtered.
+
+### 4.2 Per-method filtering (`roles` on `@api` and `@ui_widget`)
+
+Applies within a bundle manifest — controls which apis and widgets are
+visible to a given user.
+
+- Both raw roles and derived types are matched here.
+- Enforced by `_roles_visible` in the integration layer.
+- Direct widget fetch and operation routes also reject unauthorized aliases.
 
 Bundle methods should still enforce business-level authorization when needed,
 but route-level visibility is already enforced from decorator metadata.
