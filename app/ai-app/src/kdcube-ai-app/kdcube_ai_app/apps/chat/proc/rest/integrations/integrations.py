@@ -60,7 +60,12 @@ from kdcube_ai_app.infra.plugin.agentic_loader import (
     resolve_bundle_api_endpoint,
     resolve_bundle_widget,
 )
-from kdcube_ai_app.infra.secrets import SecretsManagerError, SecretsManagerWriteError, get_secrets_manager
+from kdcube_ai_app.infra.secrets import (
+    SecretsManagerError,
+    SecretsManagerWriteError,
+    build_user_secret_metadata_key,
+    get_secrets_manager,
+)
 import kdcube_ai_app.infra.namespaces as namespaces
 
 logger = logging.getLogger("ChatProc.Integrations")
@@ -355,6 +360,11 @@ class BundleSecretsUpdateRequest(BaseModel):
     secrets: Dict[str, Any] = {}
 
 
+class UserBundleSecretsUpdateRequest(BaseModel):
+    mode: str = "set"  # set | clear
+    secrets: Dict[str, Any] = {}
+
+
 class BundleCleanupRequest(BaseModel):
     drop_sys_modules: bool = True
     tenant: Optional[str] = None
@@ -383,6 +393,15 @@ def _bundle_secrets_key(*, tenant: str, project: str, bundle_id: str) -> str:
         tenant=tenant,
         project=project,
         bundle_id=bundle_id,
+    )
+
+
+def _user_bundle_secrets_key(*, tenant: str, project: str, bundle_id: str, user_id: str) -> str:
+    return namespaces.CONFIG.BUNDLES.USER_SECRETS_KEYS_FMT.format(
+        tenant=tenant,
+        project=project,
+        bundle_id=bundle_id,
+        user_id=user_id,
     )
 
 
@@ -951,6 +970,108 @@ async def get_bundle_secrets(
         "tenant": tenant_id,
         "project": project_id,
         "keys": keys or [],
+    }
+
+
+@router.post("/bundles/{tenant}/{project}/{bundle_id}/user-secrets", status_code=200)
+async def set_current_user_bundle_secrets(
+        tenant: str,
+        project: str,
+        bundle_id: str,
+        payload: UserBundleSecretsUpdateRequest,
+        request: Request,
+        session: UserSession = Depends(require_auth(RequireUser())),
+):
+    user_id = str(session.user_id or "").strip()
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Current user id is unavailable for user secrets")
+
+    settings = get_settings()
+    try:
+        secrets_manager = get_secrets_manager(settings)
+    except SecretsManagerError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if not secrets_manager.can_write():
+        raise HTTPException(status_code=503, detail="Secrets provider is not configured for writes")
+
+    redis = _get_app_redis(request)
+    mode = (payload.mode or "set").strip().lower()
+    if mode not in {"set", "clear"}:
+        raise HTTPException(status_code=400, detail="Invalid mode; use set or clear")
+
+    flat: Dict[str, str] = {}
+    keys: Set[str] = set()
+    prefix_bundle_id = bundle_id
+    if mode == "set":
+        _flatten_secrets(
+            f"users.{user_id}.bundles.{prefix_bundle_id}.secrets",
+            payload.secrets or {},
+            flat,
+        )
+        keys = set(flat.keys())
+    else:
+        _flatten_secret_keys(
+            f"users.{user_id}.bundles.{prefix_bundle_id}.secrets",
+            payload.secrets or {},
+            keys,
+        )
+        for key in keys:
+            flat[key] = ""
+    if not flat:
+        return {"status": "ok", "bundle_id": bundle_id, "user_id": user_id, "count": 0, "mode": mode}
+
+    try:
+        if mode == "set":
+            await asyncio.to_thread(secrets_manager.set_many, flat)
+        else:
+            await asyncio.to_thread(secrets_manager.delete_many, keys)
+    except SecretsManagerWriteError as exc:
+        raise HTTPException(status_code=502, detail=f"Failed to store user secrets: {exc}") from exc
+
+    secrets_key = _user_bundle_secrets_key(
+        tenant=tenant,
+        project=project,
+        bundle_id=bundle_id,
+        user_id=user_id,
+    )
+    stored_keys: Set[str] = set()
+    try:
+        raw_keys = await redis.get(secrets_key)
+        if raw_keys:
+            stored_keys = set(json.loads(raw_keys))
+    except Exception:
+        stored_keys = set()
+    if mode == "set":
+        stored_keys.update(keys)
+    else:
+        stored_keys.difference_update(keys)
+
+    metadata_key = build_user_secret_metadata_key(user_id=user_id, bundle_id=bundle_id)
+    try:
+        if stored_keys:
+            await asyncio.to_thread(
+                secrets_manager.set_secret,
+                metadata_key,
+                json.dumps(sorted(stored_keys), ensure_ascii=False),
+            )
+        else:
+            await asyncio.to_thread(secrets_manager.delete_secret, metadata_key)
+    except SecretsManagerWriteError as exc:
+        raise HTTPException(status_code=502, detail=f"Failed to store user secrets metadata: {exc}") from exc
+
+    try:
+        await redis.set(secrets_key, json.dumps(sorted(stored_keys)))
+    except Exception:
+        pass
+
+    return {
+        "status": "ok",
+        "bundle_id": bundle_id,
+        "tenant": tenant,
+        "project": project,
+        "user_id": user_id,
+        "count": len(flat),
+        "mode": mode,
     }
 
 

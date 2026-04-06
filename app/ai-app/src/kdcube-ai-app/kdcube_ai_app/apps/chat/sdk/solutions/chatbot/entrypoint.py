@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import importlib
 import copy
+import hashlib
 import json
 import os
 import pathlib
@@ -247,7 +248,7 @@ class BaseEntrypoint:
     def _ensure_ui_build(self) -> None:
         """
         Build the bundle's custom UI if `ui.main_view` is configured in bundle_props.
-        Uses a signature (src_folder|build_command) to skip rebuilding when nothing changed.
+        Uses a signature that includes source tree metadata to skip rebuilding when nothing changed.
         Output goes to <bundle_storage_root>/ui/.
         Bundles can override this method to customise the build behaviour.
         """
@@ -283,10 +284,35 @@ class BaseEntrypoint:
             self.logger.log(f"[bundle.ui] build skipped: src_folder not found: {src_folder!r}", "WARNING")
             return
 
+        def _ui_source_signature(root: pathlib.Path) -> str:
+            ignored_dirs = {"node_modules", ".git", "dist", "build", ".vite", ".vite-temp", "__pycache__"}
+            ignored_suffixes = {".tsbuildinfo"}
+            sha = hashlib.sha256()
+            for path in sorted(root.rglob("*")):
+                rel = path.relative_to(root)
+                if any(part in ignored_dirs for part in rel.parts):
+                    continue
+                if path.is_dir():
+                    continue
+                if path.suffix in ignored_suffixes:
+                    continue
+                try:
+                    stat = path.stat()
+                except OSError:
+                    continue
+                sha.update(rel.as_posix().encode("utf-8"))
+                sha.update(b"\0")
+                sha.update(str(stat.st_size).encode("ascii"))
+                sha.update(b"\0")
+                sha.update(str(stat.st_mtime_ns).encode("ascii"))
+                sha.update(b"\n")
+            return sha.hexdigest()
+
         build_dest = storage_root / "ui"
         sig_path = storage_root / ".ui.signature"
         bundle_delivery_id = str(getattr(getattr(self.config, "ai_bundle_spec", None), "id", "") or "")
-        signature = f"{src_path}|{build_command}|{bundle_delivery_id}"
+        source_signature = _ui_source_signature(src_path)
+        signature = f"{src_path}|{build_command}|{bundle_delivery_id}|{source_signature}"
 
         try:
             if sig_path.read_text(encoding="utf-8").strip() == signature and (build_dest / "index.html").exists():
@@ -324,8 +350,14 @@ class BaseEntrypoint:
                 env=env
             )
             if result.returncode != 0:
+                build_output = "\n".join(
+                    part for part in [
+                        (result.stderr or "").strip(),
+                        (result.stdout or "").strip(),
+                    ] if part
+                )
                 self.logger.log(
-                    f"[bundle.ui] build failed (exit={result.returncode}):\n{result.stderr[-2000:]}",
+                    f"[bundle.ui] build failed (exit={result.returncode}):\n{build_output[-4000:]}",
                     "ERROR",
                 )
                 return

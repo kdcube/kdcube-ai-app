@@ -124,6 +124,27 @@ class ISecretsManager(ABC):
         for key in keys:
             self.delete_secret(key)
 
+    def get_user_secret(self, *, user_id: str, key: str, bundle_id: str | None = None) -> Optional[str]:
+        return self.get_secret(build_user_secret_key(user_id=user_id, key=key, bundle_id=bundle_id))
+
+    def set_user_secret(self, *, user_id: str, key: str, value: str, bundle_id: str | None = None) -> None:
+        self.set_secret(build_user_secret_key(user_id=user_id, key=key, bundle_id=bundle_id), value)
+
+    def delete_user_secret(self, *, user_id: str, key: str, bundle_id: str | None = None) -> None:
+        self.delete_secret(build_user_secret_key(user_id=user_id, key=key, bundle_id=bundle_id))
+
+    def list_user_secret_keys(self, *, user_id: str, bundle_id: str | None = None) -> list[str]:
+        raw = self.get_secret(build_user_secret_metadata_key(user_id=user_id, bundle_id=bundle_id))
+        if not raw:
+            return []
+        try:
+            data = json.loads(raw)
+        except Exception:
+            return []
+        if isinstance(data, list):
+            return [str(item) for item in data if str(item).strip()]
+        return []
+
 
 class InMemorySecretsManager(ISecretsManager):
     provider_type = "in-memory"
@@ -162,6 +183,52 @@ def _split_bundle_secret_key(key: str) -> tuple[str, str] | None:
     if not bundle_id or not tail:
         return None
     return bundle_id, tail
+
+
+def build_user_secret_key(*, user_id: str, key: str, bundle_id: str | None = None) -> str:
+    resolved_user_id = str(user_id or "").strip()
+    resolved_key = str(key or "").strip().strip(".")
+    if not resolved_user_id or not resolved_key:
+        raise SecretsManagerError("User secret key requires non-empty user_id and key")
+    if bundle_id is not None:
+        resolved_bundle_id = str(bundle_id or "").strip()
+        if not resolved_bundle_id:
+            raise SecretsManagerError("User bundle secret key requires non-empty bundle_id")
+        return f"users.{resolved_user_id}.bundles.{resolved_bundle_id}.secrets.{resolved_key}"
+    return f"users.{resolved_user_id}.secrets.{resolved_key}"
+
+
+def build_user_secret_metadata_key(*, user_id: str, bundle_id: str | None = None) -> str:
+    return build_user_secret_key(user_id=user_id, key="__keys", bundle_id=bundle_id)
+
+
+def _split_user_secret_key(key: str) -> tuple[str, str | None, str] | None:
+    prefix = "users."
+    marker_bundle = ".bundles."
+    marker_secrets = ".secrets."
+    if not isinstance(key, str) or not key.startswith(prefix):
+        return None
+    rest = key[len(prefix):]
+    bundle_idx = rest.find(marker_bundle)
+    secrets_idx = rest.find(marker_secrets)
+    if secrets_idx < 0:
+        return None
+    if bundle_idx >= 0 and bundle_idx < secrets_idx:
+        user_id = rest[:bundle_idx].strip()
+        remainder = rest[bundle_idx + len(marker_bundle):]
+        inner_secrets_idx = remainder.find(marker_secrets)
+        if inner_secrets_idx < 0:
+            return None
+        bundle_id = remainder[:inner_secrets_idx].strip()
+        tail = remainder[inner_secrets_idx + len(marker_secrets):].strip()
+        if not user_id or not bundle_id or not tail:
+            return None
+        return user_id, bundle_id, tail
+    user_id = rest[:secrets_idx].strip()
+    tail = rest[secrets_idx + len(marker_secrets):].strip()
+    if not user_id or not tail:
+        return None
+    return user_id, None, tail
 
 
 def _flatten_mapping(prefix: str, node: Any, out: dict[str, str]) -> None:

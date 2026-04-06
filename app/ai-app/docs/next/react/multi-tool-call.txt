@@ -40,12 +40,12 @@
 2026-03-12T16:09:45.516017930Z 2026-03-12 16:09:45,515 - kdcube_ai_app.infra.plugin.bundle_store - INFO - Copied example bundle to shared root: /app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44 -> /bundles/react@2026-02-10-02-44
 2026-03-12T16:09:45.538250096Z 2026-03-12 16:09:45,538 - kdcube_ai_app.infra.plugin.bundle_store - INFO - Copied example bundle to shared root: /app/kdcube_ai_app/apps/chat/sdk/examples/bundles/eco@2026-02-18-15-06 -> /bundles/eco@2026-02-18-15-06
 2026-03-12T16:09:45.566209680Z 2026-03-12 16:09:45,566 - kdcube_ai_app.infra.plugin.bundle_store - INFO - Copied example bundle to shared root: /app/kdcube_ai_app/apps/chat/sdk/examples/bundles/kdcube.copilot@2026-04-03-19-05 -> /bundles/kdcube.copilot@2026-04-03-19-05
-2026-03-12T16:09:45.566550971Z 2026-03-12 16:09:45,566 - agent.git.bundle - WARNING - HOST_BUNDLES_PATH points to missing path /Users/elenaviter/.kdcube/kdcube-runtime/data/bundles; using AGENTIC_BUNDLES_ROOT=/bundles
-2026-03-12T16:09:45.567236680Z 2026-03-12 16:09:45,567 - agent.git.bundle - WARNING - HOST_BUNDLES_PATH points to missing path /Users/elenaviter/.kdcube/kdcube-runtime/data/bundles; using AGENTIC_BUNDLES_ROOT=/bundles
+2026-03-12T16:09:45.566550971Z 2026-03-12 16:09:45,566 - agent.git.bundle - WARNING - HOST_BUNDLES_PATH points to missing path <host-bundles-path>; using AGENTIC_BUNDLES_ROOT=/bundles
+2026-03-12T16:09:45.567236680Z 2026-03-12 16:09:45,567 - agent.git.bundle - WARNING - HOST_BUNDLES_PATH points to missing path <host-bundles-path>; using AGENTIC_BUNDLES_ROOT=/bundles
 2026-03-12T16:09:45.583796388Z 2026-03-12 16:09:45,583 - kdcube_ai_app.infra.plugin.bundle_store - INFO - Copied example bundle to shared root: /app/kdcube_ai_app/apps/chat/sdk/examples/bundles/with-isoruntime@2026-02-16-14-00 -> /bundles/with-isoruntime@2026-02-16-14-00
 2026-03-12T16:09:45.589860055Z 2026-03-12 16:09:45,589 - kdcube_ai_app.infra.plugin.bundle_registry - INFO - Resolving git bundles (source=registry.set, bundles=2)
 2026-03-12T16:09:45.590683971Z 2026-03-12 16:09:45,590 - kdcube_ai_app.infra.plugin.bundle_registry - INFO - Git bundle resolve: id=example-product@marketing repo=git@github.com:example-org/example-product_chatbot.git ref=main subdir=src/ciso/app/service/bundle/ciso_marketing/bundle source=registry.set
-2026-03-12T16:09:45.590930680Z 2026-03-12 16:09:45,590 - agent.git.bundle - WARNING - HOST_BUNDLES_PATH points to missing path /Users/elenaviter/.kdcube/kdcube-runtime/data/bundles; using AGENTIC_BUNDLES_ROOT=/bundles
+2026-03-12T16:09:45.590930680Z 2026-03-12 16:09:45,590 - agent.git.bundle - WARNING - HOST_BUNDLES_PATH points to missing path <host-bundles-path>; using AGENTIC_BUNDLES_ROOT=/bundles
 2026-03-12T16:09:45.596699555Z 2026-03-12 16:09:45,596 - httpx - INFO - HTTP Request: GET http://kdcube-secrets:7777/secret/services.git.http_token "HTTP/1.1 200 OK"
 2026-03-12T16:09:45.597176888Z 2026-03-12 16:09:45,596 - agent.git.bundle - INFO - [git.bundle] using HTTPS for git@github.com:example-org/example-product_chatbot.git
 2026-03-12T16:09:45.608077596Z 2026-03-12 16:09:45,607 - httpx - INFO - HTTP Request: GET http://kdcube-secrets:7777/secret/services.git.http_token "HTTP/1.1 200 OK"
@@ -59,9 +59,9 @@
 2026-03-12T16:09:51.902655252Z 2026-03-12 16:09:51,902 - agent.git.bundle - INFO - Already up to date.
 2026-03-12T16:09:51.909879210Z 2026-03-12 16:09:51,909 - agent.git.bundle - INFO - [git.bundle] HEAD=5f34f8f0dceb017868723fb9461b218c7a1b7e9d
 2026-03-12T16:09:51.913140210Z 2026-03-12 16:09:51,913 - kdcube_ai_app.infra.plugin.bundle_registry - INFO - Git bundle resolved: id=example-product@marketing path=/bundles/example-product_chatbot__example-product@marketing__main/src/ciso/app/service/bundle/ciso_marketing/bundle repo_root=/bundles/example-product_chatbot__example-product@marketing__main
-2026-03-12T16:09:51.913391377Z 2026-03-12 16:09:51,913 - agent.git.bundle - WARNING - HOST_BUNDLES_PATH points to missing path /Users/elenaviter/.kdcube/kdcube-runtime/data/bundles; using AGENTIC_BUNDLES_ROOT=/bundles
+2026-03-12T16:09:51.913391377Z 2026-03-12 16:09:51,913 - agent.git.bundle - WARNING - HOST_BUNDLES_PATH points to missing path <host-bundles-path>; using AGENTIC_BUNDLES_ROOT=/bundles
 2026-03-12T16:09:51.914028043Z 2026-03-12 16:09:51,913 - kdcube_ai_app.infra.plugin.bundle_registry - INFO - Git bundle resolve: id=app@2-0 repo=git@github.com:org/customer-repo.git ref=bundle-v2026.02.22 subdir=service/bundles source=registry.set
-2026-03-12T16:09:51.914307335Z 2026-03-12 16:09:51,914 - agent.git.bundle - WARNING - HOST_BUNDLES_PATH points to missing path /Users/elenaviter/.kdcube/kdcube-runtime/data/bundles; using AGENTIC_BUNDLES_ROOT=/bundles
+2026-03-12T16:09:51.914307335Z 2026-03-12 16:09:51,914 - agent.git.bundle - WARNING - HOST_BUNDLES_PATH points to missing path <host-bundles-path>; using AGENTIC_BUNDLES_ROOT=/bundles
 2026-03-12T16:09:51.922189043Z 2026-03-12 16:09:51,921 - httpx - INFO - HTTP Request: GET http://kdcube-secrets:7777/secret/services.git.http_token "HTTP/1.1 200 OK"
 2026-03-12T16:09:51.922393127Z 2026-03-12 16:09:51,922 - agent.git.bundle - INFO - [git.bundle] using HTTPS for git@github.com:org/customer-repo.git
 2026-03-12T16:09:51.931741585Z 2026-03-12 16:09:51,931 - httpx - INFO - HTTP Request: GET http://kdcube-secrets:7777/secret/services.git.http_token "HTTP/1.1 200 OK"
@@ -90,11 +90,11 @@
 2026-03-12T16:09:52.553121960Z 2026-03-12 16:09:52,553 - Periodical.Routines - INFO - [Bundles] Cleanup loop started (interval=3600s)
 2026-03-12T16:09:52.553507460Z 2026-03-12 16:09:52,553 - uvicorn.error - INFO - Application startup complete.
 2026-03-12T16:09:52.554024419Z 2026-03-12 16:09:52,553 - uvicorn.error - INFO - Uvicorn running on http://0.0.0.0:8020 (Press CTRL+C to quit)
-2026-03-12T16:09:52.554917210Z 2026-03-12 16:09:52,554 - agent.git.bundle - WARNING - HOST_BUNDLES_PATH points to missing path /Users/elenaviter/.kdcube/kdcube-runtime/data/bundles; using AGENTIC_BUNDLES_ROOT=/bundles
-2026-03-12T16:09:52.555717127Z 2026-03-12 16:09:52,555 - agent.git.bundle - WARNING - HOST_BUNDLES_PATH points to missing path /Users/elenaviter/.kdcube/kdcube-runtime/data/bundles; using AGENTIC_BUNDLES_ROOT=/bundles
+2026-03-12T16:09:52.554917210Z 2026-03-12 16:09:52,554 - agent.git.bundle - WARNING - HOST_BUNDLES_PATH points to missing path <host-bundles-path>; using AGENTIC_BUNDLES_ROOT=/bundles
+2026-03-12T16:09:52.555717127Z 2026-03-12 16:09:52,555 - agent.git.bundle - WARNING - HOST_BUNDLES_PATH points to missing path <host-bundles-path>; using AGENTIC_BUNDLES_ROOT=/bundles
 2026-03-12T16:09:52.559681752Z 2026-03-12 16:09:52,559 - httpx - INFO - HTTP Request: GET http://kdcube-secrets:7777/secret/services.git.http_token "HTTP/1.1 200 OK"
 2026-03-12T16:09:52.559986294Z 2026-03-12 16:09:52,559 - agent.git.bundle - INFO - [git.bundle] using HTTPS for git@github.com:org/customer-repo.git
-2026-03-12T16:09:52.560149419Z 2026-03-12 16:09:52,560 - agent.git.bundle - WARNING - HOST_BUNDLES_PATH points to missing path /Users/elenaviter/.kdcube/kdcube-runtime/data/bundles; using AGENTIC_BUNDLES_ROOT=/bundles
+2026-03-12T16:09:52.560149419Z 2026-03-12 16:09:52,560 - agent.git.bundle - WARNING - HOST_BUNDLES_PATH points to missing path <host-bundles-path>; using AGENTIC_BUNDLES_ROOT=/bundles
 2026-03-12T16:13:41.460309678Z 2026-03-12 16:13:41,459 - httpx - INFO - HTTP Request: GET https://cognito-idp.eu-west-1.amazonaws.com/eu-west-1_kWcB6nLJ7/.well-known/jwks.json "HTTP/1.1 200 OK"
 2026-03-12T16:13:41.473981511Z 2026-03-12 16:13:41,473 - kdcube_ai_app.infra.gateway.backpressure - INFO - Gateway capacity check passed: privileged, queue=0/39
 2026-03-12T16:13:41.478564344Z 2026-03-12 16:13:41,478 - kdcube_ai_app.infra.gateway.backpressure - INFO - Gateway capacity check passed: privileged, queue=0/39

@@ -407,8 +407,8 @@ Operational caveat:
 
 See also:
 
-- [longrun-protection-README.md](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/docs/arch/proc/longrun-protection-README.md)
-- [proc-README.md](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/docs/ops/ecs/components/proc-README.md)
+- [longrun-protection-README.md](longrun-protection-README.md)
+- [proc-README.md](../../ops/ecs/components/proc-README.md)
 
 ---
 
@@ -488,9 +488,9 @@ They load bundles through the current registry entry and therefore through the c
 Current behavior:
 
 - startup and bundle-update paths load or rebuild the effective registry for the worker scope
-- built-in example bundles are merged into that registry in [bundle_store.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_store.py)
-- request-time bundle resolution then uses the in-memory registry in [bundle_registry.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_registry.py)
-- module/singleton cache keys are based on the resolved bundle path in [agentic_loader.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/infra/plugin/agentic_loader.py)
+- built-in example bundles are merged into that registry in [bundle_store.py](../../../src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_store.py)
+- request-time bundle resolution then uses the in-memory registry in [bundle_registry.py](../../../src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_registry.py)
+- module/singleton cache keys are based on the resolved bundle path in [agentic_loader.py](../../../src/kdcube-ai-app/kdcube_ai_app/infra/plugin/agentic_loader.py)
 
 For built-in example bundles on Docker/ECS proc:
 

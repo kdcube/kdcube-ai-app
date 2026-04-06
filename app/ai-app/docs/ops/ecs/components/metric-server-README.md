@@ -16,12 +16,11 @@ This document describes the **current ECS deployment shape** of the Metrics serv
 It is not the source of truth for metric semantics or exporter internals.
 Those live in:
 
-- [metric-server-README.md](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/docs/service/scale/metric-server-README.md)
-- [metrics-README.md](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/docs/service/scale/metrics-README.md)
+- [metric-server-README.md](../../../service/scale/metric-server-README.md)
+- [metrics-README.md](../../../service/scale/metrics-README.md)
 
-The ECS wiring described here comes from:
-
-- [/Users/elenaviter/src/kdcube/kdcube-internal-demo/ops/ecs/terraform/modules/ecs/task_remaining.tf](/Users/elenaviter/src/kdcube/kdcube-internal-demo/ops/ecs/terraform/modules/ecs/task_remaining.tf)
+The ECS wiring described here comes from the internal-demo deployment repo,
+specifically `ops/ecs/terraform/modules/ecs/task_remaining.tf`.
 
 ---
 
@@ -113,9 +112,9 @@ This document does not define:
 
 Use instead:
 
-- [metric-server-README.md](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/docs/service/scale/metric-server-README.md)
-- [metrics-README.md](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/docs/service/scale/metrics-README.md)
-- [ecs-deployment-README.md](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/docs/ops/ecs/ecs-deployment-README.md)
+- [metric-server-README.md](../../../service/scale/metric-server-README.md)
+- [metrics-README.md](../../../service/scale/metrics-README.md)
+- [ecs-deployment-README.md](../ecs-deployment-README.md)
 
 ---
 

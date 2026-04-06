@@ -170,8 +170,8 @@ The deployment maps the main autoscaling signals to stable CloudWatch-style name
 The metrics service also computes stronger proc queue signals internally,
 including queue pressure and wait metrics, as described in:
 
-- [metric-server-README.md](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/docs/service/scale/metric-server-README.md)
-- [metrics-README.md](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/docs/service/scale/metrics-README.md)
+- [metric-server-README.md](../../service/scale/metric-server-README.md)
+- [metrics-README.md](../../service/scale/metrics-README.md)
 
 ### Current scaling shape
 
@@ -238,7 +238,7 @@ Operational consequence:
 
 For deployment and autoscaling, use the documented health endpoints rather than
 assuming generic container readiness.
-See [health-README.md](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/docs/ops/health-README.md).
+See [health-README.md](../health-README.md).
 
 In particular:
 

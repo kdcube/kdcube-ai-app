@@ -225,7 +225,7 @@ Location:
 
 Prerequisites:
 - `AUTH_PROVIDER=simple`
-- `IDP_DB_PATH=/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/idp_users.json`
+- `IDP_DB_PATH=app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/idp_users.json`
 - Ensure admin + registered tokens exist in that file.
 
 ### Case 1: 15 registered, 1 message each (no SSE streams)
