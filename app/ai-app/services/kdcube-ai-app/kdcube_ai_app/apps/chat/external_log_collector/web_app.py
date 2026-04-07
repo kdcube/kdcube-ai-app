@@ -1,15 +1,30 @@
 import os
 import logging
 from pathlib import Path
+from dotenv import load_dotenv, find_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from kdcube_ai_app.apps.chat.external_log_collector.event_type import ExternalLogEvent
 from kdcube_ai_app.apps.chat.external_log_collector.service import LogCollectorService
 import kdcube_ai_app.apps.utils.logging_config as logging_config
 
-_SERVICE_DIR = Path(__file__).resolve().parents[4]
-os.environ.setdefault("LOG_DIR", str(_SERVICE_DIR))
-os.environ.setdefault("LOG_FILE_PREFIX", "chat-frontend-logs")
+# Default component identity for shared .env usage
+os.environ.setdefault("GATEWAY_COMPONENT", "collector")
+
+_ENV_DIR = Path(__file__).resolve().parent
+_CONFIG_DIR = os.environ.get("KDCUBE_CONFIG_DIR")
+_IN_CONTAINER = Path("/.dockerenv").exists()
+
+if _CONFIG_DIR:
+    _CONFIG_ENV = Path(_CONFIG_DIR) / ".env.collector"
+    if _CONFIG_ENV.exists():
+        load_dotenv(_CONFIG_ENV, override=True)
+elif not _IN_CONTAINER:
+    # Local dev only (avoid overriding compose envs in containers).
+    load_dotenv(_ENV_DIR / ".env.collector", override=True)
+
+if not _IN_CONTAINER:
+    load_dotenv(find_dotenv(usecwd=False))
 
 logging_config.configure_logging()
 logger = logging.getLogger(__name__)
@@ -54,10 +69,12 @@ async def health_check():
     }
 
 
+# Get port from env (set by .env.collector or KDCUBE_CONFIG_DIR)
+EVENTS_COLLECTOR_PORT = int(os.environ.get("EVENTS_COLLECTOR_PORT", 8080))
+
+
 if __name__ == "__main__":
     import uvicorn
-
-    EVENTS_COLLECTOR_PORT = int(os.environ.get("EVENTS_COLLECTOR_PORT", 8080))
 
     logger.info(f"Starting External Log Collector on port {EVENTS_COLLECTOR_PORT}")
 
