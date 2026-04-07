@@ -1,3 +1,21 @@
+export interface BundleWidgetIcon {
+    tailwind?: string | null;
+    lucide?: string | null;
+}
+
+export interface BundleWidgetEntry {
+    alias: string;
+    icon?: BundleWidgetIcon | null;
+    roles?: string[] | null;
+}
+
+export interface BundleApiEntry {
+    alias: string;
+    http_method?: string | null;
+    route?: string | null;
+    roles?: string[] | null;
+}
+
 export interface BundleEntry {
     id: string;
     name?: string | null;
@@ -10,6 +28,9 @@ export interface BundleEntry {
     ref?: string | null;
     subdir?: string | null;
     git_commit?: string | null;
+    apis?: BundleApiEntry[] | null;
+    widgets?: BundleWidgetEntry[] | null;
+    on_message?: string | null;
 }
 
 export interface BundlesResponse {

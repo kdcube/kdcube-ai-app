@@ -2,7 +2,6 @@ import {useEffect, useMemo, useRef} from "react";
 import {useAppSelector} from "../../app/store.ts";
 import {selectProject, selectTenant} from "../chat/chatSettingsSlice.ts";
 import {motion} from "motion/react";
-import {GetWidgetParams} from "../widgetPanels/widgetPanels.ts";
 import IconContainer from "../../components/IconContainer.tsx";
 import {LoaderCircle} from "lucide-react";
 
@@ -68,17 +67,18 @@ const PanelLoadingError = ({className}: PanelErrorProps) => {
 interface GenericWidgetPanelProps {
     visible: boolean;
     className?: string;
-    trigger: (params: GetWidgetParams, preferCache?: boolean) => void;
+    trigger: (params: any, preferCache?: boolean) => void;
     useCached?: boolean;
+    params?: Record<string, string>;
     lastArg: {
         data?: string | undefined;
         isFetching: boolean;
         isError: boolean;
         isUninitialized: boolean;
-    }
+    };
 }
 
-export const GenericPanel = ({visible, className, trigger, lastArg, useCached = false}: GenericWidgetPanelProps) => {
+export const GenericPanel = ({visible, className, trigger, lastArg, useCached = false, params}: GenericWidgetPanelProps) => {
     const wasVisible = useRef(visible);
 
     const {data, isFetching, isError, isUninitialized} = useMemo(() => {
@@ -87,15 +87,22 @@ export const GenericPanel = ({visible, className, trigger, lastArg, useCached = 
 
     const tenant = useAppSelector(selectTenant);
     const project = useAppSelector(selectProject);
+    const resolvedParams = useMemo(() => {
+        return {
+            tenant,
+            project,
+            ...(params || {}),
+        };
+    }, [params, project, tenant]);
 
     useEffect(() => {
         if (!wasVisible.current && !useCached && visible) {
-            trigger({tenant, project}, false);
+            trigger(resolvedParams, false);
         } else if (visible && isUninitialized) {
-            trigger({tenant, project}, true)
+            trigger(resolvedParams, true)
         }
         wasVisible.current = visible;
-    }, [isUninitialized, project, useCached, tenant, trigger, visible]);
+    }, [isUninitialized, resolvedParams, trigger, useCached, visible]);
 
     return useMemo(() => {
         if (visible) {

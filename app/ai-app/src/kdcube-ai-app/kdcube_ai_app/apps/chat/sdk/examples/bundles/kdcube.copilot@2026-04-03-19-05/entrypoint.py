@@ -36,24 +36,57 @@ import os
 import shutil
 import traceback
 import fcntl
+import json
+import uuid
 from contextlib import contextmanager
-from typing import Any, Dict
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
 
 from langgraph.graph import StateGraph, START, END
 
 from kdcube_ai_app.apps.chat.sdk.context.vector.conv_ticket_store import ConvTicketStore
+from kdcube_ai_app.apps.chat.sdk.config import (
+    delete_user_secret,
+    get_secret,
+    get_user_secret,
+    set_user_secret,
+)
 from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
+from kdcube_ai_app.apps.chat.sdk.solutions.claude_code import (
+    ClaudeCodeAgent,
+    ClaudeCodeAgentConfig,
+    ClaudeCodeBinding,
+)
+from kdcube_ai_app.apps.chat.sdk.storage.ai_bundle_storage import AIBundleStorage
+from kdcube_ai_app.apps.chat.sdk.viz.patch_platform_dashboard import patch_dashboard
+from kdcube_ai_app.apps.chat.emitters import ChatCommunicator
 from kdcube_ai_app.infra.service_hub.inventory import Config, BundleState
-from kdcube_ai_app.infra.plugin.agentic_loader import agentic_workflow
+from kdcube_ai_app.infra.plugin.agentic_loader import agentic_workflow, api, ui_widget
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import BaseEntrypoint
 
 from .orchestrator.workflow import WithReactWorkflow
 from .event_filter import BundleEventFilter
+from .knowledge_base_admin import (
+    AGENT_NAME as KB_ADMIN_AGENT_NAME,
+    append_conversation_message,
+    build_kb_admin_storage,
+    build_widget_payload as build_kb_admin_widget_payload,
+    build_workspace_prompt_context,
+    create_or_load_conversation,
+    ensure_workspace as kb_admin_ensure_workspace,
+    load_conversation as kb_admin_load_conversation,
+    load_user_config as kb_admin_load_user_config,
+    save_user_config as kb_admin_save_user_config,
+    update_last_sync as kb_admin_update_last_sync,
+    validate_workspace_config as kb_admin_validate_workspace_config,
+    workspace_root as kb_admin_workspace_root,
+)
 import importlib.util
 import sys
 
 # Unique bundle ID — used by the plugin system to discover and load this bundle
 BUNDLE_ID = "kdcube.copilot"
+KB_ADMIN_TURN_KINDS = ("regular", "followup", "steer")
 
 
 def _knowledge_lock_path(storage_root: pathlib.Path) -> pathlib.Path:
@@ -520,6 +553,488 @@ class ReactWorkflow(BaseEntrypoint):
             self.logger.log(f"[kdcube.copilot] knowledge reconcile failed ({reason})", "WARNING")
             self.logger.log(traceback.format_exc(), "WARNING")
         return None
+
+    def _kb_admin_storage(self) -> Optional[AIBundleStorage]:
+        actor = getattr(self.comm_context, "actor", None)
+        tenant = getattr(actor, "tenant_id", None) or self.settings.TENANT
+        project = getattr(actor, "project_id", None) or self.settings.PROJECT
+        bundle_spec = getattr(self.config, "ai_bundle_spec", None)
+        bundle_id = getattr(bundle_spec, "id", None) or BUNDLE_ID
+        try:
+            return build_kb_admin_storage(
+                tenant=str(tenant or "unknown"),
+                project=str(project or "unknown"),
+                bundle_id=str(bundle_id or BUNDLE_ID),
+                storage_uri=self.settings.STORAGE_PATH,
+            )
+        except Exception:
+            self.logger.log(traceback.format_exc(), "ERROR")
+            return None
+
+    def _kb_admin_local_root(self) -> Optional[pathlib.Path]:
+        storage_root = self.bundle_storage_root()
+        if not storage_root:
+            return None
+        root = storage_root / "_knowledge_base_admin"
+        root.mkdir(parents=True, exist_ok=True)
+        return root
+
+    def _kb_admin_user_id(
+        self,
+        *,
+        user_id: Optional[str] = None,
+        fingerprint: Optional[str] = None,
+    ) -> str:
+        return (
+            (user_id or "").strip()
+            or (fingerprint or "").strip()
+            or str(getattr(self.comm, "user_id", None) or "").strip()
+            or str(getattr(getattr(self.comm_context, "user", None), "user_id", None) or "").strip()
+            or str(getattr(getattr(self.comm_context, "user", None), "fingerprint", None) or "").strip()
+            or "anonymous"
+        )
+
+    def _kb_admin_secret_flags(self, *, user_id: str) -> dict[str, bool]:
+        bundle_id = getattr(getattr(self.config, "ai_bundle_spec", None), "id", None) or BUNDLE_ID
+        return {
+            "has_git_pat": bool(
+                get_user_secret("git.http_token", user_id=user_id, bundle_id=bundle_id)
+                or get_secret("services.git.http_token")
+            ),
+            "has_anthropic_api_key": bool(
+                get_user_secret("anthropic.api_key", user_id=user_id, bundle_id=bundle_id)
+                or get_secret("services.anthropic.api_key")
+            ),
+            "has_claude_code_key": bool(
+                get_user_secret("anthropic.claude_code_key", user_id=user_id, bundle_id=bundle_id)
+                or get_secret("services.anthropic.claude_code_key")
+            ),
+        }
+
+    def _kb_admin_claude_env(self, *, user_id: str) -> dict[str, str]:
+        bundle_id = getattr(getattr(self.config, "ai_bundle_spec", None), "id", None) or BUNDLE_ID
+        env: dict[str, str] = {}
+        api_key = (
+            get_user_secret("anthropic.api_key", user_id=user_id, bundle_id=bundle_id)
+            or get_secret("services.anthropic.api_key")
+        )
+        auth_token = (
+            get_user_secret("anthropic.auth_token", user_id=user_id, bundle_id=bundle_id)
+            or get_secret("services.anthropic.auth_token")
+        )
+        claude_code_key = (
+            get_user_secret("anthropic.claude_code_key", user_id=user_id, bundle_id=bundle_id)
+            or get_secret("services.anthropic.claude_code_key")
+        )
+        if api_key:
+            env["ANTHROPIC_API_KEY"] = api_key
+        if auth_token:
+            env["ANTHROPIC_AUTH_TOKEN"] = auth_token
+        if claude_code_key:
+            env["CLAUDE_CODE_KEY"] = claude_code_key
+        return env
+
+    def _kb_admin_git_credentials(self, *, user_id: str) -> tuple[str | None, str | None]:
+        bundle_id = getattr(getattr(self.config, "ai_bundle_spec", None), "id", None) or BUNDLE_ID
+        token = (
+            get_user_secret("git.http_token", user_id=user_id, bundle_id=bundle_id)
+            or get_secret("services.git.http_token")
+        )
+        http_user = (
+            get_user_secret("git.http_user", user_id=user_id, bundle_id=bundle_id)
+            or get_secret("services.git.http_user")
+            or "x-access-token"
+        )
+        return token, http_user
+
+    def _kb_admin_bound_comm(self, *, conversation_id: str, turn_id: str) -> ChatCommunicator:
+        base = self.comm
+        if not isinstance(base, ChatCommunicator):
+            raise RuntimeError("Knowledge Base Admin requires a bound ChatCommunicator")
+        conversation = dict(base.conversation or {})
+        conversation["conversation_id"] = conversation_id
+        conversation["turn_id"] = turn_id
+        return ChatCommunicator(
+            emitter=base.emitter,
+            tenant=base.tenant,
+            project=base.project,
+            user_id=base.user_id,
+            user_type=base.user_type,
+            service=dict(base.service or {}),
+            conversation=conversation,
+            room=base.room,
+            target_sid=base.target_sid,
+            event_filter=getattr(self, "_event_filter", None),
+        )
+
+    def _kb_admin_binding(self, *, user_id: str, conversation_id: str) -> ClaudeCodeBinding:
+        session_id = (
+            str(getattr(getattr(self.comm_context, "routing", None), "session_id", None) or "").strip()
+            or conversation_id
+        )
+        claude_session_id = str(
+            uuid.uuid5(
+                uuid.NAMESPACE_URL,
+                f"kdcube/claude-code/{user_id}/{conversation_id}/{KB_ADMIN_AGENT_NAME}",
+            )
+        )
+        return ClaudeCodeBinding(
+            user_id=user_id,
+            conversation_id=conversation_id,
+            session_id=session_id,
+            claude_session_id=claude_session_id,
+        )
+
+    def _kb_admin_render_widget(self, payload: dict[str, Any]) -> str:
+        bundle_root = pathlib.Path(__file__).resolve().parent
+        tsx_path = bundle_root / "ui" / "KnowledgeBaseAdmin.tsx"
+        content = tsx_path.read_text(encoding="utf-8").replace(
+            "__KNOWLEDGE_BASE_ADMIN_JSON__",
+            json.dumps(payload, ensure_ascii=False),
+        )
+        actor = getattr(self.comm_context, "actor", None)
+        bundle_spec = getattr(getattr(self, "config", None), "ai_bundle_spec", None)
+        rendered = patch_dashboard(
+            input_content=content,
+            base_url=f"http://localhost:{os.environ.get('CHAT_APP_PORT') or '8010'}",
+            default_tenant=getattr(actor, "tenant_id", None) or self.settings.TENANT,
+            default_project=getattr(actor, "project_id", None) or self.settings.PROJECT,
+            default_app_bundle_id=getattr(bundle_spec, "id", None) or BUNDLE_ID,
+            access_token=None,
+            id_token=None,
+            id_token_header="X-ID-Token",
+        )
+        return self._render_dashboard_html(content=rendered, title="Knowledge Base Admin")
+
+    def _kb_admin_normalize_turn_kind(self, raw: Optional[str]) -> str:
+        turn_kind = str(raw or "regular").strip().lower() or "regular"
+        if turn_kind not in KB_ADMIN_TURN_KINDS:
+            raise ValueError(
+                f"Unsupported turn_kind '{raw}'. Expected one of: {', '.join(KB_ADMIN_TURN_KINDS)}."
+            )
+        return turn_kind
+
+    @api(
+        alias="knowledge_base_admin_widget",
+        route="operations",
+        roles=("super-admin",),
+    )
+    @ui_widget(
+        icon={
+            "tailwind": "heroicons-outline:circle-stack",
+            "lucide": "DatabaseZap",
+        },
+        alias="knowledge_base_admin",
+        roles=("super-admin",),
+    )
+    def knowledge_base_admin_widget(
+        self,
+        user_id: Optional[str] = None,
+        fingerprint: Optional[str] = None,
+        selected_conversation_id: Optional[str] = None,
+        **kwargs,
+    ):
+        del kwargs
+        storage = self._kb_admin_storage()
+        if not storage:
+            return ["<p>Bundle storage backend is not configured for this bundle.</p>"]
+        target_user = self._kb_admin_user_id(user_id=user_id, fingerprint=fingerprint)
+        flags = self._kb_admin_secret_flags(user_id=target_user)
+        payload = build_kb_admin_widget_payload(
+            storage,
+            target_user,
+            has_git_pat=flags["has_git_pat"],
+            has_anthropic_api_key=flags["has_anthropic_api_key"],
+            has_claude_code_key=flags["has_claude_code_key"],
+            selected_conversation_id=selected_conversation_id,
+        )
+        try:
+            return [self._kb_admin_render_widget(payload)]
+        except Exception:
+            self.logger.log(traceback.format_exc(), "ERROR")
+            return ["<p>Unable to render the Knowledge Base Admin widget right now.</p>"]
+
+    @api(alias="knowledge_base_admin_widget_data", roles=("super-admin",))
+    def knowledge_base_admin_widget_data(
+        self,
+        user_id: Optional[str] = None,
+        fingerprint: Optional[str] = None,
+        selected_conversation_id: Optional[str] = None,
+        **kwargs,
+    ):
+        del kwargs
+        storage = self._kb_admin_storage()
+        if not storage:
+            return {"ok": False, "error": "Bundle storage backend is not configured for this bundle."}
+        target_user = self._kb_admin_user_id(user_id=user_id, fingerprint=fingerprint)
+        flags = self._kb_admin_secret_flags(user_id=target_user)
+        payload = build_kb_admin_widget_payload(
+            storage,
+            target_user,
+            has_git_pat=flags["has_git_pat"],
+            has_anthropic_api_key=flags["has_anthropic_api_key"],
+            has_claude_code_key=flags["has_claude_code_key"],
+            selected_conversation_id=selected_conversation_id,
+        )
+        payload["ok"] = True
+        local_root = self._kb_admin_local_root()
+        payload["workspace_root"] = str(kb_admin_workspace_root(local_root, target_user)) if local_root else None
+        return payload
+
+    @api(alias="knowledge_base_admin_conversation_data", roles=("super-admin",))
+    def knowledge_base_admin_conversation_data(
+        self,
+        conversation_id: str,
+        user_id: Optional[str] = None,
+        fingerprint: Optional[str] = None,
+        **kwargs,
+    ):
+        del kwargs
+        storage = self._kb_admin_storage()
+        if not storage:
+            return {"ok": False, "error": "Bundle storage backend is not configured for this bundle."}
+        target_user = self._kb_admin_user_id(user_id=user_id, fingerprint=fingerprint)
+        conversation = kb_admin_load_conversation(storage, target_user, conversation_id)
+        return {
+            "ok": bool(conversation),
+            "conversation": conversation,
+            "conversation_id": conversation_id,
+        }
+
+    @api(alias="knowledge_base_admin_save_settings", roles=("super-admin",))
+    def knowledge_base_admin_save_settings(
+        self,
+        content_repos: Optional[list[dict[str, Any]]] = None,
+        output_repo: Optional[dict[str, Any]] = None,
+        git_http_token: Optional[str] = None,
+        git_http_user: Optional[str] = None,
+        anthropic_api_key: Optional[str] = None,
+        claude_code_key: Optional[str] = None,
+        clear_git_http_token: bool = False,
+        clear_anthropic_api_key: bool = False,
+        clear_claude_code_key: bool = False,
+        user_id: Optional[str] = None,
+        fingerprint: Optional[str] = None,
+        **kwargs,
+    ):
+        del kwargs
+        storage = self._kb_admin_storage()
+        if not storage:
+            return {"ok": False, "error": "Bundle storage backend is not configured for this bundle."}
+        target_user = self._kb_admin_user_id(user_id=user_id, fingerprint=fingerprint)
+        bundle_id = getattr(getattr(self.config, "ai_bundle_spec", None), "id", None) or BUNDLE_ID
+
+        if clear_git_http_token:
+            delete_user_secret("git.http_token", user_id=target_user, bundle_id=bundle_id)
+            delete_user_secret("git.http_user", user_id=target_user, bundle_id=bundle_id)
+        else:
+            if str(git_http_token or "").strip():
+                set_user_secret("git.http_token", str(git_http_token).strip(), user_id=target_user, bundle_id=bundle_id)
+            if str(git_http_user or "").strip():
+                set_user_secret("git.http_user", str(git_http_user).strip(), user_id=target_user, bundle_id=bundle_id)
+
+        if clear_anthropic_api_key:
+            delete_user_secret("anthropic.api_key", user_id=target_user, bundle_id=bundle_id)
+        elif str(anthropic_api_key or "").strip():
+            set_user_secret("anthropic.api_key", str(anthropic_api_key).strip(), user_id=target_user, bundle_id=bundle_id)
+
+        if clear_claude_code_key:
+            delete_user_secret("anthropic.claude_code_key", user_id=target_user, bundle_id=bundle_id)
+        elif str(claude_code_key or "").strip():
+            set_user_secret("anthropic.claude_code_key", str(claude_code_key).strip(), user_id=target_user, bundle_id=bundle_id)
+
+        config = kb_admin_save_user_config(
+            storage,
+            target_user,
+            content_repos=content_repos or [],
+            output_repo=output_repo or {},
+            last_sync=kb_admin_load_user_config(storage, target_user).get("last_sync"),
+        )
+        flags = self._kb_admin_secret_flags(user_id=target_user)
+        payload = build_kb_admin_widget_payload(
+            storage,
+            target_user,
+            has_git_pat=flags["has_git_pat"],
+            has_anthropic_api_key=flags["has_anthropic_api_key"],
+            has_claude_code_key=flags["has_claude_code_key"],
+        )
+        payload["ok"] = True
+        payload["config"] = config
+        return payload
+
+    @api(alias="knowledge_base_admin_sync_workspace", roles=("super-admin",))
+    def knowledge_base_admin_sync_workspace(
+        self,
+        user_id: Optional[str] = None,
+        fingerprint: Optional[str] = None,
+        **kwargs,
+    ):
+        del kwargs
+        storage = self._kb_admin_storage()
+        local_root = self._kb_admin_local_root()
+        if not storage or not local_root:
+            return {"ok": False, "error": "Bundle storage root is unavailable for Knowledge Base Admin."}
+        target_user = self._kb_admin_user_id(user_id=user_id, fingerprint=fingerprint)
+        config = kb_admin_load_user_config(storage, target_user)
+        token, http_user = self._kb_admin_git_credentials(user_id=target_user)
+        try:
+            workspace = kb_admin_ensure_workspace(
+                local_root=local_root,
+                user_id=target_user,
+                config=config,
+                git_http_token=token,
+                git_http_user=http_user,
+                sync_existing=True,
+            )
+        except Exception as exc:
+            self.logger.log(traceback.format_exc(), "ERROR")
+            return {"ok": False, "error": str(exc)}
+        sync_payload = {
+            "synced_at": datetime.now(timezone.utc).isoformat(),
+            "repo_statuses": workspace["repo_statuses"],
+            "workspace_root": workspace["workspace_root"],
+        }
+        kb_admin_update_last_sync(storage, target_user, sync_payload)
+        return {
+            "ok": True,
+            **sync_payload,
+        }
+
+    @api(alias="knowledge_base_admin_chat", roles=("super-admin",))
+    async def knowledge_base_admin_chat(
+        self,
+        message: str,
+        conversation_id: Optional[str] = None,
+        turn_kind: str = "regular",
+        user_id: Optional[str] = None,
+        fingerprint: Optional[str] = None,
+        **kwargs,
+    ):
+        del kwargs
+        storage = self._kb_admin_storage()
+        local_root = self._kb_admin_local_root()
+        if not storage or not local_root:
+            return {"ok": False, "error": "Bundle storage root is unavailable for Knowledge Base Admin."}
+
+        text = str(message or "").strip()
+        if not text:
+            return {"ok": False, "error": "message is required"}
+
+        try:
+            normalized_turn_kind = self._kb_admin_normalize_turn_kind(turn_kind)
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+
+        target_user = self._kb_admin_user_id(user_id=user_id, fingerprint=fingerprint)
+        config = kb_admin_load_user_config(storage, target_user)
+        try:
+            config = kb_admin_validate_workspace_config(config)
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+        token, http_user = self._kb_admin_git_credentials(user_id=target_user)
+        try:
+            workspace = kb_admin_ensure_workspace(
+                local_root=local_root,
+                user_id=target_user,
+                config=config,
+                git_http_token=token,
+                git_http_user=http_user,
+                sync_existing=False,
+            )
+        except Exception as exc:
+            self.logger.log(traceback.format_exc(), "ERROR")
+            return {"ok": False, "error": str(exc)}
+
+        conversation = create_or_load_conversation(
+            storage,
+            target_user,
+            conversation_id=conversation_id,
+            title_hint=text[:80],
+        )
+        cid = str(conversation["conversation_id"])
+        turn_id_value = f"kb_admin_turn_{uuid.uuid4().hex[:12]}"
+        bound_comm = self._kb_admin_bound_comm(conversation_id=cid, turn_id=turn_id_value)
+
+        history_lines: list[str] = []
+        for item in list(conversation.get("messages") or [])[-12:]:
+            role = str(item.get("role") or "assistant").capitalize()
+            body = str(item.get("text") or "").strip()
+            if body:
+                history_lines.append(f"{role}: {body}")
+
+        workspace_prompt = build_workspace_prompt_context(workspace["workspace_payload"])
+        full_prompt = workspace_prompt
+        if history_lines:
+            full_prompt += "\n\nPrevious conversation:\n" + "\n\n".join(history_lines)
+        full_prompt += f"\n\nCurrent turn kind: {normalized_turn_kind}\n\n{text}"
+
+        append_conversation_message(
+            storage,
+            target_user,
+            conversation_id=cid,
+            role="user",
+            text=text,
+            metadata={"turn_kind": normalized_turn_kind},
+        )
+
+        agent = ClaudeCodeAgent(
+            config=ClaudeCodeAgentConfig(
+                agent_name=KB_ADMIN_AGENT_NAME,
+                workspace_path=pathlib.Path(workspace["workspace_root"]),
+                allowed_tools=("Read", "Grep", "Bash", "WebFetch", "WebSearch"),
+                env=self._kb_admin_claude_env(user_id=target_user),
+                step_name="knowledge_base_admin.agent",
+            ),
+            binding=self._kb_admin_binding(user_id=target_user, conversation_id=cid),
+            comm=bound_comm,
+            logger=self.logger._logger if hasattr(self.logger, "_logger") else None,
+        )
+
+        try:
+            result = await agent.run_turn(full_prompt, kind=normalized_turn_kind)
+        except Exception as exc:
+            conversation_doc = append_conversation_message(
+                storage,
+                target_user,
+                conversation_id=cid,
+                role="assistant",
+                text=f"Error: {exc}",
+                metadata={"error": True, "turn_kind": normalized_turn_kind},
+            )
+            return {
+                "ok": False,
+                "error": str(exc),
+                "conversation_id": cid,
+                "conversation": conversation_doc,
+            }
+
+        append_conversation_message(
+            storage,
+            target_user,
+            conversation_id=cid,
+            role="assistant",
+            text=result.final_text,
+            metadata={
+                "turn_kind": normalized_turn_kind,
+                "status": result.status,
+                "delta_count": result.delta_count,
+                "exit_code": result.exit_code,
+                "claude_session_id": result.session_id,
+            },
+        )
+        conversation_doc = kb_admin_load_conversation(storage, target_user, cid)
+        return {
+            "ok": True,
+            "conversation_id": cid,
+            "conversation": conversation_doc,
+            "result": {
+                "status": result.status,
+                "final_text": result.final_text,
+                "delta_count": result.delta_count,
+                "exit_code": result.exit_code,
+                "session_id": result.session_id,
+            },
+        }
 
     @property
     def configuration(self) -> Dict[str, Any]:

@@ -1,6 +1,7 @@
 import {createApi, fetchBaseQuery} from "@reduxjs/toolkit/query/react";
 import {
     AIBundlesResponse,
+    BundleWidgetResponse,
     ConversationsBrowserResponse,
     EconomicsResponse,
     EconomicUsageResponse,
@@ -18,8 +19,13 @@ const ConversationBrowserTag = "conversation_browser"
 const RedisBrowserTag = "redis_browser"
 const EconomicUsageTag = "economic_usage"
 const VersatilePreferencesTag = "versatile_preferences"
+const BundleWidgetTag = "bundle_widget"
 
 export type GetWidgetParams = ChatScope
+export interface GetBundleWidgetParams extends ChatScope {
+    bundleId: string;
+    widgetAlias: string;
+}
 
 export const widgetPanelsApiSlice = createApi({
     reducerPath: 'widgetPanels',
@@ -28,7 +34,7 @@ export const widgetPanelsApiSlice = createApi({
             return appendDefaultHeaders(headers) as Headers;
         }
     }),
-    tagTypes: [EconomicsTag, AIBundlesTag, GatewayTag, ConversationBrowserTag, RedisBrowserTag, EconomicUsageTag, VersatilePreferencesTag],
+    tagTypes: [EconomicsTag, AIBundlesTag, GatewayTag, ConversationBrowserTag, RedisBrowserTag, EconomicUsageTag, VersatilePreferencesTag, BundleWidgetTag],
     endpoints: builder => ({
         getEconomicsWidget: builder.query<string, {
             tenant: string,
@@ -164,6 +170,25 @@ export const widgetPanelsApiSlice = createApi({
             },
             providesTags: [VersatilePreferencesTag],
         }),
+        getBundleWidget: builder.query<string, GetBundleWidgetParams>({
+            query: ({tenant, project, bundleId, widgetAlias}: GetBundleWidgetParams) => {
+                return {
+                    url: `/api/integrations/bundles/${tenant}/${project}/${bundleId}/widgets/${widgetAlias}`,
+                    method: 'GET',
+                    headers: [
+                        ["Content-Type", "application/json"]
+                    ],
+                }
+            },
+            transformResponse(res: BundleWidgetResponse, _meta, arg) {
+                const value = res[arg.widgetAlias];
+                if (Array.isArray(value)) {
+                    return String(value[0] ?? "");
+                }
+                return String(value ?? "");
+            },
+            providesTags: [BundleWidgetTag],
+        }),
     })
 })
 
@@ -175,4 +200,5 @@ export const {
     useGetRedisBrowserWidgetQuery, useLazyGetRedisBrowserWidgetQuery,
     useGetEconomicUsageWidgetQuery, useLazyGetEconomicUsageWidgetQuery,
     useGetVersatilePreferencesWidgetQuery, useLazyGetVersatilePreferencesWidgetQuery,
+    useGetBundleWidgetQuery, useLazyGetBundleWidgetQuery,
 } = widgetPanelsApiSlice

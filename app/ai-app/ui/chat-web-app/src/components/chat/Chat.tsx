@@ -20,6 +20,7 @@ import ConversationHeader from "../../features/conversationHeader/ConversationHe
 import {selectCurrentBundle} from "../../features/bundles/bundlesSlice.ts";
 import {selectProject, selectTenant} from "../../features/chat/chatSettingsSlice.ts";
 import {connectChat} from "../../features/chat/chatServiceMiddleware.ts";
+import {DynamicBundleWidgetSelection} from "../../features/chatSidePanel/ChatSidePanel.tsx";
 
 const SingleChatApp: React.FC = () => {
     const currentTurn = useAppSelector(selectCurrentTurn);
@@ -29,6 +30,7 @@ const SingleChatApp: React.FC = () => {
     const [canvasItemLink, setCanvasItemLink] = useState<CanvasItemLink | null>(null);
     const [overrideCanvasItemLink, setOverrideCanvasItemLink] = useState<boolean>(false);
     const [bundleUiAvailable, setBundleUiAvailable] = useState<boolean | null>(null);
+    const [selectedBundleWidget, setSelectedBundleWidget] = useState<DynamicBundleWidgetSelection | null>(null);
     const tenant = useAppSelector(selectTenant)
     const project = useAppSelector(selectProject)
     const bundleId = useAppSelector(selectCurrentBundle);
@@ -45,6 +47,10 @@ const SingleChatApp: React.FC = () => {
     useEffect(() => {
         setBundleUiAvailable(bundleUIUrl ? null : false);
     }, [bundleUIUrl]);
+
+    useEffect(() => {
+        setSelectedBundleWidget(null);
+    }, [bundleId]);
 
     const lastCanvasItem = useMemo(() => {
         if (currentTurn == null) return null;
@@ -137,14 +143,16 @@ const SingleChatApp: React.FC = () => {
     return useMemo(() => {
         return <div id={SingleChatApp.name}
                     className="flex flex-col h-full w-full min-h-0 min-w-0 bg-slate-100 overflow-hidden">
-            <ChatHeader/>
+            <ChatHeader selectedBundleWidget={selectedBundleWidget}
+                        onBundleWidgetClick={setSelectedBundleWidget}/>
 
             <div className={`flex flex-row overflow-hidden flex-1 w-full min-h-0 min-w-0`}>
-                <ChatSidePanel/>
+                <ChatSidePanel selectedBundleWidget={selectedBundleWidget}
+                               onSelectedBundleWidgetChange={setSelectedBundleWidget}/>
                 {chatInterface}
             </div>
         </div>
-    }, [chatInterface])
+    }, [chatInterface, selectedBundleWidget])
 };
 
 export default SingleChatApp;

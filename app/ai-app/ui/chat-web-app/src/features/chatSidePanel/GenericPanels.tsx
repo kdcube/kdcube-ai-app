@@ -1,10 +1,12 @@
 import {
     useLazyGetAIBundlesWidgetQuery,
+    useLazyGetBundleWidgetQuery,
     useLazyGetConversationBrowserWidgetQuery,
     useLazyGetEconomicsWidgetQuery,
     useLazyGetEconomicUsageWidgetQuery,
     useLazyGetGatewayWidgetQuery,
-    useLazyGetRedisBrowserWidgetQuery, useLazyGetVersatilePreferencesWidgetQuery
+    useLazyGetRedisBrowserWidgetQuery,
+    useLazyGetVersatilePreferencesWidgetQuery
 } from "../widgetPanels/widgetPanels.ts";
 import {useMemo} from "react";
 import {GenericPanel} from "./GenericPanel.tsx";
@@ -59,4 +61,18 @@ export const VersatilePreferencesPanel = ({visible, className}: WidgetPanelProps
     return useMemo(() => {
         return <GenericPanel trigger={trigger} lastArg={lastArg} visible={visible} className={className}/>
     }, [trigger, lastArg, visible, className]);
+}
+
+interface BundleWidgetPanelProps extends WidgetPanelProps {
+    bundleId: string | null;
+    widgetAlias: string | null;
+}
+
+export const BundleWidgetPanel = ({visible, className, bundleId, widgetAlias}: BundleWidgetPanelProps) => {
+    const [trigger, lastArg] = useLazyGetBundleWidgetQuery();
+
+    return useMemo(() => {
+        const params = bundleId && widgetAlias ? {bundleId, widgetAlias} : undefined;
+        return <GenericPanel trigger={trigger} lastArg={lastArg} visible={visible && !!params} className={className} params={params}/>
+    }, [trigger, lastArg, visible, className, bundleId, widgetAlias]);
 }
