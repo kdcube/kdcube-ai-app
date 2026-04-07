@@ -1358,9 +1358,14 @@ async def serve_static_asset(
         base_href = f"/api/integrations/static/{tenant}/{project}/{bundle_id}/"
         content = target.read_text(encoding="utf-8")
         content = content.replace("<head>", f"<head><base href=\"{base_href}\">", 1)
-        return HTMLResponse(content=content)
+        return HTMLResponse(content=content, headers={"Cache-Control": "no-cache"})
 
-    return FileResponse(str(target))
+    rel_parts = target.relative_to(ui_root).parts
+    headers = {"Cache-Control": "public, max-age=3600"}
+    if rel_parts and rel_parts[0] == "assets":
+        headers = {"Cache-Control": "public, max-age=31536000, immutable"}
+
+    return FileResponse(str(target), headers=headers)
 
 
 @router.get("/static/{tenant}/{project}/{bundle_id}")
