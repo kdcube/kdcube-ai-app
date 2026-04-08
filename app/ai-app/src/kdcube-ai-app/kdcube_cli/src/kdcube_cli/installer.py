@@ -2650,6 +2650,12 @@ def gather_configuration(
     workspace_git_repo = _get_nested(assembly_data, "storage", "workspace", "repo")
     if workspace_git_repo and not is_placeholder(str(workspace_git_repo)):
         update_env_value(env_proc, "REACT_WORKSPACE_GIT_REPO", str(workspace_git_repo))
+    claude_session_store_type = _get_nested(assembly_data, "storage", "claude_code_session", "type")
+    if claude_session_store_type and not is_placeholder(str(claude_session_store_type)):
+        update_env_value(env_proc, "CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION", str(claude_session_store_type))
+    claude_session_git_repo = _get_nested(assembly_data, "storage", "claude_code_session", "repo")
+    if claude_session_git_repo and not is_placeholder(str(claude_session_git_repo)):
+        update_env_value(env_proc, "CLAUDE_CODE_SESSION_GIT_REPO", str(claude_session_git_repo))
     if is_placeholder(env_proc.entries.get("BUNDLE_STORAGE_ROOT", (None, None))[1]):
         update_env_value(env_proc, "BUNDLE_STORAGE_ROOT", "/bundle-storage")
     if is_placeholder(env_proc.entries.get("AGENTIC_BUNDLES_ROOT", (None, None))[1]):

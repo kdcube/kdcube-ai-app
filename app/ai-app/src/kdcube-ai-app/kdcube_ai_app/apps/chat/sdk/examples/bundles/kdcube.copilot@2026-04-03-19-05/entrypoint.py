@@ -56,6 +56,8 @@ from kdcube_ai_app.apps.chat.sdk.solutions.claude_code import (
     ClaudeCodeAgent,
     ClaudeCodeAgentConfig,
     ClaudeCodeBinding,
+    ClaudeCodeSessionStoreConfig,
+    run_claude_code_turn,
 )
 from kdcube_ai_app.apps.chat.sdk.storage.ai_bundle_storage import AIBundleStorage
 from kdcube_ai_app.apps.chat.sdk.viz.patch_platform_dashboard import patch_dashboard
@@ -78,6 +80,7 @@ from .knowledge_base_admin import (
     load_conversation as kb_admin_load_conversation,
     load_user_config as kb_admin_load_user_config,
     push_output_repo as kb_admin_push_output_repo,
+    refresh_workspace_support_files as kb_admin_refresh_workspace_support_files,
     reset_output_repo as kb_admin_reset_output_repo,
     save_user_config as kb_admin_save_user_config,
     update_last_sync as kb_admin_update_last_sync,
@@ -1205,6 +1208,7 @@ class ReactWorkflow(BaseEntrypoint):
         cid = str(conversation["conversation_id"])
         turn_id_value = f"kb_admin_turn_{uuid.uuid4().hex[:12]}"
         bound_comm = self._kb_admin_bound_comm(conversation_id=cid, turn_id=turn_id_value)
+        workspace_root_path = pathlib.Path(workspace["workspace_root"])
 
         history_lines: list[str] = []
         for item in existing_messages[-12:]:
@@ -1247,12 +1251,34 @@ class ReactWorkflow(BaseEntrypoint):
             comm=bound_comm,
             logger=self.logger._logger if hasattr(self.logger, "_logger") else None,
         )
+        session_store = ClaudeCodeSessionStoreConfig(
+            implementation=str(getattr(self.settings, "CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION", "local") or "local"),
+            local_root=workspace_root_path / ".claude",
+            tenant=str(getattr(self.settings, "TENANT", "home") or "home"),
+            project=str(getattr(self.settings, "PROJECT", "default-project") or "default-project"),
+            user_id=str(target_user or "anonymous"),
+            conversation_id=cid,
+            agent_name=KB_ADMIN_AGENT_NAME,
+            git_repo=getattr(self.settings, "CLAUDE_CODE_SESSION_GIT_REPO", None),
+        )
+
+        def _refresh_claude_support_files() -> None:
+            workspace["workspace_payload"] = kb_admin_refresh_workspace_support_files(
+                local_root=local_root,
+                user_id=target_user,
+                config=config,
+                repo_statuses=list(workspace.get("repo_statuses") or []),
+            )
 
         try:
-            result = await agent.run_turn(
-                full_prompt,
+            result = await run_claude_code_turn(
+                agent=agent,
+                prompt=full_prompt,
                 kind=normalized_turn_kind,
                 resume_existing=resume_existing or normalized_turn_kind in ("followup", "steer"),
+                session_store=session_store,
+                refresh_support_files=_refresh_claude_support_files,
+                logger=self.logger._logger if hasattr(self.logger, "_logger") else None,
             )
         except Exception as exc:
             conversation_doc = append_conversation_message(
