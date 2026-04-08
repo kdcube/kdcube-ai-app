@@ -23,8 +23,9 @@ use the optional `secrets.yaml` workflow described in
 For **code usage guidelines** (how to read config/secrets in platform/bundles),
 see [docs/service/configuration/code-config-secrets-README.md](code-config-secrets-README.md).
 
-**Secrets note:** Secrets are injected via the secrets sidecar using **dot‑path keys**
-(for example, `services.openai.api_key`). Env vars are legacy compatibility only.
+**Secrets note:** Secrets are resolved by the configured runtime provider using
+**dot‑path keys** (for example, `services.openai.api_key`). Env vars are legacy
+compatibility only.
 
 **Sample env files (per service)**
 
@@ -54,7 +55,7 @@ Descriptions are condensed from the comments in those sample files.
 | `HOST_EXEC_WORKSPACE_PATH` | Temporary workspace for code execution (Docker-in-Docker) |
 | `AGENTIC_BUNDLES_ROOT` | Mount path for bundles inside the container DO NOT CHANGE unless you modify AGENTIC_BUNDLES_JSON references |
 | `BUNDLE_STORAGE_ROOT` | Shared bundle storage root inside the container (knowledge space root) |
-| `UI_BUILD_CONTEXT` | Root of the KDCube ai-app directory (contains deployment/, ui/, services/) This works on Linux/Mac. For Windows, use a Windows-safe path (e.g., D:/path/to/kdcube-ai-app/app/ai-app) |
+| `UI_BUILD_CONTEXT` | Root of the KDCube ai-app directory (contains deployment/, ui/, src/) This works on Linux/Mac. For Windows, use a Windows-safe path (e.g., D:/path/to/kdcube-ai-app/app/ai-app) |
 | `UI_DOCKERFILE_PATH` | Path to Dockerfile_UI (relative to UI_BUILD_CONTEXT) |
 | `UI_SOURCE_PATH` | Path to UI source code (relative to UI_BUILD_CONTEXT) This directory should contain package.json and your UI application |
 | `NGINX_UI_CONFIG_FILE_PATH` | Path to nginx configuration for UI (relative to UI_BUILD_CONTEXT) This configures how nginx serves your built UI application |
@@ -89,6 +90,8 @@ Secrets resolution is provider-based:
 - `in-memory` for process-local operational values
 - `secrets-service` for the local `kdcube-secrets` sidecar
 - `aws-sm` for AWS Secrets Manager
+- `secrets-file` for descriptor-backed runtime loading from `secrets.yaml` and
+  `bundles.secrets.yaml` via the storage backend (`file://...` or `s3://...`)
 
 The local secrets sidecar provider supports two roles:
 
@@ -101,6 +104,13 @@ The local secrets sidecar provider supports two roles:
 `SECRETS_PROVIDER` is rendered from `assembly.yaml` (`secrets.provider`).
 Gateway config must not carry secrets backend settings.
 
+If `SECRETS_PROVIDER` is omitted and either `GLOBAL_SECRETS_YAML` or
+`BUNDLE_SECRETS_YAML` is set, runtime auto-selects `secrets-file`.
+
+`secrets-file` reads and writes the configured YAML descriptors through the
+storage backend. The service therefore needs write access to the referenced
+`file://...` path or `s3://...` object prefix if you want admin/UI updates to persist.
+
 Token TTL/uses:
 - `SECRETS_TOKEN_TTL_SECONDS=0` and `SECRETS_TOKEN_MAX_USES=0` mean **no expiry**.
 - This is required if bundle secrets can be updated and read long after startup.
@@ -110,10 +120,12 @@ Token TTL/uses:
 |---|---|
 | `CHAT_APP_PORT` | n/a |
 | `GATEWAY_COMPONENT` | n/a |
-| `SECRETS_PROVIDER` | Secrets backend: `secrets-service`, `aws-sm`, or `in-memory`. Legacy `local` remains accepted as an alias for `secrets-service`. |
+| `SECRETS_PROVIDER` | Secrets backend: `secrets-service`, `aws-sm`, `secrets-file`, or `in-memory`. Legacy `local` remains accepted as an alias for `secrets-service`. |
 | `SECRETS_URL` | Base URL for the local `secrets-service` provider. |
 | `SECRETS_TOKEN` | Read token for secrets sidecar (runtime-only; injected by CLI). |
 | `SECRETS_ADMIN_TOKEN` | Admin token for **writing** secrets (bundle admin UI). Set to `${SECRETS_ADMIN_TOKEN}`. |
+| `GLOBAL_SECRETS_YAML` | Read-only global secrets descriptor for `secrets-file`; accepts `file://...` or `s3://...`. |
+| `BUNDLE_SECRETS_YAML` | Read-only bundle secrets descriptor for `secrets-file`; accepts `file://...` or `s3://...`. |
 | `SECRETS_TOKEN_TTL_SECONDS` | Token lifetime (seconds). `0` = no expiry. |
 | `SECRETS_TOKEN_MAX_USES` | Max uses per token. `0` = unlimited. |
 | `SECRETS_ADMIN_TOKEN` | Optional admin token for writing secrets via the bundle admin UI. |
@@ -142,6 +154,7 @@ Token TTL/uses:
 | `DEFAULT_EMBEDDING_MODEL_ID` | n/a |
 | `AUTH_PROVIDER` | Auth Auth provider, simple|cognito |
 | `ID_TOKEN_HEADER_NAME` | For non-simple auth, id token must be sent by client in addition to the access token in the auth header. |
+| `STREAM_ID_HEADER_NAME` | Header carrying the connected peer/stream id for REST requests that need peer-targeted communicator delivery. |
 | `AUTH_TOKEN_COOKIE_NAME` | n/a |
 | `ID_TOKEN_COOKIE_NAME` | n/a |
 | `COGNITO_REGION` | # Cognito specifics |
@@ -181,9 +194,11 @@ Token TTL/uses:
 |---|---|
 | `CHAT_PROCESSOR_PORT` | n/a |
 | `GATEWAY_COMPONENT` | n/a |
-| `SECRETS_PROVIDER` | Secrets backend: `secrets-service`, `aws-sm`, or `in-memory`. Legacy `local` remains accepted as an alias for `secrets-service`. |
+| `SECRETS_PROVIDER` | Secrets backend: `secrets-service`, `aws-sm`, `secrets-file`, or `in-memory`. Legacy `local` remains accepted as an alias for `secrets-service`. |
 | `SECRETS_URL` | Base URL for the local `secrets-service` provider. |
 | `SECRETS_TOKEN` | Read token for the configured `secrets-service` provider. |
+| `GLOBAL_SECRETS_YAML` | Read-only global secrets descriptor for `secrets-file`; accepts `file://...` or `s3://...`. |
+| `BUNDLE_SECRETS_YAML` | Read-only bundle secrets descriptor for `secrets-file`; accepts `file://...` or `s3://...`. |
 | `GATEWAY_CONFIG_JSON` | Gateway config JSON (see Gateway Config section above). |
 | `KDCUBE_GATEWAY_DESCRIPTOR_PATH` | Path to `gateway.yaml` used by the CLI to render `GATEWAY_CONFIG_JSON`. |
 | `GATEWAY_CONFIG_FORCE_ENV_ON_STARTUP` | n/a |
@@ -202,6 +217,8 @@ Token TTL/uses:
 | `KDCUBE_STORAGE_PATH` | Storage backend root (file:///... or s3://...). |
 | `CB_BUNDLE_STORAGE_URL` | n/a |
 | `BUNDLE_STORAGE_ROOT` | Shared bundle local storage (used by ks: resolvers). Must match docker-compose mount. |
+| `REACT_WORKSPACE_IMPLEMENTATION` | React workspace backend. `custom` keeps artifact/hosting-backed hydration. `git` enables git-backed `fi:<turn>.files/...` slice hydration. Default is `custom`. |
+| `REACT_WORKSPACE_GIT_REPO` | Remote repo used by the git workspace backend. Required when `REACT_WORKSPACE_IMPLEMENTATION=git`. Auth reuses `GIT_HTTP_TOKEN`, `GIT_HTTP_USER`, `GIT_SSH_KEY_PATH`, `GIT_SSH_KNOWN_HOSTS`, and `GIT_SSH_STRICT_HOST_KEY_CHECKING`. |
 | `OPENAI_API_KEY` | Services credentials Ext services |
 | `HUGGING_FACE_API_TOKEN` | n/a |
 | `ANTHROPIC_API_KEY` | n/a |
@@ -212,6 +229,7 @@ Token TTL/uses:
 | `DEFAULT_EMBEDDING_MODEL_ID` | n/a |
 | `AUTH_PROVIDER` | Auth Auth provider, simple|cognito |
 | `ID_TOKEN_HEADER_NAME` | For non-simple auth, id token must be sent by client in addition to the access token in the auth header. |
+| `STREAM_ID_HEADER_NAME` | Header carrying the connected peer/stream id for REST requests that need peer-targeted communicator delivery. |
 | `AUTH_TOKEN_COOKIE_NAME` | n/a |
 | `ID_TOKEN_COOKIE_NAME` | n/a |
 | `COGNITO_REGION` | # Cognito specifics |
@@ -253,6 +271,7 @@ Token TTL/uses:
 | `BUNDLE_REF_TTL_SECONDS` | Active bundle ref TTL (seconds). |
 | `BUNDLES_FORCE_ENV_ON_STARTUP` | Force bundles registry overwrite from env on startup (processor only). |
 | `BUNDLES_FORCE_ENV_LOCK_TTL_SECONDS` | n/a |
+| `BUNDLES_PRELOAD_ON_START` | Eagerly load all configured bundle modules and run on_bundle_load hooks at proc startup. Eliminates cold start on first request. Proc health returns 503 until preload completes (default: `0`). |
 | `AGENTIC_BUNDLES_ROOT` | Agentic bundles root inside the container. All bundles (subfolders, wheels, zips) will be linked there. The paths in the AGENTIC_BUNDLES_JSON must start with this root. Container bundle root (from .env.proc): Docker/ECS: set AGENTIC_BUNDLES_ROOT=/bundles and mount your host/EFS path there. Host path for mounts lives in .env (HOST_BUNDLES_PATH). |
 | `BUNDLE_GIT_RESOLUTION_ENABLED` | Git bundle resolution Disable git bundle resolution until git bundles are fully configured. |
 | `BUNDLE_GIT_ATOMIC` | Atomic checkout (clone to temp dir then rename) |
@@ -280,6 +299,24 @@ Token TTL/uses:
 | `AWS_SDK_LOAD_CONFIG` | optional: make boto3 read ~/.aws/config if present (harmless) |
 | `NO_PROXY` | EC2 stuff. If you run dockercompose on EC2. Running with managed services don't proxy IMDS |
 | `AWS_EC2_METADATA_DISABLED` | make sure SDKs don’t disable IMDS accidentally |
+
+### Assembly -> React workspace env mapping
+
+The reference assembly descriptor may declare:
+
+```yaml
+storage:
+  workspace:
+    type: git      # or custom
+    repo: https://github.com/org/private-workspace.git
+```
+
+The CLI installer maps that to:
+
+- `REACT_WORKSPACE_IMPLEMENTATION`
+- `REACT_WORKSPACE_GIT_REPO`
+
+`repo` is only meaningful when `type=git`.
 
 ### `.env.metrics`
 | Key | Description |
@@ -343,7 +380,7 @@ The chat service is **rate‑limited and capacity‑limited** by design:
 - Excess load is **rejected early** with `queue.enqueue_rejected`.
 - Concurrency limits keep each processor stable under load.
 
-For gateway‑level rate limits and backpressure configuration, see `docs/gateway-README.md`.
+For gateway‑level rate limits and backpressure configuration, see `docs/service/gateway-README.md`.
 If you use a `gateway.yaml`, the CLI renders it into `GATEWAY_CONFIG_JSON`.
 See: [gateway-config-README.md](../cicd/gateway-config-README.md).
 ## Gateway Config (Required)
@@ -364,6 +401,9 @@ treated as ingress (rate limit + backpressure) vs read‑only (session only).
 
 **Processor (integrations)**
 - `^/integrations/bundles/[^/]+/[^/]+/operations/[^/]+$`
+- `^/integrations/bundles/[^/]+/[^/]+/[^/]+/operations/[^/]+$`
+- `^/integrations/bundles/[^/]+/[^/]+/[^/]+/public/[^/]+$`
+- `^/integrations/bundles/[^/]+/[^/]+/[^/]+/widgets/[^/]+$`
 
 These defaults are used when no `guarded_rest_patterns` are provided in
 `GATEWAY_CONFIG_JSON`.
@@ -444,7 +484,10 @@ Pattern styles (strict vs prefix‑tolerant) are documented in
       "^/conversations/[^/]+/[^/]+/feedback/conversations-in-period$"
     ],
     "proc": [
-      "^/integrations/bundles/[^/]+/[^/]+/operations/[^/]+$"
+      "^/integrations/bundles/[^/]+/[^/]+/operations/[^/]+$",
+      "^/integrations/bundles/[^/]+/[^/]+/[^/]+/operations/[^/]+$",
+      "^/integrations/bundles/[^/]+/[^/]+/[^/]+/public/[^/]+$",
+      "^/integrations/bundles/[^/]+/[^/]+/[^/]+/widgets/[^/]+$"
     ]
   },
   "bypass_throttling_patterns": {
@@ -556,6 +599,14 @@ Conversation artifacts and turn workspace:
 |-------------------------|---------|---------------------------------------------------------------|
 | `KDCUBE_STORAGE_PATH`   | ✅       | Storage root (local FS `file:///...` or `s3://bucket/path`)   |
 | `CB_BUNDLE_STORAGE_URL` | ➖       | Bundle storage URL (proc only; defaults to storage path)      |
+| `REACT_WORKSPACE_GIT_REPO` | ➖    | Remote git repo used as the authoritative backup/version store for React git-backed workspace lineages (proc/runtime only) |
+
+`REACT_WORKSPACE_GIT_REPO` uses the same git authentication contract already supported for git bundle loading:
+- `GIT_HTTP_TOKEN`
+- `GIT_HTTP_USER`
+- `GIT_SSH_KEY_PATH`
+- `GIT_SSH_KNOWN_HOSTS`
+- `GIT_SSH_STRICT_HOST_KEY_CHECKING`
 
 ### ClamAV (Ingress only)
 
@@ -572,6 +623,7 @@ Conversation artifacts and turn workspace:
 |-----------------------------|----------|---------|
 | `AUTH_PROVIDER`             | ✅        | `simple` or `cognito` |
 | `ID_TOKEN_HEADER_NAME`      | ➖        | Header for id token |
+| `STREAM_ID_HEADER_NAME`     | ➖        | Header for connected peer/stream id |
 | `AUTH_TOKEN_COOKIE_NAME`    | ➖        | Access token cookie name |
 | `ID_TOKEN_COOKIE_NAME`      | ➖        | ID token cookie name |
 | `COGNITO_REGION`            | ➖        | Cognito region |
@@ -604,6 +656,7 @@ Conversation artifacts and turn workspace:
 | `PY_CODE_EXEC_TIMEOUT`      | _(unset)_  | Exec timeout (seconds)                                                                                                                                                                      |
 | `PY_CODE_EXEC_NETWORK_MODE` | _(unset)_  | Docker network mode                                                                                                                                                                         |
 | `EXEC_WORKSPACE_ROOT`       | _(auto)_   | Local workspace root for per‑turn workdir/outdir. Defaults to `/exec-workspace` inside Docker or `/tmp` on host. Path is created if missing and **must be writable** or the request fails.  |
+| `REACT_WORKSPACE_GIT_REPO`  | _(unset)_  | React git-backed workspace remote. The runtime carries it into `RuntimeCtx.workspace_git_repo` so React can reason about the authoritative workspace backup without trying to fetch from exec. |
 | `FARGATE_EXEC_ENABLED`      | `0`        | Enable distributed exec via ECS/Fargate. When disabled, `EXEC_RUNTIME_MODE=fargate` cannot launch tasks.                                                                                  |
 | `FARGATE_CLUSTER`           | _(unset)_  | ECS cluster ARN/name for distributed exec tasks.                                                                                                                                           |
 | `FARGATE_TASK_DEFINITION`   | _(unset)_  | ECS task definition for distributed exec tasks.                                                                                                                                            |
@@ -620,32 +673,32 @@ These values scope **bundle registries** and **control‑plane events**.
 
 | Setting                  | Default   | Purpose                                                                                         | Used by                           |
 |--------------------------|-----------|-------------------------------------------------------------------------------------------------|-----------------------------------|
-| `AGENTIC_BUNDLES_JSON`   | _(unset)_ | Seed bundle registry from JSON                                                                  | `infra/plugin/bundle_store.py`    |
-| `BUNDLES_INCLUDE_EXAMPLES` | `1`     | Auto‑add example bundles from `sdk/examples/bundles`                                            | `infra/plugin/bundle_store.py`    |
-| `BUNDLES_FORCE_ENV_ON_STARTUP` | `0` | Force overwrite Redis registry from `AGENTIC_BUNDLES_JSON` (processor only)                     | `infra/plugin/bundle_store.py`    |
-| `BUNDLES_FORCE_ENV_LOCK_TTL_SECONDS` | `60` | Redis lock TTL for startup env reset                                                     | `infra/plugin/bundle_store.py`    |
-| `HOST_BUNDLES_PATH`      | _(unset)_ | Host path for bundle roots (git‑cloned or manually provisioned). Often mounted into containers. | `infra/plugin/git_bundle.py`      |
-| `AGENTIC_BUNDLES_ROOT`   | _(unset)_ | Container‑visible bundles root (path used by runtime inside container).                         | `infra/plugin/git_bundle.py`      |
-| `BUNDLE_STORAGE_ROOT` | _(unset)_ | Shared local filesystem root for bundle data (used by ks:), default: `<bundles_root>/_bundle_storage`. | `infra/plugin/bundle_storage.py` |
-| `BUNDLE_GIT_ALWAYS_PULL` | `0`       | Force refresh on resolve                                                                        | `infra/plugin/bundle_registry.py` |
-| `BUNDLE_GIT_ATOMIC`      | `1`       | Atomic clone/update                                                                             | `infra/plugin/git_bundle.py`      |
-| `BUNDLE_GIT_SHALLOW`     | `1`       | Shallow clone mode                                                                              | `infra/plugin/git_bundle.py`      |
-| `BUNDLE_GIT_CLONE_DEPTH` | `50`      | Shallow clone depth                                                                             | `infra/plugin/git_bundle.py`      |
-| `BUNDLE_GIT_KEEP`        | `3`       | Keep N old bundle dirs                                                                          | `infra/plugin/git_bundle.py`      |
-| `BUNDLE_GIT_TTL_HOURS`   | `0`       | TTL cleanup for old bundle dirs                                                                 | `infra/plugin/git_bundle.py`      |
-| `BUNDLE_GIT_REDIS_LOCK`  | `0`       | Use Redis lock to serialize git pulls **per instance** (key includes `INSTANCE_ID`)            | `infra/plugin/git_bundle.py`      |
-| `BUNDLE_GIT_REDIS_LOCK_TTL_SECONDS` | `300` | Redis lock TTL for git pulls                                                             | `infra/plugin/git_bundle.py`      |
-| `BUNDLE_GIT_REDIS_LOCK_WAIT_SECONDS` | `60` | Max wait to acquire git lock                                                            | `infra/plugin/git_bundle.py`      |
-| `BUNDLE_GIT_PREFETCH_ENABLED` | `1` | Prefetch git bundles once on startup to gate readiness                         | `apps/chat/proc/web_app.py`       |
-| `BUNDLE_GIT_FAIL_BACKOFF_SECONDS` | `60` | Initial backoff after git failure (cooldown)                                        | `infra/plugin/git_bundle.py`      |
-| `BUNDLE_GIT_FAIL_MAX_BACKOFF_SECONDS` | `300` | Max backoff after repeated failures                                         | `infra/plugin/git_bundle.py`      |
-| `GIT_SSH_COMMAND`        | _(unset)_ | Full SSH command override (optional)                                                            | `infra/plugin/git_bundle.py`      |
-| `GIT_SSH_KEY_PATH`       | _(unset)_ | Path to private SSH key (for private repos)                                                     | `infra/plugin/git_bundle.py`      |
-| `GIT_SSH_KNOWN_HOSTS`    | _(unset)_ | Path to `known_hosts` file (SSH)                                                                | `infra/plugin/git_bundle.py`      |
-| `GIT_SSH_STRICT_HOST_KEY_CHECKING` | _(unset)_ | `yes` / `no`                                                                              | `infra/plugin/git_bundle.py`      |
-| `GIT_HTTP_TOKEN`         | _(unset)_ | HTTPS token for private git repos (uses GIT_ASKPASS)                                             | `infra/plugin/git_bundle.py`      |
-| `GIT_HTTP_USER`          | _(unset)_ | HTTPS username (defaults to `x-access-token`)                                                   | `infra/plugin/git_bundle.py`      |
-| `BUNDLE_REF_TTL_SECONDS` | `3600`    | TTL for active bundle refs                                                                      | `infra/plugin/bundle_refs.py`     |
+| `AGENTIC_BUNDLES_JSON`   | _(unset)_ | Seed bundle registry from JSON                                                                  | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_store.py`    |
+| `BUNDLES_INCLUDE_EXAMPLES` | `1`     | Auto‑add example bundles from `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles`                                            | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_store.py`    |
+| `BUNDLES_FORCE_ENV_ON_STARTUP` | `0` | Force overwrite Redis registry from `AGENTIC_BUNDLES_JSON` (processor only)                     | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_store.py`    |
+| `BUNDLES_FORCE_ENV_LOCK_TTL_SECONDS` | `60` | Redis lock TTL for startup env reset                                                     | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_store.py`    |
+| `HOST_BUNDLES_PATH`      | _(unset)_ | Host path for bundle roots (git‑cloned or manually provisioned). Often mounted into containers. | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`      |
+| `AGENTIC_BUNDLES_ROOT`   | _(unset)_ | Container‑visible bundles root (path used by runtime inside container).                         | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`      |
+| `BUNDLE_STORAGE_ROOT` | _(unset)_ | Shared local filesystem root for bundle data (used by ks:), default: `<bundles_root>/_bundle_storage`. | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_storage.py` |
+| `BUNDLE_GIT_ALWAYS_PULL` | `0`       | Force refresh on resolve                                                                        | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_registry.py` |
+| `BUNDLE_GIT_ATOMIC`      | `1`       | Atomic clone/update                                                                             | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`      |
+| `BUNDLE_GIT_SHALLOW`     | `1`       | Shallow clone mode                                                                              | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`      |
+| `BUNDLE_GIT_CLONE_DEPTH` | `50`      | Shallow clone depth                                                                             | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`      |
+| `BUNDLE_GIT_KEEP`        | `3`       | Keep N old bundle dirs                                                                          | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`      |
+| `BUNDLE_GIT_TTL_HOURS`   | `0`       | TTL cleanup for old bundle dirs                                                                 | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`      |
+| `BUNDLE_GIT_REDIS_LOCK`  | `0`       | Use Redis lock to serialize git pulls **per instance** (key includes `INSTANCE_ID`)            | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`      |
+| `BUNDLE_GIT_REDIS_LOCK_TTL_SECONDS` | `300` | Redis lock TTL for git pulls                                                             | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`      |
+| `BUNDLE_GIT_REDIS_LOCK_WAIT_SECONDS` | `60` | Max wait to acquire git lock                                                            | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`      |
+| `BUNDLE_GIT_PREFETCH_ENABLED` | `1` | Prefetch git bundles once on startup to gate readiness                         | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/web_app.py`       |
+| `BUNDLE_GIT_FAIL_BACKOFF_SECONDS` | `60` | Initial backoff after git failure (cooldown)                                        | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`      |
+| `BUNDLE_GIT_FAIL_MAX_BACKOFF_SECONDS` | `300` | Max backoff after repeated failures                                         | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`      |
+| `GIT_SSH_COMMAND`        | _(unset)_ | Full SSH command override (optional)                                                            | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`      |
+| `GIT_SSH_KEY_PATH`       | _(unset)_ | Path to private SSH key (for private repos)                                                     | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`      |
+| `GIT_SSH_KNOWN_HOSTS`    | _(unset)_ | Path to `known_hosts` file (SSH)                                                                | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`      |
+| `GIT_SSH_STRICT_HOST_KEY_CHECKING` | _(unset)_ | `yes` / `no`                                                                              | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`      |
+| `GIT_HTTP_TOKEN`         | _(unset)_ | HTTPS token for private git repos (uses GIT_ASKPASS)                                             | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`      |
+| `GIT_HTTP_USER`          | _(unset)_ | HTTPS username (defaults to `x-access-token`)                                                   | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`      |
+| `BUNDLE_REF_TTL_SECONDS` | `3600`    | TTL for active bundle refs                                                                      | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_refs.py`     |
 
 **Auth precedence:** if `GIT_HTTP_TOKEN` is set, HTTPS token auth is used and SSH settings are ignored (a warning is logged when both are set).
 
@@ -680,20 +733,20 @@ product‑level chatbot capabilities.
 
 | Setting                | Default           | Purpose | Used by                                                                                                             |
 |------------------------|-------------------| --- |---------------------------------------------------------------------------------------------------------------------|
-| `INSTANCE_ID`          | `home-instance-1` | Instance identity for heartbeats & monitoring | `apps/chat/sdk/config.py`, `infra/availability/health_and_heartbeat.py`                                             |
-| `HEARTBEAT_INTERVAL`   | `10`              | Heartbeat interval (seconds) | Orchestrator + KB services (`infra/orchestration/app/dramatiq/resolver.py`, `apps/knowledge_base/api/resolvers.py`) |
+| `INSTANCE_ID`          | `home-instance-1` | Instance identity for heartbeats & monitoring | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/config.py`, `src/kdcube-ai-app/kdcube_ai_app/infra/availability/health_and_heartbeat.py`                                             |
+| `HEARTBEAT_INTERVAL`   | `10`              | Heartbeat interval (seconds) | Orchestrator + KB services (`src/kdcube-ai-app/kdcube_ai_app/infra/orchestration/app/dramatiq/resolver.py`, `src/kdcube-ai-app/kdcube_ai_app/apps/knowledge_base/api/resolvers.py`) |
 
 ## Parallelism / Capacity
 
 | Setting                                                                     | Default | Purpose                                | Used by                                           |
 |-----------------------------------------------------------------------------|---------|----------------------------------------|---------------------------------------------------|
-| `GATEWAY_CONFIG_JSON.service_capacity.proc.processes_per_instance`          | `1`     | Proc worker processes per instance     | `infra/gateway/config.py`, heartbeat expectations |
-| `GATEWAY_CONFIG_JSON.service_capacity.proc.concurrent_requests_per_process` | `5`     | Max concurrent chat tasks per proc     | `apps/chat/processor.py`                          |
-| `GATEWAY_CONFIG_JSON.service_capacity.proc.avg_processing_time_seconds`     | `25`    | Capacity math / throughput estimate    | `infra/gateway/config.py`                         |
-| `GATEWAY_CONFIG_JSON.service_capacity.ingress.processes_per_instance`       | `1`     | Ingress worker processes per instance  | `infra/gateway/config.py`                         |
-| `GATEWAY_CONFIG_JSON.limits.proc.max_queue_size`                            | `0`     | Hard queue size limit (0 = disabled)   | `infra/gateway/backpressure.py`                   |
-| `CHAT_TASK_TIMEOUT_SEC`                                                     | `600`   | Per‑task timeout (seconds)             | `apps/chat/processor.py`                          |
-| `PROC_CONTAINER_STOP_TIMEOUT_SEC`                                           | `120`   | Proc container/task stop window        | `apps/chat/proc/web_app.py`                       |
+| `GATEWAY_CONFIG_JSON.service_capacity.proc.processes_per_instance`          | `1`     | Proc worker processes per instance     | `src/kdcube-ai-app/kdcube_ai_app/infra/gateway/config.py`, heartbeat expectations |
+| `GATEWAY_CONFIG_JSON.service_capacity.proc.concurrent_requests_per_process` | `5`     | Max concurrent chat tasks per proc     | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py`                          |
+| `GATEWAY_CONFIG_JSON.service_capacity.proc.avg_processing_time_seconds`     | `25`    | Capacity math / throughput estimate    | `src/kdcube-ai-app/kdcube_ai_app/infra/gateway/config.py`                         |
+| `GATEWAY_CONFIG_JSON.service_capacity.ingress.processes_per_instance`       | `1`     | Ingress worker processes per instance  | `src/kdcube-ai-app/kdcube_ai_app/infra/gateway/config.py`                         |
+| `GATEWAY_CONFIG_JSON.limits.proc.max_queue_size`                            | `0`     | Hard queue size limit (0 = disabled)   | `src/kdcube-ai-app/kdcube_ai_app/infra/gateway/backpressure.py`                   |
+| `CHAT_TASK_TIMEOUT_SEC`                                                     | `600`   | Per‑task timeout (seconds)             | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py`                          |
+| `PROC_CONTAINER_STOP_TIMEOUT_SEC`                                           | `120`   | Proc container/task stop window        | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/web_app.py`                       |
 
 Notes:
 - `PROC_CONTAINER_STOP_TIMEOUT_SEC` should match the deployment/task-definition `stopTimeout`.
@@ -716,8 +769,8 @@ returns a **system error** with:
   - `queue_size_exceeded` (when `GATEWAY_CONFIG_JSON.limits.proc.max_queue_size` is set and exceeded)
   - `hard_limit_exceeded` / `registered_threshold_exceeded` / `anonymous_threshold_exceeded`
 
-This is emitted from `apps/chat/api/ingress/chat_core.py` and handled in SSE at
-`apps/chat/api/sse/chat.py`.
+This is emitted from `src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/chat_core.py` and handled in SSE at
+`src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/sse/chat.py`.
 
 ## Metrics & Rolling Windows
 
@@ -734,7 +787,7 @@ Retention is **1 hour**. Metrics are exposed via:
 
 ## Scheduling (OPEX + Bundle Cleanup)
 
-These settings are now **first‑class** in `Settings` (`apps/chat/sdk/config.py`).
+These settings are now **first‑class** in `Settings` (`src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/config.py`).
 
 | Setting                                  | Default        | Purpose                                   |
 |------------------------------------------|----------------|-------------------------------------------|
@@ -761,7 +814,7 @@ Control plane schema
 
 Deploy the economics schema before enabling control plane endpoints:
 
-- [deploy-kdcube-control-plane.sql](../../services/kdcube-ai-app/kdcube_ai_app/ops/deployment/sql/control_plane/deploy-kdcube-control-plane.sql)
+- [deploy-kdcube-control-plane.sql](../../src/kdcube-ai-app/kdcube_ai_app/ops/deployment/sql/control_plane/deploy-kdcube-control-plane.sql)
 
 Plan quota seeding
 

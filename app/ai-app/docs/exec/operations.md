@@ -129,7 +129,7 @@ PY_CODE_EXEC_NETWORK_MODE=host       # Supervisor needs network
 pip install -r requirements-chat.txt
 
 # Run service
-python kdcube_ai_app/apps/chat/api/web_app.py
+python kdcube_ai_app/apps/chat/ingress/web_app.py
 ```
 
 #### 4. Verify Execution
@@ -197,7 +197,7 @@ RUN apt-get update && apt-get install -y \
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-COPY services/kdcube-ai-app/requirements-chat.txt requirements.txt
+COPY src/kdcube-ai-app/requirements-chat.txt requirements.txt
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
@@ -244,13 +244,13 @@ RUN groupadd --gid 1000 appuser && \
 RUN mkdir -p /exec-workspace && \
     chown -R appuser:appuser /exec-workspace
 
-COPY --chown=appuser:appuser services/kdcube-ai-app/ .
+COPY --chown=appuser:appuser src/kdcube-ai-app/ .
 
 COPY deployment/docker/all_in_one/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-CMD ["python", "kdcube_ai_app/apps/chat/api/web_app.py"]
+CMD ["python", "kdcube_ai_app/apps/chat/ingress/web_app.py"]
 ```
 
 #### 3. Create Entrypoint Script

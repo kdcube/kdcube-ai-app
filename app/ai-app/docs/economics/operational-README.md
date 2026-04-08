@@ -18,7 +18,7 @@ This document describes the tables, maintenance jobs, emailing, and runtime conf
 
 The authoritative schema is defined here:
 
-- [deploy-kdcube-control-plane.sql](../../services/kdcube-ai-app/kdcube_ai_app/ops/deployment/sql/control_plane/deploy-kdcube-control-plane.sql)
+- [deploy-kdcube-control-plane.sql](../../src/kdcube-ai-app/kdcube_ai_app/ops/deployment/sql/control_plane/deploy-kdcube-control-plane.sql)
 
 Key table groups:
 
@@ -81,7 +81,7 @@ Entry points:
 
 - Automatic: `stripe_reconcile_scheduler_loop()` — background asyncio task, started at app lifespan.
 - Manual trigger: `POST /api/economics/admin/stripe/reconcile`
-- Code: `apps/chat/api/economics/routines.py` → `run_stripe_reconcile_sweep_once()`
+- Code: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/economics/routines.py` → `run_stripe_reconcile_sweep_once()`
 
 Configuration (env vars):
 
@@ -118,7 +118,7 @@ Entry points:
 
 - Automatic: `subscription_rollover_scheduler_loop()` — background asyncio task, started at app lifespan.
 - Manual trigger: `POST /api/economics/admin/subscriptions/rollover/sweep`
-- Code: `apps/chat/api/economics/routines.py` → `run_subscription_rollover_sweep_once()`
+- Code: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/economics/routines.py` → `run_subscription_rollover_sweep_once()`
 
 Configuration (env vars):
 
@@ -173,7 +173,7 @@ Admin alerts are sent for:
 
 Implementation:
 
-- [email.py](../../services/kdcube-ai-app/kdcube_ai_app/infra/channel/email.py)
+- [email.py](../../src/kdcube-ai-app/kdcube_ai_app/infra/channel/email.py)
 
 Required env vars are listed in the service config doc.
 
@@ -198,7 +198,7 @@ Recommended routine checks:
 - Subscription balances for paid users: `GET /api/economics/admin/subscriptions/user/{user_id}`
 - Expired reservation cleanup: `POST /api/economics/admin/subscriptions/reservations/reap-all`
 - Project budget balance: `GET /api/economics/admin/app-budget/status`
-- One-user usage diagnosis: run `apps/chat/sdk/infra/economics/profile_user_economics.py` inside the processor container.
+- One-user usage diagnosis: run `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/infra/economics/profile_user_economics.py` inside the processor container.
 
 ## Redis Keys Reference
 
@@ -226,6 +226,6 @@ Lock TTLs are configured via `STRIPE_RECONCILE_LOCK_TTL_SECONDS` and
 
 If you need a clean reset of the control‑plane schema:
 
-- Standard drop script: [drop-kdcube-control-plane.sql](../../services/kdcube-ai-app/kdcube_ai_app/ops/deployment/sql/control_plane/drop-kdcube-control-plane.sql)
+- Standard drop script: [drop-kdcube-control-plane.sql](../../src/kdcube-ai-app/kdcube_ai_app/ops/deployment/sql/control_plane/drop-kdcube-control-plane.sql)
 
 Always re‑deploy using the authoritative schema file linked at the top.

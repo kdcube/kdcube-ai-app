@@ -168,7 +168,7 @@ Until then, **keep unified versioning**.
 ## 8) CLI (immediate use cases)
 
 The CLI lives at:
-`services/kdcube-ai-app/kdcube_cli`
+`src/kdcube-ai-app/kdcube_cli`
 
 Immediate use cases to support:
 

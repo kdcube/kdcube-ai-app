@@ -43,11 +43,11 @@ mismatched sessions are rejected (401/403).
 ## Supported auth providers
 
 1) Cognito (production)
-- Implementation: [Cognito auth](../../../services/kdcube-ai-app/kdcube_ai_app/auth/implementations/cognito.py)
+- Implementation: [Cognito auth](../../../src/kdcube-ai-app/kdcube_ai_app/auth/implementations/cognito.py)
 - Uses access token (Bearer) and optional ID token for profile/roles.
 
 2) SimpleIDP (dev / local)
-- Implementation: [SimpleIDP](../../../services/kdcube-ai-app/kdcube_ai_app/apps/middleware/simple_idp.py)
+- Implementation: [SimpleIDP](../../../src/kdcube-ai-app/kdcube_ai_app/apps/middleware/simple_idp.py)
 - Token-to-user mapping stored in `idp_users.json` (or `IDP_DB_PATH`).
 
 3) Delegated auth (proxy login service)
@@ -83,9 +83,9 @@ support:
 
 Notes:
 - For SSE, query param tokens are injected into headers in
-  [chat web app](../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/api/web_app.py) before gateway processing.
+  [chat web app](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/web_app.py) before gateway processing.
 - For Socket.IO, the gateway session upgrade uses auth payload first, then cookies
-  in [ingress chat core](../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/api/ingress/chat_core.py).
+  in [ingress chat core](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/chat_core.py).
 - If cookies are present, they are treated as valid credentials (same as headers).
 
 ## Configuration
@@ -109,9 +109,9 @@ Role sets are defined in `kdcube_ai_app/auth/AuthManager.py`.
 
 ## References
 - Gateway/auth adapters:
-  [gateway adapter](../../../services/kdcube-ai-app/kdcube_ai_app/apps/middleware/gateway.py),
-  [auth adapter](../../../services/kdcube-ai-app/kdcube_ai_app/apps/middleware/auth.py)
+  [gateway adapter](../../../src/kdcube-ai-app/kdcube_ai_app/apps/middleware/gateway.py),
+  [auth adapter](../../../src/kdcube-ai-app/kdcube_ai_app/apps/middleware/auth.py)
 - SSE + Socket.IO ingress:
-  [SSE chat](../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/api/sse/chat.py),
-  [Socket.IO chat](../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/api/socketio/chat.py),
-  [ingress chat core](../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/api/ingress/chat_core.py)
+  [SSE chat](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/sse/chat.py),
+  [Socket.IO chat](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/socketio/chat.py),
+  [ingress chat core](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/chat_core.py)

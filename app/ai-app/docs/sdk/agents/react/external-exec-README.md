@@ -17,8 +17,8 @@ This page focuses on the React-agent view of external execution.
 
 For the runtime/deployment internals, see:
 
-- [exec-logging-error-propagation-README.md](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/docs/exec/exec-logging-error-propagation-README.md)
-- [distributed-exec-README.md](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/docs/exec/distributed-exec-README.md)
+- [exec-logging-error-propagation-README.md](../../../exec/exec-logging-error-propagation-README.md)
+- [distributed-exec-README.md](../../../exec/distributed-exec-README.md)
 
 ### Bundle code vs bundle readonly data
 
@@ -27,7 +27,7 @@ External exec transports two different bundle-side inputs:
 - bundle code root
 - per-bundle readonly storage dir
 
-The bundle code root is where bundle-local tools live, for example:
+The bundle code root is where bundle-local tools live, for example bundle-relative paths like:
 
 - `tools/react_tools.py`
 - `knowledge/resolver.py`
@@ -49,16 +49,16 @@ Current transport behavior:
   - bundle code root is snapshotted and restored
   - `BUNDLE_STORAGE_DIR` is snapshotted and restored
 
-Example: `react.doc`
+Example: `kdcube.copilot`
 
-- bundle code lives under `/bundles/react.doc@...`
+- bundle code lives under `/bundles/kdcube.copilot@...`
 - its built knowledge space lives under the per-bundle storage dir
 - `react.search_knowledge(...)` reads that physical knowledge space through `knowledge/resolver.py`
 - if isolated exec loads the resolver without having run the bundle entrypoint first, the resolver falls back to `BUNDLE_STORAGE_DIR`
 
 ### What the agent calls
 
-The public tool is `exec_tools.execute_code_python(...)` in [exec_tools.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tools/exec_tools.py).
+The public tool is `exec_tools.execute_code_python(...)` in [exec_tools.py](../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tools/exec_tools.py).
 
 Current public contract:
 
@@ -66,6 +66,10 @@ Current public contract:
 - `contract` is required
 - `contract` must be a non-empty list (or JSON string) of files to produce
 - each contract file must live under `turn_<id>/files/...`
+- each contract item supports:
+  - `filename`
+  - `description`
+  - optional `visibility` = `external|internal` (default: `external`)
 
 Important current limitation:
 
@@ -105,6 +109,16 @@ So even in the normal file-producing mode, the agent already receives a hybrid r
 - plus log/diagnostic text from the execution
 
 That means the tool is not "files only". It is "contracted files, with logs folded into the textual result".
+
+Visibility rules for contracted files:
+
+- `visibility=external`
+  - eligible for hosting / RN emission
+  - shown to the user as a produced file artifact
+- `visibility=internal`
+  - kept in OUT_DIR and timeline for agent/runtime use
+  - not hosted
+  - not emitted to the user as a file attachment
 
 ### Exactly how the agent should write code if it wants logs to appear
 

@@ -29,3 +29,19 @@ export interface RedisBrowserResponse extends PanelResponse {
 export interface EconomicUsageResponse extends PanelResponse {
     economic_usage: string[];
 }
+
+export interface VersatilePreferencesResponse extends PanelResponse {
+    preferences_widget: string[];
+}
+
+export interface BundleWidgetResponse extends PanelResponse {
+    widget?: {
+        alias?: string;
+        icon?: {
+            tailwind?: string | null;
+            lucide?: string | null;
+        } | null;
+        roles?: string[] | null;
+    };
+    [alias: string]: unknown;
+}

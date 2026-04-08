@@ -9,6 +9,8 @@ see_also:
   - ks:docs/service/comm/comm-system.md
   - ks:docs/service/auth/auth-README.md
   - ks:docs/sdk/bundle/bundle-firewall-README.md
+  - ks:docs/clients/client-communication-README.md
+  - ks:docs/clients/sse-events-README.md
 ---
 # Communication Integrations (External + Internal)
 
@@ -50,7 +52,7 @@ If you are implementing a UI, API client, or a new transport, start here.
   - multipart/form-data for attachments
 
 **Code references**
-- SSE transport: [sse/chat.py](../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/api/sse/chat.py)
+- SSE transport: [sse/chat.py](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/sse/chat.py)
 - SSE relay: [CHAT-RELAY-SESSION-SUBSCR-SSE-SOCKETIO-FUNOUT.README.md](CHAT-RELAY-SESSION-SUBSCR-SSE-SOCKETIO-FUNOUT.README.md)
 
 ### C) Socket.IO (stream + send)
@@ -68,7 +70,7 @@ If you are implementing a UI, API client, or a new transport, start here.
 - Payload: JSON (message + metadata) + optional binary frames for attachments
 
 **Code reference**
-- Socket.IO transport: [socketio/chat.py](../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/api/socketio/chat.py)
+- Socket.IO transport: [socketio/chat.py](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/socketio/chat.py)
 
 ---
 
@@ -94,9 +96,9 @@ The gateway/auth adapters accept tokens from multiple sources, so clients can ch
 3) Cookies (fallback)
 
 **Server entrypoints**
-- Gateway adapter: [middleware/gateway.py](../../../services/kdcube-ai-app/kdcube_ai_app/apps/middleware/gateway.py)
-- Auth adapter: [middleware/auth.py](../../../services/kdcube-ai-app/kdcube_ai_app/apps/middleware/auth.py)
-- Socket/SSE helpers: [middleware/token_extract.py](../../../services/kdcube-ai-app/kdcube_ai_app/apps/middleware/token_extract.py)
+- Gateway adapter: [middleware/gateway.py](../../../src/kdcube-ai-app/kdcube_ai_app/apps/middleware/gateway.py)
+- Auth adapter: [middleware/auth.py](../../../src/kdcube-ai-app/kdcube_ai_app/apps/middleware/auth.py)
+- Socket/SSE helpers: [middleware/token_extract.py](../../../src/kdcube-ai-app/kdcube_ai_app/apps/middleware/token_extract.py)
 
 ---
 
@@ -114,7 +116,7 @@ The gateway/auth adapters accept tokens from multiple sources, so clients can ch
   - `registered` or `privileged` depending on roles.
 
 **Upgrade implementation**
-- [ingress/chat_core.py](../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/api/ingress/chat_core.py)
+- [ingress/chat_core.py](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/chat_core.py)
 
 ---
 
@@ -132,8 +134,8 @@ The gateway/auth adapters accept tokens from multiple sources, so clients can ch
   - binary frames follow the JSON payload (one per attachment)
 
 **Code references**
-- SSE attachments: [sse/chat.py](../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/api/sse/chat.py)
-- Socket.IO attachments: [socketio/chat.py](../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/api/socketio/chat.py)
+- SSE attachments: [sse/chat.py](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/sse/chat.py)
+- Socket.IO attachments: [socketio/chat.py](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/socketio/chat.py)
 
 ---
 
@@ -188,6 +190,39 @@ Supported by default in the platform:
 Custom markers are allowed, but the client must know how to render them.
 See [comm-system.md](comm-system.md) for the envelope details.
 
+### Client-visible payload patterns
+
+The platform already has well-understood rendering behavior for these shapes:
+
+| Pattern | Transport shape | Typical use |
+| --- | --- | --- |
+| Main answer | `chat.delta` + `marker="answer"` | assistant answer text |
+| Thinking/progress text | `chat.delta` + `marker="thinking"` | transient thought/progress stream |
+| Subsystem JSON | `chat.delta` + `marker="subsystem"` + `extra.sub_type` | tool/widget-specific panels |
+| Canvas artifact | `chat.delta` + `marker="canvas"` + `extra.format`/`artifact_name` | inline rendered artifact/content |
+| Timeline entry | `chat.delta` + `marker="timeline_text"` | compact visible activity entries |
+| Custom typed event | `chat_step` route with custom `env.type` | domain-specific semantic event |
+
+For the client-facing contract and examples, see:
+- [docs/clients/client-communication-README.md](../../clients/client-communication-README.md)
+- [docs/clients/sse-events-README.md](../../clients/sse-events-README.md)
+
+### Which method owns which concept
+
+| Method | Main purpose | `marker` | `broadcast` |
+| --- | --- | --- | --- |
+| `comm.step(...)` | progress/status event | no | not exposed by the helper |
+| `comm.delta(...)` | stream chunk | yes | not exposed by the helper |
+| `comm.event(...)` | custom typed event | no | yes |
+| `comm.service_event(...)` | service-level event | no | yes |
+| `comm.emit(...)` | low-level socket route control | N/A | yes |
+
+Rule of thumb:
+
+- if you are asking “which marker should I use?”, you almost certainly want `comm.delta(...)`
+- if you are asking “should this be broadcast?”, you probably want `comm.event(...)`,
+  `comm.service_event(...)`, or the low-level `comm.emit(...)`
+
 ---
 
 ## 7) Bundle‑level outbound firewall
@@ -201,23 +236,34 @@ See: [docs/sdk/bundle/bundle-firewall-README.md](../../sdk/bundle/bundle-firewal
 ### Examples (per marker)
 
 ```python
-from kdcube_ai_app.apps.chat.sdk.comm.emitters import AIBEmitters
-emit = AIBEmitters(self.comm)
-
 # thinking
-await emit.delta(text="Working it out…", index=0, marker="thinking", agent="gate")
+await self.comm.delta(text="Working it out…", index=0, marker="thinking", agent="gate")
 
 # answer
-await emit.delta(text="Here is the answer.", index=0, marker="answer", agent="answer.generator")
+await self.comm.delta(text="Here is the answer.", index=0, marker="answer", agent="answer.generator")
 
 # subsystem (widget stream)
-await emit.delta(text='{"status":"running"}', index=0, marker="subsystem", agent="tool.exec")
+await self.comm.delta(text='{"status":"running"}', index=0, marker="subsystem", agent="tool.exec")
 
 # canvas (inline artifact stream)
-await emit.delta(text='{"type":"chart","data":{...}}', index=0, marker="canvas", agent="viz")
+await self.comm.delta(text='{"type":"chart","data":{...}}', index=0, marker="canvas", agent="viz")
 
 # timeline_text (compact timeline entries)
-await emit.delta(text="Loaded 3 prior turns", index=0, marker="timeline_text", agent="orchestrator")
+await self.comm.delta(text="Loaded 3 prior turns", index=0, marker="timeline_text", agent="orchestrator")
+```
+
+Custom typed event example:
+
+```python
+await self.comm.event(
+    type="bundle.preferences.updated",
+    step="preferences.updated",
+    status="completed",
+    title="Preferences updated",
+    data={"keys": ["city", "diet"]},
+    agent="preferences",
+    broadcast=True,
+)
 ```
 
 ---
@@ -236,5 +282,5 @@ await emit.delta(text="Loaded 3 prior turns", index=0, marker="timeline_text", a
 
 If you are a bundle author, see:
 - [comm-system.md](comm-system.md) (producer API + filters)
-- [emitters.py](../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/comm/emitters.py) and
-  [agentic_app (proc web_app.py)](../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/web_app.py)
+- [emitters.py](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/comm/emitters.py) and
+  [agentic_app (proc web_app.py)](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/web_app.py)

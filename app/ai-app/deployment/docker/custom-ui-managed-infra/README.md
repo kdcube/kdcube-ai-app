@@ -1,5 +1,5 @@
 ---
-id: ks:deploy/docker/custom-ui-managed-infra/README.md
+id: ks:deployment/docker/custom-ui-managed-infra/README.md
 title: "Custom UI + Managed Infra (Docker Compose)"
 summary: "Run KDCube services with a custom UI and OpenResty proxy against managed Postgres/Redis."
 tags: ["deployment", "docker", "compose", "custom-ui", "managed-infra", "nginx", "openresty"]

@@ -11,6 +11,7 @@ see_also:
   - ks:docs/sdk/agents/react/source-pool-README.md
   - ks:docs/sdk/agents/react/external-exec-README.md
   - ks:docs/exec/distributed-exec-README.md
+  - ks:docs/sdk/agents/react/design/files-vs-outputs-README.md
 ---
 # ReAct Turn Workspace
 
@@ -22,18 +23,90 @@ This document defines the **actual workspace structure** used by ReAct and how i
 
 The workspace is execution state. Canonical conversation state still lives in timeline/sources/turn-log artifacts.
 
+Scope:
+- this document describes the concrete workspace filesystem and lifecycle
+- the current namespace separation between workspace files and non-workspace outputs is tracked in `design/files-vs-outputs-README.md`
+
 ## Effective agent workspace model
 
-The agent works with a **versioned workspace**, not a single mutable project tree:
-- History is preserved physically under `out/turn_<id>/files/...` and `out/turn_<id>/attachments/...`.
-- Writes for the current turn go only to `out/<current_turn>/files/...`.
+The agent does **not** perceive one flat filesystem. It reasons across several surfaces:
+
+```text
+VISIBLE / ADDRESSABLE WORKSPACE MODEL
+
+1) CURRENT TURN OUT_DIR (physical; current-turn execution surface)
+   out/
+     turn_<current_turn>/
+       files/           # durable workspace/project namespace
+       outputs/         # non-workspace produced artifacts
+       attachments/     # current-turn attachments and rehosted copies pulled into this turn
+     logs/              # runtime logs and diagnostics
+     timeline.json
+     ...
+   work/                # exec scratch only; not stable collaboration state
+
+2) CONVERSATION ARTIFACT MEMORY (logical; cross-turn; not a browsable folder)
+   ar:...  tc:...  so:...  su:...
+   fi:<older_turn>.files/...
+   fi:<older_turn>.user.attachments/...
+
+3) BUNDLE KNOWLEDGE SPACE `ks:` (logical; read-only virtual folder)
+   ks:<bundle-defined-path>/...
+   ...
+
+```
+
+Current behavior:
+- History is preserved physically under `out/turn_<id>/files/...`, `out/turn_<id>/outputs/...`, and `out/turn_<id>/attachments/...`.
+- Writes for the current turn go to:
+  - `out/<current_turn>/files/...` for durable workspace/project state
+  - `out/<current_turn>/outputs/...` for non-workspace produced artifacts
 - Reads can target:
   - versioned turn artifacts and attachments
   - any readable file already present under `out/` (for example `out/logs/docker.err.log`)
+  - exact logical `ks:` paths via `react.read`
 - The practical mental model is:
   - `turn_<id>/files/...` and `turn_<id>/attachments/...` preserve origin and history
   - the latest visible version of a file path is the current logical workspace view
   - runtime folders like `logs/` are part of OUT_DIR but are not part of the turn-versioned file namespace
+  - `ks:` is not inside OUT_DIR at all; it is a bundle-owned read-only virtual space
+
+Workspace implementation (`RuntimeCtx.workspace_implementation`):
+- `custom`
+  - the agent is taught to use `fi:` plus `react.pull(paths=[...])` for historical materialization and `react.checkout(paths=[...])` for active workspace seeding
+  - `.files/...` pulls hydrate from artifact/timeline/hosting-backed snapshot state
+  - the agent is not instructed to treat the activated workspace as git
+- `git`
+  - the agent is taught to use `fi:` plus `react.pull(paths=[...])` for historical materialization and `react.checkout(paths=[...])` for active workspace seeding
+  - `.files/...` pulls hydrate from git-backed lineage snapshots
+  - the current turn root `out/<current_turn>/` is bootstrapped as a local git repo
+  - that current-turn repo keeps lineage history available but does not eagerly populate the worktree
+  - ANNOUNCE may show `ls workspace` so React can see the existing top-level project folders already established in the conversation workspace
+  - the agent may use local git inspection/history/edit commands inside that current-turn repo, except pull/push/fetch
+- in both modes:
+  - `fi:<turn_id>.files/<scope-or-subtree>` may be pulled as a subtree
+  - `fi:<turn_id>.outputs/<file>` may be pulled as an exact file ref
+  - `fi:<turn_id>.user.attachments/<name>` may be pulled only as an exact file ref
+  - folder pulls do not imply hosted binaries; binary files must be named point-wise
+  - in `git` mode, exact non-text `.files/...` refs that resolve to hosted artifacts are still hydrated from artifact/hosting history, not from git
+
+### Knowledge space and exec-time path resolution
+
+`ks:` is readable by logical path, for example `react.read(["ks:<bundle-defined-path>"])`.
+
+Important constraints:
+- `react.search_files` does not browse `ks:`.
+- `fetch_ctx` does not support `ks:`.
+- `ks:` becomes a physical directory tree only inside isolated exec **if** the bundle exposes a namespace resolver/helper for it.
+
+When such a resolver exists, the generated code flow is:
+1. start from a logical ref such as `ks:<bundle-defined-root>`
+2. call the bundle/helper resolver inside exec
+3. receive an exec-local physical path
+4. browse descendants in code
+5. emit discovered logical refs like `ks:<bundle-defined-root>/foo/bar.py` back into OUT_DIR artifacts or logs so the agent can later call `react.read` on them
+
+If the bundle does **not** expose a resolver for directory-style browsing, then `ks:` remains readable only by exact logical path or by bundle-specific search tools. It is not a normal browseable filesystem from standard React tools.
 
 ## Lifecycle at a glance
 
@@ -65,6 +138,13 @@ Runtime bindings set immediately:
 - `RuntimeCtx.workdir` / `RuntimeCtx.outdir`
 - env vars: `WORKDIR`, `OUTPUT_DIR`
 - context vars: `WORKDIR_CV`, `OUTDIR_CV`
+
+When `workspace_implementation=git`:
+- runtime also bootstraps `out/turn_<current_turn>/` as a local git repo
+- if the lineage branch already exists, that repo is seeded from the latest lineage head
+- runtime keeps the repo history/refs available but leaves the worktree empty until the agent explicitly materializes files
+- if the lineage branch does not exist yet, runtime creates an empty orphan repo for the turn
+- engineering, not exec, is responsible for later remote synchronization
 
 ## Phase 2: What is populated during a normal turn
 
@@ -125,8 +205,25 @@ Logical `fi:` paths map to physical `out/` paths by convention:
 Other logical paths (`ar:`, `tc:`, `so:`) resolve from timeline state and are not always direct files.
 
 Workspace/read-write summary:
-- `react.write`, `react.patch`, rendering tools, and exec outputs write to the current turn file namespace.
+- `react.write`, `react.patch`, rendering tools, and exec outputs may write to either:
+  - `turn_<id>/files/...` for durable workspace state
+  - `turn_<id>/outputs/...` for non-workspace produced artifacts
 - `react.read` can load any readable OUT_DIR file through `fi:...`.
+- `react.pull` materializes selected `fi:` snapshot refs locally under OUT_DIR as historical/reference material.
+- `react.checkout` defines what is materialized into the active current-turn `files/` workspace.
+- `.files/...` pulls come from:
+  - artifact/timeline/hosting-backed snapshot state in `custom`
+  - git-backed lineage snapshots in `git`
+- `.outputs/...` pulls always come from artifact/timeline/hosting-backed snapshot state
+- exact attachment pulls still come from hosted artifact storage in both modes
+- exact non-text `.files/...` refs also stay on the hosted/artifact path when timeline metadata says the file is a hosted binary artifact
+- `react.pull` supports subtree pulls only for `fi:<turn_id>.files/...`; `fi:<turn_id>.outputs/...` and attachment/binary pulls must be exact file refs
+- `react.checkout(mode="replace")` accepts ordered `fi:<turn_id>.files/...` refs and replaces `turn_<current>/files/` before applying them
+- `react.checkout(mode="overlay")` accepts ordered `fi:<turn_id>.files/...` refs and applies them into the existing current workspace without deleting unspecified files
+- exec/code and historical cross-turn patching no longer auto-materialize historical workspace files; if the file is not already local, React must `react.pull(...)` it first
+- when continuing the same project, React is expected to reuse the existing top-level `files/<scope>/...` folder rather than inventing a sibling scope
+- if the old scope name is clearly weak or misleading, React may intentionally rename/migrate the project tree to a better canonical scope
+- a rename is different from sibling drift: the project should continue under the new scope instead of leaving the old scope active and starting a second one
 - `react.search_files` can search all of OUT_DIR and returns `logical_path` for OUT_DIR hits so the agent can immediately call `react.read`.
 - workdir is searchable but is still not a general-purpose readable namespace for `react.read`.
 
@@ -155,6 +252,7 @@ Before remote execution, host builds a reduced workspace (`build_exec_snapshot_w
 - copy full `work/`
 - create filtered `out/timeline.json`
 - include only referenced files required by code (`fetch_ctx`/file refs)
+- if any referenced file belongs to a git-backed turn root, copy the whole `out/turn_<id>/` tree so `.git` survives in isolated exec
 - write `out/exec_snapshot_manifest.json`
 
 Temporary snapshot tree:
@@ -230,11 +328,11 @@ Workspace (`work/` + `out/`) is execution state and diagnostics. Use it for runt
 ## Code map
 
 Primary implementation points:
-- workspace origin: [`kdcube_ai_app/apps/chat/sdk/solutions/react/v2/browser.py`](../../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/browser.py)
-- root selection: [`kdcube_ai_app/apps/chat/sdk/solutions/infra.py`](../../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/infra.py)
-- tool call index/files: [`kdcube_ai_app/apps/chat/sdk/runtime/tool_index.py`](../../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/tool_index.py), [`kdcube_ai_app/apps/chat/sdk/tools/io_tools.py`](../../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tools/io_tools.py)
-- local timeline file writes: [`kdcube_ai_app/apps/chat/sdk/solutions/react/v2/timeline.py`](../../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/timeline.py)
-- lightweight distributed snapshot: [`kdcube_ai_app/apps/chat/sdk/solutions/react/v2/solution_workspace.py`](../../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/solution_workspace.py)
-- snapshot upload/path conventions: [`kdcube_ai_app/apps/chat/sdk/runtime/external/distributed_snapshot.py`](../../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/external/distributed_snapshot.py)
-- remote restore/upload entrypoint: [`kdcube_ai_app/apps/chat/sdk/runtime/isolated/py_code_exec_entry.py`](../../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/isolated/py_code_exec_entry.py)
-- Fargate launch + merge-back: [`kdcube_ai_app/apps/chat/sdk/runtime/external/fargate.py`](../../../../services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/external/fargate.py)
+- workspace origin: [`kdcube_ai_app/apps/chat/sdk/solutions/react/v2/browser.py`](../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/browser.py)
+- root selection: [`kdcube_ai_app/apps/chat/sdk/solutions/infra.py`](../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/infra.py)
+- tool call index/files: [`kdcube_ai_app/apps/chat/sdk/runtime/tool_index.py`](../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/tool_index.py), [`kdcube_ai_app/apps/chat/sdk/tools/io_tools.py`](../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tools/io_tools.py)
+- local timeline file writes: [`kdcube_ai_app/apps/chat/sdk/solutions/react/v2/timeline.py`](../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/timeline.py)
+- lightweight distributed snapshot: [`kdcube_ai_app/apps/chat/sdk/solutions/react/v2/solution_workspace.py`](../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/solution_workspace.py)
+- snapshot upload/path conventions: [`kdcube_ai_app/apps/chat/sdk/runtime/external/distributed_snapshot.py`](../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/external/distributed_snapshot.py)
+- remote restore/upload entrypoint: [`kdcube_ai_app/apps/chat/sdk/runtime/isolated/py_code_exec_entry.py`](../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/isolated/py_code_exec_entry.py)
+- Fargate launch + merge-back: [`kdcube_ai_app/apps/chat/sdk/runtime/external/fargate.py`](../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/external/fargate.py)

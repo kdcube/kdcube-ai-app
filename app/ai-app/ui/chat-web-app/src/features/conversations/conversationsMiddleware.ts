@@ -8,9 +8,9 @@ import {
     selectConversationId,
     setConversationId
 } from "../chat/chatStateSlice.ts";
-import {fetchConversation, getConversations} from "./conversationsAPI.ts";
+import {fetchConversation, getConversations, deleteConversation as deleteConversationAPI} from "./conversationsAPI.ts";
 import {
-    conversationStatusUpdateRequired,
+    conversationStatusUpdateRequired, removeConversation,
     selectConversationDescriptorsLoading,
     selectConversationLoading,
     selectConversationStatusUpdateRequired,
@@ -70,8 +70,23 @@ export const loadConversations = (conversationId: string | null): LoadConversati
     }
 }
 
+const DELETE_CONVERSATION = "conversations/deleteConversation"
+
+interface DeleteConversationAction extends UnknownAction {
+    type: typeof DELETE_CONVERSATION;
+    payload: string;
+}
+
+export const deleteConversation = (conversationId: string): DeleteConversationAction => {
+    return {
+        type: DELETE_CONVERSATION,
+        payload: conversationId
+    }
+}
+
 type ConversationURLAction = LoadConversationsAction
     | LoadConversationListAction
+    | DeleteConversationAction
     | ReturnType<typeof setConversationId>
     | ReturnType<typeof chatConnected>;
 
@@ -293,6 +308,16 @@ const conversationsMiddleware = (): Middleware => {
                         }
                     }
                     break;
+                }
+                case DELETE_CONVERSATION: {
+                    const conversationId = (action as DeleteConversationAction).payload;
+                    dispatch(removeConversation(conversationId))
+                    const state = store.getState()
+                    if (conversationId === selectConversationId(state)) {
+                        dispatch(newConversation())
+                    }
+                    deleteConversationAPI(selectTenant(state), selectProject(state), conversationId).catch(console.error)
+                    break
                 }
                 case chatConnected.type: {
                     const state = store.getState()

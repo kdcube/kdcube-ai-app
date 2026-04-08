@@ -11,7 +11,14 @@ gateway:
       - "^.*/conversations/[^/]+/[^/]+/turns-with-feedbacks$"
       - "^.*/conversations/[^/]+/[^/]+/feedback/conversations-in-period$"
     proc:
+      - "^.*/integrations/bundles/[^/]+/[^/]+/[^/]+$"
+      - "^.*/integrations/bundles/[^/]+/[^/]+/[^/]+/widgets$"
       - "^.*/integrations/bundles/[^/]+/[^/]+/operations/[^/]+$"
+      - "^.*/integrations/bundles/[^/]+/[^/]+/[^/]+/operations/[^/]+$"
+      - "^.*/integrations/bundles/[^/]+/[^/]+/[^/]+/public/[^/]+$"
+      - "^.*/integrations/bundles/[^/]+/[^/]+/[^/]+/widgets/[^/]+$"
+      - "^.*/integrations/static/[^/]+/[^/]+/[^/]+$"
+      - "^.*/integrations/static/[^/]+/[^/]+/[^/]+/.*$"
 
   bypass_throttling_patterns:
     ingress:

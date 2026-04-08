@@ -17,7 +17,8 @@ This doc describes how the **announce** block is used for ReAct v2.
 - An **ephemeral tail block** added by the runtime for each decision round.
 - Contains ANNOUNCE️:
   - iteration
-  - current plan with status markers
+  - open-plan summary with plan ids, snapshot refs, and status markers (if any exist)
+  - compact workspace status
   - authoritative temporal context (UTC + user timezone)
   - optional system notices (e.g., cache TTL pruning)
 
@@ -42,12 +43,34 @@ When cache TTL pruning occurs, the render path appends a one-time announce block
 containing a system notice. It appears after the budget section and advises
 the agent to use `react.read(path)` to restore truncated context.
 
+## Workspace state in ANNOUNCE
+ANNOUNCE may include a compact `[WORKSPACE]` section.
+
+Its purpose is operational guidance, not full git/debug observability.
+
+It can include:
+- `implementation: custom|git`
+- `current_turn_root`
+- `materialized_turn_roots`
+- `current_turn_scopes`
+- in `git` mode only:
+  - `repo_mode`
+  - `repo_status`
+- publish state:
+  - `current_turn_publish`
+  - `last_published_turn`
+  - `publish_error` only when the current turn publish failed
+
+Important rule:
+- ANNOUNCE should stay compact
+- raw git refs, commit shas, and other low-level publish metadata do not belong here unless there is a failure that React must react to immediately
+
 ## Why it exists
 - Keeps high‑frequency state updates out of the cached timeline.
 - Allows downstream agents (final answer generator) to see the **last ℹ️ ANNOUNCE ℹ️**
   via the persisted contribution block.
 
-## Example (single plan)
+## Example (open plans)
 ```
 ╔══════════════════════════════════════╗
 ║  ANNOUNCE — Iteration 3/15           ║
@@ -63,15 +86,42 @@ the agent to use `react.read(path)` to restore truncated context.
   current_utc_date: 2026-02-10
   All relative dates MUST be interpreted against this context.
 
-[ACTIVE PLAN]
-  - plans:
-    • plan #1 (current) last=2026-02-07T19:22:10Z
+[OPEN PLANS]
+  - plans: 2 visible
+    • plan_id=plan_alpha
+      snapshot_ref=ar:plan.latest:plan_alpha
+      created_turn=turn_1
+      created_ts=2026-02-07T19:10:00Z
+      last_update_turn=turn_1
+      last_update_ts=2026-02-07T19:22:10Z
       ✓ [1] gather sources
       □ [2] draft report
-  - plan_status: done=1 failed=0 pending=1
-  - plan_complete: false
+    • plan_id=plan_beta (current)
+      snapshot_ref=ar:plan.latest:plan_beta
+      created_turn=turn_3
+      created_ts=2026-02-10T13:50:00Z
+      last_update_turn=turn_3
+      last_update_ts=2026-02-10T13:54:00Z
+      □ [1] draft answer
+      □ [2] verify citations
+
+[WORKSPACE]
+  implementation: git
+  current_turn_root: turn_1775153963506_m1wj6f/
+  materialized_turn_roots: turn_1775153855448_qryil1, turn_1775153963506_m1wj6f (current)
+  current_turn_scopes:
+    - docs/ (2 files)
+    - src/ (5 files)
+  repo_mode: sparse git repo
+  repo_status: dirty
+  current_turn_publish: pending
 ```
 
 ## Notes
-- Only the latest plan is shown in ACTIVE PLAN.
+- ANNOUNCE is the open/current plan presentation layer; React does not rely on a separate persistent `react.plan.active` tail artifact.
+- Closed, complete, and superseded plans are excluded from ANNOUNCE.
+- An open plan is not automatically current. Only explicitly current plans carry the `(current)` tag.
+- If a plan is shown without `(current)`, React must activate it before acknowledging any of its steps.
 - Announce is not cached and is re‑rendered each decision round.
+- The `[WORKSPACE]` section is intentionally brief; detailed publish metadata belongs in internal event blocks, not the visible announce surface.
+- The example uses simplified plan ids (`plan_alpha`, `plan_beta`) for readability. Real runtime-generated `plan_id` values may look like `plan:turn_3:efgh5678`, and the matching stable alias would then be `ar:plan.latest:plan:turn_3:efgh5678`.

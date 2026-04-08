@@ -37,7 +37,7 @@ kdcube-setup
 Prerequisites: Python 3.9+, Git, and Docker (Docker Desktop on macOS/Windows).
 
 #### Docs:
-- [CLI installer](app/ai-app/services/kdcube-ai-app/kdcube_cli/README.md)
+- [CLI installer](app/ai-app/src/kdcube-ai-app/kdcube_cli/README.md)
 - [Docker Compose (all‑in‑one)](app/ai-app/deployment/docker/custom-ui-managed-infra/README.md)
 
 ---

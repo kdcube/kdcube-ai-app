@@ -3,7 +3,7 @@ id: ks:docs/sdk/agents/react/react-tools-README.md
 title: "React Tools"
 summary: "React‑only tools catalog injected into the decision runtime."
 tags: ["sdk", "agents", "react", "tools"]
-keywords: ["react.read", "react.write", "react.search_files", "react.memsearch", "react.search_knowledge"]
+keywords: ["react.read", "react.pull", "react.write", "react.search_files", "react.memsearch", "react.search_knowledge"]
 see_also:
   - ks:docs/sdk/agents/react/artifact-discovery-README.md
   - ks:docs/sdk/agents/react/event-blocks-README.md
@@ -30,7 +30,7 @@ Common behaviors
 Data spaces (quick guide)
 - Knowledge Space (`ks:`): read-only reference files prepared by the system (docs, indexes, repos).
 - OUT_DIR (`fi:`): per‑turn output artifacts (read/write during the turn).
-- Conversation Workspace (future): shared writable workspace across turns (not implemented yet).
+- Versioned snapshot refs (`fi:<turn_id>...`): historical artifacts and workspace slices.
 
 Accepted path families (built-in react tools)
 - `react.read` accepts logical paths, not raw host/runtime paths:
@@ -40,6 +40,9 @@ Accepted path families (built-in react tools)
   - `su:...`
   - `tc:...`
   - bundle-provided logical namespaces such as `ks:...` when the active bundle supports them
+- `react.pull` accepts logical `fi:` paths only:
+  - `fi:<turn_id>.files/<path-or-subtree>` for versioned files/workspace slices
+  - `fi:<turn_id>.user.attachments/<file>` or legacy `fi:<turn_id>.attachments/<file>` for exact attachment/binary pulls
 - `react.file`, `react.patch`, and `react.stream` accept OUT_DIR-relative file targets under the current turn's `files/` area. They do not accept logical `fi:` paths.
 - `react.search_files` accepts only rooted search prefixes:
   - `outdir`
@@ -75,6 +78,61 @@ Behavior by path:
 Example result (simplified):
 ```json
 { "type": "react.tool.result", "path": "ar:turn_123.artifacts.notes", "mime": "text/markdown", "text": "..." }
+```
+
+react.pull
+- Purpose: materialize selected `fi:` snapshot refs locally under OUT_DIR so code/execution can use them by physical path.
+- Use this when `fi:` data must exist as a local file as historical/reference material, not just as visible timeline content.
+- Backend semantics depend on `RuntimeCtx.workspace_implementation`:
+  - `custom`: hydrate from conversation artifact history / hosting-backed snapshot state
+  - `git`: hydrate `fi:<turn>.files/...` from the git-backed workspace lineage snapshot for that version
+- In `git` mode, runtime also bootstraps `out/<current_turn>/` as a local repo so exec/code may use local git inspection/history/edit commands there, but not pull/push/fetch.
+- That current-turn repo keeps lineage history/refs available without eagerly checking out the project tree; explicit file materialization is still required.
+- In `git` mode, an exact `.files/...` ref that resolves to a hosted/non-text artifact stays on the artifact/hosting path instead of going through git.
+- Path contract:
+  - `fi:<turn_id>.files/<path>` may be an exact file or a subtree/prefix.
+  - `fi:<turn_id>.user.attachments/<file>` and legacy `fi:<turn_id>.attachments/<file>` must be exact file refs.
+- Binary rule:
+  - folder pulls do not imply hosted binaries/attachments under that subtree
+  - if you need a binary file, name that exact `fi:` file in `paths`
+- Exact attachment pulls stay on the artifact/hosting path even when the workspace implementation is `git`.
+- Exact binary `.files/...` pulls also stay on the artifact/hosting path when the referenced file is a hosted/non-text artifact in timeline history.
+- `react.pull(...)` does not seed or replace `turn_<current_turn>/files/...`; use `react.checkout(...)` when the active current-turn workspace itself must be materialized from historical refs.
+- Result:
+  - `pulled[]` rows contain `logical_path`, `physical_path`, and `kind`
+  - those `physical_path` values are OUT_DIR-relative local paths you can use in exec code
+Example result (simplified):
+```json
+{
+  "type": "react.tool.result",
+  "path": "tc:turn_123.abc.result",
+  "mime": "application/json",
+  "text": "{ \"pulled\": [{\"logical_path\": \"fi:turn_120.files/projectA/src/app.py\", \"physical_path\": \"turn_120/files/projectA/src/app.py\", \"kind\": \"files\"}] }"
+}
+```
+
+react.checkout
+- Purpose: build the active current-turn workspace under `turn_<current_turn>/files/...` from ordered historical `fi:<turn_id>.files/...` refs.
+- Use this when the current workspace itself must contain a runnable/searchable/testable project snapshot.
+- Contract:
+  - `params.mode`: `replace` (default) or `overlay`
+  - `replace` clears current-turn `files/` before applying refs
+  - `overlay` keeps current-turn `files/` and applies refs on top, overwriting overlapping files without deleting unspecified files
+  - `params.paths`: ordered list of `fi:<turn_id>.files/<scope-or-path>` refs
+  - later entries override earlier ones if they overlap
+  - legacy `params.version` is still accepted as a compatibility form meaning a whole-tree checkout of `fi:<turn_id>.files/`
+- Effect:
+  - `replace`: replaces the current-turn `files/` tree, then applies the requested refs in order
+  - `overlay`: keeps the current-turn `files/` tree and applies the requested refs in order on top
+  - leaves historical pulled trees under their original turn roots
+Example result (simplified):
+```json
+{
+  "type": "react.tool.result",
+  "path": "tc:turn_123.xyz.result",
+  "mime": "application/json",
+  "text": "{ \"checked_out_from\": [\"fi:turn_120.files/projectA\"], \"materialized\": [{\"logical_path\": \"fi:turn_123.files/projectA/src/app.py\", \"physical_path\": \"turn_123/files/projectA/src/app.py\", \"source_logical_path\": \"fi:turn_120.files/projectA\"}] }"
+}
 ```
 
 react.stream
@@ -144,7 +202,7 @@ Example result block (simplified):
 
 react.search_knowledge (bundle‑provided)
 - Purpose: search knowledge space (read‑only reference materials).
-- Availability: only when the active bundle registers this tool (e.g., `react.doc`).
+- Availability: only when the active bundle registers this tool (e.g., `kdcube.copilot`).
 - Use when you need docs/KB, not conversation history.
 - This is a logical bundle tool surface, separate from exec-only namespace resolver tools.
 Params:

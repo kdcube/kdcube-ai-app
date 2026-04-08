@@ -106,11 +106,11 @@ ReAct integration (optional):
 See:
 - [docs/sdk/bundle/bundle-knowledge-space-README.md](bundle-knowledge-space-README.md) (resolver + ks namespace)
 - [docs/sdk/bundle/bundle-dev-README.md](bundle-dev-README.md) (on_bundle_load + usage)
-- Example bundle: `.../examples/bundles/react.doc@2026-03-02-22-10`
+- Example bundle: `.../examples/bundles/kdcube.copilot@2026-04-03-19-05`
 
 ---
 
 ## References (code)
 
-- Storage: `services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/storage/ai_bundle_storage.py`
-- KV cache: `services/kdcube-ai-app/kdcube_ai_app/infra/service_hub/cache.py`
+- Storage: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/storage/ai_bundle_storage.py`
+- KV cache: `src/kdcube-ai-app/kdcube_ai_app/infra/service_hub/cache.py`

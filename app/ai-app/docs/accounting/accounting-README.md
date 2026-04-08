@@ -75,7 +75,7 @@ Reference:
 Ingress creates an `AccountingEnvelope` using:
 
 - `build_envelope_from_session()` in `kdcube_ai_app/infra/accounting/envelope.py`
-- Example usage in `kdcube_ai_app/apps/chat/api/ingress/chat_core.py`
+- Example usage in `kdcube_ai_app/apps/chat/ingress/chat_core.py`
 
 The envelope includes:
 
@@ -188,7 +188,7 @@ These results feed:
 Aggregates are computed by `AccountingAggregator`:
 
 - `kdcube_ai_app/infra/accounting/aggregator.py`
-- scheduled via `kdcube_ai_app/apps/chat/api/opex/routines.py`
+- scheduled via `kdcube_ai_app/apps/chat/ingress/opex/routines.py`
 
 Raw events live under `accounting/…`  
 Aggregates are written under:
@@ -197,7 +197,7 @@ Aggregates are written under:
 analytics/<tenant>/<project>/accounting/
 ```
 
-OPEX endpoints in `apps/chat/api/opex/opex.py` read from both raw and aggregated data.
+OPEX endpoints in `src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/opex/opex.py` read from both raw and aggregated data.
 
 See:
 
@@ -210,7 +210,7 @@ See:
 Key inputs that affect accounting behavior:
 
 - **Storage backend**: derived from `KDCUBE_STORAGE_PATH` / `settings.STORAGE_PATH`
-- **Web search pricing tiers**: `ACCOUNTING_SERVICES` (JSON) in `infra/accounting/usage.py` and OPEX API
+- **Web search pricing tiers**: `ACCOUNTING_SERVICES` (JSON) in `src/kdcube-ai-app/kdcube_ai_app/infra/accounting/usage.py` and OPEX API
 - **Redis turn cache**: enabled in `AccountingSystem.init_storage()` by default
 
 The accounting system itself is controlled by the service entrypoints and binders; there is no single global switch unless explicitly wired in the caller.
@@ -224,5 +224,5 @@ The accounting system itself is controlled by the service entrypoints and binder
 - Storage cache: `kdcube_ai_app/infra/accounting/turn_cache.py`
 - Cost calculator: `kdcube_ai_app/infra/accounting/calculator.py`
 - Aggregator: `kdcube_ai_app/infra/accounting/aggregator.py`
-- OPEX API: `kdcube_ai_app/apps/chat/api/opex/opex.py`
-- Aggregation scheduler: `kdcube_ai_app/apps/chat/api/opex/routines.py`
+- OPEX API: `kdcube_ai_app/apps/chat/ingress/opex/opex.py`
+- Aggregation scheduler: `kdcube_ai_app/apps/chat/ingress/opex/routines.py`

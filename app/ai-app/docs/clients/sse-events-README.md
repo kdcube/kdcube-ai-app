@@ -5,6 +5,8 @@ summary: "SSE protocol reference: envelope, lifecycle events, continuation ackno
 tags: ["clients", "sse", "protocol", "events", "streaming", "chat"]
 keywords: ["event envelope", "chat_step", "delta", "server_shutdown", "conv_status", "rate_limit", "backpressure", "bundle events", "followup", "steer", "continuation"]
 see_also:
+  - ks:docs/clients/README.md
+  - ks:docs/clients/client-communication-README.md
   - ks:docs/clients/frontend-awareness-on-service-state-README.md
   - ks:docs/service/comm/comm-system.md
   - ks:docs/arch/architecture-long.md
@@ -539,7 +541,7 @@ If your client does not recognize a type:
 - Treat it as a `chat_step` payload.
 - Use `event.step`, `event.status`, and `event.markdown` for display.
 
-Custom event filtering can be applied per bundle (see `sdk/comm/event_filter.py`).
+Custom event filtering can be applied per bundle (see `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/comm/event_filter.py`).
 
 ---
 

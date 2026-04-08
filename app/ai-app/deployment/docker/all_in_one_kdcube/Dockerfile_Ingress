@@ -17,8 +17,8 @@ RUN apt-get update && apt-get install -y \
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-COPY services/kdcube-ai-app/requirements-chat-ingress.txt requirements.txt
-COPY services/kdcube-ai-app/requirements-aws.txt requirements-aws.txt
+COPY src/kdcube-ai-app/requirements-chat-ingress.txt requirements.txt
+COPY src/kdcube-ai-app/requirements-aws.txt requirements-aws.txt
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
@@ -51,8 +51,8 @@ COPY --from=builder /opt/venv /opt/venv
 RUN groupadd --gid 1000 appuser && \
     useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash appuser
 
-COPY --chown=appuser:appuser services/kdcube-ai-app/ .
+COPY --chown=appuser:appuser src/kdcube-ai-app/ .
 RUN chown -R appuser:appuser /app
 
 USER appuser
-CMD ["python", "kdcube_ai_app/apps/chat/api/web_app.py"]
+CMD ["python", "kdcube_ai_app/apps/chat/ingress/web_app.py"]

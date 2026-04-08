@@ -41,9 +41,9 @@ Notes:
 - Only **new requests** use the updated bundle path.
 
 Runtime touchpoints:
-- Task runner: `apps/chat/processor.py` (loads bundle + calls `run`)
-- Config listener: `apps/chat/processor.py` (subscribes to bundles update channel)
-- Integrations API: `apps/chat/proc/rest/integrations/integrations.py`
+- Task runner: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py` (loads bundle + calls `run`)
+- Config listener: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py` (subscribes to bundles update channel)
+- Integrations API: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/integrations.py`
   - `POST /bundles/{tenant}/{project}/operations/{operation}` invokes `workflow.<operation>(...)`
 
 ---
@@ -154,7 +154,8 @@ Important:
 | `BUNDLE_STORAGE_ROOT`                | _(unset)_ | Shared local filesystem root for bundle data (used by ks:), default: `<bundles_root>/_bundle_storage`. |
 | `BUNDLES_FORCE_ENV_ON_STARTUP`        | `0`       | Force overwrite Redis registry and descriptor-backed bundle props from `AGENTIC_BUNDLES_JSON` at startup. |
 | `BUNDLES_FORCE_ENV_LOCK_TTL_SECONDS`  | `60`      | Redis lock TTL for startup env reset.                                   |
-| `BUNDLES_INCLUDE_EXAMPLES`            | `1`       | Auto‑add example bundles from `sdk/examples/bundles`.                   |
+| `BUNDLES_INCLUDE_EXAMPLES`            | `1`       | Auto‑add example bundles from `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles`.                   |
+| `BUNDLES_PRELOAD_ON_START`            | `0`       | Eagerly load all configured bundle modules and run `on_bundle_load` hooks at proc startup. Eliminates cold start on first request. Proc `/health` returns 503 until preload completes. |
 | `BUNDLE_GIT_RESOLUTION_ENABLED`       | `1`       | Enable git clone/pull for bundles with `repo`.                          |
 | `BUNDLE_GIT_ALWAYS_PULL`              | `0`       | Always pull even if local path exists (useful for branch refs).         |
 | `BUNDLE_GIT_ATOMIC`                   | `1`       | Use atomic checkout (clone to temp dir then rename).                    |
@@ -225,7 +226,7 @@ If `ref` is omitted:
 
 These IDs are reserved and cannot be overridden:
 - `kdcube.admin`
-- example bundles from `apps/chat/sdk/examples/bundles` (when enabled)
+- example bundles from `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles` (when enabled)
 
 To disable example bundles:
 ```
@@ -303,7 +304,7 @@ POST /admin/integrations/bundles/<bundle_id>/props
       "repo": "git@github.com:kdcube/kdcube-ai-app.git",
       "ref": "v0.3.2",
       "docs_root": "app/ai-app/docs",
-      "src_root": "app/ai-app/services/kdcube-ai-app/kdcube_ai_app",
+      "src_root": "app/ai-app/src/kdcube-ai-app/kdcube_ai_app",
       "deploy_root": "app/ai-app/deployment",
       "validate_refs": true
     }
@@ -322,14 +323,14 @@ bundles:
     - id: "react@2026-02-10-02-44"
       repo: "git@github.com:kdcube/kdcube-ai-app.git"
       ref: "v0.3.2"
-      subdir: "app/ai-app/services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles"
+      subdir: "app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles"
       module: "react@2026-02-10-02-44.entrypoint"
       config:
         knowledge:
           repo: "git@github.com:kdcube/kdcube-ai-app.git"
           ref: "v0.3.2"
           docs_root: "app/ai-app/docs"
-          src_root: "app/ai-app/services/kdcube-ai-app/kdcube_ai_app"
+          src_root: "app/ai-app/src/kdcube-ai-app/kdcube_ai_app"
           deploy_root: "app/ai-app/deployment"
           validate_refs: true
 ```
@@ -388,7 +389,7 @@ kdcube:config:bundles:props:<tenant>:<project>:<bundle_id>
 
 Example:
 ```bash
-redis-cli GET "kdcube:config:bundles:props:demo-tenant:demo-project:react.doc@2026-03-02-22-10"
+redis-cli GET "kdcube:config:bundles:props:demo-tenant:demo-project:kdcube.copilot@2026-04-03-19-05"
 ```
 
 ---
@@ -429,8 +430,8 @@ These control the periodic cleanup that removes stale bundle module caches:
 
 ## References (code)
 
-- Bundle registry: `services/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_registry.py`
-- Git bundle resolver: `services/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`
-- Bundle store (Redis): `services/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_store.py`
-- Task processor + config listener: `services/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py`
-- Integrations API: `services/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/integrations.py`
+- Bundle registry: `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_registry.py`
+- Git bundle resolver: `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`
+- Bundle store (Redis): `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_store.py`
+- Task processor + config listener: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py`
+- Integrations API: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/integrations.py`

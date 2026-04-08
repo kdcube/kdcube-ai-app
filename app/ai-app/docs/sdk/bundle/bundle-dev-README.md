@@ -6,18 +6,42 @@ tags: ["sdk", "bundle", "development", "workflow", "entrypoint", "tools", "skill
 keywords: ["agentic_workflow", "BaseEntrypoint", "tools_descriptor", "skills_descriptor", "operations API", "on_bundle_load", "knowledge space", "event_filter"]
 see_also:
   - ks:docs/sdk/bundle/bundle-index-README.md
+  - ks:docs/sdk/bundle/bundle-lifecycle-README.md
+  - ks:docs/sdk/bundle/bundle-runtime-README.md
+  - ks:docs/sdk/bundle/bundle-config-README.md
   - ks:docs/sdk/bundle/bundle-interfaces-README.md
+  - ks:docs/sdk/bundle/bundle-platform-integration-README.md
   - ks:docs/sdk/bundle/bundle-ops-README.md
   - ks:docs/sdk/bundle/bundle-platform-properties-README.md
+  - ks:docs/clients/client-communication-README.md
+  - ks:docs/clients/sse-events-README.md
 ---
 # Bundle Developer Guide (SDK)
 
 This guide is for **bundle developers** who build workflows, tools, and UI experiences on top of the KDCube Chat SDK.
 
+Read these first:
+- docs index + reference bundle:
+  [docs/sdk/bundle/bundle-index-README.md](bundle-index-README.md)
+- lifecycle and storage surfaces:
+  [docs/sdk/bundle/bundle-lifecycle-README.md](bundle-lifecycle-README.md)
+- runtime surfaces and request/tool execution modes:
+  [docs/sdk/bundle/bundle-runtime-README.md](bundle-runtime-README.md)
+- client communication contract for bundle UI/widgets/frontends:
+  [docs/clients/client-communication-README.md](../../clients/client-communication-README.md)
+- bundle config and secrets:
+  [docs/sdk/bundle/bundle-config-README.md](bundle-config-README.md)
+- primary full-feature reference bundle:
+  [docs/sdk/bundle/bundle-reference-versatile-README.md](bundle-reference-versatile-README.md)
+- declarative platform integration (`@api`, `@ui_widget`, `@ui_main`, `@on_message`):
+  [docs/sdk/bundle/bundle-platform-integration-README.md](bundle-platform-integration-README.md)
+- optional React `ks:` integration:
+  [docs/sdk/bundle/bundle-knowledge-space-README.md](bundle-knowledge-space-README.md)
+
 If you need **ops/runtime config** (registry, env vars, git bundles, assembly descriptors), see:
 [docs/sdk/bundle/bundle-ops-README.md](bundle-ops-README.md).
 
-If you need **bundle config/secrets** (properties and secret keys), see:
+If you need the platform/source-of-truth config format (`bundles.yaml`, secrets files), see:
 [docs/service/configuration/bundle-configuration-README.md](../../service/configuration/bundle-configuration-README.md).
 
 If you need the list of **platform-reserved bundle property paths** interpreted by
@@ -28,23 +52,63 @@ base/economics entrypoints and exec runtime, see:
 
 ## Reference bundle (start here)
 
-Reference implementation:
-`services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44`
+Primary reference implementation:
+`src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36`
+
+Overview doc:
+- [docs/sdk/bundle/bundle-reference-versatile-README.md](bundle-reference-versatile-README.md)
+
+Recommended first read sequence for bundle builders:
+1. [docs/sdk/bundle/bundle-index-README.md](bundle-index-README.md)
+2. [docs/sdk/bundle/bundle-reference-versatile-README.md](bundle-reference-versatile-README.md)
+3. [docs/sdk/bundle/bundle-runtime-README.md](bundle-runtime-README.md)
+4. [docs/sdk/bundle/bundle-platform-integration-README.md](bundle-platform-integration-README.md)
+5. [docs/clients/client-communication-README.md](../../clients/client-communication-README.md)
+6. `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/README.md`
+7. the smallest relevant pytest files under `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tests/bundle`
+8. if the bundle already has package-specific tests, also read `<bundle>/tests`
 
 Key files:
-- `entrypoint.py` — bundle entrypoint (decorated workflow)
-- `orchestrator/workflow.py` — orchestration (BaseWorkflow)
-- `agents/` — bundle-local agents (gate, etc.)
-- `tools_descriptor.py` — tool registry for this bundle
-- `skills_descriptor.py` — skills visibility config
-- `resources.py` — user-facing error messages
-- `event_filter.py` — event filtering policy
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/entrypoint.py` — entrypoint, economics, widget operation, direct isolated-exec operation
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/orchestrator/workflow.py` — React orchestration
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/tools_descriptor.py` — SDK tools + bundle-local tools + MCP connectors
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/skills_descriptor.py` — bundle-local skill visibility
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/tools/preference_tools.py` — custom tools
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/preferences_store.py` — shared local bundle storage model
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/ui/PreferencesBrowser.tsx` — TSX widget example
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/ui-src/src/App.tsx` — custom main-view iframe SPA using the platform chat REST/SSE contract
+
+Current shared bundle test suite:
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tests/bundle`
+
+Default combined runner:
+- `python -m kdcube_ai_app.apps.chat.sdk.tests.bundle.run_bundle_suite --bundle-path /abs/path/to/bundle`
+  - runs the shared SDK bundle suite
+  - automatically adds `<bundle>/tests` when the bundle defines bundle-local tests
+
+Bundle-local tests:
+- A bundle may legitimately define its own package-specific tests under `<bundle>/tests`
+- Use that for reference-bundle or feature-specific behavior that is not part of the generic SDK contract
+- Those tests are not auto-collected by plain `pytest sdk/tests/bundle`; use the runner above for combined validation
+
+Specialized examples only when the task is narrower than the full reference:
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/kdcube.copilot@2026-04-03-19-05`
+  - bundle-defined `ks:` knowledge space and namespace resolution
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/with-isoruntime@2026-02-16-14-00`
+  - stripped-down direct isolated-exec harness
 
 Related runtime entrypoints:
-- Processor task runner: `apps/chat/processor.py` (loads bundle + calls `run`)
-- Integrations API: `apps/chat/proc/rest/integrations/integrations.py`
-  - `POST /bundles/{tenant}/{project}/operations/{operation}` invokes `workflow.<operation>(...)`
-- Base entrypoint features: `apps/chat/sdk/solutions/chatbot/entrypoint.py`
+- Processor task runner: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py` (loads bundle + calls `run`)
+- Integrations API: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/integrations.py`
+  - `GET /bundles/{tenant}/{project}/{bundle_id}` returns bundle interface metadata discovered from decorators
+  - `GET /bundles/{tenant}/{project}/{bundle_id}/widgets` lists decorated widgets
+  - `GET /bundles/{tenant}/{project}/{bundle_id}/widgets/{alias}` resolves a decorated widget
+  - `GET|POST /bundles/{tenant}/{project}/{bundle_id}/operations/{operation}` resolves only `@api(..., route="operations")`
+  - `GET|POST /bundles/{tenant}/{project}/{bundle_id}/public/{operation}` resolves only `@api(..., route="public")`
+  - the legacy `POST /bundles/{tenant}/{project}/operations/{operation}` route still exists for backward compatibility
+  - widget methods still fetched through `/operations/...` should carry both `@ui_widget(...)` and `@api(..., route="operations")`
+  - the current decorator contract is described in [docs/sdk/bundle/bundle-platform-integration-README.md](bundle-platform-integration-README.md)
+- Base entrypoint features: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/entrypoint.py`
   - Admin React apps like `ai_bundles`, `svc_gateway` can be exposed from bundles
 
 ---
@@ -77,13 +141,12 @@ Entrypoint uses `@agentic_workflow` and typically extends `BaseEntrypoint`.
 
 Minimal pattern:
 ```python
-from kdcube_ai_app.infra.plugin.agentic_loader import agentic_workflow
+from kdcube_ai_app.infra.plugin.agentic_loader import agentic_workflow, bundle_id
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import BaseEntrypoint
 from langgraph.graph import StateGraph, START, END
 
-BUNDLE_ID = "my.bundle"
-
-@agentic_workflow(name=BUNDLE_ID, version="1.0.0", priority=100)
+@agentic_workflow(name="My Bundle", version="1.0.0", priority=100)
+@bundle_id("my.bundle@1.0.0")
 class MyWorkflow(BaseEntrypoint):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -100,10 +163,40 @@ class MyWorkflow(BaseEntrypoint):
         return await self.graph.ainvoke(state, config={"configurable": {"thread_id": thread_id}})
 ```
 
+Canonical imports:
+- non-economics bundles: `kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint.BaseEntrypoint`
+- economics-aware bundles: `kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint_with_economic.BaseEntrypointWithEconomics`
+- do not use `kdcube_ai_app.apps.chat.sdk.workflow`; that legacy path is not part of the current SDK contract
+
 Model defaults live in `entrypoint.configuration` (`role_models`, `embedding`, etc).
 Runtime overrides are applied via `bundle_props` (`bundles.yaml` + admin UI).
 If you override `configuration`, call `super().configuration()` and use
 `setdefault` for defaults so external overrides still win.
+
+### Declarative interface decorators
+
+The current bundle interface surface is explicit and decorator-driven:
+
+- `@bundle_id("my.bundle@version")` declares the canonical bundle id
+- `@api(...)` exposes a method through the integrations HTTP surface
+  - `route="operations"` is the default
+  - use `route="public"` only for operations intentionally reachable from the public route
+  - `route="public"` must also declare `public_auth`
+    - `public_auth="none"` means explicitly unauthenticated public endpoint
+    - `public_auth={"mode":"header_secret","header":"X-Telegram-Bot-Api-Secret-Token","secret_key":"telegram.webhook_secret"}` means the platform verifies the header against `bundles.<bundle_id>.secrets.telegram.webhook_secret`
+- `@ui_widget(...)` declares a widget for `/widgets`
+- `@ui_main` declares the main iframe UI entrypoint for `/static/...`
+- `@on_message` marks the turn handler metadata used by the processor path
+
+Important rules:
+
+- only methods decorated with `@api(...)` are remotely callable through `/operations` or `/public`
+- same-name undeclared methods are not part of the HTTP contract
+- if a widget method is still called through `/operations/...`, decorate it with both `@ui_widget(...)` and `@api(..., route="operations")`
+- `public_auth` is invalid on `route="operations"` methods
+
+Full contract:
+- [docs/sdk/bundle/bundle-platform-integration-README.md](bundle-platform-integration-README.md)
 
 ### Canonical turn error propagation
 
@@ -407,8 +500,8 @@ Runtime:
 Example path:
 ```
 ks:docs/README.md
-ks:src/apps/chat/sdk/solutions/react/v2/runtime.py
-ks:deploy/docker/all_in_one_kdcube/docker-compose.yaml
+ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/runtime.py
+ks:deployment/docker/all_in_one_kdcube/docker-compose.yaml
 ```
 
 See:
@@ -447,15 +540,25 @@ Primary runtime input:
 - Passed into the workflow via `run(...)` / `execute_core(...)`
 
 Operation inputs:
-- `POST /bundles/{tenant}/{project}/operations/{operation}` passes JSON body as kwargs to `workflow.<operation>(...)`.
+- preferred routes:
+  - `GET /bundles/{tenant}/{project}/{bundle_id}/operations/{operation}`
+  - `POST /bundles/{tenant}/{project}/{bundle_id}/operations/{operation}`
+  - `GET /bundles/{tenant}/{project}/{bundle_id}/public/{operation}`
+  - `POST /bundles/{tenant}/{project}/{bundle_id}/public/{operation}`
+- `/operations/...` resolves only declared `@api(..., route="operations")` methods
+- `/public/...` resolves only declared `@api(..., route="public")` methods
+- `/public/...` methods must also declare `public_auth`
+- `POST` forwards `payload.data` as kwargs
+- `GET` forwards query params as kwargs
+- legacy `POST /bundles/{tenant}/{project}/operations/{operation}` still exists and still resolves the default bundle when `bundle_id` is omitted, but it still calls only declared `@api(..., route="operations")` methods
 
 Outputs:
 - Streaming events (deltas, steps, widgets) via `ChatCommunicator`.
 - Final JSON response (`final_answer`, `suggested_followups`, etc.) returned by the workflow.
 
 Code references:
-- `apps/chat/sdk/protocol.py`
-- `apps/chat/sdk/solutions/chatbot/base_workflow.py`
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/protocol.py`
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/base_workflow.py`
 
 ---
 
@@ -480,21 +583,121 @@ If you don’t need filtering, omit it or pass no filter to `BaseEntrypoint`.
 
 ## Streaming and output
 
-Prefer BaseWorkflow’s built-in emitters:
-- `mk_thinking_streamer` for thinking
-- ReAct streaming via `react.write` (canvas or timeline_text)
+Streaming means:
 
-If you need direct streaming, use `AIBEmitters(self.comm)`:
-- `delta(...)` for token streams
-- `step(...)` for progress steps
-- `event(...)` for custom widgets
+- bundle code emits events through the platform communicator
+- clients receive those events over an already-connected SSE stream or Socket.IO connection
+- bundle UI code inside widgets or custom frontends is itself a client and must follow the same client communication contract as any other frontend
 
-Common markers:
+In normal chat turns:
+
+- the connected peer already exists through `/sse/stream` or Socket.IO
+- bundle-side `self.comm` events flow back through that chat transport
+
+In REST-triggered bundle operations:
+
+- the bundle still has a communicator
+- if the REST request carries the configured stream-id header
+  (default `KDC-Stream-ID`) with the connected peer id, the bundle can emit
+  directly to that one peer
+- if the header is absent, bundle-originated events are broadcast to the whole session
+
+This matters for bundle widgets and custom bundle frontends:
+
+- if they call `/api/integrations/*` and want progress/events routed back only to
+  the initiating browser peer, they must propagate the connected peer id on the
+  REST request
+- see [docs/clients/client-communication-README.md](../../clients/client-communication-README.md)
+
+Prefer the higher-level SDK paths first:
+
+- `BaseWorkflow.mk_streamer(...)` for thought/progress streaming
+
+If the active solver is the React agent, it may emit its own agent-side
+`canvas` / `timeline_text` output through React tools. That is not the
+bundle-author API and should not be treated as the primary bundle streaming
+surface.
+
+If you need direct streaming, use `self.comm` directly:
+
+- `delta(...)` for streamed text/artifact chunks
+- `step(...)` for progress/status updates
+- `event(...)` for structured custom events
+- `error(...)` for user-visible failures
+
+Keep the mental model simple:
+
+| Method                         | Use it for                                   | Has `marker`? | Has `broadcast`?                              |
+|--------------------------------|----------------------------------------------|---------------|-----------------------------------------------|
+| `self.comm.step(...)`          | normal progress/status updates               | no            | no, helper is request-targeted/session-scoped |
+| `self.comm.delta(...)`         | streamed chunks or streamed artifact content | yes           | no, helper is request-targeted/session-scoped |
+| `self.comm.event(...)`         | custom typed semantic events                 | no            | yes                                           |
+| `self.comm.service_event(...)` | service-level events on `chat_service`       | no            | yes                                           |
+| `self.comm.emit(...)`          | low-level route control only                 | N/A           | yes                                           |
+
+Important:
+
+- `marker` belongs to `delta(...)`, not to `step(...)` or `event(...)`
+- use `step(...)` when you want a normal progress/status event rendered on the
+  standard `chat_step` path
+- use `delta(...)` when the client is supposed to treat the payload as a stream
+  and route it by marker such as `answer`, `thinking`, `canvas`, `timeline_text`,
+  or `subsystem`
+- use `event(...)` when the bundle defines its own semantic event type and may
+  also want explicit `broadcast=True`
+
+Example: get the communicator from the bundle runtime and emit both a supported
+step update and a custom typed broadcast event:
+
+```python
+async def refresh_preferences(self) -> dict:
+    # In entrypoints and workflows, the active communicator is available as self.comm
+    await self.comm.step(
+        step="preferences.refresh",
+        status="started",
+        title="Refreshing preferences",
+        agent="preferences",
+        data={"source": "bundle"},
+    )
+
+    # ... do the actual work ...
+
+    await self.comm.event(
+        type="bundle.preferences.updated",
+        step="preferences.updated",
+        status="completed",
+        title="Preferences updated",
+        agent="preferences",
+        data={"keys": ["city", "diet"]},
+        broadcast=True,
+    )
+
+    return {"ok": True}
+```
+
+Use:
+
+- `step(...)` when the event fits the normal progress/status model already understood by clients
+- `event(...)` when the bundle wants to define a custom semantic event type or explicitly choose `broadcast=True`
+
+Common `chat.delta` markers:
+
 - `answer`
 - `thinking`
 - `canvas`
 - `timeline_text`
 - `subsystem`
+
+Read these next, not just this summary:
+
+- client transport, auth, stream-id, peer targeting:
+  [docs/clients/client-communication-README.md](../../clients/client-communication-README.md)
+- streaming event envelope, routes, and all predefined delta markers:
+  [docs/clients/sse-events-README.md](../../clients/sse-events-README.md)
+- bundle runtime surfaces and communicator behavior:
+  [docs/sdk/bundle/bundle-runtime-README.md](bundle-runtime-README.md)
+- widget/frontend ↔ bundle exchange over REST:
+  [docs/sdk/bundle/bundle-interfaces-README.md](bundle-interfaces-README.md)
 
 ---
 
@@ -504,7 +707,7 @@ Bundles can define an **event filter** (bundle‑level outbound firewall) to con
 which events are visible to non‑privileged users.
 
 Example:
-- `services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44/event_filter.py`
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44/event_filter.py`
 
 Docs:
 - [docs/service/comm/comm-system.md](../../service/comm/comm-system.md) (event types + filtering)
@@ -527,13 +730,20 @@ Docs:
 
 Bundles can expose **React panels** and **operations**:
 
-- Base entrypoint: `apps/chat/sdk/solutions/chatbot/entrypoint.py`
+- Base entrypoint: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/entrypoint.py`
   - Admin panels like `ai_bundles`, `svc_gateway` are exported as bundle apps.
-- Integrations API: `apps/chat/proc/rest/integrations/integrations.py`
-  - `POST /bundles/{tenant}/{project}/operations/{operation}` calls `workflow.<operation>(...)`.
+- Integrations API: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/integrations.py`
+  - `GET /bundles/{tenant}/{project}/{bundle_id}` returns declarative bundle interface metadata
+  - `GET /bundles/{tenant}/{project}/{bundle_id}/widgets` lists decorated widgets
+  - `GET /bundles/{tenant}/{project}/{bundle_id}/widgets/{alias}` fetches a decorated widget
+  - `GET|POST /bundles/{tenant}/{project}/{bundle_id}/operations/{operation}` resolves only declared `@api(..., route="operations")`
+  - `GET|POST /bundles/{tenant}/{project}/{bundle_id}/public/{operation}` resolves only declared `@api(..., route="public")`
+    - public methods must also declare `public_auth`
+  - legacy `POST /bundles/{tenant}/{project}/operations/{operation}` still exists for compatibility
 
 Docs:
 - [docs/sdk/bundle/bundle-interfaces-README.md](bundle-interfaces-README.md)
+- [docs/clients/client-communication-README.md](../../clients/client-communication-README.md)
 
 ---
 
@@ -541,24 +751,24 @@ Docs:
 
 | Capability | What you get | Where to learn |
 |---|---|---|
-| Streaming | deltas, steps, widgets | `docs/sdk/comm/README-comm.md` |
-| Timeline + context | read/write, search, attachments | `docs/sdk/runtime/solution/context/browser-README.md` |
+| Streaming | deltas, steps, widgets | `docs/service/comm/README-comm.md` |
+| Timeline + context | read/write, search, attachments | `docs/sdk/agents/react/context-browser-README.md` |
 | Tools | local + isolated + MCP | [docs/sdk/tools/tool-subsystem-README.md](../tools/tool-subsystem-README.md), [docs/sdk/tools/mcp-README.md](../tools/mcp-README.md) |
 | Skills | prompt-time skills registry | [docs/sdk/skills/skills-README.md](../skills/skills-README.md), [docs/sdk/skills/skills-infra-README.md](../skills/skills-infra-README.md) |
 | Storage | per‑bundle storage (file/S3) | [docs/sdk/bundle/bundle-storage-cache-README.md](bundle-storage-cache-README.md) |
 | Knowledge space | bundle‑defined `ks:` docs + search | [docs/sdk/bundle/bundle-knowledge-space-README.md](bundle-knowledge-space-README.md) |
 | Cache | Redis KV cache | [docs/sdk/bundle/bundle-storage-cache-README.md](bundle-storage-cache-README.md) |
 | Custom UI | widgets + React panels | [docs/sdk/bundle/bundle-interfaces-README.md](bundle-interfaces-README.md) |
-| Economics | budgets/usage tracking | `docs/sdk/infra/economics/economics-usage.md` |
+| Economics | budgets/usage tracking | `docs/economics/economics-usage.md` |
 
 ---
 
 ## Custom tools (bundle‑local)
 
 Use `tools_descriptor.py` to expose tools to the runtime. Example:
-- Bundle: `apps/chat/sdk/examples/bundles/with-isoruntime@2026-02-16-14-00`
-- Tool module: `apps/chat/sdk/examples/bundles/with-isoruntime@2026-02-16-14-00/tools/local_tools.py`
-- Descriptor: `apps/chat/sdk/examples/bundles/with-isoruntime@2026-02-16-14-00/tools_descriptor.py`
+- Bundle: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/with-isoruntime@2026-02-16-14-00`
+- Tool module: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/with-isoruntime@2026-02-16-14-00/tools/local_tools.py`
+- Descriptor: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/with-isoruntime@2026-02-16-14-00/tools_descriptor.py`
 
 Docs:
 - [docs/sdk/tools/tool-subsystem-README.md](../tools/tool-subsystem-README.md)
@@ -570,9 +780,9 @@ Docs:
 ## Custom skills (bundle‑local)
 
 Use `skills_descriptor.py` to register bundle‑specific skills. Example:
-- Bundle: `services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44`
-- Skill: `skills/product`
-- Descriptor: `skills_descriptor.py`
+- Bundle: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44`
+- Skill: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44/skills/product`
+- Descriptor: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44/skills_descriptor.py`
 
 Docs:
 - [docs/sdk/skills/skills-README.md](../skills/skills-README.md)
@@ -584,7 +794,7 @@ Docs:
 - Bundles may be loaded per request or reused as singletons.
 - If `singleton=true` in the registry, the workflow instance is cached and reused.
 - Use the KV cache abstraction for lightweight runtime state or config.
-  See: `infra/service_hub/cache-README.md`
+  See: `docs/sdk/storage/cache-README.md`
 
 ---
 
@@ -623,11 +833,11 @@ export AGENTIC_BUNDLES_ROOT=/bundles
 ## Examples
 
 - ReAct Agent:
-  `services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44`
+  `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44`
 - Iso Runtime Demo:
-  `services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/with-isoruntime@2026-02-16-14-00`
+  `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/with-isoruntime@2026-02-16-14-00`
 - Economics Demo:
-  `services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/eco@2026-02-18-15-06`
+  `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/eco@2026-02-18-15-06`
 
 ---
 
@@ -638,21 +848,21 @@ export AGENTIC_BUNDLES_ROOT=/bundles
 - Tool subsystem:
   [docs/sdk/tools/tool-subsystem-README.md](../tools/tool-subsystem-README.md)
 - Comm system:
-  `docs/sdk/comm/README-comm.md`
+  `docs/service/comm/README-comm.md`
 - Context browser:
-  `docs/sdk/runtime/solution/context/browser-README.md`
+  `docs/sdk/agents/react/context-browser-README.md`
 - ISO runtime:
-  `docs/sdk/runtime/isolated/README-iso-runtime.md`
+  `docs/exec/README-iso-runtime.md`
 
 ---
 
 ## References (code)
 
-- Bundle loader + cache: `services/kdcube-ai-app/kdcube_ai_app/infra/plugin/agentic_loader.py`
-- Bundle registry: `services/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_registry.py`
-- Task processor: `services/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py`
-- Integrations ops API: `services/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/integrations.py`
-- Base entrypoint: `services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/entrypoint.py`
-- Protocol types: `services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/protocol.py`
-- Base workflow: `services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/base_workflow.py`
-- Event filter example: `services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44/event_filter.py`
+- Bundle loader + cache: `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/agentic_loader.py`
+- Bundle registry: `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_registry.py`
+- Task processor: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py`
+- Integrations ops API: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/integrations.py`
+- Base entrypoint: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/entrypoint.py`
+- Protocol types: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/protocol.py`
+- Base workflow: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/base_workflow.py`
+- Event filter example: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44/event_filter.py`

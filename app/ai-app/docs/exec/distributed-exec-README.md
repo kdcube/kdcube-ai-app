@@ -195,7 +195,7 @@ This is why runtime-specific failures such as:
 - Fargate timeout
 - secret/bundle/snapshot restore failure
 
-still appear to the agent through the same final `report_text` / `error` path documented in [exec-logging-error-propagation-README.md](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/docs/exec/exec-logging-error-propagation-README.md).
+still appear to the agent through the same final `report_text` / `error` path documented in [exec-logging-error-propagation-README.md](exec-logging-error-propagation-README.md).
 
 ### 3. Runtime — exec task side (`py_code_exec_entry.py`)
 
@@ -222,8 +222,8 @@ ECS FARGATE EXEC TASK
 │  │       yes → restore_zip_to_dir → BUNDLE_STORAGE_DIR
 │  │       no  → continue
 │  │
-│  │     Bundle-local exec-only tools may then resolve logical namespace refs
-│  │     (for example ks:docs or ks:src) to exec-visible physical paths under
+│  │     Bundle-local exec-only tools may then resolve logical bundle refs
+│  │     (for example ks:docs or ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk) to exec-visible physical paths under
 │  │     that restored readonly subtree.
 │  │
 │  │     Those returned physical paths are runtime-local only:
@@ -233,9 +233,9 @@ ECS FARGATE EXEC TASK
 │  │
 │  │     If code wants the agent to follow up later with react.read(...), it must
 │  │     emit logical refs derived from the resolver input logical_ref, for example:
-│  │       logical_ref = "ks:src"
-│  │       discovered relative file = "foo/bar.py"
-│  │       emitted follow-up ref = "ks:src/foo/bar.py"
+│  │       logical_ref = "ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk"
+│  │       discovered relative file = "runtime/execution.py"
+│  │       emitted follow-up ref = "ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/execution.py"
 │  │
 │  ├── baseline_work = build_manifest(workdir)   (for delta upload)
 │  ├── baseline_out  = build_manifest(outdir)
@@ -309,7 +309,7 @@ Preferred model:
    - `browseable: bool`
 4. generated code reads that path if appropriate
 5. if code wants later `react.read(...)` follow-up, it emits logical refs derived from the original resolver input logical_ref
-   - example: `logical_ref="ks:src"` plus discovered relative file `foo/bar.py` becomes `ks:src/foo/bar.py`
+   - example: `logical_ref="ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk"` plus discovered relative file `runtime/execution.py` becomes `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/execution.py`
 6. generated code propagates useful results back through:
    - files under `OUTPUT_DIR`
    - and/or short `user.log` output
@@ -552,7 +552,7 @@ DNS (`redis.kdcube.local`) or the direct ElastiCache endpoint both work.
 
 ### Recommended smoke test bundle
 
-The bundle `apps/chat/sdk/examples/bundles/with-isoruntime@2026-02-16-14-00`
+The bundle `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/with-isoruntime@2026-02-16-14-00`
 includes scenario:
 
 - `13. Fargate happy path`

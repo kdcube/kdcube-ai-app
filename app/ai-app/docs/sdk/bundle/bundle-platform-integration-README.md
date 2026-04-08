@@ -1,0 +1,535 @@
+---
+id: ks:docs/sdk/bundle/bundle-platform-integration-README.md
+title: "Bundle Platform Integration"
+summary: "Current declarative bundle integration contract: supported decorators, manifest metadata, REST routes, and UI/static integration."
+tags: ["sdk", "bundle", "integration", "decorators", "widgets", "operations", "ui", "manifest"]
+keywords: ["agentic_workflow", "bundle_id decorator", "api decorator", "ui_widget", "ui_main", "on_message", "bundle manifest", "integrations widgets", "integrations operations", "public route"]
+see_also:
+  - ks:docs/sdk/bundle/bundle-interfaces-README.md
+  - ks:docs/sdk/bundle/bundle-dev-README.md
+  - ks:docs/sdk/bundle/bundle-index-README.md
+  - ks:docs/sdk/bundle/bundle-reference-versatile-README.md
+---
+# Bundle Platform Integration
+
+This document describes the bundle integration contract that is implemented now.
+It covers:
+
+- class and method decorators supported by the bundle loader
+- bundle interface manifest discovery
+- REST routing for bundle operations and public operations
+- widget discovery and widget fetch
+- bundle main UI entrypoints and static asset serving
+
+All of this is implemented in:
+
+- `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/agentic_loader.py`
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/integrations.py`
+
+## 1) Supported decorators
+
+Bundles currently use these decorators:
+
+- `@agentic_workflow(...)`
+- `@bundle_id(...)`
+- `@api(...)`
+- `@ui_widget(...)`
+- `@ui_main`
+- `@on_message`
+
+These decorators are metadata for the bundle interface surface. They are not
+deployment config.
+
+### 1.1 `@bundle_id(...)`
+
+Declares the canonical bundle ID on the entrypoint class.
+
+```python
+from kdcube_ai_app.infra.plugin.agentic_loader import agentic_workflow, bundle_id
+
+@agentic_workflow(name="My Bundle", version="1.0.0")
+@bundle_id("my.bundle@1.0.0")
+class MyBundle:
+    ...
+```
+
+Use it when the code should declare its own stable bundle identity.
+
+### 1.2 `@agentic_workflow(...)` — bundle-level `allowed_roles`
+
+The `@agentic_workflow` decorator accepts an optional `allowed_roles` parameter
+that restricts which users can see the bundle in the bundle listing.
+
+```python
+@agentic_workflow(
+    name="Finance Copilot",
+    version="1.0.0",
+    allowed_roles=("kdcube:role:finance-team", "kdcube:role:super-admin"),
+)
+@bundle_id("finance.copilot@1.0.0")
+class FinanceCopilot:
+    ...
+```
+
+Current fields relevant to access control:
+
+- `allowed_roles`
+  - tuple/list of non-derived (externally defined) role names
+  - must use `kdcube:role:<name>` format — Cognito group IDs
+  - do **not** use derived platform types here (`"registered"`, `"privileged"`)
+  - empty or omitted means the bundle is visible to all authenticated users
+  - OR semantics: user passes if at least one of their raw roles matches
+
+Current behavior:
+
+- `GET /api/integrations/bundles` (non-admin) filters out bundles whose
+  `allowed_roles` do not intersect with the calling user's raw roles
+  (entries in the session that start with `kdcube:role:`)
+- `GET /api/admin/integrations/bundles` is not filtered — admin always
+  sees all bundles regardless of `allowed_roles`
+- A bundle with no `allowed_roles` is always included for any authenticated
+  user (backwards-compatible default)
+
+### 1.3 `@api(...)`
+
+Marks a method as a remotely callable bundle operation.
+
+Current signature:
+
+```python
+@api(
+    method="POST",
+    alias="preferences_exec_report",
+    route="operations",
+    roles=("registered",),
+    public_auth=None,
+)
+async def preferences_exec_report(self, **kwargs):
+    ...
+```
+
+Current fields:
+
+- `method`
+  - `GET` or `POST`
+  - default: `POST`
+- `alias`
+  - public operation alias in the URL
+  - default: Python method name
+- `route`
+  - `operations` or `public`
+  - default: `operations`
+- `roles`
+  - tuple/list of visible roles
+  - empty means visible to any caller that can reach that route
+- `public_auth`
+  - used only with `route="public"`
+  - current built-in modes:
+    - `"none"`: explicitly unauthenticated public endpoint
+    - `{"mode": "header_secret", "header": "<Header-Name>", "secret_key": "<bundle-secret-path>"}`:
+      request must present the expected header value
+  - default: required for `route="public"`, invalid for `route="operations"`
+
+Important current rule:
+
+- only methods decorated with `@api(...)` are remotely callable through bundle
+  operation routes
+- same-name fallback for undecorated methods is no longer part of the HTTP
+  contract
+- `route="public"` must also declare `public_auth`
+
+Route mapping:
+
+- `@api(route="operations")` is callable through
+  `/api/integrations/bundles/.../operations/{alias}`
+- `@api(route="public")` is callable through
+  `/api/integrations/bundles/.../public/{alias}`
+
+### 1.3 `@ui_widget(...)`
+
+Marks a method as a discoverable widget endpoint.
+
+```python
+@ui_widget(
+    icon={
+        "tailwind": "heroicons-outline:adjustments-horizontal",
+        "lucide": "SlidersHorizontal",
+    },
+    alias="preferences",
+    roles=("registered", "privileged"),
+)
+def preferences_widget(self, **kwargs):
+    ...
+```
+
+Current fields:
+
+- `icon`
+  - preferred shape is a provider map
+  - supported providers: `tailwind`, `lucide`
+  - legacy string icons are normalized to `{"tailwind": "<value>"}`
+- `alias`
+  - widget alias used by widget discovery/fetch
+  - default: Python method name
+- `roles`
+  - widget visibility roles
+
+Current rule:
+
+- widget list and widget fetch are driven only by `@ui_widget(...)`
+
+If the same widget method must also be callable through `/operations/...`,
+decorate it with both `@ui_widget(...)` and `@api(route="operations", ...)`.
+
+That is the current compatibility pattern for widgets that are still loaded
+through operation calls in existing clients.
+
+### 1.4 `@ui_main`
+
+Marks the method that declares the bundle's main iframe UI surface.
+
+```python
+@ui_main
+def main_ui(self, **kwargs):
+    ...
+```
+
+Current behavior:
+
+- the bundle manifest reports `ui_main`
+- proc serves the built UI assets from the bundle static route
+- build-on-first-request is supported for bundles that have a UI defined but
+  were not yet built in the current proc
+
+### 1.5 `@on_message`
+
+Marks the bundle message handler metadata.
+
+```python
+@on_message
+async def run(self, **params):
+    ...
+```
+
+Current practical pattern:
+
+- base entrypoints already decorate `run()` with `@on_message`
+- manifest discovery reports the message handler method name
+
+## 2) Metadata model
+
+The loader stores interface metadata as typed dataclasses.
+
+### 2.1 `APIEndpointSpec`
+
+```python
+@dataclass(frozen=True)
+class APIEndpointSpec:
+    method_name: str
+    alias: str
+    http_method: str = "POST"
+    route: str = "operations"
+    roles: tuple[str, ...] = ()
+```
+
+### 2.2 `UIWidgetSpec`
+
+```python
+@dataclass(frozen=True)
+class UIWidgetSpec:
+    method_name: str
+    alias: str
+    icon: dict[str, str]
+    roles: tuple[str, ...] = ()
+```
+
+### 2.3 `OnMessageSpec`
+
+```python
+@dataclass(frozen=True)
+class OnMessageSpec:
+    method_name: str
+```
+
+### 2.4 `UIMainSpec`
+
+```python
+@dataclass(frozen=True)
+class UIMainSpec:
+    method_name: str
+```
+
+### 2.5 `BundleInterfaceManifest`
+
+```python
+@dataclass(frozen=True)
+class BundleInterfaceManifest:
+    bundle_id: str
+    allowed_roles: tuple[str, ...] = ()
+    ui_widgets: tuple[UIWidgetSpec, ...] = ()
+    api_endpoints: tuple[APIEndpointSpec, ...] = ()
+    ui_main: UIMainSpec | None = None
+    on_message: OnMessageSpec | None = None
+```
+
+`allowed_roles` is populated from the `allowed_roles` argument of
+`@agentic_workflow`. Empty tuple means no restriction.
+
+Discovery helpers currently exposed by the loader:
+
+- `discover_bundle_interface_manifest(...)`
+- `resolve_bundle_api_endpoint(...)`
+- `resolve_bundle_widget(...)`
+- `resolve_bundle_message_method(...)`
+
+## 3) Current REST and static routes
+
+### 3.1 Bundle manifest
+
+```text
+GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}
+```
+
+Returns bundle interface metadata visible to the current user.
+
+Current response shape includes:
+
+- `ui_widgets`
+- `api_endpoints`
+  - includes `alias`
+  - includes `http_method`
+  - includes `route`
+  - includes `roles`
+- `ui_main`
+- `on_message`
+
+Example:
+
+```json
+{
+  "bundle_id": "versatile@2026-03-31-13-36",
+  "tenant": "demo-tenant",
+  "project": "demo-project",
+  "ui_widgets": [
+    {
+      "alias": "preferences",
+      "icon": {
+        "tailwind": "heroicons-outline:adjustments-horizontal",
+        "lucide": "SlidersHorizontal"
+      },
+      "roles": ["registered", "privileged"]
+    }
+  ],
+  "api_endpoints": [
+    {
+      "alias": "preferences_exec_report",
+      "http_method": "POST",
+      "route": "operations",
+      "roles": ["registered"]
+    }
+  ],
+  "ui_main": {
+    "method_name": "main_ui"
+  },
+  "on_message": {
+    "method_name": "run"
+  }
+}
+```
+
+### 3.2 Operations route
+
+```text
+GET  /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/{alias}
+POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/{alias}
+```
+
+Current rules:
+
+- only `@api(..., route="operations")` methods are callable here
+- `POST` forwards `payload.data` as kwargs
+- `GET` forwards query params as kwargs
+- request/session context still comes from platform session and `self.comm`
+- if the alias exists for a different HTTP method on the same route, proc
+  returns `405`
+- if the alias is not declared for route `operations`, proc returns `404`
+
+### 3.3 Public route
+
+```text
+GET  /api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/{alias}
+POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/{alias}
+```
+
+Current rules:
+
+- only `@api(..., route="public")` methods are callable here
+- route matching is strict; an `operations` method is not callable through
+  `/public/...`
+- public methods must also declare `public_auth`
+- current built-in public auth modes are:
+  - `public_auth="none"` for intentionally open public endpoints
+  - `public_auth={"mode":"header_secret", ...}` for shared-secret webhook headers
+
+### 3.4 Legacy no-bundle-id operations route
+
+```text
+POST /api/integrations/bundles/{tenant}/{project}/operations/{alias}
+```
+
+This route still exists for backward compatibility.
+
+Current rules:
+
+- it still resolves only declared `@api(..., route="operations")` methods
+- `bundle_id` may come from the body
+- otherwise the current default bundle is used
+
+### 3.5 Widgets list
+
+```text
+GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/widgets
+```
+
+Returns only `@ui_widget(...)` metadata visible to the current user.
+
+### 3.6 Widget fetch
+
+```text
+GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/widgets/{alias}
+```
+
+Current rules:
+
+- resolves only `@ui_widget(...)` aliases
+- applies role visibility before invocation
+- does not use operation routing
+
+### 3.7 Bundle static UI
+
+```text
+GET /api/integrations/static/{tenant}/{project}/{bundle_id}
+GET /api/integrations/static/{tenant}/{project}/{bundle_id}/{path}
+```
+
+Current behavior:
+
+- serves assets built under the bundle's UI storage root
+- supports SPA fallback to `index.html`
+- injects `<base>` into `index.html` so relative assets resolve correctly
+- can trigger a build on first request if the UI was not yet built in the
+  current proc
+
+This is the route used for bundle main-view apps embedded in the host UI.
+
+## 4) Role visibility
+
+Role visibility is enforced by the platform integration layer at two levels.
+
+### 4.1 Bundle-level filtering (`allowed_roles` on `@agentic_workflow`)
+
+Applies to the bundle listing endpoint (`GET /api/integrations/bundles`).
+
+- The platform compares the user's **raw roles** — `session.roles` entries
+  that start with `kdcube:role:` — against the bundle's `allowed_roles`.
+- Raw roles are externally defined: they are Cognito group IDs propagated
+  directly from the ID token without transformation.
+- Derived platform types (`"registered"`, `"privileged"`, `"paid"`) are
+  **not** considered for this check.
+- A bundle is included in the listing if the intersection is non-empty
+  (OR semantics).
+- A bundle with empty `allowed_roles` is always included.
+- Admin listing (`GET /api/admin/integrations/bundles`) is not filtered.
+
+### 4.2 Per-method filtering (`roles` on `@api` and `@ui_widget`)
+
+Applies within a bundle manifest — controls which apis and widgets are
+visible to a given user.
+
+- Both raw roles and derived types are matched here.
+- Enforced by `_roles_visible` in the integration layer.
+- Direct widget fetch and operation routes also reject unauthorized aliases.
+
+Bundle methods should still enforce business-level authorization when needed,
+but route-level visibility is already enforced from decorator metadata.
+
+## 5) Authoring rules
+
+Use these rules for new bundles:
+
+1. Decorate every remotely callable method with `@api(...)`.
+2. Use `route="operations"` for authenticated/internal bundle operations.
+3. Use `route="public"` only for intentionally public endpoints.
+4. Decorate every widget method with `@ui_widget(...)`.
+5. If a widget method is also called through `/operations/...`, add
+   `@api(route="operations", alias="<operation-alias>")` to the same method.
+6. Use `@ui_main` when the bundle has a main iframe application.
+7. Use `@on_message` on the bundle message handler. The base entrypoints already
+   do this on `run()`.
+
+Important current rule:
+
+- do not rely on undecorated same-name method exposure for HTTP routes
+
+## 6) Reference implementations
+
+Primary reference bundle:
+
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36`
+
+Smaller custom main-view example:
+
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/echo.ui@2026-03-30`
+
+Relevant code:
+
+- decorator implementation:
+  `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/agentic_loader.py`
+- integrations controller:
+  `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/integrations.py`
+- base entrypoint widget and `@on_message` usage:
+  `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/entrypoint.py`
+
+## 7) Practical examples
+
+### 7.1 Normal authenticated operation
+
+```python
+@api(alias="preferences_exec_report", route="operations", roles=("registered",))
+async def preferences_exec_report(self, **kwargs):
+    ...
+```
+
+### 7.2 Public webhook-style operation
+
+```python
+@api(
+    alias="telegram_webhook",
+    route="public",
+    public_auth={
+        "mode": "header_secret",
+        "header": "X-Telegram-Bot-Api-Secret-Token",
+        "secret_key": "telegram.webhook_secret",
+    },
+)
+async def telegram_webhook(self, **kwargs):
+    ...
+```
+
+### 7.3 Widget plus operation compatibility
+
+```python
+@api(alias="preferences_widget", route="operations", roles=("registered",))
+@ui_widget(
+    alias="preferences",
+    icon={"tailwind": "heroicons-outline:adjustments-horizontal"},
+    roles=("registered",),
+)
+def preferences_widget(self, **kwargs):
+    ...
+```
+
+This pattern is appropriate when:
+
+- the platform should list/fetch the method as a widget by widget alias
+- an existing client still calls the same method through `/operations/...`

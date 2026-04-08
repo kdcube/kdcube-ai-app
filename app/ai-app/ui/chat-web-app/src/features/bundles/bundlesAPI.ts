@@ -1,24 +1,27 @@
 import {createApi, fetchBaseQuery} from "@reduxjs/toolkit/query/react";
-import {appendDefaultCredentialsHeader} from "../../app/api/utils.ts";
+import {appendDefaultHeaders} from "../../app/api/utils.ts";
 import {ChatScope} from "../chat/chatTypes.ts";
 import {BundlesInfo, BundlesResponse} from "./types.ts";
+
+type GetBundlesListRequest = ChatScope
+
+interface GetBundleUIRequest extends ChatScope {
+    bundleId: string
+}
 
 export const bundlesApiSlice = createApi({
     reducerPath: 'bundlesAPI',
     baseQuery: fetchBaseQuery({
         prepareHeaders(headers) {
-            return appendDefaultCredentialsHeader(headers) as Headers;
+            return appendDefaultHeaders(headers) as Headers;
         }
     }),
-    tagTypes: ["bundles"],
+    tagTypes: ["bundles", "bundle_ui"],
     endpoints: builder => ({
-        getBundlesList: builder.query<BundlesInfo, {
-            tenant: string,
-            project: string,
-        }>({
-            query: ({tenant, project}: ChatScope) => {
+        getBundlesList: builder.query<BundlesInfo, GetBundlesListRequest>({
+            query: ({tenant, project}: GetBundlesListRequest) => {
                 return {
-                    url: `/admin/integrations/bundles?tenant=${tenant}&project=${project}`,
+                    url: `/api/integrations/bundles?tenant=${tenant}&project=${project}`,
                     method: 'GET',
                     headers: [
                         ["Content-Type", "application/json"]
@@ -30,10 +33,23 @@ export const bundlesApiSlice = createApi({
             },
             providesTags: ["bundles"],
         }),
-
+        getBundleUI: builder.query<string, GetBundleUIRequest>({
+            query: ({tenant, project, bundleId}: GetBundleUIRequest) => {
+                return {
+                    url: `/api/integrations/static/${tenant}/${project}/${bundleId}`,
+                    method: 'GET',
+                    headers: [
+                        ["Content-Type", "text/html"]
+                    ],
+                    responseHandler: "text"
+                }
+            },
+            providesTags: ["bundle_ui"],
+        }),
     })
 })
 
 export const {
     useGetBundlesListQuery, useLazyGetBundlesListQuery,
+    useGetBundleUIQuery, useLazyGetBundleUIQuery
 } = bundlesApiSlice

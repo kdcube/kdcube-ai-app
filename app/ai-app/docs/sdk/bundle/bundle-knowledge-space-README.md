@@ -1,151 +1,155 @@
 ---
 id: ks:docs/sdk/bundle/bundle-knowledge-space-README.md
 title: "Bundle Knowledge Space"
-summary: "How bundles expose docs/sources via ks: and integrate knowledge search with React (built on shared local storage)."
-tags: ["sdk", "bundle", "knowledge", "react", "docs", "search"]
-keywords: ["knowledge space", "ks:", "knowledge resolver", "knowledge_search_fn", "knowledge_read_fn", "bundle_storage", "on_bundle_load", "index.json"]
+summary: "Optional bundle-defined read-only ks: namespace for React, plus exact-path reads, optional search, and optional exec-time browsing."
+tags: ["sdk", "bundle", "knowledge", "react", "ks", "storage"]
+keywords: ["knowledge space", "ks:", "knowledge_read_fn", "knowledge_search_fn", "resolve_namespace", "bundle storage", "on_bundle_load"]
 see_also:
+  - ks:docs/sdk/bundle/bundle-lifecycle-README.md
   - ks:docs/sdk/bundle/bundle-storage-cache-README.md
   - ks:docs/sdk/bundle/bundle-dev-README.md
-  - ks:docs/sdk/agents/react/runtime-configuration-README.md
-  - ks:docs/sdk/bundle/bundle-interfaces-README.md
+  - ks:docs/sdk/agents/react/react-turn-workspace-README.md
 ---
 # Bundle Knowledge Space
 
-The **knowledge space** is a bundle‑defined, read‑only namespace that React can
-navigate with `ks:` paths (e.g., `ks:docs/...`, `ks:src/...`). It is **not a global
-filesystem**—each bundle decides what to expose and how to resolve those paths.
+`ks:` is an **optional**, bundle-defined, **read-only logical namespace** that a React agent can use.
 
-This feature is built on **shared bundle local storage** (`BUNDLE_STORAGE_ROOT`):
-the bundle can store docs/indexes there and expose them via a resolver.
+Important constraints:
+- `ks:` is **not mandatory**. A bundle may not expose it at all.
+- The internal shape of `ks:` is **entirely bundle-defined**.
+- `ks:` is **not** part of the turn `OUT_DIR`.
+- `ks:` is **not** browsed by `react.search_files`.
+- `ks:` may be readable by exact path, searchable, both, or neither, depending on what the bundle implements.
 
-This doc explains how to:
-- prepare the knowledge space on bundle startup
-- implement a `ks:` resolver and a search function
-- integrate with React via runtime hooks
+## Mental model
 
----
+```text
+Bundle-defined read-only namespace
 
-## 1) Prepare the knowledge space (bundle startup)
+  ks:<bundle-defined-path>
 
-Use `on_bundle_load(...)` to prepare the bundle’s shared storage and build an index.
-This runs **once per process per tenant/project** and is ideal for cloning docs,
-building indexes, or caching read‑only assets.
+Examples of valid shapes a bundle may choose:
+  ks:index.md
+  ks:catalog/overview.md
+  ks:repo/src/foo.py
+  ks:assets/policies/iso27001.md
 
-```python
-class MyWorkflow(BaseEntrypoint):
-    def on_bundle_load(self, *, storage_root=None, bundle_spec=None, logger=None, **_):
-        if not storage_root:
-            return
-        root = Path(storage_root)
-        (root / "docs").mkdir(parents=True, exist_ok=True)
-        (root / "index.json").write_text("{\"items\": []}")
+These are examples only, not platform-mandated folders.
 ```
 
-Where is `storage_root`?
-- The platform resolves `storage_root` from **shared bundle local storage**.
-- Default location: `<bundles_root>/_bundle_storage/<tenant>/<project>/<bundle_id>`.
-- Configure with `BUNDLE_STORAGE_ROOT`.
+The React agent should learn the actual `ks:` layout from:
+- bundle skills
+- bundle-specific search tools
+- exact paths surfaced in prior results
 
-See: [docs/sdk/bundle/bundle-storage-cache-README.md](bundle-storage-cache-README.md).
+## What React can do with `ks:`
 
----
+### Exact-path read
 
-## 2) Provide a resolver for `ks:` paths
+If the bundle provides `knowledge_read_fn`, the agent can call:
 
-React does **not** know how to read `ks:` by default. Your bundle must provide:
-- **read resolver**: `knowledge_read_fn(path) -> ReadResult`
-- **search resolver**: `knowledge_search_fn(query, root?, keywords?, top_k?) -> list`
-
-These are attached to `RuntimeCtx` (see below), and `react.read` calls them when
-it sees a `ks:` path.
-
-A minimal resolver usually:
-- maps `ks:docs/<path>` to a local file under `<bundle_storage>/docs/...`
-- maps `ks:src/<path>` to a local file under `<bundle_storage>/src/...`
-- returns clear errors when a path is missing or unreadable
-
----
-
-## 3) Integrate with React runtime
-
-React supports bundle‑supplied knowledge hooks:
-- `knowledge_read_fn` — used by `react.read` for `ks:` paths
-- `knowledge_search_fn` — exposed to the agent as `react.search_knowledge`
-
-You set these in the bundle entrypoint when the workflow is constructed:
-
-```python
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.proto import RuntimeCtx
-from .knowledge import resolver as knowledge_resolver
-
-runtime_ctx.knowledge_read_fn = knowledge_resolver.read_knowledge
-runtime_ctx.knowledge_search_fn = knowledge_resolver.search_knowledge
+```text
+react.read(["ks:<bundle-defined-path>"])
 ```
 
-Now the agent can do:
-- `react.read(["ks:docs/...", "ks:src/..."])`
-- `react.search_knowledge(query="...", root="ks:docs")`
+This is the primary `ks:` contract.
 
----
+### Optional search
 
-## 4) How `ks:` paths are used
+If the bundle provides `knowledge_search_fn`, the bundle may expose a search surface such as `react.search_knowledge`.
 
-Typical scheme:
+Search is optional and bundle-defined:
+- the bundle decides whether search exists
+- the bundle decides what query params it supports
+- the bundle decides how results map back to `ks:` paths
 
-```
-ks:index.md
-ks:docs/<relative_doc_path>
-ks:src/<relative_source_path>
-ks:deploy/<relative_deploy_path>
-```
+### Optional exec-time browsing
 
-Important:
-- `ks:` is **bundle‑local**. Different bundles can expose different layouts.
-- If a bundle doesn’t supply a resolver, `react.read(ks:...)` will return a clear
-  error (not a file).
+Normal React tools do **not** browse `ks:` as a directory tree.
 
----
+Directory-style browsing is only possible if the bundle also exposes an **exec-only namespace resolver/helper** for generated code.
 
-## 5) Example bundle (reference)
+Typical pattern:
+1. code starts from a logical ref such as `ks:<bundle-defined-root>`
+2. bundle resolver returns an exec-local `physical_path`
+3. generated code inspects descendants under that path
+4. generated code emits follow-up logical refs such as `ks:<bundle-defined-root>/foo/bar.py`
+5. later the agent uses `react.read(...)` on those logical refs
 
-Reference implementation:
-`services/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react.doc@2026-03-02-22-10`
+If no such resolver/helper exists, `ks:` is still exact-path readable, but not browseable as a filesystem tree.
 
-This bundle:
-- clones docs + sources in `on_bundle_load`
-- builds `index.json` and `index.md`
-- exposes `ks:docs`, `ks:src`, `ks:deploy`
-- registers `react.search_knowledge` in bundle tools
+## Recommended integration contract
 
-See:
-- `.../react.doc@2026-03-02-22-10/doc-reader-README.md`
-- `.../react.doc@2026-03-02-22-10/knowledge/resolver.py`
-- `.../react.doc@2026-03-02-22-10/knowledge/index_builder.py`
+### Required for `react.read`
 
----
+Set:
+- `runtime_ctx.knowledge_read_fn`
 
-## Read + search flow (visual)
+Expected role:
+- accept a `ks:` logical path
+- resolve it to bundle-owned content
+- return text/base64/mime metadata in the shape expected by the React read path
 
-```mermaid
-flowchart LR
-    A[Bundle Startup] --> B[Prepare bundle storage]
-    B --> C[Build index.json + index.md]
-    C --> D[Expose ks:docs / ks:src / ks:deploy]
+### Optional for bundle search
 
-    U[User question] --> S[React loads skill]
-    S --> I[react.read ks:index.md]
-    I --> Q[react.search_knowledge]
-    Q --> R[react.read ks:docs/<path>]
-    R --> X[optional: react.read ks:src/<file>]
-```
+Set:
+- `runtime_ctx.knowledge_search_fn`
 
----
+Expected role:
+- search bundle knowledge
+- return hits that can be turned into exact `ks:` reads
 
-## Checklist (bundle author)
+### Optional for exec-time browsing
 
-- [ ] Implement `on_bundle_load` to prepare docs / index.
-- [ ] Provide `knowledge_read_fn` and `knowledge_search_fn`.
-- [ ] Register `react.search_knowledge` in bundle tools descriptor.
-- [ ] Add a product/knowledge skill that teaches the agent how to navigate `ks:`.
-- [ ] Validate `ks:` references in docs (optional, but recommended).
+Expose a bundle-local exec-only helper, for example:
+- `bundle_data.resolve_namespace(logical_ref)`
+
+This helper is not a platform-wide mandatory name. The `kdcube.copilot` bundle uses that pattern, but other bundles may choose a different helper or no helper at all.
+
+## Where `ks:` can be backed from
+
+`ks:` does **not** have to come from one specific storage backend.
+
+Common backing choices:
+- shared bundle local storage under `BUNDLE_STORAGE_ROOT`
+- bundle-cloned repo/cache built in `on_bundle_load(...)`
+- read-only files prepared from remote storage into local cache
+- any other bundle-owned storage the resolver can expose safely
+
+Recommended default:
+- use shared bundle local storage for large read-only assets, indexes, cloned repos, and caches
+- optionally map part of that storage into `ks:`
+
+## Relationship to bundle storage
+
+`ks:` is a **logical namespace**.
+`BUNDLE_STORAGE_ROOT` is a **storage location**.
+
+They are related, but not the same thing:
+- a bundle may use local bundle storage to back `ks:`
+- a bundle may expose only part of that storage via `ks:`
+- a bundle may use local bundle storage without exposing any `ks:`
+
+## Lifecycle
+
+The usual pattern is:
+1. `on_bundle_load(...)` prepares local read-only assets or indexes
+2. bundle wires `knowledge_read_fn` and optional `knowledge_search_fn`
+3. bundle skills teach the agent how to navigate the exposed namespace
+4. generated exec code optionally uses a resolver/helper if directory-style browsing is needed
+
+## Example bundle
+
+Reference example:
+`src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/kdcube.copilot@2026-04-03-19-05`
+
+That bundle exposes one particular `ks:` layout for its own use case, but that layout is **example-specific**, not part of the general bundle contract.
+
+## Checklist
+
+- [ ] Decide whether the bundle exposes `ks:` at all.
+- [ ] If yes, define the logical namespace shape in bundle docs/skills.
+- [ ] Implement `knowledge_read_fn` for exact-path reads.
+- [ ] Optionally implement `knowledge_search_fn`.
+- [ ] Optionally expose an exec-only namespace resolver/helper for directory-style browsing.
+- [ ] Keep `ks:` read-only from the React agent’s perspective.

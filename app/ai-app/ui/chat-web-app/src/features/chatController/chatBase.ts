@@ -169,6 +169,7 @@ export interface ChatOptions {
     authToken?: string | null;
     idToken?: string | null;
     idHeaderName?: string | null;
+    streamIdHeaderName?: string | null;
 }
 
 export abstract class ChatBase {
@@ -179,6 +180,8 @@ export abstract class ChatBase {
     protected _authToken?: string | null;
     protected _idToken?: string | null;
     protected _sessionId?: string | null;
+    protected _streamId: string | null = null;
+    protected _streamIdHeaderName?: string | null;
     protected _idHeaderName?: string | null;
 
     protected constructor(options: ChatOptions) {
@@ -189,6 +192,7 @@ export abstract class ChatBase {
         this._authToken = options.authToken;
         this._idToken = options.idToken;
         this._idHeaderName = options.idHeaderName;
+        this._streamIdHeaderName = options.streamIdHeaderName
     }
 
     public get sessionId(): string | null | undefined {
@@ -197,6 +201,22 @@ export abstract class ChatBase {
 
     public set sessionId(value: string | null | undefined) {
         this._sessionId = value;
+    }
+
+    public get streamId(): string | null {
+        return this._streamId
+    }
+
+    public set streamId(value: string | null) {
+        this._streamId = value;
+    }
+
+    get streamIdHeaderName(): string | null | undefined {
+        return this._streamIdHeaderName;
+    }
+
+    set streamIdHeaderName(value: string | null) {
+        this._streamIdHeaderName = value;
     }
 
     public set authToken(authToken: string | null | undefined) {
@@ -274,6 +294,14 @@ export abstract class ChatBase {
         const tz = getClientTimezone()
         if (tz.tz) h.set("X-User-Timezone", tz.tz);
         h.set("X-User-UTC-Offset", String(tz.utcOffsetMin));
+        return h;
+    };
+
+    protected addStreamIdHeader(base?: HeadersInit): Headers {
+        const h = new Headers(base);
+        if (this._streamIdHeaderName && this._streamId) {
+            h.set(this._streamIdHeaderName, this._streamId);
+        }
         return h;
     };
 

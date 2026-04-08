@@ -1,12 +1,12 @@
 ---
-id: ks:deploy/devenv/README.md
+id: ks:deployment/devenv/README.md
 title: "DevEnv (Run Services Locally)"
 summary: "Run ingress/proc/metrics/frontend on the host while infra runs in a separate stack."
 tags: ["deployment", "devenv", "local", "development", "env"]
 keywords: ["local dev", "host services", "sample env", "frontend configs", "infra stack", "proxylogin"]
 see_also:
   - ks:docs/ops/deployment-options-index-README.md
-  - ks:deploy/docker/local-infra-stack/README.md
+  - ks:deployment/docker/local-infra-stack/README.md
 ---
 # DevEnv (run services locally)
 
@@ -64,7 +64,7 @@ docker compose up -d
 
 3. Run services locally:
 
-- Ingress: `apps/chat/api/web_app.py`
+- Ingress: `apps/chat/ingress/web_app.py`
 - Proc: `apps/chat/proc/web_app.py`
 - Metrics: `apps/metrics/web_app.py`
 - Frontend: run Vite using `.env.frontend`

@@ -1,0 +1,1233 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2025 Elena Viter
+
+# chat/ingress/chat_core.py
+
+from __future__ import annotations
+
+import logging
+import os
+import time
+import uuid
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Literal
+from fastapi import Request  # only if you put this in a place where FastAPI is available
+
+from kdcube_ai_app.apps.chat.sdk.config import get_settings
+from kdcube_ai_app.apps.chat.continuations import RedisConversationContinuationSource
+from kdcube_ai_app.apps.chat.sdk.util import _iso
+from kdcube_ai_app.auth.sessions import RequestContext, UserType, UserSession
+from kdcube_ai_app.apps.chat.emitters import ChatRelayCommunicator, ChatCommunicator
+from kdcube_ai_app.apps.chat.sdk.protocol import (
+    ChatTaskPayload, ChatTaskMeta, ChatTaskRouting, ChatTaskActor, ChatTaskUser,
+    ChatTaskRequest, ChatTaskConfig, ChatTaskAccounting, ChatTaskContinuation, ServiceCtx, ConversationCtx
+)
+from kdcube_ai_app.infra.accounting.envelope import build_envelope_from_session
+from kdcube_ai_app.infra.gateway.rate_limiter import RateLimitError
+from kdcube_ai_app.infra.gateway.backpressure import BackpressureError
+from kdcube_ai_app.infra.gateway.circuit_breaker import CircuitBreakerError
+from kdcube_ai_app.infra.namespaces import CONFIG
+from kdcube_ai_app.apps.middleware.token_extract import (
+    resolve_auth_from_headers_and_cookies,
+    resolve_socket_auth_tokens,
+)
+from kdcube_ai_app.apps.chat.ingress.resolvers import get_auth_manager
+from kdcube_ai_app.infra.plugin.bundle_registry import load_persisted_registry_from_runtime_ctx
+
+from kdcube_ai_app.auth.AuthManager import AuthenticationError, PRIVILEGED_ROLES
+
+logger = logging.getLogger(__name__)
+
+async def _load_registry_from_redis(app, tenant: str, project: str):
+    """
+    Ingress must never update bundles. It only reads registry from Redis
+    to validate bundle IDs and fetch the default bundle id.
+    """
+    return await load_persisted_registry_from_runtime_ctx(app.state, tenant, project)
+
+
+TransportKind = Literal["sse", "socket"]
+
+# Hard limit for input text length.
+# Chosen so that we can embed it with OpenAI embeddings without chunking.
+try:
+    MAX_EMBED_TEXT_CHARS: int = int(os.getenv("CHAT_MAX_MESSAGE_CHARS", "32000"))
+except Exception:
+    MAX_EMBED_TEXT_CHARS = 32000
+
+# -----------------------------
+# Gateway checks (shared)
+# -----------------------------
+
+@dataclass
+class GatewayCheckResult:
+    kind: Literal["ok", "rate_limit", "backpressure", "circuit_breaker", "error"]
+    exc: Optional[Exception] = None
+
+
+async def run_gateway_checks(
+        gateway_adapter,
+        session: UserSession,
+        context: RequestContext,
+        endpoint: str,
+) -> GatewayCheckResult:
+    """
+    Shared gateway checks for chat ingestion.
+    Transport layer decides how to map errors to HTTP / WS semantics.
+    """
+    try:
+        await gateway_adapter.gateway.rate_limiter.check_and_record(session, context, endpoint)
+        await gateway_adapter.gateway.backpressure_manager.check_capacity(
+            session.user_type, session, context, endpoint
+        )
+        return GatewayCheckResult(kind="ok")
+    except RateLimitError as e:
+        return GatewayCheckResult(kind="rate_limit", exc=e)
+    except BackpressureError as e:
+        return GatewayCheckResult(kind="backpressure", exc=e)
+    except CircuitBreakerError as e:
+        return GatewayCheckResult(kind="circuit_breaker", exc=e)
+    except Exception as e:
+        logger.exception("Gateway checks failed for endpoint %s: %s", endpoint, e)
+        return GatewayCheckResult(kind="error", exc=e)
+
+
+def map_gateway_error(result: GatewayCheckResult) -> Dict[str, Any]:
+    """
+    Map GatewayCheckResult → generic error payload for transport layer.
+    """
+    if result.kind == "rate_limit":
+        e: RateLimitError = result.exc  # type: ignore[assignment]
+        msg = f"Rate limit exceeded: {getattr(e, 'message', str(e))}"
+        return {
+            "error_type": "rate_limit",
+            "status": 429,
+            "message": msg,
+            "retry_after": getattr(e, "retry_after", None),
+        }
+    if result.kind == "backpressure":
+        e: BackpressureError = result.exc  # type: ignore[assignment]
+        msg = f"System under pressure: {getattr(e, 'message', str(e))}"
+        return {
+            "error_type": "backpressure",
+            "status": 503,
+            "message": msg,
+            "retry_after": getattr(e, "retry_after", None),
+        }
+    if result.kind == "circuit_breaker":
+        e: CircuitBreakerError = result.exc  # type: ignore[assignment]
+        msg = f"Service temporarily unavailable: {getattr(e, 'message', str(e))}"
+        return {
+            "error_type": "circuit_breaker",
+            "status": 503,
+            "message": msg,
+            "retry_after": getattr(e, "retry_after", None),
+        }
+
+    # generic
+    msg = "System check failed"
+    return {
+        "error_type": "gateway_error",
+        "status": 503,
+        "message": msg,
+        "retry_after": None,
+    }
+
+
+# -----------------------------
+# Attachments (shared)
+# -----------------------------
+
+@dataclass
+class RawAttachment:
+    """
+    Transport-agnostic representation of a raw uploaded file.
+    """
+    content: bytes
+    name: str
+    mime: str
+    meta: Optional[Dict[str, Any]] = None
+
+
+# -----------------------------
+# Chat ingestion (shared)
+# -----------------------------
+
+@dataclass
+class IngressConfig:
+    transport: TransportKind                # "sse" or "socket"
+    entrypoint: str                         # "/sse/chat" or "/socket.io/chat"
+    component: str                          # "chat.sse" or "chat.socket"
+    instance_id: str
+    stream_id: Optional[str] = None         # SSE stream_id or Socket.IO sid
+    metadata: Optional[Dict[str, Any]] = None
+
+
+@dataclass
+class IngressResult:
+    ok: bool
+    error_type: Optional[str] = None
+    error: Optional[str] = None
+    http_status: Optional[int] = None
+    retry_after: Optional[int] = None
+    task_id: Optional[str] = None
+    conversation_id: Optional[str] = None
+    turn_id: Optional[str] = None
+    session_id: Optional[str] = None
+    user_type: Optional[str] = None
+    queue_stats: Optional[Dict[str, Any]] = None
+    reason: Optional[str] = None
+    continuation_kind: Optional[str] = None
+
+
+def _resolve_requested_continuation_kind(
+    message_data: Dict[str, Any],
+    *,
+    conversation_busy: bool,
+) -> tuple[str, bool]:
+    payload = message_data.get("payload")
+    payload = payload if isinstance(payload, dict) else {}
+
+    raw = (
+        message_data.get("message_kind")
+        or message_data.get("continuation_kind")
+        or payload.get("message_kind")
+        or payload.get("continuation_kind")
+    )
+    raw = str(raw or "").strip().lower()
+
+    explicit_followup = bool(message_data.get("followup") or payload.get("followup"))
+    explicit_steer = bool(message_data.get("steer") or payload.get("steer"))
+
+    if explicit_steer or raw == "steer":
+        return "steer", True
+    if explicit_followup or raw == "followup":
+        return "followup", True
+    if raw == "regular":
+        return ("followup" if conversation_busy else "regular"), True
+    return ("followup" if conversation_busy else "regular"), False
+
+
+def _resolve_target_turn_id(message_data: Dict[str, Any]) -> Optional[str]:
+    payload = message_data.get("payload")
+    payload = payload if isinstance(payload, dict) else {}
+    raw = (
+        message_data.get("target_turn_id")
+        or message_data.get("active_turn_id")
+        or payload.get("target_turn_id")
+        or payload.get("active_turn_id")
+    )
+    value = str(raw or "").strip()
+    return value or None
+
+
+async def process_chat_message(
+        *,
+        app,
+        chat_queue_manager,
+        chat_comm: ChatRelayCommunicator,
+        session: UserSession,
+        request_context: RequestContext,
+        message_data: Dict[str, Any],
+        message_text: str,
+        ingress: IngressConfig,
+        raw_attachments: Optional[List[RawAttachment]] = None,
+) -> IngressResult:
+    """
+    Core chat ingestion:
+      - validate message
+      - resolve bundle
+      - build payload + accounting envelope
+      - conversation state (lock, created/in_progress)
+      - enqueue
+      - emit conv_status + start + errors
+
+    Transport layer already ran gateway checks. It just passes its
+    RequestContext + IngressConfig.
+    """
+    text = (message_text or "").strip()
+    requested_kind, requested_kind_explicit = _resolve_requested_continuation_kind(
+        message_data,
+        conversation_busy=False,
+    )
+    target_turn_id = _resolve_target_turn_id(message_data)
+    task_id = str(uuid.uuid4())
+    turn_id = message_data.get("turn_id") or f"turn_{uuid.uuid4().hex[:8]}"
+    conversation_id = message_data.get("conversation_id") or session.session_id
+    # Tenant / project
+    settings = get_settings()
+    tenant_id = (
+            message_data.get("tenant")
+            or message_data.get("tenant_id")
+            or settings.TENANT
+    )
+    project_id = message_data.get("project") or settings.PROJECT
+
+    request_id = str(uuid.uuid4())
+    provided_bundle_id = message_data.get("bundle_id")
+
+    # Ingress only reads registry from Redis (no updates).
+    reg = await _load_registry_from_redis(app, tenant_id, project_id)
+
+    svc = ServiceCtx(request_id=request_id, user=session.user_id, project=project_id, tenant=tenant_id)
+    conv = ConversationCtx(
+        session_id=session.session_id,
+        conversation_id=conversation_id,
+        turn_id=turn_id,
+    )
+    comm = ChatCommunicator(
+        emitter=chat_comm,
+        tenant=tenant_id or "",
+        project=project_id or "",
+        user_id=session.user_id,
+        user_type=session.user_type.value,
+        service=svc.model_dump(),
+        conversation=conv.model_dump(),
+        room=session.session_id,
+        target_sid=ingress.stream_id,
+    )
+
+    # If registry is not available from Redis, fail early to avoid stale defaults.
+    if not reg:
+        err = "Bundle registry unavailable (Redis not ready)"
+        await chat_comm.emit_error(
+            svc,
+            conv,
+            error=err,
+            target_sid=ingress.stream_id,
+            session_id=session.session_id,
+        )
+        return IngressResult(
+            ok=False,
+            error_type="bundle_registry_unavailable",
+            error=err,
+            http_status=503,
+        )
+
+    # Empty message → emit error via relay + let transport map to HTTP/WS.
+    # Explicit steer messages may intentionally carry blank text.
+    if not text and requested_kind != "steer":
+        await chat_comm.emit_error(
+            svc,
+            conv,
+            error='Missing "message"',
+            target_sid=ingress.stream_id,
+            session_id=session.session_id,
+        )
+        return IngressResult(
+            ok=False,
+            error_type="missing_message",
+            error='Missing "message"',
+            http_status=400,
+        )
+
+    from kdcube_ai_app.infra.service_hub.multimodality import (
+        MESSAGE_MAX_BYTES,
+        MODALITY_DOC_MIME,
+        MODALITY_IMAGE_MIME,
+        MODALITY_MAX_DOC_BYTES,
+        MODALITY_MAX_IMAGE_BYTES,
+    )
+
+    text_bytes = len(text.encode("utf-8"))
+    if text_bytes > MESSAGE_MAX_BYTES:
+        total_limit_mb = int(MESSAGE_MAX_BYTES / (1024 * 1024))
+        await chat_comm.emit_error(
+            svc,
+            conv,
+            error=f"Message exceeds the {total_limit_mb} MB total limit (text + attachments).",
+            target_sid=ingress.stream_id,
+            session_id=session.session_id,
+        )
+        return IngressResult(
+            ok=False,
+            error_type="message_size_limit",
+            error="message exceeds total size limit",
+            http_status=413,
+        )
+
+    bundle_id_val = provided_bundle_id or (reg.default_bundle_id if reg else None)
+    if not reg or not bundle_id_val or bundle_id_val not in (reg.bundles or {}):
+        err = f"Unknown bundle_id '{bundle_id_val or provided_bundle_id}'"
+        await chat_comm.emit_error(
+            svc,
+            conv,
+            error=err,
+            target_sid=ingress.stream_id,
+            session_id=session.session_id,
+        )
+        return IngressResult(
+            ok=False,
+            error_type="unknown_bundle",
+            error=err,
+            http_status=400,
+        )
+    spec_resolved = reg.bundles.get(bundle_id_val)
+    if not spec_resolved:
+        err = f"Bundle spec missing for bundle_id '{bundle_id_val}'"
+        await chat_comm.emit_error(
+            svc,
+            conv,
+            error=err,
+            target_sid=ingress.stream_id,
+            session_id=session.session_id,
+        )
+        return IngressResult(
+            ok=False,
+            error_type="unknown_bundle",
+            error=err,
+            http_status=400,
+        )
+
+    # Input too long → emit error and do NOT enqueue
+    if len(text) > MAX_EMBED_TEXT_CHARS:
+        err = (
+            f"Input is too long ({len(text)} characters). "
+            f"Maximum allowed is {MAX_EMBED_TEXT_CHARS} characters."
+        )
+        await chat_comm.emit_error(
+            svc,
+            conv,
+            error=err,
+            target_sid=ingress.stream_id,
+            session_id=session.session_id,
+        )
+        return IngressResult(
+            ok=False,
+            error_type="input_too_long",
+            error=err,
+            http_status=400,
+            reason="input_too_long",
+        )
+
+    bundle_id = spec_resolved.id
+    metadata = dict(ingress.metadata or {})
+    acct_env = build_envelope_from_session(
+        session=session,
+        tenant_id=tenant_id,
+        project_id=project_id,
+        request_id=request_id,
+        component=ingress.component,
+        app_bundle_id=bundle_id,
+        metadata=metadata,
+    ).to_dict()
+
+    ext_config = (message_data.get("config") or {}).copy()
+    if "tenant" not in ext_config:
+        ext_config["tenant"] = tenant_id
+    if "project" not in ext_config and project_id:
+        ext_config["project"] = project_id
+
+    routing = ChatTaskRouting(
+        session_id=session.session_id,
+        conversation_id=conversation_id,
+        turn_id=turn_id,
+        socket_id=ingress.stream_id,
+        bundle_id=bundle_id,
+    )
+
+    payload = ChatTaskPayload(
+        meta=ChatTaskMeta(
+            task_id=task_id,
+            created_at=time.time(),
+            instance_id=ingress.instance_id,
+        ),
+        routing=routing,
+        actor=ChatTaskActor(
+            tenant_id=tenant_id,
+            project_id=project_id,
+        ),
+        user=ChatTaskUser(
+            user_type=session.user_type.value,
+            user_id=session.user_id,
+            username=session.username,
+            fingerprint=session.fingerprint,
+            roles=session.roles,
+            permissions=session.permissions,
+            timezone=session.timezone,
+            utc_offset_min=getattr(request_context, "user_utc_offset_min", None),
+        ),
+        request=ChatTaskRequest(
+            message=text,
+            chat_history=message_data.get("chat_history") or [],
+            operation=message_data.get("operation") or message_data.get("command"),
+            invocation=message_data.get("invocation"),
+            payload=message_data.get("payload") or {},
+            request_id=request_id,
+        ),
+        config=ChatTaskConfig(values=ext_config),
+        accounting=ChatTaskAccounting(envelope=acct_env),
+        continuation=ChatTaskContinuation(
+            kind=requested_kind,
+            explicit=requested_kind_explicit,
+            target_turn_id=target_turn_id,
+        ),
+    )
+
+    # --- Conversation lock + state ---
+    try:
+        conv_exists = await app.state.conversation_browser.conversation_exists(
+            user_id=payload.user.user_id,
+            conversation_id=conversation_id,
+            bundle_id=payload.routing.bundle_id,
+        )
+
+        set_res = await app.state.conversation_browser.set_conversation_state(
+            tenant=payload.actor.tenant_id,
+            project=payload.actor.project_id,
+            user_id=payload.user.user_id,
+            conversation_id=payload.routing.conversation_id,
+            new_state="in_progress",
+            by_instance=ingress.instance_id,
+            request_id=request_id,
+            last_turn_id=payload.routing.turn_id,
+            require_not_in_progress=True,
+            user_type=payload.user.user_type,
+            bundle_id=payload.routing.bundle_id,
+        )
+    except Exception as e:
+        conv_state_update_error = f"conversation state update failed: {e}"
+        logger.error(conv_state_update_error)
+        conv_exists = True
+        set_res = {"ok": False,
+                   "error": conv_state_update_error,
+                   "updated_at": _iso(),
+                   "current_turn_id": turn_id,
+                   "error_type": "conversation_state_update_error"
+                   }
+
+    if not set_res.get("ok", True):
+        active_turn = set_res.get("current_turn_id")
+        error = set_res.get("error") or "Conversation is busy (another tab/process is answering)."
+        error_type = set_res.get("error_type") or "conversation_busy"
+        if error_type == "conversation_busy":
+            try:
+                continuation_kind, continuation_explicit = _resolve_requested_continuation_kind(
+                    message_data,
+                    conversation_busy=True,
+                )
+                payload.continuation = ChatTaskContinuation(
+                    kind=continuation_kind,
+                    explicit=continuation_explicit,
+                    target_turn_id=target_turn_id,
+                    active_turn_id=active_turn,
+                )
+                continuation_source = RedisConversationContinuationSource(
+                    redis=getattr(app.state, "redis_async", None),
+                    tenant=tenant_id,
+                    project=project_id,
+                    conversation_id=conversation_id,
+                )
+                env = await continuation_source.publish(
+                    payload,
+                    kind=continuation_kind,
+                    explicit=continuation_explicit,
+                    target_turn_id=target_turn_id,
+                    active_turn_id=active_turn,
+                )
+                queue_size = await continuation_source.pending_count()
+                try:
+                    await comm.service_event(
+                        type="queue.continuation.accepted",
+                        step="queue.continuation",
+                        status="completed",
+                        title="Continuation accepted",
+                        agent="ingress",
+                        data={
+                            "message_kind": continuation_kind,
+                            "active_turn_id": active_turn,
+                            "queued_turn_id": payload.routing.turn_id,
+                            "task_id": payload.meta.task_id,
+                            "continuation_queue_size": queue_size,
+                            "continuation_message_id": env.message_id,
+                        },
+                    )
+                except Exception:
+                    logger.debug("Failed to emit continuation accepted service event", exc_info=True)
+                return IngressResult(
+                    ok=True,
+                    task_id=task_id,
+                    conversation_id=conversation_id,
+                    turn_id=turn_id,
+                    session_id=session.session_id,
+                    user_type=session.user_type.value,
+                    queue_stats={"continuation_queue_size": queue_size},
+                    reason=f"{continuation_kind}_accepted",
+                    continuation_kind=continuation_kind,
+                )
+            except Exception:
+                logger.exception("Failed to store continuation message for conversation %s", conversation_id)
+        try:
+            await chat_comm.emit_conv_status(
+                svc,
+                conv,
+                routing,
+                state="in_progress",
+                updated_at=set_res.get("updated_at", _iso()),
+                current_turn_id=active_turn,
+                target_sid=ingress.stream_id,
+            )
+            await chat_comm.emit_error(
+                svc,
+                conv,
+                error=error,
+                target_sid=ingress.stream_id,
+                session_id=payload.routing.session_id,
+            )
+        except Exception:
+            pass
+
+        return IngressResult(
+            ok=False,
+            error_type=error_type,
+            error=error,
+            http_status=409,
+        )
+
+    # Emit conv_status created / in_progress
+    try:
+        if not conv_exists:
+            # broadcast. client can update the conversation list
+            await chat_comm.emit_conv_status(
+                svc,
+                conv,
+                routing,
+                state="created",
+                updated_at=set_res["updated_at"],
+                current_turn_id=payload.routing.turn_id,
+            )
+        # broadcast
+        await chat_comm.emit_conv_status(
+            svc,
+            conv,
+            routing,
+            state="in_progress",
+            updated_at=set_res["updated_at"],
+            current_turn_id=payload.routing.turn_id,
+        )
+    except Exception:
+        pass
+
+    # --- Attachments (host after lock; reject entire message on any failure) ---
+    if raw_attachments:
+        store = getattr(app.state, "conversation_store", None)
+        enable_av = os.getenv("APP_AV_SCAN", "1") == "1"
+        av_timeout = float(os.getenv("APP_AV_TIMEOUT_S", "3.0"))
+        from kdcube_ai_app.infra.gateway.safe_preflight import PreflightConfig, preflight_async
+        cfg = PreflightConfig(av_scan=enable_av, av_timeout_s=av_timeout)
+
+        attachment_errors: List[str] = []
+        preflight_ok: List[RawAttachment] = []
+
+        async def _safe_attachment_event(reason: str, message: str, att: RawAttachment, extra: Optional[Dict[str, Any]] = None) -> None:
+            data = {
+                "reason": reason,
+                "message": message,
+                "filename": att.name or "file",
+                "mime": att.mime or "application/octet-stream",
+                "show_in_timeline": True,
+            }
+            if extra:
+                data.update(extra)
+            try:
+                await comm.service_event(
+                    type="rate_limit.attachment_failure",
+                    step="rate_limit",
+                    status="error",
+                    title="Attachment rejected",
+                    agent="ingress.attachments",
+                    data=data,
+                )
+            except Exception:
+                logger.exception("failed to emit attachment failure event")
+
+        total_bytes = text_bytes + sum(len(a.content or b"") for a in raw_attachments)
+        total_limit_mb = int(MESSAGE_MAX_BYTES / (1024 * 1024))
+        if total_bytes > MESSAGE_MAX_BYTES:
+            attachment_errors.append("message_size_limit")
+            await _safe_attachment_event(
+                "message_size_limit",
+                (
+                    f"Total message size exceeds {total_limit_mb} MB (includes message text + attachments; "
+                    f"per-file caps: images {int(MODALITY_MAX_IMAGE_BYTES / (1024 * 1024))} MB, "
+                    f"PDFs {int(MODALITY_MAX_DOC_BYTES / (1024 * 1024))} MB)."
+                ),
+                raw_attachments[0],
+                {"size_bytes": total_bytes, "max_bytes": MESSAGE_MAX_BYTES, "max_mb": total_limit_mb, "text_bytes": text_bytes},
+            )
+
+        for a in raw_attachments:
+            if not a.content:
+                attachment_errors.append("empty")
+                await _safe_attachment_event("empty", "Attachment is empty.", a)
+                continue
+            mime = (a.mime or "").strip().lower()
+            per_file_cap = MESSAGE_MAX_BYTES
+            if mime in MODALITY_IMAGE_MIME:
+                per_file_cap = MODALITY_MAX_IMAGE_BYTES
+            elif mime in MODALITY_DOC_MIME:
+                per_file_cap = MODALITY_MAX_DOC_BYTES
+            if len(a.content) > per_file_cap:
+                attachment_errors.append("size_limit")
+                per_file_mb = int(per_file_cap / (1024 * 1024))
+                await _safe_attachment_event(
+                    "size_limit",
+                    f"Attachment '{a.name or 'file'}' exceeds the per-file size limit ({per_file_mb} MB).",
+                    a,
+                    {"size_bytes": len(a.content), "max_bytes": per_file_cap},
+                )
+                continue
+            if not store:
+                attachment_errors.append("store_missing")
+                await _safe_attachment_event(
+                    "store_missing",
+                    "Attachment store is unavailable.",
+                    a,
+                    {"size_bytes": len(a.content)},
+                )
+                continue
+            if enable_av:
+                try:
+                    pf = await preflight_async(
+                        a.content,
+                        a.name or "file",
+                        a.mime or "application/octet-stream",
+                        cfg,
+                    )
+                except Exception:
+                    attachment_errors.append("preflight_error")
+                    await _safe_attachment_event("preflight_error", "Attachment preflight failed.", a)
+                    continue
+                if not pf.allowed:
+                    attachment_errors.append("preflight_rejected")
+                    await _safe_attachment_event(
+                        "preflight_rejected",
+                        "Attachment failed security checks.",
+                        a,
+                        {"reasons": pf.reasons},
+                    )
+                    continue
+            preflight_ok.append(a)
+
+        attachments: List[Dict[str, Any]] = []
+        if not attachment_errors and preflight_ok:
+            for a in preflight_ok:
+                try:
+                    uri, key, rn_f = await store.put_attachment(
+                        tenant=tenant_id or "",
+                        project=project_id or "",
+                        user=session.user_id,
+                        fingerprint=session.fingerprint,
+                        conversation_id=conversation_id,
+                        turn_id=turn_id,
+                        role="user",
+                        filename=a.name or "file",
+                        data=a.content,
+                        mime=a.mime or "application/octet-stream",
+                        user_type=session.user_type.value,
+                        origin="user",
+                    )
+                except Exception:
+                    attachment_errors.append("store_error")
+                    await _safe_attachment_event("store_error", "Attachment hosting failed.", a)
+                    break
+                attachments.append({
+                    "filename": a.name or "file",
+                    "mime": a.mime or "application/octet-stream",
+                    "size": len(a.content),
+                    "meta": a.meta or {},
+                    "hosted_uri": uri,
+                    "key": key,
+                    "rn": rn_f,
+                    "role": "user",
+                    "origin": "user",
+                })
+
+        if attachment_errors:
+            # Best-effort cleanup for partially stored attachments in this turn
+            if store:
+                try:
+                    _, user_or_fp = store._who_and_id(session.user_id, session.fingerprint)
+                    await store.delete_turn(
+                        tenant=tenant_id or "",
+                        project=project_id or "",
+                        user_type=session.user_type.value,
+                        user_or_fp=user_or_fp,
+                        conversation_id=conversation_id,
+                        turn_id=turn_id,
+                    )
+                except Exception:
+                    logger.exception("failed to cleanup attachments after failure")
+            # rollback state since nothing will process this turn
+            try:
+                res_reset = await app.state.conversation_browser.set_conversation_state(
+                    tenant=tenant_id,
+                    project=project_id,
+                    user_id=session.user_id,
+                    conversation_id=conversation_id,
+                    new_state="idle",
+                    by_instance=ingress.instance_id,
+                    request_id=request_id,
+                    last_turn_id=turn_id,
+                    require_not_in_progress=False,
+                    user_type=session.user_type.value,
+                    bundle_id=bundle_id,
+                )
+                await chat_comm.emit_conv_status(
+                    svc,
+                    conv,
+                    routing=routing,
+                    state="idle",
+                    updated_at=res_reset.get("updated_at", _iso()),
+                    current_turn_id=res_reset.get("current_turn_id"),
+                    completion="rollback",
+                    target_sid=ingress.stream_id,
+                )
+            except Exception:
+                logger.exception("failed to reset conv state after attachment failure")
+            # await chat_comm.emit_error(
+            #     svc,
+            #     conv,
+            #     error="Attachment rejected; message not processed.",
+            #     target_sid=ingress.stream_id,
+            #     session_id=session.session_id,
+            # )
+            return IngressResult(
+                ok=False,
+                error_type="attachment_rejected",
+                error="Attachment rejected; message not processed.",
+                http_status=400,
+            )
+
+        if attachments:
+            payload_obj = message_data.get("payload")
+            if not isinstance(payload_obj, dict):
+                payload_obj = {}
+            payload_obj["attachments"] = attachments
+            message_data["payload"] = payload_obj
+            if payload.request:
+                payload.request.payload = payload_obj
+            try:
+                await comm.event(
+                    agent="tooling",
+                    type="chat.attachments",
+                    title=f"Attachments Ready ({len(attachments)})",
+                    step="attachments",
+                    status="completed",
+                    data={"count": len(attachments), "items": attachments},
+                )
+            except Exception:
+                logger.exception("failed to emit attachments step")
+
+    # --- Enqueue ---
+    enqueue_started_at = time.monotonic()
+    try:
+        success, reason, stats = await chat_queue_manager.enqueue_chat_task_atomic(
+            session.user_type,
+            payload.model_dump(),
+            session,
+            request_context,
+            ingress.entrypoint,
+        )
+    except Exception as e:
+        logger.exception("enqueue_chat_task_atomic failed: %s", e)
+        success, reason, stats = False, "internal_error", {}
+    enqueue_ms = int((time.monotonic() - enqueue_started_at) * 1000)
+    try:
+        created_at = float(payload.meta.created_at) if payload.meta else None
+    except Exception:
+        created_at = None
+    ingress_to_enqueue_ms = None
+    if created_at:
+        try:
+            ingress_to_enqueue_ms = int((time.time() - created_at) * 1000)
+        except Exception:
+            ingress_to_enqueue_ms = None
+
+    logger.info(
+        "enqueue_chat_task_atomic result task_id=%s user_type=%s success=%s reason=%s enqueue_ms=%s ingress_to_enqueue_ms=%s queue_stats=%s",
+        task_id,
+        session.user_type.value,
+        success,
+        reason,
+        enqueue_ms,
+        ingress_to_enqueue_ms,
+        stats,
+    )
+
+    if not success:
+        # rollback state since nothing will process this turn
+        try:
+            res_reset = await app.state.conversation_browser.set_conversation_state(
+                tenant=payload.actor.tenant_id,
+                project=payload.actor.project_id,
+                user_id=payload.user.user_id,
+                conversation_id=payload.routing.conversation_id,
+                new_state="idle",
+                by_instance=ingress.instance_id,
+                request_id=request_id,
+                last_turn_id=payload.routing.turn_id,
+                require_not_in_progress=False,
+                user_type=payload.user.user_type,
+                bundle_id=payload.routing.bundle_id,
+            )
+        except Exception as e:
+            logger.error("Failed to reset conv state after enqueue failure: %s", e)
+            res_reset = {"updated_at": _iso(), "current_turn_id": payload.routing.turn_id}
+
+        retry_after = (
+            30
+            if session.user_type == UserType.ANONYMOUS
+            else 45
+            if session.user_type == UserType.REGISTERED
+            else 60
+        )
+        try: # broadcast conv state rollback
+            await chat_comm.emit_conv_status(
+                svc,
+                conv,
+                routing=routing,
+                state="idle",
+                updated_at=res_reset.get("updated_at", _iso()),
+                current_turn_id=res_reset.get("current_turn_id"),
+                completion="rollback",
+            )
+            # legacy error for compat
+            await chat_comm.emit_error(
+                svc,
+                conv,
+                error=f"System under pressure - request rejected ({reason})",
+                target_sid=ingress.stream_id,
+                session_id=payload.routing.session_id,
+            )
+            # chat_service event (minimal inline env)
+            env = {
+                "type": "queue.enqueue_rejected",   # logical type
+                "timestamp": _iso(),
+                "ts": int(time.time() * 1000),
+                "service": svc.model_dump(),
+                "conversation": conv.model_dump(),
+                "event": {
+                    "step": "enqueue",
+                    "status": "error",
+                    "title": "Request rejected by queue",
+                    "agent": "queue",
+                },
+                "data": {
+                    "message": f"System under pressure - request rejected ({reason})",
+                    "error_type": "queue.enqueue_rejected",
+                    "http_status": 503,
+                    "retry_after": retry_after,
+                    "reason": reason,
+                    "queue_stats": stats,
+                },
+                "route": "chat_service",
+            }
+
+            await chat_comm.emit(
+                event="chat_service",
+                data=env,
+                tenant=svc.tenant,
+                project=svc.project,
+                session_id=payload.routing.session_id,
+                target_sid=ingress.stream_id,
+            )
+        except Exception:
+            pass
+
+        return IngressResult(
+            ok=False,
+            error_type="queue.enqueue_rejected",
+            error=f"System under pressure - request rejected ({reason})",
+            http_status=503,
+            retry_after=retry_after,
+            reason=reason,
+        )
+
+    # --- Success: emit start + ack payload ---
+    try:
+        await chat_comm.emit_start(
+            svc,
+            conv,
+            message=(text[:100] + "..." if len(text) > 100 else text),
+            queue_stats=stats,
+            target_sid=ingress.stream_id,
+            session_id=session.session_id,
+        )
+    except Exception:
+        pass
+
+    return IngressResult(
+        ok=True,
+        task_id=task_id,
+        conversation_id=conversation_id,
+        turn_id=turn_id,
+        session_id=session.session_id,
+        user_type=session.user_type.value,
+        queue_stats=stats,
+    )
+
+
+# -----------------------------
+# Conversation status (shared)
+# -----------------------------
+
+async def get_conversation_status(
+        *,
+        app,
+        chat_comm: ChatRelayCommunicator,
+        session: UserSession,
+        tenant: str,
+        project: str,
+        bundle_id: Optional[str],
+        conversation_id: Optional[str],
+        stream_id: Optional[str],
+        publish: bool = True,
+) -> Dict[str, Any]:
+    """
+    Shared implementation for conv_status.get for SSE + WS.
+    """
+    reg = await _load_registry_from_redis(app, tenant, project)
+    conv_id = conversation_id or session.session_id
+    row = None
+    try:
+        row = await app.state.conversation_browser.idx.get_conversation_state_row(
+            user_id=session.user_id,
+            conversation_id=conv_id,
+        )
+    except Exception as e:
+        logger.error("conv_status lookup failed user=%s conv=%s: %s", session.user_id, conv_id, e)
+
+    if not row:
+        state = "idle"
+        updated_at = _iso()
+        current_turn_id = None
+    else:
+        tags = row.get("tags", [])
+        if "conv.state:in_progress" in tags:
+            state = "in_progress"
+        elif "conv.state:error" in tags:
+            state = "error"
+        else:
+            state = "idle"
+        ts = row.get("ts")
+        updated_at = ts.isoformat() + "Z" if ts else _iso()
+        payload_row = row.get("payload") or {}
+        current_turn_id = payload_row.get("last_turn_id")
+    if publish:
+        if not reg:
+            logger.warning(
+                "conv_status.get: bundle registry unavailable; falling back to provided bundle_id/default placeholder "
+                "(tenant=%s project=%s session=%s)",
+                tenant,
+                project,
+                session.session_id,
+            )
+        bundle_id_val = bundle_id or (reg.default_bundle_id if reg else "unknown")
+        if not bundle_id_val:
+            bundle_id_val = "unknown"
+            logger.warning(
+                "conv_status.get: bundle_id missing; using placeholder (tenant=%s project=%s session=%s)",
+                tenant,
+                project,
+                session.session_id,
+            )
+
+        routing = ChatTaskRouting(
+            session_id=session.session_id,
+            conversation_id=conv_id,
+            turn_id=current_turn_id,
+            socket_id=stream_id,
+            bundle_id=bundle_id_val,
+        )
+        svc = ServiceCtx(request_id=str(uuid.uuid4()), user=session.user_id, tenant=tenant, project=project)
+        conv = ConversationCtx(
+            session_id=session.session_id,
+            conversation_id=conv_id,
+            turn_id=current_turn_id,
+        )
+
+        try:
+            await chat_comm.emit_conv_status(
+                svc,
+                conv,
+                routing=routing,
+                state=state,
+                updated_at=updated_at,
+                current_turn_id=current_turn_id,
+                target_sid=stream_id,
+            )
+        except Exception as e:
+            logger.error("emit_conv_status failed: %s", e)
+
+    return {
+        "conversation_id": conv_id,
+        "state": state,
+        "updated_at": updated_at,
+        "current_turn_id": current_turn_id,
+    }
+
+def build_sse_request_context(
+        request: Request,
+        session: UserSession,
+        bearer_token: Optional[str] = None,
+        id_token: Optional[str] = None,
+        *,
+        client_ip_fallback: str = "sse",
+) -> RequestContext:
+    """
+    Build RequestContext for SSE endpoints.
+
+    Rule:
+      - Use session.request_context if present.
+      - If auth/id_token missing there, fill from explicit args.
+      - If still missing, fall back to request headers.
+    """
+
+    base = getattr(session, "request_context", None)
+
+    # client ip
+    client_ip = client_ip_fallback
+    try:
+        if isinstance(base, RequestContext) and base.client_ip:
+            client_ip = base.client_ip
+        elif request.client and request.client.host:
+            client_ip = request.client.host
+    except Exception:
+        pass
+
+    # user agent
+    user_agent = ""
+    if isinstance(base, RequestContext) and base.user_agent:
+        user_agent = base.user_agent
+    else:
+        user_agent = request.headers.get("user-agent", "")
+
+    # authorization header
+    auth_header = None
+    if isinstance(base, RequestContext) and base.authorization_header:
+        auth_header = base.authorization_header
+    elif bearer_token:
+        auth_header = f"Bearer {bearer_token}"
+    else:
+        auth_header, _ = resolve_auth_from_headers_and_cookies(
+            request.headers.get("authorization"),
+            None,
+            request.cookies,
+        )
+
+    # id token
+    resolved_id_token = None
+    if isinstance(base, RequestContext) and base.id_token:
+        resolved_id_token = base.id_token
+    elif id_token:
+        resolved_id_token = id_token
+    else:
+        _, resolved_id_token = resolve_auth_from_headers_and_cookies(
+            None,
+            request.headers.get(CONFIG.ID_TOKEN_HEADER_NAME)
+            or request.headers.get(CONFIG.ID_TOKEN_HEADER_NAME.lower()),
+            request.cookies,
+        )
+
+    return RequestContext(
+        client_ip=client_ip,
+        user_agent=user_agent,
+        authorization_header=auth_header,
+        id_token=resolved_id_token,
+    )
+
+def build_ws_connect_request_context(
+        environ: dict,
+        auth: Optional[dict],
+) -> RequestContext:
+
+    xff = environ.get("HTTP_X_FORWARDED_FOR")
+    client_ip = (xff.split(",")[0].strip() if xff else None) or environ.get("REMOTE_ADDR") or "unknown"
+    user_agent = environ.get("HTTP_USER_AGENT", "")
+    bearer, id_token = resolve_socket_auth_tokens(auth, environ)
+    auth_header = f"Bearer {bearer}" if bearer else None
+
+    return RequestContext(
+        client_ip=client_ip,
+        user_agent=user_agent,
+        authorization_header=auth_header,
+        id_token=id_token
+    )
+
+
+def build_ws_chat_request_context() -> RequestContext:
+    # For chat_message we often don’t have the raw environ;
+    # you already used synthetic values.
+    return RequestContext(
+        client_ip="socket.io",
+        user_agent="socket.io-client",
+        authorization_header=None,
+    )
+
+async def upgrade_session_from_tokens(
+        *,
+        session: UserSession,
+        ctx,
+        bearer_token: Optional[str],
+        id_token: Optional[str],
+        gateway_adapter,
+        chat_comm: ChatRelayCommunicator,
+        stream_id: Optional[str],
+) -> UserSession:
+    # No tokens → nothing to do
+    if not bearer_token and not id_token:
+        return session
+
+    # Already non-anonymous with a real user → keep as-is
+    if session.user_type != UserType.ANONYMOUS and session.user_id:
+        return session
+
+    auth_manager = get_auth_manager()
+
+    try:
+        user = await auth_manager.authenticate_with_both(
+            access_token=bearer_token or "",
+            id_token=id_token,
+        )
+    except AuthenticationError as e:
+        svc = ServiceCtx(request_id=str(uuid.uuid4()), user=session.user_id or session.fingerprint)
+        conv = ConversationCtx(
+            session_id=session.session_id,
+            conversation_id=session.session_id,
+            turn_id=f"turn_{uuid.uuid4().hex[:8]}",
+        )
+        # This won't work if this is the connection flow because the relay is not connected.
+        await chat_comm.emit_error(
+            svc,
+            conv,
+            error=f"Authentication failed: {e.message}",
+            target_sid=stream_id,
+            session_id=session.session_id,
+        )
+        raise e
+
+    roles = user.roles or []
+    if any(r in PRIVILEGED_ROLES for r in roles):
+        user_type = UserType.PRIVILEGED
+    else:
+        user_type = UserType.REGISTERED
+
+    user_data = {
+        "user_id": user.id,
+        "username": user.username,
+        "roles": roles,
+        "permissions": user.permissions or [],
+        "email": user.email,
+    }
+
+    new_session = await gateway_adapter.gateway.get_or_create_session_with_econ_role(
+        ctx,
+        user_type=user_type,
+        user_data=user_data,
+    )
+
+    # Persist context on the session if you like
+    new_session.request_context = ctx
+    return new_session

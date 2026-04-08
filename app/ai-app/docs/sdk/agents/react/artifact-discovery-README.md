@@ -8,6 +8,7 @@ see_also:
   - ks:docs/sdk/agents/react/artifact-storage-README.md
   - ks:docs/sdk/agents/react/react-tools-README.md
   - ks:docs/sdk/agents/react/timeline-README.md
+  - ks:docs/sdk/agents/react/design/files-vs-outputs-README.md
 ---
 # Artifact Discovery (Logical/Physical Paths)
 
@@ -17,6 +18,7 @@ are resolved for tools (`react.read`, `fetch_ctx`, `react.patch`, exec code).
 Important distinction:
 - this document is about artifact discovery and OUT_DIR-relative artifact paths
 - it is not the contract for bundle namespace resolution inside isolated exec
+- it describes the current artifact path model, including the phase-1 `files/...` vs `outputs/...` namespace split
 
 For bundle namespace browsing such as `ks:` via generated exec code, the relevant model is:
 - a bundle may expose an exec-only namespace resolver tool
@@ -29,7 +31,9 @@ For bundle namespace browsing such as `ks:` via generated exec code, the relevan
 Stable identifier used in `react.read` / `fetch_ctx`. Examples:
 - `ar:<turn_id>.user.prompt`
 - `ar:<turn_id>.assistant.completion`
+- `ar:plan.latest:<plan_id>` (stable latest snapshot of a plan lineage)
 - `fi:<turn_id>.files/<relpath>`
+- `fi:<turn_id>.outputs/<relpath>`
 - `fi:<turn_id>.user.attachments/<name>`
 - `fi:logs/docker.err.log`
 - `so:sources_pool[...]`
@@ -40,6 +44,7 @@ Stable identifier used in `react.read` / `fetch_ctx`. Examples:
 OUT_DIR‑relative path used for `react.patch`, rendering tools, and exec code file I/O.
 Common forms:
 - `<turn_id>/files/<relpath>` (files; current or historical)
+- `<turn_id>/outputs/<relpath>` (non-workspace produced artifacts)
 - `<turn_id>/attachments/<name>` (attachments)
 - `logs/<name>` and other runtime-managed files already present in OUT_DIR
 
@@ -120,6 +125,7 @@ The rewrite is recorded as a **protocol notice** in the timeline so the agent ca
 **react.read / fetch_ctx**
 - Accept logical path (fi:/ar:/so:/su:/tc:).
 - Resolve artifact by logical path; return canonical artifact payload.
+- For plan-related `ar:` paths, the recovery handle to use is the stable latest-snapshot alias: `ar:plan.latest:<plan_id>`.
 - For `fi:` paths, `react.read` **rehosts** the file into OUT_DIR and reconstructs the
   metadata block from `meta.digest` (if present). It then emits:
   - metadata digest block (text only)
@@ -146,6 +152,20 @@ The rewrite is recorded as a **protocol notice** in the timeline so the agent ca
   - `logical_path` for OUT_DIR hits, suitable for `react.read`
 - This is the bridge from filesystem discovery to content loading.
 
+**react.pull**
+- Accepts `fi:` refs only.
+- For `fi:<turn>.files/<prefix>` folder pulls, the current implementation does **not** scan all hosted storage.
+- In `workspace_implementation=custom`, it inspects artifact metadata for the referenced turn from timeline/turn-log state, expands the matching descendants, and fetches only the exact matched blobs.
+- In `workspace_implementation=git`, `fi:<turn>.files/...` resolves against the git-backed lineage snapshot for that version instead of scanning artifact history.
+- Folder pulls currently imply:
+  - textual/tree content backed by turn artifacts (`custom`) or a git snapshot tree (`git`)
+  - no implicit hosted-binary descendants
+- Hosted binaries are allowed only by exact logical ref, for example:
+  - `fi:<turn>.user.attachments/template.xlsx`
+- Future design note:
+  - `fi:<turn>.outputs/...` is the explicit non-workspace artifact retrieval namespace
+  - unlike `fi:<turn>.files/...`, it does not participate in workspace history semantics
+
 **bundle_data.resolve_namespace** (bundle-defined, exec-only)
 - Not a general artifact-discovery tool.
 - Not driven by timeline blocks.
@@ -156,9 +176,9 @@ The rewrite is recorded as a **protocol notice** in the timeline so the agent ca
   - `browseable: bool`
 - Use the resolver input logical_ref itself as the logical base if generated code wants the agent to follow up later with `react.read(...)`.
 - Example:
-  - set `logical_base = "ks:src"` and resolve it
+  - set `logical_base = "ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk"` and resolve it
   - code inspects files under the returned `physical_path`
-  - if code finds `foo/bar.py`, it should emit logical ref `ks:src/foo/bar.py` in an `OUTPUT_DIR` file or short `user.log` note
+  - if code finds `runtime/execution.py`, it should emit logical ref `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/execution.py` in an `OUTPUT_DIR` file or short `user.log` note
 - The returned `physical_path` is an exec-runtime path only.
 - It is not an artifact `physical_path`, not an OUT_DIR-relative path, and not a valid input to normal react tools.
 - Generated code must respect `access` exactly; for example, `access='r'` means browse/read only.

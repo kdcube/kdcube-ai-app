@@ -1,6 +1,7 @@
 import {Indexed, Timestamped} from "../../types/common.ts";
 import {RichLink, RNFile, TurnStep} from "../chatController/chatBase.ts";
 import {AuthConfig} from "../auth/authTypes.ts";
+import {CookieOptions} from "../../utils/cookies.ts";
 
 
 export interface ChatScope {
@@ -11,6 +12,11 @@ export interface ChatScope {
 export interface ChatSettings extends ChatScope {
     auth: AuthConfig;
     routesPrefix: string;
+    streamIdHeaderName: string;
+    useAuthCookies: boolean;
+    authCookieName: string,
+    idCookieName: string,
+    authCookieOpts: CookieOptions
 }
 
 export interface ChatSettingsState {
@@ -44,6 +50,7 @@ export interface ChatState extends ConversationState {
     userInputLockMessage: string | null;
     userMessage: string;
     userAttachments: UserAttachment[];
+    streamId: string | null;
 }
 
 export interface UserMessage extends Timestamped {

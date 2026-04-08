@@ -319,8 +319,8 @@ Platform-reserved paths are documented in:
 external overrides from `bundles.yaml` and the admin UI still win.
 
 See:
-- `apps/chat/sdk/solutions/chatbot/entrypoint.py` (`configuration`, `bundle_props`)
-- `apps/chat/sdk/solutions/chatbot/entrypoint_with_economic.py`
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/entrypoint.py` (`configuration`, `bundle_props`)
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/entrypoint_with_economic.py`
 
 Secrets should be read via `get_secret()` with the dot‑path key:
 
@@ -365,7 +365,7 @@ kdcube:config:bundles:props:<tenant>:<project>:<bundle_id>
 Example:
 
 ```bash
-redis-cli GET "kdcube:config:bundles:props:demo-tenant:demo-project:react.doc@2026-03-02-22-10"
+redis-cli GET "kdcube:config:bundles:props:demo-tenant:demo-project:kdcube.copilot@2026-04-03-19-05"
 ```
 
 ### Dot‑path access for config (code-side)

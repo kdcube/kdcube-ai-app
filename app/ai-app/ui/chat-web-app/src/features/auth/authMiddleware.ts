@@ -1,9 +1,16 @@
-import {Middleware, UnknownAction} from "@reduxjs/toolkit";
+import {Middleware, PayloadAction, UnknownAction} from "@reduxjs/toolkit";
 import CognitoAuth from "./cognitoAuth.ts";
 import {AppStore, RootState} from "../../app/store.ts";
-import {loadChatSettings, selectAuthConfig} from "../chat/chatSettingsSlice.ts";
-import {setCredentials} from "./authSlice.ts";
+import {
+    loadChatSettings,
+    selectAuthConfig,
+    selectAuthCookieName,
+    selectAuthCookieOpts,
+    selectIdCookieName, selectUseAuthCookies
+} from "../chat/chatSettingsSlice.ts";
+import {AuthAction, setCredentials} from "./authSlice.ts";
 import {HardcodedAuthConfig} from "./authTypes.ts";
+import {removeCookie, setCookie} from "../../utils/cookies.ts";
 
 export const LOG_IN = "auth/LogIn"
 
@@ -75,6 +82,28 @@ export const authMiddleware = (): Middleware => {
         const state = store.getState() as RootState;
         const authConfig = selectAuthConfig(state)
         let handlerParent: WithActionHandler | null = null
+
+        const removeAuthCookie = () => {
+            removeCookie(selectAuthCookieName(store.getState()))
+        }
+
+        const removeIdCookie = () => {
+            removeCookie(selectIdCookieName(store.getState()))
+        }
+
+        const removeCookies = () => {
+            removeAuthCookie()
+            removeIdCookie()
+        }
+
+        const setAuthToken = (token: string) => {
+            setCookie(selectAuthCookieName(store.getState()), token, selectAuthCookieOpts(store.getState()))
+        }
+
+        const setIdToken = (idToken: string) => {
+            setCookie(selectIdCookieName(store.getState()), idToken, selectAuthCookieOpts(store.getState()))
+        }
+
         switch ((action as UnknownAction).type) {
             case loadChatSettings.fulfilled.type:
                 if (!handler) {
@@ -104,6 +133,28 @@ export const authMiddleware = (): Middleware => {
                 }
                 handler(store as AppStore, action as AuthActions);
                 break;
+            case setCredentials.type:
+                if (selectUseAuthCookies(store.getState())) {
+                    switch (authConfig.authType) {
+                        case "hardcoded":
+                        case "cognito": {
+                            const payload = (action as PayloadAction<AuthAction>).payload;
+                            removeCookies()
+                            if (!payload.loggedIn) {
+                                return
+                            }
+
+                            if (payload.authToken) {
+                                setAuthToken(payload.authToken)
+                            }
+
+                            if (payload.idToken) {
+                                setIdToken(payload.idToken)
+                            }
+                        }
+                    }
+                    break
+                }
         }
     })
 }

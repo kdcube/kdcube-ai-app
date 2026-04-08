@@ -1,7 +1,30 @@
 platform:
   repo: "kdcube-ai-app"
-  ref: "2026.3.26.1101"
+  ref: "2026.4.07.101"
   description: |
-    Frontend: exec widget fixed
+    This release focuses on hardening the hosted bundle platform and making full custom applications
+    more deployable inside KDCube without separate infrastructure.
+
+    The bundle gateway and integrations surface were tightened substantially. Bundle HTTP routes now
+    use explicit route declarations, clamp tenant and project scope consistently, and route public
+    bundle ingress through the gateway pressure path. Public operations can now declare explicit
+    webhook-style authentication, including header-secret verification suitable for integrations such
+    as Telegram.
+
+    The runtime now supports richer hosted bundle execution. Bundle-local sidecars can be started
+    and reused per proc, typed HTTP bundle operations now support multipart uploads and binary/file
+    responses, and the chat web host now loads custom bundle UIs as real iframe documents instead of
+    inline `srcDoc`, which makes hosted frontend applications behave like normal web apps.
+
+    Secrets handling also moved forward in a major way. In addition to the existing backends, the
+    platform now supports a storage-backed `secrets-file` provider that can read and write secrets
+    through `file://` or `s3://` YAML descriptors. User-scoped bundle secrets were added on top of
+    that model, with write-only REST management so users can configure per-user credentials without
+    the platform ever returning secret values through the API.
+
+    On the storage side, bundle local storage cleanup now removes stale versioned bundle roots while
+    preserving unversioned persistent state, which is important for long-lived hosted applications
+    that keep runtime data outside the code snapshot. Documentation was updated throughout the
+    service and bundle docs to reflect the new secrets, hosting, and runtime behavior.
 config:
-    version: "2026.3.26.1101"
+    version: "2026.4.07.101"

@@ -53,19 +53,19 @@ addChatLogExtension(ServiceErrorArtifactType, ServiceErrorMessage)
 addCanvasItemExtension(CanvasArtifactType, {
     component: CanvasItem,
     linkGenerator: getCanvasArtifactLink,
-    artifactLinkComparator: matchesCanvasArtifact,
-    artifactTitleGenerator: getCanvasArtifactTitle,
-    artifactCopyHandler: copyCanvasArtifact,
-    artifactSaveHandler: saveCanvasArtifact,
+    linkComparator: matchesCanvasArtifact,
+    titleGenerator: getCanvasArtifactTitle,
+    copyHandler: copyCanvasArtifact,
+    saveHandler: saveCanvasArtifact,
 })
 
 addCanvasItemExtension(WebSearchArtifactType, {
     component: WebSearchCanvasItem,
     linkGenerator: getWebSearchArtifactLink,
-    artifactLinkComparator: matchesWebSearchArtifact,
-    artifactTitleGenerator: getWebSearchArtifactTitle,
-    artifactCopyHandler: copyWebSearchArtifact,
-    artifactSaveHandler: saveWebSearchArtifact,
+    linkComparator: matchesWebSearchArtifact,
+    titleGenerator: getWebSearchArtifactTitle,
+    copyHandler: copyWebSearchArtifact,
+    saveHandler: saveWebSearchArtifact,
 })
 
 //artifact stream parsers (for conversation loader)
