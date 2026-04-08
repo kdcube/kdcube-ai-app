@@ -219,6 +219,8 @@ Token TTL/uses:
 | `BUNDLE_STORAGE_ROOT` | Shared bundle local storage (used by ks: resolvers). Must match docker-compose mount. |
 | `REACT_WORKSPACE_IMPLEMENTATION` | React workspace backend. `custom` keeps artifact/hosting-backed hydration. `git` enables git-backed `fi:<turn>.files/...` slice hydration. Default is `custom`. |
 | `REACT_WORKSPACE_GIT_REPO` | Remote repo used by the git workspace backend. Required when `REACT_WORKSPACE_IMPLEMENTATION=git`. Auth reuses `GIT_HTTP_TOKEN`, `GIT_HTTP_USER`, `GIT_SSH_KEY_PATH`, `GIT_SSH_KNOWN_HOSTS`, and `GIT_SSH_STRICT_HOST_KEY_CHECKING`. |
+| `CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION` | Claude Code session-store backend. `local` keeps continuity on local disk only. `git` enables per-conversation bootstrap/publish of the bundle-selected Claude session root. |
+| `CLAUDE_CODE_SESSION_GIT_REPO` | Remote repo used by the Claude Code git-backed session store. Required when `CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION=git`. |
 | `OPENAI_API_KEY` | Services credentials Ext services |
 | `HUGGING_FACE_API_TOKEN` | n/a |
 | `ANTHROPIC_API_KEY` | n/a |
@@ -315,6 +317,24 @@ The CLI installer maps that to:
 
 - `REACT_WORKSPACE_IMPLEMENTATION`
 - `REACT_WORKSPACE_GIT_REPO`
+
+`repo` is only meaningful when `type=git`.
+
+### Assembly -> Claude Code session-store env mapping
+
+The reference assembly descriptor may declare:
+
+```yaml
+storage:
+  claude_code_session:
+    type: git      # or local
+    repo: https://github.com/org/private-claude-session-store.git
+```
+
+The CLI installer maps that to:
+
+- `CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION`
+- `CLAUDE_CODE_SESSION_GIT_REPO`
 
 `repo` is only meaningful when `type=git`.
 
@@ -600,8 +620,9 @@ Conversation artifacts and turn workspace:
 | `KDCUBE_STORAGE_PATH`   | ✅       | Storage root (local FS `file:///...` or `s3://bucket/path`)   |
 | `CB_BUNDLE_STORAGE_URL` | ➖       | Bundle storage URL (proc only; defaults to storage path)      |
 | `REACT_WORKSPACE_GIT_REPO` | ➖    | Remote git repo used as the authoritative backup/version store for React git-backed workspace lineages (proc/runtime only) |
+| `CLAUDE_CODE_SESSION_GIT_REPO` | ➖ | Remote git repo used as the authoritative backup/version store for Claude Code per-conversation session roots (proc/runtime only) |
 
-`REACT_WORKSPACE_GIT_REPO` uses the same git authentication contract already supported for git bundle loading:
+`REACT_WORKSPACE_GIT_REPO` and `CLAUDE_CODE_SESSION_GIT_REPO` use the same git authentication contract already supported for git bundle loading:
 - `GIT_HTTP_TOKEN`
 - `GIT_HTTP_USER`
 - `GIT_SSH_KEY_PATH`
@@ -657,6 +678,8 @@ Conversation artifacts and turn workspace:
 | `PY_CODE_EXEC_NETWORK_MODE` | _(unset)_  | Docker network mode                                                                                                                                                                         |
 | `EXEC_WORKSPACE_ROOT`       | _(auto)_   | Local workspace root for per‑turn workdir/outdir. Defaults to `/exec-workspace` inside Docker or `/tmp` on host. Path is created if missing and **must be writable** or the request fails.  |
 | `REACT_WORKSPACE_GIT_REPO`  | _(unset)_  | React git-backed workspace remote. The runtime carries it into `RuntimeCtx.workspace_git_repo` so React can reason about the authoritative workspace backup without trying to fetch from exec. |
+| `CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION` | `local` | Claude Code session-store mode. `git` enables runtime bootstrap/publish of the bundle-selected Claude session root on regular turns. |
+| `CLAUDE_CODE_SESSION_GIT_REPO` | _(unset)_ | Claude Code git-backed session-store remote. Used by the Claude runtime bootstrap layer to rehydrate and publish per-conversation session roots. |
 | `FARGATE_EXEC_ENABLED`      | `0`        | Enable distributed exec via ECS/Fargate. When disabled, `EXEC_RUNTIME_MODE=fargate` cannot launch tasks.                                                                                  |
 | `FARGATE_CLUSTER`           | _(unset)_  | ECS cluster ARN/name for distributed exec tasks.                                                                                                                                           |
 | `FARGATE_TASK_DEFINITION`   | _(unset)_  | ECS task definition for distributed exec tasks.                                                                                                                                            |

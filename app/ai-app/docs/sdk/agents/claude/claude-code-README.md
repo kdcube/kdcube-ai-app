@@ -9,12 +9,14 @@ see_also:
   - ks:docs/sdk/streaming/channeled-streamer-README.md
   - ks:docs/sdk/tools/tool-subsystem-README.md
   - ks:docs/sdk/agents/claude/claude-code-accounting-README.md
+  - ks:docs/sdk/agents/claude/claude-code-workspace-bootstrap-README.md
 ---
 # Claude Code Agent
 
 This page documents the native Python Claude Code runner added under:
 
 - [src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/claude_code/agent.py](../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/claude_code/agent.py)
+- [src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/claude_code/runtime.py](../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/claude_code/runtime.py)
 - [src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/claude_code/types.py](../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/claude_code/types.py)
 - [src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/claude_code/streaming.py](../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/claude_code/streaming.py)
 
@@ -29,6 +31,8 @@ The SDK surface is:
 - `ClaudeCodeBinding`
 - `ClaudeCodeRunResult`
 - `ClaudeCodeTurnKind = "regular" | "followup" | "steer"`
+- `ClaudeCodeSessionStoreConfig`
+- `run_claude_code_turn(...)`
 
 Main features:
 
@@ -252,6 +256,29 @@ If the Claude run needs access outside the main workspace root, the caller
 should pass `additional_directories`. These are forwarded to Claude Code as
 `--add-dir` entries.
 
+## Session-store bootstrap
+
+Claude workspace/session continuity is now handled by a separate runtime layer,
+not by the low-level runner itself.
+
+Use:
+
+- `run_claude_code_turn(...)`
+- `ClaudeCodeSessionStoreConfig`
+
+when the caller wants:
+
+- a bundle-controlled local Claude root
+- optional git bootstrap before a regular turn
+- optional publish after the turn
+
+That layer supports:
+
+- `CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION=local|git`
+- `CLAUDE_CODE_SESSION_GIT_REPO=<repo>`
+
+See [ks:docs/sdk/agents/claude/claude-code-workspace-bootstrap-README.md](ks:docs/sdk/agents/claude/claude-code-workspace-bootstrap-README.md).
+
 ## Allowed tools
 
 Allowed Claude Code tools are fully caller-controlled.
@@ -303,8 +330,10 @@ This first cut does not provide:
 - PTY-backed interactive stdin sessions
 - workspace isolation
 - automatic secret injection policy
-- automatic repo checkout lifecycle
 - bundle UI integration
+
+The generic runner still does not itself own repo bootstrap/publish policy. That
+is handled by the higher-level Claude workspace/session-store runtime layer.
 
 Those belong to higher-level integrations such as `kdcube.copilot`.
 
@@ -323,6 +352,7 @@ Covered cases:
 - failure reporting
 - first-turn `--session-id` vs resumed-turn `--resume`
 - session reuse across `followup` and `steer`
+- git-backed session bootstrap/publish through `run_claude_code_turn(...)`
 
 ## Intended next use
 
@@ -336,3 +366,4 @@ That bundle will use this SDK runner to:
 - keep conversation continuity across turns
 - point Claude at caller-managed repo workspaces
 - stream Claude output through the standard communicator path
+- optionally persist Claude's own session substrate through the git-backed session store

@@ -1,0 +1,183 @@
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+
+import pytest
+
+from kdcube_ai_app.apps.chat.sdk.solutions.claude_code.runtime import (
+    ClaudeCodeSessionStoreConfig,
+    bootstrap_claude_code_session_store,
+    claude_code_session_branch_ref,
+    publish_claude_code_session_store,
+    run_claude_code_turn,
+)
+from kdcube_ai_app.apps.chat.sdk.solutions.claude_code.types import ClaudeCodeRunResult
+
+
+def _init_git_repo(path: Path, *, branch: str = "main", files: dict[str, str] | None = None) -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", "--initial-branch", branch], cwd=path, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=path, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=path, check=True, capture_output=True, text=True)
+    for rel_path, content in dict(files or {"README.md": "# Test\n"}).items():
+        target = path / rel_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+    subprocess.run(["git", "add", "."], cwd=path, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=path, check=True, capture_output=True, text=True)
+    return path
+
+
+def _init_bare_repo(path: Path) -> Path:
+    subprocess.run(["git", "init", "--bare", str(path)], check=True, capture_output=True, text=True)
+    return path
+
+
+def _push_branch(source_repo: Path, remote_repo: Path, branch_ref: str) -> None:
+    subprocess.run(
+        ["git", "-C", str(source_repo), "push", str(remote_repo), f"HEAD:{branch_ref}"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _read_remote_file(remote_repo: Path, branch_ref: str, rel_path: str) -> str:
+    proc = subprocess.run(
+        ["git", "--git-dir", str(remote_repo), "show", f"{branch_ref}:{rel_path}"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return proc.stdout
+
+
+def _config(tmp_path: Path, *, git_repo: Path, local_root: Path | None = None) -> ClaudeCodeSessionStoreConfig:
+    return ClaudeCodeSessionStoreConfig(
+        implementation="git",
+        local_root=local_root or (tmp_path / "workspace" / ".claude"),
+        tenant="home",
+        project="demo",
+        user_id="alice",
+        conversation_id="conv-1",
+        agent_name="knowledge-base-admin",
+        git_repo=str(git_repo),
+    )
+
+
+def test_bootstrap_materializes_remote_session_branch(tmp_path: Path):
+    remote_repo = _init_bare_repo(tmp_path / "remote.git")
+    seed_repo = _init_git_repo(
+        tmp_path / "seed",
+        files={
+            "agents/knowledge-base-admin.md": "# Agent\n",
+            "sessions/history.json": "{\"turns\": 1}\n",
+        },
+    )
+    config = _config(tmp_path, git_repo=remote_repo)
+    branch_ref = claude_code_session_branch_ref(config)
+    _push_branch(seed_repo, remote_repo, branch_ref)
+
+    result = bootstrap_claude_code_session_store(config=config)
+
+    assert result["bootstrapped"] is True
+    assert (config.local_root / "sessions" / "history.json").read_text(encoding="utf-8") == "{\"turns\": 1}\n"
+    remote_url = subprocess.run(
+        ["git", "-C", str(config.local_root), "config", "--get", "remote.origin.url"],
+        capture_output=True,
+        text=True,
+    )
+    assert remote_url.returncode != 0
+
+
+def test_publish_pushes_session_root_to_conversation_branch(tmp_path: Path):
+    remote_repo = _init_bare_repo(tmp_path / "remote.git")
+    config = _config(tmp_path, git_repo=remote_repo)
+
+    bootstrap_claude_code_session_store(config=config)
+    config.local_root.mkdir(parents=True, exist_ok=True)
+    (config.local_root / "sessions").mkdir(parents=True, exist_ok=True)
+    (config.local_root / "sessions" / "history.json").write_text("{\"turns\": 2}\n", encoding="utf-8")
+
+    result = publish_claude_code_session_store(config=config)
+
+    assert result["published"] is True
+    assert _read_remote_file(remote_repo, claude_code_session_branch_ref(config), "sessions/history.json") == "{\"turns\": 2}\n"
+
+
+class _FakeAgent:
+    def __init__(self, root: Path):
+        self.root = root
+        self.calls: list[dict[str, object]] = []
+
+    async def run_turn(self, prompt: str, *, kind: str = "regular", resume_existing: bool = False) -> ClaudeCodeRunResult:
+        self.calls.append({"prompt": prompt, "kind": kind, "resume_existing": resume_existing})
+        target = self.root / "sessions" / "history.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("{\"turns\": 3}\n", encoding="utf-8")
+        return ClaudeCodeRunResult(
+            status="completed",
+            session_id="claude-session-1",
+            final_text="Done",
+            delta_count=1,
+            exit_code=0,
+            stderr_lines=[],
+            raw_output_lines=[],
+            turn_kind=kind,
+            agent_name="knowledge-base-admin",
+            provider="anthropic",
+            requested_model="default",
+            model="claude-sonnet-4-6",
+            usage={"input_tokens": 10, "output_tokens": 20, "requests": 1},
+            cost_usd=0.01,
+            duration_ms=10,
+            api_duration_ms=5,
+        )
+
+
+@pytest.mark.asyncio
+async def test_run_claude_code_turn_bootstraps_and_publishes_regular_turns(tmp_path: Path):
+    remote_repo = _init_bare_repo(tmp_path / "remote.git")
+    config = _config(tmp_path, git_repo=remote_repo)
+    agent = _FakeAgent(config.local_root)
+    refresh_calls: list[str] = []
+
+    result = await run_claude_code_turn(
+        agent=agent,  # type: ignore[arg-type]
+        prompt="hello",
+        kind="regular",
+        resume_existing=False,
+        session_store=config,
+        refresh_support_files=lambda: refresh_calls.append("refresh"),
+    )
+
+    assert result.status == "completed"
+    assert refresh_calls == ["refresh"]
+    assert agent.calls == [{"prompt": "hello", "kind": "regular", "resume_existing": False}]
+    assert _read_remote_file(remote_repo, claude_code_session_branch_ref(config), "sessions/history.json") == "{\"turns\": 3}\n"
+
+
+@pytest.mark.asyncio
+async def test_run_claude_code_turn_skips_git_sync_for_followup(tmp_path: Path):
+    remote_repo = _init_bare_repo(tmp_path / "remote.git")
+    config = _config(tmp_path, git_repo=remote_repo)
+    agent = _FakeAgent(config.local_root)
+    refresh_calls: list[str] = []
+
+    result = await run_claude_code_turn(
+        agent=agent,  # type: ignore[arg-type]
+        prompt="continue",
+        kind="followup",
+        resume_existing=True,
+        session_store=config,
+        refresh_support_files=lambda: refresh_calls.append("refresh"),
+    )
+
+    assert result.status == "completed"
+    assert refresh_calls == []
+    show_ref = subprocess.run(
+        ["git", "--git-dir", str(remote_repo), "show-ref", "--verify", "--quiet", claude_code_session_branch_ref(config)],
+        capture_output=True,
+    )
+    assert show_ref.returncode != 0
