@@ -216,3 +216,17 @@ class TestBundleAccounting:
             assert table is not None
         except ImportError:
             pytest.skip("price_table not available in this environment")
+
+    def test_anthropic_price_lookup_supports_aliases(self):
+        from kdcube_ai_app.infra.accounting.usage import _find_llm_price
+
+        sonnet = _find_llm_price("anthropic", "sonnet")
+        opus = _find_llm_price("anthropic", "opus")
+        haiku = _find_llm_price("anthropic", "haiku")
+
+        assert sonnet is not None
+        assert sonnet["model"] == "claude-sonnet-4-6"
+        assert opus is not None
+        assert opus["model"] == "claude-opus-4-6"
+        assert haiku is not None
+        assert haiku["model"] == "claude-haiku-4-5-20251001"

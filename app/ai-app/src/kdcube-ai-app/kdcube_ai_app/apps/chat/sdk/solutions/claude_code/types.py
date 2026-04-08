@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal, Mapping, Sequence
+from typing import Any, Literal, Mapping, Sequence
 
 
 ClaudeCodeTurnKind = Literal["regular", "followup", "steer"]
@@ -15,6 +15,7 @@ ClaudeCodeTurnKind = Literal["regular", "followup", "steer"]
 class ClaudeCodeAgentConfig:
     agent_name: str
     workspace_path: Path
+    model: str | None = None
     allowed_tools: Sequence[str] = field(default_factory=tuple)
     additional_directories: Sequence[Path] = field(default_factory=tuple)
     extra_args: Sequence[str] = field(default_factory=tuple)
@@ -47,6 +48,7 @@ class ClaudeCodeAgentConfig:
             "env",
             {str(key): str(value) for key, value in dict(self.env or {}).items() if str(value).strip()},
         )
+        object.__setattr__(self, "model", str(self.model or "").strip() or None)
         if self.permission_mode is not None:
             object.__setattr__(self, "permission_mode", str(self.permission_mode).strip() or None)
 
@@ -70,3 +72,13 @@ class ClaudeCodeRunResult:
     raw_output_lines: list[str]
     turn_kind: ClaudeCodeTurnKind
     agent_name: str
+    provider: str | None = None
+    requested_model: str | None = None
+    model: str | None = None
+    usage: dict[str, Any] | None = None
+    cost_usd: float | None = None
+    duration_ms: int | None = None
+    api_duration_ms: int | None = None
+    raw_result_event: dict[str, Any] | None = None
+    resolved_from_stream: bool = False
+    error_message: str | None = None

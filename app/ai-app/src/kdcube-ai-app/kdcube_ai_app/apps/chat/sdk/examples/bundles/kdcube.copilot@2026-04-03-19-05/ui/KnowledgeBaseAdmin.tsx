@@ -42,6 +42,7 @@ interface WidgetPayload {
     config?: {
         content_repos?: RepoConfig[];
         output_repo?: RepoConfig;
+        claude_code_model?: string;
         last_sync?: {
             synced_at?: string;
             repo_statuses?: SyncRepoStatus[];
@@ -99,6 +100,12 @@ const PLACEHOLDER_TENANT = '{{DEFAULT_TENANT}}';
 const PLACEHOLDER_PROJECT = '{{DEFAULT_PROJECT}}';
 const PLACEHOLDER_BUNDLE_ID = '{{DEFAULT_APP_BUNDLE_ID}}';
 const STREAM_ID_HEADER_NAME = 'KDC-Stream-ID';
+const DEFAULT_CLAUDE_CODE_MODEL = 'default';
+const CLAUDE_CODE_MODEL_OPTIONS = [
+    { value: DEFAULT_CLAUDE_CODE_MODEL, label: 'Default (account tier)' },
+    { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+    { value: 'claude-opus-4-6', label: 'Claude Opus 4.6' },
+] as const;
 
 function isTemplatePlaceholder(value: string | null | undefined): boolean {
     return typeof value === 'string' && value.includes('{{') && value.includes('}}');
@@ -323,6 +330,68 @@ function shortText(value?: string, max = 120): string {
     return `${text.slice(0, max - 1)}…`;
 }
 
+function recordFromUnknown(value: unknown): Record<string, unknown> | null {
+    return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function numberFromUnknown(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && value.trim()) {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : null;
+    }
+    return null;
+}
+
+function stringFromUnknown(value: unknown): string | null {
+    return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function formatTokenCount(value: unknown): string | null {
+    const number = numberFromUnknown(value);
+    return number === null ? null : number.toLocaleString();
+}
+
+function formatUsd(value: unknown): string | null {
+    const number = numberFromUnknown(value);
+    return number === null ? null : `$${number.toFixed(number >= 1 ? 2 : 4)}`;
+}
+
+function modelLabel(model: string | null): string | null {
+    if (!model || model === DEFAULT_CLAUDE_CODE_MODEL) return 'Default';
+    const option = CLAUDE_CODE_MODEL_OPTIONS.find((item) => item.value === model);
+    return option?.label || model;
+}
+
+function usageFromMetadata(metadata?: Record<string, unknown>): Record<string, unknown> | null {
+    return recordFromUnknown(metadata?.usage);
+}
+
+function metadataBadges(metadata?: Record<string, unknown>): string[] {
+    if (!metadata) return [];
+    const badges: string[] = [];
+    const turnKind = stringFromUnknown(metadata.turn_kind);
+    if (turnKind) badges.push(turnKind);
+    const model = stringFromUnknown(metadata.model) || stringFromUnknown(metadata.requested_model);
+    if (model) badges.push(modelLabel(model) || model);
+    const usage = usageFromMetadata(metadata);
+    const requests = formatTokenCount(usage?.requests);
+    const input = formatTokenCount(usage?.input_tokens);
+    const output = formatTokenCount(usage?.output_tokens);
+    const cacheRead = formatTokenCount(usage?.cache_read_tokens);
+    const cacheWrite = formatTokenCount(usage?.cache_creation_tokens);
+    const cacheCreation = recordFromUnknown(usage?.cache_creation);
+    const cache5m = formatTokenCount(cacheCreation?.ephemeral_5m_input_tokens);
+    const cache1h = formatTokenCount(cacheCreation?.ephemeral_1h_input_tokens);
+    const cost = formatUsd(metadata.cost_usd ?? usage?.cost_usd);
+    if (requests) badges.push(`req ${requests}`);
+    if (input || output) badges.push(`in ${input || '0'} · out ${output || '0'}`);
+    if (cacheRead || cacheWrite) badges.push(`cache r ${cacheRead || '0'} · w ${cacheWrite || '0'}`);
+    if (cache5m || cache1h) badges.push(`cache tiers 5m ${cache5m || '0'} · 1h ${cache1h || '0'}`);
+    if (cost) badges.push(cost);
+    return badges;
+}
+
 function sectionNavClass(active: boolean): string {
     return [
         'w-full rounded-2xl border px-3 py-3 text-left transition',
@@ -366,6 +435,7 @@ function App() {
     const [gitHttpToken, setGitHttpToken] = useState<string>('');
     const [anthropicApiKey, setAnthropicApiKey] = useState<string>('');
     const [claudeCodeKey, setClaudeCodeKey] = useState<string>('');
+    const [claudeCodeModel, setClaudeCodeModel] = useState<string>(INITIAL_DATA.config?.claude_code_model || DEFAULT_CLAUDE_CODE_MODEL);
 
     const currentMessages = currentConversation?.messages || [];
     const syncStatuses = data.config?.last_sync?.repo_statuses || [];
@@ -394,6 +464,7 @@ function App() {
         setCurrentConversation(payload.current_conversation || null);
         setContentRepos(normalizeContentRepos(payload.config?.content_repos));
         setOutputRepo({ id: 'output', label: '', source: '', branch: '', ...(payload.config?.output_repo || {}) });
+        setClaudeCodeModel(payload.config?.claude_code_model || DEFAULT_CLAUDE_CODE_MODEL);
     }
 
     async function loadConversation(conversationId: string): Promise<void> {
@@ -529,6 +600,7 @@ function App() {
                     git_http_token: gitHttpToken.trim() || undefined,
                     anthropic_api_key: anthropicApiKey.trim() || undefined,
                     claude_code_key: claudeCodeKey.trim() || undefined,
+                    claude_code_model: claudeCodeModel || DEFAULT_CLAUDE_CODE_MODEL,
                 },
                 streamId || undefined,
             );
@@ -669,6 +741,7 @@ function App() {
                     conversation_id: nextConversationId,
                     message: text,
                     turn_kind: turnKind,
+                    claude_code_model: claudeCodeModel || DEFAULT_CLAUDE_CODE_MODEL,
                 },
                 streamId || undefined,
             );
@@ -794,6 +867,20 @@ function App() {
                                     <option value="steer">steer</option>
                                 </select>
                             </div>
+                            <div className="mt-3 flex flex-col gap-2">
+                                <div className="text-xs uppercase tracking-[0.22em] text-slate-500">Claude model</div>
+                                <select
+                                    className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                                    value={claudeCodeModel}
+                                    onChange={(e) => setClaudeCodeModel(e.target.value)}
+                                >
+                                    {CLAUDE_CODE_MODEL_OPTIONS.map((option) => (
+                                        <option key={option.value} value={option.value}>
+                                            {option.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
                         </div>
 
                         <div className="flex-1 overflow-y-auto px-4 py-4">
@@ -809,6 +896,18 @@ function App() {
                                             <span>{message.role || 'assistant'}</span>
                                             <span>{formatTimestamp(message.created_at)}</span>
                                         </div>
+                                        {metadataBadges(message.metadata).length > 0 && (
+                                            <div className="mb-3 flex flex-wrap gap-2">
+                                                {metadataBadges(message.metadata).map((badge) => (
+                                                    <span
+                                                        key={`${message.message_id || message.created_at}-${badge}`}
+                                                        className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600"
+                                                    >
+                                                        {badge}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
                                         <div className="whitespace-pre-wrap text-sm leading-7">{message.text || (message.metadata?.pending ? 'Streaming…' : '')}</div>
                                     </div>
                                 ))}
@@ -886,6 +985,20 @@ function App() {
                                     <label className="grid gap-1">
                                         <span className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Claude Code key</span>
                                         <input className="rounded-xl border border-slate-200 px-3 py-2 text-sm" type="password" value={claudeCodeKey} onChange={(e) => setClaudeCodeKey(e.target.value)} placeholder="optional" />
+                                    </label>
+                                    <label className="grid gap-1">
+                                        <span className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">Claude model</span>
+                                        <select
+                                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                                            value={claudeCodeModel}
+                                            onChange={(e) => setClaudeCodeModel(e.target.value)}
+                                        >
+                                            {CLAUDE_CODE_MODEL_OPTIONS.map((option) => (
+                                                <option key={option.value} value={option.value}>
+                                                    {option.label}
+                                                </option>
+                                            ))}
+                                        </select>
                                     </label>
                                 </div>
                             </div>

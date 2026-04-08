@@ -19,6 +19,7 @@ from kdcube_ai_app.apps.chat.sdk.storage.ai_bundle_storage import AIBundleStorag
 
 ROOT_KEY = "knowledge_base_admin"
 AGENT_NAME = "knowledge-base-admin"
+DEFAULT_CLAUDE_CODE_MODEL = "default"
 
 
 def _utc_now() -> str:
@@ -50,6 +51,7 @@ def _default_config() -> dict[str, Any]:
     return {
         "content_repos": [],
         "output_repo": {},
+        "claude_code_model": DEFAULT_CLAUDE_CODE_MODEL,
         "last_sync": None,
         "updated_at": None,
     }
@@ -137,6 +139,7 @@ def normalize_config(data: Mapping[str, Any] | None) -> dict[str, Any]:
     return {
         "content_repos": content_repos,
         "output_repo": output_repo,
+        "claude_code_model": str(raw.get("claude_code_model") or DEFAULT_CLAUDE_CODE_MODEL).strip() or DEFAULT_CLAUDE_CODE_MODEL,
         "last_sync": raw.get("last_sync"),
         "updated_at": raw.get("updated_at"),
     }
@@ -163,12 +166,14 @@ def save_user_config(
     *,
     content_repos: Iterable[Mapping[str, Any]] | None,
     output_repo: Mapping[str, Any] | None,
+    claude_code_model: str | None = None,
     last_sync: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     config = normalize_config(
         {
             "content_repos": list(content_repos or []),
             "output_repo": dict(output_repo or {}),
+            "claude_code_model": claude_code_model,
             "last_sync": dict(last_sync or {}) if last_sync else None,
             "updated_at": _utc_now(),
         }

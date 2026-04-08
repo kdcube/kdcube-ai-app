@@ -146,7 +146,7 @@ def _floor_bucket(ts: datetime, granularity: str) -> str:
     start = epoch - (epoch % s)
     return datetime.utcfromtimestamp(start).isoformat(timespec="seconds") + "Z"
 
-def _spent_seed(service_type: str) -> Dict[str, int]:
+def _spent_seed(service_type: str) -> Dict[str, Any]:
     """Create initial spent dict with all possible token types."""
     if service_type == "llm":
         return {
@@ -157,19 +157,22 @@ def _spent_seed(service_type: str) -> Dict[str, int]:
             "cache_read": 0,
             "cache_5m_write": 0,
             "cache_1h_write": 0,
+            "cost_usd": 0.0,
         }
     if service_type == "embedding":
-        return {"tokens": 0}
+        return {"tokens": 0, "cost_usd": 0.0}
     if service_type == "web_search":
         return {
             "search_queries": 0,
             "search_results": 0,
+            "cost_usd": 0.0,
         }
     return {}
 
 
-def _accumulate_compact(spent: Dict[str, int], ev_usage: Dict[str, Any], service_type: str) -> None:
+def _accumulate_compact(spent: Dict[str, Any], ev_usage: Dict[str, Any], service_type: str) -> None:
     """Accumulate token usage including detailed cache breakdowns and web_search."""
+    spent["cost_usd"] = float(spent.get("cost_usd", 0.0) or 0.0) + float(ev_usage.get("cost_usd", 0.0) or 0.0)
     if service_type == "llm":
         spent["input"] = int(spent.get("input", 0)) + int(ev_usage.get("input_tokens") or 0)
         spent["output"] = int(spent.get("output", 0)) + int(ev_usage.get("output_tokens") or 0)
@@ -197,6 +200,16 @@ def _accumulate_compact(spent: Dict[str, int], ev_usage: Dict[str, Any], service
         # NEW: accumulate web search metrics
         spent["search_queries"] = int(spent.get("search_queries", 0)) + int(ev_usage.get("search_queries") or 0)
         spent["search_results"] = int(spent.get("search_results", 0)) + int(ev_usage.get("search_results") or 0)
+
+
+def _serialize_spent(spent: Dict[str, Any]) -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
+    for key, value in spent.items():
+        if key == "cost_usd":
+            out[key] = float(value or 0.0)
+        else:
+            out[key] = int(value or 0)
+    return out
 
 
 def _new_usage_acc() -> Dict[str, Any]:
@@ -719,15 +732,19 @@ class AccountingCalculator:
         for (service, provider, model) in sorted(rollup.keys()):
             spent = rollup[(service, provider, model)]
             if not include_zero:
-                if service == "llm" and (spent.get("input", 0) == 0 and spent.get("output", 0) == 0):
+                if service == "llm" and (
+                    spent.get("input", 0) == 0
+                    and spent.get("output", 0) == 0
+                    and float(spent.get("cost_usd", 0.0) or 0.0) == 0.0
+                ):
                     continue
-                if service == "embedding" and spent.get("tokens", 0) == 0:
+                if service == "embedding" and spent.get("tokens", 0) == 0 and float(spent.get("cost_usd", 0.0) or 0.0) == 0.0:
                     continue
             items.append({
                 "service": service,
                 "provider": provider or None,
                 "model": model or None,
-                "spent": {k: int(v) for k, v in spent.items()},
+                "spent": _serialize_spent(spent),
             })
 
         return items
@@ -907,7 +924,7 @@ class AccountingCalculator:
                     "service": service,
                     "provider": provider or None,
                     "model": model or None,
-                    "spent": {k: int(v) for k, v in spent.items()},
+                    "spent": _serialize_spent(spent),
                 }
             )
 
@@ -1431,7 +1448,7 @@ class AccountingCalculator:
                         "service": service,
                         "provider": provider or None,
                         "model": model or None,
-                        "spent": {k: int(v) for k, v in spent.items()},
+                        "spent": _serialize_spent(spent),
                     }
                 )
             result[uid] = {
@@ -1591,7 +1608,7 @@ class AccountingCalculator:
                         "service": service,
                         "provider": provider or None,
                         "model": model or None,
-                        "spent": {k: int(v) for k, v in spent.items()},
+                        "spent": _serialize_spent(spent),
                     }
                 )
             result[agent_name] = {
@@ -1987,17 +2004,19 @@ class RateCalculator(AccountingCalculator):
             spent = rollup[(service, provider, model)]
             if not include_zero:
                 if service == "llm" and (
-                        spent.get("input", 0) == 0 and spent.get("output", 0) == 0
+                        spent.get("input", 0) == 0
+                        and spent.get("output", 0) == 0
+                        and float(spent.get("cost_usd", 0.0) or 0.0) == 0.0
                 ):
                     continue
-                if service == "embedding" and spent.get("tokens", 0) == 0:
+                if service == "embedding" and spent.get("tokens", 0) == 0 and float(spent.get("cost_usd", 0.0) or 0.0) == 0.0:
                     continue
             items.append(
                 {
                     "service": service,
                     "provider": provider or None,
                     "model": model or None,
-                    "spent": {k: int(v) for k, v in spent.items()},
+                    "spent": _serialize_spent(spent),
                 }
             )
 
@@ -2170,10 +2189,12 @@ class RateCalculator(AccountingCalculator):
 
                 if not include_zero:
                     if service == "llm" and (
-                            spent.get("input", 0) == 0 and spent.get("output", 0) == 0
+                            spent.get("input", 0) == 0
+                            and spent.get("output", 0) == 0
+                            and float(spent.get("cost_usd", 0.0) or 0.0) == 0.0
                     ):
                         continue
-                    if service == "embedding" and spent.get("tokens", 0) == 0:
+                    if service == "embedding" and spent.get("tokens", 0) == 0 and float(spent.get("cost_usd", 0.0) or 0.0) == 0.0:
                         continue
 
                 items.append(
@@ -2181,7 +2202,7 @@ class RateCalculator(AccountingCalculator):
                         "service": service,
                         "provider": provider or None,
                         "model": model or None,
-                        "spent": {k: int(v) for k, v in spent.items()},
+                        "spent": _serialize_spent(spent),
                     }
                 )
 
@@ -2342,6 +2363,7 @@ class RateCalculator(AccountingCalculator):
 
             cost_usd = 0.0
             cost_details = {}
+            direct_cost_usd = float(spent.get("cost_usd", 0.0) or 0.0)
 
             if service == "llm":
                 pr = _find_llm_price(provider, model)
@@ -2405,6 +2427,12 @@ class RateCalculator(AccountingCalculator):
                         }
 
                     cost_usd = input_cost + output_cost + cache_write_cost + cache_read_cost
+                elif direct_cost_usd > 0:
+                    cost_usd = direct_cost_usd
+                    cost_details = {
+                        "direct_cost_usd": direct_cost_usd,
+                        "pricing_source": "reported_usage_cost",
+                    }
 
             elif service == "embedding":
                 pr = _find_emb_price(provider, model, pricing_table=price_table())
@@ -2412,6 +2440,12 @@ class RateCalculator(AccountingCalculator):
                     cost_usd = (float(spent.get("tokens", 0)) / 1_000_000.0) * float(pr.get("tokens_1M", 0.0))
                     cost_details = {
                         "tokens": spent.get("tokens", 0),
+                    }
+                elif direct_cost_usd > 0:
+                    cost_usd = direct_cost_usd
+                    cost_details = {
+                        "direct_cost_usd": direct_cost_usd,
+                        "pricing_source": "reported_usage_cost",
                     }
 
             elif service == "web_search":
@@ -2427,6 +2461,15 @@ class RateCalculator(AccountingCalculator):
                         "search_queries": spent.get("search_queries", 0),
                         "search_results": spent.get("search_results", 0),
                         "tier": tier,
+                    }
+                elif direct_cost_usd > 0:
+                    cost_usd = direct_cost_usd
+                    cost_details = {
+                        "search_queries": spent.get("search_queries", 0),
+                        "search_results": spent.get("search_results", 0),
+                        "tier": tier,
+                        "direct_cost_usd": direct_cost_usd,
+                        "pricing_source": "reported_usage_cost",
                     }
 
             cost_total_usd += cost_usd
@@ -2515,6 +2558,7 @@ def _calculate_agent_costs(
 
             cost_usd = 0.0
             tier = None  # for web_search
+            direct_cost_usd = float(spent.get("cost_usd", 0.0) or 0.0)
 
             if service == "llm":
                 pr = _find_llm_price(provider, model, pricing_table=pricing_table)
@@ -2579,6 +2623,8 @@ def _calculate_agent_costs(
                     token_summary["cache_5m_write"] += int(spent.get("cache_5m_write", 0) or 0)
                     token_summary["cache_1h_write"] += int(spent.get("cache_1h_write", 0) or 0)
                     token_summary["cache_read"] += int(spent.get("cache_read", 0) or 0)
+                elif direct_cost_usd > 0:
+                    cost_usd = direct_cost_usd
 
             elif service == "embedding":
                 pr = _find_emb_price(provider, model, pricing_table=pricing_table)
@@ -2590,6 +2636,8 @@ def _calculate_agent_costs(
                             * float(pr.get("tokens_1M", 0.0))
                     )
                     token_summary["embedding"] += int(spent.get("tokens", 0) or 0)
+                elif direct_cost_usd > 0:
+                    cost_usd = direct_cost_usd
 
             elif service == "web_search":
                 # web_search cost calculation
@@ -2603,6 +2651,8 @@ def _calculate_agent_costs(
 
                     token_summary["search_queries"] += int(spent.get("search_queries", 0) or 0)
                     token_summary["search_results"] += int(spent.get("search_results", 0) or 0)
+                elif direct_cost_usd > 0:
+                    cost_usd = direct_cost_usd
 
             total_cost += cost_usd
             breakdown.append(
@@ -2753,6 +2803,7 @@ async def example_grouped_calc(tenant, project, bundle_id):
         spent = item.get("spent", {}) or {}
 
         cost_usd = 0.0
+        direct_cost_usd = float(spent.get("cost_usd", 0.0) or 0.0)
 
         if service == "llm":
             pr = _find_llm_price(provider, model)
@@ -2809,10 +2860,14 @@ async def example_grouped_calc(tenant, project, bundle_id):
                         + cache_write_cost
                         + cache_read_cost
                 )
+            elif direct_cost_usd > 0:
+                cost_usd = direct_cost_usd
         elif service == "embedding":
             pr = _find_emb_price(provider, model, pricing_table=price_table())
             if pr:
                 cost_usd = (float(spent.get("tokens", 0)) / 1_000_000.0) * float(pr.get("tokens_1M", 0.0))
+            elif direct_cost_usd > 0:
+                cost_usd = direct_cost_usd
 
         cost_total_usd += cost_usd
         cost_breakdown.append({

@@ -68,6 +68,7 @@ from .orchestrator.workflow import WithReactWorkflow
 from .event_filter import BundleEventFilter
 from .knowledge_base_admin import (
     AGENT_NAME as KB_ADMIN_AGENT_NAME,
+    DEFAULT_CLAUDE_CODE_MODEL,
     append_conversation_message,
     build_kb_admin_storage,
     build_widget_payload as build_kb_admin_widget_payload,
@@ -655,6 +656,7 @@ class ReactWorkflow(BaseEntrypoint):
         *,
         content_repos: Optional[list[dict[str, Any]]] = None,
         output_repo: Optional[dict[str, Any]] = None,
+        claude_code_model: Optional[str] = None,
     ) -> dict[str, Any]:
         normalized_content: list[dict[str, Any]] = []
         for idx, item in enumerate(list(content_repos or [])[:3], start=1):
@@ -680,6 +682,7 @@ class ReactWorkflow(BaseEntrypoint):
                 "has_source": bool(str(output.get("source") or "").strip()),
                 "source_kind": self._kb_admin_repo_source_kind(output.get("source")),
             },
+            "claude_code_model": str(claude_code_model or DEFAULT_CLAUDE_CODE_MODEL).strip() or DEFAULT_CLAUDE_CODE_MODEL,
         }
 
     def _kb_admin_claude_env(self, *, user_id: str) -> dict[str, str]:
@@ -877,6 +880,7 @@ class ReactWorkflow(BaseEntrypoint):
         self,
         content_repos: Optional[list[dict[str, Any]]] = None,
         output_repo: Optional[dict[str, Any]] = None,
+        claude_code_model: Optional[str] = None,
         git_http_token: Optional[str] = None,
         git_http_user: Optional[str] = None,
         anthropic_api_key: Optional[str] = None,
@@ -898,6 +902,7 @@ class ReactWorkflow(BaseEntrypoint):
         requested_summary = self._kb_admin_config_summary(
             content_repos=content_repos,
             output_repo=output_repo,
+            claude_code_model=claude_code_model,
         )
         self.logger.log(
             "[knowledge_base_admin.save_settings] request "
@@ -947,6 +952,7 @@ class ReactWorkflow(BaseEntrypoint):
                 target_user,
                 content_repos=content_repos or [],
                 output_repo=output_repo or {},
+                claude_code_model=claude_code_model or DEFAULT_CLAUDE_CODE_MODEL,
                 last_sync=kb_admin_load_user_config(storage, target_user).get("last_sync"),
             )
             flags = self._kb_admin_secret_flags(user_id=target_user)
@@ -959,6 +965,7 @@ class ReactWorkflow(BaseEntrypoint):
                         "persisted": self._kb_admin_config_summary(
                             content_repos=list(config.get("content_repos") or []),
                             output_repo=dict(config.get("output_repo") or {}),
+                            claude_code_model=str(config.get("claude_code_model") or DEFAULT_CLAUDE_CODE_MODEL),
                         ),
                         "secret_flags": flags,
                     },
@@ -1142,6 +1149,7 @@ class ReactWorkflow(BaseEntrypoint):
         message: str,
         conversation_id: Optional[str] = None,
         turn_kind: str = "regular",
+        claude_code_model: Optional[str] = None,
         user_id: Optional[str] = None,
         fingerprint: Optional[str] = None,
         **kwargs,
@@ -1163,6 +1171,7 @@ class ReactWorkflow(BaseEntrypoint):
 
         target_user = self._kb_admin_user_id(user_id=user_id, fingerprint=fingerprint)
         config = kb_admin_load_user_config(storage, target_user)
+        selected_model = str(claude_code_model or config.get("claude_code_model") or DEFAULT_CLAUDE_CODE_MODEL).strip() or DEFAULT_CLAUDE_CODE_MODEL
         try:
             config = kb_admin_validate_workspace_config(config)
         except ValueError as exc:
@@ -1223,6 +1232,7 @@ class ReactWorkflow(BaseEntrypoint):
             config=ClaudeCodeAgentConfig(
                 agent_name=KB_ADMIN_AGENT_NAME,
                 workspace_path=pathlib.Path(workspace["workspace_root"]),
+                model=selected_model,
                 allowed_tools=("Read", "Grep", "Bash", "WebFetch", "WebSearch"),
                 additional_directories=tuple(
                     pathlib.Path(str(item.get("local_path")))
@@ -1260,18 +1270,30 @@ class ReactWorkflow(BaseEntrypoint):
                 "conversation": conversation_doc,
             }
 
+        assistant_text = result.final_text
+        if not assistant_text and result.status != "completed":
+            assistant_text = f"Error: {result.error_message or f'Claude exited with code {result.exit_code}'}"
+
         append_conversation_message(
             storage,
             target_user,
             conversation_id=cid,
             role="assistant",
-            text=result.final_text,
+            text=assistant_text,
             metadata={
                 "turn_kind": normalized_turn_kind,
                 "status": result.status,
                 "delta_count": result.delta_count,
                 "exit_code": result.exit_code,
                 "claude_session_id": result.session_id,
+                "provider": result.provider,
+                "requested_model": result.requested_model or selected_model,
+                "model": result.model,
+                "usage": dict(result.usage or {}),
+                "cost_usd": result.cost_usd,
+                "duration_ms": result.duration_ms,
+                "api_duration_ms": result.api_duration_ms,
+                "error": result.status != "completed",
             },
         )
         conversation_doc = kb_admin_load_conversation(storage, target_user, cid)
@@ -1281,10 +1303,18 @@ class ReactWorkflow(BaseEntrypoint):
             "conversation": conversation_doc,
             "result": {
                 "status": result.status,
-                "final_text": result.final_text,
+                "final_text": assistant_text,
                 "delta_count": result.delta_count,
                 "exit_code": result.exit_code,
                 "session_id": result.session_id,
+                "provider": result.provider,
+                "requested_model": result.requested_model or selected_model,
+                "model": result.model,
+                "usage": dict(result.usage or {}),
+                "cost_usd": result.cost_usd,
+                "duration_ms": result.duration_ms,
+                "api_duration_ms": result.api_duration_ms,
+                "error_message": result.error_message,
             },
         }
 
