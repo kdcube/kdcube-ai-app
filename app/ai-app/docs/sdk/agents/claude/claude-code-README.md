@@ -1,13 +1,14 @@
 ---
 id: ks:docs/sdk/agents/claude/claude-code-README.md
 title: "Claude Code Agent"
-summary: "Native Python SDK runner for Claude Code with deterministic user and conversation binding, workspace-scoped execution, and communicator-backed streaming."
+summary: "Native Python SDK runner for Claude Code with deterministic user and conversation binding, workspace-scoped execution, communicator-backed streaming, and correct session resume semantics."
 tags: ["sdk", "agents", "claude", "claude-code", "streaming", "communicator", "workspace"]
-keywords: ["ClaudeCodeAgent", "run_followup", "run_steer", "allowedTools", "session-id", "stream-json", "ChatCommunicator"]
+keywords: ["ClaudeCodeAgent", "run_followup", "run_steer", "allowedTools", "session-id", "resume", "add-dir", "permission-mode", "stream-json", "ChatCommunicator"]
 see_also:
   - ks:docs/sdk/bundle/bundle-runtime-README.md
   - ks:docs/sdk/streaming/channeled-streamer-README.md
   - ks:docs/sdk/tools/tool-subsystem-README.md
+  - ks:docs/sdk/agents/claude/claude-code-accounting-README.md
 ---
 # Claude Code Agent
 
@@ -35,6 +36,8 @@ Main features:
 - deterministic Claude session binding from current KDCube user + conversation + agent name
 - explicit caller-supplied workspace path
 - explicit caller-supplied allowed tools
+- explicit additional writable / accessible directories via `--add-dir`
+- explicit Claude permission mode such as `acceptEdits`
 - incremental `chat.delta` emission through `ChatCommunicator`
 - separate stderr step emission
 - support for `regular`, `followup`, and `steer` turns
@@ -43,15 +46,18 @@ Main features:
 
 This runner is not a long-lived PTY session.
 
-Each turn starts a fresh `claude -p` subprocess, but reuses a stable Claude `--session-id` so Claude Code can keep its own session continuity across turns.
+Each turn starts a fresh `claude -p` subprocess, but reuses a stable Claude
+session identity so Claude Code can keep its own continuity across turns.
 
 That means:
 
-- `run_turn(...)` starts a normal turn
-- `run_followup(...)` continues the same Claude session
-- `run_steer(...)` redirects the same Claude session
+- first turn uses `--session-id <stable-uuid>` to create the Claude session
+- continued turns use `--resume <stable-uuid>` to continue that same session
+- `run_followup(...)` and `run_steer(...)` always resume
+- `run_turn(..., resume_existing=True)` is available when the caller wants a
+  normal prompt shape but is continuing an already existing conversation
 
-All three reuse the same workspace and deterministic Claude session id.
+All of these reuse the same workspace and deterministic Claude session id.
 
 ## Binding model
 
@@ -83,6 +89,13 @@ So the effective session identity is:
 
 This avoids cross-user session collisions while still allowing one user to run multiple Claude sessions by using different conversations or different agent names.
 
+Important distinction:
+
+- `ClaudeCodeBinding.session_id` is the current KDCube request/session correlation id
+- `ClaudeCodeBinding.claude_session_id` is the stable Claude resume identity
+
+So browser session expiry or multi-device login changes do not break Claude Code session continuity. Continuity is anchored to `user_id + conversation_id + agent_name`, not to the transient KDCube session id.
+
 ## Public API
 
 Typical usage:
@@ -95,7 +108,13 @@ from kdcube_ai_app.apps.chat.sdk.solutions.claude_code import ClaudeCodeAgent
 agent = ClaudeCodeAgent.from_current_context(
     agent_name="kb-writer",
     workspace_path=Path("/workspace/docs"),
+    model="claude-sonnet-4-6",
     allowed_tools=["Read", "Grep", "Bash", "WebFetch", "WebSearch"],
+    additional_directories=[
+        Path("/workspace/output-repo"),
+        Path("/workspace/source-repo"),
+    ],
+    permission_mode="acceptEdits",
 )
 
 result = await agent.run_turn(
@@ -119,6 +138,15 @@ steer = await agent.run_steer(
 )
 ```
 
+Continuing an existing conversation with a regular turn:
+
+```python
+result = await agent.run_turn(
+    "Now push the prepared wiki branch.",
+    resume_existing=True,
+)
+```
+
 ## CLI invocation model
 
 The runner executes Claude Code in print mode with stream-json:
@@ -133,9 +161,13 @@ Important current flags:
 - `--verbose`
 - `--output-format stream-json`
 - `--include-partial-messages`
+- `--model <alias|name>` when configured
 - `--allowedTools ...` when configured
+- `--permission-mode <mode>` when configured
+- `--add-dir <path>` for each configured additional directory
 - `--agent <agent_name>`
-- `--session-id <stable-uuid>`
+- `--session-id <stable-uuid>` for first turn
+- `--resume <stable-uuid>` for continued turns
 
 The CLI command is configurable through `ClaudeCodeAgentConfig.command`, but defaults to `claude`.
 
@@ -171,8 +203,37 @@ The runner does not call `chat.complete` itself. That remains the responsibility
 - `raw_output_lines`
 - `turn_kind`
 - `agent_name`
+- `provider`
+- `requested_model`
+- `model`
+- `usage`
+- `cost_usd`
+- `duration_ms`
+- `api_duration_ms`
+- `error_message`
 
 This is meant for bundle logic and diagnostics, not only UI streaming.
+
+`requested_model` is what the caller asked Claude Code to use. `model` is what the CLI stream actually reported for the run. When aliases like `sonnet` or `opus` are used, this distinction is useful for observability and accounting.
+
+## Model selection
+
+`ClaudeCodeAgentConfig.model` is optional.
+
+- if omitted or `"default"`, the runner starts Claude Code without `--model`
+- if set, the runner forwards it via `claude --model <alias|name>`
+
+This makes it possible for a bundle to persist a user-selected Claude model and reuse it across turns while still keeping the actual resolved model visible in the result object and accounting events.
+
+## Accounting
+
+Claude Code runs are accounted as normal `service_type=llm` usage events with:
+
+- `provider="anthropic"`
+- `metadata.runtime="claude_code"`
+- resolved usage from the `stream-json` result stream
+
+See [ks:docs/sdk/agents/claude/claude-code-accounting-README.md](ks:docs/sdk/agents/claude/claude-code-accounting-README.md).
 
 ## Workspace model
 
@@ -186,6 +247,10 @@ The runner does not:
 - publish or push changes
 
 That is intentional. Workspace orchestration belongs to the caller or a higher-level SDK abstraction.
+
+If the Claude run needs access outside the main workspace root, the caller
+should pass `additional_directories`. These are forwarded to Claude Code as
+`--add-dir` entries.
 
 ## Allowed tools
 
@@ -202,6 +267,20 @@ agent = ClaudeCodeAgent.from_current_context(
 ```
 
 If `allowed_tools` is empty, the runner simply omits `--allowedTools`.
+
+## Permission mode
+
+The runner exposes Claude Code permission mode through
+`ClaudeCodeAgentConfig.permission_mode` and
+`ClaudeCodeAgent.from_current_context(..., permission_mode=...)`.
+
+Current default:
+
+- `acceptEdits`
+
+This is useful for managed workspaces where the caller wants Claude to edit
+within the allowed workspace / `--add-dir` scope without stopping on each file
+write.
 
 ## Error behavior
 
@@ -242,6 +321,7 @@ Covered cases:
 - incremental snapshot-to-delta conversion
 - stderr emission
 - failure reporting
+- first-turn `--session-id` vs resumed-turn `--resume`
 - session reuse across `followup` and `steer`
 
 ## Intended next use

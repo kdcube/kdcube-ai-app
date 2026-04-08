@@ -457,10 +457,13 @@ class AccountingTracker:
 
         return "unknown"
 
-    def _extract_model(self, *args, **kwargs) -> str:
+    def _extract_model(self, result: Any, *args, **kwargs) -> str:
         """Extract model name"""
         if self.model_extractor:
-            return self.model_extractor(*args, **kwargs)
+            try:
+                return self.model_extractor(result, *args, **kwargs)
+            except TypeError:
+                return self.model_extractor(*args, **kwargs)
 
         if 'model' in kwargs:
             model_record = kwargs['model']
@@ -498,10 +501,13 @@ class AccountingTracker:
 
         return ServiceUsage(requests=1)
 
-    def _extract_metadata(self, *args, **kwargs) -> Dict[str, Any]:
+    def _extract_metadata(self, result: Any, *args, **kwargs) -> Dict[str, Any]:
         """Extract additional metadata"""
         if self.metadata_extractor:
-            return self.metadata_extractor(*args, **kwargs)
+            try:
+                return self.metadata_extractor(result, *args, **kwargs)
+            except TypeError:
+                return self.metadata_extractor(*args, **kwargs)
         return {}
 
     def _create_event(self, result: Any, exception: Optional[Exception],
@@ -514,9 +520,9 @@ class AccountingTracker:
 
         # Extract information
         provider = self._extract_provider(result, *args, **kwargs)
-        model = self._extract_model(*args, **kwargs)
+        model = self._extract_model(result, *args, **kwargs)
         usage = self._extract_usage(result, *args, **kwargs)
-        meta = self._extract_metadata(*args, **kwargs)
+        meta = self._extract_metadata(result, *args, **kwargs)
 
         # merge in enrichment metadata (caller-provided data)
         extra_meta = dict(enrich.get("metadata") or {})
@@ -530,6 +536,11 @@ class AccountingTracker:
         # Determine success and error
         success = exception is None
         error_message = str(exception) if exception else None
+        if exception is None and result is not None:
+            result_status = str(getattr(result, "status", "") or "").strip().lower()
+            if result_status in {"failed", "error"}:
+                success = False
+                error_message = getattr(result, "error_message", None) or error_message
 
         # Provider request ID
         provider_request_id = None
