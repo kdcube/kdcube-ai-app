@@ -1,5 +1,6 @@
 export type EventBase = {
     event_type: "log"
+    origin: string
     tenant: string
     project: string
     user_id: string | null

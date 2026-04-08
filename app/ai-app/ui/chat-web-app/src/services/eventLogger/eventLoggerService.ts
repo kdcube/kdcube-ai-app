@@ -144,6 +144,7 @@ export class EventLoggerService {
         // Create event
         const event: ExternalLogEvent = {
             event_type: "log",
+            origin: "kdcube-frontend",
             level,
             message,
             args: eventArgs,
@@ -211,16 +212,19 @@ export class EventLoggerService {
         const eventsToSend = [...this.buffer];
         this.buffer = [];
 
-        // Fire-and-forget: don't wait for response, don't handle errors
-        fetch(this.ENDPOINT, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify(eventsToSend),
-        }).catch((err) => {
-            // Log send errors only with original console (avoid infinite loop)
-            this.originalConsoleError("Failed to send events to collector:", err);
+        // Send each event individually
+        eventsToSend.forEach((event) => {
+            // Fire-and-forget: don't wait for response, don't handle errors
+            fetch(this.ENDPOINT, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify(event),
+            }).catch((err) => {
+                // Log send errors only with original console (avoid infinite loop)
+                this.originalConsoleError("Failed to send event to collector:", err);
+            });
         });
     }
 
