@@ -124,6 +124,16 @@ aws:
   profile: "dev"
   ec2: false
 
+storage:
+  workspace:
+    type: "custom"         # custom | git
+    repo: ""               # required when type=git
+  claude_code_session:
+    type: "local"          # local | git
+    repo: ""               # required when type=git
+  kdcube: "s3://../data/kdcube"
+  bundles: "s3://../data/kdcube"
+
 paths:
   host_kdcube_storage_path: "/srv/kdcube/data/kdcube-storage"
   host_bundles_path: "/srv/kdcube/data/bundles"
@@ -287,6 +297,8 @@ When you run the wizard with an assembly descriptor, it will:
 - Use `context.tenant` and `context.project` as defaults for prompts.
 - Use `secrets.provider` as the source of truth for `SECRETS_PROVIDER`.
 - Use `infra.postgres` and `infra.redis` values as defaults.
+- Use `storage.workspace` as the source of truth for React workspace bootstrap mode.
+- Use `storage.claude_code_session` as the source of truth for Claude Code session-store bootstrap mode.
 - Use `paths.*` as defaults for local host paths.
 - Write back any values you enter, keeping `assembly.yaml` as the source of truth.
 
@@ -297,6 +309,13 @@ from the descriptor or override them. If you choose to use the descriptor, it
 will not prompt for those values.
 
 These sections are used by the CLI to **render .env files** for docker-compose.
+
+Runtime env mapping:
+
+- `storage.workspace.type` -> `REACT_WORKSPACE_IMPLEMENTATION`
+- `storage.workspace.repo` -> `REACT_WORKSPACE_GIT_REPO`
+- `storage.claude_code_session.type` -> `CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION`
+- `storage.claude_code_session.repo` -> `CLAUDE_CODE_SESSION_GIT_REPO`
 
 ---
 

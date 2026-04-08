@@ -6,6 +6,7 @@ tags: ["sdk", "agents", "claude", "claude-code", "accounting", "economics"]
 keywords: ["track_llm", "cost_usd", "stream-json", "claude-sonnet-4-6", "claude-opus-4-6", "runtime=claude_code"]
 see_also:
   - ks:docs/sdk/agents/claude/claude-code-README.md
+  - ks:docs/sdk/agents/claude/claude-code-workspace-bootstrap-README.md
 ---
 # Claude Code Accounting
 

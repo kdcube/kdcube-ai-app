@@ -154,6 +154,13 @@ When an assembly descriptor is provided, the wizard writes non‑secret values
 back into `assembly.yaml` (tenant/project, auth, infra, paths) and then renders
 `.env*` from it. The assembly file becomes the source of truth for local config.
 
+The same descriptor also controls workspace/session bootstrap settings for agent runtimes:
+
+- `storage.workspace.type` -> `REACT_WORKSPACE_IMPLEMENTATION`
+- `storage.workspace.repo` -> `REACT_WORKSPACE_GIT_REPO`
+- `storage.claude_code_session.type` -> `CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION`
+- `storage.claude_code_session.repo` -> `CLAUDE_CODE_SESSION_GIT_REPO`
+
 Repo field contract:
 
 - `platform.repo` and `frontend.build.repo` should use a cloneable repo spec:

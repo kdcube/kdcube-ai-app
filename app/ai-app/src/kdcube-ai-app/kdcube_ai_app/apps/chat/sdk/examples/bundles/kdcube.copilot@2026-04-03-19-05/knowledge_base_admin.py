@@ -673,6 +673,21 @@ def write_workspace_context(
     return payload
 
 
+def refresh_workspace_support_files(
+    *,
+    local_root: Path,
+    user_id: str | None,
+    config: Mapping[str, Any],
+    repo_statuses: list[Mapping[str, Any]],
+) -> dict[str, Any]:
+    return write_workspace_context(
+        local_root=local_root,
+        user_id=user_id,
+        config=config,
+        repo_statuses=repo_statuses,
+    )
+
+
 def build_workspace_prompt_context(workspace_payload: Mapping[str, Any]) -> str:
     lines = [
         "You are operating in the Knowledge Base Admin workspace.",

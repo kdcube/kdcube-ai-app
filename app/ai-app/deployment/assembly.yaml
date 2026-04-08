@@ -19,6 +19,9 @@ storage:
   workspace:
     type: git
     repo: "" # repo url
+  claude_code_session:
+    type: local   # local | git
+    repo: ""      # repo url; used only when type=git
 
 
 

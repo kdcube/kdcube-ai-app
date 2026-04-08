@@ -2,6 +2,13 @@
 # Copyright (c) 2025 Elena Viter
 
 from kdcube_ai_app.apps.chat.sdk.solutions.claude_code.agent import ClaudeCodeAgent
+from kdcube_ai_app.apps.chat.sdk.solutions.claude_code.runtime import (
+    ClaudeCodeSessionStoreConfig,
+    bootstrap_claude_code_session_store,
+    claude_code_session_branch_ref,
+    publish_claude_code_session_store,
+    run_claude_code_turn,
+)
 from kdcube_ai_app.apps.chat.sdk.solutions.claude_code.types import (
     ClaudeCodeAgentConfig,
     ClaudeCodeBinding,
@@ -15,4 +22,9 @@ __all__ = [
     "ClaudeCodeBinding",
     "ClaudeCodeRunResult",
     "ClaudeCodeTurnKind",
+    "ClaudeCodeSessionStoreConfig",
+    "bootstrap_claude_code_session_store",
+    "claude_code_session_branch_ref",
+    "publish_claude_code_session_store",
+    "run_claude_code_turn",
 ]

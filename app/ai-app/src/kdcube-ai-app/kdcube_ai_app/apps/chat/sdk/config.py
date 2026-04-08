@@ -251,6 +251,8 @@ class Settings(BaseSettings):
     STORAGE_PATH: str | None = Field(default=None, alias="KDCUBE_STORAGE_PATH")
     REACT_WORKSPACE_IMPLEMENTATION: str = Field(default="custom")
     REACT_WORKSPACE_GIT_REPO: str | None = None
+    CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION: str = Field(default="local")
+    CLAUDE_CODE_SESSION_GIT_REPO: str | None = None
 
     TENANT: str = Field(default="home", alias="TENANT_ID")
     PROJECT: str = Field(default="default-project", alias="PROJECT_ID")
