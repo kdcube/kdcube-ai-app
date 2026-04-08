@@ -104,6 +104,7 @@ def test_conversation_roundtrip_and_widget_payload(tmp_path: Path, monkeypatch: 
         "alice",
         content_repos=[{"source": "https://example.com/docs.git", "label": "Docs"}],
         output_repo={"source": "https://example.com/wiki.git", "label": "Wiki"},
+        claude_code_model="claude-opus-4-6",
     )
 
     conversation = mod.create_or_load_conversation(
@@ -144,6 +145,7 @@ def test_conversation_roundtrip_and_widget_payload(tmp_path: Path, monkeypatch: 
         "has_claude_code_key": True,
     }
     assert payload["selected_conversation_id"] == "kb_admin_demo"
+    assert payload["config"]["claude_code_model"] == "claude-opus-4-6"
     assert payload["current_conversation"]["messages"][0]["role"] == "user"
     assert payload["current_conversation"]["messages"][1]["role"] == "assistant"
     assert payload["conversations"][0]["message_count"] == 2

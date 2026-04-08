@@ -16,9 +16,18 @@ from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import (
     get_current_comm,
     get_current_request_context,
 )
+from kdcube_ai_app.infra.accounting import track_llm
+from kdcube_ai_app.infra.accounting.usage import ServiceUsage, _norm_usage_dict
 from kdcube_ai_app.apps.chat.sdk.solutions.claude_code.streaming import (
-    compute_incremental_chunk,
+    CLAUDE_CODE_PROVIDER,
+    accumulate_usage,
+    accumulate_transcript,
+    extract_model_from_claude_event,
+    extract_result_metrics_from_claude_event,
     extract_text_from_claude_event,
+    extract_usage_from_claude_event,
+    is_result_event,
+    is_usage_bearing_message_event,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.claude_code.types import (
     ClaudeCodeAgentConfig,
@@ -26,6 +35,87 @@ from kdcube_ai_app.apps.chat.sdk.solutions.claude_code.types import (
     ClaudeCodeRunResult,
     ClaudeCodeTurnKind,
 )
+
+
+def _claude_code_provider_extractor(result, *_args, **_kwargs) -> str:
+    return str(getattr(result, "provider", None) or CLAUDE_CODE_PROVIDER)
+
+
+def _claude_code_model_extractor(result, *_args, **_kwargs) -> str:
+    model = getattr(result, "model", None)
+    if model:
+        return str(model)
+    return "unknown"
+
+
+def _claude_code_usage_extractor(result, *_args, **_kwargs) -> ServiceUsage:
+    if result is None:
+        return ServiceUsage(requests=0)
+
+    usage = getattr(result, "usage", None) or {}
+    normalized = _norm_usage_dict(usage if isinstance(usage, dict) else {})
+    requests = 1
+    if isinstance(usage, dict):
+        try:
+            requests = max(int(usage.get("requests") or 1), 0)
+        except Exception:
+            requests = 1
+
+    cost_usd = None
+    if isinstance(usage, dict) and usage.get("cost_usd") is not None:
+        try:
+            cost_usd = float(usage.get("cost_usd"))
+        except Exception:
+            cost_usd = None
+    elif getattr(result, "cost_usd", None) is not None:
+        try:
+            cost_usd = float(result.cost_usd)
+        except Exception:
+            cost_usd = None
+
+    return ServiceUsage(
+        input_tokens=int((usage.get("input_tokens") if isinstance(usage, dict) else None) or normalized.get("input_tokens", 0) or 0),
+        output_tokens=int((usage.get("output_tokens") if isinstance(usage, dict) else None) or normalized.get("output_tokens", 0) or 0),
+        thinking_tokens=int((usage.get("thinking_tokens") if isinstance(usage, dict) else None) or normalized.get("thinking_tokens", 0) or 0),
+        cache_creation_tokens=int((usage.get("cache_creation_tokens") if isinstance(usage, dict) else None) or normalized.get("cache_creation_input_tokens", 0) or 0),
+        cache_read_tokens=int((usage.get("cache_read_tokens") if isinstance(usage, dict) else None) or normalized.get("cache_read_input_tokens", 0) or 0),
+        cache_creation=(usage.get("cache_creation") if isinstance(usage, dict) else None) or normalized.get("cache_creation") or {},
+        total_tokens=int((usage.get("total_tokens") if isinstance(usage, dict) else None) or normalized.get("total_tokens", 0) or 0),
+        requests=requests,
+        cost_usd=cost_usd,
+    )
+
+
+def _claude_code_meta_extractor(result, *args, **kwargs) -> dict:
+    agent = args[0] if args else None
+    prompt = args[1] if len(args) > 1 else kwargs.get("prompt", "")
+    kind = kwargs.get("kind", "regular")
+    resume_existing = bool(kwargs.get("resume_existing", False))
+
+    meta: dict = {}
+    if agent is not None and hasattr(agent, "_metadata"):
+        meta = dict(agent._metadata(kind=kind, resume_existing=resume_existing))
+
+    meta.update(
+        {
+            "runtime": "claude_code",
+            "accounting_source": "claude_code_cli_stream_json",
+            "prompt_chars": len(prompt or ""),
+        }
+    )
+
+    if result is not None:
+        meta.update(
+            {
+                "exit_code": getattr(result, "exit_code", None),
+                "delta_count": getattr(result, "delta_count", None),
+                "duration_ms": getattr(result, "duration_ms", None),
+                "api_duration_ms": getattr(result, "api_duration_ms", None),
+                "cost_usd": getattr(result, "cost_usd", None),
+                "model_resolution": "stream_json" if getattr(result, "resolved_from_stream", False) else "unknown",
+            }
+        )
+    return meta
 
 
 class ClaudeCodeAgent:
@@ -48,6 +138,7 @@ class ClaudeCodeAgent:
         *,
         agent_name: str,
         workspace_path: str | Path,
+        model: str | None = None,
         allowed_tools: Sequence[str] = (),
         additional_directories: Sequence[str | Path] = (),
         extra_args: Sequence[str] = (),
@@ -66,6 +157,7 @@ class ClaudeCodeAgent:
             config=ClaudeCodeAgentConfig(
                 agent_name=agent_name,
                 workspace_path=Path(workspace_path),
+                model=model,
                 allowed_tools=allowed_tools,
                 additional_directories=tuple(Path(path) for path in additional_directories),
                 extra_args=extra_args,
@@ -90,6 +182,8 @@ class ClaudeCodeAgent:
         ]
         if self.config.allowed_tools:
             args.extend(["--allowedTools", ",".join(self.config.allowed_tools)])
+        if self.config.model and self.config.model != "default":
+            args.extend(["--model", self.config.model])
         if self.config.permission_mode:
             args.extend(["--permission-mode", self.config.permission_mode])
         for path in self.config.additional_directories:
@@ -102,6 +196,196 @@ class ClaudeCodeAgent:
         args.extend(list(self.config.extra_args))
         args.append(prompt)
         return args
+
+    @track_llm(
+        provider_extractor=_claude_code_provider_extractor,
+        model_extractor=_claude_code_model_extractor,
+        usage_extractor=_claude_code_usage_extractor,
+        metadata_extractor=_claude_code_meta_extractor,
+    )
+    async def _run_accountable_turn(
+        self,
+        prompt: str,
+        *,
+        kind: ClaudeCodeTurnKind = "regular",
+        resume_existing: bool = False,
+    ) -> ClaudeCodeRunResult:
+        workspace_path = self.config.workspace_path
+        raw_output_lines: list[str] = []
+        stderr_lines: list[str] = []
+        delta_count = 0
+        snapshot = ""
+        final_text = ""
+        transcript = ""
+        usage_totals: dict[str, object] | None = None
+        usage_message_events = 0
+        resolved_model: str | None = None
+        cost_usd: float | None = None
+        duration_ms: int | None = None
+        api_duration_ms: int | None = None
+        raw_result_event: dict | None = None
+        resolved_from_stream = False
+
+        process = await asyncio.create_subprocess_exec(
+            self.config.command,
+            *self.build_args(prompt, resume_existing=resume_existing),
+            cwd=str(workspace_path),
+            env=self._build_env(kind=kind),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        async def _consume_stdout() -> None:
+            nonlocal snapshot
+            nonlocal final_text
+            nonlocal transcript
+            nonlocal delta_count
+            nonlocal usage_totals
+            nonlocal usage_message_events
+            nonlocal resolved_model
+            nonlocal cost_usd
+            nonlocal duration_ms
+            nonlocal api_duration_ms
+            nonlocal raw_result_event
+            nonlocal resolved_from_stream
+
+            assert process.stdout is not None
+            async for raw_line in process.stdout:
+                line = raw_line.decode("utf-8", errors="replace").replace("\r", "").rstrip("\n")
+                if not line.strip():
+                    continue
+                raw_output_lines.append(line)
+                try:
+                    parsed = json.loads(line)
+                except json.JSONDecodeError:
+                    final_text += line
+                    await self._emit_delta(text=line, index=delta_count)
+                    delta_count += 1
+                    continue
+
+                model_name = extract_model_from_claude_event(parsed)
+                if model_name:
+                    resolved_model = model_name
+                    resolved_from_stream = True
+
+                usage_payload = extract_usage_from_claude_event(parsed)
+                if isinstance(usage_payload, dict):
+                    should_accumulate = True
+                    if is_result_event(parsed) and usage_message_events > 0:
+                        should_accumulate = False
+                    if should_accumulate:
+                        usage_totals = accumulate_usage(usage_totals, usage_payload)
+                    if is_usage_bearing_message_event(parsed):
+                        usage_message_events += 1
+                        resolved_from_stream = True
+
+                metrics = extract_result_metrics_from_claude_event(parsed)
+                if "cost_usd" in metrics:
+                    cost_usd = float(metrics["cost_usd"])
+                    resolved_from_stream = True
+                if "duration_ms" in metrics:
+                    duration_ms = int(metrics["duration_ms"])
+                if "duration_api_ms" in metrics:
+                    api_duration_ms = int(metrics["duration_api_ms"])
+                elif "api_duration_ms" in metrics:
+                    api_duration_ms = int(metrics["api_duration_ms"])
+
+                if is_result_event(parsed):
+                    raw_result_event = parsed
+                    resolved_from_stream = True
+
+                text = extract_text_from_claude_event(parsed)
+                if not text:
+                    continue
+                transcript, snapshot, chunk = accumulate_transcript(transcript, snapshot, text)
+                final_text = f"{transcript}\n\n{snapshot}" if transcript and snapshot else (snapshot or transcript)
+                if not chunk:
+                    continue
+                await self._emit_delta(text=chunk, index=delta_count)
+                delta_count += 1
+
+        async def _consume_stderr() -> None:
+            assert process.stderr is not None
+            async for raw_line in process.stderr:
+                line = raw_line.decode("utf-8", errors="replace").replace("\r", "").rstrip("\n")
+                if not line.strip():
+                    continue
+                stderr_lines.append(line)
+                self.logger.warning("[ClaudeCodeAgent] stderr: %s", line)
+                if self.config.emit_stderr_steps:
+                    await self._emit_step(
+                        step=f"{self.config.step_name}.stderr",
+                        status="running",
+                        title="Claude stderr",
+                        data={
+                            **self._metadata(kind=kind, resume_existing=resume_existing),
+                            "line": line,
+                            "stderr_index": len(stderr_lines) - 1,
+                        },
+                    )
+
+        stdout_task = asyncio.create_task(_consume_stdout())
+        stderr_task = asyncio.create_task(_consume_stderr())
+
+        exit_code = await process.wait()
+        await asyncio.gather(stdout_task, stderr_task)
+
+        status = "completed" if exit_code == 0 else "failed"
+        usage_payload = dict(usage_totals or {}) or None
+        if usage_payload is not None:
+            if usage_payload.get("requests") in (None, 0):
+                usage_payload["requests"] = max(usage_message_events, 1)
+            if cost_usd is not None and usage_payload.get("cost_usd") is None:
+                usage_payload["cost_usd"] = float(cost_usd)
+            try:
+                self.logger.info(
+                    "[ClaudeCodeAgent] usage summary agent=%s session=%s requested_model=%s resolved_model=%s "
+                    "requests=%s input=%s output=%s thinking=%s cache_read=%s cache_write_total=%s "
+                    "cache_5m=%s cache_1h=%s cost_usd=%s duration_ms=%s api_duration_ms=%s",
+                    self.config.agent_name,
+                    self.binding.claude_session_id,
+                    self.config.model,
+                    resolved_model,
+                    usage_payload.get("requests"),
+                    usage_payload.get("input_tokens"),
+                    usage_payload.get("output_tokens"),
+                    usage_payload.get("thinking_tokens"),
+                    usage_payload.get("cache_read_tokens"),
+                    usage_payload.get("cache_creation_tokens"),
+                    ((usage_payload.get("cache_creation") or {}) if isinstance(usage_payload.get("cache_creation"), dict) else {}).get("ephemeral_5m_input_tokens"),
+                    ((usage_payload.get("cache_creation") or {}) if isinstance(usage_payload.get("cache_creation"), dict) else {}).get("ephemeral_1h_input_tokens"),
+                    usage_payload.get("cost_usd", cost_usd),
+                    duration_ms,
+                    api_duration_ms,
+                )
+            except Exception:
+                pass
+
+        error_message = None
+        if status != "completed":
+            error_message = stderr_lines[-1] if stderr_lines else f"Claude exited with code {exit_code}"
+
+        return ClaudeCodeRunResult(
+            status=status,
+            session_id=self.binding.claude_session_id,
+            final_text=final_text,
+            delta_count=delta_count,
+            exit_code=exit_code,
+            stderr_lines=stderr_lines,
+            raw_output_lines=raw_output_lines,
+            turn_kind=kind,
+            agent_name=self.config.agent_name,
+            provider=CLAUDE_CODE_PROVIDER,
+            requested_model=self.config.model,
+            model=resolved_model,
+            usage=usage_payload,
+            cost_usd=cost_usd,
+            duration_ms=duration_ms,
+            api_duration_ms=api_duration_ms,
+            raw_result_event=raw_result_event,
+            resolved_from_stream=resolved_from_stream,
+            error_message=error_message,
+        )
 
     async def run_turn(
         self,
@@ -130,20 +414,11 @@ class ClaudeCodeAgent:
             data=metadata,
         )
 
-        raw_output_lines: list[str] = []
-        stderr_lines: list[str] = []
-        delta_count = 0
-        snapshot = ""
-        final_text = ""
-
         try:
-            process = await asyncio.create_subprocess_exec(
-                self.config.command,
-                *self.build_args(prompt, resume_existing=resume_existing),
-                cwd=str(workspace_path),
-                env=self._build_env(kind=kind),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+            result = await self._run_accountable_turn(
+                prompt,
+                kind=kind,
+                resume_existing=resume_existing,
             )
         except Exception as exc:
             await self._emit_final_error(
@@ -155,90 +430,27 @@ class ClaudeCodeAgent:
             )
             raise
 
-        async def _consume_stdout() -> tuple[str, int]:
-            nonlocal snapshot, final_text, delta_count
-            assert process.stdout is not None
-            async for raw_line in process.stdout:
-                line = raw_line.decode("utf-8", errors="replace").replace("\r", "").rstrip("\n")
-                if not line.strip():
-                    continue
-                raw_output_lines.append(line)
-                try:
-                    parsed = json.loads(line)
-                except json.JSONDecodeError:
-                    final_text += line
-                    await self._emit_delta(text=line, index=delta_count)
-                    delta_count += 1
-                    continue
-
-                text = extract_text_from_claude_event(parsed)
-                if not text:
-                    continue
-                snapshot, chunk = compute_incremental_chunk(snapshot, text)
-                final_text = snapshot
-                if not chunk:
-                    continue
-                await self._emit_delta(text=chunk, index=delta_count)
-                delta_count += 1
-            return final_text, delta_count
-
-        async def _consume_stderr() -> None:
-            assert process.stderr is not None
-            async for raw_line in process.stderr:
-                line = raw_line.decode("utf-8", errors="replace").replace("\r", "").rstrip("\n")
-                if not line.strip():
-                    continue
-                stderr_lines.append(line)
-                self.logger.warning("[ClaudeCodeAgent] stderr: %s", line)
-                if self.config.emit_stderr_steps:
-                    await self._emit_step(
-                        step=f"{self.config.step_name}.stderr",
-                        status="running",
-                        title="Claude stderr",
-                        data={
-                            **metadata,
-                            "line": line,
-                            "stderr_index": len(stderr_lines) - 1,
-                        },
-                    )
-
-        stdout_task = asyncio.create_task(_consume_stdout())
-        stderr_task = asyncio.create_task(_consume_stderr())
-
-        exit_code = await process.wait()
-        await asyncio.gather(stdout_task, stderr_task)
-
-        status = "completed" if exit_code == 0 else "failed"
-        result = ClaudeCodeRunResult(
-            status=status,
-            session_id=self.binding.claude_session_id,
-            final_text=final_text,
-            delta_count=delta_count,
-            exit_code=exit_code,
-            stderr_lines=stderr_lines,
-            raw_output_lines=raw_output_lines,
-            turn_kind=kind,
-            agent_name=self.config.agent_name,
-        )
-
-        if status == "completed":
+        if result.status == "completed":
             await self._emit_step(
                 step=self.config.step_name,
                 status="completed",
                 title=f"Completed {self.config.agent_name}",
                 data={
                     **metadata,
-                    "delta_count": delta_count,
-                    "exit_code": exit_code,
+                    "delta_count": result.delta_count,
+                    "exit_code": result.exit_code,
+                    "model": result.model,
+                    "requested_model": result.requested_model,
+                    "cost_usd": result.cost_usd,
+                    "usage": dict(result.usage or {}),
                 },
             )
         else:
-            message = stderr_lines[-1] if stderr_lines else f"Claude exited with code {exit_code}"
             await self._emit_final_error(
-                message=message,
+                message=result.error_message or f"Claude exited with code {result.exit_code}",
                 kind=kind,
-                exit_code=exit_code,
-                stderr_lines=stderr_lines,
+                exit_code=result.exit_code,
+                stderr_lines=result.stderr_lines,
                 resume_existing=resume_existing,
             )
 
@@ -270,6 +482,7 @@ class ClaudeCodeAgent:
             "workspace_path": str(self.config.workspace_path),
             "allowed_tools": list(self.config.allowed_tools),
             "additional_directories": [str(path) for path in self.config.additional_directories],
+            "requested_model": self.config.model,
             "permission_mode": self.config.permission_mode,
             "user_id": self.binding.user_id,
             "conversation_id": self.binding.conversation_id,

@@ -10,6 +10,8 @@ from decimal import Decimal, ROUND_FLOOR
 logger = logging.getLogger(__name__)
 
 sonnet_45 = "claude-sonnet-4-5-20250929"
+sonnet_46 = "claude-sonnet-4-6"
+opus_46 = "claude-opus-4-6"
 haiku_4 = "claude-haiku-4-5-20251001"
 gemini_25_pro = "gemini-2.5-pro"
 
@@ -24,6 +26,59 @@ def price_table():
 
     return {
         "llm": [
+            {
+                "model": sonnet_46,
+                "provider": "anthropic",
+                "aliases": [
+                    "sonnet",
+                    "claude-sonnet",
+                    "sonnet-4.6",
+                    "sonnet-4-6",
+                    "claude-sonnet-4.6",
+                    "claude-sonnet-4-6",
+                ],
+                "input_tokens_1M": 3.00,
+                "output_tokens_1M": 15.00,
+                "cache_pricing": {
+                    "5m": {
+                        "write_tokens_1M": 3.75,
+                        "read_tokens_1M": 0.30,
+                    },
+                    "1h": {
+                        "write_tokens_1M": 6.00,
+                        "read_tokens_1M": 0.30,
+                    },
+                },
+                "cache_write_tokens_1M": 3.75,
+                "cache_read_tokens_1M": 0.30,
+            },
+            {
+                "model": opus_46,
+                "provider": "anthropic",
+                "aliases": [
+                    "best",
+                    "opus",
+                    "claude-opus",
+                    "opus-4.6",
+                    "opus-4-6",
+                    "claude-opus-4.6",
+                    "claude-opus-4-6",
+                ],
+                "input_tokens_1M": 5.00,
+                "output_tokens_1M": 25.00,
+                "cache_pricing": {
+                    "5m": {
+                        "write_tokens_1M": 6.25,
+                        "read_tokens_1M": 0.50,
+                    },
+                    "1h": {
+                        "write_tokens_1M": 10.00,
+                        "read_tokens_1M": 0.50,
+                    },
+                },
+                "cache_write_tokens_1M": 6.25,
+                "cache_read_tokens_1M": 0.50,
+            },
             {
                 "model": sonnet_45,
                 "provider": "anthropic",
@@ -62,6 +117,14 @@ def price_table():
             {
                 "model": haiku_4,
                 "provider": "anthropic",
+                "aliases": [
+                    "haiku",
+                    "claude-haiku",
+                    "haiku-4.5",
+                    "haiku-4-5",
+                    "claude-haiku-4.5",
+                    "claude-haiku-4-5",
+                ],
                 "input_tokens_1M": 1,
                 "output_tokens_1M": 5,
                 "cache_pricing": {
@@ -665,8 +728,21 @@ def _find_llm_price(provider: str,
     if not pricing_table:
         pricing_table = price_table()
     llm_pricelist = pricing_table.get("llm") or {}
+    provider_norm = str(provider or "").strip().lower()
+    model_norm = str(model or "").strip().lower()
     for p in llm_pricelist:
-        if p.get("provider") == provider and p.get("model") == model:
+        aliases = [
+            str(alias).strip().lower()
+            for alias in list(p.get("aliases") or [])
+            if str(alias).strip()
+        ]
+        if (
+            str(p.get("provider") or "").strip().lower() == provider_norm
+            and (
+                str(p.get("model") or "").strip().lower() == model_norm
+                or model_norm in aliases
+            )
+        ):
             return p
     return None
 
