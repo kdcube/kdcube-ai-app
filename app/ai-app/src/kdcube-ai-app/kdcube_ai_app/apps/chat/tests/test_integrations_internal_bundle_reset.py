@@ -85,3 +85,80 @@ def test_internal_reset_env_reapplies_registry(monkeypatch):
     assert calls["serialize"][1] == "demo.bundle@1.0.0"
     assert calls["cleared"] is True
     assert calls["publish"][0] == "kdcube:config:bundles:update:example-product:chatbot"
+
+
+def test_internal_reset_env_evicts_requested_bundle_scope(monkeypatch):
+    app = FastAPI()
+    mount_integrations_routers(app)
+
+    calls: dict[str, object] = {}
+
+    async def fake_reset_registry_from_env(redis, tenant, project):
+        calls["reset"] = (redis, tenant, project)
+        return _Registry(
+            default_bundle_id="demo.bundle@1.0.0",
+            bundles={
+                "demo.bundle@1.0.0": _Entry(
+                    {
+                        "id": "demo.bundle@1.0.0",
+                        "path": "/bundles/demo",
+                        "module": "demo.entrypoint",
+                        "singleton": True,
+                    }
+                )
+            },
+        )
+
+    async def fake_set_registry_async(registry, default_bundle_id):
+        calls["set_registry"] = (registry, default_bundle_id)
+
+    def fake_serialize_to_env(registry, default_bundle_id):
+        calls["serialize"] = (registry, default_bundle_id)
+        return "ok"
+
+    def fake_clear_agentic_caches():
+        calls["cleared"] = True
+
+    def fake_evict_bundle_scope(spec, *, drop_sys_modules=True):
+        calls["evicted"] = {
+            "path": spec.path,
+            "module": spec.module,
+            "singleton": spec.singleton,
+            "drop_sys_modules": drop_sys_modules,
+        }
+        return {"evicted_modules": 1, "evicted_singletons": 1, "evicted_manifests": 1, "sys_modules_deleted": 2}
+
+    class _Redis:
+        async def publish(self, channel, payload):
+            calls["publish"] = (channel, payload)
+            return 1
+
+    app.state.redis_async = _Redis()
+
+    monkeypatch.setattr(integrations, "get_settings", lambda: SimpleNamespace(TENANT="example-product", PROJECT="chatbot"))
+    monkeypatch.setattr(integrations, "_LOCALHOST", {"testclient", "127.0.0.1", "::1"})
+
+    import kdcube_ai_app.infra.plugin.bundle_store as bundle_store
+    import kdcube_ai_app.infra.plugin.bundle_registry as bundle_registry
+    import kdcube_ai_app.infra.plugin.agentic_loader as agentic_loader
+
+    monkeypatch.setattr(bundle_store, "reset_registry_from_env", fake_reset_registry_from_env)
+    monkeypatch.setattr(bundle_registry, "set_registry_async", fake_set_registry_async)
+    monkeypatch.setattr(bundle_registry, "serialize_to_env", fake_serialize_to_env)
+    monkeypatch.setattr(agentic_loader, "clear_agentic_caches", fake_clear_agentic_caches)
+    monkeypatch.setattr(agentic_loader, "evict_bundle_scope", fake_evict_bundle_scope)
+
+    client = TestClient(app)
+    response = client.post("/internal/bundles/reset-env", json={"bundle_id": "demo.bundle@1.0.0"})
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+    assert response.json()["bundle_id"] == "demo.bundle@1.0.0"
+    assert response.json()["eviction"]["sys_modules_deleted"] == 2
+    assert calls["evicted"] == {
+        "path": "/bundles/demo",
+        "module": "demo.entrypoint",
+        "singleton": True,
+        "drop_sys_modules": True,
+    }
+    assert "cleared" not in calls
