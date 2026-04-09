@@ -390,6 +390,7 @@ class BundleCleanupRequest(BaseModel):
 class BundleResetEnvRequest(BaseModel):
     tenant: Optional[str] = None
     project: Optional[str] = None
+    bundle_id: Optional[str] = None
 
 
 def _bundles_channel(fmt: str, *, tenant: str, project: str) -> str:
@@ -1199,10 +1200,11 @@ async def _do_reset_bundles_from_env(
     settings = get_settings()
     from kdcube_ai_app.infra.plugin.bundle_store import reset_registry_from_env
     from kdcube_ai_app.infra.plugin.bundle_registry import set_registry_async, serialize_to_env
-    from kdcube_ai_app.infra.plugin.agentic_loader import clear_agentic_caches
+    from kdcube_ai_app.infra.plugin.agentic_loader import clear_agentic_caches, evict_bundle_scope, AgenticBundleSpec
 
     tenant_id = (payload.tenant if payload else None) or settings.TENANT
     project_id = (payload.project if payload else None) or settings.PROJECT
+    requested_bundle_id = str((payload.bundle_id if payload else "") or "").strip() or None
     redis = _get_app_redis(request)
 
     try:
@@ -1210,11 +1212,30 @@ async def _do_reset_bundles_from_env(
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
 
+    target_entry = None
+    if requested_bundle_id:
+        target_entry = reg.bundles.get(requested_bundle_id)
+        if target_entry is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Bundle '{requested_bundle_id}' is not present in the active descriptor",
+            )
+
     bundles_dict = {bid: entry.model_dump() for bid, entry in reg.bundles.items()}
+    eviction_result: dict[str, int] | None = None
     if tenant_id == settings.TENANT and project_id == settings.PROJECT:
         await set_registry_async(bundles_dict, reg.default_bundle_id)
         serialize_to_env(bundles_dict, reg.default_bundle_id)
-        clear_agentic_caches()
+        if target_entry is not None:
+            target_payload = target_entry.model_dump()
+            target_spec = AgenticBundleSpec(
+                path=target_payload.get("path"),
+                module=target_payload.get("module"),
+                singleton=bool(target_payload.get("singleton")),
+            )
+            eviction_result = evict_bundle_scope(target_spec, drop_sys_modules=True)
+        else:
+            clear_agentic_caches()
 
     msg = {
         "type": "bundles.update",
@@ -1236,6 +1257,8 @@ async def _do_reset_bundles_from_env(
         "source": "env",
         "default_bundle_id": reg.default_bundle_id,
         "count": len(reg.bundles),
+        "bundle_id": requested_bundle_id,
+        "eviction": eviction_result,
     }
 
 

@@ -359,7 +359,7 @@ def reload_bundle_from_descriptor(
             "Start the stack first, then rerun --bundle-reload."
         )
 
-    payload = json.dumps({})
+    payload = json.dumps({"bundle_id": bundle_id})
     script = (
         "import json,sys,urllib.request;"
         f"data={payload!r}.encode('utf-8');"
@@ -390,8 +390,8 @@ def reload_bundle_from_descriptor(
     )
     _run_compose(console, cmd, cwd=ctx.docker_dir)
     console.print(
-        "[green]Bundle descriptor reapplied and proc caches cleared.[/green]\n"
-        "[dim]Local code changes under the mounted bundle path will be loaded on the next request.[/dim]"
+        "[green]Bundle descriptor reapplied and target bundle evicted from proc caches.[/green]\n"
+        "[dim]The next request will re-import that bundle from the mounted path.[/dim]"
     )
 
 
