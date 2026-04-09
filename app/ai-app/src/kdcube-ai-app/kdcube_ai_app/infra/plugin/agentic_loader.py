@@ -931,6 +931,39 @@ def clear_agentic_caches() -> None:
     _manifest_cache.clear()
 
 
+def _module_matches_bundle_scope(mod: types.ModuleType, bundle_root: Path) -> bool:
+    try:
+        bundle_root = bundle_root.resolve()
+    except Exception:
+        bundle_root = Path(bundle_root)
+
+    candidate_paths: list[Path] = []
+    mod_file = getattr(mod, "__file__", None)
+    if mod_file:
+        candidate_paths.append(Path(mod_file))
+    mod_path = getattr(mod, "__path__", None)
+    if mod_path:
+        try:
+            iterator = iter(mod_path)
+        except TypeError:
+            iterator = ()
+        for item in iterator:
+            if item:
+                candidate_paths.append(Path(item))
+
+    for candidate in candidate_paths:
+        try:
+            resolved = candidate.resolve()
+        except Exception:
+            resolved = candidate
+        try:
+            resolved.relative_to(bundle_root)
+            return True
+        except Exception:
+            continue
+    return False
+
+
 def get_cached_manifest(spec: AgenticBundleSpec) -> "BundleInterfaceManifest | None":
     """Return the cached BundleInterfaceManifest for spec, or None if not yet loaded."""
     return _manifest_cache.get(_cache_key(spec))
@@ -1056,3 +1089,59 @@ def evict_spec(spec: AgenticBundleSpec, *, drop_sys_modules: bool = True) -> boo
     if drop_sys_modules:
         importlib.invalidate_caches()
     return removed
+
+
+def evict_bundle_scope(spec: AgenticBundleSpec, *, drop_sys_modules: bool = True) -> Dict[str, int]:
+    """
+    Evict one bundle from loader caches and remove all sys.modules entries that
+    belong to the same bundle directory or its virtual package namespace.
+
+    This is intended for dev hot-reload of a single bundle without disturbing
+    unrelated bundles.
+    """
+    key = cache_key_for_spec(spec)
+    bundle_root = Path(spec.path).resolve()
+    evicted_modules = 0
+    evicted_singletons = 0
+    evicted_manifests = 0
+    sys_modules_deleted = 0
+
+    mod = _module_cache.pop(key, None)
+    if mod is not None:
+        evicted_modules = 1
+
+    if _singleton_cache.pop(key, None) is not None:
+        evicted_singletons = 1
+
+    if _manifest_cache.pop(key, None) is not None:
+        evicted_manifests = 1
+
+    if drop_sys_modules:
+        virtual_roots: set[str] = set()
+        if mod is not None:
+            mod_name = getattr(mod, "__name__", None)
+            if mod_name and mod_name.startswith("kdcube_bundle_"):
+                virtual_roots.add(mod_name.split(".", 1)[0])
+
+        to_delete: set[str] = set()
+        for mod_name, candidate in list(sys.modules.items()):
+            if candidate is None:
+                continue
+            if any(mod_name == root or mod_name.startswith(root + ".") for root in virtual_roots):
+                to_delete.add(mod_name)
+                continue
+            if isinstance(candidate, types.ModuleType) and _module_matches_bundle_scope(candidate, bundle_root):
+                to_delete.add(mod_name)
+
+        for mod_name in to_delete:
+            if sys.modules.pop(mod_name, None) is not None:
+                sys_modules_deleted += 1
+
+        importlib.invalidate_caches()
+
+    return {
+        "evicted_modules": evicted_modules,
+        "evicted_singletons": evicted_singletons,
+        "evicted_manifests": evicted_manifests,
+        "sys_modules_deleted": sys_modules_deleted,
+    }
