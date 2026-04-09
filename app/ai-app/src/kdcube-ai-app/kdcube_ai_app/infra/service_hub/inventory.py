@@ -615,7 +615,7 @@ class Config:
         self.kb_search_url = os.getenv("KB_SEARCH_URL", None)
 
         # CB, bundles
-        self.bundle_storage_url = os.getenv("CB_BUNDLE_STORAGE_URL", None)
+        self.bundle_storage_url = getattr(get_settings(), "BUNDLE_STORAGE_URL", None)
 
         self.tenant = os.getenv("TENANT_ID", None)
         self.project = os.getenv("DEFAULT_PROJECT_NAME", None)
