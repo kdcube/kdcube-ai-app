@@ -90,6 +90,32 @@ Set this in the platform compose `.env` so bundles are mounted into chat‑proc:
 HOST_BUNDLES_PATH=<custom-app-repo>/path/to/bundles
 ```
 
+This is one shared bundles root:
+
+- manually placed local bundles live there
+- git-described bundles are also cloned there by proc
+- inside the container the same root is visible as `/bundles`
+
+So if the host path is:
+
+```text
+/Users/you/dev/bundles/my.bundle
+```
+
+then the bundle descriptor must use:
+
+```yaml
+path: /bundles/my.bundle
+```
+
+and not the raw host path.
+
+Symlink note:
+
+- if `HOST_BUNDLES_PATH` contains a symlinked bundle folder, proc sees that symlink through the bind mount
+- this only works if Docker can also access the symlink target on the host
+- safest local pattern: keep the real bundle under `HOST_BUNDLES_PATH`, or symlink only to another path that is already visible to Docker on the host
+
 ### Bundle shared local storage (optional)
 
 Bundles can use a shared local filesystem to store read‑only assets, indexes,

@@ -62,6 +62,42 @@ Typical examples:
 - runtime profiles
 - knowledge-source selection
 
+## Local prototyping loop
+
+For localhost bundle iteration, keep the split clear:
+
+1. **Code defaults**
+   - live in `entrypoint.configuration` / `bundle_props_defaults`
+2. **Descriptor-backed config**
+   - lives in `bundles.yaml`
+3. **Runtime/admin overrides**
+   - live in Redis through the admin props API
+
+Recommended local flow:
+
+- mount one host bundles root into proc as `/bundles`
+- in `bundles.yaml`, point the bundle to the container-visible path such as `/bundles/my.bundle`
+- edit code and/or `bundles.yaml`
+- run:
+  - `kdcube --workdir <runtime-workdir> --bundle-reload <bundle_id>`
+
+That CLI reload is **descriptor-authoritative**:
+- it reapplies the registry from `bundles.yaml`
+- it rebuilds the descriptor-backed bundle props layer in Redis
+- it clears proc bundle caches so new requests load the updated code
+
+So:
+- use `bundles.yaml` + `--bundle-reload` when you want the local environment to match the descriptor
+- use the admin props API when you want a quick runtime-only override without editing the descriptor
+
+Useful admin endpoints:
+- `GET /admin/integrations/bundles/{bundle_id}/props`
+- `POST /admin/integrations/bundles/{bundle_id}/props`
+- `POST /admin/integrations/bundles/{bundle_id}/props/reset-code`
+
+`reset-code` restores the Redis props layer back to the code defaults currently
+declared by the bundle.
+
 ## Secrets
 
 Read secrets with:

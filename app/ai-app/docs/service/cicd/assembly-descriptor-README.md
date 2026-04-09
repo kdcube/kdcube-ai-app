@@ -177,6 +177,14 @@ routines:
 
 ```
 
+`paths.*` is installer-facing host wiring, not runtime application config.
+In particular:
+
+- `paths.host_bundles_path` becomes `HOST_BUNDLES_PATH` in compose env
+- proc mounts that host folder as `AGENTIC_BUNDLES_ROOT` (normally `/bundles`)
+- local bundles placed there and git-resolved bundles cloned by proc share the same root
+- bundle entries in `bundles.yaml` must still point to the container-visible path such as `/bundles/my.bundle`
+
 Bundle definitions moved to `bundles.yaml`.
 See: [docs/service/configuration/bundle-configuration-README.md](../configuration/bundle-configuration-README.md)
 

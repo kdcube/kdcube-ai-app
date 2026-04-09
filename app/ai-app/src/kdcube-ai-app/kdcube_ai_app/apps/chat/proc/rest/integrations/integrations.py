@@ -1191,10 +1191,9 @@ async def _do_set_bundles(
     return {"status": "ok", "default_bundle_id": default_id, "count": len(reg)}
 
 
-@admin_router.post("/admin/integrations/bundles/reset-env", status_code=200)
-async def admin_reset_bundles_from_env(
+async def _do_reset_bundles_from_env(
         request: Request,
-        session: UserSession = Depends(auth_without_pressure()),
+        session: UserSession,
         payload: Optional[BundleResetEnvRequest] = None,
 ):
     settings = get_settings()
@@ -1238,6 +1237,36 @@ async def admin_reset_bundles_from_env(
         "default_bundle_id": reg.default_bundle_id,
         "count": len(reg.bundles),
     }
+
+
+@admin_router.post("/admin/integrations/bundles/reset-env", status_code=200)
+async def admin_reset_bundles_from_env(
+        request: Request,
+        session: UserSession = Depends(auth_without_pressure()),
+        payload: Optional[BundleResetEnvRequest] = None,
+):
+    return await _do_reset_bundles_from_env(request, session, payload)
+
+
+@internal_router.post("/internal/bundles/reset-env", status_code=200)
+async def internal_reset_bundles_from_env(payload: Optional[BundleResetEnvRequest], request: Request):
+    """
+    Localhost-only descriptor reset for local development / CLI automation.
+    Re-applies AGENTIC_BUNDLES_JSON authoritatively and clears bundle caches.
+    """
+    client_ip = request.client.host if request.client else ""
+    if client_ip not in _LOCALHOST:
+        raise HTTPException(status_code=403, detail="Internal endpoint: localhost only")
+    from kdcube_ai_app.auth.sessions import UserSession, UserType
+    automation_session = UserSession(
+        session_id="internal-automation",
+        user_type=UserType.PRIVILEGED,
+        user_id="cli-local",
+        username="cli-local",
+        roles=[],
+        permissions=[],
+    )
+    return await _do_reset_bundles_from_env(request, automation_session, payload)
 
 
 @admin_router.post("/admin/integrations/bundles/cleanup", status_code=200)
