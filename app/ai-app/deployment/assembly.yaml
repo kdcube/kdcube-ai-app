@@ -10,7 +10,7 @@ context:
   project: "demo-project"
 
 secrets:
-  provider: "secrets-service"  # "secrets-service" | "aws-sm" | "in-memory"
+  provider: "secrets-service"   # "secrets-service" | "aws-sm" | "in-memory" | "secrets-file"
 
 # for cloud
 storage:
@@ -23,8 +23,8 @@ storage:
     type: local   # local | git
     repo: ""      # repo url; used only when type=git
 
-
-
+paths:
+  host_bundles_path: ""   # required for descriptor-driven local bundle installs; host folder mounted into /bundles
 
 notifications:
   email:
@@ -51,7 +51,6 @@ routines:
 
   opex:
     agg_cron: "0 3 * * *"
-
 
 auth:
   type: "simple"  # "simple" | "cognito" | "delegated"

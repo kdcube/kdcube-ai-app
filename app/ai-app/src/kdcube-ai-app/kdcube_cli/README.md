@@ -65,6 +65,44 @@ That brings up the stack with no local build required.
 We aim for a setup that is simple to try, and easy to explore further using the
 installed admin assistant and bundled tools.
 
+## Quick start (prepared descriptors)
+
+If you already have a descriptor folder, you can skip the wizard:
+
+```bash
+kdcube-setup \
+  --descriptors-location /path/to/descriptors \
+  --workdir ~/.kdcube/kdcube-runtime
+```
+
+Or pull the latest platform release from the platform repo instead of
+`assembly.yaml -> platform.ref`:
+
+```bash
+kdcube-setup \
+  --descriptors-location /path/to/descriptors \
+  --latest
+```
+
+Expected descriptor folder:
+
+```text
+descriptors/
+  assembly.yaml
+  secrets.yaml
+  gateway.yaml
+  bundles.yaml            # optional
+  bundles.secrets.yaml    # optional
+```
+
+When the descriptor set is complete, the CLI:
+- stages the descriptors into `workdir/config`
+- skips interactive prompts
+- runs a release install directly
+
+If required fields are missing, it falls back to the guided setup and prints
+what is incomplete.
+
 ## What it installs (default)
 - Repo clone: `~/.kdcube/kdcube-ai-app`
 - Workdir: `~/.kdcube/kdcube-runtime`
@@ -76,6 +114,8 @@ installed admin assistant and bundled tools.
 | `--repo <url>` | Git repo URL (default: official kdcube repo). |
 | `--path <repo>` | Use a local repo checkout for templates and builds (skips install-source menu). |
 | `--workdir <path>` | Use a specific workdir instead of `~/.kdcube/kdcube-runtime`. |
+| `--descriptors-location <dir>` | Use a folder containing `assembly.yaml`, `secrets.yaml`, `gateway.yaml`, and optional bundle descriptors. |
+| `--latest` | With `--descriptors-location`, resolve the latest platform release instead of using `assembly.yaml -> platform.ref`. |
 | `--reset-config` | Re‑prompt for config values without deleting files. |
 | `--reset` | Alias for `--reset-config`. |
 | `--clean` | Clean local Docker cache and unused KDCube images. |
@@ -298,6 +338,23 @@ The same assembly descriptor also configures runtime workspace/session bootstrap
 - `storage.claude_code_session.type` -> `CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION`
 - `storage.claude_code_session.repo` -> `CLAUDE_CODE_SESSION_GIT_REPO`
 
+### Descriptor fast path requirements
+
+The descriptor-folder fast path is used only when the descriptor set is complete
+enough for a non-interactive install. At minimum:
+
+- `assembly.yaml`, `secrets.yaml`, and `gateway.yaml` exist
+- `assembly.secrets.provider == "secrets-file"`
+- `assembly.context.tenant` and `assembly.context.project` are set
+- `assembly.paths.host_bundles_path` is set
+- `assembly.platform.ref` is set unless `--latest` is used
+- `assembly.domain` is set when `proxy.ssl: true`
+- any git-backed workspace/session config includes its repo URL
+- Cognito auth fields are present when `auth.type` requires them
+- frontend build fields are present when `frontend` is used without `frontend.image`
+
+If any of those are missing, the CLI falls back to the normal guided flow.
+
 Template:
 - [`app/ai-app/deployment/assembly.yaml`](../../../deployment/assembly.yaml) (copied into the workdir if no path is provided)
 
@@ -321,8 +378,30 @@ The CLI stages `bundles.yaml` into the workdir and, when enabled:
 - sets `BUNDLES_PRELOAD_ON_START=1` in `.env.proc` by default
 - enables bundle git resolution and env sync on startup
 
-`bundles.secrets.yaml` is **not copied** into the workdir. It is read from the
-path you provide and used only to inject secrets at runtime.
+Local bundle root contract:
+
+- `assembly.paths.host_bundles_path` is installer-facing config and becomes `HOST_BUNDLES_PATH`
+- compose mounts `HOST_BUNDLES_PATH` into proc as `AGENTIC_BUNDLES_ROOT` (normally `/bundles`)
+- bundle entries in `bundles.yaml` must use the container-visible path, for example:
+  - host folder: `/Users/you/dev/bundles/my.bundle`
+  - descriptor path: `/bundles/my.bundle`
+
+Git-described bundles use the same root:
+
+- manually placed local bundles and git-resolved bundles both live under `HOST_BUNDLES_PATH`
+- git bundles are cloned into generated subfolders under that root, so they can coexist with manual bundle folders
+
+Symlink note:
+
+- if you symlink a bundle into `HOST_BUNDLES_PATH`, proc sees the symlink through the `/bundles` mount
+- this works only if Docker can also access the symlink target on the host
+- safest local pattern: keep the real bundle folder inside `HOST_BUNDLES_PATH`, or symlink only to another host path that is already accessible through the same Docker file-sharing scope
+
+`bundles.secrets.yaml` is staged into the workdir only when it is provided.
+If `assembly.yaml -> secrets.provider == "secrets-file"`, it is also mounted as
+`/config/bundles.secrets.yaml` and used via:
+
+- `BUNDLE_SECRETS_YAML=file:///config/bundles.secrets.yaml`
 
 Example (`bundles.yaml`):
 ```yaml
@@ -367,9 +446,17 @@ References:
 
 ### Secrets descriptor (optional)
 You can provide a `secrets.yaml` path in the wizard (or via `KDCUBE_SECRETS_DESCRIPTOR_PATH`).
-The CLI **does not copy** this file into the workdir; it is used only to prefill runtime
-secrets (OpenAI/Anthropic/Brave/Git HTTP token and delegated Cognito client secret).
-Values are injected into the secrets sidecar at runtime and **not** written to `.env.proc`.
+The CLI stages this file into the workdir.
+
+It is used:
+- to prefill runtime secrets (OpenAI/Anthropic/Brave/Git HTTP token and delegated Cognito client secret) during guided setup
+- or as the runtime secrets source when `assembly.yaml -> secrets.provider == "secrets-file"`
+
+In `secrets-file` mode the CLI mounts it as `/config/secrets.yaml` and writes:
+
+- `GLOBAL_SECRETS_YAML=file:///config/secrets.yaml`
+
+Values injected through the `secrets-service` flow are still **not** written to `.env.proc`.
 
 Secrets are keyed by **dot‑path** (e.g. `services.openai.api_key`).
 

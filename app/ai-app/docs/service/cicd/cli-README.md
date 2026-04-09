@@ -182,6 +182,55 @@ Repo field contract:
   backward compatibility, but new descriptors should use one of the cloneable
   forms above
 
+### 2.3a Descriptor folder fast path
+
+The CLI now supports a descriptor-folder driven install path:
+
+```bash
+kdcube-setup \
+  --descriptors-location /path/to/descriptors \
+  --workdir ~/.kdcube/kdcube-runtime
+```
+
+Expected folder contents:
+
+- `assembly.yaml`
+- `secrets.yaml`
+- `gateway.yaml`
+- optional `bundles.yaml`
+- optional `bundles.secrets.yaml`
+
+If the descriptor set is complete enough, the CLI skips interactive questions
+and proceeds directly to a **release install**.
+
+Use `--latest` to resolve the platform release from the platform repo instead
+of using `assembly.yaml -> platform.ref`:
+
+```bash
+kdcube-setup \
+  --descriptors-location /path/to/descriptors \
+  --latest
+```
+
+Fast-path requirements:
+
+- `assembly.yaml` exists
+- `secrets.yaml` exists
+- `gateway.yaml` exists
+- `assembly.secrets.provider == "secrets-file"`
+- `assembly.context.tenant` and `assembly.context.project` are set
+- `assembly.paths.host_bundles_path` is set
+- `assembly.platform.ref` is set unless `--latest` is used
+- if `proxy.ssl: true`, `assembly.domain` is set
+- if `storage.workspace.type == git`, `storage.workspace.repo` is set
+- if `storage.claude_code_session.type == git`, `storage.claude_code_session.repo` is set
+- if `auth.type` is `cognito` or `delegated`, the required Cognito fields are set
+- if `frontend` is present and no `frontend.image` is set, the required
+  `frontend.build.*` fields and `frontend.frontend_config` are set
+
+If any of those are missing, the CLI falls back to the guided setup and prints
+the missing reasons.
+
 ### 2.4 Bundles descriptor (optional)
 
 You can provide a **bundles descriptor** (`bundles.yaml`) and an optional
@@ -193,6 +242,25 @@ When provided, the CLI:
 - sets `AGENTIC_BUNDLES_JSON=/config/bundles.yaml`
 - injects secrets from `bundles.secrets.yaml` into the secrets sidecar
 
+Local bundle root contract:
+
+- `assembly.paths.host_bundles_path` is installer-facing config and is written to `HOST_BUNDLES_PATH`
+- compose mounts `HOST_BUNDLES_PATH` into proc as `AGENTIC_BUNDLES_ROOT` (normally `/bundles`)
+- bundle entries in `bundles.yaml` must therefore use the container-visible path, for example:
+  - host folder: `/Users/you/dev/bundles/my.bundle`
+  - descriptor path: `/bundles/my.bundle`
+
+Git bundle resolution uses the same root:
+
+- manually placed local bundles and git-described bundles both live under `HOST_BUNDLES_PATH`
+- git bundles are cloned into generated subfolders under that same root, so they can coexist with manual bundle folders
+
+Symlink note:
+
+- if you symlink a bundle into `HOST_BUNDLES_PATH`, proc sees the symlink through the `/bundles` mount
+- this works only if Docker can also access the symlink target on the host
+- safest local pattern: keep the real bundle folder inside `HOST_BUNDLES_PATH`, or symlink only to another host path that is already accessible through the same Docker file-sharing scope
+
 `AGENTIC_BUNDLES_JSON` controls proc bundle-registry seeding.
 It is separate from the broader descriptor mounts used by `read_plain(...)`.
 
@@ -201,8 +269,22 @@ Templates:
 - [`deployment/bundles.secrets.yaml`](../../../deployment/bundles.secrets.yaml)
 
 ### 2.5 Secrets descriptor (optional)
-If you provide a `secrets.yaml`, the CLI will use it to prefill runtime secrets
-and sensitive infra passwords. The file is **not copied** into the workdir.
+If you provide a `secrets.yaml`, the CLI stages it into the workdir and can use
+it in two ways:
+
+- to prefill runtime secrets and sensitive infra passwords during guided setup
+- as the runtime secrets source when `assembly.yaml -> secrets.provider` is
+  `secrets-file`
+
+In `secrets-file` mode, the CLI mounts:
+
+- `/config/secrets.yaml`
+- `/config/bundles.secrets.yaml`
+
+and writes:
+
+- `GLOBAL_SECRETS_YAML=file:///config/secrets.yaml`
+- `BUNDLE_SECRETS_YAML=file:///config/bundles.secrets.yaml`
 
 See: [docs/service/cicd/secrets-descriptor-README.md](secrets-descriptor-README.md)
 
@@ -252,6 +334,7 @@ You can also pre‑seed paths and flags via environment variables:
 | `KDCUBE_USE_BUNDLES_DESCRIPTOR` | `1/0` to apply bundles descriptor. |
 | `KDCUBE_USE_BUNDLES_SECRETS` | `1/0` to apply bundles secrets. |
 | `KDCUBE_GATEWAY_DESCRIPTOR_PATH` | Path to `gateway.yaml` (used for GATEWAY_CONFIG_JSON). |
+| `KDCUBE_CLI_NONINTERACTIVE` | Internal installer flag. Prompt helpers use defaults instead of asking. The CLI sets this automatically for the descriptor fast path. |
 
 ---
 
