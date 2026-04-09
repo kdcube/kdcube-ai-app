@@ -119,6 +119,10 @@ def _load_plain_yaml(path: Path) -> Any:
     return _load_plain_yaml_cached(*token)
 
 
+def _load_assembly_plain(dotted_path: str) -> Any:
+    return _resolve_dotted_value(_load_plain_yaml(_ASSEMBLY_YAML_PATH), dotted_path)
+
+
 def _resolve_dotted_value(data: Any, dotted_path: str) -> Any:
     if not dotted_path:
         return data
@@ -342,6 +346,7 @@ class Settings(BaseSettings):
     REDIS_DB: int = Field(default=0)
 
     STORAGE_PATH: str | None = Field(default=None, alias="KDCUBE_STORAGE_PATH")
+    BUNDLE_STORAGE_URL: str | None = Field(default=None, alias="CB_BUNDLE_STORAGE_URL")
     REACT_WORKSPACE_IMPLEMENTATION: str = Field(default="custom")
     REACT_WORKSPACE_GIT_REPO: str | None = None
     CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION: str = Field(default="local")
@@ -400,6 +405,9 @@ class Settings(BaseSettings):
             except Exception:
                 return None
 
+        def _env_present(name: str) -> bool:
+            return bool(str(os.getenv(name) or "").strip())
+
         # Override tenant/project from GATEWAY_CONFIG_JSON if present.
         cfg_json = os.getenv("GATEWAY_CONFIG_JSON")
         if isinstance(cfg_json, str) and cfg_json.strip():
@@ -429,6 +437,27 @@ class Settings(BaseSettings):
         if not os.getenv("REDIS_URL"):
             auth = f":{self.REDIS_PASSWORD}@" if self.REDIS_PASSWORD else ""
             self.REDIS_URL = f"redis://{auth}{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+
+        # Populate non-secret storage/runtime settings from assembly.yaml when
+        # they are not explicitly provided via env. This lets runtime code use
+        # get_settings() while keeping assembly.yaml as the source of truth.
+        if not _env_present("KDCUBE_STORAGE_PATH") and not self.STORAGE_PATH:
+            self.STORAGE_PATH = _load_assembly_plain("storage.kdcube")
+        if not _env_present("CB_BUNDLE_STORAGE_URL") and not self.BUNDLE_STORAGE_URL:
+            self.BUNDLE_STORAGE_URL = _load_assembly_plain("storage.bundles")
+        if not _env_present("REACT_WORKSPACE_IMPLEMENTATION"):
+            self.REACT_WORKSPACE_IMPLEMENTATION = str(
+                _load_assembly_plain("storage.workspace.type") or self.REACT_WORKSPACE_IMPLEMENTATION
+            )
+        if not _env_present("REACT_WORKSPACE_GIT_REPO") and not self.REACT_WORKSPACE_GIT_REPO:
+            self.REACT_WORKSPACE_GIT_REPO = _load_assembly_plain("storage.workspace.repo")
+        if not _env_present("CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION"):
+            self.CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION = str(
+                _load_assembly_plain("storage.claude_code_session.type")
+                or self.CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION
+            )
+        if not _env_present("CLAUDE_CODE_SESSION_GIT_REPO") and not self.CLAUDE_CODE_SESSION_GIT_REPO:
+            self.CLAUDE_CODE_SESSION_GIT_REPO = _load_assembly_plain("storage.claude_code_session.repo")
 
         # Populate secrets from provider if not set in env.
         env_openai = os.getenv("OPENAI_API_KEY")
