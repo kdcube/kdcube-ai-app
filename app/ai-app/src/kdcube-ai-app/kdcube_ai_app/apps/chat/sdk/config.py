@@ -441,6 +441,8 @@ class Settings(BaseSettings):
         # Populate non-secret storage/runtime settings from assembly.yaml when
         # they are not explicitly provided via env. This lets runtime code use
         # get_settings() while keeping assembly.yaml as the source of truth.
+        if not _env_present("SECRETS_PROVIDER") and not self.SECRETS_PROVIDER:
+            self.SECRETS_PROVIDER = _load_assembly_plain("secrets.provider")
         if not _env_present("KDCUBE_STORAGE_PATH") and not self.STORAGE_PATH:
             self.STORAGE_PATH = _load_assembly_plain("storage.kdcube")
         if not _env_present("CB_BUNDLE_STORAGE_URL") and not self.BUNDLE_STORAGE_URL:

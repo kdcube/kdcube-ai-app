@@ -3,6 +3,7 @@ from pathlib import Path
 import yaml
 
 from kdcube_ai_app.apps.chat.sdk import config as sdk_config
+from kdcube_ai_app.infra.secrets import build_secrets_manager_config
 
 
 class _NoopSecretsManager:
@@ -12,6 +13,7 @@ class _NoopSecretsManager:
 
 def test_get_plain_reads_assembly_by_default(monkeypatch, tmp_path):
     for key in (
+        "SECRETS_PROVIDER",
         "KDCUBE_STORAGE_PATH",
         "CB_BUNDLE_STORAGE_URL",
         "REACT_WORKSPACE_IMPLEMENTATION",
@@ -24,6 +26,9 @@ def test_get_plain_reads_assembly_by_default(monkeypatch, tmp_path):
     assembly_path.write_text(
         yaml.safe_dump(
             {
+                "secrets": {
+                    "provider": "secrets-service",
+                },
                 "storage": {
                     "kdcube": "s3://example/kdcube",
                     "bundles": "s3://example/bundles",
@@ -43,6 +48,9 @@ def test_get_plain_reads_assembly_by_default(monkeypatch, tmp_path):
 
     assert sdk_config.get_plain("storage.workspace.type") == "git"
     assert sdk_config.read_plain("a:frontend.routes_prefix") == "/example-product"
+    assert sdk_config.get_plain("secrets.provider") == "secrets-service"
+    assert settings.SECRETS_PROVIDER == "secrets-service"
+    assert build_secrets_manager_config(settings).provider == "secrets-service"
     assert settings.STORAGE_PATH == "s3://example/kdcube"
     assert settings.BUNDLE_STORAGE_URL == "s3://example/bundles"
     assert settings.REACT_WORKSPACE_IMPLEMENTATION == "git"
