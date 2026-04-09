@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 import redis.asyncio as aioredis
 from croniter import croniter
 
-from kdcube_ai_app.apps.chat.sdk.config import get_settings, get_secret
+from kdcube_ai_app.apps.chat.sdk.config import get_settings, get_secret, read_plain
 from kdcube_ai_app.apps.chat.sdk.infra.economics.project_budget import ProjectBudgetLimiter
 from kdcube_ai_app.infra.redis.client import get_async_redis_client
 
@@ -22,6 +22,13 @@ logger = logging.getLogger(__name__)
 SUBSCRIPTION_TZ = ZoneInfo("UTC")
 
 _economics_redis: Optional[aioredis.Redis] = None
+
+
+def _plain_or_settings(plain_key: str, settings_attr: str, default=None):
+    value = read_plain(plain_key, default=None)
+    if value is not None:
+        return value
+    return getattr(get_settings(), settings_attr, default)
 
 
 async def _get_redis() -> Optional[aioredis.Redis]:
@@ -47,13 +54,13 @@ async def _get_redis() -> Optional[aioredis.Redis]:
 # =============================================================================
 
 def stripe_reconcile_enabled() -> bool:
-    return bool(get_settings().STRIPE_RECONCILE_ENABLED)
+    return bool(_plain_or_settings("routines.stripe.reconcile_enabled", "STRIPE_RECONCILE_ENABLED", True))
 
 def _get_stripe_reconcile_cron_expression() -> str:
-    return get_settings().STRIPE_RECONCILE_CRON
+    return str(_plain_or_settings("routines.stripe.reconcile_cron", "STRIPE_RECONCILE_CRON", "45 * * * *"))
 
 def _stripe_reconcile_lock_ttl_seconds() -> int:
-    return int(get_settings().STRIPE_RECONCILE_LOCK_TTL_SECONDS)
+    return int(_plain_or_settings("routines.stripe.reconcile_lock_ttl_seconds", "STRIPE_RECONCILE_LOCK_TTL_SECONDS", 900))
 
 def _compute_next_stripe_reconcile_run(now: datetime) -> datetime:
     expr = _get_stripe_reconcile_cron_expression()
@@ -170,7 +177,7 @@ async def run_stripe_reconcile_sweep_once(*, actor: str = "scheduler") -> dict:
 
 async def stripe_reconcile_scheduler_loop() -> None:
     if not stripe_reconcile_enabled():
-        logger.info("[Stripe Reconcile] Scheduler disabled (STRIPE_RECONCILE_ENABLED=0)")
+        logger.info("[Stripe Reconcile] Scheduler disabled (routines.stripe.reconcile_enabled=false)")
         return
 
     logger.info(
@@ -207,16 +214,40 @@ async def stripe_reconcile_scheduler_loop() -> None:
 # =============================================================================
 
 def subscription_rollover_enabled() -> bool:
-    return bool(get_settings().SUBSCRIPTION_ROLLOVER_ENABLED)
+    return bool(
+        _plain_or_settings(
+            "routines.economics.subscription_rollover_enabled",
+            "SUBSCRIPTION_ROLLOVER_ENABLED",
+            True,
+        )
+    )
 
 def _get_subscription_rollover_cron_expression() -> str:
-    return get_settings().SUBSCRIPTION_ROLLOVER_CRON
+    return str(
+        _plain_or_settings(
+            "routines.economics.subscription_rollover_cron",
+            "SUBSCRIPTION_ROLLOVER_CRON",
+            "15 * * * *",
+        )
+    )
 
 def _subscription_rollover_lock_ttl_seconds() -> int:
-    return int(get_settings().SUBSCRIPTION_ROLLOVER_LOCK_TTL_SECONDS)
+    return int(
+        _plain_or_settings(
+            "routines.economics.subscription_rollover_lock_ttl_seconds",
+            "SUBSCRIPTION_ROLLOVER_LOCK_TTL_SECONDS",
+            900,
+        )
+    )
 
 def _subscription_rollover_sweep_limit() -> int:
-    return int(get_settings().SUBSCRIPTION_ROLLOVER_SWEEP_LIMIT)
+    return int(
+        _plain_or_settings(
+            "routines.economics.subscription_rollover_sweep_limit",
+            "SUBSCRIPTION_ROLLOVER_SWEEP_LIMIT",
+            500,
+        )
+    )
 
 def _compute_next_subscription_rollover_run(now: datetime) -> datetime:
     expr = _get_subscription_rollover_cron_expression()
@@ -302,7 +333,7 @@ async def run_subscription_rollover_sweep_once(*, actor: str = "scheduler") -> d
 
 async def subscription_rollover_scheduler_loop() -> None:
     if not subscription_rollover_enabled():
-        logger.info("[Subscription Rollover] Scheduler disabled (SUBSCRIPTION_ROLLOVER_ENABLED=0)")
+        logger.info("[Subscription Rollover] Scheduler disabled (routines.economics.subscription_rollover_enabled=false)")
         return
 
     logger.info(

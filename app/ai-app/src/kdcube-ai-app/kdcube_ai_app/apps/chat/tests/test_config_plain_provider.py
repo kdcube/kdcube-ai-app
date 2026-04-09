@@ -11,12 +11,24 @@ class _NoopSecretsManager:
 
 
 def test_get_plain_reads_assembly_by_default(monkeypatch, tmp_path):
+    for key in (
+        "KDCUBE_STORAGE_PATH",
+        "CB_BUNDLE_STORAGE_URL",
+        "REACT_WORKSPACE_IMPLEMENTATION",
+        "REACT_WORKSPACE_GIT_REPO",
+        "CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION",
+        "CLAUDE_CODE_SESSION_GIT_REPO",
+    ):
+        monkeypatch.delenv(key, raising=False)
     assembly_path = tmp_path / "assembly.yaml"
     assembly_path.write_text(
         yaml.safe_dump(
             {
                 "storage": {
+                    "kdcube": "s3://example/kdcube",
+                    "bundles": "s3://example/bundles",
                     "workspace": {"type": "git", "repo": "https://example.com/workspace.git"},
+                    "claude_code_session": {"type": "git", "repo": "https://example.com/sessions.git"},
                 },
                 "frontend": {"routes_prefix": "/example-product"},
             },
@@ -31,7 +43,13 @@ def test_get_plain_reads_assembly_by_default(monkeypatch, tmp_path):
 
     assert sdk_config.get_plain("storage.workspace.type") == "git"
     assert sdk_config.read_plain("a:frontend.routes_prefix") == "/example-product"
+    assert settings.STORAGE_PATH == "s3://example/kdcube"
+    assert settings.BUNDLE_STORAGE_URL == "s3://example/bundles"
+    assert settings.REACT_WORKSPACE_IMPLEMENTATION == "git"
     assert settings.plain("storage.workspace.repo") == "https://example.com/workspace.git"
+    assert settings.REACT_WORKSPACE_GIT_REPO == "https://example.com/workspace.git"
+    assert settings.CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION == "git"
+    assert settings.CLAUDE_CODE_SESSION_GIT_REPO == "https://example.com/sessions.git"
 
 
 def test_get_plain_reads_bundles_namespace(monkeypatch, tmp_path):

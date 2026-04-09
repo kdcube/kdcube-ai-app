@@ -14,7 +14,7 @@ from croniter import croniter
 
 import redis.asyncio as aioredis
 
-from kdcube_ai_app.apps.chat.sdk.config import get_settings
+from kdcube_ai_app.apps.chat.sdk.config import get_settings, read_plain
 from kdcube_ai_app.infra.accounting.aggregator import AccountingAggregator
 from kdcube_ai_app.storage.storage import create_storage_backend
 from kdcube_ai_app.infra.redis.client import get_async_redis_client
@@ -204,20 +204,22 @@ async def _get_agg_redis() -> Optional[aioredis.Redis]:
 
 def _get_cron_expression() -> str:
     """
-    Return cron expression from settings or env.
+    Return cron expression from assembly.yaml, settings, or env.
 
     Priority:
-      1) settings.OPEX_AGG_CRON if exists
-      2) env OPEX_AGG_CRON
-      3) default: "0 3 * * *" (daily at 03:00)
+      1) assembly.yaml routines.opex.agg_cron
+      2) settings.OPEX_AGG_CRON if exists
+      3) env OPEX_AGG_CRON
+      4) default: "0 3 * * *" (daily at 03:00)
     """
-    expr = None
+    expr = read_plain("routines.opex.agg_cron", default=None)
     try:
-        _settings = get_settings()
-        expr = getattr(_settings, "OPEX_AGG_CRON", None)
+        if not expr:
+            _settings = get_settings()
+            expr = getattr(_settings, "OPEX_AGG_CRON", None)
     except Exception:
         # if settings don’t have it, silently ignore
-        expr = None
+        pass
 
     expr = expr or os.getenv("OPEX_AGG_CRON")
     if not expr:
@@ -368,7 +370,8 @@ async def aggregation_scheduler_loop() -> None:
     """
     Background loop:
 
-      - reads cron from OPEX_AGG_CRON (or settings.OPEX_AGG_CRON)
+      - reads cron from assembly.yaml routines.opex.agg_cron
+      - falls back to settings/env only for compatibility
       - waits until the next scheduled time in Europe/Berlin
       - runs aggregation for *yesterday* (Berlin date)
       - repeats forever

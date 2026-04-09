@@ -5,22 +5,29 @@ import logging
 from email.message import EmailMessage
 from typing import Optional, Sequence
 
-from kdcube_ai_app.apps.chat.sdk.config import get_settings, get_secret
+from kdcube_ai_app.apps.chat.sdk.config import get_settings, get_secret, read_plain
 
 logger = logging.getLogger(__name__)
 
 
+def _plain_or_settings(plain_key: str, settings_attr: str, default=None):
+    value = read_plain(plain_key, default=None)
+    if value is not None:
+        return value
+    return getattr(get_settings(), settings_attr, default)
+
+
 def _smtp_settings() -> dict:
-    s = get_settings()
+    user = _plain_or_settings("notifications.email.user", "EMAIL_USER")
     return {
-        "host": s.EMAIL_HOST,
-        "port": s.EMAIL_PORT,
-        "user": s.EMAIL_USER,
+        "host": _plain_or_settings("notifications.email.host", "EMAIL_HOST"),
+        "port": int(_plain_or_settings("notifications.email.port", "EMAIL_PORT", 587) or 587),
+        "user": user,
         "password": get_secret("services.email.password"),
-        "from_addr": s.EMAIL_FROM or s.EMAIL_USER,
-        "to_default": s.EMAIL_TO,
-        "use_tls": s.EMAIL_USE_TLS,
-        "enabled": s.EMAIL_ENABLED,
+        "from_addr": _plain_or_settings("notifications.email.from", "EMAIL_FROM") or user,
+        "to_default": _plain_or_settings("notifications.email.to", "EMAIL_TO", "ops@example.com"),
+        "use_tls": bool(_plain_or_settings("notifications.email.use_tls", "EMAIL_USE_TLS", True)),
+        "enabled": bool(_plain_or_settings("notifications.email.enabled", "EMAIL_ENABLED", True)),
     }
 
 
@@ -33,13 +40,13 @@ def _send_email_sync(
 ) -> bool:
     cfg = _smtp_settings()
     if not cfg["enabled"]:
-        logger.info("Email disabled (EMAIL_ENABLED=false). Skipping send.")
+        logger.info("Email disabled (notifications.email.enabled=false). Skipping send.")
         return False
     if not cfg["host"]:
-        logger.warning("EMAIL_HOST not configured; skipping email send.")
+        logger.warning("notifications.email.host not configured; skipping email send.")
         return False
     if not cfg["from_addr"]:
-        logger.warning("EMAIL_FROM/EMAIL_USER not configured; skipping email send.")
+        logger.warning("notifications.email.from or notifications.email.user not configured; skipping email send.")
         return False
 
     msg = EmailMessage()
