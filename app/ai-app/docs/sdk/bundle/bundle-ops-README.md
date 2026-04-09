@@ -39,6 +39,8 @@ Notes:
 - Registry is tenant/project scoped.
 - Updates are published to a tenant/project channel; each processor listens only to its own channel.
 - Only **new requests** use the updated bundle path.
+- For local descriptor-driven development, the CLI now wraps the authoritative env replay path with:
+  - `kdcube --workdir <runtime-workdir> --bundle-reload <bundle_id>`
 
 Runtime touchpoints:
 - Task runner: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py` (loads bundle + calls `run`)
@@ -57,6 +59,39 @@ Choose one delivery mode per deployment:
 **Git pull policy (runtime):**
 - Git pulls happen **only during registry sync** (processor startup or a bundle config update).
 - Request‑time `resolve_bundle()` **never** pulls from git.
+
+## Local developer prototyping flow
+
+Recommended localhost loop:
+
+1. set `assembly.yaml -> paths.host_bundles_path`
+2. keep your bundle under that host root
+3. point `bundles.yaml` to the container-visible path `/bundles/<bundle-folder>`
+4. install once with:
+   - `kdcube --descriptors-location <dir> --build`
+5. after each code or descriptor change, run:
+   - `kdcube --workdir <runtime-workdir> --bundle-reload <bundle_id>`
+
+Example:
+
+- host bundle folder:
+  - `/Users/you/dev/bundles/my.bundle`
+- descriptor entry:
+
+```yaml
+bundles:
+  items:
+    - id: "my.bundle@1.0.0"
+      path: "/bundles/my.bundle"
+      module: "entrypoint"
+```
+
+Important:
+
+- proc sees `/bundles/...`, not raw host paths
+- local manual bundles and git-resolved bundles share the same `HOST_BUNDLES_PATH` root
+- `--bundle-reload` is descriptor-authoritative: it reapplies the registry and descriptor-backed props from `bundles.yaml`, then clears proc bundle caches
+- use the admin props API only for temporary runtime-only overrides that you do not need to keep in the descriptor
 
 ---
 
@@ -94,8 +129,8 @@ Accepted shape:
 Fields:
 - `id` (required)
 - `name` (optional)
-- `path` (required for local bundles, parent dir)
-- `module` (required for local bundles, includes bundle folder)
+- `path` (required for local bundles, recommended: direct bundle root such as `/bundles/my.bundle`)
+- `module` (required for local bundles, recommended: `entrypoint` when `path` already points to the bundle root)
 - `singleton` (optional)
 - `description` (optional)
 - `version` (optional)
@@ -108,6 +143,7 @@ Fields:
 - `POST /admin/integrations/bundles`
   - `{ op: "replace"|"merge", bundles: {...}, default_bundle_id?: "..." }`
 - `POST /admin/integrations/bundles/reset-env`
+- `POST /internal/bundles/reset-env` (localhost only; intended for CLI/local automation)
 
 **CI/CD friendly option (no admin tokens):**
 Set `BUNDLES_FORCE_ENV_ON_STARTUP=1` on **processor**.
@@ -285,6 +321,7 @@ Important:
   Redis props are rebuilt from `bundles.yaml` authoritatively
 - stale keys removed from `bundles.yaml` are deleted from Redis
 - runtime overrides do not survive that authoritative env reset
+- CLI `--bundle-reload` uses that same authoritative env replay path
 
 Admin APIs:
 - `GET /admin/integrations/bundles/{bundle_id}/props`

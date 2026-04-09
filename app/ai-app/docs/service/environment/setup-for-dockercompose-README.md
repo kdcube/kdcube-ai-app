@@ -46,6 +46,17 @@ These are mounted by compose into the runtime services that need them.
 - `/config/assembly.yaml`
 - `/config/bundles.yaml`
 
+Bundle path rule:
+
+- local manual bundles and git-resolved bundles both use `HOST_BUNDLES_PATH`
+- inside proc that same root is visible as `/bundles`
+- bundle descriptors must therefore point to `/bundles/...`, not to the raw host path
+
+Example:
+
+- host folder: `/Users/you/dev/bundles/my.bundle`
+- descriptor path: `/bundles/my.bundle`
+
 If you use `all_in_one_kdcube`, nginx configs are mounted from
 `KDCUBE_CONFIG_DIR` (defaults to `./config`). Copy these once:
 

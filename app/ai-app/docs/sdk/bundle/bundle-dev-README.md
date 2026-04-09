@@ -804,29 +804,85 @@ See: [docs/sdk/bundle/bundle-storage-cache-README.md](bundle-storage-cache-READM
 
 ---
 
-## Register for local dev
+## Local prototyping with CLI
 
-Local path bundle registration (dev only):
+The easiest localhost bundle flow is descriptor-driven:
+
+1. put your bundle under the host bundles root configured by:
+   - `assembly.yaml -> paths.host_bundles_path`
+2. define the bundle in `bundles.yaml`
+3. install once with the CLI
+4. after each local change, run `--bundle-reload`
+
+Recommended descriptor shape:
+
+```yaml
+bundles:
+  default_bundle_id: "my.bundle@1.0.0"
+  items:
+    - id: "my.bundle@1.0.0"
+      name: "My Bundle"
+      path: "/bundles/my.bundle"
+      module: "entrypoint"
+      singleton: false
+      config:
+        ui:
+          title: "My local bundle"
+```
+
+Important path rule:
+
+- host path example:
+  - `/Users/you/dev/bundles/my.bundle`
+- descriptor path example:
+  - `/bundles/my.bundle`
+
+Do **not** put the raw host path into `bundles.yaml`. Proc only sees the
+container-visible mounted root.
+
+One-time install:
+
 ```bash
-export AGENTIC_BUNDLES_JSON='{
-  "default_bundle_id": "react@2026-02-10-02-44",
-  "bundles": {
-    "react@2026-02-10-02-44": {
-      "id": "react@2026-02-10-02-44",
-      "name": "React Bundle",
-      "path": "/bundles",
-      "module": "react@2026-02-10-02-44.entrypoint",
-      "singleton": false,
-      "description": "Reference bundle"
-    }
-  }
-}'
+kdcube \
+  --descriptors-location /path/to/descriptors \
+  --build
 ```
 
-If running in Docker:
+Normal edit/test loop:
+
+```bash
+# edit bundle code or bundles.yaml
+kdcube --workdir ~/.kdcube/kdcube-runtime --bundle-reload my.bundle@1.0.0
 ```
-export AGENTIC_BUNDLES_ROOT=/bundles
-```
+
+What `--bundle-reload` does:
+
+- validates that the bundle id exists in the current mounted descriptor
+- reapplies the descriptor-backed registry to proc
+- rebuilds descriptor-backed bundle props from `bundles.yaml`
+- clears proc bundle caches so the next request loads the updated code
+
+This is the fastest path when you want:
+- local code changes
+- local descriptor changes
+- descriptor-defined props
+
+For quick runtime-only prop tweaks without editing `bundles.yaml`, use the
+bundle admin props API instead:
+
+- `GET /admin/integrations/bundles/{bundle_id}/props`
+- `POST /admin/integrations/bundles/{bundle_id}/props`
+- `POST /admin/integrations/bundles/{bundle_id}/props/reset-code`
+
+Important nuance:
+
+- `--bundle-reload` is descriptor-authoritative
+- it will reapply descriptor-backed props from `bundles.yaml`
+- runtime-only admin overrides do not survive that descriptor replay
+
+So:
+- use the admin props API for temporary runtime experiments
+- use `bundles.yaml` + `--bundle-reload` for the repeatable local prototype state
 
 ---
 

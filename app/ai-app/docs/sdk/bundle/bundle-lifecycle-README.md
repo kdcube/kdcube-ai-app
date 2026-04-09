@@ -149,6 +149,31 @@ Those helpers are bound by the platform for queued `run(...)` execution and for
 REST/widget invocation paths. Use them instead of storing request execution
 context on the shared singleton object.
 
+## What changes apply to new requests
+
+Three classes of changes matter during bundle development:
+
+1. **Runtime/admin prop overrides**
+   - stored in Redis
+   - picked up by `refresh_bundle_props(...)` at invocation start
+   - affect new requests immediately
+
+2. **Descriptor-backed bundle config**
+   - comes from `bundles.yaml`
+   - affects new requests after proc reapplies the descriptor (`reset-env` / CLI `--bundle-reload`)
+
+3. **Bundle code changes**
+   - require proc cache eviction before the next request should load the updated module
+   - for local development, the intended path is:
+     - `kdcube --workdir <runtime-workdir> --bundle-reload <bundle_id>`
+
+Practical rule:
+
+- current in-flight requests continue with the code/config they already loaded
+- new requests pick up:
+  - Redis prop edits immediately
+  - descriptor/code changes after proc cache clear + descriptor replay
+
 ## Storage and isolation surfaces
 
 | Surface | Access | Isolation | Use it for |

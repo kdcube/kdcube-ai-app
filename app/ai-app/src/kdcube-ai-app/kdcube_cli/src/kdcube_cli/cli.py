@@ -8,6 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import yaml
 from rich.console import Console
 from rich.control import Control
 from rich.live import Live
@@ -267,6 +268,133 @@ def _compose_running_services(docker_dir: Path, env_file: Path) -> set[str]:
         return set()
 
 
+def _strip_env_value(raw: str | None) -> str:
+    value = (raw or "").strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        value = value[1:-1]
+    return value.strip()
+
+
+def _resolve_bundle_reload_source(env_main: installer_mod.EnvFile, env_proc: installer_mod.EnvFile) -> Path:
+    raw = _strip_env_value(env_proc.entries.get("AGENTIC_BUNDLES_JSON", (None, None))[1])
+    if not raw:
+        raise SystemExit(
+            "AGENTIC_BUNDLES_JSON is not configured for this runtime. "
+            "Bundle reload expects a descriptor-backed bundle registry."
+        )
+
+    if raw == "/config/bundles.yaml":
+        host = _strip_env_value(env_main.entries.get("HOST_BUNDLES_DESCRIPTOR_PATH", (None, None))[1])
+        if not host or host == "/dev/null":
+            raise SystemExit(
+                "HOST_BUNDLES_DESCRIPTOR_PATH is not configured. "
+                "Bundle reload expects bundles.yaml to be mounted into chat-proc."
+            )
+        return Path(host).expanduser().resolve()
+
+    if raw == "/config/assembly.yaml":
+        host = _strip_env_value(env_main.entries.get("HOST_ASSEMBLY_YAML_DESCRIPTOR_PATH", (None, None))[1])
+        if not host or host == "/dev/null":
+            raise SystemExit(
+                "HOST_ASSEMBLY_YAML_DESCRIPTOR_PATH is not configured. "
+                "Bundle reload expects assembly.yaml to be mounted into chat-proc."
+            )
+        return Path(host).expanduser().resolve()
+
+    candidate = Path(raw).expanduser()
+    return candidate.resolve() if candidate.exists() else candidate
+
+
+def _load_bundle_ids_from_descriptor(path: Path) -> set[str]:
+    if not path.exists():
+        raise SystemExit(f"Bundle descriptor source not found: {path}")
+
+    text = path.read_text()
+    suffix = path.suffix.lower()
+    if suffix in {".yaml", ".yml"}:
+        data = yaml.safe_load(text) or {}
+    else:
+        data = json.loads(text)
+
+    if not isinstance(data, dict):
+        raise SystemExit(f"Unsupported bundle descriptor format in {path}")
+
+    raw_bundles = data.get("bundles") if "bundles" in data else data
+    if not isinstance(raw_bundles, dict):
+        raise SystemExit(f"Descriptor {path} does not contain a bundles mapping")
+    return {str(key) for key in raw_bundles.keys()}
+
+
+def reload_bundle_from_descriptor(
+    console: Console,
+    *,
+    repo_root: Path,
+    workdir: Path,
+    bundle_id: str,
+) -> None:
+    ctx = _build_paths_for_repo(repo_root, workdir)
+    env_main_path = ctx.config_dir / ".env"
+    env_proc_path = ctx.config_dir / ".env.proc"
+    if not env_main_path.exists() or not env_proc_path.exists():
+        raise SystemExit(
+            f"Runtime env files not found under {ctx.config_dir}. "
+            "Run the installer first for this workdir."
+        )
+
+    env_main = installer_mod.load_env_file(env_main_path)
+    env_proc = installer_mod.load_env_file(env_proc_path)
+    descriptor_path = _resolve_bundle_reload_source(env_main, env_proc)
+    bundle_ids = _load_bundle_ids_from_descriptor(descriptor_path)
+    if bundle_id not in bundle_ids:
+        known = ", ".join(sorted(bundle_ids)) or "<none>"
+        raise SystemExit(
+            f"Bundle '{bundle_id}' is not declared in {descriptor_path}. "
+            f"Known bundles: {known}"
+        )
+
+    running = _compose_running_services(ctx.docker_dir, env_main_path)
+    if "chat-proc" not in running:
+        raise SystemExit(
+            "chat-proc is not running for this workdir. "
+            "Start the stack first, then rerun --bundle-reload."
+        )
+
+    payload = json.dumps({})
+    script = (
+        "import json,sys,urllib.request;"
+        f"data={payload!r}.encode('utf-8');"
+        "req=urllib.request.Request("
+        "'http://127.0.0.1:8020/internal/bundles/reset-env',"
+        "data=data,"
+        "headers={'content-type':'application/json'},"
+        "method='POST');"
+        "resp=urllib.request.urlopen(req);"
+        "sys.stdout.write(resp.read().decode('utf-8'))"
+    )
+    cmd = [
+        "docker",
+        "compose",
+        "--env-file",
+        str(env_main_path),
+        "exec",
+        "-T",
+        "chat-proc",
+        "python",
+        "-c",
+        script,
+    ]
+
+    console.print(
+        f"[dim]Reapplying descriptor from[/dim] {descriptor_path}\n"
+        f"[dim]Requested bundle[/dim] {bundle_id}"
+    )
+    _run_compose(console, cmd, cwd=ctx.docker_dir)
+    console.print(
+        "[green]Bundle descriptor reapplied and proc caches cleared.[/green]\n"
+        "[dim]Local code changes under the mounted bundle path will be loaded on the next request.[/dim]"
+    )
+
+
 def _docker_running_names() -> list[str]:
     try:
         output = _docker_output(["docker", "ps", "--format", "{{.Names}}"])
@@ -520,6 +648,7 @@ def _descriptor_fast_path_reasons(
     have_secrets: bool,
     have_gateway: bool,
     latest: bool,
+    release: str | None = None,
 ) -> list[str]:
     reasons: list[str] = []
     if not have_secrets:
@@ -534,8 +663,8 @@ def _descriptor_fast_path_reasons(
     if provider != "secrets-file":
         reasons.append("assembly secrets.provider must be secrets-file")
 
-    if not latest and not _has_value(_get_nested(assembly, "platform", "ref")):
-        reasons.append("assembly platform.ref is required unless --latest is used")
+    if not latest and not _has_value(release) and not _has_value(_get_nested(assembly, "platform", "ref")):
+        reasons.append("assembly platform.ref is required unless --latest or --release is used")
 
     for field in (("context", "tenant"), ("context", "project")):
         if not _has_value(_get_nested(assembly, *field)):
@@ -560,6 +689,9 @@ def _descriptor_fast_path_reasons(
         storage_type = str(_get_nested(assembly, "storage", storage_kind, "type") or "").strip().lower()
         if storage_type == "git" and not _has_value(_get_nested(assembly, "storage", storage_kind, "repo")):
             reasons.append(f"assembly storage.{storage_kind}.repo is required when type=git")
+
+    if not _has_value(_get_nested(assembly, "paths", "host_bundles_path")):
+        reasons.append("assembly paths.host_bundles_path is required for non-interactive local bundle installs")
 
     frontend = assembly.get("frontend")
     if isinstance(frontend, dict) and frontend:
@@ -654,6 +786,38 @@ def ensure_repo(console: Console, repo: str, target: Path) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     console.print(f"Cloning {normalized_repo} to {target}")
     run(["git", "clone", normalized_repo, str(target)])
+
+
+def _checkout_repo_ref(console: Console, repo_root: Path, ref: str) -> None:
+    ref = str(ref or "").strip()
+    if not ref:
+        raise SystemExit("Release ref is required for source checkout.")
+    console.print(f"[dim]Checking out repo ref:[/dim] {ref}")
+    try:
+        subprocess.run(["git", "fetch", "--tags", "origin"], cwd=repo_root, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError:
+        # Best effort only; later checkout may still work for local refs/commits.
+        pass
+
+    candidates = [ref, f"origin/{ref}", f"refs/tags/{ref}", f"tags/{ref}"]
+    last_error: subprocess.CalledProcessError | None = None
+    for candidate in candidates:
+        try:
+            subprocess.run(
+                ["git", "checkout", "--detach", candidate],
+                cwd=repo_root,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            return
+        except subprocess.CalledProcessError as exc:
+            last_error = exc
+            continue
+    details = ""
+    if last_error is not None:
+        details = (last_error.stderr or last_error.stdout or "").strip()
+    raise SystemExit(f"Could not checkout release ref '{ref}' in {repo_root}.{(' ' + details) if details else ''}")
 
 
 def _read_install_meta(workdir: Path) -> dict | None:
@@ -751,6 +915,16 @@ def main() -> None:
         help="With --descriptors-location, use the latest platform release from the platform repo instead of assembly platform.ref",
     )
     parser.add_argument(
+        "--release",
+        default="",
+        help="With --descriptors-location, use the given platform release instead of assembly platform.ref",
+    )
+    parser.add_argument(
+        "--build",
+        action="store_true",
+        help="With --descriptors-location, checkout the selected platform release source and build images locally instead of pulling release images",
+    )
+    parser.add_argument(
         "--reset-config",
         action="store_true",
         help="Re-run config prompts and allow editing existing values",
@@ -806,6 +980,11 @@ def main() -> None:
         action="store_true",
         help="With --dry-run, print full env file contents",
     )
+    parser.add_argument(
+        "--bundle-reload",
+        default="",
+        help="Reapply the mounted bundle descriptor and clear proc bundle caches for local development. Validates that the given bundle id exists in the current descriptor.",
+    )
     args = parser.parse_args()
 
     def _arg_provided(name: str) -> bool:
@@ -823,6 +1002,8 @@ def main() -> None:
             return
         if args.remove_volumes and not args.stop:
             raise SystemExit("--remove-volumes can only be used together with --stop.")
+        if args.latest and args.release:
+            raise SystemExit("Choose only one of --latest or --release.")
         if args.proxy_ssl and args.no_proxy_ssl:
             raise SystemExit("Choose only one of --proxy-ssl or --no-proxy-ssl.")
         if args.proxy_ssl:
@@ -840,6 +1021,14 @@ def main() -> None:
                 repo_root=repo_path,
                 workdir=workdir,
                 remove_volumes=args.remove_volumes,
+            )
+            return
+        if args.bundle_reload:
+            reload_bundle_from_descriptor(
+                console,
+                repo_root=repo_path,
+                workdir=workdir,
+                bundle_id=str(args.bundle_reload).strip(),
             )
             return
         workdir_arg = _arg_provided("--workdir")
@@ -889,6 +1078,7 @@ def main() -> None:
                 have_secrets=bool(descriptor_bootstrap["have_secrets"]),
                 have_gateway=bool(descriptor_bootstrap["have_gateway"]),
                 latest=bool(args.latest),
+                release=str(args.release or "").strip() or None,
             )
             if not reasons:
                 platform_repo = str(_get_nested(assembly, "platform", "repo") or args.repo).strip()
@@ -907,14 +1097,22 @@ def main() -> None:
                             "Could not resolve the latest platform release from the platform repo. "
                             "Check platform.repo or pass a repo that contains release.yaml."
                         )
+                elif str(args.release or "").strip():
+                    release_ref = str(args.release).strip()
                 else:
                     release_ref = str(_get_nested(assembly, "platform", "ref") or "").strip() or None
                     if not release_ref:
-                        raise SystemExit("assembly platform.ref is required unless --latest is used.")
+                        raise SystemExit("assembly platform.ref is required unless --latest or --release is used.")
 
-                console.print("[green]Descriptor set is complete. Running non-interactive release install.[/green]")
+                if args.build:
+                    _checkout_repo_ref(console, repo_path, release_ref)
+                    install_mode = "skip"
+                    console.print("[green]Descriptor set is complete. Running non-interactive source build install.[/green]")
+                else:
+                    install_mode = "release"
+                    console.print("[green]Descriptor set is complete. Running non-interactive release-image install.[/green]")
                 os.environ["KDCUBE_CLI_NONINTERACTIVE"] = "1"
-                run_installer(console, repo_path, workdir, "release", release_ref, None, args.dry_run)
+                run_installer(console, repo_path, workdir, install_mode, release_ref, None, args.dry_run)
                 return
 
             console.print("[yellow]Descriptor set is incomplete for non-interactive install; falling back to guided setup.[/yellow]")
