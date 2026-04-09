@@ -94,7 +94,7 @@ def run(op, component, tenant=None, project=None, app=None):
         substitutions = {"SCHEMA": CONTROL_PLANE_SCHEMA}
 
         if op == "deploy":
-            schema_file = os.path.join(sql_location, app, f"deploy-{component}.sql")
+            schema_file = os.path.join(sql_location, "control_plane", f"deploy-{component}.sql")
             try:
                 mgr.execute_sql_file(schema_file, substitutions=substitutions)
                 print(f"Control plane schema deployed successfully to '{CONTROL_PLANE_SCHEMA}'.")
@@ -104,7 +104,7 @@ def run(op, component, tenant=None, project=None, app=None):
                 raise e
 
         elif op == "delete":
-            delete_file = os.path.join(sql_location, app, f"drop-{component}.sql")
+            delete_file = os.path.join(sql_location, "control_plane", f"drop-{component}.sql")
             try:
                 mgr.execute_sql_file(delete_file, substitutions=substitutions)
                 print(f"Control plane schema components removed successfully.")
