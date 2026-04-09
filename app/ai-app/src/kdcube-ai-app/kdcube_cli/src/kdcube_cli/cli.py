@@ -483,6 +483,168 @@ def _read_remote_ref(repo_root: Path) -> str | None:
     return _extract_platform_ref(proc.stdout)
 
 
+def _get_nested(data: dict | None, *keys: str):
+    cur = data
+    for key in keys:
+        if not isinstance(cur, dict):
+            return None
+        cur = cur.get(key)
+    return cur
+
+
+def _has_value(value: object | None) -> bool:
+    if value is None:
+        return False
+    text = str(value).strip()
+    return bool(text) and not installer_mod.is_placeholder(text)
+
+
+def _load_yaml_mapping(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text()) if path.suffix == ".json" else None
+    except Exception:
+        payload = None
+    if isinstance(payload, dict):
+        return payload
+    try:
+        return installer_mod.load_release_descriptor(path)
+    except Exception:
+        return {}
+
+
+def _descriptor_fast_path_reasons(
+    assembly: dict,
+    *,
+    have_secrets: bool,
+    have_gateway: bool,
+    latest: bool,
+) -> list[str]:
+    reasons: list[str] = []
+    if not have_secrets:
+        reasons.append("missing secrets.yaml")
+    if not have_gateway:
+        reasons.append("missing gateway.yaml")
+
+    provider = installer_mod.normalize_secrets_provider(
+        _get_nested(assembly, "secrets", "provider"),
+        default="secrets-service",
+    )
+    if provider != "secrets-file":
+        reasons.append("assembly secrets.provider must be secrets-file")
+
+    if not latest and not _has_value(_get_nested(assembly, "platform", "ref")):
+        reasons.append("assembly platform.ref is required unless --latest is used")
+
+    for field in (("context", "tenant"), ("context", "project")):
+        if not _has_value(_get_nested(assembly, *field)):
+            reasons.append(f"assembly {'.'.join(field)} is required")
+
+    auth_type = str(_get_nested(assembly, "auth", "type") or "").strip().lower()
+    if auth_type not in {"simple", "cognito", "delegated"}:
+        reasons.append("assembly auth.type must be simple, cognito, or delegated")
+    if auth_type in {"cognito", "delegated"}:
+        for field in (
+            ("auth", "cognito", "region"),
+            ("auth", "cognito", "user_pool_id"),
+            ("auth", "cognito", "app_client_id"),
+        ):
+            if not _has_value(_get_nested(assembly, *field)):
+                reasons.append(f"assembly {'.'.join(field)} is required")
+
+    if installer_mod.parse_bool(_get_nested(assembly, "proxy", "ssl")) and not _has_value(assembly.get("domain")):
+        reasons.append("assembly domain is required when proxy.ssl=true")
+
+    for storage_kind in ("workspace", "claude_code_session"):
+        storage_type = str(_get_nested(assembly, "storage", storage_kind, "type") or "").strip().lower()
+        if storage_type == "git" and not _has_value(_get_nested(assembly, "storage", storage_kind, "repo")):
+            reasons.append(f"assembly storage.{storage_kind}.repo is required when type=git")
+
+    frontend = assembly.get("frontend")
+    if isinstance(frontend, dict) and frontend:
+        frontend_image = frontend.get("image")
+        if not _has_value(frontend_image):
+            build = frontend.get("build") if isinstance(frontend.get("build"), dict) else frontend
+            for field in ("repo", "ref", "dockerfile", "src"):
+                if not _has_value(build.get(field) if isinstance(build, dict) else None):
+                    reasons.append(f"assembly frontend.build.{field} is required when frontend.image is not set")
+            if not _has_value(frontend.get("frontend_config")):
+                reasons.append("assembly frontend.frontend_config is required when frontend.image is not set")
+
+    return reasons
+
+
+def _stage_descriptor_set(
+    *,
+    repo_root: Path,
+    workdir: Path,
+    descriptors_location: Path,
+) -> dict[str, object]:
+    ai_app_root = repo_root / "app/ai-app"
+    config_dir = workdir / "config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+
+    assembly_source = descriptors_location / "assembly.yaml"
+    secrets_source = descriptors_location / "secrets.yaml"
+    gateway_source = descriptors_location / "gateway.yaml"
+    bundles_source = descriptors_location / "bundles.yaml"
+    bundles_secrets_source = descriptors_location / "bundles.secrets.yaml"
+
+    assembly_target = config_dir / "assembly.yaml"
+    if not assembly_source.exists():
+        raise SystemExit(f"assembly.yaml not found under {descriptors_location}")
+    if not installer_mod.stage_assembly_descriptor(
+        assembly_target,
+        source_path=assembly_source,
+        ai_app_root=ai_app_root,
+    ):
+        raise SystemExit(f"assembly.yaml not found under {descriptors_location}")
+
+    secrets_target = config_dir / "secrets.yaml"
+    have_secrets = installer_mod.stage_secrets_descriptor(
+        secrets_target,
+        source_path=secrets_source if secrets_source.exists() else None,
+        ai_app_root=ai_app_root,
+    ) if secrets_source.exists() else False
+
+    gateway_target = config_dir / "gateway.yaml"
+    have_gateway = False
+    if gateway_source.exists():
+        installer_mod.stage_gateway_descriptor(
+            gateway_target,
+            source_path=gateway_source,
+            ai_app_root=ai_app_root,
+        )
+        have_gateway = gateway_target.exists()
+
+    bundles_target = config_dir / "bundles.yaml"
+    have_bundles = installer_mod.stage_bundles_descriptor(
+        bundles_target,
+        source_path=bundles_source if bundles_source.exists() else None,
+        ai_app_root=ai_app_root,
+    ) if bundles_source.exists() else False
+
+    bundles_secrets_target = config_dir / "bundles.secrets.yaml"
+    have_bundles_secrets = installer_mod.stage_bundles_secrets_descriptor(
+        bundles_secrets_target,
+        source_path=bundles_secrets_source if bundles_secrets_source.exists() else None,
+        ai_app_root=ai_app_root,
+    ) if bundles_secrets_source.exists() else False
+
+    assembly = _load_yaml_mapping(assembly_target)
+    return {
+        "assembly_path": assembly_target,
+        "secrets_path": secrets_target if have_secrets else None,
+        "gateway_path": gateway_target if have_gateway else None,
+        "bundles_path": bundles_target if have_bundles else None,
+        "bundles_secrets_path": bundles_secrets_target if have_bundles_secrets else None,
+        "assembly": assembly,
+        "have_secrets": have_secrets,
+        "have_gateway": have_gateway,
+    }
+
+
 def ensure_repo(console: Console, repo: str, target: Path) -> None:
     if target.exists() and (target / ".git").is_dir():
         console.print(f"Repo already exists at {target}")
@@ -579,6 +741,16 @@ def main() -> None:
         help="Compose workdir (config+data root)",
     )
     parser.add_argument(
+        "--descriptors-location",
+        default="",
+        help="Directory containing assembly.yaml, secrets.yaml, gateway.yaml, and optional bundle descriptors",
+    )
+    parser.add_argument(
+        "--latest",
+        action="store_true",
+        help="With --descriptors-location, use the latest platform release from the platform repo instead of assembly platform.ref",
+    )
+    parser.add_argument(
         "--reset-config",
         action="store_true",
         help="Re-run config prompts and allow editing existing values",
@@ -660,6 +832,8 @@ def main() -> None:
         if args.dry_run_print_env:
             os.environ["KDCUBE_DRY_RUN_PRINT_ENV"] = "1"
         workdir = Path(os.path.expanduser(args.workdir)).expanduser().resolve()
+        def _is_git_repo(path: Path) -> bool:
+            return path.exists() and (path / ".git").is_dir()
         if args.stop:
             stop_compose_stack(
                 console,
@@ -669,10 +843,83 @@ def main() -> None:
             )
             return
         workdir_arg = _arg_provided("--workdir")
-        if not args.secrets_set and not args.secrets_prompt and not (args.dry_run and workdir_arg):
+        if (
+            not args.secrets_set
+            and not args.secrets_prompt
+            and not args.descriptors_location
+            and not (args.dry_run and workdir_arg)
+        ):
             workdir = Path(
                 Prompt.ask("Compose workdir (config+data root)", default=str(workdir))
             ).expanduser().resolve()
+
+        descriptor_bootstrap = None
+        if args.descriptors_location and not args.secrets_set and not args.secrets_prompt:
+            descriptor_bootstrap = _stage_descriptor_set(
+                repo_root=repo_path,
+                workdir=workdir,
+                descriptors_location=Path(os.path.expanduser(args.descriptors_location)).expanduser().resolve(),
+            )
+            assembly_path = descriptor_bootstrap["assembly_path"]
+            secrets_path = descriptor_bootstrap["secrets_path"]
+            gateway_path = descriptor_bootstrap["gateway_path"]
+            bundles_path = descriptor_bootstrap["bundles_path"]
+            bundles_secrets_path = descriptor_bootstrap["bundles_secrets_path"]
+            assembly = descriptor_bootstrap["assembly"]
+
+            os.environ["KDCUBE_ASSEMBLY_DESCRIPTOR_PATH"] = str(assembly_path)
+            os.environ["KDCUBE_ASSEMBLY_USER_SUPPLIED"] = "1"
+            if secrets_path:
+                os.environ["KDCUBE_SECRETS_DESCRIPTOR_PATH"] = str(secrets_path)
+            if gateway_path:
+                os.environ["KDCUBE_GATEWAY_DESCRIPTOR_PATH"] = str(gateway_path)
+            if bundles_path:
+                os.environ["KDCUBE_BUNDLES_DESCRIPTOR_PATH"] = str(bundles_path)
+            if bundles_secrets_path:
+                os.environ["KDCUBE_BUNDLES_SECRETS_PATH"] = str(bundles_secrets_path)
+
+            os.environ["KDCUBE_ASSEMBLY_USE_BUNDLES"] = "1" if bool(_get_nested(assembly, "bundles")) else "0"
+            os.environ["KDCUBE_ASSEMBLY_USE_FRONTEND"] = "1" if bool(_get_nested(assembly, "frontend")) else "0"
+            os.environ["KDCUBE_ASSEMBLY_USE_PLATFORM"] = "0"
+            os.environ["KDCUBE_USE_BUNDLES_DESCRIPTOR"] = "1" if bundles_path else "0"
+            os.environ["KDCUBE_USE_BUNDLES_SECRETS"] = "1" if bundles_secrets_path else "0"
+
+            reasons = _descriptor_fast_path_reasons(
+                assembly,
+                have_secrets=bool(descriptor_bootstrap["have_secrets"]),
+                have_gateway=bool(descriptor_bootstrap["have_gateway"]),
+                latest=bool(args.latest),
+            )
+            if not reasons:
+                platform_repo = str(_get_nested(assembly, "platform", "repo") or args.repo).strip()
+                if not platform_repo:
+                    platform_repo = args.repo
+                if not _is_git_repo(repo_path):
+                    ensure_repo(console, platform_repo, repo_path)
+
+                release_ref = None
+                if args.latest:
+                    release_ref = _read_remote_ref(repo_path)
+                    if not release_ref:
+                        release_ref = _read_local_ref(repo_path)
+                    if not release_ref:
+                        raise SystemExit(
+                            "Could not resolve the latest platform release from the platform repo. "
+                            "Check platform.repo or pass a repo that contains release.yaml."
+                        )
+                else:
+                    release_ref = str(_get_nested(assembly, "platform", "ref") or "").strip() or None
+                    if not release_ref:
+                        raise SystemExit("assembly platform.ref is required unless --latest is used.")
+
+                console.print("[green]Descriptor set is complete. Running non-interactive release install.[/green]")
+                os.environ["KDCUBE_CLI_NONINTERACTIVE"] = "1"
+                run_installer(console, repo_path, workdir, "release", release_ref, None, args.dry_run)
+                return
+
+            console.print("[yellow]Descriptor set is incomplete for non-interactive install; falling back to guided setup.[/yellow]")
+            for reason in reasons:
+                console.print(f"  - {reason}")
 
         assembly_descriptor_path: Path | None = None
         secrets_descriptor_path: Path | None = None
@@ -684,7 +931,7 @@ def main() -> None:
         use_descriptor_frontend = False
         bundles_default = False
         frontend_default = False
-        if not args.secrets_set and not args.secrets_prompt:
+        if not args.secrets_set and not args.secrets_prompt and not descriptor_bootstrap:
             default_assembly = str((workdir / "config" / "assembly.yaml").resolve())
             raw_path = Prompt.ask("Assembly descriptor path (assembly.yaml)", default=default_assembly).strip()
             source_path = Path(os.path.expanduser(raw_path)).expanduser().resolve()
@@ -792,6 +1039,11 @@ def main() -> None:
                 os.environ["KDCUBE_ASSEMBLY_USE_BUNDLES"] = "0"
                 os.environ["KDCUBE_ASSEMBLY_USE_FRONTEND"] = "0"
                 os.environ["KDCUBE_ASSEMBLY_USE_PLATFORM"] = "0"
+        elif descriptor_bootstrap:
+            assembly_descriptor_path = descriptor_bootstrap["assembly_path"]
+            secrets_descriptor_path = descriptor_bootstrap["secrets_path"]
+            bundles_descriptor_path = descriptor_bootstrap["bundles_path"]
+            bundles_secrets_path = descriptor_bootstrap["bundles_secrets_path"]
 
         if args.secrets_set or args.secrets_prompt:
             secrets = _parse_secret_pairs(args.secrets_set)
@@ -922,9 +1174,6 @@ def main() -> None:
             console.print("[dim]Installed release (workdir):[/dim] unknown (no metadata)")
 
         docker_namespace = None
-
-        def _is_git_repo(path: Path) -> bool:
-            return path.exists() and (path / ".git").is_dir()
 
         path_arg = _arg_provided("--path")
         if path_arg:

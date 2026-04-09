@@ -77,6 +77,14 @@ services:
         target: /config/bundles.yaml
         read_only: true
       - type: bind
+        source: ${HOST_SECRETS_YAML_DESCRIPTOR_PATH:-/dev/null}
+        target: /config/secrets.yaml
+        read_only: true
+      - type: bind
+        source: ${HOST_BUNDLES_SECRETS_YAML_DESCRIPTOR_PATH:-/dev/null}
+        target: /config/bundles.secrets.yaml
+        read_only: true
+      - type: bind
         source: ${HOME}/.aws
         target: /home/appuser/.aws
         read_only: true
@@ -123,6 +131,14 @@ services:
         target: /config/bundles.yaml
         read_only: true
       - type: bind
+        source: ${HOST_SECRETS_YAML_DESCRIPTOR_PATH:-/dev/null}
+        target: /config/secrets.yaml
+        read_only: true
+      - type: bind
+        source: ${HOST_BUNDLES_SECRETS_YAML_DESCRIPTOR_PATH:-/dev/null}
+        target: /config/bundles.secrets.yaml
+        read_only: true
+      - type: bind
         source: ${HOST_BUNDLES_PATH?}           # host root with all bundles
         target: ${AGENTIC_BUNDLES_ROOT?}       # e.g. /bundles inside the container
       - type: bind
@@ -167,6 +183,14 @@ services:
       - type: bind
         source: ${HOST_BUNDLES_DESCRIPTOR_PATH:-/dev/null}
         target: /config/bundles.yaml
+        read_only: true
+      - type: bind
+        source: ${HOST_SECRETS_YAML_DESCRIPTOR_PATH:-/dev/null}
+        target: /config/secrets.yaml
+        read_only: true
+      - type: bind
+        source: ${HOST_BUNDLES_SECRETS_YAML_DESCRIPTOR_PATH:-/dev/null}
+        target: /config/bundles.secrets.yaml
         read_only: true
     networks:
       - kdcube-internal

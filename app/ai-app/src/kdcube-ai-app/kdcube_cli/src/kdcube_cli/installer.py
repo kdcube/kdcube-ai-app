@@ -1005,18 +1005,30 @@ def _label(text: str) -> str:
 def _mask(value: str) -> str:
     return "*" * len(value)
 
+
+def _noninteractive_enabled() -> bool:
+    raw = os.getenv("KDCUBE_CLI_NONINTERACTIVE", "").strip().lower()
+    return raw in {"1", "true", "yes", "y", "on"}
+
+
 def _abort_if_quit(value: str) -> None:
     if value.strip().lower() in {"q", "quit", "exit"}:
         raise SystemExit("Setup cancelled by user.")
 
 
 def ask(console: Console, label: str, default: Optional[str] = None, secret: bool = False) -> str:
+    if _noninteractive_enabled():
+        if default is None:
+            raise SystemExit(f"Non-interactive setup requires a default for: {label}")
+        return str(default)
     value = Prompt.ask(_label(label), default=default or "", password=secret)
     _abort_if_quit(value)
     return value
 
 
 def ask_confirm(console: Console, label: str, default: bool = False) -> bool:
+    if _noninteractive_enabled():
+        return default
     default_hint = "y" if default else "n"
     while True:
         try:
@@ -1036,6 +1048,8 @@ def ask_confirm(console: Console, label: str, default: bool = False) -> bool:
 
 
 def prompt_optional(console: Console, label: str, secret: bool = False) -> str:
+    if _noninteractive_enabled():
+        return ""
     console.print(f"{_label(label)} [dim](leave blank to skip)[/dim]")
     while True:
         try:
@@ -1049,6 +1063,8 @@ def prompt_optional(console: Console, label: str, secret: bool = False) -> str:
 
 
 def prompt_optional_keep(console: Console, label: str, current: Optional[str]) -> Optional[str]:
+    if _noninteractive_enabled():
+        return current if current and not is_placeholder(current) else None
     if current and not is_placeholder(current):
         console.print(f"{_label(label)} [dim](press Enter to keep current)[/dim]")
     else:
@@ -1285,6 +1301,10 @@ def normalize_docker_host(console: Console, host: Optional[str], label: str) -> 
 
 
 def select_option(console: Console, title: str, options: List[str], default_index: int = 0) -> str:
+    if _noninteractive_enabled():
+        idx = max(0, min(default_index, len(options) - 1))
+        return options[idx]
+
     def _debug_enabled() -> bool:
         raw = os.environ.get("KDCUBE_CLI_DEBUG_SELECTOR", "").strip().lower()
         return raw not in {"", "0", "false", "no"}
@@ -1663,6 +1683,11 @@ def gather_configuration(
     _set_nested(assembly_data, ["secrets", "provider"], secrets_provider)
     update_env_value(env_ingress, "SECRETS_PROVIDER", secrets_provider)
     update_env_value(env_proc, "SECRETS_PROVIDER", secrets_provider)
+    update_env_value(env_metrics, "SECRETS_PROVIDER", secrets_provider)
+    if secrets_provider == "secrets-file":
+        for env in (env_ingress, env_proc, env_metrics):
+            update_env_value(env, "GLOBAL_SECRETS_YAML", "file:///config/secrets.yaml")
+            update_env_value(env, "BUNDLE_SECRETS_YAML", "file:///config/bundles.secrets.yaml")
     if secrets_provider == "secrets-service":
         update_if_placeholder(env_ingress, "SECRETS_URL", "http://kdcube-secrets:7777")
         update_if_placeholder(env_proc, "SECRETS_URL", "http://kdcube-secrets:7777")
@@ -2459,6 +2484,14 @@ def gather_configuration(
         update_env_value(env_main, "HOST_ASSEMBLY_YAML_DESCRIPTOR_PATH", release_descriptor_path)
     else:
         update_env_value(env_main, "HOST_ASSEMBLY_YAML_DESCRIPTOR_PATH", "/dev/null")
+    if secrets_provider == "secrets-file" and secrets_descriptor_path:
+        update_env_value(env_main, "HOST_SECRETS_YAML_DESCRIPTOR_PATH", secrets_descriptor_path)
+    else:
+        update_env_value(env_main, "HOST_SECRETS_YAML_DESCRIPTOR_PATH", "/dev/null")
+    if secrets_provider == "secrets-file" and bundles_secrets_path:
+        update_env_value(env_main, "HOST_BUNDLES_SECRETS_YAML_DESCRIPTOR_PATH", bundles_secrets_path)
+    else:
+        update_env_value(env_main, "HOST_BUNDLES_SECRETS_YAML_DESCRIPTOR_PATH", "/dev/null")
 
     if use_bundles_descriptor is None and bundles_path:
         use_bundles_descriptor = True
@@ -3063,7 +3096,16 @@ def run_setup(
             release_descriptor_path = None
 
     if env_secrets_descriptor:
-        secrets_descriptor_path = str(Path(env_secrets_descriptor).expanduser().resolve())
+        default_secrets = str((workdir / "config" / "secrets.yaml").resolve())
+        staged = stage_secrets_descriptor(
+            Path(default_secrets),
+            source_path=Path(env_secrets_descriptor),
+            ai_app_root=ai_app_root,
+        )
+        if staged and Path(default_secrets).exists():
+            secrets_descriptor_path = default_secrets
+        else:
+            secrets_descriptor_path = None
 
     if env_bundles_descriptor:
         default_bundles = str((workdir / "config" / "bundles.yaml").resolve())
@@ -3078,9 +3120,14 @@ def run_setup(
             bundles_descriptor_path = None
 
     if env_bundles_secrets:
-        source_path = Path(env_bundles_secrets).expanduser().resolve()
-        if source_path.exists():
-            bundles_secrets_path = str(source_path)
+        default_bundles_secrets = str((workdir / "config" / "bundles.secrets.yaml").resolve())
+        staged = stage_bundles_secrets_descriptor(
+            Path(default_bundles_secrets),
+            source_path=Path(env_bundles_secrets),
+            ai_app_root=ai_app_root,
+        )
+        if staged and Path(default_bundles_secrets).exists():
+            bundles_secrets_path = default_bundles_secrets
         else:
             bundles_secrets_path = None
 
