@@ -219,6 +219,8 @@ services:
       - LOG_FILE_PREFIX=chat-ingress
       - GATEWAY_COMPONENT=ingress
       - HOST_KDCUBE_STORAGE_PATH=${HOST_KDCUBE_STORAGE_PATH}
+      - HOST_GIT_BUNDLES_PATH=${HOST_GIT_BUNDLES_PATH:-}
+      - AGENTIC_GIT_BUNDLES_ROOT=${AGENTIC_GIT_BUNDLES_ROOT:-/git-bundles}
       - SECRETS_TOKEN=${SECRETS_TOKEN_INGRESS:-}
     volumes:
       - ${KDCUBE_DATA_DIR:-./data}/kdcube-storage:/kdcube-storage
@@ -239,6 +241,9 @@ services:
         source: ${HOST_BUNDLES_SECRETS_YAML_DESCRIPTOR_PATH:-/dev/null}
         target: /config/bundles.secrets.yaml
         read_only: true
+      - type: bind
+        source: ${HOST_GIT_BUNDLES_PATH?}
+        target: ${AGENTIC_GIT_BUNDLES_ROOT:-/git-bundles}
       - type: bind
         source: ${HOME}/.aws
         target: /home/appuser/.aws
@@ -274,8 +279,10 @@ services:
       - GATEWAY_COMPONENT=proc
       - HOST_KDCUBE_STORAGE_PATH=${HOST_KDCUBE_STORAGE_PATH}
       - HOST_BUNDLES_PATH=${HOST_BUNDLES_PATH}
+      - HOST_GIT_BUNDLES_PATH=${HOST_GIT_BUNDLES_PATH:-}
       - HOST_BUNDLE_STORAGE_PATH=${HOST_BUNDLE_STORAGE_PATH}
       - HOST_EXEC_WORKSPACE_PATH=${HOST_EXEC_WORKSPACE_PATH}
+      - AGENTIC_GIT_BUNDLES_ROOT=${AGENTIC_GIT_BUNDLES_ROOT:-/git-bundles}
       - SECRETS_TOKEN=${SECRETS_TOKEN_PROC:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -301,6 +308,9 @@ services:
       - type: bind
         source: ${HOST_BUNDLES_PATH?}           # host root with all bundles
         target: ${AGENTIC_BUNDLES_ROOT?}       # e.g. /bundles inside the container
+      - type: bind
+        source: ${HOST_GIT_BUNDLES_PATH?}  # host root for git-resolved bundle clones/cache
+        target: ${AGENTIC_GIT_BUNDLES_ROOT:-/git-bundles}
       - type: bind
         source: ${HOST_BUNDLE_STORAGE_PATH?}   # host root for bundle shared storage (knowledge space)
         target: ${BUNDLE_STORAGE_ROOT?}        # e.g. /bundle-storage inside the container

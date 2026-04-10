@@ -9,6 +9,7 @@ from typing import Optional
 from kdcube_ai_app.infra.service_hub.inventory import AgentLogger
 
 CONTAINER_BUNDLES_ROOT = "/bundles"
+CONTAINER_GIT_BUNDLES_ROOT = "/git-bundles"
 
 def _path(p: pathlib.Path | str) -> str:
     return str(p if isinstance(p, pathlib.Path) else pathlib.Path(p))
@@ -72,10 +73,16 @@ def _translate_container_path_to_host(container_path: pathlib.Path) -> pathlib.P
         rel = os.path.relpath(path_str, "/kdcube-storage")
         return pathlib.Path(host_kb_storage) / rel
 
+    # /git-bundles → host path from env
+    if path_str.startswith(CONTAINER_GIT_BUNDLES_ROOT):
+        host_git_bundles = os.environ.get("HOST_GIT_BUNDLES_PATH") or os.environ.get("HOST_BUNDLES_PATH") or CONTAINER_GIT_BUNDLES_ROOT
+        rel = os.path.relpath(path_str, CONTAINER_GIT_BUNDLES_ROOT)
+        return pathlib.Path(host_git_bundles) / rel
+
     # /bundles → host path from env
-    if path_str.startswith("/bundles"):
+    if path_str.startswith(CONTAINER_BUNDLES_ROOT):
         host_bundles = os.environ.get("HOST_BUNDLES_PATH", "/bundles")
-        rel = os.path.relpath(path_str, "/bundles")
+        rel = os.path.relpath(path_str, CONTAINER_BUNDLES_ROOT)
         return pathlib.Path(host_bundles) / rel
 
     # /bundle-storage → host path from env

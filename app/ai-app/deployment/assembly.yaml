@@ -25,6 +25,7 @@ storage:
 
 paths:
   host_bundles_path: ""   # required for descriptor-driven local bundle installs; host folder mounted into /bundles
+  host_git_bundles_path: ""   # optional separate host folder for git-resolved bundle clones; mounted into /git-bundles when configured
 
 notifications:
   email:

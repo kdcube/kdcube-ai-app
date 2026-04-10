@@ -97,3 +97,46 @@ async def test_resolve_default_bundle_id_from_runtime_ctx_rejects_missing_defaul
     )
 
     assert resolved is None
+
+
+def test_apply_git_resolution_warns_once_for_missing_local_path_bundle(monkeypatch, caplog, tmp_path):
+    bundle_registry._MISSING_PATH_WARNED.clear()
+    monkeypatch.setenv("GATEWAY_COMPONENT", "proc")
+
+    reg = {
+        "demo.local": {
+            "id": "demo.local",
+            "path": str(tmp_path / "missing-local-bundle"),
+            "module": "entrypoint",
+        }
+    }
+
+    with caplog.at_level("WARNING"):
+        bundle_registry._apply_git_resolution(reg, source="test")
+        bundle_registry._apply_git_resolution(reg, source="test")
+
+    matches = [r for r in caplog.records if "local-path bundle" in r.message]
+    assert len(matches) == 1
+    assert "demo.local" in matches[0].message
+
+
+def test_resolve_bundle_warns_once_for_missing_local_path_bundle(monkeypatch, caplog, tmp_path):
+    bundle_registry._MISSING_PATH_WARNED.clear()
+    monkeypatch.setenv("GATEWAY_COMPONENT", "proc")
+    missing = str(tmp_path / "missing-local-bundle")
+    bundle_registry.set_registry(
+        {"demo.local": {"path": missing, "module": "entrypoint"}},
+        "demo.local",
+        resolve_git=False,
+        source="test",
+    )
+
+    with caplog.at_level("WARNING"):
+        spec = bundle_registry.resolve_bundle("demo.local")
+        spec_again = bundle_registry.resolve_bundle("demo.local")
+
+    assert spec is not None
+    assert spec.path == missing
+    matches = [r for r in caplog.records if "local-path bundle" in r.message]
+    assert len(matches) == 1
+    assert "demo.local" in matches[0].message

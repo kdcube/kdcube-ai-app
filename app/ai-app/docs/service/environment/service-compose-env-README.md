@@ -50,7 +50,8 @@ These are used by compose for mounts/builds. See `sample_env/.env` in the target
 | Variable | Purpose |
 | --- | --- |
 | `HOST_KDCUBE_STORAGE_PATH` | Host path mounted to `/kdcube-storage` |
-| `HOST_BUNDLES_PATH` | Host bundles path mounted to `/bundles` |
+| `HOST_BUNDLES_PATH` | Host path for local path bundles mounted to `/bundles` |
+| `HOST_GIT_BUNDLES_PATH` | Optional host path for git-resolved bundle clones/cache mounted to `/git-bundles` |
 | `HOST_EXEC_WORKSPACE_PATH` | Host exec workspace mounted to `/exec-workspace` |
 | `UI_BUILD_CONTEXT` | UI repo root for Docker build |
 | `UI_DOCKERFILE_PATH` | UI Dockerfile path (relative to `UI_BUILD_CONTEXT`) |

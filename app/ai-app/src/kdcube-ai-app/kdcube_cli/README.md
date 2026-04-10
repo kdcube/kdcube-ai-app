@@ -386,10 +386,14 @@ Local bundle root contract:
   - host folder: `/Users/you/dev/bundles/my.bundle`
   - descriptor path: `/bundles/my.bundle`
 
-Git-described bundles use the same root:
+- `assembly.paths.host_git_bundles_path` optionally becomes `HOST_GIT_BUNDLES_PATH`
+- compose mounts `HOST_GIT_BUNDLES_PATH` into proc as `AGENTIC_GIT_BUNDLES_ROOT` (normally `/git-bundles`)
 
-- manually placed local bundles and git-resolved bundles both live under `HOST_BUNDLES_PATH`
-- git bundles are cloned into generated subfolders under that root, so they can coexist with manual bundle folders
+Git-described bundles use the dedicated git cache root when configured:
+
+- local path bundles continue to use `HOST_BUNDLES_PATH` and `/bundles/...`
+- git bundles are cloned under `HOST_GIT_BUNDLES_PATH` and resolved inside proc as `/git-bundles/...`
+- if no dedicated git root is configured, git bundles fall back to the legacy bundles root behavior
 
 Symlink note:
 
