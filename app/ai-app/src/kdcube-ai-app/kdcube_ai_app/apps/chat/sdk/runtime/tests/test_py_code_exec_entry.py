@@ -7,12 +7,14 @@ import json
 import types
 import pathlib
 import sys
+import importlib
 
 from kdcube_ai_app.apps.chat.sdk.runtime.isolated.py_code_exec_entry import (
     _bootstrap_supervisor_runtime,
     _ensure_dynamic_package_chain,
     _hydrate_runtime_payload_from_secret,
 )
+from kdcube_ai_app.apps.chat.sdk.runtime.dynamic_module_loader import load_dynamic_module_from_file
 
 
 class _CaptureLogger:
@@ -78,6 +80,31 @@ def test_ensure_dynamic_package_chain_creates_parent_packages(tmp_path):
     assert tools_name in sys.modules
     assert pathlib.Path(sys.modules[root_name].__path__[0]).resolve() == bundle_root.resolve()  # type: ignore[attr-defined]
     assert pathlib.Path(sys.modules[tools_name].__path__[0]).resolve() == tools_dir.resolve()  # type: ignore[attr-defined]
+
+
+def test_load_dynamic_bundle_tool_supports_same_bundle_relative_imports():
+    bundle_root = (
+        pathlib.Path(__file__).resolve().parents[2]
+        / "examples"
+        / "bundles"
+        / "kdcube.copilot@2026-04-03-19-05"
+    )
+    tool_file = bundle_root / "tools" / "react_tools.py"
+    module_name = "dynpkg_test_copilot.tools.react_tools"
+
+    for name in [
+        "dynpkg_test_copilot",
+        "dynpkg_test_copilot.tools",
+        "dynpkg_test_copilot.knowledge",
+        "dynpkg_test_copilot.knowledge.resolver",
+        module_name,
+    ]:
+        sys.modules.pop(name, None)
+
+    mod = load_dynamic_module_from_file(module_name, tool_file)
+    resolver = importlib.import_module("dynpkg_test_copilot.knowledge.resolver")
+
+    assert mod.knowledge_resolver is resolver
 
 
 def test_bootstrap_supervisor_runtime_resolves_library_module_specs_without_explicit_paths(

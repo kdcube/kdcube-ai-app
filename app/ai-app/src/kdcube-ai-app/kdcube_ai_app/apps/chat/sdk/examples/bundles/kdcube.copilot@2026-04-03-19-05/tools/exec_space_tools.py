@@ -10,10 +10,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Annotated, Any
-import importlib.util
-import sys
 
 import semantic_kernel as sk
 
@@ -23,6 +20,7 @@ except Exception:
     from semantic_kernel.utils.function_decorator import kernel_function
 
 from kdcube_ai_app.apps.chat.sdk.runtime.external.base import is_isolated_exec_process
+from ..knowledge import resolver as knowledge_resolver
 
 
 def _ok_ret_result(ret: Any) -> dict[str, Any]:
@@ -51,25 +49,6 @@ def _error_result(
         "error": error,
         "ret": ret,
     }
-
-
-def _load_knowledge_resolver():
-    module_name = "_kdcube_copilot_knowledge_resolver"
-    if module_name in sys.modules:
-        return sys.modules[module_name]
-
-    bundle_root = Path(__file__).resolve().parent.parent
-    resolver_path = bundle_root / "knowledge" / "resolver.py"
-    if not resolver_path.exists():
-        raise ImportError(f"Knowledge resolver not found: {resolver_path}")
-
-    spec = importlib.util.spec_from_file_location(module_name, str(resolver_path))
-    if not spec or not spec.loader:
-        raise ImportError(f"Cannot load knowledge resolver: {resolver_path}")
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = mod
-    spec.loader.exec_module(mod)  # type: ignore[attr-defined]
-    return mod
 
 
 class ExecSpaceTools:
@@ -121,8 +100,7 @@ class ExecSpaceTools:
             )
 
         try:
-            resolver = _load_knowledge_resolver()
-            resolved = resolver.resolve_exec_namespace(logical_ref=str(logical_ref or "").strip())
+            resolved = knowledge_resolver.resolve_exec_namespace(logical_ref=str(logical_ref or "").strip())
             return _ok_ret_result(resolved)
         except Exception as e:
             if getattr(e, "code", None):
