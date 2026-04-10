@@ -1,31 +1,27 @@
 platform:
   repo: "kdcube-ai-app"
-  ref: "2026.4.10.153"
+  ref: "2026.4.11.012"
   description: |
-    This release makes descriptor-driven local deployment and bundle development much more practical.
-    Runtime code can now read non-secret descriptor values directly through `get_plain(...)` and
-    `read_plain(...)`, with `assembly.yaml` and `bundles.yaml` mounted into the services as
-    first-class runtime inputs. Assembly-backed reads now cover actionable platform settings such as
-    storage roots, workspace and Claude session git stores, notifications, routine schedules, and
-    the selected secrets provider.
+    This release expands the platform from bundle-hosting toward bundle-operated applications and
+    scheduled scenarios. Bundles can now declare proc-owned scheduled APIs through `@cron(...)`,
+    with inline expressions or bundle-config-driven expressions and explicit exclusivity span
+    (`process`, `instance`, or `system`). This gives hosted apps a native way to maintain and run
+    recurring logic in cooperation with their own storage, props, and user-facing flows.
 
-    The local installer path was streamlined substantially. `kdcube-setup` now supports a
-    descriptor-complete non-interactive flow via `--descriptors-location`, honors `--latest` and
-    `--release` as explicit overrides for `assembly.platform.ref`, stages `secrets.yaml` and
-    `bundles.secrets.yaml` correctly for `secrets-file`, and starts the runtime without extra
-    prompting when the descriptor set is complete.
+    React v2 also gained internal memory beacons, strengthening the agent’s own runtime signals for
+    navigation and continuity. Together with timeline events, ANNOUNCE contributions, source-pool
+    references, and the existing plan/hide mechanics, this makes the React runtime more explicit as
+    an execution environment rather than only an API surface.
 
-    Bundle development on localhost also became faster. The platform now documents and supports a
-    clearer host-bundles-root flow, local and git bundle resolution under the same mounted bundles
-    storage, and targeted `--bundle-reload` hot reload for descriptor-backed prototyping. Proc-side
-    reload behavior was hardened so bundle code changes can be re-imported without flushing
-    unrelated bundles.
+    Local bundle development became cleaner operationally. Git-resolved bundles can now use a
+    dedicated host/cache root separate from local path bundles, while existing deployments keep the
+    old behavior until the new root is configured. The platform also now warns once and survives
+    when a path-only bundle appears in a deployment where that path is not mounted, instead of
+    turning registry sync into a fatal path problem.
 
-    Finally, bundles can now mark dependency-heavy leaf helpers with `@venv(...)`. These helpers run
-    in a cached per-bundle subprocess virtual environment derived from the runtime Python and rebuilt
-    only when the bundle requirements file changes. The bundle and tools documentation was updated
-    to explain this execution boundary explicitly, including that proc-bound runtime surfaces such as
-    communicators, request context, DB pools, Redis clients, and tool bindings are not available
-    inside the `@venv` child process.
+    The bundle reference and builder guidance were refreshed as part of the same release. The
+    example/reference bundles now show fuller bundle surfaces, including authenticated and public
+    API patterns, and the builder skills explicitly audit the runtime package set before deciding
+    whether a custom `requirements.txt` and `@venv(...)` boundary are actually needed.
 config:
-    version: "2026.4.10.153"
+    version: "2026.4.11.012"
