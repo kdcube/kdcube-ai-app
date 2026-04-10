@@ -32,6 +32,26 @@ namespace: tests
 This skill tells you where the current parameterized bundle pytest suite lives and how to use it from isolated exec.
 Keep it loaded whenever bundle code is being authored or discussed in detail, not only when pytest is about to run.
 
+## Bundle mental model before reading tests
+
+Before diving into pytest files, remember what a bundle is in this repo:
+
+- a Python-hosted app slice, not only a chat prompt
+- it may expose:
+  - `@on_message`
+  - `@api(...)` on authenticated `operations` routes
+  - `@api(...)` on anonymous `public` routes
+  - `@ui_widget(...)`
+  - `@ui_main`
+- it may ship backend + frontend together
+- it may use props, secrets, shared bundle storage, tools, skills, MCP, isolated exec, and `@venv(...)`
+
+Normal first bundle anchors before test deep dive:
+
+- `ks:docs/sdk/bundle/bundle-index-README.md`
+- `ks:docs/sdk/bundle/bundle-reference-versatile-README.md`
+- `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/README.md`
+
 Companion loading rule:
 - For bundle tasks, load this skill together with `sk:product.kdcube`.
 - `sk:product.kdcube` gives the platform/runtime model.
