@@ -110,6 +110,46 @@ def resolve_bundles_root() -> pathlib.Path:
     return pathlib.Path(root).expanduser().resolve()
 
 
+def resolve_git_bundles_root() -> pathlib.Path:
+    """
+    Resolve the root used for materialized git-backed bundles.
+
+    Preferred order:
+    1. HOST_GIT_BUNDLES_PATH (host filesystem)
+    2. AGENTIC_GIT_BUNDLES_ROOT (container path)
+    3. legacy bundles root fallback
+
+    This keeps existing cloud/ECS behavior unchanged until a dedicated git root
+    is explicitly configured.
+    """
+    host_root = os.environ.get("HOST_GIT_BUNDLES_PATH")
+    agentic_root = os.environ.get("AGENTIC_GIT_BUNDLES_ROOT")
+    if host_root:
+        host_path = pathlib.Path(host_root).expanduser()
+        try:
+            host_path = host_path.resolve()
+        except Exception:
+            pass
+        if host_path.exists():
+            return host_path
+        log = AgentLogger("git.bundle")
+        if agentic_root:
+            log.log(
+                f"HOST_GIT_BUNDLES_PATH points to missing path {host_path}; "
+                f"using AGENTIC_GIT_BUNDLES_ROOT={agentic_root}",
+                level="WARNING",
+            )
+        else:
+            log.log(
+                f"HOST_GIT_BUNDLES_PATH points to missing path {host_path}; "
+                "falling back to the legacy bundles root",
+                level="WARNING",
+            )
+    if agentic_root:
+        return pathlib.Path(agentic_root).expanduser().resolve()
+    return resolve_bundles_root()
+
+
 def _repo_name_from_url(url: str) -> str:
     name = (url or "").rstrip("/").split("/")[-1] or "bundle"
     if name.endswith(".git"):
@@ -266,7 +306,7 @@ def compute_git_bundle_paths(
     git_subdir: Optional[str] = None,
     bundles_root: Optional[pathlib.Path] = None,
 ) -> GitBundlePaths:
-    root = bundles_root or resolve_bundles_root()
+    root = bundles_root or resolve_git_bundles_root()
     bid = (bundle_id or "").strip()
     folder = _bundle_dir_name_for_git(bid or None, git_url, git_ref)
     repo_root = (root / folder).resolve()
@@ -420,7 +460,7 @@ def ensure_git_bundle(
         if https_url != git_url:
             log.log(f"[git.bundle] using HTTPS for {git_url}", level="INFO")
             git_url = https_url
-    root = bundles_root or resolve_bundles_root()
+    root = bundles_root or resolve_git_bundles_root()
     fail_key = _fail_key(git_url=git_url, bundle_id=bundle_id, git_ref=git_ref)
     _check_fail_cooldown(fail_key)
     force_pull = os.environ.get("BUNDLE_GIT_ALWAYS_PULL", "0").lower() in {"1", "true", "yes"}
@@ -557,7 +597,7 @@ def cleanup_old_git_bundles(
     Remove old atomic bundle dirs. Returns number removed.
     """
     log = logger or AgentLogger("git.bundle")
-    root = bundles_root or resolve_bundles_root()
+    root = bundles_root or resolve_git_bundles_root()
     keep = keep if keep is not None else int(os.environ.get("BUNDLE_GIT_KEEP", "3") or "3")
     ttl_hours = ttl_hours if ttl_hours is not None else int(os.environ.get("BUNDLE_GIT_TTL_HOURS", "0") or "0")
     prefix = f"{bundle_id}__"

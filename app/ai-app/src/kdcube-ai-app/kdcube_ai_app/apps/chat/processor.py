@@ -29,6 +29,7 @@ from kdcube_ai_app.infra.plugin.git_bundle import (
     ensure_git_bundle_async,
     GitBundleCooldown,
     compute_git_bundle_paths,
+    resolve_git_bundles_root,
 )
 from kdcube_ai_app.storage.storage import create_storage_backend
 from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload, ServiceCtx, ConversationCtx
@@ -67,11 +68,12 @@ async def prefetch_git_bundles() -> dict[str, str]:
         if not path_val:
             try:
                 paths = compute_git_bundle_paths(
-                    bundle_id=bid,
-                    git_url=repo,
-                    git_ref=entry.get("ref"),
-                    git_subdir=entry.get("subdir"),
-                )
+                bundle_id=bid,
+                git_url=repo,
+                git_ref=entry.get("ref"),
+                git_subdir=entry.get("subdir"),
+                bundles_root=resolve_git_bundles_root(),
+            )
                 path_val = str(paths.bundle_root)
             except Exception:
                 path_val = ""
@@ -89,7 +91,7 @@ async def prefetch_git_bundles() -> dict[str, str]:
                 git_url=repo,
                 git_ref=entry.get("ref"),
                 git_subdir=entry.get("subdir"),
-                bundles_root=None,
+                bundles_root=resolve_git_bundles_root(),
                 atomic=os.environ.get("BUNDLE_GIT_ATOMIC", "1").lower() in {"1", "true", "yes"},
             )
         except GitBundleCooldown as e:

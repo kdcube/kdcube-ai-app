@@ -87,7 +87,8 @@ Backend API routes are **not** under `routesPrefix`:
 
 `chat-proc` mounts bundles from the host:
 
-- `HOST_BUNDLES_PATH` (host) → `AGENTIC_BUNDLES_ROOT` (container)
+- `HOST_BUNDLES_PATH` (host) → `AGENTIC_BUNDLES_ROOT` (container) for local path bundles
+- `HOST_GIT_BUNDLES_PATH` (host) → `AGENTIC_GIT_BUNDLES_ROOT` (container) for git-resolved bundle clones/cache
 
 **Knowledge space storage (for doc/knowledge bundles):**
 

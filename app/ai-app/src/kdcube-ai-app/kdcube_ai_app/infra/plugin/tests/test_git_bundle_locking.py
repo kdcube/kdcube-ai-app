@@ -64,6 +64,29 @@ def test_ensure_git_bundle_holds_local_lock_during_git_operations(monkeypatch, t
     assert paths.repo_root.exists()
 
 
+def test_resolve_git_bundles_root_prefers_dedicated_git_roots(monkeypatch, tmp_path):
+    host_git_root = tmp_path / "host-git"
+    host_git_root.mkdir()
+    fallback_root = tmp_path / "fallback"
+    fallback_root.mkdir()
+
+    monkeypatch.setenv("HOST_GIT_BUNDLES_PATH", str(host_git_root))
+    monkeypatch.setenv("AGENTIC_GIT_BUNDLES_ROOT", str(fallback_root))
+
+    assert git_bundle.resolve_git_bundles_root() == host_git_root.resolve()
+
+
+def test_resolve_git_bundles_root_falls_back_to_legacy_root(monkeypatch, tmp_path):
+    legacy_root = tmp_path / "legacy-bundles"
+    legacy_root.mkdir()
+
+    monkeypatch.delenv("HOST_GIT_BUNDLES_PATH", raising=False)
+    monkeypatch.delenv("AGENTIC_GIT_BUNDLES_ROOT", raising=False)
+    monkeypatch.setenv("HOST_BUNDLES_PATH", str(legacy_root))
+
+    assert git_bundle.resolve_git_bundles_root() == legacy_root.resolve()
+
+
 def test_ensure_git_bundle_skips_pull_for_detached_ref(monkeypatch, tmp_path):
     calls: list[list[str]] = []
 
