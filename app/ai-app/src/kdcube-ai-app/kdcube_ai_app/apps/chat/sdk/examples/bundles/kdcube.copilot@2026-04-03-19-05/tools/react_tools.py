@@ -9,16 +9,14 @@
 # as a Semantic Kernel plugin with alias "react" in tools_descriptor.py,
 # so the tool ID becomes "react.search_knowledge".
 #
-# The knowledge resolver is loaded via importlib with a shared module name
-# (_kdcube_copilot_knowledge_resolver) so that this file and entrypoint.py
-# both access the same KNOWLEDGE_ROOT global state.
+# The bundle package is loaded under a real dynamic package root, so normal
+# same-bundle relative imports work here. Proc-side tool binding seeds
+# KNOWLEDGE_ROOT from bundle storage when needed; isolated exec falls back to
+# BUNDLE_STORAGE_DIR.
 
 from __future__ import annotations
 
 from typing import Annotated, Optional, Any
-from pathlib import Path
-import importlib.util
-import sys
 
 import semantic_kernel as sk
 
@@ -27,29 +25,36 @@ try:
 except Exception:
     from semantic_kernel.utils.function_decorator import kernel_function
 
-def _load_knowledge_resolver():
-    """
-    Load bundle-local knowledge resolver by file path.
-    Tool modules are loaded via spec_from_file_location, so relative imports
-    won't work unless we resolve them manually. Uses a shared module name
-    to ensure a single KNOWLEDGE_ROOT across entrypoint + tools.
-    """
-    module_name = "_kdcube_copilot_knowledge_resolver"
-    if module_name in sys.modules:
-        return sys.modules[module_name]
+from kdcube_ai_app.infra.plugin.bundle_storage import storage_for_spec
+from ..knowledge import resolver as knowledge_resolver
 
-    bundle_root = Path(__file__).resolve().parent.parent
-    resolver_path = bundle_root / "knowledge" / "resolver.py"
-    if not resolver_path.exists():
-        raise ImportError(f"Knowledge resolver not found: {resolver_path}")
+_TOOL_SUBSYSTEM: Any = None
 
-    spec = importlib.util.spec_from_file_location(module_name, str(resolver_path))
-    if not spec or not spec.loader:
-        raise ImportError(f"Cannot load knowledge resolver: {resolver_path}")
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = mod
-    spec.loader.exec_module(mod)  # type: ignore
-    return mod
+
+def _seed_knowledge_root_from_tool_context() -> None:
+    global _TOOL_SUBSYSTEM
+    if _TOOL_SUBSYSTEM is None:
+        return
+    if getattr(knowledge_resolver, "KNOWLEDGE_ROOT", None):
+        return
+    spec = getattr(_TOOL_SUBSYSTEM, "bundle_spec", None)
+    comm = getattr(_TOOL_SUBSYSTEM, "comm", None)
+    tenant = getattr(comm, "tenant", None)
+    project = getattr(comm, "project", None)
+    root = storage_for_spec(
+        spec=spec,
+        tenant=tenant,
+        project=project,
+        ensure=True,
+    )
+    if root is not None:
+        knowledge_resolver.KNOWLEDGE_ROOT = root
+
+
+def bind_integrations(integrations):
+    global _TOOL_SUBSYSTEM
+    _TOOL_SUBSYSTEM = (integrations or {}).get("tool_subsystem")
+    _seed_knowledge_root_from_tool_context()
 
 
 class KDCubeCopilotTools:
@@ -72,7 +77,7 @@ class KDCubeCopilotTools:
             return []
         root_sel = (root or "ks:docs").strip()
         try:
-            knowledge_resolver = _load_knowledge_resolver()
+            _seed_knowledge_root_from_tool_context()
             result = knowledge_resolver.search_knowledge(
                 query=str(query).strip(),
                 root=root_sel,
