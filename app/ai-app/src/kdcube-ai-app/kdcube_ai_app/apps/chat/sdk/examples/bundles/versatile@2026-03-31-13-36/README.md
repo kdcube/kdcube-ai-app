@@ -20,6 +20,8 @@ It intentionally demonstrates the main SDK bundle surfaces together in one place
 | Direct isolated exec from bundle code  | `entrypoint.py:preferences_exec_report`                                                    |
 | Custom TSX widget                      | `ui/PreferencesBrowser.tsx`, `entrypoint.py:preferences_widget`                            |
 | Custom iframe main view                | `ui-src/src/App.tsx`, `ui-src/src/settings.ts`, `entrypoint.py`                            |
+| Authenticated `GET` bundle API         | `entrypoint.py:preferences_summary`                                                         |
+| Anonymous public bundle API            | `entrypoint.py:preferences_public_info`                                                     |
 
 ## Bundle behavior
 
@@ -180,12 +182,64 @@ Important:
 
 ## Widget + operations
 
-This bundle exposes four entrypoint operations:
+This bundle exposes both authenticated `operations` APIs and anonymous `public`
+APIs.
+
+The full decorator surface is:
+
+```python
+@api(
+    method="POST",          # default: "POST"
+    alias="my_operation",   # default: function name
+    route="operations",     # "operations" | "public", default: "operations"
+    roles=("registered",),  # default: ()
+    public_auth=None,       # only valid for route="public"
+)
+```
+
+For public endpoints:
+
+```python
+@api(
+    method="GET",
+    alias="preferences_public_info",
+    route="public",
+    public_auth="none",
+)
+```
+
+If `route="public"` then `public_auth` is mandatory. Today the accepted forms are:
+
+- `"none"`
+- `{ "mode": "header_secret", "header": "X-KDCUBE-Public-Secret", "secret_key": "bundles.<bundle>.secrets...." }`
+
+This reference bundle now includes all three common shapes:
+
+- authenticated `GET`:
+  - `preferences_summary`
+- authenticated `POST`:
+  - `preferences_widget_data`
+- anonymous public `GET`:
+  - `preferences_public_info`
+
+Concrete routes:
+
+- `GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/preferences_summary`
+- `POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/preferences_widget_data`
+- `GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/preferences_public_info`
+
+This bundle also exposes widget and notebook operations:
 
 - `preferences_widget`
   - reads current preference data
   - renders `ui/PreferencesBrowser.tsx`
   - returns iframe-ready HTML
+- `preferences_summary`
+  - authenticated `GET` example
+  - returns current preference/event counts for the current user
+- `preferences_public_info`
+  - anonymous `GET` public endpoint example
+  - returns a small non-sensitive bundle capabilities payload
 - `preferences_widget_data`
   - returns the current widget payload as JSON for the authenticated iframe client
   - is called by the widget through the integrations operations API
@@ -249,12 +303,14 @@ Reference backend endpoint:
 
 The widget uses the platform iframe config handshake and then calls:
 
+- `GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/preferences_summary`
 - `POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/preferences_widget_data`
 - `POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/preferences_canvas_data`
 - `POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/preferences_canvas_save`
 - `POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/preferences_canvas_export_excel`
 - `POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/preferences_canvas_import_excel`
 - `POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/preferences_exec_report`
+- `GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/preferences_public_info`
 
 The custom main view follows the same handshake and auth model, but it talks to the
 chat runtime directly once mounted:
