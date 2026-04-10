@@ -1,9 +1,9 @@
 ---
 id: ks:docs/sdk/bundle/bundle-reference-versatile-README.md
 title: "Versatile Reference Bundle"
-summary: "Primary full-feature bundle reference for bundle builders: React workflow, economics, props, secrets, custom tools, custom skills, storage, MCP, widget, custom main view, and isolated exec."
-tags: ["sdk", "bundle", "reference", "example", "react", "economics", "configuration", "secrets", "mcp", "storage", "widget", "ui", "exec"]
-keywords: ["versatile bundle", "reference bundle", "bundle example", "bundle props", "bundle secrets", "get_secret", "custom tools", "custom skills", "preferences", "isolated exec", "AIBundleStorage", "ui.main_view", "custom bundle ui"]
+summary: "Primary full-feature bundle reference for bundle builders: React workflow, economics, props, secrets, custom tools, custom skills, storage, MCP, widget, custom main view, isolated exec, and concrete bundle API route examples."
+tags: ["sdk", "bundle", "reference", "example", "react", "economics", "configuration", "secrets", "mcp", "storage", "widget", "ui", "exec", "api", "public"]
+keywords: ["versatile bundle", "reference bundle", "bundle example", "bundle props", "bundle secrets", "get_secret", "custom tools", "custom skills", "preferences", "isolated exec", "AIBundleStorage", "ui.main_view", "custom bundle ui", "bundle api", "public endpoint", "GET operations"]
 see_also:
   - ks:docs/sdk/bundle/bundle-index-README.md
   - ks:docs/sdk/bundle/bundle-dev-README.md
@@ -33,6 +33,34 @@ That is still useful for narrow investigation, but it is a poor starting point f
 
 `versatile` is the one place that intentionally demonstrates the main bundle authoring surfaces together.
 
+It also demonstrates the common API shapes that bundle authors usually need first:
+
+- authenticated `GET` on `/operations/...`
+- authenticated `POST` on `/operations/...`
+- anonymous `GET` on `/public/...`
+
+Concrete platform routes:
+
+- `GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/{alias}`
+- `POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/{alias}`
+- `GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/{alias}`
+- `POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/{alias}`
+
+Minimal decorator contract:
+
+```python
+@api(
+    method="POST",          # default
+    alias="my_operation",   # default: function name
+    route="operations",     # default; alternative: "public"
+    roles=("registered",),  # optional
+    public_auth=None,       # required only for route="public"
+)
+```
+
+See the bundle README for the concrete `GET`, `POST`, and public examples in the
+same reference bundle.
+
 ## Feature map
 
 | Feature | Primary file(s) |
@@ -51,6 +79,8 @@ That is still useful for narrow investigation, but it is a poor starting point f
 | Widget surface | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/ui/PreferencesBrowser.tsx` |
 | Custom main view (iframe SPA) | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/ui-src/src/App.tsx`, `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/entrypoint.py` |
 | Direct isolated exec from bundle code | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/entrypoint.py` |
+| Authenticated `GET` API example | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/entrypoint.py:preferences_summary` |
+| Anonymous public API example | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/entrypoint.py:preferences_public_info` |
 
 ## Minimal vs versatile
 

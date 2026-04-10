@@ -52,6 +52,39 @@ namespace: product
 Use this skill when the user asks about the KDCube platform, its architecture, or product capabilities —
 especially **what they can build**, **how to add web search + citations**, or **how to deploy**.
 
+## Bundle mental model before deep dive
+
+Before reading narrow docs or source files, keep this bundle model in mind:
+
+- A bundle is an end-to-end app slice hosted by KDCube.
+- A bundle normally has a Python backend entrypoint and may also ship frontend UI:
+  - iframe widgets
+  - a custom `ui.main_view`
+- A bundle can expose several backend surfaces at once:
+  - `@on_message` for chat/runtime participation
+  - `@api(...)` endpoints on:
+    - authenticated `/operations/...`
+    - anonymous `/public/...`
+  - `@ui_widget(...)` widgets
+  - `@ui_main` main-view UI
+- Bundle APIs support both `GET` and `POST`.
+- Bundle code can use:
+  - bundle props / effective config
+  - bundle secrets
+  - shared bundle storage
+  - custom tools
+  - custom skills
+  - MCP tools
+  - isolated exec
+  - bundle-scoped `@venv(...)` helpers for dependency-heavy leaf logic
+- The bundle is the app shell. It can host one or more agents and decide which runtime does which job.
+
+Useful first anchors before deeper study:
+
+- `ks:docs/sdk/bundle/bundle-index-README.md`
+- `ks:docs/sdk/bundle/bundle-reference-versatile-README.md`
+- `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/README.md`
+
 Bundle-authoring rule:
 - If the task is about generating, editing, extracting, repairing, reviewing, or validating bundle code,
   read `sk:tests.bundles` as well before answering or generating code.

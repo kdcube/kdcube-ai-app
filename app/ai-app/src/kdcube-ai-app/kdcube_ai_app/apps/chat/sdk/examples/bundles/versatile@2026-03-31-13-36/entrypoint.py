@@ -206,6 +206,57 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
             self.logger.log(traceback.format_exc(), "ERROR")
             return ["<p>Unable to render the preferences widget right now.</p>"]
 
+    @api(
+        method="GET",
+        alias="preferences_summary",
+        route="operations",
+        roles=("registered", "privileged", "free", "payasyougo", "admin"),
+    )
+    def preferences_summary(
+        self,
+        user_id: Optional[str] = None,
+        fingerprint: Optional[str] = None,
+        **kwargs,
+    ):
+        storage = self._preferences_storage()
+        target_user = user_id or fingerprint or getattr(self.comm, "user_id", None) or "anonymous"
+        if not storage:
+            return {
+                "ok": False,
+                "error": "Bundle storage backend is not configured for this bundle.",
+                "user_id": target_user,
+                "current_count": 0,
+                "event_count": 0,
+            }
+
+        snapshot = get_preferences_snapshot(storage=storage, user_id=target_user)
+        return {
+            "ok": True,
+            "user_id": target_user,
+            "current_count": len(snapshot.get("current") or {}),
+            "event_count": len(snapshot.get("items") or []),
+        }
+
+    @api(
+        method="GET",
+        alias="preferences_public_info",
+        route="public",
+        public_auth="none",
+    )
+    def preferences_public_info(self, **kwargs):
+        bundle_spec = getattr(getattr(self, "config", None), "ai_bundle_spec", None)
+        return {
+            "ok": True,
+            "bundle_id": getattr(bundle_spec, "id", None) or BUNDLE_ID,
+            "public": True,
+            "note": "Public bundle endpoint example for the versatile reference bundle.",
+            "available_routes": {
+                "operations_get": "preferences_summary",
+                "operations_post": "preferences_widget_data",
+                "public_get": "preferences_public_info",
+            },
+        }
+
     @api(alias="preferences_widget_data")
     def preferences_widget_data(
         self,
