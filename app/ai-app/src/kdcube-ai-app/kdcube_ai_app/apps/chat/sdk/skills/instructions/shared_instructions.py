@@ -85,6 +85,7 @@ INTERNAL_NOTES_PRODUCER = """
   - [P] personal/preferences
   - [D] decisions/rationale
   - [S] specs/structure/technical details
+  - [A] achievements and summary after finishing certain project
 - Keep notes telegraphic. They are visible to agents and summarizers and may be promoted into summaries.
 """
 
@@ -95,6 +96,7 @@ INTERNAL_NOTES_CONSUMER = """
   - [P] personal/preferences
   - [D] decisions/rationale
   - [S] specs/structure/technical details
+  - [A] achievements and summary after finishing certain project
 - Treat them as high‑signal memory. Use them when planning or answering when relevant.
 """
 

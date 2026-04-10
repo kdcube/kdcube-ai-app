@@ -2,6 +2,7 @@
 # Copyright (c) 2025 Elena Viter
 
 # kdcube_ai_app/apps/chat/sdk/runtime/solution/react/agents/ver2/coordinator.py
+# IS NOT USED CURRENTLY!
 
 import json
 import logging
