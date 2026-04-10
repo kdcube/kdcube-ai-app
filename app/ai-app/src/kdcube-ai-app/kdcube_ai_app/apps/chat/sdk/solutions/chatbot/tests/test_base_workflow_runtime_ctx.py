@@ -218,7 +218,10 @@ async def test_publish_git_workspace_if_needed_raises_turn_phase_error_on_publis
     assert exc_info.value.data == {
         "workspace_implementation": "git",
         "turn_id": "turn-42",
+        "error": "RuntimeError",
+        "cause": "push failed",
     }
+    assert "push failed" in str(exc_info.value)
     assert logs
     assert wf.ctx_browser.contributed
     payload = json.loads(wf.ctx_browser.contributed[-1]["text"])

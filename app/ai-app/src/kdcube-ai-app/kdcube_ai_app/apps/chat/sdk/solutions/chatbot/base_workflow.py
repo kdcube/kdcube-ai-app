@@ -16,6 +16,7 @@ from kdcube_ai_app.apps.chat.emitters import (
     build_comm_from_comm_context,
     build_relay_from_env,
 )
+from kdcube_ai_app.apps.chat.external_events import build_conversation_external_event_source
 from kdcube_ai_app.apps.chat.sdk.continuations import get_current_conversation_continuation_source
 from kdcube_ai_app.apps.chat.sdk.context.memory.conv_memories import ConvMemoriesStore
 from kdcube_ai_app.apps.chat.sdk.context.retrieval.ctx_rag import ContextRAGClient
@@ -155,6 +156,7 @@ class BaseWorkflow():
                 workspace_implementation=settings.REACT_WORKSPACE_IMPLEMENTATION,
                 workspace_git_repo=settings.REACT_WORKSPACE_GIT_REPO,
                 continuation_source=self.continuation_source,
+                external_event_source=self._external_event_source_for_runtime(),
             )
             self.ctx_browser = ContextBrowser(
                 ctx_client=self.ctx_client,
@@ -169,6 +171,7 @@ class BaseWorkflow():
                 workspace_git_repo=settings.REACT_WORKSPACE_GIT_REPO,
             )
             self.runtime_ctx.continuation_source = self.continuation_source
+            self.runtime_ctx.external_event_source = self._external_event_source_for_runtime()
             self.ctx_browser = ContextBrowser(
                 ctx_client=self.ctx_client,
                 logger=self.logger,
@@ -281,6 +284,7 @@ class BaseWorkflow():
                 runtime_ctx.turn_id = comm_context.routing.turn_id
                 runtime_ctx.bundle_storage = self._resolve_runtime_ctx_bundle_storage()
                 runtime_ctx.continuation_source = self.continuation_source
+                runtime_ctx.external_event_source = self._external_event_source_for_runtime()
                 self._sync_runtime_ctx_bundle_props()
 
         if pg_pool is not None:
@@ -294,6 +298,29 @@ class BaseWorkflow():
         if source is None:
             return 0
         return int(await source.pending_count())
+
+    def _external_event_source_for_runtime(self) -> Optional[Any]:
+        redis = getattr(self, "redis", None)
+        ctx = getattr(self, "comm_context", None)
+        if redis is None or ctx is None:
+            return None
+        try:
+            tenant = ctx.actor.tenant_id
+            project = ctx.actor.project_id
+            conversation_id = ctx.routing.conversation_id or ctx.routing.session_id
+        except Exception:
+            return None
+        if not tenant or not project or not conversation_id:
+            return None
+        try:
+            return build_conversation_external_event_source(
+                redis=redis,
+                tenant=tenant,
+                project=project,
+                conversation_id=conversation_id,
+            )
+        except Exception:
+            return None
 
     async def peek_next_continuation(self):
         source = self.continuation_source
@@ -737,21 +764,24 @@ class BaseWorkflow():
             return result
         except Exception as exc:
             self.logger.log(traceback.format_exc(), level="ERROR")
+            detail = str(exc).strip()
             self._contribute_workspace_publish_event(
                 status="failed",
                 payload={
                     "turn_id": turn_id,
                     "workspace_implementation": "git",
-                    "message": str(exc),
+                    "message": detail,
                     "error": exc.__class__.__name__,
                 },
             )
             raise TurnPhaseError(
-                "Failed to save git workspace progress.",
+                f"Failed to save git workspace progress: {detail}" if detail else "Failed to save git workspace progress.",
                 code="workspace_publish_failed",
                 data={
                     "workspace_implementation": "git",
                     "turn_id": turn_id,
+                    "error": exc.__class__.__name__,
+                    "cause": detail,
                 },
             ) from exc
 
@@ -1452,6 +1482,12 @@ class BaseWorkflow():
             if on_flush_completed_hook:
                 await on_flush_completed_hook(scratchpad)
             await self._publish_git_workspace_if_needed()
+
+        try:
+            if self.ctx_browser:
+                await self.ctx_browser.stop_external_event_listener()
+        except Exception:
+            self.logger.log(traceback.format_exc(), "ERROR")
 
         # Save turn log (always) - v2
         try:
