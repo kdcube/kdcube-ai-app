@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import pathlib
+import shlex
 import subprocess
 from typing import Any, Dict, List, Optional
 
@@ -19,6 +20,62 @@ from kdcube_ai_app.infra.plugin.git_bundle import _build_git_env
 from kdcube_ai_app.infra.service_hub.inventory import AgentLogger
 
 _SKIP_WORKSPACE_DIRS = {".git", "__pycache__", ".pytest_cache", "node_modules", ".venv", "logs", "executed_programs"}
+
+
+class GitWorkspaceCommandError(RuntimeError):
+    def __init__(
+        self,
+        *,
+        op: str,
+        cmd: List[str],
+        returncode: int,
+        stdout: str = "",
+        stderr: str = "",
+    ) -> None:
+        self.op = op
+        self.cmd = list(cmd)
+        self.returncode = int(returncode)
+        self.stdout = stdout or ""
+        self.stderr = stderr or ""
+        detail = (self.stderr or self.stdout or "no output").strip()
+        super().__init__(
+            f"{op} failed (exit={self.returncode}): {shlex.join(self.cmd)}"
+            + (f" :: {detail}" if detail else "")
+        )
+
+
+def _run_checked(
+    cmd: List[str],
+    *,
+    op: str,
+    env: Optional[Dict[str, str]] = None,
+) -> subprocess.CompletedProcess:
+    proc = subprocess.run(
+        cmd,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    if proc.returncode != 0:
+        raise GitWorkspaceCommandError(
+            op=op,
+            cmd=cmd,
+            returncode=proc.returncode,
+            stdout=proc.stdout or "",
+            stderr=proc.stderr or "",
+        )
+    return proc
+
+
+def _run_git_checked(
+    repo_root: pathlib.Path,
+    args: List[str],
+    *,
+    op: str,
+    env: Optional[Dict[str, str]] = None,
+) -> subprocess.CompletedProcess:
+    return _run_checked(["git", "-C", str(repo_root), *args], op=op, env=env)
 
 
 def _workspace_cache_root(*, runtime_ctx: Any, outdir: pathlib.Path) -> pathlib.Path:
@@ -428,10 +485,10 @@ def _git_path_is_ignored(*, repo_root: pathlib.Path, rel_path: str) -> bool:
 
 
 def _stage_current_turn_text_workspace(*, turn_root: pathlib.Path) -> None:
-    subprocess.run(
-        ["git", "-C", str(turn_root), "add", "--sparse", "-u", "--", "."],
-        check=True,
-        capture_output=True,
+    _run_git_checked(
+        turn_root,
+        ["add", "--sparse", "-u", "--", "."],
+        op="stage tracked workspace updates",
     )
     files_root = turn_root / "files"
     if not files_root.exists():
@@ -452,10 +509,10 @@ def _stage_current_turn_text_workspace(*, turn_root: pathlib.Path) -> None:
         return
     for idx in range(0, len(text_paths), 128):
         chunk = text_paths[idx: idx + 128]
-        subprocess.run(
-            ["git", "-C", str(turn_root), "add", "--sparse", "--", *chunk],
-            check=True,
-            capture_output=True,
+        _run_git_checked(
+            turn_root,
+            ["add", "--sparse", "--", *chunk],
+            op="stage text workspace files",
         )
 
 
@@ -489,39 +546,39 @@ def publish_current_turn_git_workspace(
     committed = False
     if not has_head:
         commit_args = ["git", "-C", str(turn_root), "commit", "--allow-empty", "-m", f"React workspace snapshot {turn_id}"]
-        subprocess.run(commit_args, check=True, capture_output=True)
+        _run_checked(commit_args, op="create initial workspace snapshot commit")
         committed = True
     elif _git_has_staged_changes(repo_root=turn_root):
-        subprocess.run(
-            ["git", "-C", str(turn_root), "commit", "-m", f"React workspace snapshot {turn_id}"],
-            check=True,
-            capture_output=True,
+        _run_git_checked(
+            turn_root,
+            ["commit", "-m", f"React workspace snapshot {turn_id}"],
+            op="commit workspace snapshot",
         )
         committed = True
 
     head_sha = _git_head_sha(repo_root=turn_root)
-    subprocess.run(
-        ["git", "-C", str(turn_root), "push", str(repo_root), "HEAD:refs/heads/workspace"],
-        check=True,
-        capture_output=True,
+    _run_git_checked(
+        turn_root,
+        ["push", str(repo_root), "HEAD:refs/heads/workspace"],
+        op="push workspace branch into local lineage repo",
     )
-    subprocess.run(
-        ["git", "-C", str(turn_root), "push", str(repo_root), f"{head_sha}:refs/kdcube-local/versions/{turn_id}"],
-        check=True,
-        capture_output=True,
+    _run_git_checked(
+        turn_root,
+        ["push", str(repo_root), f"{head_sha}:refs/kdcube-local/versions/{turn_id}"],
+        op="push workspace version ref into local lineage repo",
     )
 
     env = _build_git_env()
-    subprocess.run(
-        ["git", "-C", str(repo_root), "push", "origin", f"refs/heads/workspace:{lineage_ref}"],
-        check=True,
-        capture_output=True,
+    _run_git_checked(
+        repo_root,
+        ["push", "origin", f"refs/heads/workspace:{lineage_ref}"],
+        op="push workspace lineage branch to origin",
         env=env,
     )
-    subprocess.run(
-        ["git", "-C", str(repo_root), "push", "origin", f"refs/kdcube-local/versions/{turn_id}:{version_ref}"],
-        check=True,
-        capture_output=True,
+    _run_git_checked(
+        repo_root,
+        ["push", "origin", f"refs/kdcube-local/versions/{turn_id}:{version_ref}"],
+        op="push workspace version ref to origin",
         env=env,
     )
     return {

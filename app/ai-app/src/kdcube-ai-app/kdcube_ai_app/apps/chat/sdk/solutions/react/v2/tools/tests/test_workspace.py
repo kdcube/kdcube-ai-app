@@ -7,6 +7,7 @@ import subprocess
 import pytest
 
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.git_workspace import (
+    GitWorkspaceCommandError,
     checkout_current_turn_git_workspace,
     _ensure_local_version_ref,
     _ensure_workspace_repo,
@@ -503,6 +504,34 @@ def test_checkout_current_turn_git_workspace_materializes_requested_version(tmp_
     assert result["checked_out_version"] == "turn_prev"
     assert (turn_root / "files" / "projectA" / "src" / "app.py").read_text(encoding="utf-8") == "print('git')\n"
     assert (turn_root / "files" / "projectA" / "docs" / "readme.md").read_text(encoding="utf-8") == "# readme\n"
+
+
+def test_stage_current_turn_text_workspace_surfaces_git_stderr(tmp_path, monkeypatch):
+    from kdcube_ai_app.apps.chat.sdk.solutions.react.v2 import git_workspace as mod
+
+    turn_root = tmp_path / "turn_root"
+    turn_root.mkdir(parents=True, exist_ok=True)
+
+    real_run = mod.subprocess.run
+
+    def _fake_run(cmd, *args, **kwargs):
+        if cmd == ["git", "-C", str(turn_root), "add", "--sparse", "-u", "--", "."]:
+            return subprocess.CompletedProcess(
+                cmd,
+                128,
+                stdout="",
+                stderr="fatal: not a git repository",
+            )
+        return real_run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(mod.subprocess, "run", _fake_run)
+
+    with pytest.raises(GitWorkspaceCommandError) as exc_info:
+        mod._stage_current_turn_text_workspace(turn_root=turn_root)
+
+    msg = str(exc_info.value)
+    assert "stage tracked workspace updates failed" in msg
+    assert "fatal: not a git repository" in msg
 
 
 @pytest.mark.asyncio
