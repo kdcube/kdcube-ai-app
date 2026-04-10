@@ -204,6 +204,8 @@ sudo chmod -R g+rwX /path/to/exec-workspace
   - Host path mounted to `/exec-workspace` in the chat container.
 - `HOST_BUNDLES_PATH`
   - Host path of bundles root (mounted into chat container).
+- `HOST_GIT_BUNDLES_PATH`
+  - Optional host path of the git bundles cache root (mounted into chat container as `/git-bundles`).
 - `HOST_BUNDLE_STORAGE_PATH`
   - Host path of shared bundle storage root (used to translate proc-visible bundle storage paths into host-visible paths for Docker-in-Docker).
 - `AGENTIC_BUNDLES_ROOT`

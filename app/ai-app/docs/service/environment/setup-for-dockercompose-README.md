@@ -31,9 +31,13 @@ Set these in the **compose `.env`** (paths on the host):
 HOST_ASSEMBLY_YAML_DESCRIPTOR_PATH=/absolute/path/to/assembly.yaml
 HOST_BUNDLES_DESCRIPTOR_PATH=/absolute/path/to/bundles.yaml
 
-# Bundles root on host (mounted into /bundles)
+# Local path bundles root on host (mounted into /bundles)
 HOST_BUNDLES_PATH=/absolute/path/to/bundles
 AGENTIC_BUNDLES_ROOT=/bundles
+
+# Optional dedicated git bundles cache root (mounted into /git-bundles)
+HOST_GIT_BUNDLES_PATH=/absolute/path/to/git-bundles
+AGENTIC_GIT_BUNDLES_ROOT=/git-bundles
 
 # Optional SSH auth for private repos
 HOST_GIT_SSH_KEY_PATH=/absolute/path/to/.ssh/id_ed25519
@@ -48,9 +52,10 @@ These are mounted by compose into the runtime services that need them.
 
 Bundle path rule:
 
-- local manual bundles and git-resolved bundles both use `HOST_BUNDLES_PATH`
-- inside proc that same root is visible as `/bundles`
-- bundle descriptors must therefore point to `/bundles/...`, not to the raw host path
+- local manual bundles use `HOST_BUNDLES_PATH` and are visible inside proc as `/bundles/...`
+- git-described bundles are cloned under `HOST_GIT_BUNDLES_PATH` and are visible inside proc as `/git-bundles/...`
+- if `HOST_GIT_BUNDLES_PATH` is not configured, git bundles fall back to the legacy bundles root behavior
+- local path bundle descriptors must point to `/bundles/...`, not to the raw host path
 
 Example:
 

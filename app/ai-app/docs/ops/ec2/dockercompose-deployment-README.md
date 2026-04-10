@@ -88,13 +88,14 @@ Set this in the platform compose `.env` so bundles are mounted into chat‑proc:
 
 ```
 HOST_BUNDLES_PATH=<custom-app-repo>/path/to/bundles
+HOST_GIT_BUNDLES_PATH=<platform-workdir>/data/git-bundles
 ```
 
-This is one shared bundles root:
+Bundle roots are now split:
 
-- manually placed local bundles live there
-- git-described bundles are also cloned there by proc
-- inside the container the same root is visible as `/bundles`
+- local path bundles live under `HOST_BUNDLES_PATH` and are visible in the container as `/bundles/...`
+- git-described bundles are cloned under `HOST_GIT_BUNDLES_PATH` and are visible in the container as `/git-bundles/...`
+- if `HOST_GIT_BUNDLES_PATH` is not configured, git bundles fall back to the legacy bundles root behavior
 
 So if the host path is:
 

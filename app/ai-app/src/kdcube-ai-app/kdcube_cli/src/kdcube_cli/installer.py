@@ -1470,6 +1470,7 @@ def compute_paths(ai_app_root: Path, lib_root: Path, workdir: Path, compose_mode
         "host_bundle_storage": str(workdir / "data/bundle-storage"),
         "host_exec_workspace": str(workdir / "data/exec-workspace"),
         "host_bundles": str(workdir / "data/bundles"),
+        "host_git_bundles": str(workdir / "data/git-bundles"),
         "ui_dockerfile_path": "",
         "ui_source_path": "",
         "ui_env_build_relative": "",
@@ -2397,13 +2398,37 @@ def gather_configuration(
     if force_prompt or not is_placeholder(host_bundles_current):
         host_bundles = ensure_absolute(
             console,
-            "Host bundles root (git clones)",
+            "Host bundles root (local path bundles)",
             host_bundles_current,
             str(host_bundles_default) if host_bundles_default else None,
             force_prompt=force_prompt,
         )
     else:
         host_bundles = str(host_bundles_default or "")
+    host_git_bundles_current = env_main.entries.get("HOST_GIT_BUNDLES_PATH", (None, None))[1]
+    agentic_git_root = env_main.entries.get("AGENTIC_GIT_BUNDLES_ROOT", (None, None))[1] or "/git-bundles"
+    if host_git_bundles_current:
+        normalized = str(host_git_bundles_current).strip()
+        if normalized.startswith("/git-bundles") or normalized.startswith("/app/") or normalized == agentic_git_root:
+            console.print(
+                "[yellow]HOST_GIT_BUNDLES_PATH points to a container path; "
+                "resetting to the local workdir git-bundles folder.[/yellow]"
+            )
+            host_git_bundles_current = None
+    host_git_bundles_default = (
+        _get_nested(assembly_data, "paths", "host_git_bundles_path")
+        or defaults.get("host_git_bundles")
+    )
+    if force_prompt or not is_placeholder(host_git_bundles_current):
+        host_git_bundles = ensure_absolute(
+            console,
+            "Host git bundles cache root",
+            host_git_bundles_current,
+            str(host_git_bundles_default) if host_git_bundles_default else None,
+            force_prompt=force_prompt,
+        )
+    else:
+        host_git_bundles = str(host_git_bundles_default or "")
     host_bundle_storage = ensure_absolute(
         console,
         "Host bundle local storage path",
@@ -2421,10 +2446,12 @@ def gather_configuration(
 
     update_env_value(env_main, "HOST_KDCUBE_STORAGE_PATH", host_storage)
     update_env_value(env_main, "HOST_BUNDLES_PATH", host_bundles)
+    update_env_value(env_main, "HOST_GIT_BUNDLES_PATH", host_git_bundles)
     update_env_value(env_main, "HOST_BUNDLE_STORAGE_PATH", host_bundle_storage)
     update_env_value(env_main, "HOST_EXEC_WORKSPACE_PATH", host_exec)
     _set_nested(assembly_data, ["paths", "host_kdcube_storage_path"], host_storage)
     _set_nested(assembly_data, ["paths", "host_bundles_path"], host_bundles)
+    _set_nested(assembly_data, ["paths", "host_git_bundles_path"], host_git_bundles)
     _set_nested(assembly_data, ["paths", "host_bundle_storage_path"], host_bundle_storage)
     _set_nested(assembly_data, ["paths", "host_exec_workspace_path"], host_exec)
     # Always align compose paths to the selected workdir.
@@ -2434,6 +2461,8 @@ def gather_configuration(
     update_env_value(env_main, "KDCUBE_LOGS_DIR", str(ctx.workdir / "logs"))
     if is_placeholder(env_main.entries.get("AGENTIC_BUNDLES_ROOT", (None, None))[1]):
         update_env_value(env_main, "AGENTIC_BUNDLES_ROOT", "/bundles")
+    if is_placeholder(env_main.entries.get("AGENTIC_GIT_BUNDLES_ROOT", (None, None))[1]):
+        update_env_value(env_main, "AGENTIC_GIT_BUNDLES_ROOT", "/git-bundles")
     if is_placeholder(env_main.entries.get("BUNDLE_STORAGE_ROOT", (None, None))[1]):
         update_env_value(env_main, "BUNDLE_STORAGE_ROOT", "/bundle-storage")
 
@@ -2639,9 +2668,13 @@ def gather_configuration(
         update_env_value(env_proc, "BUNDLE_STORAGE_ROOT", "/bundle-storage")
     if is_placeholder(env_proc.entries.get("AGENTIC_BUNDLES_ROOT", (None, None))[1]):
         update_env_value(env_proc, "AGENTIC_BUNDLES_ROOT", "/bundles")
+    if is_placeholder(env_proc.entries.get("AGENTIC_GIT_BUNDLES_ROOT", (None, None))[1]):
+        update_env_value(env_proc, "AGENTIC_GIT_BUNDLES_ROOT", "/git-bundles")
     update_if_placeholder(env_proc, "BUNDLES_PRELOAD_ON_START", "1")
     if is_placeholder(env_proc.entries.get("HOST_BUNDLE_STORAGE_PATH", (None, None))[1]):
         update_env_value(env_proc, "HOST_BUNDLE_STORAGE_PATH", host_bundle_storage)
+    if is_placeholder(env_proc.entries.get("HOST_GIT_BUNDLES_PATH", (None, None))[1]):
+        update_env_value(env_proc, "HOST_GIT_BUNDLES_PATH", host_git_bundles)
 
     # For compose installs, always use the container log path.
     update_env_value(env_ingress, "LOG_DIR", "/logs")

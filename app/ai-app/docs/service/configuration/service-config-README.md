@@ -65,7 +65,8 @@ Descriptions are condensed from the comments in those sample files.
 | `KDCUBE_DATA_DIR` | n/a |
 | `KDCUBE_LOGS_DIR` | n/a |
 | `HOST_KDCUBE_STORAGE_PATH` | Path on host to mount as a KDCUBE STORAGE (local filesystem or S3). If using S3 in KDCUBE_STORAGE_PATH, not needed |
-| `HOST_BUNDLES_PATH` | Host directory containing ALL custom agentic bundles (subfolders, wheels, zips) These extend the chat service with custom Python applications |
+| `HOST_BUNDLES_PATH` | Host directory for local path bundles mounted into proc as `/bundles` |
+| `HOST_GIT_BUNDLES_PATH` | Optional host directory for git-resolved bundle clones/cache mounted into proc as `/git-bundles`. If unset, git bundles fall back to the legacy bundles root behavior. |
 | `HOST_BUNDLE_STORAGE_PATH` | Host directory for shared bundle local storage (bundle data; used by ks: resolvers). This is mounted into chat-proc at BUNDLE_STORAGE_ROOT. |
 | `HOST_ASSEMBLY_YAML_DESCRIPTOR_PATH` | Assembly descriptor host path. Mounted as `/config/assembly.yaml`. Runtime code may read it via `read_plain(...)`; the CLI also uses it as the local source of truth. |
 | `HOST_BUNDLES_DESCRIPTOR_PATH` | Bundles descriptor host path. Mounted as `/config/bundles.yaml`. Proc may use it as `AGENTIC_BUNDLES_JSON`, and runtime code may read it via `read_plain("b:...")`. |
@@ -297,7 +298,8 @@ Token TTL/uses:
 | `BUNDLES_FORCE_ENV_ON_STARTUP` | Force bundles registry overwrite from env on startup (processor only). |
 | `BUNDLES_FORCE_ENV_LOCK_TTL_SECONDS` | n/a |
 | `BUNDLES_PRELOAD_ON_START` | Eagerly load all configured bundle modules and run on_bundle_load hooks at proc startup. Eliminates cold start on first request. Proc health returns 503 until preload completes (default: `0`). |
-| `AGENTIC_BUNDLES_ROOT` | Agentic bundles root inside the container. All bundles (subfolders, wheels, zips) will be linked there. The paths in the AGENTIC_BUNDLES_JSON must start with this root. Container bundle root (from .env.proc): Docker/ECS: set AGENTIC_BUNDLES_ROOT=/bundles and mount your host/EFS path there. Host path for mounts lives in .env (HOST_BUNDLES_PATH). |
+| `AGENTIC_BUNDLES_ROOT` | Local path bundles root inside the container. Paths in `AGENTIC_BUNDLES_JSON` for manual path bundles must start with this root (normally `/bundles`). |
+| `AGENTIC_GIT_BUNDLES_ROOT` | Git-resolved bundles root inside the container (normally `/git-bundles`). If unset, git bundles fall back to the legacy bundles root behavior. |
 | `BUNDLE_GIT_RESOLUTION_ENABLED` | Git bundle resolution Disable git bundle resolution until git bundles are fully configured. |
 | `BUNDLE_GIT_ATOMIC` | Atomic checkout (clone to temp dir then rename) |
 | `BUNDLE_GIT_ALWAYS_PULL` | Always pull even if path exists (if using branch heads) |
@@ -725,8 +727,10 @@ These values scope **bundle registries** and **control‑plane events**.
 | `BUNDLES_INCLUDE_EXAMPLES` | `1`     | Auto‑add example bundles from `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles`                                            | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_store.py`    |
 | `BUNDLES_FORCE_ENV_ON_STARTUP` | `0` | Force overwrite Redis registry from `AGENTIC_BUNDLES_JSON` (processor only)                     | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_store.py`    |
 | `BUNDLES_FORCE_ENV_LOCK_TTL_SECONDS` | `60` | Redis lock TTL for startup env reset                                                     | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_store.py`    |
-| `HOST_BUNDLES_PATH`      | _(unset)_ | Host path for bundle roots (git‑cloned or manually provisioned). Often mounted into containers. | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`      |
-| `AGENTIC_BUNDLES_ROOT`   | _(unset)_ | Container‑visible bundles root (path used by runtime inside container).                         | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`      |
+| `HOST_BUNDLES_PATH`      | _(unset)_ | Host path for local path bundles. Mounted into containers as `AGENTIC_BUNDLES_ROOT`. | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`      |
+| `HOST_GIT_BUNDLES_PATH`  | _(unset)_ | Optional host path for git-resolved bundle clones/cache. Mounted into containers as `AGENTIC_GIT_BUNDLES_ROOT`. | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`      |
+| `AGENTIC_BUNDLES_ROOT`   | _(unset)_ | Container‑visible root for local path bundles (normally `/bundles`).                         | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`      |
+| `AGENTIC_GIT_BUNDLES_ROOT` | _(unset)_ | Container-visible root for git-resolved bundles (normally `/git-bundles`). Falls back to legacy bundles root when unset. | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`      |
 | `BUNDLE_STORAGE_ROOT` | _(unset)_ | Shared local filesystem root for bundle data (used by ks:), default: `<bundles_root>/_bundle_storage`. | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_storage.py` |
 | `BUNDLE_GIT_ALWAYS_PULL` | `0`       | Force refresh on resolve                                                                        | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_registry.py` |
 | `BUNDLE_GIT_ATOMIC`      | `1`       | Atomic clone/update                                                                             | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`      |
@@ -768,8 +772,10 @@ platform property paths such as `role_models`, `embedding`,
 
 **Host vs container bundles root**
 
-- `HOST_BUNDLES_PATH` is typically defined in `.env` (docker‑compose) so the host path can be mounted (it does not need to be in `.env.proc`).
-- `AGENTIC_BUNDLES_ROOT` is defined in `.env.proc` so the service inside the container knows the path.
+- `HOST_BUNDLES_PATH` is typically defined in `.env` (docker‑compose) so the host path for local path bundles can be mounted (it does not need to be in `.env.proc`).
+- `HOST_GIT_BUNDLES_PATH` is the optional host path for git-resolved bundle clones/cache.
+- `AGENTIC_BUNDLES_ROOT` is the container root for local path bundles.
+- `AGENTIC_GIT_BUNDLES_ROOT` is the container root for git-resolved bundles.
 
 **Admin bundle**
 

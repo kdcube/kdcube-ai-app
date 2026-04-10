@@ -182,7 +182,10 @@ In particular:
 
 - `paths.host_bundles_path` becomes `HOST_BUNDLES_PATH` in compose env
 - proc mounts that host folder as `AGENTIC_BUNDLES_ROOT` (normally `/bundles`)
-- local bundles placed there and git-resolved bundles cloned by proc share the same root
+- local path bundles continue to use that root
+- `paths.host_git_bundles_path` optionally becomes `HOST_GIT_BUNDLES_PATH`
+- proc mounts that host folder as `AGENTIC_GIT_BUNDLES_ROOT` (normally `/git-bundles`)
+- if the dedicated git root is not configured, git bundles fall back to the legacy bundles root behavior
 - bundle entries in `bundles.yaml` must still point to the container-visible path such as `/bundles/my.bundle`
 
 Bundle definitions moved to `bundles.yaml`.

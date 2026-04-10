@@ -15,6 +15,7 @@ from typing import Optional, Dict, Any
 _REG_LOCK = threading.RLock()
 _REGISTRY: Dict[str, Dict[str, Any]] = {}
 _DEFAULT_ID: Optional[str] = None
+_MISSING_PATH_WARNED: set[tuple[str, str]] = set()
 logger = logging.getLogger(__name__)
 
 
@@ -131,6 +132,7 @@ def _apply_git_resolution(reg: Dict[str, Dict[str, Any]], source: str = "unknown
                 "Git bundle resolution skipped (component=%s). Only proc resolves git bundles.",
                 component,
             )
+        _warn_missing_local_path_bundles(reg, source=source)
         return reg
     enabled = os.environ.get("BUNDLE_GIT_RESOLUTION_ENABLED", "1").lower() in {"1", "true", "yes", "on"}
     repo_count = sum(1 for entry in reg.values() if entry.get("repo"))
@@ -143,7 +145,7 @@ def _apply_git_resolution(reg: Dict[str, Dict[str, Any]], source: str = "unknown
     try:
             from kdcube_ai_app.infra.plugin.git_bundle import (
                 ensure_git_bundle,
-                resolve_bundles_root,
+                resolve_git_bundles_root,
                 cleanup_old_git_bundles,
                 bundle_dir_for_git,
             )
@@ -194,7 +196,7 @@ def _apply_git_resolution(reg: Dict[str, Dict[str, Any]], source: str = "unknown
                 git_url=repo,
                 git_ref=entry.get("ref"),
                 git_subdir=entry.get("subdir"),
-                bundles_root=resolve_bundles_root(),
+                bundles_root=resolve_git_bundles_root(),
                 atomic=atomic,
             )
             entry = dict(entry)
@@ -223,7 +225,7 @@ def _apply_git_resolution(reg: Dict[str, Dict[str, Any]], source: str = "unknown
                 base_dir = bundle_dir_for_git(bid, entry.get("ref"), repo)
                 cleanup_old_git_bundles(
                     bundle_id=base_dir,
-                    bundles_root=resolve_bundles_root(),
+                    bundles_root=resolve_git_bundles_root(),
                     active_paths=get_local_active_paths(),
                 )
         except Exception:
@@ -246,7 +248,49 @@ def _apply_git_resolution(reg: Dict[str, Dict[str, Any]], source: str = "unknown
             skipped,
             failed,
         )
+    _warn_missing_local_path_bundles(out, source=source)
     return out
+
+
+def _warn_missing_bundle_path_once(*, bundle_id: str, path_val: str, source: str, repo: Optional[str] = None) -> None:
+    key = (bundle_id, path_val)
+    with _REG_LOCK:
+        if key in _MISSING_PATH_WARNED:
+            return
+        _MISSING_PATH_WARNED.add(key)
+    kind = "git bundle" if repo else "local-path bundle"
+    guidance = (
+        "Path-only bundles require a mounted bundles root and are not portable to cloud/"
+        "git-only deployments unless that path is explicitly provided."
+        if not repo
+        else "Ensure git bundles are prefetched during startup or registry updates."
+    )
+    logger.warning(
+        "Bundle path missing for bundle_id=%s path=%s source=%s kind=%s repo=%s. %s",
+        bundle_id,
+        path_val,
+        source,
+        kind,
+        repo or "<none>",
+        guidance,
+    )
+
+
+def _warn_missing_local_path_bundles(reg: Dict[str, Dict[str, Any]], *, source: str) -> None:
+    for entry in reg.values():
+        repo = (entry.get("repo") or "").strip()
+        path_val = (entry.get("path") or "").strip()
+        if repo or not path_val:
+            continue
+        try:
+            if not Path(path_val).exists():
+                _warn_missing_bundle_path_once(
+                    bundle_id=str(entry.get("id") or "<unknown>"),
+                    path_val=path_val,
+                    source=source,
+                )
+        except Exception:
+            continue
 
 def load_from_env() -> None:
     """
@@ -375,20 +419,18 @@ def resolve_bundle(bundle_id: Optional[str], override: Optional[Dict[str, Any]] 
     # sync/update (load_from_env/set_registry/upsert). Avoid pulling on every
     # request-level resolve.
     repo = spec_dict.get("repo")
-    if repo:
-        try:
-            from pathlib import Path as _Path
-            path_val = (spec_dict.get("path") or "").strip()
-            if path_val and not _Path(path_val).exists():
-                logger.warning(
-                    "Bundle path missing for bundle_id=%s (repo=%s, ref=%s). "
-                    "Ensure git bundles are prefetched during startup or registry updates.",
-                    spec_dict.get("id"),
-                    repo,
-                    spec_dict.get("ref"),
-                )
-        except Exception:
-            pass
+    try:
+        from pathlib import Path as _Path
+        path_val = (spec_dict.get("path") or "").strip()
+        if path_val and not _Path(path_val).exists():
+            _warn_missing_bundle_path_once(
+                bundle_id=str(spec_dict.get("id") or "<unknown>"),
+                path_val=path_val,
+                source="resolve_bundle",
+                repo=repo,
+            )
+    except Exception:
+        pass
 
     return BundleSpec(**spec_dict)
 

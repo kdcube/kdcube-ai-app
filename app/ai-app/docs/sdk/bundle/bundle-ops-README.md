@@ -89,7 +89,9 @@ bundles:
 Important:
 
 - proc sees `/bundles/...`, not raw host paths
-- local manual bundles and git-resolved bundles share the same `HOST_BUNDLES_PATH` root
+- local path bundles use `HOST_BUNDLES_PATH` and `/bundles/...`
+- git bundles use `HOST_GIT_BUNDLES_PATH` and `/git-bundles/...`
+- if `HOST_GIT_BUNDLES_PATH` is not configured, git bundles fall back to the legacy bundles root behavior
 - `--bundle-reload` is descriptor-authoritative: it reapplies the registry and descriptor-backed props from `bundles.yaml`, then clears proc bundle caches
 - use the admin props API only for temporary runtime-only overrides that you do not need to keep in the descriptor
 

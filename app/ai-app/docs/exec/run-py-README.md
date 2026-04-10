@@ -62,6 +62,8 @@ PY_CODE_EXEC_NETWORK_MODE=host
 HOST_EXEC_WORKSPACE_PATH=/abs/path/to/exec-workspace
 HOST_BUNDLES_PATH=/abs/path/to/bundles
 AGENTIC_BUNDLES_ROOT=/bundles
+HOST_GIT_BUNDLES_PATH=/abs/path/to/git-bundles   # optional dedicated git bundle cache root
+AGENTIC_GIT_BUNDLES_ROOT=/git-bundles
 HOST_BUNDLE_STORAGE_PATH=/abs/path/to/bundle-storage
 BUNDLE_STORAGE_ROOT=/bundle-storage
 ```
