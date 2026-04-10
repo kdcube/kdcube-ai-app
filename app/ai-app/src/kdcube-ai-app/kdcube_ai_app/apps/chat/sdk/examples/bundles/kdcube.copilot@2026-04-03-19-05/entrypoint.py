@@ -25,9 +25,9 @@
 # Knowledge space:
 #   The bundle can pull an ai-app root from a git repo (configured via bundle_props)
 #   or auto-discover a local ai-app root relative to the bundle.
-#   The knowledge resolver (knowledge/resolver.py) is loaded via importlib
-#   with a shared module name so that entrypoint.py and tools/react_tools.py
-#   both access the same KNOWLEDGE_ROOT state.
+#   The entrypoint keeps a dedicated resolver module instance for long-lived
+#   knowledge-space preparation state; tool modules import the same-bundle
+#   resolver normally and seed their own root from bound runtime context.
 
 from __future__ import annotations
 
