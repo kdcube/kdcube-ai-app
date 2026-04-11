@@ -6,7 +6,7 @@ tags: ["sdk", "bundle", "cron", "scheduled-jobs", "scheduler", "proc"]
 keywords: ["@cron", "cron decorator", "CronJobSpec", "BundleSchedulerManager", "span", "process", "instance", "system", "expr_config", "cron_expression", "scheduled jobs", "BUNDLES_YAML_DESCRIPTOR_PATH"]
 see_also:
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
-  - ks:docs/sdk/bundle/bundle-config-README.md
+  - ks:docs/sdk/bundle/bundle-props-secrets-README.md
   - ks:docs/sdk/bundle/bundle-index-README.md
 ---
 # Bundle Scheduled Jobs

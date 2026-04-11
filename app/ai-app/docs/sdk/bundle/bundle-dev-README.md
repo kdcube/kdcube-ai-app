@@ -8,7 +8,7 @@ see_also:
   - ks:docs/sdk/bundle/bundle-index-README.md
   - ks:docs/sdk/bundle/bundle-lifecycle-README.md
   - ks:docs/sdk/bundle/bundle-runtime-README.md
-  - ks:docs/sdk/bundle/bundle-config-README.md
+  - ks:docs/sdk/bundle/bundle-props-secrets-README.md
   - ks:docs/sdk/bundle/bundle-interfaces-README.md
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
   - ks:docs/sdk/bundle/bundle-ops-README.md
@@ -31,7 +31,7 @@ Read these first:
 - client communication contract for bundle UI/widgets/frontends:
   [docs/clients/client-communication-README.md](../../clients/client-communication-README.md)
 - bundle config and secrets:
-  [docs/sdk/bundle/bundle-config-README.md](bundle-config-README.md)
+  [docs/sdk/bundle/bundle-props-secrets-README.md](bundle-props-secrets-README.md)
 - primary full-feature reference bundle:
   [docs/sdk/bundle/bundle-reference-versatile-README.md](bundle-reference-versatile-README.md)
 - declarative platform integration (`@api`, `@ui_widget`, `@ui_main`, `@on_message`):

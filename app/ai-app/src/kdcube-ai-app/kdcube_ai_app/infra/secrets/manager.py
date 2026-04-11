@@ -295,6 +295,44 @@ def _bundle_secret_metadata(flattened: Mapping[str, str]) -> dict[str, str]:
     }
 
 
+def _parse_secret_mapping_payload(raw: str | None) -> dict[str, Any] | None:
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return {}
+    try:
+        parsed = json.loads(text)
+    except Exception:
+        try:
+            yaml = _yaml_module()
+            parsed = yaml.safe_load(text)
+        except Exception:
+            return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _resolve_nested_value(root: Any, path: str) -> Any:
+    parts = [part.strip() for part in str(path or "").split(".") if part.strip()]
+    if not parts:
+        return root
+    cursor: Any = root
+    for part in parts:
+        if isinstance(cursor, dict):
+            cursor = cursor.get(part)
+            if cursor is None:
+                return None
+            continue
+        if isinstance(cursor, list) and part.isdigit():
+            idx = int(part)
+            if idx < 0 or idx >= len(cursor):
+                return None
+            cursor = cursor[idx]
+            continue
+        return None
+    return cursor
+
+
 def _storage_backend_and_key_from_uri(storage_uri: str) -> tuple[str, str]:
     raw = str(storage_uri or "").strip()
     if not raw:
@@ -767,12 +805,21 @@ class SecretsServiceSecretsManager(ISecretsManager):
 
 class AwsSecretsManagerSecretsManager(ISecretsManager):
     provider_type = "aws-sm"
+    _LOCK_TTL_SECONDS = 30
+    _LOCK_WAIT_SECONDS = 10.0
 
     def __init__(self, config: SecretsManagerConfig) -> None:
+        import kdcube_ai_app.infra.namespaces as namespaces
+
         self._region = config.aws_region
         self._profile = config.aws_profile
         self._prefix = (config.aws_sm_prefix or "kdcube").strip("/") or "kdcube"
+        self._tenant = _first_non_empty(config.tenant) or "home"
+        self._project = _first_non_empty(config.project) or "default-project"
+        self._redis_url = _first_non_empty(config.redis_url)
+        self._lock_key_fmt = namespaces.CONFIG.BUNDLES.SECRETS_AWS_SM_LOCK_FMT
         self._client: Any | None = None
+        self._redis = None
         self._lock = threading.RLock()
 
     def _get_client(self):
@@ -791,23 +838,97 @@ class AwsSecretsManagerSecretsManager(ISecretsManager):
     def _secret_id(self, key: str) -> str:
         bundle_match = _split_bundle_secret_key(key)
         if bundle_match:
+            bundle_id, _tail = bundle_match
+            return f"{self._prefix}/bundles/{bundle_id}/secrets"
+        user_match = _split_user_secret_key(key)
+        if user_match:
+            user_id, bundle_id, _tail = user_match
+            if bundle_id:
+                return f"{self._prefix}/users/{user_id}/bundles/{bundle_id}/secrets"
+            return f"{self._prefix}/users/{user_id}/secrets"
+        return f"{self._prefix}/platform/secrets"
+
+    def _legacy_secret_id(self, key: str) -> str:
+        bundle_match = _split_bundle_secret_key(key)
+        if bundle_match:
             bundle_id, tail = bundle_match
-            tail = tail.replace(".", "/")
-            return f"{self._prefix}/bundles/{bundle_id}/secrets/{tail}"
+            return f"{self._prefix}/bundles/{bundle_id}/secrets/{tail.replace('.', '/')}"
+        user_match = _split_user_secret_key(key)
+        if user_match:
+            user_id, bundle_id, tail = user_match
+            if bundle_id:
+                return f"{self._prefix}/users/{user_id}/bundles/{bundle_id}/secrets/{tail.replace('.', '/')}"
+            return f"{self._prefix}/users/{user_id}/secrets/{tail.replace('.', '/')}"
         return f"{self._prefix}/{key.replace('.', '/')}"
+
+    def _aggregate_bundle_secret_id(self) -> str:
+        return f"{self._prefix}/bundles/secrets"
+
+    def _doc_lock_key(self, secret_id: str) -> str:
+        safe = str(secret_id or "").replace("/", ":")
+        return self._lock_key_fmt.format(
+            tenant=self._tenant,
+            project=self._project,
+            doc=safe,
+        )
 
     def _error_code(self, exc: Exception) -> str:
         response = getattr(exc, "response", None) or {}
         error = response.get("Error") if isinstance(response, dict) else {}
         return str((error or {}).get("Code") or "")
 
-    def get_secret(self, key: str) -> Optional[str]:
+    def _get_sync_redis(self):
+        if not self._redis_url:
+            return None
+        if self._redis is not None:
+            return self._redis
         try:
-            response = self._get_client().get_secret_value(SecretId=self._secret_id(key))
+            from kdcube_ai_app.infra.redis.client import get_sync_redis_client
+
+            self._redis = get_sync_redis_client(self._redis_url, decode_responses=True)
+        except Exception:
+            logger.debug("Failed to initialize sync Redis client for aws-sm provider", exc_info=True)
+            self._redis = None
+        return self._redis
+
+    def _acquire_distributed_lock(self, secret_id: str) -> tuple[Any, str] | tuple[None, None]:
+        redis = self._get_sync_redis()
+        if redis is None:
+            return None, None
+        token = uuid.uuid4().hex
+        lock_key = self._doc_lock_key(secret_id)
+        start = time.time()
+        while (time.time() - start) < self._LOCK_WAIT_SECONDS:
+            try:
+                acquired = bool(redis.set(lock_key, token, nx=True, ex=self._LOCK_TTL_SECONDS))
+            except Exception:
+                acquired = False
+            if acquired:
+                return redis, token
+            time.sleep(0.25)
+        raise SecretsManagerWriteError(f"Failed to acquire distributed aws-sm write lock for {secret_id}")
+
+    def _release_distributed_lock(self, redis, token: str | None, secret_id: str) -> None:
+        if redis is None or not token:
+            return
+        lock_key = self._doc_lock_key(secret_id)
+        try:
+            redis.eval(
+                "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+                1,
+                lock_key,
+                token,
+            )
+        except Exception:
+            logger.debug("Failed to release distributed aws-sm write lock", exc_info=True)
+
+    def _get_secret_string_by_id(self, secret_id: str, *, log_key: str) -> str | None:
+        try:
+            response = self._get_client().get_secret_value(SecretId=secret_id)
         except Exception as exc:
             if self._error_code(exc) == "ResourceNotFoundException":
                 return None
-            logger.warning("AWS Secrets Manager GET %s failed", key, exc_info=True)
+            logger.warning("AWS Secrets Manager GET %s failed", log_key, exc_info=True)
             return None
         if "SecretString" in response:
             value = response.get("SecretString")
@@ -819,12 +940,68 @@ class AwsSecretsManagerSecretsManager(ISecretsManager):
             return bytes(binary).decode("utf-8")
         return str(binary)
 
-    def can_write(self) -> bool:
-        return True
+    def _get_secret_mapping_by_id(self, secret_id: str, *, log_key: str) -> dict[str, Any] | None:
+        raw = self._get_secret_string_by_id(secret_id, log_key=log_key)
+        return _parse_secret_mapping_payload(raw)
 
-    def set_secret(self, key: str, value: str) -> None:
+    def _bundle_mapping_from_aggregate(self, bundle_id: str) -> dict[str, Any] | None:
+        payload = self._get_secret_mapping_by_id(
+            self._aggregate_bundle_secret_id(),
+            log_key=f"bundles.{bundle_id}.secrets",
+        )
+        if not isinstance(payload, dict):
+            return None
+        direct = payload.get(bundle_id)
+        if isinstance(direct, dict):
+            return direct
+        bundles_root = payload.get("bundles")
+        items = bundles_root.get("items") if isinstance(bundles_root, dict) else None
+        if isinstance(items, list):
+            item = _find_bundle_item([entry for entry in items if isinstance(entry, dict)], bundle_id)
+            secrets = item.get("secrets") if isinstance(item, dict) else None
+            if isinstance(secrets, dict):
+                return secrets
+        return None
+
+    def _virtual_metadata_value(self, key: str, payload: Mapping[str, Any]) -> str | None:
+        flattened: dict[str, str] = {}
+        _flatten_mapping("", payload, flattened)
+        if not flattened:
+            return None
+        bundle_match = _split_bundle_secret_key(key)
+        if bundle_match:
+            bundle_id, _tail = bundle_match
+            prefix = f"bundles.{bundle_id}.secrets"
+        else:
+            user_match = _split_user_secret_key(key)
+            if user_match:
+                user_id, bundle_id, _tail = user_match
+                if bundle_id:
+                    prefix = f"users.{user_id}.bundles.{bundle_id}.secrets"
+                else:
+                    prefix = f"users.{user_id}.secrets"
+            else:
+                prefix = ""
+        keys = [
+            f"{prefix}.{tail}" if prefix else tail
+            for tail in sorted(flattened.keys())
+            if tail != "__keys"
+        ]
+        return json.dumps(keys, ensure_ascii=False) if keys else None
+
+    def _load_grouped_payload_for_key(self, key: str) -> dict[str, Any] | None:
+        bundle_match = _split_bundle_secret_key(key)
+        if bundle_match:
+            bundle_id, _tail = bundle_match
+            payload = self._get_secret_mapping_by_id(self._secret_id(key), log_key=key)
+            if isinstance(payload, dict):
+                return payload
+            return self._bundle_mapping_from_aggregate(bundle_id)
+        payload = self._get_secret_mapping_by_id(self._secret_id(key), log_key=key)
+        return payload if isinstance(payload, dict) else None
+
+    def _put_secret_string_by_id(self, secret_id: str, value: str, *, key: str) -> None:
         client = self._get_client()
-        secret_id = self._secret_id(key)
         try:
             client.put_secret_value(SecretId=secret_id, SecretString=value)
             return
@@ -836,11 +1013,11 @@ class AwsSecretsManagerSecretsManager(ISecretsManager):
         except Exception as exc:
             raise SecretsManagerWriteError(f"aws-sm create failed for {key}") from exc
 
-    def delete_secret(self, key: str) -> None:
+    def _delete_secret_by_id(self, secret_id: str, *, key: str) -> None:
         client = self._get_client()
         try:
             client.delete_secret(
-                SecretId=self._secret_id(key),
+                SecretId=secret_id,
                 ForceDeleteWithoutRecovery=True,
             )
         except Exception as exc:
@@ -848,6 +1025,98 @@ class AwsSecretsManagerSecretsManager(ISecretsManager):
             if code in {"ResourceNotFoundException", "InvalidRequestException"}:
                 return
             raise SecretsManagerWriteError(f"aws-sm delete failed for {key}") from exc
+
+    def get_secret(self, key: str) -> Optional[str]:
+        payload = self._load_grouped_payload_for_key(key)
+        if key.endswith(".__keys"):
+            if isinstance(payload, dict):
+                metadata = self._virtual_metadata_value(key, payload)
+                if metadata:
+                    return metadata
+            return self._get_secret_string_by_id(self._legacy_secret_id(key), log_key=key)
+        if isinstance(payload, dict):
+            bundle_match = _split_bundle_secret_key(key)
+            if bundle_match:
+                _bundle_id, tail = bundle_match
+            else:
+                user_match = _split_user_secret_key(key)
+                if user_match:
+                    _user_id, _bundle_id, tail = user_match
+                else:
+                    tail = key
+            value = _resolve_nested_value(payload, tail)
+            if value is not None:
+                return str(value)
+        return self._get_secret_string_by_id(self._legacy_secret_id(key), log_key=key)
+
+    def can_write(self) -> bool:
+        return True
+
+    def set_secret(self, key: str, value: str) -> None:
+        if key.endswith(".__keys"):
+            return
+        self.set_many({key: value})
+
+    def delete_secret(self, key: str) -> None:
+        if key.endswith(".__keys"):
+            return
+        self.delete_many([key])
+
+    def _tail_for_key(self, key: str) -> str:
+        bundle_match = _split_bundle_secret_key(key)
+        if bundle_match:
+            _bundle_id, tail = bundle_match
+            return tail
+        user_match = _split_user_secret_key(key)
+        if user_match:
+            _user_id, _bundle_id, tail = user_match
+            return tail
+        return key
+
+    def set_many(self, values: Mapping[str, str]) -> None:
+        grouped: dict[str, dict[str, str]] = {}
+        for key, value in values.items():
+            if str(key).endswith(".__keys"):
+                continue
+            grouped.setdefault(self._secret_id(key), {})[key] = value
+        for secret_id, doc_values in grouped.items():
+            with self._lock:
+                redis, token = self._acquire_distributed_lock(secret_id)
+                try:
+                    payload = self._load_grouped_payload_for_key(next(iter(doc_values.keys()))) or {}
+                    for key, value in doc_values.items():
+                        _set_nested_value(payload, self._tail_for_key(key), value)
+                    self._put_secret_string_by_id(
+                        secret_id,
+                        json.dumps(payload, ensure_ascii=False),
+                        key=next(iter(doc_values.keys())),
+                    )
+                finally:
+                    self._release_distributed_lock(redis, token, secret_id)
+
+    def delete_many(self, keys: Iterable[str]) -> None:
+        grouped: dict[str, list[str]] = {}
+        for key in keys:
+            if str(key).endswith(".__keys"):
+                continue
+            grouped.setdefault(self._secret_id(key), []).append(key)
+        for secret_id, doc_keys in grouped.items():
+            with self._lock:
+                redis, token = self._acquire_distributed_lock(secret_id)
+                try:
+                    payload = self._load_grouped_payload_for_key(doc_keys[0]) or {}
+                    for key in doc_keys:
+                        _delete_nested_value(payload, self._tail_for_key(key))
+                    if payload:
+                        self._put_secret_string_by_id(
+                            secret_id,
+                            json.dumps(payload, ensure_ascii=False),
+                            key=doc_keys[0],
+                        )
+                    else:
+                        self._delete_secret_by_id(secret_id, key=doc_keys[0])
+                finally:
+                    self._release_distributed_lock(redis, token, secret_id)
 
 
 def build_secrets_manager_config(settings: Any | None = None) -> SecretsManagerConfig:

@@ -721,6 +721,59 @@ async def test_call_bundle_op_inner_enforces_public_header_secret(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_call_bundle_op_inner_logs_bundle_api_exceptions(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class _Workflow:
+        @api(method="POST", alias="explode", route="operations")
+        async def explode(self, **kwargs):
+            del kwargs
+            raise ValueError("boom")
+
+    async def _load_bundle_workflow(**kwargs):
+        del kwargs
+        return _Workflow(), SimpleNamespace(id="bundle.demo"), "tenant-a", "project-a"
+
+    def _logger_exception(msg, *args, **kwargs):
+        captured["msg"] = msg
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+
+    monkeypatch.setattr(integrations, "_load_bundle_workflow", _load_bundle_workflow)
+    monkeypatch.setattr(integrations.logger, "exception", _logger_exception)
+
+    with pytest.raises(integrations.HTTPException) as exc:
+        await integrations._call_bundle_op_inner(
+            tenant="tenant-a",
+            project="project-a",
+            bundle_id="bundle.demo",
+            payload=integrations.BundleSuggestionsRequest(),
+            request=_request(
+                method="POST",
+                path="/api/integrations/bundles/tenant-a/project-a/bundle.demo/operations/explode",
+            ),
+            operation="explode",
+            route="operations",
+            session=_session(),
+        )
+
+    assert exc.value.status_code == 500
+    assert exc.value.detail == "explode() failed: boom"
+    assert captured["msg"] == (
+        "Bundle operation failed tenant=%s project=%s bundle=%s route=%s method=%s operation=%s endpoint=%s"
+    )
+    assert captured["args"] == (
+        "tenant-a",
+        "project-a",
+        "bundle.demo",
+        "operations",
+        "POST",
+        "explode",
+        "explode",
+    )
+
+
+@pytest.mark.asyncio
 async def test_load_bundle_workflow_rejects_config_scope_override(monkeypatch):
     captured: dict[str, object] = {}
 
