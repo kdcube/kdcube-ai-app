@@ -5,10 +5,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import json
 import pathlib
 import traceback
+import uuid
 
 import time
 from datetime import datetime, timezone
@@ -57,6 +59,77 @@ class ContextBrowser:
         self._cache_min_blocks = max(1, int(cache_additional_min_blocks))
         self._cache_offset = max(1, int(cache_additional_offset))
         self._turn_log_cache: Dict[str, Dict[str, Any]] = {}
+        self._timeline_event_hooks: List[Any] = []
+        self._external_event_task: Optional[asyncio.Task] = None
+        self._external_event_stop: Optional[asyncio.Event] = None
+        self._external_listener_id: str = ""
+        self._external_listener_turn_id: str = ""
+
+    @property
+    def external_event_source(self):
+        return getattr(self._runtime_ctx, "external_event_source", None)
+
+    def add_timeline_event_hook(self, callback: Any) -> None:
+        if not callback:
+            return
+        self._timeline_event_hooks.append(callback)
+        if self._timeline is not None and (self._external_event_task is None or self._external_event_task.done()):
+            try:
+                asyncio.get_running_loop().create_task(self.start_external_event_listener())
+            except Exception:
+                pass
+
+    async def start_external_event_listener(self) -> None:
+        source = self.external_event_source
+        if source is None or self._timeline is None:
+            return
+        turn_id = str(self._runtime_ctx.turn_id or "").strip()
+        conversation_id = str(self._runtime_ctx.conversation_id or "").strip()
+        if not turn_id or not conversation_id:
+            return
+        if self._external_event_task and not self._external_event_task.done():
+            if self._external_listener_turn_id == turn_id:
+                return
+            await self.stop_external_event_listener()
+        self._external_listener_id = self._external_listener_id or f"listener_{uuid.uuid4().hex[:8]}"
+        self._external_listener_turn_id = turn_id
+        self._external_event_stop = asyncio.Event()
+        try:
+            await source.acquire_owner(
+                turn_id=turn_id,
+                bundle_id=str(self._runtime_ctx.bundle_id or ""),
+                listener_id=self._external_listener_id,
+            )
+        except Exception:
+            self.log.log("[timeline.external] failed to acquire owner lease\n" + traceback.format_exc(), "ERROR")
+            return
+        self._external_event_task = asyncio.create_task(
+            self._external_event_listener_loop(),
+            name=f"react-timeline-events:{conversation_id}:{turn_id}",
+        )
+
+    async def stop_external_event_listener(self) -> None:
+        task = self._external_event_task
+        stop_evt = self._external_event_stop
+        self._external_event_task = None
+        self._external_event_stop = None
+        self._external_listener_turn_id = ""
+        if stop_evt is not None:
+            stop_evt.set()
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                pass
+        source = self.external_event_source
+        if source is not None and self._external_listener_id:
+            try:
+                await source.release_owner(listener_id=self._external_listener_id)
+            except Exception:
+                pass
 
     async def load_timeline(
             self,
@@ -118,6 +191,11 @@ class ContextBrowser:
         # Back-compat: if sources_pool artifact missing, keep any sources_pool inside timeline payload.
 
         self._timeline = Timeline.from_payload(timeline_payload, runtime=self._runtime_ctx, svc=self.svc)
+        deferred_current_turn_blocks: List[Dict[str, Any]] = []
+        try:
+            deferred_current_turn_blocks = await self._fold_external_events_initial()
+        except Exception:
+            self.log.log(f"[timeline.load]: external event fold failure {traceback.format_exc()}", "ERROR")
         if not self._timeline.conversation_started_at:
             try:
                 self._timeline.set_conversation_started_at(self._runtime_ctx.started_at or "")
@@ -131,6 +209,12 @@ class ContextBrowser:
             )
         except Exception:
             pass
+        try:
+            if deferred_current_turn_blocks:
+                await self._timeline.contribute_async(deferred_current_turn_blocks)
+                self._timeline.write_local()
+        except Exception:
+            self.log.log(f"[timeline.load]: deferred current-turn external event fold failure {traceback.format_exc()}", "ERROR")
         if self._timeline.cache_last_touch_at is None and self._timeline.cache_last_ttl_seconds is None:
             try:
                 blocks = list(self._timeline.blocks or [])
@@ -203,6 +287,165 @@ class ContextBrowser:
                 await self._timeline.refresh_feedbacks(ctx_client=self.ctx_client, days=days)
         except Exception:
             self.log.log(f"[timeline.load]: refresh feedbacks failure {traceback.format_exc()}", "ERROR")
+        if self._timeline_event_hooks:
+            try:
+                await self.start_external_event_listener()
+            except Exception:
+                self.log.log(f"[timeline.load]: external event listener start failure {traceback.format_exc()}", "ERROR")
+
+    async def _external_event_listener_loop(self) -> None:
+        source = self.external_event_source
+        stop_evt = self._external_event_stop
+        if source is None or stop_evt is None:
+            return
+        poll_seconds = 1.0
+        while not stop_evt.is_set():
+            try:
+                await source.refresh_owner(
+                    listener_id=self._external_listener_id,
+                    turn_id=str(self._runtime_ctx.turn_id or ""),
+                    bundle_id=str(self._runtime_ctx.bundle_id or ""),
+                )
+                changed = await self._fold_external_events(call_hooks=True)
+                if changed and self._timeline is not None:
+                    self._timeline.write_local()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                self.log.log(f"[timeline.external]: listener loop failure {traceback.format_exc()}", "ERROR")
+            try:
+                await asyncio.wait_for(stop_evt.wait(), timeout=poll_seconds)
+            except asyncio.TimeoutError:
+                continue
+
+    async def drain_external_events(self, *, call_hooks: bool) -> int:
+        if self._timeline is None:
+            return 0
+        changed = await self._fold_external_events(call_hooks=call_hooks)
+        if changed:
+            self._timeline.write_local()
+        return int(changed or 0)
+
+    async def _fold_external_events_initial(self) -> List[Dict[str, Any]]:
+        source = self.external_event_source
+        if source is None or self._timeline is None:
+            return []
+        last_cursor = self._timeline.last_external_event_id or int(self._timeline.last_external_event_seq or 0)
+        events = await source.read_since(last_cursor)
+        if not events:
+            return []
+        current_turn_id = str(self._runtime_ctx.turn_id or "").strip()
+        deferred_current_turn_blocks: List[Dict[str, Any]] = []
+        max_seq = int(self._timeline.last_external_event_seq or 0)
+        max_cursor = str(self._timeline.last_external_event_id or "")
+        for event in events:
+            blocks = self._blocks_from_external_event(event)
+            max_seq = max(max_seq, int(getattr(event, "sequence", 0) or 0))
+            if getattr(event, "stream_id", None):
+                max_cursor = str(getattr(event, "stream_id", "") or max_cursor)
+            if not blocks:
+                continue
+            event_turn_id = (
+                str(getattr(event, "owner_turn_id", "") or "").strip()
+                or str(getattr(event, "active_turn_id_at_ingress", "") or "").strip()
+            )
+            if current_turn_id and event_turn_id == current_turn_id:
+                deferred_current_turn_blocks.extend(blocks)
+            else:
+                await self._timeline.contribute_async(blocks)
+        self._timeline.last_external_event_id = max_cursor
+        self._timeline.last_external_event_seq = max_seq
+        if self._timeline.blocks:
+            self._timeline.write_local()
+        return deferred_current_turn_blocks
+
+    async def _fold_external_events(self, *, call_hooks: bool) -> int:
+        source = self.external_event_source
+        if source is None or self._timeline is None:
+            return 0
+        from kdcube_ai_app.apps.chat.external_events import ConversationExternalEvent
+
+        last_cursor = self._timeline.last_external_event_id or int(self._timeline.last_external_event_seq or 0)
+        events = await source.read_since(last_cursor)
+        if not events:
+            return 0
+        added = 0
+        for event in events:
+            if not isinstance(event, ConversationExternalEvent):
+                continue
+            blocks = self._blocks_from_external_event(event)
+            stream_id = str(getattr(event, "stream_id", "") or "")
+            if not blocks:
+                if stream_id:
+                    self._timeline.last_external_event_id = stream_id
+                self._timeline.last_external_event_seq = max(
+                    int(self._timeline.last_external_event_seq or 0),
+                    int(event.sequence or 0),
+                )
+                continue
+            await self._timeline.contribute_async(blocks)
+            if stream_id:
+                self._timeline.last_external_event_id = stream_id
+            self._timeline.last_external_event_seq = max(
+                int(self._timeline.last_external_event_seq or 0),
+                int(event.sequence or 0),
+            )
+            added += len(blocks)
+            if call_hooks:
+                await self._emit_timeline_event_hooks(type=str(event.kind or "external"), event=event, blocks=blocks)
+        return added
+
+    async def _emit_timeline_event_hooks(self, *, type: str, event: Any, blocks: List[Dict[str, Any]]) -> None:
+        hooks = list(self._timeline_event_hooks or [])
+        for callback in hooks:
+            try:
+                result = callback(type=type, event=event, blocks=list(blocks))
+                if asyncio.iscoroutine(result):
+                    await result
+            except Exception:
+                self.log.log(f"[timeline.external]: hook failure {traceback.format_exc()}", "ERROR")
+
+    def _blocks_from_external_event(self, event: Any) -> List[Dict[str, Any]]:
+        if self._timeline is None:
+            return []
+        kind = str(getattr(event, "kind", "") or "").strip().lower()
+        if kind not in {"followup", "steer"}:
+            return []
+        turn_id = (
+            str(getattr(event, "owner_turn_id", "") or "").strip()
+            or str(getattr(event, "active_turn_id_at_ingress", "") or "").strip()
+            or str(getattr(event, "target_turn_id", "") or "").strip()
+            or str(self._runtime_ctx.turn_id or "").strip()
+        )
+        path = f"ar:{turn_id}.external.{kind}.{getattr(event, 'message_id', '')}" if turn_id else ""
+        meta = {
+            "event_kind": kind,
+            "message_id": str(getattr(event, "message_id", "") or ""),
+            "stream_id": str(getattr(event, "stream_id", "") or ""),
+            "sequence": int(getattr(event, "sequence", 0) or 0),
+            "target_turn_id": getattr(event, "target_turn_id", None),
+            "active_turn_id_at_ingress": getattr(event, "active_turn_id_at_ingress", None),
+            "owner_turn_id": getattr(event, "owner_turn_id", None),
+            "explicit": bool(getattr(event, "explicit", False)),
+            "source": str(getattr(event, "source", "") or ""),
+        }
+        payload = getattr(event, "payload", None) or {}
+        if isinstance(payload, dict) and payload:
+            meta["payload"] = dict(payload)
+        text = str(getattr(event, "text", "") or "").strip()
+        if not text and isinstance(payload, dict):
+            text = str(payload.get("message") or payload.get("text") or "").strip()
+        block = self._timeline.block(
+            type="user.followup" if kind == "followup" else "user.steer",
+            author="user",
+            turn_id=turn_id,
+            ts=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(float(getattr(event, "created_at", 0.0) or time.time()))),
+            mime="text/markdown",
+            text=text,
+            path=path,
+            meta=meta,
+        )
+        return [block]
 
     @property
     def feedback_updates(self) -> List[Dict[str, Any]]:

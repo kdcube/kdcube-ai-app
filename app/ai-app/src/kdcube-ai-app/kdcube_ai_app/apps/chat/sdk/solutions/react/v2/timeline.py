@@ -81,6 +81,8 @@ def build_timeline_payload(
     sources_pool: Optional[List[Dict[str, Any]]] = None,
     conversation_title: Optional[str] = None,
     conversation_started_at: Optional[str] = None,
+    last_external_event_id: Optional[str] = None,
+    last_external_event_seq: Optional[int] = None,
     cache_last_touch_at: Optional[int] = None,
     cache_last_ttl_seconds: Optional[int] = None,
     last_known_feedback_ts: Optional[str] = None,
@@ -96,6 +98,8 @@ def build_timeline_payload(
         "conversation_title": conversation_title or "",
         "conversation_started_at": conversation_started_at or "",
         "last_activity_at": last_activity_at or "",
+        "last_external_event_id": last_external_event_id or "",
+        "last_external_event_seq": last_external_event_seq,
         "cache_last_touch_at": cache_last_touch_at,
         "cache_last_ttl_seconds": cache_last_ttl_seconds,
         "last_known_feedback_ts": last_known_feedback_ts or "",
@@ -111,6 +115,17 @@ def parse_timeline_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     sources_pool = payload.get("sources_pool")
     if not isinstance(sources_pool, list):
         sources_pool = []
+    last_external_event_id = payload.get("last_external_event_id")
+    if isinstance(last_external_event_id, str):
+        last_external_event_id = last_external_event_id.strip()
+    else:
+        last_external_event_id = ""
+    last_external_event_seq = payload.get("last_external_event_seq")
+    if last_external_event_seq is not None:
+        try:
+            last_external_event_seq = int(last_external_event_seq)
+        except Exception:
+            last_external_event_seq = None
     turn_ids = payload.get("turn_ids")
     if not isinstance(turn_ids, list) or not turn_ids:
         turn_ids = extract_turn_ids_from_blocks(blocks)
@@ -140,6 +155,8 @@ def parse_timeline_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         "conversation_title": payload.get("conversation_title") or "",
         "conversation_started_at": payload.get("conversation_started_at") or "",
         "last_activity_at": payload.get("last_activity_at") or "",
+        "last_external_event_id": last_external_event_id or "",
+        "last_external_event_seq": last_external_event_seq,
         "cache_last_touch_at": cache_last_touch_at,
         "cache_last_ttl_seconds": cache_last_ttl_seconds,
         "last_known_feedback_ts": last_known_feedback_ts,
@@ -830,6 +847,8 @@ class Timeline:
     current_turn_offset: Optional[int] = None
     conversation_title: str = ""
     conversation_started_at: str = ""
+    last_external_event_id: str = ""
+    last_external_event_seq: Optional[int] = None
     cache_last_touch_at: Optional[int] = None
     cache_last_ttl_seconds: Optional[int] = None
     last_known_feedback_ts: str = ""
@@ -860,6 +879,8 @@ class Timeline:
             sources_pool=list(parsed.get("sources_pool") or []),
             conversation_title=str(parsed.get("conversation_title") or ""),
             conversation_started_at=str(parsed.get("conversation_started_at") or ""),
+            last_external_event_id=str(parsed.get("last_external_event_id") or ""),
+            last_external_event_seq=parsed.get("last_external_event_seq"),
             cache_last_touch_at=parsed.get("cache_last_touch_at"),
             cache_last_ttl_seconds=parsed.get("cache_last_ttl_seconds"),
             last_known_feedback_ts=parsed.get("last_known_feedback_ts") or "",
@@ -871,6 +892,8 @@ class Timeline:
             sources_pool=list(self.sources_pool or []),
             conversation_title=self.conversation_title,
             conversation_started_at=self.conversation_started_at,
+            last_external_event_id=self.last_external_event_id,
+            last_external_event_seq=self.last_external_event_seq,
             cache_last_touch_at=self.cache_last_touch_at,
             cache_last_ttl_seconds=self.cache_last_ttl_seconds,
             last_known_feedback_ts=self.last_known_feedback_ts,
@@ -895,6 +918,8 @@ class Timeline:
                 sources_pool=_compact_sources_pool_for_index(self.sources_pool or []),
                 conversation_title=self.conversation_title,
                 conversation_started_at=self.conversation_started_at,
+                last_external_event_id=self.last_external_event_id,
+                last_external_event_seq=self.last_external_event_seq,
                 cache_last_touch_at=self.cache_last_touch_at,
                 cache_last_ttl_seconds=self.cache_last_ttl_seconds,
                 last_known_feedback_ts=self.last_known_feedback_ts,
@@ -2624,6 +2649,21 @@ class Timeline:
                 if text:
                     lines.append(text)
                 text = "\n".join(lines).strip()
+            elif btype in {"user.followup", "user.steer"}:
+                lines = []
+                ts_line = _ts_line(ts)
+                if ts_line:
+                    lines.append(ts_line)
+                lines.append("[FOLLOWUP DURING TURN]" if btype == "user.followup" else "[STEER DURING TURN]")
+                if path:
+                    lines.append(f"[path: {path}]")
+                if isinstance(meta, dict):
+                    target_turn = str(meta.get("target_turn_id") or "").strip()
+                    if target_turn:
+                        lines.append(f"[target_turn_id: {target_turn}]")
+                if text:
+                    lines.append(text)
+                text = "\n".join(lines).strip()
             elif btype == "assistant.completion":
                 lines = ["[ASSISTANT MESSAGE]"]
                 if ts:
@@ -3032,6 +3072,8 @@ class Timeline:
             sources_pool=_compact_sources_pool_for_index(self.sources_pool or []),
             conversation_title=self.conversation_title,
             conversation_started_at=self.conversation_started_at,
+            last_external_event_id=self.last_external_event_id,
+            last_external_event_seq=self.last_external_event_seq,
             cache_last_touch_at=self.cache_last_touch_at,
             cache_last_ttl_seconds=self.cache_last_ttl_seconds,
             last_known_feedback_ts=self.last_known_feedback_ts,

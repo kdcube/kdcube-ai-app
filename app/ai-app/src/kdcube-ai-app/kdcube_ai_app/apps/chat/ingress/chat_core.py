@@ -16,6 +16,7 @@ from fastapi import Request  # only if you put this in a place where FastAPI is 
 
 from kdcube_ai_app.apps.chat.sdk.config import get_settings
 from kdcube_ai_app.apps.chat.continuations import RedisConversationContinuationSource
+from kdcube_ai_app.apps.chat.external_events import build_conversation_external_event_source
 from kdcube_ai_app.apps.chat.sdk.util import _iso
 from kdcube_ai_app.auth.sessions import RequestContext, UserType, UserSession
 from kdcube_ai_app.apps.chat.emitters import ChatRelayCommunicator, ChatCommunicator
@@ -513,6 +514,79 @@ async def process_chat_message(
                     target_turn_id=target_turn_id,
                     active_turn_id=active_turn,
                 )
+                external_event_source = None
+                redis_async = getattr(app.state, "redis_async", None)
+                if redis_async is not None:
+                    external_event_source = build_conversation_external_event_source(
+                        redis=redis_async,
+                        tenant=tenant_id,
+                        project=project_id,
+                        conversation_id=conversation_id,
+                    )
+                owner = await external_event_source.get_owner() if external_event_source is not None else None
+                owner_turn_id = str(owner.turn_id or "").strip() if owner else ""
+                if external_event_source is not None:
+                    env = await external_event_source.publish(
+                        kind=continuation_kind,
+                        explicit=continuation_explicit,
+                        target_turn_id=target_turn_id,
+                        active_turn_id_at_ingress=active_turn,
+                        owner_turn_id=owner_turn_id,
+                        source=f"ingress.{ingress.transport}",
+                        text=text,
+                        payload={"message": text},
+                        task_payload=payload.model_dump(),
+                    )
+                    try:
+                        if owner_turn_id and active_turn and owner_turn_id == str(active_turn):
+                            await comm.service_event(
+                                type="timeline.external.accepted",
+                                step="timeline.external",
+                                status="completed",
+                                title="External timeline event accepted",
+                                agent="ingress",
+                                data={
+                                    "message_kind": continuation_kind,
+                                    "active_turn_id": active_turn,
+                                    "event_id": env.message_id,
+                                    "event_sequence": env.sequence,
+                                    "target_turn_id": target_turn_id,
+                                    "live_owner_detected": True,
+                                },
+                            )
+                        else:
+                            await comm.service_event(
+                                type="queue.continuation.accepted",
+                                step="queue.continuation",
+                                status="completed",
+                                title="Continuation accepted",
+                                agent="ingress",
+                                data={
+                                    "message_kind": continuation_kind,
+                                    "active_turn_id": active_turn,
+                                    "queued_turn_id": payload.routing.turn_id,
+                                    "task_id": payload.meta.task_id,
+                                    "continuation_message_id": env.message_id,
+                                    "external_event_sequence": env.sequence,
+                                    "live_owner_detected": False,
+                                },
+                            )
+                    except Exception:
+                        logger.debug("Failed to emit external continuation accepted", exc_info=True)
+                    return IngressResult(
+                        ok=True,
+                        task_id=task_id,
+                        conversation_id=conversation_id,
+                        turn_id=turn_id,
+                        session_id=session.session_id,
+                        user_type=session.user_type.value,
+                        queue_stats={
+                            "external_event_sequence": env.sequence,
+                            "live_owner_detected": bool(owner_turn_id and active_turn and owner_turn_id == str(active_turn)),
+                        },
+                        reason=f"{continuation_kind}_accepted",
+                        continuation_kind=continuation_kind,
+                    )
                 continuation_source = RedisConversationContinuationSource(
                     redis=getattr(app.state, "redis_async", None),
                     tenant=tenant_id,
