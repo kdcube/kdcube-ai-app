@@ -62,14 +62,27 @@ def _log_secret_status(key: str, value: str | None, source: str | None) -> None:
 
 def _resolve_current_bundle_id() -> str | None:
     try:
-        from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import get_current_request_context
+        from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import (
+            get_current_bundle_id,
+            get_current_request_context,
+        )
 
         ctx = get_current_request_context()
     except Exception:
         ctx = None
-    if ctx is None:
-        return None
-    return str(getattr(getattr(ctx, "routing", None), "bundle_id", None) or "").strip() or None
+        get_current_bundle_id = lambda: None  # type: ignore[assignment]
+    if ctx is not None:
+        bundle_id = str(getattr(getattr(ctx, "routing", None), "bundle_id", None) or "").strip()
+        if bundle_id:
+            return bundle_id
+    bundle_id = str(get_current_bundle_id() or "").strip()
+    if bundle_id:
+        return bundle_id
+    for env_key in ("KDCUBE_BUNDLE_ID", "AGENTIC_BUNDLE_ID", "BUNDLE_ID"):
+        env_val = str(os.getenv(env_key) or "").strip()
+        if env_val:
+            return env_val
+    return None
 
 
 def _normalize_secret_lookup_key(key: str) -> str:
