@@ -171,6 +171,10 @@ class RedisConversationExternalEventSource:
         return f"{self.log_key}:claim:{str(message_id or '').strip()}"
 
     @property
+    def promotion_cursor_key(self) -> str:
+        return f"{self.log_key}:promotion-cursor"
+
+    @property
     def owner_key(self) -> str:
         base = ns_key(REDIS.CHAT.CONVERSATION_TIMELINE_OWNER_PREFIX, tenant=self.tenant, project=self.project)
         return f"{base}:{self.conversation_id}"
@@ -223,25 +227,59 @@ class RedisConversationExternalEventSource:
                 break
         return out
 
+    async def wait_for_events_after(
+        self,
+        cursor: str | int | None,
+        *,
+        block_ms: int = 3000,
+        limit: Optional[int] = None,
+    ) -> List[ConversationExternalEvent]:
+        raw_items = await self._stream_wait_for_after(cursor, block_ms=block_ms, limit=limit)
+        out: List[ConversationExternalEvent] = []
+        for raw in raw_items or []:
+            try:
+                item = await self._read_event_ref(raw)
+            except Exception:
+                continue
+            if item is None:
+                continue
+            out.append(item)
+            if limit is not None and len(out) >= int(limit):
+                break
+        return out
+
     async def claim_next_promotable(
         self,
         *,
         claimant_id: str,
         ttl_seconds: int = 120,
     ) -> Optional[ConversationExternalEvent]:
-        raw_items = await self._stream_read_all()
+        cursor = await self._get_promotion_cursor()
+        raw_items = await self._stream_read_since(cursor, limit=200)
+        last_terminal_stream_id = str(cursor or "")
         for raw in raw_items or []:
             item = await self._read_event_ref(raw)
             if item is None:
                 continue
+            stream_id = str(item.stream_id or "")
             if item.failed_at is not None:
+                if stream_id:
+                    last_terminal_stream_id = stream_id
                 continue
             if item.task_payload is None:
+                if stream_id:
+                    last_terminal_stream_id = stream_id
                 continue
             if item.promoted_at is not None:
+                if stream_id:
+                    last_terminal_stream_id = stream_id
                 continue
             if item.consumed_at is not None:
+                if stream_id:
+                    last_terminal_stream_id = stream_id
                 continue
+            if last_terminal_stream_id:
+                await self._advance_promotion_cursor(last_terminal_stream_id)
             if not await self._claim_event(item.message_id, claimant_id=claimant_id, ttl_seconds=ttl_seconds):
                 continue
             latest = await self.get_event(item.message_id)
@@ -249,9 +287,15 @@ class RedisConversationExternalEventSource:
                 await self.release_claim(message_id=item.message_id, claimant_id=claimant_id)
                 continue
             if latest.failed_at is not None or latest.promoted_at is not None or latest.consumed_at is not None:
+                if latest.stream_id:
+                    await self._advance_promotion_cursor(str(latest.stream_id))
                 await self.release_claim(message_id=item.message_id, claimant_id=claimant_id)
                 continue
             return latest
+        if raw_items:
+            tail = await self._read_event_ref(raw_items[-1])
+            if tail is not None and tail.stream_id:
+                await self._advance_promotion_cursor(str(tail.stream_id))
         return None
 
     async def get_event(self, message_id: str) -> Optional[ConversationExternalEvent]:
@@ -281,6 +325,8 @@ class RedisConversationExternalEventSource:
         event.promoted_at = time.time()
         event.promoted_task_id = str(task_id or "")
         await self._write_event(event)
+        if event.stream_id:
+            await self._advance_promotion_cursor(str(event.stream_id))
         await self.release_claim(message_id=message_id, claimant_id=claimant_id)
         return event
 
@@ -292,6 +338,8 @@ class RedisConversationExternalEventSource:
         event.failed_at = time.time()
         event.failed_reason = str(reason or "failed")
         await self._write_event(event)
+        if event.stream_id:
+            await self._advance_promotion_cursor(str(event.stream_id))
         await self.release_claim(message_id=message_id, claimant_id=claimant_id)
         return event
 
@@ -301,6 +349,7 @@ class RedisConversationExternalEventSource:
             return 0
         updated = 0
         raw_items = await self._stream_read_all()
+        max_stream_id = ""
         for raw in raw_items or []:
             item = await self._read_event_ref(raw)
             if item is None:
@@ -314,7 +363,11 @@ class RedisConversationExternalEventSource:
             item.consumed_at = time.time()
             item.consumed_by_turn_id = str(turn_id or "")
             await self._write_event(item)
+            if item.stream_id:
+                max_stream_id = str(item.stream_id)
             updated += 1
+        if max_stream_id:
+            await self._advance_promotion_cursor(max_stream_id)
         return updated
 
     async def get_owner(self) -> Optional[TimelineOwnerLease]:
@@ -453,6 +506,28 @@ class RedisConversationExternalEventSource:
         )
         return True
 
+    async def _get_promotion_cursor(self) -> str:
+        raw = await self.redis.get(self.promotion_cursor_key)
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8")
+        return str(raw or "").strip()
+
+    async def _advance_promotion_cursor(self, stream_id: str) -> None:
+        stream_id = str(stream_id or "").strip()
+        if not stream_id:
+            return
+        current = await self._get_promotion_cursor()
+        if current and self._compare_stream_ids(stream_id, current) <= 0:
+            return
+        setter = getattr(self.redis, "set", None)
+        if callable(setter):
+            try:
+                await setter(self.promotion_cursor_key, stream_id)
+                return
+            except TypeError:
+                pass
+        await self.redis.setex(self.promotion_cursor_key, 315360000, stream_id)
+
     async def _append_to_stream(self, event: ConversationExternalEvent) -> str:
         fields = {"message_id": str(event.message_id or "")}
         xadd = getattr(self.redis, "xadd", None)
@@ -506,6 +581,65 @@ class RedisConversationExternalEventSource:
                     break
             return out
         return list(raw_items or [])
+
+    async def _stream_wait_for_after(self, cursor: str | int | None, *, block_ms: int, limit: Optional[int] = None) -> List[Any]:
+        xread = getattr(self.redis, "xread", None)
+        if callable(xread):
+            if isinstance(cursor, str) and "-" in cursor:
+                start_id = cursor
+            elif cursor not in (None, "", 0, "0"):
+                return await self._stream_read_since(cursor, limit=limit)
+            else:
+                start_id = "$"
+            response = await xread(
+                {self.log_key: start_id},
+                count=limit,
+                block=max(1, int(block_ms or 1)),
+            )
+            return self._flatten_xread_response(response)
+        sleep_seconds = max(0.05, float(block_ms or 0) / 1000.0)
+        await _sleep_async(sleep_seconds)
+        return await self._stream_read_since(cursor, limit=limit)
+
+    def _flatten_xread_response(self, response: Any) -> List[Any]:
+        if not response:
+            return []
+        out: List[Any] = []
+        if isinstance(response, dict):
+            for items in response.values():
+                if isinstance(items, list):
+                    out.extend(items)
+            return out
+        if isinstance(response, list):
+            for entry in response:
+                if isinstance(entry, (tuple, list)) and len(entry) == 2:
+                    items = entry[1]
+                    if isinstance(items, list):
+                        out.extend(items)
+            return out
+        return []
+
+    def _compare_stream_ids(self, left: str, right: str) -> int:
+        def _parts(value: str) -> tuple[int, int]:
+            try:
+                first, second = str(value or "").split("-", 1)
+                return int(first), int(second)
+            except Exception:
+                return 0, 0
+
+        l = _parts(left)
+        r = _parts(right)
+        if l < r:
+            return -1
+        if l > r:
+            return 1
+        return 0
+
+
+async def _sleep_async(seconds: float) -> None:
+    import asyncio
+
+    await asyncio.sleep(seconds)
 
 
 def build_conversation_external_event_source(*, redis, tenant: str, project: str, conversation_id: str) -> RedisConversationExternalEventSource:

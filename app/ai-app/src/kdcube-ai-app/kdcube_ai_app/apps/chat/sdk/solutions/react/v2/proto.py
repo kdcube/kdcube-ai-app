@@ -108,6 +108,7 @@ class RuntimeCtx:
     knowledge_read_fn: Optional[KnowledgeReadFn] = None
     model_service: Optional[Any] = None
     continuation_source: Optional[Any] = None
+    external_event_source: Optional[Any] = None
     on_before_compaction: Optional[Callable[[Dict[str, Any]], Awaitable[None]]] = None
     on_after_compaction: Optional[Callable[[Dict[str, Any]], Awaitable[None]]] = None
     save_summary: Optional[Callable[[Dict[str, Any]], Awaitable[None]]] = None
