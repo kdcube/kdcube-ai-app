@@ -7,7 +7,7 @@ keywords: ["agentic_workflow", "on_bundle_load", "execute_core", "pre_run_hook",
 see_also:
   - ks:docs/sdk/bundle/bundle-dev-README.md
   - ks:docs/sdk/bundle/bundle-runtime-README.md
-  - ks:docs/sdk/bundle/bundle-config-README.md
+  - ks:docs/sdk/bundle/bundle-props-secrets-README.md
   - ks:docs/sdk/bundle/bundle-storage-cache-README.md
   - ks:docs/sdk/bundle/bundle-knowledge-space-README.md
   - ks:docs/sdk/bundle/bundle-interfaces-README.md

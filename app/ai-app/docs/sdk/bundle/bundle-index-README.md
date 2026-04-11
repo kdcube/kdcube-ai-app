@@ -9,7 +9,7 @@ see_also:
   - ks:docs/sdk/bundle/bundle-reference-versatile-README.md
   - ks:docs/sdk/bundle/bundle-lifecycle-README.md
   - ks:docs/sdk/bundle/bundle-runtime-README.md
-  - ks:docs/sdk/bundle/bundle-config-README.md
+  - ks:docs/sdk/bundle/bundle-props-secrets-README.md
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
   - ks:docs/sdk/bundle/bundle-scheduled-jobs-README.md
 ---
@@ -37,7 +37,7 @@ Use this as the **docs start point** when building, repairing, or reviewing a bu
 | Minimal bundle contract | [[docs/sdk/bundle/bundle-dev-README.md](bundle-dev-README.md)](bundle-dev-README.md) | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/entrypoint.py`, `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/orchestrator/workflow.py` |
 | Bundle lifecycle + instance model | [[docs/sdk/bundle/bundle-lifecycle-README.md](bundle-lifecycle-README.md)](bundle-lifecycle-README.md) | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/entrypoint.py` |
 | Runtime surfaces across REST, SSE, tools, and iso runtime | [[docs/sdk/bundle/bundle-runtime-README.md](bundle-runtime-README.md)](bundle-runtime-README.md) | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/integrations.py`, `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/web_app.py`, `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/tool_subsystem.py`, `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/bootstrap.py` |
-| Config, secrets, reserved platform props | [[docs/sdk/bundle/bundle-config-README.md](bundle-config-README.md)](bundle-config-README.md), [[docs/sdk/bundle/bundle-platform-properties-README.md](bundle-platform-properties-README.md)](bundle-platform-properties-README.md) | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/entrypoint.py` |
+| Config, secrets, reserved platform props | [[docs/sdk/bundle/bundle-props-secrets-README.md](bundle-props-secrets-README.md)](bundle-props-secrets-README.md), [[docs/sdk/bundle/bundle-platform-properties-README.md](bundle-platform-properties-README.md)](bundle-platform-properties-README.md) | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/entrypoint.py` |
 | Custom tools + MCP | [[docs/sdk/tools/custom-tools-README.md](../tools/custom-tools-README.md)](../tools/custom-tools-README.md) | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/tools_descriptor.py`, `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/tools/preference_tools.py` |
 | Custom skills | [[docs/sdk/skills/custom-skills-README.md](../skills/custom-skills-README.md)](../skills/custom-skills-README.md) | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/skills_descriptor.py`, `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/skills/product/preferences/SKILL.md` |
 | Storage, cache, bundle state | [[docs/sdk/bundle/bundle-storage-cache-README.md](bundle-storage-cache-README.md)](bundle-storage-cache-README.md) | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/preferences_store.py` |
@@ -76,8 +76,8 @@ Why this is the primary reference:
   [[docs/sdk/bundle/bundle-lifecycle-README.md](bundle-lifecycle-README.md)](bundle-lifecycle-README.md)
 - Runtime surfaces across entrypoints, tools, and isolation:
   [[docs/sdk/bundle/bundle-runtime-README.md](bundle-runtime-README.md)](bundle-runtime-README.md)
-- Bundle configuration and secrets:
-  [[docs/sdk/bundle/bundle-config-README.md](bundle-config-README.md)](bundle-config-README.md)
+- Bundle props and secrets:
+  [[docs/sdk/bundle/bundle-props-secrets-README.md](bundle-props-secrets-README.md)](bundle-props-secrets-README.md)
 - Reserved platform property paths:
   [[docs/sdk/bundle/bundle-platform-properties-README.md](bundle-platform-properties-README.md)](bundle-platform-properties-README.md)
 - Shared local storage, backend storage, and cache:

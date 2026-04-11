@@ -60,9 +60,40 @@ def _log_secret_status(key: str, value: str | None, source: str | None) -> None:
         _SECRET_LOG.warning("Secret %s not set", key)
 
 
+def _resolve_current_bundle_id() -> str | None:
+    try:
+        from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import get_current_request_context
+
+        ctx = get_current_request_context()
+    except Exception:
+        ctx = None
+    if ctx is None:
+        return None
+    return str(getattr(getattr(ctx, "routing", None), "bundle_id", None) or "").strip() or None
+
+
+def _normalize_secret_lookup_key(key: str) -> str:
+    raw = str(key or "").strip()
+    if not raw:
+        return raw
+    if raw.startswith("a:") or raw.startswith("assembly:"):
+        return raw.split(":", 1)[1].strip()
+    if raw.startswith("b:") or raw.startswith("bundles:"):
+        tail = raw.split(":", 1)[1].strip().strip(".")
+        if not tail:
+            return raw
+        bundle_id = _resolve_current_bundle_id()
+        if not bundle_id:
+            _SECRET_LOG.warning("Bundle-scoped secret %s requested without bundle context", raw)
+            return raw
+        return f"bundles.{bundle_id}.secrets.{tail}"
+    return raw
+
+
 def get_secret(key: str, default: str | None = None) -> str | None:
     settings = get_settings()
-    for candidate in _secret_candidates(key):
+    normalized_key = _normalize_secret_lookup_key(key)
+    for candidate in _secret_candidates(normalized_key):
         env_val = os.getenv(candidate)
         if env_val:
             return env_val
@@ -502,11 +533,12 @@ class Settings(BaseSettings):
         _log_secret_status("services.openrouter.api_key", self.OPENROUTER_API_KEY, "env" if env_openrouter else "secrets")
 
     def secret(self, key: str, default: str | None = None) -> str | None:
-        env_val = os.getenv(key)
+        normalized_key = _normalize_secret_lookup_key(key)
+        env_val = os.getenv(normalized_key)
         if env_val:
             return env_val
         try:
-            value = get_secrets_manager(self).get_secret(key)
+            value = get_secrets_manager(self).get_secret(normalized_key)
         except Exception:
             value = None
         return value or default

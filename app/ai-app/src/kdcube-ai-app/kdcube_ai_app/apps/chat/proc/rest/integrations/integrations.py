@@ -2093,6 +2093,16 @@ async def _call_bundle_op_inner(
             else:
                 result = fn(**extra)
     except Exception as e:
+        logger.exception(
+            "Bundle operation failed tenant=%s project=%s bundle=%s route=%s method=%s operation=%s endpoint=%s",
+            tenant_id,
+            project_id,
+            spec_resolved.id,
+            route,
+            request_method,
+            operation,
+            endpoint_spec.method_name,
+        )
         raise HTTPException(status_code=500, detail=f"{operation}() failed: {e}")
 
     http_response = _coerce_bundle_http_response(result)
