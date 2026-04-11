@@ -163,6 +163,10 @@ class ReactSolverV2:
         self._latest_steer_seq_seen = 0
         self._last_handled_steer_seq = 0
         self._latest_steer_text = ""
+        self._active_phase_task: Optional[asyncio.Task] = None
+        self._active_phase_name: str = ""
+        self._active_phase_cancelled_by_steer: bool = False
+        self._active_phase_cancel_requested_at: float = 0.0
 
     async def on_timeline_event(self, *, type: str, event: Any, blocks: List[Dict[str, Any]]) -> None:
         try:
@@ -177,6 +181,7 @@ class ReactSolverV2:
                     self._latest_steer_seq_seen = int(seq or 0)
                 self._latest_steer_text = str(getattr(event, "text", "") or "").strip()
                 self._steer_interrupt_requested = True
+                await self._interrupt_active_phase_for_steer()
         except Exception:
             pass
         try:
@@ -187,6 +192,60 @@ class ReactSolverV2:
             )
         except Exception:
             pass
+
+    async def _interrupt_active_phase_for_steer(self) -> bool:
+        task = self._active_phase_task
+        if task is None or task.done():
+            return False
+        self._active_phase_cancelled_by_steer = True
+        self._active_phase_cancel_requested_at = time.time()
+        phase = str(self._active_phase_name or "").strip() or "phase"
+        self.log.log(
+            f"[react.v2] steer cancelling active {phase} task turn_id={self.scratchpad.turn_id}",
+            level="INFO",
+        )
+        task.cancel()
+        try:
+            await self.comm.service_event(
+                type="timeline.external.steer.cancel_requested",
+                step=f"timeline.external.steer.{phase}",
+                status="running",
+                title="Steer requested live cancellation",
+                agent=self.MODULE_AGENT_NAME,
+                data={
+                    "turn_id": str(self.scratchpad.turn_id or ""),
+                    "phase": phase,
+                    "sequence": int(self._latest_steer_seq_seen or 0),
+                    "text": str(self._latest_steer_text or ""),
+                },
+            )
+        except Exception:
+            pass
+        return True
+
+    async def _run_cancellable_phase(self, *, phase: str, coro: Awaitable[Any]) -> tuple[bool, Any]:
+        task = asyncio.create_task(coro, name=f"react.{phase}.{self.scratchpad.turn_id}")
+        self._active_phase_task = task
+        self._active_phase_name = str(phase or "")
+        self._active_phase_cancelled_by_steer = False
+        self._active_phase_cancel_requested_at = 0.0
+        try:
+            result = await task
+            return False, result
+        except asyncio.CancelledError:
+            if self._active_phase_cancelled_by_steer or self._steer_interrupt_requested:
+                self.log.log(
+                    f"[react.v2] active {phase} cancelled by steer turn_id={self.scratchpad.turn_id}",
+                    level="INFO",
+                )
+                return True, None
+            raise
+        finally:
+            if self._active_phase_task is task:
+                self._active_phase_task = None
+                self._active_phase_name = ""
+                self._active_phase_cancelled_by_steer = False
+                self._active_phase_cancel_requested_at = 0.0
         try:
             await self.comm.service_event(
                 type="timeline.external.accepted",
@@ -318,6 +377,31 @@ class ReactSolverV2:
             return False
         if not self._steer_interrupt_requested and int(self._latest_steer_seq_seen or 0) <= int(self._last_handled_steer_seq or 0):
             return False
+        await self._enter_steer_finalize_mode(state, checkpoint=checkpoint, cancelled_phase=None)
+        return True
+
+    def _steer_finalize_round_limit(self) -> int:
+        try:
+            return max(1, int(os.getenv("REACT_STEER_FINALIZE_ROUNDS", "2") or "2"))
+        except Exception:
+            return 2
+
+    def _steer_finalize_max_tokens(self) -> int:
+        try:
+            return max(512, int(os.getenv("REACT_STEER_FINALIZE_MAX_TOKENS", "3000") or "3000"))
+        except Exception:
+            return 3000
+
+    def _build_default_steer_final_answer(self) -> str:
+        return "Stopped at your request. I preserved the progress made so far."
+
+    async def _enter_steer_finalize_mode(
+        self,
+        state: Dict[str, Any],
+        *,
+        checkpoint: str,
+        cancelled_phase: Optional[str],
+    ) -> None:
         visible_seq = max(self._visible_external_event_seq(), int(self._latest_steer_seq_seen or 0))
         try:
             if visible_seq > int(self._last_consumed_external_event_seq or 0):
@@ -327,24 +411,29 @@ class ReactSolverV2:
         self._last_handled_steer_seq = max(int(self._last_handled_steer_seq or 0), int(self._latest_steer_seq_seen or 0), int(visible_seq or 0))
         self._steer_interrupt_requested = False
         steer_text = str(self._latest_steer_text or "").strip()
-        state["retry_decision"] = False
-        state["exit_reason"] = "steer"
+        state["steer_finalize_mode"] = True
+        state["steer_finalize_rounds_remaining"] = self._steer_finalize_round_limit()
+        state["steer_finalize_seq"] = int(self._latest_steer_seq_seen or visible_seq or 0)
+        state["retry_decision"] = True
+        state["exit_reason"] = None
         state["final_answer"] = None
         state["suggested_followups"] = []
         state["last_decision"] = {
             "action": "exit",
             "final_answer": "",
-            "notes": "steer_interrupt",
+            "notes": "steer_finalize_pending",
             "suggested_followups": [],
         }
         state["steer_interrupt"] = {
             "sequence": int(self._latest_steer_seq_seen or 0),
             "text": steer_text,
             "checkpoint": checkpoint,
+            "cancelled_phase": cancelled_phase,
         }
         self.log.log(
-            f"[react.v2] steer interrupt requested: turn_id={self.scratchpad.turn_id} "
-            f"checkpoint={checkpoint} seq={self._latest_steer_seq_seen} text={steer_text!r}",
+            f"[react.v2] steer finalize mode: turn_id={self.scratchpad.turn_id} "
+            f"checkpoint={checkpoint} cancelled_phase={cancelled_phase or ''} "
+            f"seq={self._latest_steer_seq_seen} text={steer_text!r}",
             level="INFO",
         )
         try:
@@ -359,11 +448,12 @@ class ReactSolverV2:
                     "sequence": int(self._latest_steer_seq_seen or 0),
                     "checkpoint": checkpoint,
                     "text": steer_text,
+                    "cancelled_phase": cancelled_phase,
+                    "finalize_rounds": int(state.get("steer_finalize_rounds_remaining") or 0),
                 },
             )
         except Exception:
             pass
-        return True
 
     async def _render_timeline_with_announce(
         self,
@@ -1075,12 +1165,29 @@ class ReactSolverV2:
             return state
         if state.get("exit_reason"):
             return state
+        if bool(state.get("steer_finalize_mode")) and int(state.get("steer_finalize_rounds_remaining") or 0) <= 0:
+            state["exit_reason"] = "steer"
+            if not (state.get("final_answer") or "").strip():
+                state["final_answer"] = self._build_default_steer_final_answer()
+            state["suggested_followups"] = state.get("suggested_followups") or []
+            return state
         iteration = int(state.get("iteration") or 0)
         if iteration >= int(state.get("max_iterations") or 0):
             state["exit_reason"] = "max_iterations"
             return state
         try:
-            return await self._decision_node_impl(state, iteration)
+            interrupted, result = await self._run_cancellable_phase(
+                phase="decision",
+                coro=self._decision_node_impl(state, iteration),
+            )
+            if interrupted:
+                await self._enter_steer_finalize_mode(
+                    state,
+                    checkpoint="decision.cancelled",
+                    cancelled_phase="decision",
+                )
+                return state
+            return result
         except Exception as exc:
             import traceback
             tb = traceback.format_exc()
@@ -1161,6 +1268,9 @@ class ReactSolverV2:
                 subs = subs.subscribe("ReactDecisionOutV2", exec_streamer_widget.feed_json)
                 subs = subs.subscribe("code", exec_streamer_widget.feed_code)
             runtime_ctx = getattr(self.ctx_browser, "runtime_ctx", None)
+            decision_max_tokens = 20000
+            if bool(state.get("steer_finalize_mode")):
+                decision_max_tokens = min(decision_max_tokens, self._steer_finalize_max_tokens())
             return await react_decision_stream_v2(
                 svc=self.svc,
                 adapters=announced_adapters,
@@ -1169,7 +1279,7 @@ class ReactSolverV2:
                 on_progress_delta=mainstream,
                 subscribers=subs,
                 agent_name=role,
-                max_tokens=20000,
+                max_tokens=decision_max_tokens,
                 user_blocks=blocks,
             )
 
@@ -1615,6 +1725,34 @@ class ReactSolverV2:
                 if tools_insights.is_exec_tool(tool_id) and exec_streamer_widget:
                     await exec_streamer_widget.emit_reasoning(notes)
 
+        if bool(state.get("steer_finalize_mode")):
+            remaining_before = int(state.get("steer_finalize_rounds_remaining") or 0)
+            remaining_after = max(0, remaining_before - 1)
+            state["steer_finalize_rounds_remaining"] = remaining_after
+            allowed_finalize_tools = {"react.write", "react.patch", "react.plan", "react.hide"}
+            if action == "call_tool" and tool_id not in allowed_finalize_tools:
+                decision = {
+                    "action": "complete",
+                    "final_answer": self._build_default_steer_final_answer(),
+                    "notes": "steer_finalize_forced_complete",
+                    "suggested_followups": [],
+                }
+                action = "complete"
+                tool_call = {}
+                tool_id = ""
+                state["last_decision"] = decision
+            elif action == "call_tool" and remaining_after <= 0:
+                decision = {
+                    "action": "complete",
+                    "final_answer": self._build_default_steer_final_answer(),
+                    "notes": "steer_finalize_budget_exhausted",
+                    "suggested_followups": [],
+                }
+                action = "complete"
+                tool_call = {}
+                tool_id = ""
+                state["last_decision"] = decision
+
         if not state.get("retry_decision") and action in {"complete", "exit"}:
             exit_grace_ms = 0
             try:
@@ -1641,7 +1779,7 @@ class ReactSolverV2:
                 except Exception:
                     pass
             else:
-                state["exit_reason"] = action
+                state["exit_reason"] = "steer" if bool(state.get("steer_finalize_mode")) else action
                 state["final_answer"] = (decision.get("final_answer") or "").strip()
                 state["suggested_followups"] = decision.get("suggested_followups") or []
                 try:
@@ -1699,7 +1837,18 @@ class ReactSolverV2:
     async def _tool_execution_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         if await self._apply_steer_interrupt_if_requested(state, checkpoint="tool.before_execute"):
             return state
-        state = await ReactRound.execute(react=self, state=state)
+        interrupted, result = await self._run_cancellable_phase(
+            phase="tool_execution",
+            coro=ReactRound.execute(react=self, state=state),
+        )
+        if interrupted:
+            await self._enter_steer_finalize_mode(
+                state,
+                checkpoint="tool.cancelled",
+                cancelled_phase="tool_execution",
+            )
+            return state
+        state = result
         await self._drain_external_events(call_hooks=True)
         if await self._apply_steer_interrupt_if_requested(state, checkpoint="tool.after_execute"):
             return state

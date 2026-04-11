@@ -61,7 +61,7 @@ Important:
 - They mean the message is accepted into ordered shared storage for that conversation.
 - A live React turn may consume it while still running.
 - A consumed `followup` stays on the current turn and can affect the next decision boundary.
-- A consumed `steer` is a control interrupt and stops the current turn at the next safe runtime checkpoint.
+- A consumed `steer` is a control interrupt. Engineering first tries to cancel the active generation or cancellable tool phase, then React gets a short finalize phase on that same turn.
 - If no live turn consumes it, proc may later promote it into the normal ready queue after the current turn ends.
 
 ---

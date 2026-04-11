@@ -177,7 +177,7 @@ Important:
 - events are not placed onto the main ready queue immediately
 - the active React workflow may consume them while it is still running
 - a live consumed `followup` stays on the current turn
-- a live consumed `steer` interrupts the current turn at the next safe checkpoint
+- a live consumed `steer` interrupts the active generation or cancellable tool phase and then hands React a short finalize phase on the same turn
 - if the active workflow does not consume them, proc promotes the next event back into the normal ready queue after the active turn finishes
 
 ---
@@ -210,7 +210,7 @@ Busy-conversation continuation path:
 
 If a live React owner exists:
 - `followup` can be folded into the active turn and influence the next decision boundary
-- `steer` can be folded into the active turn and stop it at the next safe checkpoint
+- `steer` can be folded into the active turn, cancel the active generation/tool phase when possible, and then bound React to a short finalize window
 
 ### 4.2 Claim on proc
 
@@ -335,7 +335,7 @@ Current guarantees:
 - at most one actively executing turn per conversation because ingress currently blocks a second normal enqueue while the conversation is `in_progress`
 - busy-conversation continuation messages are preserved in ordered shared storage instead of being dropped
 - if the active workflow does not consume continuation input, proc promotes exactly one next external event back to the normal ready queue after the current turn ends
-- a live consumed `steer` interrupts React cooperatively at a safe runtime checkpoint
+- a live consumed `steer` interrupts the active React phase immediately when possible, then React gets a short finalize phase on the same turn
 
 Current non-guarantees:
 
@@ -343,7 +343,7 @@ Current non-guarantees:
 - no full conversation-shard scheduler yet
 - no guarantee that a running workflow will inspect live external events unless that bundle/runtime supports them
 - no strict cross-conversation ordering
-- no hard preemption of already-running tool subprocesses or model calls; interruption remains cooperative
+- a fully blocking tool that does not cooperate with cancellation can still delay full stop until its await boundary
 
 The current continuation slice is useful, but it is still layered on top of the existing lane queues rather than replacing them with a full conversation scheduler.
 
@@ -494,7 +494,7 @@ What happens today:
   - `peek_next_continuation()`
   - `take_next_continuation()`
 - if the live runtime consumes a `followup` while it is running, that input stays inside the active turn
-- if the live runtime consumes a `steer` while it is running, the turn stops cooperatively at the next safe checkpoint
+- if the live runtime consumes a `steer` while it is running, engineering interrupts the active phase and React finishes through a short bounded finalize pass on the same turn
 - if the runtime does not consume the event, proc promotes exactly one next pending event into the normal ready queue after the current turn finishes
 
 This is the answer to the main operational question:
@@ -576,7 +576,7 @@ What it solves:
 - workflow-level inspection API
 - fallback processing for non-reactive bundles through post-turn promotion
 - live followup on the same turn for React
-- cooperative live steer interruption for React
+- immediate live steer interruption plus bounded finalize for React
 
 What it still does not provide:
 

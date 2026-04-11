@@ -54,7 +54,7 @@ retains the durable event identity (`message_id`, `stream_id`, `sequence`) and r
 
 Runtime meaning:
 - a persisted `user.followup` means the active turn actually consumed that live followup
-- a persisted `user.steer` means the active turn saw the steer and stopped cooperatively at a safe checkpoint
+- a persisted `user.steer` means the active turn saw the steer, engineering interrupted the live phase, and React finalized the turn from that same timeline
 
 ## Reconstruction
 The turn view is reconstructed by:

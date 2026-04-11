@@ -54,7 +54,7 @@ This describes how context is built and updated during a turn.
   folds events live into the current timeline, persists the external-event cursor, and
   notifies runtime hooks.
 - A consumed `followup` keeps the same turn alive and is seen by the next decision boundary.
-- A consumed `steer` is treated as stop/reorient control. React exits the current turn at the next safe checkpoint and persists the work completed so far.
+- A consumed `steer` is treated as stop/reorient control. Engineering interrupts the active decision generation or cancellable tool phase immediately when possible, then React re-enters with the steer block already on the timeline and only a short bounded finalize window.
 - If there is no live owner, processor promotion uses that same durable source to continue
   the conversation later. There is not a separate “live log” and “fallback queue” model anymore.
 
@@ -140,6 +140,7 @@ Retry on context-limit:
 └────────────────────────────┘
 ┌────────────────────────────┐
 │ ANNOUNCE (optional)         │   (tail, uncached)                        [ephemeral]
+│                            │   (+ current-turn live event summary)     [ephemeral]
 └────────────────────────────┘
 ```
 

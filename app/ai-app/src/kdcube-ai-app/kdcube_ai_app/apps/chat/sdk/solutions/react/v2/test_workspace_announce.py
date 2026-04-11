@@ -122,3 +122,53 @@ def test_build_announce_text_includes_lineage_scopes_even_when_current_turn_is_s
     assert "current_turn_scopes: none" in announce_text
     assert "ls workspace:" in announce_text
     assert "- customer_portal/ (1 file)" in announce_text
+
+
+def test_build_announce_text_includes_current_turn_live_events(tmp_path):
+    runtime = RuntimeCtx(
+        turn_id="turn_123",
+        outdir=str(tmp_path / "out"),
+        workspace_implementation="custom",
+    )
+
+    announce_text = build_announce_text(
+        iteration=1,
+        max_iterations=6,
+        started_at="2026-04-11T10:00:00Z",
+        timezone="UTC",
+        runtime_ctx=runtime,
+        timeline_blocks=[
+            {
+                "type": "user.followup",
+                "turn_id": "turn_123",
+                "path": "ar:turn_123.external.followup.evt_1",
+                "text": "especially interesting in quantum",
+                "meta": {"sequence": 7, "explicit": True},
+            },
+            {
+                "type": "user.steer",
+                "turn_id": "turn_123",
+                "path": "ar:turn_123.external.steer.evt_2",
+                "text": "",
+                "meta": {"sequence": 8, "explicit": True},
+            },
+            {
+                "type": "user.followup",
+                "turn_id": "turn_old",
+                "path": "ar:turn_old.external.followup.evt_0",
+                "text": "old turn event should stay out of announce",
+                "meta": {"sequence": 6, "explicit": True},
+            },
+        ],
+        constraints=None,
+        feedback_updates=None,
+        feedback_incorporated=False,
+        mode="full",
+    )
+
+    assert "[LIVE TURN EVENTS]" in announce_text
+    assert "• followup seq=7 explicit=True" in announce_text
+    assert "text=especially interesting in quantum" in announce_text
+    assert "• steer seq=8 explicit=True" in announce_text
+    assert "text=(empty stop control)" in announce_text
+    assert "old turn event should stay out of announce" not in announce_text

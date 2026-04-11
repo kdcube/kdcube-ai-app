@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 
 import os
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -25,6 +26,10 @@ def _solver_stub() -> ReactSolverV2:
     solver._latest_steer_seq_seen = 0
     solver._last_handled_steer_seq = 0
     solver._latest_steer_text = ""
+    solver._active_phase_task = None
+    solver._active_phase_name = ""
+    solver._active_phase_cancelled_by_steer = False
+    solver._active_phase_cancel_requested_at = 0.0
     solver.scratchpad = SimpleNamespace(turn_id="turn-1")
     solver.comm = SimpleNamespace(service_event=_noop_async)
     solver.tools_subsystem = None
@@ -125,8 +130,10 @@ async def test_tool_execution_node_short_circuits_on_pending_steer(monkeypatch):
     state = {"last_decision": {"tool_call": {"tool_id": "web_tools.web_search"}}}
     out = await solver._tool_execution_node(state)
 
-    assert out["exit_reason"] == "steer"
+    assert out.get("exit_reason") is None
     assert out["final_answer"] is None
+    assert out["retry_decision"] is True
+    assert out["steer_finalize_mode"] is True
     assert marks["count"] == 1
 
 
@@ -158,8 +165,77 @@ async def test_decision_node_short_circuits_on_pending_steer_before_decision():
 
     out = await solver._decision_node(state)
 
-    assert out["exit_reason"] == "steer"
+    assert out.get("exit_reason") is None
     assert out["final_answer"] is None
+    assert out["retry_decision"] is True
+    assert out["steer_finalize_mode"] is True
+
+
+@pytest.mark.asyncio
+async def test_decision_node_cancels_inflight_phase_on_steer():
+    solver = _solver_stub()
+    solver.ctx_browser = SimpleNamespace(
+        timeline=SimpleNamespace(last_external_event_seq=0),
+        current_turn_blocks=lambda: [],
+    )
+
+    async def _impl(state, iteration):
+        del state, iteration
+        await asyncio.sleep(30)
+        raise AssertionError("cancel expected")
+
+    solver._decision_node_impl = _impl
+    state = {
+        "iteration": 0,
+        "max_iterations": 5,
+    }
+
+    task = asyncio.create_task(solver._decision_node(state))
+    await asyncio.sleep(0.05)
+    solver.ctx_browser.timeline.last_external_event_seq = 9
+    await solver.on_timeline_event(
+        type="steer",
+        event=SimpleNamespace(sequence=9, text="stop now", message_id="evt_9"),
+        blocks=[],
+    )
+    out = await task
+
+    assert out.get("exit_reason") is None
+    assert out["retry_decision"] is True
+    assert out["steer_finalize_mode"] is True
+    assert out["steer_interrupt"]["cancelled_phase"] == "decision"
+
+
+@pytest.mark.asyncio
+async def test_tool_execution_node_cancels_inflight_phase_on_steer(monkeypatch):
+    solver = _solver_stub()
+    solver.ctx_browser = SimpleNamespace(
+        timeline=SimpleNamespace(last_external_event_seq=0),
+        current_turn_blocks=lambda: [],
+    )
+
+    async def _fake_execute(*, react, state):
+        del react, state
+        await asyncio.sleep(30)
+        raise AssertionError("cancel expected")
+
+    monkeypatch.setattr(ReactRound, "execute", _fake_execute)
+
+    state = {"last_decision": {"tool_call": {"tool_id": "web_tools.web_search"}}}
+    task = asyncio.create_task(solver._tool_execution_node(state))
+    await asyncio.sleep(0.05)
+    solver.ctx_browser.timeline.last_external_event_seq = 11
+    await solver.on_timeline_event(
+        type="steer",
+        event=SimpleNamespace(sequence=11, text="stop tool", message_id="evt_11"),
+        blocks=[],
+    )
+    out = await task
+
+    assert out.get("exit_reason") is None
+    assert out["retry_decision"] is True
+    assert out["steer_finalize_mode"] is True
+    assert out["steer_interrupt"]["cancelled_phase"] == "tool_execution"
 
 
 @pytest.mark.asyncio

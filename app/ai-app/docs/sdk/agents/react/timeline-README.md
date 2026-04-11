@@ -62,8 +62,9 @@ The delivery model is now shared and durable:
 - the live React turn consumes from that source when it owns the timeline
 - if there is no live owner, processor promotion continues from that same source
 - a consumed `followup` remains on the same turn and becomes visible to the next decision round
-- a consumed `steer` is a runtime interrupt and exits the turn at the next safe checkpoint
-- steer interruption is cooperative; it does not hard-kill an already-running tool subprocess or model call
+- a consumed `steer` is an engineering-layer interrupt first, not just extra timeline text
+- engineering attempts to cancel the active decision generation or cancellable tool phase immediately
+- React then sees the steer block on the same turn timeline and gets a short bounded finalize phase before turn completion
 
 This avoids having one path for “live events” and a different source of truth for fallback continuation.
 
@@ -122,8 +123,8 @@ When `RuntimeCtx.session.cache_ttl_seconds` is set, the timeline applies TTL-bas
   restore paths via `react.read(path)`. Hidden replacement blocks do **not**
   include per-block hints.
 - Internal Memory Beacons (`react.note`, `react.note.preserved`) are exempt from TTL hiding and remain visible.
-- External `user.followup` / `user.steer` blocks are normal timeline blocks. They are not TTL-special-cased;
-  they remain or disappear according to the same visible-window rules as other ordinary blocks.
+- External `user.followup` / `user.steer` are treated as primary user control input and remain visible through TTL pruning.
+- If compaction later hides their original region, preserved copies remain visible as `user.followup.preserved` / `user.steer.preserved`.
 
 ### Pruned view (schematic)
 ```
@@ -154,6 +155,7 @@ Use react.read(path) to restore a logical path (fi:/ar:/so:/sk:).
   Used for user prompts, attachments, stage outputs, tool call/results, assistant completion.
 - **Announce** = ephemeral, turn‑local signals (not persisted).  
   Used for ACTIVE STATE (plans, budgets) and transient notices.  
+  It may also include a compact `[LIVE TURN EVENTS]` view for current-turn consumed `followup` / `steer`.
   Announce is appended after sources when `include_announce=True` in `timeline.render(...)`.
 
 ## Rendering

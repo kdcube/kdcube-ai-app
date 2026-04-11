@@ -18,6 +18,7 @@ This doc describes how the **announce** block is used for ReAct v2.
 - Contains ANNOUNCE️:
   - iteration
   - open-plan summary with plan ids, snapshot refs, and status markers (if any exist)
+  - compact live-turn external event summary (`followup`, `steer`) when present
   - compact workspace status
   - authoritative temporal context (UTC + user timezone)
   - optional system notices (e.g., cache TTL pruning)
@@ -65,6 +66,21 @@ Important rule:
 - ANNOUNCE should stay compact
 - raw git refs, commit shas, and other low-level publish metadata do not belong here unless there is a failure that React must react to immediately
 
+## Live turn events in ANNOUNCE
+When the current turn has already consumed busy-turn external events, ANNOUNCE includes a compact
+`[LIVE TURN EVENTS]` section.
+
+Its purpose is operational orientation, not full replay. It surfaces current-turn:
+- `followup`
+- `steer`
+
+Important semantics:
+- `followup` means the current turn already accepted additional same-turn user input
+- `steer` means engineering already recorded a stop/reorient control event on the current turn timeline
+- a live steer can interrupt an in-flight generation or cancellable tool phase before React re-enters a short bounded finalize phase
+
+ANNOUNCE only shows current-turn live events. Historical preserved event blocks remain on the timeline itself.
+
 ## Why it exists
 - Keeps high‑frequency state updates out of the cached timeline.
 - Allows downstream agents (final answer generator) to see the **last ℹ️ ANNOUNCE ℹ️**
@@ -105,6 +121,13 @@ Important rule:
       □ [1] draft answer
       □ [2] verify citations
 
+[LIVE TURN EVENTS]
+  - events: 2 visible
+    • followup seq=7 explicit=True
+      text=especially interesting in quantum
+    • steer seq=8 explicit=True
+      text=(empty stop control)
+
 [WORKSPACE]
   implementation: git
   current_turn_root: turn_1775153963506_m1wj6f/
@@ -124,4 +147,5 @@ Important rule:
 - If a plan is shown without `(current)`, React must activate it before acknowledging any of its steps.
 - Announce is not cached and is re‑rendered each decision round.
 - The `[WORKSPACE]` section is intentionally brief; detailed publish metadata belongs in internal event blocks, not the visible announce surface.
+- The `[LIVE TURN EVENTS]` section is also intentionally brief; it is a same-turn control summary, not a replacement for the underlying timeline blocks.
 - The example uses simplified plan ids (`plan_alpha`, `plan_beta`) for readability. Real runtime-generated `plan_id` values may look like `plan:turn_3:efgh5678`, and the matching stable alias would then be `ar:plan.latest:plan:turn_3:efgh5678`.

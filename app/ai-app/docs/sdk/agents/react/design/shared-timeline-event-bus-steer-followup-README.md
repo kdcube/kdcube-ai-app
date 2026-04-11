@@ -32,13 +32,14 @@ This design is now implemented in the current React runtime with these concrete 
 - the active React turn acquires a fenced owner lease and listens to that source live
 - `followup` is folded into the current turn and can trigger another decision round before completion
 - `steer` is folded into the current turn and acts as a control interrupt
-- a consumed steer exits the turn at the next safe checkpoint and persists the work completed so far
+- a consumed steer first interrupts the active generation or cancellable tool phase when possible
+- React then re-enters with the steer already on the current turn timeline and gets a short bounded finalize window
 - if no live owner consumes the event, processor promotes it from that same durable source into a normal scheduled turn
 
 Current boundary:
-- steer interruption is cooperative
-- it does not hard-cancel an already-running tool subprocess or LLM call mid-flight
-- it takes effect before the next decision, before the next tool call, or immediately after the current tool returns
+- steer interruption is immediate for the active decision phase task
+- steer interruption is immediate for cancellable exec/tool phases that already honor task cancellation
+- a fully blocking tool that does not cooperate with cancellation can still delay final stop until its await boundary
 
 ## 1. Problem
 
@@ -124,17 +125,16 @@ We want all of the following:
 
 This design does **not** try to do these things yet:
 
-- hard-preempt an in-flight tool call or LLM request
 - let arbitrary bundle methods directly mutate the active timeline
 - replace the normal conversation task queue entirely
 - invent a second “summary agent” that interprets events separately from React
 
-Events are accepted live, but their effect on reasoning remains **cooperative**:
+Events are accepted live and can have engineering-layer effects before the next normal reasoning boundary:
 
 - they become visible to the current turn
 - they trigger hooks
-- they can influence the next safe React boundary
-- they do not imply model/tool cancellation in v1
+- `followup` affects the next decision boundary on the same turn
+- `steer` can cancel the active generation/tool phase first and only then hand React a bounded finalize phase
 
 ## 5. Core Decision
 
