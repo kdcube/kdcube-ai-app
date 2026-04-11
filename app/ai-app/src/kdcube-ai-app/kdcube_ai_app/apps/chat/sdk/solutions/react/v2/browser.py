@@ -298,7 +298,6 @@ class ContextBrowser:
         stop_evt = self._external_event_stop
         if source is None or stop_evt is None:
             return
-        poll_seconds = 1.0
         while not stop_evt.is_set():
             try:
                 await source.refresh_owner(
@@ -306,17 +305,23 @@ class ContextBrowser:
                     turn_id=str(self._runtime_ctx.turn_id or ""),
                     bundle_id=str(self._runtime_ctx.bundle_id or ""),
                 )
-                changed = await self._fold_external_events(call_hooks=True)
+                last_cursor = ""
+                try:
+                    last_cursor = str(self._timeline.last_external_event_id or "") if self._timeline is not None else ""
+                except Exception:
+                    last_cursor = ""
+                events = await source.wait_for_events_after(last_cursor, block_ms=3000, limit=100)
+                changed = await self._apply_external_events(events, call_hooks=True)
                 if changed and self._timeline is not None:
                     self._timeline.write_local()
             except asyncio.CancelledError:
                 raise
             except Exception:
                 self.log.log(f"[timeline.external]: listener loop failure {traceback.format_exc()}", "ERROR")
-            try:
-                await asyncio.wait_for(stop_evt.wait(), timeout=poll_seconds)
-            except asyncio.TimeoutError:
-                continue
+                try:
+                    await asyncio.wait_for(stop_evt.wait(), timeout=0.5)
+                except asyncio.TimeoutError:
+                    continue
 
     async def drain_external_events(self, *, call_hooks: bool) -> int:
         if self._timeline is None:
@@ -363,12 +368,17 @@ class ContextBrowser:
         source = self.external_event_source
         if source is None or self._timeline is None:
             return 0
-        from kdcube_ai_app.apps.chat.external_events import ConversationExternalEvent
-
         last_cursor = self._timeline.last_external_event_id or int(self._timeline.last_external_event_seq or 0)
         events = await source.read_since(last_cursor)
+        return await self._apply_external_events(events, call_hooks=call_hooks)
+
+    async def _apply_external_events(self, events: List[Any], *, call_hooks: bool) -> int:
+        if self._timeline is None:
+            return 0
         if not events:
             return 0
+        from kdcube_ai_app.apps.chat.external_events import ConversationExternalEvent
+
         added = 0
         for event in events:
             if not isinstance(event, ConversationExternalEvent):

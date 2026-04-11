@@ -24,6 +24,9 @@ class REDIS:
         CONVERSATION_MAILBOX_PREFIX = "kdcube:chat:conversation:mailbox"
         CONVERSATION_MAILBOX_SEQ_PREFIX = "kdcube:chat:conversation:mailbox:seq"
         CONVERSATION_MAILBOX_COUNT_PREFIX = "kdcube:chat:conversation:mailbox:count"
+        CONVERSATION_EXTERNAL_EVENTS_PREFIX = "kdcube:chat:conversation:external-events"
+        CONVERSATION_EXTERNAL_EVENTS_SEQ_PREFIX = "kdcube:chat:conversation:external-events:seq"
+        CONVERSATION_TIMELINE_OWNER_PREFIX = "kdcube:chat:conversation:timeline-owner"
         SSE_CONNECTIONS_PREFIX = "kdcube:chat:sse:connections"
 
     class INSTANCE:
