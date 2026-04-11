@@ -485,6 +485,18 @@ class EnhancedChatRequestProcessor:
         event = await source.claim_next_promotable(claimant_id=claimant_id)
         if event is None:
             return None
+        logger.warning(
+            "Claimed promotable external event conversation=%s current_turn=%s event_id=%s kind=%s seq=%s target_turn=%s active_turn=%s owner_turn=%s text=%r",
+            payload.routing.conversation_id,
+            payload.routing.turn_id,
+            event.message_id,
+            event.kind,
+            event.sequence,
+            event.target_turn_id,
+            event.active_turn_id_at_ingress,
+            event.owner_turn_id,
+            (event.text or "")[:160],
+        )
 
         try:
             next_payload = event.task_payload_model()

@@ -94,6 +94,8 @@ class BaseWorkflow():
                  answer_system_prompt: Optional[str] = None,
                  graph: GraphCtx = None,
                  continuation_source: Optional[Any] = None,
+                 pg_pool: Any = None,
+                 redis: Any = None,
                  bundle_props: Optional[Dict[str, Any]] = None):
 
         self.graph = graph
@@ -105,6 +107,8 @@ class BaseWorkflow():
         self.model_service = model_service
         self.store = store
         self.conv_idx = conv_idx
+        self.pg_pool = pg_pool
+        self.redis = redis
 
         self.conv_ticket_store = conv_ticket_store
         self.ticket_index = ConvTicketIndex(conv_ticket_store)
@@ -261,6 +265,11 @@ class BaseWorkflow():
         """
         Refresh request-bound state on cached singleton workflows.
         """
+        if pg_pool is not None:
+            self.pg_pool = pg_pool
+        if redis is not None:
+            self.redis = redis
+
         if comm_context is not None:
             self.comm_context = comm_context
             self.comm = build_comm_from_comm_context(
@@ -286,11 +295,11 @@ class BaseWorkflow():
                 runtime_ctx.continuation_source = self.continuation_source
                 runtime_ctx.external_event_source = self._external_event_source_for_runtime()
                 self._sync_runtime_ctx_bundle_props()
-
-        if pg_pool is not None:
-            self.pg_pool = pg_pool
-        if redis is not None:
-            self.redis = redis
+        else:
+            runtime_ctx = getattr(self, "runtime_ctx", None)
+            if runtime_ctx is not None:
+                runtime_ctx.continuation_source = self.continuation_source
+                runtime_ctx.external_event_source = self._external_event_source_for_runtime()
         self._sync_runtime_ctx_bundle_props()
 
     async def pending_continuation_count(self) -> int:

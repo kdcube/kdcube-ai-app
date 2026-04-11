@@ -66,6 +66,34 @@ def test_rebind_request_context_refreshes_runtime_ctx_bundle_storage(monkeypatch
     assert wf.runtime_ctx.bundle_storage == str(resolved_storage)
 
 
+def test_rebind_request_context_refreshes_external_event_source_after_redis_bind(monkeypatch):
+    monkeypatch.setattr(workflow_mod, "build_comm_from_comm_context", lambda *args, **kwargs: SimpleNamespace(delta=None))
+    monkeypatch.setattr(workflow_mod, "build_relay_from_env", lambda: None)
+
+    expected_source = object()
+
+    def _fake_external_event_source(self):
+        return expected_source if getattr(self, "redis", None) == "redis-client" else None
+
+    monkeypatch.setattr(BaseWorkflow, "_external_event_source_for_runtime", _fake_external_event_source, raising=False)
+
+    wf = BaseWorkflow.__new__(BaseWorkflow)
+    wf.bundle_props = {}
+    wf.comm_context = _payload(tenant="tenant-a", project="project-a")
+    wf._continuation_source = None
+    wf.hosting_service = None
+    wf.turn_status = None
+    wf.runtime_ctx = RuntimeCtx(external_event_source=None)
+    wf._sync_runtime_ctx_bundle_props = lambda: None
+
+    wf.rebind_request_context(
+        comm_context=_payload(tenant="tenant-b", project="project-b", turn_id="turn-2"),
+        redis="redis-client",
+    )
+
+    assert wf.runtime_ctx.external_event_source is expected_source
+
+
 def test_resolve_mcp_services_config_prefers_bundle_props_over_env(monkeypatch):
     monkeypatch.setenv("MCP_SERVICES", '{"mcpServers":{"env_only":{"transport":"stdio","command":"python"}}}')
 
@@ -133,6 +161,34 @@ def test_runtime_ctx_carries_workspace_git_repo(monkeypatch, tmp_path):
         assert wf.runtime_ctx.bundle_storage == str(resolved_storage)
     finally:
         workflow_mod.get_settings.cache_clear()
+
+
+def test_base_workflow_constructor_binds_external_event_source_when_redis_present(monkeypatch):
+    sentinel = object()
+    monkeypatch.setattr(
+        workflow_mod,
+        "build_conversation_external_event_source",
+        lambda **kwargs: sentinel,
+    )
+
+    wf = BaseWorkflow(
+        conv_idx=SimpleNamespace(),
+        kb=SimpleNamespace(),
+        store=SimpleNamespace(),
+        comm=SimpleNamespace(delta=lambda *a, **k: None),
+        model_service=SimpleNamespace(),
+        conv_ticket_store=SimpleNamespace(),
+        config=SimpleNamespace(
+            ai_bundle_spec=SimpleNamespace(id="bundle.test"),
+            max_tokens=256,
+        ),
+        comm_context=_payload(tenant="tenant-a", project="project-a", turn_id="turn-ctor"),
+        ctx_client=SimpleNamespace(),
+        redis="redis-client",
+    )
+
+    assert wf.redis == "redis-client"
+    assert wf.runtime_ctx.external_event_source is sentinel
 
 
 @pytest.mark.asyncio
