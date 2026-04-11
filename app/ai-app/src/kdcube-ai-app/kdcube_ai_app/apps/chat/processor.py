@@ -17,6 +17,7 @@ from typing import Optional, Dict, Any, Iterable
 
 from kdcube_ai_app.apps.chat.sdk.config import get_settings
 from kdcube_ai_app.apps.chat.continuations import build_conversation_continuation_source
+from kdcube_ai_app.apps.chat.external_events import build_conversation_external_event_source
 from kdcube_ai_app.apps.chat.sdk.continuations import bind_current_conversation_continuation_source
 from kdcube_ai_app.apps.chat.sdk.context.retrieval.ctx_rag import ContextRAGClient
 from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import bind_current_request_context
@@ -381,6 +382,14 @@ class EnhancedChatRequestProcessor:
     def _continuation_source_for(self, payload: ChatTaskPayload):
         return build_conversation_continuation_source(redis=self.redis, payload=payload)
 
+    def _external_event_source_for(self, payload: ChatTaskPayload):
+        return build_conversation_external_event_source(
+            redis=self.redis,
+            tenant=payload.actor.tenant_id,
+            project=payload.actor.project_id,
+            conversation_id=payload.routing.conversation_id or payload.routing.session_id,
+        )
+
     async def _mark_task_interrupted(self, task_dict: Dict[str, Any], *, reason: str) -> None:
         try:
             payload = ChatTaskPayload.model_validate(task_dict)
@@ -425,6 +434,10 @@ class EnhancedChatRequestProcessor:
             logger.debug("Failed to emit interrupted error for task %s", payload.meta.task_id, exc_info=True)
 
     async def _promote_next_continuation(self, payload: ChatTaskPayload) -> Optional[Dict[str, Any]]:
+        external_promoted = await self._promote_next_external_event(payload)
+        if external_promoted is not None:
+            return external_promoted
+
         source = self._continuation_source_for(payload)
         envelope = await source.take_next()
         if envelope is None:
@@ -462,6 +475,59 @@ class EnhancedChatRequestProcessor:
         )
         return {
             "envelope": envelope,
+            "payload": next_payload,
+            "ready_queue_key": ready_queue_key,
+        }
+
+    async def _promote_next_external_event(self, payload: ChatTaskPayload) -> Optional[Dict[str, Any]]:
+        source = self._external_event_source_for(payload)
+        claimant_id = f"{self.middleware.instance_id}:{self.process_id}:{time.time_ns()}"
+        event = await source.claim_next_promotable(claimant_id=claimant_id)
+        if event is None:
+            return None
+
+        try:
+            next_payload = event.task_payload_model()
+        except Exception:
+            logger.exception(
+                "Dropping malformed external event payload for conversation=%s event_id=%s",
+                payload.routing.conversation_id,
+                event.message_id,
+            )
+            await source.mark_failed(
+                message_id=event.message_id,
+                claimant_id=claimant_id,
+                reason="malformed_task_payload",
+            )
+            return None
+
+        user_type = next_payload.user.user_type
+        if hasattr(user_type, "value"):
+            user_type = user_type.value
+        ready_queue_key = self._ready_queue_key(str(user_type).lower())
+        raw_payload = json.dumps(next_payload.model_dump(), ensure_ascii=False)
+
+        try:
+            await self.redis.lpush(ready_queue_key, raw_payload)
+        except Exception:
+            await source.release_claim(message_id=event.message_id, claimant_id=claimant_id)
+            raise
+
+        await source.mark_promoted(
+            message_id=event.message_id,
+            claimant_id=claimant_id,
+            task_id=str(getattr(next_payload.meta, "task_id", "") or ""),
+        )
+        logger.info(
+            "Promoted external event message_id=%s kind=%s conversation=%s turn_id=%s to %s",
+            event.message_id,
+            event.kind,
+            next_payload.routing.conversation_id,
+            next_payload.routing.turn_id,
+            ready_queue_key,
+        )
+        return {
+            "envelope": event,
             "payload": next_payload,
             "ready_queue_key": ready_queue_key,
         }
