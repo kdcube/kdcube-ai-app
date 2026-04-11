@@ -537,6 +537,18 @@ async def process_chat_message(
                         payload={"message": text},
                         task_payload=payload.model_dump(),
                     )
+                    logger.info(
+                        "[ingress.external] published continuation conversation=%s kind=%s event_id=%s seq=%s active_turn=%s owner_turn=%s target_turn=%s live_owner=%s text=%r",
+                        conversation_id,
+                        continuation_kind,
+                        env.message_id,
+                        env.sequence,
+                        active_turn,
+                        owner_turn_id,
+                        target_turn_id,
+                        bool(owner_turn_id and active_turn and owner_turn_id == str(active_turn)),
+                        (text or "")[:160],
+                    )
                     try:
                         if owner_turn_id and active_turn and owner_turn_id == str(active_turn):
                             await comm.service_event(

@@ -102,6 +102,8 @@ class WithIsoRuntimeWorkflow(BaseWorkflow):
             config: Config,
             comm_context: ChatTaskPayload,
             ctx_client: Any = None,
+            pg_pool: Any = None,
+            redis: Any = None,
             bundle_props: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(
@@ -114,6 +116,8 @@ class WithIsoRuntimeWorkflow(BaseWorkflow):
             config=config,
             comm_context=comm_context,
             ctx_client=ctx_client,
+            pg_pool=pg_pool,
+            redis=redis,
             bundle_props=bundle_props,
             # Provide user-friendly error messages (from resources.py)
             message_resources_fn=get_friendly_error_message,

@@ -197,16 +197,52 @@ class ReactSolverV2:
         if not self.ctx_browser:
             return 0
         try:
+            before_seq = int(getattr(self.ctx_browser.timeline, "last_external_event_seq", 0) or 0) if getattr(self.ctx_browser, "timeline", None) is not None else 0
             changed = await self.ctx_browser.drain_external_events(call_hooks=call_hooks)
+            current_seq = before_seq
             try:
                 current_seq = int(getattr(self.ctx_browser.timeline, "last_external_event_seq", 0) or 0)
                 if current_seq > self._latest_external_event_seq_seen:
                     self._latest_external_event_seq_seen = current_seq
             except Exception:
                 pass
+            if changed:
+                self.log.log(
+                    f"[react.v2] drained external events turn_id={self.scratchpad.turn_id} "
+                    f"changed={changed} before_seq={before_seq} after_seq={current_seq}",
+                    level="INFO",
+                )
             return int(changed or 0)
         except Exception:
             self.log.log(f"[react.v2] external event drain failed: {traceback.format_exc()}", level="ERROR")
+            return 0
+
+    async def _wait_and_drain_external_events(self, *, call_hooks: bool, block_ms: int) -> int:
+        if not self.ctx_browser:
+            return 0
+        try:
+            before_seq = int(getattr(self.ctx_browser.timeline, "last_external_event_seq", 0) or 0) if getattr(self.ctx_browser, "timeline", None) is not None else 0
+            changed = await self.ctx_browser.wait_and_drain_external_events(
+                call_hooks=call_hooks,
+                block_ms=max(1, int(block_ms or 1)),
+                limit=100,
+            )
+            current_seq = before_seq
+            try:
+                current_seq = int(getattr(self.ctx_browser.timeline, "last_external_event_seq", 0) or 0)
+                if current_seq > self._latest_external_event_seq_seen:
+                    self._latest_external_event_seq_seen = current_seq
+            except Exception:
+                pass
+            if changed:
+                self.log.log(
+                    f"[react.v2] waited/drained external events turn_id={self.scratchpad.turn_id} "
+                    f"changed={changed} before_seq={before_seq} after_seq={current_seq} block_ms={block_ms}",
+                    level="INFO",
+                )
+            return int(changed or 0)
+        except Exception:
+            self.log.log(f"[react.v2] external event wait/drain failed: {traceback.format_exc()}", level="ERROR")
             return 0
 
     async def _render_timeline_with_announce(
@@ -1040,6 +1076,11 @@ class ReactSolverV2:
                 )
                 if consumed:
                     self._last_consumed_external_event_seq = max(self._last_consumed_external_event_seq, visible_external_event_seq)
+                    self.log.log(
+                        f"[react.v2] marked external events consumed turn_id={self.scratchpad.turn_id} "
+                        f"count={consumed} up_to_seq={visible_external_event_seq}",
+                        level="INFO",
+                    )
             except Exception:
                 self.log.log(f"[react.v2] failed to mark external events consumed: {traceback.format_exc()}", level="ERROR")
         # Reset forced compaction once we have a decision attempt.
@@ -1449,6 +1490,13 @@ class ReactSolverV2:
                     await exec_streamer_widget.emit_reasoning(notes)
 
         if not state.get("retry_decision") and action in {"complete", "exit"}:
+            exit_grace_ms = 0
+            try:
+                exit_grace_ms = int(os.getenv("REACT_EXTERNAL_EVENT_EXIT_GRACE_MS", "750") or "750")
+            except Exception:
+                exit_grace_ms = 750
+            if exit_grace_ms > 0:
+                await self._wait_and_drain_external_events(call_hooks=True, block_ms=exit_grace_ms)
             latest_seen_after_decision = max(
                 int(self._latest_external_event_seq_seen or 0),
                 int(getattr(getattr(self.ctx_browser, "timeline", None), "last_external_event_seq", 0) or 0),
@@ -1524,6 +1572,7 @@ class ReactSolverV2:
 
     async def _tool_execution_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
         state = await ReactRound.execute(react=self, state=state)
+        await self._drain_external_events(call_hooks=True)
         pending_sources = state.pop("pending_sources", None)
         if pending_sources:
             try:

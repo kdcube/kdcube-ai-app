@@ -230,6 +230,8 @@ class ReactWorkflow(BaseEntrypoint):
                     config=self.config,
                     comm_context=self.comm_context,
                     ctx_client=ctx_client,
+                    pg_pool=self.pg_pool,
+                    redis=self.redis,
                     bundle_props=self.bundle_props,
                 )
                 try:

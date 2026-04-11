@@ -102,6 +102,11 @@ class ContextBrowser:
                 listener_id=self._external_listener_id,
             )
             self._external_lease_token = str(getattr(lease, "lease_token", "") or "")
+            self.log.log(
+                f"[timeline.external]: owner lease acquired conversation={conversation_id} turn_id={turn_id} "
+                f"listener_id={self._external_listener_id} lease_epoch={getattr(lease, 'lease_epoch', 0)}",
+                "INFO",
+            )
         except Exception:
             self.log.log("[timeline.external] failed to acquire owner lease\n" + traceback.format_exc(), "ERROR")
             return
@@ -323,6 +328,12 @@ class ContextBrowser:
                 except Exception:
                     last_cursor = ""
                 events = await source.wait_for_events_after(last_cursor, block_ms=3000, limit=100)
+                if events:
+                    self.log.log(
+                        f"[timeline.external]: listener received conversation={self._runtime_ctx.conversation_id} "
+                        f"turn_id={self._runtime_ctx.turn_id} count={len(events)} last_cursor={last_cursor}",
+                        "INFO",
+                    )
                 changed = await self._apply_external_events(events, call_hooks=True)
                 if changed and self._timeline is not None:
                     self._timeline.write_local()
@@ -340,6 +351,39 @@ class ContextBrowser:
             return 0
         changed = await self._fold_external_events(call_hooks=call_hooks)
         if changed:
+            self.log.log(
+                f"[timeline.external]: drain applied conversation={self._runtime_ctx.conversation_id} "
+                f"turn_id={self._runtime_ctx.turn_id} changed={changed} last_seq={self._timeline.last_external_event_seq} "
+                f"last_id={self._timeline.last_external_event_id}",
+                "INFO",
+            )
+            self._timeline.write_local()
+        return int(changed or 0)
+
+    async def wait_and_drain_external_events(
+        self,
+        *,
+        call_hooks: bool,
+        block_ms: int = 750,
+        limit: int = 100,
+    ) -> int:
+        source = self.external_event_source
+        if source is None or self._timeline is None:
+            return 0
+        last_cursor = ""
+        try:
+            last_cursor = str(self._timeline.last_external_event_id or "")
+        except Exception:
+            last_cursor = ""
+        events = await source.wait_for_events_after(last_cursor, block_ms=max(1, int(block_ms or 1)), limit=max(1, int(limit or 1)))
+        changed = await self._apply_external_events(events, call_hooks=call_hooks)
+        if changed:
+            self.log.log(
+                f"[timeline.external]: wait/drain applied conversation={self._runtime_ctx.conversation_id} "
+                f"turn_id={self._runtime_ctx.turn_id} changed={changed} last_seq={self._timeline.last_external_event_seq} "
+                f"last_id={self._timeline.last_external_event_id}",
+                "INFO",
+            )
             self._timeline.write_local()
         return int(changed or 0)
 
@@ -413,6 +457,14 @@ class ContextBrowser:
                 int(event.sequence or 0),
             )
             added += len(blocks)
+            self.log.log(
+                f"[timeline.external]: applied conversation={self._runtime_ctx.conversation_id} "
+                f"current_turn={self._runtime_ctx.turn_id} event_id={getattr(event, 'message_id', '')} "
+                f"kind={getattr(event, 'kind', '')} seq={getattr(event, 'sequence', 0)} "
+                f"event_turn={getattr(event, 'owner_turn_id', None) or getattr(event, 'active_turn_id_at_ingress', None) or getattr(event, 'target_turn_id', None)} "
+                f"blocks={len(blocks)} text={(str(getattr(event, 'text', '') or '')[:160])!r}",
+                "INFO",
+            )
             if call_hooks:
                 await self._emit_timeline_event_hooks(type=str(event.kind or "external"), event=event, blocks=blocks)
         return added
