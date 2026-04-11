@@ -14,6 +14,7 @@ import {
     AgentTiming,
     AnswerEvent,
     CanvasEvent,
+    ChatTurn,
     ChatState,
     CitationArtifact,
     ConversationState,
@@ -314,6 +315,26 @@ const startNewConversation = (state: WritableDraft<ChatState>) => {
     state.conversationBundleId = null
 }
 
+const createSyntheticTurn = (
+    turnId: string,
+    userMessage: string,
+    timestamp: number,
+): WritableDraft<ChatTurn> => {
+    return {
+        id: turnId,
+        state: "new",
+        userMessage: {
+            text: userMessage,
+            attachments: [],
+            timestamp,
+        },
+        events: [],
+        artifacts: [],
+        followUpQuestions: [],
+        steps: {},
+    }
+}
+
 const chatStateSlice = createSlice({
     name: 'chatState',
     initialState: (): ChatState => {
@@ -351,10 +372,24 @@ const chatStateSlice = createSlice({
         },
         chatStarted(state, action: PayloadAction<ChatStartEnvelope>) {
             const turnId = action.payload.conversation.turn_id;
+            const startedAt = Date.parse(action.payload.timestamp) || new Date().getTime()
+
+            Object.values(state.turns).forEach((turn) => {
+                if (turn.id !== turnId && turn.state === "inProgress") {
+                    turn.state = "finished"
+                }
+            })
+
             if (Object.hasOwn(state.turns, turnId)) {
                 state.turns[turnId].state = "inProgress"
             } else {
-                console.error("Received event for an unknown turn", action.payload);
+                state.turns[turnId] = createSyntheticTurn(
+                    turnId,
+                    String(action.payload.data?.message || ""),
+                    startedAt,
+                )
+                state.turns[turnId].state = "inProgress"
+                state.turnOrder.push(turnId)
             }
         },
         chatCompleted(state, action: PayloadAction<ChatCompleteEnvelope>) {

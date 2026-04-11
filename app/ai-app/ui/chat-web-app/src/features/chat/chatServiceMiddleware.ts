@@ -466,19 +466,33 @@ export const chatServiceMiddleware = (transportType: TransportType): Middleware 
                         }
                     )
 
-                    transport.sendChatMessage(conversationId, chatRequest, files).then(() => {
+                    transport.sendChatMessage(conversationId, chatRequest, files).then((ack?: {status?: string; turn_id?: string; message_kind?: string}) => {
                         dispatch(clearUserInput())
                         if (isContinuation) {
+                            const ackStatus = typeof ack?.status === "string" ? ack.status : null
+                            const continuationAccepted = ackStatus === "followup_accepted" || ackStatus === "steer_accepted"
+                            const continuationStartedNewTurn = !!ackStatus && !continuationAccepted
                             dispatch(pushNotification({
                                 type: "info",
-                                text: continuationKind === "steer"
-                                    ? (message ? "Steer sent to the in-progress turn." : "Stop signal sent to the in-progress turn.")
-                                    : "Follow-up sent to the in-progress turn.",
+                                text: continuationStartedNewTurn
+                                    ? "The previous turn had already advanced. A new turn was started instead."
+                                    : continuationAccepted
+                                    ? (
+                                        continuationKind === "steer"
+                                            ? (message ? "Steer sent to the in-progress turn." : "Stop signal sent to the in-progress turn.")
+                                            : "Follow-up sent to the in-progress turn."
+                                    )
+                                    : (
+                                        continuationKind === "steer"
+                                            ? (message ? "Steer sent to the in-progress turn." : "Stop signal sent to the in-progress turn.")
+                                            : "Follow-up sent to the in-progress turn."
+                                    ),
                             }))
                         }
                     }).catch(error => {
                         console.error(error)
                         if (isContinuation) {
+                            dispatch(requestConversationStatus(conversationId))
                             dispatch(pushNotification({
                                 type: "error",
                                 text: error instanceof Error ? error.message : String(error),
