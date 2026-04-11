@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 import uuid
@@ -13,6 +14,7 @@ from typing import Any, Dict, List, Optional
 from kdcube_ai_app.apps.chat.sdk.continuations import ContinuationKind
 from kdcube_ai_app.infra.namespaces import REDIS, ns_key
 
+logger = logging.getLogger(__name__)
 
 _DEFAULT_OWNER_TTL_SECONDS = 600
 _PROMOTION_CONSUMER_GROUP = "react-external-promoter.v1"
@@ -245,6 +247,19 @@ class RedisConversationExternalEventSource:
         stream_id = await self._append_to_stream(event)
         event.stream_id = str(stream_id or "")
         await self._write_event(event)
+        logger.info(
+            "[external_events.publish] conversation=%s kind=%s event_id=%s seq=%s stream_id=%s target_turn=%s active_turn=%s owner_turn=%s explicit=%s text=%r",
+            self.conversation_id,
+            event.kind,
+            event.message_id,
+            event.sequence,
+            event.stream_id,
+            event.target_turn_id,
+            event.active_turn_id_at_ingress,
+            event.owner_turn_id,
+            event.explicit,
+            (event.text or "")[:160],
+        )
         await self._maybe_cleanup_retention()
         return event
 
@@ -320,6 +335,17 @@ class RedisConversationExternalEventSource:
                 if latest.stream_id:
                     await self._ack_stream_event(str(latest.stream_id))
                 continue
+            logger.info(
+                "[external_events.claim] conversation=%s claimant=%s event_id=%s kind=%s seq=%s target_turn=%s active_turn=%s owner_turn=%s",
+                self.conversation_id,
+                claimant_id,
+                latest.message_id,
+                latest.kind,
+                latest.sequence,
+                latest.target_turn_id,
+                latest.active_turn_id_at_ingress,
+                latest.owner_turn_id,
+            )
             return latest
 
         cursor = await self._get_promotion_cursor()
@@ -361,6 +387,17 @@ class RedisConversationExternalEventSource:
                     await self._advance_promotion_cursor(str(latest.stream_id))
                 await self.release_claim(message_id=item.message_id, claimant_id=claimant_id)
                 continue
+            logger.info(
+                "[external_events.claim] conversation=%s claimant=%s event_id=%s kind=%s seq=%s target_turn=%s active_turn=%s owner_turn=%s",
+                self.conversation_id,
+                claimant_id,
+                latest.message_id,
+                latest.kind,
+                latest.sequence,
+                latest.target_turn_id,
+                latest.active_turn_id_at_ingress,
+                latest.owner_turn_id,
+            )
             return latest
         if raw_items:
             tail = await self._read_event_ref(raw_items[-1])
@@ -399,6 +436,18 @@ class RedisConversationExternalEventSource:
             await self._ack_stream_event(str(event.stream_id))
             await self._advance_promotion_cursor(str(event.stream_id))
         await self.release_claim(message_id=message_id, claimant_id=claimant_id)
+        logger.info(
+            "[external_events.promoted] conversation=%s claimant=%s event_id=%s kind=%s seq=%s promoted_task_id=%s target_turn=%s active_turn=%s owner_turn=%s",
+            self.conversation_id,
+            claimant_id,
+            event.message_id,
+            event.kind,
+            event.sequence,
+            event.promoted_task_id,
+            event.target_turn_id,
+            event.active_turn_id_at_ingress,
+            event.owner_turn_id,
+        )
         await self._maybe_cleanup_retention()
         return event
 
@@ -444,6 +493,13 @@ class RedisConversationExternalEventSource:
         if max_stream_id:
             await self._advance_promotion_cursor(max_stream_id)
         if updated:
+            logger.info(
+                "[external_events.consumed] conversation=%s turn_id=%s max_sequence=%s updated=%s",
+                self.conversation_id,
+                turn_id,
+                max_sequence,
+                updated,
+            )
             await self._maybe_cleanup_retention()
         return updated
 
@@ -484,6 +540,13 @@ class RedisConversationExternalEventSource:
             started_at=now_iso,
             updated_at=now_iso,
         )
+        logger.info(
+            "[external_events.owner.acquire] conversation=%s turn_id=%s listener_id=%s lease_epoch=%s",
+            self.conversation_id,
+            lease.turn_id,
+            lease.listener_id,
+            lease.lease_epoch,
+        )
         return lease
 
     async def refresh_owner(
@@ -521,6 +584,13 @@ class RedisConversationExternalEventSource:
         )
         if not updated:
             return None
+        logger.info(
+            "[external_events.owner.refresh] conversation=%s turn_id=%s listener_id=%s lease_epoch=%s",
+            self.conversation_id,
+            lease.turn_id,
+            lease.listener_id,
+            lease.lease_epoch,
+        )
         return lease
 
     async def release_owner(self, *, listener_id: str, lease_token: str = "") -> bool:
@@ -531,7 +601,16 @@ class RedisConversationExternalEventSource:
             return False
         if lease_token and existing.lease_token and existing.lease_token != str(lease_token or ""):
             return False
-        return bool(await self._delete_owner_lease(expected_token=str(existing.lease_token or "")))
+        deleted = bool(await self._delete_owner_lease(expected_token=str(existing.lease_token or "")))
+        if deleted:
+            logger.info(
+                "[external_events.owner.release] conversation=%s turn_id=%s listener_id=%s lease_epoch=%s",
+                self.conversation_id,
+                existing.turn_id,
+                existing.listener_id,
+                existing.lease_epoch,
+            )
+        return deleted
 
     async def _read_event_ref(self, raw: Any) -> Optional[ConversationExternalEvent]:
         stream_id = None
