@@ -106,6 +106,11 @@ class ReactSolverV2:
         if source is None:
             return None
         return await source.take_next()
+
+    @property
+    def external_event_source(self):
+        runtime_ctx = getattr(self.ctx_browser, "runtime_ctx", None) if self.ctx_browser else None
+        return getattr(runtime_ctx, "external_event_source", None) if runtime_ctx else None
     DECISION_AGENT_NAME = "decision.v2"
 
     def __init__(
@@ -142,10 +147,67 @@ class ReactSolverV2:
         self.comm_context = comm_context
         self.hosting_service = hosting_service
         self.ctx_browser = ctx_browser
+        if self.ctx_browser is not None:
+            try:
+                self.ctx_browser.add_timeline_event_hook(self.on_timeline_event)
+            except Exception:
+                pass
         self.graph = self._build_graph()
         self._timeline_text_idx = {}
         self._outdir_cv_token = None
         self._workdir_cv_token = None
+        self._latest_external_event_seq_seen = 0
+        self._last_decision_visible_external_event_seq = 0
+        self._last_consumed_external_event_seq = 0
+
+    async def on_timeline_event(self, *, type: str, event: Any, blocks: List[Dict[str, Any]]) -> None:
+        try:
+            seq = int(getattr(event, "sequence", 0) or 0)
+            if seq > self._latest_external_event_seq_seen:
+                self._latest_external_event_seq_seen = seq
+        except Exception:
+            seq = None
+        try:
+            event_id = getattr(event, "message_id", None) or ""
+            self.log.log(
+                f"[react.v2] timeline_event accepted: type={type} event_id={event_id} seq={seq} blocks={len(blocks or [])}",
+                level="INFO",
+            )
+        except Exception:
+            pass
+        try:
+            await self.comm.service_event(
+                type="timeline.external.accepted",
+                step="timeline.external",
+                status="completed",
+                title="External Timeline Event Accepted",
+                agent=self.MODULE_AGENT_NAME,
+                data={
+                    "event_kind": str(type or "external"),
+                    "event_id": str(getattr(event, "message_id", "") or ""),
+                    "sequence": int(getattr(event, "sequence", 0) or 0),
+                    "turn_id": str(self.scratchpad.turn_id or ""),
+                    "blocks": len(blocks or []),
+                },
+            )
+        except Exception:
+            pass
+
+    async def _drain_external_events(self, *, call_hooks: bool) -> int:
+        if not self.ctx_browser:
+            return 0
+        try:
+            changed = await self.ctx_browser.drain_external_events(call_hooks=call_hooks)
+            try:
+                current_seq = int(getattr(self.ctx_browser.timeline, "last_external_event_seq", 0) or 0)
+                if current_seq > self._latest_external_event_seq_seen:
+                    self._latest_external_event_seq_seen = current_seq
+            except Exception:
+                pass
+            return int(changed or 0)
+        except Exception:
+            self.log.log(f"[react.v2] external event drain failed: {traceback.format_exc()}", level="ERROR")
+            return 0
 
     async def _render_timeline_with_announce(
         self,
@@ -704,6 +766,13 @@ class ReactSolverV2:
         state = await self.prepare_session(
             allowed_plugins=allowed_plugins,
         )
+        try:
+            if self.ctx_browser and self.ctx_browser.timeline:
+                self._latest_external_event_seq_seen = int(self.ctx_browser.timeline.last_external_event_seq or 0)
+                self._last_decision_visible_external_event_seq = int(self.ctx_browser.timeline.last_external_event_seq or 0)
+                self._last_consumed_external_event_seq = int(self.ctx_browser.timeline.last_external_event_seq or 0)
+        except Exception:
+            pass
 
         start_ts = time.time()
         try:
@@ -944,6 +1013,13 @@ class ReactSolverV2:
             "include_announce": True,
             "force_sanitize": bool(state.get("force_compaction_next_decision")),
         }
+        await self._drain_external_events(call_hooks=True)
+        visible_external_event_seq = 0
+        try:
+            visible_external_event_seq = int(getattr(self.ctx_browser.timeline, "last_external_event_seq", 0) or 0)
+        except Exception:
+            visible_external_event_seq = 0
+        self._last_decision_visible_external_event_seq = visible_external_event_seq
         decision = await retry_with_compaction(
             ctx_browser=self.ctx_browser,
             system_text_fn=lambda: build_decision_system_text(
@@ -955,6 +1031,17 @@ class ReactSolverV2:
             agent_fn=_decision_agent,
             emit_status=None,
         )
+        await self._drain_external_events(call_hooks=True)
+        if visible_external_event_seq > self._last_consumed_external_event_seq and self.external_event_source is not None:
+            try:
+                consumed = await self.external_event_source.mark_consumed_up_to(
+                    max_sequence=visible_external_event_seq,
+                    turn_id=str(self.scratchpad.turn_id or ""),
+                )
+                if consumed:
+                    self._last_consumed_external_event_seq = max(self._last_consumed_external_event_seq, visible_external_event_seq)
+            except Exception:
+                self.log.log(f"[react.v2] failed to mark external events consumed: {traceback.format_exc()}", level="ERROR")
         # Reset forced compaction once we have a decision attempt.
         state["force_compaction_next_decision"] = False
         state["last_decision_raw"] = decision
@@ -1362,17 +1449,35 @@ class ReactSolverV2:
                     await exec_streamer_widget.emit_reasoning(notes)
 
         if not state.get("retry_decision") and action in {"complete", "exit"}:
-            state["exit_reason"] = action
-            state["final_answer"] = (decision.get("final_answer") or "").strip()
-            state["suggested_followups"] = decision.get("suggested_followups") or []
-            try:
-                sf = state.get("suggested_followups") or []
-                self.log.log(
-                    f"[react.v2] decision followups: count={len(sf)}",
-                    level="INFO",
-                )
-            except Exception:
-                pass
+            latest_seen_after_decision = max(
+                int(self._latest_external_event_seq_seen or 0),
+                int(getattr(getattr(self.ctx_browser, "timeline", None), "last_external_event_seq", 0) or 0),
+            )
+            if latest_seen_after_decision > int(visible_external_event_seq or 0):
+                state["retry_decision"] = True
+                state["exit_reason"] = None
+                state["final_answer"] = None
+                state["suggested_followups"] = []
+                try:
+                    self.log.log(
+                        f"[react.v2] external event arrived during decision; forcing another round "
+                        f"(seen={latest_seen_after_decision} visible={visible_external_event_seq})",
+                        level="INFO",
+                    )
+                except Exception:
+                    pass
+            else:
+                state["exit_reason"] = action
+                state["final_answer"] = (decision.get("final_answer") or "").strip()
+                state["suggested_followups"] = decision.get("suggested_followups") or []
+                try:
+                    sf = state.get("suggested_followups") or []
+                    self.log.log(
+                        f"[react.v2] decision followups: count={len(sf)}",
+                        level="INFO",
+                    )
+                except Exception:
+                    pass
 
         try:
             if notes:

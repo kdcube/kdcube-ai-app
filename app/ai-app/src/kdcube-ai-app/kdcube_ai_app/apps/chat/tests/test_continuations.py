@@ -6,12 +6,15 @@ import pytest
 import kdcube_ai_app.apps.chat.ingress.chat_core as chat_core
 from kdcube_ai_app.apps.chat.ingress.chat_core import IngressConfig, process_chat_message
 from kdcube_ai_app.apps.chat.continuations import RedisConversationContinuationSource
+from kdcube_ai_app.apps.chat.external_events import build_conversation_external_event_source
 from kdcube_ai_app.auth.sessions import UserType
 
 
 class _MiniRedis:
     def __init__(self):
         self.lists = {}
+        self.streams = {}
+        self.stream_seq = {}
         self.values = {}
 
     async def lpush(self, key, value):
@@ -27,6 +30,32 @@ class _MiniRedis:
         if end == -1:
             return items[start:]
         return items[start:end + 1]
+
+    async def xadd(self, key, fields):
+        seq = int(self.stream_seq.get(key, 0)) + 1
+        self.stream_seq[key] = seq
+        stream_id = f"{seq}-0"
+        self.streams.setdefault(key, []).append((stream_id, dict(fields or {})))
+        return stream_id
+
+    async def xrange(self, key, min="-", max="+", count=None):
+        items = list(self.streams.get(key) or [])
+        out = []
+        for stream_id, fields in items:
+            if min not in ("-", None, ""):
+                exclusive = str(min).startswith("(")
+                floor = str(min)[1:] if exclusive else str(min)
+                if exclusive:
+                    if stream_id <= floor:
+                        continue
+                elif stream_id < floor:
+                    continue
+            if max not in ("+", None, "") and stream_id > str(max):
+                continue
+            out.append((stream_id, dict(fields)))
+            if count is not None and len(out) >= int(count):
+                break
+        return out
 
     async def rpop(self, key):
         items = list(self.lists.get(key) or [])
@@ -51,6 +80,20 @@ class _MiniRedis:
 
     async def get(self, key):
         return self.values.get(key)
+
+    async def setex(self, key, ttl, value):
+        del ttl
+        self.values[key] = value
+
+    async def set(self, key, value, ex=None, nx=False):
+        del ex
+        if nx and key in self.values:
+            return False
+        self.values[key] = value
+        return True
+
+    async def delete(self, key):
+        self.values.pop(key, None)
 
 
 def _task_payload(*, task_id: str, turn_id: str, text: str, kind: str = "followup"):
@@ -200,12 +243,17 @@ async def test_busy_message_is_stored_as_followup(_patch_ingress_dependencies):
     assert result.reason == "followup_accepted"
     assert result.continuation_kind == "followup"
 
-    mailbox_key = "tenant-a:project-a:kdcube:chat:conversation:mailbox:conv-1"
-    assert len(redis.lists[mailbox_key]) == 1
-    envelope = json.loads(redis.lists[mailbox_key][0])
-    assert envelope["kind"] == "followup"
-    assert envelope["active_turn_id"] == "turn-active"
-    assert envelope["payload"]["continuation"]["kind"] == "followup"
+    source = build_conversation_external_event_source(
+        redis=redis,
+        tenant="tenant-a",
+        project="project-a",
+        conversation_id="conv-1",
+    )
+    events = await source.read_since(0)
+    assert len(events) == 1
+    assert events[0].kind == "followup"
+    assert events[0].active_turn_id_at_ingress == "turn-active"
+    assert events[0].task_payload["continuation"]["kind"] == "followup"
 
 
 @pytest.mark.asyncio
@@ -246,8 +294,14 @@ async def test_busy_blank_explicit_steer_is_stored(_patch_ingress_dependencies):
     assert result.reason == "steer_accepted"
     assert result.continuation_kind == "steer"
 
-    mailbox_key = "tenant-a:project-a:kdcube:chat:conversation:mailbox:conv-1"
-    envelope = json.loads(redis.lists[mailbox_key][0])
-    assert envelope["kind"] == "steer"
-    assert envelope["payload"]["request"]["message"] == ""
-    assert envelope["payload"]["continuation"]["target_turn_id"] is None
+    source = build_conversation_external_event_source(
+        redis=redis,
+        tenant="tenant-a",
+        project="project-a",
+        conversation_id="conv-1",
+    )
+    events = await source.read_since(0)
+    assert len(events) == 1
+    assert events[0].kind == "steer"
+    assert events[0].task_payload["request"]["message"] == ""
+    assert events[0].task_payload["continuation"]["target_turn_id"] is None
