@@ -144,7 +144,9 @@ These are model-visible timeline blocks, not merely transport-level ingress mess
 
 Behavioral meaning:
 - `user.followup` is additional user input that the current live turn actually consumed.
-- `user.steer` is a control signal. In React, a consumed steer requests interruption of the active turn at the next safe checkpoint.
+- `user.steer` is a control signal. In React, a consumed steer first trips an engineering-layer interrupt.
+- engineering attempts to cancel the active decision generation or cancellable tool phase immediately
+- React then re-enters with the steer block already on the timeline and gets only a short bounded finalize window
 - If a live turn does not consume the event, the same durable event may later be promoted into a normal scheduled turn by proc.
 
 ### react.read status block

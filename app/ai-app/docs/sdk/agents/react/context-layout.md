@@ -162,6 +162,8 @@ Notes:
 - Internal Memory Beacons render as `[INTERNAL NOTE]` blocks and are part of the model-visible timeline.
 - External followups/steers render as `[FOLLOWUP DURING TURN]` / `[STEER DURING TURN]`
   and are part of the same model-visible timeline once folded.
+- When the current turn has consumed them, ANNOUNCE also shows a compact `[LIVE TURN EVENTS]`
+  section so React can orient to recent same-turn control input without rereading the whole suffix first.
 
 ---
 

@@ -73,6 +73,10 @@ Treat these as high-signal. Preserve them in the appropriate sections:
 - [S] -> Critical Context
 - [A] -> Progress (usually Done; if still relevant, also Next Steps or Critical Context)
 - [K] -> Critical Context (preserve the path and the one-line explanation)
+Live turn events may appear as `user.followup` or `user.steer` blocks:
+- `user.followup` = additional user input for the same running turn
+- `user.steer` = user redirection/stop signal for the same running turn
+Treat both as high-priority user intent updates. Preserve them in Goal, Constraints & Preferences, Key Decisions, Next Steps, or Critical Context wherever they materially changed what the agent should do next.
 
 Keep each section concise. Preserve exact file paths, function names, and error messages."""
 
@@ -129,6 +133,10 @@ Treat these as high-signal. Preserve them in the appropriate sections:
 - [S] -> Critical Context
 - [A] -> Progress (usually Done; if still relevant, also Next Steps or Critical Context)
 - [K] -> Critical Context (preserve the path and the one-line explanation)
+Live turn events may appear as `user.followup` or `user.steer` blocks:
+- `user.followup` = additional user input for the same running turn
+- `user.steer` = user redirection/stop signal for the same running turn
+Treat both as high-priority user intent updates. Preserve them in Goal, Constraints & Preferences, Key Decisions, Next Steps, or Critical Context wherever they materially changed what the agent should do next.
 
 Keep each section concise. Preserve exact file paths, function names, and error messages."""
 
@@ -148,6 +156,7 @@ Summarize the prefix to provide context for the retained suffix:
 Internal notes may appear as `react.note` blocks and are tagged [P]/[D]/[S]/[A]/[K].
 [A] means achievements, completed milestones, or project-level accomplishment notes.
 [K] means key artifacts/anchors with logical path and why they matter.
+Live turn events may appear as `user.followup` or `user.steer` blocks. They are real user control input for the same turn and should be preserved if they explain why the retained suffix changed direction, scope, or stopping behavior.
 Preserve their substance if they are relevant, especially when they explain why the retained suffix exists, what was already completed earlier in the turn, or which artifact the future agent should reopen first.
 
 Be concise. Focus on what's needed to understand the kept suffix."""
@@ -225,6 +234,18 @@ def _serialize_context_blocks_for_compaction(blocks: List[dict]) -> str:
         if tool_call_id:
             header_parts.append(f"tool_call_id={tool_call_id}")
 
+        if btype in {"user.followup", "user.followup.preserved"}:
+            if isinstance(text, str) and text.strip():
+                parts.append(f"[User Followup During Turn]: {text.strip()}")
+            else:
+                parts.append(f"[User Followup During Turn]: ({' | '.join(header_parts)})")
+            continue
+        if btype in {"user.steer", "user.steer.preserved"}:
+            if isinstance(text, str) and text.strip():
+                parts.append(f"[User Steer During Turn]: {text.strip()}")
+            else:
+                parts.append(f"[User Steer During Turn]: ({' | '.join(header_parts)})")
+            continue
         if btype == "user.prompt" or author == "user":
             if isinstance(text, str) and text.strip():
                 parts.append(f"[User]: {text.strip()}")
