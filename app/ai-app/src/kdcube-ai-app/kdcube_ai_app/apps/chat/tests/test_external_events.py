@@ -51,6 +51,17 @@ class _FakeRedis:
                 break
         return out
 
+    async def xread(self, streams, count=None, block=None):
+        del block
+        out = []
+        for key, start in (streams or {}).items():
+            items = await self.xrange(key, min=f"({start}" if start not in ("$", None, "") else "-", max="+", count=count)
+            if start == "$":
+                items = []
+            if items:
+                out.append((key, items))
+        return out
+
     async def setex(self, key, ttl, value):
         del ttl
         self._kv[key] = value
@@ -169,6 +180,61 @@ async def test_external_event_source_claim_promote_and_consume():
     first_after = await source.get_event(first.message_id)
     assert first_after is not None
     assert first_after.consumed_by_turn_id == "turn-2"
+
+
+@pytest.mark.asyncio
+async def test_external_event_source_wait_and_cursor_progression():
+    redis = _FakeRedis()
+    source = build_conversation_external_event_source(
+        redis=redis,
+        tenant="t1",
+        project="p1",
+        conversation_id="conv1",
+    )
+
+    first = await source.publish(
+        kind="followup",
+        source="ingress.sse",
+        text="first",
+        payload={"message": "first"},
+        task_payload={
+            "meta": {"task_id": "task-1", "created_at": 1.0, "instance_id": "ingress-1"},
+            "routing": {"bundle_id": "bundle.demo", "session_id": "sess-1", "conversation_id": "conv1", "turn_id": "turn-2"},
+            "actor": {"tenant_id": "t1", "project_id": "p1"},
+            "user": {"user_type": "registered", "user_id": "u1"},
+            "request": {"message": "first", "payload": {}},
+            "config": {"values": {}},
+            "accounting": {"envelope": {}},
+            "continuation": {"kind": "followup", "explicit": False},
+        },
+    )
+    waited = await source.wait_for_events_after("0-0", block_ms=1)
+    assert waited
+    assert waited[0].stream_id == first.stream_id
+
+    claimed = await source.claim_next_promotable(claimant_id="proc-1")
+    assert claimed is not None
+    await source.mark_promoted(message_id=claimed.message_id, claimant_id="proc-1", task_id="task-1")
+
+    second = await source.publish(
+        kind="followup",
+        source="ingress.sse",
+        text="second",
+        payload={"message": "second"},
+        task_payload={
+            "meta": {"task_id": "task-2", "created_at": 2.0, "instance_id": "ingress-1"},
+            "routing": {"bundle_id": "bundle.demo", "session_id": "sess-1", "conversation_id": "conv1", "turn_id": "turn-3"},
+            "actor": {"tenant_id": "t1", "project_id": "p1"},
+            "user": {"user_type": "registered", "user_id": "u1"},
+            "request": {"message": "second", "payload": {}},
+            "config": {"values": {}},
+            "accounting": {"envelope": {}},
+            "continuation": {"kind": "followup", "explicit": False},
+        },
+    )
+    claimed_next = await source.claim_next_promotable(claimant_id="proc-2")
+    assert claimed_next is not None
+    assert claimed_next.message_id == second.message_id
 
 
 @pytest.mark.asyncio
