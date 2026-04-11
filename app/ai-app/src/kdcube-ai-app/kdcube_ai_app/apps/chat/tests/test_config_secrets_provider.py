@@ -65,3 +65,19 @@ def test_get_secret_bundle_namespace_uses_request_context_scope(monkeypatch):
     )
 
     assert sdk_config.get_secret("b:user_management.cognito_user_pool_id") == "pool-123"
+
+
+def test_get_secret_bundle_namespace_uses_explicit_bundle_contextvar(monkeypatch):
+    monkeypatch.setattr(sdk_config, "get_secrets_manager", lambda _settings: _FakeSecretsManager())
+    monkeypatch.setattr(comm_ctx, "get_current_request_context", lambda: None)
+
+    with comm_ctx.bind_current_bundle_id("bundle.demo"):
+        assert sdk_config.get_secret("b:user_management.cognito_user_pool_id") == "pool-123"
+
+
+def test_get_secret_bundle_namespace_uses_bundle_env_fallback(monkeypatch):
+    monkeypatch.setattr(sdk_config, "get_secrets_manager", lambda _settings: _FakeSecretsManager())
+    monkeypatch.setattr(comm_ctx, "get_current_request_context", lambda: None)
+    monkeypatch.setenv("KDCUBE_BUNDLE_ID", "bundle.demo")
+
+    assert sdk_config.get_secret("b:user_management.cognito_user_pool_id") == "pool-123"
