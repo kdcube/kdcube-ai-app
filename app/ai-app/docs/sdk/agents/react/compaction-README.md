@@ -123,9 +123,12 @@ This includes external in-turn user contributions such as:
 - `user.followup`
 - `user.steer`
 
-They are treated like normal timeline blocks. Unlike Internal Memory Beacons, they are
-not specially cloned across the compaction boundary. If they fall behind the latest
-summary, they remain represented through the summary, not as preserved beacon copies.
+They are treated as first-class user control input. If they fall behind the latest
+summary, visible copies are preserved after the summary boundary as:
+- `user.followup.preserved`
+- `user.steer.preserved`
+
+That keeps same-turn followup/stop intent visible even after compaction.
 
 ---
 

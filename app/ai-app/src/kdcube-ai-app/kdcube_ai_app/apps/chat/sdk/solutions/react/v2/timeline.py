@@ -1675,6 +1675,29 @@ class Timeline:
         cloned["meta"] = meta
         return cloned
 
+    def _clone_preserved_external_event_block(
+        self,
+        *,
+        block: Dict[str, Any],
+        preserved_path: str,
+        source_path: str,
+    ) -> Dict[str, Any]:
+        cloned = dict(block or {})
+        meta = dict(cloned.get("meta") or {})
+        meta.pop("replacement_text", None)
+        meta["source_path"] = source_path
+        meta["preserved_by_compaction"] = True
+        btype = (cloned.get("type") or "").strip()
+        if btype == "user.followup":
+            cloned["type"] = "user.followup.preserved"
+        elif btype == "user.steer":
+            cloned["type"] = "user.steer.preserved"
+        cloned["path"] = preserved_path
+        cloned["hidden"] = False
+        cloned.pop("replacement_text", None)
+        cloned["meta"] = meta
+        return cloned
+
     def _build_compacted_internal_note_blocks(
         self,
         *,
@@ -1710,6 +1733,54 @@ class Timeline:
             preserved_path = f"ar:{turn_id}.react.note.preserved.{idx}" if turn_id else ""
             preserved.append(
                 self._clone_preserved_internal_note_block(
+                    block=blk,
+                    preserved_path=preserved_path,
+                    source_path=str(entry.get("source_path") or "").strip(),
+                )
+            )
+        return preserved
+
+    def _build_compacted_external_event_blocks(
+        self,
+        *,
+        blocks: List[Dict[str, Any]],
+        turn_id: str,
+    ) -> List[Dict[str, Any]]:
+        entries: Dict[str, Dict[str, Any]] = {}
+        for order, blk in enumerate(blocks or []):
+            if not isinstance(blk, dict):
+                continue
+            btype = (blk.get("type") or "").strip()
+            if btype not in {
+                "user.followup",
+                "user.followup.preserved",
+                "user.steer",
+                "user.steer.preserved",
+            }:
+                continue
+            text = (blk.get("text") or "").strip() if isinstance(blk.get("text"), str) else ""
+            meta = blk.get("meta") if isinstance(blk.get("meta"), dict) else {}
+            source_path = (meta.get("source_path") or blk.get("path") or "").strip()
+            message_id = str(meta.get("message_id") or "").strip()
+            key = message_id or source_path or f"{btype}:{text}"
+            entries[key] = {
+                "order": order,
+                "block": blk,
+                "source_path": source_path,
+            }
+        if not entries:
+            return []
+        ordered = sorted(entries.values(), key=lambda item: int(item.get("order") or 0))
+        preserved: List[Dict[str, Any]] = []
+        for idx, entry in enumerate(ordered, start=1):
+            blk = entry.get("block") if isinstance(entry.get("block"), dict) else None
+            if not blk:
+                continue
+            btype = (blk.get("type") or "").strip()
+            suffix = "followup" if "followup" in btype else "steer"
+            preserved_path = f"ar:{turn_id}.external.{suffix}.preserved.{idx}" if turn_id else ""
+            preserved.append(
+                self._clone_preserved_external_event_block(
                     block=blk,
                     preserved_path=preserved_path,
                     source_path=str(entry.get("source_path") or "").strip(),
@@ -2013,6 +2084,10 @@ class Timeline:
             blocks=compacted_blocks,
             turn_id=summary_turn_id or self.runtime.turn_id or "",
         )
+        external_event_preserved_blocks = self._build_compacted_external_event_blocks(
+            blocks=compacted_blocks,
+            turn_id=summary_turn_id or self.runtime.turn_id or "",
+        )
 
         active_plan_before = None
         if latest_current_plan_snapshot is not None:
@@ -2045,6 +2120,11 @@ class Timeline:
                 updated_blocks.insert(insert_pos, preserved_note)
                 insert_pos += 1
             inserted_blocks += len(note_preserved_blocks)
+        if external_event_preserved_blocks:
+            for preserved_event in external_event_preserved_blocks:
+                updated_blocks.insert(insert_pos, preserved_event)
+                insert_pos += 1
+            inserted_blocks += len(external_event_preserved_blocks)
         if history_index_block:
             updated_blocks.insert(insert_pos, history_index_block)
             insert_pos += 1
@@ -2649,12 +2729,17 @@ class Timeline:
                 if text:
                     lines.append(text)
                 text = "\n".join(lines).strip()
-            elif btype in {"user.followup", "user.steer"}:
+            elif btype in {
+                "user.followup",
+                "user.steer",
+                "user.followup.preserved",
+                "user.steer.preserved",
+            }:
                 lines = []
                 ts_line = _ts_line(ts)
                 if ts_line:
                     lines.append(ts_line)
-                lines.append("[FOLLOWUP DURING TURN]" if btype == "user.followup" else "[STEER DURING TURN]")
+                lines.append("[FOLLOWUP DURING TURN]" if "followup" in btype else "[STEER DURING TURN]")
                 if path:
                     lines.append(f"[path: {path}]")
                 if isinstance(meta, dict):

@@ -108,6 +108,22 @@ INTERNAL_NOTES_CONSUMER = """
 - Treat them as high‑signal memory beacons. Use them when planning or answering when relevant.
 """
 
+EXTERNAL_TURN_EVENTS_GUIDE = """
+[LIVE TURN EVENTS — FOLLOWUP & STEER]
+- The timeline may include explicit user control events during a running turn:
+  - `[FOLLOWUP DURING TURN]`
+  - `[STEER DURING TURN]`
+- These are real user inputs for the SAME running turn, not diagnostics and not assistant-authored notes.
+- Treat them as high-priority user intent updates.
+- `followup` means: the user added more input while you were already working. Fold it into the current objective and continue with the SAME turn.
+- `steer` means: the user wants to redirect or stop the current line of work. Treat it as authoritative latest intent. Do not continue the previous plan blindly.
+- If a steer arrives without extra text, assume the user wants the current work stopped and wrapped up at the next safe point with the progress made so far.
+- Engineering may already interrupt an in-flight generation or tool when steer arrives. If you now see a steer block, treat yourself as being in a short finalize phase, not in normal open-ended exploration.
+- In that finalize phase, wrap up briefly from the progress already made. Avoid restarting broad exploration or long new work unless absolutely unavoidable.
+- If both older prompt text and later followup/steer are visible, the later event is newer control input and must influence your next decision.
+- These events are durable. They stay visible across pruning and may reappear after compaction as preserved event blocks.
+"""
+
 ATTACHMENT_AWARENESS_COORDINATOR = """
 [ATTACHMENTS — ADVISORY SIGNAL (HARD)]:
 - Always assess whether the task benefits from using original attachments.

@@ -32,6 +32,7 @@ from kdcube_ai_app.tools.content_type import is_text_mime_type
 import re
 
 MAX_VISIBLE_OPEN_PLANS = 4
+MAX_VISIBLE_LIVE_TURN_EVENTS = 4
 
 
 
@@ -381,6 +382,50 @@ def build_announce_workspace_lines(
     return lines
 
 
+def build_announce_live_turn_event_lines(
+    *,
+    runtime_ctx: Optional[RuntimeCtx],
+    timeline_blocks: List[Dict[str, Any]],
+    max_visible: int = MAX_VISIBLE_LIVE_TURN_EVENTS,
+) -> List[str]:
+    if runtime_ctx is None:
+        return []
+    turn_id = str(getattr(runtime_ctx, "turn_id", "") or "").strip()
+    if not turn_id:
+        return []
+
+    visible: List[Dict[str, Any]] = []
+    for block in timeline_blocks:
+        btype = str(block.get("type") or "").strip()
+        if btype not in {"user.followup", "user.steer"}:
+            continue
+        if str(block.get("turn_id") or "").strip() != turn_id:
+            continue
+        visible.append(block)
+
+    if not visible:
+        return []
+
+    kept = visible[-max(1, int(max_visible or 1)) :]
+    lines: List[str] = ["[LIVE TURN EVENTS]"]
+    lines.append(f"  - events: {len(kept)} visible")
+    for block in kept:
+        btype = str(block.get("type") or "").strip()
+        meta = block.get("meta") if isinstance(block.get("meta"), dict) else {}
+        kind = "steer" if btype == "user.steer" else "followup"
+        seq = meta.get("sequence")
+        explicit = meta.get("explicit")
+        seq_suffix = f" seq={seq}" if seq is not None else ""
+        explicit_suffix = f" explicit={bool(explicit)}" if explicit is not None else ""
+        lines.append(f"    • {kind}{seq_suffix}{explicit_suffix}")
+        text = str(block.get("text") or "").strip()
+        if text:
+            lines.append(f"      text={_shorten(text, 120)}")
+        elif kind == "steer":
+            lines.append("      text=(empty stop control)")
+    return lines
+
+
 def build_announce_text(
     *,
     iteration: int,
@@ -467,6 +512,14 @@ def build_announce_text(
     if show_plan:
         lines.append("")
         lines.extend(build_announce_plan_lines(timeline_blocks=timeline_blocks))
+
+    live_turn_event_lines = build_announce_live_turn_event_lines(
+        runtime_ctx=runtime_ctx,
+        timeline_blocks=timeline_blocks,
+    )
+    if live_turn_event_lines:
+        lines.append("")
+        lines.extend(live_turn_event_lines)
 
     workspace_lines = build_announce_workspace_lines(
         runtime_ctx=runtime_ctx,
