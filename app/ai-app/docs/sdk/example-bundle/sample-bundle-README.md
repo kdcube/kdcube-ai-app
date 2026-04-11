@@ -13,7 +13,7 @@ with external tool servers connected through MCP (Model Context Protocol).
 
 For the shared SDK model behind this example, see:
 - [../bundle/bundle-lifecycle-README.md](../bundle/bundle-lifecycle-README.md)
-- [../bundle/bundle-config-README.md](../bundle/bundle-config-README.md)
+- [../bundle/bundle-props-secrets-README.md](../bundle/bundle-props-secrets-README.md)
 - [../bundle/bundle-knowledge-space-README.md](../bundle/bundle-knowledge-space-README.md)
 
 Motivation:
@@ -161,7 +161,7 @@ export AGENTIC_BUNDLES_JSON='{
 - MCP connector configuration: [sample-bundle-configuration-README.md](sample-bundle-configuration-README.md)
 - Bundle properties and integrations: [sample-bundle-properties-README.md](sample-bundle-properties-README.md)
 - Bundle lifecycle: [../bundle/bundle-lifecycle-README.md](../bundle/bundle-lifecycle-README.md)
-- Bundle configuration: [../bundle/bundle-config-README.md](../bundle/bundle-config-README.md)
+- Bundle props and secrets: [../bundle/bundle-props-secrets-README.md](../bundle/bundle-props-secrets-README.md)
 - SDK MCP integration: [docs/sdk/tools/mcp-README.md](../../tools/mcp-README.md)
 - Bundle developer guide: [docs/sdk/bundle/bundle-dev-README.md](../bundle-dev-README.md)
 - Base react bundle: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44/`
