@@ -501,8 +501,7 @@ class StripeEconomicsWebhookHandler:
 
     def _verify_and_parse(self, *, body: bytes, stripe_signature: Optional[str]) -> Dict[str, Any]:
         if not self.webhook_secret:
-            logger.warning("services.stripe.webhook_secret not set: parsing Stripe event WITHOUT verification")
-            return json.loads(body.decode("utf-8"))
+            raise RuntimeError("services.stripe.webhook_secret not configured")
 
         if not stripe_signature:
             raise ValueError("Missing Stripe-Signature header")
