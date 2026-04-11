@@ -15,6 +15,10 @@ from kdcube_ai_app.infra.namespaces import REDIS, ns_key
 
 
 _DEFAULT_OWNER_TTL_SECONDS = 600
+_PROMOTION_CONSUMER_GROUP = "react-external-promoter.v1"
+_DEFAULT_STREAM_MAX_ENTRIES = max(64, int(os.getenv("CHAT_EXTERNAL_EVENTS_STREAM_MAX_ENTRIES") or "1024"))
+_DEFAULT_STREAM_RETENTION_SECONDS = max(0, int(os.getenv("CHAT_EXTERNAL_EVENTS_STREAM_RETENTION_SECONDS") or str(7 * 24 * 3600)))
+_DEFAULT_STREAM_TRIM_BATCH = max(16, int(os.getenv("CHAT_EXTERNAL_EVENTS_STREAM_TRIM_BATCH") or "256"))
 
 
 @dataclass
@@ -107,6 +111,8 @@ class TimelineOwnerLease:
     instance_id: str = ""
     process_id: int = 0
     listener_id: str = ""
+    lease_token: str = ""
+    lease_epoch: int = 0
     started_at: str = ""
     updated_at: str = ""
 
@@ -117,6 +123,8 @@ class TimelineOwnerLease:
             "instance_id": self.instance_id or "",
             "process_id": int(self.process_id or 0),
             "listener_id": self.listener_id or "",
+            "lease_token": self.lease_token or "",
+            "lease_epoch": int(self.lease_epoch or 0),
             "started_at": self.started_at or "",
             "updated_at": self.updated_at or "",
         }
@@ -142,17 +150,32 @@ class TimelineOwnerLease:
             instance_id=str(raw.get("instance_id") or ""),
             process_id=int(raw.get("process_id") or 0),
             listener_id=str(raw.get("listener_id") or ""),
+            lease_token=str(raw.get("lease_token") or ""),
+            lease_epoch=int(raw.get("lease_epoch") or 0),
             started_at=str(raw.get("started_at") or ""),
             updated_at=str(raw.get("updated_at") or ""),
         )
 
 
 class RedisConversationExternalEventSource:
-    def __init__(self, *, redis, tenant: str, project: str, conversation_id: str):
+    def __init__(
+        self,
+        *,
+        redis,
+        tenant: str,
+        project: str,
+        conversation_id: str,
+        stream_max_entries: Optional[int] = None,
+        stream_retention_seconds: Optional[int] = None,
+        stream_trim_batch: Optional[int] = None,
+    ):
         self.redis = redis
         self.tenant = tenant
         self.project = project
         self.conversation_id = conversation_id
+        self.stream_max_entries = max(0, int(stream_max_entries if stream_max_entries is not None else _DEFAULT_STREAM_MAX_ENTRIES))
+        self.stream_retention_seconds = max(0, int(stream_retention_seconds if stream_retention_seconds is not None else _DEFAULT_STREAM_RETENTION_SECONDS))
+        self.stream_trim_batch = max(1, int(stream_trim_batch if stream_trim_batch is not None else _DEFAULT_STREAM_TRIM_BATCH))
 
     @property
     def log_key(self) -> str:
@@ -175,9 +198,21 @@ class RedisConversationExternalEventSource:
         return f"{self.log_key}:promotion-cursor"
 
     @property
+    def promotion_group(self) -> str:
+        return _PROMOTION_CONSUMER_GROUP
+
+    @property
     def owner_key(self) -> str:
         base = ns_key(REDIS.CHAT.CONVERSATION_TIMELINE_OWNER_PREFIX, tenant=self.tenant, project=self.project)
         return f"{base}:{self.conversation_id}"
+
+    @property
+    def owner_token_key(self) -> str:
+        return f"{self.owner_key}:token"
+
+    @property
+    def owner_epoch_key(self) -> str:
+        return f"{self.owner_key}:epoch"
 
     async def publish(
         self,
@@ -210,6 +245,7 @@ class RedisConversationExternalEventSource:
         stream_id = await self._append_to_stream(event)
         event.stream_id = str(stream_id or "")
         await self._write_event(event)
+        await self._maybe_cleanup_retention()
         return event
 
     async def read_since(self, cursor: str | int | None, *, limit: Optional[int] = None) -> List[ConversationExternalEvent]:
@@ -253,9 +289,43 @@ class RedisConversationExternalEventSource:
         *,
         claimant_id: str,
         ttl_seconds: int = 120,
+        min_idle_ms: int = 15_000,
     ) -> Optional[ConversationExternalEvent]:
+        consumer_name = str(claimant_id or "")
+        for _ in range(200):
+            raw_items = await self._promotion_group_read(consumer_name=consumer_name, count=1)
+            if not raw_items:
+                raw_items = await self._promotion_group_autoclaim(
+                    consumer_name=consumer_name,
+                    min_idle_ms=max(1, int(min_idle_ms or 1)),
+                    count=1,
+                )
+            if not raw_items:
+                break
+            raw = raw_items[0]
+            item = await self._read_event_ref(raw)
+            if item is None:
+                continue
+            stream_id = str(item.stream_id or "")
+            if item.failed_at is not None or item.task_payload is None or item.promoted_at is not None or item.consumed_at is not None:
+                if stream_id:
+                    await self._ack_stream_event(stream_id)
+                continue
+            latest = await self.get_event(item.message_id)
+            if latest is None:
+                if stream_id:
+                    await self._ack_stream_event(stream_id)
+                continue
+            if latest.failed_at is not None or latest.promoted_at is not None or latest.consumed_at is not None:
+                if latest.stream_id:
+                    await self._ack_stream_event(str(latest.stream_id))
+                continue
+            return latest
+
         cursor = await self._get_promotion_cursor()
         raw_items = await self._stream_read_since(cursor, limit=200)
+        if not raw_items:
+            return None
         last_terminal_stream_id = str(cursor or "")
         for raw in raw_items or []:
             item = await self._read_event_ref(raw)
@@ -326,8 +396,10 @@ class RedisConversationExternalEventSource:
         event.promoted_task_id = str(task_id or "")
         await self._write_event(event)
         if event.stream_id:
+            await self._ack_stream_event(str(event.stream_id))
             await self._advance_promotion_cursor(str(event.stream_id))
         await self.release_claim(message_id=message_id, claimant_id=claimant_id)
+        await self._maybe_cleanup_retention()
         return event
 
     async def mark_failed(self, *, message_id: str, claimant_id: str, reason: str) -> Optional[ConversationExternalEvent]:
@@ -339,8 +411,10 @@ class RedisConversationExternalEventSource:
         event.failed_reason = str(reason or "failed")
         await self._write_event(event)
         if event.stream_id:
+            await self._ack_stream_event(str(event.stream_id))
             await self._advance_promotion_cursor(str(event.stream_id))
         await self.release_claim(message_id=message_id, claimant_id=claimant_id)
+        await self._maybe_cleanup_retention()
         return event
 
     async def mark_consumed_up_to(self, *, max_sequence: int, turn_id: str) -> int:
@@ -364,10 +438,13 @@ class RedisConversationExternalEventSource:
             item.consumed_by_turn_id = str(turn_id or "")
             await self._write_event(item)
             if item.stream_id:
+                await self._ack_stream_event(str(item.stream_id))
                 max_stream_id = str(item.stream_id)
             updated += 1
         if max_stream_id:
             await self._advance_promotion_cursor(max_stream_id)
+        if updated:
+            await self._maybe_cleanup_retention()
         return updated
 
     async def get_owner(self) -> Optional[TimelineOwnerLease]:
@@ -383,19 +460,29 @@ class RedisConversationExternalEventSource:
         ttl_seconds: int = _DEFAULT_OWNER_TTL_SECONDS,
     ) -> TimelineOwnerLease:
         now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        lease_token = f"lease_{uuid.uuid4().hex[:16]}"
+        listener_id = listener_id or f"listener_{uuid.uuid4().hex[:8]}"
+        lease_epoch = int(
+            await self._acquire_owner_epoch_and_write(
+                turn_id=str(turn_id or ""),
+                bundle_id=str(bundle_id or ""),
+                listener_id=str(listener_id or ""),
+                lease_token=str(lease_token or ""),
+                started_at=now_iso,
+                updated_at=now_iso,
+                ttl_seconds=max(1, int(ttl_seconds or _DEFAULT_OWNER_TTL_SECONDS)),
+            )
+        )
         lease = TimelineOwnerLease(
             turn_id=turn_id or "",
             bundle_id=bundle_id or "",
             instance_id=os.getenv("INSTANCE_ID", "unknown"),
             process_id=os.getpid(),
-            listener_id=listener_id or f"listener_{uuid.uuid4().hex[:8]}",
+            listener_id=listener_id,
+            lease_token=lease_token,
+            lease_epoch=lease_epoch,
             started_at=now_iso,
             updated_at=now_iso,
-        )
-        await self.redis.setex(
-            self.owner_key,
-            max(1, int(ttl_seconds or _DEFAULT_OWNER_TTL_SECONDS)),
-            json.dumps(lease.to_dict(), ensure_ascii=False),
         )
         return lease
 
@@ -405,34 +492,46 @@ class RedisConversationExternalEventSource:
         listener_id: str,
         turn_id: str,
         bundle_id: str = "",
+        lease_token: str = "",
         ttl_seconds: int = _DEFAULT_OWNER_TTL_SECONDS,
-    ) -> TimelineOwnerLease:
+    ) -> Optional[TimelineOwnerLease]:
         now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         existing = await self.get_owner()
-        started_at = existing.started_at if existing and existing.listener_id == listener_id else now_iso
+        if existing is None:
+            return None
+        if listener_id and existing.listener_id != listener_id:
+            return None
+        if lease_token and existing.lease_token != str(lease_token or ""):
+            return None
         lease = TimelineOwnerLease(
             turn_id=turn_id or "",
-            bundle_id=bundle_id or (existing.bundle_id if existing else ""),
+            bundle_id=bundle_id or existing.bundle_id,
             instance_id=os.getenv("INSTANCE_ID", "unknown"),
             process_id=os.getpid(),
-            listener_id=listener_id or (existing.listener_id if existing else ""),
-            started_at=started_at,
+            listener_id=listener_id or existing.listener_id,
+            lease_token=existing.lease_token,
+            lease_epoch=int(existing.lease_epoch or 0),
+            started_at=existing.started_at or now_iso,
             updated_at=now_iso,
         )
-        await self.redis.setex(
-            self.owner_key,
-            max(1, int(ttl_seconds or _DEFAULT_OWNER_TTL_SECONDS)),
-            json.dumps(lease.to_dict(), ensure_ascii=False),
+        updated = await self._compare_and_set_owner_lease(
+            expected_token=str(existing.lease_token or ""),
+            lease=lease,
+            ttl_seconds=max(1, int(ttl_seconds or _DEFAULT_OWNER_TTL_SECONDS)),
         )
+        if not updated:
+            return None
         return lease
 
-    async def release_owner(self, *, listener_id: str) -> None:
+    async def release_owner(self, *, listener_id: str, lease_token: str = "") -> bool:
         existing = await self.get_owner()
         if existing is None:
-            return
+            return False
         if listener_id and existing.listener_id and existing.listener_id != listener_id:
-            return
-        await self.redis.delete(self.owner_key)
+            return False
+        if lease_token and existing.lease_token and existing.lease_token != str(lease_token or ""):
+            return False
+        return bool(await self._delete_owner_lease(expected_token=str(existing.lease_token or "")))
 
     async def _read_event_ref(self, raw: Any) -> Optional[ConversationExternalEvent]:
         stream_id = None
@@ -482,6 +581,164 @@ class RedisConversationExternalEventSource:
             except TypeError:
                 pass
         await self.redis.setex(self.event_key(event.message_id), 315360000, payload)
+
+    async def _acquire_owner_epoch_and_write(
+        self,
+        *,
+        turn_id: str,
+        bundle_id: str,
+        listener_id: str,
+        lease_token: str,
+        started_at: str,
+        updated_at: str,
+        ttl_seconds: int,
+    ) -> int:
+        script = """
+local epoch_key = KEYS[1]
+local token_key = KEYS[2]
+local owner_key = KEYS[3]
+local ttl = tonumber(ARGV[1])
+local epoch = redis.call('INCR', epoch_key)
+local owner = cjson.encode({
+  turn_id = ARGV[2],
+  bundle_id = ARGV[3],
+  instance_id = ARGV[4],
+  process_id = tonumber(ARGV[5]),
+  listener_id = ARGV[6],
+  lease_token = ARGV[7],
+  lease_epoch = epoch,
+  started_at = ARGV[8],
+  updated_at = ARGV[9]
+})
+redis.call('SETEX', owner_key, ttl, owner)
+redis.call('SETEX', token_key, ttl, ARGV[7])
+return epoch
+"""
+        evaluator = getattr(self.redis, "eval", None)
+        instance_id = os.getenv("INSTANCE_ID", "unknown")
+        process_id = os.getpid()
+        if callable(evaluator):
+            try:
+                res = await evaluator(
+                    script,
+                    3,
+                    self.owner_epoch_key,
+                    self.owner_token_key,
+                    self.owner_key,
+                    str(max(1, int(ttl_seconds or 1))),
+                    str(turn_id or ""),
+                    str(bundle_id or ""),
+                    str(instance_id or ""),
+                    str(process_id),
+                    str(listener_id or ""),
+                    str(lease_token or ""),
+                    str(started_at or ""),
+                    str(updated_at or ""),
+                )
+                return int(res or 0)
+            except Exception:
+                pass
+        epoch = int(await self.redis.incr(self.owner_epoch_key))
+        lease = TimelineOwnerLease(
+            turn_id=str(turn_id or ""),
+            bundle_id=str(bundle_id or ""),
+            instance_id=str(instance_id or ""),
+            process_id=int(process_id or 0),
+            listener_id=str(listener_id or ""),
+            lease_token=str(lease_token or ""),
+            lease_epoch=epoch,
+            started_at=str(started_at or ""),
+            updated_at=str(updated_at or ""),
+        )
+        await self._write_owner_lease(lease, ttl_seconds=max(1, int(ttl_seconds or 1)))
+        return epoch
+
+    async def _write_owner_lease(self, lease: TimelineOwnerLease, *, ttl_seconds: int) -> None:
+        payload = json.dumps(lease.to_dict(), ensure_ascii=False)
+        setter = getattr(self.redis, "set", None)
+        if callable(setter):
+            try:
+                await setter(self.owner_key, payload, ex=ttl_seconds)
+                await setter(self.owner_token_key, str(lease.lease_token or ""), ex=ttl_seconds)
+                return
+            except TypeError:
+                pass
+        await self.redis.setex(self.owner_key, ttl_seconds, payload)
+        await self.redis.setex(self.owner_token_key, ttl_seconds, str(lease.lease_token or ""))
+
+    async def _compare_and_set_owner_lease(self, *, expected_token: str, lease: TimelineOwnerLease, ttl_seconds: int) -> bool:
+        payload = json.dumps(lease.to_dict(), ensure_ascii=False)
+        script = """
+local token_key = KEYS[1]
+local owner_key = KEYS[2]
+local expected = ARGV[1]
+local ttl = tonumber(ARGV[2])
+local owner_json = ARGV[3]
+local lease_token = ARGV[4]
+local current = redis.call('GET', token_key)
+if not current then return 0 end
+if current ~= expected then return 0 end
+redis.call('SETEX', owner_key, ttl, owner_json)
+redis.call('SETEX', token_key, ttl, lease_token)
+return 1
+"""
+        evaluator = getattr(self.redis, "eval", None)
+        if callable(evaluator):
+            try:
+                res = await evaluator(
+                    script,
+                    2,
+                    self.owner_token_key,
+                    self.owner_key,
+                    str(expected_token or ""),
+                    str(max(1, int(ttl_seconds or 1))),
+                    payload,
+                    str(lease.lease_token or ""),
+                )
+                return bool(int(res or 0))
+            except Exception:
+                pass
+        current = await self.redis.get(self.owner_token_key)
+        if isinstance(current, bytes):
+            current = current.decode("utf-8")
+        if str(current or "") != str(expected_token or ""):
+            return False
+        await self._write_owner_lease(lease, ttl_seconds=ttl_seconds)
+        return True
+
+    async def _delete_owner_lease(self, *, expected_token: str) -> bool:
+        script = """
+local token_key = KEYS[1]
+local owner_key = KEYS[2]
+local expected = ARGV[1]
+local current = redis.call('GET', token_key)
+if not current then return 0 end
+if current ~= expected then return 0 end
+redis.call('DEL', owner_key)
+redis.call('DEL', token_key)
+return 1
+"""
+        evaluator = getattr(self.redis, "eval", None)
+        if callable(evaluator):
+            try:
+                res = await evaluator(
+                    script,
+                    2,
+                    self.owner_token_key,
+                    self.owner_key,
+                    str(expected_token or ""),
+                )
+                return bool(int(res or 0))
+            except Exception:
+                pass
+        current = await self.redis.get(self.owner_token_key)
+        if isinstance(current, bytes):
+            current = current.decode("utf-8")
+        if str(current or "") != str(expected_token or ""):
+            return False
+        await self.redis.delete(self.owner_key)
+        await self.redis.delete(self.owner_token_key)
+        return True
 
     async def _claim_event(self, message_id: str, *, claimant_id: str, ttl_seconds: int) -> bool:
         setter = getattr(self.redis, "set", None)
@@ -538,6 +795,127 @@ class RedisConversationExternalEventSource:
             return str(stream_id or "")
         await self.redis.rpush(self.log_key, event.message_id)
         return ""
+
+    async def _delete_stream_event(self, stream_id: str) -> None:
+        stream_id = str(stream_id or "").strip()
+        if not stream_id:
+            return
+        await self._ack_stream_event(stream_id)
+        deleter = getattr(self.redis, "xdel", None)
+        if callable(deleter):
+            try:
+                await deleter(self.log_key, stream_id)
+            except Exception:
+                pass
+
+    def _terminal_timestamp(self, event: Optional[ConversationExternalEvent]) -> Optional[float]:
+        if event is None:
+            return None
+        for value in (event.consumed_at, event.promoted_at, event.failed_at):
+            if value is not None:
+                try:
+                    return float(value)
+                except Exception:
+                    continue
+        return None
+
+    def _raw_stream_id(self, raw: Any) -> str:
+        if isinstance(raw, (tuple, list)) and len(raw) == 2:
+            stream_id = raw[0]
+            if isinstance(stream_id, bytes):
+                stream_id = stream_id.decode("utf-8")
+            return str(stream_id or "")
+        return ""
+
+    async def _maybe_cleanup_retention(self) -> int:
+        max_entries = int(self.stream_max_entries or 0)
+        retention_seconds = int(self.stream_retention_seconds or 0)
+        if max_entries <= 0 and retention_seconds <= 0:
+            return 0
+        raw_items = list(await self._stream_read_all() or [])
+        if not raw_items:
+            return 0
+        overflow = max(0, len(raw_items) - max_entries) if max_entries > 0 else 0
+        if overflow <= 0 and self.stream_trim_batch > 0 and len(raw_items) > self.stream_trim_batch:
+            raw_items = raw_items[: self.stream_trim_batch]
+        now = time.time()
+        removed = 0
+        for raw in raw_items:
+            item = await self._read_event_ref(raw)
+            stream_id = str(getattr(item, "stream_id", "") or "") if item is not None else self._raw_stream_id(raw)
+            if not stream_id:
+                continue
+            terminal_at = self._terminal_timestamp(item)
+            should_trim_for_age = bool(
+                retention_seconds > 0
+                and terminal_at is not None
+                and (now - float(terminal_at or 0.0)) >= retention_seconds
+            )
+            should_trim_for_overflow = bool(overflow > 0 and (terminal_at is not None or item is None))
+            if not should_trim_for_age and not should_trim_for_overflow:
+                continue
+            await self._delete_stream_event(stream_id)
+            if item is not None:
+                await self.redis.delete(self.event_key(item.message_id))
+                await self.redis.delete(self.claim_key(item.message_id))
+            removed += 1
+            if should_trim_for_overflow and overflow > 0:
+                overflow -= 1
+        return removed
+
+    async def _ensure_promotion_group(self) -> None:
+        creator = getattr(self.redis, "xgroup_create", None)
+        if not callable(creator):
+            return
+        try:
+            await creator(self.log_key, self.promotion_group, id="0-0", mkstream=True)
+        except Exception as exc:
+            if "BUSYGROUP" not in str(exc):
+                raise
+
+    async def _promotion_group_read(self, *, consumer_name: str, count: int) -> List[Any]:
+        reader = getattr(self.redis, "xreadgroup", None)
+        if not callable(reader):
+            return []
+        await self._ensure_promotion_group()
+        response = await reader(
+            self.promotion_group,
+            str(consumer_name or "promoter"),
+            {self.log_key: ">"},
+            count=max(1, int(count or 1)),
+            block=1,
+        )
+        return self._flatten_xread_response(response)
+
+    async def _promotion_group_autoclaim(self, *, consumer_name: str, min_idle_ms: int, count: int) -> List[Any]:
+        claimer = getattr(self.redis, "xautoclaim", None)
+        if not callable(claimer):
+            return []
+        await self._ensure_promotion_group()
+        response = await claimer(
+            self.log_key,
+            self.promotion_group,
+            str(consumer_name or "promoter"),
+            max(1, int(min_idle_ms or 1)),
+            "0-0",
+            count=max(1, int(count or 1)),
+        )
+        if isinstance(response, (tuple, list)) and len(response) >= 2:
+            return list(response[1] or [])
+        return []
+
+    async def _ack_stream_event(self, stream_id: str) -> None:
+        stream_id = str(stream_id or "").strip()
+        if not stream_id:
+            return
+        acker = getattr(self.redis, "xack", None)
+        if not callable(acker):
+            return
+        await self._ensure_promotion_group()
+        try:
+            await acker(self.log_key, self.promotion_group, stream_id)
+        except Exception:
+            pass
 
     async def _stream_read_all(self) -> List[Any]:
         xrange = getattr(self.redis, "xrange", None)
@@ -642,10 +1020,22 @@ async def _sleep_async(seconds: float) -> None:
     await asyncio.sleep(seconds)
 
 
-def build_conversation_external_event_source(*, redis, tenant: str, project: str, conversation_id: str) -> RedisConversationExternalEventSource:
+def build_conversation_external_event_source(
+    *,
+    redis,
+    tenant: str,
+    project: str,
+    conversation_id: str,
+    stream_max_entries: Optional[int] = None,
+    stream_retention_seconds: Optional[int] = None,
+    stream_trim_batch: Optional[int] = None,
+) -> RedisConversationExternalEventSource:
     return RedisConversationExternalEventSource(
         redis=redis,
         tenant=tenant,
         project=project,
         conversation_id=conversation_id,
+        stream_max_entries=stream_max_entries,
+        stream_retention_seconds=stream_retention_seconds,
+        stream_trim_batch=stream_trim_batch,
     )
