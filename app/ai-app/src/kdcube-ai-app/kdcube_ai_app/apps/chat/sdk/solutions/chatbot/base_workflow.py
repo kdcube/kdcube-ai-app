@@ -1325,12 +1325,15 @@ class BaseWorkflow():
         # Contribute user prompt + attachments to current turn log
         try:
             from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.layout import build_user_input_blocks
+            _continuation = self.comm_context.continuation if hasattr(self.comm_context, "continuation") else None
+            _continuation_kind = (getattr(_continuation, "kind", None) or "") or ""
             self.ctx_browser.contribute(
                 blocks=build_user_input_blocks(
                     runtime=self.ctx_browser.runtime_ctx,
                     user_text=scratchpad.user_text or "",
                     user_attachments=list(scratchpad.user_attachments or []),
                     block_factory=self.ctx_browser.timeline.block,
+                    continuation_kind=_continuation_kind or None,
                 ),
             )
             # Add attachments to sources_pool so local attachment paths are citable.
