@@ -9,6 +9,7 @@ pydantic==2.11.7
 pydantic-settings==2.10.1
 redis==6.2.0
 asyncpg
+psycopg2-binary==2.9.10
 Pillow
 
 # CloudWatch export
