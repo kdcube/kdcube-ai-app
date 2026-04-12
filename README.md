@@ -63,15 +63,17 @@ Install the bootstrap CLI and launch the setup wizard:
 
 ```bash
 pipx install kdcube-cli
-kdcube-setup
+kdcube
 ```
 
 Alternative:
 
 ```bash
 pip install kdcube-cli
-kdcube-setup
+kdcube
 ```
+
+`kdcube-setup` remains available as a compatibility alias, but `kdcube` is the canonical command.
 
 Prerequisites:
 - Python 3.9+
