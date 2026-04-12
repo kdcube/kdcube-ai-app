@@ -30,6 +30,9 @@ def _solver_stub() -> ReactSolverV2:
     solver._active_phase_name = ""
     solver._active_phase_cancelled_by_steer = False
     solver._active_phase_cancel_requested_at = 0.0
+    solver._active_generation_iteration = None
+    solver._active_generation_raw_chunks = []
+    solver._interrupted_generation_snapshot = None
     solver.scratchpad = SimpleNamespace(turn_id="turn-1")
     solver.comm = SimpleNamespace(service_event=_noop_async)
     solver.tools_subsystem = None
@@ -204,6 +207,42 @@ async def test_decision_node_cancels_inflight_phase_on_steer():
     assert out["retry_decision"] is True
     assert out["steer_finalize_mode"] is True
     assert out["steer_interrupt"]["cancelled_phase"] == "decision"
+
+
+def test_persist_interrupted_generation_uses_mainstream_raw_snapshot():
+    solver = _solver_stub()
+    captured = {}
+
+    def _contribute(*, blocks):
+        captured["blocks"] = list(blocks or [])
+
+    solver.ctx_browser = SimpleNamespace(
+        runtime_ctx=SimpleNamespace(turn_id="turn-1", started_at="2026-04-12T10:00:00Z"),
+        timeline=SimpleNamespace(block=lambda **kwargs: kwargs),
+        contribute=_contribute,
+        current_turn_blocks=lambda: [],
+    )
+    solver._interrupted_generation_snapshot = {
+        "raw_text": "<channel:thinking>thinking</channel:thinking><channel:code>print(1)</channel:code>",
+        "iteration": 2,
+        "captured_at": "2026-04-12T10:01:00Z",
+    }
+
+    state = {}
+    solver._persist_interrupted_generation(
+        state=state,
+        checkpoint="decision.after",
+        cancelled_phase="decision",
+    )
+
+    assert state["interrupted_generation_persisted"] is True
+    blocks = captured["blocks"]
+    assert len(blocks) == 1
+    assert blocks[0]["type"] == "react.decision.raw"
+    assert blocks[0]["mime"] == "text/plain"
+    assert blocks[0]["meta"]["interrupted"] is True
+    assert blocks[0]["meta"]["checkpoint"] == "decision.after"
+    assert blocks[0]["text"].startswith("<channel:thinking>")
 
 
 @pytest.mark.asyncio

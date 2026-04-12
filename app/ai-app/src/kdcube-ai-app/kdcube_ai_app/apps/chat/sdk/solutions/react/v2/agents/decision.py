@@ -596,6 +596,7 @@ async def react_decision_stream_v2(
     infra_adapters: Optional[List[Dict[str, Any]]] = None,
     workspace_implementation: str = "custom",
     on_progress_delta=None,
+    on_raw_delta=None,
     subscribers: Optional[Dict[str, List[Any]]] = None,
     max_tokens: int = 6000,
     user_blocks: Optional[List[Dict[str, Any]]] = None,
@@ -629,6 +630,14 @@ async def react_decision_stream_v2(
             except TypeError:
                 await on_progress_delta(text or "", completed=completed)
 
+    async def _emit_raw_delta(piece: str):
+        if not piece or on_raw_delta is None:
+            return
+        try:
+            await on_raw_delta(piece)
+        except TypeError:
+            await on_raw_delta(text=piece, completed=False)
+
     results, meta = await stream_with_channels(
         svc,
         messages=[system_msg, user_msg],
@@ -639,6 +648,7 @@ async def react_decision_stream_v2(
         artifact_name="react.decision",
         sources_list=None,
         subscribers=subscribers,
+        raw_emit=_emit_raw_delta,
         max_tokens=max_tokens,
         temperature=0.6,
         return_full_raw=True,

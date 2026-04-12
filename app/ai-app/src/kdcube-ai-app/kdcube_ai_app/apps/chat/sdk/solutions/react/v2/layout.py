@@ -172,6 +172,49 @@ def build_assistant_completion_blocks(
     )]
 
 
+def build_interrupted_generation_blocks(
+    *,
+    runtime: RuntimeCtx,
+    raw_text: str,
+    iteration: int,
+    interrupted_at: Optional[str],
+    checkpoint: Optional[str],
+    cancelled_phase: Optional[str],
+    sequence: Optional[int],
+    block_factory,
+) -> List[Dict[str, Any]]:
+    tid = (getattr(runtime, "turn_id", None) or "").strip()
+    raw_text = str(raw_text or "").strip()
+    if not tid or not raw_text:
+        return []
+    ts = (interrupted_at or getattr(runtime, "started_at", "") or "").strip()
+    meta: Dict[str, Any] = {
+        "channel": "raw",
+        "iteration": int(iteration or 0),
+        "interrupted": True,
+        "reason": "steer.interrupted",
+    }
+    if checkpoint:
+        meta["checkpoint"] = str(checkpoint)
+    if cancelled_phase:
+        meta["cancelled_phase"] = str(cancelled_phase)
+    if sequence is not None:
+        try:
+            meta["sequence"] = int(sequence)
+        except Exception:
+            pass
+    return [block_factory(
+        type="react.decision.raw",
+        author="react",
+        turn_id=tid,
+        ts=ts,
+        mime="text/plain",
+        path=f"ar:{tid}.react.decision.raw.interrupted.{int(iteration or 0)}",
+        text=raw_text,
+        meta=meta,
+    )]
+
+
 def build_turn_header_text(*, turn_id: str, started_at: str) -> str:
     turn_id = (turn_id or "").strip()
     started_at = (started_at or "").strip()
