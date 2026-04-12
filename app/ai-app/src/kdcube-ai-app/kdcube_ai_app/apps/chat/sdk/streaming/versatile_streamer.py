@@ -175,6 +175,7 @@ async def stream_with_channels(
         artifact_name: Optional[str] = None,
         sources_list: Optional[List[Dict[str, Any]]] = None,
         subscribers: Optional[Union[Dict[str, List[ChannelEmitFn]], ChannelSubscribers]] = None,
+        raw_emit: Optional[Callable[[str], Awaitable[None]]] = None,
         max_tokens: int = 8000,
         temperature: float = 0.3,
         debug: bool = False,
@@ -415,6 +416,11 @@ async def stream_with_channels(
 
     async def on_delta(piece: str):
         nonlocal buf
+        if piece and raw_emit is not None:
+            try:
+                await raw_emit(piece)
+            except Exception:
+                pass
         piece = citations_module._strip_invisible(piece)
         if not piece:
             return

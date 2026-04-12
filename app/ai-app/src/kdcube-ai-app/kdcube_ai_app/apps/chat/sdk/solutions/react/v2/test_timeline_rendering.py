@@ -203,3 +203,33 @@ def test_timeline_renders_plan_calls_but_hides_internal_plan_snapshots():
     assert "[AI Agent say]: Create the investigation plan." in text_dump
     assert '"origin_turn_id": "turn_plan"' not in text_dump
     assert "ar:turn_plan.react.plan.ack.1" not in text_dump
+
+
+def test_timeline_renders_interrupted_raw_generation_even_when_raw_hidden():
+    ctx = RuntimeCtx(turn_id="turn_raw", started_at="2026-04-12T00:00:00Z")
+    tl = Timeline(runtime=ctx)
+
+    tl.blocks.append(
+        tl._block(
+            type="react.decision.raw",
+            author="react",
+            turn_id=ctx.turn_id,
+            ts=ctx.started_at,
+            path="ar:turn_raw.react.decision.raw.interrupted.1",
+            text="<channel:thinking>draft</channel:thinking><channel:code>print(1)</channel:code>",
+            meta={
+                "interrupted": True,
+                "reason": "steer.interrupted",
+                "checkpoint": "decision.after",
+                "cancelled_phase": "decision",
+            },
+        )
+    )
+
+    rendered = _run(tl.render(cache_last=True))
+    text_dump = "\n".join(b.get("text", "") for b in rendered if b.get("type") == "text")
+
+    assert "[REACT DECISION RAW INTERRUPTED]" in text_dump
+    assert "checkpoint: decision.after" in text_dump
+    assert "cancelled_phase: decision" in text_dump
+    assert "<channel:thinking>draft</channel:thinking>" in text_dump

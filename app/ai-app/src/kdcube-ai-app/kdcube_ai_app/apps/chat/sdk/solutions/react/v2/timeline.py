@@ -2791,19 +2791,27 @@ class Timeline:
                     else:
                         text = f"[AI Agent say]: {text}".strip()
             elif btype == "react.decision.raw":
-                if not getattr(self.runtime, "render_decision_raw", False):
+                interrupted = bool(isinstance(meta, dict) and meta.get("interrupted"))
+                if not interrupted and not getattr(self.runtime, "render_decision_raw", False):
                     continue
                 if isinstance(text, str):
                     lines = []
                     ts_line = _ts_line(ts)
                     if ts_line:
                         lines.append(ts_line)
-                    lines.append("[REACT DECISION RAW]")
+                    lines.append("[REACT DECISION RAW INTERRUPTED]" if interrupted else "[REACT DECISION RAW]")
                     reason = ""
                     if isinstance(meta, dict):
                         reason = (meta.get("reason") or "").strip()
                     if reason:
                         lines.append(f"reason: {reason}")
+                    if interrupted and isinstance(meta, dict):
+                        checkpoint = (meta.get("checkpoint") or "").strip()
+                        cancelled_phase = (meta.get("cancelled_phase") or "").strip()
+                        if checkpoint:
+                            lines.append(f"checkpoint: {checkpoint}")
+                        if cancelled_phase:
+                            lines.append(f"cancelled_phase: {cancelled_phase}")
                     lines.append(text)
                     text = "\n".join([l for l in lines if l]).strip()
             elif btype == "react.state":
