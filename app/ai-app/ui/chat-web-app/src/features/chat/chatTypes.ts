@@ -159,6 +159,7 @@ export interface ChatTurn {
     id: string;
     state: TurnState;
     userMessage: UserMessage;
+    additionalUserMessages?: UserMessage[];
     answer?: string | null;
     events: TurnEvent<unknown>[];
     steps: Record<string, TurnStep>;

@@ -103,7 +103,10 @@ const ChatLog = () => {
                 const turn = turns[turnId];
 
                 return (<Fragment key={turnId}>
-                    <UserMessageComponent message={turn.userMessage} turnId={turnId}/>
+                    {turn.userMessage.text && <UserMessageComponent message={turn.userMessage} turnId={turnId}/>}
+                    {(turn.additionalUserMessages ?? []).map((msg, idx) => (
+                        <UserMessageComponent key={`${turnId}_followup_${idx}`} message={msg} turnId={turnId}/>
+                    ))}
                     <AssistantMessageComponent
                         message={turn.answer}
                         isGreeting={false}
