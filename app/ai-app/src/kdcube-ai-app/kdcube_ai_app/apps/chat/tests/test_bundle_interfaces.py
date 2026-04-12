@@ -19,6 +19,7 @@ from kdcube_ai_app.infra.plugin.agentic_loader import (
     _bundle_venv_base_python,
     _bundle_venv_build_env,
     _load_module_from_dir,
+    _load_from_sys_with_path_on_syspath,
     BUNDLE_VENV_ATTR,
     api,
     discover_bundle_interface_manifest,
@@ -304,6 +305,56 @@ def test_venv_decorator_supports_bundle_local_dataclass_arguments(monkeypatch, t
     assert isinstance(result, mod.SheetUser)
     assert result.email == "ALPHA@EXAMPLE.COM"
     assert result.status == "new"
+
+
+def test_venv_decorator_supports_bundle_local_dataclass_arguments_when_module_spec_contains_bundle_dir(
+    monkeypatch, tmp_path
+):
+    storage_root = tmp_path / "bundle-storage"
+    monkeypatch.setenv("BUNDLE_SHARED_STORAGE_ROOT", str(storage_root))
+
+    container_dir = tmp_path / "bundle-container"
+    bundle_dir = container_dir / "user-mgmt@1-0"
+    bundle_dir.mkdir(parents=True)
+    (bundle_dir / "requirements.txt").write_text("", encoding="utf-8")
+    (bundle_dir / "entrypoint.py").write_text(
+        "\n".join(
+            [
+                "from kdcube_ai_app.infra.plugin.agentic_loader import agentic_workflow, bundle_id",
+                "",
+                "@agentic_workflow(name='User Mgmt Bundle')",
+                "@bundle_id('user-mgmt@1-0')",
+                "class UserMgmtBundle:",
+                "    pass",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (bundle_dir / "service.py").write_text(
+        "\n".join(
+            [
+                "from dataclasses import dataclass",
+                "from kdcube_ai_app.infra.plugin.agentic_loader import venv",
+                "",
+                "@dataclass",
+                "class Payload:",
+                "    email: str",
+                "",
+                "@venv(requirements='requirements.txt')",
+                "def normalize(payload: Payload) -> Payload:",
+                "    return Payload(email=payload.email.upper())",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    mod = _load_from_sys_with_path_on_syspath(container_dir, "user-mgmt@1-0.service")
+    result = mod.normalize(mod.Payload(email="alpha@example.com"))
+
+    assert isinstance(result, mod.Payload)
+    assert result.email == "ALPHA@EXAMPLE.COM"
 
 
 def test_bundle_venv_build_env_strips_nested_runtime_and_debugger_vars(monkeypatch):

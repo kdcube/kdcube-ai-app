@@ -780,6 +780,39 @@ def _resolve_bundle_callable(bundle_root: Path, module_name: str, qualname: str)
     return _resolve_bundle_callable_from_module(mod, qualname)
 
 
+def _venv_module_context(fn: Callable[..., Any]) -> tuple[Path, str, str | None]:
+    """
+    Return the module container root, module name relative to that root, and
+    optional virtual root package used to import the callable.
+
+    For normal bundle-local modules this resolves to:
+      - container root = bundle root
+      - module name = e.g. "service"
+
+    For bundles loaded through a parent container plus a module like
+    "user-mgmt@1-0.entrypoint", proc imports the callable from a module named
+    "kdcube_bundle_<hash>.user-mgmt@1-0.service". In that case the child must
+    recreate the same module path from the parent container root rather than
+    re-importing from the concrete bundle root only.
+    """
+    file_path = Path(inspect.getsourcefile(fn) or inspect.getfile(fn)).resolve()
+    bundle_root = _resolve_bundle_root_for_callable(fn)
+    fn_module = str(getattr(fn, "__module__", "") or "").strip()
+    if fn_module.startswith("kdcube_bundle_"):
+        module_root = fn_module.split(".", 1)[0]
+        suffix = fn_module[len(module_root) + 1 :] if len(fn_module) > len(module_root) else ""
+        if suffix:
+            parts = suffix.split(".")
+            container_root = file_path.parents[len(parts) - 1]
+            return container_root.resolve(), suffix, module_root
+        return bundle_root, _resolve_bundle_module_name(bundle_root, fn), module_root
+    if fn_module and fn_module != "__main__":
+        parts = fn_module.split(".")
+        container_root = file_path.parents[len(parts) - 1]
+        return container_root.resolve(), fn_module, None
+    return bundle_root, _resolve_bundle_module_name(bundle_root, fn), None
+
+
 def _bundle_venv_entry_main() -> int:
     if len(sys.argv) != 5:
         raise SystemExit("usage: python -c ... <request.json> <args.pkl> <kwargs.pkl> <response.pkl>")
@@ -790,13 +823,19 @@ def _bundle_venv_entry_main() -> int:
     os.environ[_BUNDLE_VENV_EXEC_ENV] = "1"
     try:
         payload = json.loads(request_path.read_text(encoding="utf-8"))
-        bundle_root = Path(str(payload["bundle_root"])).resolve()
+        module_container_root = Path(
+            str(payload.get("module_container_root") or payload["bundle_root"])
+        ).resolve()
         module_name = str(payload["module_name"])
         module_root = str(payload.get("module_root") or "").strip() or None
+        if module_root is None:
+            root = str(module_container_root)
+            if root not in sys.path:
+                sys.path.insert(0, root)
         mod = (
-            _load_module_from_dir_with_root(bundle_root, module_name, root_pkg=module_root)
+            _load_module_from_dir_with_root(module_container_root, module_name, root_pkg=module_root)
             if module_root
-            else _load_module_from_dir(bundle_root, module_name)
+            else _load_from_sys_with_path_on_syspath(module_container_root, module_name)
         )
         args = pickle.loads(args_path.read_bytes())
         kwargs = pickle.loads(kwargs_path.read_bytes())
@@ -823,12 +862,8 @@ def _execute_in_bundle_venv(
     kwargs: dict[str, Any],
 ) -> Any:
     bundle_root = _resolve_bundle_root_for_callable(fn)
-    module_name = _resolve_bundle_module_name(bundle_root, fn)
+    module_container_root, module_name, module_root = _venv_module_context(fn)
     bundle_id = _resolve_bundle_id_for_root(bundle_root)
-    module_root = None
-    fn_module = str(getattr(fn, "__module__", "") or "").strip()
-    if fn_module.startswith("kdcube_bundle_"):
-        module_root = fn_module.split(".", 1)[0]
     requirements_path = Path(str(meta.get("requirements") or "requirements.txt"))
     if not requirements_path.is_absolute():
         requirements_path = (bundle_root / requirements_path).resolve()
@@ -865,6 +900,7 @@ def _execute_in_bundle_venv(
             json.dumps(
                 {
                     "bundle_root": str(bundle_root),
+                    "module_container_root": str(module_container_root),
                     "module_name": module_name,
                     "module_root": module_root,
                     "qualname": fn.__qualname__,
