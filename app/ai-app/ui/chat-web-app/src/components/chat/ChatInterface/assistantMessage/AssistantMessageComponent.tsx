@@ -2,6 +2,7 @@ import {RNFile, TurnStep} from "../../../../features/chatController/chatBase.ts"
 import {useAppSelector} from "../../../../app/store.ts";
 import {selectCurrentTurn} from "../../../../features/chat/chatStateSlice.ts";
 import React, {ReactNode, useCallback, useMemo, useRef, useState} from "react";
+import {UserMessageComponent} from "../UserMessageComponent.tsx";
 import {closeUpMarkdown, useWordStreamEffect} from "../../../WordStreamingEffects.tsx";
 import ReactMarkdown from "react-markdown";
 import {markdownComponents, markdownComponentsTight, rehypePlugins, remarkPlugins} from "../markdownRenderUtils.tsx";
@@ -30,11 +31,11 @@ import {
     CitationArtifact,
     FileArtifact,
     ThinkingArtifact,
-    UnknownArtifact
+    UnknownArtifact,
+    UserMessage
 } from "../../../../features/chat/chatTypes.ts";
 import {downloadResourceByRN} from "../../../../app/api/utils.ts";
 import {getFileIcon} from "../../../FileIcons.tsx";
-import {sortTimestamped} from "../../../../utils/utils.ts";
 import {Thinking} from "./Thinking.tsx";
 import {getChatLogComponent} from "../../../../features/extensions/logExtesnions.ts";
 
@@ -134,6 +135,8 @@ interface AssistantMessageProps {
     isGreeting: boolean;
     isError: boolean;
     isHistorical: boolean | undefined | null;
+    followupMessages?: UserMessage[];
+    turnId?: string;
 }
 
 export const AssistantMessageComponent = ({
@@ -142,6 +145,8 @@ export const AssistantMessageComponent = ({
                                               artifacts,
                                               isHistorical,
                                               isGreeting = false,
+                                              followupMessages,
+                                              turnId,
                                           }: AssistantMessageProps) => {
     const currentTurn = useAppSelector(selectCurrentTurn)
     const inProgress = useMemo(() => !!currentTurn, [currentTurn])
@@ -302,32 +307,58 @@ export const AssistantMessageComponent = ({
         </div>)
     }, [citations])
 
+    const thinkingStartMs = useMemo(() => {
+        if (thinkingItems.length === 0) return null;
+        return Math.min(...thinkingItems.map(t => t.timestamp));
+    }, [thinkingItems]);
+
+    const {beforeThinkingFollowups, afterThinkingFollowups} = useMemo(() => {
+        const msgs = followupMessages ?? [];
+        if (msgs.length === 0) return {beforeThinkingFollowups: [], afterThinkingFollowups: []};
+        if (thinkingStartMs === null) return {beforeThinkingFollowups: msgs, afterThinkingFollowups: []};
+        return {
+            beforeThinkingFollowups: msgs.filter(m => m.timestamp < thinkingStartMs),
+            afterThinkingFollowups: msgs.filter(m => m.timestamp >= thinkingStartMs),
+        };
+    }, [followupMessages, thinkingStartMs]);
+
     const thinkingItemsMemo = useMemo(() => {
-        if (!thinkingItems || thinkingItems.length === 0) {
-            return null
-        }
+        const thinkingBlock = thinkingItems.length > 0 ? (
+            <>
+                {thinkingItems.map((item, i) => <Thinking item={item} key={i}/>)}
+            </>
+        ) : null;
+
+        if (beforeThinkingFollowups.length === 0) return thinkingBlock;
+
         return (
             <>
-                {thinkingItems.map((item, i) => {
-                    return <Thinking item={item} key={i}/>
-                })}
+                {beforeThinkingFollowups.map(msg => (
+                    <UserMessageComponent key={`followup_${msg.timestamp}`} turnId={turnId ?? ""} message={msg}/>
+                ))}
+                {thinkingBlock}
             </>
-        )
-    }, [thinkingItems])
+        );
+    }, [thinkingItems, beforeThinkingFollowups, turnId])
 
     const timelineMemo = useMemo(() => {
-        const items = other.concat()
-        sortTimestamped(items)
+        type MixedItem = UnknownArtifact | UserMessage;
+        const items: MixedItem[] = [...other, ...afterThinkingFollowups];
+        items.sort((a, b) => a.timestamp - b.timestamp);
+
         return <div className={"w-full min-w-0 flex flex-col"}>
-            {items.map((item, i) => {
-                const Component = getChatLogComponent(item.artifactType)
-                if (!Component) {
-                    return null
+            {items.map((item) => {
+                if ('text' in item && 'attachments' in item) {
+                    const msg = item as UserMessage;
+                    return <UserMessageComponent key={`followup_${msg.timestamp}`} turnId={turnId ?? ""} message={msg}/>
                 }
-                return <Component key={i} item={item} historical={isHistorical}/>
+                const artifact = item as UnknownArtifact;
+                const Component = getChatLogComponent(artifact.artifactType)
+                if (!Component) return null
+                return <Component key={`${artifact.artifactType}_${artifact.timestamp}`} item={artifact} historical={isHistorical}/>
             })}
         </div>
-    }, [isHistorical, other])
+    }, [isHistorical, other, afterThinkingFollowups, turnId])
 
     return useMemo(() => {
         return (
