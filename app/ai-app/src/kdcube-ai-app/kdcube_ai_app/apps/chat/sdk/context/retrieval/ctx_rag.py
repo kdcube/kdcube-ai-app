@@ -2289,18 +2289,52 @@ class ContextRAGClient:
                     blocks=blocks,
                     sources_pool=(sources_pool or sources_pool_for_conv or []),
                 )
+                # Extract continuation_kind from user.prompt block meta (set for followup/steer turns)
+                _user_prompt_block = next(
+                    (b for b in blocks if isinstance(b, dict) and (b.get("type") or "") == "user.prompt"),
+                    None,
+                )
+                _prompt_meta = (_user_prompt_block or {}).get("meta") if isinstance((_user_prompt_block or {}).get("meta"), dict) else {}
+                _prompt_continuation_kind = (_prompt_meta or {}).get("continuation_kind") or None
+
                 user_text = (view.get("user") or {}).get("text") or ""
                 user_ts = (view.get("user") or {}).get("ts") or ts
                 if user_text:
+                    _user_data: Dict[str, Any] = {"text": user_text, "meta": {"source": "turn_log"}}
+                    if _prompt_continuation_kind:
+                        _user_data["continuation_kind"] = _prompt_continuation_kind
                     out.append({
                         "message_id": None,
                         "type": "chat:user",
                         "ts": user_ts,
                         "hosted_uri": None,
                         "bundle_id": turn_log_item.get("bundle_id"),
-                        "data": {"text": user_text, "meta": {"source": "turn_log"}},
+                        "data": _user_data,
                     })
                     replace_types["chat:user"] = True
+
+                # Emit user.followup blocks from Turn A (written when a followup arrived mid-turn)
+                for _blk in blocks:
+                    if not isinstance(_blk, dict):
+                        continue
+                    _btype = (_blk.get("type") or "").strip()
+                    if _btype not in {"user.followup", "user.followup.preserved"}:
+                        continue
+                    _blk_tid = str(_blk.get("turn_id") or "").strip()
+                    if _blk_tid and _blk_tid != tid:
+                        continue  # belongs to a different turn
+                    _fu_text = (_blk.get("text") or "").strip()
+                    if not _fu_text:
+                        continue
+                    _fu_ts = (_blk.get("ts") or ts or "")
+                    out.append({
+                        "message_id": None,
+                        "type": "chat:user",
+                        "ts": _fu_ts,
+                        "hosted_uri": None,
+                        "bundle_id": turn_log_item.get("bundle_id"),
+                        "data": {"text": _fu_text, "continuation_kind": "followup", "meta": {"source": "turn_log"}},
+                    })
 
                 for a in view.get("attachments") or []:
                     out.append({
