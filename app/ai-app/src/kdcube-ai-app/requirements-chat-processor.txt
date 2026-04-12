@@ -21,6 +21,7 @@ uvicorn==0.37.0
 networkx
 neo4j
 asyncpg
+psycopg2-binary==2.9.10
 ddgs
 semantic-kernel
 reportlab
