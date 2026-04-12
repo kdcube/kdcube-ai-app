@@ -16,7 +16,8 @@ export interface ConversationDescriptor {
 
 export interface ArtifactDataDTO {
     payload: unknown,
-    text: string
+    text: string,
+    continuation_kind?: string,
 }
 
 export interface AssistantFileData {

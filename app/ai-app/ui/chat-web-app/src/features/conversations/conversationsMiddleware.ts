@@ -127,19 +127,32 @@ const conversationsMiddleware = (): Middleware => {
                 turnOrder: conversation.turns.map(it => it.turn_id),
                 turns: conversation.turns.reduce((previousValue, currentValue, i, arr) => {
                     let userMessage: UserMessage | null = null;
+                    const additionalUserMessages: UserMessage[] = [];
                     let answer: string | null = null;
                     const followUpQuestions: string[] = []
                     const turnArtifacts: UnknownArtifact[] = []
 
                     currentValue.artifacts.forEach(it => {
                         switch (it.type) {
-                            case "chat:user":
-                                userMessage = {
-                                    text: it.data.text,
-                                    timestamp: Date.parse(it.ts),
-                                    attachments: userMessage ? userMessage.attachments : []
+                            case "chat:user": {
+                                const isFollowup = it.data.continuation_kind === "followup";
+                                if (isFollowup && userMessage) {
+                                    // Followup message within the active turn — append after original
+                                    additionalUserMessages.push({
+                                        text: it.data.text,
+                                        timestamp: Date.parse(it.ts),
+                                        attachments: [],
+                                    });
+                                } else if (!isFollowup) {
+                                    userMessage = {
+                                        text: it.data.text,
+                                        timestamp: Date.parse(it.ts),
+                                        attachments: userMessage ? userMessage.attachments : []
+                                    };
                                 }
-                                break
+                                // isFollowup && !userMessage → Turn B, skip
+                                break;
+                            }
                             case "artifact:user.attachment":
                                 userMessage = {
                                     text: userMessage ? userMessage.text : "",
@@ -264,7 +277,8 @@ const conversationsMiddleware = (): Middleware => {
                     previousValue[currentValue.turn_id] = {
                         id: currentValue.turn_id,
                         state: i < arr.length - 2 ? "finished" : "inProgress",
-                        userMessage: userMessage ?? {text: "ERROR", attachments: [], timestamp: 0},
+                        userMessage: userMessage ?? {text: "", attachments: [], timestamp: 0},
+                        ...(additionalUserMessages.length > 0 ? {additionalUserMessages} : {}),
                         events: [],
                         artifacts: turnArtifacts,
                         steps: {},
