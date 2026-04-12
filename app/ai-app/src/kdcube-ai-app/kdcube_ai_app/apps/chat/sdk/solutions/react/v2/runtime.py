@@ -167,6 +167,9 @@ class ReactSolverV2:
         self._active_phase_name: str = ""
         self._active_phase_cancelled_by_steer: bool = False
         self._active_phase_cancel_requested_at: float = 0.0
+        self._active_generation_iteration: Optional[int] = None
+        self._active_generation_raw_chunks: List[str] = []
+        self._interrupted_generation_snapshot: Optional[Dict[str, Any]] = None
 
     async def on_timeline_event(self, *, type: str, event: Any, blocks: List[Dict[str, Any]]) -> None:
         try:
@@ -395,6 +398,72 @@ class ReactSolverV2:
     def _build_default_steer_final_answer(self) -> str:
         return "Stopped at your request. I preserved the progress made so far."
 
+    def _begin_active_generation_capture(self, *, iteration: int) -> None:
+        self._active_generation_iteration = int(iteration or 0)
+        self._active_generation_raw_chunks = []
+
+    async def _capture_active_generation_raw(self, piece: str) -> None:
+        if self._active_generation_iteration is None:
+            return
+        if not piece:
+            return
+        self._active_generation_raw_chunks.append(str(piece))
+
+    def _clear_active_generation_capture(self) -> None:
+        self._active_generation_iteration = None
+        self._active_generation_raw_chunks = []
+
+    def _stash_interrupted_generation_snapshot(self) -> None:
+        raw_text = "".join(self._active_generation_raw_chunks or []).strip()
+        if not raw_text:
+            return
+        self._interrupted_generation_snapshot = {
+            "raw_text": raw_text,
+            "iteration": int(getattr(self, "_active_generation_iteration", 0) or 0),
+            "captured_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }
+
+    def _take_interrupted_generation_snapshot(self) -> Optional[Dict[str, Any]]:
+        snap = self._interrupted_generation_snapshot
+        self._interrupted_generation_snapshot = None
+        return snap if isinstance(snap, dict) else None
+
+    def _persist_interrupted_generation(
+        self,
+        *,
+        state: Dict[str, Any],
+        checkpoint: str,
+        cancelled_phase: Optional[str],
+    ) -> None:
+        if cancelled_phase != "decision":
+            return
+        if bool(state.get("interrupted_generation_persisted")):
+            return
+        snap = self._take_interrupted_generation_snapshot()
+        if not snap or not self.ctx_browser or not getattr(self.ctx_browser, "timeline", None):
+            return
+        raw_text = str(snap.get("raw_text") or "").strip()
+        if not raw_text:
+            return
+        try:
+            from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.layout import build_interrupted_generation_blocks
+
+            blocks = build_interrupted_generation_blocks(
+                runtime=self.ctx_browser.runtime_ctx,
+                raw_text=raw_text,
+                iteration=int(snap.get("iteration") or 0),
+                interrupted_at=str(snap.get("captured_at") or ""),
+                checkpoint=checkpoint,
+                cancelled_phase=cancelled_phase,
+                sequence=int(self._latest_steer_seq_seen or 0) if self._latest_steer_seq_seen is not None else None,
+                block_factory=self.ctx_browser.timeline.block,
+            )
+            if blocks:
+                self.ctx_browser.contribute(blocks=blocks)
+                state["interrupted_generation_persisted"] = True
+        except Exception:
+            self.log.log(f"[react.v2] failed to persist interrupted generation: {traceback.format_exc()}", level="ERROR")
+
     async def _enter_steer_finalize_mode(
         self,
         state: Dict[str, Any],
@@ -435,6 +504,11 @@ class ReactSolverV2:
             f"checkpoint={checkpoint} cancelled_phase={cancelled_phase or ''} "
             f"seq={self._latest_steer_seq_seen} text={steer_text!r}",
             level="INFO",
+        )
+        self._persist_interrupted_generation(
+            state=state,
+            checkpoint=checkpoint,
+            cancelled_phase=cancelled_phase,
         )
         try:
             await self.comm.service_event(
@@ -1262,6 +1336,7 @@ class ReactSolverV2:
         from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.agents.decision import build_decision_system_text
 
         async def _decision_agent(*, blocks: List[Dict[str, Any]]) -> Dict[str, Any]:
+            self._begin_active_generation_capture(iteration=iteration)
             from kdcube_ai_app.apps.chat.sdk.streaming.versatile_streamer import ChannelSubscribers
             subs = ChannelSubscribers().subscribe("ReactDecisionOutV2", _hub_on_json)
             if exec_streamer_widget is not None:
@@ -1277,6 +1352,7 @@ class ReactSolverV2:
                 infra_adapters=extra_adapters_for_decision,
                 workspace_implementation=getattr(runtime_ctx, "workspace_implementation", "custom") if runtime_ctx else "custom",
                 on_progress_delta=mainstream,
+                on_raw_delta=self._capture_active_generation_raw,
                 subscribers=subs,
                 agent_name=role,
                 max_tokens=decision_max_tokens,
@@ -1296,17 +1372,22 @@ class ReactSolverV2:
         except Exception:
             visible_external_event_seq = 0
         self._last_decision_visible_external_event_seq = visible_external_event_seq
-        decision = await retry_with_compaction(
-            ctx_browser=self.ctx_browser,
-            system_text_fn=lambda: build_decision_system_text(
-                adapters=announced_adapters,
-                infra_adapters=extra_adapters_for_decision,
-                workspace_implementation=getattr(getattr(self.ctx_browser, "runtime_ctx", None), "workspace_implementation", "custom"),
-            ),
-            render_params=render_params,
-            agent_fn=_decision_agent,
-            emit_status=None,
-        )
+        try:
+            decision = await retry_with_compaction(
+                ctx_browser=self.ctx_browser,
+                system_text_fn=lambda: build_decision_system_text(
+                    adapters=announced_adapters,
+                    infra_adapters=extra_adapters_for_decision,
+                    workspace_implementation=getattr(getattr(self.ctx_browser, "runtime_ctx", None), "workspace_implementation", "custom"),
+                ),
+                render_params=render_params,
+                agent_fn=_decision_agent,
+                emit_status=None,
+            )
+        finally:
+            if self._active_phase_cancelled_by_steer or self._steer_interrupt_requested:
+                self._stash_interrupted_generation_snapshot()
+            self._clear_active_generation_capture()
         await self._drain_external_events(call_hooks=True)
         if await self._apply_steer_interrupt_if_requested(state, checkpoint="decision.after"):
             state["force_compaction_next_decision"] = False
