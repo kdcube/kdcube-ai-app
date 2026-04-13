@@ -11,7 +11,7 @@ import re
 import json
 import textwrap
 import asyncio
-from typing import Annotated, Optional, Any, Dict
+from typing import Annotated, Optional, Any, Dict, List
 
 import semantic_kernel as sk
 import logging
@@ -30,6 +30,8 @@ from kdcube_ai_app.apps.chat.sdk.tools.docx_renderer import render_docx
 from kdcube_ai_app.apps.chat.sdk.tools.pptx_renderer import render_pptx
 from kdcube_ai_app.apps.chat.sdk.tools.md2pdf_async import AsyncMarkdownPDF, PDFOptions, get_shared_md2pdf
 from kdcube_ai_app.apps.chat.sdk.util import _defence
+from kdcube_ai_app.infra.accounting import _get_context
+from kdcube_ai_app.apps.chat.sdk.config import get_plain
 
 # Bound at runtime by ToolManager
 _SERVICE = None
