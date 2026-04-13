@@ -224,7 +224,7 @@ Unregister logic:
 * Call `unsubscribe_some(remove_channel)` on the communicator.
 * That removes the channel from `_subscribed_channels` and calls `UNSUBSCRIBE` / `PUNSUBSCRIBE`.
 
-Relay callback:
+Relay callback (fan-out with reconnection fallback):
 
 ```python
 async def _on_relay(self, message: dict):
@@ -246,13 +246,27 @@ async def _on_relay(self, message: dict):
     frame = _sse_frame(event, data, event_id=str(uuid.uuid4()))
 
     if target_sid:
+        # Prefer exact stream_id match; fall back to session broadcast
+        # if the target stream_id is no longer connected (e.g. client
+        # reconnected with a new stream_id while processor still holds
+        # the old one from task creation time).
+        matched = False
         for c in recipients:
             if c.stream_id and c.stream_id == target_sid:
+                self._enqueue(c, frame)
+                matched = True
+        if not matched and recipients:
+            # Fallback: deliver to all session clients
+            for c in recipients:
                 self._enqueue(c, frame)
     else:
         for c in recipients:
             self._enqueue(c, frame)
 ```
+
+> **Reconnection safety:** When a client reconnects (new `stream_id`), the processor
+> may still publish with the old `target_sid`. The fallback ensures messages are not
+> silently dropped — they are delivered to all clients in the same session instead.
 
 ---
 
@@ -282,53 +296,105 @@ await app.state.sse_hub.unregister(client)
 
 ## End-to-End Flow
 
-### Mermaid architecture diagram
+### Architecture diagram (two-instance deployment)
 
-```mermaid
-graph TD
-    subgraph "Orchestrator / Workers"
-        W1[Worker / Agentic App]
-    end
+Ingress and processor run as **separate uvicorn instances**. They communicate via Redis.
 
-    subgraph "Chat Service Process"
-        SC[ServiceCommunicator]
-        HUB[SSEHub]
-        SSE1[SSE Client 1<br>/sse/stream]
-        SSE2[SSE Client 2<br>/sse/stream]
-    end
-
-    Redis[(Redis Pub/Sub)]
-
-    W1 -->|pub event, session_id| SC
-    SC -->|PUBLISH kdcube.relay.chatbot.chat.events.session| Redis
-
-    HUB -->|subscribe_add chat.events.session| SC
-    SC -->|SUBSCRIBE kdcube.relay.chatbot.chat.events.session| Redis
-
-    Redis -->|message on channel| SC
-    SC -->|on_message payload| HUB
-    HUB -->|enqueue SSE frame| SSE1
-    HUB -->|enqueue SSE frame| SSE2
 ```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        Client (Browser)                                │
+│  EventSource(/sse/stream)  ←──SSE frames──  HTTP POST(/sse/chat) ──→  │
+└─────────┬──────────────────────────────────────────────┬────────────────┘
+          │ SSE                                          │ HTTP POST
+          ▼                                              ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    INGRESS (uvicorn instance)                           │
+│                                                                         │
+│  ┌──────────┐    ┌─────────────────────┐    ┌────────────────────────┐  │
+│  │ SSEHub   │◀───│ ChatRelayCommunicator│◀───│ ServiceCommunicator   │  │
+│  │          │    │ (subscribe side)     │    │ (Redis pubsub listener)│  │
+│  │ _on_relay│    │ acquire/release      │    │ subscribe_add()       │  │
+│  │ fan-out  │    │ session channels     │    │ start_listener()      │  │
+│  └──┬───────┘    └─────────────────────┘    └──────────┬─────────────┘  │
+│     │                                                   │               │
+│     │ enqueue SSE frames                   SUBSCRIBE to │               │
+│     ▼                                                   ▼               │
+│  ┌──────────┐                              ┌────────────────────────┐  │
+│  │ Client   │                              │ Redis Pub/Sub          │  │
+│  │ queue    │                              │ channel:               │  │
+│  │ → SSE    │                              │ {identity}.{t}:{p}:    │  │
+│  │   stream │                              │ chat.events.{session}  │  │
+│  └──────────┘                              └──────────┬─────────────┘  │
+│                                                       ▲               │
+│  HTTP POST /sse/chat:                                  │               │
+│    → enqueue task to Redis Queue ──────────────────────┼───────────┐   │
+└─────────────────────────────────────────────────────────┼───────────┼───┘
+                                                         │           │
+                                                 PUBLISH │    BRPOP  │
+                                                         │           ▼
+┌─────────────────────────────────────────────────────────┼───────────────┐
+│                   PROCESSOR (uvicorn instance)          │               │
+│                                                         │               │
+│  ┌──────────────┐    ┌─────────────────────┐    ┌──────┴────────────┐  │
+│  │ Chat Handler │───▶│ ChatCommunicator    │───▶│ ChatRelayCommunic.│  │
+│  │ (agentic     │    │ emit_delta()        │    │ (publish side)    │  │
+│  │  workflow)   │    │ emit_complete()     │    │ _pub_async()      │  │
+│  └──────────────┘    │ target_sid=stream_id│    └───────────────────┘  │
+│                      └─────────────────────┘                           │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Key invariant:** Both instances must use the same `orchestrator_identity`
+(env `CB_RELAY_IDENTITY`, default `kdcube.relay.chatbot`) so the Redis channel
+names match between PUBLISH and SUBSCRIBE.
 
 ### Sequence diagram for one event
 
 ```mermaid
 sequenceDiagram
-    participant Worker as Orchestrator / Worker
-    participant Comm as ServiceCommunicator
-    participant Redis as Redis Pub/Sub
-    participant Hub as SSEHub
-    participant Client as SSE /sse/stream
+    participant Browser
+    participant Ingress as Ingress (SSE + HTTP)
+    participant Redis as Redis
+    participant Proc as Processor
 
-    Note over Client,Hub: Client connects, SSEHub.register()<br>→ subscribe_add("chat.events.S")<br>→ start_listener()
+    Note over Browser,Ingress: SSE connect: register(client)<br>→ subscribe_add("chat.events.S")<br>→ start_listener()
 
-    Worker->>Comm: pub("conv_status", session_id=S)
-    Comm->>Redis: PUBLISH kdcube.relay.chatbot.chat.events.S {message}
-    Redis-->>Comm: message on kdcube.relay.chatbot.chat.events.S
-    Comm-->>Hub: on_message(payload)
-    Hub->>Client: enqueue SSE frame into queue
-    Client->>Client: Browser receives event via /sse/stream
+    Browser->>Ingress: POST /sse/chat (stream_id=X, message)
+    Ingress->>Redis: LPUSH task queue
+    Proc->>Redis: BRPOPLPUSH (claim task)
+    Proc->>Proc: execute agentic workflow
+
+    Proc->>Redis: PUBLISH chat.events.S {event, target_sid=X}
+    Redis-->>Ingress: pubsub message on chat.events.S
+    Ingress->>Ingress: _on_relay → fan-out to client with stream_id=X
+    Ingress->>Browser: SSE frame via EventSource
+```
+
+### Reconnection sequence (stream_id fallback)
+
+```mermaid
+sequenceDiagram
+    participant Browser
+    participant Ingress as Ingress
+    participant Redis as Redis
+    participant Proc as Processor
+
+    Note over Browser: Connected with stream_id=AAA
+
+    Browser->>Ingress: POST /sse/chat (stream_id=AAA)
+    Ingress->>Redis: LPUSH task (socket_id=AAA)
+    Proc->>Redis: BRPOPLPUSH (claim)
+
+    Note over Browser: Network glitch → SSE drops
+    Note over Browser: Reconnect with stream_id=BBB
+
+    Browser->>Ingress: SSE reconnect (stream_id=BBB)
+    Ingress->>Ingress: register(BBB), subscribe
+
+    Proc->>Redis: PUBLISH {target_sid=AAA}
+    Redis-->>Ingress: message arrives
+    Ingress->>Ingress: target_sid=AAA not found<br>→ fallback: broadcast to session
+    Ingress->>Browser: SSE frame delivered via BBB
 ```
 
 ---
@@ -421,3 +487,116 @@ Dynamic subscription + single listener + in-process fan-out gives:
     * Subscribe to at least one channel.
     * Then start the listener.
     * Dynamically add/remove channels as sessions appear/disappear.
+
+---
+
+## Diagnosing Connection Problems
+
+When a client connects but does not receive backward traffic (processor results), use these log entries to trace the chain. Each step must succeed for messages to flow.
+
+### Step 1: Verify SSE client is registered
+
+**Log to find:** `[SSEHub] register session=... stream_id=...`
+
+```
+[SSEHub] register session=abc123 stream_id=xyz789 tenant=allciso project=cisoteria-ciso total_now=1
+```
+
+If this log is missing, the client did not connect or the SSE endpoint rejected it (check auth, capacity).
+
+### Step 2: Verify Redis channel subscription
+
+**Log to find:** `[ChatRelayCommunicator] acquire session=...`
+
+```
+[ChatRelayCommunicator] acquire session=abc123 count_before=0 channel=allciso:cisoteria-ciso:chat.events.abc123
+```
+
+`count_before=0` means this is the first client for this session → Redis SUBSCRIBE will be issued.
+If `count_before > 0`, the channel was already subscribed (existing tab).
+
+### Step 3: Verify pubsub subscription succeeded
+
+**Log to find:** `[ServiceCommunicator] subscribe_add`
+
+```
+[ServiceCommunicator] subscribe_add self_id=... pubsub_id=... new=[kdcube.relay.chatbot.allciso:cisoteria-ciso:chat.events.abc123]
+```
+
+If this shows `noop`, the channel was already in `_subscribed_channels` — check if a stale subscription exists without an active listener.
+
+### Step 4: Verify listener task is alive
+
+**Log to find:** `[sse_stream] relay diagnostic`
+
+```
+[sse_stream] relay diagnostic session=abc123 stream_id=xyz789
+  relay_id=... comm_id=... listener_started=True listener_alive=True
+  subscribed_channels=[kdcube.relay.chatbot.allciso:cisoteria-ciso:chat.events.abc123]
+  refcounts={'abc123': 1}
+```
+
+Check:
+| Field | Expected | Problem if wrong |
+|-------|----------|-----------------|
+| `listener_started` | `True` | Listener was never started → `_ensure_listener` not called |
+| `listener_alive` | `True` | Listener task crashed → check `[ServiceCommunicator] listener error` logs |
+| `subscribed_channels` | Contains session channel | Channel not subscribed → `subscribe_add` failed or was unsubscribed |
+| `refcounts` | `{session_id: 1+}` | Refcount is 0 or missing → `acquire_session_channel` not called |
+
+### Step 5: Verify processor publishes to correct channel
+
+**On the processor instance**, look for:
+
+```
+Publishing event 'chat_delta' to 'kdcube.relay.chatbot.allciso:cisoteria-ciso:chat.events.abc123'
+  (sid=xyz789, session=abc123)
+```
+
+Compare the full channel name with the ingress's `subscribed_channels` from Step 4.
+If they differ, the `orchestrator_identity` (prefix) does not match between ingress and processor.
+
+**Common mismatch:** processor uses default `kdcube.relay.chatbot`, ingress SSE router passes
+`os.getenv("CB_RELAY_IDENTITY")` explicitly. If `CB_RELAY_IDENTITY` is not set in the environment,
+both default to `kdcube.relay.chatbot`. If set differently per instance, channels won't match.
+
+### Step 6: Verify ingress receives the message
+
+**Log to find:** `[SSEHub._on_relay] RECEIVED`
+
+```
+[SSEHub._on_relay] RECEIVED event=chat_delta session=abc123 target_sid=xyz789
+  known_sessions=[abc123]
+```
+
+If this log **never appears**, the Redis pubsub message is not reaching the ingress:
+- Check Redis connectivity between ingress and processor instances
+- Check `orchestrator_identity` matches (Step 5)
+- Check `listener_alive` (Step 4) — if `False`, the listener task crashed
+
+If this log appears but the client still doesn't receive:
+- Check `target_sid` vs connected client's `stream_id`
+- If mismatched, the fallback should deliver anyway (look for "falling back to session broadcast")
+
+### Step 7: Verify SSE frame delivery
+
+If `_on_relay` fired but the browser doesn't show the event:
+- Check the SSE connection is still open in browser DevTools (Network → EventStream)
+- Check for `[sse_stream] Client disconnected` — the SSE generator may have exited
+- Check the client's queue is not full: `[SSEHub] queue overflow` indicates dropped frames
+
+### Quick diagnostic checklist
+
+```
+Is client registered?           → [SSEHub] register
+Is channel subscribed?          → [ServiceCommunicator] subscribe_add
+Is listener alive?              → relay diagnostic: listener_alive=True
+Does processor publish?         → Publishing event ... to channel
+Do channels match?              → Compare publish channel vs subscribed_channels
+Does ingress receive?           → [SSEHub._on_relay] RECEIVED
+Does fan-out match stream_id?   → target_sid vs connected clients
+```
+
+If the chain breaks at "Does ingress receive?", the problem is Redis pubsub wiring
+(identity mismatch, dead listener, network). If it breaks at fan-out, check stream_id
+lifecycle and the fallback logic.
