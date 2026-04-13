@@ -212,6 +212,12 @@ def get_plain(key: str, default: Any = None) -> Any:
 def read_plain(key: str, default: Any = None) -> Any:
     return get_plain(key, default=default)
 
+def _plain_or_settings(plain_key: str, settings_attr: str, default=None):
+    value = read_plain(plain_key, default=None)
+    if value is not None:
+        return value
+    return getattr(get_settings(), settings_attr, default)
+
 
 def _resolve_current_user_bundle_scope(
     *,
