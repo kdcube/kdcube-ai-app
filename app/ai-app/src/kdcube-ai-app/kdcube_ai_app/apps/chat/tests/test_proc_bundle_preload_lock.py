@@ -121,3 +121,53 @@ async def test_preload_bundles_loop_skips_when_another_instance_holds_lock(monke
     assert app.state.bundles_preload_ready is True
     assert app.state.bundles_preload_errors == {}
     assert redis.calls == [("set", key, redis.calls[0][2], 45, True)]
+
+
+@pytest.mark.asyncio
+async def test_initial_git_bundle_prefetch_marks_ready_after_success(monkeypatch):
+    app = _app(_FakeRedis(acquire=True))
+
+    monkeypatch.setattr(web_app, "_git_prefetch_enabled", lambda: True)
+    monkeypatch.setattr(web_app, "_git_resolution_enabled", lambda: True)
+    monkeypatch.setattr(
+        web_app,
+        "_get_bundle_registry",
+        lambda: {"bundle.demo": {"repo": "https://example.invalid/repo.git"}},
+    )
+
+    async def _fake_prefetch(app_obj):
+        app_obj.state.bundle_git_ready = True
+        app_obj.state.bundle_git_errors = {}
+
+    monkeypatch.setattr(web_app, "_prefetch_git_bundles_loop", _fake_prefetch)
+
+    await web_app._initial_git_bundle_prefetch(app)
+
+    assert app.state.bundle_git_ready is True
+    assert app.state.bundle_git_errors == {}
+    assert app.state.bundle_git_task is None
+
+
+@pytest.mark.asyncio
+async def test_initial_git_bundle_prefetch_preserves_prefetch_errors(monkeypatch):
+    app = _app(_FakeRedis(acquire=True))
+
+    monkeypatch.setattr(web_app, "_git_prefetch_enabled", lambda: True)
+    monkeypatch.setattr(web_app, "_git_resolution_enabled", lambda: True)
+    monkeypatch.setattr(
+        web_app,
+        "_get_bundle_registry",
+        lambda: {"bundle.demo": {"repo": "https://example.invalid/repo.git"}},
+    )
+
+    async def _fake_prefetch(app_obj):
+        app_obj.state.bundle_git_ready = False
+        app_obj.state.bundle_git_errors = {"bundle.demo": "boom"}
+
+    monkeypatch.setattr(web_app, "_prefetch_git_bundles_loop", _fake_prefetch)
+
+    await web_app._initial_git_bundle_prefetch(app)
+
+    assert app.state.bundle_git_ready is False
+    assert app.state.bundle_git_errors == {"bundle.demo": "boom"}
+    assert app.state.bundle_git_task is None
