@@ -340,11 +340,10 @@ async def test_decision_node_direct_phase_watcher_interrupts_without_browser_lis
         def __init__(self):
             self._sent = False
 
-        async def wait_for_events_after(self, cursor, *, block_ms, limit):
-            del cursor, block_ms, limit
+        async def read_since(self, cursor, *, limit=None):
+            del cursor, limit
             await asyncio.sleep(0.05)
             if self._sent:
-                await asyncio.sleep(30)
                 return []
             self._sent = True
             return [
