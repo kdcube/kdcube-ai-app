@@ -304,6 +304,8 @@ class ReactSolverV2:
         source = self.external_event_source
         if ctx_browser is None or source is None:
             return
+        read_since = getattr(source, "read_since", None)
+        poll_interval_s = 0.2
         try:
             ensure_listener = getattr(ctx_browser, "ensure_external_event_listener", None)
             if ensure_listener is not None:
@@ -330,10 +332,14 @@ class ReactSolverV2:
                     if timeline is not None
                     else str(self._active_phase_external_cursor or "")
                 )
-                events = await source.wait_for_events_after(last_cursor, block_ms=500, limit=100)
+                events: List[Any] = []
+                if callable(read_since):
+                    maybe = read_since(last_cursor, limit=100)
+                    events = list(await maybe if asyncio.iscoroutine(maybe) else maybe or [])
                 if phase_task.done():
                     return
                 if not events:
+                    await asyncio.sleep(poll_interval_s)
                     continue
                 self.log.log(
                     f"[react.v2] phase={phase} direct external-event watch received count={len(events)} turn_id={self.scratchpad.turn_id}",
