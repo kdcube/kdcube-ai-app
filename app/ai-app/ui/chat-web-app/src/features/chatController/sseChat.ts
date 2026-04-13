@@ -28,7 +28,9 @@ class SSEChat extends ChatBase {
     }
 
     private constructEventSource(): void {
-        this._streamId = uuidv4();
+        if (!this._streamId) {
+            this._streamId = uuidv4();
+        }
 
         const url = new URL(`${this._baseUrl}/sse/stream`);
         url.searchParams.set("user_session_id", this._sessionId ?? this._sessionId!);

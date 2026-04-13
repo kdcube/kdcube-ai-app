@@ -346,7 +346,13 @@ class SSEHub:
                 logger.warning(f"[SSEHub._on_relay] unrouted message {message}")
                 return  # we only fan-out messages scoped to a session room. ignore malformed / global messages
 
-            logger.debug("[SSEHub._on_relay] received message for session session=%s stream_id=%s", room, target_sid)
+            logger.info(
+                "[SSEHub._on_relay] RECEIVED event=%s session=%s target_sid=%s "
+                "known_sessions=%s hub_id=%s",
+                event, room, target_sid,
+                list(self._by_session.keys()),
+                id(self),
+            )
 
             # First check if we even have listeners for this session
             async with self._lock:
@@ -361,14 +367,24 @@ class SSEHub:
             frame = _sse_frame(event, data, event_id=str(uuid.uuid4()))
 
             if target_sid:
-                # DM: only client with matching stream_id
+                # DM: prefer client with matching stream_id, but fall back to
+                # all session clients if the target stream_id is no longer connected
+                # (e.g. client reconnected with a new stream_id while processor
+                # still holds the old one from task creation time).
+                matched = False
                 for c in recipients:
                     if c.stream_id and c.stream_id == target_sid:
                         logger.debug("[SSEHub._on_relay] DIRECT SEND the message for session session=%s stream_id=%s to recipient session=%s stream_id=%s", room, target_sid, c.session_id, c.stream_id)
                         self._enqueue(c, frame)
-                    else:
-                        # logger.debug("[SSEHub._on_relay] SKIP DIRECT SEND the message for session session=%s stream_id=%s to recipient session=%s stream_id=%s", room, target_sid, c.session_id, c.stream_id)
-                        pass
+                        matched = True
+                if not matched and recipients:
+                    logger.info(
+                        "[SSEHub._on_relay] target stream_id=%s not found among %d session client(s) for session=%s; "
+                        "falling back to session broadcast (likely client reconnected)",
+                        target_sid, len(recipients), room,
+                    )
+                    for c in recipients:
+                        self._enqueue(c, frame)
             else:
                 # Broadcast to all clients in the same session
                 for c in recipients:
@@ -522,6 +538,21 @@ def create_sse_router(
         except SSECapacityError as e:
             logger.warning("[sse_stream] SSE capacity reached: %s", e)
             raise HTTPException(status_code=429, detail="SSE instance capacity reached. Try again later.")
+
+        # Diagnostic: verify relay wiring after register
+        relay_comm = app.state.sse_hub.chat_comm
+        comm_obj = getattr(relay_comm, "_comm", None)
+        logger.info(
+            "[sse_stream] relay diagnostic session=%s stream_id=%s "
+            "relay_id=%s comm_id=%s listener_started=%s "
+            "listener_alive=%s subscribed_channels=%s refcounts=%s",
+            session.session_id, stream_id,
+            id(relay_comm), id(comm_obj) if comm_obj else None,
+            getattr(relay_comm, "_listener_started", "?"),
+            comm_obj.listener_alive() if comm_obj and hasattr(comm_obj, "listener_alive") else "?",
+            getattr(comm_obj, "_subscribed_channels", []) if comm_obj else [],
+            dict(getattr(relay_comm, "_session_refcounts", {})),
+        )
 
         async def gen():
             shutdown_notified = False

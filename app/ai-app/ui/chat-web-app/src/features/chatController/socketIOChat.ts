@@ -70,7 +70,9 @@ class SocketIOChat extends ChatBase {
     }
 
     public override connect(sessionId?: string | null): void {
-        this._streamId = uuidv4();
+        if (!this._streamId) {
+            this._streamId = uuidv4();
+        }
 
         new Promise<void>((resolve) => {
             if (this._socket.connected) {
