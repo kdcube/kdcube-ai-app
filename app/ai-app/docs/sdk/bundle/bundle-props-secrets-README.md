@@ -25,6 +25,21 @@ The important split is:
 - `get_user_prop(...)` reads user-scoped non-secret bundle props
 - `get_user_secret(...)` reads user-scoped secrets
 
+If you only need the short answer, use this table first.
+
+## Quick answer matrix
+
+| What you need | Read/write API | Scope | Where it lives in `aws-sm` mode | Where it lives in `secrets-file` mode | Exported by `kdcube --export-live-bundles`? |
+|---|---|---|---|---|---|
+| effective bundle non-secret config | `self.bundle_prop(...)`, `self.bundle_props` | bundle + tenant/project | AWS SM grouped bundle descriptor docs, cached in Redis | `bundles.yaml`, cached in Redis | yes, as `bundles.yaml` |
+| raw mounted bundle descriptor YAML | `get_plain("b:...")` | process-local mounted descriptors | mounted `bundles.yaml` inside the container | mounted `bundles.yaml` inside the container | no; this is just the currently mounted file |
+| raw mounted platform descriptor YAML | `get_plain("...")` or `get_plain("a:...")` | process-local mounted descriptors | mounted `assembly.yaml` inside the container | mounted `assembly.yaml` inside the container | no |
+| bundle-level secrets | `get_secret("b:...")` | bundle + tenant/project | AWS SM grouped bundle secret docs | `bundles.secrets.yaml` | yes, as `bundles.secrets.yaml` |
+| platform/global secrets | `get_secret("services...")` or `get_secret("a:...")` | deployment | AWS Secrets Manager / configured provider | `secrets.yaml` | no |
+| user-scoped non-secret bundle props | `get_user_prop(...)`, `set_user_prop(...)`, `get_user_props()` | user + bundle + tenant/project | PostgreSQL project schema table | PostgreSQL project schema table | no |
+| user-scoped secrets | `get_user_secret(...)`, `set_user_secret(...)` | user + bundle + tenant/project | configured secrets provider | `secrets.yaml` in `secrets-file` mode | no |
+| mutable bundle business state | bundle storage APIs | bundle-defined | bundle storage backend | bundle storage backend | no |
+
 For secrets, there are two recommended namespaces:
 - no prefix or `a:` -> platform/global secrets
 - `b:` -> the current bundle's secrets
@@ -39,27 +54,27 @@ internal/global form, not the normal bundle-facing form.
 1) Code defaults
    entrypoint.configuration / bundle_props_defaults
 
-2) Bundle descriptor config
-   bundles.yaml -> items[].config
+2) Mounted descriptor files
+   assembly.yaml / bundles.yaml
 
-3) Authoritative deploy-scoped bundle props
+3) Authoritative deploy-scoped bundle descriptor state
    `bundles.yaml` in `secrets-file` mode
    grouped bundle descriptor docs in `aws-sm` mode
 
-4) Secrets
-   get_secret("dot.path.key")
+4) Secrets and user-scoped state
+   bundle/platform secrets in the configured secrets provider
+   user non-secret props in PostgreSQL
 ```
 
-## What to use when
+## Where to look first
 
-| Need | Use | Backing store |
+| Question | Look here first | Why |
 |---|---|---|
-| effective non-secret bundle config | `self.bundle_prop("dot.path")` / `self.bundle_props` | code defaults + authoritative deploy-scoped bundle descriptor state |
-| raw deploy-time descriptor values | `get_plain("...")` / `get_plain("b:...")` | mounted `assembly.yaml` / `bundles.yaml` |
-| bundle-level secrets | `get_secret("b:dot.path")` | configured secrets provider |
-| user-scoped non-secret bundle props | `get_user_prop("some.key")` / `get_user_props()` | PostgreSQL `<SCHEMA>.user_bundle_props` |
-| user-scoped secrets | `get_user_secret("some.key")` | configured secrets provider |
-| mutable bundle-owned state | bundle storage, not props | bundle storage backend |
+| "What config does my bundle actually see at runtime?" | `self.bundle_props` / `self.bundle_prop(...)` | This is the merged effective bundle config. |
+| "What is mounted in the current container right now?" | `get_plain(...)` / `get_plain("b:...")` | This reads raw descriptor files only. |
+| "Where is this per-user non-secret value persisted?" | PostgreSQL `<SCHEMA>.user_bundle_props` | User props are not in AWS SM and not in `bundles.yaml`. |
+| "Where is this bundle secret persisted?" | configured secrets provider | In `aws-sm` that means grouped AWS SM bundle secret docs. |
+| "Can I export this back to descriptor files?" | only deployment-scoped bundle config and bundle-level secrets | User props and user secrets are not descriptor data. |
 
 If the data is mutable business state, do not put it into props. Use storage.
 
@@ -107,12 +122,33 @@ bundles:
             default_profile: "local"
 ```
 
-That deploy-scoped bundle props layer is cached in Redis per:
+The effective bundle props path has both an authority and a cache.
+
+| Layer | What it contains | Where it lives |
+|---|---|---|
+| code defaults | `configuration` / `bundle_props_defaults` from bundle code | bundle code |
+| authoritative deploy-scoped bundle props | non-secret bundle config after live admin updates | `bundles.yaml` in `secrets-file`, grouped AWS SM descriptor docs in `aws-sm` |
+| runtime cache | latest effective deploy-scoped bundle props per tenant/project/bundle | Redis |
+
+The runtime Redis cache is per:
 - tenant
 - project
 - bundle
 
-Its authority depends on deployment mode:
+Its current key format is:
+
+```text
+kdcube:config:bundles:props:{tenant}:{project}:{bundle_id}
+```
+
+When proc refreshes bundle props:
+
+1. code defaults are loaded
+2. Redis is checked for the effective deploy-scoped bundle props
+3. if Redis misses, the authoritative store is used
+4. Redis is backfilled from that authoritative store
+
+The authority depends on deployment mode:
 
 - `secrets-file`: `bundles.yaml`
 - `aws-sm`: grouped AWS SM bundle descriptor docs
@@ -121,12 +157,6 @@ The supported live override path is the admin props API:
 - `GET /admin/integrations/bundles/{bundle_id}/props`
 - `POST /admin/integrations/bundles/{bundle_id}/props`
 - `POST /admin/integrations/bundles/{bundle_id}/props/reset-code`
-
-Redis cache uses a per-tenant/project/bundle key. The current key format is:
-
-```text
-kdcube:config:bundles:props:{tenant}:{project}:{bundle_id}
-```
 
 ### Can a bundle write props on the fly?
 
@@ -172,6 +202,10 @@ What matters:
 - it is not tenant/project scoped
 - it does not include Redis runtime overrides
 - it has no write path
+
+In `aws-sm` deployments, `get_plain("b:...")` can differ from the live
+effective bundle props if props were changed through the admin/runtime API and
+have not yet been exported back into descriptor files.
 
 Use it when the bundle needs raw platform or descriptor data, not when it wants
 its own effective runtime props.
@@ -333,6 +367,14 @@ For `secrets-file`, the split is important:
 - keys under `bundles.<bundle_id>.secrets...` go to `bundles.secrets.yaml`
 - user keys under `users.<user_id>...` go to `secrets.yaml`
 
+In `aws-sm`, the grouped bundle descriptor documents are:
+
+| Document | Contents |
+|---|---|
+| `<prefix>/bundles-meta` | bundle id inventory and registry metadata |
+| `<prefix>/bundles/<bundle_id>/descriptor` | bundle registry entry and non-secret `config` |
+| `<prefix>/bundles/<bundle_id>/secrets` | bundle-level secrets |
+
 ## User-scoped non-secret props
 
 Use these helpers for non-secret per-user bundle state:
@@ -361,6 +403,18 @@ Storage:
 - PostgreSQL project schema
 - table: `<SCHEMA>.user_bundle_props`
 
+This is relevant in any normal deployment mode.
+
+It does **not** matter whether proc runs:
+- locally
+- on EC2
+- on ECS
+- with `aws-sm`
+- with `secrets-file`
+
+If bundle code uses `get_user_prop(...)` / `set_user_prop(...)`, the persisted
+non-secret per-user value goes to PostgreSQL `user_bundle_props`.
+
 They are for non-secret per-user bundle state such as:
 
 - user-approved preferences
@@ -374,6 +428,18 @@ They are not part of:
 - deployment export
 - bundle secrets
 
+## Deployment mode matrix
+
+This is the easiest way to answer "where do I look?".
+
+| Data type | `aws-sm` authority | `secrets-file` authority | Redis role | PostgreSQL role |
+|---|---|---|---|---|
+| bundle-level non-secret props | AWS SM grouped bundle descriptor docs | `bundles.yaml` | cache / fast runtime copy | none |
+| bundle-level secrets | AWS SM grouped bundle secret docs | `bundles.secrets.yaml` | none | none |
+| platform/global secrets | configured secrets provider | `secrets.yaml` | none | none |
+| user-scoped non-secret props | PostgreSQL project schema | PostgreSQL project schema | none | authority |
+| user-scoped secrets | configured secrets provider | `secrets.yaml` | none | none |
+
 ## Practical decision rules
 
 Use:
@@ -383,6 +449,42 @@ Use:
 - `get_user_prop(...)` for per-user non-secret bundle values
 - `get_user_secret(...)` for per-user secret values
 - bundle storage for mutable non-secret business state
+
+## Exporting live bundle descriptors with CLI
+
+For `aws-sm` deployments, the CLI can reconstruct the current authoritative
+deployment-scoped bundle descriptors:
+
+```bash
+kdcube \
+  --export-live-bundles \
+  --tenant <tenant> \
+  --project <project> \
+  --aws-region <region> \
+  --out-dir /tmp/kdcube-export
+```
+
+Optional:
+- `--aws-profile <profile>`
+- `--aws-sm-prefix <prefix>`
+
+This exports:
+- `bundles.yaml`
+- `bundles.secrets.yaml`
+
+It reads from the authoritative grouped AWS SM bundle documents, not from:
+- Redis
+- the currently mounted `/config/bundles.yaml`
+- PostgreSQL `user_bundle_props`
+
+It does **not** export:
+- `secrets.yaml`
+- user-scoped secrets
+- user-scoped non-secret props
+- bundle storage data
+
+If the grouped AWS SM bundle documents were never bootstrapped, export fails
+because there is no authoritative bundle descriptor set to reconstruct yet.
 
 ## Reserved platform properties
 

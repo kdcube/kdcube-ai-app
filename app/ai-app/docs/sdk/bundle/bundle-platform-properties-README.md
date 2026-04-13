@@ -41,6 +41,33 @@ When a reserved property references a secret key, resolution still goes through
 runtime secrets provider: `secrets-service`, `aws-sm`, `secrets-file`, or
 `in-memory`.
 
+The storage rule is:
+- these paths are still just bundle props
+- the platform interprets them specially
+- where they are stored depends on the bundle-props deployment mode, not simply on "AWS or not"
+
+## Storage by deployment mode
+
+| Mode | Authoritative store for reserved bundle props | Runtime cache | What bundle code reads |
+|---|---|---|---|
+| `aws-sm` | grouped AWS SM bundle descriptor docs | Redis per tenant/project/bundle | `self.bundle_prop(...)` / `self.bundle_props` |
+| `secrets-file` | `bundles.yaml` | Redis per tenant/project/bundle | `self.bundle_prop(...)` / `self.bundle_props` |
+| no provider / code-only fallback | bundle code defaults only | none | `self.bundle_prop(...)` from defaults only |
+
+The Redis cache key format is:
+
+```text
+kdcube:config:bundles:props:{tenant}:{project}:{bundle_id}
+```
+
+In `aws-sm`, the grouped bundle descriptor docs are:
+
+| Document | Contents |
+|---|---|
+| `<prefix>/bundles-meta` | bundle registry inventory |
+| `<prefix>/bundles/<bundle_id>/descriptor` | bundle registry entry and non-secret `config` |
+| `<prefix>/bundles/<bundle_id>/secrets` | bundle-level secrets only |
+
 ## Reserved property paths
 
 | Path | Default source | Interpreted by | Effect |
@@ -51,6 +78,33 @@ runtime secrets provider: `secrets-service`, `aws-sm`, `secrets-file`, or
 | `execution.runtime` | no default | `BaseEntrypoint`, `RuntimeCtx`, exec runtime | Per-bundle exec runtime selection/overrides |
 | `exec_runtime` | no default | same as `execution.runtime` | Legacy compatibility alias for `execution.runtime` |
 | `mcp.services` | no default | `BaseWorkflow`, MCP runtime/bootstrap | MCP server transport/auth config for tool subsystem |
+
+## Where each reserved property lives
+
+All reserved paths below are still non-secret bundle props.
+
+| Path | Normal read surface | `aws-sm` authority | `secrets-file` authority | Redis role | Notes |
+|---|---|---|---|---|---|
+| `role_models` | `self.bundle_prop("role_models")` or resolved `Config.role_models` | `<prefix>/bundles/<bundle_id>/descriptor` `config.role_models` | `bundles.yaml -> items[].config.role_models` | cache | platform-owned model-role routing |
+| `embedding` | `self.bundle_prop("embedding")` or resolved `Config.embedding` | `<prefix>/bundles/<bundle_id>/descriptor` `config.embedding` | `bundles.yaml -> items[].config.embedding` | cache | platform-owned embedding override |
+| `economics.reservation_amount_dollars` | `self.bundle_prop("economics.reservation_amount_dollars")` | `<prefix>/bundles/<bundle_id>/descriptor` `config.economics.reservation_amount_dollars` | `bundles.yaml -> items[].config.economics.reservation_amount_dollars` | cache | used only by economics entrypoints |
+| `execution.runtime` | `self.bundle_prop("execution.runtime")` or `resolve_exec_runtime(...)` | `<prefix>/bundles/<bundle_id>/descriptor` `config.execution.runtime` | `bundles.yaml -> items[].config.execution.runtime` | cache | canonical execution runtime path |
+| `exec_runtime` | `self.bundle_prop("exec_runtime")` | `<prefix>/bundles/<bundle_id>/descriptor` `config.exec_runtime` | `bundles.yaml -> items[].config.exec_runtime` | cache | legacy alias, prefer `execution.runtime` |
+| `mcp.services` | `self.bundle_prop("mcp.services")` | `<prefix>/bundles/<bundle_id>/descriptor` `config.mcp.services` | `bundles.yaml -> items[].config.mcp.services` | cache | MCP transport/auth config |
+
+## Common confusion: reserved vs bundle-owned props
+
+Not every important prop is platform-reserved.
+
+| Prop path | Is it platform-reserved? | Who interprets it | Where it is stored |
+|---|---|---|---|
+| `role_models` | yes | platform entrypoint/runtime | bundle props authority + Redis cache |
+| `embedding` | yes | platform entrypoint/runtime | bundle props authority + Redis cache |
+| `mcp.services` | yes | platform runtime | bundle props authority + Redis cache |
+| `react.additional_instructions` | no, this is a bundle convention | only bundles/workflows that pass it into `build_react(...)` | same bundle props storage as any other non-secret prop |
+
+So `react.additional_instructions` is still stored exactly like other bundle
+props, but the platform does not interpret it globally by itself.
 
 ## `role_models`
 
@@ -71,6 +125,14 @@ Behavior:
 - `bundles.yaml` can override or add role entries
 - runtime/admin props can override them again
 
+Storage summary:
+
+| Question | Answer |
+|---|---|
+| Where do I set it for a deployment? | `bundles.yaml -> items[].config.role_models` or the live admin props API |
+| Where does it live on AWS `aws-sm`? | `<prefix>/bundles/<bundle_id>/descriptor` |
+| Where does proc read it from at runtime? | Redis effective bundle props cache, with fallback to the authoritative store |
+
 This property is interpreted by `BaseEntrypoint`, not by bundle code directly.
 
 ## `embedding`
@@ -90,6 +152,15 @@ Behavior:
 - applied by `BaseEntrypoint`
 - stored in effective bundle props like any other prop
 - affects SDK embedding calls that use the bundle’s resolved `Config`
+
+Storage summary:
+
+| Question | Answer |
+|---|---|
+| Where do I set it? | `config.embedding` in bundle props |
+| Is it in secrets? | no |
+| Is it in PostgreSQL `user_bundle_props`? | no |
+| Is it exportable by `kdcube --export-live-bundles`? | yes |
 
 ## `economics.reservation_amount_dollars`
 
@@ -115,6 +186,14 @@ config:
 ```
 
 If a bundle does not use `BaseEntrypointWithEconomics`, this key is just data unless the bundle chooses to interpret it.
+
+Storage summary:
+
+| Question | Answer |
+|---|---|
+| Where does it live? | bundle descriptor `config.economics.reservation_amount_dollars` |
+| Is it deployment-scoped or user-scoped? | deployment-scoped |
+| Does it ever go to `user_bundle_props`? | no |
 
 ## `execution.runtime`
 
@@ -237,6 +316,14 @@ Docker notes:
 
 `exec_runtime` is accepted as a legacy alias, but `execution.runtime` is the canonical path.
 
+Storage summary:
+
+| Question | Answer |
+|---|---|
+| Where is it configured? | `config.execution.runtime` in bundle props |
+| Where is it persisted on `aws-sm`? | bundle descriptor doc in AWS SM |
+| Where is it exported from? | `kdcube --export-live-bundles` reconstructs it into `bundles.yaml` |
+
 ## `mcp.services`
 
 This property is reserved for MCP connector configuration.
@@ -284,6 +371,37 @@ This property works together with `MCP_TOOL_SPECS` from the bundle
 `tools_descriptor.py`:
 - `MCP_TOOL_SPECS` controls which MCP tools are exposed
 - `mcp.services` controls how those MCP servers are connected and authenticated
+
+Storage summary:
+
+| Question | Answer |
+|---|---|
+| Where do I set MCP server URLs/auth? | `config.mcp.services` in bundle props |
+| Where should auth secrets go? | bundle or platform secrets via `get_secret(...)`, not inside plain props |
+| What gets exported by CLI? | the non-secret `mcp.services` config, not the resolved secret values |
+
+## Exporting reserved properties back to descriptors
+
+Reserved platform properties are not exported separately. They are exported as
+part of the bundle descriptor `config`:
+
+```bash
+kdcube \
+  --export-live-bundles \
+  --tenant <tenant> \
+  --project <project> \
+  --aws-region <region> \
+  --out-dir /tmp/kdcube-export
+```
+
+This reconstructs:
+- `bundles.yaml`
+- `bundles.secrets.yaml`
+
+So if you changed `role_models`, `embedding`, `execution.runtime`, or
+`mcp.services` through the live admin props API in an `aws-sm` deployment, this
+CLI export is the way to get those effective deployment-scoped values back into
+descriptor files.
 
 ### Sourcing Fargate values for `execution.runtime`
 
