@@ -30,7 +30,6 @@ from kdcube_ai_app.apps.chat.sdk.tools.docx_renderer import render_docx
 from kdcube_ai_app.apps.chat.sdk.tools.pptx_renderer import render_pptx
 from kdcube_ai_app.apps.chat.sdk.tools.md2pdf_async import AsyncMarkdownPDF, PDFOptions, get_shared_md2pdf
 from kdcube_ai_app.apps.chat.sdk.util import _defence
-from kdcube_ai_app.infra.accounting import _get_context
 from kdcube_ai_app.apps.chat.sdk.config import get_plain
 
 # Bound at runtime by ToolManager
@@ -890,6 +889,20 @@ class RenderingTools:
                 conv.extra_css = []
                 conv.pdf_options.display_header_footer = False
                 conv.pdf_options.landscape = landscape
+                import json as _json
+                _rg_html = _json.loads(os.getenv("RUNTIME_GLOBALS_JSON") or "{}")
+                _bid_html = str((_rg_html.get("EXEC_CONTEXT") or {}).get("bundle_id") or "").strip() or None
+                if _bid_html:
+                    _footer_html = get_plain(f"b:bundles.items.{_bid_html}.pdf_footer")
+                    if _footer_html:
+                        import html as _html
+                        conv.pdf_options.footer_html = (
+                            f'<div style="font-size:8pt;color:#6b7280;width:100%;'
+                            f'text-align:center;padding:4px 10mm 0;">'
+                            f'{_html.escape(str(_footer_html))}</div>'
+                        )
+                        conv.pdf_options.display_header_footer = True
+                        conv.pdf_options.margin_bottom = "20mm"
                 content = _ensure_html_wrapper(content, title=title or "Document")
                 if resolve_citations:
                     try:
@@ -959,6 +972,23 @@ class RenderingTools:
                 )
 
             conv.pdf_options = pdf_opts
+
+            import json as _json
+            _rg = _json.loads(os.getenv("RUNTIME_GLOBALS_JSON") or "{}")
+            bundle_id = str((_rg.get("EXEC_CONTEXT") or {}).get("bundle_id") or "").strip() or None
+
+            if bundle_id:
+                pdf_footer = get_plain(f"b:bundles.items.{bundle_id}.pdf_footer")
+
+                if pdf_footer:
+                    import html as _html
+
+                    conv.pdf_options.footer_html = (
+                        f'<div style="font-size:8pt;color:#6b7280;width:100%;'
+                        f'text-align:center;padding:4px 10mm 0;">'
+                        f'{_html.escape(str(pdf_footer))}</div>'
+                    )
+                    conv.pdf_options.display_header_footer = True
 
             conv.enable_mathjax = False
             conv.extra_css = css_files
