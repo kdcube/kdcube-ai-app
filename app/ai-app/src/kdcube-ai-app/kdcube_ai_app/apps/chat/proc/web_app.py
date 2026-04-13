@@ -256,6 +256,37 @@ async def _prefetch_git_bundles_loop(app) -> None:
         app.state.bundle_git_errors = {"_internal": str(e)}
 
 
+async def _initial_git_bundle_prefetch(app) -> None:
+    """
+    Resolve git-backed bundles before bundle preload and scheduler startup.
+
+    The registry already points repo-backed bundles at /git-bundles/... paths.
+    If scheduler reconcile runs before those paths exist, manifest loading fails
+    on first startup and scheduled jobs are skipped until a later registry update.
+    """
+    app.state.bundle_git_ready = True
+    app.state.bundle_git_errors = {}
+    app.state.bundle_git_task = None
+
+    if not (_git_prefetch_enabled() and _git_resolution_enabled()):
+        return
+
+    reg_now = _get_bundle_registry()
+    if not any(entry.get("repo") for entry in reg_now.values()):
+        return
+
+    app.state.bundle_git_ready = False
+    await _prefetch_git_bundles_loop(app)
+
+    if app.state.bundle_git_errors:
+        logger.warning(
+            "[Bundles] Git prefetch completed with failures: %s",
+            app.state.bundle_git_errors,
+        )
+    else:
+        logger.info("[Bundles] Git prefetch complete")
+
+
 async def _preload_bundles_loop(app) -> None:
     """
     Eagerly load all configured bundle modules and run on_bundle_load hooks.
@@ -633,15 +664,9 @@ async def lifespan(app: FastAPI):
                 e,
             )
 
-        # Git bundle readiness: prefetch git bundles once and mark readiness when done
-        app.state.bundle_git_ready = True
-        app.state.bundle_git_errors = {}
-        app.state.bundle_git_task = None
-        if _git_prefetch_enabled() and _git_resolution_enabled():
-            reg_now = _get_bundle_registry()
-            if any(entry.get("repo") for entry in reg_now.values()):
-                app.state.bundle_git_ready = False
-                app.state.bundle_git_task = asyncio.create_task(_prefetch_git_bundles_loop(app))
+        # Resolve git-backed bundles before preload/scheduler startup so the
+        # registry's /git-bundles/... paths exist when manifests are loaded.
+        await _initial_git_bundle_prefetch(app)
 
         app.state.bundles_preload_ready = True
         app.state.bundles_preload_errors = {}
