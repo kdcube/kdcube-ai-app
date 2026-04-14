@@ -77,7 +77,7 @@ def _pdf_footer_text() -> str | None:
     bundle_id = _pdf_bundle_id()
     if not bundle_id:
         return None
-    return get_plain(f"b:{bundle_id}.pdf_footer") or None
+    return get_plain(f"b:bundles.items.{bundle_id}.pdf_footer") or None
 
 
 def _inject_footer_html(html_content: str, footer_text: str) -> str:
