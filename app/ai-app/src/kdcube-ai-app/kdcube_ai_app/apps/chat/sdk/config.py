@@ -129,17 +129,14 @@ def _parse_plain_key(key: str) -> tuple[Path, str]:
     raw = str(key or "").strip()
     if not raw:
         return _ASSEMBLY_YAML_PATH, ""
-    for prefix in ("a:", "assembly:"):
+    for prefix, path in {
+        "a:": _ASSEMBLY_YAML_PATH,
+        "assembly:": _ASSEMBLY_YAML_PATH,
+        "b:": _BUNDLES_YAML_PATH,
+        "bundles:": _BUNDLES_YAML_PATH,
+    }.items():
         if raw.startswith(prefix):
-            return _ASSEMBLY_YAML_PATH, raw[len(prefix):]
-    for prefix in ("b:", "bundles:"):
-        if raw.startswith(prefix):
-            tail = raw[len(prefix):]
-            # Auto-inject "bundles.items." so callers write get_plain("b:<bundle_id>.<key>")
-            # matching the bundles.yaml list structure, without knowing the internal path.
-            if tail and not tail.startswith("bundles."):
-                tail = "bundles.items." + tail
-            return _BUNDLES_YAML_PATH, tail
+            return path, raw[len(prefix):]
     return _ASSEMBLY_YAML_PATH, raw
 
 
