@@ -99,6 +99,24 @@ aws:
   profile: ""
   ec2: false
 
+platform:
+  services:
+    ingress:
+      service:
+        uvicorn_reload: false
+        cb_relay_identity: "kdcube.relay.chatbot"
+    proc:
+      service:
+        uvicorn_reload: false
+        cb_relay_identity: "kdcube.relay.chatbot"
+        chat_task_timeout_sec: 600
+        chat_task_idle_timeout_sec: 600
+        chat_task_max_wall_time_sec: 2400
+        chat_task_watchdog_poll_interval_sec: 1.0
+    metrics:
+      service:
+        uvicorn_reload: false
+
 bundles:
   default_bundle_id: "react@2026-02-10-02-44"
   items:
