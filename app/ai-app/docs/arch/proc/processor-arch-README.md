@@ -7,6 +7,7 @@ keywords: ["proc", "chat processor", "inflight", "drain", "turn interruption", "
 see_also:
   - ks:docs/arch/architecture-long.md
   - ks:docs/arch/proc/longrun-protection-README.md
+  - ks:docs/arch/proc/design/conversation-scheduler-streams-README.md
   - ks:docs/ops/ecs/components/proc-README.md
   - ks:docs/service/maintenance/connection-pooling-README.md
   - ks:docs/clients/sse-events-README.md
@@ -648,6 +649,14 @@ Steer/followup does not change the non-idempotent nature of an already-started t
 ---
 
 ## 13. Proposed Full Conversation Scheduler
+
+The detailed design note for this target model now lives in:
+
+- [design/conversation-scheduler-streams-README.md](design/conversation-scheduler-streams-README.md)
+
+That note uses Redis Streams as the primary target because it matches current
+platform infrastructure, and it also documents how the same scheduler semantics
+map onto Kafka if we want a second backend option.
 
 The recommended target model is:
 
