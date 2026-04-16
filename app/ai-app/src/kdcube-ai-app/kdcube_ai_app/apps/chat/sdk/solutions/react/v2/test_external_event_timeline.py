@@ -7,6 +7,7 @@ import pytest
 from kdcube_ai_app.apps.chat.external_events import build_conversation_external_event_source
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.browser import ContextBrowser
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.proto import RuntimeCtx
+from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.timeline import extract_user_attachments_from_blocks
 
 
 class _FakeRedis:
@@ -89,6 +90,20 @@ async def test_browser_folds_external_events_into_history_and_current_turn(tmp_p
         source="ingress.sse",
         text="history event",
         payload={"message": "history event"},
+        task_payload={
+            "request": {
+                "payload": {
+                    "attachments": [
+                        {
+                            "filename": "brief.txt",
+                            "mime": "text/plain",
+                            "text": "attachment text from followup",
+                            "hosted_uri": "s3://bucket/brief.txt",
+                        }
+                    ]
+                }
+            }
+        },
     )
     await source.publish(
         kind="steer",
@@ -123,8 +138,22 @@ async def test_browser_folds_external_events_into_history_and_current_turn(tmp_p
     try:
         history_blocks = browser.timeline.get_history_blocks()
         current_blocks = browser.timeline.get_turn_blocks()
+        history_attachments = extract_user_attachments_from_blocks(history_blocks)
 
         assert any(b.get("type") == "user.followup" and b.get("turn_id") == "turn_old" for b in history_blocks)
+        assert any(
+            b.get("type") == "user.attachment.meta"
+            and b.get("turn_id") == "turn_old"
+            and ".external.followup." in str(b.get("path") or "")
+            for b in history_blocks
+        )
+        assert any(
+            b.get("type") == "user.attachment.text"
+            and b.get("turn_id") == "turn_old"
+            and b.get("text") == "attachment text from followup"
+            for b in history_blocks
+        )
+        assert any(att.get("filename") == "brief.txt" for att in history_attachments)
         assert any(b.get("type") == "user.steer" and b.get("turn_id") == "turn_current" for b in current_blocks)
         assert browser.timeline.last_external_event_id == "2-0"
         assert int(browser.timeline.last_external_event_seq or 0) == 2

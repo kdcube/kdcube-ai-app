@@ -64,18 +64,52 @@ def build_user_input_blocks(
             text=user_text,
             meta=prompt_meta,
         ))
+    blocks.extend(build_user_attachment_blocks(
+        turn_id=tid,
+        ts=ts,
+        user_attachments=user_attachments,
+        block_factory=block_factory,
+        path_root=f"fi:{tid}.user.attachments",
+        synthetic_physical_root=f"{tid}/attachments",
+    ))
+    return blocks
+
+
+def build_user_attachment_blocks(
+    *,
+    turn_id: str,
+    ts: str,
+    user_attachments: Optional[List[Dict[str, Any]]],
+    block_factory,
+    path_root: str,
+    synthetic_physical_root: Optional[str] = None,
+    meta_extra: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    tid = (turn_id or "").strip()
+    if not tid:
+        return []
+    path_root = (path_root or "").rstrip("/")
+    if not path_root:
+        return []
+    blocks: List[Dict[str, Any]] = []
     for att in (user_attachments or []):
         if not isinstance(att, dict):
             continue
         name = (att.get("filename") or att.get("name") or "").strip() or "(attachment)"
         mime = (att.get("mime") or "").strip() or "application/octet-stream"
         summary = (att.get("summary") or "").strip()
-        attachment_path = f"fi:{tid}.user.attachments/{name}" if name and name != "(attachment)" else ""
+        attachment_path = path_root
+        if name and name != "(attachment)":
+            attachment_path = f"{path_root}/{name}"
         meta = {k: att.get(k) for k in ("hosted_uri", "rn", "key", "physical_path") if att.get(k)}
         if not meta.get("physical_path") and att.get("local_path"):
             meta["physical_path"] = att.get("local_path")
         if tid:
             meta["turn_id"] = tid
+        if isinstance(meta_extra, dict):
+            for k, v in meta_extra.items():
+                if v is not None:
+                    meta[k] = v
         if summary:
             meta["summary"] = summary
         if name and name != "(attachment)":
@@ -83,8 +117,8 @@ def build_user_input_blocks(
         if mime:
             meta["mime"] = mime
         physical_path = ""
-        if name and name != "(attachment)":
-            physical_path = f"{tid}/attachments/{name}"
+        if synthetic_physical_root and name and name != "(attachment)":
+            physical_path = f"{synthetic_physical_root.rstrip('/')}/{name}"
             meta["physical_path"] = physical_path
         # Build a stable, safe metadata digest (no hosted_uri/rn/key).
         try:
