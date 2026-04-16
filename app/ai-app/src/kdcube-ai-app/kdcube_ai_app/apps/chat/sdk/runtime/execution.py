@@ -13,7 +13,7 @@ import traceback
 import uuid
 from typing import Any, Dict, Optional, Tuple
 
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.proto import RuntimeCtx
+from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
 from kdcube_ai_app.apps.chat.sdk.runtime.tool_subsystem import ToolSubsystem
 
 from kdcube_ai_app.infra.service_hub.inventory import AgentLogger
