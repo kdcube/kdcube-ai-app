@@ -44,6 +44,7 @@ class ToolContentStreamerBase:
         self.path_xpath = "tool_call.params.path"
         self.channel_xpath = "tool_call.params.channel"
         self.kind_xpath = "tool_call.params.kind"
+        self.format_xpath = "tool_call.params.format"
         self.tool_id_xpath = "tool_call.tool_id"
         self.action_xpath = "action"
 
@@ -51,12 +52,14 @@ class ToolContentStreamerBase:
         self.path_parent, self.path_key = self._split_path(self.path_xpath)
         self.channel_parent, self.channel_key = self._split_path(self.channel_xpath)
         self.kind_parent, self.kind_key = self._split_path(self.kind_xpath)
+        self.format_parent, self.format_key = self._split_path(self.format_xpath)
         self.tool_id_parent, self.tool_id_key = self._split_path(self.tool_id_xpath)
         self.action_parent, self.action_key = self._split_path(self.action_xpath)
 
         self.current_tool_id: Optional[str] = None
         self.action_value: Optional[str] = None
         self.current_format: str = "markdown"
+        self.current_format_explicit: bool = False
         self.current_channel: str = "canvas"
         self.current_kind: str = "display"
         self.current_path: Optional[str] = None
@@ -80,6 +83,8 @@ class ToolContentStreamerBase:
         self.channel_seen = False
         self.pending_channel_stream = False
         self.pending_channel_buf = ""
+        self.pending_string_quote = False
+        self.pending_string_quote_ws = ""
 
         self.capturing_tool_id = False
         self.tool_value_buf = ""
@@ -143,6 +148,7 @@ class ToolContentStreamerBase:
         self.current_channel = "canvas"
         self.current_kind = "display"
         self.current_format = "markdown"
+        self.current_format_explicit = False
         self.current_path = None
         self.record_artifact_name = None
 
@@ -218,6 +224,13 @@ class ToolContentStreamerBase:
             return False
         return True
 
+    def _matches_format_path(self) -> bool:
+        if not self.format_key or self.last_key != self.format_key:
+            return False
+        if self.format_parent and not self._path_has(self.format_parent):
+            return False
+        return True
+
     def _matches_tool_id_path(self) -> bool:
         if not self.tool_id_key or self.last_key != self.tool_id_key:
             return False
@@ -241,6 +254,27 @@ class ToolContentStreamerBase:
 
     def _format_from_path(self, norm_path: str) -> str:
         return infer_format_from_path(norm_path)
+
+    def _normalize_declared_format(self, value: str) -> Optional[str]:
+        raw = (value or "").strip().lower()
+        if not raw:
+            return None
+        aliases = {
+            "md": "markdown",
+            "markdown": "markdown",
+            "htm": "html",
+            "html": "html",
+            "txt": "text",
+            "text": "text",
+            "yml": "yaml",
+            "yaml": "yaml",
+            "json": "json",
+            "xml": "xml",
+            "svg": "svg",
+            "mermaid": "mermaid",
+            "mmd": "mermaid",
+        }
+        return aliases.get(raw, raw)
 
     async def _emit_chunk(self, text: str) -> None:
         if not text:
@@ -269,6 +303,152 @@ class ToolContentStreamerBase:
         self.index += 1
         self.started = True
 
+    async def _append_active_text(self, text: str) -> None:
+        if not text or not self.active_key:
+            return
+        if self.capturing_tool_id:
+            self.tool_value_buf += text
+        if self.skip_stream_value and self.stream_value_active:
+            return
+        self.active_value_buf += text
+        if self.pending_ref_check and self.stream_value_active:
+            if len(self.ref_check_buf) < 4:
+                need = 4 - len(self.ref_check_buf)
+                self.ref_check_buf += text[:need]
+                if len(self.ref_check_buf) >= 4:
+                    if self.ref_check_buf.lower().startswith("ref:"):
+                        self.skip_stream_value = True
+                        self.pending_ref_check = False
+                        self.streaming_content = False
+                        self.active_value_buf = ""
+                    else:
+                        self.pending_ref_check = False
+                        if self.channel_pending and not self.channel_seen:
+                            self.streaming_content = False
+                        else:
+                            self.streaming_content = True
+                            if self.active_value_buf:
+                                await self._emit_chunk(self.active_value_buf)
+                                self.active_value_buf = ""
+        elif self.streaming_content and len(self.active_value_buf) >= 256:
+            await self._emit_chunk(self.active_value_buf)
+            self.active_value_buf = ""
+
+    async def _close_active_string(self) -> None:
+        if not self.active_key:
+            return
+        if self.capturing_tool_id:
+            self.current_tool_id = self.tool_value_buf
+            self.tool_value_buf = ""
+            self.capturing_tool_id = False
+        if self._matches_action_path():
+            self.action_value = self.active_value_buf.strip()
+        if self._matches_path_path():
+            path_val = self.active_value_buf.strip()
+            if path_val:
+                norm_path = normalize_relpath(path_val, turn_id=self.turn_id)
+                self.current_path = norm_path
+                self.record_artifact_name = norm_path
+                if not self.current_format_explicit:
+                    self.current_format = self._format_from_path(norm_path)
+                    print(f"ContentStreamer: Inferred format {self.current_format} from path {norm_path}")
+        if self._matches_channel_path():
+            channel_val = self.active_value_buf.strip().lower()
+            if channel_val:
+                if channel_val == "timeline":
+                    channel_val = "timeline_text"
+                self.current_channel = channel_val
+                self.channel_seen = True
+                await self._flush_pending_channel_stream()
+        if self._matches_format_path():
+            format_val = self._normalize_declared_format(self.active_value_buf)
+            if format_val:
+                self.current_format = format_val
+                self.current_format_explicit = True
+        if self._matches_kind_path():
+            kind_val = self.active_value_buf.strip().lower()
+            if kind_val:
+                self.current_kind = kind_val
+        if self.stream_value_active:
+            if self.pending_ref_check:
+                if self.active_value_buf.lower().startswith("ref:"):
+                    self.skip_stream_value = True
+                    self.streaming_content = False
+                else:
+                    if self.channel_pending and not self.channel_seen:
+                        self.streaming_content = False
+                    else:
+                        self.streaming_content = True
+                self.pending_ref_check = False
+            if self.channel_pending and not self.channel_seen:
+                if not self.skip_stream_value and self.active_value_buf:
+                    self.pending_channel_buf = self.active_value_buf
+                    self.pending_channel_stream = True
+                self.channel_pending = False
+                self.streaming_content = False
+            if self.streaming_content and self.active_value_buf:
+                await self._emit_chunk(self.active_value_buf)
+        self.active_value_buf = ""
+        self.streaming_content = False
+        self.stream_value_active = False
+        self.pending_ref_check = False
+        self.ref_check_buf = ""
+        self.skip_stream_value = False
+        self.active_key = None
+        self.pending_string_quote = False
+        self.pending_string_quote_ws = ""
+
+    async def _process_non_string_char(self, ch: str) -> None:
+        if ch == '"':
+            self.in_string = True
+            self.pending_string_quote = False
+            self.pending_string_quote_ws = ""
+            if self.expecting_value:
+                self.active_key = self.last_key
+                self.active_value_buf = ""
+                self.expecting_value = False
+                self.stream_value_active = False
+                self.streaming_content = False
+                self.pending_ref_check = False
+                self.ref_check_buf = ""
+                self.skip_stream_value = False
+                if self._matches_stream_path() and (not self._requires_channel() or self._channel_allowed()):
+                    self.stream_value_active = True
+                    self.pending_ref_check = True
+                    if self._requires_channel() and not self.channel_seen:
+                        self.channel_pending = True
+                self.capturing_tool_id = self._matches_tool_id_path()
+            else:
+                self.reading_key = True
+                self.current_key = ""
+            return
+
+        if ch in "{[":
+            self.path_stack.append(self.last_key)
+            if self.last_key == "tool_call":
+                self._start_tool_call()
+            self.last_key = None
+            self.expecting_value = False
+            return
+
+        if ch in "}]":
+            if self.path_stack:
+                popped = self.path_stack.pop()
+                if popped == "tool_call":
+                    await self._flush_pending_channel_stream(force_default=True)
+            self.last_key = None
+            self.expecting_value = False
+            return
+
+        if ch == ":":
+            if self.last_key is not None:
+                self.expecting_value = True
+            return
+
+        if ch == ",":
+            self.expecting_value = False
+            return
+
     def _decode_escape(self, ch: str) -> Optional[str]:
         if ch == "n":
             return "\n"
@@ -294,6 +474,21 @@ class ToolContentStreamerBase:
 
         for ch in chunk:
             if self.in_string:
+                if self.pending_string_quote and self.active_key and self.stream_value_active:
+                    if ch in " \t\r\n":
+                        self.pending_string_quote_ws += ch
+                        continue
+                    if ch in ",}]":
+                        self.in_string = False
+                        await self._close_active_string()
+                        await self._process_non_string_char(ch)
+                        continue
+                    buffered = '"' + self.pending_string_quote_ws + ch
+                    self.pending_string_quote = False
+                    self.pending_string_quote_ws = ""
+                    await self._append_active_text(buffered)
+                    continue
+
                 if self.unicode_mode:
                     self.unicode_buf += ch
                     if len(self.unicode_buf) == 4:
@@ -304,32 +499,7 @@ class ToolContentStreamerBase:
                         if self.reading_key:
                             self.current_key += decoded
                         elif self.active_key:
-                            if self.capturing_tool_id:
-                                self.tool_value_buf += decoded
-                            if self.skip_stream_value and self.stream_value_active:
-                                continue
-                            self.active_value_buf += decoded
-                            if self.pending_ref_check and self.stream_value_active:
-                                if len(self.ref_check_buf) < 4:
-                                    self.ref_check_buf += decoded
-                                    if len(self.ref_check_buf) >= 4:
-                                        if self.ref_check_buf.lower().startswith("ref:"):
-                                            self.skip_stream_value = True
-                                            self.pending_ref_check = False
-                                            self.streaming_content = False
-                                            self.active_value_buf = ""
-                                        else:
-                                            self.pending_ref_check = False
-                                            if self.channel_pending and not self.channel_seen:
-                                                self.streaming_content = False
-                                            else:
-                                                self.streaming_content = True
-                                                if self.active_value_buf:
-                                                    await self._emit_chunk(self.active_value_buf)
-                                                    self.active_value_buf = ""
-                            elif self.streaming_content and len(self.active_value_buf) >= 256:
-                                await self._emit_chunk(self.active_value_buf)
-                                self.active_value_buf = ""
+                            await self._append_active_text(decoded)
                         self.unicode_mode = False
                         self.unicode_buf = ""
                     continue
@@ -342,32 +512,7 @@ class ToolContentStreamerBase:
                     if self.reading_key:
                         self.current_key += decoded
                     elif self.active_key:
-                        if self.capturing_tool_id:
-                            self.tool_value_buf += decoded
-                        if self.skip_stream_value and self.stream_value_active:
-                            continue
-                        self.active_value_buf += decoded
-                        if self.pending_ref_check and self.stream_value_active:
-                            if len(self.ref_check_buf) < 4:
-                                self.ref_check_buf += decoded
-                                if len(self.ref_check_buf) >= 4:
-                                    if self.ref_check_buf.lower().startswith("ref:"):
-                                        self.skip_stream_value = True
-                                        self.pending_ref_check = False
-                                        self.streaming_content = False
-                                        self.active_value_buf = ""
-                                    else:
-                                        self.pending_ref_check = False
-                                        if self.channel_pending and not self.channel_seen:
-                                            self.streaming_content = False
-                                        else:
-                                            self.streaming_content = True
-                                            if self.active_value_buf:
-                                                await self._emit_chunk(self.active_value_buf)
-                                                self.active_value_buf = ""
-                        elif self.streaming_content and len(self.active_value_buf) >= 256:
-                            await self._emit_chunk(self.active_value_buf)
-                            self.active_value_buf = ""
+                        await self._append_active_text(decoded)
                     continue
 
                 if ch == "\\":
@@ -375,150 +520,36 @@ class ToolContentStreamerBase:
                     continue
 
                 if ch == '"':
-                    self.in_string = False
                     if self.reading_key:
+                        self.in_string = False
                         self.last_key = self.current_key
                         self.current_key = ""
                         self.reading_key = False
                     elif self.active_key:
-                        if self.capturing_tool_id:
-                            self.current_tool_id = self.tool_value_buf
-                            self.tool_value_buf = ""
-                            self.capturing_tool_id = False
-                        if self._matches_action_path():
-                            self.action_value = self.active_value_buf.strip()
-                        if self._matches_path_path():
-                            path_val = self.active_value_buf.strip()
-                            if path_val:
-                                norm_path = normalize_relpath(path_val, turn_id=self.turn_id)
-                                self.current_path = norm_path
-                                self.record_artifact_name = norm_path
-                                self.current_format = self._format_from_path(norm_path)
-                                print(f"ContentStreamer: Inferred format {self.current_format} from path {norm_path}")
-                        if self._matches_channel_path():
-                            channel_val = self.active_value_buf.strip().lower()
-                            if channel_val:
-                                if channel_val == "timeline":
-                                    channel_val = "timeline_text"
-                                self.current_channel = channel_val
-                                self.channel_seen = True
-                                await self._flush_pending_channel_stream()
-                        if self._matches_kind_path():
-                            kind_val = self.active_value_buf.strip().lower()
-                            if kind_val:
-                                self.current_kind = kind_val
                         if self.stream_value_active:
-                            if self.pending_ref_check:
-                                if self.active_value_buf.lower().startswith("ref:"):
-                                    self.skip_stream_value = True
-                                    self.streaming_content = False
-                                else:
-                                    if self.channel_pending and not self.channel_seen:
-                                        self.streaming_content = False
-                                    else:
-                                        self.streaming_content = True
-                                self.pending_ref_check = False
-                            if self.channel_pending and not self.channel_seen:
-                                if not self.skip_stream_value and self.active_value_buf:
-                                    self.pending_channel_buf = self.active_value_buf
-                                    self.pending_channel_stream = True
-                                self.channel_pending = False
-                                self.streaming_content = False
-                            if self.streaming_content and self.active_value_buf:
-                                await self._emit_chunk(self.active_value_buf)
-                        self.active_value_buf = ""
-                        self.streaming_content = False
-                        self.stream_value_active = False
-                        self.pending_ref_check = False
-                        self.ref_check_buf = ""
-                        self.skip_stream_value = False
-                        self.active_key = None
+                            self.pending_string_quote = True
+                            self.pending_string_quote_ws = ""
+                            continue
+                        self.in_string = False
+                        await self._close_active_string()
                     continue
 
                 if self.reading_key:
                     self.current_key += ch
                 elif self.active_key:
-                    if self.capturing_tool_id:
-                        self.tool_value_buf += ch
-                    if self.skip_stream_value and self.stream_value_active:
-                        continue
-                    self.active_value_buf += ch
-                    if self.pending_ref_check and self.stream_value_active:
-                        if len(self.ref_check_buf) < 4:
-                            self.ref_check_buf += ch
-                            if len(self.ref_check_buf) >= 4:
-                                if self.ref_check_buf.lower().startswith("ref:"):
-                                    self.skip_stream_value = True
-                                    self.pending_ref_check = False
-                                    self.streaming_content = False
-                                    self.active_value_buf = ""
-                                    continue
-                                self.pending_ref_check = False
-                                if self.channel_pending and not self.channel_seen:
-                                    self.streaming_content = False
-                                else:
-                                    self.streaming_content = True
-                                    if self.active_value_buf:
-                                        await self._emit_chunk(self.active_value_buf)
-                                        self.active_value_buf = ""
-                    if self.streaming_content and len(self.active_value_buf) >= 256:
-                        await self._emit_chunk(self.active_value_buf)
-                        self.active_value_buf = ""
+                    await self._append_active_text(ch)
                 continue
 
-            if ch == '"':
-                self.in_string = True
-                if self.expecting_value:
-                    self.active_key = self.last_key
-                    self.active_value_buf = ""
-                    self.expecting_value = False
-                    self.stream_value_active = False
-                    self.streaming_content = False
-                    self.pending_ref_check = False
-                    self.ref_check_buf = ""
-                    self.skip_stream_value = False
-                    if self._matches_stream_path() and (not self._requires_channel() or self._channel_allowed()):
-                        self.stream_value_active = True
-                        self.pending_ref_check = True
-                        if self._requires_channel() and not self.channel_seen:
-                            self.channel_pending = True
-                    self.capturing_tool_id = self._matches_tool_id_path()
-                else:
-                    self.reading_key = True
-                    self.current_key = ""
-                continue
-
-            if ch in "{[":
-                self.path_stack.append(self.last_key)
-                if self.last_key == "tool_call":
-                    self._start_tool_call()
-                self.last_key = None
-                self.expecting_value = False
-                continue
-
-            if ch in "}]":
-                if self.path_stack:
-                    popped = self.path_stack.pop()
-                    if popped == "tool_call":
-                        await self._flush_pending_channel_stream(force_default=True)
-                self.last_key = None
-                self.expecting_value = False
-                continue
-
-            if ch == ":":
-                if self.last_key is not None:
-                    self.expecting_value = True
-                continue
-
-            if ch == ",":
-                self.expecting_value = False
-                continue
+            await self._process_non_string_char(ch)
 
         if self.streaming_content and self.active_value_buf:
             await self._emit_chunk(self.active_value_buf)
             self.active_value_buf = ""
 
     async def finish(self) -> None:
+        if self.pending_string_quote and self.active_key:
+            self.in_string = False
+            await self._close_active_string()
         if self.streaming_content and self.active_value_buf:
             await self._emit_chunk(self.active_value_buf)
             self.active_value_buf = ""
