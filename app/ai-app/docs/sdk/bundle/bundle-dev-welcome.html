@@ -696,8 +696,8 @@ POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/{operation}
       <tbody>
         <tr><td><code>@agentic_workflow(...)</code></td><td>class</td><td>Marks the bundle entrypoint for loader discovery</td><td><code>name</code>, <code>version</code>, <code>priority</code></td></tr>
         <tr><td><code>@bundle_id(...)</code></td><td>class</td><td>Declares the canonical bundle id from code</td><td><code>id</code></td></tr>
-        <tr><td><code>@ui_widget(...)</code></td><td>method</td><td>Declares a UI widget discoverable under widget endpoints</td><td><code>icon</code>, <code>alias</code>, <code>roles</code></td></tr>
-        <tr><td><code>@api(...)</code></td><td>method</td><td>Declares a bundle API under <code>/operations/{operation}</code> or <code>/public/{operation}</code></td><td><code>method</code>, <code>alias</code>, <code>route</code>, <code>roles</code>, <code>public_auth</code></td></tr>
+        <tr><td><code>@ui_widget(...)</code></td><td>method</td><td>Declares a UI widget discoverable under widget endpoints</td><td><code>icon</code>, <code>alias</code>, <code>user_types</code>, <code>roles</code></td></tr>
+        <tr><td><code>@api(...)</code></td><td>method</td><td>Declares a bundle API under <code>/operations/{operation}</code> or <code>/public/{operation}</code></td><td><code>method</code>, <code>alias</code>, <code>route</code>, <code>user_types</code>, <code>roles</code>, <code>public_auth</code></td></tr>
         <tr><td><code>@ui_main</code></td><td>method</td><td>Marks the bundle’s main UI entrypoint returned in the interface manifest</td><td>no args</td></tr>
         <tr><td><code>@on_message</code></td><td>method</td><td>Marks the live message-entry method the proc/web layer routes to</td><td>no args</td></tr>
       </tbody>
@@ -1599,11 +1599,11 @@ According to multiple sources [[S:1-4]], the trend is clear.</code></pre>
   <h3>Example: Declare widget, API, and main-view entrypoints</h3>
   <pre><code><span class="kw">from</span> kdcube_ai_app.infra.plugin.agentic_loader <span class="kw">import</span> api, ui_widget, ui_main
 
-<span class="dec">@ui_widget</span>(icon={<span class="str">"tailwind"</span>: <span class="str">"heroicons-outline:swatch"</span>}, alias=<span class="str">"dashboard"</span>, roles=(<span class="str">"registered"</span>, <span class="str">"admin"</span>))
+<span class="dec">@ui_widget</span>(icon={<span class="str">"tailwind"</span>: <span class="str">"heroicons-outline:swatch"</span>}, alias=<span class="str">"dashboard"</span>, user_types=(<span class="str">"registered"</span>, <span class="str">"privileged"</span>))
 <span class="kw">def</span> <span class="fn">dashboard_widget</span>(self, **kwargs):
     <span class="kw">return</span> [<span class="str">"&lt;div id='root'&gt;&lt;/div&gt;"</span>]
 
-<span class="dec">@api</span>(alias=<span class="str">"refresh_dashboard"</span>, method=<span class="str">"POST"</span>, roles=(<span class="str">"registered"</span>, <span class="str">"admin"</span>))
+<span class="dec">@api</span>(alias=<span class="str">"refresh_dashboard"</span>, method=<span class="str">"POST"</span>, user_types=(<span class="str">"registered"</span>, <span class="str">"privileged"</span>))
 <span class="kw">def</span> <span class="fn">refresh_dashboard</span>(self, **kwargs):
     <span class="kw">return</span> {<span class="str">"ok"</span>: <span class="kw">True</span>}
 
@@ -1828,7 +1828,7 @@ kdcube --workdir ~/.kdcube/kdcube-runtime --bundle-reload my.bundle@1.0.0</code>
         <tr>
           <td><strong>Bundle endpoints RBAC</strong></td>
           <td><span class="pill avail">Available</span></td>
-          <td>Bundle endpoint visibility and access are governed by decorator metadata. Bundle listing honors bundle-level <code>allowed_roles</code>, while per-method <code>roles</code> on <code>@api</code> and <code>@ui_widget</code> control which operations and widgets are visible and callable for a given user.</td>
+          <td>Bundle endpoint visibility and access are governed by decorator metadata. Bundle listing honors bundle-level <code>allowed_roles</code>, while per-method <code>user_types</code> and raw <code>roles</code> on <code>@api</code> and <code>@ui_widget</code> control which operations and widgets are visible and callable for a given user.</td>
         </tr>
         <tr>
           <td><strong>Admin bundle interface enrichment</strong></td>

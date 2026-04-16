@@ -219,7 +219,7 @@ Authenticated operation example:
     alias="preferences_summary",
     method="GET",
     route="operations",
-    roles=("registered",),
+    user_types=("registered",),
 )
 async def preferences_summary(self, **kwargs):
     ...
@@ -232,7 +232,7 @@ Public endpoint example:
     alias="registration-request",
     method="POST",
     route="public",
-    roles=(),
+    user_types=(),
     public_auth="none",
 )
 async def submit_registration_request(self, *, email: str, **kwargs):
@@ -241,6 +241,8 @@ async def submit_registration_request(self, *, email: str, **kwargs):
 
 Rules:
 
+- `user_types=(...)` for inferred internal user types such as `registered`, `paid`, `privileged`, `anonymous`
+- `roles=(...)` for raw external roles such as `kdcube:role:super-admin`
 - `route="operations"` for authenticated internal app operations
 - `route="public"` for deliberately public/external endpoints
 - if `route="public"`, set `public_auth`

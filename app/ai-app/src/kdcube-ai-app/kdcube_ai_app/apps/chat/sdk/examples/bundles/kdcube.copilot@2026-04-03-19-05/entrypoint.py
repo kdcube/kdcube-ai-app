@@ -796,7 +796,7 @@ class ReactWorkflow(BaseEntrypoint):
     @api(
         alias="knowledge_base_admin_widget",
         route="operations",
-        roles=("super-admin",),
+        roles=("kdcube:role:super-admin",),
     )
     @ui_widget(
         icon={
@@ -804,7 +804,7 @@ class ReactWorkflow(BaseEntrypoint):
             "lucide": "DatabaseZap",
         },
         alias="knowledge_base_admin",
-        roles=("super-admin",),
+        roles=("kdcube:role:super-admin",),
     )
     def knowledge_base_admin_widget(
         self,
@@ -833,7 +833,7 @@ class ReactWorkflow(BaseEntrypoint):
             self.logger.log(traceback.format_exc(), "ERROR")
             return ["<p>Unable to render the Knowledge Base Admin widget right now.</p>"]
 
-    @api(alias="knowledge_base_admin_widget_data", roles=("super-admin",))
+    @api(alias="knowledge_base_admin_widget_data", roles=("kdcube:role:super-admin",))
     def knowledge_base_admin_widget_data(
         self,
         user_id: Optional[str] = None,
@@ -860,7 +860,7 @@ class ReactWorkflow(BaseEntrypoint):
         payload["workspace_root"] = str(kb_admin_workspace_root(local_root, target_user)) if local_root else None
         return payload
 
-    @api(alias="knowledge_base_admin_conversation_data", roles=("super-admin",))
+    @api(alias="knowledge_base_admin_conversation_data", roles=("kdcube:role:super-admin",))
     def knowledge_base_admin_conversation_data(
         self,
         conversation_id: str,
@@ -880,7 +880,7 @@ class ReactWorkflow(BaseEntrypoint):
             "conversation_id": conversation_id,
         }
 
-    @api(alias="knowledge_base_admin_save_settings", roles=("super-admin",))
+    @api(alias="knowledge_base_admin_save_settings", roles=("kdcube:role:super-admin",))
     def knowledge_base_admin_save_settings(
         self,
         content_repos: Optional[list[dict[str, Any]]] = None,
@@ -1006,7 +1006,7 @@ class ReactWorkflow(BaseEntrypoint):
             self.logger.log(traceback.format_exc(), "ERROR")
             raise
 
-    @api(alias="knowledge_base_admin_sync_workspace", roles=("super-admin",))
+    @api(alias="knowledge_base_admin_sync_workspace", roles=("kdcube:role:super-admin",))
     def knowledge_base_admin_sync_workspace(
         self,
         user_id: Optional[str] = None,
@@ -1044,7 +1044,7 @@ class ReactWorkflow(BaseEntrypoint):
             **sync_payload,
         }
 
-    @api(alias="knowledge_base_admin_push_output_repo", roles=("super-admin",))
+    @api(alias="knowledge_base_admin_push_output_repo", roles=("kdcube:role:super-admin",))
     def knowledge_base_admin_push_output_repo(
         self,
         user_id: Optional[str] = None,
@@ -1095,7 +1095,7 @@ class ReactWorkflow(BaseEntrypoint):
             **sync_payload,
         }
 
-    @api(alias="knowledge_base_admin_reset_output_repo", roles=("super-admin",))
+    @api(alias="knowledge_base_admin_reset_output_repo", roles=("kdcube:role:super-admin",))
     def knowledge_base_admin_reset_output_repo(
         self,
         commit: str,
@@ -1148,7 +1148,7 @@ class ReactWorkflow(BaseEntrypoint):
             **sync_payload,
         }
 
-    @api(alias="knowledge_base_admin_chat", roles=("super-admin",))
+    @api(alias="knowledge_base_admin_chat", roles=("kdcube:role:super-admin",))
     async def knowledge_base_admin_chat(
         self,
         message: str,

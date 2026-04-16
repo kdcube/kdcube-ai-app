@@ -158,7 +158,7 @@ Current signature:
     method="POST",
     alias="preferences_exec_report",
     route="operations",
-    roles=("registered",),
+    user_types=("registered",),
     public_auth=None,
 )
 async def preferences_exec_report(self, **kwargs):
@@ -176,9 +176,14 @@ Current fields:
 - `route`
   - `operations` or `public`
   - default: `operations`
+- `user_types`
+  - tuple/list of inferred internal user types
+  - examples: `registered`, `paid`, `privileged`, `anonymous`
+  - empty means no user-type restriction
 - `roles`
-  - tuple/list of visible roles
-  - empty means visible to any caller that can reach that route
+  - tuple/list of raw external roles
+  - use actual auth role ids such as `kdcube:role:super-admin`
+  - empty means no raw-role restriction
 - `public_auth`
   - used only with `route="public"`
   - current built-in modes:
@@ -191,6 +196,8 @@ Important current rule:
 
 - only methods decorated with `@api(...)` are remotely callable through bundle
   operation routes
+- if both `user_types` and `roles` are provided, both must match for the
+  endpoint to be visible/callable
 - same-name fallback for undecorated methods is no longer part of the HTTP
   contract
 - `route="public"` must also declare `public_auth`
@@ -220,7 +227,7 @@ Marks a method as a discoverable widget endpoint.
         "lucide": "SlidersHorizontal",
     },
     alias="preferences",
-    roles=("registered", "privileged"),
+    user_types=("registered", "privileged"),
 )
 def preferences_widget(self, **kwargs):
     ...
@@ -235,8 +242,11 @@ Current fields:
 - `alias`
   - widget alias used by widget discovery/fetch
   - default: Python method name
+- `user_types`
+  - inferred internal user types allowed to see the widget
 - `roles`
-  - widget visibility roles
+  - raw external roles allowed to see the widget
+  - use values such as `kdcube:role:super-admin`
 
 Current rule:
 
@@ -390,6 +400,7 @@ class APIEndpointSpec:
     alias: str
     http_method: str = "POST"
     route: str = "operations"
+    user_types: tuple[str, ...] = ()
     roles: tuple[str, ...] = ()
 ```
 
@@ -401,6 +412,7 @@ class UIWidgetSpec:
     method_name: str
     alias: str
     icon: dict[str, str]
+    user_types: tuple[str, ...] = ()
     roles: tuple[str, ...] = ()
 ```
 
@@ -476,6 +488,7 @@ Current response shape includes:
   - includes `alias`
   - includes `http_method`
   - includes `route`
+  - includes `user_types`
   - includes `roles`
 - `ui_main`
 - `on_message`
@@ -500,7 +513,8 @@ Example:
         "tailwind": "heroicons-outline:adjustments-horizontal",
         "lucide": "SlidersHorizontal"
       },
-      "roles": ["registered", "privileged"]
+      "user_types": ["registered", "privileged"],
+      "roles": []
     }
   ],
   "api_endpoints": [
@@ -508,7 +522,8 @@ Example:
       "alias": "preferences_exec_report",
       "http_method": "POST",
       "route": "operations",
-      "roles": ["registered"]
+      "user_types": ["registered"],
+      "roles": []
     }
   ],
   "ui_main": {
@@ -633,13 +648,15 @@ Applies to the bundle listing endpoint (`GET /api/integrations/bundles`).
 - A bundle with empty `allowed_roles` is always included.
 - Admin listing (`GET /api/admin/integrations/bundles`) is not filtered.
 
-### 4.2 Per-method filtering (`roles` on `@api` and `@ui_widget`)
+### 4.2 Per-method filtering (`user_types` and `roles` on `@api` and `@ui_widget`)
 
 Applies within a bundle manifest — controls which apis and widgets are
 visible to a given user.
 
-- Both raw roles and derived types are matched here.
-- Enforced by `_roles_visible` in the integration layer.
+- `user_types` are matched against the session's inferred platform user type.
+- `roles` are matched against the session's raw `kdcube:role:*` entries.
+- If both are present, both conditions must pass.
+- Enforced by `_endpoint_visible` in the integration layer.
 - Direct widget fetch and operation routes also reject unauthorized aliases.
 
 Bundle methods should still enforce business-level authorization when needed,
@@ -691,7 +708,7 @@ Relevant code:
 ### 7.1 Normal authenticated operation
 
 ```python
-@api(alias="preferences_exec_report", route="operations", roles=("registered",))
+@api(alias="preferences_exec_report", route="operations", user_types=("registered",))
 async def preferences_exec_report(self, **kwargs):
     ...
 ```
@@ -715,11 +732,11 @@ async def telegram_webhook(self, **kwargs):
 ### 7.3 Widget plus operation compatibility
 
 ```python
-@api(alias="preferences_widget", route="operations", roles=("registered",))
+@api(alias="preferences_widget", route="operations", user_types=("registered",))
 @ui_widget(
     alias="preferences",
     icon={"tailwind": "heroicons-outline:adjustments-horizontal"},
-    roles=("registered",),
+    user_types=("registered",),
 )
 def preferences_widget(self, **kwargs):
     ...

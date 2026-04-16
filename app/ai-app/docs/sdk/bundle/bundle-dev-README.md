@@ -152,8 +152,8 @@ These are the bundle decorators currently supported by the SDK loader in
 | `@agentic_workflow(...)` | entrypoint class | Declares the bundle workflow class used by the runtime. This is the normal entrypoint decorator for bundles. |
 | `@agentic_workflow_factory(...)` | factory function | Declares a workflow factory function instead of a workflow class. Use this only when the bundle needs factory-style construction rather than the normal class entrypoint pattern. |
 | `@bundle_id("my.bundle@1.0.0")` | entrypoint class | Declares the bundle id in code when runtime needs to infer identity from the bundle code itself. For deployed bundles loaded from `bundles.yaml`, the descriptor `id` still remains the operational registry id. |
-| `@api(...)` | entrypoint method | Exposes a bundle method through the integrations HTTP surface. Use `route="operations"` for authenticated/internal bundle operations and `route="public"` only for explicitly public endpoints. |
-| `@ui_widget(...)` | entrypoint method | Declares a discoverable widget in the bundle manifest and widget endpoints. |
+| `@api(...)` | entrypoint method | Exposes a bundle method through the integrations HTTP surface. Use `user_types=(...)` for inferred platform user types such as `registered` or `privileged`, and `roles=(...)` for raw external roles such as `kdcube:role:super-admin`. |
+| `@ui_widget(...)` | entrypoint method | Declares a discoverable widget in the bundle manifest and widget endpoints. Supports the same `user_types=(...)` and raw `roles=(...)` visibility selectors as `@api(...)`. |
 | `@ui_main` | entrypoint method | Declares the main iframe UI entrypoint for the bundle. |
 | `@on_message` | entrypoint method | Declares the message-handling method for the bundle turn path. Base entrypoints already apply this to `run()`. |
 | `@cron(...)` | entrypoint method | Declares a scheduled background job managed by proc. Cron expression can be inline or loaded from bundle props via `expr_config`. |
@@ -245,6 +245,11 @@ The current bundle interface surface is explicit and decorator-driven:
 - `@api(...)` exposes a method through the integrations HTTP surface
   - `route="operations"` is the default
   - use `route="public"` only for operations intentionally reachable from the public route
+  - use `user_types=(...)` for inferred internal user types
+    - examples: `("anonymous",)`, `("registered",)`, `("paid",)`, `("privileged",)`
+  - use `roles=(...)` for raw external roles propagated from auth
+    - example: `("kdcube:role:super-admin",)`
+  - if both `user_types` and `roles` are provided, both conditions must match
   - `route="public"` must also declare `public_auth`
     - `public_auth="none"` means explicitly unauthenticated public endpoint
     - `public_auth={"mode":"header_secret","header":"X-Telegram-Bot-Api-Secret-Token","secret_key":"telegram.webhook_secret"}` means the platform verifies the header against `bundles.<bundle_id>.secrets.telegram.webhook_secret`
@@ -736,7 +741,7 @@ Outputs:
 | `tenant` | read | Tenant identifier |
 | `project` | read | Project identifier |
 | `user` | read | User identifier |
-| `user_type` | read | User role (`privileged`, `registered`, `anonymous`) |
+| `user_type` | read | Inferred user type (`privileged`, `registered`, `paid`, `anonymous`) |
 | `session_id` | read | Session identifier |
 | `conversation_id` | read | Conversation identifier |
 | `turn_id` | read | Current turn identifier |

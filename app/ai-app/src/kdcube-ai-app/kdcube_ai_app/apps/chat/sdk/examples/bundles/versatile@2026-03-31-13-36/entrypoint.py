@@ -166,7 +166,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
     @api(
         alias="preferences_widget",
         route="operations",
-        roles=("registered", "privileged", "free", "payasyougo", "admin"),
+        user_types=("registered", "paid", "privileged"),
     )
     @ui_widget(
         icon={
@@ -174,7 +174,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
             "lucide": "SlidersHorizontal",
         },
         alias="preferences",
-        roles=("registered", "privileged", "free", "payasyougo", "admin"),
+        user_types=("registered", "paid", "privileged"),
     )
     def preferences_widget(self, user_id: Optional[str] = None, **kwargs):
         storage = self._preferences_storage()
@@ -212,7 +212,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
         method="GET",
         alias="preferences_summary",
         route="operations",
-        roles=("registered", "privileged", "free", "payasyougo", "admin"),
+        user_types=("registered", "paid", "privileged"),
     )
     def preferences_summary(
         self,

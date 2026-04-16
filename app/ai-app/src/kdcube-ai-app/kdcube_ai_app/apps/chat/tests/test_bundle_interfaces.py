@@ -63,7 +63,7 @@ def _request(*, method: str = "GET", path: str = "/api/integrations/test", query
 
 
 class _DecoratedWorkflow:
-    @api(method="GET", alias="prefs_view", roles=("registered",))
+    @api(method="GET", alias="prefs_view", user_types=("registered",))
     async def preferences_view(self, **kwargs):
         return kwargs
 
@@ -75,14 +75,14 @@ class _DecoratedWorkflow:
     async def public_ping(self, **kwargs):
         return kwargs
 
-    @api(method="POST", alias="preferences_widget", route="operations", roles=("registered",))
+    @api(method="POST", alias="preferences_widget", route="operations", user_types=("registered",))
     @ui_widget(
         icon={
             "tailwind": "heroicons-outline:adjustments-horizontal",
             "lucide": "SlidersHorizontal",
         },
         alias="preferences",
-        roles=("registered",),
+        user_types=("registered",),
     )
     def preferences_widget(self, **kwargs):
         return [f"<p>{kwargs.get('fingerprint')}</p>"]
@@ -116,8 +116,32 @@ def test_discover_bundle_interface_manifest_returns_declarative_specs():
     }
     public_ping = next(item for item in manifest.api_endpoints if item.alias == "public_ping")
     assert public_ping.public_auth and public_ping.public_auth.mode == "none"
+    prefs_view = next(item for item in manifest.api_endpoints if item.alias == "prefs_view")
+    assert prefs_view.user_types == ("registered",)
+    assert prefs_view.roles == ()
+    assert manifest.ui_widgets[0].user_types == ("registered",)
     assert manifest.ui_main and manifest.ui_main.method_name == "main_ui"
     assert manifest.on_message and manifest.on_message.method_name == "handle_message"
+
+
+def test_discover_bundle_interface_manifest_normalizes_legacy_roles_to_user_types_and_raw_roles():
+    class _LegacyWorkflow:
+        @api(method="GET", alias="legacy_user_type", roles=("registered",))
+        async def legacy_user_type(self, **kwargs):
+            return kwargs
+
+        @api(method="POST", alias="legacy_admin", roles=("super-admin",))
+        async def legacy_admin(self, **kwargs):
+            return kwargs
+
+    manifest = discover_bundle_interface_manifest(_LegacyWorkflow(), bundle_id="bundle.demo")
+    legacy_user_type = next(item for item in manifest.api_endpoints if item.alias == "legacy_user_type")
+    legacy_admin = next(item for item in manifest.api_endpoints if item.alias == "legacy_admin")
+
+    assert legacy_user_type.user_types == ("registered",)
+    assert legacy_user_type.roles == ()
+    assert legacy_admin.user_types == ()
+    assert legacy_admin.roles == ("kdcube:role:super-admin",)
 
 
 def test_resolve_bundle_api_endpoint_prefers_decorated_alias_and_method():
@@ -421,6 +445,11 @@ async def test_get_bundle_interface_and_widgets_use_decorators(monkeypatch):
     }
     public_ping = next(item for item in manifest["api_endpoints"] if item["alias"] == "public_ping")
     assert public_ping["public_auth_mode"] == "none"
+    prefs_view = next(item for item in manifest["api_endpoints"] if item["alias"] == "prefs_view")
+    assert prefs_view["user_types"] == ["registered"]
+    assert prefs_view["roles"] == []
+    assert manifest["ui_widgets"][0]["user_types"] == ["registered"]
+    assert manifest["ui_widgets"][0]["roles"] == []
 
     widgets = await integrations.list_bundle_widgets(
         tenant="tenant-a",
@@ -440,6 +469,8 @@ async def test_get_bundle_interface_and_widgets_use_decorators(monkeypatch):
         session=session,
     )
     assert widget_payload["widget"]["alias"] == "preferences"
+    assert widget_payload["widget"]["user_types"] == ["registered"]
+    assert widget_payload["widget"]["roles"] == []
     assert widget_payload["preferences"] == ["<p>fp-1</p>"]
 
 
@@ -448,7 +479,7 @@ async def test_call_bundle_op_inner_supports_decorated_get_api(monkeypatch):
     captured: dict[str, object] = {}
 
     class _Workflow(_DecoratedWorkflow):
-        @api(method="GET", alias="prefs_view", roles=("registered",))
+        @api(method="GET", alias="prefs_view", user_types=("registered",))
         async def preferences_view(self, **kwargs):
             captured["kwargs"] = dict(kwargs)
             return {"ok": True, "value": kwargs.get("value")}
@@ -501,6 +532,53 @@ async def test_call_bundle_op_inner_supports_widget_compat_api(monkeypatch):
     )
 
     assert result["preferences_widget"] == ["<p>fp-1</p>"]
+
+
+def test_visible_specs_require_intersection_of_user_types_and_raw_roles():
+    class _VisibilityWorkflow:
+        @api(alias="by_user_type", user_types=("registered",))
+        async def by_user_type(self, **kwargs):
+            return kwargs
+
+        @api(alias="by_role", roles=("kdcube:role:super-admin",))
+        async def by_role(self, **kwargs):
+            return kwargs
+
+        @api(alias="by_both", user_types=("privileged",), roles=("kdcube:role:super-admin",))
+        async def by_both(self, **kwargs):
+            return kwargs
+
+        @ui_widget(
+            icon="heroicons-outline:shield-check",
+            alias="admin_widget",
+            user_types=("privileged",),
+            roles=("kdcube:role:super-admin",),
+        )
+        def admin_widget(self, **kwargs):
+            return kwargs
+
+    manifest = discover_bundle_interface_manifest(_VisibilityWorkflow(), bundle_id="bundle.demo")
+
+    visible_registered = integrations._visible_api_specs(manifest, _session(user_type="registered"))
+    assert {spec.alias for spec in visible_registered} == {"by_user_type"}
+
+    visible_admin = integrations._visible_api_specs(
+        manifest,
+        _session(user_type="privileged", roles=["kdcube:role:super-admin"]),
+    )
+    assert {spec.alias for spec in visible_admin} == {"by_role", "by_both"}
+
+    visible_privileged_no_role = integrations._visible_api_specs(
+        manifest,
+        _session(user_type="privileged"),
+    )
+    assert {spec.alias for spec in visible_privileged_no_role} == set()
+
+    visible_widget = integrations._visible_widget_specs(
+        manifest,
+        _session(user_type="privileged", roles=["kdcube:role:super-admin"]),
+    )
+    assert [spec.alias for spec in visible_widget] == ["admin_widget"]
 
 
 def test_parse_bundle_request_payload_supports_multipart_files():
