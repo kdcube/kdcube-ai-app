@@ -554,20 +554,68 @@ class ContextBrowser:
         payload = getattr(event, "payload", None) or {}
         if isinstance(payload, dict) and payload:
             meta["payload"] = dict(payload)
+        attachments = self._attachments_from_external_event(event) if kind == "followup" else []
+        if attachments:
+            meta["attachments_count"] = len(attachments)
+        event_ts = time.strftime(
+            "%Y-%m-%dT%H:%M:%SZ",
+            time.gmtime(float(getattr(event, "created_at", 0.0) or time.time())),
+        )
         text = str(getattr(event, "text", "") or "").strip()
         if not text and isinstance(payload, dict):
             text = str(payload.get("message") or payload.get("text") or "").strip()
-        block = self._timeline.block(
+        blocks = [self._timeline.block(
             type="user.followup" if kind == "followup" else "user.steer",
             author="user",
             turn_id=turn_id,
-            ts=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(float(getattr(event, "created_at", 0.0) or time.time()))),
+            ts=event_ts,
             mime="text/markdown",
             text=text,
             path=path,
             meta=meta,
-        )
-        return [block]
+        )]
+        if attachments and kind == "followup":
+            from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.layout import build_user_attachment_blocks
+
+            event_id = str(getattr(event, "message_id", "") or "").strip() or "external"
+            blocks.extend(build_user_attachment_blocks(
+                turn_id=turn_id,
+                ts=event_ts,
+                user_attachments=attachments,
+                block_factory=self._timeline.block,
+                path_root=f"fi:{turn_id}.external.followup.{event_id}.attachments",
+                synthetic_physical_root=f"{turn_id}/external/followup/{event_id}/attachments",
+                meta_extra={
+                    "continuation_kind": "followup",
+                    "event_kind": "followup",
+                    "message_id": event_id,
+                    "sequence": int(getattr(event, "sequence", 0) or 0),
+                },
+            ))
+        return blocks
+
+    def _attachments_from_external_event(self, event: Any) -> List[Dict[str, Any]]:
+        def _normalize(raw: Any) -> List[Dict[str, Any]]:
+            if not isinstance(raw, list):
+                return []
+            return [dict(item) for item in raw if isinstance(item, dict)]
+
+        task_payload = getattr(event, "task_payload", None)
+        if isinstance(task_payload, dict):
+            request = task_payload.get("request") if isinstance(task_payload.get("request"), dict) else {}
+            payload = request.get("payload") if isinstance(request.get("payload"), dict) else {}
+            attachments = _normalize(payload.get("attachments"))
+            if attachments:
+                return attachments
+        try:
+            payload_model = event.task_payload_model()
+            request = getattr(payload_model, "request", None)
+            payload = getattr(request, "payload", None)
+            if isinstance(payload, dict):
+                return _normalize(payload.get("attachments"))
+        except Exception:
+            return []
+        return []
 
     @property
     def feedback_updates(self) -> List[Dict[str, Any]]:

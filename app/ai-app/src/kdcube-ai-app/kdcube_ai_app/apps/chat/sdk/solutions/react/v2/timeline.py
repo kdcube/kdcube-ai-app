@@ -368,6 +368,9 @@ def _attachment_name_from_path(path: str) -> str:
     marker = ".user.attachments/"
     if marker in path:
         return path.split(marker, 1)[1]
+    path = (path or "").rstrip("/")
+    if "/" in path:
+        return path.rsplit("/", 1)[-1]
     return path
 
 
