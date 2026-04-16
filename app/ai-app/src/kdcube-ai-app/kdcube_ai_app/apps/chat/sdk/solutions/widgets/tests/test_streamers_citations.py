@@ -391,6 +391,41 @@ async def test_rendering_write_streamer_skips_ref_content():
 
 
 @pytest.mark.asyncio
+async def test_rendering_write_streamer_tolerates_raw_quotes_inside_streamed_html_content():
+    raw_payload = """```json
+{
+  "action": "call_tool",
+  "tool_call": {
+    "tool_id": "rendering_tools.write_pdf",
+    "params": {
+      "path": "turn_1/files/page.pdf",
+      "format": "html",
+      "content": "<!DOCTYPE html>\\n<html lang=\\"en\\">\\n<body>\\n<p>Researchers have developed a cutting-edge technique that uses RNA "barcodes" to map how neurons connect, capturing thousands of synaptic links with single-synapse precision.</p>\\n<p>Tail paragraph stays visible.</p>\\n</body>\\n</html>"
+    }
+  }
+}
+```"""
+
+    collector = _Collector()
+    streamer = RenderingWriteContentStreamer(
+        emit_delta=collector.emit,
+        agent="test.agent",
+        artifact_name="react.record.test",
+        sources_list=[],
+        turn_id="turn_1",
+    )
+
+    for chunk in _chunk_text(raw_payload, size=7):
+        await streamer.feed(chunk)
+    await streamer.finish()
+
+    rendered = collector.text_for_marker("canvas")
+    assert 'RNA "barcodes" to map how neurons connect' in rendered
+    assert "Tail paragraph stays visible." in rendered
+    assert rendered.rstrip().endswith("</html>")
+
+
+@pytest.mark.asyncio
 async def test_react_write_streamer_skips_ref_content():
     sources_list = [
         {"sid": 1, "title": "Example", "url": "https://example.com", "text": "X"},
