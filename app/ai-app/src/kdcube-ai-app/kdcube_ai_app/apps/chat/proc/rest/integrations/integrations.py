@@ -216,34 +216,29 @@ def _resolve_bound_runtime_comm(*, workflow: Any, comm_context: Optional[ChatTas
         return None
 
 
-def _session_role_names(session: UserSession) -> set[str]:
-    names: set[str] = set()
-    user_type = str(getattr(getattr(session, "user_type", None), "value", "") or "").strip()
-    if user_type:
-        names.add(user_type)
-    for item in getattr(session, "roles", None) or []:
-        text = str(item or "").strip()
-        if text:
-            names.add(text)
-    return names
+def _session_user_type(session: UserSession) -> str | None:
+    value = str(getattr(getattr(session, "user_type", None), "value", "") or "").strip()
+    return value or None
 
 
-def _roles_visible(required_roles: tuple[str, ...] | list[str] | None, session: UserSession) -> bool:
-    roles = tuple(str(role or "").strip() for role in (required_roles or ()) if str(role or "").strip())
-    if not roles:
+def _user_types_visible(required_user_types: tuple[str, ...] | list[str] | None, session: UserSession) -> bool:
+    user_types = tuple(
+        str(user_type or "").strip()
+        for user_type in (required_user_types or ())
+        if str(user_type or "").strip()
+    )
+    if not user_types:
         return True
-    if "super-admin" in roles and "kdcube:role:super-admin" in _session_role_names(session):
-        return True
-    current = _session_role_names(session)
-    return any(role in current for role in roles)
+    current = _session_user_type(session)
+    return bool(current and current in set(user_types))
 
 
 def _visible_widget_specs(manifest: BundleInterfaceManifest, session: UserSession) -> list[UIWidgetSpec]:
-    return [spec for spec in manifest.ui_widgets if _roles_visible(spec.roles, session)]
+    return [spec for spec in manifest.ui_widgets if _endpoint_visible(spec.user_types, spec.roles, session)]
 
 
 def _visible_api_specs(manifest: BundleInterfaceManifest, session: UserSession) -> list[APIEndpointSpec]:
-    return [spec for spec in manifest.api_endpoints if _roles_visible(spec.roles, session)]
+    return [spec for spec in manifest.api_endpoints if _endpoint_visible(spec.user_types, spec.roles, session)]
 
 
 def _user_raw_roles(session: UserSession) -> set[str]:
@@ -252,6 +247,21 @@ def _user_raw_roles(session: UserSession) -> set[str]:
         r for r in (session.roles or [])
         if isinstance(r, str) and r.startswith("kdcube:role:")
     }
+
+
+def _raw_roles_visible(required_roles: tuple[str, ...] | list[str] | None, session: UserSession) -> bool:
+    roles = tuple(str(role or "").strip() for role in (required_roles or ()) if str(role or "").strip())
+    if not roles:
+        return True
+    return bool(_user_raw_roles(session) & set(roles))
+
+
+def _endpoint_visible(
+        required_user_types: tuple[str, ...] | list[str] | None,
+        required_roles: tuple[str, ...] | list[str] | None,
+        session: UserSession,
+) -> bool:
+    return _user_types_visible(required_user_types, session) and _raw_roles_visible(required_roles, session)
 
 
 def _bundle_allowed_for_session(manifest: "BundleInterfaceManifest | None", session: UserSession) -> bool:
@@ -603,11 +613,17 @@ def _manifest_to_descriptor(manifest: BundleInterfaceManifest) -> Dict[str, Any]
     """Serialise a full (unfiltered) manifest to a plain dict."""
     return {
         "apis": [
-            {"alias": s.alias, "http_method": s.http_method, "route": s.route, "roles": list(s.roles)}
+            {
+                "alias": s.alias,
+                "http_method": s.http_method,
+                "route": s.route,
+                "user_types": list(s.user_types),
+                "roles": list(s.roles),
+            }
             for s in manifest.api_endpoints
         ],
         "widgets": [
-            {"alias": s.alias, "icon": s.icon, "roles": list(s.roles)}
+            {"alias": s.alias, "icon": s.icon, "user_types": list(s.user_types), "roles": list(s.roles)}
             for s in manifest.ui_widgets
         ],
         "on_message": manifest.on_message.method_name if manifest.on_message else None,
@@ -628,17 +644,23 @@ def _manifest_to_descriptor_filtered(
         manifest: BundleInterfaceManifest,
         session: UserSession,
 ) -> Dict[str, Any]:
-    """Serialise a manifest filtered to the roles visible to session."""
+    """Serialise a manifest filtered to the endpoint visibility rules for session."""
     return {
         "apis": [
-            {"alias": s.alias, "http_method": s.http_method, "route": s.route, "roles": list(s.roles)}
+            {
+                "alias": s.alias,
+                "http_method": s.http_method,
+                "route": s.route,
+                "user_types": list(s.user_types),
+                "roles": list(s.roles),
+            }
             for s in manifest.api_endpoints
-            if _roles_visible(s.roles, session)
+            if _endpoint_visible(s.user_types, s.roles, session)
         ],
         "widgets": [
-            {"alias": s.alias, "icon": s.icon, "roles": list(s.roles)}
+            {"alias": s.alias, "icon": s.icon, "user_types": list(s.user_types), "roles": list(s.roles)}
             for s in manifest.ui_widgets
-            if _roles_visible(s.roles, session)
+            if _endpoint_visible(s.user_types, s.roles, session)
         ],
         "on_message": manifest.on_message.method_name if manifest.on_message else None,
         "scheduled_jobs": [
@@ -1696,6 +1718,7 @@ async def get_bundle_interface(
             {
                 "alias": spec.alias,
                 "icon": spec.icon,
+                "user_types": list(spec.user_types),
                 "roles": list(spec.roles),
             }
             for spec in visible_widgets
@@ -1705,6 +1728,7 @@ async def get_bundle_interface(
                 "alias": spec.alias,
                 "http_method": spec.http_method,
                 "route": spec.route,
+                "user_types": list(spec.user_types),
                 "roles": list(spec.roles),
                 "public_auth_mode": (spec.public_auth.mode if spec.public_auth else None),
             }
@@ -1752,6 +1776,7 @@ async def list_bundle_widgets(
             {
                 "alias": spec.alias,
                 "icon": spec.icon,
+                "user_types": list(spec.user_types),
                 "roles": list(spec.roles),
             }
             for spec in _visible_widget_specs(manifest, session)
@@ -1782,7 +1807,7 @@ async def fetch_bundle_widget(
     widget_spec = resolve_bundle_widget(workflow, alias=widget_alias, bundle_id=spec_resolved.id)
     if widget_spec is None:
         raise HTTPException(status_code=404, detail=f"Bundle does not define widget {widget_alias}")
-    if not _roles_visible(widget_spec.roles, session):
+    if not _endpoint_visible(widget_spec.user_types, widget_spec.roles, session):
         raise HTTPException(status_code=403, detail=f"Bundle widget {widget_alias} is not visible to this user")
 
     fn = getattr(workflow, widget_spec.method_name)
@@ -1805,6 +1830,7 @@ async def fetch_bundle_widget(
         "widget": {
             "alias": widget_spec.alias,
             "icon": widget_spec.icon,
+            "user_types": list(widget_spec.user_types),
             "roles": list(widget_spec.roles),
         },
         widget_alias: result,
@@ -2103,7 +2129,7 @@ async def _call_bundle_op_inner(
         operation=operation,
         request=request,
     )
-    if not _roles_visible(endpoint_spec.roles, session):
+    if not _endpoint_visible(endpoint_spec.user_types, endpoint_spec.roles, session):
         raise HTTPException(status_code=403, detail=f"Bundle operation {operation} is not visible to this user")
 
     try:

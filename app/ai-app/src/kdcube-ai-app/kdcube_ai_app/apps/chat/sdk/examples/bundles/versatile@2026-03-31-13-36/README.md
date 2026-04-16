@@ -197,7 +197,7 @@ The full decorator surface is:
     method="POST",          # default: "POST"
     alias="my_operation",   # default: function name
     route="operations",     # "operations" | "public", default: "operations"
-    roles=("registered",),  # default: ()
+    user_types=("registered",),  # default: ()
     public_auth=None,       # only valid for route="public"
 )
 ```
