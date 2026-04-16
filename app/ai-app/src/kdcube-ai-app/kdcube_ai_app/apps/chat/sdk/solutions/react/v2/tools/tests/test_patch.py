@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.proto import RuntimeCtx
+from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.tools.patch import handle_react_patch
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.tools.tests.helpers import FakeBrowser, FakeReact
 

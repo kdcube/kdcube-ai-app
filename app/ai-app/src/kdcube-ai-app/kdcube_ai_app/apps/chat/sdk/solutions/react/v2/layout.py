@@ -10,7 +10,7 @@ import urllib.parse
 import pathlib
 from typing import Dict, Any, List, Tuple, Optional
 
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.proto import RuntimeCtx
+from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
 from kdcube_ai_app.apps.chat.sdk.tools import citations as citations_module
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.plan import (
     collect_plan_snapshots,

@@ -485,6 +485,7 @@ class Settings(BaseSettings):
     REACT_WORKSPACE_IMPLEMENTATION: str = Field(default="custom")
     REACT_WORKSPACE_GIT_REPO: str | None = None
     AI_REACT_AGENT_VERSION: str = Field(default="v2")
+    AI_REACT_AGENT_MULTI_ACTION: str = Field(default="off")
     CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION: str = Field(default="local")
     CLAUDE_CODE_SESSION_GIT_REPO: str | None = None
 
@@ -594,6 +595,9 @@ class Settings(BaseSettings):
         )
         if self.AI_REACT_AGENT_VERSION not in {"v2", "v3"}:
             self.AI_REACT_AGENT_VERSION = "v2"
+        if not self.AI_REACT_AGENT_MULTI_ACTION:
+            self.AI_REACT_AGENT_MULTI_ACTION = "off"
+
         if not _env_present("CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION"):
             self.CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION = str(
                 _load_assembly_plain("storage.claude_code_session.type")

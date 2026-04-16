@@ -63,3 +63,16 @@ def test_build_decision_system_text_appends_additional_runtime_instructions():
     )
     assert "[ADDITIONAL RUNTIME INSTRUCTIONS]" in text
     assert "Always prefer the product knowledge skill before web search." in text
+
+
+def test_build_decision_system_text_explains_one_response_is_one_round():
+    text = build_decision_system_text(
+        adapters=[],
+        infra_adapters=[],
+        workspace_implementation="custom",
+    )
+    assert "Output protocol (strict): you must produce content which represents one round" in text
+    assert "In a single round, only one occurrence of each channel can be included in your response." in text
+    assert "DO NOT DO THIS: Your typical error is that you make sequence of triplets" in text
+    assert "Generating the second instance of any channel in the same response means you do not understand the contract and violate it." in text
+    assert "Use <channel:code> only when the single action is exec_tools.execute_code_python" in text

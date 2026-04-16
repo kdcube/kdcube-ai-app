@@ -294,10 +294,71 @@ Maintain a natural, progressive dialogue:
 - Ask only for the missing info you need to proceed.
 - When you are done for this turn, close with a clear final_answer and actionable suggested_followups.
 """
+    protocol = (
+        "CRITICAL: you are the agent which must for in custom protocol which you must obey. This is not similar to tool calling protocol. You MUST NOT include multiple actions at a time in your response. This is a gross mistake.\n"
+        "CRITICAL: you have 3 channels and you must always write the proper content inside each channel.\n"
+        "Output protocol (strict): you must produce content which represents one round and consists of these 3 channels:\n"
+        "<channel:thinking> ... </channel:thinking>\n"
+        "<channel:ReactDecisionOutV2> ... </channel:ReactDecisionOutV2>\n"
+        "<channel:code> code generated </channel:code>\n\n"
+        "In a single round, only one occurrence of each channel can be included in your response.\n"
+        "In <channel:thinking>, write a brief user-facing status in markdown\n"
+        "The thinking <channel:thinking> channel is shown to the user.\n"
+        "Keep it very short (1–2 sentences, no lists).\n\n"
+        "<channel:ReactDecisionOutV2> is the action channel. One <channel:ReactDecisionOutV2> ... </channel:ReactDecisionOutV2> channel instance means exactly one action.\n"
+        # "For now we support only one action per round, so the whole response must contain exactly one action total.\n"
+        "Inside that single <channel:ReactDecisionOutV2> channel instance, output exactly one ```json fenced block with a ReactDecisionOutV2 object matching the shape hint below (no extra text):\n"
+        "```json\n"
+        f"{json_hint}\n"
+        "```\n\n"
+        "CRITICAL: The runtime which read your response will attempt to convert it to one round, so to the single triplet of channels channel:thinking>, <channel:ReactDecisionOutV2>, <channel:code>.\n"
+        # "So a round is exactly one <channel:thinking> block + one <channel:ReactDecisionOutV2> block + one <channel:code> block.\n"
+        # "After you generate these 3 channels, STOP. If you tempt to plan the multiple steps than simply use the plan tool for that. But never generate multiple rounds of thinking/ReactDecisionOutV2 - the runtime which will read your response will reject it fully if it contain more than 1 triplet of channels.\n"
+        "DO NOT DO THIS: Your typical error is that you make sequence of triplets <channel:thinking></channel:thinking><channel:ReactDecisionOutV2></channel:ReactDecisionOutV2><channel:code></channel:code> and then again <channel:thinking></channel:thinking><channel:ReactDecisionOutV2></channel:ReactDecisionOutV2><channel:code></channel:code> in the same response.\n"
+        # "Do not start a second thinking/ReactDecisionOutV2/code sequence in the same response, even as a correction or next step. Your runtime will reject the entire output as a protocol violation if in your response will be more that 1 instance of each channel.\n"
+        # "Your typical error is that you make sequence of triplets <channel:thinking></channel:thinking><channel:ReactDecisionOutV2></channel:ReactDecisionOutV2><channel:code></channel:code> and then again <channel:thinking></channel:thinking><channel:ReactDecisionOutV2></channel:ReactDecisionOutV2><channel:code></channel:code> in the same response.\n"
+        # "This is WRONG! You must produce only one triplet of channels per response."
+        "If you need plan, plan with the plan tool or include it in notes but you are disallowed to call more than one tool. Generating the second instance of any channel in the same response means you do not understand the contract and violate it.\n\n"
+        "Minimal valid shape:\n"
+        "<channel:thinking>...short status...</channel:thinking>\n"
+        "<channel:ReactDecisionOutV2>```json { ...one ReactDecisionOutV2 object... } ```</channel:ReactDecisionOutV2>\n"
+        "<channel:code></channel:code>\n\n"
+        "In <channel:code>, output ONLY the raw Python code snippet (no fencing, no any auxiliary text).\n"
+        "Use <channel:code> only when the single action is exec_tools.execute_code_python; otherwise emit an empty <channel:code></channel:code> block.\n"
+        "CRITICAL: Exec tool DOES NOT HAVE code parameter! Putting code in the tool call params is WRONG. Code goes only in <channel:code>!"
+        "CRITICAL: if you want to cite the channel name, i.e. if you by some reason decide to write the token which is verbatim a name one of the channels in your contract, for example, <channel:thinking>, while simply cite it as a name, not intending to open or close this channel, you MUST write it in backticks like this: `channel:CHANNEL_ID`; to avoid confusion with the actual channel opening/closing token.\n"
+    )
+    # protocol = (
+    #     "CRITICAL: you have 3 channels and you must always write the proper content inside each channel."
+    #     "Output protocol (strict): you must produce these content in these 3 channels\n"
+    #     "<channel:thinking> ... </channel:thinking>\n"
+    #     "<channel:ReactDecisionOutV2> ... </channel:ReactDecisionOutV2>\n"
+    #     "<channel:code> code generated </channel:code>\n\n"
+    #     "In <channel:thinking>, write a brief user-facing status in markdown\n"
+    #     "The thinking <channel:thinking> channel is shown to the user.\n"
+    #     "Keep it very short (1–2 sentences, no lists).\n\n"
+    #     "<channel:ReactDecisionOutV2> is the action channel. One <channel:ReactDecisionOutV2> ... </channel:ReactDecisionOutV2> channel instance means exactly one action.\n"
+    #
+    #     "For now we support only one round at a time, which means only one set of thinking;ReactDecisionOutV2;code channels, and only one action per round, so you must produce exactly one channel instance of each type in the whole response.\n"
+    #     "Inside that single <channel:ReactDecisionOutV2> channel instance, output exactly one ```json fenced block with a ReactDecisionOutV2 object matching the shape hint below (no extra text):\n"
+    #     "```json\n"
+    #     f"{json_hint}\n"
+    #     "```\n\n"
+    #     "Minimal example how you structure the round:\n"
+    #     "<channel:thinking> ..thinking data here.. </channel:thinking>\n"
+    #     "<channel:ReactDecisionOutV2>```json { ...one ReactDecisionOutV2 object... } ```</channel:ReactDecisionOutV2>\n"
+    #     "<channel:code> optional code channel, only with exec tool </channel:code>\n"
+    #     "CRITICAL: You never produce more than one sequence of the channels thinking;ReactDecisionOutV2;code at a time. Producing sequence of channels thinking;ReactDecisionOutV2;code and then again thinking;ReactDecisionOutV2;code will be treated as a protocol violation.\n"
+    #     "If multiple tools are needed, emit only one action now and use later rounds for the rest.\n\n"
+    #     "In <channel:code>, output ONLY the raw Python code snippet (no fencing, no any auxiliary text).\n"
+    #     "When you need to execute the code with exec_tools.execute_code_python tool, you MUST write code in this channel.\n"
+    #     "CRITICAL: Exec tool DOES NOT HAVE code parameter! Putting code in the tool call params is WRONG. Code goes only in <channel:code>!"
+    # )
 
     sys_1 = f"""
 [ReAct Decision Module v2]
 You are the Decision module inside a ReAct loop.
+{protocol}
 {PROMPT_EXFILTRATION_GUARD}
 {INTERNAL_AGENT_JOURNAL_GUARD}
 {INTERNAL_NOTES_PRODUCER}
@@ -358,7 +419,7 @@ You are the Decision module inside a ReAct loop.
   To continue one of them as the active workspace, use `react.checkout(mode="replace", paths=["fi:<turn>.files/<that_scope>"])`, then write into the current turn as `files/<that_scope>/...`.
   Continue inside the matching existing scope when the user is extending the same project.
   If you decide the current project deserves a better scope name, perform that as an intentional rename/migration, not as sibling drift into a second project folder.
-- Keep your context sane: if you just retrieved the large snippet which is useless and you plan the further exploration, hide it with react.hide. Help yourself not to repeat the mistakes in search with setting param replacement_text such that it will hint what's inside very briefly and why you hide it. 
+- Keep your context sane: if you just retrieved the large snippet which is useless and you plan the further exploration, hide it with react.hide. Help yourself not to repeat the mistakes in search with setting param replacement such that it will hint what's inside very briefly and why you hide it. 
   This will help you later decide if you need to read that snippet again since it is relevant in later context or do not touch it because it is not relevant. Sometimes you use hide because you now exploited the large snippet and do not plan to work with it now. Remember the hide only works for tools results produced in last 4 rounds.
 - Keep track on the turn objectives. If you need a plan, make a plan. Carefully track the progress and assess the rounds results using visible context. Do not assess as done what is not. 
   Every time before making next step make sure you synchronized with the turn objective(s) and the current progress. Sometimes it is not possible to do something or it continuously does not work. Be fair and admit the status.       
@@ -476,7 +537,7 @@ You have following tools to capture content which you produce in the named and d
   If you can see the needed content (or its logical path), use it directly or call react.read on that path.
   Only use react.memsearch when you cannot identify a path and suspect the info exists in older turns.
 - react.hide: hide a large snippet by logical path (ar:/fi:/tc:/so:/ks:), not a query. Use only when the large barely useful snippet is near the tail of your visible context, and clearly no longer needed. The original content remains retrievable via react.read(path).
-  This is very useful tool when results retrieved by react.read, react.memsearch or web_tools.web_search / web_tools/web_fetch are irrelevant. In that case you can hide the, to avoid spending tokens, and provide the replacement_text which explains the irrelevance and helps later to correlate the retrieval query (path or semantic query) 
+  This is very useful tool when results retrieved by react.read, react.memsearch or web_tools.web_search / web_tools/web_fetch are irrelevant. In that case you can hide the, to avoid spending tokens, and provide the replacement which explains the irrelevance and helps later to correlate the retrieval query (path or semantic query) 
   to result it returned so do not repeat the same irrelevant retrieval later. This is also useful when you have already seen the content but it is far in the tail of your visible context and you want to keep the context clean and focused on more relevant content.
 - react.search_files: safe file search under OUTPUT_DIR or workdir (no shell). Use to locate files by name/content when needed.
   It returns discovery metadata, not file contents. OUTPUT_DIR hits include `logical_path`; follow up with react.read on that path when you need the content.
@@ -566,26 +627,68 @@ It is preferable to use react.write for streaming large content and use renderin
         react_tools=get_react_tools_catalog(),
         include_skill_gallery=True,
     )
-
-    protocol = (
-        "CRITICAL: you have 3 channels and you must always write the proper content inside each channel."
-        "Output protocol (strict):\n"
-        "<channel:thinking> ... </channel:thinking>\n"
-        "<channel:ReactDecisionOutV2> ... </channel:ReactDecisionOutV2>\n"
-        "<channel:code> code generated </channel:code>\n\n"
-        "In <channel:thinking>, write a brief user-facing status in markdown\n"
-        "The thinking <channel:thinking> channel is shown to the user.\n"
-        "Keep it very short (1–2 sentences, no lists).\n\n"
-        "In <channel:ReactDecisionOutV2>, output ONLY a single ```json fenced block with\n"
-        "a ReactDecisionOutV2 object matching the shape hint below (no extra text):\n"
-        "```json\n"
-        f"{json_hint}\n"
-        "```\n\n"
-        "In <channel:code>, output ONLY the raw Python code snippet (no fencing, no any auxiliary text).\n"
-        "When you need to execute the code with exec_tools.execute_code_python tool, you MUST write code in this channel.\n"
-        "CRITICAL: Exec tool DOES NOT HAVE code parameter! Putting code in the tool call params is WRONG. Code goes only in <channel:code>!"
-    )
-    sys_msg = sys_1 + "\n" + "\n" + protocol + "\n" + tool_block
+    # protocol = (
+    #     "CRITICAL: you are the agent which must for in custom protocol which you must obey. This is not similar to tool calling protocol. You MUST NOT include multiple actions at a time in your response. This is a gross mistake.\n"
+    #     "CRITICAL: you have 3 channels and you must always write the proper content inside each channel.\n"
+    #     "Output protocol (strict): you must produce content which represents one round and consists of these 3 channels:\n"
+    #     "<channel:thinking> ... </channel:thinking>\n"
+    #     "<channel:ReactDecisionOutV2> ... </channel:ReactDecisionOutV2>\n"
+    #     "<channel:code> code generated </channel:code>\n\n"
+    #     "In a single round, only one occurrence of each channel can be included in your response.\n"
+    #     "In <channel:thinking>, write a brief user-facing status in markdown\n"
+    #     "The thinking <channel:thinking> channel is shown to the user.\n"
+    #     "Keep it very short (1–2 sentences, no lists).\n\n"
+    #     "<channel:ReactDecisionOutV2> is the action channel. One <channel:ReactDecisionOutV2> ... </channel:ReactDecisionOutV2> channel instance means exactly one action.\n"
+    #     # "For now we support only one action per round, so the whole response must contain exactly one action total.\n"
+    #     "Inside that single <channel:ReactDecisionOutV2> channel instance, output exactly one ```json fenced block with a ReactDecisionOutV2 object matching the shape hint below (no extra text):\n"
+    #     "```json\n"
+    #     f"{json_hint}\n"
+    #     "```\n\n"
+    #     "CRITICAL: The runtime which read your response will attempt to convert it to one round, so to the single triplet of channels channel:thinking>, <channel:ReactDecisionOutV2>, <channel:code>.\n"
+    #     # "So a round is exactly one <channel:thinking> block + one <channel:ReactDecisionOutV2> block + one <channel:code> block.\n"
+    #     # "After you generate these 3 channels, STOP. If you tempt to plan the multiple steps than simply use the plan tool for that. But never generate multiple rounds of thinking/ReactDecisionOutV2 - the runtime which will read your response will reject it fully if it contain more than 1 triplet of channels.\n"
+    #     "DO NOT DO THIS: Your typical error is that you make sequence of triplets <channel:thinking></channel:thinking><channel:ReactDecisionOutV2></channel:ReactDecisionOutV2><channel:code></channel:code> and then again <channel:thinking></channel:thinking><channel:ReactDecisionOutV2></channel:ReactDecisionOutV2><channel:code></channel:code> in the same response.\n"
+    #     # "Do not start a second thinking/ReactDecisionOutV2/code sequence in the same response, even as a correction or next step. Your runtime will reject the entire output as a protocol violation if in your response will be more that 1 instance of each channel.\n"
+    #     # "Your typical error is that you make sequence of triplets <channel:thinking></channel:thinking><channel:ReactDecisionOutV2></channel:ReactDecisionOutV2><channel:code></channel:code> and then again <channel:thinking></channel:thinking><channel:ReactDecisionOutV2></channel:ReactDecisionOutV2><channel:code></channel:code> in the same response.\n"
+    #     # "This is WRONG! You must produce only one triplet of channels per response."
+    #     "If you need plan, plan with the plan tool or include it in notes but you are disallowed to call more than one tool. Generating the second instance of any channel in the same response means you do not understand the contract and violate it.\n\n"
+    #     "Minimal valid shape:\n"
+    #     "<channel:thinking>...short status...</channel:thinking>\n"
+    #     "<channel:ReactDecisionOutV2>```json { ...one ReactDecisionOutV2 object... } ```</channel:ReactDecisionOutV2>\n"
+    #     "<channel:code></channel:code>\n\n"
+    #     "In <channel:code>, output ONLY the raw Python code snippet (no fencing, no any auxiliary text).\n"
+    #     "Use <channel:code> only when the single action is exec_tools.execute_code_python; otherwise emit an empty <channel:code></channel:code> block.\n"
+    #     "CRITICAL: Exec tool DOES NOT HAVE code parameter! Putting code in the tool call params is WRONG. Code goes only in <channel:code>!"
+    #     "CRITICAL: if you want to cite the channel name, i.e. if you by some reason decide to write the token which is verbatim a name one of the channels in your contract, for example, <channel:thinking>, while simply cite it as a name, not intending to open or close this channel, you MUST write it in backticks like this: `channel:CHANNEL_ID`; to avoid confusion with the actual channel opening/closing token.\n"
+    # )
+    # # protocol = (
+    # #     "CRITICAL: you have 3 channels and you must always write the proper content inside each channel."
+    # #     "Output protocol (strict): you must produce these content in these 3 channels\n"
+    # #     "<channel:thinking> ... </channel:thinking>\n"
+    # #     "<channel:ReactDecisionOutV2> ... </channel:ReactDecisionOutV2>\n"
+    # #     "<channel:code> code generated </channel:code>\n\n"
+    # #     "In <channel:thinking>, write a brief user-facing status in markdown\n"
+    # #     "The thinking <channel:thinking> channel is shown to the user.\n"
+    # #     "Keep it very short (1–2 sentences, no lists).\n\n"
+    # #     "<channel:ReactDecisionOutV2> is the action channel. One <channel:ReactDecisionOutV2> ... </channel:ReactDecisionOutV2> channel instance means exactly one action.\n"
+    # #
+    # #     "For now we support only one round at a time, which means only one set of thinking;ReactDecisionOutV2;code channels, and only one action per round, so you must produce exactly one channel instance of each type in the whole response.\n"
+    # #     "Inside that single <channel:ReactDecisionOutV2> channel instance, output exactly one ```json fenced block with a ReactDecisionOutV2 object matching the shape hint below (no extra text):\n"
+    # #     "```json\n"
+    # #     f"{json_hint}\n"
+    # #     "```\n\n"
+    # #     "Minimal example how you structure the round:\n"
+    # #     "<channel:thinking> ..thinking data here.. </channel:thinking>\n"
+    # #     "<channel:ReactDecisionOutV2>```json { ...one ReactDecisionOutV2 object... } ```</channel:ReactDecisionOutV2>\n"
+    # #     "<channel:code> optional code channel, only with exec tool </channel:code>\n"
+    # #     "CRITICAL: You never produce more than one sequence of the channels thinking;ReactDecisionOutV2;code at a time. Producing sequence of channels thinking;ReactDecisionOutV2;code and then again thinking;ReactDecisionOutV2;code will be treated as a protocol violation.\n"
+    # #     "If multiple tools are needed, emit only one action now and use later rounds for the rest.\n\n"
+    # #     "In <channel:code>, output ONLY the raw Python code snippet (no fencing, no any auxiliary text).\n"
+    # #     "When you need to execute the code with exec_tools.execute_code_python tool, you MUST write code in this channel.\n"
+    # #     "CRITICAL: Exec tool DOES NOT HAVE code parameter! Putting code in the tool call params is WRONG. Code goes only in <channel:code>!"
+    # # )
+    # sys_msg = sys_1 + "\n" + "\n" + protocol + "\n" + tool_block
+    sys_msg = sys_1 + "\n" + "\n" + tool_block
     extra_instructions = str(additional_instructions or "").strip()
     if extra_instructions:
         sys_msg += "\n\n[ADDITIONAL RUNTIME INSTRUCTIONS]\n" + extra_instructions

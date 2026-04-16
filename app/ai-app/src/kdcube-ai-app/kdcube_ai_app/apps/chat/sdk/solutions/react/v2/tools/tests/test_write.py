@@ -2,7 +2,7 @@
 
 import pytest
 
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.proto import RuntimeCtx
+from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.tools.write import handle_react_write
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.tools.tests.helpers import FakeBrowser, FakeReact
 

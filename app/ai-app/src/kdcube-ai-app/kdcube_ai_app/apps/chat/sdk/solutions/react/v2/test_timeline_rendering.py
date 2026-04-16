@@ -7,7 +7,7 @@ import asyncio
 import json
 
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.timeline import Timeline
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.proto import RuntimeCtx
+from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.plan import (
     build_plan_ack_block,
     build_plan_block,
@@ -233,3 +233,172 @@ def test_timeline_renders_interrupted_raw_generation_even_when_raw_hidden():
     assert "checkpoint: decision.after" in text_dump
     assert "cancelled_phase: decision" in text_dump
     assert "<channel:thinking>draft</channel:thinking>" in text_dump
+
+
+def test_timeline_renders_failed_protocol_attempt_as_a_round():
+    ctx = RuntimeCtx(turn_id="turn_fail", started_at="2026-04-16T00:00:00Z")
+    tl = Timeline(runtime=ctx)
+
+    tl.blocks.extend([
+        tl._block(type="turn.header", author="system", turn_id=ctx.turn_id, ts=ctx.started_at, text="[TURN turn_fail]"),
+        tl._block(
+            type="react.notes",
+            author="react",
+            turn_id=ctx.turn_id,
+            ts=ctx.started_at,
+            path="ar:turn_fail.react.notes.tc_fail_1",
+            text="Wrong round. The agent wrote invalid content into the action channel, so this round executed no action.",
+            meta={
+                "tool_id": "__protocol_violation__",
+                "tool_call_id": "tc_fail_1",
+                "action": "call_tool",
+                "iteration": 0,
+            },
+        ),
+        tl._block(
+            type="react.decision.raw",
+            author="react",
+            turn_id=ctx.turn_id,
+            ts=ctx.started_at,
+            path="ar:turn_fail.react.decision.raw.0",
+            text="```json\n{\"action\":\"call_tool\"}\n```\n```json\n{\"action\":\"call_tool\"}\n```",
+            meta={
+                "reason": "schema_error",
+                "tool_call_id": "tc_fail_1",
+                "iteration": 0,
+            },
+        ),
+        tl._block(
+            type="react.notice",
+            author="react",
+            turn_id=ctx.turn_id,
+            ts=ctx.started_at,
+            mime="application/json",
+            path="tc:turn_fail.tc_fail_1.notice",
+            text=json.dumps(
+                {
+                    "code": "protocol_violation.ReactDecisionOutV2_schema_error",
+                    "message": "Bad Protocol. The agent output in <channel:ReactDecisionOutV2> could not be parsed, so no action was executed for this round.",
+                },
+                ensure_ascii=False,
+            ),
+            meta={"tool_call_id": "tc_fail_1"},
+        ),
+        tl._block(
+            type="react.notes",
+            author="react",
+            turn_id=ctx.turn_id,
+            ts=ctx.started_at,
+            path="ar:turn_fail.react.notes.tc_ok_2",
+            text="Searching the web.",
+            meta={
+                "tool_id": "web_tools.web_search",
+                "tool_call_id": "tc_ok_2",
+                "action": "call_tool",
+                "iteration": 1,
+            },
+        ),
+        tl._block(
+            type="react.tool.call",
+            author="react",
+            turn_id=ctx.turn_id,
+            ts=ctx.started_at,
+            mime="application/json",
+            path="tc:turn_fail.tc_ok_2.call",
+            text=json.dumps(
+                {
+                    "tool_id": "web_tools.web_search",
+                    "tool_call_id": "tc_ok_2",
+                    "params": {"queries": ["latest neuroscience news"]},
+                },
+                ensure_ascii=False,
+            ),
+        ),
+    ])
+
+    rendered = _run(tl.render(cache_last=True))
+    text_dump = "\n".join(b.get("text", "") for b in rendered if b.get("type") == "text")
+
+    assert "┌──────── ROUND 1 ────────┐" in text_dump
+    assert "┌──────── ROUND 2 ────────┐" in text_dump
+    assert "[PROTOCOL VIOLATION]" in text_dump
+    assert "protocol_violation.ReactDecisionOutV2_schema_error" in text_dump
+    assert "Wrong round. The agent wrote invalid content into the action channel" in text_dump
+    assert "[TOOL CALL tc_ok_2].call web_tools.web_search" in text_dump
+
+
+def test_timeline_renders_mid_round_followup_inside_active_round():
+    ctx = RuntimeCtx(turn_id="turn_follow", started_at="2026-04-16T18:04:21Z")
+    tl = Timeline(runtime=ctx)
+
+    tl.blocks.extend([
+        tl._block(type="turn.header", author="system", turn_id=ctx.turn_id, ts=ctx.started_at, text="[TURN turn_follow]"),
+        tl._block(
+            type="user.prompt",
+            author="user",
+            turn_id=ctx.turn_id,
+            ts=ctx.started_at,
+            path="ar:turn_follow.user.prompt",
+            text="Find top news and put it into pptx.",
+        ),
+        {
+            **tl._block(
+                type="react.round.start",
+                author="react",
+                turn_id=ctx.turn_id,
+                ts="2026-04-16T18:04:36Z",
+                path="ar:turn_follow.react.round.start.tc_fail_1",
+                text="thinking",
+                meta={"tool_call_id": "tc_fail_1", "iteration": 0},
+            ),
+            "call_id": "tc_fail_1",
+        },
+        tl._block(
+            type="user.followup",
+            author="user",
+            turn_id=ctx.turn_id,
+            ts="2026-04-16T18:04:36Z",
+            path="ar:turn_follow.external.followup.evt_1",
+            text="sorry, pdf",
+            meta={"target_turn_id": "turn_follow", "event_kind": "followup"},
+        ),
+        tl._block(
+            type="react.notes",
+            author="react",
+            turn_id=ctx.turn_id,
+            ts="2026-04-16T18:04:37Z",
+            path="ar:turn_follow.react.notes.tc_fail_1",
+            text="Wrong round. The agent wrote invalid content into the action channel, so this round executed no action.",
+            meta={
+                "tool_id": "__protocol_violation__",
+                "tool_call_id": "tc_fail_1",
+                "action": "call_tool",
+                "iteration": 0,
+            },
+        ),
+        tl._block(
+            type="react.notice",
+            author="react",
+            turn_id=ctx.turn_id,
+            ts="2026-04-16T18:04:37Z",
+            mime="application/json",
+            path="tc:turn_follow.tc_fail_1.notice",
+            text=json.dumps(
+                {
+                    "code": "protocol_violation.ReactDecisionOutV2_schema_error",
+                    "message": "Bad Protocol. The agent output in <channel:ReactDecisionOutV2> could not be parsed, so no action was executed for this round.",
+                },
+                ensure_ascii=False,
+            ),
+            meta={"tool_call_id": "tc_fail_1"},
+        ),
+    ])
+
+    rendered = _run(tl.render(cache_last=True))
+    text_dump = "\n".join(b.get("text", "") for b in rendered if b.get("type") == "text")
+
+    assert "┌──────── ROUND 1 ────────┐" in text_dump
+    assert "[AI Agent thinking...]" in text_dump
+    assert "  [FOLLOWUP DURING TURN]" in text_dump
+    assert "  sorry, pdf" in text_dump
+    assert text_dump.index("[AI Agent thinking...]") < text_dump.index("[FOLLOWUP DURING TURN]") < text_dump.index("[AI Agent say]: Wrong round.")
