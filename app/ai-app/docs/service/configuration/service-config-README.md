@@ -247,6 +247,8 @@ Token TTL/uses:
 | `BUNDLE_STORAGE_ROOT`                      | Shared bundle local storage (used by ks: resolvers). Must match docker-compose mount. |
 | `REACT_WORKSPACE_IMPLEMENTATION`           | React workspace backend. `custom` keeps artifact/hosting-backed hydration. `git` enables git-backed `fi:<turn>.files/...` slice hydration. Default is `custom`. |
 | `REACT_WORKSPACE_GIT_REPO`                 | Remote repo used by the git workspace backend. Required when `REACT_WORKSPACE_IMPLEMENTATION=git`. Auth reuses `GIT_HTTP_TOKEN`, `GIT_HTTP_USER`, `GIT_SSH_KEY_PATH`, `GIT_SSH_KNOWN_HOSTS`, and `GIT_SSH_STRICT_HOST_KEY_CHECKING`. |
+| `AI_REACT_AGENT_VERSION`                   | React runtime family selector. `v2` is the default production path. `v3` enables the experimental React v3 module family. |
+| `AI_REACT_AGENT_MULTI_ACTION`              | React multi-action mode selector, passed into `RuntimeCtx.multi_action_mode`. Default is `off`. Currently meaningful for `AI_REACT_AGENT_VERSION=v3`; `safe_fanout` enables experimental same-round multi-action bundles that are still executed sequentially. |
 | `CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION` | Claude Code session-store backend. `local` keeps continuity on local disk only. `git` enables per-conversation bootstrap/publish of the bundle-selected Claude session root. |
 | `CLAUDE_CODE_SESSION_GIT_REPO`             | Remote repo used by the Claude Code git-backed session store. Required when `CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION=git`. |
 | `OPENAI_API_KEY`                           | Services credentials Ext services |
@@ -709,6 +711,8 @@ Conversation artifacts and turn workspace:
 | `PY_CODE_EXEC_NETWORK_MODE` | _(unset)_  | Docker network mode                                                                                                                                                                         |
 | `EXEC_WORKSPACE_ROOT`       | _(auto)_   | Local workspace root for per‑turn workdir/outdir. Defaults to `/exec-workspace` inside Docker or `/tmp` on host. Path is created if missing and **must be writable** or the request fails.  |
 | `REACT_WORKSPACE_GIT_REPO`  | _(unset)_  | React git-backed workspace remote. The runtime carries it into `RuntimeCtx.workspace_git_repo` so React can reason about the authoritative workspace backup without trying to fetch from exec. |
+| `AI_REACT_AGENT_VERSION`    | `v2`       | React runtime family selector. `v2` is the default production path; `v3` switches `BaseWorkflow` to the experimental React v3 module family. |
+| `AI_REACT_AGENT_MULTI_ACTION` | `off`    | React multi-action mode. Passed into `RuntimeCtx.multi_action_mode`. Currently used by React v3; `safe_fanout` enables experimental same-round multi-action bundles that are accepted only for safe cases and still execute sequentially, not in parallel. |
 | `CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION` | `local` | Claude Code session-store mode. `git` enables runtime bootstrap/publish of the bundle-selected Claude session root on regular turns. |
 | `CLAUDE_CODE_SESSION_GIT_REPO` | _(unset)_ | Claude Code git-backed session-store remote. Used by the Claude runtime bootstrap layer to rehydrate and publish per-conversation session roots. |
 | `FARGATE_EXEC_ENABLED`      | `0`        | Enable distributed exec via ECS/Fargate. When disabled, `EXEC_RUNTIME_MODE=fargate` cannot launch tasks.                                                                                  |

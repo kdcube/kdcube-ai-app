@@ -2283,7 +2283,7 @@ class ContextRAGClient:
 
             if blocks:
                 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.timeline import Timeline
-                from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.proto import RuntimeCtx
+                from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
                 view = Timeline(runtime=RuntimeCtx()).build_turn_view(
                     turn_id=tid,
                     blocks=blocks,

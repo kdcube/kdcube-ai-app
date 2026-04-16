@@ -110,6 +110,39 @@ class ChannelSubscribers:
         return dict(self._subs)
 
 
+def _is_valid_channel_tag_start(text: str, idx: int) -> bool:
+    try:
+        return (text[:idx].count("`") % 2) == 0
+    except Exception:
+        return True
+
+
+def _find_next_valid_tag(text: str, start: int) -> Optional[re.Match[str]]:
+    pos = max(0, int(start or 0))
+    while True:
+        m = TAG_RE.search(text, pos)
+        if not m:
+            return None
+        if _is_valid_channel_tag_start(text, m.start()):
+            return m
+        pos = m.start() + 1
+
+
+def _extract_valid_channel_bodies(full_raw: str, channel_name: str) -> List[str]:
+    patt = re.compile(
+        rf"<channel:{re.escape(channel_name)}>(.*?)</channel:{re.escape(channel_name)}>",
+        re.I | re.S,
+    )
+    out: List[str] = []
+    for match in patt.finditer(full_raw or ""):
+        if not _is_valid_channel_tag_start(full_raw or "", match.start()):
+            continue
+        body = match.group(1)
+        if body is not None:
+            out.append(body)
+    return out
+
+
 def _tag_holdback() -> int:
     return 64
 
@@ -135,7 +168,7 @@ def _scrub_chunk(text: str, *, strip_usage: bool) -> str:
 def _truncate_at_channel_tag(text: str) -> str:
     if not text:
         return text
-    m = re.search(r"<\s*/?\s*channel", text, flags=re.I)
+    m = _find_next_valid_tag(text, 0)
     if not m:
         return text
     return text[:m.start()]
@@ -381,7 +414,7 @@ async def stream_with_channels(
                 buf = buf[cursor:]
                 cursor = 0
 
-            m_tag = TAG_RE.search(buf, cursor)
+            m_tag = _find_next_valid_tag(buf, cursor)
             if not m_tag:
                 if current is None:
                     if len(buf) > _tag_holdback():
@@ -483,11 +516,7 @@ async def stream_with_channels(
         for name in channel_specs.keys():
             if raw_by_channel.get(name):
                 continue
-            patt = re.compile(
-                rf"<channel:{re.escape(name)}>(.*?)</channel:{re.escape(name)}>",
-                re.I | re.S,
-            )
-            matches = patt.findall(full_raw)
+            matches = _extract_valid_channel_bodies(full_raw, name)
             if matches:
                 raw_by_channel[name] = [m for m in matches if m is not None]
 

@@ -5,6 +5,7 @@ import json
 import pytest
 
 from kdcube_ai_app.apps.chat.sdk.solutions.widgets.canvas import (
+    RenderingWriteContentStreamer,
     ReactWriteContentStreamer,
     TimelineStreamer,
 )
@@ -265,6 +266,61 @@ async def test_stream_with_channels_v3_drives_exec_widget_from_single_decision_a
 
 
 @pytest.mark.asyncio
+async def test_stream_with_channels_v3_uses_declared_rendering_format_for_pdf_stream():
+    decision_payload = {
+        "action": "call_tool",
+        "tool_call": {
+            "tool_id": "rendering_tools.write_pdf",
+            "params": {
+                "path": "outputs/science_news/top_news_april_2026.pdf",
+                "format": "html",
+                "title": "Top Science News",
+                "content": "<!DOCTYPE html><html><body><h1>Top Science News</h1></body></html>",
+            },
+        },
+    }
+    full = _json_channel("ReactDecisionOutV2", decision_payload)
+
+    svc = _FakeService(_chunk_text(full, size=13))
+    collector = _Collector()
+    widget = RenderingWriteContentStreamer(
+        emit_delta=collector.emit,
+        agent="test.render",
+        artifact_name="react.render.test",
+        turn_id="turn_1",
+        sources_list=[],
+        write_tool_prefix="rendering_tools.write_",
+    )
+
+    subscribers = ChannelSubscribers().subscribe("ReactDecisionOutV2", _wrap_json_widget(widget))
+
+    results, meta = await stream_with_channels(
+        svc=svc,
+        messages=["sys", "user"],
+        role="answer.generator.regular",
+        channels=[ChannelSpec(name="ReactDecisionOutV2", format="json", replace_citations=False, emit_marker="answer")],
+        emit=collector.emit,
+        agent="test.agent",
+        artifact_name="react.decision",
+        subscribers=subscribers,
+        max_tokens=300,
+        temperature=0.0,
+        return_full_raw=True,
+    )
+
+    assert meta.get("service_error") is None
+    assert results["ReactDecisionOutV2"].raw
+
+    artifact_events = collector.events_for_artifact("science_news/top_news_april_2026.pdf")
+    assert artifact_events
+    first_content = next(e for e in artifact_events if e.get("text"))
+    assert first_content.get("format") == "html"
+    assert first_content.get("marker") == "canvas"
+    assert "<!DOCTYPE html>" in collector.text_for_artifact("science_news/top_news_april_2026.pdf")
+    assert any(e.get("completed") is True and e.get("format") == "html" for e in artifact_events)
+
+
+@pytest.mark.asyncio
 async def test_stream_with_channels_v3_factory_failure_does_not_break_other_subscribers():
     payload = {
         "action": "call_tool",
@@ -370,3 +426,43 @@ async def test_stream_with_channels_v3_handles_split_tags_and_mismatched_close_t
     assert results["ReactDecisionOutV2"].raw == json.dumps(payload, ensure_ascii=True)
     assert [e["channel_instance"] for e in seen if e["completed"] is True] == [0]
     assert not any("</channel:wrong>" in (e.get("text") or "") for e in seen)
+
+
+@pytest.mark.asyncio
+async def test_stream_with_channels_v3_ignores_literal_channel_mentions_inside_content():
+    payload = {
+        "action": "call_tool",
+        "tool_call": {
+            "tool_id": "react.read",
+            "params": {"paths": ["alpha"]},
+        },
+    }
+    text = (
+        "<channel:thinking>Explain the literal syntax `<channel:code></channel:code>` to the user.</channel:thinking>\n"
+        f"{_json_channel('ReactDecisionOutV2', payload)}\n"
+        "<channel:code></channel:code>"
+    )
+    svc = _FakeService(_chunk_text(text, size=9))
+    collector = _Collector()
+
+    results, meta = await stream_with_channels(
+        svc=svc,
+        messages=["sys", "user"],
+        role="answer.generator.regular",
+        channels=[
+            ChannelSpec(name="thinking", format="markdown", replace_citations=False, emit_marker="thinking"),
+            ChannelSpec(name="ReactDecisionOutV2", format="json", replace_citations=False, emit_marker="answer"),
+            ChannelSpec(name="code", format="text", replace_citations=False, emit_marker="subsystem"),
+        ],
+        emit=collector.emit,
+        agent="test.agent",
+        artifact_name="react.decision",
+        max_tokens=200,
+        temperature=0.0,
+        return_full_raw=True,
+    )
+
+    assert meta.get("service_error") is None
+    assert "`<channel:code></channel:code>`" in results["thinking"].raw
+    assert results["ReactDecisionOutV2"].raw == json.dumps(payload, ensure_ascii=True)
+    assert results["code"].raw == ""

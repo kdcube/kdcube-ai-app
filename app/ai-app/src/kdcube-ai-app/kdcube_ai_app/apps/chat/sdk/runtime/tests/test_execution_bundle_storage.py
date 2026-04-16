@@ -5,7 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from kdcube_ai_app.apps.chat.sdk.runtime.execution import _resolve_bundle_storage_dir
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.proto import RuntimeCtx
+from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
 
 
 class _Logger:
