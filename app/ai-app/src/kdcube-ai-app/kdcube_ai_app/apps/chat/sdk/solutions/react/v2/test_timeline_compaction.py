@@ -11,7 +11,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.timeline import (
     Timeline,
     resolve_artifact_from_timeline,
 )
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.proto import RuntimeCtx
+from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.session import apply_cache_ttl_pruning
 
 

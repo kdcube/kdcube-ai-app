@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2025 Elena Viter
 
-# kdcube_ai_app/apps/chat/sdk/runtime/solution/react/v2/proto.py
+# kdcube_ai_app/apps/chat/sdk/solutions/react/proto.py
 
 from __future__ import annotations
+
 import copy
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, List, Callable, Awaitable, Protocol
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Protocol
 
 
 class KnowledgeSearchFn(Protocol):
@@ -99,12 +100,7 @@ class RuntimeCtx:
     workspace_implementation: str = "custom"
     workspace_git_repo: Optional[str] = None
     exec_runtime: Dict[str, Any] = field(default_factory=dict)
-    # Expected signature:
-    #   (query: str, root: str = "", max_hits: int = 20, keywords: Optional[List[str]] = None, **kwargs) -> List[Dict]
-    # Implementations may be sync or async; callers will await if needed.
     knowledge_search_fn: Optional[KnowledgeSearchFn] = None
-    # Expected signature:
-    #   (path: str, **kwargs) -> Dict with optional keys: text, base64, mime, physical_path, missing
     knowledge_read_fn: Optional[KnowledgeReadFn] = None
     model_service: Optional[Any] = None
     continuation_source: Optional[Any] = None
@@ -115,7 +111,7 @@ class RuntimeCtx:
     started_at: Optional[str] = ""
     debug_log_announce: bool = True
     debug_log_sources_pool: bool = False
-    debug_timeline: bool = False # if set, dump the timeline rendered view on render() to  rendered-YYYYMMDD-HHMMSS-<turn_id>-src|nosrc-ann|noann.txt
+    debug_timeline: bool = False
     announce_mode: str = "full"  # "full" or "budget"
     render_decision_raw: bool = False
     render_react_state: bool = False
@@ -135,6 +131,8 @@ class RuntimeCtx:
     # These are runtime-only and should not be serialized.
     on_before_completion_contribution: Optional[Callable[[], Any]] = None
     on_after_completion_contribution: Optional[Callable[[], Any]] = None
+    # Experimental react multi-action mode, currently used by v3.
+    multi_action_mode: Optional[str] = "off"
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -171,15 +169,16 @@ class RuntimeCtx:
             "cache_truncation_max_base64_chars": self.cache_truncation_max_base64_chars,
             "cache_truncation_keep_recent_images": self.cache_truncation_keep_recent_images,
             "cache_truncation_max_image_pdf_b64_sum": self.cache_truncation_max_image_pdf_b64_sum,
+            "multi_action_mode": self.multi_action_mode,
         }
 
 
 @dataclass
 class SlotSpec:
     """
-    Minimal slot spec used by react v2 mapping only.
-    This is intentionally tiny and local to react v2.
+    Minimal slot spec used by react mapping only.
     """
+
     description: str = ""
     mime: Optional[str] = None
     format: Optional[str] = None
@@ -235,6 +234,7 @@ class ReactResult:
             "outdir": self.outdir or "",
             "workdir": self.workdir or "",
         }
+
 
 @dataclass
 class ReactStateSnapshot:
@@ -303,6 +303,7 @@ class ToolCallView:
     Base class for tool call/result truncation views.
     Subclasses should override build_call_replacement/build_result_replacement.
     """
+
     tool_id: str = ""
 
     def __init__(self, tool_id: Optional[str] = None) -> None:
@@ -326,14 +327,3 @@ class ToolCallView:
         cfg: Optional[Any] = None,
     ) -> str:
         raise NotImplementedError
-class KnowledgeSearchFn(Protocol):
-    def __call__(
-        self,
-        *,
-        query: str,
-        root: str = "",
-        max_hits: int = 20,
-        keywords: Optional[List[str]] = None,
-        **kwargs: Any,
-    ) -> Any:
-        ...

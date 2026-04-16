@@ -77,6 +77,13 @@ def _react_module(module_suffix: str):
 def _react_symbol(module_suffix: str, name: str):
     return getattr(_react_module(module_suffix), name)
 
+
+def _react_shared_symbol(module_suffix: str, name: str):
+    return getattr(
+        import_module(f"kdcube_ai_app.apps.chat.sdk.solutions.react.{module_suffix}"),
+        name,
+    )
+
 def _ttl_for(user_type: str, requested: int) -> int:
     ttl_map = {
         "anonymous": 1,
@@ -141,7 +148,7 @@ class BaseWorkflow():
         self.gate_out_class = gate_out_class or GateOut
 
         ApplicationHostingService = _react_symbol("solution_workspace", "ApplicationHostingService")
-        RuntimeCtx = _react_symbol("proto", "RuntimeCtx")
+        RuntimeCtx = _react_shared_symbol("proto", "RuntimeCtx")
         ContextBrowser = _react_symbol("browser", "ContextBrowser")
 
         self.hosting_service = ApplicationHostingService(
@@ -180,6 +187,7 @@ class BaseWorkflow():
                 workspace_git_repo=settings.REACT_WORKSPACE_GIT_REPO,
                 continuation_source=self.continuation_source,
                 external_event_source=self._external_event_source_for_runtime(),
+                multi_action_mode=settings.AI_REACT_AGENT_MULTI_ACTION,
             )
             self.ctx_browser = ContextBrowser(
                 ctx_client=self.ctx_client,
@@ -192,6 +200,7 @@ class BaseWorkflow():
             self.runtime_ctx = RuntimeCtx(
                 workspace_implementation=settings.REACT_WORKSPACE_IMPLEMENTATION,
                 workspace_git_repo=settings.REACT_WORKSPACE_GIT_REPO,
+                multi_action_mode=settings.AI_REACT_AGENT_MULTI_ACTION,
             )
             self.runtime_ctx.continuation_source = self.continuation_source
             self.runtime_ctx.external_event_source = self._external_event_source_for_runtime()

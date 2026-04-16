@@ -23,7 +23,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.browser import ContextBrowse
 from kdcube_ai_app.apps.chat.sdk.solutions.infra import emit_event
 from kdcube_ai_app.apps.chat.sdk.runtime.execution import execute_tool, _safe_label
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.agents.decision import react_decision_stream_v2
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.proto import ReactResult
+from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import ReactResult
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.solution_workspace import ApplicationHostingService
 from kdcube_ai_app.apps.chat.sdk.solutions.widgets.exec import DecisionExecCodeStreamer
 from kdcube_ai_app.apps.chat.sdk.solutions.widgets.canvas import (
@@ -47,7 +47,7 @@ import kdcube_ai_app.apps.chat.sdk.tools.tools_insights as tools_insights
 from kdcube_ai_app.apps.chat.sdk.tools import citations as citations_module
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.plan import apply_plan_updates
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.round import ReactRound
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.proto import ReactStateSnapshot
+from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import ReactStateSnapshot
 
 @dataclass
 class ReactStateV2:
@@ -992,11 +992,14 @@ class ReactSolverV2:
         if code == "missing_contract":
             return f"exec tool requires params.contract (tool_id={tool_id or 'unknown'})."
         if code == "tool_call_invalid":
-            return f"tool_call failed protocol validation for tool_id={tool_id or 'unknown'}."
+            return f"tool_call failed protocol validation for tool_id={tool_id or 'unknown'}. No action was executed for this round."
         if code == "tool_signature_red":
-            return f"tool params failed signature validation for tool_id={tool_id or 'unknown'}."
+            return f"tool params failed signature validation for tool_id={tool_id or 'unknown'}. No action was executed for this round."
         if code == "ReactDecisionOutV2_schema_error":
-            return f"Bad Protocol. ReactDecisionOutV2_schema_error, cannot parse agent output. {error}'."
+            return (
+                "Bad Protocol. The agent output in <channel:ReactDecisionOutV2> could not be parsed, "
+                f"so no action was executed for this round. {error}'."
+            )
         if final_answer and action == "call_tool":
             return f"final_answer present with action={action}."
         if extra:
@@ -1005,6 +1008,92 @@ class ReactSolverV2:
             except Exception:
                 return f"Protocol violation: {code}."
         return f"Protocol violation: {code}."
+
+    def _failed_decision_round_note(
+        self,
+        *,
+        code: str,
+        tool_id: str = "",
+    ) -> str:
+        if code == "ReactDecisionOutV2_schema_error":
+            return (
+                "Wrong round. The agent wrote invalid content into the action channel, "
+                "so this round executed no action. Retry with exactly one valid action."
+            )
+        if code == "tool_call_invalid":
+            target = tool_id or "the requested tool"
+            return (
+                f"Wrong round. The agent attempted to call {target}, but the tool call did not pass "
+                "protocol validation, so no action was executed."
+            )
+        if code == "tool_signature_red":
+            target = tool_id or "the requested tool"
+            return (
+                f"Wrong round. The agent attempted to call {target}, but the parameter signature was invalid, "
+                "so no action was executed."
+            )
+        if code == "tool_not_allowed_in_react":
+            target = tool_id or "the requested tool"
+            return (
+                f"Wrong round. The agent selected {target}, but that tool is not allowed in the ReAct loop, "
+                "so no action was executed."
+            )
+        return (
+            "Wrong round. The agent violated the ReAct action protocol, "
+            "so this round executed no action."
+        )
+
+    def _record_failed_decision_attempt(
+        self,
+        *,
+        iteration: int,
+        tool_call_id: str,
+        code: str,
+        notice_code: str,
+        notice_message: str,
+        decision_packet: Optional[Dict[str, Any]] = None,
+        reason: Optional[str] = None,
+        tool_id: str = "",
+        notice_extra: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        if not self.ctx_browser or not tool_call_id:
+            return
+        try:
+            ReactRound.note(
+                ctx_browser=self.ctx_browser,
+                notes=self._failed_decision_round_note(code=code, tool_id=tool_id),
+                tool_call_id=tool_call_id,
+                tool_id=tool_id or "__protocol_violation__",
+                action="call_tool",
+                iteration=iteration,
+            )
+        except Exception:
+            pass
+        try:
+            ReactRound.decision_raw(
+                ctx_browser=self.ctx_browser,
+                decision=decision_packet or {},
+                iteration=iteration,
+                reason=reason or code,
+                tool_call_id=tool_call_id,
+            )
+        except Exception:
+            pass
+        try:
+            self.ctx_browser.contribute_notice(
+                code=notice_code,
+                message=notice_message,
+                extra=notice_extra or {},
+                call_id=tool_call_id,
+                meta={
+                    "rel": "call",
+                    "iteration": iteration,
+                    "failed_round": True,
+                    "reason": reason or code,
+                },
+            )
+        except Exception:
+            pass
 
     async def _emit_timeline_text(self, *, text: str, agent: str, artifact_name: str):
         if not text:
@@ -1559,6 +1648,14 @@ class ReactSolverV2:
             visible_external_event_seq = 0
         self._last_decision_visible_external_event_seq = visible_external_event_seq
         try:
+            ReactRound.start(
+                ctx_browser=self.ctx_browser,
+                tool_call_id=pending_tool_call_id,
+                iteration=iteration,
+            )
+        except Exception:
+            pass
+        try:
             decision = await retry_with_compaction(
                 ctx_browser=self.ctx_browser,
                 system_text_fn=lambda: build_decision_system_text(
@@ -1623,25 +1720,23 @@ class ReactSolverV2:
         protocol_entry = None
 
         if error:
+            notice_message = self._protocol_violation_message(
+                code="ReactDecisionOutV2_schema_error",
+                error=error,
+                state=state,
+                decision={},
+            )
             try:
-                self.ctx_browser.contribute_notice(
-                    code="protocol_violation.ReactDecisionOutV2_schema_error",
-                    message=self._protocol_violation_message(
-                        code="ReactDecisionOutV2_schema_error",
-                        error=error,
-                        state=state,
-                        decision={}
-                    )
+                self._record_failed_decision_attempt(
+                    iteration=iteration,
+                    tool_call_id=pending_tool_call_id,
+                    code="ReactDecisionOutV2_schema_error",
+                    notice_code="protocol_violation.ReactDecisionOutV2_schema_error",
+                    notice_message=notice_message,
+                    decision_packet=decision,
+                    reason="schema_error",
                 )
                 self.log.log(f"[react.v2] decision schema error: {error}", level="ERROR")
-            except Exception:
-                pass
-            try:
-                ReactRound.decision_raw(
-                    ctx_browser=self.ctx_browser,
-                    decision=decision,
-                    iteration=iteration,
-                )
             except Exception:
                 pass
             retries = int(state.get("decision_retries") or 0)
@@ -1649,15 +1744,6 @@ class ReactSolverV2:
                 state["decision_retries"] = retries + 1
                 state["retry_decision"] = True
                 decision["notes"] = "ReactDecisionOutV2_schema_error; retry decision"
-                try:
-                    ReactRound.decision_raw(
-                        ctx_browser=self.ctx_browser,
-                        decision=decision,
-                        iteration=iteration,
-                        reason="schema_error",
-                    )
-                except Exception:
-                    pass
                 try:
                     self.log.log(
                         f"[react.v2] retry decision after schema error (retries={state['decision_retries']})",
@@ -1693,6 +1779,7 @@ class ReactSolverV2:
                                 state=state,
                             ),
                             extra={"action": "call_tool"},
+                            call_id=pending_tool_call_id,
                         )
                 except Exception:
                     pass
@@ -1714,15 +1801,22 @@ class ReactSolverV2:
                     # If we see invalid_action repeatedly, force compaction on next decision.
                     if invalid_retries >= 2:
                         state["force_compaction_next_decision"] = True
+                notice_message = self._protocol_violation_message(
+                    code=validation_error,
+                    decision=decision,
+                    state=state,
+                )
                 try:
-                    self.ctx_browser.contribute_notice(
-                        code=f"protocol_violation.{validation_error}",
-                        message=self._protocol_violation_message(
-                            code=validation_error,
-                            decision=decision,
-                            state=state,
-                        ),
-                        extra={"validation_error": validation_error},
+                    self._record_failed_decision_attempt(
+                        iteration=iteration,
+                        tool_call_id=pending_tool_call_id,
+                        code=validation_error,
+                        notice_code=f"protocol_violation.{validation_error}",
+                        notice_message=notice_message,
+                        decision_packet=state.get("last_decision_raw") if isinstance(state.get("last_decision_raw"), dict) else None,
+                        reason=validation_error,
+                        tool_id=((decision.get("tool_call") or {}).get("tool_id") or "").strip(),
+                        notice_extra={"validation_error": validation_error},
                     )
                 except Exception:
                     pass
@@ -1825,6 +1919,7 @@ class ReactSolverV2:
                             extra={"tool_id": tool_id},
                         ),
                         extra={"tool_id": tool_id, "iteration": iteration},
+                        call_id=pending_tool_call_id,
                         meta={"rel": "call"},
                     )
                 except Exception:
@@ -1884,6 +1979,7 @@ class ReactSolverV2:
                                 "tool_id": verdict.get("tool_id"),
                                 "iteration": iteration,
                             },
+                            call_id=pending_tool_call_id,
                             meta={"rel": "call"},
                         )
                     except Exception:
@@ -1943,6 +2039,7 @@ class ReactSolverV2:
                         code="tool_signature_validation",
                         message=f"tool_signature_validation={sig_status}",
                         extra={"iteration": iteration, "tool_id": tool_id, "status": sig_status, "issues": sig_issues},
+                        call_id=pending_tool_call_id,
                         meta={"rel": "call"},
                     )
                 except Exception:
@@ -1966,6 +2063,7 @@ class ReactSolverV2:
                             state=state,
                         ),
                         extra={"violations": sig_issues, "tool_id": tool_id, "iteration": iteration},
+                        call_id=pending_tool_call_id,
                         meta={"rel": "call"},
                     )
                 except Exception:

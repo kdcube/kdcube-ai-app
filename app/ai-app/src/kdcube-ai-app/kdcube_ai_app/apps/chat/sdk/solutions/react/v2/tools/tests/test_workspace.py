@@ -14,7 +14,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.git_workspace import (
     ensure_current_turn_git_workspace,
     publish_current_turn_git_workspace,
 )
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.proto import RuntimeCtx
+from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.solution_workspace import (
     build_exec_snapshot_workspace,
     rehost_files_from_timeline,
