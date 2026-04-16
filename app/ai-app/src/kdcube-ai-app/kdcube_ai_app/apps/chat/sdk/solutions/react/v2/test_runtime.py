@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 
 import os
+import json
 import asyncio
 from types import SimpleNamespace
 
@@ -298,6 +299,72 @@ def test_mk_timeline_streamer_uses_existing_answer_index_for_final_answer_stream
     _fn, streamer = solver._mk_timeline_streamer("decision", stream_final_answer=True)
 
     assert streamer.next_index("final_answer") == 3
+
+
+def test_record_failed_decision_attempt_emits_round_scoped_blocks():
+    solver = _solver_stub()
+    captured = []
+
+    def _contribute(*, blocks):
+        captured.extend(list(blocks or []))
+
+    def _contribute_notice(**kwargs):
+        payload = {"code": kwargs["code"], "message": kwargs["message"]}
+        if kwargs.get("extra"):
+            payload.update(kwargs["extra"])
+        captured.append(
+            {
+                "type": "react.notice",
+                "call_id": kwargs.get("call_id"),
+                "text": json.dumps(payload, ensure_ascii=False, indent=2),
+                "meta": kwargs.get("meta") or {},
+            }
+        )
+
+    solver.ctx_browser = SimpleNamespace(
+        runtime_ctx=SimpleNamespace(turn_id="turn-1"),
+        contribute=_contribute,
+        contribute_notice=_contribute_notice,
+    )
+
+    solver._record_failed_decision_attempt(
+        iteration=0,
+        tool_call_id="tc_fail_1",
+        code="ReactDecisionOutV2_schema_error",
+        notice_code="protocol_violation.ReactDecisionOutV2_schema_error",
+        notice_message="Bad Protocol. The agent output in <channel:ReactDecisionOutV2> could not be parsed, so no action was executed for this round.",
+        decision_packet={"raw": "```json\n{\"action\":\"call_tool\"}\n```"},
+        reason="schema_error",
+    )
+
+    assert [b["type"] for b in captured] == ["react.notes", "react.decision.raw", "react.notice"]
+    assert captured[0]["meta"]["tool_call_id"] == "tc_fail_1"
+    assert captured[1]["call_id"] == "tc_fail_1"
+    assert captured[1]["meta"]["reason"] == "schema_error"
+    assert captured[2]["call_id"] == "tc_fail_1"
+
+
+def test_react_round_start_emits_round_open_block():
+    captured = []
+
+    def _contribute(*, blocks):
+        captured.extend(list(blocks or []))
+
+    ctx_browser = SimpleNamespace(
+        runtime_ctx=SimpleNamespace(turn_id="turn-1"),
+        contribute=_contribute,
+    )
+
+    ReactRound.start(
+        ctx_browser=ctx_browser,
+        tool_call_id="tc_round_1",
+        iteration=0,
+    )
+
+    assert len(captured) == 1
+    assert captured[0]["type"] == "react.round.start"
+    assert captured[0]["call_id"] == "tc_round_1"
+    assert captured[0]["meta"]["tool_call_id"] == "tc_round_1"
 
 
 @pytest.mark.asyncio

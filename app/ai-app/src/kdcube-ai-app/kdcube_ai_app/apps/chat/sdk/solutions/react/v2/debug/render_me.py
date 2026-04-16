@@ -1,7 +1,7 @@
 import asyncio
 import json
 
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.proto import RuntimeCtx
+from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.timeline import Timeline
 
 runtime = RuntimeCtx()

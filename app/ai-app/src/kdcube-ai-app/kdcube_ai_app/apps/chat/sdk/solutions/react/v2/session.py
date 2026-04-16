@@ -9,7 +9,7 @@ import logging
 from dataclasses import dataclass, replace
 from typing import Any, Dict, List, Optional, Tuple
 
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.proto import ToolCallView
+from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import ToolCallView
 import kdcube_ai_app.apps.chat.sdk.tools.tools_insights as tools_insights
 from kdcube_ai_app.apps.chat.sdk.util import token_count
 
@@ -819,6 +819,7 @@ def apply_cache_ttl_pruning(
         "conv.range.summary",
         "react.note",
         "react.note.preserved",
+        "react.round.start",
         "user.followup",
         "user.followup.preserved",
         "user.steer",
@@ -842,7 +843,7 @@ def apply_cache_ttl_pruning(
             continue
 
         btype = (blk.get("type") or "").strip()
-        if btype in {"react.notes", "react.plan.history"}:
+        if btype in {"react.notes", "react.plan.history", "react.round.start"}:
             continue
         if path.startswith("sk:"):
             rep = _build_skill_prune_message(path)

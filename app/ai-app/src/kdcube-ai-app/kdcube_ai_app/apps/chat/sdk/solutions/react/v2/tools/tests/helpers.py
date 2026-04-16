@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.proto import RuntimeCtx
+from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.timeline import Timeline
 
 
@@ -27,6 +27,9 @@ class FakeBrowser:
 
     def timeline_artifacts(self, paths):
         return self.timeline.materialize_show_artifacts(paths)
+
+    def hide_paths(self, *, paths, replacement):
+        return self.timeline.hide_paths(paths, replacement)
 
     def unhide_paths(self, paths=None):
         return None

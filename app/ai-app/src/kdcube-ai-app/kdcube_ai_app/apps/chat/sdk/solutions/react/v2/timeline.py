@@ -18,7 +18,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.caching import (
     cache_point_indices,
     tail_rounds_from_path as cache_tail_rounds_from_path,
 )
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.proto import RuntimeCtx
+from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
 
 from kdcube_ai_app.apps.chat.sdk.tools import citations as citations_module
 from kdcube_ai_app.apps.chat.sdk.util import token_count, isoz, ts_key
@@ -2610,6 +2610,7 @@ class Timeline:
 
         out: List[Dict[str, Any]] = []
         current_round_id: Optional[str] = None
+        current_round_accepts_external = False
         round_idx = 0
         call_id_to_tool_id: Dict[str, str] = {}
 
@@ -2632,13 +2633,31 @@ class Timeline:
                     rid = (meta_local.get("tool_call_id") or meta_local.get("call_id") or "").strip()
                     if rid:
                         return rid
-            if btype_local in {"react.tool.call", "react.tool.result", "react.notice", "react.tool.code"}:
+            if btype_local in {"react.round.start", "react.tool.call", "react.tool.result", "react.notice", "react.tool.code", "react.decision.raw"}:
                 rid = (blk.get("call_id") or meta_local.get("tool_call_id") or "").strip()
                 if not rid:
                     rid = _call_id_from_path((blk.get("path") or "").strip())
                 if rid:
                     return rid
             return None
+
+        def _is_round_passthrough_block(blk: Dict[str, Any]) -> bool:
+            btype_local = (blk.get("type") or "").strip()
+            meta_local = blk.get("meta") if isinstance(blk.get("meta"), dict) else {}
+            if btype_local in {
+                "user.followup",
+                "user.steer",
+                "user.followup.preserved",
+                "user.steer.preserved",
+            }:
+                return True
+            if btype_local in {"user.attachment.meta", "user.attachment", "user.attachment.text"}:
+                continuation_kind = str(meta_local.get("continuation_kind") or "").strip().lower()
+                return continuation_kind in {"followup", "steer"}
+            return False
+
+        def _is_round_terminal_block(blk: Dict[str, Any]) -> bool:
+            return (blk.get("type") or "").strip() in {"react.notice", "react.tool.result"}
         for b in (blocks or []):
             if not isinstance(b, dict):
                 continue
@@ -2685,9 +2704,11 @@ class Timeline:
                 round_idx += 1
                 out.append({"type": "text", "text": _round_header(round_idx)})
                 current_round_id = round_id
-            elif current_round_id and not round_id:
+                current_round_accepts_external = True
+            elif current_round_id and not round_id and not (current_round_accepts_external and _is_round_passthrough_block(b)):
                 out.append({"type": "text", "text": _round_footer()})
                 current_round_id = None
+                current_round_accepts_external = False
 
             if meta.get("render_as") == "raw":
                 base64 = b.get("base64") or b.get("data")
@@ -2793,6 +2814,13 @@ class Timeline:
                         text = f"{ts_line}\n[AI Agent say]: {text}".strip()
                     else:
                         text = f"[AI Agent say]: {text}".strip()
+            elif btype == "react.round.start":
+                lines = []
+                ts_line = _ts_line(ts)
+                if ts_line:
+                    lines.append(ts_line)
+                lines.append("[AI Agent thinking...]")
+                text = "\n".join(lines).strip()
             elif btype == "react.decision.raw":
                 interrupted = bool(isinstance(meta, dict) and meta.get("interrupted"))
                 if not interrupted and not getattr(self.runtime, "render_decision_raw", False):
@@ -2816,6 +2844,27 @@ class Timeline:
                         if cancelled_phase:
                             lines.append(f"cancelled_phase: {cancelled_phase}")
                     lines.append(text)
+                    text = "\n".join([l for l in lines if l]).strip()
+            elif btype == "react.notice":
+                payload = _maybe_parse_json(text) if (b.get("mime") or "").strip() == "application/json" else None
+                if isinstance(payload, dict):
+                    code = str(payload.get("code") or "").strip()
+                    message = str(payload.get("message") or "").strip()
+                    lines = []
+                    ts_line = _ts_line(ts)
+                    if ts_line:
+                        lines.append(ts_line)
+                    if code.startswith("protocol_violation."):
+                        lines.append("[PROTOCOL VIOLATION]")
+                    else:
+                        lines.append("[REACT NOTICE]")
+                    if code:
+                        lines.append(f"code: {code}")
+                    if message:
+                        lines.append(message)
+                    extra_payload = {k: v for k, v in payload.items() if k not in {"code", "message"}}
+                    if extra_payload:
+                        lines.append(json.dumps(extra_payload, ensure_ascii=False, indent=2))
                     text = "\n".join([l for l in lines if l]).strip()
             elif btype == "react.state":
                 if not getattr(self.runtime, "render_react_state", False):
@@ -3111,6 +3160,8 @@ class Timeline:
             if cache:
                 emitted[-1]["cache"] = True
             out.extend(emitted)
+            if current_round_id and _is_round_terminal_block(b):
+                current_round_accepts_external = False
         if current_round_id:
             out.append({"type": "text", "text": _round_footer()})
         return out

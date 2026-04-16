@@ -20,6 +20,34 @@ class ReactRound:
     tool_call_id: str = ""
 
     @classmethod
+    def start(
+        cls,
+        *,
+        ctx_browser: Any,
+        tool_call_id: str,
+        iteration: int,
+    ) -> None:
+        if not ctx_browser or not tool_call_id:
+            return
+        turn_id = (ctx_browser.runtime_ctx.turn_id or "")
+        ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        add_block(ctx_browser, {
+            "type": "react.round.start",
+            "author": "react",
+            "turn_id": turn_id,
+            "ts": ts,
+            "mime": "text/plain",
+            "path": f"ar:{turn_id}.react.round.start.{tool_call_id}" if turn_id else "",
+            "text": "thinking",
+            "meta": {
+                "tool_call_id": tool_call_id,
+                "iteration": iteration,
+                "phase": "decision",
+            },
+            "call_id": tool_call_id,
+        })
+
+    @classmethod
     def thinking(
         cls,
         *,
@@ -111,6 +139,7 @@ class ReactRound:
         decision: Optional[Dict[str, Any]] = None,
         iteration: int,
         reason: Optional[str] = None,
+        tool_call_id: Optional[str] = None,
     ) -> None:
         if not ctx_browser or not isinstance(decision, dict):
             return
@@ -132,6 +161,8 @@ class ReactRound:
         }
         if reason:
             meta["reason"] = reason
+        if tool_call_id:
+            meta["tool_call_id"] = tool_call_id
         add_block(ctx_browser, {
             "type": "react.decision.raw",
             "author": "react",
@@ -141,6 +172,7 @@ class ReactRound:
             "path": f"ar:{turn_id}.react.decision.raw.{iteration}" if turn_id else "",
             "text": raw_text,
             "meta": meta,
+            **({"call_id": tool_call_id} if tool_call_id else {}),
         })
 
     @classmethod

@@ -172,7 +172,7 @@ async def handle_react_hide(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
     try:
         res = ctx_browser.hide_paths(
             paths=[path],
-            replacement_text=replacement,
+            replacement=replacement,
         )
         if isinstance(res, dict):
             replaced = int(res.get("blocks_hidden") or 0)

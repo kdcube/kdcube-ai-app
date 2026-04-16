@@ -30,7 +30,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.timeline import (
     Timeline,
     extract_turn_ids_from_blocks,
 )
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.proto import RuntimeCtx
+from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.workspace import get_workspace_implementation
 
 PROJECT_LOG_SLOTS = { "project_log" }

@@ -154,3 +154,42 @@ async def test_stream_with_channels_json_fanout_to_canvas():
     assert "Hello" in "".join(by_key["artifactA"])
     assert "World" in "".join(by_key["artifactB"])
     assert "".join(by_key["artifactC"]) == ""
+
+
+@pytest.mark.asyncio
+async def test_stream_with_channels_ignores_literal_channel_mentions_inside_content():
+    chunks = [
+        "<channel:thinking>Explain the literal syntax `",
+        "<channel:code></channel:code>` to the user.</channel:thinking>\n",
+        "<channel:answer>Done.</channel:answer>\n",
+        "<channel:code></channel:code>",
+    ]
+    svc = _FakeService(chunks)
+    events = []
+
+    async def _emit(**kwargs):
+        events.append(kwargs)
+
+    channels = [
+        ChannelSpec(name="thinking", format="markdown", replace_citations=False, emit_marker="thinking"),
+        ChannelSpec(name="answer", format="markdown", replace_citations=False, emit_marker="answer"),
+        ChannelSpec(name="code", format="text", replace_citations=False, emit_marker="subsystem"),
+    ]
+
+    results, meta = await stream_with_channels(
+        svc=svc,
+        messages=["sys", "user"],
+        role="answer.generator.regular",
+        channels=channels,
+        emit=_emit,
+        agent="test.agent",
+        artifact_name="demo",
+        max_tokens=200,
+        temperature=0.0,
+        return_full_raw=True,
+    )
+
+    assert meta.get("service_error") is None
+    assert "`<channel:code></channel:code>`" in results["thinking"].raw
+    assert "Done." in results["answer"].raw
+    assert results["code"].raw == ""
