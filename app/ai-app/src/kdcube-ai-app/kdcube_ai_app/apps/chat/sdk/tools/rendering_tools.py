@@ -11,7 +11,7 @@ import re
 import json
 import textwrap
 import asyncio
-from typing import Annotated, Optional, Any, Dict
+from typing import Annotated, Optional, Any, Dict, List
 
 import semantic_kernel as sk
 import logging
@@ -267,6 +267,7 @@ class RenderingTools:
         path: Annotated[str, "Destination .pptx path under OUTPUT_DIR (relative path)."],
         content: Annotated[str, "HTML (only HTML) to render. Use <section> per slide."] = "",
         title: Annotated[Optional[str], "Optional deck title (title slide)."] = None,
+        format: Annotated[str, "Content format: 'html'"] = "html",
         include_sources_slide: Annotated[bool, "Append a 'Sources' slide if sources are given."] = False,
         base_dir: Annotated[Optional[str], "Base dir for resolving relative images in HTML. Defaults to OUTPUT_DIR."] = None,
     ) -> Annotated[dict, "Result envelope: {ok: bool, error: null|{code,message,where,managed}}."]:
