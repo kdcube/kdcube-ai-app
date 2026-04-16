@@ -53,7 +53,7 @@ Minimal decorator contract:
     method="POST",          # default
     alias="my_operation",   # default: function name
     route="operations",     # default; alternative: "public"
-    roles=("registered",),  # optional
+    user_types=("registered",),  # optional
     public_auth=None,       # required only for route="public"
 )
 ```

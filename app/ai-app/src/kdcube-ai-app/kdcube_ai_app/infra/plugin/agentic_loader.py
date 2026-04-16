@@ -67,6 +67,7 @@ class APIEndpointSpec:
     alias: str
     http_method: str = "POST"
     route: str = "operations"
+    user_types: tuple[str, ...] = ()
     roles: tuple[str, ...] = ()
     public_auth: "PublicAPIAuthSpec | None" = None
 
@@ -83,6 +84,7 @@ class UIWidgetSpec:
     method_name: str
     alias: str
     icon: dict[str, str]
+    user_types: tuple[str, ...] = ()
     roles: tuple[str, ...] = ()
 
 
@@ -134,6 +136,47 @@ def _tuple_str(values: Any) -> tuple[str, ...]:
         if text:
             out.append(text)
     return tuple(out)
+
+
+def _merge_unique_strs(*groups: Any) -> tuple[str, ...]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for group in groups:
+        for item in _tuple_str(group):
+            if item in seen:
+                continue
+            seen.add(item)
+            out.append(item)
+    return tuple(out)
+
+
+_LEGACY_RAW_ROLE_ALIASES: dict[str, str] = {
+    "super-admin": "kdcube:role:super-admin",
+}
+
+
+def _normalize_visibility_selectors(
+        *,
+        user_types: Any = None,
+        roles: Any = None,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    resolved_user_types = list(_tuple_str(user_types))
+    resolved_roles: list[str] = []
+
+    for item in _tuple_str(roles):
+        if item.startswith("kdcube:role:"):
+            resolved_roles.append(item)
+            continue
+        mapped_role = _LEGACY_RAW_ROLE_ALIASES.get(item)
+        if mapped_role:
+            resolved_roles.append(mapped_role)
+            continue
+        # Backward compatibility: older bundles used roles= for inferred
+        # internal user types. Preserve that behavior while exposing the new
+        # explicit user_types= contract.
+        resolved_user_types.append(item)
+
+    return _merge_unique_strs(resolved_user_types), _merge_unique_strs(resolved_roles)
 
 
 def _normalize_http_method(value: str | None) -> str:
@@ -280,12 +323,17 @@ def api(
         method: str = "POST",
         alias: str | None = None,
         route: str = "operations",
+        user_types: List[str] | Tuple[str, ...] | None = None,
         roles: List[str] | Tuple[str, ...] | None = None,
         public_auth: str | Dict[str, Any] | None = None,
 ):
     http_method = _normalize_http_method(method)
     resolved_route = _normalize_api_route(route)
     resolved_public_auth = _normalize_public_api_auth(resolved_route, public_auth)
+    resolved_user_types, resolved_roles = _normalize_visibility_selectors(
+        user_types=user_types,
+        roles=roles,
+    )
 
     def _wrap(fn):
         setattr(
@@ -296,7 +344,8 @@ def api(
                 alias=_clean_alias(alias, getattr(fn, "__name__", "api_method")),
                 http_method=http_method,
                 route=resolved_route,
-                roles=_tuple_str(roles),
+                user_types=resolved_user_types,
+                roles=resolved_roles,
                 public_auth=resolved_public_auth,
             ),
         )
@@ -309,8 +358,14 @@ def ui_widget(
         *,
         icon: str | Dict[str, str],
         alias: str | None = None,
+        user_types: List[str] | Tuple[str, ...] | None = None,
         roles: List[str] | Tuple[str, ...] | None = None,
 ):
+    resolved_user_types, resolved_roles = _normalize_visibility_selectors(
+        user_types=user_types,
+        roles=roles,
+    )
+
     def _wrap(fn):
         setattr(
             fn,
@@ -319,7 +374,8 @@ def ui_widget(
                 method_name=getattr(fn, "__name__", "widget"),
                 alias=_clean_alias(alias, getattr(fn, "__name__", "widget")),
                 icon=_normalize_icon_spec(icon),
-                roles=_tuple_str(roles),
+                user_types=resolved_user_types,
+                roles=resolved_roles,
             ),
         )
         return fn
@@ -1345,6 +1401,7 @@ def discover_bundle_interface_manifest(target: Any, *, bundle_id: str | None = N
                 alias=api_spec.alias,
                 http_method=api_spec.http_method,
                 route=api_spec.route,
+                user_types=tuple(api_spec.user_types or ()),
                 roles=tuple(api_spec.roles or ()),
                 public_auth=api_spec.public_auth,
             )
@@ -1363,6 +1420,7 @@ def discover_bundle_interface_manifest(target: Any, *, bundle_id: str | None = N
                 method_name=member_name,
                 alias=widget_spec.alias,
                 icon=dict(widget_spec.icon or {}),
+                user_types=tuple(widget_spec.user_types or ()),
                 roles=tuple(widget_spec.roles or ()),
             )
             if resolved.alias in seen_widgets:

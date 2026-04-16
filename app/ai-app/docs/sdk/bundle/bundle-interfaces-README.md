@@ -153,7 +153,7 @@ Important for bundle REST/public API methods:
 Bundles can expose a widget by implementing an entrypoint method that returns a list of HTML strings. The SDK embeds the widget in an iframe on the client.
 
 Preferred pattern now:
-- decorate the widget method with `@ui_widget(alias=..., icon=..., roles=...)`
+- decorate the widget method with `@ui_widget(alias=..., icon=..., user_types=..., roles=...)`
 - if the same method is also called through the integrations operations route,
   add `@api(alias=..., route="operations", ...)` on that method too
 - prefer a provider-aware icon map such as `icon={"tailwind": "...", "lucide": "SlidersHorizontal"}`
@@ -176,7 +176,7 @@ from kdcube_ai_app.infra.plugin.agentic_loader import ui_widget
 from kdcube_ai_app.apps.chat.sdk.viz.tsx_transpiler import ClientSideTSXTranspiler
 
 class MyEntrypoint(BaseEntrypoint):
-    @ui_widget(alias="price_model", roles=("registered",))
+    @ui_widget(alias="price_model", user_types=("registered",))
     def price_model(self, user_id: Optional[str] = None, **kwargs):
         bundle_root = self._bundle_root()
         if not bundle_root:
@@ -324,11 +324,19 @@ Example declaration:
 from kdcube_ai_app.infra.plugin.agentic_loader import api, ui_widget
 
 class MyEntrypoint(BaseEntrypoint):
-    @ui_widget(alias="preferences_exec_report", roles=("registered",))
-    @api(alias="preferences_exec_report", route="operations", roles=("registered",))
+    @ui_widget(alias="preferences_exec_report", user_types=("registered",))
+    @api(alias="preferences_exec_report", route="operations", user_types=("registered",))
     async def preferences_exec_report(self, recency: int = 10, kwords: str = "", **kwargs):
         ...
 ```
+
+Use the visibility selectors like this:
+
+- `user_types=(...)`
+  - inferred internal user types such as `registered`, `paid`, `privileged`, `anonymous`
+- `roles=(...)`
+  - raw external auth roles such as `kdcube:role:super-admin`
+- if both are provided, both conditions must match
 
 This allows UI → backend → bundle round-trips without exposing a separate service.
 

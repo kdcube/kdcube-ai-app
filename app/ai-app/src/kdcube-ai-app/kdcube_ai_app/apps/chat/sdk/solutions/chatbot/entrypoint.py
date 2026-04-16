@@ -766,14 +766,14 @@ class BaseEntrypoint:
         transpiler = ClientSideTSXTranspiler()
         return transpiler.tsx_to_html(content, title=title)
 
-    @api(route="operations", roles=("privileged",))
+    @api(route="operations", user_types=("privileged",))
     @ui_widget(
         icon={
             "tailwind": "heroicons-outline:currency-dollar",
             "lucide": "CircleDollarSign",
         },
         alias="opex",
-        roles=("privileged",),
+        user_types=("privileged",),
     )
     def opex(self, user_id: Optional[str] = None, **kwargs):
         user_type = self._ensure_privileged(user_id=user_id, feature="opex")
@@ -804,14 +804,14 @@ class BaseEntrypoint:
                 self.logger.log(f"Error loading opex by user {user_id}: {traceback.format_exc()}", "ERROR")
         return [default_html]
 
-    @api(route="operations", roles=("privileged",))
+    @api(route="operations", user_types=("privileged",))
     @ui_widget(
         icon={
             "tailwind": "heroicons-outline:currency-dollar",
             "lucide": "CircleDollarSign",
         },
         alias="control_plane",
-        roles=("privileged",),
+        user_types=("privileged",),
     )
     def control_plane(self, user_id: Optional[str] = None, **kwargs):
         user_type = self._ensure_privileged(user_id=user_id, feature="control_plane")
@@ -842,14 +842,14 @@ class BaseEntrypoint:
                 self.logger.log(f"Error loading control_plane by user {user_id}: {traceback.format_exc()}", "ERROR")
         return [default_html]
 
-    @api(route="operations", roles=("privileged",))
+    @api(route="operations", user_types=("privileged",))
     @ui_widget(
         icon={
             "tailwind": "heroicons-outline:chat-bubble-left-right",
             "lucide": "MessageSquareMore",
         },
         alias="conversation_browser",
-        roles=("privileged",),
+        user_types=("privileged",),
     )
     def conversation_browser(self, user_id: Optional[str] = None, **kwargs):
         user_type = self._ensure_privileged(user_id=user_id, feature="conversation_browser")
@@ -886,14 +886,14 @@ class BaseEntrypoint:
                 )
         return [default_html]
 
-    @api(route="operations", roles=("privileged",))
+    @api(route="operations", user_types=("privileged",))
     @ui_widget(
         icon={
             "tailwind": "heroicons-outline:arrows-right-left",
             "lucide": "ArrowLeftRight",
         },
         alias="svc_gateway",
-        roles=("privileged",),
+        user_types=("privileged",),
     )
     def svc_gateway(self, user_id: Optional[str] = None, **kwargs):
         user_type = self._ensure_privileged(user_id=user_id, feature="svc_gateway")
@@ -925,14 +925,14 @@ class BaseEntrypoint:
                 self.logger.log(f"Error loading svc_gateway by user {user_id}: {traceback.format_exc()}", "ERROR")
         return [default_html]
 
-    @api(route="operations", roles=("privileged",))
+    @api(route="operations", user_types=("privileged",))
     @ui_widget(
         icon={
             "tailwind": "heroicons-outline:circle-stack",
             "lucide": "Database",
         },
         alias="redis_browser",
-        roles=("privileged",),
+        user_types=("privileged",),
     )
     def redis_browser(self, user_id: Optional[str] = None, **kwargs):
         user_type = self._ensure_privileged(user_id=user_id, feature="redis_browser")
@@ -963,14 +963,14 @@ class BaseEntrypoint:
                 self.logger.log(f"Error loading redis browser by user {user_id}: {traceback.format_exc()}", "ERROR")
         return [default_html]
 
-    @api(route="operations", roles=("privileged",))
+    @api(route="operations", user_types=("privileged",))
     @ui_widget(
         icon={
             "tailwind": "heroicons-outline:cpu-chip",
             "lucide": "Bot",
         },
         alias="ai_bundles",
-        roles=("privileged",),
+        user_types=("privileged",),
     )
     def ai_bundles(self, user_id: Optional[str] = None, **kwargs):
         user_type = self._ensure_privileged(user_id=user_id, feature="ai_bundles")
@@ -1003,14 +1003,14 @@ class BaseEntrypoint:
             self.logger.log(f"Error loading ai_bundles by user {user_id}: {traceback.format_exc()}", "ERROR")
         return [default_html]
 
-    @api(route="operations", roles=())
+    @api(route="operations", user_types=())
     @ui_widget(
         icon={
             "tailwind": "heroicons-outline:credit-card",
             "lucide": "CreditCard",
         },
         alias="economic_usage",
-        roles=(),
+        user_types=(),
     )
     def economic_usage(self, user_id: Optional[str] = None, **kwargs):
         user_type = self.user_type_from_comm_ctx(self.comm)
