@@ -6,7 +6,7 @@ import pytest
 
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot import base_workflow as workflow_mod
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.base_workflow import BaseWorkflow
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.proto import RuntimeCtx
+from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
 
 
 class _TimelineStub:
