@@ -11,7 +11,7 @@ see_also:
   - ks:docs/sdk/bundle/bundle-storage-cache-README.md
   - ks:docs/sdk/bundle/bundle-knowledge-space-README.md
   - ks:docs/sdk/bundle/bundle-interfaces-README.md
-  - ks:docs/sdk/bundle/design/bundle-custom-venv-README.md
+  - ks:docs/sdk/bundle/bundle-venv-README.md
   - ks:docs/clients/client-communication-README.md
 ---
 # Bundle Lifecycle
@@ -224,7 +224,7 @@ Practical implications:
 See:
 - [Bundle Dev](bundle-dev-README.md)
 - [Bundle Interfaces](bundle-interfaces-README.md)
-- [Draft: Bundle Custom Venv](design/bundle-custom-venv-README.md)
+- [Bundle Venv](bundle-venv-README.md)
 
 ## Storage and isolation surfaces
 
