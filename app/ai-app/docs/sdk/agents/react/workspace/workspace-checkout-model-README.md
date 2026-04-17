@@ -1,10 +1,9 @@
 ---
-id: ks:docs/sdk/agents/react/design/workspace-checkout-model-README.md
-title: "Draft: Workspace Checkout Model"
-summary: "Draft design for making current-turn workspace population explicit in React by keeping react.pull as historical materialization and redefining react.checkout as the normal current-workspace checkout operation."
-draft: true
-status: draft
-tags: ["sdk", "agents", "react", "design", "workspace", "checkout", "git", "custom"]
+id: ks:docs/sdk/agents/react/workspace/workspace-checkout-model-README.md
+title: "Workspace Checkout Model"
+summary: "How React makes current-turn workspace population explicit by keeping react.pull as historical materialization and using react.checkout as the normal current-workspace checkout operation."
+status: experimental
+tags: ["sdk", "agents", "react", "workspace", "checkout", "git", "custom"]
 keywords:
   [
     "workspace checkout",
@@ -16,7 +15,7 @@ keywords:
     "custom workspace",
   ]
 see_also:
-  - ks:docs/sdk/agents/react/design/git-based-isolated-workspace-README.md
+  - ks:docs/sdk/agents/react/workspace/git-based-isolated-workspace-README.md
   - ks:docs/sdk/agents/react/design/custom-isolated-workspace-mental-map-README.md
   - ks:docs/sdk/agents/react/react-turn-workspace-README.md
   - ks:docs/sdk/agents/react/flow-README.md
@@ -28,16 +27,12 @@ see_also:
 
 # Workspace Checkout Model
 
-This draft addresses a semantic gap in the current React workspace model:
+This document explains the semantic split between the two workspace-materialization tools:
 
 - `react.pull(...)` materializes historical snapshot views under their original turn roots
-- `react.checkout(...)` is currently described as a rare git-only whole-workspace reset
-- there is still no clear, ordinary operation that answers:
-  - "what should exist inside `turn_<current>/files/...` right now?"
+- `react.checkout(...)` defines what should exist inside `turn_<current>/files/...`
 
-That missing answer is the reason project continuation still feels indirect.
-
-Current status:
+Current behavior:
 
 - `react.pull(...)` is implemented as historical side materialization
 - `react.checkout(...)` is implemented as current-workspace materialization

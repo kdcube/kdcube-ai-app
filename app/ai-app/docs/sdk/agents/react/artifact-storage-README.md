@@ -21,7 +21,7 @@ Scope:
 Tool results are stored in the **event log blocks** (timeline), not on disk.
 Only the following are written to disk in OUT_DIR:
 - exec tool outputs
-- `react.file` / `react.write` (when `kind=file`)
+- `react.write` artifacts
 - `rendering_tools.write_*` outputs
 - user attachments (materialized when needed)
 
@@ -117,7 +117,8 @@ Important:
 
 ## Kind
 - `kind=file`: normal file artifact
-- `kind=display`: streamed display artifact (shown to the user; also stored as a file if `react.file` is used)
+- `kind=display`: streamed display artifact
+- `kind=file`: downloadable file artifact when hosting succeeds
 
 ## Example (meta block)
 ```json

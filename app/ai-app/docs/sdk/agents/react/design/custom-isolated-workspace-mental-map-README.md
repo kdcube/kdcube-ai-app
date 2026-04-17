@@ -7,8 +7,8 @@ status: draft
 tags: ["sdk", "agents", "react", "design", "workspace", "custom", "timeline"]
 keywords: ["custom workspace", "mental map", "workspace tree", "file versions", "deleted files", "announce"]
 see_also:
-  - ks:docs/sdk/agents/react/design/git-based-isolated-workspace-README.md
-  - ks:docs/sdk/agents/react/design/workspace-checkout-model-README.md
+  - ks:docs/sdk/agents/react/workspace/git-based-isolated-workspace-README.md
+  - ks:docs/sdk/agents/react/workspace/workspace-checkout-model-README.md
   - ks:docs/sdk/agents/react/react-announce-README.md
   - ks:docs/sdk/agents/react/react-turn-workspace-README.md
 ---
@@ -158,7 +158,7 @@ That makes the map useful for React reasoning:
 - "this scope has these known paths"
 
 The missing operational companion to this map is defined in
-`design/workspace-checkout-model-README.md`:
+`workspace/workspace-checkout-model-README.md`:
 
 - the mental map answers **what scopes and latest versions exist**
 - checkout should answer **what gets materialized into `turn_<current>/files/`**
