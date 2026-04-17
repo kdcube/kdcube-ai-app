@@ -10,56 +10,6 @@ export const handleContentDownload = (fileName: string, content: string | Blob |
     URL.revokeObjectURL(url);
 }
 
-// Simple word-aware truncation
-function truncateWords(str: string, length: number, ellipsis: string = '...'): string {
-    if (str.length <= length) return str;
-
-    const truncated = str.slice(0, length - ellipsis.length);
-    const lastSpaceIndex = truncated.lastIndexOf(' ');
-
-    // If no space found or space is too close to the beginning, just truncate normally
-    if (lastSpaceIndex === -1 || lastSpaceIndex < length * 0.5) {
-        return truncated + ellipsis;
-    }
-
-    return truncated.slice(0, lastSpaceIndex) + ellipsis;
-}
-
-// Truncate by number of words instead of characters
-function truncateByWords(str: string, wordCount: number, ellipsis: string = '...'): string {
-    const words = str.trim().split(/\s+/);
-
-    if (words.length <= wordCount) return str;
-
-    return words.slice(0, wordCount).join(' ') + ellipsis;
-}
-
-// Smart truncation that tries to preserve meaning
-function smartTruncate(str: string, length: number, ellipsis: string = '...'): string {
-    if (str.length <= length) return str;
-
-    // Try to truncate at sentence boundaries first
-    const sentences = str.split(/[.!?]+/);
-    let result = '';
-
-    for (const sentence of sentences) {
-        const potential = result + (result ? '. ' : '') + sentence.trim();
-        if (potential.length + ellipsis.length <= length) {
-            result = potential;
-        } else {
-            break;
-        }
-    }
-
-    // If we got a good sentence-based truncation, use it
-    if (result.length > length * 0.6) {
-        return result + (result.endsWith('.') ? '' : '.') + ellipsis;
-    }
-
-    // Otherwise fall back to word-aware truncation
-    return truncateWords(str, length, ellipsis);
-}
-
 function openUrlSafely(url: string): boolean {
     try {
         const newWindow = window.open(url, '_blank', 'noopener,noreferrer');
@@ -138,4 +88,4 @@ async function selectFileAdvanced(options: FileSelectionOptions = {}): Promise<F
 
 export const emSize = parseFloat(getComputedStyle(document.body).fontSize);
 
-export {truncateWords, truncateByWords, smartTruncate, openUrlSafely, selectFile, selectFileAdvanced};
+export {openUrlSafely, selectFile, selectFileAdvanced};

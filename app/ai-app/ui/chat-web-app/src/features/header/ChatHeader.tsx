@@ -1,40 +1,17 @@
 import {useCallback, useMemo} from "react";
-import * as LucideIcons from "lucide-react";
 import {Blocks, Loader, LogOut, Wifi, WifiOff} from "lucide-react";
 import {useAppDispatch, useAppSelector} from "../../app/store.ts";
-import {selectChatConnected, selectChatStayConnected} from "../../features/chat/chatStateSlice.ts";
-import {logOut} from "../../features/auth/authMiddleware.ts";
-import {useGetBundlesListQuery} from "../../features/bundles/bundlesAPI.ts";
-import {selectProject, selectTenant} from "../../features/chat/chatSettingsSlice.ts";
-import {selectCurrentBundle, setCurrentBundle} from "../../features/bundles/bundlesSlice.ts";
-import IconContainer from "../IconContainer.tsx";
-import {BundleWidgetEntry} from "../../features/bundles/types.ts";
-import {DynamicBundleWidgetSelection} from "../../features/chatSidePanel/ChatSidePanel.tsx";
+import {selectChatConnected, selectChatStayConnected} from "../chat/chatStateSlice.ts";
+import {logOut} from "../auth/authMiddleware.ts";
+import {useGetBundlesListQuery} from "../bundles/bundlesAPI.ts";
+import {selectProject, selectTenant} from "../chat/chatSettingsSlice.ts";
+import {selectCurrentBundle, setCurrentBundle} from "../bundles/bundlesSlice.ts";
+import IconContainer from "../../components/IconContainer.tsx";
+import BundleControls from "./BundleControls.tsx";
+import {useSidePanelContext} from "../chatSidePanel/sidePanelContext.ts";
 
-const BUILT_IN_WIDGET_ALIASES = new Set([
-    "economic_usage",
-    "conversation_browser",
-    "control_plane",
-    "ai_bundles",
-    "opex",
-    "redis_browser",
-    "svc_gateway",
-]);
 
-function resolveWidgetIcon(widget: BundleWidgetEntry) {
-    const lucideName = String(widget.icon?.lucide || "").trim();
-    if (lucideName && lucideName in LucideIcons) {
-        return LucideIcons[lucideName as keyof typeof LucideIcons];
-    }
-    return Blocks;
-}
-
-interface ChatHeaderProps {
-    selectedBundleWidget?: DynamicBundleWidgetSelection | null;
-    onBundleWidgetClick?: (selection: DynamicBundleWidgetSelection | null) => void;
-}
-
-const ChatHeader = ({selectedBundleWidget = null, onBundleWidgetClick}: ChatHeaderProps) => {
+const ChatHeader = () => {
     const dispatch = useAppDispatch()
     const stayConnected = useAppSelector(selectChatStayConnected)
     const connected = useAppSelector(selectChatConnected)
@@ -59,15 +36,8 @@ const ChatHeader = ({selectedBundleWidget = null, onBundleWidgetClick}: ChatHead
     const {data, isSuccess} = useGetBundlesListQuery({tenant, project})
 
     const currentBundle = useAppSelector(selectCurrentBundle)
-    const currentBundleEntry = useMemo(() => {
-        if (!data || !currentBundle) return null;
-        return data.bundles[currentBundle] || null;
-    }, [currentBundle, data]);
 
-    const customWidgets = useMemo(() => {
-        const widgets = currentBundleEntry?.widgets || [];
-        return widgets.filter((widget) => !BUILT_IN_WIDGET_ALIASES.has(widget.alias));
-    }, [currentBundleEntry]);
+    const sidePanelContext = useSidePanelContext()
 
     const bundlesSelector = useMemo(() => {
         if (isSuccess) {
@@ -76,9 +46,9 @@ const ChatHeader = ({selectedBundleWidget = null, onBundleWidgetClick}: ChatHead
                     <IconContainer icon={Blocks} size={1.2} className={"stroke-[1.5px]"}/>
                     <select id={"bundles_selector"} className={"text-sm w-full focus:outline-none truncate"}
                             value={currentBundle ?? undefined}
-                            onChange={(event)=> {
+                            onChange={(event) => {
                                 dispatch(setCurrentBundle(event.target.value))
-                                onBundleWidgetClick?.(null)
+                                sidePanelContext.setPanelId(null)
                             }}
                     >
                         {Object.values(data.bundles).map(bundle => {
@@ -87,41 +57,11 @@ const ChatHeader = ({selectedBundleWidget = null, onBundleWidgetClick}: ChatHead
                         })}
                     </select>
                 </div>
-                {customWidgets.length > 0 && (
-                    <div className={"flex flex-row items-center gap-1"}>
-                        {customWidgets.map((widget) => {
-                            const Icon = resolveWidgetIcon(widget);
-                            const isActive = selectedBundleWidget?.bundleId === currentBundle && selectedBundleWidget?.widgetAlias === widget.alias;
-                            return <button
-                                key={`${currentBundle}:${widget.alias}`}
-                                type={"button"}
-                                className={`h-8 w-8 rounded-md border transition-colors flex items-center justify-center ${
-                                    isActive
-                                        ? "border-blue-300 bg-blue-50 text-blue-700"
-                                        : "border-gray-200 bg-white text-gray-700 hover:bg-gray-100"
-                                }`}
-                                title={widget.alias}
-                                onClick={() => {
-                                    if (!currentBundle) return;
-                                    if (isActive) {
-                                        onBundleWidgetClick?.(null);
-                                        return;
-                                    }
-                                    onBundleWidgetClick?.({
-                                        bundleId: currentBundle,
-                                        widgetAlias: widget.alias,
-                                    });
-                                }}
-                            >
-                                <IconContainer icon={Icon} size={1.15} className={"stroke-[1.7px]"}/>
-                            </button>
-                        })}
-                    </div>
-                )}
+                <BundleControls/>
             </div>
         }
         return null
-    }, [currentBundle, customWidgets, data, dispatch, isSuccess, onBundleWidgetClick, selectedBundleWidget])
+    }, [currentBundle, data, dispatch, isSuccess, sidePanelContext])
 
     return useMemo(() => {
         return (
