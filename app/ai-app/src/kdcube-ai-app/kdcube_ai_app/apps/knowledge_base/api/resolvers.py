@@ -6,6 +6,7 @@
 from fastapi import Request, Depends
 import os
 import logging
+from kdcube_ai_app.apps.chat.sdk.config import get_settings
 
 from kdcube_ai_app.apps.knowledge_base.core import KnowledgeBase
 from kdcube_ai_app.apps.middleware.accounting import MiddlewareAuthWithAccounting
@@ -29,9 +30,10 @@ from kdcube_ai_app.infra.llm.llm_data_model import AIProvider, ModelRecord, AIPr
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_PROJECT = os.environ.get("DEFAULT_PROJECT_NAME", None)
-DEFAULT_TENANT_ID = os.environ.get("DEFAULT_PROJECT_NAME", None)
-TENANT_ID = os.environ.get("TENANT_ID", DEFAULT_TENANT_ID)
+_settings = get_settings()
+DEFAULT_PROJECT = _settings.PROJECT
+DEFAULT_TENANT_ID = _settings.PROJECT
+TENANT_ID = _settings.TENANT
 
 def get_project(request: Request) -> str:
     """Look for a `project` path-param; if absent, return your default_project."""
@@ -43,7 +45,7 @@ def get_tenant_dep(request: Request) -> str:
 
 
 # Environment configuration
-KDCUBE_STORAGE_PATH = os.environ.get("KDCUBE_STORAGE_PATH")
+KDCUBE_STORAGE_PATH = _settings.STORAGE_PATH
 
 REDIS_URL = get_settings().REDIS_URL
 
@@ -122,12 +124,11 @@ def get_orchestrator() -> IOrchestrator:
 
 # System configuration
 ENABLE_DATABASE = os.environ.get("ENABLE_DATABASE", "true").lower() == "true"
-INSTANCE_ID = os.environ.get("INSTANCE_ID", "home-instance-1")
+INSTANCE_ID = _settings.INSTANCE_ID
 KB_PORT = int(os.environ.get("KB_PORT", 8000))
 KB_PARALLELISM = int(os.environ.get("KB_PARALLELISM", 1))
-HEARTBEAT_INTERVAL = int(os.environ.get("HEARTBEAT_INTERVAL", 10))
+HEARTBEAT_INTERVAL = get_settings().PLATFORM.SERVICE.HEARTBEAT_INTERVAL
 
-DEFAULT_PROJECT = os.environ.get("DEFAULT_PROJECT_NAME", None)
 # Database setup
 _tenant_db = TenantDB(tenant_id=TENANT_ID) if ENABLE_DATABASE else None
 
@@ -208,7 +209,7 @@ def get_heartbeats_mgr_and_middleware(service_type: str = "kb",
                                       port: int = 8000,
                                       redis_client=None):
 
-    instance_id = instance_id or os.getenv("INSTANCE_ID")
+    instance_id = instance_id or _settings.INSTANCE_ID
     middleware = MultiprocessDistributedMiddleware(
         REDIS_URL,
         instance_id=instance_id,
@@ -245,7 +246,7 @@ def create_auth_manager():
     """Create the authentication manager"""
     # You can switch between different auth managers here:
 
-    provider = os.getenv("AUTH_PROVIDER", "simple").lower()
+    provider = (_settings.AUTH_PROVIDER or "simple").lower()
     if provider == "cognito":
         from kdcube_ai_app.auth.implementations.cognito import CognitoAuthManager
         logger.info("Using CognitoAuthManager for authentication")

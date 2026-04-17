@@ -7,6 +7,7 @@ from __future__ import annotations
 import io, re, asyncio, zipfile, time, os
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List
+from kdcube_ai_app.apps.chat.sdk.config import get_settings
 
 from kdcube_ai_app.infra.service_hub.multimodality import MODALITY_IMAGE_MIME, MODALITY_DOC_MIME
 
@@ -125,8 +126,9 @@ async def av_scan_bytes_async(data: bytes, timeout_s: float) -> tuple[bool, str]
     def _scan_blocking() -> tuple[bool, str]:
         try:
             import clamd  # type: ignore
-            host = os.getenv("CLAMAV_HOST", "127.0.0.1")
-            port = int(os.getenv("CLAMAV_PORT", "3310"))
+            _av = get_settings().PLATFORM.HOSTED_SERVICES.AV
+            host = _av.CLAMAV_HOST
+            port = _av.CLAMAV_PORT
             try:
                 cd = clamd.ClamdUnixSocket()
                 cd.ping()

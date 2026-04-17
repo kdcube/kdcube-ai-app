@@ -28,7 +28,6 @@ from kdcube_ai_app.infra.accounting.envelope import build_envelope_from_session
 from kdcube_ai_app.infra.gateway.rate_limiter import RateLimitError
 from kdcube_ai_app.infra.gateway.backpressure import BackpressureError
 from kdcube_ai_app.infra.gateway.circuit_breaker import CircuitBreakerError
-from kdcube_ai_app.infra.namespaces import CONFIG
 from kdcube_ai_app.apps.middleware.token_extract import (
     resolve_auth_from_headers_and_cookies,
     resolve_socket_auth_tokens,
@@ -698,8 +697,9 @@ async def process_chat_message(
     # --- Attachments (host after lock; reject entire message on any failure) ---
     if raw_attachments:
         store = getattr(app.state, "conversation_store", None)
-        enable_av = os.getenv("APP_AV_SCAN", "1") == "1"
-        av_timeout = float(os.getenv("APP_AV_TIMEOUT_S", "3.0"))
+        _av = get_settings().PLATFORM.HOSTED_SERVICES.AV
+        enable_av = _av.APP_AV_SCAN
+        av_timeout = _av.APP_AV_TIMEOUT_S
         from kdcube_ai_app.infra.gateway.safe_preflight import PreflightConfig, preflight_async
         cfg = PreflightConfig(av_scan=enable_av, av_timeout_s=av_timeout)
 
@@ -1212,8 +1212,8 @@ def build_sse_request_context(
     else:
         _, resolved_id_token = resolve_auth_from_headers_and_cookies(
             None,
-            request.headers.get(CONFIG.ID_TOKEN_HEADER_NAME)
-            or request.headers.get(CONFIG.ID_TOKEN_HEADER_NAME.lower()),
+            request.headers.get(get_settings().AUTH.ID_TOKEN_HEADER_NAME)
+            or request.headers.get(get_settings().AUTH.ID_TOKEN_HEADER_NAME.lower()),
             request.cookies,
         )
 

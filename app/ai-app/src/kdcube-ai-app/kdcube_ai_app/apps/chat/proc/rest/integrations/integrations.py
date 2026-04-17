@@ -2018,12 +2018,6 @@ async def _load_bundle_workflow(
     tenant_id, project_id = _resolve_path_scope(tenant=tenant, project=project)
     _bind_route_scope_to_config_request(cfg_req, tenant=tenant_id, project=project_id)
 
-    if not cfg_req.selected_model:
-        cfg_req.selected_model = (namespaces.CONFIG.AGENTIC.DEFAULT_LLM_MODEL_CONFIG or {}).get("model_name",
-                                                                                                "gpt-4o-mini")
-    if not cfg_req.selected_embedder:
-        cfg_req.selected_embedder = (namespaces.CONFIG.AGENTIC.DEFAULT_EMBEDDING_MODEL_CONFIG or {}).get("model_name",
-                                                                                                         "gpt-4o-mini")
     if not cfg_req.openai_api_key:
         cfg_req.openai_api_key = settings.OPENAI_API_KEY
     if not cfg_req.claude_api_key:

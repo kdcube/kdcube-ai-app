@@ -17,6 +17,7 @@ from dataclasses import dataclass, asdict
 import logging
 from enum import Enum
 
+from kdcube_ai_app.apps.chat.sdk.config import get_settings
 from kdcube_ai_app.infra.namespaces import REDIS, ns_key
 from kdcube_ai_app.infra.redis.client import get_async_redis_client
 
@@ -435,7 +436,7 @@ class ServiceHealthChecker:
 
     async def _check_service_health(self):
         """Check health of all services on this instance"""
-        component = (os.getenv("GATEWAY_COMPONENT") or "ingress").strip().lower()
+        component = (get_settings().GATEWAY_COMPONENT or "ingress").strip().lower()
         if component in {"proc", "processor", "worker"}:
             expected_services = [("chat", "proc")]
         else:
@@ -474,14 +475,14 @@ def get_expected_services(INSTANCE_ID) -> Dict[str, List[ServiceConfig]]:
     """
     Define expected services per instance based on gateway config and environment variables
     """
-    component = (os.getenv("GATEWAY_COMPONENT") or "ingress").strip().lower()
+    component = (get_settings().GATEWAY_COMPONENT or "ingress").strip().lower()
     try:
         from kdcube_ai_app.infra.gateway.config import get_gateway_config
         chat_workers = max(1, int(get_gateway_config().service_capacity.processes_per_instance or 1))
     except Exception:
         chat_workers = 1
 
-    chat_port = int(os.getenv("CHAT_APP_PORT", "8010"))
+    chat_port = get_settings().CHAT_APP_PORT
     service_name = "proc" if component in {"proc", "processor", "worker"} else "rest"
 
     expected_services = {

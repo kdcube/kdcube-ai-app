@@ -75,7 +75,6 @@ class EnrichmentModule(ProcessingModule):
             req = ConfigRequest(
                 openai_api_key=kwargs.get("openai_api_key"),
                 claude_api_key=kwargs.get("claude_api_key"),
-                selected_model=kwargs.get("selected_model") or "claude-3-7-sonnet-20250219",
                 role_models={role: kwargs.get("segment_enrichment_role",
                                               {"provider": "anthropic", "model": "claude-3-7-sonnet-20250219"})},
             )

@@ -175,8 +175,6 @@ def _config_to_model_config_spec(cfg: Config) -> ModelConfigSpec:
     return ModelConfigSpec(
         openai_api_key=cfg.openai_api_key or None,
         claude_api_key=cfg.claude_api_key or None,
-        selected_model=_pick_selected_model_name(cfg.default_llm_model),
-        selected_embedder=cfg.selected_embedder,
         custom_embedding_endpoint=cfg.custom_embedding_endpoint,
         custom_embedding_model=cfg.custom_embedding_model,
         custom_embedding_size=cfg.custom_embedding_size,
