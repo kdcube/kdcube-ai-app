@@ -11,6 +11,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+from kdcube_ai_app.apps.chat.sdk.config import get_settings
 from kdcube_ai_app.apps.chat.sdk.continuations import ContinuationKind
 from kdcube_ai_app.infra.namespaces import REDIS, ns_key
 
@@ -532,7 +533,7 @@ class RedisConversationExternalEventSource:
         lease = TimelineOwnerLease(
             turn_id=turn_id or "",
             bundle_id=bundle_id or "",
-            instance_id=os.getenv("INSTANCE_ID", "unknown"),
+            instance_id=get_settings().INSTANCE_ID,
             process_id=os.getpid(),
             listener_id=listener_id,
             lease_token=lease_token,
@@ -569,7 +570,7 @@ class RedisConversationExternalEventSource:
         lease = TimelineOwnerLease(
             turn_id=turn_id or "",
             bundle_id=bundle_id or existing.bundle_id,
-            instance_id=os.getenv("INSTANCE_ID", "unknown"),
+            instance_id=get_settings().INSTANCE_ID,
             process_id=os.getpid(),
             listener_id=listener_id or existing.listener_id,
             lease_token=existing.lease_token,
@@ -694,7 +695,7 @@ redis.call('SETEX', token_key, ttl, ARGV[7])
 return epoch
 """
         evaluator = getattr(self.redis, "eval", None)
-        instance_id = os.getenv("INSTANCE_ID", "unknown")
+        instance_id = get_settings().INSTANCE_ID
         process_id = os.getpid()
         if callable(evaluator):
             try:

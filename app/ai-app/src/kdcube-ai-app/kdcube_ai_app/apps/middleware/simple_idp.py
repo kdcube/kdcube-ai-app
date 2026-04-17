@@ -10,10 +10,11 @@ import os
 from typing import Dict, Optional
 
 from kdcube_ai_app.auth.AuthManager import AuthManager, User, AuthenticationError
+from kdcube_ai_app.apps.chat.sdk.config import get_settings
 
 
 # Simple user database - stored as JSON file
-IDP_DB_PATH = os.getenv("IDP_DB_PATH", "./idp_users.json")
+IDP_DB_PATH = get_settings().AUTH.IDP.local.IDP_DB_PATH or "./idp_users.json"
 
 # Default users
 DEFAULT_USERS = {

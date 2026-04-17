@@ -6,6 +6,7 @@ import json
 import time
 from dataclasses import asdict
 from datetime import datetime
+from kdcube_ai_app.apps.chat.sdk.config import get_settings
 
 from fastapi import Depends
 from fastapi.responses import JSONResponse
@@ -226,7 +227,7 @@ async def reset_throttling_state(
 
 
 def _burst_sim_enabled() -> bool:
-    return os.getenv("MONITORING_BURST_ENABLE", "0").lower() in {"1", "true", "yes", "on"}
+    return get_settings().PLATFORM.MONITORING.MONITORING_BURST_ENABLE
 
 
 @router.get("/admin/burst/users")
@@ -238,7 +239,7 @@ async def get_burst_users(session: UserSession = Depends(auth_without_pressure()
     if not _burst_sim_enabled():
         raise HTTPException(status_code=404, detail="Burst simulator is disabled")
 
-    if os.getenv("AUTH_PROVIDER", "simple").lower() != "simple":
+    if (get_settings().AUTH_PROVIDER or "simple").lower() != "simple":
         raise HTTPException(status_code=400, detail="Burst simulator requires AUTH_PROVIDER=simple")
 
     try:
@@ -651,7 +652,7 @@ async def debug_environment(session: UserSession = Depends(auth_without_pressure
         },
         "AVG_PROCESSING_TIME_SECONDS": os.getenv("AVG_PROCESSING_TIME_SECONDS", "25.0"),
         "GATEWAY_PROFILE": os.getenv("GATEWAY_PROFILE", "development"),
-        "INSTANCE_ID": os.getenv("INSTANCE_ID", "default-instance"),
+        "INSTANCE_ID": get_settings().INSTANCE_ID,
         "GATEWAY_CONFIG_JSON_SET": bool(os.getenv("GATEWAY_CONFIG_JSON")),
         "all_env_vars": {k: v for k, v in os.environ.items() if any(keyword in k.upper() for keyword in ["CHAT", "CONCURRENT", "PARALLEL", "GATEWAY", "CAPACITY"])}
     }

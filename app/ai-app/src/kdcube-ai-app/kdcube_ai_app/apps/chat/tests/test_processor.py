@@ -458,15 +458,9 @@ async def test_prefetch_git_bundles_resolves_missing_paths_and_collects_errors(m
 
     monkeypatch.setattr(processor_mod, "ensure_git_bundle_async", _ensure_git_bundle_async)
 
-    old_atomic = os.environ.get("BUNDLE_GIT_ATOMIC")
-    try:
-        os.environ["BUNDLE_GIT_ATOMIC"] = "1"
-        errors = await processor_mod.prefetch_git_bundles()
-    finally:
-        if old_atomic is None:
-            os.environ.pop("BUNDLE_GIT_ATOMIC", None)
-        else:
-            os.environ["BUNDLE_GIT_ATOMIC"] = old_atomic
+    from kdcube_ai_app.apps.chat.sdk.config import get_settings
+    monkeypatch.setattr(get_settings().PLATFORM.APPLICATIONS.GIT, "BUNDLE_GIT_ATOMIC", True)
+    errors = await processor_mod.prefetch_git_bundles()
 
     assert errors == {
         "bundle.cooldown": "cooldown",

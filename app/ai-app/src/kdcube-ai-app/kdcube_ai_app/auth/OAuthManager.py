@@ -13,6 +13,8 @@ import logging
 import os
 from typing import Optional, Dict, Any, Tuple
 
+from kdcube_ai_app.apps.chat.sdk.config import get_settings
+
 import httpx
 import jwt
 from jwt import PyJWTError
@@ -107,7 +109,7 @@ class OAuthManager(AuthManager):
         self._jwks_cache_exp: float = 0.0
         self._jwks_lock: Optional[asyncio.Lock] = None
         try:
-            self._jwks_cache_ttl = int(os.getenv("JWKS_CACHE_TTL_SECONDS", "3600") or "3600")
+            self._jwks_cache_ttl = get_settings().AUTH.JWKS_CACHE_TTL_SECONDS
         except Exception:
             self._jwks_cache_ttl = 3600
         try:

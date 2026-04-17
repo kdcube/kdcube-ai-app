@@ -5,6 +5,7 @@ import math
 from dataclasses import dataclass
 from typing import Dict, Any, Optional, List
 import logging, json, os
+from kdcube_ai_app.apps.chat.sdk.config import get_settings
 from decimal import Decimal, ROUND_FLOOR
 
 logger = logging.getLogger(__name__)
@@ -427,8 +428,8 @@ def price_table():
     }
 
 def load_accounting_services_config() -> Dict[str, Any]:
-    """Load ACCOUNTING_SERVICES from environment variable."""
-    config_str = os.environ.get("ACCOUNTING_SERVICES", "{}")
+    """Load ACCOUNTING_SERVICES from config."""
+    config_str = get_settings().PLATFORM.ACCOUNTING.ACCOUNTING_SERVICES or "{}"
     try:
         return json.loads(config_str)
     except json.JSONDecodeError:
@@ -771,8 +772,7 @@ def _find_web_search_price(provider: str,
 
 def _get_accounting_services_config(accounting_services_config=None):
     if not accounting_services_config:
-        # Load from environment
-        config_str = os.environ.get("ACCOUNTING_SERVICES", "{}")
+        config_str = get_settings().PLATFORM.ACCOUNTING.ACCOUNTING_SERVICES or "{}"
         try:
             accounting_services_config = json.loads(config_str)
         except json.JSONDecodeError:

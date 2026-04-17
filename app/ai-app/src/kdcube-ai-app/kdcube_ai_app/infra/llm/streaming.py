@@ -21,7 +21,8 @@ from kdcube_ai_app.infra.llm.util import (get_system_message,
                                           rate_limiter, rate_limited_request,
                                           fix_invalid_json,
                                           fix_invalid_boolean_and_null,
-                                          apply_cache_strategy)
+                                          apply_cache_strategy,
+                                          get_service_key_fn)
 from kdcube_ai_app.storage.storage import create_storage_backend
 
 
@@ -734,7 +735,7 @@ def test_platform_streaming():
         systemName="gpt-4o-mini",
         provider=AIProvider(
             provider=provider,
-            apiToken=os.getenv("OPENAI_API_KEY"),
+            apiToken=get_service_key_fn(AIProviderName.open_ai),
         ),
     )
 
@@ -743,7 +744,7 @@ def test_platform_streaming():
         systemName="claude-3-5-haiku-20241022",
         provider=AIProvider(
             provider=provider,
-            apiToken=os.getenv("ANTHROPIC_API_KEY"),
+            apiToken=get_service_key_fn(AIProviderName.anthropic),
         ),
     )
 

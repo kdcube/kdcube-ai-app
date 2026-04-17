@@ -7,6 +7,7 @@ import os
 import time
 import uuid
 from typing import Optional, Dict, Any
+from kdcube_ai_app.apps.chat.sdk.config import get_settings
 
 import socketio
 
@@ -216,14 +217,15 @@ async def _demo():
 
     # Build IdP config from env (Cognito example; swap if you add other providers)
     from botocore.config import Config as BotoConfig
+    _auth = get_settings().AUTH
     idp_cfg = IdpConfig(
         "cognito",
-        region=os.getenv("COGNITO_REGION"),
-        user_pool_id=os.getenv("COGNITO_USER_POOL_ID"),
-        client_id=os.getenv("COGNITO_SERVICE_CLIENT_ID"),
+        region=_auth.COGNITO_REGION,
+        user_pool_id=_auth.COGNITO_USER_POOL_ID,
+        client_id=_auth.COGNITO_SERVICE_CLIENT_ID,
         client_secret=os.getenv("COGNITO_SERVICE_CLIENT_SECRET") or None,
-        username=os.getenv("OIDC_SERVICE_ADMIN_USERNAME"),
-        password=os.getenv("OIDC_SERVICE_ADMIN_PASSWORD"),
+        username=_auth.OIDC_SERVICE_ADMIN_USERNAME,
+        password=_auth.OIDC_SERVICE_ADMIN_PASSWORD,
         use_admin_api=True,
         boto_cfg=BotoConfig(retries={"max_attempts": 3, "mode": "standard"}),
     )

@@ -68,7 +68,6 @@ def configure_env() -> ModelServiceBase:
         openai_api_key=settings.OPENAI_API_KEY,
         claude_api_key=settings.ANTHROPIC_API_KEY,
         google_api_key=settings.GOOGLE_API_KEY,
-        selected_model=DEFAULT_MODEL,
         role_models={
             # ROLE_SUMMARIZER: {"provider": "anthropic", "model": CLAUDE_HAIKU45},
             ROLE_SUMMARIZER: {"provider": "openai", "model": OPENAI_GPT5_MINI},

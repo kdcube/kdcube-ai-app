@@ -217,25 +217,19 @@ PROC_UVICORN_GRACEFUL_SHUTDOWN_TIMEOUT_SEC = _get_proc_graceful_shutdown_timeout
 
 
 def _git_prefetch_enabled() -> bool:
-    return os.environ.get("BUNDLE_GIT_PREFETCH_ENABLED", "1").lower() in {"1", "true", "yes", "on"}
+    return get_settings().PLATFORM.APPLICATIONS.GIT.BUNDLE_GIT_PREFETCH_ENABLED
 
 
 def _git_resolution_enabled() -> bool:
-    return os.environ.get("BUNDLE_GIT_RESOLUTION_ENABLED", "1").lower() in {"1", "true", "yes", "on"}
+    return get_settings().PLATFORM.APPLICATIONS.GIT.BUNDLE_GIT_RESOLUTION_ENABLED
 
 
 def _bundles_preload_enabled() -> bool:
-    try:
-        return bool(get_settings().BUNDLES_PRELOAD_ON_START)
-    except Exception:
-        return os.environ.get("BUNDLES_PRELOAD_ON_START", "0").lower() in {"1", "true", "yes", "on"}
+    return bool(get_settings().PLATFORM.APPLICATIONS.BUNDLES_PRELOAD_ON_START)
 
 
 def _bundle_preload_lock_ttl_seconds() -> int:
-    try:
-        return int(get_settings().BUNDLES_PRELOAD_LOCK_TTL_SECONDS)
-    except Exception:
-        return int(os.environ.get("BUNDLES_PRELOAD_LOCK_TTL_SECONDS", "900") or "900")
+    return int(get_settings().PLATFORM.APPLICATIONS.BUNDLES_PRELOAD_LOCK_TTL_SECONDS)
 
 
 async def _prefetch_git_bundles_loop(app) -> None:
@@ -403,7 +397,7 @@ async def lifespan(app: FastAPI):
         CHAT_PROCESSOR_PORT,
         os.getpid(),
         _get_uvicorn_workers_from_config(),
-        os.getenv("UVICORN_RELOAD", "0"),
+        get_settings().PLATFORM.SERVICE.UVICORN_RELOAD,
     )
     app.state.shutting_down = False
     app.state.draining = False
@@ -777,11 +771,11 @@ async def gateway_middleware(request: Request, call_next):
             if bearer_token and "authorization" not in {k.lower(): v for k, v in headers.items()}:
                 headers["authorization"] = f"Bearer {bearer_token}"
             if id_token:
-                headers[CONFIG.ID_TOKEN_HEADER_NAME] = id_token
+                headers[get_settings().AUTH.ID_TOKEN_HEADER_NAME] = id_token
             if user_timezone:
-                headers[CONFIG.USER_TIMEZONE_HEADER_NAME] = user_timezone
+                headers[get_settings().RUNTIME_CONFIG.USER_TIMEZONE_HEADER_NAME] = user_timezone
             if user_utc_offset_min:
-                headers[CONFIG.USER_UTC_OFFSET_MIN_HEADER_NAME] = user_utc_offset_min
+                headers[get_settings().RUNTIME_CONFIG.USER_UTC_OFFSET_MIN_HEADER_NAME] = user_utc_offset_min
 
         session = await app.state.gateway_adapter.process_by_policy(request)
         setattr(request.state, STATE_SESSION, session)
@@ -836,7 +830,7 @@ if __name__ == "__main__":
     install_uvicorn_shutdown_diagnostics(uvicorn, logger, component="chat-proc")
 
     workers = _get_uvicorn_workers_from_config()
-    reload_enabled = os.getenv("UVICORN_RELOAD", "").lower() in {"1", "true", "yes", "on"}
+    reload_enabled = get_settings().PLATFORM.SERVICE.UVICORN_RELOAD
     worker_healthcheck_timeout = _get_uvicorn_worker_healthcheck_timeout()
 
     # Uvicorn requires an import string when using workers or reload.

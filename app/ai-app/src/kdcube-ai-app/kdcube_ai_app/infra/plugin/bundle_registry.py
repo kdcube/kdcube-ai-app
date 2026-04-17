@@ -11,6 +11,7 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Dict, Any
+from kdcube_ai_app.apps.chat.sdk.config import get_settings
 
 _REG_LOCK = threading.RLock()
 _REGISTRY: Dict[str, Dict[str, Any]] = {}
@@ -134,7 +135,7 @@ def _apply_git_resolution(reg: Dict[str, Dict[str, Any]], source: str = "unknown
             )
         _warn_missing_local_path_bundles(reg, source=source)
         return reg
-    enabled = os.environ.get("BUNDLE_GIT_RESOLUTION_ENABLED", "1").lower() in {"1", "true", "yes", "on"}
+    enabled = get_settings().PLATFORM.APPLICATIONS.GIT.BUNDLE_GIT_RESOLUTION_ENABLED
     repo_count = sum(1 for entry in reg.values() if entry.get("repo"))
     if not enabled:
         if any(entry.get("repo") for entry in reg.values()):
@@ -153,8 +154,9 @@ def _apply_git_resolution(reg: Dict[str, Dict[str, Any]], source: str = "unknown
     except Exception:
         return reg
 
-    atomic = os.environ.get("BUNDLE_GIT_ATOMIC", "1").lower() in {"1", "true", "yes"}
-    force_pull = os.environ.get("BUNDLE_GIT_ALWAYS_PULL", "0").lower() in {"1", "true", "yes"}
+    _git = get_settings().PLATFORM.APPLICATIONS.GIT
+    atomic = _git.BUNDLE_GIT_ATOMIC
+    force_pull = _git.BUNDLE_GIT_ALWAYS_PULL
     out = dict(reg)
     total = 0
     resolved = 0

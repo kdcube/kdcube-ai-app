@@ -111,7 +111,7 @@ class SSEHub:
     ):
         self.chat_comm = chat_comm
         self.redis = redis
-        self.instance_id = instance_id or os.getenv("INSTANCE_ID", "unknown")
+        self.instance_id = instance_id or get_settings().INSTANCE_ID
         self.process_id = process_id or os.getpid()
         self._stats_ttl_sec = stats_ttl_sec
         self._by_session: Dict[str, List[Client]] = {}
@@ -429,7 +429,7 @@ def create_sse_router(
     chat_comm = ChatRelayCommunicator(
         redis_url=redis_url,
         channel="chat.events",
-        orchestrator_identity=os.getenv("CB_RELAY_IDENTITY"),
+        orchestrator_identity=get_settings().PLATFORM.SERVICE.CB_RELAY_IDENTITY,
     )
 
     # Ensure hub exists on app

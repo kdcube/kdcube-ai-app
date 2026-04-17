@@ -14,6 +14,7 @@ import pathlib
 import tokenize
 from typing import Dict, Any, List, Tuple, Optional, Literal
 
+from kdcube_ai_app.apps.chat.sdk.config import get_settings
 from kdcube_ai_app.apps.chat.sdk.runtime.exec_runtime_config import resolve_exec_runtime_profile
 from kdcube_ai_app.apps.chat.sdk.util import strip_lone_surrogates
 from kdcube_ai_app.infra.service_hub.inventory import AgentLogger
@@ -1800,7 +1801,7 @@ class _InProcessRuntime:
                     "docker_network_mode",
                     "PY_CODE_EXEC_NETWORK_MODE",
                 )
-                or os.environ.get("PY_CODE_EXEC_NETWORK_MODE", "host")
+                or get_settings().PLATFORM.EXEC.PY.PY_CODE_EXEC_NETWORK_MODE
             ).strip() or "host"
             docker_extra_args: List[str] = []
             docker_cpus = _pick_runtime_cfg(exec_runtime_cfg, "cpus", "docker_cpus")

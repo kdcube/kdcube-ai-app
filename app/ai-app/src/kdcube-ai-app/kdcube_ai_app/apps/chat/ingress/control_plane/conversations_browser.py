@@ -77,7 +77,6 @@ def _get_shared_components():
     req = ConfigRequest(
         openai_api_key=settings.OPENAI_API_KEY,
         claude_api_key=settings.ANTHROPIC_API_KEY,
-        selected_model=settings.DEFAULT_MODEL_LLM,
     )
     model_service = ModelServiceBase(create_workflow_config(req))
     store = ConversationStore(settings.STORAGE_PATH)

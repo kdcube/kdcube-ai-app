@@ -11,8 +11,6 @@ class ModelConfigSpec:
     # mirrors ConfigRequest fields you already have
     openai_api_key: Optional[str] = None
     claude_api_key: Optional[str] = None
-    selected_model: Optional[str] = None
-    selected_embedder: str = "openai-text-embedding-3-small"
     custom_embedding_endpoint: Optional[str] = None
     custom_embedding_model: Optional[str] = "sentence-transformers/all-MiniLM-L6-v2"
     custom_embedding_size: Optional[int] = 384

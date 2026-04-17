@@ -19,7 +19,7 @@ from kdcube_ai_app.infra.gateway.definitions import GatewayError
 from kdcube_ai_app.auth.sessions import UserType, UserSession, RequestContext
 from kdcube_ai_app.auth.AuthManager import RequirementBase, AuthenticationError, AuthorizationError, RequireUser, \
     RequireRoles
-from kdcube_ai_app.infra.namespaces import CONFIG
+from kdcube_ai_app.apps.chat.sdk.config import get_settings
 from kdcube_ai_app.apps.middleware.token_extract import resolve_auth_from_headers_and_cookies
 import logging
 import os
@@ -58,7 +58,7 @@ STATE_FLAG = "_gw_processed"
 STATE_SESSION = "user_session"
 STATE_USER_TYPE = "user_type"
 STATE_STREAM_ID = "stream_id"
-STREAM_ID_HEADER = CONFIG.STREAM_ID_HEADER_NAME
+STREAM_ID_HEADER = get_settings().RUNTIME_CONFIG.STREAM_ID_HEADER_NAME
 
 
 def extract_stream_id(request: Request) -> Optional[str]:
@@ -95,10 +95,12 @@ class FastAPIGatewayAdapter:
             except Exception:
                 return None
 
+        _auth_cfg = get_settings().AUTH
+        _rc = get_settings().RUNTIME_CONFIG
         auth_header, id_token = resolve_auth_from_headers_and_cookies(
             request.headers.get("authorization"),
-            request.headers.get(CONFIG.ID_TOKEN_HEADER_NAME)
-            or request.headers.get(CONFIG.ID_TOKEN_HEADER_NAME.lower()),
+            request.headers.get(_auth_cfg.ID_TOKEN_HEADER_NAME)
+            or request.headers.get(_auth_cfg.ID_TOKEN_HEADER_NAME.lower()),
             request.cookies,
         )
         if _auth_debug_enabled():
@@ -114,8 +116,8 @@ class FastAPIGatewayAdapter:
             user_agent=request.headers.get("user-agent", ""),
             authorization_header=auth_header,
             id_token=id_token,
-            user_timezone= request.headers.get(CONFIG.USER_TIMEZONE_HEADER_NAME) or request.headers.get(CONFIG.USER_TIMEZONE_HEADER_NAME.lower()),
-            user_utc_offset_min=_parse_int(request.headers.get(CONFIG.USER_UTC_OFFSET_MIN_HEADER_NAME) or request.headers.get(CONFIG.USER_UTC_OFFSET_MIN_HEADER_NAME.lower()),)
+            user_timezone=request.headers.get(_rc.USER_TIMEZONE_HEADER_NAME) or request.headers.get(_rc.USER_TIMEZONE_HEADER_NAME.lower()),
+            user_utc_offset_min=_parse_int(request.headers.get(_rc.USER_UTC_OFFSET_MIN_HEADER_NAME) or request.headers.get(_rc.USER_UTC_OFFSET_MIN_HEADER_NAME.lower()),)
         )
 
     def _extract_user_session_id(self, request: Request) -> Optional[str]:

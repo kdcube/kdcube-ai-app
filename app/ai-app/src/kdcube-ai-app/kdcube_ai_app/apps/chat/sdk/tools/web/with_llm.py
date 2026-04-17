@@ -424,10 +424,11 @@ async def sources_filter_and_segment(
     from datetime import datetime, timezone
     import logging
     import os
+    from kdcube_ai_app.apps.chat.sdk.config import get_plain
     logger = logging.getLogger(__name__)
 
     import kdcube_ai_app.apps.chat.sdk.tools.web.content_filters as content_filters
-    if (os.getenv("WEB_SEARCH_SEGMENTER") or "").strip().lower() == "fast":
+    if (get_plain("a:platform.services.proc.tools.web_search.web_search_segmenter") or "").strip().lower() == "fast":
         from kdcube_ai_app.apps.chat.sdk.tools.web.filter_segmenter_fast import (
             filter_and_segment_stream,
         )
