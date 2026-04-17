@@ -1,7 +1,7 @@
 ---
 id: ks:docs/sdk/bundle/bundle-props-secrets-README.md
 title: "Bundle Props and Secrets"
-summary: "How a bundle reads effective props, raw descriptor config, bundle secrets, user-scoped props, and user-scoped secrets, and where each layer is stored."
+summary: "Bundle-facing config and secret scopes, their read/write APIs, and the current source-of-truth/storage model for local and production deployments."
 tags: ["sdk", "bundle", "props", "secrets", "configuration"]
 keywords: ["bundle_props", "get_plain", "get_secret", "get_user_secret", "bundles.yaml", "bundles.secrets.yaml", "secrets.yaml", "redis overrides"]
 see_also:
@@ -11,92 +11,58 @@ see_also:
 ---
 # Bundle Props and Secrets
 
-This document is the bundle-developer view of:
-- effective bundle props
-- raw descriptor reads through `get_plain(...)`
-- bundle-level secrets
-- user-scoped non-secret props
-- user-scoped secrets
+This document covers the four bundle-facing state classes that matter in practice:
 
-The important split is:
-- `self.bundle_prop(...)` reads the bundle's effective config
-- `get_plain(...)` reads raw mounted descriptor YAML
-- `get_secret(...)` reads bundle/platform secrets
-- `get_user_prop(...)` reads user-scoped non-secret bundle props
-- `get_user_secret(...)` reads user-scoped secrets
+1. deployment-scoped bundle props
+2. deployment-scoped bundle secrets
+3. user-scoped bundle props
+4. user-scoped bundle secrets
 
-If you only need the short answer, use this table first.
+For now, bundle code should **not** write platform/global props or platform/global secrets.
 
-## Quick answer matrix
+## Short answer
 
-| What you need | Read/write API | Scope | Where it lives in `aws-sm` mode | Where it lives in `secrets-file` mode | Exported by `kdcube --export-live-bundles`? |
-|---|---|---|---|---|---|
-| effective bundle non-secret config | `self.bundle_prop(...)`, `self.bundle_props` | bundle + tenant/project | AWS SM grouped bundle descriptor docs, cached in Redis | `bundles.yaml`, cached in Redis | yes, as `bundles.yaml` |
-| raw mounted bundle descriptor YAML | `get_plain("b:...")` | process-local mounted descriptors | mounted `bundles.yaml` inside the container | mounted `bundles.yaml` inside the container | no; this is just the currently mounted file |
-| raw mounted platform descriptor YAML | `get_plain("...")` or `get_plain("a:...")` | process-local mounted descriptors | mounted `assembly.yaml` inside the container | mounted `assembly.yaml` inside the container | no |
-| bundle-level secrets | `get_secret("b:...")` | bundle + tenant/project | AWS SM grouped bundle secret docs | `bundles.secrets.yaml` | yes, as `bundles.secrets.yaml` |
-| platform/global secrets | `get_secret("services...")` or `get_secret("a:...")` | deployment | AWS Secrets Manager / configured provider | `secrets.yaml` | no |
-| user-scoped non-secret bundle props | `get_user_prop(...)`, `set_user_prop(...)`, `get_user_props()` | user + bundle + tenant/project | PostgreSQL project schema table | PostgreSQL project schema table | no |
-| user-scoped secrets | `get_user_secret(...)`, `set_user_secret(...)` | user + bundle + tenant/project | configured secrets provider | `secrets.yaml` in `secrets-file` mode | no |
-| mutable bundle business state | bundle storage APIs | bundle-defined | bundle storage backend | bundle storage backend | no |
+| Data class                       | Read API                                     | Write API today                                      | Scope                            | Current production storage / authority                                                                              |
+|----------------------------------|----------------------------------------------|------------------------------------------------------|----------------------------------|---------------------------------------------------------------------------------------------------------------------|
+| deployment-scoped bundle props   | `self.bundle_prop(...)`, `self.bundle_props` | `await set_bundle_prop(...)`                         | tenant + project + bundle        | mounted `bundles.yaml` whenever present; grouped bundle descriptor docs only when no mounted descriptor file exists |
+| deployment-scoped bundle secrets | `get_secret("b:...")`                        | `await set_bundle_secret(...)`                       | tenant + project + bundle        | configured secrets provider                                                                                         |
+| user-scoped bundle props         | `get_user_prop(...)`, `get_user_props()`     | `set_user_prop(...)`, `delete_user_prop(...)`        | tenant + project + bundle + user | PostgreSQL `<SCHEMA>.user_bundle_props`                                                                             |
+| user-scoped bundle secrets       | `get_user_secret(...)`                       | `set_user_secret(...)`, `delete_user_secret(...)`    | tenant + project + bundle + user | configured secrets provider                                                                                         |
 
-For secrets, there are two recommended namespaces:
-- no prefix or `a:` -> platform/global secrets
-- `b:` -> the current bundle's secrets
+The most important split is:
 
-Fully qualified canonical keys such as `bundles.<bundle_id>.secrets...` and
-`users.<user_id>...` are still accepted by the low-level API, but they are the
-internal/global form, not the normal bundle-facing form.
+- `self.bundle_prop(...)` reads the bundle's effective non-secret runtime config
+- `get_plain(...)` reads raw mounted descriptor files only
+- `get_secret("b:...")` reads deployment-scoped bundle secrets
+- `get_user_prop(...)` / `set_user_prop(...)` are user-scoped non-secret state
+- `get_user_secret(...)` / `set_user_secret(...)` are user-scoped secret state
 
-## Four config layers
+If the data is mutable business data rather than config or credentials, use bundle storage instead.
 
-```text
-1) Code defaults
-   entrypoint.configuration / bundle_props_defaults
+## What is actually supported today
 
-2) Mounted descriptor files
-   assembly.yaml / bundles.yaml
+### From inside bundle code
 
-3) Authoritative deploy-scoped bundle descriptor state
-   `bundles.yaml` in `secrets-file` mode
-   grouped bundle descriptor docs in `aws-sm` mode
+Supported directly:
 
-4) Secrets and user-scoped state
-   bundle/platform secrets in the configured secrets provider
-   user non-secret props in PostgreSQL
-```
+- read deployment-scoped bundle props via `self.bundle_prop(...)`
+- read deployment-scoped bundle secrets via `get_secret("b:...")`
+- write deployment-scoped bundle props via `await set_bundle_prop(...)`
+- write deployment-scoped bundle secrets via `await set_bundle_secret(...)`
+- read/write user-scoped bundle props via `get_user_prop(...)`, `set_user_prop(...)`
+- read/write user-scoped bundle secrets via `get_user_secret(...)`, `set_user_secret(...)`
 
-## Where to look first
+That distinction matters:
 
-| Question | Look here first | Why |
-|---|---|---|
-| "What config does my bundle actually see at runtime?" | `self.bundle_props` / `self.bundle_prop(...)` | This is the merged effective bundle config. |
-| "What is mounted in the current container right now?" | `get_plain(...)` / `get_plain("b:...")` | This reads raw descriptor files only. |
-| "Where is this per-user non-secret value persisted?" | PostgreSQL `<SCHEMA>.user_bundle_props` | User props are not in AWS SM and not in `bundles.yaml`. |
-| "Where is this bundle secret persisted?" | configured secrets provider | In `aws-sm` that means grouped AWS SM bundle secret docs. |
-| "Can I export this back to descriptor files?" | only deployment-scoped bundle config and bundle-level secrets | User props and user secrets are not descriptor data. |
+- user-scoped writes are part of normal bundle runtime behavior
+- deployment-scoped bundle writes are still operational/configuration writes
 
-If the data is mutable business state, do not put it into props. Use storage.
+## Deployment-scoped bundle props
 
-## Effective bundle props
+Read effective bundle props through:
 
-Read effective non-secret config from:
 - `self.bundle_props`
 - `self.bundle_prop("dot.path", default=...)`
-
-For non-secret config, precedence is:
-1. code defaults
-2. authoritative deploy-scoped bundle props
-
-The merged result is exposed to the bundle as `bundle_props`.
-
-Typical examples:
-- role/model selection
-- MCP connector config
-- runtime profiles
-- feature flags
-- knowledge-source selection
-- scheduled job config through `@cron(..., expr_config=...)`
 
 Example:
 
@@ -106,113 +72,101 @@ profile = self.bundle_prop("execution.runtime.default_profile", "local")
 services = self.bundle_prop("mcp.services", {})
 ```
 
-### Where effective props come from
+Typical use:
 
-```yaml
-bundles:
-  version: "1"
-  items:
-    - id: "demo.bundle@1-0"
-      config:
-        features:
-          sync:
-            enabled: true
-        execution:
-          runtime:
-            default_profile: "local"
-```
+- model and role-model selection
+- MCP service config
+- runtime profiles
+- feature flags
+- scheduled job config such as `@cron(..., expr_config=...)`
 
-The effective bundle props path has both an authority and a cache.
+### Source-of-truth policy for bundle props
 
-| Layer | What it contains | Where it lives |
-|---|---|---|
-| code defaults | `configuration` / `bundle_props_defaults` from bundle code | bundle code |
-| authoritative deploy-scoped bundle props | non-secret bundle config after live admin updates | `bundles.yaml` in `secrets-file`, grouped AWS SM descriptor docs in `aws-sm` |
-| runtime cache | latest effective deploy-scoped bundle props per tenant/project/bundle | Redis |
+`bundles.yaml` is the deployment-scoped bundle descriptor and is always mounted into the runtime.
 
-The runtime Redis cache is per:
-- tenant
-- project
-- bundle
+That means the intended source-of-truth policy is:
 
-Its current key format is:
+- deployment-scoped bundle prop changes should be persisted into `bundles.yaml`
+- exports should reconstruct `bundles.yaml` from the current deployment-scoped bundle state
+- user-scoped state should remain outside descriptors
+
+This is the policy the docs should describe.
+
+### Current implementation for bundle props
+
+There are two layers:
+
+1. code defaults in bundle code
+2. deploy-scoped props overrides
+
+The effective runtime props are always assembled from those two layers.
+
+The runtime cache key is:
 
 ```text
 kdcube:config:bundles:props:{tenant}:{project}:{bundle_id}
 ```
 
-When proc refreshes bundle props:
+That Redis key is what proc reads first at runtime.
 
-1. code defaults are loaded
-2. Redis is checked for the effective deploy-scoped bundle props
-3. if Redis misses, the authoritative store is used
-4. Redis is backfilled from that authoritative store
+If Redis misses:
 
-The authority depends on deployment mode:
+- if mounted `bundles.yaml` exists, proc backfills Redis from that file
+- in `aws-sm`, proc backfills Redis from the grouped bundle descriptor doc
 
-- `secrets-file`: `bundles.yaml`
-- `aws-sm`: grouped AWS SM bundle descriptor docs
+### Current write path for bundle props
 
-The supported live override path is the admin props API:
+Supported operational write path today:
+
+- `await set_bundle_prop("dot.path", value)` from bundle code
 - `GET /admin/integrations/bundles/{bundle_id}/props`
 - `POST /admin/integrations/bundles/{bundle_id}/props`
 - `POST /admin/integrations/bundles/{bundle_id}/props/reset-code`
 
-### Can a bundle write props on the fly?
+Current behavior:
 
-Not through `get_plain(...)`.
+- `POST /.../props` always writes Redis
+- if mounted `bundles.yaml` exists, that same write also updates the mounted file directly
+- otherwise, in `aws-sm`, that same write updates the grouped bundle descriptor doc
 
-The supported live write path is the admin/runtime props API. There is no
-first-class SDK helper like `set_bundle_prop(...)`.
+So the current implementation is:
 
-If you mutate `self.bundle_props` directly in code, that is only in-memory and
-not persisted.
+| Mode | Runtime read authority | Persistent authority today |
+|---|---|---|
+| mounted descriptor file present | Redis, backfilled from mounted `bundles.yaml` | mounted `bundles.yaml` |
+| no mounted descriptor file, `aws-sm` configured | Redis, backfilled from grouped bundle descriptor docs | grouped bundle descriptor docs in AWS Secrets Manager |
+| other non-file providers | Redis | provider-specific operational path if configured |
 
-### What resets those props?
+### Descriptor reset behavior
 
-- `reset-code` rewrites the deploy-scoped bundle props layer to the bundle's code defaults
-- `kdcube --bundle-reload <bundle_id>` is descriptor-authoritative:
-  - reapplies the registry from `bundles.yaml`
-  - rebuilds the descriptor-backed deploy-scoped props layer
-  - clears proc bundle caches
-- env/descriptor force-reset paths can also replace the deploy-scoped props
-  layer authoritatively from the active descriptor source
+These paths are descriptor-authoritative today:
 
-## Raw descriptor reads with `get_plain(...)`
+- `kdcube --bundle-reload <bundle_id>`
+- env/descriptor force-reset paths
+- startup env reset paths that replay `AGENTIC_BUNDLES_JSON` / `bundles.yaml`
 
-`get_plain(...)` is different from `self.bundle_prop(...)`.
+Those paths replace Redis bundle props from the descriptor source, which is the mounted `bundles.yaml`.
 
-It reads the mounted YAML descriptors directly:
-- no prefix or `a:` -> `assembly.yaml`
-- `b:` -> `bundles.yaml`
+### Raw descriptor reads are different
 
-Examples:
+`get_plain(...)` is not the same thing as `self.bundle_prop(...)`.
 
-```python
-from kdcube_ai_app.apps.chat.sdk.config import get_plain
+Use:
 
-host_bundles_root = get_plain("paths.host_bundles_path")
-default_bundle_id = get_plain("b:default_bundle_id")
-raw_items = get_plain("b:items", [])
-```
+- `get_plain("a:...")` or no prefix for `assembly.yaml`
+- `get_plain("b:...")` for raw `bundles.yaml`
 
-What matters:
-- it is raw descriptor inspection
-- it is cached by descriptor file mtime/size
-- it is not tenant/project scoped
-- it does not include Redis runtime overrides
-- it has no write path
+It reads mounted files only:
 
-In `aws-sm` deployments, `get_plain("b:...")` can differ from the live
-effective bundle props if props were changed through the admin/runtime API and
-have not yet been exported back into descriptor files.
+- no Redis overrides
+- no tenant/project scoping
+- no write path
 
-Use it when the bundle needs raw platform or descriptor data, not when it wants
-its own effective runtime props.
+Use it only when the bundle needs raw descriptor inspection.
 
-## Bundle-level secrets
+## Deployment-scoped bundle secrets
 
-Read secrets with:
+Read bundle secrets with:
 
 ```python
 from kdcube_ai_app.apps.chat.sdk.config import get_secret
@@ -220,164 +174,50 @@ from kdcube_ai_app.apps.chat.sdk.config import get_secret
 token = get_secret("b:api.token")
 ```
 
-Namespace rules for `get_secret(...)`:
+Bundle-facing secret namespace:
 
-| Key form | Meaning | Recommended use |
-|---|---|---|
-| `get_secret("services.openai.api_key")` | platform/global secret | yes |
-| `get_secret("a:services.openai.api_key")` | platform/global secret | yes, explicit form |
-| `get_secret("b:api.token")` | current bundle secret | yes |
-| `get_secret("bundles.demo.bundle@1-0.secrets.api.token")` | fully qualified bundle secret | only for low-level/admin/explicit cross-scope access |
-| `get_secret("users.user-1.bundles.demo.bundle@1-0.secrets.api.token")` | fully qualified user/bundle secret | do not use in normal bundle code; use `get_user_secret(...)` |
+```text
+b:<dot.path>
+```
 
-Use secrets for:
-- API keys
-- bearer tokens
-- git credentials
-- external connector credentials
-- JSON credentials content such as Google service-account files
-- sensitive identifiers such as Cognito pool ids when the bundle treats them as secrets
-
-The underlying canonical bundle secret namespace is:
+Canonical internal namespace:
 
 ```text
 bundles.<bundle_id>.secrets.<dot.path>
 ```
 
-But normal bundle code should prefer:
+### Current write path for bundle secrets
 
-```python
-get_secret("b:<dot.path>")
-```
+Supported operational write path today:
 
-because KDCube resolves the current bundle automatically from:
-
-1. request context `routing.bundle_id`
-2. bound runtime bundle context
-3. env fallback such as `KDCUBE_BUNDLE_ID`
-
-### Can a bundle read another bundle's secret?
-
-Normal bundle code should treat the answer as **no**.
-
-Use these rules:
-- read your own bundle's deployment secrets via `get_secret("b:...")`
-- read platform/global shared secrets via `get_secret("...")` or `get_secret("a:...")`
-- read user-scoped secrets via `get_user_secret(...)`
-
-Today, the low-level API still accepts fully qualified canonical keys, so code
-that explicitly asks for `bundles.<other_bundle_id>.secrets...` can bypass the
-nice `b:` shorthand. That is an internal/administrative capability, not the
-recommended bundle contract. Bundle code should not depend on cross-bundle
-secret reads.
-
-If two bundles need the same secret, choose one of these instead:
-- move it to platform/global scope
-- duplicate it into each bundle's own secret scope
-- expose the needed capability through an API, not direct secret sharing
-
-`get_secret(...)` is backed by the configured runtime secrets provider. Current
-provider modes are:
-- `secrets-service`
-- `aws-sm`
-- `secrets-file`
-- `in-memory`
-
-`secrets-file` reads `secrets.yaml` and `bundles.secrets.yaml` directly through
-the storage backend (`file://...` or `s3://...`). It is useful for local
-debugging, static deployments, and descriptor-driven setups. Admin/UI secret
-updates persist back into those descriptors when the backing location is writable.
-
-Do not put secrets into:
-- `bundle_props`
-- `bundles.yaml` config blocks
-- long-lived logs or generated artifacts
-
-Example bundle secret descriptor:
-
-```yaml
-bundles:
-  version: "1"
-  items:
-    - id: "demo.bundle@1-0"
-      secrets:
-        integrations:
-          docs_api_token: "..."
-```
-
-Supported admin/API write path:
+- `await set_bundle_secret("dot.path", value)` from bundle code
 - `POST /admin/integrations/bundles/{bundle_id}/secrets`
-
-List current known keys:
 - `GET /admin/integrations/bundles/{bundle_id}/secrets`
 
-## User-scoped secrets
+Current storage depends on the configured secrets provider:
 
-Use user-scoped secrets when the secret belongs to the current user inside the
-bundle, not to the deployment.
-
-Read and write from bundle code:
-
-```python
-from kdcube_ai_app.apps.chat.sdk.config import (
-    get_user_secret,
-    set_user_secret,
-    delete_user_secret,
-)
-
-token = get_user_secret("git.http_token")
-set_user_secret("git.http_token", "...")
-delete_user_secret("git.http_token")
-```
-
-For normal bundle code, prefer these helpers over raw `get_secret("users....")`
-keys. They keep the scope explicit and use the current request context
-correctly.
-
-If `user_id` and `bundle_id` are omitted, KDCube resolves them from the current
-request context.
-
-The stored logical key is:
-
-```text
-users.<user_id>.bundles.<bundle_id>.secrets.<dot.path>
-```
-
-If there is no bundle scope, the user-secret namespace falls back to:
-
-```text
-users.<user_id>.secrets.<dot.path>
-```
-
-Supported REST write path for the current authenticated user:
-- `POST /bundles/{tenant}/{project}/{bundle_id}/user-secrets`
-
-### Where bundle and user secrets are stored
-
-That depends on the configured provider:
-
-| Provider | Bundle-level secrets | User-scoped secrets |
-|---|---|---|
-| `secrets-service` | secrets service | secrets service |
-| `aws-sm` | AWS Secrets Manager | AWS Secrets Manager |
-| `secrets-file` | `bundles.secrets.yaml` | `secrets.yaml` |
-| `in-memory` | process memory | process memory |
-
-For `secrets-file`, the split is important:
-- keys under `bundles.<bundle_id>.secrets...` go to `bundles.secrets.yaml`
-- user keys under `users.<user_id>...` go to `secrets.yaml`
-
-In `aws-sm`, the grouped bundle descriptor documents are:
-
-| Document | Contents |
+| Provider | Bundle secrets are written to |
 |---|---|
-| `<prefix>/bundles-meta` | bundle id inventory and registry metadata |
-| `<prefix>/bundles/<bundle_id>/descriptor` | bundle registry entry and non-secret `config` |
-| `<prefix>/bundles/<bundle_id>/secrets` | bundle-level secrets |
+| `aws-sm` | `<prefix>/bundles/{bundle_id}/secrets` |
+| `secrets-file` | `bundles.secrets.yaml` |
+| `secrets-service` | secrets service backend |
+| `in-memory` | process memory only |
 
-## User-scoped non-secret props
+This means bundle secret writes in local descriptor mode already behave the way you want:
 
-Use these helpers for non-secret per-user bundle state:
+- in `secrets-file`, bundle secret writes go straight into `bundles.secrets.yaml`
+- in `aws-sm`, bundle secret writes go straight into the provider authority
+
+Do not put secrets into:
+
+- `bundle_props`
+- `bundles.yaml`
+- logs
+- artifacts
+
+## User-scoped bundle props
+
+Use:
 
 ```python
 from kdcube_ai_app.apps.chat.sdk.config import (
@@ -393,67 +233,127 @@ snapshot = get_user_props()
 delete_user_prop("preferences.theme")
 ```
 
-These helpers resolve:
+These values are always written to PostgreSQL:
 
-- current user by request context
-- current bundle by request context / runtime bundle context
+- project schema table: `<SCHEMA>.user_bundle_props`
 
-Storage:
+This is true regardless of:
 
-- PostgreSQL project schema
-- table: `<SCHEMA>.user_bundle_props`
+- local vs cloud
+- `aws-sm` vs `secrets-file`
+- ECS vs EC2 vs local proc
 
-This is relevant in any normal deployment mode.
+User props are:
 
-It does **not** matter whether proc runs:
-- locally
-- on EC2
-- on ECS
-- with `aws-sm`
-- with `secrets-file`
+- non-secret
+- per-user
+- per-bundle
+- operational data, not deployment descriptors
 
-If bundle code uses `get_user_prop(...)` / `set_user_prop(...)`, the persisted
-non-secret per-user value goes to PostgreSQL `user_bundle_props`.
-
-They are for non-secret per-user bundle state such as:
-
-- user-approved preferences
-- per-user UI settings
-- small bundle-owned user choices
-
-They are not part of:
+They are never written to:
 
 - `bundles.yaml`
 - `bundles.secrets.yaml`
-- deployment export
-- bundle secrets
+- CLI bundle export
 
-## Deployment mode matrix
-
-This is the easiest way to answer "where do I look?".
-
-| Data type | `aws-sm` authority | `secrets-file` authority | Redis role | PostgreSQL role |
-|---|---|---|---|---|
-| bundle-level non-secret props | AWS SM grouped bundle descriptor docs | `bundles.yaml` | cache / fast runtime copy | none |
-| bundle-level secrets | AWS SM grouped bundle secret docs | `bundles.secrets.yaml` | none | none |
-| platform/global secrets | configured secrets provider | `secrets.yaml` | none | none |
-| user-scoped non-secret props | PostgreSQL project schema | PostgreSQL project schema | none | authority |
-| user-scoped secrets | configured secrets provider | `secrets.yaml` | none | none |
-
-## Practical decision rules
+## User-scoped bundle secrets
 
 Use:
-- `self.bundle_prop(...)` when bundle code needs its effective config
-- `get_plain(...)` when code must inspect raw descriptor YAML
-- `get_secret(...)` for deployment- or bundle-scoped secret values
-- `get_user_prop(...)` for per-user non-secret bundle values
-- `get_user_secret(...)` for per-user secret values
-- bundle storage for mutable non-secret business state
 
-## Exporting live bundle descriptors with CLI
+```python
+from kdcube_ai_app.apps.chat.sdk.config import (
+    get_user_secret,
+    set_user_secret,
+    delete_user_secret,
+)
 
-For `aws-sm` deployments, the CLI can reconstruct the current authoritative
-deployment-scoped bundle descriptors:
+token = get_user_secret("git.http_token")
+set_user_secret("git.http_token", "...")
+delete_user_secret("git.http_token")
+```
+
+Logical namespace:
+
+```text
+users.<user_id>.bundles.<bundle_id>.secrets.<dot.path>
+```
+
+Current storage depends on the secrets provider:
+
+| Provider | User secrets are written to |
+|---|---|
+| `aws-sm` | `<prefix>/users/{user_id}/bundles/{bundle_id}/secrets` |
+| `secrets-file` | `secrets.yaml` |
+| `secrets-service` | secrets service backend |
+| `in-memory` | process memory only |
+
+Important split in `secrets-file` mode:
+
+- bundle secrets -> `bundles.secrets.yaml`
+- user secrets -> `secrets.yaml`
+
+User secrets are operational user data, not deployment descriptors.
+
+They are never part of:
+
+- `bundles.secrets.yaml`
+- `bundles.yaml`
+- `kdcube --export-live-bundles`
+
+## Source-of-truth matrix
+
+This is the cleanest operational view.
+
+| Data class | Local / production write target today | Descriptor source-of-truth today | Exportable to bundle descriptors |
+|---|---|---|---|
+| deployment-scoped bundle props | file-backed local: `bundles.yaml`; `aws-sm`: grouped bundle descriptor docs | file-backed local: `bundles.yaml`; `aws-sm`: grouped bundle descriptor docs | yes |
+| deployment-scoped bundle secrets | configured secrets provider | `bundles.secrets.yaml` in local `secrets-file`; provider authority in `aws-sm` / `secrets-service` | yes, bundle-level secrets only |
+| user-scoped bundle props | PostgreSQL | PostgreSQL | no |
+| user-scoped bundle secrets | configured secrets provider | configured secrets provider | no |
+
+## Descriptor-first model
+
+When `bundles.yaml` and `bundles.secrets.yaml` are mounted as writable descriptor files, the operating model is:
+
+- mounted descriptors are the only source of truth for deployment-scoped bundle config
+- env files only identify component role and descriptor locations
+- deployment-scoped bundle writes go directly to bundle descriptor files when file-backed descriptor mode is enabled
+- user-scoped writes never go to descriptors
+
+Concretely:
+
+### Descriptor-first policy
+
+Deployment-scoped writes should land here:
+
+- bundle props -> `bundles.yaml`
+- bundle secrets -> `bundles.secrets.yaml` in local descriptor mode
+
+And user-scoped writes should still land here:
+
+- user props -> PostgreSQL
+- user secrets -> configured secrets provider
+
+### If descriptors are not the live authority
+
+Then the platform still needs an explicit export path for deployment-scoped bundle state:
+
+- export bundle props to `bundles.yaml`
+- export bundle secrets to `bundles.secrets.yaml`
+
+But never export:
+
+- user props
+- user secrets
+
+That same split should hold in cloud:
+
+- deployment-scoped bundle state is exportable/configurable
+- user-scoped state is operational runtime data
+
+## CLI export
+
+Current CLI export path:
 
 ```bash
 kdcube \
@@ -464,80 +364,47 @@ kdcube \
   --out-dir /tmp/kdcube-export
 ```
 
-Optional:
-- `--aws-profile <profile>`
-- `--aws-sm-prefix <prefix>`
-
 This exports:
+
 - `bundles.yaml`
 - `bundles.secrets.yaml`
 
-It reads from the authoritative grouped AWS SM bundle documents, not from:
-- Redis
-- the currently mounted `/config/bundles.yaml`
-- PostgreSQL `user_bundle_props`
-
 It does **not** export:
+
 - `secrets.yaml`
-- user-scoped secrets
-- user-scoped non-secret props
+- user props
+- user secrets
 - bundle storage data
 
-If the grouped AWS SM bundle documents were never bootstrapped, export fails
-because there is no authoritative bundle descriptor set to reconstruct yet.
+When local file-backed descriptors are mounted, `kdcube --export-live-bundles` exports directly from:
 
-## Reserved platform properties
+- mounted `bundles.yaml`
+- mounted `bundles.secrets.yaml` when configured
 
-Most bundle props are bundle-defined.
+When `aws-sm` is the authority, it reconstructs the export from grouped AWS Secrets Manager bundle docs.
 
-Some property paths are reserved by the platform, for example:
-- `role_models`
-- `embedding`
-- `economics.reservation_amount_dollars`
-- `execution.runtime`
-- `mcp.services`
+## Decision rules
 
-Canonical reference:
-- [bundle-platform-properties-README.md](bundle-platform-properties-README.md)
+Use:
 
-## Defaults in code
+- `self.bundle_prop(...)` for effective non-secret bundle config
+- `get_plain(...)` for raw descriptor inspection
+- `get_secret("b:...")` for deployment-scoped bundle secrets
+- `get_user_prop(...)` / `set_user_prop(...)` for per-user non-secret bundle state
+- `get_user_secret(...)` / `set_user_secret(...)` for per-user secret state
+- bundle storage APIs for mutable business data
 
-Use bundle code defaults for stable defaults that should travel with the bundle:
+Do not use bundle props or secrets for:
 
-```python
-@property
-def configuration(self):
-    config = dict(super().configuration)
-    config.setdefault("my_feature", {"enabled": True})
-    return config
-```
-
-Use `setdefault(...)` patterns so external overrides can still win.
-
-## Local prototyping loop
-
-For localhost bundle iteration, keep the split clear:
-
-1. code defaults
-2. descriptor-backed deploy-scoped bundle config
-3. user-scoped non-secret state in PostgreSQL, if your bundle uses it
-
-Recommended local flow:
-- mount one host bundles root into proc as `/bundles`
-- in `bundles.yaml`, point the bundle to the container-visible path such as `/bundles/my.bundle`
-- edit code and/or `bundles.yaml`
-- run:
-  - `kdcube --workdir <runtime-workdir> --bundle-reload <bundle_id>`
-
-That reload is descriptor-authoritative and is the right path when the
-descriptor is your source of truth.
+- conversation/business records
+- large mutable data
+- artifacts
 
 ## Related docs
 
 - authoring guide: [bundle-dev-README.md](bundle-dev-README.md)
-- lifecycle and storage surfaces: [bundle-lifecycle-README.md](bundle-lifecycle-README.md)
 - runtime surfaces: [bundle-runtime-README.md](bundle-runtime-README.md)
-- storage backends: [bundle-storage-cache-README.md](bundle-storage-cache-README.md)
+- lifecycle and storage surfaces: [bundle-lifecycle-README.md](bundle-lifecycle-README.md)
 - reserved platform props: [bundle-platform-properties-README.md](bundle-platform-properties-README.md)
-- external/source-of-truth config and secrets format:
+- deployment config format:
   [../../service/configuration/bundle-configuration-README.md](../../service/configuration/bundle-configuration-README.md)

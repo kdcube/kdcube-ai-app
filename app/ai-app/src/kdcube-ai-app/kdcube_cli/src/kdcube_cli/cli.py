@@ -306,6 +306,30 @@ def _resolve_bundle_reload_source(env_main: installer_mod.EnvFile, env_proc: ins
     return candidate.resolve() if candidate.exists() else candidate
 
 
+def _resolve_live_bundle_export_sources(
+    env_main: installer_mod.EnvFile,
+    env_proc: installer_mod.EnvFile,
+) -> tuple[Path, Path | None] | None:
+    bundles_host = _strip_env_value(env_main.entries.get("HOST_BUNDLES_DESCRIPTOR_PATH", (None, None))[1])
+    if not bundles_host or bundles_host == "/dev/null":
+        return None
+
+    bundles_path = Path(bundles_host).expanduser().resolve()
+    if not bundles_path.exists():
+        raise SystemExit(
+            f"Mounted bundles descriptor source not found: {bundles_path}. "
+            "The runtime env points at a local bundle descriptor authority, but the host file is missing."
+        )
+
+    bundle_secrets_raw = _strip_env_value(env_proc.entries.get("BUNDLE_SECRETS_YAML", (None, None))[1])
+    bundle_secrets_host = _strip_env_value(
+        env_main.entries.get("HOST_BUNDLES_SECRETS_YAML_DESCRIPTOR_PATH", (None, None))[1]
+    )
+    if bundle_secrets_raw and bundle_secrets_host and bundle_secrets_host != "/dev/null":
+        return bundles_path, Path(bundle_secrets_host).expanduser().resolve()
+    return bundles_path, None
+
+
 def _load_bundle_ids_from_descriptor(path: Path) -> set[str]:
     if not path.exists():
         raise SystemExit(f"Bundle descriptor source not found: {path}")
@@ -1062,17 +1086,17 @@ def main() -> None:
     parser.add_argument(
         "--export-live-bundles",
         action="store_true",
-        help="Export the current effective live bundles.yaml and bundles.secrets.yaml from AWS Secrets Manager.",
+        help="Export the current effective live bundles.yaml and bundles.secrets.yaml from the active bundle authority.",
     )
     parser.add_argument(
         "--tenant",
         default="",
-        help="Tenant for --export-live-bundles. Required unless --aws-sm-prefix is provided.",
+        help="Tenant for --export-live-bundles when exporting from AWS SM. Ignored for mounted local descriptor exports.",
     )
     parser.add_argument(
         "--project",
         default="",
-        help="Project for --export-live-bundles. Required unless --aws-sm-prefix is provided.",
+        help="Project for --export-live-bundles when exporting from AWS SM. Ignored for mounted local descriptor exports.",
     )
     parser.add_argument(
         "--out-dir",
@@ -1082,17 +1106,17 @@ def main() -> None:
     parser.add_argument(
         "--aws-region",
         default="",
-        help="AWS region for --export-live-bundles. Falls back to current AWS CLI environment if omitted.",
+        help="AWS region for --export-live-bundles when exporting from AWS SM. Falls back to current AWS CLI environment if omitted.",
     )
     parser.add_argument(
         "--aws-profile",
         default="",
-        help="AWS profile for --export-live-bundles. Falls back to current AWS CLI environment if omitted.",
+        help="AWS profile for --export-live-bundles when exporting from AWS SM. Falls back to current AWS CLI environment if omitted.",
     )
     parser.add_argument(
         "--aws-sm-prefix",
         default="",
-        help="Explicit AWS Secrets Manager prefix for --export-live-bundles. Default is kdcube/<tenant>/<project>.",
+        help="Explicit AWS Secrets Manager prefix for --export-live-bundles when exporting from AWS SM. Default is kdcube/<tenant>/<project>.",
     )
     args = parser.parse_args()
 
@@ -1110,7 +1134,24 @@ def main() -> None:
             clean_docker_images(console)
             return
         if args.export_live_bundles:
+            workdir = Path(os.path.expanduser(args.workdir)).expanduser().resolve()
             out_dir = Path(os.path.expanduser(args.out_dir or os.getcwd())).expanduser().resolve()
+            bundles_path = None
+            bundles_secrets_path = None
+            try:
+                ctx = _build_paths_for_repo(repo_path, workdir)
+                env_main_path = ctx.config_dir / ".env"
+                env_proc_path = ctx.config_dir / ".env.proc"
+                if env_main_path.exists() and env_proc_path.exists():
+                    env_main = installer_mod.load_env_file(env_main_path)
+                    env_proc = installer_mod.load_env_file(env_proc_path)
+                    sources = _resolve_live_bundle_export_sources(env_main, env_proc)
+                    if sources is not None:
+                        bundles_path, bundles_secrets_path = sources
+            except SystemExit:
+                raise
+            except Exception:
+                pass
             export_live_bundle_descriptors(
                 console,
                 tenant=str(args.tenant or "").strip(),
@@ -1119,6 +1160,8 @@ def main() -> None:
                 aws_region=str(args.aws_region or "").strip() or None,
                 aws_profile=str(args.aws_profile or "").strip() or None,
                 aws_sm_prefix=str(args.aws_sm_prefix or "").strip() or None,
+                bundles_path=bundles_path,
+                bundles_secrets_path=bundles_secrets_path,
             )
             return
         if args.remove_volumes and not args.stop:

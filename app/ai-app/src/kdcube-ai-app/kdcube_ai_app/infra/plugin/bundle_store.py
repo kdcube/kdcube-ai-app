@@ -15,6 +15,12 @@ import kdcube_ai_app.infra.namespaces as namespaces
 from kdcube_ai_app.apps.chat.sdk.config import get_settings
 from kdcube_ai_app.apps.chat.sdk.runtime.external.service_discovery import _is_running_in_docker
 from kdcube_ai_app.apps.chat.sdk.runtime.external.distributed_snapshot import compute_dir_sha256
+from kdcube_ai_app.infra.secrets.manager import (
+    _bundle_descriptor_items as _secrets_bundle_descriptor_items,
+    _find_bundle_item as _secrets_find_bundle_item,
+    _load_yaml_mapping_from_storage,
+    _write_yaml_mapping_to_storage,
+)
 
 REDIS_KEY_FMT = namespaces.CONFIG.BUNDLES.BUNDLE_MAPPING_KEY_FMT
 REDIS_CHANNEL_FMT = namespaces.CONFIG.BUNDLES.UPDATE_CHANNEL
@@ -861,26 +867,212 @@ class _AwsBundleDescriptorStore:
                 self._release_distributed_lock(redis, token, secret_id)
 
 
+class _FileBundleDescriptorStore:
+    def __init__(self, *, bundles_yaml_uri: str) -> None:
+        self._bundles_yaml_uri = bundles_yaml_uri
+        self._lock = threading.RLock()
+        self._lock_file_path = self._resolve_local_lock_path(bundles_yaml_uri)
+
+    @staticmethod
+    def _resolve_local_lock_path(storage_uri: str) -> Path | None:
+        raw = str(storage_uri or "").strip()
+        if not raw:
+            return None
+        if raw.startswith("file://"):
+            raw = raw[len("file://"):]
+        try:
+            path = Path(raw)
+        except Exception:
+            return None
+        if not path.is_absolute():
+            return None
+        return path.with_name(f".{path.name}.lock")
+
+    def _acquire_file_lock(self):
+        class _LockCtx:
+            def __init__(self, outer: "_FileBundleDescriptorStore") -> None:
+                self._outer = outer
+                self._fh = None
+
+            def __enter__(self):
+                if self._outer._lock_file_path is None:
+                    return None
+                self._outer._lock_file_path.parent.mkdir(parents=True, exist_ok=True)
+                self._fh = self._outer._lock_file_path.open("a+")
+                fcntl.flock(self._fh.fileno(), fcntl.LOCK_EX)
+                return self._fh
+
+            def __exit__(self, exc_type, exc, tb):
+                if self._fh is not None:
+                    try:
+                        fcntl.flock(self._fh.fileno(), fcntl.LOCK_UN)
+                    finally:
+                        self._fh.close()
+                return False
+
+        return _LockCtx(self)
+
+    def _load_mapping(self) -> Dict[str, Any]:
+        return _load_yaml_mapping_from_storage(self._bundles_yaml_uri, missing_ok=True)
+
+    def _write_mapping(self, payload: Dict[str, Any]) -> None:
+        _write_yaml_mapping_to_storage(self._bundles_yaml_uri, payload)
+
+    def _bundle_items(self, payload: Dict[str, Any]) -> list[dict[str, Any]]:
+        return _secrets_bundle_descriptor_items(payload)
+
+    def _bundle_item_entry_and_props(
+        self,
+        bundle_id: str,
+        item: dict[str, Any],
+    ) -> tuple["BundleEntry", Dict[str, Any]]:
+        bundles_dict, props_map = _split_bundles_and_props({bundle_id: dict(item)})
+        entry = _to_entry(bundle_id, bundles_dict.get(bundle_id) or {"id": bundle_id})
+        return entry, props_map.get(bundle_id) or {}
+
+    def _item_from_entry(self, entry: "BundleEntry", props: Dict[str, Any] | None) -> dict[str, Any]:
+        payload = entry.model_dump(exclude_none=True)
+        payload["id"] = entry.id
+        if props:
+            payload["config"] = props
+        else:
+            payload.pop("config", None)
+        payload.pop("props", None)
+        return payload
+
+    def load_registry(self) -> tuple["BundlesRegistry", Dict[str, Dict[str, Any]]] | None:
+        with self._lock, self._acquire_file_lock():
+            payload = self._load_mapping()
+            items = self._bundle_items(payload)
+            bundles: Dict[str, BundleEntry] = {}
+            props_map: Dict[str, Dict[str, Any]] = {}
+            for item in items:
+                bundle_id = str(item.get("id") or "").strip()
+                if not bundle_id:
+                    continue
+                try:
+                    entry, props = self._bundle_item_entry_and_props(bundle_id, item)
+                except Exception:
+                    _log.warning("Failed to parse file-backed bundle descriptor for %s", bundle_id, exc_info=True)
+                    continue
+                bundles[bundle_id] = entry
+                if props:
+                    props_map[bundle_id] = props
+            bundles_root = payload.get("bundles") or {}
+            default_bundle_id = None
+            if isinstance(bundles_root, dict):
+                default_bundle_id = str(bundles_root.get("default_bundle_id") or "").strip() or None
+            if not bundles and not default_bundle_id:
+                return None
+            reg = BundlesRegistry(default_bundle_id=default_bundle_id, bundles=bundles)
+            if reg.default_bundle_id and reg.default_bundle_id not in reg.bundles:
+                reg.default_bundle_id = next(iter(reg.bundles.keys()), None)
+            return reg, props_map
+
+    def save_registry(
+        self,
+        reg: "BundlesRegistry",
+        props_map: Dict[str, Dict[str, Any]],
+        *,
+        replace: bool,
+    ) -> None:
+        deployment_ids = _deployment_bundle_ids(reg)
+        with self._lock, self._acquire_file_lock():
+            payload = self._load_mapping()
+            items = self._bundle_items(payload)
+            new_items: list[dict[str, Any]] = []
+            for bundle_id in deployment_ids:
+                entry = reg.bundles.get(bundle_id)
+                if entry is None:
+                    continue
+                new_items.append(self._item_from_entry(entry, props_map.get(bundle_id) or {}))
+            items[:] = new_items
+            bundles_root = payload.get("bundles")
+            if not isinstance(bundles_root, dict):
+                bundles_root = {}
+                payload["bundles"] = bundles_root
+            bundles_root["version"] = str(bundles_root.get("version") or "1")
+            default_bundle_id = _deployment_default_bundle_id(reg)
+            if default_bundle_id:
+                bundles_root["default_bundle_id"] = default_bundle_id
+            else:
+                bundles_root.pop("default_bundle_id", None)
+            self._write_mapping(payload)
+
+    def load_bundle_props(self, bundle_id: str) -> Dict[str, Any]:
+        if bundle_id in _reserved_bundle_ids():
+            return {}
+        loaded = self.load_registry()
+        if loaded is None:
+            return {}
+        _reg, props_map = loaded
+        return dict(props_map.get(bundle_id) or {})
+
+    def set_bundle_props(self, bundle_id: str, entry: "BundleEntry", props: Dict[str, Any]) -> None:
+        if bundle_id in _reserved_bundle_ids():
+            return
+        with self._lock, self._acquire_file_lock():
+            payload = self._load_mapping()
+            items = self._bundle_items(payload)
+            item = _secrets_find_bundle_item(items, bundle_id)
+            if item is None:
+                item = self._item_from_entry(entry, props)
+                items.append(item)
+            else:
+                fresh = self._item_from_entry(entry, props)
+                item.clear()
+                item.update(fresh)
+            self._write_mapping(payload)
+
+
+def _resolve_bundles_descriptor_authority_uri() -> str | None:
+    candidates = [
+        os.getenv("BUNDLES_YAML_DESCRIPTOR_PATH"),
+        os.getenv("AGENTIC_BUNDLES_JSON"),
+        "/config/bundles.yaml",
+    ]
+    for raw in candidates:
+        value = str(raw or "").strip()
+        if not value:
+            continue
+        if value.startswith("{") or value.startswith("["):
+            continue
+        if value == "/dev/null":
+            continue
+        if value.endswith("assembly.yaml"):
+            continue
+        path_text = value
+        if value.startswith("file://"):
+            path_text = value[len("file://"):]
+        path = Path(path_text).expanduser()
+        if path.exists() and path.is_file():
+            return path.resolve().as_uri()
+    return None
+
+
 def _get_authoritative_bundle_store(
     tenant: str,
     project: str,
-) -> _AwsBundleDescriptorStore | None:
+) -> Any | None:
     try:
         from kdcube_ai_app.infra.secrets.manager import build_secrets_manager_config
 
         cfg = build_secrets_manager_config(get_settings())
     except Exception:
         return None
-    if cfg.provider != "aws-sm":
-        return None
-    return _AwsBundleDescriptorStore(
-        tenant=tenant,
-        project=project,
-        prefix=cfg.aws_sm_prefix,
-        region=cfg.aws_region,
-        profile=cfg.aws_profile,
-        redis_url=cfg.redis_url,
-    )
+    bundles_yaml_uri = _resolve_bundles_descriptor_authority_uri()
+    if bundles_yaml_uri:
+        return _FileBundleDescriptorStore(bundles_yaml_uri=bundles_yaml_uri)
+    if cfg.provider == "aws-sm":
+        return _AwsBundleDescriptorStore(
+            tenant=tenant,
+            project=project,
+            prefix=cfg.aws_sm_prefix,
+            region=cfg.aws_region,
+            profile=cfg.aws_profile,
+            redis_url=cfg.redis_url,
+        )
+    return None
 
 def _tp_from_env() -> Tuple[str,str]:
     settings = get_settings()
