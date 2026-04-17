@@ -1,9 +1,16 @@
+from types import SimpleNamespace
+
+import pytest
+
 from kdcube_ai_app.apps.chat.sdk import config as sdk_config
-from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload, ChatTaskRouting, ChatTaskUser
+from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskActor, ChatTaskPayload, ChatTaskRouting, ChatTaskUser
 from kdcube_ai_app.apps.chat.sdk.runtime import comm_ctx
 
 
 class _FakeSecretsManager:
+    def __init__(self):
+        self.set_calls = []
+
     def get_secret(self, key: str):
         values = {
             "services.openai.api_key": "sk-openai-test",
@@ -18,6 +25,9 @@ class _FakeSecretsManager:
             ("user-1", "bundle.demo", "anthropic.api_key"): "sk-user-anthropic",
         }
         return values.get((user_id, bundle_id, key))
+
+    def set_secret(self, key: str, value: str):
+        self.set_calls.append((key, value))
 
 
 class _FakePropsManager:
@@ -110,3 +120,100 @@ def test_get_secret_bundle_namespace_uses_bundle_env_fallback(monkeypatch):
     monkeypatch.setenv("KDCUBE_BUNDLE_ID", "bundle.demo")
 
     assert sdk_config.get_secret("b:user_management.cognito_user_pool_id") == "pool-123"
+
+
+@pytest.mark.asyncio
+async def test_set_bundle_secret_uses_request_context_bundle_scope(monkeypatch):
+    manager = _FakeSecretsManager()
+    monkeypatch.setattr(sdk_config, "get_secrets_manager", lambda _settings: manager)
+    monkeypatch.setattr(
+        sdk_config,
+        "get_settings",
+        lambda: SimpleNamespace(TENANT="demo-tenant", PROJECT="demo-project"),
+    )
+    monkeypatch.setattr(
+        comm_ctx,
+        "get_current_request_context",
+        lambda: ChatTaskPayload(
+            routing=ChatTaskRouting(bundle_id="bundle.demo", session_id="s-1"),
+            actor=ChatTaskActor(tenant_id="ctx-tenant", project_id="ctx-project"),
+            user=ChatTaskUser(user_type="registered", user_id="user-1"),
+        ),
+    )
+
+    await sdk_config.set_bundle_secret("api.token", "secret-value")
+
+    assert manager.set_calls == [
+        ("bundles.bundle.demo.secrets.api.token", "secret-value"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_set_bundle_prop_uses_request_context_scope_and_merges_nested_key(monkeypatch):
+    calls = {}
+
+    async def _fake_get_bundle_props(redis, *, tenant, project, bundle_id):
+        calls["get"] = {
+            "redis": redis,
+            "tenant": tenant,
+            "project": project,
+            "bundle_id": bundle_id,
+        }
+        return {"features": {"existing": True}}
+
+    async def _fake_put_bundle_props(redis, *, tenant, project, bundle_id, props):
+        calls["put"] = {
+            "redis": redis,
+            "tenant": tenant,
+            "project": project,
+            "bundle_id": bundle_id,
+            "props": props,
+        }
+
+    redis_client = object()
+    monkeypatch.setattr(
+        sdk_config,
+        "get_settings",
+        lambda: SimpleNamespace(
+            REDIS_URL="redis://test",
+            TENANT="settings-tenant",
+            PROJECT="settings-project",
+        ),
+    )
+    monkeypatch.setattr(
+        comm_ctx,
+        "get_current_request_context",
+        lambda: ChatTaskPayload(
+            routing=ChatTaskRouting(bundle_id="bundle.demo", session_id="s-1"),
+            actor=ChatTaskActor(tenant_id="ctx-tenant", project_id="ctx-project"),
+            user=ChatTaskUser(user_type="registered", user_id="user-1"),
+        ),
+    )
+
+    import kdcube_ai_app.infra.redis.client as redis_client_mod
+    import kdcube_ai_app.infra.plugin.bundle_store as bundle_store_mod
+
+    monkeypatch.setattr(redis_client_mod, "get_async_redis_client", lambda url: redis_client)
+    monkeypatch.setattr(bundle_store_mod, "get_bundle_props", _fake_get_bundle_props)
+    monkeypatch.setattr(bundle_store_mod, "put_bundle_props", _fake_put_bundle_props)
+
+    await sdk_config.set_bundle_prop("features.sync.enabled", False)
+
+    assert calls["get"] == {
+        "redis": redis_client,
+        "tenant": "ctx-tenant",
+        "project": "ctx-project",
+        "bundle_id": "bundle.demo",
+    }
+    assert calls["put"] == {
+        "redis": redis_client,
+        "tenant": "ctx-tenant",
+        "project": "ctx-project",
+        "bundle_id": "bundle.demo",
+        "props": {
+            "features": {
+                "existing": True,
+                "sync": {"enabled": False},
+            }
+        },
+    }

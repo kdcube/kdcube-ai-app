@@ -165,12 +165,12 @@ what is incomplete.
 | `--upstream` | With `--descriptors-location` and `--build`, use the latest upstream repo state (`origin/main`) instead of a released platform ref. |
 | `--release <ref>` | With `--descriptors-location`, use the given platform release instead of `assembly.yaml -> platform.ref`. |
 | `--bundle-reload <bundle_id>` | Reapply the mounted bundle descriptor and clear proc bundle caches for local development. |
-| `--export-live-bundles` | Export effective live `bundles.yaml` and `bundles.secrets.yaml` from AWS SM grouped bundle docs. |
-| `--tenant <id>` / `--project <id>` | Scope for `--export-live-bundles` unless `--aws-sm-prefix` is given. |
+| `--export-live-bundles` | Export effective live `bundles.yaml` and `bundles.secrets.yaml` from the active bundle authority: mounted local descriptors when present, otherwise AWS SM grouped bundle docs. |
+| `--tenant <id>` / `--project <id>` | Scope for `--export-live-bundles` when exporting from AWS SM. Ignored when mounted local descriptors are exported directly. |
 | `--out-dir <dir>` | Output directory for `--export-live-bundles`. |
-| `--aws-region <region>` | AWS region for `--export-live-bundles`. |
-| `--aws-profile <profile>` | AWS profile for `--export-live-bundles`. |
-| `--aws-sm-prefix <prefix>` | Explicit AWS SM prefix for `--export-live-bundles`. |
+| `--aws-region <region>` | AWS region for `--export-live-bundles` when exporting from AWS SM. |
+| `--aws-profile <profile>` | AWS profile for `--export-live-bundles` when exporting from AWS SM. |
+| `--aws-sm-prefix <prefix>` | Explicit AWS SM prefix for `--export-live-bundles` when exporting from AWS SM. |
 | `--stop` | Stop the local Docker Compose stack for the selected workdir. |
 | `--remove-volumes` | With `--stop`, also remove local volumes. |
 | `--reset-config` | Re‑prompt for config values without deleting files. |
