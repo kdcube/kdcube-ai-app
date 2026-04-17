@@ -1,10 +1,9 @@
 ---
-id: ks:docs/sdk/agents/react/design/git-based-isolated-workspace-README.md
-title: "Draft: Git-Based Isolated Workspace"
-summary: "Draft design and implementation notes for git-backed React workspaces, immutable per-turn version refs, explicit workspace pull, sparse current-turn repos, point-wise hosted binary hydration, and strict lineage-only git isolation."
-draft: true
-status: draft
-tags: ["sdk", "agents", "react", "design", "workspace", "git", "artifacts"]
+id: ks:docs/sdk/agents/react/workspace/git-based-isolated-workspace-README.md
+title: "Git-Based Isolated Workspace"
+summary: "Git-backed React workspace model, immutable per-turn version refs, explicit workspace pull and checkout hydration, sparse current-turn repos, point-wise hosted binary hydration, and lineage-only git isolation."
+status: experimental
+tags: ["sdk", "agents", "react", "workspace", "git", "artifacts"]
 keywords:
   [
     "git workspace",
@@ -17,20 +16,21 @@ keywords:
     "lineage branch",
   ]
 see_also:
-  - ks:docs/sdk/agents/react/design/note-keeping-and-working-summary-README.md
-  - ks:docs/sdk/agents/react/design/workspace-checkout-model-README.md
+  - ks:docs/sdk/agents/react/draft/note-keeping-and-working-summary-README.md
+  - ks:docs/sdk/agents/react/workspace/workspace-checkout-model-README.md
   - ks:docs/sdk/agents/react/react-announce-README.md
   - ks:docs/sdk/agents/react/session-view-README.md
   - ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/solution_workspace.py
   - ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/runtime.py
   - ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/timeline.py
 ---
-# Draft: Git-Based Isolated Workspace
+# Git-Based Isolated Workspace
 
-This doc is a **draft design** for replacing React v2's current
-copy-forward/rehost workspace model with a git-backed isolated workspace model.
+This document explains the git-backed React workspace model that complements the
+existing `custom` backend while keeping the same agent-facing `fi:` /
+`react.pull(...)` contract.
 
-The main design choices in this draft are:
+The main design choices in this model are:
 
 - **keep `fi:` unchanged**
 - **keep `<version>` equal to `turn_...`**
@@ -424,7 +424,7 @@ explicit historical compatibility views under the referenced version path.
 
 `react.checkout(...)` is the tool that defines what gets materialized into the
 active current-turn workspace. The fuller cross-backend rationale is captured in
-`design/workspace-checkout-model-README.md`:
+`workspace/workspace-checkout-model-README.md`:
 
 - keep `react.pull(...)` strictly historical
 - make checkout define the contents of `turn_<current>/files/`

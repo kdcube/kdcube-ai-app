@@ -1,17 +1,30 @@
 ---
 id: ks:docs/sdk/agents/react/runtime-configuration-README.md
 title: "Runtime Configuration"
-summary: "RuntimeCtx and session configuration fields for React v2, including knowledge hooks."
+summary: "RuntimeCtx, version selection, and session configuration fields for the React runtime, including knowledge hooks and experimental multi-action mode."
 tags: ["sdk", "agents", "react", "configuration"]
-keywords: ["RuntimeCtx", "RuntimeSessionConfig", "cache config", "pruning settings", "knowledge_search_fn", "knowledge_read_fn", "bundle_storage"]
+keywords: ["RuntimeCtx", "RuntimeSessionConfig", "cache config", "pruning settings", "knowledge_search_fn", "knowledge_read_fn", "bundle_storage", "AI_REACT_AGENT_VERSION", "AI_REACT_AGENT_MULTI_ACTION", "multi_action_mode"]
 see_also:
   - ks:docs/sdk/agents/react/compaction-README.md
   - ks:docs/sdk/agents/react/context-caching-README.md
   - ks:docs/sdk/agents/react/feedback-README.md
+  - ks:docs/sdk/agents/react/react-round-README.md
 ---
 # Runtime Configuration
 
 This document summarizes runtime configuration fields for the React runtime (`RuntimeCtx`) and its session-level settings.
+
+## Runtime version selection
+
+React is selected before the runtime instance is built:
+
+- `AI_REACT_AGENT_VERSION=v2|v3`
+  - `v2` is the production single-action runtime
+  - `v3` is the experimental runtime
+- `AI_REACT_AGENT_MULTI_ACTION=off|safe_fanout`
+  - passed through `RuntimeCtx.multi_action_mode`
+  - currently relevant only for `v3`
+  - `safe_fanout` allows repeated action-channel instances in one response, but accepted actions are still executed sequentially, not in parallel
 
 ## RuntimeCtx
 
@@ -30,6 +43,7 @@ This document summarizes runtime configuration fields for the React runtime (`Ru
 - `bundle_storage`: optional per-bundle managed storage directory for bundle-owned data such as cloned repos, built indexes, and other readonly data prepared by the bundle.
 - `workspace_implementation`: workspace backend selector. `custom` uses the existing artifact/timeline rehost model. `git` resolves `fi:<turn>.files/...` slices from the configured git-backed lineage snapshots. This does not by itself force the prompt into explicit-pull mode.
 - `workspace_git_repo`: optional remote git repo URL used as the authoritative backup/version-control store for React's git-backed workspace lineage snapshots.
+- `multi_action_mode`: decision contract selector. `off` keeps the one-action-per-response contract. `safe_fanout` enables the experimental v3 multi-action protocol.
 - `model_service`: model service handle.
 - `knowledge_search_fn`: bundle‑supplied search function for `react.search_knowledge`.
 - `knowledge_read_fn`: bundle‑supplied resolver for `react.read(ks:...)` paths.
@@ -40,7 +54,6 @@ This document summarizes runtime configuration fields for the React runtime (`Ru
 - `debug_log_announce`: emit announce blocks in debug logs.
 - `debug_log_sources_pool`: emit sources pool in debug logs.
 - `debug_timeline`: when `true`, write the fully rendered model context to `debug/rendering/` (one file per render).
-- `workspace_implementation`: workspace paradigm selector. `custom` keeps artifact/timeline/hosting-backed slice hydration. `git` enables git-backed `fi:<turn>.files/...` slice hydration and the corresponding git-aware agent instructions.
 - `session`: session-level configuration (see below).
 - `cache`: cache-related limits (see below).
 

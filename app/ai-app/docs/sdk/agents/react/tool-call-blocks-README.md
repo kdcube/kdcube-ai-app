@@ -1,7 +1,7 @@
 ---
 id: ks:docs/sdk/agents/react/tool-call-blocks-README.md
 title: "Tool Call Blocks"
-summary: "What is written to the timeline when tools are executed."
+summary: "What is written to the timeline when React executes tools."
 tags: ["sdk", "agents", "react", "tools", "timeline"]
 keywords: ["react.write", "exec_tools.execute_code", "rendering_tools", "tool results", "block order"]
 see_also:
@@ -9,13 +9,15 @@ see_also:
   - ks:docs/sdk/agents/react/event-blocks-README.md
   - ks:docs/sdk/agents/react/context-progression.md
 ---
-# Tool Call Blocks (react v2)
+# Tool Call Blocks
 
 This document summarizes **what gets written to the timeline** when React executes tools.  
 It focuses on:
 - `react.write(...)`
 - `rendering_tools.write_*` (PDF/PNG/DOCX/PPTX)
 - `exec_tools.execute_code_*` (code execution with contract)
+
+The block shapes described here are shared by the current `v2` production runtime and the experimental `v3` runtime.
 
 **External tool return shape (required):**  
 All external tools **must** return an envelope that includes at least:

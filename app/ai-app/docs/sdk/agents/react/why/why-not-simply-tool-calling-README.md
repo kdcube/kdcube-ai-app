@@ -1,10 +1,8 @@
 ---
-id: ks:docs/sdk/agents/react/design/why-not-simply-tool-calling-README.md
-title: "Draft: Why Not Simply Tool Calling"
-summary: "Draft design note explaining why React v2 does not use provider-native tool calling as its primary orchestration protocol, and why it instead uses a timeline-driven, channeled, distributed execution model."
-draft: true
-status: draft
-tags: ["sdk", "agents", "react", "design", "tool-calling", "timeline", "streaming"]
+id: ks:docs/sdk/agents/react/why/why-not-simply-tool-calling-README.md
+title: "Why Not Simply Tool Calling"
+summary: "Why React does not use provider-native tool calling as its primary orchestration protocol, and why it instead uses a timeline-driven, channeled, distributed execution model."
+tags: ["sdk", "agents", "react", "tool-calling", "timeline", "streaming"]
 keywords:
   [
     "tool calling",
@@ -25,9 +23,9 @@ see_also:
   - ks:docs/service/comm/README-comm.md
   - ks:docs/clients/client-communication-README.md
 ---
-# Draft: Why Not Simply Tool Calling
+# Why Not Simply Tool Calling
 
-This note explains why **React v2 does not use provider-native tool calling as
+This note explains why **React does not use provider-native tool calling as
 its primary orchestration protocol**, even though React is still very much a
 tool-using agent.
 

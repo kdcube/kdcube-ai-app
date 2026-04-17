@@ -1,8 +1,8 @@
 ---
-id: ks:docs/sdk/agents/react/design/shared-timeline-event-bus-steer-followup-README.md
+id: ks:docs/sdk/agents/react/shared-timeline-event-bus-steer-followup-README.md
 title: "Shared Timeline Event Bus for Steer and Followup"
-summary: "Design for making steer, followup, and future external events durably reachable by an active React timeline while preserving turn ownership and fallback continuation execution."
-tags: ["sdk", "agents", "react", "timeline", "steer", "followup", "continuations", "redis", "design"]
+summary: "How active React turns consume durable followup and steer events through the shared conversation event bus while preserving turn ownership and fallback continuation execution."
+tags: ["sdk", "agents", "react", "timeline", "steer", "followup", "continuations", "redis"]
 keywords:
   [
     "shared timeline",
@@ -19,7 +19,7 @@ see_also:
   - ks:docs/sdk/agents/react/timeline-README.md
   - ks:docs/sdk/agents/react/context-browser-README.md
   - ks:docs/sdk/agents/react/turn-log-README.md
-  - ks:docs/sdk/agents/react/design/memory-architecture-README.md
+  - ks:docs/sdk/agents/react/why/memory-architecture-README.md
 ---
 
 # Shared Timeline Event Bus for Steer and Followup

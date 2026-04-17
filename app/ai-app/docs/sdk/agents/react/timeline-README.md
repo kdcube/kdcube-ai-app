@@ -1,7 +1,7 @@
 ---
 id: ks:docs/sdk/agents/react/timeline-README.md
 title: "Timeline"
-summary: "Timeline as single source of truth for context and artifacts."
+summary: "Timeline as the single source of truth for React context, artifacts, round state, and live external events."
 tags: ["sdk", "agents", "react", "timeline", "blocks"]
 keywords: ["timeline blocks", "ordered events", "artifacts", "turn context"]
 see_also:
@@ -9,11 +9,12 @@ see_also:
   - ks:docs/sdk/agents/react/turn-log-README.md
   - ks:docs/sdk/agents/react/artifact-discovery-README.md
 ---
-# Timeline (react v2)
+# Timeline (React)
 
 The **timeline** is the single source of truth for turn context. It stores:
 - ordered **blocks** (user prompts, attachments, agent contributions, tool calls/results)
 - live-folded external user event blocks (`user.followup`, `user.steer`)
+- live-folded attachment blocks for busy-turn followups that carry attachments
 - Internal Memory Beacons (`react.note`) and preserved beacons (`react.note.preserved`)
 - conversation metadata (title, started_at, last_activity_at)
 - the persisted external-event replay cursor (`last_external_event_id`, `last_external_event_seq`)
@@ -22,6 +23,8 @@ The **timeline** is the single source of truth for turn context. It stores:
 
 It is persisted as a single artifact: `artifact:conv.timeline.v1`.
 The sources pool is persisted separately as `artifact:conv:sources_pool`.
+
+Both `v2` and `v3` use this same timeline model. The difference is the decision contract, not the persistence model.
 
 ## Stored payload
 ```
@@ -65,6 +68,7 @@ The delivery model is now shared and durable:
 - a consumed `steer` is an engineering-layer interrupt first, not just extra timeline text
 - engineering attempts to cancel the active decision generation or cancellable tool phase immediately
 - React then sees the steer block on the same turn timeline and gets a short bounded finalize phase before turn completion
+- if a live `followup` carries attachments, those attachments are folded into the current turn as normal attachment blocks instead of text-only control input
 
 This avoids having one path for “live events” and a different source of truth for fallback continuation.
 
@@ -84,10 +88,12 @@ When the visible window exceeds the model budget, the timeline compacts earlier 
 ```
 [TURN <id> header]
   user.prompt
+  react.round.start [optional, when a round has begun]
   user.followup / user.steer [optional]
   user.attachment.meta
   user.attachment (optional binary)
   stage.gate [optional] / stage.react / ...
+  react.notice [optional]
   react.tool.call / react.tool.result / ...
   react.note [optional]
   assistant.completion
@@ -157,6 +163,14 @@ Use react.read(path) to restore a logical path (fi:/ar:/so:/sk:).
   Used for ACTIVE STATE (plans, budgets) and transient notices.  
   It may also include a compact `[LIVE TURN EVENTS]` view for current-turn consumed `followup` / `steer`.
   Announce is appended after sources when `include_announce=True` in `timeline.render(...)`.
+
+## Sequential block stream in v3
+
+Experimental `v3` may accept multiple requested actions in one response, but the timeline remains one ordered block stream:
+
+- accepted actions are executed sequentially
+- each executed action still produces its own `react.tool.call` / `react.tool.result` group
+- rendering, cache points, compaction, and turn reconstruction continue to operate on one ordered sequence
 
 ## Rendering
 `timeline.render(...)` returns model message blocks:

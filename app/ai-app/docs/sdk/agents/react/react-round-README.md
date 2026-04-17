@@ -1,24 +1,29 @@
 ---
 id: ks:docs/sdk/agents/react/react-round-README.md
 title: "React Round"
-summary: "ReactRound representation for tool calls and results."
+summary: "How React rounds represent decision attempts, executed tool calls, and results in v2 and v3."
 tags: ["sdk", "agents", "react", "tool-calls"]
-keywords: ["ReactRound", "tool call blocks", "results mapping"]
+keywords: ["ReactRound", "tool call blocks", "results mapping", "react.round.start", "react.notice", "v3 multi-action"]
 see_also:
   - ks:docs/sdk/agents/react/tool-call-blocks-README.md
   - ks:docs/sdk/agents/react/event-blocks-README.md
   - ks:docs/sdk/agents/react/react-tools-README.md
+  - ks:docs/sdk/agents/react/timeline-README.md
 ---
-# React Round (Tool Call) Model
+# React Round Model
 
-This document describes the ReactRound concept and how tool calls are represented.
+This document describes the ReactRound concept and how decision attempts and tool calls are represented.
 
 ## Overview
-- A **React round** corresponds to exactly one tool call.
-- Each round emits:
-  - One tool-call block (`react.tool.call`)
-  - One or more tool-result blocks (`react.tool.result`)
-- The round also updates the sources pool and artifacts registry.
+- In production `v2`, one response corresponds to one round, and a successful round executes exactly one action.
+- In experimental `v3`, one response can request multiple actions, but accepted actions are still executed sequentially.
+- Each executed action still gets its own `tool_call_id`, `react.tool.call`, and `react.tool.result` blocks.
+- A round can also be a failed decision attempt with no executed action. In that case the timeline still shows:
+  - `react.round.start`
+  - `react.decision.raw`
+  - `react.notice`
+
+So a React round is the unit of visible reasoning/execution progress, not only the unit of successful tool execution.
 
 ## Tool Call Blocks
 Tool call blocks are JSON text blocks with metadata:
@@ -38,16 +43,17 @@ Tool result blocks are emitted per artifact or per result type:
 
 ## React Tools
 - `react.read`: Load artifacts/files/sources/tool-call payloads by path.
-- `react.stream`: Stream text content to a display block (`kind=display`).
-- `react.file`: Persist text content to disk (`kind=file`) + emit result block.
+- `react.pull` / `react.checkout`: Materialize historical refs or define the current-turn workspace.
+- `react.write`: Create a text artifact for display, file delivery, or internal note keeping.
 - `react.patch`: Update an existing file. If `patch` starts with `---/+++/@@`, treat as unified diff; otherwise replace full file content.
 - `react.memsearch`: Query conversation index for prior turns; returns snippets.
+- `react.hide`, `react.search_files`, and `react.plan` provide cache-tail cleanup, safe file search, and in-loop planning.
 
 ## Storage
 - Tool results are **not** persisted as files by default.
 - Only files produced by:
   - exec tools
-  - `react.file`
+  - `react.write`
   - `rendering_tools.write_*`
   are written to disk.
 

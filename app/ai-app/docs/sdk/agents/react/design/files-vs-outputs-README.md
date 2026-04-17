@@ -8,7 +8,7 @@ see_also:
   - ks:docs/sdk/agents/react/artifact-discovery-README.md
   - ks:docs/sdk/agents/react/artifact-storage-README.md
   - ks:docs/sdk/agents/react/react-turn-workspace-README.md
-  - ks:docs/sdk/agents/react/design/git-based-isolated-workspace-README.md
+  - ks:docs/sdk/agents/react/workspace/git-based-isolated-workspace-README.md
 status: draft
 ---
 # Files vs Outputs

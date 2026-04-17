@@ -1,5 +1,5 @@
 ---
-id: ks:docs/sdk/agents/react/design/memory-architecture-README.md
+id: ks:docs/sdk/agents/react/why/memory-architecture-README.md
 title: "Memory Architecture"
 summary: "How memory is represented, stored, indexed, surfaced, compressed, and reopened in the React system."
 tags: ["sdk", "agents", "react", "memory", "timeline", "workspace", "retrieval"]
