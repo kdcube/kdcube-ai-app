@@ -822,12 +822,13 @@ class Settings(PLATFORM_CONFIG):
                 self._assembly_str("storage.workspace.type") or self.REACT_WORKSPACE_IMPLEMENTATION
             )
         self.AI_REACT_AGENT_VERSION = (
-            str(self.AI_REACT_AGENT_VERSION or "v2").strip().lower() or "v2"
+            str(self._resolve_str("AI_REACT_AGENT_VERSION", "ai.react.react_agent_version", "v2") or "v2").strip().lower() or "v2"
         )
         if self.AI_REACT_AGENT_VERSION not in {"v2", "v3"}:
             self.AI_REACT_AGENT_VERSION = "v2"
-        if not self.AI_REACT_AGENT_MULTI_ACTION:
-            self.AI_REACT_AGENT_MULTI_ACTION = "off"
+        self.AI_REACT_AGENT_MULTI_ACTION = (
+            self._resolve_str("AI_REACT_AGENT_MULTI_ACTION", "ai.react.react_agent_multiaction", "off") or "off"
+        )
         if not self._env_present("REACT_WORKSPACE_GIT_REPO") and not self.REACT_WORKSPACE_GIT_REPO:
             self.REACT_WORKSPACE_GIT_REPO = self._assembly_str("storage.workspace.repo")
         if not self._env_present("CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION"):
