@@ -1,8 +1,8 @@
-import {ExoticComponent, useMemo} from "react";
+import {FC, useMemo} from "react";
 import {LucideProps} from "lucide-react";
 import {emSize} from "./shared.ts";
 
-type IconType = ExoticComponent<LucideProps>
+export type IconType = FC<LucideProps>
 
 interface IconContainerProps {
     icon: IconType

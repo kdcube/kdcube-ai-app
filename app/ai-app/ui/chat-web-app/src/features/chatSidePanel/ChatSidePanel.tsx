@@ -1,4 +1,4 @@
-import {ReactNode, useCallback, useEffect, useMemo, useRef, useState} from "react";
+import {ReactNode, useCallback, useMemo, useRef} from "react";
 import {
     ArrowLeftRight,
     Bot,
@@ -8,7 +8,8 @@ import {
     CreditCard,
     Database,
     MessageSquareMore,
-    MessagesSquare
+    MessagesSquare,
+    Package
 } from "lucide-react";
 import IconContainer from "../../components/IconContainer.tsx";
 import AnimatedExpander from "../../components/AnimatedExpander.tsx";
@@ -29,6 +30,10 @@ import {
     GatewayPanel,
     RedisBrowserPanel
 } from "./GenericPanels.tsx";
+import {ArtifactsPanel} from "./ArtifactsPanel.tsx";
+import {SidePanel, useSidePanelContext} from "./sidePanelContext.ts";
+import {useGetBundleWidgets} from "../bundles/widgetReducer.tsx";
+import {getBundleWidgetPanelId} from "../bundles/utils.ts";
 
 interface MenuButtonProps {
     children: ReactNode | ReactNode[];
@@ -54,61 +59,51 @@ export interface WidgetPanelProps {
     className?: string;
 }
 
-export interface DynamicBundleWidgetSelection {
-    bundleId: string;
-    widgetAlias: string;
-}
-
-type Panels =
-    "conversations"
-    | "economics"
-    | "ai_bundles"
-    | "gateway"
-    | "conv_browser"
-    | "redis_browser"
-    | "economic_usage"
-    | "bundle_widget"
-    | "debug"
-    | null
-
-interface ChatSidePanelProps {
-    selectedBundleWidget?: DynamicBundleWidgetSelection | null;
-    onSelectedBundleWidgetChange?: (value: DynamicBundleWidgetSelection | null) => void;
-}
-
-const ChatSidePanel = ({selectedBundleWidget = null, onSelectedBundleWidgetChange}: ChatSidePanelProps) => {
+const ChatSidePanel = () => {
     const dispatch = useAppDispatch();
 
     const parentRef = useRef<HTMLDivElement>(null);
-    const [visiblePanel, setVisiblePanel] = useState<Panels>(null);
     const sidePanelContentRef = useRef<HTMLDivElement>(null);
 
-    const onPanelButtonClick = useCallback((panel: Panels) => {
-        if (panel !== "bundle_widget" && selectedBundleWidget) {
-            onSelectedBundleWidgetChange?.(null);
-        }
-        if (panel === null || panel !== visiblePanel) {
-            setVisiblePanel(panel)
-        } else {
-            setVisiblePanel(null)
-        }
-    }, [onSelectedBundleWidgetChange, selectedBundleWidget, visiblePanel])
+    const sidePanelContext = useSidePanelContext()
 
-    useEffect(() => {
-        if (selectedBundleWidget) {
-            setVisiblePanel("bundle_widget");
-            return;
+    const visiblePanel = useMemo(() => {
+        return sidePanelContext.panelId
+    }, [sidePanelContext.panelId])
+
+    const setPanelId = useMemo(() => {
+        return sidePanelContext.setPanelId
+    }, [sidePanelContext.setPanelId])
+
+    const onPanelButtonClick = useCallback((panel: SidePanel) => {
+        if (panel === null || panel !== visiblePanel) {
+            setPanelId(panel)
+        } else {
+            setPanelId(null)
         }
-        if (visiblePanel === "bundle_widget") {
-            setVisiblePanel(null);
-        }
-    }, [selectedBundleWidget, visiblePanel]);
+    }, [setPanelId, visiblePanel])
 
     const user = useAppSelector(selectAppUser)
 
     const onPanelResize = useCallback((size: number) => {
         writeParam("sidePanelWidth", size, user ? user.username : null);
     }, [user])
+
+    const {currentBundleId, widgets} = useGetBundleWidgets()
+
+    const bundlePanels = useMemo(() => {
+        if (!currentBundleId) {
+            return null
+        }
+        return widgets.map((widget) => {
+            const widgetPanelId = getBundleWidgetPanelId(currentBundleId, widget.alias)
+            return <BundleWidgetPanel key={widgetPanelId}
+                                      visible={visiblePanel === widgetPanelId}
+                                      bundleId={currentBundleId}
+                                      widgetAlias={widget.alias}
+                                      className={"w-full h-full absolute left-0 top-0"}/>
+        })
+    }, [currentBundleId, visiblePanel, widgets])
 
     return useMemo(() => {
 
@@ -129,6 +124,13 @@ const ChatSidePanel = ({selectedBundleWidget = null, onSelectedBundleWidgetChang
                 >
                     <IconContainer icon={MessagesSquare} size={1.5}/>
                 </MenuButton>
+                {/*<MenuButton*/}
+                {/*    onClick={() => {*/}
+                {/*        onPanelButtonClick("artifacts");*/}
+                {/*    }}*/}
+                {/*>*/}
+                {/*    <IconContainer icon={Package} size={1.5}/>*/}
+                {/*</MenuButton>*/}
                 <MenuButton
                     onClick={() => {
                         onPanelButtonClick("economics");
@@ -189,6 +191,8 @@ const ChatSidePanel = ({selectedBundleWidget = null, onSelectedBundleWidgetChang
                                         initialSize={initialPanelWidth} minSize={300} className={"h-full"}>
                         <ConversationsPanel visible={visiblePanel === "conversations"}
                                             className={"w-full h-full absolute left-0 top-0"}/>
+                        <ArtifactsPanel visible={visiblePanel === "artifacts"}
+                                        className={"w-full h-full absolute left-0 top-0"}/>
                         <EconomicsPanel visible={visiblePanel === "economics"}
                                         className={"w-full h-full absolute left-0 top-0"}/>
                         <AIBundlesPanel visible={visiblePanel === "ai_bundles"}
@@ -201,10 +205,7 @@ const ChatSidePanel = ({selectedBundleWidget = null, onSelectedBundleWidgetChang
                                            className={"w-full h-full absolute left-0 top-0"}/>
                         <EconomicUsagePanel visible={visiblePanel === "economic_usage"}
                                             className={"w-full h-full absolute left-0 top-0"}/>
-                        <BundleWidgetPanel visible={visiblePanel === "bundle_widget"}
-                                           bundleId={selectedBundleWidget?.bundleId || null}
-                                           widgetAlias={selectedBundleWidget?.widgetAlias || null}
-                                           className={"w-full h-full absolute left-0 top-0"}/>
+                        {bundlePanels}
                         {showDebugControls && <DebugPanel visible={visiblePanel === "debug"}
                                                           className={"w-full h-full absolute left-0 top-0"}/>}
                     </ResizableContainer>
@@ -212,7 +213,7 @@ const ChatSidePanel = ({selectedBundleWidget = null, onSelectedBundleWidgetChang
                 </AnimatedExpander>
             </div>
         </div>
-    }, [dispatch, onPanelButtonClick, onPanelResize, visiblePanel])
+    }, [bundlePanels, dispatch, onPanelButtonClick, onPanelResize, visiblePanel])
 }
 
 export default ChatSidePanel;
