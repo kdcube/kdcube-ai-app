@@ -49,7 +49,7 @@ class _DummyConfig:
         self.role_models = {}
         self.embedder_config = {}
         self.embedding_model = "text-embedding-3-small"
-        self.selected_embedder = None
+        #self.selected_embedder = None
         self.custom_embedding_endpoint = None
         self.custom_embedding_size = None
         self.openai_api_key = "test-openai-key"

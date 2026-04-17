@@ -87,7 +87,7 @@ from kdcube_ai_app.infra.gateway.config import (
     GatewayConfigFactory,
     gateway_config_cache_key,
 )
-from kdcube_ai_app.infra.namespaces import CONFIG
+from kdcube_ai_app.apps.chat.sdk.config import get_settings
 
 from kdcube_ai_app.apps.chat.ingress.resolvers import (
     get_fastapi_adapter, get_fast_api_accounting_binder, get_user_session_dependency, require_auth,
@@ -182,7 +182,7 @@ async def lifespan(app: FastAPI):
         CHAT_APP_PORT,
         os.getpid(),
         _get_uvicorn_workers_from_config(),
-        os.getenv("UVICORN_RELOAD", "0"),
+        get_settings().PLATFORM.SERVICE.UVICORN_RELOAD,
     )
 
     # mark not shutting down yet
@@ -491,11 +491,11 @@ async def gateway_middleware(request: Request, call_next):
             if bearer_token and "authorization" not in {k.lower(): v for k, v in headers.items()}:
                 headers["authorization"] = f"Bearer {bearer_token}"
             if id_token:
-                headers[CONFIG.ID_TOKEN_HEADER_NAME] = id_token
+                headers[get_settings().AUTH.ID_TOKEN_HEADER_NAME] = id_token
             if user_timezone:
-                headers[CONFIG.USER_TIMEZONE_HEADER_NAME] = user_timezone
+                headers[get_settings().RUNTIME_CONFIG.USER_TIMEZONE_HEADER_NAME] = user_timezone
             if user_utc_offset_min:
-                headers[CONFIG.USER_UTC_OFFSET_MIN_HEADER_NAME] = user_utc_offset_min
+                headers[get_settings().RUNTIME_CONFIG.USER_UTC_OFFSET_MIN_HEADER_NAME] = user_utc_offset_min
 
         # session = await app.state.gateway_adapter.process_request(request, [])
         session = await app.state.gateway_adapter.process_by_policy(request)
@@ -701,7 +701,7 @@ if __name__ == "__main__":
     install_uvicorn_shutdown_diagnostics(uvicorn, logger, component="chat-ingress")
 
     workers = _get_uvicorn_workers_from_config()
-    reload_enabled = os.getenv("UVICORN_RELOAD", "").lower() in {"1", "true", "yes", "on"}
+    reload_enabled = get_settings().PLATFORM.SERVICE.UVICORN_RELOAD
     worker_healthcheck_timeout = _get_uvicorn_worker_healthcheck_timeout()
 
     # Uvicorn requires an import string when using workers or reload.

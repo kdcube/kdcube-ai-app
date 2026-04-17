@@ -17,7 +17,7 @@ from starlette.status import HTTP_400_BAD_REQUEST
 from kdcube_ai_app.auth.AuthManager import AuthManager, RequirementBase, AuthenticationError, AuthorizationError, \
     HTTP_401_UNAUTHORIZED, PRIVILEGED_ROLES
 from kdcube_ai_app.auth.sessions import RequestContext, UserType
-from kdcube_ai_app.infra.namespaces import CONFIG
+from kdcube_ai_app.apps.chat.sdk.config import get_settings
 from kdcube_ai_app.apps.middleware.token_extract import (
     extract_auth_tokens_from_cookies,
     resolve_auth_from_headers_and_cookies,
@@ -62,10 +62,11 @@ class FastAPIAuthAdapter:
 
     def _extract_context(self, request: Request) -> RequestContext:
         """Extract request context from FastAPI request"""
+        _auth_cfg = get_settings().AUTH
         auth_header, id_token = resolve_auth_from_headers_and_cookies(
             request.headers.get("authorization"),
-            request.headers.get(CONFIG.ID_TOKEN_HEADER_NAME)
-            or request.headers.get(CONFIG.ID_TOKEN_HEADER_NAME.lower()),
+            request.headers.get(_auth_cfg.ID_TOKEN_HEADER_NAME)
+            or request.headers.get(_auth_cfg.ID_TOKEN_HEADER_NAME.lower()),
             request.cookies,
         )
         if _auth_debug_enabled():
@@ -73,9 +74,9 @@ class FastAPIAuthAdapter:
                 "Auth context: has_auth=%s has_id=%s id_hdr=%s cookie_auth=%s cookie_id=%s path=%s",
                 bool(auth_header),
                 bool(id_token),
-                bool(request.headers.get(CONFIG.ID_TOKEN_HEADER_NAME) or request.headers.get(CONFIG.ID_TOKEN_HEADER_NAME.lower())),
-                bool(request.cookies.get(CONFIG.AUTH_TOKEN_COOKIE_NAME)),
-                bool(request.cookies.get(CONFIG.ID_TOKEN_COOKIE_NAME)),
+                bool(request.headers.get(_auth_cfg.ID_TOKEN_HEADER_NAME) or request.headers.get(_auth_cfg.ID_TOKEN_HEADER_NAME.lower())),
+                bool(request.cookies.get(_auth_cfg.AUTH_TOKEN_COOKIE_NAME)),
+                bool(request.cookies.get(_auth_cfg.ID_TOKEN_COOKIE_NAME)),
                 request.url.path if request else "",
             )
         return RequestContext(
@@ -95,9 +96,10 @@ class FastAPIAuthAdapter:
             if not credentials and not cookie_token:
                 raise HTTPException(status_code=HTTP_401_UNAUTHORIZED, detail="No authentication credentials provided")
 
+            _id_hdr = get_settings().AUTH.ID_TOKEN_HEADER_NAME
             id_token = (
-                request.headers.get(CONFIG.ID_TOKEN_HEADER_NAME)
-                or request.headers.get(CONFIG.ID_TOKEN_HEADER_NAME.lower())
+                request.headers.get(_id_hdr)
+                or request.headers.get(_id_hdr.lower())
                 or cookie_id_token
             )
 
@@ -133,9 +135,10 @@ class FastAPIAuthAdapter:
             if not credentials and not cookie_token:
                 raise HTTPException(status_code=HTTP_401_UNAUTHORIZED, detail="No authentication credentials provided")
 
+            _id_hdr = get_settings().AUTH.ID_TOKEN_HEADER_NAME
             id_token = (
-                request.headers.get(CONFIG.ID_TOKEN_HEADER_NAME)
-                or request.headers.get(CONFIG.ID_TOKEN_HEADER_NAME.lower())
+                request.headers.get(_id_hdr)
+                or request.headers.get(_id_hdr.lower())
                 or cookie_id_token
             )
 

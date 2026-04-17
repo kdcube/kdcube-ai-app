@@ -22,7 +22,7 @@ from kdcube_ai_app.infra.service_hub.cache import (
     create_namespaced_kv_cache_from_config,
 )
 from kdcube_ai_app.infra.namespaces import REDIS
-from kdcube_ai_app.apps.chat.sdk.config import get_settings
+from kdcube_ai_app.apps.chat.sdk.config import get_settings, get_plain
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +112,7 @@ class MCPToolsSubsystem:
             tenant = settings.TENANT
             project = settings.PROJECT
             namespace = f"{REDIS.CACHE.MCP}:{tenant}:{project}:{self.bundle_id}"
-            default_ttl = int(os.getenv("MCP_CACHE_TTL_SECONDS", "3600"))
+            default_ttl = int(get_plain("a:platform.services.proc.tools.mcp_cache_ttl_seconds", 3600))
             cfg = NamespacedKVCacheConfig(
                 redis_url=settings.REDIS_URL,
                 namespace=namespace,

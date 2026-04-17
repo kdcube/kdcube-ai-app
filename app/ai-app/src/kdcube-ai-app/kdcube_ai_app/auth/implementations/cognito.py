@@ -7,6 +7,7 @@ import os
 import logging
 from kdcube_ai_app.auth.AuthManager import AuthenticationError, User
 from kdcube_ai_app.auth.OAuthManager import OAuthManager, OAuth2Config
+from kdcube_ai_app.apps.chat.sdk.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -18,9 +19,10 @@ class CognitoUser(User):
     preferred_username: Optional[str] = None
 
 def _cfg() -> OAuth2Config:
-    region    = os.getenv("COGNITO_REGION")
-    pool_id   = os.getenv("COGNITO_USER_POOL_ID")
-    client_id = os.getenv("COGNITO_APP_CLIENT_ID")
+    _auth = get_settings().AUTH
+    region    = _auth.COGNITO_REGION
+    pool_id   = _auth.COGNITO_USER_POOL_ID
+    client_id = _auth.COGNITO_APP_CLIENT_ID
     hosted_ui = os.getenv("COGNITO_HOSTED_UI_DOMAIN")
 
     if not (region and pool_id and client_id):

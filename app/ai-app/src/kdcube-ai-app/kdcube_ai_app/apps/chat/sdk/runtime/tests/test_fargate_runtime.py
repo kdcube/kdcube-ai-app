@@ -120,8 +120,6 @@ def test_prepare_external_runtime_globals_compacts_payload_for_remote_runtime():
             "PORTABLE_SPEC_JSON": json.dumps(
                 {
                     "model_config": {
-                        "selected_model": "o3-mini",
-                        "selected_embedder": "openai-text-embedding-3-small",
                         "custom_embedding_endpoint": None,
                     },
                     "comm": {

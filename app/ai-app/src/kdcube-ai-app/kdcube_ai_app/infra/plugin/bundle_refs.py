@@ -9,13 +9,15 @@ import time
 from typing import Optional, Iterable, Set, Dict, Any
 
 import kdcube_ai_app.infra.namespaces as namespaces
+from kdcube_ai_app.apps.chat.sdk.config import get_settings
 
 _LOCAL_ACTIVE: Dict[str, float] = {}
 
 
 def _tp_from_env() -> tuple[str, str]:
-    tenant = os.getenv("DEFAULT_TENANT") or os.getenv("TENANT_ID") or "default-tenant"
-    project = os.getenv("DEFAULT_PROJECT_NAME") or os.getenv("CHAT_WEB_APP_PROJECT") or "default-project"
+    s = get_settings()
+    tenant = s.TENANT or "default-tenant"
+    project = s.PROJECT or "default-project"
     return tenant, project
 
 
@@ -29,11 +31,7 @@ def refs_key(tenant: Optional[str] = None, project: Optional[str] = None) -> str
 
 
 def _ttl_seconds() -> int:
-    try:
-        from kdcube_ai_app.apps.chat.sdk.config import get_settings
-        return int(get_settings().BUNDLE_REF_TTL_SECONDS)
-    except Exception:
-        return int(os.environ.get("BUNDLE_REF_TTL_SECONDS", "3600") or "3600")
+    return int(get_settings().PLATFORM.APPLICATIONS.BUNDLE_REF_TTL_SECONDS)
 
 
 def _touch_local(path: str) -> None:

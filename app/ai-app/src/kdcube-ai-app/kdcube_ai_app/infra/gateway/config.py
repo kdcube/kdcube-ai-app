@@ -377,6 +377,19 @@ class GatewayConfigFactory:
             except Exception as e:
                 logger.warning(f"Failed to parse GATEWAY_CONFIG_JSON: {e}. Falling back to env defaults.")
 
+        # YAML descriptor (GATEWAY_YAML_PATH) — used when GATEWAY_CONFIG_JSON is absent
+        yaml_data = _load_gateway_yaml()
+        if yaml_data is not None:
+            try:
+                cfg = _config_from_dict(yaml_data)
+                settings = get_settings()
+                if not cfg.redis_url:
+                    cfg.redis_url = settings.REDIS_URL or ""
+                cfg.instance_id = os.getenv("INSTANCE_ID", cfg.instance_id or "default-instance")
+                return cfg
+            except Exception as e:
+                logger.warning("Failed to build gateway config from GATEWAY_YAML_PATH: %s. Falling back to env defaults.", e)
+
         # Auto-detect profile if not specified
         if profile is None:
             env_profile = os.getenv("GATEWAY_PROFILE", "development").lower()
@@ -1107,6 +1120,40 @@ def _env_truthy(name: str) -> bool:
     return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def _load_gateway_yaml() -> Optional[Dict[str, Any]]:
+    """Load gateway config from GATEWAY_YAML_PATH if set.
+
+    gateway.yaml is expected to have a top-level ``gateway:`` key whose
+    contents are the same shape as the dict accepted by ``_config_from_dict``.
+    Returns the ``gateway`` section dict, or ``None`` if the variable is unset,
+    the file is missing, or parsing fails.
+    """
+    path_str = (os.getenv("GATEWAY_YAML_PATH") or "").strip()
+    if not path_str:
+        return None
+    try:
+        import yaml
+        from pathlib import Path
+        path = Path(path_str)
+        if not path.exists():
+            logger.warning("GATEWAY_YAML_PATH set but file not found: %s", path_str)
+            return None
+        with open(path, "r") as fh:
+            data = yaml.safe_load(fh)
+        if not isinstance(data, dict):
+            logger.warning("GATEWAY_YAML_PATH: not a valid YAML mapping: %s", path_str)
+            return None
+        # Accept both a bare dict and a file with a top-level "gateway:" key.
+        gateway_section = data.get("gateway") if "gateway" in data else data
+        if not isinstance(gateway_section, dict):
+            logger.warning("GATEWAY_YAML_PATH: no usable gateway section in %s", path_str)
+            return None
+        return gateway_section
+    except Exception as exc:
+        logger.warning("Failed to load GATEWAY_YAML_PATH %s: %s", path_str, exc)
+        return None
+
+
 def should_force_gateway_config_from_env() -> bool:
     return _env_truthy("GATEWAY_CONFIG_FORCE_ENV_ON_STARTUP")
 
@@ -1118,6 +1165,9 @@ def load_gateway_config_raw_from_env() -> Dict[str, Any]:
             return json.loads(cfg_json)
         except Exception as e:
             logger.warning("Failed to parse GATEWAY_CONFIG_JSON: %s", e)
+    yaml_data = _load_gateway_yaml()
+    if yaml_data is not None:
+        return yaml_data
     return _serialize_gateway_config(GatewayConfigFactory.create_from_env())
 
 
@@ -1188,6 +1238,9 @@ async def load_gateway_config_raw(
             return json.loads(cfg_json)
         except Exception:
             pass
+    yaml_data = _load_gateway_yaml()
+    if yaml_data is not None:
+        return yaml_data
     # Fallback to current component config serialized (flat)
     return _serialize_gateway_config(get_gateway_config())
 

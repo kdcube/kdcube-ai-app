@@ -47,14 +47,11 @@ def _get_aggregator() -> AccountingAggregator:
 
 
 def _idp_import_enabled() -> bool:
-    try:
-        return bool(get_settings().IDP_IMPORT_ENABLED)  # type: ignore[attr-defined]
-    except Exception:
-        return os.environ.get("IDP_IMPORT_ENABLED", "0").lower() in {"1", "true", "yes"}
+    return get_settings().AUTH.IDP.local.IDP_IMPORT_ENABLED
 
 
 def _idp_import_run_at() -> Optional[datetime]:
-    raw = os.environ.get("IDP_IMPORT_RUN_AT")
+    raw = get_settings().AUTH.IDP.local.IDP_IMPORT_RUN_AT
     if not raw:
         return None
     try:
@@ -68,7 +65,7 @@ def _idp_import_run_at() -> Optional[datetime]:
 
 
 def _idp_import_script_path() -> Optional[Path]:
-    raw = os.environ.get("IDP_IMPORT_SCRIPT_PATH")
+    raw = get_settings().AUTH.IDP.local.IDP_IMPORT_SCRIPT_PATH
     if not raw:
         return None
     p = Path(raw).expanduser()
@@ -203,47 +200,17 @@ async def _get_agg_redis() -> Optional[aioredis.Redis]:
     return _agg_redis
 
 def _get_cron_expression() -> str:
-    """
-    Return cron expression from assembly.yaml, settings, or env.
-
-    Priority:
-      1) assembly.yaml routines.opex.agg_cron
-      2) settings.OPEX_AGG_CRON if exists
-      3) env OPEX_AGG_CRON
-      4) default: "0 3 * * *" (daily at 03:00)
-    """
-    expr = read_plain("routines.opex.agg_cron", default=None)
-    try:
-        if not expr:
-            _settings = get_settings()
-            expr = getattr(_settings, "OPEX_AGG_CRON", None)
-    except Exception:
-        # if settings don’t have it, silently ignore
-        pass
-
-    expr = expr or os.getenv("OPEX_AGG_CRON")
-    if not expr:
-        expr = "0 3 * * *"
-    return expr
+    return get_settings().OPEX_AGG_CRON
 
 
 def _bundle_cleanup_enabled() -> bool:
-    try:
-        return bool(get_settings().BUNDLE_CLEANUP_ENABLED)
-    except Exception:
-        return os.environ.get("BUNDLE_CLEANUP_ENABLED", "1").lower() in {"1", "true", "yes"}
+    return bool(get_settings().PLATFORM.APPLICATIONS.BUNDLE_CLEANUP_ENABLED)
 
 def _bundle_cleanup_interval_seconds() -> int:
-    try:
-        return int(get_settings().BUNDLE_CLEANUP_INTERVAL_SECONDS)
-    except Exception:
-        return int(os.environ.get("BUNDLE_CLEANUP_INTERVAL_SECONDS", "3600") or "3600")
+    return int(get_settings().PLATFORM.APPLICATIONS.BUNDLE_CLEANUP_INTERVAL_SECONDS)
 
 def _bundle_cleanup_lock_ttl_seconds() -> int:
-    try:
-        return int(get_settings().BUNDLE_CLEANUP_LOCK_TTL_SECONDS)
-    except Exception:
-        return int(os.environ.get("BUNDLE_CLEANUP_LOCK_TTL_SECONDS", "900") or "900")
+    return int(get_settings().PLATFORM.APPLICATIONS.BUNDLE_CLEANUP_LOCK_TTL_SECONDS)
 
 
 def _compute_next_run(now: datetime) -> datetime:

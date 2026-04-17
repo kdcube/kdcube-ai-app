@@ -12,6 +12,7 @@ from typing import Callable, Iterable, Optional, Union, AsyncIterator, List, Any
 import redis.asyncio as aioredis
 
 from dotenv import load_dotenv, find_dotenv
+from kdcube_ai_app.apps.chat.sdk.config import get_settings
 
 from kdcube_ai_app.apps.chat.sdk.config import get_settings
 from kdcube_ai_app.infra.redis.client import get_async_redis_client
@@ -57,9 +58,10 @@ class ServiceCommunicator:
         if not orchestrator_identity:
             ORCHESTRATOR_TYPE = os.environ.get("CB_ORCHESTRATOR_TYPE", "chatbot")
             DEFAULT_ORCHESTRATOR_IDENTITY = f"kdcube.relay.{ORCHESTRATOR_TYPE}"
-            ORCHESTRATOR_IDENTITY = os.environ.get("CB_RELAY_IDENTITY", DEFAULT_ORCHESTRATOR_IDENTITY)
-
-            orchestrator_identity = ORCHESTRATOR_IDENTITY
+            orchestrator_identity = (
+                get_settings().PLATFORM.SERVICE.CB_RELAY_IDENTITY
+                or DEFAULT_ORCHESTRATOR_IDENTITY
+            )
 
         self.orchestrator_identity = orchestrator_identity
 

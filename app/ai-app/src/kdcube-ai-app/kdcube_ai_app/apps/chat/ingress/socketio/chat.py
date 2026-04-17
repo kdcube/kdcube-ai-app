@@ -13,6 +13,7 @@ import os
 import uuid
 from pathlib import Path
 import logging
+from kdcube_ai_app.apps.chat.sdk.config import get_settings
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 import hashlib
@@ -96,7 +97,7 @@ class SocketIOChatHandler:
         self._comm = ChatRelayCommunicator(
             redis_url=redis_url,
             channel="chat.events",
-            orchestrator_identity=os.getenv("CB_RELAY_IDENTITY"),
+            orchestrator_identity=get_settings().PLATFORM.SERVICE.CB_RELAY_IDENTITY,
         )
         self._listener_started = False
 

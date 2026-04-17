@@ -13,6 +13,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 import yaml
 
+from kdcube_ai_app.apps.chat.sdk.config_scopes import (
+    PLATFORM_CONFIG, RUNTIME_CONFIG,
+    _load_assembly_plain, _parse_plain_key, _load_plain_yaml, _resolve_dotted_value,
+    LOGConfig, ServiceConfig, AVConfig, HostedServicesConfig, MonitoringConfig,
+    PyExecConfig, ExecConfig, AccountingConfig, GitBundlesConfig, ApplicationsConfig,
+    PlatformConfig, IDPLocalConfig, IDPConfig, AuthConfig, ServicesConfig,
+)
 from kdcube_ai_app.infra.props import get_props_manager
 from kdcube_ai_app.infra.secrets import get_secrets_manager
 
@@ -24,22 +31,26 @@ _SECRET_ALIASES: dict[str, list[str]] = {
     "services.anthropic.api_key": ["ANTHROPIC_API_KEY"],
     "services.anthropic.claude_code_key": ["CLAUDE_CODE_KEY"],
     "services.brave.api_key": ["BRAVE_API_KEY"],
+    "services.brave.api_comm_mid_key": ["BRAVE_API_COMM_MID_KEY"],
     "services.google.api_key": ["GOOGLE_API_KEY", "GEMINI_API_KEY"],
     "services.git.http_token": ["GIT_HTTP_TOKEN"],
     "services.git.http_user": ["GIT_HTTP_USER"],
     "services.openrouter.api_key": ["OPENROUTER_API_KEY"],
+    "services.serpapi.api_key": ["SERPAPI_API_KEY"],
     "services.stripe.secret_key": ["STRIPE_SECRET_KEY", "STRIPE_API_KEY"],
     "services.stripe.webhook_secret": ["STRIPE_WEBHOOK_SECRET"],
-    "services.huggingface.api_key": ["HUGGING_FACE_KEY", "HUGGINGFACE_API_KEY"],
+    "services.huggingface.api_key": ["HUGGING_FACE_KEY", "HUGGINGFACE_API_KEY", "HUGGING_FACE_API_TOKEN"],
     "services.firecrawl.api_key": ["FIRECRAWL_API_KEY"],
     "services.email.password": ["EMAIL_PASSWORD"],
+    "auth.oidc.admin_email": ["OIDC_SERVICE_USER_EMAIL"],
+    "auth.oidc.admin_username": ["OIDC_SERVICE_ADMIN_USERNAME"],
+    "auth.oidc.admin_password": ["OIDC_SERVICE_ADMIN_PASSWORD"],
 }
 _LEGACY_SECRET_TO_CANON: dict[str, str] = {
     legacy: canon for canon, aliases in _SECRET_ALIASES.items() for legacy in aliases
 }
 _PG_SSL_MODES = {"disable", "allow", "prefer", "require", "verify-ca", "verify-full"}
-_ASSEMBLY_YAML_PATH = Path(os.getenv("ASSEMBLY_YAML_DESCRIPTOR_PATH") or "/config/assembly.yaml")
-_BUNDLES_YAML_PATH = Path(os.getenv("BUNDLES_YAML_DESCRIPTOR_PATH") or "/config/bundles.yaml")
+
 
 
 def _secret_candidates(key: str) -> list[str]:
@@ -123,86 +134,6 @@ def get_secret(key: str, default: str | None = None) -> str | None:
 
 def read_secret(key: str, default: str | None = None) -> str | None:
     return get_secret(key, default=default)
-
-
-def _parse_plain_key(key: str) -> tuple[Path, str]:
-    raw = str(key or "").strip()
-    if not raw:
-        return _ASSEMBLY_YAML_PATH, ""
-    for prefix, path in {
-        "a:": _ASSEMBLY_YAML_PATH,
-        "assembly:": _ASSEMBLY_YAML_PATH,
-        "b:": _BUNDLES_YAML_PATH,
-        "bundles:": _BUNDLES_YAML_PATH,
-    }.items():
-        if raw.startswith(prefix):
-            return path, raw[len(prefix):]
-    return _ASSEMBLY_YAML_PATH, raw
-
-
-def _descriptor_cache_token(path: Path) -> tuple[str, int, int] | None:
-    try:
-        stat = path.stat()
-    except OSError:
-        return None
-    return str(path), stat.st_mtime_ns, stat.st_size
-
-
-@lru_cache(maxsize=8)
-def _load_plain_yaml_cached(path_str: str, _mtime_ns: int, _size: int) -> Any:
-    path = Path(path_str)
-    try:
-        return yaml.safe_load(path.read_text()) if path.exists() else None
-    except Exception:
-        return None
-
-
-def _load_plain_yaml(path: Path) -> Any:
-    token = _descriptor_cache_token(path)
-    if token is None:
-        return None
-    return _load_plain_yaml_cached(*token)
-
-
-def _load_assembly_plain(dotted_path: str) -> Any:
-    return _resolve_dotted_value(_load_plain_yaml(_ASSEMBLY_YAML_PATH), dotted_path)
-
-
-def _resolve_dotted_value(data: Any, dotted_path: str) -> Any:
-    if not dotted_path:
-        return data
-    cur: Any = data
-    segments = [part for part in dotted_path.split(".") if part]
-    idx = 0
-    while idx < len(segments):
-        segment = segments[idx]
-        if isinstance(cur, dict):
-            if segment in cur:
-                cur = cur.get(segment)
-                idx += 1
-                continue
-            matched = False
-            for end in range(len(segments), idx, -1):
-                compound = ".".join(segments[idx:end])
-                if compound in cur:
-                    cur = cur.get(compound)
-                    idx = end
-                    matched = True
-                    break
-            if not matched:
-                return None
-            continue
-        if isinstance(cur, list):
-            if not segment.isdigit():
-                return None
-            list_idx = int(segment)
-            if list_idx < 0 or list_idx >= len(cur):
-                return None
-            cur = cur[list_idx]
-            idx += 1
-            continue
-        return None
-    return cur
 
 
 def get_plain(key: str, default: Any = None) -> Any:
@@ -500,6 +431,7 @@ def delete_user_prop(
     )
 
 
+
 def log_secret_statuses(force: bool = False) -> None:
     if force:
         _SECRET_LOGGED.clear()
@@ -539,9 +471,11 @@ class CorsConfig(BaseModel):
         return [str(v)]
 
 
-class Settings(BaseSettings):
+class Settings(PLATFORM_CONFIG):
     # API
     PORT: int = 8011
+    CHAT_APP_PORT: int = Field(default=8010)
+    CHAT_PROCESSOR_PORT: int = Field(default=8020)
     CORS_CONFIG: str | None = None
     CORS_CONFIG_OBJ: CorsConfig | None = None
 
@@ -563,6 +497,15 @@ class Settings(BaseSettings):
     GLOBAL_SECRETS_YAML: str | None = None
     BUNDLE_SECRETS_YAML: str | None = None
     LINK_PREVIEW_ENABLED: bool = Field(default=True)
+
+    # Nested config objects — populated in model_post_init.
+    # Primary access: get_settings().PLATFORM.<sub>.<attr>
+    #                 get_settings().AUTH.<attr>
+    #                 get_settings().SERVICES.<attr>
+    PLATFORM: Any = None
+    AUTH: Any = None
+    SERVICES: Any = None
+    RUNTIME_CONFIG: Any = None
 
     # Postgres
     PGHOST: str = Field(default="localhost", alias="POSTGRES_HOST")
@@ -606,8 +549,10 @@ class Settings(BaseSettings):
     TENANT: str = Field(default="home", alias="TENANT_ID")
     PROJECT: str = Field(default="default-project", alias="PROJECT_ID")
     INSTANCE_ID: str = Field(default="home-instance-1", alias="INSTANCE_ID")
+    AUTH_PROVIDER: str | None = Field(default=None, alias="AUTH_PROVIDER")
 
-    DEFAULT_MODEL_LLM: str | None = "claude-3-7-sonnet-20250219"
+    DEFAULT_MODEL_LLM_ID: str | None = Field(default="claude-3-7-sonnet-20250219", alias="DEFAULT_LLM_MODEL_ID")
+    DEFAULT_EMBEDDER: str | None = "openai-text-embedding-3-small"
 
     # OPEX aggregation scheduler
     OPEX_AGG_CRON: str = Field(default="0 3 * * *")
@@ -623,18 +568,17 @@ class Settings(BaseSettings):
     STRIPE_RECONCILE_CRON: str = Field(default="45 * * * *")
     STRIPE_RECONCILE_LOCK_TTL_SECONDS: int = Field(default=900)
 
-    # Bundle cleanup + ref tracking
+    # Bundle lifecycle settings — primary access via get_settings().PLATFORM.APPLICATIONS.*
+    # Flat fields below are kept for backward-compat env-var reads on cloud deployments
+    # where PLATFORM is not yet initialised (e.g. early startup checks).
     BUNDLE_CLEANUP_ENABLED: bool = Field(default=True)
     BUNDLE_CLEANUP_INTERVAL_SECONDS: int = Field(default=3600)
     BUNDLE_CLEANUP_LOCK_TTL_SECONDS: int = Field(default=900)
     BUNDLE_REF_TTL_SECONDS: int = Field(default=3600)
     BUNDLES_PRELOAD_LOCK_TTL_SECONDS: int = Field(default=900)
-    # Include built-in example bundles from sdk/examples/bundles
     BUNDLES_INCLUDE_EXAMPLES: bool = Field(default=True)
-    # Force bundles registry to be overwritten from AGENTIC_BUNDLES_JSON at startup (processor only).
     BUNDLES_FORCE_ENV_ON_STARTUP: bool = Field(default=False)
     BUNDLES_FORCE_ENV_LOCK_TTL_SECONDS: int = Field(default=60)
-    # Eagerly load all configured bundles at proc startup.
     BUNDLES_PRELOAD_ON_START: bool = Field(default=False)
 
     # Email notifications (admin alerts for Stripe events)
@@ -650,16 +594,12 @@ class Settings(BaseSettings):
     SOLUTION_RETAIN_TURN_WORKSPACE: bool = Field(default=False)
 
     def model_post_init(self, __context) -> None:
-        def _fetch_secret(key: str) -> str | None:
-            try:
-                return get_secrets_manager(self).get_secret(key)
-            except Exception:
-                return None
 
-        def _env_present(name: str) -> bool:
-            return bool(str(os.getenv(name) or "").strip())
 
-        # Override tenant/project from GATEWAY_CONFIG_JSON if present.
+        # 1. Override tenant/project from GATEWAY_CONFIG_JSON if present (backward compat).
+        #    Track whether GATEWAY_CONFIG_JSON supplied them so assembly.yaml does not override.
+        _gateway_json_set_tenant = False
+        _gateway_json_set_project = False
         cfg_json = os.getenv("GATEWAY_CONFIG_JSON")
         if isinstance(cfg_json, str) and cfg_json.strip():
             try:
@@ -669,41 +609,218 @@ class Settings(BaseSettings):
                 project = cfg.get("project_id") or cfg.get("project")
                 if tenant:
                     self.TENANT = tenant
+                    _gateway_json_set_tenant = True
                 if project:
                     self.PROJECT = project
+                    _gateway_json_set_project = True
             except Exception:
-                # Keep env-derived values on parse failure
                 pass
 
-        # Parse CORS_CONFIG JSON (if provided)
+        # 2. Parse CORS_CONFIG JSON (if provided); fall back to assembly cors.* section.
         if isinstance(self.CORS_CONFIG, str) and self.CORS_CONFIG.strip():
             try:
                 import json
                 self.CORS_CONFIG_OBJ = CorsConfig.model_validate(json.loads(self.CORS_CONFIG))
             except Exception:
-                # Leave None on parse failure
                 self.CORS_CONFIG_OBJ = None
+        if self.CORS_CONFIG_OBJ is None:
+            cors_data = _load_assembly_plain("cors")
+            if cors_data and isinstance(cors_data, dict):
+                try:
+                    self.CORS_CONFIG_OBJ = CorsConfig.model_validate(cors_data)
+                except Exception:
+                    pass
 
-        # If REDIS_URL is not explicitly set, build it from host/port/password/db.
+        # 3. Read infra settings from assembly.yaml before building REDIS_URL,
+        #    so the assembled values feed into the URL construction below.
+        if not self._env_present("SECRETS_PROVIDER") and not self.SECRETS_PROVIDER:
+            self.SECRETS_PROVIDER = self._assembly_str("secrets.provider")
+
+        if not self._env_present("POSTGRES_HOST"):
+            val = self._assembly_str("infra.postgres.host")
+            if val:
+                self.PGHOST = val
+        if not self._env_present("POSTGRES_PORT"):
+            val = self._assembly_int("infra.postgres.port")
+            if val is not None:
+                self.PGPORT = val
+        if not self._env_present("POSTGRES_USER"):
+            val = self._assembly_str("infra.postgres.user")
+            if val:
+                self.PGUSER = val
+        if not self._env_present("POSTGRES_PASSWORD"):
+            raw = _load_assembly_plain("infra.postgres.password")
+            if raw is not None:
+                self.PGPASSWORD = str(raw)
+        if not self._env_present("POSTGRES_DATABASE"):
+            val = self._assembly_str("infra.postgres.database")
+            if val:
+                self.PGDATABASE = val
+        if not self._env_present("POSTGRES_SSL"):
+            val = self._assembly_bool("infra.postgres.postgres_ssl")
+            if val is not None:
+                self.PGSSL = val
+
+        if not self._env_present("REDIS_HOST"):
+            val = self._assembly_str("infra.redis.host")
+            if val:
+                self.REDIS_HOST = val
+        if not self._env_present("REDIS_PORT"):
+            val = self._assembly_int("infra.redis.port")
+            if val is not None:
+                self.REDIS_PORT = val
+        if not self._env_present("REDIS_PASSWORD"):
+            raw = _load_assembly_plain("infra.redis.password")
+            if raw is not None:
+                self.REDIS_PASSWORD = str(raw) if str(raw).strip() else None
+
+        # 4. Build REDIS_URL from components if not explicitly set in env.
+        #    Must happen after infra reads so assembly.yaml host/port/password are reflected.
         if not os.getenv("REDIS_URL"):
             auth = f":{self.REDIS_PASSWORD}@" if self.REDIS_PASSWORD else ""
             self.REDIS_URL = f"redis://{auth}{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
 
-        # Populate non-secret storage/runtime settings from assembly.yaml when
-        # they are not explicitly provided via env. This lets runtime code use
-        # get_settings() while keeping assembly.yaml as the source of truth.
-        if not _env_present("SECRETS_PROVIDER") and not self.SECRETS_PROVIDER:
-            self.SECRETS_PROVIDER = _load_assembly_plain("secrets.provider")
-        if not _env_present("KDCUBE_STORAGE_PATH") and not self.STORAGE_PATH:
-            self.STORAGE_PATH = _load_assembly_plain("storage.kdcube")
-        if not _env_present("CB_BUNDLE_STORAGE_URL") and not self.BUNDLE_STORAGE_URL:
-            self.BUNDLE_STORAGE_URL = _load_assembly_plain("storage.bundles")
-        if not _env_present("REACT_WORKSPACE_IMPLEMENTATION"):
+        # 5. context: tenant/project from assembly.yaml when neither env var nor
+        #    GATEWAY_CONFIG_JSON supplied them.
+        if not self._env_present("TENANT_ID") and not _gateway_json_set_tenant:
+            val = self._assembly_str("context.tenant")
+            if val:
+                self.TENANT = val
+        if not self._env_present("PROJECT_ID") and not _gateway_json_set_project:
+            val = self._assembly_str("context.project")
+            if val:
+                self.PROJECT = val
+
+        # 6. auth provider
+        if not self._env_present("AUTH_PROVIDER") and not self.AUTH_PROVIDER:
+            self.AUTH_PROVIDER = self._assembly_str("auth.type")
+
+        # 7. AWS settings
+        if not self._env_present("AWS_REGION"):
+            val = self._assembly_str("aws.aws_region")
+            if val:
+                self.AWS_REGION = val
+        if not self._env_present("AWS_PROFILE") and not self.AWS_PROFILE:
+            self.AWS_PROFILE = self._assembly_str("aws.aws_profile")
+
+        # 8. Build PLATFORM nested config (per-service reads from assembly.yaml).
+        component = (self.GATEWAY_COMPONENT or "").strip().lower()
+        svc = f"platform.services.{component}"
+        log_p = f"{svc}.log"
+        svc_p = f"{svc}.service"
+        av_p = f"{svc}.av"
+        idp_p = f"{svc}.idp"
+        mon_p = f"{svc}.monitoring"
+        exec_p = f"{svc}.exec"
+        bundles_p = f"{svc}.bundles"
+        git_p = f"{bundles_p}.git"
+
+        self.PLATFORM = PlatformConfig(
+            LOG=LOGConfig(
+                LOG_LEVEL=self._resolve_str("LOG_LEVEL", f"{log_p}.log_level", "INFO"),
+                LOG_MAX_MB=self._resolve_int("LOG_MAX_MB", f"{log_p}.log_max_mb", 20),
+                LOG_BACKUP_COUNT=self._resolve_int("LOG_BACKUP_COUNT", f"{log_p}.log_backup_count", 10),
+                LOG_DIR=self._resolve_str("LOG_DIR", f"{log_p}.log_dir"),
+                LOG_FILE_PREFIX=self._resolve_str("LOG_FILE_PREFIX", f"{log_p}.log_file_prefix"),
+            ),
+            SERVICE=ServiceConfig(
+                UVICORN_RELOAD=self._resolve_bool("UVICORN_RELOAD", f"{svc_p}.uvicorn_reload", False),
+                HEARTBEAT_INTERVAL=self._resolve_int("HEARTBEAT_INTERVAL", f"{svc_p}.heartbeat_interval", 5),
+                CB_RELAY_IDENTITY=self._resolve_str("CB_RELAY_IDENTITY", f"{svc_p}.cb_relay_identity"),
+                CHAT_SCHEDULER_BACKEND=self._resolve_str("CHAT_SCHEDULER_BACKEND", f"{svc_p}.chat_scheduler_backend", "legacy_lists"),
+                CHAT_TASK_TIMEOUT_SEC=self._resolve_int("CHAT_TASK_TIMEOUT_SEC", f"{svc_p}.chat_task_timeout_sec", 600),
+                CHAT_TASK_IDLE_TIMEOUT_SEC=self._resolve_int("CHAT_TASK_IDLE_TIMEOUT_SEC", f"{svc_p}.chat_task_idle_timeout_sec", 600),
+                CHAT_TASK_MAX_WALL_TIME_SEC=self._resolve_int("CHAT_TASK_MAX_WALL_TIME_SEC", f"{svc_p}.chat_task_max_wall_time_sec", 2400),
+                CHAT_TASK_WATCHDOG_POLL_INTERVAL_SEC=self._resolve_float("CHAT_TASK_WATCHDOG_POLL_INTERVAL_SEC", f"{svc_p}.chat_task_watchdog_poll_interval_sec", 1.0),
+            ),
+            HOSTED_SERVICES=HostedServicesConfig(
+                AV=AVConfig(
+                    APP_AV_SCAN=self._resolve_bool("APP_AV_SCAN", f"{av_p}.app_av_scan", True),
+                    APP_AV_TIMEOUT_S=self._resolve_float("APP_AV_TIMEOUT_S", f"{av_p}.app_av_timeout_s", 3.0),
+                    CLAMAV_HOST=self._resolve_str("CLAMAV_HOST", f"{av_p}.clamav_host", "localhost"),
+                    CLAMAV_PORT=self._resolve_int("CLAMAV_PORT", f"{av_p}.clamav_port", 3310),
+                ),
+            ),
+            MONITORING=MonitoringConfig(
+                MONITORING_BURST_ENABLE=self._resolve_bool("MONITORING_BURST_ENABLE", f"{mon_p}.monitoring_burst_enable", True),
+            ),
+            EXEC=ExecConfig(
+                EXEC_WORKSPACE_ROOT=self._resolve_str("EXEC_WORKSPACE_ROOT", f"{exec_p}.exec_workspace_root"),
+                PY=PyExecConfig(
+                    PY_CODE_EXEC_IMAGE=self._resolve_str("PY_CODE_EXEC_IMAGE", f"{exec_p}.py_code_exec_image", "py-code-exec:latest"),
+                    PY_CODE_EXEC_TIMEOUT=self._resolve_int("PY_CODE_EXEC_TIMEOUT", f"{exec_p}.py_code_exec_timeout", 600),
+                    PY_CODE_EXEC_NETWORK_MODE=self._resolve_str("PY_CODE_EXEC_NETWORK_MODE", f"{exec_p}.py_code_exec_network_mode", "host"),
+                ),
+            ),
+            ACCOUNTING=AccountingConfig(
+                ACCOUNTING_SERVICES=self._resolve_str("ACCOUNTING_SERVICES", f"{svc}.tools.accounting_services"),
+            ),
+            APPLICATIONS=ApplicationsConfig(
+                AGENTIC_BUNDLES_ROOT=self._resolve_str("AGENTIC_BUNDLES_ROOT", f"{bundles_p}.agentic_bundles_root", "/bundles"),
+                BUNDLE_STORAGE_ROOT=self._resolve_str("BUNDLE_STORAGE_ROOT", f"{bundles_p}.bundle_storage_root"),
+                BUNDLES_INCLUDE_EXAMPLES=self._resolve_bool("BUNDLES_INCLUDE_EXAMPLES", f"{bundles_p}.bundles_include_examples", True),
+                BUNDLE_CLEANUP_ENABLED=self._resolve_bool("BUNDLE_CLEANUP_ENABLED", f"{bundles_p}.bundle_cleanup_enabled", True),
+                BUNDLE_CLEANUP_INTERVAL_SECONDS=self._resolve_int("BUNDLE_CLEANUP_INTERVAL_SECONDS", f"{bundles_p}.bundle_cleanup_interval_seconds", 3600),
+                BUNDLE_CLEANUP_LOCK_TTL_SECONDS=self._resolve_int("BUNDLE_CLEANUP_LOCK_TTL_SECONDS", f"{bundles_p}.bundle_cleanup_lock_ttl_seconds", 900),
+                BUNDLE_REF_TTL_SECONDS=self._resolve_int("BUNDLE_REF_TTL_SECONDS", f"{bundles_p}.bundle_ref_ttl_seconds", 3600),
+                BUNDLES_FORCE_ENV_ON_STARTUP=self._resolve_bool("BUNDLES_FORCE_ENV_ON_STARTUP", f"{bundles_p}.bundles_force_env_on_startup", False),
+                BUNDLES_FORCE_ENV_LOCK_TTL_SECONDS=self._resolve_int("BUNDLES_FORCE_ENV_LOCK_TTL_SECONDS", f"{bundles_p}.bundles_force_env_lock_ttl_seconds", 60),
+                BUNDLES_PRELOAD_ON_START=self._resolve_bool("BUNDLES_PRELOAD_ON_START", f"{bundles_p}.bundles_preload_on_start", False),
+                BUNDLES_PRELOAD_LOCK_TTL_SECONDS=self._resolve_int("BUNDLES_PRELOAD_LOCK_TTL_SECONDS", f"{bundles_p}.bundles_preload_lock_ttl_seconds", 900),
+                GIT=GitBundlesConfig(
+                    BUNDLE_GIT_RESOLUTION_ENABLED=self._resolve_bool("BUNDLE_GIT_RESOLUTION_ENABLED", f"{git_p}.bundle_git_resolution_enabled", True),
+                    BUNDLE_GIT_ATOMIC=self._resolve_bool("BUNDLE_GIT_ATOMIC", f"{git_p}.bundle_git_atomic", True),
+                    BUNDLE_GIT_ALWAYS_PULL=self._resolve_bool("BUNDLE_GIT_ALWAYS_PULL", f"{git_p}.bundle_git_always_pull", False),
+                    BUNDLE_GIT_REDIS_LOCK=self._resolve_bool("BUNDLE_GIT_REDIS_LOCK", f"{git_p}.bundle_git_redis_lock", True),
+                    BUNDLE_GIT_REDIS_LOCK_TTL_SECONDS=self._resolve_int("BUNDLE_GIT_REDIS_LOCK_TTL_SECONDS", f"{git_p}.bundle_git_redis_lock_ttl_seconds", 300),
+                    BUNDLE_GIT_REDIS_LOCK_WAIT_SECONDS=self._resolve_int("BUNDLE_GIT_REDIS_LOCK_WAIT_SECONDS", f"{git_p}.bundle_git_redis_lock_wait_seconds", 60),
+                    BUNDLE_GIT_PREFETCH_ENABLED=self._resolve_bool("BUNDLE_GIT_PREFETCH_ENABLED", f"{git_p}.bundle_git_prefetch_enabled", True),
+                    BUNDLE_GIT_PREFETCH_INTERVAL_SECONDS=self._resolve_int("BUNDLE_GIT_PREFETCH_INTERVAL_SECONDS", f"{git_p}.bundle_git_prefetch_interval_seconds", 15),
+                    BUNDLE_GIT_FAIL_BACKOFF_SECONDS=self._resolve_int("BUNDLE_GIT_FAIL_BACKOFF_SECONDS", f"{git_p}.bundle_git_fail_backoff_seconds", 60),
+                    BUNDLE_GIT_FAIL_MAX_BACKOFF_SECONDS=self._resolve_int("BUNDLE_GIT_FAIL_MAX_BACKOFF_SECONDS", f"{git_p}.bundle_git_fail_max_backoff_seconds", 300),
+                    BUNDLE_GIT_KEEP=self._resolve_int("BUNDLE_GIT_KEEP", f"{git_p}.bundle_git_keep", 3),
+                    BUNDLE_GIT_TTL_HOURS=self._resolve_int("BUNDLE_GIT_TTL_HOURS", f"{git_p}.bundle_git_ttl_hours", 0),
+                    GIT_SSH_KEY_PATH=self._resolve_str("GIT_SSH_KEY_PATH", f"{git_p}.git_ssh_key_path"),
+                    GIT_SSH_KNOWN_HOSTS=self._resolve_str("GIT_SSH_KNOWN_HOSTS", f"{git_p}.git_ssh_known_hosts"),
+                    GIT_SSH_STRICT_HOST_KEY_CHECKING=self._resolve_str("GIT_SSH_STRICT_HOST_KEY_CHECKING", f"{git_p}.git_ssh_strict_host_key_checking", "yes"),
+                ),
+            ),
+        )
+
+        # Service port from assembly.yaml based on GATEWAY_COMPONENT.
+        _port_key = {"ingress": "ports.ingress", "proc": "ports.proc",
+                     "processor": "ports.proc", "metrics": "ports.metrics"}.get(component)
+        if _port_key and not self._env_present("CHAT_APP_PORT") and not self._env_present("CHAT_PROCESSOR_PORT") \
+                and not self._env_present("METRICS_PORT"):
+            val = self._assembly_int(_port_key)
+            if val is not None:
+                self.PORT = val
+
+        # CHAT_APP_PORT / CHAT_PROCESSOR_PORT — explicit per-service port fields (always from assembly).
+        if not self._env_present("CHAT_APP_PORT"):
+            val = self._assembly_int("ports.ingress")
+            if val is not None:
+                self.CHAT_APP_PORT = val
+        if not self._env_present("CHAT_PROCESSOR_PORT"):
+            val = self._assembly_int("ports.proc")
+            if val is not None:
+                self.CHAT_PROCESSOR_PORT = val
+
+        # Default LLM model (env: DEFAULT_LLM_MODEL_ID, assembly: models.default_llm_model_id).
+        if not self._env_present("DEFAULT_LLM_MODEL_ID"):
+            val = self._assembly_str("models.default_llm_model_id")
+            if val:
+                self.DEFAULT_MODEL_LLM_ID = val
+
+        # 9. Storage / workspace settings from assembly.yaml.
+        if not self._env_present("KDCUBE_STORAGE_PATH") and not self.STORAGE_PATH:
+            self.STORAGE_PATH = self._assembly_str("storage.kdcube")
+        if not self._env_present("CB_BUNDLE_STORAGE_URL") and not self.BUNDLE_STORAGE_URL:
+            self.BUNDLE_STORAGE_URL = self._assembly_str("storage.bundles")
+        if not self._env_present("REACT_WORKSPACE_IMPLEMENTATION"):
             self.REACT_WORKSPACE_IMPLEMENTATION = str(
-                _load_assembly_plain("storage.workspace.type") or self.REACT_WORKSPACE_IMPLEMENTATION
+                self._assembly_str("storage.workspace.type") or self.REACT_WORKSPACE_IMPLEMENTATION
             )
-        if not _env_present("REACT_WORKSPACE_GIT_REPO") and not self.REACT_WORKSPACE_GIT_REPO:
-            self.REACT_WORKSPACE_GIT_REPO = _load_assembly_plain("storage.workspace.repo")
         self.AI_REACT_AGENT_VERSION = (
             str(self.AI_REACT_AGENT_VERSION or "v2").strip().lower() or "v2"
         )
@@ -711,16 +828,75 @@ class Settings(BaseSettings):
             self.AI_REACT_AGENT_VERSION = "v2"
         if not self.AI_REACT_AGENT_MULTI_ACTION:
             self.AI_REACT_AGENT_MULTI_ACTION = "off"
-
-        if not _env_present("CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION"):
+        if not self._env_present("REACT_WORKSPACE_GIT_REPO") and not self.REACT_WORKSPACE_GIT_REPO:
+            self.REACT_WORKSPACE_GIT_REPO = self._assembly_str("storage.workspace.repo")
+        if not self._env_present("CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION"):
             self.CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION = str(
-                _load_assembly_plain("storage.claude_code_session.type")
+                self._assembly_str("storage.claude_code_session.type")
                 or self.CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION
             )
-        if not _env_present("CLAUDE_CODE_SESSION_GIT_REPO") and not self.CLAUDE_CODE_SESSION_GIT_REPO:
-            self.CLAUDE_CODE_SESSION_GIT_REPO = _load_assembly_plain("storage.claude_code_session.repo")
+        if not self._env_present("CLAUDE_CODE_SESSION_GIT_REPO") and not self.CLAUDE_CODE_SESSION_GIT_REPO:
+            self.CLAUDE_CODE_SESSION_GIT_REPO = self._assembly_str("storage.claude_code_session.repo")
 
-        # Populate secrets from provider if not set in env.
+        # 10. Routines / scheduler settings from assembly.yaml.
+        if not self._env_present("OPEX_AGG_CRON"):
+            val = self._assembly_str("routines.opex.agg_cron")
+            if val:
+                self.OPEX_AGG_CRON = val
+        if not self._env_present("SUBSCRIPTION_ROLLOVER_ENABLED"):
+            val = self._assembly_bool("routines.economics.subscription_rollover_enabled")
+            if val is not None:
+                self.SUBSCRIPTION_ROLLOVER_ENABLED = val
+        if not self._env_present("SUBSCRIPTION_ROLLOVER_CRON"):
+            val = self._assembly_str("routines.economics.subscription_rollover_cron")
+            if val:
+                self.SUBSCRIPTION_ROLLOVER_CRON = val
+        if not self._env_present("SUBSCRIPTION_ROLLOVER_LOCK_TTL_SECONDS"):
+            val = self._assembly_int("routines.economics.subscription_rollover_lock_ttl_seconds")
+            if val is not None:
+                self.SUBSCRIPTION_ROLLOVER_LOCK_TTL_SECONDS = val
+        if not self._env_present("SUBSCRIPTION_ROLLOVER_SWEEP_LIMIT"):
+            val = self._assembly_int("routines.economics.subscription_rollover_sweep_limit")
+            if val is not None:
+                self.SUBSCRIPTION_ROLLOVER_SWEEP_LIMIT = val
+        if not self._env_present("STRIPE_RECONCILE_ENABLED"):
+            val = self._assembly_bool("routines.stripe.reconcile_enabled")
+            if val is not None:
+                self.STRIPE_RECONCILE_ENABLED = val
+        if not self._env_present("STRIPE_RECONCILE_CRON"):
+            val = self._assembly_str("routines.stripe.reconcile_cron")
+            if val:
+                self.STRIPE_RECONCILE_CRON = val
+        if not self._env_present("STRIPE_RECONCILE_LOCK_TTL_SECONDS"):
+            val = self._assembly_int("routines.stripe.reconcile_lock_ttl_seconds")
+            if val is not None:
+                self.STRIPE_RECONCILE_LOCK_TTL_SECONDS = val
+
+        # 11. Email notification settings from assembly.yaml.
+        if not self._env_present("EMAIL_ENABLED"):
+            val = self._assembly_bool("notifications.email.enabled")
+            if val is not None:
+                self.EMAIL_ENABLED = val
+        if not self._env_present("EMAIL_HOST") and not self.EMAIL_HOST:
+            self.EMAIL_HOST = self._assembly_str("notifications.email.host")
+        if not self._env_present("EMAIL_PORT"):
+            val = self._assembly_int("notifications.email.port")
+            if val is not None:
+                self.EMAIL_PORT = val
+        if not self._env_present("EMAIL_USER") and not self.EMAIL_USER:
+            self.EMAIL_USER = self._assembly_str("notifications.email.user")
+        if not self._env_present("EMAIL_FROM") and not self.EMAIL_FROM:
+            self.EMAIL_FROM = self._assembly_str("notifications.email.from")
+        if not self._env_present("EMAIL_TO"):
+            val = self._assembly_str("notifications.email.to")
+            if val:
+                self.EMAIL_TO = val
+        if not self._env_present("EMAIL_USE_TLS"):
+            val = self._assembly_bool("notifications.email.use_tls")
+            if val is not None:
+                self.EMAIL_USE_TLS = val
+
+        # 12. Populate secrets from provider if not set in env.
         env_openai = os.getenv("OPENAI_API_KEY")
         env_anthropic = os.getenv("ANTHROPIC_API_KEY")
         env_gemini = os.getenv("GEMINI_API_KEY")
@@ -730,27 +906,27 @@ class Settings(BaseSettings):
         env_openrouter = os.getenv("OPENROUTER_API_KEY")
 
         if not self.OPENAI_API_KEY:
-            self.OPENAI_API_KEY = _fetch_secret("services.openai.api_key") or _fetch_secret("OPENAI_API_KEY")
+            self.OPENAI_API_KEY = self._fetch_secret("services.openai.api_key") or self._fetch_secret("OPENAI_API_KEY")
         if not self.ANTHROPIC_API_KEY:
-            self.ANTHROPIC_API_KEY = _fetch_secret("services.anthropic.api_key") or _fetch_secret("ANTHROPIC_API_KEY")
+            self.ANTHROPIC_API_KEY = self._fetch_secret("services.anthropic.api_key") or self._fetch_secret("ANTHROPIC_API_KEY")
         if not self.GOOGLE_API_KEY:
             self.GOOGLE_API_KEY = (
-                _fetch_secret("services.google.api_key")
-                or _fetch_secret("GOOGLE_API_KEY")
-                or _fetch_secret("GEMINI_API_KEY")
+                self._fetch_secret("services.google.api_key")
+                or self._fetch_secret("GOOGLE_API_KEY")
+                or self._fetch_secret("GEMINI_API_KEY")
             )
         if not self.BRAVE_API_KEY:
-            self.BRAVE_API_KEY = _fetch_secret("services.brave.api_key") or _fetch_secret("BRAVE_API_KEY")
+            self.BRAVE_API_KEY = self._fetch_secret("services.brave.api_key") or self._fetch_secret("BRAVE_API_KEY")
         if not self.GIT_HTTP_TOKEN:
-            self.GIT_HTTP_TOKEN = _fetch_secret("services.git.http_token") or _fetch_secret("GIT_HTTP_TOKEN")
+            self.GIT_HTTP_TOKEN = self._fetch_secret("services.git.http_token") or self._fetch_secret("GIT_HTTP_TOKEN")
         if not self.GIT_HTTP_USER and self.GIT_HTTP_TOKEN:
-            self.GIT_HTTP_USER = _fetch_secret("services.git.http_user") or "x-access-token"
+            self.GIT_HTTP_USER = self._fetch_secret("services.git.http_user") or "x-access-token"
         if not self.OPENROUTER_API_KEY:
-            self.OPENROUTER_API_KEY = _fetch_secret("services.openrouter.api_key") or _fetch_secret("OPENROUTER_API_KEY")
+            self.OPENROUTER_API_KEY = self._fetch_secret("services.openrouter.api_key") or self._fetch_secret("OPENROUTER_API_KEY")
         if not self.OPENROUTER_BASE_URL:
             self.OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL") or "https://openrouter.ai/api/v1"
         if not self.CLAUDE_CODE_KEY:
-            self.CLAUDE_CODE_KEY = _fetch_secret("services.anthropic.claude_code_key") or _fetch_secret("CLAUDE_CODE_KEY")
+            self.CLAUDE_CODE_KEY = self._fetch_secret("services.anthropic.claude_code_key") or self._fetch_secret("CLAUDE_CODE_KEY")
 
         _log_secret_status("services.openai.api_key", self.OPENAI_API_KEY, "env" if env_openai else "secrets")
         _log_secret_status("services.anthropic.api_key", self.ANTHROPIC_API_KEY, "env" if env_anthropic else "secrets")
@@ -759,6 +935,39 @@ class Settings(BaseSettings):
         _log_secret_status("services.git.http_token", self.GIT_HTTP_TOKEN, "env" if env_git_token else "secrets")
         _log_secret_status("services.git.http_user", self.GIT_HTTP_USER, "env" if env_git_user else "secrets")
         _log_secret_status("services.openrouter.api_key", self.OPENROUTER_API_KEY, "env" if env_openrouter else "secrets")
+
+        # 13. Build AUTH config (env > assembly.yaml > default).
+        self.AUTH = AuthConfig(
+            COGNITO_REGION=self._resolve_str("COGNITO_REGION", "auth.cognito.region"),
+            COGNITO_USER_POOL_ID=self._resolve_str("COGNITO_USER_POOL_ID", "auth.cognito.user_pool_id"),
+            COGNITO_APP_CLIENT_ID=self._resolve_str("COGNITO_APP_CLIENT_ID", "auth.cognito.app_client_id"),
+            COGNITO_SERVICE_CLIENT_ID=self._resolve_str("COGNITO_SERVICE_CLIENT_ID", "auth.cognito.service_client_id"),
+            ID_TOKEN_HEADER_NAME=self._resolve_str("ID_TOKEN_HEADER_NAME", "auth.id_token_header_name", "X-ID-Token"),
+            AUTH_TOKEN_COOKIE_NAME=self._resolve_str("AUTH_TOKEN_COOKIE_NAME", "auth.auth_token_cookie_name", "__Secure-LATC"),
+            ID_TOKEN_COOKIE_NAME=self._resolve_str("ID_TOKEN_COOKIE_NAME", "auth.id_token_cookie_name", "__Secure-LITC"),
+            JWKS_CACHE_TTL_SECONDS=self._resolve_int("JWKS_CACHE_TTL_SECONDS", "auth.jwks_cache_ttl_seconds", 86400),
+            OIDC_SERVICE_USER_EMAIL=self._fetch_secret("auth.oidc.admin_email") or self._env_str("OIDC_SERVICE_USER_EMAIL"),
+            OIDC_SERVICE_ADMIN_USERNAME=self._fetch_secret("auth.oidc.admin_username") or self._env_str("OIDC_SERVICE_ADMIN_USERNAME"),
+            OIDC_SERVICE_ADMIN_PASSWORD=self._fetch_secret("auth.oidc.admin_password") or self._env_str("OIDC_SERVICE_ADMIN_PASSWORD"),
+            IDP=IDPConfig(
+                local=IDPLocalConfig(
+                    IDP_DB_PATH=self._resolve_str("IDP_DB_PATH", f"{svc}.idp.idp_db_path"),
+                    IDP_IMPORT_ENABLED=self._resolve_bool("IDP_IMPORT_ENABLED", f"{svc}.idp.idp_import_enabled", False),
+                    IDP_IMPORT_RUN_AT=self._resolve_str("IDP_IMPORT_RUN_AT", f"{svc}.idp.idp_import_run_at"),
+                    IDP_IMPORT_SCRIPT_PATH=self._resolve_str("IDP_IMPORT_SCRIPT_PATH", f"{svc}.idp.idp_import_script_path"),
+                ),
+            ),
+        )
+
+        # 14. Build SERVICES config.
+        self.SERVICES = ServicesConfig(
+            DEFAULT_EMBEDDING_MODEL_ID=self._resolve_str("DEFAULT_EMBEDDING_MODEL_ID", "models.default_embedding_model_id"),
+        )
+
+        # 15. Build RUNTIME_CONFIG (request-context header names).
+        # RUNTIME_CONFIG inherits PLATFORM_CONFIG (BaseSettings) so env vars are
+        # picked up automatically by Pydantic — no manual resolution needed here.
+        self.RUNTIME_CONFIG = RUNTIME_CONFIG()
 
     def secret(self, key: str, default: str | None = None) -> str | None:
         normalized_key = _normalize_secret_lookup_key(key)

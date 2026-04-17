@@ -275,10 +275,7 @@ class PolicyTester:
         payload = {
             "message": f"Policy test from {user_type} at {time.time()}",
             "session_id": session_id,
-            "config": {
-                "selected_model": "gpt-4o",
-                "selected_embedder": "openai-text-embedding-3-small"
-            }
+            "config": {}
         }
 
         try:

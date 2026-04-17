@@ -46,7 +46,7 @@ import aiohttp
 from kdcube_ai_app.apps.chat.sdk.tools.backends.web.inventory import compose_search_results_html, SearchRequest, \
     make_hit, clamp_max_results, SearchBackendError, _claim_sid_block, _normalize_url, dedup_round_robin_ranked, \
     PROVIDERS_AUTHORITY_RANK
-from kdcube_ai_app.apps.chat.sdk.config import get_settings
+from kdcube_ai_app.apps.chat.sdk.config import get_settings, get_plain
 from kdcube_ai_app.apps.chat.sdk.tools.web.favicon_cache import enrich_sources_pool_with_favicons
 from kdcube_ai_app.apps.chat.sdk.tools.web.with_llm import sources_reconciler, \
     filter_search_results_by_content
@@ -498,7 +498,7 @@ def get_search_backend(name: Optional[str] = None) -> SearchBackend:
     Uses env WEB_SEARCH_BACKEND if name not provided.
     Supported: duckduckgo|ddg, brave
     """
-    n = (name or os.environ.get("WEB_SEARCH_BACKEND") or "duckduckgo").strip().lower()
+    n = (name or get_plain("a:platform.services.proc.tools.web_search.web_search_backend") or "duckduckgo").strip().lower()
 
     if n in ("duckduckgo", "ddg"):
         return DDGSearchBackend()
@@ -528,14 +528,14 @@ def get_search_backend_or_hybrid(
         SearchBackend or HybridSearchBackend instance
     """
     if not backend_name:
-        backend_name = os.environ.get("WEB_SEARCH_BACKEND", "duckduckgo").strip().lower()
+        backend_name = (get_plain("a:platform.services.proc.tools.web_search.web_search_backend") or "duckduckgo").strip().lower()
     else:
         backend_name = backend_name.strip().lower()
 
     # Explicit hybrid mode via backend name
     if backend_name == "hybrid":
         from kdcube_ai_app.apps.chat.sdk.tools.backends.web.hybrid_search_backend import get_hybrid_search_backend, HybridMode
-        primary_name = os.environ.get("WEB_SEARCH_PRIMARY_BACKEND", "brave")
+        primary_name = get_plain("a:platform.services.proc.tools.web_search.web_search_primary_backend") or "brave"
         mode = HybridMode(hybrid_mode) if hybrid_mode in ("sequential", "parallel") else HybridMode.SEQUENTIAL
         return get_hybrid_search_backend(primary_name, spare_backend, mode)
 
@@ -593,7 +593,7 @@ async def web_search(
     Results are CLEAN - no provider metadata returned to LLM.
     """
 
-    WEB_SEARCH_AGENTIC_THINKING_BUDGET = int(os.getenv("WEB_SEARCH_AGENTIC_THINKING_BUDGET") or 0)
+    WEB_SEARCH_AGENTIC_THINKING_BUDGET = int(get_plain("a:platform.services.proc.tools.web_search.web_search_agentic_thinking_budget") or 0)
     refinement = (refinement or "balanced").lower()
     if refinement not in ("none", "balanced", "recall", "precision"):
         refinement = "balanced"
@@ -706,7 +706,7 @@ async def web_search(
     #     spare_backend="duckduckgo"
     # )
     enable_hybrid = False
-    primary_backend_name = (os.environ.get("WEB_SEARCH_BACKEND") or "brave").strip().lower()
+    primary_backend_name = (get_plain("a:platform.services.proc.tools.web_search.web_search_backend") or "brave").strip().lower()
     search_backend = get_search_backend_or_hybrid(
         backend_name=primary_backend_name,
         enable_hybrid=enable_hybrid,

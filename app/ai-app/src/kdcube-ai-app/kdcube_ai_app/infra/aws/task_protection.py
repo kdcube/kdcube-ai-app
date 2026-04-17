@@ -11,6 +11,7 @@ import urllib.request
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Optional
+from kdcube_ai_app.apps.chat.sdk.config import get_settings
 
 import fcntl
 
@@ -74,12 +75,13 @@ class EcsTaskScaleInProtection:
             1.0,
             float(request_timeout_sec or os.getenv("ECS_TASK_PROTECTION_REQUEST_TIMEOUT_SEC", "5")),
         )
+        _svc = get_settings().PLATFORM.SERVICE
         effective_task_timeout_sec = max(
             60,
             int(
                 task_timeout_sec
-                or os.getenv("CHAT_TASK_MAX_WALL_TIME_SEC")
-                or os.getenv("CHAT_TASK_TIMEOUT_SEC", "600")
+                or _svc.CHAT_TASK_MAX_WALL_TIME_SEC
+                or _svc.CHAT_TASK_TIMEOUT_SEC
             ),
         )
         default_expires = max(5, min(120, math.ceil(effective_task_timeout_sec / 60) + 5))

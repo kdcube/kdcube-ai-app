@@ -165,7 +165,7 @@ async def prefetch_git_bundles() -> dict[str, str]:
     """
     errors: dict[str, str] = {}
     reg = _get_bundle_registry()
-    force_pull = os.environ.get("BUNDLE_GIT_ALWAYS_PULL", "0").lower() in {"1", "true", "yes"}
+    force_pull = get_settings().PLATFORM.APPLICATIONS.GIT.BUNDLE_GIT_ALWAYS_PULL
 
     for bid, entry in reg.items():
         repo = entry.get("repo")
@@ -200,7 +200,7 @@ async def prefetch_git_bundles() -> dict[str, str]:
                 git_ref=entry.get("ref"),
                 git_subdir=entry.get("subdir"),
                 bundles_root=resolve_git_bundles_root(),
-                atomic=os.environ.get("BUNDLE_GIT_ATOMIC", "1").lower() in {"1", "true", "yes"},
+                atomic=get_settings().PLATFORM.APPLICATIONS.GIT.BUNDLE_GIT_ATOMIC,
             )
         except GitBundleCooldown as e:
             errors[bid] = str(e)
@@ -247,27 +247,23 @@ class EnhancedChatRequestProcessor:
         self.chat_handler = chat_handler
         self.process_id = process_id or os.getpid()
         self.max_concurrent = int(max_concurrent or 5)
+        _svc = get_settings().PLATFORM.SERVICE
         self.scheduler_backend_name = normalize_processor_scheduler_backend(
-            os.getenv("CHAT_SCHEDULER_BACKEND", scheduler_backend or ""),
+            scheduler_backend or _svc.CHAT_SCHEDULER_BACKEND,
         )
         self._task_scheduler_backend = build_processor_scheduler_backend(self.scheduler_backend_name)
         legacy_task_timeout_sec = max(
             1,
-            int(os.getenv("CHAT_TASK_TIMEOUT_SEC", str(task_timeout_sec or 600))),
+            task_timeout_sec or _svc.CHAT_TASK_TIMEOUT_SEC,
         )
         self.task_timeout_sec = legacy_task_timeout_sec
         self.task_idle_timeout_sec = max(
             1,
-            int(os.getenv("CHAT_TASK_IDLE_TIMEOUT_SEC", str(task_idle_timeout_sec or legacy_task_timeout_sec))),
+            task_idle_timeout_sec or _svc.CHAT_TASK_IDLE_TIMEOUT_SEC or legacy_task_timeout_sec,
         )
         self.task_max_wall_time_sec = max(
             self.task_idle_timeout_sec,
-            int(
-                os.getenv(
-                    "CHAT_TASK_MAX_WALL_TIME_SEC",
-                    str(task_max_wall_time_sec or max(legacy_task_timeout_sec, legacy_task_timeout_sec * 4)),
-                )
-            ),
+            task_max_wall_time_sec or _svc.CHAT_TASK_MAX_WALL_TIME_SEC or max(legacy_task_timeout_sec, legacy_task_timeout_sec * 4),
         )
         self.lock_ttl_sec = lock_ttl_sec
         self.lock_renew_sec = lock_renew_sec
@@ -329,7 +325,7 @@ class EnhancedChatRequestProcessor:
         )
         self._task_watchdog_poll_interval_sec = max(
             0.1,
-            float(os.getenv("CHAT_TASK_WATCHDOG_POLL_INTERVAL_SEC", str(TASK_WATCHDOG_POLL_INTERVAL_SEC)) or str(TASK_WATCHDOG_POLL_INTERVAL_SEC)),
+            get_settings().PLATFORM.SERVICE.CHAT_TASK_WATCHDOG_POLL_INTERVAL_SEC,
         )
         self._host_draining = False
         self._host_draining_since: Optional[str] = None

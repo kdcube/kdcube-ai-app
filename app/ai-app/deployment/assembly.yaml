@@ -1,129 +1,285 @@
-config:
-  version: "2026.3.10.209"
-
-release_name: "local-default"
-domain: ""   # required when proxy.ssl=true; used for proxylogin URLs and nginx SSL server_name/cert paths
-company: ""
+domain: "" # required when proxy.ssl=true; used for proxylogin URLs and nginx SSL server_name/cert paths
+company: "KDCube"
 
 context:
-  tenant: "demo-tenant"
-  project: "demo-project"
+  tenant: "demo-tenant"    # TENANT_ID
+  project: "demo-project"  # PROJECT_ID
 
-secrets:
-  provider: "secrets-service"   # "secrets-service" | "aws-sm" | "in-memory" | "secrets-file"
-
-# for cloud
-storage:
-  kdcube: "s3://../data/kdcube"
-  bundles: "s3://../data/kdcube"
-  workspace:
-    type: git
-    repo: "" # repo url
-  claude_code_session:
-    type: local   # local | git
-    repo: ""      # repo url; used only when type=git
-
-paths:
-  host_bundles_path: ""   # required for descriptor-driven local bundle installs; host folder mounted into /bundles
-  host_git_bundles_path: ""   # optional separate host folder for git-resolved bundle clones; mounted into /git-bundles when configured
-
-notifications:
-  email:
-    enabled: true
-    host: ""
-    port: "587"
-    user: ""
-    from: ""
-    to: "ops@example.com"
-    use_tls: true
-
-routines:
-
-  economics:
-    subscription_rollover_enabled: true
-    subscription_rollover_cron: "15 * * * *"
-    subscription_rollover_lock_ttl_seconds: 900
-    subscription_rollover_sweep_limit: 500
-
-  stripe:
-    reconcile_enabled: true
-    reconcile_cron: "45 * * * *"
-    reconcile_lock_ttl_seconds: 900
-
-  opex:
-    agg_cron: "0 3 * * *"
-
+# ---------------------------------------------------------------------------
+# Authentication
+# Set type to "simple" (local IDP), "cognito" (AWS Cognito), or "delegated".
+# ---------------------------------------------------------------------------
 auth:
-  type: "simple"  # "simple" | "cognito" | "delegated"
+  type: "simple"  # AUTH_PROVIDER: simple | cognito | delegated
+
+  # Token / cookie header names (new)
+  id_token_header_name: "X-ID-Token"         # ID_TOKEN_HEADER_NAME
+  auth_token_cookie_name: "__Secure-LATC"    # AUTH_TOKEN_COOKIE_NAME
+  id_token_cookie_name: "__Secure-LITC"      # ID_TOKEN_COOKIE_NAME
+  jwks_cache_ttl_seconds: 86400              # JWKS_CACHE_TTL_SECONDS
+
+  # OIDC service account credentials → secrets.yaml: auth.oidc.{admin_email,admin_username,admin_password}
+
+  # Cognito — fill in when type = "cognito"
   cognito:
-    region: "eu-west-1"
-    user_pool_id: ""
-    app_client_id: ""
-    service_client_id: ""
+    region: eu-west-1                 # COGNITO_REGION
+    user_pool_id: eu-west-1_XXXXXXXXX # COGNITO_USER_POOL_ID
+    app_client_id: ""                 # COGNITO_APP_CLIENT_ID
+    service_client_id: ""             # COGNITO_SERVICE_CLIENT_ID
+
   proxy_login:
     redis_key_prefix: "proxylogin:<TENANT>:<PROJECT>:"
     token_masquerade: true
     password_reset:
-      company: ""
-      sender: "email@your-org.com"
-      template_name: ""
-      redirect_url: "http://YOUR_DOMAIN/chatbot/reset-password?user=%[1]s"
-    http_urlbase: "https://YOUR_DOMAIN/auth"
+      company: "KDCube"
+      sender: "info@example.com"
+      template_name: "KDCubeNewUserWelcomeTemplate"
+      redirect_url: "http://YOUR_DOMAIN/platform/reset-password?user=%[1]s"
+    http_urlbase: "http://YOUR_DOMAIN/auth"
 
 proxy:
-  ssl: false   # when true, CLI uses SSL nginx templates and applies `domain` to LetsEncrypt paths under /etc/letsencrypt/live/<domain>/
-  route_prefix: "/chatbot"
+  ssl: false
+  route_prefix: "/platform"
 
+# ---------------------------------------------------------------------------
+# Service ports
+# ports.ingress → CHAT_APP_PORT; ports.proc → CHAT_PROCESSOR_PORT
+# ---------------------------------------------------------------------------
 ports:
-  ingress: "8010"
-  proc: "8020"
+  ingress: "8010"  # CHAT_APP_PORT
+  proc: "8020"     # CHAT_PROCESSOR_PORT
   metrics: "8090"
-  ui: "80"
+  ui: "5174"
   ui_ssl: "443"
 
+# ---------------------------------------------------------------------------
+# Infrastructure — Postgres and Redis
+# Passwords live in secrets.yaml (infra.postgres.password / infra.redis.password)
+# ---------------------------------------------------------------------------
 infra:
   postgres:
-    user: "postgres"
-    password: "postgres"
-    database: "kdcube"
-    host: "postgres-db"
-    port: "5432"
-    ssl: false
+    host: "postgres-db"  # POSTGRES_HOST
+    port: "5432"         # POSTGRES_PORT
+    user: "postgres"     # POSTGRES_USER
+    database: "kdcube"   # POSTGRES_DATABASE
+    password: "postgres" # POSTGRES_PASSWORD → also in secrets.yaml: infra.postgres.password
+    postgres_ssl: false  # POSTGRES_SSL (new)
+    # postgres_ssl_mode: "require"  # POSTGRES_SSL_MODE (new, optional)
+    # postgres_ssl_root_cert: ""    # POSTGRES_SSL_ROOT_CERT (new, optional)
   redis:
-    password: "redispass"
-    host: "redis"
-    port: "6379"
+    host: "redis"        # REDIS_HOST
+    port: "6379"         # REDIS_PORT
+    password: "redispass" # REDIS_PASSWORD → also in secrets.yaml: infra.redis.password
 
+# ---------------------------------------------------------------------------
+# Storage
+# ---------------------------------------------------------------------------
+storage:
+  kdcube: "s3://YOUR_BUCKET/data/kdcube/dev"    # KDCUBE_STORAGE_PATH; for local storage use an absolute path
+  bundles: "s3://YOUR_BUCKET/data/kdcube/dev"   # CB_BUNDLE_STORAGE_URL; for local storage use an absolute path
+  workspace:
+    type: git             # REACT_WORKSPACE_IMPLEMENTATION: local | git
+    repo: "https://github.com/YOUR_ORG/agentic-workspace.git"  # REACT_WORKSPACE_GIT_REPO
+  claude_code_session:
+    type: git             # CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION: local | git
+    repo: "https://github.com/YOUR_ORG/agentic-workspace.git"  # CLAUDE_CODE_SESSION_GIT_REPO; used only when type=git
+
+# ---------------------------------------------------------------------------
+# AWS
+# ---------------------------------------------------------------------------
 aws:
-  region: ""
-  profile: ""
-  ec2: false
+  aws_region: "eu-west-1"                          # AWS_REGION
+  # aws_profile: ""                                # AWS_PROFILE (optional)
+  aws_sdk_load_config: true                        # AWS_SDK_LOAD_CONFIG; make boto3 read ~/.aws/config when present
+  aws_ec2_metadata_disabled: false                 # AWS_EC2_METADATA_DISABLED
+  no_proxy: "169.254.169.254,localhost,127.0.0.1"  # NO_PROXY
 
+# ---------------------------------------------------------------------------
+# Models
+# ---------------------------------------------------------------------------
+models:
+  default_llm_model_id: "claude-sonnet-4-6"                   # DEFAULT_LLM_MODEL_ID
+  default_embedding_model_id: "openai-text-embedding-3-small"  # DEFAULT_EMBEDDING_MODEL_ID
+
+# ---------------------------------------------------------------------------
+# Services (LLM provider config, non-secret)
+# Leaf keys match env var names (lowercase).
+# ---------------------------------------------------------------------------
+services:
+  llm:
+    gemini:
+      gemini_cache_enabled: false     # GEMINI_CACHE_ENABLED
+      gemini_cache_ttl_seconds: 3600  # GEMINI_CACHE_TTL_SECONDS
+
+# ---------------------------------------------------------------------------
+# CORS — parsed as a block into CorsConfig (maps to CORS_CONFIG env var).
+# Keys match CorsConfig field names.
+# ---------------------------------------------------------------------------
+cors:
+  allow_origins:
+    - "http://localhost:3000"
+    - "http://localhost:3001"
+    - "http://localhost:4000"
+    - "http://localhost:5173"
+    - "http://localhost:5174"
+    - "http://localhost:5175"
+    - "http://localhost:8050"
+  allow_credentials: true
+  allow_methods: "*"
+  allow_headers: "*"
+
+# ---------------------------------------------------------------------------
+# Notifications
+# ---------------------------------------------------------------------------
+notifications:
+  email:
+    enabled: true          # EMAIL_ENABLED
+    host: ""               # EMAIL_HOST
+    port: "587"            # EMAIL_PORT
+    user: ""               # EMAIL_USER
+    from: ""               # EMAIL_FROM
+    to: "ops@example.com"  # EMAIL_TO
+    use_tls: true          # EMAIL_USE_TLS
+    # email_password → secrets.yaml: services.email.password
+
+# ---------------------------------------------------------------------------
+# Scheduled routines
+# ---------------------------------------------------------------------------
+routines:
+
+  economics:
+    subscription_rollover_enabled: true          # SUBSCRIPTION_ROLLOVER_ENABLED
+    subscription_rollover_cron: "15 * * * *"     # SUBSCRIPTION_ROLLOVER_CRON
+    subscription_rollover_lock_ttl_seconds: 900  # SUBSCRIPTION_ROLLOVER_LOCK_TTL_SECONDS
+    subscription_rollover_sweep_limit: 500       # SUBSCRIPTION_ROLLOVER_SWEEP_LIMIT
+
+  stripe:
+    reconcile_enabled: true          # STRIPE_RECONCILE_ENABLED
+    reconcile_cron: "45 * * * *"     # STRIPE_RECONCILE_CRON
+    reconcile_lock_ttl_seconds: 900  # STRIPE_RECONCILE_LOCK_TTL_SECONDS
+
+  opex:
+    agg_cron: "0 3 * * *"  # OPEX_AGG_CRON
+
+# ---------------------------------------------------------------------------
+# Secrets provider
+# ---------------------------------------------------------------------------
+secrets:
+  provider: "secrets-file"  # SECRETS_PROVIDER: secrets-service | aws-sm | in-memory | secrets-file
+
+# ---------------------------------------------------------------------------
+# Host paths (used by docker-compose mounts; not read by services directly)
+# ---------------------------------------------------------------------------
+paths:
+  host_bundles_path: "/YOUR/HOST/PATH/src"                           # HOST_BUNDLES_PATH; required for descriptor-driven local bundle installs; host folder mounted into /bundles
+  host_git_bundles_path: "/YOUR/HOST/PATH/.kdcube/git-bundles"       # HOST_GIT_BUNDLES_PATH; optional separate host folder for git-resolved bundle clones/cache; mounted into /git-bundles
+  host_bundle_storage_path: "/YOUR/HOST/PATH/.kdcube/bundle-storage" # HOST_BUNDLE_STORAGE_PATH; host folder for local bundle storage; mounted into container
+
+# ---------------------------------------------------------------------------
+# Platform metadata
+# ---------------------------------------------------------------------------
 platform:
+  repo: "git@github.com:kdcube/kdcube-ai-app.git"
+  ref: "2026.4.12.500"
+  config:
+    version: "2026.4.12.500"
+
+  # -------------------------------------------------------------------------
+  # Component-scoped settings.
+  # Each component (ingress / proc) only reads its own section.
+  # Leaf keys match env var names (lowercase).
+  # -------------------------------------------------------------------------
   services:
     ingress:
-      service:
-        uvicorn_reload: false
-        cb_relay_identity: "kdcube.relay.chatbot"
-    proc:
-      service:
-        uvicorn_reload: false
-        cb_relay_identity: "kdcube.relay.chatbot"
-        chat_scheduler_backend: "legacy_lists"
-        chat_task_timeout_sec: 600
-        chat_task_idle_timeout_sec: 600
-        chat_task_max_wall_time_sec: 2400
-        chat_task_watchdog_poll_interval_sec: 1.0
-    metrics:
-      service:
-        uvicorn_reload: false
+      log:
+        log_level: "INFO"            # LOG_LEVEL
+        log_max_mb: 20               # LOG_MAX_MB
+        log_backup_count: 10         # LOG_BACKUP_COUNT
+        log_dir: ""                  # LOG_DIR; absolute path; leave empty to use default
+        log_file_prefix: "chat-ingress"  # LOG_FILE_PREFIX
 
-bundles:
-  default_bundle_id: "react@2026-02-10-02-44"
-  items:
-    - id: app@2-0
-      name: Customer App
-      repo: git@github.com:org/customer-repo.git
-      ref: bundle-v2026.02.22
-      subdir: service/bundles
-      module: app@2-0.entrypoint
+      service:
+        uvicorn_reload: false                      # UVICORN_RELOAD
+        heartbeat_interval: 5                      # HEARTBEAT_INTERVAL
+        cb_relay_identity: "kdcube.relay.chatbot"  # CB_RELAY_IDENTITY
+
+      av:
+        app_av_scan: true         # APP_AV_SCAN
+        app_av_timeout_s: 3.0     # APP_AV_TIMEOUT_S
+        clamav_host: "localhost"  # CLAMAV_HOST
+        clamav_port: 3310         # CLAMAV_PORT
+
+      idp:
+        idp_db_path: ""                            # IDP_DB_PATH; absolute path to idp_users.json; leave empty to use default location
+        idp_import_enabled: false                  # IDP_IMPORT_ENABLED
+        idp_import_run_at: "2026-02-22T07:00:00Z"  # IDP_IMPORT_RUN_AT; ISO timestamp; UTC assumed when no tz
+        idp_import_script_path: ""                 # IDP_IMPORT_SCRIPT_PATH; absolute path to import_users.py
+
+      monitoring:
+        monitoring_burst_enable: true  # MONITORING_BURST_ENABLE
+
+    proc:
+      log:
+        log_level: "INFO"          # LOG_LEVEL
+        log_max_mb: 20             # LOG_MAX_MB
+        log_backup_count: 10       # LOG_BACKUP_COUNT
+        log_dir: ""                # LOG_DIR; absolute path; leave empty to use default
+        log_file_prefix: "chat-proc"  # LOG_FILE_PREFIX
+
+      service:
+        uvicorn_reload: false                      # UVICORN_RELOAD
+        heartbeat_interval: 5                      # HEARTBEAT_INTERVAL
+        cb_relay_identity: "kdcube.relay.chatbot"  # CB_RELAY_IDENTITY
+        chat_scheduler_backend: "legacy_lists"     # CHAT_SCHEDULER_BACKEND: legacy_lists | kafka
+        chat_task_timeout_sec: 600                 # CHAT_TASK_TIMEOUT_SEC
+        chat_task_idle_timeout_sec: 600            # CHAT_TASK_IDLE_TIMEOUT_SEC
+        chat_task_max_wall_time_sec: 2400          # CHAT_TASK_MAX_WALL_TIME_SEC
+        chat_task_watchdog_poll_interval_sec: 1.0  # CHAT_TASK_WATCHDOG_POLL_INTERVAL_SEC
+
+      exec:
+        exec_workspace_root: ""                # EXEC_WORKSPACE_ROOT; absolute path
+        py_code_exec_image: "py-code-exec:latest"  # PY_CODE_EXEC_IMAGE
+        py_code_exec_timeout: 600              # PY_CODE_EXEC_TIMEOUT
+        py_code_exec_network_mode: "host"      # PY_CODE_EXEC_NETWORK_MODE
+
+      tools:
+        web_search:
+          tools_web_search_fetch_content: true     # TOOLS_WEB_SEARCH_FETCH_CONTENT
+          web_search_agentic_thinking_budget: 200  # WEB_SEARCH_AGENTIC_THINKING_BUDGET
+          web_search_primary_backend: "brave"      # WEB_SEARCH_PRIMARY_BACKEND
+          web_search_backend: "hybrid"             # WEB_SEARCH_BACKEND: duckduckgo | brave | hybrid
+          web_search_hybrid_mode: "sequential"     # WEB_SEARCH_HYBRID_MODE: sequential | parallel
+          web_search_segmenter: "fast"             # WEB_SEARCH_SEGMENTER
+        web_fetch:
+          web_fetch_resources_medium: ""  # WEB_FETCH_RESOURCES_MEDIUM; JSON: {"cookies": {"uid": "...", "sid": "..."}}
+        mcp_cache_ttl_seconds: 36000      # MCP_CACHE_TTL_SECONDS
+        accounting_services: '{"web_search": {"brave": {"tier": "free"}, "duckduckgo": {"tier": "free"}}}'  # ACCOUNTING_SERVICES
+
+      bundles:
+        agentic_bundles_root: "/bundles"              # AGENTIC_BUNDLES_ROOT; host path → paths.host_bundles_path
+        bundle_storage_root: ""                       # BUNDLE_STORAGE_ROOT
+        bundles_include_examples: true                # BUNDLES_INCLUDE_EXAMPLES
+        bundle_cleanup_enabled: true                  # BUNDLE_CLEANUP_ENABLED
+        bundle_cleanup_interval_seconds: 3600         # BUNDLE_CLEANUP_INTERVAL_SECONDS
+        bundle_cleanup_lock_ttl_seconds: 900          # BUNDLE_CLEANUP_LOCK_TTL_SECONDS
+        bundle_ref_ttl_seconds: 3600                  # BUNDLE_REF_TTL_SECONDS
+        bundles_force_env_on_startup: true            # BUNDLES_FORCE_ENV_ON_STARTUP
+        bundles_force_env_lock_ttl_seconds: 60        # BUNDLES_FORCE_ENV_LOCK_TTL_SECONDS
+        bundles_preload_on_start: true                # BUNDLES_PRELOAD_ON_START
+        bundles_preload_lock_ttl_seconds: 900         # BUNDLES_PRELOAD_LOCK_TTL_SECONDS
+        git:
+          bundle_git_resolution_enabled: true         # BUNDLE_GIT_RESOLUTION_ENABLED
+          bundle_git_atomic: true                     # BUNDLE_GIT_ATOMIC
+          bundle_git_always_pull: false               # BUNDLE_GIT_ALWAYS_PULL
+          bundle_git_redis_lock: true                 # BUNDLE_GIT_REDIS_LOCK
+          bundle_git_redis_lock_ttl_seconds: 300      # BUNDLE_GIT_REDIS_LOCK_TTL_SECONDS
+          bundle_git_redis_lock_wait_seconds: 60      # BUNDLE_GIT_REDIS_LOCK_WAIT_SECONDS
+          bundle_git_prefetch_enabled: true           # BUNDLE_GIT_PREFETCH_ENABLED
+          bundle_git_prefetch_interval_seconds: 15    # BUNDLE_GIT_PREFETCH_INTERVAL_SECONDS
+          bundle_git_fail_backoff_seconds: 60         # BUNDLE_GIT_FAIL_BACKOFF_SECONDS
+          bundle_git_fail_max_backoff_seconds: 300    # BUNDLE_GIT_FAIL_MAX_BACKOFF_SECONDS
+          bundle_git_keep: 3                          # BUNDLE_GIT_KEEP
+          bundle_git_ttl_hours: 0                     # BUNDLE_GIT_TTL_HOURS
+          git_ssh_key_path: ""                        # GIT_SSH_KEY_PATH; absolute path to SSH private key
+          git_ssh_known_hosts: ""                     # GIT_SSH_KNOWN_HOSTS; absolute path to known_hosts file
+          git_ssh_strict_host_key_checking: "yes"     # GIT_SSH_STRICT_HOST_KEY_CHECKING

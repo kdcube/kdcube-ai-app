@@ -7,6 +7,7 @@ import os
 from logging.handlers import RotatingFileHandler
 from datetime import datetime
 from pathlib import Path
+from kdcube_ai_app.apps.chat.sdk.config import get_settings
 
 
 def _to_level(name: str, default: int) -> int:
@@ -17,8 +18,9 @@ def _to_level(name: str, default: int) -> int:
 
 
 def configure_logging():
-    # --- Global settings from env ---
-    log_level_name = os.getenv("LOG_LEVEL", "INFO").upper()
+    # --- Global settings from config ---
+    _log = get_settings().PLATFORM.LOG
+    log_level_name = (_log.LOG_LEVEL or "INFO").upper()
     log_format = os.getenv(
         "LOG_FORMAT",
         "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -31,14 +33,14 @@ def configure_logging():
     console_handler.setFormatter(logging.Formatter(log_format))
 
     # ---- File handler with rotation ----
-    log_dir = Path(os.getenv("LOG_DIR", "logs"))
+    log_dir = Path(_log.LOG_DIR or "logs")
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    file_prefix = os.getenv("LOG_FILE_PREFIX", "kdcube")
+    file_prefix = _log.LOG_FILE_PREFIX or "kdcube"
     base_log_path = log_dir / f"{file_prefix}.log"
 
-    max_mb = int(os.getenv("LOG_MAX_MB", "20"))          # 20 MB default
-    backup_count = int(os.getenv("LOG_BACKUP_COUNT", "10"))
+    max_mb = _log.LOG_MAX_MB
+    backup_count = _log.LOG_BACKUP_COUNT
 
     file_handler = RotatingFileHandler(
         base_log_path,
