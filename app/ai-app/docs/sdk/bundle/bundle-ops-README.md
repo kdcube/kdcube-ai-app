@@ -1,476 +1,121 @@
 ---
 id: ks:docs/sdk/bundle/bundle-ops-README.md
 title: "Bundle Ops"
-summary: "Ops guide for bundle registry, delivery modes, git resolution, env controls, and runtime props."
-tags: ["sdk", "bundle", "ops", "registry", "git", "env", "release", "props"]
-keywords: ["AGENTIC_BUNDLES_JSON", "bundles registry", "Redis", "BUNDLES_FORCE_ENV_ON_STARTUP", "git bundles", "BUNDLE_GIT_RESOLUTION_ENABLED", "BUNDLE_GIT_REDIS_LOCK", "bundles.yaml", "props"]
+summary: "Bundle delivery and update guide: local reload, registry updates, descriptor-authoritative config, and deployment-side bundle resolution."
+tags: ["sdk", "bundle", "ops", "registry", "git", "reload", "deployment"]
+keywords: ["bundle reload", "AGENTIC_BUNDLES_JSON", "bundles registry", "bundles.yaml", "bundle git", "kdcube cli"]
 see_also:
   - ks:docs/sdk/bundle/bundle-dev-README.md
-  - ks:docs/sdk/bundle/bundle-index-README.md
-  - ks:docs/sdk/bundle/bundle-interfaces-README.md
-  - ks:docs/sdk/bundle/bundle-platform-properties-README.md
+  - ks:docs/sdk/bundle/bundle-props-secrets-README.md
   - ks:docs/service/configuration/bundle-configuration-README.md
 ---
-# Bundle Ops Guide (Registry, Delivery, Git)
+# Bundle Ops Guide
 
-This guide is for **ops/deployment** owners who configure bundle registries, delivery, and upgrades.
+This page is for delivery and update operations, not authoring.
 
-If you need **authoring** guidance, see:
-[docs/sdk/bundle/bundle-dev-README.md](bundle-dev-README.md).
+If you are building a bundle, start with:
 
----
+- [bundle-dev-README.md](bundle-dev-README.md)
 
-## Registry + runtime flow (overview)
-
-```mermaid
-graph TD
-  ENV[AGENTIC_BUNDLES_JSON] --> REG[Redis bundle registry<br/>per tenant/project]
-  API[Admin Integrations API] -->|update/merge| REG
-  REG -->|pubsub update| PROC[Processor config listener]
-  PROC -->|apply + clear caches| REGMEM[In‑process registry]
-
-  INGRESS[Ingress SSE/WS] -->|bundle_id| RESOLVE[resolve_bundle]
-  RESOLVE --> LOADER[agentic_loader<br/>load + instantiate]
-  LOADER --> WF[Workflow.run/execute_core]
-  WF --> STREAM[ChatCommunicator streams]
-```
-
-Notes:
-- Registry is tenant/project scoped.
-- Updates are published to a tenant/project channel; each processor listens only to its own channel.
-- Only **new requests** use the updated bundle path.
-- For local descriptor-driven development, the CLI now wraps the authoritative env replay path with:
-  - `kdcube --workdir <runtime-workdir> --bundle-reload <bundle_id>`
-
-Runtime touchpoints:
-- Task runner: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py` (loads bundle + calls `run`)
-- Config listener: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py` (subscribes to bundles update channel)
-- Integrations API: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/integrations.py`
-  - `POST /bundles/{tenant}/{project}/operations/{operation}` invokes `workflow.<operation>(...)`
-
----
-
-## Delivery modes
+## Delivery Modes
 
 Choose one delivery mode per deployment:
-- **Mounted path** (EC2 compose, local dev): bundles exist on disk and are mounted into proc.
-- **Git‑defined** (ECS or EC2): proc clones bundles from git at startup/config update.
 
-**Git pull policy (runtime):**
-- Git pulls happen **only during registry sync** (processor startup or a bundle config update).
-- Request‑time `resolve_bundle()` **never** pulls from git.
+- mounted local path
+  - bundle code exists on disk and is mounted into proc
+- git-defined bundle
+  - proc clones bundle code from git during registry sync
 
-## Local developer prototyping flow
+Request-time bundle resolution does **not** pull from git. Git sync happens during startup or config refresh.
 
-Recommended localhost loop:
+## Local Descriptor-Driven Development
 
-1. set `assembly.yaml -> paths.host_bundles_path`
-2. keep your bundle under that host root
-3. point `bundles.yaml` to the container-visible path `/bundles/<bundle-folder>`
-4. install once with:
-   - `kdcube --descriptors-location <dir> --build`
-5. after each code or descriptor change, run:
-   - `kdcube --workdir <runtime-workdir> --bundle-reload <bundle_id>`
+Recommended local loop:
 
-Example:
+1. keep the bundle under the configured host bundles root
+2. point `bundles.yaml` to the container-visible path `/bundles/<bundle-folder>`
+3. build once:
 
-- host bundle folder:
-  - `/Users/you/dev/bundles/my.bundle`
-- descriptor entry:
-
-```yaml
-bundles:
-  items:
-    - id: "my.bundle@1.0.0"
-      path: "/bundles/my.bundle"
-      module: "entrypoint"
-```
-
-Important:
-
-- proc sees `/bundles/...`, not raw host paths
-- local path bundles use `HOST_BUNDLES_PATH` and `/bundles/...`
-- git bundles use `HOST_GIT_BUNDLES_PATH` and `/git-bundles/...`
-- if `HOST_GIT_BUNDLES_PATH` is not configured, git bundles fall back to the legacy bundles root behavior
-- `--bundle-reload` is descriptor-authoritative: it reapplies the registry and descriptor-backed props from `bundles.yaml`, then clears proc bundle caches
-- use the admin props API only for temporary runtime-only overrides that you do not need to keep in the descriptor
-
----
-
-## Registry source of truth
-
-At runtime, the source of truth is Redis:
-- key: `kdcube:config:bundles:mapping:{tenant}:{project}`
-- channel: `kdcube:config:bundles:update:{tenant}:{project}`
-
-Processors load Redis on startup and subscribe to the channel.
-
----
-
-## Configuration sources
-
-### 1) `AGENTIC_BUNDLES_JSON`
-
-Accepted shape:
-```json
-{
-  "default_bundle_id": "with.codegen",
-  "bundles": {
-    "with.codegen": {
-      "id": "with.codegen",
-      "name": "Codegen Agentic App",
-      "path": "/bundles",
-      "module": "with.codegen.entrypoint",
-      "singleton": false,
-      "description": "Codegen Agentic App"
-    }
-  }
-}
-```
-
-Fields:
-- `id` (required)
-- `name` (optional)
-- `path` (required for local bundles, recommended: direct bundle root such as `/bundles/my.bundle`)
-- `module` (required for local bundles, recommended: `entrypoint` when `path` already points to the bundle root)
-- `singleton` (optional)
-- `description` (optional)
-- `version` (optional)
-- `repo` / `ref` / `subdir` (git bundles)
-- `git_commit` (optional, filled after clone)
-
-### 2) Admin APIs (update registry + broadcast)
-
-- `GET /admin/integrations/bundles`
-- `POST /admin/integrations/bundles`
-  - `{ op: "replace"|"merge", bundles: {...}, default_bundle_id?: "..." }`
-- `POST /admin/integrations/bundles/reset-env`
-- `POST /internal/bundles/reset-env` (localhost only; intended for CLI/local automation)
-
-**CI/CD friendly option (no admin tokens):**
-Set `BUNDLES_FORCE_ENV_ON_STARTUP=1` on **processor**.
-
-`reset-env` and proc startup force-env do two things authoritatively for the
-current tenant/project scope:
-- replace the Redis bundle registry from `AGENTIC_BUNDLES_JSON` / `bundles.yaml`
-- replace the descriptor-backed bundle props layer in Redis
-
-If a bundle prop key was removed from `bundles.yaml`, that key is deleted from
-Redis during env reset. Runtime/admin overrides are also discarded by env reset,
-which makes `bundles.yaml` the startup source of truth.
-
-**Bundle secrets + sidecar tokens (important):**
-Bundle secrets can be added at any time (admin UI or bundles.secrets.yaml),
-so services must be able to read them long after startup. If you use
-`bundles.secrets.yaml`, keep the secrets sidecar **read tokens non‑expiring**:
-- `SECRETS_TOKEN_TTL_SECONDS=0`
-- `SECRETS_TOKEN_MAX_USES=0`
-These live in the workdir `.env` (compose) and ensure `get_secret()` keeps
-working for bundle secrets at runtime.
-
-**Admin UI UX:** bundle secrets are write‑only. The UI shows **keys only**
-(values are never returned). Keys are tracked in Redis per bundle.
-
-When secrets are provisioned via `bundles.secrets.yaml`, the CLI also stores
-the key list under `bundles.<bundle_id>.secrets.__keys` in the secrets sidecar
-so the UI can show keys without exposing values.
-
-Important:
-- this authoritative env reset applies to the registry and bundle props layer
-  only
-- `bundles.secrets.yaml` provisioning is currently upsert-only
-- removing a secret from the descriptor does not auto-delete it from the
-  configured secrets provider
-
----
-
-## Runtime env controls
-
-| Setting                               | Default   | Purpose                                                                 |
-|---------------------------------------|-----------|-------------------------------------------------------------------------|
-| `AGENTIC_BUNDLES_JSON`                | _(unset)_ | Bundle registry descriptor (inline JSON or path to JSON/YAML file).     |
-| `BUNDLE_STORAGE_ROOT`                | _(unset)_ | Shared local filesystem root for bundle data (used by ks:), default: `<bundles_root>/_bundle_storage`. |
-| `BUNDLES_FORCE_ENV_ON_STARTUP`        | `0`       | Force overwrite Redis registry and descriptor-backed bundle props from `AGENTIC_BUNDLES_JSON` at startup. |
-| `BUNDLES_FORCE_ENV_LOCK_TTL_SECONDS`  | `60`      | Redis lock TTL for startup env reset.                                   |
-| `BUNDLES_INCLUDE_EXAMPLES`            | `1`       | Auto‑add example bundles from `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles`.                   |
-| `BUNDLES_PRELOAD_ON_START`            | `0`       | Eagerly load all configured bundle modules and run `on_bundle_load` hooks at proc startup. Eliminates cold start on first request. Proc `/health` returns 503 until preload completes. |
-| `BUNDLE_GIT_RESOLUTION_ENABLED`       | `1`       | Enable git clone/pull for bundles with `repo`.                          |
-| `BUNDLE_GIT_ALWAYS_PULL`              | `0`       | Always pull even if local path exists (useful for branch refs).         |
-| `BUNDLE_GIT_ATOMIC`                   | `1`       | Use atomic checkout (clone to temp dir then rename).                    |
-| `BUNDLE_GIT_PREFETCH_ENABLED`         | `1`       | Prefetch git bundles once on startup to gate readiness.                 |
-| `BUNDLE_GIT_REDIS_LOCK`               | `0`       | Redis lock for git pulls (per instance; key includes `INSTANCE_ID`).    |
-| `BUNDLE_GIT_REDIS_LOCK_TTL_SECONDS`   | `300`     | Redis lock TTL for git pulls.                                           |
-| `BUNDLE_GIT_REDIS_LOCK_WAIT_SECONDS`  | `60`      | Max wait to acquire git lock.                                           |
-| `BUNDLE_GIT_FAIL_BACKOFF_SECONDS`     | `60`      | Initial backoff after git failure (cooldown).                           |
-| `BUNDLE_GIT_FAIL_MAX_BACKOFF_SECONDS` | `300`     | Max backoff after repeated failures.                                    |
-| `BUNDLE_GIT_CLONE_DEPTH`              | _(unset)_ | Git clone depth (shallow clone).                                        |
-| `BUNDLE_GIT_SHALLOW`                  | _(unset)_ | Shallow clone (depth=50) when clone depth is unset.                     |
-| `BUNDLE_GIT_KEEP`                     | `3`       | Number of old git bundle folders to keep (cleanup).                     |
-| `BUNDLE_GIT_TTL_HOURS`                | `0`       | If >0, delete git bundle folders older than this TTL (hours).           |
-| `GIT_SSH_COMMAND`                     | _(unset)_ | Full SSH command for git (overrides other SSH envs).                    |
-| `GIT_SSH_KEY_PATH`                    | _(unset)_ | Path to private SSH key used for git clone/pull.                        |
-| `GIT_SSH_KNOWN_HOSTS`                 | _(unset)_ | Path to `known_hosts` for SSH host verification.                        |
-| `GIT_SSH_STRICT_HOST_KEY_CHECKING`    | _(unset)_ | `yes`/`no` for StrictHostKeyChecking.                                   |
-| `GIT_HTTP_TOKEN`                      | _(unset)_ | HTTPS token for private repos (uses GIT_ASKPASS).                       |
-| `GIT_HTTP_USER`                       | _(unset)_ | HTTPS username (defaults to `x-access-token`).                          |
-
-**Auth precedence:** if `GIT_HTTP_TOKEN` is set, HTTPS token auth is used and SSH settings are ignored (a warning is logged when both are set).
-
----
-
-## Shared bundle local storage (compose / ECS)
-
-If you use bundles that expose `ks:` (doc/knowledge or any shared local data),
-mount a shared local store and set:
-
-```
-BUNDLE_STORAGE_ROOT=/bundle-storage
-```
-
-Examples:
-- **Docker compose**: bind a host dir to `/bundle-storage`.
-- **ECS**: mount EFS to `/bundle-storage` (access point `uid=1000`, `gid=1000`).
-
-## Bundles root resolution
-
-Bundles are stored under a root directory. Resolution order:
-1. `HOST_BUNDLES_PATH`
-2. `AGENTIC_BUNDLES_ROOT`
-3. `/bundles`
-
-In containers, prefer `AGENTIC_BUNDLES_ROOT=/bundles`.
-
----
-
-## Git bundle path derivation
-
-```
-<bundles_root>/<repo>__<bundle_id>__<ref>/<subdir?>
-```
-
-If `ref` is omitted:
-```
-<bundles_root>/<repo>__<bundle_id>/<subdir?>
-```
-
-**Ref policy (recommended):**
-- Tag (release)
-- Commit SHA (deterministic)
-- Branch name (dev only, requires `BUNDLE_GIT_ALWAYS_PULL=1`)
-
----
-
-## Built‑in bundles and reserved IDs
-
-These IDs are reserved and cannot be overridden:
-- `kdcube.admin`
-- example bundles from `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles` (when enabled)
-
-To disable example bundles:
-```
-BUNDLES_INCLUDE_EXAMPLES=0
-```
-
----
-
-## Bundle props (runtime overrides)
-
-Bundles can expose runtime props stored per tenant/project/bundle in Redis.
-These props can be provided in `bundles.yaml` **or** updated at runtime.
-Bundle defaults come from `entrypoint.configuration` (bundle-defined). Effective
-props are computed as a deep merge: defaults → bundles.yaml → runtime overrides.
-
-Some prop paths are platform-reserved and have built-in behavior:
-- `role_models`
-- `embedding`
-- `economics.reservation_amount_dollars`
-- `execution.runtime`
-- `mcp.services`
-
-Canonical reference:
-[docs/sdk/bundle/bundle-platform-properties-README.md](bundle-platform-properties-README.md).
-
-Example: MCP service config in bundle props
-
-```yaml
-config:
-  mcp:
-    services:
-      mcpServers:
-        docs:
-          transport: http
-          url: https://mcp.internal.example.com
-          auth:
-            type: bearer
-            secret: bundles.react.mcp@2026-03-09.secrets.docs.token
-        firecrawl:
-          transport: stdio
-          command: npx
-          args: ["-y", "firecrawl-mcp"]
-          env:
-            FIRECRAWL_API_KEY: ${secret:bundles.react.mcp@2026-03-09.secrets.firecrawl.api_key}
-```
-
-Notes:
-- `mcp.services` is the preferred platform contract for MCP connector config.
-- `MCP_SERVICES` env remains only as a legacy/local-dev fallback.
-- `auth.secret` is the preferred way to wire HTTP/SSE auth through named bundle secrets.
-- `${secret:...}` is supported for stdio server `env` values and resolves through `get_secret()` at session creation time.
-
-Important:
-- during normal runtime, admin edits act as the top override layer
-- during `reset-env` or proc startup with `BUNDLES_FORCE_ENV_ON_STARTUP=1`,
-  Redis props are rebuilt from `bundles.yaml` authoritatively
-- stale keys removed from `bundles.yaml` are deleted from Redis
-- runtime overrides do not survive that authoritative env reset
-- CLI `--bundle-reload` uses that same authoritative env replay path
-
-Admin APIs:
-- `GET /admin/integrations/bundles/{bundle_id}/props`
-- `POST /admin/integrations/bundles/{bundle_id}/props`
-- `POST /admin/integrations/bundles/{bundle_id}/props/reset-code`
-
-Example: set knowledge repo + docs roots for a bundle that uses knowledge search:
-
-```
-POST /admin/integrations/bundles/<bundle_id>/props
-{
-  "tenant": "<tenant>",
-  "project": "<project>",
-  "op": "merge",
-  "props": {
-    "knowledge": {
-      "repo": "git@github.com:kdcube/kdcube-ai-app.git",
-      "ref": "v0.3.2",
-      "docs_root": "app/ai-app/docs",
-      "src_root": "app/ai-app/src/kdcube-ai-app/kdcube_ai_app",
-      "deploy_root": "app/ai-app/deployment",
-      "validate_refs": true
-    }
-  }
-}
-```
-
-### Props in bundles.yaml
-
-You can also set props per bundle item in `bundles.yaml`:
-
-```yaml
-bundles:
-  version: "1"
-  items:
-    - id: "react@2026-02-10-02-44"
-      repo: "git@github.com:kdcube/kdcube-ai-app.git"
-      ref: "v0.3.2"
-      subdir: "app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles"
-      module: "react@2026-02-10-02-44.entrypoint"
-      config:
-        knowledge:
-          repo: "git@github.com:kdcube/kdcube-ai-app.git"
-          ref: "v0.3.2"
-          docs_root: "app/ai-app/docs"
-          src_root: "app/ai-app/src/kdcube-ai-app/kdcube_ai_app"
-          deploy_root: "app/ai-app/deployment"
-          validate_refs: true
-```
-
-Resolved values are stored in Redis as bundle props.
-On `reset-env` / startup force-env this Redis layer is synchronized
-authoritatively from the descriptor, not merged additively.
-
-Example: per-bundle Fargate exec override
-
-```yaml
-config:
-  execution:
-    runtime:
-      mode: fargate
-      enabled: true
-      cluster: arn:aws:ecs:eu-west-1:100258542545:cluster/kdcube-staging-cluster
-      task_definition: kdcube-staging-exec
-      container_name: exec
-      subnets: ["subnet-xxxx", "subnet-yyyy"]
-      security_groups: ["sg-xxxx"]
-      assign_public_ip: DISABLED
-```
-
-This lets a specific bundle opt into distributed exec even if proc also has
-global env fallbacks for Docker/Fargate execution.
-
-Bundles can also declare multiple supported exec profiles in props:
-
-```yaml
-config:
-  execution:
-    runtime:
-      default_profile: fargate
-      profiles:
-        docker:
-          mode: docker
-        fargate:
-          mode: fargate
-          enabled: true
-          cluster: arn:aws:ecs:eu-west-1:100258542545:cluster/kdcube-staging-cluster
-          task_definition: kdcube-staging-exec
-          container_name: exec
-          subnets: ["subnet-xxxx", "subnet-yyyy"]
-          security_groups: ["sg-xxxx"]
-          assign_public_ip: DISABLED
-```
-
-That keeps the supported runtime set inside bundle props while still allowing
-the bundle to choose the actual profile at runtime.
-
-### Inspect effective props in Redis
-```
-kdcube:config:bundles:props:<tenant>:<project>:<bundle_id>
-```
-
-Example:
 ```bash
-redis-cli GET "kdcube:config:bundles:props:demo-tenant:demo-project:kdcube.copilot@2026-04-03-19-05"
+kdcube --descriptors-location <dir> --build
 ```
 
----
+4. after code or descriptor changes:
 
-## Bundles descriptor
-
-Bundles descriptors define bundle versions for CI/CD.
-Canonical docs:
-- [docs/service/configuration/bundle-configuration-README.md](../../service/configuration/bundle-configuration-README.md)
-- [docs/service/cicd/release-bundle-README.md](../../service/cicd/release-bundle-README.md)
-
-Use `repo/ref/subdir/module` in `bundles.yaml` and set:
-```
-AGENTIC_BUNDLES_JSON=/config/bundles.yaml
+```bash
+kdcube --workdir <runtime-workdir> --bundle-reload <bundle_id>
 ```
 
-Bundles descriptors define **bundle versions** and can include **bundle props**.
+Example:
 
----
+```bash
+kdcube --workdir ~/.kdcube/kdcube-runtime --bundle-reload versatile@2026-03-31-13-36
+```
 
-## Cleanup of old git bundles
+`--bundle-reload` is descriptor-authoritative:
 
-Use cleanup to drop old git bundle folders:
-- automatic cleanup via `BUNDLE_GIT_KEEP` and `BUNDLE_GIT_TTL_HOURS`
-- admin cleanup endpoint (if enabled) for module cache eviction
+- reapplies the bundle registry from descriptor/env state
+- rebuilds descriptor-backed bundle props from `bundles.yaml`
+- clears in-process bundle caches in proc
 
----
+Use it after changing:
 
-## Bundle cache cleanup loop (proc)
+- bundle code
+- `bundles.yaml`
+- `bundles.secrets.yaml`
 
-These control the periodic cleanup that removes stale bundle module caches:
-- `BUNDLE_CLEANUP_ENABLED`
-- `BUNDLE_CLEANUP_INTERVAL_SECONDS`
-- `BUNDLE_CLEANUP_LOCK_TTL_SECONDS`
-- `BUNDLE_REF_TTL_SECONDS`
+## Config Update Rules
 
----
+### Local mode
 
-## References (code)
+Local mode is the only mode where editing mounted descriptors directly is the normal operational path.
 
-- Bundle registry: `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_registry.py`
-- Git bundle resolver: `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`
-- Bundle store (Redis): `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_store.py`
-- Task processor + config listener: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py`
-- Integrations API: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/integrations.py`
+Typical change:
+
+1. edit `bundles.yaml` and/or `bundles.secrets.yaml`
+2. run `kdcube --bundle-reload <bundle_id>`
+
+### Runtime-only override
+
+Admin/runtime overrides are for temporary live changes.
+
+They are **not** the durable source of truth when you later reload from descriptors.
+
+If you want the change to survive reload and future upgrades:
+
+- put it into `bundles.yaml` or `bundles.secrets.yaml`
+
+### Export before upgrade
+
+If a deployment accumulated live bundle config and you need to carry it forward before an upgrade:
+
+- export live bundle descriptors with the CLI
+- then treat the exported descriptors as the new source of truth
+
+The exact descriptor-management docs will live under `docs/service/descriptors/`, but the important bundle rule is simple:
+
+- local mounted descriptors can be edited directly
+- non-local deployments should treat descriptor export/import as the controlled update path
+
+## Runtime Registry Source of Truth
+
+At runtime the active bundle registry lives in Redis.
+
+Proc loads it on startup and updates it when registry/config refresh is triggered.
+
+Relevant controls include:
+
+- `AGENTIC_BUNDLES_JSON`
+- `BUNDLES_FORCE_ENV_ON_STARTUP`
+- git bundle resolution env vars
+
+Those are deployment controls. They are not bundle authoring APIs.
+
+## When To Read Service Docs
+
+Use service docs only when you are changing deployment descriptors, release packaging, or service-wide configuration.
+
+For bundle-specific config semantics, stay in:
+
+- [bundle-props-secrets-README.md](bundle-props-secrets-README.md)
+- [bundle-platform-properties-README.md](bundle-platform-properties-README.md)

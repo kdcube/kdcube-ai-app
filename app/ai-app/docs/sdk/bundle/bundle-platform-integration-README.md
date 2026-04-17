@@ -8,7 +8,7 @@ see_also:
   - ks:docs/sdk/bundle/bundle-interfaces-README.md
   - ks:docs/sdk/bundle/bundle-scheduled-jobs-README.md
   - ks:docs/sdk/bundle/bundle-dev-README.md
-  - ks:docs/sdk/bundle/design/bundle-custom-venv-README.md
+  - ks:docs/sdk/bundle/bundle-venv-README.md
   - ks:docs/sdk/bundle/bundle-index-README.md
   - ks:docs/sdk/bundle/bundle-reference-versatile-README.md
 ---

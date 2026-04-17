@@ -1,1152 +1,209 @@
 ---
 id: ks:docs/sdk/bundle/bundle-dev-README.md
 title: "Bundle Dev"
-summary: "Bundle developer guide: entrypoint setup, supported decorators, layout, tools/skills, ops API, and one‑time bundle init."
-tags: ["sdk", "bundle", "development", "workflow", "entrypoint", "decorators", "tools", "skills", "ui", "operations", "cron", "venv"]
-keywords: ["agentic_workflow", "agentic_workflow_factory", "bundle_id", "api decorator", "ui_widget", "ui_main", "on_message", "cron", "venv", "BaseEntrypoint", "tools_descriptor", "skills_descriptor", "operations API", "on_bundle_load", "knowledge space", "event_filter", "BundleState", "with_accounting", "track_llm", "followups", "final_answer"]
+summary: "Compact bundle authoring guide: minimal structure, runtime contract, configuration model, reference bundle, and local reload loop."
+tags: ["sdk", "bundle", "development", "entrypoint", "workflow", "tools", "skills", "configuration"]
+keywords: ["bundle authoring", "agentic_workflow", "bundle_id", "tools_descriptor", "skills_descriptor", "bundle_prop", "get_secret", "bundle reload", "versatile"]
 see_also:
-  - ks:docs/sdk/bundle/bundle-index-README.md
-  - ks:docs/sdk/bundle/bundle-lifecycle-README.md
+  - ks:docs/sdk/bundle/bundle-reference-versatile-README.md
+  - ks:docs/sdk/bundle/bundle-platform-integration-README.md
   - ks:docs/sdk/bundle/bundle-runtime-README.md
   - ks:docs/sdk/bundle/bundle-props-secrets-README.md
-  - ks:docs/sdk/bundle/bundle-interfaces-README.md
-  - ks:docs/sdk/bundle/bundle-platform-integration-README.md
-  - ks:docs/sdk/bundle/bundle-node-backend-bridge-README.md
   - ks:docs/sdk/bundle/bundle-ops-README.md
-  - ks:docs/sdk/bundle/design/bundle-custom-venv-README.md
-  - ks:docs/sdk/bundle/bundle-platform-properties-README.md
-  - ks:docs/clients/client-communication-README.md
-  - ks:docs/clients/sse-events-README.md
 ---
-# Bundle Developer Guide (SDK)
+# Bundle Developer Guide
 
-This guide is for **bundle developers** who build workflows, tools, and UI experiences on top of the KDCube Chat SDK.
+This page is the shortest complete path for bundle authors.
 
-Read these first:
-- docs index + reference bundle:
-  [docs/sdk/bundle/bundle-index-README.md](bundle-index-README.md)
-- lifecycle and storage surfaces:
-  [docs/sdk/bundle/bundle-lifecycle-README.md](bundle-lifecycle-README.md)
-- runtime surfaces and request/tool execution modes:
-  [docs/sdk/bundle/bundle-runtime-README.md](bundle-runtime-README.md)
-- client communication contract for bundle UI/widgets/frontends:
-  [docs/clients/client-communication-README.md](../../clients/client-communication-README.md)
-- bundle config and secrets:
-  [docs/sdk/bundle/bundle-props-secrets-README.md](bundle-props-secrets-README.md)
-- primary full-feature reference bundle:
-  [docs/sdk/bundle/bundle-reference-versatile-README.md](bundle-reference-versatile-README.md)
-- declarative platform integration (`@agentic_workflow`, `@bundle_id`, `@api`, `@ui_widget`, `@ui_main`, `@on_message`, `@cron`, `@venv`):
-  [docs/sdk/bundle/bundle-platform-integration-README.md](bundle-platform-integration-README.md)
-- optional React `ks:` integration:
-  [docs/sdk/bundle/bundle-knowledge-space-README.md](bundle-knowledge-space-README.md)
-- optional Node or TypeScript backend behind a Python bridge:
-  [docs/sdk/bundle/bundle-node-backend-bridge-README.md](bundle-node-backend-bridge-README.md)
+Use it together with:
 
-If you need **ops/runtime config** (registry, env vars, git bundles, assembly descriptors), see:
-[docs/sdk/bundle/bundle-ops-README.md](bundle-ops-README.md).
+- [bundle-reference-versatile-README.md](bundle-reference-versatile-README.md)
+- [bundle-platform-integration-README.md](bundle-platform-integration-README.md)
+- [bundle-runtime-README.md](bundle-runtime-README.md)
+- [bundle-props-secrets-README.md](bundle-props-secrets-README.md)
 
-If you need the platform/source-of-truth config format (`bundles.yaml`, secrets files), see:
-[docs/service/configuration/bundle-configuration-README.md](../../service/configuration/bundle-configuration-README.md).
+## Start Here
 
-If you need the list of **platform-reserved bundle property paths** interpreted by
-base/economics entrypoints and exec runtime, see:
-[docs/sdk/bundle/bundle-platform-properties-README.md](bundle-platform-properties-README.md).
+Primary reference bundle:
 
-If you need the detailed design/runtime note for subprocess venv execution, see:
-[docs/sdk/bundle/design/bundle-custom-venv-README.md](design/bundle-custom-venv-README.md).
-
----
-
-## Reference bundle (start here)
-
-Primary reference implementation:
 `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36`
 
-Overview doc:
-- [docs/sdk/bundle/bundle-reference-versatile-README.md](bundle-reference-versatile-README.md)
+Read in this order:
 
-Recommended first read sequence for bundle builders:
-1. [docs/sdk/bundle/bundle-index-README.md](bundle-index-README.md)
-2. [docs/sdk/bundle/bundle-reference-versatile-README.md](bundle-reference-versatile-README.md)
-3. [docs/sdk/bundle/bundle-runtime-README.md](bundle-runtime-README.md)
-4. [docs/sdk/bundle/bundle-platform-integration-README.md](bundle-platform-integration-README.md)
-5. [docs/clients/client-communication-README.md](../../clients/client-communication-README.md)
-6. `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/README.md`
-7. the smallest relevant pytest files under `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tests/bundle`
-8. if the bundle already has package-specific tests, also read `<bundle>/tests`
+1. this guide
+2. the versatile reference doc
+3. `entrypoint.py`
+4. `orchestrator/workflow.py`
+5. `tools_descriptor.py`
+6. `skills_descriptor.py`
 
-Key files:
-- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/entrypoint.py` — entrypoint, economics, widget operation, direct isolated-exec operation
-- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/orchestrator/workflow.py` — React orchestration
-- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/tools_descriptor.py` — SDK tools + bundle-local tools + MCP connectors
-- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/skills_descriptor.py` — bundle-local skill visibility
-- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/tools/preference_tools.py` — custom tools
-- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/preferences_store.py` — shared local bundle storage model
-- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/ui/PreferencesBrowser.tsx` — TSX widget example
-- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/ui-src/src/App.tsx` — custom main-view iframe SPA using the platform chat REST/SSE contract
+## Minimal Bundle Shape
 
-Current shared bundle test suite:
-- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tests/bundle`
+Recommended layout:
 
-Default combined runner:
-- `python -m kdcube_ai_app.apps.chat.sdk.tests.bundle.run_bundle_suite --bundle-path /abs/path/to/bundle`
-  - runs the shared SDK bundle suite
-  - automatically adds `<bundle>/tests` when the bundle defines bundle-local tests
-
-Bundle-local tests:
-- A bundle may legitimately define its own package-specific tests under `<bundle>/tests`
-- Use that for reference-bundle or feature-specific behavior that is not part of the generic SDK contract
-- Those tests are not auto-collected by plain `pytest sdk/tests/bundle`; use the runner above for combined validation
-
-Specialized examples only when the task is narrower than the full reference:
-- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/kdcube.copilot@2026-04-03-19-05`
-  - bundle-defined `ks:` knowledge space and namespace resolution
-- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/with-isoruntime@2026-02-16-14-00`
-  - stripped-down direct isolated-exec harness
-
-Related runtime entrypoints:
-- Processor task runner: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py` (loads bundle + calls `run`)
-- Integrations API: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/integrations.py`
-  - `GET /bundles/{tenant}/{project}/{bundle_id}` returns bundle interface metadata discovered from decorators
-  - `GET /bundles/{tenant}/{project}/{bundle_id}/widgets` lists decorated widgets
-  - `GET /bundles/{tenant}/{project}/{bundle_id}/widgets/{alias}` resolves a decorated widget
-  - `GET|POST /bundles/{tenant}/{project}/{bundle_id}/operations/{operation}` resolves only `@api(..., route="operations")`
-  - `GET|POST /bundles/{tenant}/{project}/{bundle_id}/public/{operation}` resolves only `@api(..., route="public")`
-  - the legacy `POST /bundles/{tenant}/{project}/operations/{operation}` route still exists for backward compatibility
-  - widget methods still fetched through `/operations/...` should carry both `@ui_widget(...)` and `@api(..., route="operations")`
-  - the current decorator contract is described in [docs/sdk/bundle/bundle-platform-integration-README.md](bundle-platform-integration-README.md)
-- Base entrypoint features: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/entrypoint.py`
-  - Admin React apps like `ai_bundles`, `svc_gateway` can be exposed from bundles
-
----
-
-## Recommended bundle layout
-
-```
+```text
 my_bundle/
   entrypoint.py
   orchestrator/
     workflow.py
-  agents/
-    gate.py
   tools_descriptor.py
   skills_descriptor.py
-  resources.py
-  event_filter.py
+  tools/
+  skills/
+  ui/                 # optional widget TSX
+  ui-src/             # optional iframe app
+  tests/              # optional bundle-local tests
 ```
 
-Notes:
-- `entrypoint.py` is required.
-- `orchestrator/workflow.py` is recommended for real bundles.
-- `tools_descriptor.py` and `skills_descriptor.py` define the tool/skill surface.
+Required in practice:
 
----
+- `entrypoint.py`
+- bundle entrypoint registration
+- a compiled graph or equivalent run path
 
-## Supported decorators
+Usually present in real bundles:
 
-These are the bundle decorators currently supported by the SDK loader in
-`src/kdcube-ai-app/kdcube_ai_app/infra/plugin/agentic_loader.py`.
+- `orchestrator/workflow.py`
+- `tools_descriptor.py`
+- `skills_descriptor.py`
 
-| Decorator | Scope | What it means |
-| --- | --- | --- |
-| `@agentic_workflow(...)` | entrypoint class | Declares the bundle workflow class used by the runtime. This is the normal entrypoint decorator for bundles. |
-| `@agentic_workflow_factory(...)` | factory function | Declares a workflow factory function instead of a workflow class. Use this only when the bundle needs factory-style construction rather than the normal class entrypoint pattern. |
-| `@bundle_id("my.bundle@1.0.0")` | entrypoint class | Declares the bundle id in code when runtime needs to infer identity from the bundle code itself. For deployed bundles loaded from `bundles.yaml`, the descriptor `id` still remains the operational registry id. |
-| `@api(...)` | entrypoint method | Exposes a bundle method through the integrations HTTP surface. Use `user_types=(...)` for inferred platform user types such as `registered` or `privileged`, and `roles=(...)` for raw external roles such as `kdcube:role:super-admin`. |
-| `@ui_widget(...)` | entrypoint method | Declares a discoverable widget in the bundle manifest and widget endpoints. Supports the same `user_types=(...)` and raw `roles=(...)` visibility selectors as `@api(...)`. |
-| `@ui_main` | entrypoint method | Declares the main iframe UI entrypoint for the bundle. |
-| `@on_message` | entrypoint method | Declares the message-handling method for the bundle turn path. Base entrypoints already apply this to `run()`. |
-| `@cron(...)` | entrypoint method | Declares a scheduled background job managed by proc. Cron expression can be inline or loaded from bundle props via `expr_config`. |
-| `@venv(...)` | helper function or method | Executes the decorated callable in a cached per-bundle subprocess venv. This is an execution-boundary decorator, not an HTTP/UI manifest decorator. |
-
-Important rules:
-- use exactly one entrypoint style: `@agentic_workflow(...)` or `@agentic_workflow_factory(...)`
-- most bundles should use `@agentic_workflow(...)`; `@agentic_workflow_factory(...)` is an exception for custom construction cases
-- `@api(...)`, `@ui_widget(...)`, `@ui_main`, `@on_message`, and `@cron(...)` define the bundle interface and runtime metadata
-- `@venv(...)` does not expose routes or widgets by itself; it only changes where the callable executes
-- for the detailed contract, fields, and route mapping, see
-  [docs/sdk/bundle/bundle-platform-integration-README.md](bundle-platform-integration-README.md)
-
----
-
-## Entrypoint: register the bundle
-
-Entrypoint uses `@agentic_workflow` and typically extends `BaseEntrypoint`.
-
-Choose entrypoint style like this:
-
-- use `@agentic_workflow(...)` for the normal case: one workflow class is the bundle entrypoint
-- use `@agentic_workflow_factory(...)` only when bundle construction itself needs custom logic and a factory function must return the workflow object
-
-Side-by-side:
+## Minimal Entry Pattern
 
 ```python
-from kdcube_ai_app.infra.plugin.agentic_loader import (
-    agentic_workflow,
-    agentic_workflow_factory,
-    bundle_id,
-)
+from langgraph.graph import END, START, StateGraph
 
-@agentic_workflow(name="My Bundle", version="1.0.0")
-@bundle_id("my.bundle@1.0.0")
-class MyWorkflow(BaseEntrypoint):
-    ...
-
-@agentic_workflow_factory(name="My Bundle", version="1.0.0")
-def build_workflow(config, **kwargs):
-    return MyWorkflow(config=config, **kwargs)
-```
-
-In practice:
-- class form means the runtime instantiates the workflow class directly
-- factory form means the runtime calls your function and uses the returned workflow instance
-- prefer the class form unless you specifically need dynamic selection, wrapping, or legacy construction adaptation
-
-Minimal pattern:
-```python
 from kdcube_ai_app.infra.plugin.agentic_loader import agentic_workflow, bundle_id
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import BaseEntrypoint
-from langgraph.graph import StateGraph, START, END
+from kdcube_ai_app.infra.service_hub.inventory import BundleState
 
-@agentic_workflow(name="My Bundle", version="1.0.0", priority=100)
+
+@agentic_workflow(name="my.bundle", version="1.0.0")
 @bundle_id("my.bundle@1.0.0")
-class MyWorkflow(BaseEntrypoint):
+class MyEntrypoint(BaseEntrypoint):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.graph = self._build_graph()
 
-    def _build_graph(self) -> StateGraph:
+    def _build_graph(self):
         g = StateGraph(BundleState)
-        g.add_node("orchestrate", orchestrate)
+        g.add_node("orchestrate", self._orchestrate)
         g.add_edge(START, "orchestrate")
         g.add_edge("orchestrate", END)
         return g.compile()
-
-    async def execute_core(self, *, state, thread_id, params):
-        return await self.graph.ainvoke(state, config={"configurable": {"thread_id": thread_id}})
 ```
 
-Canonical imports:
-- non-economics bundles: `kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint.BaseEntrypoint`
-- economics-aware bundles: `kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint_with_economic.BaseEntrypointWithEconomics`
-- do not use `kdcube_ai_app.apps.chat.sdk.workflow`; that legacy path is not part of the current SDK contract
+For the exact decorator contract, route mapping, widget/public endpoints, `@cron`, and `@venv`, use:
 
-Model defaults live in `entrypoint.configuration` (`role_models`, `embedding`, etc).
-Runtime overrides are applied via `bundle_props` (`bundles.yaml` + admin UI).
-If you override `configuration`, call `super().configuration()` and use
-`setdefault` for defaults so external overrides still win.
+- [bundle-platform-integration-README.md](bundle-platform-integration-README.md)
 
-### Declarative interface decorators
+## Decorator Matrix
 
-The current bundle interface surface is explicit and decorator-driven:
+| Decorator | Scope | Use it for |
+| --- | --- | --- |
+| `@agentic_workflow(...)` | entrypoint class | normal bundle registration |
+| `@agentic_workflow_factory(...)` | factory function | custom workflow construction when class registration is not enough |
+| `@bundle_id(...)` | entrypoint class | code-level bundle identity |
+| `@api(...)` | entrypoint method | bundle HTTP operations and public endpoints |
+| `@ui_widget(...)` | entrypoint method | widget manifest entries |
+| `@ui_main` | entrypoint method | main iframe UI entrypoint |
+| `@on_message` | entrypoint method | message-handler metadata |
+| `@cron(...)` | entrypoint method | scheduled background jobs |
+| `@venv(...)` | helper function or method | cached subprocess virtualenv execution for selected helpers |
 
-- `@agentic_workflow(...)` declares the bundle workflow class
-- `@bundle_id("my.bundle@version")` declares the canonical bundle id
-- `@api(...)` exposes a method through the integrations HTTP surface
-  - `route="operations"` is the default
-  - use `route="public"` only for operations intentionally reachable from the public route
-  - use `user_types=(...)` for inferred internal user types
-    - examples: `("anonymous",)`, `("registered",)`, `("paid",)`, `("privileged",)`
-  - use `roles=(...)` for raw external roles propagated from auth
-    - example: `("kdcube:role:super-admin",)`
-  - if both `user_types` and `roles` are provided, both conditions must match
-  - `route="public"` must also declare `public_auth`
-    - `public_auth="none"` means explicitly unauthenticated public endpoint
-    - `public_auth={"mode":"header_secret","header":"X-Telegram-Bot-Api-Secret-Token","secret_key":"telegram.webhook_secret"}` means the platform verifies the header against `bundles.<bundle_id>.secrets.telegram.webhook_secret`
-- `@ui_widget(...)` declares a widget for `/widgets`
-- `@ui_main` declares the main iframe UI entrypoint for `/static/...`
-- `@on_message` marks the turn handler metadata used by the processor path
-- `@cron(...)` declares a scheduled background job reconciled by proc
+Practical rule:
 
-Important rules:
+- most bundles need `@agentic_workflow(...)`, `@bundle_id(...)`, and optionally `@api(...)` / `@ui_widget(...)`
+- use `@cron(...)` only for scheduled work
+- use `@venv(...)` only for dependency-heavy leaf helpers, not general orchestration
 
-- only methods decorated with `@api(...)` are remotely callable through `/operations` or `/public`
-- same-name undeclared methods are not part of the HTTP contract
-- if a widget method is still called through `/operations/...`, decorate it with both `@ui_widget(...)` and `@api(..., route="operations")`
-- `public_auth` is invalid on `route="operations"` methods
+## Configuration Model
 
-Full contract:
-- [docs/sdk/bundle/bundle-platform-integration-README.md](bundle-platform-integration-README.md)
+The important split is:
 
-### `@venv(...)` for dependency-heavy helpers
+- non-secret bundle config:
+  - `self.bundle_prop(...)`
+  - code defaults -> `bundles.yaml` -> runtime/admin overrides
+- bundle secrets:
+  - `get_secret("b:...")`
+  - provisioned through `bundles.secrets.yaml` or the configured secrets provider
+- raw mounted descriptor reads:
+  - `get_plain(...)`
+  - only when bundle code really must inspect descriptor files directly
 
-`@venv(...)` lets selected bundle callables run in a cached per-bundle subprocess venv while the rest of the bundle stays in the shared proc interpreter.
+Read the exact model here:
 
-Example:
+- [bundle-props-secrets-README.md](bundle-props-secrets-README.md)
+- [bundle-platform-properties-README.md](bundle-platform-properties-README.md)
 
-```python
-from kdcube_ai_app.infra.plugin.agentic_loader import venv
+## Local Development Loop
 
-@venv(requirements="requirements.txt", timeout_seconds=120)
-def sync_google_sheet(payload: dict) -> dict:
-    ...
-```
+Recommended local loop:
 
-Current runtime model:
-- the decorated callable is the subprocess boundary
-- arguments and return values are serialized across that boundary
-- the runtime resolves the bundle root and bundle id
-- the runtime creates or reuses a cached venv under bundle-managed local storage for that bundle id
-- the venv is built from the selected base Python and overlays the current runtime packages
-- the bundle's `requirements.txt` is installed on top of that runtime layer
-- the venv is rebuilt only when the requirements file content hash changes
-
-Important execution-boundary rule:
-- the `@venv(...)` child receives only the serialized function arguments plus normal Python import access to bundle code
-- it does **not** receive proc-bound runtime bindings such as `self.comm`, `self.comm_context`, `get_current_comm()`, `get_current_request_context()`, `TOOL_SUBSYSTEM`, `COMMUNICATOR`, `KV_CACHE`, `CTX_CLIENT`, DB pools, Redis clients, or framework request objects
-- if the bundle needs those surfaces, read or use them in proc and pass plain data into the decorated helper
-
-Good uses:
-- Google Sheets / Google API jobs
-- PDF / OCR / parsing helpers
-- report generation
-- package-heavy transformation jobs
-
-Bad uses:
-- methods that need `self.comm`, `self.comm_context`, `pg_pool`, `redis`, or other live proc-owned objects
-- methods that need to return live third-party Python objects
-- long-running logic that needs to emit continuous stream events from inside the helper
-
-Current boundary rule:
-- keep the public entrypoint/API/widget method in proc
-- move the dependency-heavy leaf operation into a plain helper function marked with `@venv(...)`
-- pass serializable data in and return serializable data out
-- bundle-local dataclasses are acceptable only when they live in normal importable bundle modules
-- changing Python source still needs the normal proc-side bundle reload path; changing `requirements.txt` triggers lazy venv rebuild on the next decorated call
-
-Request-bound runtime context rule for bundle APIs:
-- bundle API methods receive payload/query fields plus standard caller fields such as `user_id` and `fingerprint`
-- they do not receive a separate communicator kwarg from proc by default
-- if the bundle needs the live request communicator or the current request payload:
-  - in `BaseEntrypoint` / `BaseEntrypointWithEconomics`, use `self.comm` and `self.comm_context`
-  - otherwise use `get_current_comm()` and `get_current_request_context()` from `kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx`
-
-Good:
-
-```python
-@venv(requirements="requirements.txt")
-def build_sheet_result(payload: dict) -> dict:
-    ...
-```
-
-Risky / usually wrong:
-
-```python
-class MyEntrypoint(BaseEntrypoint):
-    @venv(requirements="requirements.txt")
-    async def sync_sheet(self, **kwargs):
-        ...
-```
-
-Why the second pattern is wrong in most cases:
-- bound methods carry `self`
-- `self` often contains non-serializable or request-bound proc state
-- singleton entrypoints may hold shared state that should not cross the subprocess boundary
-- even when it appears to work, it blurs the intended boundary between proc-owned orchestration and subprocess-owned dependency-heavy helpers
-
-### Canonical turn error propagation
-
-For entrypoint-level turn failures, use the base helper:
-
-```python
-try:
-    orch = MyWorkflow(...)
-    res = await orch.process({...})
-    if not isinstance(res, dict):
-        res = {}
-    state["final_answer"] = res.get("answer") or ""
-    state["followups"] = res.get("followups") or []
-except Exception as e:
-    await self.report_turn_error(state=state, exc=e, title="Turn Error")
-```
-
-Important details:
-- Put workflow construction **inside** the `try`.
-- This catches both constructor failures and runtime failures in the same path.
-- `report_turn_error(...)` emits a real `chat.error` envelope for the client and
-  also records turn-level error state.
-- A plain `self.comm.step(status="error", ...)` is not the canonical user-facing
-  path. It is useful for diagnostics, but the frontend primarily treats
-  `chat.error` as the visible service-error channel.
-- `report_turn_error(...)` also emits a diagnostic step event, so you get both:
-  user-visible error propagation and step-level diagnostics.
-
-Economics bundles:
-- If your bundle extends `BaseEntrypointWithEconomics`, economics and quota
-  exceptions must be allowed to propagate unchanged.
-- The base `report_turn_error(...)` helper already re-raises
-  `EconomicsLimitException`, so calling it from a broad `except Exception`
-  block is safe.
-
-Use this helper for **entrypoint/orchestration-level** failures. Inside deeper
-workflow logic, you can still emit domain-specific `self.comm.error(...)` events
-directly when you want to surface a structured tool/program/runtime failure to
-the user before the whole turn aborts.
-
-### Passing bundle props into custom workflows
-
-`bundle_props` live on the entrypoint. If your custom workflow needs to read
-bundle configuration directly with `self.bundle_prop(...)` or to resolve
-runtime profiles with `self.resolve_exec_runtime(...)`, the workflow constructor
-must accept `bundle_props` and forward them into `BaseWorkflow`.
-
-Pattern:
-
-```python
-# entrypoint.py
-orch = MyWorkflow(
-    ...,
-    bundle_props=self.bundle_props,
-)
-```
-
-```python
-# orchestrator/workflow.py
-class MyWorkflow(BaseWorkflow):
-    def __init__(
-        self,
-        *,
-        conv_idx,
-        kb,
-        store,
-        comm,
-        model_service,
-        conv_ticket_store,
-        config,
-        comm_context,
-        ctx_client=None,
-        bundle_props=None,
-    ):
-        super().__init__(
-            conv_idx=conv_idx,
-            kb=kb,
-            store=store,
-            comm=comm,
-            model_service=model_service,
-            conv_ticket_store=conv_ticket_store,
-            config=config,
-            comm_context=comm_context,
-            ctx_client=ctx_client,
-            bundle_props=bundle_props,
-        )
-```
-
-Without that constructor wiring, entrypoint props are not automatically visible
-inside the workflow instance.
-
-## Local prototyping flow with `@venv(...)`
-
-The normal local bundle loop stays the same:
-
-1. install/start with descriptors
-2. edit the bundle under `HOST_BUNDLES_PATH`
-3. if Python source changed, run:
-   - `kdcube --workdir <runtime-workdir> --bundle-reload <bundle_id>`
-4. invoke the bundle again from UI or API
-
-For `@venv(...)`, add these rules:
-
-- if only `requirements.txt` changed, the next invocation of the decorated helper rebuilds the cached venv automatically
-- if Python source changed, proc still needs the normal reload so the updated module is imported
-- if both changed, do the reload first; the venv rebuild will then happen lazily on the next call
-- the helper still does not gain access to proc-side communicator/runtime bindings after rebuild; the execution boundary stays the same
-
-So the practical loop is:
-- edit code -> `--bundle-reload`
-- edit only `requirements.txt` -> call again
-- edit both -> `--bundle-reload`, then call again
-
-This is why `@venv(...)` is good for rapid local prototyping of dependency-heavy helpers without polluting the shared proc environment.
-
----
-
-## Bundle configuration & secrets
-
-Bundles consume **non‑secret configuration** via `bundle_props` and **secrets**
-via:
-- `get_secret("b:...")` for the current bundle's deployment secrets
-- `get_secret("...")` / `get_secret("a:...")` for platform/global secrets
-- `get_user_secret(...)` for current-user secrets
-
-Non‑secret config:
-- Defined in `bundles.yaml` under `items[].config`.
-- Base defaults are defined in `entrypoint.configuration`.
-- Effective props are available via `bundle_props` (defaults + overrides).
-- If you override `configuration`, call `super().configuration()` and use `setdefault`
-  for defaults so external overrides still win.
-- Nested YAML is preserved as a nested dict.
-- Dot‑paths are not expanded at ingest time; resolve them at read time if needed.
-- Platform-reserved property paths are interpreted by base entrypoints and runtime:
-  - `role_models`
-  - `embedding`
-  - `economics.reservation_amount_dollars`
-  - `execution.runtime`
-- Canonical reference:
-  [docs/sdk/bundle/bundle-platform-properties-README.md](bundle-platform-properties-README.md).
-- Secret model reference:
-  [docs/sdk/bundle/bundle-props-secrets-README.md](bundle-props-secrets-README.md).
-
-Example overrides:
-```yaml
-bundles:
-  items:
-    - id: "react@2026-02-10-02-44"
-      config:
-        role_models:
-          solver.react.v2.decision.v2.strong:
-            provider: "anthropic"
-            model: "claude-sonnet-4-6"
-          custom.agent.example:
-            provider: "anthropic"
-            model: "claude-3-5-haiku-20241022"
-        embedding:
-          provider: "openai"
-          model: "text-embedding-3-small"
-```
-
-### Best practice: defining bundle defaults
-When defining bundle defaults in code, prefer `configuration` and preserve
-external overrides:
-
-```python
-@property
-def configuration(self) -> Dict[str, Any]:
-    config = dict(super().configuration)  # property, not a method
-    role_models = dict(config.get("role_models") or {})
-    role_models.setdefault("solver.react.v2.decision.v2.strong", {
-        "provider": "anthropic",
-        "model": "claude-sonnet-4-5-20250929",
-    })
-    config["role_models"] = role_models
-    return config
-```
-
-This ensures the effective order remains:
-`code defaults → bundles.yaml → runtime overrides`.
-
-### Example: bundle-level Fargate exec override
-
-If your bundle uses exec tools and you want it to route through Fargate without
-depending only on proc-wide env vars, set:
-
-```yaml
-config:
-  execution:
-    runtime:
-      mode: fargate
-      enabled: true
-      cluster: arn:aws:ecs:eu-west-1:100258542545:cluster/kdcube-staging-cluster
-      task_definition: kdcube-staging-exec
-      container_name: exec
-      subnets:
-        - subnet-xxxx
-        - subnet-yyyy
-      security_groups:
-        - sg-xxxx
-      assign_public_ip: DISABLED
-```
-
-That configuration is copied into `RuntimeCtx.exec_runtime` and then passed into
-exec tool execution. Missing keys still fall back to proc env vars.
-
-If your bundle supports more than one runtime, you can declare multiple
-bundle-scoped profiles and either choose a default or select one at call time:
-
-```yaml
-config:
-  execution:
-    runtime:
-      default_profile: fargate
-      profiles:
-        docker:
-          mode: docker
-        fargate:
-          mode: fargate
-          enabled: true
-          cluster: arn:aws:ecs:eu-west-1:100258542545:cluster/kdcube-staging-cluster
-          task_definition: kdcube-staging-exec
-          container_name: exec
-          subnets:
-            - subnet-xxxx
-            - subnet-yyyy
-          security_groups:
-            - sg-xxxx
-          assign_public_ip: DISABLED
-```
-
-Bundle code can then use the default resolved runtime or explicitly choose
-another supported profile.
-
-Important:
-- `bundles.yaml` is the source of truth for descriptor-backed bundle props.
-- `Reset from env` and proc startup with `BUNDLES_FORCE_ENV_ON_STARTUP=1`
-  rebuild the Redis props layer from `bundles.yaml` authoritatively.
-- If a key was previously present in `bundles.yaml` and is later removed,
-  the env reset deletes that stale Redis key instead of keeping the old value.
-- Runtime/admin overrides can still be applied after startup, but they are
-  overwritten again on the next env reset/startup when force-env is enabled.
-
-Secrets:
-- Defined in `bundles.secrets.yaml` under `items[].secrets`.
-- Injected into the secrets manager using dot‑path keys like:
-    - `services.anthropic.api_key`
-    - `services.git.http_token`
-    - `bundles.<bundle_id>.secrets.<key>`
-See:
-[docs/service/configuration/bundle-configuration-README.md](../../service/configuration/bundle-configuration-README.md).
-
-Note: bundle secrets can be read at any time. If you use `bundles.secrets.yaml`
-with the local secrets sidecar, keep read tokens non‑expiring:
-`SECRETS_TOKEN_TTL_SECONDS=0` and `SECRETS_TOKEN_MAX_USES=0` in the workdir `.env`.
-Bundle secrets are **write‑only**; admin UI shows keys only, not values.
-If secrets come from `bundles.secrets.yaml`, the CLI stores the key list in the
-sidecar as `bundles.<bundle_id>.secrets.__keys` so keys are visible in the UI.
-Current semantics are upsert-only: removing a key from `bundles.secrets.yaml`
-does not auto-delete it from the secrets provider.
-
----
-
-## Bundle load hook (one‑time init)
-
-Bundles can run a **one‑time initialization hook** when they are first loaded
-(per process, per tenant/project). Use it to prepare local assets or indexes.
-
-Hook signature (override in your entrypoint):
-```python
-class MyWorkflow(BaseEntrypoint):
-    def on_bundle_load(self, *, storage_root=None, bundle_spec=None, logger=None, **_):
-        # One-time init. Keep it deterministic and idempotent.
-        if not storage_root:
-            return
-        # Example: create a local index folder inside the knowledge space
-        ws = pathlib.Path(storage_root)
-        (ws / "index").mkdir(parents=True, exist_ok=True)
-
-        # Example: clone a docs repo into workspace (optional)
-        # from kdcube_ai_app.infra.plugin.git_bundle import ensure_git_bundle
-        # ensure_git_bundle(
-        #     bundle_id="my-docs",
-        #     git_url="git@github.com:org/docs.git",
-        #     git_ref="v1.2.3",
-        #     bundles_root=ws,
-        # )
-```
-
-Notes:
-- The hook is **synchronous**. If you need async work, run it inside the hook.
-- Use `storage_root` to store shared local bundle data (see below).
-
----
-
-## Storage types (clear separation)
-
-Bundles have **two distinct storage options**:
-
-1) **Bundle storage backend (localfs/S3)**  
-   Configured via `CB_BUNDLE_STORAGE_URL`.  
-   Use this for **read/write** data that should persist beyond the host.
-
-2) **Shared bundle local storage (filesystem)**  
-   Configured via `BUNDLE_STORAGE_ROOT`.  
-   This is a **local filesystem mount** (host or EFS), namespaced per
-   tenant/project/bundle. You can store **any shared local data** here
-   (indexes, repos, caches, datasets).  
-   The **knowledge space** is just one optional use of this storage.
-
-See: [docs/sdk/bundle/bundle-storage-cache-README.md](bundle-storage-cache-README.md).
-
----
-
-## Knowledge space (read‑only, filesystem)
-
-Bundles can prepare a **knowledge space** (local FS or EFS) to store indexes,
-cloned repos, or cached reference data that should be reused across users/conversations/flows.
-
-Env:
-```
-BUNDLE_STORAGE_ROOT=/bundles/_bundle_storage   # shared local bundle storage (default if not set)
-```
-
-Runtime:
-- The platform resolves `bundle_storage` for the active bundle.
-- ReAct tools can read from it using `ks:<relpath>` with `react.read`.
-- `react.search_knowledge(query="...")` searches it when the bundle provides a resolver.
-
-Example path:
-```
-ks:docs/README.md
-ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/runtime.py
-ks:deployment/docker/all_in_one_kdcube/docker-compose.yaml
-```
-
-See:
-- [docs/sdk/bundle/bundle-knowledge-space-README.md](bundle-knowledge-space-README.md)
-
----
-
-## Orchestrator workflow (BaseWorkflow)
-
-Use `BaseWorkflow` to manage:
-- timeline persistence
-- scratchpad lifecycle
-- turn completion
-
-Key patterns:
-- Call `start_turn(scratchpad)` and `finish_turn(scratchpad, ok=...)`.
-- Use `ContextBrowser` for context/timeline access.
-- Build and run the ReAct agent via `build_react(...)` and `react.run(...)`.
-- If the workflow needs bundle configuration, accept `bundle_props` in the
-  workflow constructor and forward it into `BaseWorkflow`.
-- Inside the workflow, use:
-  - `self.bundle_prop("some.dot.path")` to read raw configured values
-  - `self.resolve_exec_runtime(profile="name")` to resolve a named exec profile
-
-Output contract:
-- Set `scratchpad.answer` for the assistant message.
-- Set `scratchpad.suggested_followups` if you have followups.
-- Return `{ "answer": ..., "suggested_followups": [...] }`.
-
----
-
-## Inputs and outputs
-
-Primary runtime input:
-- `ChatTaskPayload` / `ChatTaskRequest` (tenant, project, conversation_id, turn_id, user, etc.)
-- Passed into the workflow via `run(...)` / `execute_core(...)`
-
-Operation inputs:
-- preferred routes:
-  - `GET /bundles/{tenant}/{project}/{bundle_id}/operations/{operation}`
-  - `POST /bundles/{tenant}/{project}/{bundle_id}/operations/{operation}`
-  - `GET /bundles/{tenant}/{project}/{bundle_id}/public/{operation}`
-  - `POST /bundles/{tenant}/{project}/{bundle_id}/public/{operation}`
-- `/operations/...` resolves only declared `@api(..., route="operations")` methods
-- `/public/...` resolves only declared `@api(..., route="public")` methods
-- `/public/...` methods must also declare `public_auth`
-- `POST` forwards `payload.data` as kwargs
-- `GET` forwards query params as kwargs
-- legacy `POST /bundles/{tenant}/{project}/operations/{operation}` still exists and still resolves the default bundle when `bundle_id` is omitted, but it still calls only declared `@api(..., route="operations")` methods
-
-Outputs:
-- Streaming events (deltas, steps, widgets) via `ChatCommunicator`.
-- Final JSON response (`final_answer`, `suggested_followups`, etc.) returned by the workflow.
-
-### BundleState fields
-
-`BundleState` carries the full request context through LangGraph. Fields available to every bundle:
-
-| Field | Direction | Description |
-|-------|-----------|-------------|
-| `request_id` | read | Unique ID for the current request |
-| `tenant` | read | Tenant identifier |
-| `project` | read | Project identifier |
-| `user` | read | User identifier |
-| `user_type` | read | Inferred user type (`privileged`, `registered`, `paid`, `anonymous`) |
-| `session_id` | read | Session identifier |
-| `conversation_id` | read | Conversation identifier |
-| `turn_id` | read | Current turn identifier |
-| `text` | read | User message content |
-| `attachments` | read | Optional file/image attachments |
-| `final_answer` | write | LLM response text returned to the platform |
-| `followups` | write | Optional list of suggested follow-up actions shown in the UI |
-
-Code references:
-- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/protocol.py`
-- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/base_workflow.py`
-
----
-
-## Tools and skills configuration
-
-### tools_descriptor.py
-Defines tool modules (SDK tools, local tools, MCP tools).
-React uses these specs to build the tool catalog.
-
-### skills_descriptor.py
-Controls which skills are visible to specific agents.
-Use `AGENTS_CONFIG` to enable or hide skills per role.
-
----
-
-## Event filter (optional)
-
-`event_filter.py` lets you restrict what events are visible to non-privileged users.
-If you don’t need filtering, omit it or pass no filter to `BaseEntrypoint`.
-
----
-
-## Accounting integration (LLM cost tracking)
-
-Any bundle that makes direct LLM calls (outside the React agent) can track token usage
-and associate costs with roles using the accounting context manager.
-
-```python
-from kdcube_ai_app.infra.accounting import with_accounting
-
-with with_accounting("my-role", metadata={"model": model}):
-    result = await some_llm_call(model, messages, ...)
-```
-
-If the LLM call function is decorated with `@track_llm`, token usage is captured
-automatically from the API response. The `with_accounting` context associates the usage
-with a named role and attaches metadata for cost attribution.
-
-Fields captured per call:
-
-| Field | Value |
-|-------|-------|
-| `role` | The role name passed to `with_accounting` |
-| `input_tokens` | From LLM response usage |
-| `output_tokens` | From LLM response usage |
-| `total_tokens` | Sum of input + output |
-| `model` | Model slug |
-| `metadata` | Arbitrary dict (e.g. provider, model slug) |
-
-Data is stored in `accounting.cost_events` (PostgreSQL) and can be queried by
-`request_id`, `tenant`, `project`, `user`, and `role` for billing and analytics.
-
-Code reference: `src/kdcube-ai-app/kdcube_ai_app/infra/accounting.py`
-
----
-
-## Streaming and output
-
-Streaming means:
-
-- bundle code emits events through the platform communicator
-- clients receive those events over an already-connected SSE stream or Socket.IO connection
-- bundle UI code inside widgets or custom frontends is itself a client and must follow the same client communication contract as any other frontend
-
-In normal chat turns:
-
-- the connected peer already exists through `/sse/stream` or Socket.IO
-- bundle-side `self.comm` events flow back through that chat transport
-
-In REST-triggered bundle operations:
-
-- the bundle still has a communicator
-- if the REST request carries the configured stream-id header
-  (default `KDC-Stream-ID`) with the connected peer id, the bundle can emit
-  directly to that one peer
-- if the header is absent, bundle-originated events are broadcast to the whole session
-
-This matters for bundle widgets and custom bundle frontends:
-
-- if they call `/api/integrations/*` and want progress/events routed back only to
-  the initiating browser peer, they must propagate the connected peer id on the
-  REST request
-- see [docs/clients/client-communication-README.md](../../clients/client-communication-README.md)
-
-Prefer the higher-level SDK paths first:
-
-- `BaseWorkflow.mk_streamer(...)` for thought/progress streaming
-
-If the active solver is the React agent, it may emit its own agent-side
-`canvas` / `timeline_text` output through React tools. That is not the
-bundle-author API and should not be treated as the primary bundle streaming
-surface.
-
-If you need direct streaming, use `self.comm` directly:
-
-- `delta(...)` for streamed text/artifact chunks
-- `step(...)` for progress/status updates
-- `event(...)` for structured custom events
-- `error(...)` for user-visible failures
-
-Keep the mental model simple:
-
-| Method                         | Use it for                                   | Has `marker`? | Has `broadcast`?                              |
-|--------------------------------|----------------------------------------------|---------------|-----------------------------------------------|
-| `self.comm.step(...)`          | normal progress/status updates               | no            | no, helper is request-targeted/session-scoped |
-| `self.comm.delta(...)`         | streamed chunks or streamed artifact content | yes           | no, helper is request-targeted/session-scoped |
-| `self.comm.event(...)`         | custom typed semantic events                 | no            | yes                                           |
-| `self.comm.service_event(...)` | service-level events on `chat_service`       | no            | yes                                           |
-| `self.comm.emit(...)`          | low-level route control only                 | N/A           | yes                                           |
-
-Important:
-
-- `marker` belongs to `delta(...)`, not to `step(...)` or `event(...)`
-- use `step(...)` when you want a normal progress/status event rendered on the
-  standard `chat_step` path
-- use `delta(...)` when the client is supposed to treat the payload as a stream
-  and route it by marker such as `answer`, `thinking`, `canvas`, `timeline_text`,
-  or `subsystem`
-- use `event(...)` when the bundle defines its own semantic event type and may
-  also want explicit `broadcast=True`
-
-Example: get the communicator from the bundle runtime and emit both a supported
-step update and a custom typed broadcast event:
-
-```python
-async def refresh_preferences(self) -> dict:
-    # In entrypoints and workflows, the active communicator is available as self.comm
-    await self.comm.step(
-        step="preferences.refresh",
-        status="started",
-        title="Refreshing preferences",
-        agent="preferences",
-        data={"source": "bundle"},
-    )
-
-    # ... do the actual work ...
-
-    await self.comm.event(
-        type="bundle.preferences.updated",
-        step="preferences.updated",
-        status="completed",
-        title="Preferences updated",
-        agent="preferences",
-        data={"keys": ["city", "diet"]},
-        broadcast=True,
-    )
-
-    return {"ok": True}
-```
-
-Use:
-
-- `step(...)` when the event fits the normal progress/status model already understood by clients
-- `event(...)` when the bundle wants to define a custom semantic event type or explicitly choose `broadcast=True`
-
-Common `chat.delta` markers:
-
-- `answer`
-- `thinking`
-- `canvas`
-- `timeline_text`
-- `subsystem`
-
-Read these next, not just this summary:
-
-- client transport, auth, stream-id, peer targeting:
-  [docs/clients/client-communication-README.md](../../clients/client-communication-README.md)
-- streaming event envelope, routes, and all predefined delta markers:
-  [docs/clients/sse-events-README.md](../../clients/sse-events-README.md)
-- bundle runtime surfaces and communicator behavior:
-  [docs/sdk/bundle/bundle-runtime-README.md](bundle-runtime-README.md)
-- widget/frontend ↔ bundle exchange over REST:
-  [docs/sdk/bundle/bundle-interfaces-README.md](bundle-interfaces-README.md)
-
----
-
-## Event filtering (per‑bundle)
-
-Bundles can define an **event filter** (bundle‑level outbound firewall) to control
-which events are visible to non‑privileged users.
-
-Example:
-- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44/event_filter.py`
-
-Docs:
-- [docs/service/comm/comm-system.md](../../service/comm/comm-system.md) (event types + filtering)
-- [docs/sdk/bundle/bundle-firewall-README.md](bundle-firewall-README.md) (bundle outbound firewall)
-
----
-
-## Files + attachments hosting
-
-Bundles can emit files (artifacts) and consume user attachments. The platform
-stores and serves them; the timeline includes references so the client can show
-downloads and previews.
-
-Docs:
-- Attachments system: [docs/hosting/attachments-system.md](../../hosting/attachments-system.md)
-- SSE events (attachments/artifacts): [docs/clients/sse-events-README.md](../../clients/sse-events-README.md)
----
-
-## Bundle UI panels and operations
-
-Bundles can expose **React panels** and **operations**:
-
-- Base entrypoint: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/entrypoint.py`
-  - Admin panels like `ai_bundles`, `svc_gateway` are exported as bundle apps.
-- Integrations API: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/integrations.py`
-  - `GET /bundles/{tenant}/{project}/{bundle_id}` returns declarative bundle interface metadata
-  - `GET /bundles/{tenant}/{project}/{bundle_id}/widgets` lists decorated widgets
-  - `GET /bundles/{tenant}/{project}/{bundle_id}/widgets/{alias}` fetches a decorated widget
-  - `GET|POST /bundles/{tenant}/{project}/{bundle_id}/operations/{operation}` resolves only declared `@api(..., route="operations")`
-  - `GET|POST /bundles/{tenant}/{project}/{bundle_id}/public/{operation}` resolves only declared `@api(..., route="public")`
-    - public methods must also declare `public_auth`
-  - legacy `POST /bundles/{tenant}/{project}/operations/{operation}` still exists for compatibility
-
-Docs:
-- [docs/sdk/bundle/bundle-interfaces-README.md](bundle-interfaces-README.md)
-- [docs/clients/client-communication-README.md](../../clients/client-communication-README.md)
-
----
-
-## Bundle developer capabilities (at a glance)
-
-| Capability | What you get | Where to learn |
-|---|---|---|
-| Streaming | deltas, steps, widgets | `docs/service/comm/README-comm.md` |
-| Timeline + context | read/write, search, attachments | `docs/sdk/agents/react/context-browser-README.md` |
-| Tools | local + isolated + MCP | [docs/sdk/tools/tool-subsystem-README.md](../tools/tool-subsystem-README.md), [docs/sdk/tools/mcp-README.md](../tools/mcp-README.md) |
-| Skills | prompt-time skills registry | [docs/sdk/skills/skills-README.md](../skills/skills-README.md), [docs/sdk/skills/skills-infra-README.md](../skills/skills-infra-README.md) |
-| Storage | per‑bundle storage (file/S3) | [docs/sdk/bundle/bundle-storage-cache-README.md](bundle-storage-cache-README.md) |
-| Knowledge space | bundle‑defined `ks:` docs + search | [docs/sdk/bundle/bundle-knowledge-space-README.md](bundle-knowledge-space-README.md) |
-| Cache | Redis KV cache | [docs/sdk/bundle/bundle-storage-cache-README.md](bundle-storage-cache-README.md) |
-| Custom UI | widgets + React panels | [docs/sdk/bundle/bundle-interfaces-README.md](bundle-interfaces-README.md) |
-| Economics | budgets/usage tracking | `docs/economics/economics-usage.md` |
-
----
-
-## Custom tools (bundle‑local)
-
-Use `tools_descriptor.py` to expose tools to the runtime. Example:
-- Bundle: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/with-isoruntime@2026-02-16-14-00`
-- Tool module: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/with-isoruntime@2026-02-16-14-00/tools/local_tools.py`
-- Descriptor: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/with-isoruntime@2026-02-16-14-00/tools_descriptor.py`
-
-Docs:
-- [docs/sdk/tools/tool-subsystem-README.md](../tools/tool-subsystem-README.md)
-- [docs/sdk/tools/mcp-README.md](../tools/mcp-README.md)
-- [docs/sdk/tools/custom-tools-README.md](../tools/custom-tools-README.md)
-
----
-
-## Custom skills (bundle‑local)
-
-Use `skills_descriptor.py` to register bundle‑specific skills. Example:
-- Bundle: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44`
-- Skill: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44/skills/product`
-- Descriptor: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44/skills_descriptor.py`
-
-Docs:
-- [docs/sdk/skills/skills-README.md](../skills/skills-README.md)
-- [docs/sdk/skills/skills-infra-README.md](../skills/skills-infra-README.md)
-- [docs/sdk/skills/custom-skills-README.md](../skills/custom-skills-README.md)
-
-## Cache and bundle lifetime
-
-- Bundles may be loaded per request or reused as singletons.
-- If `singleton=true` in the registry, the workflow instance is cached and reused.
-- Use the KV cache abstraction for lightweight runtime state or config.
-  See: `docs/sdk/storage/cache-README.md`
-
----
-
-## Storage + cache
-
-See: [docs/sdk/bundle/bundle-storage-cache-README.md](bundle-storage-cache-README.md)
-
----
-
-## Local prototyping with CLI
-
-The easiest localhost bundle flow is descriptor-driven:
-
-1. put your bundle under the host bundles root configured by:
-   - `assembly.yaml -> paths.host_bundles_path`
-2. define the bundle in `bundles.yaml`
-3. install once with the CLI
-4. after each local change, run `--bundle-reload`
-
-Recommended descriptor shape:
-
-```yaml
-bundles:
-  default_bundle_id: "my.bundle@1.0.0"
-  items:
-    - id: "my.bundle@1.0.0"
-      name: "My Bundle"
-      path: "/bundles/my.bundle"
-      module: "entrypoint"
-      singleton: false
-      config:
-        ui:
-          title: "My local bundle"
-```
-
-Important path rule:
-
-- host path example:
-  - `/Users/you/dev/bundles/my.bundle`
-- descriptor path example:
-  - `/bundles/my.bundle`
-
-Do **not** put the raw host path into `bundles.yaml`. Proc only sees the
-container-visible mounted root.
-
-One-time install:
+1. mount your bundle under the configured host bundles root
+2. point `bundles.yaml` to the container-visible bundle path such as `/bundles/my.bundle`
+3. install or rebuild once:
 
 ```bash
-kdcube \
-  --descriptors-location /path/to/descriptors \
-  --build
+kdcube --descriptors-location <dir> --build
 ```
 
-Normal edit/test loop:
+4. after each code or descriptor change, reload:
 
 ```bash
-# edit bundle code or bundles.yaml
-kdcube --workdir ~/.kdcube/kdcube-runtime --bundle-reload my.bundle@1.0.0
+kdcube --workdir <runtime-workdir> --bundle-reload my.bundle@1.0.0
 ```
 
 What `--bundle-reload` does:
 
-- validates that the bundle id exists in the current mounted descriptor
-- reapplies the descriptor-backed registry to proc
+- reapplies the bundle registry from descriptor/env state
 - rebuilds descriptor-backed bundle props from `bundles.yaml`
-- clears proc bundle caches so the next request loads the updated code
+- clears in-process proc bundle caches so new requests use the updated code/config
 
-This is the fastest path when you want:
-- local code changes
-- local descriptor changes
-- descriptor-defined props
+Use this when you changed:
 
-For quick runtime-only prop tweaks without editing `bundles.yaml`, use the
-bundle admin props API instead:
+- bundle code
+- `bundles.yaml`
+- `bundles.secrets.yaml`
 
-- `GET /admin/integrations/bundles/{bundle_id}/props`
-- `POST /admin/integrations/bundles/{bundle_id}/props`
-- `POST /admin/integrations/bundles/{bundle_id}/props/reset-code`
+If you need the deployment-side details and registry behavior, use:
 
-Important nuance:
+- [bundle-ops-README.md](bundle-ops-README.md)
 
-- `--bundle-reload` is descriptor-authoritative
-- it will reapply descriptor-backed props from `bundles.yaml`
-- runtime-only admin overrides do not survive that descriptor replay
+## Reference Bundle Scope
 
-So:
-- use the admin props API for temporary runtime experiments
-- use `bundles.yaml` + `--bundle-reload` for the repeatable local prototype state
+The reference bundle is `versatile@2026-03-31-13-36`.
 
----
+It intentionally demonstrates:
 
-## Examples
+- a normal React bundle entrypoint
+- economics-enabled entrypoint
+- bundle-local tools
+- bundle-local skills
+- props and secrets
+- widget operations
+- custom iframe main view
+- MCP connector descriptors
+- public endpoint example
+- direct isolated-exec operation
 
-- ReAct Agent:
-  `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44`
-- Iso Runtime Demo:
-  `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/with-isoruntime@2026-02-16-14-00`
-- Economics Demo:
-  `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/eco@2026-02-18-15-06`
+It does **not** currently demonstrate every bundle surface. In particular:
 
----
+- it is not the reference for `@cron`
+- it is not the reference for `@venv`
 
-## Related SDK docs
+For those, use the dedicated docs:
 
-- ReAct agent docs:
-  [docs/sdk/agents/react](../agents/react)
-- Tool subsystem:
-  [docs/sdk/tools/tool-subsystem-README.md](../tools/tool-subsystem-README.md)
-- Comm system:
-  `docs/service/comm/README-comm.md`
-- Context browser:
-  `docs/sdk/agents/react/context-browser-README.md`
-- ISO runtime:
-  `docs/exec/README-iso-runtime.md`
+- [bundle-scheduled-jobs-README.md](bundle-scheduled-jobs-README.md)
+- [bundle-venv-README.md](bundle-venv-README.md)
 
----
+## Validation
 
-## References (code)
+Shared SDK bundle suite:
 
-- Bundle loader + cache: `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/agentic_loader.py`
-- Bundle registry: `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_registry.py`
-- Task processor: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py`
-- Integrations ops API: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/integrations.py`
-- Base entrypoint: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/entrypoint.py`
-- Protocol types: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/protocol.py`
-- Base workflow: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/base_workflow.py`
-- Event filter example: `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44/event_filter.py`
+```bash
+PYTHONPATH=app/ai-app/src/kdcube-ai-app \
+python -m kdcube_ai_app.apps.chat.sdk.tests.bundle.run_bundle_suite \
+  --bundle-path /abs/path/to/bundle
+```
+
+Use `<bundle>/tests` for bundle-specific behavior that is not part of the generic SDK contract.
