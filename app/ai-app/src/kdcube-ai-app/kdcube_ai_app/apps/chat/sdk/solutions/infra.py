@@ -7,6 +7,7 @@ from typing import Callable, Awaitable,Any, Dict, List
 import pathlib, json, os
 
 from kdcube_ai_app.apps.chat.emitters import ChatCommunicator
+from kdcube_ai_app.apps.chat.sdk.config import get_settings
 
 
 class ExecWorkspaceError(RuntimeError):
@@ -113,7 +114,7 @@ def get_exec_workspace_root() -> pathlib.Path:
     that's accessible to sibling containers when running Docker-in-Docker.
     """
     # Allow explicit override for dev setups (e.g., Docker Desktop file sharing)
-    env_root = os.environ.get("EXEC_WORKSPACE_ROOT")
+    env_root = get_settings().PLATFORM.EXEC.EXEC_WORKSPACE_ROOT
     if env_root:
         # Keep this log minimal to avoid noise
         try:

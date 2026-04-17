@@ -46,7 +46,7 @@ async def opex_lifespan(app: FastAPI):
     if _scheduler_task is None:
         _scheduler_task = asyncio.create_task(routines.aggregation_scheduler_loop())
         logger.info("[OPEX Aggregator] Background scheduler task started")
-    component = (os.getenv("GATEWAY_COMPONENT") or "ingress").strip().lower()
+    component = (get_settings().GATEWAY_COMPONENT or "ingress").strip().lower()
     if component == "proc":
         if _bundle_cleanup_task is None:
             _bundle_cleanup_task = asyncio.create_task(routines.bundle_cleanup_loop())
@@ -180,8 +180,7 @@ def _compute_cost_estimate(rollup: List[dict]) -> dict:
     emb_pricelist = configuration.get("embedding", [])
     web_search_pricelist = configuration.get("web_search", [])  # NEW
 
-    # Load tier configuration from environment
-    config_str = os.environ.get("ACCOUNTING_SERVICES", "{}")
+    config_str = get_settings().PLATFORM.ACCOUNTING.ACCOUNTING_SERVICES or "{}"
     try:
         accounting_services_config = json.loads(config_str)
     except json.JSONDecodeError:

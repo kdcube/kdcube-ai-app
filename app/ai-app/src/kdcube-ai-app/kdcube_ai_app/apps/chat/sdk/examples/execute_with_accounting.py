@@ -50,7 +50,6 @@ def configure_env():
         openai_api_key=settings.OPENAI_API_KEY,
         claude_api_key=settings.ANTHROPIC_API_KEY,
         google_api_key=settings.GOOGLE_API_KEY,
-        selected_model=DEFAULT_MODEL,
         role_models={ ROLE_FRIENDLY_ASSISTANT: {"provider": "anthropic", "model": sonnet_45}},
     )
 

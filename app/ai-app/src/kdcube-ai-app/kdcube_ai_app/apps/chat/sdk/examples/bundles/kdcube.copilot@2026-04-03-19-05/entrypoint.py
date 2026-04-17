@@ -775,7 +775,7 @@ class ReactWorkflow(BaseEntrypoint):
         bundle_spec = getattr(getattr(self, "config", None), "ai_bundle_spec", None)
         rendered = patch_dashboard(
             input_content=content,
-            base_url=f"http://localhost:{os.environ.get('CHAT_APP_PORT') or '8010'}",
+            base_url=f"http://localhost:{self.settings.CHAT_APP_PORT}",
             default_tenant=getattr(actor, "tenant_id", None) or self.settings.TENANT,
             default_project=getattr(actor, "project_id", None) or self.settings.PROJECT,
             default_app_bundle_id=getattr(bundle_spec, "id", None) or BUNDLE_ID,

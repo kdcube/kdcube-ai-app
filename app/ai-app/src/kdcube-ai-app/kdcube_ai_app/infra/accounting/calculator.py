@@ -22,6 +22,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass, asdict
+from kdcube_ai_app.apps.chat.sdk.config import get_settings
 from datetime import datetime, date, timedelta
 from typing import Any, Dict, Iterable, List, Optional, Tuple, AsyncIterator
 
@@ -2345,7 +2346,7 @@ class RateCalculator(AccountingCalculator):
         # 6. Calculate overall cost breakdown
         # Load ACCOUNTING_SERVICES config if not provided
         if accounting_services_config is None:
-            config_str = os.environ.get("ACCOUNTING_SERVICES", "{}")
+            config_str = get_settings().PLATFORM.ACCOUNTING.ACCOUNTING_SERVICES or "{}"
             try:
                 accounting_services_config = json.loads(config_str)
             except json.JSONDecodeError:
@@ -2526,8 +2527,7 @@ def _calculate_agent_costs(
     """
 
     if accounting_services_config is None:
-        # Load from environment
-        config_str = os.environ.get("ACCOUNTING_SERVICES", "{}")
+        config_str = get_settings().PLATFORM.ACCOUNTING.ACCOUNTING_SERVICES or "{}"
         try:
             accounting_services_config = json.loads(config_str)
         except json.JSONDecodeError:

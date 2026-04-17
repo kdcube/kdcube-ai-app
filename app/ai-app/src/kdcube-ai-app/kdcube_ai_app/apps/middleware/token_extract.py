@@ -8,7 +8,7 @@ from typing import Mapping, Optional, Tuple, Any
 import logging
 import os
 
-from kdcube_ai_app.infra.namespaces import CONFIG
+from kdcube_ai_app.apps.chat.sdk.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +21,8 @@ def extract_auth_tokens_from_cookies(
 ) -> Tuple[Optional[str], Optional[str]]:
     if not cookies:
         return None, None
-    bearer = cookies.get(CONFIG.AUTH_TOKEN_COOKIE_NAME)
-    id_token = cookies.get(CONFIG.ID_TOKEN_COOKIE_NAME)
+    bearer = cookies.get(get_settings().AUTH.AUTH_TOKEN_COOKIE_NAME)
+    id_token = cookies.get(get_settings().AUTH.ID_TOKEN_COOKIE_NAME)
     return bearer or None, id_token or None
 
 
@@ -33,8 +33,8 @@ def extract_auth_tokens_from_cookie_header(
         return None, None
     cookies = SimpleCookie()
     cookies.load(cookie_header)
-    bearer = cookies.get(CONFIG.AUTH_TOKEN_COOKIE_NAME)
-    id_token = cookies.get(CONFIG.ID_TOKEN_COOKIE_NAME)
+    bearer = cookies.get(get_settings().AUTH.AUTH_TOKEN_COOKIE_NAME)
+    id_token = cookies.get(get_settings().AUTH.ID_TOKEN_COOKIE_NAME)
     return (bearer.value if bearer and bearer.value else None,
             id_token.value if id_token and id_token.value else None)
 
@@ -95,8 +95,8 @@ def resolve_auth_from_headers_and_cookies(
             "Auth resolve: header_auth=%s header_id=%s cookie_auth=%s cookie_id=%s final_auth=%s final_id=%s",
             bool(authorization_header),
             bool(id_token_header),
-            bool(cookies and cookies.get(CONFIG.AUTH_TOKEN_COOKIE_NAME)),
-            bool(cookies and cookies.get(CONFIG.ID_TOKEN_COOKIE_NAME)),
+            bool(cookies and cookies.get(get_settings().AUTH.AUTH_TOKEN_COOKIE_NAME)),
+            bool(cookies and cookies.get(get_settings().AUTH.ID_TOKEN_COOKIE_NAME)),
             bool(auth_header),
             bool(id_token),
         )
@@ -109,7 +109,7 @@ def inject_auth_tokens_into_headers(
     bearer_token: Optional[str],
     id_token: Optional[str],
     *,
-    id_header_name: str = CONFIG.ID_TOKEN_HEADER_NAME,
+    id_header_name: str = get_settings().AUTH.ID_TOKEN_HEADER_NAME,
 ) -> dict:
     if not bearer_token and not id_token:
         return dict(headers)
