@@ -2,10 +2,6 @@
 # Copyright (c) 2026 Elena Viter
 
 # infra/namespaces.py
-import os
-
-from kdcube_ai_app.apps.chat.reg import MODEL_CONFIGS, EMBEDDERS, DEFAULT_MODEL_CONFIG, DEFAULT_EMBEDDER_CONFIG
-
 
 def tp_prefix(tenant: str | None = None, project: str | None = None) -> str:
     from kdcube_ai_app.apps.chat.sdk.config import get_settings
@@ -91,13 +87,6 @@ class REDIS:
         REGISTRY = "kdcube:registry"
 
 class CONFIG:
-    ID_TOKEN_HEADER_NAME = os.getenv("ID_TOKEN_HEADER_NAME", "X-ID-Token")
-    STREAM_ID_HEADER_NAME = os.getenv("STREAM_ID_HEADER_NAME", "KDC-Stream-ID")
-    USER_TIMEZONE_HEADER_NAME = os.getenv("USER_TIMEZONE_HEADER_NAME", "X-User-Timezone")
-    USER_UTC_OFFSET_MIN_HEADER_NAME = os.getenv("USER_UTC_OFFSET_MIN_HEADER_NAME", "X-User-UTC-Offset")
-    AUTH_TOKEN_COOKIE_NAME = os.getenv("AUTH_TOKEN_COOKIE_NAME", "__Secure-LATC")
-    ID_TOKEN_COOKIE_NAME = os.getenv("ID_TOKEN_COOKIE_NAME", "__Secure-LITC")
-
     class BUNDLES:
         BUNDLE_MAPPING_KEY_FMT = "kdcube:config:bundles:mapping:{tenant}:{project}"
         UPDATE_CHANNEL = "kdcube:config:bundles:update:{tenant}:{project}"
@@ -117,11 +106,3 @@ class CONFIG:
         NAMESPACE = "kdcube:config:gateway"
         UPDATE_CHANNEL = "kdcube:config:gateway:update"
         CURRENT_KEY = "current"
-
-    class AGENTIC:
-        DEFAULT_LLM_MODEL_CONFIG = MODEL_CONFIGS.get(os.getenv("DEFAULT_LLM_MODEL_ID")) or DEFAULT_MODEL_CONFIG
-        DEFAULT_EMBEDDING_MODEL_CONFIG = EMBEDDERS.get(os.getenv("DEFAULT_EMBEDDING_MODEL_ID")) or DEFAULT_EMBEDDER_CONFIG
-
-        SUGGESTIONS_PREFIX = "kdcube:agentic:suggestions:{tenant}:{project}:{bundle_id}"
-
-    KDCUBE_STORAGE_PATH = os.environ.get("KDCUBE_STORAGE_PATH") or os.environ.get("STORAGE_PATH")

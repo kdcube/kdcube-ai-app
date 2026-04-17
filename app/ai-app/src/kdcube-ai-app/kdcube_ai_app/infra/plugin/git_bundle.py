@@ -13,6 +13,7 @@ import time
 from contextlib import contextmanager
 import uuid
 import fcntl
+from kdcube_ai_app.apps.chat.sdk.config import get_settings
 
 from kdcube_ai_app.infra.service_hub.inventory import AgentLogger
 from kdcube_ai_app.apps.chat.sdk.config import get_secret
@@ -40,14 +41,14 @@ def _fail_key(*, git_url: str, bundle_id: str, git_ref: Optional[str]) -> str:
 
 def _fail_backoff_initial() -> int:
     try:
-        return int(os.environ.get("BUNDLE_GIT_FAIL_BACKOFF_SECONDS", "60") or "60")
+        return get_settings().PLATFORM.APPLICATIONS.GIT.BUNDLE_GIT_FAIL_BACKOFF_SECONDS
     except Exception:
         return 60
 
 
 def _fail_backoff_max() -> int:
     try:
-        return int(os.environ.get("BUNDLE_GIT_FAIL_MAX_BACKOFF_SECONDS", "300") or "300")
+        return get_settings().PLATFORM.APPLICATIONS.GIT.BUNDLE_GIT_FAIL_MAX_BACKOFF_SECONDS
     except Exception:
         return 300
 
@@ -85,7 +86,7 @@ def resolve_bundles_root() -> pathlib.Path:
     Prefer HOST_BUNDLES_PATH (host filesystem), then AGENTIC_BUNDLES_ROOT.
     """
     host_root = os.environ.get("HOST_BUNDLES_PATH")
-    agentic_root = os.environ.get("AGENTIC_BUNDLES_ROOT")
+    agentic_root = get_settings().PLATFORM.APPLICATIONS.AGENTIC_BUNDLES_ROOT
     if host_root:
         host_path = pathlib.Path(host_root).expanduser()
         try:
@@ -189,17 +190,17 @@ def _bundle_lock(*, bundle_id: str, git_ref: Optional[str], bundles_root: pathli
             fcntl.flock(fh, fcntl.LOCK_UN)
 
 def _redis_lock_enabled() -> bool:
-    return os.environ.get("BUNDLE_GIT_REDIS_LOCK", "0").lower() in {"1", "true", "yes", "on"}
+    return get_settings().PLATFORM.APPLICATIONS.GIT.BUNDLE_GIT_REDIS_LOCK
 
 def _redis_lock_ttl() -> int:
     try:
-        return int(os.environ.get("BUNDLE_GIT_REDIS_LOCK_TTL_SECONDS", "300") or "300")
+        return get_settings().PLATFORM.APPLICATIONS.GIT.BUNDLE_GIT_REDIS_LOCK_TTL_SECONDS
     except Exception:
         return 300
 
 def _redis_lock_wait() -> int:
     try:
-        return int(os.environ.get("BUNDLE_GIT_REDIS_LOCK_WAIT_SECONDS", "60") or "60")
+        return get_settings().PLATFORM.APPLICATIONS.GIT.BUNDLE_GIT_REDIS_LOCK_WAIT_SECONDS
     except Exception:
         return 60
 
@@ -462,7 +463,7 @@ def ensure_git_bundle(
     root = bundles_root or resolve_git_bundles_root()
     fail_key = _fail_key(git_url=git_url, bundle_id=bundle_id, git_ref=git_ref)
     _check_fail_cooldown(fail_key)
-    force_pull = os.environ.get("BUNDLE_GIT_ALWAYS_PULL", "0").lower() in {"1", "true", "yes"}
+    force_pull = get_settings().PLATFORM.APPLICATIONS.GIT.BUNDLE_GIT_ALWAYS_PULL
     with _redis_bundle_lock(bundle_id=bundle_id, git_ref=git_ref):
         with _bundle_lock(bundle_id=bundle_id, git_ref=git_ref, bundles_root=root):
             try:
@@ -597,8 +598,8 @@ def cleanup_old_git_bundles(
     """
     log = logger or AgentLogger("git.bundle")
     root = bundles_root or resolve_git_bundles_root()
-    keep = keep if keep is not None else int(os.environ.get("BUNDLE_GIT_KEEP", "3") or "3")
-    ttl_hours = ttl_hours if ttl_hours is not None else int(os.environ.get("BUNDLE_GIT_TTL_HOURS", "0") or "0")
+    keep = keep if keep is not None else get_settings().PLATFORM.APPLICATIONS.GIT.BUNDLE_GIT_KEEP
+    ttl_hours = ttl_hours if ttl_hours is not None else get_settings().PLATFORM.APPLICATIONS.GIT.BUNDLE_GIT_TTL_HOURS
     prefix = f"{bundle_id}__"
     if not root.exists():
         return 0

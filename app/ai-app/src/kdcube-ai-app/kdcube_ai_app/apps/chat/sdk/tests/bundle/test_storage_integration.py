@@ -43,20 +43,13 @@ class TestStorageFallbackChain:
             if old2:
                 os.environ["BUNDLE_SHARED_STORAGE_ROOT"] = old2
 
-    def test_bundle_storage_root_respects_env_var(self, tmp_path):
-        """resolve_bundle_storage_root() uses BUNDLE_STORAGE_ROOT when set."""
-        import os
+    def test_bundle_storage_root_respects_config(self, tmp_path, monkeypatch):
+        """resolve_bundle_storage_root() uses BUNDLE_STORAGE_ROOT from settings when set."""
         from kdcube_ai_app.infra.plugin.bundle_storage import resolve_bundle_storage_root
-        old = os.environ.get("BUNDLE_STORAGE_ROOT")
-        try:
-            os.environ["BUNDLE_STORAGE_ROOT"] = str(tmp_path)
-            root = resolve_bundle_storage_root()
-            assert root == tmp_path.resolve()
-        finally:
-            if old is None:
-                os.environ.pop("BUNDLE_STORAGE_ROOT", None)
-            else:
-                os.environ["BUNDLE_STORAGE_ROOT"] = old
+        from kdcube_ai_app.apps.chat.sdk.config import get_settings
+        monkeypatch.setattr(get_settings().PLATFORM.APPLICATIONS, "BUNDLE_STORAGE_ROOT", str(tmp_path))
+        root = resolve_bundle_storage_root()
+        assert root == tmp_path.resolve()
 
 
 class TestStorageContextIsolation:

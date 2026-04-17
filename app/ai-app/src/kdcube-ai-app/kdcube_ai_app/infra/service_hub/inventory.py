@@ -36,7 +36,7 @@ from kdcube_ai_app.infra.embedding.embedding import get_embedding
 from kdcube_ai_app.infra.plugin.bundle_registry import BundleSpec
 import kdcube_ai_app.infra.service_hub.errors as service_errors
 import kdcube_ai_app.apps.chat.sdk.tools.citations as citation_utils
-from kdcube_ai_app.apps.chat.sdk.config import get_settings
+from kdcube_ai_app.apps.chat.sdk.config import get_settings, get_plain
 from kdcube_ai_app.infra.service_hub.message_utils import (
     extract_message_blocks,
     normalize_blocks,
@@ -525,11 +525,8 @@ class ConfigRequest(BaseModel):
     claude_api_key: Optional[str] = None
     google_api_key: Optional[str] = None
 
-    # Global defaults
-    selected_model: str = None   # used for default role mapping if role_models not provided
 
     # RAG embeddings
-    selected_embedder: str = "openai-text-embedding-3-small"
     custom_embedding_endpoint: Optional[str] = None
     custom_embedding_model: Optional[str] = "sentence-transformers/all-MiniLM-L6-v2"
     custom_embedding_size: Optional[int] = 384
@@ -578,24 +575,24 @@ class Config:
                  role_models: Optional[Dict[str, Dict[str, str]]] = None):
         # keys (prefer Settings/sidecar, fall back to env)
         settings = get_settings()
-        self.openai_api_key = openai_api_key or settings.OPENAI_API_KEY or os.getenv("OPENAI_API_KEY", "")
-        self.claude_api_key = claude_api_key or settings.ANTHROPIC_API_KEY or os.getenv("ANTHROPIC_API_KEY", "")
-        self.google_api_key = google_api_key or settings.GOOGLE_API_KEY or os.getenv("GEMINI_API_KEY", "")
+        self.openai_api_key = openai_api_key or settings.OPENAI_API_KEY or ""
+        self.claude_api_key = claude_api_key or settings.ANTHROPIC_API_KEY or ""
+        self.google_api_key = google_api_key or settings.GOOGLE_API_KEY or ""
 
-        # Gemini cache options (env or defaults)
-        self.gemini_cache_enabled: bool = bool(int(os.getenv("GEMINI_CACHE_ENABLED", "0")))
-        self.gemini_cache_ttl_seconds: int = int(os.getenv("GEMINI_CACHE_TTL_SECONDS", "3600"))
+        # Gemini cache options
+        self.gemini_cache_enabled: bool = bool(get_plain("a:services.llm.gemini.gemini_cache_enabled", False))
+        self.gemini_cache_ttl_seconds: int = int(get_plain("a:services.llm.gemini.gemini_cache_ttl_seconds", 3600))
 
         # embeddings (declarative)
-        self.selected_embedder = "openai-text-embedding-3-small"
-        self.embedder_config = EMBEDDERS.get(self.selected_embedder, EMBEDDERS["openai-text-embedding-3-small"])
-        self.embedding_model = embedding_model or "text-embedding-3-small"
+        #self.selected_embedder = "openai-text-embedding-3-small"
+        self.embedder_config = EMBEDDERS.get(get_settings().DEFAULT_EMBEDDER, EMBEDDERS["openai-text-embedding-3-small"])
+        self.embedding_model = embedding_model or get_settings().DEFAULT_EMBEDDER
         self.custom_embedding_endpoint = None
         self.custom_embedding_model = "sentence-transformers/all-MiniLM-L6-v2"
         self.custom_embedding_size = 384
 
         # logging
-        self.log_level = os.getenv("LOG_LEVEL", "INFO")
+        self.log_level = get_settings().PLATFORM.LOG.LOG_LEVEL
 
         # format fix (Claude by default)
         self.format_fixer_model = "claude-3-haiku-20240307"
@@ -615,10 +612,10 @@ class Config:
         self.kb_search_url = os.getenv("KB_SEARCH_URL", None)
 
         # CB, bundles
-        self.bundle_storage_url = getattr(get_settings(), "BUNDLE_STORAGE_URL", None)
+        self.bundle_storage_url = get_settings().BUNDLE_STORAGE_URL
 
-        self.tenant = os.getenv("TENANT_ID", None)
-        self.project = os.getenv("DEFAULT_PROJECT_NAME", None)
+        self.tenant = get_settings().TENANT
+        self.project = get_settings().PROJECT
 
         self.ai_bundle_spec: Optional[BundleSpec] = None
 
@@ -626,7 +623,7 @@ class Config:
     def set_embedder(self, embedder_id: str, custom_endpoint: str | None = None):
         if embedder_id not in EMBEDDERS:
             raise ValueError(f"Unknown embedder: {embedder_id}")
-        self.selected_embedder = embedder_id
+        #self.selected_embedder = embedder_id
         self.embedder_config = EMBEDDERS[embedder_id]
         if self.embedder_config["provider"] == "custom":
             if not custom_endpoint:
@@ -744,7 +741,7 @@ class Config:
 # Config factory (accept bundle template or fill defaults)
 # =========================
 def create_workflow_config(config_request: ConfigRequest) -> Config:
-    cfg = Config(default_llm_model=config_request.selected_model)
+    cfg = Config(default_llm_model=get_settings().DEFAULT_MODEL_LLM_ID)
 
     # keys
     if config_request.openai_api_key:
@@ -763,15 +760,15 @@ def create_workflow_config(config_request: ConfigRequest) -> Config:
     cfg.format_fix_enabled = bool(config_request.format_fix_enabled)
 
     # embeddings
-    try:
-        cfg.set_embedder(config_request.selected_embedder, config_request.custom_embedding_endpoint)
-    except ValueError:
-        if config_request.custom_embedding_endpoint:
-            cfg.set_custom_embedding_endpoint(
-                config_request.custom_embedding_endpoint,
-                config_request.custom_embedding_model or "sentence-transformers/all-MiniLM-L6-v2",
-                int(config_request.custom_embedding_size or 384),
-                )
+    # try:
+    #     cfg.set_embedder(config_request.selected_embedder, config_request.custom_embedding_endpoint)
+    # except ValueError:
+    #     if config_request.custom_embedding_endpoint:
+    #         cfg.set_custom_embedding_endpoint(
+    #             config_request.custom_embedding_endpoint,
+    #             config_request.custom_embedding_model or "sentence-transformers/all-MiniLM-L6-v2",
+    #             int(config_request.custom_embedding_size or 384),
+    #             )
 
     # role models (template-filled or defaults)
     cfg.set_role_models(config_request.role_models)
@@ -800,11 +797,7 @@ def _build_model_service_from_env() -> "ModelServiceBase":
     Used by MCP servers and other lightweight entrypoints.
     """
     settings = get_settings()
-    selected_model = (
-        os.getenv("DEFAULT_LLM_MODEL_ID")
-        or os.getenv("SELECTED_MODEL")
-        or "o3-mini"
-    )
+
     role_models = None
     role_models_json = os.getenv("ROLE_MODELS_JSON")
     if role_models_json:
@@ -814,13 +807,12 @@ def _build_model_service_from_env() -> "ModelServiceBase":
             role_models = None
 
     req = ConfigRequest(
-        openai_api_key=settings.OPENAI_API_KEY or os.environ.get("OPENAI_API_KEY"),
-        claude_api_key=settings.ANTHROPIC_API_KEY or os.environ.get("ANTHROPIC_API_KEY"),
-        google_api_key=settings.GOOGLE_API_KEY or os.environ.get("GEMINI_API_KEY"),
-        selected_model=selected_model,
+        openai_api_key=settings.OPENAI_API_KEY,
+        claude_api_key=settings.ANTHROPIC_API_KEY,
+        google_api_key=settings.GOOGLE_API_KEY,
         role_models=role_models,
-        tenant=settings.TENANT or os.environ.get("TENANT_ID"),
-        project=settings.PROJECT or os.environ.get("DEFAULT_PROJECT_NAME"),
+        tenant=settings.TENANT,
+        project=settings.PROJECT,
     )
     cfg = create_workflow_config(req)
     return ModelServiceBase(cfg)
@@ -1116,8 +1108,6 @@ class ModelServiceBase:
         provider_id = (embedder_config.get("provider") or "openai").lower()
         model_name = embedder_config.get("model_name") or self.config.embedding_model
         if provider_id == "custom":
-            if not self.config.custom_embedding_endpoint:
-                raise ValueError(f"Custom embedder {self.config.selected_embedder} requires an endpoint")
             size = int(embedder_config.get("dim") or self.config.custom_embedding_size or 0)
             self._custom_embeddings = CustomEmbeddings(
                 endpoint=self.config.custom_embedding_endpoint,
@@ -2971,28 +2961,6 @@ def export_execution_logs(execution_data: Dict[str, Any], filename: str | None =
     except Exception as e:
         return f"Failed to export logs: {str(e)}"
 
-def probe_embeddings(config_request: ConfigRequest) -> Dict[str, Any]:
-    cfg = create_workflow_config(config_request)
-    ecfg = cfg.embedder_config
-    if ecfg["provider"] == "openai":
-        embeddings = OpenAIEmbeddings(model=ecfg["model_name"], openai_api_key=cfg.openai_api_key)
-        test_text = "This is a test embedding query"
-        embedding = embeddings.embed_query(test_text)
-        return {"status": "success", "embedder_id": cfg.selected_embedder, "provider": "openai",
-                "model": ecfg["model_name"], "embedding_size": len(embedding),
-                "test_text": test_text, "embedding_preview": embedding[:5]}
-    if ecfg["provider"] == "custom":
-        if not config_request.custom_embedding_endpoint:
-            raise Exception("Custom embedder requires an endpoint")
-        embeddings = CustomEmbeddings(endpoint=config_request.custom_embedding_endpoint,
-                                      model=ecfg["model_name"], size=ecfg["dim"])
-        test_text = "This is a test embedding query"
-        embedding = embeddings.embed_query(test_text)
-        return {"status": "success" if embedding else "failed", "embedder_id": cfg.selected_embedder,
-                "provider": "custom", "endpoint": config_request.custom_embedding_endpoint,
-                "model": ecfg["model_name"], "embedding_size": len(embedding or []),
-                "test_text": test_text, "embedding_preview": (embedding or [])[:5]}
-    raise Exception(f"Unknown embedding provider: {ecfg['provider']}")
 
 class BundleState(TypedDict, total=False):
     request_id: str
@@ -3043,9 +3011,8 @@ if __name__ == "__main__":
         role = "segment_enrichment"
         settings = get_settings()
         req = ConfigRequest(
-            openai_api_key=settings.OPENAI_API_KEY or os.environ.get("OPENAI_API_KEY"),
-            claude_api_key=settings.ANTHROPIC_API_KEY or os.environ.get("ANTHROPIC_API_KEY"),
-            selected_model=m,
+            openai_api_key=settings.OPENAI_API_KEY,
+            claude_api_key=settings.ANTHROPIC_API_KEY,
             role_models={ role: {"provider": "anthropic", "model": m}},
         )
         ms = ModelServiceBase(create_workflow_config(req))

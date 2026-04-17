@@ -26,8 +26,8 @@ from kdcube_ai_app.infra.config import (
 )
 from kdcube_ai_app.apps.chat.sdk.config import get_settings
 
-_DEFAULT_IMAGE = os.environ.get("PY_CODE_EXEC_IMAGE", "py-code-exec:latest")
-_DEFAULT_TIMEOUT_S = int(os.environ.get("PY_CODE_EXEC_TIMEOUT", "600"))  # 10min default
+_DEFAULT_IMAGE = get_settings().PLATFORM.EXEC.PY.PY_CODE_EXEC_IMAGE
+_DEFAULT_TIMEOUT_S = get_settings().PLATFORM.EXEC.PY.PY_CODE_EXEC_TIMEOUT
 
 _PROC_VISIBLE_ROOTS = (
     "/exec-workspace",

@@ -89,8 +89,8 @@ class ChatRelayCommunicator:
         self._comm = comm or ServiceCommunicator(
             redis_url=redis_url,
             orchestrator_identity=orchestrator_identity
-                                  or os.environ.get(
-                "CB_RELAY_IDENTITY") or "kdcube.relay.chatbot",
+                                  or get_settings().PLATFORM.SERVICE.CB_RELAY_IDENTITY
+                                  or "kdcube.relay.chatbot",
         )
         self._channel = channel
 
