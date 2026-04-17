@@ -78,6 +78,7 @@ In `aws-sm`, the grouped bundle descriptor docs are:
 | `execution.runtime` | no default | `BaseEntrypoint`, `RuntimeCtx`, exec runtime | Per-bundle exec runtime selection/overrides |
 | `exec_runtime` | no default | same as `execution.runtime` | Legacy compatibility alias for `execution.runtime` |
 | `mcp.services` | no default | `BaseWorkflow`, MCP runtime/bootstrap | MCP server transport/auth config for tool subsystem |
+| `pdf_footer` | no default | `rendering_tools.write_pdf` | Per-bundle footer text embedded in all rendered PDF formats (markdown, html, mermaid). Read via `get_plain("b:bundles.items.<bundle_id>.pdf_footer")`. |
 
 ## Where each reserved property lives
 
@@ -452,6 +453,29 @@ config:
             - sg-<group_id>  # terraform output -raw ecs_tasks_sg_id
           assign_public_ip: DISABLED
 ```
+
+## `pdf_footer`
+
+This property controls the footer text embedded by `rendering_tools.write_pdf` into produced PDF files.
+
+When set, the footer is injected directly into the rendered content (not as a Chromium page margin header/footer), so it is visible in both the canvas preview window and the downloaded PDF.
+
+Applies to all three input formats: `markdown`, `html`, and `mermaid`.
+
+Example:
+
+```yaml
+config:
+  pdf_footer: "Made by Acme Corp"
+```
+
+Read by the platform via:
+
+```python
+get_plain(f"b:bundles.items.{bundle_id}.pdf_footer")
+```
+
+Bundle id is resolved from the current execution context (request context → `RUNTIME_GLOBALS_JSON` → env vars), so the correct bundle footer is applied in all runtimes: react agent loop and isolated code execution.
 
 ## Bundle author guidance
 
