@@ -8,7 +8,7 @@ see_also:
   - ks:docs/sdk/bundle/bundle-dev-README.md
   - ks:docs/sdk/bundle/bundle-runtime-README.md
   - ks:docs/sdk/bundle/bundle-ops-README.md
-  - ks:docs/sdk/bundle/design/bundle-custom-venv-README.md
+  - ks:docs/sdk/bundle/bundle-venv-README.md
   - ks:docs/sdk/bundle/bundle-index-README.md
   - ks:docs/clients/client-communication-README.md
   - ks:docs/clients/sse-events-README.md

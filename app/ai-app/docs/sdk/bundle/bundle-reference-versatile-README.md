@@ -1,110 +1,54 @@
 ---
 id: ks:docs/sdk/bundle/bundle-reference-versatile-README.md
 title: "Versatile Reference Bundle"
-summary: "Primary full-feature bundle reference for bundle builders: React workflow, economics, props, secrets, custom tools, custom skills, storage, MCP, widget, custom main view, isolated exec, and concrete bundle API route examples."
-tags: ["sdk", "bundle", "reference", "example", "react", "economics", "configuration", "secrets", "mcp", "storage", "widget", "ui", "exec", "api", "public"]
-keywords: ["versatile bundle", "reference bundle", "bundle example", "bundle props", "bundle secrets", "get_secret", "custom tools", "custom skills", "preferences", "isolated exec", "AIBundleStorage", "ui.main_view", "custom bundle ui", "bundle api", "public endpoint", "GET operations"]
+summary: "Reference bundle for bundle builders: actual file map, demonstrated capabilities, config surfaces, and validation path for versatile@2026-03-31-13-36."
+tags: ["sdk", "bundle", "reference", "example", "react", "configuration", "widget", "api", "mcp"]
+keywords: ["versatile bundle", "reference bundle", "bundle example", "preferences", "ui widget", "public endpoint", "isolated exec", "mcp"]
 see_also:
-  - ks:docs/sdk/bundle/bundle-index-README.md
   - ks:docs/sdk/bundle/bundle-dev-README.md
-  - ks:docs/sdk/bundle/bundle-lifecycle-README.md
-  - ks:docs/sdk/bundle/bundle-interfaces-README.md
+  - ks:docs/sdk/bundle/bundle-runtime-README.md
+  - ks:docs/sdk/bundle/bundle-props-secrets-README.md
+  - ks:docs/sdk/bundle/bundle-platform-integration-README.md
 ---
 # Versatile Reference Bundle
 
-This is the **primary bundle reference** for bundle builders.
+Reference bundle root:
 
-Actual bundle root:
 `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36`
 
-Bundle README:
-`src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/README.md`
+This is the bundle to study first.
 
-## Why this bundle exists
+## What It Demonstrates
 
-Older examples split the platform across several bundles:
-- one for React
-- one for economics
-- one for MCP
-- one for isolated exec
-- one for `ks:`
-
-That is still useful for narrow investigation, but it is a poor starting point for bundle builders and bundle-builder copilots.
-
-`versatile` is the one place that intentionally demonstrates the main bundle authoring surfaces together.
-
-It also demonstrates the common API shapes that bundle authors usually need first:
-
-- authenticated `GET` on `/operations/...`
-- authenticated `POST` on `/operations/...`
-- anonymous `GET` on `/public/...`
-
-Concrete platform routes:
-
-- `GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/{alias}`
-- `POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/{alias}`
-- `GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/{alias}`
-- `POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/{alias}`
-
-Minimal decorator contract:
-
-```python
-@api(
-    method="POST",          # default
-    alias="my_operation",   # default: function name
-    route="operations",     # default; alternative: "public"
-    user_types=("registered",),  # optional
-    public_auth=None,       # required only for route="public"
-)
-```
-
-See the bundle README for the concrete `GET`, `POST`, and public examples in the
-same reference bundle.
-
-## Feature map
-
-| Feature | Primary file(s) |
+| Capability | Where to look |
 | --- | --- |
-| Entrypoint + graph bootstrap | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/entrypoint.py` |
-| React workflow orchestration | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/orchestrator/workflow.py` |
-| Gate agent | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/agents/gate.py` |
-| Economics / quotas | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/entrypoint.py` |
-| Bundle-local tools | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/tools/preference_tools.py` |
-| Bundle-local skill | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/skills/product/preferences/SKILL.md` |
-| Bundle props / effective config | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/entrypoint.py`, `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/orchestrator/workflow.py` |
-| Bundle secrets via `get_secret(...)` | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/tools/preference_tools.py` |
-| Shared bundle storage model | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/preferences_store.py` |
-| Storage backend snapshot | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/tools/preference_tools.py` |
-| MCP connector surface | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/tools_descriptor.py` |
-| Widget surface | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/ui/PreferencesBrowser.tsx` |
-| Custom main view (iframe SPA) | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/ui-src/src/App.tsx`, `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/entrypoint.py` |
-| Direct isolated exec from bundle code | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/entrypoint.py` |
-| Authenticated `GET` API example | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/entrypoint.py:preferences_summary` |
-| Anonymous public API example | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/entrypoint.py:preferences_public_info` |
+| Entry point and graph bootstrap | `entrypoint.py` |
+| React workflow orchestration | `orchestrator/workflow.py` |
+| Economics-enabled entrypoint | `entrypoint.py` via `BaseEntrypointWithEconomics` |
+| Bundle-local tools | `tools/preference_tools.py` |
+| Bundle-local skills | `skills_descriptor.py` and bundle `skills/` tree |
+| Effective bundle props | `entrypoint.py`, `orchestrator/workflow.py` |
+| Bundle secrets via `get_secret("b:...")` | `tools/preference_tools.py` |
+| Bundle storage backend usage | `preferences_store.py` |
+| Widget + widget operations | `entrypoint.py`, `ui/PreferencesBrowser.tsx` |
+| Iframe main view | `ui-src/src/App.tsx`, `entrypoint.py` |
+| Public bundle endpoint | `entrypoint.py:preferences_public_info` |
+| Direct isolated exec from bundle code | `entrypoint.py:preferences_exec_report` |
+| MCP connector declarations | `tools_descriptor.py` |
 
-## Minimal vs versatile
+## What It Does Not Demonstrate
 
-| Concern | Minimal bundle | Versatile bundle |
-| --- | --- | --- |
-| Entrypoint + compiled graph | required | yes |
-| Role models / configuration | required | yes |
-| Bundle props / effective config | required for real deployments | yes |
-| Tools descriptor | required for tool-aware solver | yes |
-| Skills descriptor | required for skill-aware solver | yes |
-| Bundle-local tools | optional | yes |
-| Bundle-local skills | optional | yes |
-| Bundle secrets via `get_secret(...)` | optional | yes |
-| Economics | optional | yes |
-| Shared bundle storage | optional | yes |
-| Storage backend export | optional | yes |
-| MCP connectors | optional | yes |
-| Widget / operations | optional | yes |
-| Custom main view UI | optional | yes |
-| Direct isolated exec from bundle code | optional | yes |
+Do not use `versatile` as the reference for:
 
-## How to study it
+- `@cron`
+- `@venv`
 
-Recommended reading order:
+Those are documented separately:
+
+- [bundle-scheduled-jobs-README.md](bundle-scheduled-jobs-README.md)
+- [bundle-venv-README.md](bundle-venv-README.md)
+
+## Study Order
 
 1. `entrypoint.py`
 2. `orchestrator/workflow.py`
@@ -112,46 +56,53 @@ Recommended reading order:
 4. `skills_descriptor.py`
 5. `tools/preference_tools.py`
 6. `preferences_store.py`
-7. the “Bundle props and secrets” section in the bundle README
-8. `ui/PreferencesBrowser.tsx`
-9. `ui-src/src/App.tsx`
-10. bundle pytest files under:
-   `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tests/bundle`
-11. bundle-local tests under:
-   `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/tests`
+7. `ui/PreferencesBrowser.tsx`
+8. `ui-src/src/App.tsx`
+9. bundle-local tests under `tests/`
 
-## When to branch to specialized examples
+## Config Surfaces Used by This Bundle
 
-- For bundle-defined `ks:` and namespace resolution:
-  use `kdcube.copilot@2026-04-03-19-05`
-- For stripped-down isolated-exec scaffolding:
-  use `with-isoruntime@2026-02-16-14-00`
+Actual non-secret props demonstrated here:
 
-Do not start with those examples unless the task is specifically about those narrower surfaces.
+- `preferences.auto_capture`
+- `execution.runtime`
+- `mcp.services`
 
-## Related validation
+Actual bundle secret demonstrated here:
 
-Current shared bundle pytest suite:
-`src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tests/bundle`
+- `preferences.snapshot_hmac_key`
 
-Bundle-local tests for this reference bundle:
-`src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/tests`
+Read the exact rules here:
 
-Preferred broad validation command:
+- [bundle-props-secrets-README.md](bundle-props-secrets-README.md)
+- [bundle-platform-properties-README.md](bundle-platform-properties-README.md)
+
+## API and UI Surface Actually Present
+
+This bundle currently demonstrates:
+
+- authenticated operations endpoints via `@api(..., route="operations")`
+- widget discovery via `@ui_widget(...)`
+- a public endpoint via `@api(..., route="public", public_auth="none")`
+- a custom iframe main view
+
+Use the exact decorator and route contract here:
+
+- [bundle-platform-integration-README.md](bundle-platform-integration-README.md)
+
+## Validation
+
+Shared SDK bundle suite:
 
 ```bash
 PYTHONPATH=app/ai-app/src/kdcube-ai-app \
 python -m kdcube_ai_app.apps.chat.sdk.tests.bundle.run_bundle_suite \
-  --bundle-path /abs/path/to/versatile@2026-03-31-13-36 -v --tb=short
+  --bundle-path /abs/path/to/versatile@2026-03-31-13-36
 ```
 
-Typical first validation subset:
+Bundle-local tests:
 
 ```bash
-BUNDLE_UNDER_TEST=/abs/path/to/versatile@2026-03-31-13-36 \
 PYTHONPATH=app/ai-app/src/kdcube-ai-app \
-pytest -q \
-  app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tests/bundle/test_initialization.py \
-  app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tests/bundle/test_configuration.py \
-  app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tests/bundle/test_graph.py
+pytest -q app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/tests
 ```

@@ -1,144 +1,86 @@
 ---
 id: ks:docs/sdk/bundle/bundle-index-README.md
 title: "Bundle Index"
-summary: "Bundle developer index for authoring docs, the primary reference bundle, and the current bundle pytest suite."
-tags: ["sdk", "bundle", "docs", "index", "developer", "reference", "tests"]
-keywords: ["bundle docs index", "bundle developer guide", "reference bundle", "versatile bundle", "bundle pytest suite", "bundle builder"]
+summary: "Start page for bundle developers: authoring path, reference bundle, configuration, and local reload workflow."
+tags: ["sdk", "bundle", "docs", "index", "reference"]
+keywords: ["bundle docs index", "bundle developer", "versatile bundle", "bundle reload", "bundles.yaml"]
 see_also:
   - ks:docs/sdk/bundle/bundle-dev-README.md
   - ks:docs/sdk/bundle/bundle-reference-versatile-README.md
-  - ks:docs/sdk/bundle/bundle-lifecycle-README.md
-  - ks:docs/sdk/bundle/bundle-runtime-README.md
-  - ks:docs/sdk/bundle/bundle-node-backend-bridge-README.md
   - ks:docs/sdk/bundle/bundle-props-secrets-README.md
+  - ks:docs/sdk/bundle/bundle-ops-README.md
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
-  - ks:docs/sdk/bundle/bundle-scheduled-jobs-README.md
 ---
 # Bundle Docs Index
 
-Use this as the **docs start point** when building, repairing, or reviewing a bundle.
+This is the bundle-developer start page.
 
-## Bundle-builder quickstart
+The bundle docs now use one reference bundle only:
 
-1. Start with [[docs/sdk/bundle/bundle-dev-README.md](bundle-dev-README.md)](bundle-dev-README.md).
-2. Read the primary full-feature reference:
-   [[docs/sdk/bundle/bundle-reference-versatile-README.md](bundle-reference-versatile-README.md)](bundle-reference-versatile-README.md).
-3. Read the runtime execution model:
-   [[docs/sdk/bundle/bundle-runtime-README.md](bundle-runtime-README.md)](bundle-runtime-README.md).
-4. Read the declarative platform integration design:
-   [[docs/sdk/bundle/bundle-platform-integration-README.md](bundle-platform-integration-README.md)](bundle-platform-integration-README.md).
-5. Read the current shared bundle pytest suite under:
-   `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tests/bundle`
-6. Only after that, branch into narrower specialized examples if the task is specifically about `ks:` or direct isolated-exec internals.
+- `versatile@2026-03-31-13-36`
 
-## Bundle-builder map
+Older `docs/sdk/example-bundle` sample docs are no longer part of the bundle path.
 
-| Concern | Read first | Then inspect |
-| --- | --- | --- |
-| Minimal bundle contract | [[docs/sdk/bundle/bundle-dev-README.md](bundle-dev-README.md)](bundle-dev-README.md) | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/entrypoint.py`, `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/orchestrator/workflow.py` |
-| Bundle lifecycle + instance model | [[docs/sdk/bundle/bundle-lifecycle-README.md](bundle-lifecycle-README.md)](bundle-lifecycle-README.md) | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/entrypoint.py` |
-| Runtime surfaces across REST, SSE, tools, and iso runtime | [[docs/sdk/bundle/bundle-runtime-README.md](bundle-runtime-README.md)](bundle-runtime-README.md) | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/integrations.py`, `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/web_app.py`, `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/tool_subsystem.py`, `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/bootstrap.py` |
-| Dependency-heavy helpers with cached bundle venvs | [[docs/sdk/bundle/bundle-lifecycle-README.md](bundle-lifecycle-README.md)](bundle-lifecycle-README.md), [[docs/sdk/bundle/design/bundle-custom-venv-README.md](design/bundle-custom-venv-README.md)](design/bundle-custom-venv-README.md) | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/agentic_loader.py` |
-| Config, secrets, reserved platform props | [[docs/sdk/bundle/bundle-props-secrets-README.md](bundle-props-secrets-README.md)](bundle-props-secrets-README.md), [[docs/sdk/bundle/bundle-platform-properties-README.md](bundle-platform-properties-README.md)](bundle-platform-properties-README.md) | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/entrypoint.py` |
-| Custom tools + MCP | [[docs/sdk/tools/custom-tools-README.md](../tools/custom-tools-README.md)](../tools/custom-tools-README.md) | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/tools_descriptor.py`, `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/tools/preference_tools.py` |
-| Custom skills | [[docs/sdk/skills/custom-skills-README.md](../skills/custom-skills-README.md)](../skills/custom-skills-README.md) | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/skills_descriptor.py`, `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/skills/product/preferences/SKILL.md` |
-| Storage, cache, bundle state | [[docs/sdk/bundle/bundle-storage-cache-README.md](bundle-storage-cache-README.md)](bundle-storage-cache-README.md) | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/preferences_store.py` |
-| Widgets + operations | [[docs/sdk/bundle/bundle-platform-integration-README.md](bundle-platform-integration-README.md)](bundle-platform-integration-README.md), [[docs/sdk/bundle/bundle-interfaces-README.md](bundle-interfaces-README.md)](bundle-interfaces-README.md) | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/ui/PreferencesBrowser.tsx`, `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/entrypoint.py` |
-| React v2 agent integration | [[docs/sdk/agents/react/structure-README.md](../agents/react/structure-README.md)](../agents/react/structure-README.md), [[docs/sdk/agents/react/plan-README.md](../agents/react/plan-README.md)](../agents/react/plan-README.md) | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/orchestrator/workflow.py` |
-| Claude Code agent integration | [[docs/sdk/agents/claude/claude-code-README.md](../agents/claude/claude-code-README.md)](../agents/claude/claude-code-README.md) | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/claude_code.py` |
-| Node/TypeScript backend behind Python bridge | [[docs/sdk/bundle/bundle-node-backend-bridge-README.md](bundle-node-backend-bridge-README.md)](bundle-node-backend-bridge-README.md) | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/resources/node-backend-bridge/cli.mjs`, `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/resources/node-backend-bridge/sample_routes.ts` |
-| Scheduled jobs (`@cron`) | [[docs/sdk/bundle/bundle-scheduled-jobs-README.md](bundle-scheduled-jobs-README.md)](bundle-scheduled-jobs-README.md) | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/bundle_scheduler.py`, `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/echo.ui@2026-03-30/entrypoint.py` |
-| Custom main-view UI | [[docs/sdk/bundle/bundle-lifecycle-README.md](bundle-lifecycle-README.md)](bundle-lifecycle-README.md), [[docs/sdk/bundle/bundle-reference-versatile-README.md](bundle-reference-versatile-README.md)](bundle-reference-versatile-README.md) | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/ui-src/src/App.tsx`, `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/entrypoint.py` |
-| Direct isolated exec from bundle code | [[docs/sdk/bundle/bundle-reference-versatile-README.md](bundle-reference-versatile-README.md)](bundle-reference-versatile-README.md) | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/entrypoint.py` |
-| Bundle-defined `ks:` knowledge space | [[docs/sdk/bundle/bundle-knowledge-space-README.md](bundle-knowledge-space-README.md)](bundle-knowledge-space-README.md) | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/kdcube.copilot@2026-04-03-19-05` |
-| Validation | `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tests/bundle` | read the exact relevant pytest files, then run the smallest relevant subset |
+## Read in this order
 
-## Primary reference bundle
+1. [bundle-dev-README.md](bundle-dev-README.md)
+   - minimal authoring contract
+   - local bundle layout
+   - config/secrets/update loop
+2. [bundle-reference-versatile-README.md](bundle-reference-versatile-README.md)
+   - the concrete reference bundle to study
+3. [bundle-runtime-README.md](bundle-runtime-README.md)
+   - runtime surfaces available to bundle code
+4. [bundle-platform-integration-README.md](bundle-platform-integration-README.md)
+   - exact decorator and route contract
+5. [bundle-props-secrets-README.md](bundle-props-secrets-README.md)
+   - effective props, raw descriptor reads, bundle secrets, user props, user secrets
+6. [bundle-ops-README.md](bundle-ops-README.md)
+   - local reload, registry updates, delivery modes, and deployment-side changes
 
-- Primary all-features reference bundle:
-  [[docs/sdk/bundle/bundle-reference-versatile-README.md](bundle-reference-versatile-README.md)](bundle-reference-versatile-README.md)
-- Actual bundle root:
-  `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36`
-- Bundle README:
+## Core Doc Map
+
+| Concern | Primary doc |
+| --- | --- |
+| Build a new bundle | [bundle-dev-README.md](bundle-dev-README.md) |
+| Study the reference bundle | [bundle-reference-versatile-README.md](bundle-reference-versatile-README.md) |
+| Runtime surfaces | [bundle-runtime-README.md](bundle-runtime-README.md) |
+| Decorators, widget/API/public integration | [bundle-platform-integration-README.md](bundle-platform-integration-README.md) |
+| Props, secrets, raw descriptor reads | [bundle-props-secrets-README.md](bundle-props-secrets-README.md) |
+| Reserved platform-owned prop paths | [bundle-platform-properties-README.md](bundle-platform-properties-README.md) |
+| Bundle lifecycle and instance model | [bundle-lifecycle-README.md](bundle-lifecycle-README.md) |
+| Widgets, streaming, operations surface | [bundle-interfaces-README.md](bundle-interfaces-README.md) |
+| Local reload and deployed registry updates | [bundle-ops-README.md](bundle-ops-README.md) |
+| Knowledge space (`ks:`) | [bundle-knowledge-space-README.md](bundle-knowledge-space-README.md) |
+| Bundle storage and cache | [bundle-storage-cache-README.md](bundle-storage-cache-README.md) |
+| Scheduled jobs (`@cron`) | [bundle-scheduled-jobs-README.md](bundle-scheduled-jobs-README.md) |
+| Cached subprocess virtualenv helpers (`@venv`) | [bundle-venv-README.md](bundle-venv-README.md) |
+| Outbound event filtering | [bundle-firewall-README.md](bundle-firewall-README.md) |
+| Python-to-Node backend bridge | [bundle-node-backend-bridge-README.md](bundle-node-backend-bridge-README.md) |
+
+## Reference Bundle
+
+Reference bundle root:
+
+`src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36`
+
+Start with:
+
+- the reference doc:
+  [bundle-reference-versatile-README.md](bundle-reference-versatile-README.md)
+- then the actual bundle README:
   `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/README.md`
-
-Why this is the primary reference:
-- it shows the normal React bundle skeleton
-- it keeps the economics-enabled entrypoint
-- it includes bundle-local tools and skills
-- it demonstrates shared local bundle storage
-- it demonstrates storage-backend export through `AIBundleStorage`
-- it includes MCP connector examples
-- it includes a TSX widget
-- it includes a custom iframe main view built through `ui.main_view`
-- it includes a direct isolated-exec operation
-
-## Core bundle docs
-
-- Developer guide:
-  [[docs/sdk/bundle/bundle-dev-README.md](bundle-dev-README.md)](bundle-dev-README.md)
-- Lifecycle, instance model, and storage surfaces:
-  [[docs/sdk/bundle/bundle-lifecycle-README.md](bundle-lifecycle-README.md)](bundle-lifecycle-README.md)
-- Runtime surfaces across entrypoints, tools, and isolation:
-  [[docs/sdk/bundle/bundle-runtime-README.md](bundle-runtime-README.md)](bundle-runtime-README.md)
-- Bundle props and secrets:
-  [[docs/sdk/bundle/bundle-props-secrets-README.md](bundle-props-secrets-README.md)](bundle-props-secrets-README.md)
-- Reserved platform property paths:
-  [[docs/sdk/bundle/bundle-platform-properties-README.md](bundle-platform-properties-README.md)](bundle-platform-properties-README.md)
-- Shared local storage, backend storage, and cache:
-  [[docs/sdk/bundle/bundle-storage-cache-README.md](bundle-storage-cache-README.md)](bundle-storage-cache-README.md)
-- Bundle interfaces (widgets + operations + streaming):
-  [[docs/sdk/bundle/bundle-interfaces-README.md](bundle-interfaces-README.md)](bundle-interfaces-README.md)
-- Declarative platform integration design (`@api`, `@ui_widget`, `@ui_main`, `@on_message`, `@cron`):
-  [[docs/sdk/bundle/bundle-platform-integration-README.md](bundle-platform-integration-README.md)](bundle-platform-integration-README.md)
-- Node or TypeScript backend behind Python bridge:
-  [[docs/sdk/bundle/bundle-node-backend-bridge-README.md](bundle-node-backend-bridge-README.md)](bundle-node-backend-bridge-README.md)
-- Scheduled jobs (`@cron` decorator, span semantics, cron resolution, local debug):
-  [[docs/sdk/bundle/bundle-scheduled-jobs-README.md](bundle-scheduled-jobs-README.md)](bundle-scheduled-jobs-README.md)
-- Bundle knowledge space (`ks:`):
-  [[docs/sdk/bundle/bundle-knowledge-space-README.md](bundle-knowledge-space-README.md)](bundle-knowledge-space-README.md)
-- Bundle outbound firewall:
-  [[docs/sdk/bundle/bundle-firewall-README.md](bundle-firewall-README.md)](bundle-firewall-README.md)
-- Bundle-local tools:
-  [[docs/sdk/tools/custom-tools-README.md](../tools/custom-tools-README.md)](../tools/custom-tools-README.md)
-- Bundle-local skills:
-  [[docs/sdk/skills/custom-skills-README.md](../skills/custom-skills-README.md)](../skills/custom-skills-README.md)
 
 ## Validation
 
-- Current shared bundle pytest suite root:
-  `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tests/bundle`
-- Start with the smallest relevant subset:
-  - `test_initialization.py`
-  - `test_configuration.py`
-  - `test_graph.py`
-- Then add feature-specific subsets:
-  - `test_custom_tools_*.py`
-  - `test_custom_skills_*.py`
-  - `test_storage*.py`
+Shared SDK bundle tests:
 
-## Specialized focused examples
+`src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tests/bundle`
 
-These are useful when the primary reference bundle is too broad for the question:
+Default combined runner:
 
-- `kdcube.copilot@2026-04-03-19-05`
-  - use when the question is specifically about bundle-defined `ks:` knowledge space, local docs indexing, or namespace resolution
-  - root:
-    `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/kdcube.copilot@2026-04-03-19-05`
-- `with-isoruntime@2026-02-16-14-00`
-  - use when the question is specifically about direct isolated exec and scenario-driven runtime diagnostics
-  - root:
-    `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/with-isoruntime@2026-02-16-14-00`
-- `examples/resources/node-backend-bridge`
-  - use when the question is specifically about reusing a Node or TypeScript backend behind a Python bundle shell
-  - root:
-    `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/resources/node-backend-bridge`
-- older focused examples still exist under `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles`, but they are not the default starting point for bundle authoring anymore
-
-## Ops after authoring
-
-Most bundle builders do **not** need ops docs first.
-
-Read this only when you are wiring delivery or deployment:
-- [[docs/sdk/bundle/bundle-ops-README.md](bundle-ops-README.md)](bundle-ops-README.md)
-- Assembly descriptors, delivery descriptors, and similar ops-only material are intentionally not part of the normal bundle-authoring start path.
+```bash
+PYTHONPATH=app/ai-app/src/kdcube-ai-app \
+python -m kdcube_ai_app.apps.chat.sdk.tests.bundle.run_bundle_suite \
+  --bundle-path /abs/path/to/bundle
+```
