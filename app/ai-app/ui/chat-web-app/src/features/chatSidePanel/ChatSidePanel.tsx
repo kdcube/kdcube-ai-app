@@ -8,8 +8,7 @@ import {
     CreditCard,
     Database,
     MessageSquareMore,
-    MessagesSquare,
-    Package
+    MessagesSquare
 } from "lucide-react";
 import IconContainer from "../../components/IconContainer.tsx";
 import AnimatedExpander from "../../components/AnimatedExpander.tsx";
