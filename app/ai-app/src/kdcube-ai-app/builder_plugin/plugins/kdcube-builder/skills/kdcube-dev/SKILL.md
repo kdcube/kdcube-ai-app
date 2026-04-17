@@ -10,48 +10,80 @@ allowed-tools: Bash, Read, Write, Edit, Grep, Glob
 # KDCube Dev Assistant
 
 You are the main entry point for all KDCube development work. Understand the user's intent and drive
-the right sequence of sub-skills without asking the user to type slash commands.
+the right sequence of actions without asking the user to type slash commands.
+
+All actions go through the plugin helper script:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/kdcube_local.py" <command> [args]
+```
 
 ## Intent map
 
-| User says (any language) | What to do |
+| User says (any language) | Command to run |
 |---|---|
-| start / run / запусти / launch | Run `/kdcube-builder:local-runtime start latest-image` |
-| stop / останови / kill | Run `/kdcube-builder:local-runtime stop` |
-| reload / restart / перезагрузи `<bundle>` | Run reload then verify: see **Reload flow** |
-| test bundle / протестируй / does it work | See **Test flow** |
-| build / create / fix bundle / создай бандл | Invoke `/kdcube-builder:bundle-builder` |
-| setup / first time / настрой / where are descriptors | See **First-time setup flow** |
-| status / what's running / что запущено | Run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/kdcube_local.py status` |
+| start / run / запусти / launch | `start latest-image` |
+| stop / останови / kill | `stop` |
+| reload / restart / перезагрузи `<bundle>` | see **Reload flow** |
+| test bundle / протестируй / does it work | see **Test flow** |
+| build / create / fix bundle / создай бандл | see **Bundle build flow** |
+| setup / first time / настрой / where are descriptors | see **First-time setup flow** |
+| status / what's running / что запущено | `status` |
+| install / поставь kdcube / kdcube not found | `install` |
 
 ## First-time setup flow
 
-1. Ask the user for the path to their deployment descriptors directory
-   (the folder with `assembly.yaml`, `bundles.yaml`, `gateway.yaml`, `secrets.yaml`).
-2. Run `/kdcube-builder:use-descriptors <path>`.
-3. If that succeeds, offer to start KDCube immediately with `start latest-image`.
+Run `status` first to check current state.
+
+**Case A — descriptors already exist on disk** (user says "I have descriptors at X"):
+1. Run `use-descriptors <path>`.
+2. Offer to start immediately.
+
+**Case B — no descriptors yet**:
+Ask the user in one message:
+- "What is your bundle id?" (e.g. `telegram-bot`)
+- "What is the absolute path to your bundle directory?" (e.g. `/Users/you/projects/telegram-bot`)
+
+Then run:
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/kdcube_local.py" bootstrap <bundle_id> <bundle_path>
+```
+
+Generates all descriptors with safe local defaults (auth=simple, demo tenant/project). After success, offer to start.
 
 ## Reload flow
 
-When the user says "reload" or "перезагрузи":
-
-1. Extract `bundle_id` from the message. If missing, ask: "Which bundle id should I reload?"
-2. Run `/kdcube-builder:local-runtime reload <bundle_id>`.
-3. Immediately run `/kdcube-builder:verify-reload <bundle_id>`.
-4. Report the combined result: reloaded + confirmed, or show the error.
+1. Extract `bundle_id` from the message. If missing, ask.
+2. Run `reload <bundle_id>`.
+3. Immediately run `verify-reload <bundle_id>`.
+4. Report combined result: reloaded + confirmed, or show the error.
 
 ## Test flow
 
-- If the user wants to run the shared bundle suite against a local path:
-  Run `/kdcube-builder:local-runtime bundle-tests <bundle_path>`.
-- If the user wants to verify the last reload took effect:
-  Run `/kdcube-builder:verify-reload <bundle_id>`.
-- If the bundle path is unknown, ask for it before proceeding.
+- Shared bundle suite: run `bundle-tests <bundle_path>`.
+- Verify last reload: run `verify-reload <bundle_id>`.
+- If path/id unknown, ask before proceeding.
+
+## Bundle build flow
+
+Read the bundle docs and examples, then write or fix bundle code directly using the Edit/Write tools.
+
+Docs (prefer local checkout if `CLAUDE_PLUGIN_OPTION_KDCUBE_REPO_ROOT` is set, otherwise fetch from GitHub):
+1. `https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/bundle/bundle-index-README.md`
+2. `https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/bundle/bundle-reference-versatile-README.md`
+
+After edits run `reload <bundle_id>` + `verify-reload <bundle_id>` to apply.
 
 ## General rules
 
-- Never ask the user to run a slash command themselves — do it for them.
-- If the runtime is not running when reload/test is requested, say so and offer to start it first.
-- If descriptors have never been configured (no profile linked), run the first-time setup flow before anything else.
-- Keep the user informed with one short status line before each sub-skill invocation.
-- After any error, show the raw error output and suggest the most likely fix — do not silently retry.
+- Never ask the user to type a slash command — do everything via Bash.
+- If `status` shows `kdcube CLI: NOT FOUND`, run `install` before anything else.
+- If the runtime is not running when reload/test is requested, offer to start it first.
+- If no descriptor profile is linked, run the first-time setup flow before anything else.
+- One short status line before each action.
+- On error: show raw output, suggest the most likely fix, do not silently retry.
+
+## CLI reference
+
+kdcube-cli docs: https://pypi.org/project/kdcube-cli/
+Key flags: `--workdir`, `--latest`, `--upstream`, `--release <ref>`, `--stop`, `--reset`, `--clean`, `--dry-run`, `--build`, `--bundle-reload <id>`, `--descriptors-location <path>`

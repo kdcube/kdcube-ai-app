@@ -4,9 +4,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path, PurePosixPath
 
 
@@ -82,7 +84,10 @@ def _write(path: Path, content: str) -> None:
 
 def _ensure_cmd_available(cmd: str) -> None:
     if shutil.which(cmd) is None:
-        raise SystemExit(f"Required command not found in PATH: {cmd}")
+        raise SystemExit(
+            f"Required command not found in PATH: {cmd}\n"
+            f"Run `python3 {Path(__file__).resolve()} install` to install kdcube-cli."
+        )
 
 
 def _resolve_bundle_mapping(bundle_path: Path, host_bundles_path: Path) -> PurePosixPath:
@@ -218,9 +223,27 @@ def _ensure_descriptors_exist(profile: str) -> Path:
     return descriptors_dir
 
 
+def _expand_descriptors(descriptors_dir: Path) -> Path:
+    """Copy descriptors to a temp dir with ~ and $HOME expanded in all yaml values."""
+    home = str(Path.home())
+    tilde_re = re.compile(r'(:\s*["\']?)~/')
+
+    tmp = Path(tempfile.mkdtemp(prefix="kdcube-descriptors-"))
+    for src in descriptors_dir.iterdir():
+        if not src.is_file() or src.suffix not in (".yaml", ".yml"):
+            continue
+        text = src.read_text()
+        # expand ~/  →  /home/user/
+        text = tilde_re.sub(lambda m: m.group(1) + home + "/", text)
+        # expand $HOME/
+        text = text.replace("$HOME/", home + "/")
+        (tmp / src.name).write_text(text)
+    return tmp
+
+
 def cmd_start(args: argparse.Namespace) -> int:
     _ensure_cmd_available(_kdcube_cmd())
-    descriptors_dir = _ensure_descriptors_exist(args.profile)
+    descriptors_dir = _expand_descriptors(_ensure_descriptors_exist(args.profile))
     cmd = [_kdcube_cmd(), "--descriptors-location", str(descriptors_dir)]
 
     if args.mode == "upstream":
@@ -370,6 +393,31 @@ def cmd_use_descriptors(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_install(args: argparse.Namespace) -> int:
+    kdcube = _kdcube_cmd()
+    if shutil.which(kdcube) is not None:
+        print(f"kdcube-cli is already installed: {shutil.which(kdcube)}")
+        return 0
+
+    if shutil.which("pipx") is None:
+        raise SystemExit("pipx not found in PATH. Install it first: https://pipx.pypa.io/stable/installation/")
+    installer = ["pipx", "install", "kdcube-cli"]
+
+    print(f"Installing kdcube-cli via: {' '.join(installer)}")
+    r = subprocess.run(installer)
+    if r.returncode != 0:
+        raise SystemExit("Installation failed. Check the output above.")
+
+    if shutil.which(kdcube) is None:
+        raise SystemExit(
+            "Installation succeeded but `kdcube` is still not in PATH. "
+            "You may need to add the install location to PATH and restart your shell."
+        )
+
+    print(f"kdcube-cli installed: {shutil.which(kdcube)}")
+    return 0
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     profile = args.profile
 
@@ -472,6 +520,9 @@ def build_parser() -> argparse.ArgumentParser:
     status = sub.add_parser("status", help="Show runtime status: CLI, descriptor profile, workdir, containers.")
     status.add_argument("--profile", default="default")
     status.set_defaults(func=cmd_status)
+
+    install = sub.add_parser("install", help="Install kdcube-cli via pipx or pip if not already present.")
+    install.set_defaults(func=cmd_install)
 
     return parser
 
