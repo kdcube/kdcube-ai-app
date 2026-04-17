@@ -20,14 +20,14 @@ This document covers the four bundle-facing state classes that matter in practic
 
 For now, bundle code should **not** write platform/global props or platform/global secrets.
 
-## Short answer
+## What lives where
 
-| Data class                       | Read API                                     | Write API today                                      | Scope                            | Current production storage / authority                                                                              |
-|----------------------------------|----------------------------------------------|------------------------------------------------------|----------------------------------|---------------------------------------------------------------------------------------------------------------------|
-| deployment-scoped bundle props   | `self.bundle_prop(...)`, `self.bundle_props` | `await set_bundle_prop(...)`                         | tenant + project + bundle        | mounted `bundles.yaml` whenever present; grouped bundle descriptor docs only when no mounted descriptor file exists |
-| deployment-scoped bundle secrets | `get_secret("b:...")`                        | `await set_bundle_secret(...)`                       | tenant + project + bundle        | configured secrets provider                                                                                         |
-| user-scoped bundle props         | `get_user_prop(...)`, `get_user_props()`     | `set_user_prop(...)`, `delete_user_prop(...)`        | tenant + project + bundle + user | PostgreSQL `<SCHEMA>.user_bundle_props`                                                                             |
-| user-scoped bundle secrets       | `get_user_secret(...)`                       | `set_user_secret(...)`, `delete_user_secret(...)`    | tenant + project + bundle + user | configured secrets provider                                                                                         |
+| Data class | Read API | Write API | Scope | Live authority today | Export / descriptor behavior |
+|---|---|---|---|---|---|
+| deployment-scoped bundle props | `self.bundle_prop(...)`, `self.bundle_props` | `await set_bundle_prop(...)` | tenant + project + bundle | mounted writable `bundles.yaml` when present; Redis is the runtime cache; grouped bundle descriptor docs are fallback only when no mounted file exists | exported to `bundles.yaml` |
+| deployment-scoped bundle secrets | `get_secret("b:...")` | `await set_bundle_secret(...)` | tenant + project + bundle | configured secrets provider; in local `secrets-file` mode this is `bundles.secrets.yaml` | exported to `bundles.secrets.yaml` |
+| user-scoped bundle props | `get_user_prop(...)`, `get_user_props()` | `set_user_prop(...)`, `delete_user_prop(...)` | tenant + project + bundle + user | PostgreSQL `<SCHEMA>.user_bundle_props` | never exported to descriptors |
+| user-scoped bundle secrets | `get_user_secret(...)` | `set_user_secret(...)`, `delete_user_secret(...)` | tenant + project + bundle + user | configured secrets provider; in local `secrets-file` mode this is `secrets.yaml` | never exported to descriptors |
 
 The most important split is:
 
@@ -300,17 +300,6 @@ They are never part of:
 - `bundles.yaml`
 - `kdcube --export-live-bundles`
 
-## Source-of-truth matrix
-
-This is the cleanest operational view.
-
-| Data class | Local / production write target today | Descriptor source-of-truth today | Exportable to bundle descriptors |
-|---|---|---|---|
-| deployment-scoped bundle props | file-backed local: `bundles.yaml`; `aws-sm`: grouped bundle descriptor docs | file-backed local: `bundles.yaml`; `aws-sm`: grouped bundle descriptor docs | yes |
-| deployment-scoped bundle secrets | configured secrets provider | `bundles.secrets.yaml` in local `secrets-file`; provider authority in `aws-sm` / `secrets-service` | yes, bundle-level secrets only |
-| user-scoped bundle props | PostgreSQL | PostgreSQL | no |
-| user-scoped bundle secrets | configured secrets provider | configured secrets provider | no |
-
 ## Descriptor-first model
 
 When `bundles.yaml` and `bundles.secrets.yaml` are mounted as writable descriptor files, the operating model is:
@@ -324,15 +313,15 @@ Concretely:
 
 ### Descriptor-first policy
 
-Deployment-scoped writes should land here:
+Deployment-scoped writes land here:
 
 - bundle props -> `bundles.yaml`
-- bundle secrets -> `bundles.secrets.yaml` in local descriptor mode
+- bundle secrets -> `bundles.secrets.yaml` in local `secrets-file` mode
 
-And user-scoped writes should still land here:
+User-scoped writes still land here:
 
 - user props -> PostgreSQL
-- user secrets -> configured secrets provider
+- user secrets -> configured secrets provider (`secrets.yaml` in local `secrets-file` mode)
 
 ### If descriptors are not the live authority
 
