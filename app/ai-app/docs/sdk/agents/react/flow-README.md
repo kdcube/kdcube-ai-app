@@ -1,7 +1,7 @@
 ---
 id: ks:docs/sdk/agents/react/flow-README.md
 title: "Flow"
-summary: "End-to-end React v2 turn flow from turn start through workspace bootstrap, timeline and sources-pool load, tool execution, optional distributed exec packaging, and turn finish."
+summary: "End-to-end React turn flow from turn start through version selection, workspace bootstrap, timeline and sources-pool load, tool execution, optional distributed exec packaging, and turn finish."
 tags: ["sdk", "agents", "react", "flow", "timeline", "workspace"]
 keywords:
   [
@@ -20,9 +20,9 @@ see_also:
   - ks:docs/sdk/agents/react/source-pool-README.md
   - ks:docs/sdk/agents/react/external-exec-README.md
 ---
-# End-to-end flow (React v2)
+# End-to-end flow (React)
 
-This document shows the full React v2 turn lifecycle:
+This document shows the shared React turn lifecycle:
 
 - turn start
 - workspace bootstrap
@@ -34,6 +34,17 @@ This document shows the full React v2 turn lifecycle:
 - turn finish, persistence, and optional git workspace publish
 
 The reference implementation is still the single-agent React loop. Gate is optional and runs only for new conversations.
+
+Version selection happens before the loop starts:
+
+- `AI_REACT_AGENT_VERSION=v2|v3`
+- `AI_REACT_AGENT_MULTI_ACTION=off|safe_fanout`
+
+Current operational model:
+
+- `v2` is production and keeps one action per response
+- `v3` is experimental and may accept multiple requested actions in one response when `multi_action_mode=safe_fanout`
+- even in `v3`, accepted multi-action bundles are still executed sequentially, not in parallel
 
 ## High-level lifecycle
 
