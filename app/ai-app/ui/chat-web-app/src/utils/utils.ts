@@ -1,10 +1,6 @@
 import {Indexed, Timestamped} from "../types/common.ts";
 import sha256 from 'crypto-js/sha256';
 
-export function cn(...classes: Array<string | false | null | undefined>) {
-    return classes.filter(Boolean).join(' ');
-}
-
 export function makeSerializable<T extends object>(obj: T): Partial<T> {
     const serializable: Record<string, unknown> = {};
 

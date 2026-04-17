@@ -1,17 +1,18 @@
 import {ComponentType, RefObject} from "react";
 import {UnknownArtifact} from "../chat/chatTypes.ts";
 import {CanvasItemLink} from "../canvas/canvasContext.tsx";
+import {IconType} from "../../components/IconContainer.tsx";
 
 export type ArtifactComponentProps = {
     item: UnknownArtifact
     contentRef: RefObject<HTMLDivElement | null>
 }
 
-export type ArtifactNameGenerator = (artifact: UnknownArtifact) => string
 export type ArtifactLinkGenerator = (artifact: UnknownArtifact) => CanvasItemLink
 export type ArtifactComponent = ComponentType<ArtifactComponentProps>
 export type ArtifactLinkComparator = (link: CanvasItemLink, artifact: UnknownArtifact) => boolean
 export type ArtifactTitleGenerator = (artifact: UnknownArtifact) => string
+export type ArtifactIconGenerator = (artifact: UnknownArtifact) => IconType | null
 export type ArtifactCopyHandler = (artifact: UnknownArtifact, contentRef?: RefObject<HTMLDivElement | null> | null) => void
 export type ArtifactSaveHandler = (artifact: UnknownArtifact, contentRef?: RefObject<HTMLDivElement | null> | null) => void
 
@@ -21,6 +22,7 @@ export interface CanvasExtension {
     linkGenerator: ArtifactLinkGenerator
     linkComparator: ArtifactLinkComparator
     titleGenerator: ArtifactTitleGenerator
+    iconGenerator?: ArtifactIconGenerator | null
     copyHandler?: ArtifactCopyHandler | null
     saveHandler?: ArtifactSaveHandler | null
 }
@@ -56,6 +58,10 @@ export const getArtifactLinkComparator = (artifactType: string): ArtifactLinkCom
 
 export const getArtifactTitleGenerator = (artifactType: string): ArtifactTitleGenerator => {
     return canvasExtensions[artifactType].titleGenerator;
+}
+
+export const getArtifactIconGenerator = (artifactType: string): ArtifactIconGenerator | undefined | null => {
+    return canvasExtensions[artifactType].iconGenerator;
 }
 
 export const getArtifactCopyHandler = (artifactType: string): ArtifactCopyHandler | undefined | null => {

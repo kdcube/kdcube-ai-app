@@ -91,12 +91,48 @@ export const exampleConversationData: {
         [key: string]: ChatTurn
     }
 } = {
-    turnOrder: ["example_turn_0"],
+    turnOrder: ["example_turn_0", "example_turn_1"],
     turns: {
         "example_turn_0": {
             id: "example_turn_0",
             state: "finished",
             userMessage: {text:"Example user message", timestamp:Date.now(), attachments:[{name:"example.txt", size: 42}]},
+            followUpQuestions: ["There is no spoon", "Test"],
+            events:[],
+            steps:{},
+            artifacts: [
+                {
+                    artifactType: CanvasArtifactType,
+                    timestamp: Date.now(),
+                    content: {
+                        name: "canvas_md_example",
+                        title: "Canvas Markdown example",
+                        content: mdExample,
+                        contentType: "markdown",
+                    },
+                    canCopy: true,
+                    canSave: true,
+                    complete: true,
+                } as CanvasArtifact,
+                {
+                    artifactType: CanvasArtifactType,
+                    timestamp: Date.now(),
+                    content: {
+                        name: "canvas_html_example",
+                        title: "Canvas HTML example",
+                        content: htmlExample,
+                        contentType: "html",
+                    },
+                    canCopy: true,
+                    canSave: true,
+                    complete: true,
+                } as CanvasArtifact
+            ]
+        },
+        "example_turn_1": {
+            id: "example_turn_0",
+            state: "finished",
+            userMessage: {text:"Long user message. Very very very very very very very very very very very very very very very very very very very very long", timestamp:Date.now(), attachments:[{name:"example.txt", size: 42}]},
             followUpQuestions: ["There is no spoon", "Test"],
             events:[],
             steps:{},
