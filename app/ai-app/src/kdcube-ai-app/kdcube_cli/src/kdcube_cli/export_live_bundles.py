@@ -71,6 +71,48 @@ def resolve_aws_sm_prefix(*, tenant: str, project: str, explicit: str | None) ->
     return f"kdcube/{tenant_text}/{project_text}"
 
 
+def _empty_bundles_secrets_payload() -> dict[str, object]:
+    return {
+        "bundles": {
+            "version": "1",
+            "items": [],
+        }
+    }
+
+
+def _export_live_bundle_descriptors_from_files(
+    console: Console,
+    *,
+    bundles_path: Path,
+    bundles_secrets_path: Path | None,
+    out_dir: Path,
+) -> None:
+    if not bundles_path.exists():
+        raise SystemExit(f"Local bundles descriptor not found: {bundles_path}")
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_bundles_path = out_dir / "bundles.yaml"
+    out_bundles_path.write_text(bundles_path.read_text())
+
+    out_bundles_secrets_path = out_dir / "bundles.secrets.yaml"
+    if bundles_secrets_path is not None and bundles_secrets_path.exists():
+        out_bundles_secrets_path.write_text(bundles_secrets_path.read_text())
+    else:
+        out_bundles_secrets_path.write_text(
+            yaml.safe_dump(_empty_bundles_secrets_payload(), sort_keys=False, allow_unicode=True)
+        )
+
+    console.print("[green]Exported effective live bundle descriptors.[/green]")
+    console.print(f"[dim]Authority:[/dim] mounted local descriptors")
+    console.print(f"[dim]source bundles.yaml:[/dim] {bundles_path}")
+    if bundles_secrets_path is not None and bundles_secrets_path.exists():
+        console.print(f"[dim]source bundles.secrets.yaml:[/dim] {bundles_secrets_path}")
+    else:
+        console.print("[dim]source bundles.secrets.yaml:[/dim] <not configured>")
+    console.print(f"[dim]bundles.yaml:[/dim] {out_bundles_path}")
+    console.print(f"[dim]bundles.secrets.yaml:[/dim] {out_bundles_secrets_path}")
+
+
 def export_live_bundle_descriptors(
     console: Console,
     *,
@@ -80,7 +122,18 @@ def export_live_bundle_descriptors(
     aws_region: str | None,
     aws_profile: str | None,
     aws_sm_prefix: str | None,
+    bundles_path: Path | None = None,
+    bundles_secrets_path: Path | None = None,
 ) -> None:
+    if bundles_path is not None:
+        _export_live_bundle_descriptors_from_files(
+            console,
+            bundles_path=bundles_path,
+            bundles_secrets_path=bundles_secrets_path,
+            out_dir=out_dir,
+        )
+        return
+
     prefix = resolve_aws_sm_prefix(tenant=tenant, project=project, explicit=aws_sm_prefix)
     meta_secret_id = f"{prefix}/bundles-meta"
     meta = aws_secret_json(
@@ -117,7 +170,11 @@ def export_live_bundle_descriptors(
             profile=aws_profile,
             required=False,
         ) or {}
-        bundles_items.append({"id": bundle_id, **descriptor})
+        descriptor_payload = {"id": bundle_id, **descriptor}
+        props = descriptor_payload.pop("props", None)
+        if isinstance(props, dict) and props:
+            descriptor_payload["config"] = props
+        bundles_items.append(descriptor_payload)
         bundles_secrets_items.append({"id": bundle_id, "secrets": secrets})
 
     bundles_payload: dict[str, object] = {"bundles": {"version": "1", "items": bundles_items}}

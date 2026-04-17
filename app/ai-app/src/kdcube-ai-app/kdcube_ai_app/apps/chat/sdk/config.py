@@ -233,6 +233,54 @@ def _resolve_current_user_bundle_scope(
     return resolved_user_id, resolved_bundle_id
 
 
+def _resolve_current_bundle_scope(
+    *,
+    bundle_id: str | None = None,
+    tenant: str | None = None,
+    project: str | None = None,
+) -> tuple[str | None, str | None, str | None]:
+    resolved_bundle_id = str(bundle_id or "").strip() or None
+    resolved_tenant = str(tenant or "").strip() or None
+    resolved_project = str(project or "").strip() or None
+
+    from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import get_current_request_context
+
+    ctx = get_current_request_context()
+    if ctx is not None:
+        actor = getattr(ctx, "actor", None)
+        if resolved_tenant is None:
+            resolved_tenant = str(getattr(actor, "tenant_id", None) or "").strip() or None
+        if resolved_project is None:
+            resolved_project = str(getattr(actor, "project_id", None) or "").strip() or None
+        if resolved_bundle_id is None:
+            resolved_bundle_id = str(getattr(getattr(ctx, "routing", None), "bundle_id", None) or "").strip() or None
+
+    if resolved_bundle_id is None:
+        resolved_bundle_id = _resolve_current_bundle_id()
+
+    settings = get_settings()
+    if resolved_tenant is None:
+        resolved_tenant = str(getattr(settings, "TENANT", None) or "").strip() or None
+    if resolved_project is None:
+        resolved_project = str(getattr(settings, "PROJECT", None) or "").strip() or None
+
+    return resolved_bundle_id, resolved_tenant, resolved_project
+
+
+def _set_nested_value(root: dict[str, Any], path: str, value: Any) -> None:
+    parts = [part.strip() for part in str(path or "").split(".") if part.strip()]
+    if not parts:
+        raise ValueError("Bundle prop key path is empty")
+    cursor = root
+    for part in parts[:-1]:
+        existing = cursor.get(part)
+        if not isinstance(existing, dict):
+            existing = {}
+            cursor[part] = existing
+        cursor = existing
+    cursor[parts[-1]] = value
+
+
 def get_user_secret(
     key: str,
     *,
@@ -276,6 +324,24 @@ def set_user_secret(
         bundle_id=resolved_bundle_id,
         key=key,
         value=value,
+    )
+
+
+async def set_bundle_secret(
+    key: str,
+    value: str,
+    *,
+    bundle_id: str | None = None,
+) -> None:
+    resolved_bundle_id, _tenant, _project = _resolve_current_bundle_scope(bundle_id=bundle_id)
+    if not resolved_bundle_id:
+        raise RuntimeError("Current bundle id is unavailable for bundle-scoped secret write")
+    tail = str(key or "").strip().strip(".")
+    if not tail:
+        raise ValueError("Bundle secret key path is empty")
+    get_secrets_manager(get_settings()).set_secret(
+        f"bundles.{resolved_bundle_id}.secrets.{tail}",
+        value,
     )
 
 
@@ -362,6 +428,54 @@ def set_user_prop(
         bundle_id=resolved_bundle_id,
         key=key,
         value=value,
+    )
+
+
+async def set_bundle_prop(
+    key: str,
+    value: Any,
+    *,
+    bundle_id: str | None = None,
+    tenant: str | None = None,
+    project: str | None = None,
+) -> None:
+    resolved_bundle_id, resolved_tenant, resolved_project = _resolve_current_bundle_scope(
+        bundle_id=bundle_id,
+        tenant=tenant,
+        project=project,
+    )
+    if not resolved_bundle_id:
+        raise RuntimeError("Current bundle id is unavailable for bundle-scoped prop write")
+    if not resolved_tenant:
+        raise RuntimeError("Current tenant is unavailable for bundle-scoped prop write")
+    if not resolved_project:
+        raise RuntimeError("Current project is unavailable for bundle-scoped prop write")
+
+    from kdcube_ai_app.infra.redis.client import get_async_redis_client
+    from kdcube_ai_app.infra.plugin.bundle_store import (
+        get_bundle_props as _store_get_bundle_props,
+        put_bundle_props as _store_put_bundle_props,
+    )
+
+    tail = str(key or "").strip().strip(".")
+    if not tail:
+        raise ValueError("Bundle prop key path is empty")
+
+    redis = get_async_redis_client(get_settings().REDIS_URL)
+    current = await _store_get_bundle_props(
+        redis,
+        tenant=resolved_tenant,
+        project=resolved_project,
+        bundle_id=resolved_bundle_id,
+    )
+    props = dict(current or {})
+    _set_nested_value(props, tail, value)
+    await _store_put_bundle_props(
+        redis,
+        tenant=resolved_tenant,
+        project=resolved_project,
+        bundle_id=resolved_bundle_id,
+        props=props,
     )
 
 

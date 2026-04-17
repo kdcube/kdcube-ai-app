@@ -1,7 +1,10 @@
 import fnmatch
 import json
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+import yaml
 
 from kdcube_ai_app.infra.plugin import bundle_store
 
@@ -233,3 +236,108 @@ async def test_reset_registry_from_env_replaces_authoritative_store(monkeypatch)
     assert replace is True
     assert new_bundle_id in saved_reg.bundles
     assert saved_props == {new_bundle_id: {"feature": {"enabled": True}}}
+
+
+def test_file_bundle_descriptor_store_reads_config_blocks(tmp_path: Path):
+    descriptor_path = tmp_path / "bundles.yaml"
+    descriptor_path.write_text(
+        """
+bundles:
+  version: "1"
+  items:
+    - id: demo.bundle
+      path: /bundles/demo.bundle
+      module: entrypoint
+      config:
+        feature:
+          enabled: true
+  default_bundle_id: demo.bundle
+""".strip()
+    )
+
+    store = bundle_store._FileBundleDescriptorStore(bundles_yaml_uri=descriptor_path.resolve().as_uri())
+    loaded = store.load_registry()
+
+    assert loaded is not None
+    reg, props_map = loaded
+    assert reg.default_bundle_id == "demo.bundle"
+    assert reg.bundles["demo.bundle"].path == "/bundles/demo.bundle"
+    assert props_map == {"demo.bundle": {"feature": {"enabled": True}}}
+
+
+def test_authoritative_bundle_store_prefers_mounted_bundles_yaml_over_aws(monkeypatch, tmp_path: Path):
+    descriptor_path = tmp_path / "bundles.yaml"
+    descriptor_path.write_text("bundles:\n  version: '1'\n  items: []\n")
+
+    monkeypatch.setenv("BUNDLES_YAML_DESCRIPTOR_PATH", str(descriptor_path.resolve()))
+    monkeypatch.setattr(
+        "kdcube_ai_app.infra.secrets.manager.build_secrets_manager_config",
+        lambda _settings: SimpleNamespace(
+            provider="aws-sm",
+            aws_sm_prefix="kdcube/demo/proj",
+            aws_region="eu-west-1",
+            aws_profile=None,
+            redis_url=None,
+        ),
+    )
+    monkeypatch.setattr(bundle_store, "get_settings", lambda: object())
+
+    store = bundle_store._get_authoritative_bundle_store("demo", "demo-project")
+
+    assert isinstance(store, bundle_store._FileBundleDescriptorStore)
+
+
+@pytest.mark.asyncio
+async def test_put_bundle_props_rewrites_local_bundles_yaml(monkeypatch, tmp_path: Path):
+    descriptor_path = tmp_path / "bundles.yaml"
+    descriptor_path.write_text(
+        """
+bundles:
+  version: "1"
+  items:
+    - id: demo.bundle
+      path: /bundles/demo.bundle
+      module: entrypoint
+      config:
+        feature:
+          enabled: false
+  default_bundle_id: demo.bundle
+""".strip()
+    )
+
+    redis = _FakeRedis()
+    tenant = "demo"
+    project = "demo-project"
+    bundle_id = "demo.bundle"
+    store = bundle_store._FileBundleDescriptorStore(bundles_yaml_uri=descriptor_path.resolve().as_uri())
+
+    monkeypatch.setattr(bundle_store, "_merge_example_bundles", lambda reg: (reg, False))
+    monkeypatch.setattr(bundle_store, "_get_authoritative_bundle_store", lambda tenant, project: store)
+
+    reg = bundle_store.BundlesRegistry(
+        default_bundle_id=bundle_id,
+        bundles={
+            bundle_id: bundle_store.BundleEntry(
+                id=bundle_id,
+                path="/bundles/demo.bundle",
+                module="entrypoint",
+            )
+        },
+    )
+
+    await bundle_store.save_registry(redis, reg, tenant=tenant, project=project)
+    await bundle_store.put_bundle_props(
+        redis,
+        tenant=tenant,
+        project=project,
+        bundle_id=bundle_id,
+        props={"feature": {"enabled": True}, "limits": {"n": 3}},
+    )
+
+    written = yaml.safe_load(descriptor_path.read_text())
+    items = written["bundles"]["items"]
+    bundle_item = next(item for item in items if item["id"] == bundle_id)
+    assert bundle_item["config"] == {
+        "feature": {"enabled": True},
+        "limits": {"n": 3},
+    }

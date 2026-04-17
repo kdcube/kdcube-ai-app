@@ -719,7 +719,7 @@ def test_export_live_bundle_descriptors_reconstructs_effective_files(monkeypatch
                     "id": "demo.bundle",
                     "path": "/bundles/demo.bundle",
                     "module": "entrypoint",
-                    "props": {"feature": {"enabled": True}},
+                    "config": {"feature": {"enabled": True}},
                 },
                 {
                     "id": "git.bundle",
@@ -741,3 +741,49 @@ def test_export_live_bundle_descriptors_reconstructs_effective_files(monkeypatch
             ],
         }
     }
+
+
+def test_export_live_bundle_descriptors_prefers_local_descriptor_files(tmp_path: Path):
+    bundles_path = tmp_path / "mounted-bundles.yaml"
+    bundles_secrets_path = tmp_path / "mounted-bundles.secrets.yaml"
+    bundles_path.write_text(
+        """
+bundles:
+  version: "1"
+  items:
+    - id: demo.bundle
+      path: /bundles/demo.bundle
+      module: entrypoint
+      config:
+        feature:
+          enabled: true
+  default_bundle_id: demo.bundle
+""".strip()
+    )
+    bundles_secrets_path.write_text(
+        """
+bundles:
+  version: "1"
+  items:
+    - id: demo.bundle
+      secrets:
+        api:
+          key: secret-1
+""".strip()
+    )
+
+    out_dir = tmp_path / "out"
+    export_mod.export_live_bundle_descriptors(
+        Console(file=None),
+        tenant="",
+        project="",
+        out_dir=out_dir,
+        aws_region=None,
+        aws_profile=None,
+        aws_sm_prefix=None,
+        bundles_path=bundles_path,
+        bundles_secrets_path=bundles_secrets_path,
+    )
+
+    assert (out_dir / "bundles.yaml").read_text() == bundles_path.read_text()
+    assert (out_dir / "bundles.secrets.yaml").read_text() == bundles_secrets_path.read_text()
