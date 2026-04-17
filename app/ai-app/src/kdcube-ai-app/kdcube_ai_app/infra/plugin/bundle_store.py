@@ -65,7 +65,7 @@ def _current_platform_ref() -> Optional[str]:
     if direct:
         return _sanitize_example_version_part(direct)
 
-    image_ref = (os.getenv("PY_CODE_EXEC_IMAGE") or "").strip()
+    image_ref = (get_settings().PLATFORM.EXEC.PY.PY_CODE_EXEC_IMAGE or "").strip()
     if image_ref and ":" in image_ref:
         tail = image_ref.rsplit(":", 1)[-1].strip()
         if tail and "/" not in tail:
@@ -90,8 +90,8 @@ def cleanup_old_shared_example_bundles(
     if not root.exists():
         return 0
 
-    keep = keep if keep is not None else int(os.environ.get("BUNDLE_GIT_KEEP", "3") or "3")
-    ttl_hours = ttl_hours if ttl_hours is not None else int(os.environ.get("BUNDLE_GIT_TTL_HOURS", "0") or "0")
+    keep = keep if keep is not None else get_settings().PLATFORM.APPLICATIONS.GIT.BUNDLE_GIT_KEEP
+    ttl_hours = ttl_hours if ttl_hours is not None else get_settings().PLATFORM.APPLICATIONS.GIT.BUNDLE_GIT_TTL_HOURS
     active_set: set[Path] = set()
     for ap in active_paths or ():
         try:
@@ -188,15 +188,10 @@ def _ensure_example_bundle_shared(bundle_root: Path) -> Path:
         return bundle_root
 
 def _examples_enabled() -> bool:
-    component = (os.getenv("GATEWAY_COMPONENT") or "ingress").strip().lower()
+    component = (get_settings().GATEWAY_COMPONENT or "ingress").strip().lower()
     if component != "proc":
         return False
-    try:
-        settings = get_settings()
-        return bool(settings.BUNDLES_INCLUDE_EXAMPLES)
-    except Exception:
-        raw = os.getenv("BUNDLES_INCLUDE_EXAMPLES", "1").lower()
-        return raw in {"1", "true", "yes", "on"}
+    return bool(get_settings().PLATFORM.APPLICATIONS.BUNDLES_INCLUDE_EXAMPLES)
 
 def _load_example_bundles() -> Dict[str, "BundleEntry"]:
     if not _examples_enabled():

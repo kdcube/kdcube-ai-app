@@ -792,7 +792,7 @@ class BaseEntrypoint:
                 content = fallback_path.read_text(encoding="utf-8")
                 output_content = patch_dashboard(
                     input_content=content,
-                    base_url=f"http://localhost:{os.environ.get('CHAT_APP_PORT') or '8010'}",
+                    base_url=f"http://localhost:{get_settings().CHAT_APP_PORT}",
                     access_token=None,
                     default_tenant=self.settings.TENANT,
                     default_project=self.settings.PROJECT,
@@ -830,7 +830,7 @@ class BaseEntrypoint:
                 content = fallback_path.read_text(encoding="utf-8")
                 output_content = patch_dashboard(
                     input_content=content,
-                    base_url=f"http://localhost:{os.environ.get('CHAT_APP_PORT') or '8010'}",
+                    base_url=f"http://localhost:{get_settings().CHAT_APP_PORT}",
                     access_token=None,
                     default_tenant=self.settings.TENANT,
                     default_project=self.settings.PROJECT,
@@ -871,7 +871,7 @@ class BaseEntrypoint:
 
                 output_content = patch_dashboard(
                     input_content=content,
-                    base_url=f"http://localhost:{os.environ.get('CHAT_APP_PORT') or '8010'}",
+                    base_url=f"http://localhost:{get_settings().CHAT_APP_PORT}",
                     access_token=None,
                     default_tenant=self.settings.TENANT,
                     default_project=self.settings.PROJECT,
@@ -913,7 +913,7 @@ class BaseEntrypoint:
 
                 output_content = patch_dashboard(
                     input_content=content,
-                    base_url=f"http://localhost:{os.environ.get('CHAT_APP_PORT') or '8010'}",
+                    base_url=f"http://localhost:{get_settings().CHAT_APP_PORT}",
                     access_token=None,
                     default_tenant=self.settings.TENANT,
                     default_project=self.settings.PROJECT,
@@ -951,7 +951,7 @@ class BaseEntrypoint:
                 content = fallback_path.read_text(encoding="utf-8")
                 output_content = patch_dashboard(
                     input_content=content,
-                    base_url=f"http://localhost:{os.environ.get('CHAT_APP_PORT') or '8010'}",
+                    base_url=f"http://localhost:{get_settings().CHAT_APP_PORT}",
                     access_token=None,
                     default_tenant=self.settings.TENANT,
                     default_project=self.settings.PROJECT,
@@ -989,13 +989,13 @@ class BaseEntrypoint:
 
             output_content = patch_dashboard(
                 input_content=content,
-                base_url=f"http://localhost:{os.environ.get('CHAT_APP_PORT') or '8010'}",
+                base_url=f"http://localhost:{get_settings().CHAT_APP_PORT}",
                 access_token=None,
                 default_tenant=self.settings.TENANT,
                 default_project=self.settings.PROJECT,
                 default_app_bundle_id=self.config.ai_bundle_spec.id,
                 host_bundles_path=os.environ.get("HOST_BUNDLES_PATH"),
-                agentic_bundles_root=os.environ.get("AGENTIC_BUNDLES_ROOT"),
+                agentic_bundles_root=get_settings().PLATFORM.APPLICATIONS.AGENTIC_BUNDLES_ROOT,
             )
             html = self._render_dashboard_html(content=output_content, title="AI Bundles")
             return [html]
@@ -1029,7 +1029,7 @@ class BaseEntrypoint:
 
             output_content = patch_dashboard(
                 input_content=content,
-                base_url=f"http://localhost:{os.environ.get('CHAT_APP_PORT') or '8010'}",
+                base_url=f"http://localhost:{get_settings().CHAT_APP_PORT}",
                 access_token=None,
                 default_tenant=self.settings.TENANT,
                 default_project=self.settings.PROJECT,

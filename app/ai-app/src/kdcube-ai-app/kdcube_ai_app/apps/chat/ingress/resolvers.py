@@ -43,8 +43,8 @@ logger = logging.getLogger(__name__)
 
 # TENANT_ID = os.environ.get("TENANT_ID", "home")
 # INSTANCE_ID = os.environ.get("INSTANCE_ID", "home-instance-1")
-CHAT_APP_PORT = int(os.environ.get("CHAT_APP_PORT", 8010))
-CHAT_PROCESSOR_PORT = int(os.environ.get("CHAT_PROCESSOR_PORT", CHAT_APP_PORT))
+CHAT_APP_PORT = get_settings().CHAT_APP_PORT
+CHAT_PROCESSOR_PORT = get_settings().CHAT_PROCESSOR_PORT
 
 # Gateway Profile Selection
 GATEWAY_PROFILE = os.environ.get("GATEWAY_PROFILE", "development").lower()
@@ -155,7 +155,7 @@ def create_auth_manager():
     """Create the authentication manager"""
     # You can switch between different auth managers here:
 
-    provider = os.getenv("AUTH_PROVIDER", "simple").lower()
+    provider = (get_settings().AUTH_PROVIDER or "simple").lower()
     if provider == "cognito":
         from kdcube_ai_app.auth.implementations.cognito import CognitoAuthManager
         logger.info("Using CognitoAuthManager for authentication")
@@ -521,7 +521,7 @@ def _announce_startup():
     url = os.environ.get("CHAT_PUBLIC_URL")
     if not url:
         # fallback: infer from port if no env provided
-        port = os.environ.get("CHAT_APP_PORT") or str(CHAT_APP_PORT)
+        port = str(CHAT_APP_PORT)
         url = f"http://localhost:{port}/health"
     try:
         # Bold line
@@ -665,7 +665,6 @@ async def get_conversation_system(pg_pool) -> Tuple[ContextRAGClient, ConvIndex,
     req = ConfigRequest(
         openai_api_key=_settings.OPENAI_API_KEY,
         claude_api_key=_settings.ANTHROPIC_API_KEY,
-        selected_model=_settings.DEFAULT_MODEL_LLM,
     )
     model_service = ModelServiceBase(create_workflow_config(req))
     _conv_store = ConversationStore(_settings.STORAGE_PATH)

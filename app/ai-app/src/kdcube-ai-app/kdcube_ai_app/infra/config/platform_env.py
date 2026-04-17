@@ -98,7 +98,7 @@ PLATFORM_ENV_GROUPS: dict[str, tuple[str, ...]] = {
         "COGNITO_REGION",
         "COGNITO_SERVICE_CLIENT_ID",
         "COGNITO_USER_POOL_ID",
-        "ODIC_SERVICE_USER_EMAIL",
+        "OIDC_SERVICE_USER_EMAIL",
         "OIDC_SERVICE_ADMIN_PASSWORD",
         "OIDC_SERVICE_ADMIN_USERNAME",
     ),

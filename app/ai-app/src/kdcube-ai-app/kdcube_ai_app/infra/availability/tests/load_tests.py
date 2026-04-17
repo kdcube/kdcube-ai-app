@@ -160,10 +160,7 @@ class GatewayLoadTester:
         payload = {
             "message": message or f"Load test message from {user_type} at {time.time()}",
             "session_id": session_id or str(uuid.uuid4()),
-            "config": {
-                "selected_model": "gpt-4o",
-                "selected_embedder": "openai-text-embedding-3-small"
-            }
+            "config": {}
         }
 
         try:

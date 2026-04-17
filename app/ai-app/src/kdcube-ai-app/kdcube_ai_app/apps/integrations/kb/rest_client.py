@@ -6,18 +6,20 @@ import os
 from botocore.config import Config as BotoConfig
 from kdcube_ai_app.auth.service_auth.base import IdpConfig
 from kdcube_ai_app.auth.service_auth.factory import create_service_idp
+from kdcube_ai_app.apps.chat.sdk.config import get_settings
 
 def build_service_idp_from_env():
     provider = os.getenv("IDP_PROVIDER", "cognito")
     if provider == "cognito":
+        _auth = get_settings().AUTH
         cfg = IdpConfig(
             "cognito",
-            region=os.getenv("COGNITO_REGION"),
-            user_pool_id=os.getenv("COGNITO_USER_POOL_ID"),
-            client_id=os.getenv("COGNITO_SERVICE_CLIENT_ID"),
+            region=_auth.COGNITO_REGION,
+            user_pool_id=_auth.COGNITO_USER_POOL_ID,
+            client_id=_auth.COGNITO_SERVICE_CLIENT_ID,
             client_secret=os.getenv("COGNITO_SERVICE_CLIENT_SECRET", None),  # ok if None
-            username=os.getenv("OIDC_SERVICE_ADMIN_USERNAME"),
-            password=os.getenv("OIDC_SERVICE_ADMIN_PASSWORD"),
+            username=_auth.OIDC_SERVICE_ADMIN_USERNAME,
+            password=_auth.OIDC_SERVICE_ADMIN_PASSWORD,
             new_password=os.getenv("OIDC_SERVICE_ADMIN_NEW_PASSWORD", None),  # <- only if first-login
             use_admin_api=True,
             boto_cfg=BotoConfig(retries={"max_attempts": 3, "mode": "standard"}),

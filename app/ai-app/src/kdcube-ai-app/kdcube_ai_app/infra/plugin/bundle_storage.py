@@ -9,6 +9,7 @@ import pathlib
 from typing import Optional
 
 from kdcube_ai_app.infra.service_hub.inventory import AgentLogger
+from kdcube_ai_app.apps.chat.sdk.config import get_settings
 
 from kdcube_ai_app.infra.plugin.git_bundle import resolve_bundles_root
 
@@ -24,7 +25,7 @@ def resolve_bundle_storage_root() -> pathlib.Path:
     Resolve the shared storage root for bundle-managed assets (indexes, repos, etc).
     Prefer explicit env, otherwise default under bundles root.
     """
-    root = os.environ.get("BUNDLE_SHARED_STORAGE_ROOT") or os.environ.get("BUNDLE_STORAGE_ROOT")
+    root = os.environ.get("BUNDLE_SHARED_STORAGE_ROOT") or get_settings().PLATFORM.APPLICATIONS.BUNDLE_STORAGE_ROOT
     if root:
         # Accept plain filesystem paths. If a file:// URI is provided, normalize to path.
         if isinstance(root, str) and root.startswith("file://"):

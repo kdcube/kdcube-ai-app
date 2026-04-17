@@ -6,6 +6,7 @@
 import os
 import urllib
 import psycopg2
+
 from psycopg2.extras import execute_values, register_default_json, register_default_jsonb
 import json
 
@@ -18,18 +19,20 @@ register_default_jsonb(loads=json.loads)
 
 class PostgreSqlDbMgr:
     def __init__(self, connection_params: Optional[Dict[str, str]] = None):
+        from kdcube_ai_app.apps.chat.sdk.config import get_settings
         connection_params = connection_params or {}
-        self.host = connection_params.get("host") or os.environ.get("POSTGRES_HOST")
-        self.port = connection_params.get("port") or os.environ.get("POSTGRES_PORT")
-        self.database = connection_params.get("database") or os.environ.get("POSTGRES_DATABASE")
+        _s = get_settings()
+        self.host = connection_params.get("host") or _s.PGHOST
+        self.port = connection_params.get("port") or str(_s.PGPORT)
+        self.database = connection_params.get("database") or _s.PGDATABASE
 
-        self.username = connection_params.get("username") or os.environ.get("POSTGRES_USER")
-        self.password = connection_params.get("password") or os.environ.get("POSTGRES_PASSWORD")
+        self.username = connection_params.get("username") or _s.PGUSER
+        self.password = connection_params.get("password") or _s.PGPASSWORD
 
-        # Optional tuning knobs via env
-        self.ssl = (os.environ.get("POSTGRES_SSL", "false").lower() == "true")
-        self.sslmode = os.environ.get("POSTGRES_SSL_MODE") or ("require" if self.ssl else "disable")
-        self.sslrootcert = os.environ.get("POSTGRES_SSL_ROOT_CERT")
+        # Optional tuning knobs
+        self.ssl = _s.PGSSL
+        self.sslmode = _s.PGSSL_MODE or ("require" if self.ssl else "disable")
+        self.sslrootcert = _s.PGSSL_ROOT_CERT
         self.appname = connection_params.get("application_name") or os.environ.get("POSTGRES_APPNAME", "kdcube-psql")
         self.statement_timeout_ms = int(os.environ.get("POSTGRES_STATEMENT_TIMEOUT_MS", "60000"))  # 60s
         self.search_path = connection_params.get("search_path") or os.environ.get("POSTGRES_SEARCH_PATH")  # optional
