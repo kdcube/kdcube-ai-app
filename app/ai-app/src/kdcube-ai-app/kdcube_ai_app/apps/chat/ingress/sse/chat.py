@@ -346,7 +346,7 @@ class SSEHub:
                 logger.warning(f"[SSEHub._on_relay] unrouted message {message}")
                 return  # we only fan-out messages scoped to a session room. ignore malformed / global messages
 
-            logger.info(
+            logger.debug(
                 "[SSEHub._on_relay] RECEIVED event=%s session=%s target_sid=%s "
                 "known_sessions=%s hub_id=%s",
                 event, room, target_sid,
