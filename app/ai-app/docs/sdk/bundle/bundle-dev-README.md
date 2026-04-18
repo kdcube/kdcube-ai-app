@@ -158,26 +158,18 @@ Do not:
 
 Use:
 - `self.bundle_storage_root()` when you want the bundle-scoped shared local root
-- `bundle_storage_dir(..., version=None) / "_subsystem"` when you want a mutable unversioned local workspace for a subsystem
+- `bundle_storage_dir(...)` only when you are outside entrypoint code and therefore do not have `self.bundle_storage_root()`
 
 Example:
 
 ```python
-from kdcube_ai_app.infra.plugin.bundle_storage import bundle_storage_dir
-
 def _local_root(self) -> pathlib.Path:
-    actor = getattr(self.comm_context, "actor", None)
-    bundle_spec = getattr(self.config, "ai_bundle_spec", None)
-    tenant = getattr(actor, "tenant_id", None) or self.settings.TENANT
-    project = getattr(actor, "project_id", None) or self.settings.PROJECT
-    bundle_id = getattr(bundle_spec, "id", None) or "my.bundle@1.0.0"
-    return bundle_storage_dir(
-        bundle_id=str(bundle_id),
-        version=None,
-        tenant=str(tenant),
-        project=str(project),
-        ensure=True,
-    ) / "_my_subsystem"
+    storage_root = self.bundle_storage_root()
+    if storage_root is None:
+        raise RuntimeError("Bundle storage root is unavailable.")
+    local_root = storage_root / "_my_subsystem"
+    local_root.mkdir(parents=True, exist_ok=True)
+    return local_root
 ```
 
 Use this for:
@@ -222,8 +214,9 @@ Use this when you changed:
 
 If your bundle uses local bundle storage, `--bundle-reload` does not wipe that storage automatically.
 Design your subsystem roots intentionally:
-- versioned root for rebuildable version-tied data
-- unversioned `_subsystem` root for mutable local working state
+- stable bundle root for all bundle-managed local data
+- explicit `_subsystem` roots for mutable local working state
+- optional bundle-owned subdirectories for rebuildable caches if you intentionally need them
 
 If you need the deployment-side details and registry behavior, use:
 

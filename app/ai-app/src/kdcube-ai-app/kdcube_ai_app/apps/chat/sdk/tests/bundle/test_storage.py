@@ -59,12 +59,6 @@ class TestBundleStorageRoot:
         assert "main" in s
         assert "my-bundle" in s
 
-    def test_bundle_storage_dir_with_version_includes_version(self):
-        """bundle_storage_dir() path includes version when passed."""
-        from kdcube_ai_app.infra.plugin.bundle_storage import bundle_storage_dir
-        path = bundle_storage_dir(bundle_id="b", version="abc123", ensure=False)
-        assert "abc123" in str(path)
-
     def test_bundle_storage_dir_is_absolute(self):
         """bundle_storage_dir() returns an absolute path."""
         from kdcube_ai_app.infra.plugin.bundle_storage import bundle_storage_dir
@@ -98,6 +92,27 @@ class TestBundleStorageRoot:
         result = storage_for_spec(spec=spec, ensure=False)
         assert isinstance(result, pathlib.Path)
         assert "test-bundle" in str(result)
+
+    def test_storage_for_spec_ignores_versioned_spec_fields_for_primary_root(self, monkeypatch, tmp_path):
+        """Primary bundle storage is stable by bundle id, not by git/ref/version."""
+        from kdcube_ai_app.infra.plugin.bundle_storage import storage_for_spec
+        from unittest.mock import MagicMock
+
+        monkeypatch.setenv("BUNDLE_STORAGE_ROOT", str(tmp_path))
+        spec = MagicMock()
+        spec.id = "test-bundle"
+        spec.git_commit = "abc123"
+        spec.ref = "main"
+        spec.version = "deadbeef"
+
+        result = storage_for_spec(
+            spec=spec,
+            tenant="tenant-a",
+            project="project-a",
+            ensure=False,
+        )
+
+        assert result == (tmp_path / "tenant-a" / "project-a" / "test-bundle").resolve()
 
 
 class TestOnBundleLoad:

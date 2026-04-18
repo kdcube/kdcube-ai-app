@@ -293,7 +293,7 @@ def test_venv_decorator_records_metadata_without_changing_function_behavior(monk
 
 def test_venv_decorator_executes_in_cached_bundle_subprocess(monkeypatch, tmp_path):
     storage_root = tmp_path / "bundle-storage"
-    monkeypatch.setenv("BUNDLE_SHARED_STORAGE_ROOT", str(storage_root))
+    monkeypatch.setenv("BUNDLE_STORAGE_ROOT", str(storage_root))
 
     bundle_dir = tmp_path / "demo-bundle"
     bundle_dir.mkdir()
@@ -357,7 +357,7 @@ def test_venv_decorator_executes_in_cached_bundle_subprocess(monkeypatch, tmp_pa
 
 def test_venv_decorator_supports_bundle_local_dataclass_arguments(monkeypatch, tmp_path):
     storage_root = tmp_path / "bundle-storage"
-    monkeypatch.setenv("BUNDLE_SHARED_STORAGE_ROOT", str(storage_root))
+    monkeypatch.setenv("BUNDLE_STORAGE_ROOT", str(storage_root))
 
     bundle_dir = tmp_path / "dataclass-bundle"
     bundle_dir.mkdir()
@@ -408,7 +408,7 @@ def test_venv_decorator_supports_bundle_local_dataclass_arguments_when_module_sp
     monkeypatch, tmp_path
 ):
     storage_root = tmp_path / "bundle-storage"
-    monkeypatch.setenv("BUNDLE_SHARED_STORAGE_ROOT", str(storage_root))
+    monkeypatch.setenv("BUNDLE_STORAGE_ROOT", str(storage_root))
 
     container_dir = tmp_path / "bundle-container"
     bundle_dir = container_dir / "user-mgmt@1-0"

@@ -307,15 +307,15 @@ GET /api/integrations/static/{tenant}/{project}/{bundle_id}/{path}
 ```
 
 The endpoint computes the content hash of the bundle directory (same algorithm as
-`_apply_configuration_overrides`) to locate the correct `bundle_storage_root`, then
-returns files from its `ui/` subdirectory. Missing paths fall back to `index.html`
-for client-side routing.
+the UI build signature inputs to decide whether the SPA needs rebuilding, then
+serves files from the stable `<bundle_storage_root>/ui/` subtree. Missing paths
+fall back to `index.html` for client-side routing.
 
 ### Notes
 
 - The UI is built per process per tenant/project (same cadence as `on_bundle_load`).
-- `node_modules/` and `package-lock.json` are excluded from the content hash so that
-  `npm install` during the build does not change the hash.
+- `node_modules/` and related generated folders are excluded from the build signature so that
+  dependency installation during the build does not rotate the build cache unnecessarily.
 - The built UI typically communicates back to the backend through the bundle operations
   endpoint (`POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/{operation}`)
   and receives runtime config (base URL, auth tokens, tenant/project) via `postMessage`

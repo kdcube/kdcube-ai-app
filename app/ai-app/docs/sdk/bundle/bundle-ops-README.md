@@ -122,7 +122,8 @@ If a bundle keeps local instance-visible state such as:
 that state should live under the platform-managed bundle local storage root, not under the bundle source tree.
 
 For bundle authors this means:
-- resolve local storage through `self.bundle_storage_root()` or `bundle_storage_dir(...)`
+- resolve local storage through `self.bundle_storage_root()`
+- use `bundle_storage_dir(...)` only in lower-level helpers that do not have an entrypoint instance
 - do not persist operational state under the checked-out bundle code path
 
 Why ops cares:

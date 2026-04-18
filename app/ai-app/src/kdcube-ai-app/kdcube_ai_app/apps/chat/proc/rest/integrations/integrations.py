@@ -1652,23 +1652,6 @@ async def serve_static_asset(
     if not spec:
         raise HTTPException(status_code=404, detail=f"Bundle '{bundle_id}' not found")
 
-    # Mirror BaseEntrypoint._apply_configuration_overrides: use dir content hash as
-    # authoritative version so the storage path matches what _ensure_ui_build() used.
-    try:
-        import pathlib as _pathlib
-        from kdcube_ai_app.apps.chat.sdk.runtime.external.distributed_snapshot import compute_dir_sha256
-        _root = _pathlib.Path(spec.path)
-        if spec.module:
-            _candidate = _root / spec.module.split(".")[0]
-            if _candidate.exists():
-                _root = _candidate
-        if _root.exists():
-            from kdcube_ai_app.apps.chat.sdk.runtime.external.distributed_snapshot import _SKIP_DIRS_DEFAULT
-            spec.version = compute_dir_sha256(_root, skip_dirs={*_SKIP_DIRS_DEFAULT, "node_modules"},
-                                              skip_files={"package-lock.json"})[:12]
-    except Exception:
-        pass
-
     storage_root = storage_for_spec(spec=spec, tenant=tenant_id, project=project_id, ensure=False)
     ui_root = storage_root / "ui" if storage_root else None
 

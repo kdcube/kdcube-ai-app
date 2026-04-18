@@ -599,32 +599,12 @@ class ReactWorkflow(BaseEntrypoint):
 
     def _kb_admin_local_root(self) -> Optional[pathlib.Path]:
         try:
-            from kdcube_ai_app.infra.plugin.bundle_storage import bundle_storage_dir
-
-            actor = getattr(self.comm_context, "actor", None)
-            bundle_spec = getattr(getattr(self, "config", None), "ai_bundle_spec", None)
-            tenant = getattr(actor, "tenant_id", None) or getattr(self.comm, "tenant", None) or self.settings.TENANT
-            project = getattr(actor, "project_id", None) or getattr(self.comm, "project", None) or self.settings.PROJECT
-            bundle_id = getattr(bundle_spec, "id", None) or BUNDLE_ID
-            unversioned_root = bundle_storage_dir(
-                bundle_id=str(bundle_id or BUNDLE_ID),
-                version=None,
-                tenant=str(tenant or "unknown"),
-                project=str(project or "unknown"),
-                ensure=True,
-            ) / "_knowledge_base_admin"
-            if not unversioned_root.exists():
-                legacy_root = self.bundle_storage_root()
-                if legacy_root:
-                    legacy_root = legacy_root / "_knowledge_base_admin"
-                    if legacy_root.exists() and legacy_root.resolve() != unversioned_root.resolve():
-                        shutil.copytree(legacy_root, unversioned_root, dirs_exist_ok=True)
-                        self.logger.log(
-                            f"[knowledge_base_admin.workspace] migrated local workspace root from {legacy_root} to {unversioned_root}",
-                            "INFO",
-                        )
-            unversioned_root.mkdir(parents=True, exist_ok=True)
-            return unversioned_root
+            storage_root = self.bundle_storage_root()
+            if not storage_root:
+                return None
+            local_root = storage_root / "_knowledge_base_admin"
+            local_root.mkdir(parents=True, exist_ok=True)
+            return local_root
         except Exception:
             self.logger.log(traceback.format_exc(), "ERROR")
             return None
