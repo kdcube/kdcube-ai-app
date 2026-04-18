@@ -71,6 +71,12 @@ interface BundleCleanupPayload {
     project?: string;
 }
 
+interface BundleResetEnvPayload {
+    tenant?: string;
+    project?: string;
+    bundle_id?: string;
+}
+
 interface BundleSecretsPayload {
     tenant?: string;
     project?: string;
@@ -384,13 +390,15 @@ class IntegrationsAPI {
         return response.json();
     }
 
-    async resetFromEnv(scope?: Scope): Promise<any> {
+    async resetFromEnv(scope?: Scope, bundleId?: string): Promise<any> {
         const response = await this.fetchWithAuth(
             this.buildUrl('/bundles/reset-env'),
             {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(withScope({}, scope))
+                body: JSON.stringify(withScope({
+                    ...(bundleId ? { bundle_id: bundleId } : {})
+                } as BundleResetEnvPayload, scope))
             }
         );
         return response.json();
@@ -640,6 +648,7 @@ const AIBundleDashboard: React.FC = () => {
     const [bundles, setBundles] = useState<Record<string, BundleEntry>>({});
     const [defaultBundleId, setDefaultBundleId] = useState<string>('');
     const [editingId, setEditingId] = useState<string | null>(null);
+    const [reloadingBundleId, setReloadingBundleId] = useState<string | null>(null);
     const [scopeTenant, setScopeTenant] = useState(settings.getDefaultTenant());
     const [scopeProject, setScopeProject] = useState(settings.getDefaultProject());
     const [scopeInput, setScopeInput] = useState(
@@ -926,6 +935,26 @@ const AIBundleDashboard: React.FC = () => {
             setError(e.message || 'Failed to load bundle secrets');
         } finally {
             setSecretsLoading(false);
+        }
+    };
+
+    const reloadBundleFromEnv = async (bundleId: string) => {
+        if (!bundleId) return;
+        try {
+            setReloadingBundleId(bundleId);
+            await api.resetFromEnv(registryScope, bundleId);
+            await loadBundles();
+            if (propsBundleId === bundleId) {
+                await loadProps();
+            }
+            if (secretsBundleId === bundleId) {
+                await loadSecrets();
+            }
+            setError(null);
+        } catch (e: any) {
+            setError(e.message || `Failed to reload bundle ${bundleId}`);
+        } finally {
+            setReloadingBundleId(null);
         }
     };
 
@@ -1263,6 +1292,13 @@ const AIBundleDashboard: React.FC = () => {
                                             </td>
                                             <td className="px-4 py-3 text-right">
                                                 <div className="flex justify-end gap-2">
+                                                    <Button
+                                                        variant="secondary"
+                                                        onClick={() => reloadBundleFromEnv(b.id)}
+                                                        disabled={reloadingBundleId === b.id}
+                                                    >
+                                                        {reloadingBundleId === b.id ? 'Reloading…' : 'Reload'}
+                                                    </Button>
                                                     <Button
                                                         variant="secondary"
                                                         onClick={() => editBundle(b)}
