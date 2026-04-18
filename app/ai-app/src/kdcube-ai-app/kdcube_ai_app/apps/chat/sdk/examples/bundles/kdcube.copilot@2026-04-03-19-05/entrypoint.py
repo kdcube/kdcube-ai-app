@@ -63,11 +63,12 @@ from kdcube_ai_app.apps.chat.sdk.storage.ai_bundle_storage import AIBundleStorag
 from kdcube_ai_app.apps.chat.sdk.viz.patch_platform_dashboard import patch_dashboard
 from kdcube_ai_app.apps.chat.emitters import ChatCommunicator
 from kdcube_ai_app.infra.service_hub.inventory import Config, BundleState
-from kdcube_ai_app.infra.plugin.agentic_loader import agentic_workflow, api, ui_widget
+from kdcube_ai_app.infra.plugin.agentic_loader import agentic_workflow, api, mcp, ui_widget
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import BaseEntrypoint
 
 from .orchestrator.workflow import WithReactWorkflow
 from .event_filter import BundleEventFilter
+from .tools import react_tools as doc_reader_tools
 from .knowledge_base_admin import (
     AGENT_NAME as KB_ADMIN_AGENT_NAME,
     DEFAULT_CLAUDE_CODE_MODEL,
@@ -182,6 +183,7 @@ class ReactWorkflow(BaseEntrypoint):
         )
         # Signature-based cache key — avoids rebuilding the knowledge index on every turn
         self._knowledge_signature: str | None = None
+        self._doc_reader_mcp_app: Any = None
         # Graph is built once at init and reused across invocations
         self.graph = self._build_graph()
 
@@ -280,6 +282,22 @@ class ReactWorkflow(BaseEntrypoint):
         await super().pre_run_hook(state=state)
         self._reconcile_knowledge_space(reason="pre_run_hook")
         return None
+
+    def _doc_reader_storage_root(self) -> pathlib.Path | None:
+        storage_root = self.bundle_storage_root()
+        if storage_root is not None:
+            doc_reader_tools.ensure_knowledge_root(storage_root=storage_root)
+        return storage_root
+
+    @mcp(alias="doc_reader", route="operations", user_types=("registered",))
+    def doc_reader_mcp(self, **kwargs):
+        if self._doc_reader_mcp_app is None:
+            self._doc_reader_mcp_app = doc_reader_tools.build_doc_reader_mcp_app(
+                name=f"{BUNDLE_ID}.doc_reader",
+                storage_root_provider=self._doc_reader_storage_root,
+                refresh_knowledge_space=lambda: self._reconcile_knowledge_space(reason="doc_reader_mcp"),
+            )
+        return self._doc_reader_mcp_app
 
     def _resolve_knowledge_paths(
         self,
