@@ -32,13 +32,22 @@ class _RecordingEmitter:
 
 
 class _FakeProcess:
-    def __init__(self, *, stdout_lines: list[str], stderr_lines: list[str], returncode: int):
+    def __init__(
+        self,
+        *,
+        stdout_lines: list[str],
+        stderr_lines: list[str],
+        returncode: int,
+        wait_delay: float = 0.0,
+    ):
         self.stdout = asyncio.StreamReader()
         self.stderr = asyncio.StreamReader()
         self.returncode = None
         self._stdout_lines = list(stdout_lines)
         self._stderr_lines = list(stderr_lines)
         self._planned_returncode = returncode
+        self._wait_delay = wait_delay
+        self._done = asyncio.Event()
         self._task = asyncio.create_task(self._feed())
 
     async def _feed(self) -> None:
@@ -50,11 +59,30 @@ class _FakeProcess:
             self.stderr.feed_data(line.encode("utf-8"))
             await asyncio.sleep(0)
         self.stderr.feed_eof()
-        self.returncode = self._planned_returncode
+        if self._wait_delay > 0:
+            try:
+                await asyncio.wait_for(self._done.wait(), timeout=self._wait_delay)
+            except asyncio.TimeoutError:
+                pass
+        if self.returncode is None:
+            self.returncode = self._planned_returncode
+        self._done.set()
 
     async def wait(self) -> int:
-        await self._task
-        return self._planned_returncode
+        await asyncio.shield(self._task)
+        await self._done.wait()
+        assert self.returncode is not None
+        return self.returncode
+
+    def terminate(self) -> None:
+        if self.returncode is None:
+            self.returncode = -15
+        self._done.set()
+
+    def kill(self) -> None:
+        if self.returncode is None:
+            self.returncode = -9
+        self._done.set()
 
 
 class _RecordingAccountingBackend:
@@ -290,9 +318,21 @@ async def test_run_turn_emits_stderr_and_failure_step(monkeypatch, tmp_path: Pat
     comm, emitter = _make_comm()
     ctx = _ctx()
 
+    outputs = [
+        json.dumps(
+            {
+                "type": "result",
+                "subtype": "error",
+                "duration_ms": 800,
+                "total_cost_usd": 0.001,
+            }
+        )
+        + "\n",
+    ]
+
     async def _fake_create_subprocess_exec(*args, **kwargs):
         del args, kwargs
-        return _FakeProcess(stdout_lines=[], stderr_lines=["fatal: boom\n"], returncode=1)
+        return _FakeProcess(stdout_lines=outputs, stderr_lines=["fatal: boom\n"], returncode=1)
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_create_subprocess_exec)
 
@@ -314,6 +354,94 @@ async def test_run_turn_emits_stderr_and_failure_step(monkeypatch, tmp_path: Pat
     assert any(step["event"]["step"] == "claude_code.agent.stderr" for step in steps)
     assert steps[-1]["event"]["status"] == "error"
     assert steps[-1]["data"]["error"] == "fatal: boom"
+    assert steps[-1]["data"]["last_stderr_line"] == "fatal: boom"
+    assert steps[-1]["data"]["raw_result_event"] == {
+        "type": "result",
+        "subtype": "error",
+        "duration_ms": 800,
+        "total_cost_usd": 0.001,
+    }
+
+
+@pytest.mark.asyncio
+async def test_run_turn_collects_structured_events_from_streamed_chunks(monkeypatch, tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    comm, emitter = _make_comm()
+    ctx = _ctx()
+    observed: list[dict] = []
+
+    outputs = [
+        json.dumps({"message": {"content": [{"type": "text", "text": "NEWS_PIPELINE_EVENT {\"type\":\"phase\""}]}}) + "\n",
+        json.dumps({"message": {"content": [{"type": "text", "text": "NEWS_PIPELINE_EVENT {\"type\":\"phase\",\"phase\":\"draft_markdown\",\"status\":\"started\"}\nDone"}]}}) + "\n",
+    ]
+
+    async def _fake_create_subprocess_exec(*args, **kwargs):
+        del args, kwargs
+        return _FakeProcess(stdout_lines=outputs, stderr_lines=[], returncode=0)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_create_subprocess_exec)
+
+    with bind_current_request_context(ctx, comm=comm):
+        agent = ClaudeCodeAgent.from_current_context(
+            agent_name="kb-writer",
+            workspace_path=workspace,
+            structured_output_prefixes=("NEWS_PIPELINE_EVENT",),
+            on_structured_output=lambda event: observed.append(event),
+        )
+        result = await agent.run_turn("Summarize repo")
+
+    completed_steps = [
+        envelope
+        for _, envelope in emitter.events
+        if envelope.get("type") == "chat.step" and envelope.get("event", {}).get("status") == "completed"
+    ]
+
+    assert result.status == "completed"
+    assert result.structured_events == [
+        {
+            "prefix": "NEWS_PIPELINE_EVENT",
+            "payload": {"type": "phase", "phase": "draft_markdown", "status": "started"},
+            "raw_line": "NEWS_PIPELINE_EVENT {\"type\":\"phase\",\"phase\":\"draft_markdown\",\"status\":\"started\"}",
+        }
+    ]
+    assert observed == result.structured_events
+    assert completed_steps[-1]["data"]["structured_events"] == result.structured_events
+
+
+@pytest.mark.asyncio
+async def test_run_turn_timeout_marks_failure_and_emits_timeout_metadata(monkeypatch, tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    comm, emitter = _make_comm()
+    ctx = _ctx()
+
+    async def _fake_create_subprocess_exec(*args, **kwargs):
+        del args, kwargs
+        return _FakeProcess(stdout_lines=[], stderr_lines=[], returncode=0, wait_delay=5.0)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_create_subprocess_exec)
+
+    with bind_current_request_context(ctx, comm=comm):
+        agent = ClaudeCodeAgent.from_current_context(
+            agent_name="kb-writer",
+            workspace_path=workspace,
+            timeout_seconds=0.01,
+        )
+        result = await agent.run_turn("Summarize repo")
+
+    error_steps = [
+        envelope
+        for _, envelope in emitter.events
+        if envelope.get("type") == "chat.step" and envelope.get("event", {}).get("status") == "error"
+    ]
+
+    assert result.status == "failed"
+    assert result.timed_out is True
+    assert result.timeout_seconds == pytest.approx(0.01)
+    assert "timeout" in (result.error_message or "").lower()
+    assert error_steps[-1]["data"]["timed_out"] is True
+    assert error_steps[-1]["data"]["timeout_seconds"] == pytest.approx(0.01)
 
 
 @pytest.mark.asyncio

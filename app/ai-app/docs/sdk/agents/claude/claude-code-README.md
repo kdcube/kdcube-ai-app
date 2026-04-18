@@ -1,9 +1,9 @@
 ---
 id: ks:docs/sdk/agents/claude/claude-code-README.md
 title: "Claude Code Agent"
-summary: "Native Python SDK runner for Claude Code with deterministic user and conversation binding, workspace-scoped execution, communicator-backed streaming, and correct session resume semantics."
+summary: "Native Python SDK runner for Claude Code with deterministic user and conversation binding, workspace-scoped execution, communicator-backed streaming, framed structured-output parsing, timeout control, and correct session resume semantics."
 tags: ["sdk", "agents", "claude", "claude-code", "streaming", "communicator", "workspace"]
-keywords: ["ClaudeCodeAgent", "run_followup", "run_steer", "allowedTools", "session-id", "resume", "add-dir", "permission-mode", "stream-json", "ChatCommunicator"]
+keywords: ["ClaudeCodeAgent", "run_followup", "run_steer", "allowedTools", "session-id", "resume", "add-dir", "permission-mode", "stream-json", "ChatCommunicator", "timeout_seconds", "structured_output_prefixes"]
 see_also:
   - ks:docs/sdk/bundle/bundle-runtime-README.md
   - ks:docs/sdk/streaming/channeled-streamer-README.md
@@ -43,6 +43,8 @@ Main features:
 - explicit additional writable / accessible directories via `--add-dir`
 - explicit Claude permission mode such as `acceptEdits`
 - incremental `chat.delta` emission through `ChatCommunicator`
+- optional framed structured-output extraction from streamed assistant text
+- optional per-turn timeout
 - separate stderr step emission
 - support for `regular`, `followup`, and `steer` turns
 
@@ -119,6 +121,8 @@ agent = ClaudeCodeAgent.from_current_context(
         Path("/workspace/source-repo"),
     ],
     permission_mode="acceptEdits",
+    timeout_seconds=900,
+    structured_output_prefixes=("CLAUDE_EVENT",),
 )
 
 result = await agent.run_turn(
@@ -194,6 +198,43 @@ Communicator behavior:
 
 The runner does not call `chat.complete` itself. That remains the responsibility of the surrounding bundle or workflow turn handling.
 
+## Structured streamed output
+
+Some callers need more than raw `final_text`. For that case the runner can parse
+framed JSON records directly from streamed assistant text.
+
+Configure:
+
+- `ClaudeCodeAgentConfig.structured_output_prefixes`
+- `ClaudeCodeAgentConfig.on_structured_output`
+- `ClaudeCodeAgentConfig.on_text_chunk`
+
+The intended contract is line-framed output, for example:
+
+```text
+CLAUDE_EVENT {"type":"phase","phase":"analysis","status":"started"}
+CLAUDE_EVENT {"type":"warning","message":"fallback path activated"}
+```
+
+The prefix is caller-defined. The platform only enforces that parsing is
+prefix-based; it does not reserve an application-specific event name.
+
+The runner does not try to parse arbitrary JSON from normal prose. It only
+parses lines beginning with one of the configured prefixes.
+
+Parsed records are returned in `ClaudeCodeRunResult.structured_events` as:
+
+```python
+{
+    "prefix": "CLAUDE_EVENT",
+    "payload": {"type": "phase", "phase": "analysis", "status": "started"},
+    "raw_line": 'CLAUDE_EVENT {"type":"phase","phase":"analysis","status":"started"}',
+}
+```
+
+This is meant for workflows that need semantic progress while the turn is still
+running, while still ending with one final result payload in `final_text`.
+
 ## Result object
 
 `ClaudeCodeRunResult` returns:
@@ -214,7 +255,11 @@ The runner does not call `chat.complete` itself. That remains the responsibility
 - `cost_usd`
 - `duration_ms`
 - `api_duration_ms`
+- `raw_result_event`
 - `error_message`
+- `timed_out`
+- `timeout_seconds`
+- `structured_events`
 
 This is meant for bundle logic and diagnostics, not only UI streaming.
 
@@ -316,7 +361,13 @@ Current behavior:
 - invalid or missing workspace path raises before subprocess execution
 - subprocess start failure emits an error step and re-raises
 - non-zero Claude exit code returns `ClaudeCodeRunResult(status="failed", ...)`
+- per-turn timeout marks the run as failed and terminates the Claude subprocess
 - stderr lines are captured separately and also included in the final error step payload
+- final error step payload includes:
+  - `last_stderr_line`
+  - `raw_result_event`
+  - `timed_out`
+  - `timeout_seconds`
 
 The runner is designed so failures are visible both:
 

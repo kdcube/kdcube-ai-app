@@ -153,6 +153,16 @@ If `CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION=git`:
 3. run Claude
 4. publish the mutated Claude root back to the same branch
 
+Bootstrap is rerun-safe:
+
+- the local Claude session checkout can already exist
+- the workspace branch can already be checked out there
+- bootstrap refreshes that dedicated local checkout from the stored lineage branch
+
+If Claude still fails with a stale local-session error such as "Session ID ...
+is already in use", the runtime resets that dedicated local checkout and
+retries the turn once in resume mode.
+
 ### Followup / steer
 
 Current default behavior:
@@ -235,7 +245,9 @@ The runner and the workspace/bootstrap layer are intentionally separate.
 - binding deterministic `claude_session_id`
 - running the subprocess
 - streaming deltas and steps
-- returning structured usage/model/cost results
+- optionally extracting framed structured JSON events from streamed assistant text
+- enforcing optional per-turn timeout
+- returning structured usage/model/cost/failure results
 
 The runtime/bootstrap layer is responsible for:
 
@@ -243,6 +255,7 @@ The runtime/bootstrap layer is responsible for:
 - branch naming
 - bootstrap before the turn
 - publish after the turn
+- self-healing refresh of the dedicated local Claude session checkout
 
 That separation keeps bundles flexible while still giving the platform a
 standard continuity mechanism.

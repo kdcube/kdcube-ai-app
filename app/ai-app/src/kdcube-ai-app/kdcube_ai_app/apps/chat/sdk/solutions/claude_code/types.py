@@ -5,10 +5,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, Mapping, Sequence
+from typing import Any, Awaitable, Callable, Literal, Mapping, Sequence
 
 
 ClaudeCodeTurnKind = Literal["regular", "followup", "steer"]
+ClaudeCodeStructuredEventCallback = Callable[[dict[str, Any]], Awaitable[None] | None]
+ClaudeCodeTextChunkCallback = Callable[[str], Awaitable[None] | None]
 
 
 @dataclass(frozen=True)
@@ -25,6 +27,10 @@ class ClaudeCodeAgentConfig:
     emit_stderr_steps: bool = True
     command: str = "claude"
     permission_mode: str | None = "acceptEdits"
+    timeout_seconds: float | None = None
+    structured_output_prefixes: Sequence[str] = field(default_factory=tuple)
+    on_structured_output: ClaudeCodeStructuredEventCallback | None = None
+    on_text_chunk: ClaudeCodeTextChunkCallback | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "workspace_path", Path(self.workspace_path))
@@ -48,9 +54,20 @@ class ClaudeCodeAgentConfig:
             "env",
             {str(key): str(value) for key, value in dict(self.env or {}).items() if str(value).strip()},
         )
+        object.__setattr__(
+            self,
+            "structured_output_prefixes",
+            tuple(str(prefix).strip() for prefix in self.structured_output_prefixes if str(prefix).strip()),
+        )
         object.__setattr__(self, "model", str(self.model or "").strip() or None)
         if self.permission_mode is not None:
             object.__setattr__(self, "permission_mode", str(self.permission_mode).strip() or None)
+        if self.timeout_seconds is not None:
+            try:
+                timeout_seconds = float(self.timeout_seconds)
+            except Exception as exc:
+                raise ValueError("timeout_seconds must be numeric") from exc
+            object.__setattr__(self, "timeout_seconds", timeout_seconds if timeout_seconds > 0 else None)
 
 
 @dataclass(frozen=True)
@@ -82,3 +99,6 @@ class ClaudeCodeRunResult:
     raw_result_event: dict[str, Any] | None = None
     resolved_from_stream: bool = False
     error_message: str | None = None
+    timed_out: bool = False
+    timeout_seconds: float | None = None
+    structured_events: list[dict[str, Any]] = field(default_factory=list)

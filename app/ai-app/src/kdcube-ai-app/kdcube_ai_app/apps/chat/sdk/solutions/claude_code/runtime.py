@@ -259,6 +259,23 @@ def _clear_session_root(*, local_root: pathlib.Path) -> None:
             child.unlink()
 
 
+def _reset_local_session_checkout(*, local_root: pathlib.Path) -> None:
+    if local_root.exists():
+        shutil.rmtree(local_root, ignore_errors=True)
+
+
+def _is_session_in_use_error(result: ClaudeCodeRunResult | None) -> bool:
+    if result is None:
+        return False
+    text_candidates = [
+        str(getattr(result, "error_message", None) or ""),
+        str((result.stderr_lines[-1] if getattr(result, "stderr_lines", None) else "") or ""),
+        str(getattr(result, "final_text", None) or ""),
+    ]
+    joined = "\n".join(part for part in text_candidates if part).lower()
+    return "session id" in joined and "already in use" in joined
+
+
 def bootstrap_claude_code_session_store(
     *,
     config: ClaudeCodeSessionStoreConfig,
@@ -281,12 +298,17 @@ def bootstrap_claude_code_session_store(
     if lineage_ref:
         _clear_session_root(local_root=local_root)
         subprocess.run(
-            ["git", "-C", str(local_root), "fetch", "--no-tags", str(repo_root), f"+{lineage_ref}:refs/heads/workspace"],
+            ["git", "-C", str(local_root), "fetch", "--no-tags", str(repo_root), lineage_ref],
             check=True,
             capture_output=True,
         )
         subprocess.run(
-            ["git", "-C", str(local_root), "checkout", "-B", "workspace", "refs/heads/workspace"],
+            ["git", "-C", str(local_root), "checkout", "-B", "workspace", "FETCH_HEAD"],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(local_root), "reset", "--hard", "FETCH_HEAD"],
             check=True,
             capture_output=True,
         )
@@ -414,22 +436,56 @@ async def run_claude_code_turn(
         and session_store.implementation == "git"
         and kind in set(session_store.publish_turn_kinds)
     )
+    effective_resume_existing = bool(resume_existing)
 
     if should_bootstrap and session_store is not None:
-        await asyncio.to_thread(
+        bootstrap_result = await asyncio.to_thread(
             bootstrap_claude_code_session_store,
             config=session_store,
             logger=logger,
         )
+        effective_resume_existing = effective_resume_existing or bool(bootstrap_result.get("bootstrapped"))
         if refresh_support_files is not None:
             refresh_support_files()
 
     try:
-        return await agent.run_turn(
+        result = await agent.run_turn(
             prompt,
             kind=kind,
-            resume_existing=resume_existing,
+            resume_existing=effective_resume_existing,
         )
+        if (
+            result.status == "failed"
+            and should_bootstrap
+            and session_store is not None
+            and session_store.implementation == "git"
+            and _is_session_in_use_error(result)
+        ):
+            log = logger or logging.getLogger("ClaudeCodeRuntime")
+            log.warning(
+                "[ClaudeCodeRuntime] detected stale session checkout for agent=%s conversation=%s local_root=%s; "
+                "resetting local checkout and retrying in resume mode",
+                session_store.agent_name,
+                session_store.conversation_id,
+                session_store.local_root,
+            )
+            await asyncio.to_thread(
+                _reset_local_session_checkout,
+                local_root=pathlib.Path(session_store.local_root),
+            )
+            retry_bootstrap = await asyncio.to_thread(
+                bootstrap_claude_code_session_store,
+                config=session_store,
+                logger=logger,
+            )
+            if refresh_support_files is not None:
+                refresh_support_files()
+            result = await agent.run_turn(
+                prompt,
+                kind=kind,
+                resume_existing=bool(retry_bootstrap.get("bootstrapped")) or True,
+            )
+        return result
     finally:
         if should_publish and session_store is not None:
             await asyncio.to_thread(
