@@ -23,9 +23,11 @@ from kdcube_ai_app.infra.plugin.agentic_loader import (
     BUNDLE_VENV_ATTR,
     api,
     discover_bundle_interface_manifest,
+    mcp,
     on_message,
     resolve_bundle_message_method,
     resolve_bundle_api_endpoint,
+    resolve_bundle_mcp_endpoint,
     resolve_bundle_widget,
     ui_main,
     ui_widget,
@@ -46,20 +48,73 @@ def _session(*, user_type: str = "registered", roles: list[str] | None = None) -
     )
 
 
-def _request(*, method: str = "GET", path: str = "/api/integrations/test", query_string: bytes = b"") -> Request:
+def _request(
+        *,
+        method: str = "GET",
+        path: str = "/api/integrations/test",
+        query_string: bytes = b"",
+        body: bytes = b"",
+        headers: list[tuple[bytes, bytes]] | None = None,
+) -> Request:
+    sent = False
+
+    async def _receive():
+        nonlocal sent
+        if sent:
+            return {"type": "http.request", "body": b"", "more_body": False}
+        sent = True
+        return {"type": "http.request", "body": body, "more_body": False}
+
     return Request(
         {
             "type": "http",
             "method": method,
             "path": path,
             "query_string": query_string,
-            "headers": [],
+            "headers": headers or [],
             "scheme": "http",
             "server": ("testserver", 80),
             "client": ("127.0.0.1", 12345),
             "http_version": "1.1",
-        }
+        },
+        receive=_receive,
     )
+
+
+class _RecordingMCPProvider:
+    def streamable_http_app(self):
+        async def _app(scope, receive, send):
+            assert scope["type"] == "http"
+            body = b""
+            while True:
+                message = await receive()
+                body += message.get("body", b"")
+                if not message.get("more_body", False):
+                    break
+
+            payload = json.dumps(
+                {
+                    "path": scope.get("path"),
+                    "method": scope.get("method"),
+                    "body": body.decode("utf-8"),
+                }
+            ).encode("utf-8")
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 200,
+                    "headers": [(b"content-type", b"application/json")],
+                }
+            )
+            await send(
+                {
+                    "type": "http.response.body",
+                    "body": payload,
+                    "more_body": False,
+                }
+            )
+
+        return _app
 
 
 class _DecoratedWorkflow:
@@ -74,6 +129,14 @@ class _DecoratedWorkflow:
     @api(method="POST", alias="public_ping", route="public", public_auth="none")
     async def public_ping(self, **kwargs):
         return kwargs
+
+    @mcp(alias="tools", route="operations", user_types=("registered",))
+    def tools_mcp(self, **kwargs):
+        return _RecordingMCPProvider()
+
+    @mcp(alias="public_tools", route="public", public_auth="none")
+    def public_tools_mcp(self, **kwargs):
+        return _RecordingMCPProvider()
 
     @api(method="POST", alias="preferences_widget", route="operations", user_types=("registered",))
     @ui_widget(
@@ -116,6 +179,13 @@ def test_discover_bundle_interface_manifest_returns_declarative_specs():
     }
     public_ping = next(item for item in manifest.api_endpoints if item.alias == "public_ping")
     assert public_ping.public_auth and public_ping.public_auth.mode == "none"
+    tools_mcp = next(item for item in manifest.mcp_endpoints if item.alias == "tools")
+    assert tools_mcp.route == "operations"
+    assert tools_mcp.transport == "streamable-http"
+    assert tools_mcp.user_types == ("registered",)
+    public_tools_mcp = next(item for item in manifest.mcp_endpoints if item.alias == "public_tools")
+    assert public_tools_mcp.route == "public"
+    assert public_tools_mcp.public_auth and public_tools_mcp.public_auth.mode == "none"
     prefs_view = next(item for item in manifest.api_endpoints if item.alias == "prefs_view")
     assert prefs_view.user_types == ("registered",)
     assert prefs_view.roles == ()
@@ -190,6 +260,9 @@ def test_resolve_bundle_api_endpoint_prefers_decorated_alias_and_method():
 
     widget = resolve_bundle_widget(workflow, alias="preferences", bundle_id="bundle.demo")
     assert widget and widget.method_name == "preferences_widget"
+    mcp_spec = resolve_bundle_mcp_endpoint(workflow, alias="tools", route="operations", bundle_id="bundle.demo")
+    assert mcp_spec and mcp_spec.method_name == "tools_mcp"
+    assert resolve_bundle_mcp_endpoint(workflow, alias="missing", route="operations", bundle_id="bundle.demo") is None
 
 
 def test_string_widget_icon_is_normalized_to_tailwind_provider():
@@ -450,6 +523,13 @@ async def test_get_bundle_interface_and_widgets_use_decorators(monkeypatch):
     assert prefs_view["roles"] == []
     assert manifest["ui_widgets"][0]["user_types"] == ["registered"]
     assert manifest["ui_widgets"][0]["roles"] == []
+    assert {
+        (item["alias"], item["route"], item["transport"])
+        for item in manifest["mcp_endpoints"]
+    } == {
+        ("tools", "operations", "streamable-http"),
+        ("public_tools", "public", "streamable-http"),
+    }
 
     widgets = await integrations.list_bundle_widgets(
         tenant="tenant-a",
@@ -534,6 +614,65 @@ async def test_call_bundle_op_inner_supports_widget_compat_api(monkeypatch):
     assert result["preferences_widget"] == ["<p>fp-1</p>"]
 
 
+@pytest.mark.asyncio
+async def test_call_bundle_mcp_inner_dispatches_into_bundle_mcp_app(monkeypatch):
+    async def _load_bundle_workflow(**kwargs):
+        del kwargs
+        return _DecoratedWorkflow(), SimpleNamespace(id="bundle.demo"), "tenant-a", "project-a"
+
+    monkeypatch.setattr(integrations, "_load_bundle_workflow", _load_bundle_workflow)
+
+    response = await integrations._call_bundle_mcp_inner(
+        tenant="tenant-a",
+        project="project-a",
+        bundle_id="bundle.demo",
+        request=_request(
+            method="POST",
+            path="/api/integrations/bundles/tenant-a/project-a/bundle.demo/mcp/tools/list",
+            body=b'{"jsonrpc":"2.0","id":"1","method":"tools/list"}',
+            headers=[(b"content-type", b"application/json")],
+        ),
+        endpoint_alias="tools",
+        route="operations",
+        mcp_path="list",
+        session=_session(),
+    )
+
+    assert response.status_code == 200
+    payload = json.loads(response.body.decode("utf-8"))
+    assert payload["path"] == "/mcp/list"
+    assert payload["method"] == "POST"
+    assert payload["body"] == '{"jsonrpc":"2.0","id":"1","method":"tools/list"}'
+
+
+@pytest.mark.asyncio
+async def test_call_bundle_mcp_inner_supports_public_mcp_endpoint(monkeypatch):
+    async def _load_bundle_workflow(**kwargs):
+        del kwargs
+        return _DecoratedWorkflow(), SimpleNamespace(id="bundle.demo"), "tenant-a", "project-a"
+
+    monkeypatch.setattr(integrations, "_load_bundle_workflow", _load_bundle_workflow)
+
+    response = await integrations._call_bundle_mcp_inner(
+        tenant="tenant-a",
+        project="project-a",
+        bundle_id="bundle.demo",
+        request=_request(
+            method="GET",
+            path="/api/integrations/bundles/tenant-a/project-a/bundle.demo/public/mcp/public_tools",
+        ),
+        endpoint_alias="public_tools",
+        route="public",
+        mcp_path="",
+        session=_session(user_type="anonymous"),
+    )
+
+    assert response.status_code == 200
+    payload = json.loads(response.body.decode("utf-8"))
+    assert payload["path"] == "/mcp"
+    assert payload["method"] == "GET"
+
+
 def test_visible_specs_require_intersection_of_user_types_and_raw_roles():
     class _VisibilityWorkflow:
         @api(alias="by_user_type", user_types=("registered",))
@@ -557,6 +696,14 @@ def test_visible_specs_require_intersection_of_user_types_and_raw_roles():
         def admin_widget(self, **kwargs):
             return kwargs
 
+        @mcp(
+            alias="admin_mcp",
+            user_types=("privileged",),
+            roles=("kdcube:role:super-admin",),
+        )
+        def admin_mcp(self, **kwargs):
+            return _RecordingMCPProvider()
+
     manifest = discover_bundle_interface_manifest(_VisibilityWorkflow(), bundle_id="bundle.demo")
 
     visible_registered = integrations._visible_api_specs(manifest, _session(user_type="registered"))
@@ -579,6 +726,12 @@ def test_visible_specs_require_intersection_of_user_types_and_raw_roles():
         _session(user_type="privileged", roles=["kdcube:role:super-admin"]),
     )
     assert [spec.alias for spec in visible_widget] == ["admin_widget"]
+
+    visible_mcp = integrations._visible_mcp_specs(
+        manifest,
+        _session(user_type="privileged", roles=["kdcube:role:super-admin"]),
+    )
+    assert [spec.alias for spec in visible_mcp] == ["admin_mcp"]
 
 
 def test_user_type_visibility_uses_minimum_threshold_order():

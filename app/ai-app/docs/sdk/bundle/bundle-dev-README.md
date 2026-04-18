@@ -104,6 +104,7 @@ For the exact decorator contract, route mapping, widget/public endpoints, `@cron
 | `@agentic_workflow_factory(...)` | factory function | custom workflow construction when class registration is not enough |
 | `@bundle_id(...)` | entrypoint class | code-level bundle identity |
 | `@api(...)` | entrypoint method | bundle HTTP operations and public endpoints |
+| `@mcp(...)` | entrypoint method | bundle-served MCP endpoints |
 | `@ui_widget(...)` | entrypoint method | widget manifest entries |
 | `@ui_main` | entrypoint method | main iframe UI entrypoint |
 | `@on_message` | entrypoint method | message-handler metadata |
@@ -112,13 +113,13 @@ For the exact decorator contract, route mapping, widget/public endpoints, `@cron
 
 Practical rule:
 
-- most bundles need `@agentic_workflow(...)`, `@bundle_id(...)`, and optionally `@api(...)` / `@ui_widget(...)`
+- most bundles need `@agentic_workflow(...)`, `@bundle_id(...)`, and optionally `@api(...)` / `@mcp(...)` / `@ui_widget(...)`
 - use `@cron(...)` only for scheduled work
 - use `@venv(...)` only for dependency-heavy leaf helpers, not general orchestration
 
 Visibility rule:
 
-- `user_types` on `@api(...)` and `@ui_widget(...)` are threshold-based, not exact-match
+- `user_types` on `@api(...)`, `@mcp(...)`, and `@ui_widget(...)` are threshold-based, not exact-match
 - order is:
   - `anonymous < registered < paid < privileged`
 - so:
