@@ -1,9 +1,9 @@
 ---
 id: ks:docs/sdk/bundle/bundle-platform-integration-README.md
 title: "Bundle Platform Integration"
-summary: "Current declarative bundle integration contract: supported decorators, manifest metadata, REST routes, and UI/static integration."
-tags: ["sdk", "bundle", "integration", "decorators", "widgets", "operations", "ui", "manifest", "cron", "scheduled-jobs"]
-keywords: ["agentic_workflow", "bundle_id decorator", "api decorator", "ui_widget", "ui_main", "on_message", "cron decorator", "scheduled jobs", "bundle manifest", "integrations widgets", "integrations operations", "public route"]
+summary: "Current declarative bundle integration contract: supported decorators, manifest metadata, REST routes, MCP endpoints, and UI/static integration."
+tags: ["sdk", "bundle", "integration", "decorators", "widgets", "operations", "mcp", "ui", "manifest", "cron", "scheduled-jobs"]
+keywords: ["agentic_workflow", "bundle_id decorator", "api decorator", "mcp decorator", "ui_widget", "ui_main", "on_message", "cron decorator", "scheduled jobs", "bundle manifest", "integrations widgets", "integrations operations", "bundle mcp endpoint", "public route"]
 see_also:
   - ks:docs/sdk/bundle/bundle-interfaces-README.md
   - ks:docs/sdk/bundle/bundle-scheduled-jobs-README.md
@@ -19,7 +19,7 @@ It covers:
 
 - class and method decorators supported by the bundle loader
 - bundle interface manifest discovery
-- REST routing for bundle operations and public operations
+- REST routing for bundle operations, public operations, and bundle MCP endpoints
 - widget discovery and widget fetch
 - bundle main UI entrypoints and static asset serving
 
@@ -38,6 +38,7 @@ Bundles currently support these decorators:
 | `@agentic_workflow_factory(...)` | factory function | Declares a workflow factory function instead of a workflow class. |
 | `@bundle_id(...)` | entrypoint class | Declares the code-level bundle id used when runtime needs to infer identity from the bundle code itself. |
 | `@api(...)` | entrypoint method | Declares a remotely callable bundle HTTP operation. |
+| `@mcp(...)` | entrypoint method | Declares a remotely callable bundle MCP endpoint. |
 | `@ui_widget(...)` | entrypoint method | Declares a widget in the bundle interface manifest. |
 | `@ui_main` | entrypoint method | Declares the main iframe UI entrypoint. |
 | `@on_message` | entrypoint method | Declares the bundle message handler metadata. |
@@ -47,7 +48,7 @@ Bundles currently support these decorators:
 Important distinction:
 
 - `@agentic_workflow(...)`, `@agentic_workflow_factory(...)`, `@bundle_id(...)`,
-  `@api(...)`, `@ui_widget(...)`, `@ui_main`, `@on_message`, and `@cron(...)`
+  `@api(...)`, `@mcp(...)`, `@ui_widget(...)`, `@ui_main`, `@on_message`, and `@cron(...)`
   participate in bundle manifest and runtime interface discovery
 - `@venv(...)` is an execution decorator, not an HTTP/UI manifest decorator
 - most bundles should use `@agentic_workflow(...)`; `@agentic_workflow_factory(...)`
@@ -223,7 +224,56 @@ Route mapping:
 - `@api(route="public")` is callable through
   `/api/integrations/bundles/.../public/{alias}`
 
-### 1.5 `@ui_widget(...)`
+### 1.5 `@mcp(...)`
+
+Marks a method as a bundle-served MCP endpoint.
+
+Current signature:
+
+```python
+@mcp(
+    alias="tools",
+    route="operations",
+    transport="streamable-http",
+    user_types=("registered",),
+)
+def tools_mcp(self):
+    ...
+```
+
+Current fields:
+
+- `alias`
+  - MCP endpoint alias in the URL
+  - default: Python method name
+- `route`
+  - `operations` or `public`
+  - default: `operations`
+- `transport`
+  - current supported value: `streamable-http`
+- `user_types`
+  - same inferred internal user-type contract as `@api(...)`
+- `roles`
+  - same raw external role contract as `@api(...)`
+- `public_auth`
+  - same public-auth contract as `@api(...)`
+  - required for `route="public"`
+
+Current rule:
+
+- the decorated method must return a `FastMCP` app exposing
+  `streamable_http_app()` or an ASGI app already prepared for MCP HTTP handling
+- proc resolves the bundle endpoint, enforces auth/visibility, obtains that MCP
+  app from the bundle method, and dispatches the incoming request into it
+
+Route mapping:
+
+- `@mcp(route="operations")` is callable through
+  `/api/integrations/bundles/.../mcp/{alias}`
+- `@mcp(route="public")` is callable through
+  `/api/integrations/bundles/.../public/mcp/{alias}`
+
+### 1.6 `@ui_widget(...)`
 
 Marks a method as a discoverable widget endpoint.
 
@@ -279,7 +329,7 @@ Use the dedicated frontend contract doc for the exact pattern and example:
 
 - [bundle-widget-integration-README.md](bundle-widget-integration-README.md)
 
-### 1.6 `@ui_main`
+### 1.7 `@ui_main`
 
 Marks the method that declares the bundle's main iframe UI surface.
 
@@ -296,7 +346,7 @@ Current behavior:
 - build-on-first-request is supported for bundles that have a UI defined but
   were not yet built in the current proc
 
-### 1.7 `@on_message`
+### 1.8 `@on_message`
 
 Marks the bundle message handler metadata.
 
@@ -311,7 +361,7 @@ Current practical pattern:
 - base entrypoints already decorate `run()` with `@on_message`
 - manifest discovery reports the message handler method name
 
-### 1.8 `@cron(...)`
+### 1.9 `@cron(...)`
 
 Marks a method as a recurring scheduled job managed by proc.
 
@@ -362,7 +412,7 @@ For full details on span semantics, cron resolution, and local debug:
 
 - [docs/sdk/bundle/bundle-scheduled-jobs-README.md](bundle-scheduled-jobs-README.md)
 
-### 1.9 `@venv(...)`
+### 1.10 `@venv(...)`
 
 Marks a callable to execute in a cached per-bundle subprocess venv.
 
@@ -437,7 +487,21 @@ class UIWidgetSpec:
     roles: tuple[str, ...] = ()
 ```
 
-### 2.3 `OnMessageSpec`
+### 2.3 `MCPEndpointSpec`
+
+```python
+@dataclass(frozen=True)
+class MCPEndpointSpec:
+    method_name: str
+    alias: str
+    route: str = "operations"
+    transport: str = "streamable-http"
+    user_types: tuple[str, ...] = ()
+    roles: tuple[str, ...] = ()
+    public_auth: PublicAPIAuthSpec | None = None
+```
+
+### 2.4 `OnMessageSpec`
 
 ```python
 @dataclass(frozen=True)
@@ -445,7 +509,7 @@ class OnMessageSpec:
     method_name: str
 ```
 
-### 2.4 `UIMainSpec`
+### 2.5 `UIMainSpec`
 
 ```python
 @dataclass(frozen=True)
@@ -453,7 +517,7 @@ class UIMainSpec:
     method_name: str
 ```
 
-### 2.5 `CronJobSpec`
+### 2.6 `CronJobSpec`
 
 ```python
 @dataclass(frozen=True)
@@ -465,7 +529,7 @@ class CronJobSpec:
     span: str = "system"
 ```
 
-### 2.6 `BundleInterfaceManifest`
+### 2.7 `BundleInterfaceManifest`
 
 ```python
 @dataclass(frozen=True)
@@ -474,6 +538,7 @@ class BundleInterfaceManifest:
     allowed_roles: tuple[str, ...] = ()
     ui_widgets: tuple[UIWidgetSpec, ...] = ()
     api_endpoints: tuple[APIEndpointSpec, ...] = ()
+    mcp_endpoints: tuple[MCPEndpointSpec, ...] = ()
     ui_main: UIMainSpec | None = None
     on_message: OnMessageSpec | None = None
     scheduled_jobs: tuple[CronJobSpec, ...] = ()
@@ -489,6 +554,7 @@ Discovery helpers currently exposed by the loader:
 
 - `discover_bundle_interface_manifest(...)`
 - `resolve_bundle_api_endpoint(...)`
+- `resolve_bundle_mcp_endpoint(...)`
 - `resolve_bundle_widget(...)`
 - `resolve_bundle_message_method(...)`
 
@@ -509,6 +575,12 @@ Current response shape includes:
   - includes `alias`
   - includes `http_method`
   - includes `route`
+  - includes `user_types`
+  - includes `roles`
+- `mcp_endpoints`
+  - includes `alias`
+  - includes `route`
+  - includes `transport`
   - includes `user_types`
   - includes `roles`
 - `ui_main`
@@ -543,6 +615,15 @@ Example:
       "alias": "preferences_exec_report",
       "http_method": "POST",
       "route": "operations",
+      "user_types": ["registered"],
+      "roles": []
+    }
+  ],
+  "mcp_endpoints": [
+    {
+      "alias": "tools",
+      "route": "operations",
+      "transport": "streamable-http",
       "user_types": ["registered"],
       "roles": []
     }
@@ -599,7 +680,34 @@ Current rules:
   - `public_auth="none"` for intentionally open public endpoints
   - `public_auth={"mode":"header_secret", ...}` for shared-secret webhook headers
 
-### 3.4 Legacy no-bundle-id operations route
+### 3.4 Bundle MCP routes
+
+```text
+GET  /api/integrations/bundles/{tenant}/{project}/{bundle_id}/mcp/{alias}
+POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/mcp/{alias}
+GET  /api/integrations/bundles/{tenant}/{project}/{bundle_id}/mcp/{alias}/{path}
+POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/mcp/{alias}/{path}
+
+GET  /api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/mcp/{alias}
+POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/mcp/{alias}
+GET  /api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/mcp/{alias}/{path}
+POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/mcp/{alias}/{path}
+```
+
+Current rules:
+
+- only `@mcp(...)` methods are callable here
+- route matching is strict:
+  - `route="operations"` is not callable through `/public/mcp/...`
+  - `route="public"` is not callable through `/mcp/...`
+- public MCP endpoints use the same `public_auth` contract as public `@api(...)`
+  methods
+- current supported transport is `streamable-http`
+- proc rewrites the routed request onto the MCP subapp path expected by the
+  current FastMCP HTTP transport
+- bundle code returns the MCP app; proc does not synthesize MCP tools from
+  ordinary `@api(...)` methods
+### 3.5 Legacy no-bundle-id operations route
 
 ```text
 POST /api/integrations/bundles/{tenant}/{project}/operations/{alias}
@@ -613,7 +721,7 @@ Current rules:
 - `bundle_id` may come from the body
 - otherwise the current default bundle is used
 
-### 3.5 Widgets list
+### 3.6 Widgets list
 
 ```text
 GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/widgets
@@ -621,7 +729,7 @@ GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/widgets
 
 Returns only `@ui_widget(...)` metadata visible to the current user.
 
-### 3.6 Widget fetch
+### 3.7 Widget fetch
 
 ```text
 GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/widgets/{alias}
@@ -633,7 +741,7 @@ Current rules:
 - applies role visibility before invocation
 - does not use operation routing
 
-### 3.7 Bundle static UI
+### 3.8 Bundle static UI
 
 ```text
 GET /api/integrations/static/{tenant}/{project}/{bundle_id}
@@ -669,9 +777,9 @@ Applies to the bundle listing endpoint (`GET /api/integrations/bundles`).
 - A bundle with empty `allowed_roles` is always included.
 - Admin listing (`GET /api/admin/integrations/bundles`) is not filtered.
 
-### 4.2 Per-method filtering (`user_types` and `roles` on `@api` and `@ui_widget`)
+### 4.2 Per-method filtering (`user_types` and `roles` on `@api`, `@mcp`, and `@ui_widget`)
 
-Applies within a bundle manifest — controls which apis and widgets are
+Applies within a bundle manifest — controls which apis, MCP endpoints, and widgets are
 visible to a given user.
 
 - `user_types` are matched against the session's inferred platform user type.
@@ -695,11 +803,12 @@ but route-level visibility is already enforced from decorator metadata.
 
 Use these rules for new bundles:
 
-1. Decorate every remotely callable method with `@api(...)`.
-2. Use `route="operations"` for authenticated/internal bundle operations.
-3. Use `route="public"` only for intentionally public endpoints.
-4. Decorate every widget method with `@ui_widget(...)`.
-5. If a widget method is also called through `/operations/...`, add
+1. Decorate every remotely callable HTTP method with `@api(...)`.
+2. Decorate every remotely callable MCP surface with `@mcp(...)`.
+3. Use `route="operations"` for authenticated/internal bundle operations.
+4. Use `route="public"` only for intentionally public endpoints.
+5. Decorate every widget method with `@ui_widget(...)`.
+6. If a widget method is also called through `/operations/...`, add
    `@api(route="operations", alias="<operation-alias>")` to the same method.
 6. Use `@ui_main` when the bundle has a main iframe application.
 7. Use `@on_message` on the bundle message handler. The base entrypoints already

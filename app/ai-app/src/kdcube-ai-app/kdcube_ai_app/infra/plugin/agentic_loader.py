@@ -37,6 +37,7 @@ AGENTIC_ROLE_ATTR = "__agentic_role__"
 AGENTIC_META_ATTR = "__agentic_meta__"
 BUNDLE_ID_ATTR = "__bundle_id__"
 API_METHOD_ATTR = "__bundle_api_method__"
+MCP_ENDPOINT_ATTR = "__bundle_mcp_endpoint__"
 UI_WIDGET_ATTR = "__bundle_ui_widget__"
 ON_MESSAGE_ATTR = "__bundle_on_message__"
 UI_MAIN_ATTR = "__bundle_ui_main__"
@@ -67,6 +68,17 @@ class APIEndpointSpec:
     alias: str
     http_method: str = "POST"
     route: str = "operations"
+    user_types: tuple[str, ...] = ()
+    roles: tuple[str, ...] = ()
+    public_auth: "PublicAPIAuthSpec | None" = None
+
+
+@dataclass(frozen=True)
+class MCPEndpointSpec:
+    method_name: str
+    alias: str
+    route: str = "operations"
+    transport: str = "streamable-http"
     user_types: tuple[str, ...] = ()
     roles: tuple[str, ...] = ()
     public_auth: "PublicAPIAuthSpec | None" = None
@@ -113,6 +125,7 @@ class BundleInterfaceManifest:
     allowed_roles: tuple[str, ...] = ()
     ui_widgets: tuple[UIWidgetSpec, ...] = ()
     api_endpoints: tuple[APIEndpointSpec, ...] = ()
+    mcp_endpoints: tuple[MCPEndpointSpec, ...] = ()
     ui_main: UIMainSpec | None = None
     on_message: OnMessageSpec | None = None
     scheduled_jobs: tuple[CronJobSpec, ...] = ()
@@ -191,6 +204,15 @@ def _normalize_api_route(value: str | None) -> str:
     if route not in {"operations", "public"}:
         raise ValueError(f"Unsupported bundle api route: {route}")
     return route
+
+
+def _normalize_mcp_transport(value: str | None) -> str:
+    transport = str(value or "streamable-http").strip().lower() or "streamable-http"
+    if transport in {"streamable_http", "http"}:
+        transport = "streamable-http"
+    if transport not in {"streamable-http"}:
+        raise ValueError(f"Unsupported bundle MCP transport: {transport}")
+    return transport
 
 
 def _normalize_public_api_auth(route: str, value: Any) -> PublicAPIAuthSpec | None:
@@ -381,6 +403,45 @@ def ui_widget(
         return fn
 
     return _wrap
+
+
+def mcp(
+        *,
+        alias: str | None = None,
+        route: str = "operations",
+        transport: str = "streamable-http",
+        user_types: List[str] | Tuple[str, ...] | None = None,
+        roles: List[str] | Tuple[str, ...] | None = None,
+        public_auth: str | Dict[str, Any] | None = None,
+):
+    resolved_route = _normalize_api_route(route)
+    resolved_transport = _normalize_mcp_transport(transport)
+    resolved_public_auth = _normalize_public_api_auth(resolved_route, public_auth)
+    resolved_user_types, resolved_roles = _normalize_visibility_selectors(
+        user_types=user_types,
+        roles=roles,
+    )
+
+    def _wrap(fn):
+        setattr(
+            fn,
+            MCP_ENDPOINT_ATTR,
+            MCPEndpointSpec(
+                method_name=getattr(fn, "__name__", "mcp"),
+                alias=_clean_alias(alias, getattr(fn, "__name__", "mcp")),
+                route=resolved_route,
+                transport=resolved_transport,
+                user_types=resolved_user_types,
+                roles=resolved_roles,
+                public_auth=resolved_public_auth,
+            ),
+        )
+        return fn
+
+    return _wrap
+
+
+mcp_endpoint = mcp
 
 
 def on_message(fn):
@@ -1386,11 +1447,13 @@ def discover_bundle_interface_manifest(target: Any, *, bundle_id: str | None = N
     ).strip()
 
     api_endpoints: list[APIEndpointSpec] = []
+    mcp_endpoints: list[MCPEndpointSpec] = []
     ui_widgets: list[UIWidgetSpec] = []
     ui_main_spec: UIMainSpec | None = None
     on_message_spec: OnMessageSpec | None = None
     scheduled_jobs: list[CronJobSpec] = []
     seen_api: set[tuple[str, str]] = set()
+    seen_mcp: set[tuple[str, str]] = set()
     seen_widgets: set[str] = set()
 
     for member_name, fn in _iter_bundle_callable_members(target):
@@ -1413,6 +1476,26 @@ def discover_bundle_interface_manifest(target: Any, *, bundle_id: str | None = N
                 )
             seen_api.add(api_key)
             api_endpoints.append(resolved)
+
+        mcp_spec = getattr(fn, MCP_ENDPOINT_ATTR, None)
+        if isinstance(mcp_spec, MCPEndpointSpec):
+            resolved = MCPEndpointSpec(
+                method_name=member_name,
+                alias=mcp_spec.alias,
+                route=mcp_spec.route,
+                transport=mcp_spec.transport,
+                user_types=tuple(mcp_spec.user_types or ()),
+                roles=tuple(mcp_spec.roles or ()),
+                public_auth=mcp_spec.public_auth,
+            )
+            mcp_key = (resolved.alias, resolved.route)
+            if mcp_key in seen_mcp:
+                raise ValueError(
+                    f"Duplicate bundle MCP alias detected: {resolved.alias} "
+                    f"route={resolved.route}"
+                )
+            seen_mcp.add(mcp_key)
+            mcp_endpoints.append(resolved)
 
         widget_spec = getattr(fn, UI_WIDGET_ATTR, None)
         if isinstance(widget_spec, UIWidgetSpec):
@@ -1456,6 +1539,7 @@ def discover_bundle_interface_manifest(target: Any, *, bundle_id: str | None = N
     allowed_roles: tuple[str, ...] = _tuple_str(meta.get("allowed_roles"))
 
     api_endpoints.sort(key=lambda item: (item.alias, item.route, item.http_method, item.method_name))
+    mcp_endpoints.sort(key=lambda item: (item.alias, item.route, item.transport, item.method_name))
     ui_widgets.sort(key=lambda item: (item.alias, item.method_name))
     scheduled_jobs.sort(key=lambda item: (item.alias, item.method_name))
     return BundleInterfaceManifest(
@@ -1463,6 +1547,7 @@ def discover_bundle_interface_manifest(target: Any, *, bundle_id: str | None = N
         allowed_roles=allowed_roles,
         ui_widgets=tuple(ui_widgets),
         api_endpoints=tuple(api_endpoints),
+        mcp_endpoints=tuple(mcp_endpoints),
         ui_main=ui_main_spec,
         on_message=on_message_spec,
         scheduled_jobs=tuple(scheduled_jobs),
@@ -1498,6 +1583,21 @@ def resolve_bundle_widget(
     manifest = discover_bundle_interface_manifest(target, bundle_id=bundle_id)
     for spec in manifest.ui_widgets:
         if spec.alias == alias:
+            return spec
+    return None
+
+
+def resolve_bundle_mcp_endpoint(
+        target: Any,
+        *,
+        alias: str,
+        route: str = "operations",
+        bundle_id: str | None = None,
+) -> MCPEndpointSpec | None:
+    manifest = discover_bundle_interface_manifest(target, bundle_id=bundle_id)
+    resolved_route = _normalize_api_route(route)
+    for spec in manifest.mcp_endpoints:
+        if spec.alias == alias and spec.route == resolved_route:
             return spec
     return None
 

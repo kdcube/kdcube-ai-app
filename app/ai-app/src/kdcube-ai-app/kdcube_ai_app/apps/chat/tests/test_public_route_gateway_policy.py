@@ -54,12 +54,26 @@ def test_gateway_policy_resolver_treats_public_bundle_route_as_guarded_ingress()
     assert policy.bypass_backpressure is False
 
 
+def test_gateway_policy_resolver_treats_public_bundle_mcp_route_as_guarded_ingress():
+    resolver = GatewayPolicyResolver()
+    request = _request("/api/integrations/bundles/tenant-a/project-a/bundle.demo/public/mcp/tools")
+
+    policy = resolver.resolve(request)
+
+    assert policy.cls == EndpointClass.CHAT_INGRESS
+    assert policy.bypass_throttling is False
+    assert policy.bypass_gate is False
+    assert policy.bypass_backpressure is False
+
+
 @pytest.mark.parametrize(
     "path",
     [
         "/api/integrations/bundles/tenant-a/project-a/bundle.demo",
         "/api/integrations/bundles/tenant-a/project-a/bundle.demo/widgets",
         "/api/integrations/bundles/tenant-a/project-a/bundle.demo/widgets/preferences",
+        "/api/integrations/bundles/tenant-a/project-a/bundle.demo/mcp/tools",
+        "/api/integrations/bundles/tenant-a/project-a/bundle.demo/mcp/tools/list",
         "/api/integrations/static/tenant-a/project-a/bundle.demo",
         "/api/integrations/static/tenant-a/project-a/bundle.demo/index.html",
     ],

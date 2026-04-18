@@ -12,6 +12,7 @@ from dataclasses import asdict
 from datetime import datetime
 from typing import Optional, Dict, Any, Set, List, Tuple
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
@@ -53,6 +54,7 @@ from kdcube_ai_app.infra.plugin.agentic_loader import (
     AgenticBundleSpec,
     APIEndpointSpec,
     BundleInterfaceManifest,
+    MCPEndpointSpec,
     UIWidgetSpec,
     cache_key_for_spec,
     discover_bundle_interface_manifest,
@@ -60,6 +62,7 @@ from kdcube_ai_app.infra.plugin.agentic_loader import (
     get_workflow_instance,
     load_bundle_manifest,
     resolve_bundle_api_endpoint,
+    resolve_bundle_mcp_endpoint,
     resolve_bundle_widget,
 )
 from kdcube_ai_app.infra.secrets import (
@@ -274,6 +277,10 @@ def _visible_api_specs(manifest: BundleInterfaceManifest, session: UserSession) 
     return [spec for spec in manifest.api_endpoints if _endpoint_visible(spec.user_types, spec.roles, session)]
 
 
+def _visible_mcp_specs(manifest: BundleInterfaceManifest, session: UserSession) -> list[MCPEndpointSpec]:
+    return [spec for spec in manifest.mcp_endpoints if _endpoint_visible(spec.user_types, spec.roles, session)]
+
+
 def _user_raw_roles(session: UserSession) -> set[str]:
     """Raw (externally defined) roles: kdcube:role:* entries from session.roles."""
     return {
@@ -376,6 +383,63 @@ def _coerce_bundle_http_response(result: Any):
             status_code=result.status_code,
         )
     return None
+
+
+def _coerce_bundle_mcp_asgi_app(result: Any, *, transport: str):
+    if transport == "streamable-http" and hasattr(result, "streamable_http_app"):
+        return result.streamable_http_app()
+    if callable(result):
+        return result
+    raise RuntimeError(
+        f"Bundle MCP endpoint must return a FastMCP app or ASGI app for transport={transport}"
+    )
+
+
+def _build_mcp_dispatch_path(*, transport: str, mcp_path: str) -> str:
+    suffix = str(mcp_path or "").strip("/")
+    if transport == "streamable-http":
+        return "/mcp" if not suffix else f"/mcp/{suffix}"
+    raise RuntimeError(f"Unsupported MCP transport: {transport}")
+
+
+def _filtered_proxy_headers(headers: httpx.Headers) -> Dict[str, str]:
+    blocked = {"content-length", "transfer-encoding", "connection"}
+    return {k: v for k, v in headers.items() if k.lower() not in blocked}
+
+
+async def _dispatch_bundle_mcp_request(
+        *,
+        request: Request,
+        mcp_app: Any,
+        transport: str,
+        mcp_path: str,
+) -> Response:
+    body = await request.body()
+    dispatch_path = _build_mcp_dispatch_path(transport=transport, mcp_path=mcp_path)
+    headers = {
+        key: value
+        for key, value in request.headers.items()
+        if key.lower() not in {"host", "content-length", "connection"}
+    }
+    params = list(request.query_params.multi_items())
+
+    async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=mcp_app),
+            base_url="http://bundle-mcp.local",
+    ) as client:
+        response = await client.request(
+            request.method,
+            dispatch_path,
+            params=params,
+            headers=headers,
+            content=body,
+        )
+
+    return Response(
+        content=response.content,
+        status_code=response.status_code,
+        headers=_filtered_proxy_headers(response.headers),
+    )
 
 
 async def _parse_bundle_request_payload(request: Request) -> Tuple[BundleSuggestionsRequest, List[BundleUploadedFile]]:
@@ -687,6 +751,17 @@ def _manifest_to_descriptor(manifest: BundleInterfaceManifest) -> Dict[str, Any]
             }
             for s in manifest.api_endpoints
         ],
+        "mcp_endpoints": [
+            {
+                "alias": s.alias,
+                "route": s.route,
+                "transport": s.transport,
+                "user_types": list(s.user_types),
+                "roles": list(s.roles),
+                "public_auth_mode": (s.public_auth.mode if s.public_auth else None),
+            }
+            for s in manifest.mcp_endpoints
+        ],
         "widgets": [
             {"alias": s.alias, "icon": s.icon, "user_types": list(s.user_types), "roles": list(s.roles)}
             for s in manifest.ui_widgets
@@ -720,6 +795,18 @@ def _manifest_to_descriptor_filtered(
                 "roles": list(s.roles),
             }
             for s in manifest.api_endpoints
+            if _endpoint_visible(s.user_types, s.roles, session)
+        ],
+        "mcp_endpoints": [
+            {
+                "alias": s.alias,
+                "route": s.route,
+                "transport": s.transport,
+                "user_types": list(s.user_types),
+                "roles": list(s.roles),
+                "public_auth_mode": (s.public_auth.mode if s.public_auth else None),
+            }
+            for s in manifest.mcp_endpoints
             if _endpoint_visible(s.user_types, s.roles, session)
         ],
         "widgets": [
@@ -1774,6 +1861,7 @@ async def get_bundle_interface(
     manifest = discover_bundle_interface_manifest(workflow, bundle_id=spec_resolved.id)
     visible_widgets = _visible_widget_specs(manifest, session)
     visible_apis = _visible_api_specs(manifest, session)
+    visible_mcp_endpoints = _visible_mcp_specs(manifest, session)
     return {
         "status": "ok",
         "tenant": tenant_id,
@@ -1798,6 +1886,17 @@ async def get_bundle_interface(
                 "public_auth_mode": (spec.public_auth.mode if spec.public_auth else None),
             }
             for spec in visible_apis
+        ],
+        "mcp_endpoints": [
+            {
+                "alias": spec.alias,
+                "route": spec.route,
+                "transport": spec.transport,
+                "user_types": list(spec.user_types),
+                "roles": list(spec.roles),
+                "public_auth_mode": (spec.public_auth.mode if spec.public_auth else None),
+            }
+            for spec in visible_mcp_endpoints
         ],
         "ui_main": (
             {"method_name": manifest.ui_main.method_name}
@@ -1900,6 +1999,188 @@ async def fetch_bundle_widget(
         },
         widget_alias: result,
     }
+
+
+def _callable_accepts_kwarg(fn: Any, name: str) -> bool:
+    try:
+        params = inspect.signature(fn).parameters.values()
+    except Exception:
+        return False
+    return any(
+        p.kind == inspect.Parameter.VAR_KEYWORD or p.name == name
+        for p in params
+    )
+
+
+async def _call_bundle_mcp_limited(
+        *,
+        tenant: str,
+        project: str,
+        bundle_id: str,
+        request: Request,
+        endpoint_alias: str,
+        route: str,
+        mcp_path: str,
+        session: UserSession,
+):
+    sem = _get_integrations_semaphore()
+    if sem:
+        async with sem:
+            return await _call_bundle_mcp_inner(
+                tenant=tenant,
+                project=project,
+                bundle_id=bundle_id,
+                request=request,
+                endpoint_alias=endpoint_alias,
+                route=route,
+                mcp_path=mcp_path,
+                session=session,
+            )
+    return await _call_bundle_mcp_inner(
+        tenant=tenant,
+        project=project,
+        bundle_id=bundle_id,
+        request=request,
+        endpoint_alias=endpoint_alias,
+        route=route,
+        mcp_path=mcp_path,
+        session=session,
+    )
+
+
+async def _call_bundle_mcp_inner(
+        *,
+        tenant: str,
+        project: str,
+        bundle_id: str,
+        request: Request,
+        endpoint_alias: str,
+        route: str,
+        mcp_path: str,
+        session: UserSession,
+):
+    workflow, spec_resolved, tenant_id, project_id, comm_context = _unpack_loaded_bundle_workflow(
+        await _load_bundle_workflow(
+            tenant=tenant,
+            project=project,
+            bundle_id=bundle_id,
+            payload=BundleSuggestionsRequest(),
+            request=request,
+            session=session,
+        )
+    )
+
+    endpoint_spec = resolve_bundle_mcp_endpoint(
+        workflow,
+        alias=endpoint_alias,
+        route=route,
+        bundle_id=spec_resolved.id,
+    )
+    if endpoint_spec is None:
+        raise HTTPException(status_code=404, detail=f"Bundle does not support MCP endpoint {endpoint_alias}")
+
+    _enforce_public_api_auth(
+        endpoint_spec=endpoint_spec,
+        bundle_id=spec_resolved.id,
+        operation=f"mcp/{endpoint_alias}",
+        request=request,
+    )
+    if not _endpoint_visible(endpoint_spec.user_types, endpoint_spec.roles, session):
+        raise HTTPException(status_code=403, detail=f"Bundle MCP endpoint {endpoint_alias} is not visible to this user")
+
+    try:
+        fn = getattr(workflow, endpoint_spec.method_name)
+        extra: Dict[str, Any] = {}
+        if _callable_accepts_kwarg(fn, "request"):
+            extra["request"] = request
+        if _callable_accepts_kwarg(fn, "alias"):
+            extra["alias"] = endpoint_alias
+        if _callable_accepts_kwarg(fn, "mcp_path"):
+            extra["mcp_path"] = mcp_path
+        runtime_comm = _resolve_bound_runtime_comm(workflow=workflow, comm_context=comm_context)
+        with bind_current_request_context(comm_context, comm=runtime_comm):
+            if inspect.iscoroutinefunction(fn):
+                result = await fn(**extra)
+            else:
+                result = fn(**extra)
+        mcp_app = _coerce_bundle_mcp_asgi_app(result, transport=endpoint_spec.transport)
+        return await _dispatch_bundle_mcp_request(
+            request=request,
+            mcp_app=mcp_app,
+            transport=endpoint_spec.transport,
+            mcp_path=mcp_path,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(
+            "Bundle MCP endpoint failed tenant=%s project=%s bundle=%s route=%s endpoint=%s method=%s",
+            tenant_id,
+            project_id,
+            spec_resolved.id,
+            route,
+            endpoint_alias,
+            endpoint_spec.method_name,
+        )
+        raise HTTPException(status_code=500, detail=f"mcp/{endpoint_alias} failed: {e}")
+
+
+@router.api_route(
+    "/bundles/{tenant}/{project}/{bundle_id}/mcp/{endpoint_alias}",
+    methods=["GET", "POST"],
+)
+@router.api_route(
+    "/bundles/{tenant}/{project}/{bundle_id}/mcp/{endpoint_alias}/{mcp_path:path}",
+    methods=["GET", "POST"],
+)
+async def call_bundle_mcp(
+        tenant: str,
+        project: str,
+        bundle_id: str,
+        endpoint_alias: str,
+        request: Request,
+        mcp_path: str = "",
+        session: UserSession = Depends(require_auth(RequireUser())),
+):
+    return await _call_bundle_mcp_limited(
+        tenant=tenant,
+        project=project,
+        bundle_id=bundle_id,
+        request=request,
+        endpoint_alias=endpoint_alias,
+        route="operations",
+        mcp_path=mcp_path,
+        session=session,
+    )
+
+
+@router.api_route(
+    "/bundles/{tenant}/{project}/{bundle_id}/public/mcp/{endpoint_alias}",
+    methods=["GET", "POST"],
+)
+@router.api_route(
+    "/bundles/{tenant}/{project}/{bundle_id}/public/mcp/{endpoint_alias}/{mcp_path:path}",
+    methods=["GET", "POST"],
+)
+async def call_bundle_mcp_public(
+        tenant: str,
+        project: str,
+        bundle_id: str,
+        endpoint_alias: str,
+        request: Request,
+        mcp_path: str = "",
+        session: UserSession = Depends(get_user_session_dependency()),
+):
+    return await _call_bundle_mcp_limited(
+        tenant=tenant,
+        project=project,
+        bundle_id=bundle_id,
+        request=request,
+        endpoint_alias=endpoint_alias,
+        route="public",
+        mcp_path=mcp_path,
+        session=session,
+    )
 
 
 @router.get("/bundles/{tenant}/{project}/{bundle_id}/operations/{operation}")
