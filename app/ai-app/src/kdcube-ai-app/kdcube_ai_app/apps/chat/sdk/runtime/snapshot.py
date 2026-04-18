@@ -160,17 +160,6 @@ def snapshot_all_contextvars() -> dict:
 
     return {"entries": entries}
 
-def _pick_selected_model_name(d: dict | None) -> Optional[str]:
-    """
-    Config.default_llm_model is a dict from MODEL_CONFIGS[…].
-    Try common keys safely.
-    """
-    if not d:
-        return None
-    return (
-        d.get("model_name")
-    )
-
 def _config_to_model_config_spec(cfg: Config) -> ModelConfigSpec:
     return ModelConfigSpec(
         openai_api_key=cfg.openai_api_key or None,
