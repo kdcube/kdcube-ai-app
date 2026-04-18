@@ -231,6 +231,35 @@ React tooling (bundle‑provided):
 You can optionally pass `keywords=[...]` to `react.search_knowledge` to bias ranking
 toward specific tags or terms.
 
+## MCP endpoint for documentation tools
+
+This bundle also serves the documentation reader over bundle MCP using the
+bundle-owned `@mcp(...)` surface.
+
+Route:
+- authenticated operations endpoint:
+  `/api/integrations/bundles/{tenant}/{project}/{bundle_id}/mcp/doc_reader`
+
+Transport:
+- streamable HTTP
+
+Exposed MCP tools:
+- `search_knowledge(query, root="ks:docs", keywords=None, top_k=20)`
+  - same knowledge-space search primitive used by the bundle's React tooling
+- `read_knowledge(path)`
+  - reads one exact `ks:` path and returns the same file payload shape used by
+    the bundle-side knowledge resolver
+
+Practical use:
+- MCP clients can search docs/deployment markdown first with `search_knowledge`
+- then open the exact `ks:` path with `read_knowledge`
+
+Boundary:
+- `bundle_data.resolve_namespace(...)` remains exec-only and is not exposed over
+  MCP
+- the MCP endpoint is for documentation search/read, not physical filesystem
+  browsing inside isolated execution
+
 Important:
 - `bundle_data.resolve_namespace(...)` is **not** a normal planning-time browsing tool.
 - It is intended only for generated Python running inside `execute_code_python(...)`.
