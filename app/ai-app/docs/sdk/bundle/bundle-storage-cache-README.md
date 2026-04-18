@@ -91,7 +91,7 @@ BUNDLE_STORAGE_ROOT=/bundles/_bundle_storage
 
 Path layout (default):
 ```
-<bundles_root>/_bundle_storage/<tenant>/<project>/<bundle_id>[__<git_commit|ref|version>]
+<bundles_root>/_bundle_storage/<tenant>/<project>/<bundle_id>
 ```
 
 Authoring rule:
@@ -102,33 +102,37 @@ Authoring rule:
 Use from bundle code:
 
 ```python
-from kdcube_ai_app.infra.plugin.bundle_storage import bundle_storage_dir
-
-local_root = bundle_storage_dir(
-    bundle_id=bundle_id,
-    version=None,
-    tenant=tenant,
-    project=project,
-    ensure=True,
-) / "_my_subsystem"
+storage_root = self.bundle_storage_root()
+local_root = storage_root / "_my_subsystem"
 local_root.mkdir(parents=True, exist_ok=True)
 ```
 
-If you already have an entrypoint instance, use its helper first:
+If you are not inside a bundle entrypoint instance, use the low-level helper:
 
 ```python
-storage_root = self.bundle_storage_root()
+from kdcube_ai_app.infra.plugin.bundle_storage import bundle_storage_dir
+
+storage_root = bundle_storage_dir(
+    bundle_id=bundle_id,
+    tenant=tenant,
+    project=project,
+    ensure=True,
+)
 ```
 
-and only drop to `bundle_storage_dir(...)` when you specifically need the unversioned tenant/project/bundle path shape.
+Authoring rule:
+- inside entrypoint methods, use `self.bundle_storage_root()`
+- outside entrypoint methods, use `bundle_storage_dir(bundle_id=..., tenant=..., project=...)`
+- always create your own `_subsystem` directory under that stable root
+- do not create alternative primary roots and do not rely on version-suffixed bundle roots
 
 Practical split:
 - `self.bundle_storage_root()`
-  - versioned bundle storage root for the active bundle spec
-  - good for versioned prepared assets and caches tied to the deployed bundle version
-- `bundle_storage_dir(..., version=None) / "_name"`
-  - unversioned tenant/project/bundle-local root
-  - good for mutable local working state, checkouts, local mirrors, and long-lived runtime workspaces
+  - canonical tenant/project/bundle-local root chosen by the platform
+  - use this in entrypoint code
+- `bundle_storage_dir(...)`
+  - same canonical tenant/project/bundle-local root
+  - use this only in helpers that do not have `self.bundle_storage_root()`
 - `AIBundleStorage`
   - backend storage API for bundle artifacts
   - separate from the shared local filesystem root
@@ -139,10 +143,11 @@ Example pattern used in real bundles:
   - `<tenant>/<project>/<bundle_id>/_task_tracker`
   - `<tenant>/<project>/<bundle_id>/_knowledge_base_admin`
 
-Version suffix rules (if present):
-- `git_commit` (preferred, if set)
-- else `ref`
-- else `version`
+Important contract:
+- the platform owns only the stable root selection:
+  - `<bundle_storage_root>/<tenant>/<project>/<safe(bundle_id)>`
+- the bundle owns everything below that root
+- if the bundle wants rebuildable caches, it should create and manage them under that stable root explicitly
 
 ReAct integration (optional):
 - You can expose a knowledge space (`ks:`) backed by this local storage.

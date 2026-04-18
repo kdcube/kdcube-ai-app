@@ -33,15 +33,12 @@ class TestStorageFallbackChain:
         from kdcube_ai_app.infra.plugin.bundle_storage import resolve_bundle_storage_root
         # Remove env var temporarily to test default path resolution
         old = os.environ.pop("BUNDLE_STORAGE_ROOT", None)
-        old2 = os.environ.pop("BUNDLE_SHARED_STORAGE_ROOT", None)
         try:
             root = resolve_bundle_storage_root()
             assert isinstance(root, pathlib.Path)
         finally:
             if old:
                 os.environ["BUNDLE_STORAGE_ROOT"] = old
-            if old2:
-                os.environ["BUNDLE_SHARED_STORAGE_ROOT"] = old2
 
     def test_bundle_storage_root_respects_config(self, tmp_path, monkeypatch):
         """resolve_bundle_storage_root() uses BUNDLE_STORAGE_ROOT from settings when set."""

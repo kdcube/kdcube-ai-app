@@ -122,29 +122,22 @@ Do not do this:
 - store mutable runtime state next to bundle source files
 - assume the current working directory is durable
 
-Use one of these:
+Use the canonical bundle local root:
 
 1. `self.bundle_storage_root()`
 - available on bundle entrypoints
 - resolves the bundle-scoped shared local storage root for the active tenant/project
-- versioned with the active bundle spec when version/ref/git_commit is present
+- stable by bundle id for the active tenant/project
 
 2. `bundle_storage_dir(...)`
 - import from `kdcube_ai_app.infra.plugin.bundle_storage`
-- use it when you need the unversioned tenant/project/bundle root directly
+- use it only in lower-level helpers that do not have an entrypoint instance
 
 Typical pattern for mutable local runtime state:
 
 ```python
-from kdcube_ai_app.infra.plugin.bundle_storage import bundle_storage_dir
-
-local_root = bundle_storage_dir(
-    bundle_id=bundle_id,
-    version=None,
-    tenant=tenant,
-    project=project,
-    ensure=True,
-) / "_subsystem_name"
+storage_root = self.bundle_storage_root()
+local_root = storage_root / "_subsystem_name"
 local_root.mkdir(parents=True, exist_ok=True)
 ```
 

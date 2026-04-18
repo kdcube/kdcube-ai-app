@@ -172,24 +172,6 @@ class BaseEntrypoint:
         if wf_embedding:
             self.config.set_embedding(wf_embedding)
 
-        if getattr(self.config, "ai_bundle_spec", None):
-            try:
-                from kdcube_ai_app.apps.chat.sdk.runtime.external.distributed_snapshot import compute_dir_sha256
-                spec = self.config.ai_bundle_spec
-                root = pathlib.Path(spec.path)
-                if spec.module:
-                    module_root = spec.module.split(".")[0]
-                    candidate = root / module_root
-                    if candidate.exists():
-                        root = candidate
-                if root.exists():
-                    from kdcube_ai_app.apps.chat.sdk.runtime.external.distributed_snapshot import _SKIP_DIRS_DEFAULT
-                    sha = compute_dir_sha256(root, skip_dirs={*_SKIP_DIRS_DEFAULT, "node_modules"}, skip_files={"package-lock.json"})
-                    # Always use content hash as authoritative version
-                    self.config.ai_bundle_spec.version = sha[:12]
-            except Exception:
-                pass
-
     @property
     def bundle_props_defaults(self) -> Dict[str, Any]:
         """
