@@ -9,7 +9,7 @@ import logging
 import os
 import uuid
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
 from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import (
@@ -148,6 +148,10 @@ class ClaudeCodeAgent:
         emit_stderr_steps: bool = True,
         command: str = "claude",
         permission_mode: str | None = "acceptEdits",
+        timeout_seconds: float | None = None,
+        structured_output_prefixes: Sequence[str] = (),
+        on_structured_output=None,
+        on_text_chunk=None,
     ) -> "ClaudeCodeAgent":
         request_context = get_current_request_context()
         if request_context is None:
@@ -167,6 +171,10 @@ class ClaudeCodeAgent:
                 emit_stderr_steps=emit_stderr_steps,
                 command=command,
                 permission_mode=permission_mode,
+                timeout_seconds=timeout_seconds,
+                structured_output_prefixes=structured_output_prefixes,
+                on_structured_output=on_structured_output,
+                on_text_chunk=on_text_chunk,
             ),
             binding=_binding_from_request_context(request_context, agent_name=agent_name),
             comm=get_current_comm(),
@@ -225,6 +233,9 @@ class ClaudeCodeAgent:
         api_duration_ms: int | None = None
         raw_result_event: dict | None = None
         resolved_from_stream = False
+        timed_out = False
+        structured_events: list[dict[str, Any]] = []
+        structured_buffer = ""
 
         process = await asyncio.create_subprocess_exec(
             self.config.command,
@@ -234,6 +245,59 @@ class ClaudeCodeAgent:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
+
+        async def _emit_structured_event(record: dict[str, Any]) -> None:
+            structured_events.append(record)
+            callback = self.config.on_structured_output
+            if callback is None:
+                return
+            try:
+                maybe_coro = callback(record)
+                if asyncio.iscoroutine(maybe_coro):
+                    await maybe_coro
+            except Exception:
+                self.logger.exception("[ClaudeCodeAgent] structured output callback failed")
+
+        async def _ingest_structured_line(raw_line: str) -> None:
+            stripped = raw_line.strip()
+            if not stripped:
+                return
+            for prefix in self.config.structured_output_prefixes:
+                if not stripped.startswith(prefix):
+                    continue
+                payload_raw = stripped[len(prefix):].strip()
+                if not payload_raw:
+                    return
+                try:
+                    payload = json.loads(payload_raw)
+                except json.JSONDecodeError:
+                    self.logger.warning(
+                        "[ClaudeCodeAgent] failed to parse structured output prefix=%s line=%s",
+                        prefix,
+                        stripped,
+                    )
+                    return
+                await _emit_structured_event(
+                    {
+                        "prefix": prefix,
+                        "payload": payload,
+                        "raw_line": stripped,
+                    }
+                )
+                return
+
+        async def _ingest_structured_chunk(chunk: str) -> None:
+            nonlocal structured_buffer
+            if not chunk or not self.config.structured_output_prefixes:
+                return
+            structured_buffer += chunk
+            while True:
+                newline_index = structured_buffer.find("\n")
+                if newline_index < 0:
+                    break
+                line = structured_buffer[:newline_index]
+                structured_buffer = structured_buffer[newline_index + 1 :]
+                await _ingest_structured_line(line)
 
         async def _consume_stdout() -> None:
             nonlocal snapshot
@@ -301,6 +365,15 @@ class ClaudeCodeAgent:
                 final_text = f"{transcript}\n\n{snapshot}" if transcript and snapshot else (snapshot or transcript)
                 if not chunk:
                     continue
+                await _ingest_structured_chunk(chunk)
+                callback = self.config.on_text_chunk
+                if callback is not None:
+                    try:
+                        maybe_coro = callback(chunk)
+                        if asyncio.iscoroutine(maybe_coro):
+                            await maybe_coro
+                    except Exception:
+                        self.logger.exception("[ClaudeCodeAgent] text chunk callback failed")
                 await self._emit_delta(text=chunk, index=delta_count)
                 delta_count += 1
 
@@ -327,10 +400,36 @@ class ClaudeCodeAgent:
         stdout_task = asyncio.create_task(_consume_stdout())
         stderr_task = asyncio.create_task(_consume_stderr())
 
-        exit_code = await process.wait()
-        await asyncio.gather(stdout_task, stderr_task)
+        try:
+            if self.config.timeout_seconds is not None:
+                exit_code = await asyncio.wait_for(process.wait(), timeout=self.config.timeout_seconds)
+            else:
+                exit_code = await process.wait()
+        except asyncio.TimeoutError:
+            timed_out = True
+            self.logger.error(
+                "[ClaudeCodeAgent] timed out agent=%s session=%s timeout_seconds=%s",
+                self.config.agent_name,
+                self.binding.claude_session_id,
+                self.config.timeout_seconds,
+            )
+            try:
+                process.terminate()
+            except ProcessLookupError:
+                pass
+            try:
+                exit_code = await asyncio.wait_for(process.wait(), timeout=5.0)
+            except asyncio.TimeoutError:
+                try:
+                    process.kill()
+                except ProcessLookupError:
+                    pass
+                exit_code = await process.wait()
+        await asyncio.gather(stdout_task, stderr_task, return_exceptions=True)
+        if structured_buffer.strip():
+            await _ingest_structured_line(structured_buffer)
 
-        status = "completed" if exit_code == 0 else "failed"
+        status = "completed" if exit_code == 0 and not timed_out else "failed"
         usage_payload = dict(usage_totals or {}) or None
         if usage_payload is not None:
             if usage_payload.get("requests") in (None, 0):
@@ -363,7 +462,14 @@ class ClaudeCodeAgent:
 
         error_message = None
         if status != "completed":
-            error_message = stderr_lines[-1] if stderr_lines else f"Claude exited with code {exit_code}"
+            if timed_out:
+                error_message = (
+                    f"Claude exceeded timeout of {self.config.timeout_seconds}s"
+                    if self.config.timeout_seconds is not None
+                    else "Claude turn timed out"
+                )
+            else:
+                error_message = stderr_lines[-1] if stderr_lines else f"Claude exited with code {exit_code}"
 
         return ClaudeCodeRunResult(
             status=status,
@@ -385,6 +491,9 @@ class ClaudeCodeAgent:
             raw_result_event=raw_result_event,
             resolved_from_stream=resolved_from_stream,
             error_message=error_message,
+            timed_out=timed_out,
+            timeout_seconds=self.config.timeout_seconds,
+            structured_events=structured_events,
         )
 
     async def run_turn(
@@ -443,15 +552,30 @@ class ClaudeCodeAgent:
                     "requested_model": result.requested_model,
                     "cost_usd": result.cost_usd,
                     "usage": dict(result.usage or {}),
+                    "structured_events": list(result.structured_events),
                 },
             )
         else:
+            self.logger.error(
+                "[ClaudeCodeAgent] run failed agent=%s session=%s kind=%s exit_code=%s timed_out=%s "
+                "last_stderr=%s raw_result_event=%s",
+                self.config.agent_name,
+                self.binding.claude_session_id,
+                kind,
+                result.exit_code,
+                result.timed_out,
+                (result.stderr_lines[-1] if result.stderr_lines else None),
+                result.raw_result_event,
+            )
             await self._emit_final_error(
                 message=result.error_message or f"Claude exited with code {result.exit_code}",
                 kind=kind,
                 exit_code=result.exit_code,
                 stderr_lines=result.stderr_lines,
                 resume_existing=resume_existing,
+                raw_result_event=result.raw_result_event,
+                timed_out=result.timed_out,
+                timeout_seconds=result.timeout_seconds,
             )
 
         return result
@@ -484,6 +608,8 @@ class ClaudeCodeAgent:
             "additional_directories": [str(path) for path in self.config.additional_directories],
             "requested_model": self.config.model,
             "permission_mode": self.config.permission_mode,
+            "timeout_seconds": self.config.timeout_seconds,
+            "structured_output_prefixes": list(self.config.structured_output_prefixes),
             "user_id": self.binding.user_id,
             "conversation_id": self.binding.conversation_id,
             "session_id": self.binding.session_id,
@@ -518,6 +644,9 @@ class ClaudeCodeAgent:
         exit_code: int | None,
         stderr_lines: list[str],
         resume_existing: bool,
+        raw_result_event: dict[str, Any] | None = None,
+        timed_out: bool = False,
+        timeout_seconds: float | None = None,
     ) -> None:
         await self._emit_step(
             step=self.config.step_name,
@@ -528,6 +657,10 @@ class ClaudeCodeAgent:
                 "error": message,
                 "exit_code": exit_code,
                 "stderr_lines": list(stderr_lines),
+                "last_stderr_line": stderr_lines[-1] if stderr_lines else None,
+                "raw_result_event": raw_result_event,
+                "timed_out": timed_out,
+                "timeout_seconds": timeout_seconds,
             },
         )
 
