@@ -2,7 +2,8 @@
 description: >
   KDCube development assistant — start, reload, test, and build KDCube bundles from natural language.
   TRIGGER when: user mentions KDCube, a bundle, wants to start/stop/reload the runtime, test a bundle,
-  build or fix bundle code, configure descriptors, or asks what KDCube is doing right now.
+  build or fix bundle code, configure descriptors, wrap an existing app into a bundle, add a feature
+  to a bundle, or asks what KDCube is doing right now.
   SKIP: user is asking about unrelated code, cloud deployments, or non-KDCube services.
 allowed-tools: Bash, Read, Write, Edit, Grep, Glob
 ---
@@ -20,16 +21,21 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/kdcube_local.py" <command> [args]
 
 ## Intent map
 
-| User says (any language) | Command to run |
+| User says (any language) | Action |
 |---|---|
 | start / run / запусти / launch | `start latest-image` |
 | stop / останови / kill | `stop` |
 | reload / restart / перезагрузи `<bundle>` | see **Reload flow** |
 | test bundle / протестируй / does it work | see **Test flow** |
 | build / create / fix bundle / создай бандл | see **Bundle build flow** |
+| wrap app / заверни приложение в бандл | see **Bundle build flow** → wrap workflow |
+| add feature / добавь фичу в бандл | see **Bundle build flow** → add feature workflow |
 | setup / first time / настрой / where are descriptors | see **First-time setup flow** |
 | status / what's running / что запущено | `status` |
-| install / поставь kdcube / kdcube not found | `install` |
+| inject secrets / добавь ключи / clean / reset config | use `/kdcube-builder:kdcube-cli` |
+
+> **Note:** KDCube CLI installation is managed separately. If `kdcube` is not found in PATH,
+> tell the user to install the CLI through the standard KDCube setup process and stop.
 
 ## First-time setup flow
 
@@ -66,24 +72,45 @@ Generates all descriptors with safe local defaults (auth=simple, demo tenant/pro
 
 ## Bundle build flow
 
-Read the bundle docs and examples, then write or fix bundle code directly using the Edit/Write tools.
+Read the bundle docs and the reference bundle first, then write or fix bundle code using Edit/Write.
 
-Docs (prefer local checkout if `CLAUDE_PLUGIN_OPTION_KDCUBE_REPO_ROOT` is set, otherwise fetch from GitHub):
-1. `https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/bundle/bundle-index-README.md`
-2. `https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/bundle/bundle-reference-versatile-README.md`
+### Resolving docs and reference bundle
 
-After edits run `reload <bundle_id>` + `verify-reload <bundle_id>` to apply.
+Check `CLAUDE_PLUGIN_OPTION_KDCUBE_REPO_ROOT`. If set — use local paths with the `Read` tool:
+
+- `$CLAUDE_PLUGIN_OPTION_KDCUBE_REPO_ROOT/app/ai-app/docs/sdk/bundle/bundle-index-README.md`
+- `$CLAUDE_PLUGIN_OPTION_KDCUBE_REPO_ROOT/app/ai-app/docs/sdk/bundle/bundle-reference-versatile-README.md`
+- Reference bundle dir: `$CLAUDE_PLUGIN_OPTION_KDCUBE_REPO_ROOT/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36`
+- Tests: `$CLAUDE_PLUGIN_OPTION_KDCUBE_REPO_ROOT/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tests/bundle/test_bundle_state.py`
+
+Otherwise fetch from GitHub (see `bundle-builder` skill for full URL list).
+
+### Wrap existing app into a bundle
+
+1. Read the app's code to understand entry points and APIs.
+2. Read bundle docs and reference bundle.
+3. Map app functionality to bundle primitives — keep original code untouched, call it from `entrypoint.py`.
+4. Run `bundle-tests`, then `reload` + `verify-reload`.
+
+### Add feature to existing bundle
+
+1. Read `entrypoint.py` of the bundle and the relevant docs section.
+2. Make the minimal change.
+3. Run `bundle-tests`, then `reload` + `verify-reload`.
+
+After any edits:
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/kdcube_local.py" reload <bundle_id>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/kdcube_local.py" verify-reload <bundle_id>
+```
 
 ## General rules
 
 - Never ask the user to type a slash command — do everything via Bash.
-- If `status` shows `kdcube CLI: NOT FOUND`, run `install` before anything else.
 - If the runtime is not running when reload/test is requested, offer to start it first.
 - If no descriptor profile is linked, run the first-time setup flow before anything else.
 - One short status line before each action.
 - On error: show raw output, suggest the most likely fix, do not silently retry.
-
-## CLI reference
-
-kdcube-cli docs: https://pypi.org/project/kdcube-cli/
-Key flags: `--workdir`, `--latest`, `--upstream`, `--release <ref>`, `--stop`, `--reset`, `--clean`, `--dry-run`, `--build`, `--bundle-reload <id>`, `--descriptors-location <path>`
+- **After any container restart** (secrets injection, manual restart, etc.) — always reload active bundles immediately. Check `bundles.yaml` default_bundle_id and reload it.
+- **Before creating a bundle** — always run `/kdcube-builder:kdcube-find-project` first to get `HOST_BUNDLES_PATH`. Never write bundles into the repo or examples directory.
+- **`--secrets-prompt` is interactive** — never run it from Claude Code. Use `--secrets-set` instead.

@@ -17,6 +17,12 @@
     "local-runtime"
   ],
   "skills": "./skills",
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest"]
+    }
+  },
   "userConfig": {
     "kdcube_repo_root": {
       "type": "directory",
