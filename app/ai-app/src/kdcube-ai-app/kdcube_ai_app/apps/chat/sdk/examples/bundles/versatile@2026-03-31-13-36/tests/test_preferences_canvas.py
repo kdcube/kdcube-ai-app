@@ -7,6 +7,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
+from starlette.requests import Request
 
 from kdcube_ai_app.apps.chat.sdk.runtime.dynamic_module_loader import load_dynamic_module_for_path
 from kdcube_ai_app.apps.chat.sdk.storage.ai_bundle_storage import AIBundleStorage
@@ -41,6 +43,30 @@ def _make_storage(tmp_path: Path) -> AIBundleStorage:
         project="demo-project",
         ai_bundle_id="versatile@2026-03-31-13-36",
         storage_uri=tmp_path.resolve().as_uri(),
+    )
+
+
+def _request(*, header_name: str, header_value: str | None) -> Request:
+    headers = []
+    if header_value is not None:
+        headers.append((header_name.lower().encode("utf-8"), header_value.encode("utf-8")))
+
+    async def _receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    return Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/api/integrations/bundles/demo-tenant/demo-project/versatile@2026-03-31-13-36/mcp/preferences_tools",
+            "query_string": b"",
+            "headers": headers,
+            "scheme": "http",
+            "server": ("testserver", 80),
+            "client": ("127.0.0.1", 12345),
+            "http_version": "1.1",
+        },
+        receive=_receive,
     )
 
 
@@ -411,6 +437,95 @@ async def test_export_preferences_snapshot_uses_bundle_secret_for_signature(tmp_
 
 
 @pytest.mark.asyncio
+async def test_preference_tools_delete_preference_removes_current_value(tmp_path, monkeypatch):
+    prefs = _load_preferences_store_module()
+    tools_mod = _load_preference_tools_module()
+    storage = _make_storage(tmp_path)
+
+    prefs.append_preference_event(
+        storage,
+        "fp-user-1",
+        key="location",
+        value="Wuppertal",
+        source="chat",
+        origin="auto_capture",
+        evidence="I am in Wuppertal",
+    )
+
+    class _StoreModule:
+        build_preferences_storage = staticmethod(lambda **_: storage)
+        load_current_preferences = staticmethod(prefs.load_current_preferences)
+        append_preference_event = staticmethod(prefs.append_preference_event)
+
+    monkeypatch.setattr(tools_mod, "store_mod", _StoreModule)
+    _bind_tool_subsystem(tools_mod, user_id=None, service_user="fp-user-1")
+
+    result = await tools_mod.PreferenceTools().delete_preference(key="location")
+
+    assert result["ok"] is True
+    assert "location" not in result["ret"]["current"]
+    assert result["ret"]["event"]["value"] is None
+    assert result["ret"]["event"]["origin"] == "tool_delete"
+
+
+def test_build_preferences_mcp_app_returns_streamable_http_app(tmp_path):
+    tools_mod = _load_preference_tools_module()
+    storage = _make_storage(tmp_path)
+    app = tools_mod.build_preferences_mcp_app(
+        name="versatile.preferences_tools",
+        scope_provider=lambda user_id=None: {
+            "tenant": "demo-tenant",
+            "project": "demo-project",
+            "bundle_id": "versatile@2026-03-31-13-36",
+            "user_id": user_id or "demo-user",
+            "storage": storage,
+        },
+    )
+
+    assert hasattr(app, "streamable_http_app")
+    assert callable(app.streamable_http_app)
+    assert app.streamable_http_app() is not None
+
+
+def test_preferences_tools_mcp_auth_uses_bundle_prop_and_bundle_secret(monkeypatch):
+    entrypoint_mod = _load_entrypoint_module()
+    entrypoint = object.__new__(entrypoint_mod.VersatileEntrypoint)
+    entrypoint.bundle_prop = lambda key, default=None: (
+        "X-Test-Preferences-MCP-Token" if key == "mcp.preferences.auth.header_name" else default
+    )
+    monkeypatch.setattr(
+        entrypoint_mod,
+        "get_secret",
+        lambda key, default=None: "shared-token" if key == "b:mcp.preferences.auth.shared_token" else default,
+    )
+
+    entrypoint._require_preferences_mcp_auth(
+        _request(header_name="X-Test-Preferences-MCP-Token", header_value="shared-token")
+    )
+
+
+def test_preferences_tools_mcp_auth_rejects_invalid_header(monkeypatch):
+    entrypoint_mod = _load_entrypoint_module()
+    entrypoint = object.__new__(entrypoint_mod.VersatileEntrypoint)
+    entrypoint.bundle_prop = lambda key, default=None: (
+        "X-Test-Preferences-MCP-Token" if key == "mcp.preferences.auth.header_name" else default
+    )
+    monkeypatch.setattr(
+        entrypoint_mod,
+        "get_secret",
+        lambda key, default=None: "shared-token" if key == "b:mcp.preferences.auth.shared_token" else default,
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        entrypoint._require_preferences_mcp_auth(
+            _request(header_name="X-Test-Preferences-MCP-Token", header_value="wrong-token")
+        )
+
+    assert exc.value.status_code == 401
+    assert exc.value.detail == "Missing or invalid X-Test-Preferences-MCP-Token"
+
+
+@pytest.mark.asyncio
 async def test_preferences_exec_report_returns_downloadable_report_content(tmp_path, monkeypatch):
     entrypoint_mod = _load_entrypoint_module()
 
@@ -434,6 +549,7 @@ async def test_preferences_exec_report_returns_downloadable_report_content(tmp_p
     entrypoint = object.__new__(entrypoint_mod.VersatileEntrypoint)
     entrypoint.models_service = object()
     entrypoint._comm = SimpleNamespace(user_id="user-1")
+    entrypoint._comm_cv = SimpleNamespace(get=lambda: entrypoint._comm)
     entrypoint.ctx_client = None
     entrypoint.logger = SimpleNamespace(log=lambda *args, **kwargs: None)
     entrypoint.config = SimpleNamespace(ai_bundle_spec=SimpleNamespace(id="versatile@2026-03-31-13-36"))
