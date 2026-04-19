@@ -505,7 +505,7 @@ When a client connects but does not receive backward traffic (processor results)
 **Log to find:** `[SSEHub] register session=... stream_id=...`
 
 ```
-[SSEHub] register session=abc123 stream_id=xyz789 tenant=allciso project=example-product-ciso total_now=1
+[SSEHub] register session=abc123 stream_id=xyz789 tenant=tenant-a project=project-a total_now=1
 ```
 
 If this log is missing, the client did not connect or the SSE endpoint rejected it (check auth, capacity).
@@ -515,7 +515,7 @@ If this log is missing, the client did not connect or the SSE endpoint rejected 
 **Log to find:** `[ChatRelayCommunicator] acquire session=...`
 
 ```
-[ChatRelayCommunicator] acquire session=abc123 count_before=0 channel=allciso:example-product-ciso:chat.events.abc123
+[ChatRelayCommunicator] acquire session=abc123 count_before=0 channel=tenant-a:project-a:chat.events.abc123
 ```
 
 `count_before=0` means this is the first client for this session → Redis SUBSCRIBE will be issued.
@@ -526,7 +526,7 @@ If `count_before > 0`, the channel was already subscribed (existing tab).
 **Log to find:** `[ServiceCommunicator] subscribe_add`
 
 ```
-[ServiceCommunicator] subscribe_add self_id=... pubsub_id=... new=[kdcube.relay.chatbot.allciso:example-product-ciso:chat.events.abc123]
+[ServiceCommunicator] subscribe_add self_id=... pubsub_id=... new=[kdcube.relay.chatbot.tenant-a:project-a:chat.events.abc123]
 ```
 
 If this shows `noop`, the channel was already in `_subscribed_channels` — check if a stale subscription exists without an active listener.
@@ -538,7 +538,7 @@ If this shows `noop`, the channel was already in `_subscribed_channels` — chec
 ```
 [sse_stream] relay diagnostic session=abc123 stream_id=xyz789
   relay_id=... comm_id=... listener_started=True listener_alive=True
-  subscribed_channels=[kdcube.relay.chatbot.allciso:example-product-ciso:chat.events.abc123]
+  subscribed_channels=[kdcube.relay.chatbot.tenant-a:project-a:chat.events.abc123]
   refcounts={'abc123': 1}
 ```
 
@@ -555,7 +555,7 @@ Check:
 **On the processor instance**, look for:
 
 ```
-Publishing event 'chat_delta' to 'kdcube.relay.chatbot.allciso:example-product-ciso:chat.events.abc123'
+Publishing event 'chat_delta' to 'kdcube.relay.chatbot.tenant-a:project-a:chat.events.abc123'
   (sid=xyz789, session=abc123)
 ```
 

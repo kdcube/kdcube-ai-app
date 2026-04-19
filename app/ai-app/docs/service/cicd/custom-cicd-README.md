@@ -3,13 +3,14 @@ id: ks:docs/service/cicd/custom-cicd-README.md
 title: "Custom CICD"
 summary: "Two‑repo CI/CD plan covering build outputs, image mapping, assembly.yaml + bundles.yaml flow, and ECS/EC2 deployment steps."
 tags: ["service", "cicd", "deployment", "ecs", "ec2", "docker-compose", "images", "bundles", "release", "frontend"]
-keywords: ["two-repo", "platform repo", "custom app repo", "assembly.yaml", "bundles.yaml", "bundle packaging", "image mapping", "ecs task definitions", "compose envs", "AGENTIC_BUNDLES_JSON"]
+keywords: ["two-repo", "platform repo", "custom app repo", "assembly.yaml", "bundles.yaml", "bundle packaging", "image mapping", "ecs task definitions", "compose envs", "BUNDLES_YAML_DESCRIPTOR_PATH"]
 see_also:
   - ks:docs/service/cicd/release-bundle-README.md
-  - ks:docs/service/cicd/assembly-descriptor-README.md
-  - ks:docs/service/cicd/secrets-descriptor-README.md
+  - ks:docs/service/cicd/descriptors-README.md
+  - ks:docs/service/configuration/assembly-descriptor-README.md
+  - ks:docs/service/configuration/secrets-descriptor-README.md
   - ks:docs/service/cicd/release-README.md
-  - ks:docs/service/configuration/descriptor-plain-config-README.md
+  - ks:docs/service/configuration/service-config-README.md
 ---
 # Custom CI/CD (Open Source + Custom App Repo)
 
@@ -61,7 +62,7 @@ Before GitHub Actions can build and publish releases, ensure these are set:
 1. Checkout **platform repo** at `platform.ref`.
 2. Checkout **custom app repo** at `bundles.yaml` refs + `frontend.ref`.
 3. For each bundle entry → copy `<subdir>/<id>` into `/bundles/<id>`.
-4. Generate **runtime descriptor** (`AGENTIC_BUNDLES_JSON`) with `path=/bundles` and `module=...entrypoint`.
+4. Generate `bundles.yaml` entries with `path=/bundles` and `module=...entrypoint`.
 5. Build + push images:
    - `kdcube-chat-ingress`
    - `kdcube-chat-proc` (or `kdcube-chat-proc-bundled`)
@@ -97,7 +98,7 @@ flowchart LR
 **Descriptor usage (CD/CLI):**
 - `assembly.yaml` → platform/frontend/auth/infra defaults (used by CLI/CI).
 - `assembly.yaml` may also be mounted into runtime services for plain reads via `read_plain(...)`.
-- `bundles.yaml` → bundle registry for proc (`AGENTIC_BUNDLES_JSON`).
+- `bundles.yaml` → bundle registry authority for proc.
 - `bundles.yaml` may also be mounted for plain reads via `read_plain("b:...")`.
 - `bundles.secrets.yaml` → bundle secrets (local/dev; injected into secrets sidecar).
 - `secrets.yaml` → platform/infra secrets (CI/ops; injected into secrets manager).
@@ -109,7 +110,7 @@ The bundle-registry source and the descriptor-mount contract are related but not
 - ingress, proc, or metrics may read `/config/assembly.yaml` and `/config/bundles.yaml` directly through `read_plain(...)`
 
 See:
-[docs/service/configuration/descriptor-plain-config-README.md](../configuration/descriptor-plain-config-README.md)
+[docs/service/configuration/service-config-README.md](../configuration/service-config-README.md)
 
 **Runtime config (where env lives):**
 - ECS: task definitions (ingress/proc/metrics)
@@ -187,14 +188,14 @@ Use Dockerfiles from `deployment/docker/custom-ui-managed-infra`.
 
 ## 3) Assembly Descriptor (Platform + Frontend)
 
-See: [docs/service/cicd/assembly-descriptor-README.md](assembly-descriptor-README.md)
+See: [docs/service/configuration/assembly-descriptor-README.md](../configuration/assembly-descriptor-README.md)
 
 This file (`assembly.yaml` in the private repo) pins platform + frontend.
 Bundle list and refs live in `bundles.yaml` (same repo).
 
 For **sensitive values** (LLM keys, Git HTTPS token, proxylogin client secret,
 infra passwords), use a separate `secrets.yaml` and keep it out of the repo.
-See: [docs/service/cicd/secrets-descriptor-README.md](secrets-descriptor-README.md)
+See: [docs/service/configuration/secrets-descriptor-README.md](../configuration/secrets-descriptor-README.md)
 
 For local compose, the CLI can also use `platform.ref` from `assembly.yaml`
 to pull the matching platform images (install source: **assembly-descriptor**).
@@ -235,20 +236,17 @@ the runtime nginx SSL config so `YOUR_DOMAIN_NAME` is replaced in `server_name`
 and the default Let’s Encrypt cert paths under `/etc/letsencrypt/live/<domain>/...`.
 
 Details are documented in:  
-[docs/service/cicd/assembly-descriptor-README.md](assembly-descriptor-README.md)
+[docs/service/configuration/assembly-descriptor-README.md](../configuration/assembly-descriptor-README.md)
 
 ---
 
 ## 4) Bundle Descriptor (Derived by CI)
 
-CI derives `AGENTIC_BUNDLES_JSON` from `bundles.yaml`.
-See: [docs/service/configuration/bundle-configuration-README.md](../configuration/bundle-configuration-README.md)
+CI stages `bundles.yaml` for proc.
+See: [docs/service/configuration/bundles-descriptor-README.md](../configuration/bundles-descriptor-README.md)
 
-**Optional shortcut (EC2/dev):** mount `bundles.yaml` directly and set:
-
-```
-AGENTIC_BUNDLES_JSON=/config/bundles.yaml
-```
+**Optional shortcut (EC2/dev):** mount `bundles.yaml` directly so it is
+available inside proc at `/config/bundles.yaml`.
 
 ---
 
@@ -264,8 +262,11 @@ We now split env per component:
 - `.env.proxylogin` (optional)
 - `.env.frontend` (optional)
 
-**Important:** Use the **same `GATEWAY_CONFIG_JSON`** for ingress/proc/metrics (tenant/project is shared).
-For CI/CD, set `GATEWAY_CONFIG_FORCE_ENV_ON_STARTUP=1` to enforce env on each deploy.
+**Important:** Use the **same effective gateway config** for ingress/proc/metrics
+(tenant/project is shared). In the current CI/CD packages this is commonly
+realized as a shared `GATEWAY_CONFIG_JSON`.
+For CI/CD, set `GATEWAY_CONFIG_FORCE_ENV_ON_STARTUP=1` to enforce the
+env/descriptor-sourced gateway config on each deploy.
 
 ---
 
@@ -365,8 +366,8 @@ If using private git repos:
 
 ## 8.1) Bundle Descriptor Generation
 
-CI derives `AGENTIC_BUNDLES_JSON` from `bundles.yaml`.
-See: [docs/service/configuration/bundle-configuration-README.md](../configuration/bundle-configuration-README.md)
+CI stages `bundles.yaml` from the custom app repo.
+See: [docs/service/configuration/bundles-descriptor-README.md](../configuration/bundles-descriptor-README.md)
 
 ---
 
@@ -376,7 +377,7 @@ See: [docs/service/configuration/bundle-configuration-README.md](../configuratio
 - Each service has its own **task definition** with env vars + secrets.
 - Use the **same `GATEWAY_CONFIG_JSON`** across ingress/proc/metrics.
 - For deterministic deploys, set `GATEWAY_CONFIG_FORCE_ENV_ON_STARTUP=1`.
-- Inject `AGENTIC_BUNDLES_JSON` **only** for the processor service.
+- Mount `bundles.yaml` **only** for the processor service if that service owns bundle loading.
 
 **Compose (transition):**
 - `.env.ingress`, `.env.proc`, `.env.metrics`, `.env.postgres.setup`
@@ -429,12 +430,12 @@ This produces `kdcube-chat-proc-bundled`, which ECS can run without host mounts.
 
 ### Bundle Descriptor Ownership + Versioning (Now)
 
-**Owner:** the custom app repo owns the **bundle descriptor** (`AGENTIC_BUNDLES_JSON`) and controls bundle versions.  
+**Owner:** the custom app repo owns the **bundle descriptor** (`bundles.yaml`) and controls bundle versions.
 **Platform repo** only provides the loader + runtime.
 
 **Recommended (today):**
 
-- Put the bundle descriptor in the **processor env** (`AGENTIC_BUNDLES_JSON`).
+- Mount `bundles.yaml` into the processor and keep it authoritative there.
 - Keep `path` pointing to `/bundles/...` (because bundles are baked).
 - Also include **git metadata** for traceability (`repo`, `ref`, `subdir`).
 

@@ -12,19 +12,19 @@ The local install flow is descriptor-driven. The main files are:
 
 - `assembly.yaml`
   - platform release, auth mode, ports, infra, runtime service settings
-  - doc: `app/ai-app/docs/service/cicd/assembly-descriptor-README.md`
+  - doc: `app/ai-app/docs/service/configuration/assembly-descriptor-README.md`
 - `secrets.yaml`
   - platform secrets such as model keys and infra passwords
-  - doc: `app/ai-app/docs/service/cicd/secrets-descriptor-README.md`
+  - doc: `app/ai-app/docs/service/configuration/secrets-descriptor-README.md`
 - `gateway.yaml`
   - gateway capacity and throttling
-  - doc: `app/ai-app/docs/service/cicd/gateway-config-README.md`
+  - doc: `app/ai-app/docs/service/configuration/gateway-descriptor-README.md`
 - `bundles.yaml`
   - bundle registry and non-secret bundle config
-  - doc: `app/ai-app/docs/service/configuration/bundle-configuration-README.md`
+  - doc: `app/ai-app/docs/service/configuration/bundles-descriptor-README.md`
 - `bundles.secrets.yaml`
   - bundle-level secrets
-  - doc: `app/ai-app/docs/service/configuration/bundle-configuration-README.md`
+  - doc: `app/ai-app/docs/service/configuration/bundles-secrets-descriptor-README.md`
 
 ## 2. Run the CLI
 
