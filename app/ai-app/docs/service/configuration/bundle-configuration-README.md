@@ -264,13 +264,12 @@ So the current source of the deploy-scoped bundle props layer is:
 - `bundles.yaml` in `secrets-file` mode
 - `bundles/<bundle_id>/descriptor.props` in `aws-sm` mode
 
-### Authoritative env reset
+### Authoritative reload
 
-When proc startup runs with `BUNDLES_FORCE_ENV_ON_STARTUP=1`, or when an operator
-uses **Reset from env**, the platform reapplies the descriptor-backed bundle state
-from the active descriptor source.
+When an operator uses **Reload from authority**, the platform reapplies the
+descriptor-backed bundle state from the current authoritative store.
 
-That reset is authoritative:
+That reload is authoritative:
 - the authoritative deploy-scoped props layer is rewritten
 - stale deploy-scoped props are removed
 - Redis cache is rebuilt from that authoritative layer
@@ -279,6 +278,14 @@ In `aws-sm` mode, this also materializes:
 
 - `bundles-meta`
 - `bundles/<bundle_id>/descriptor`
+
+Authority by deployment mode:
+
+- `secrets-file`: mounted `bundles.yaml`
+- `aws-sm`: live AWS Secrets Manager bundle docs
+
+In `aws-sm` mode, mounted `/config/bundles.yaml` is only a deploy snapshot. It
+is not the authoritative source used by reload-authority.
 
 for each deployment-scoped bundle.
 

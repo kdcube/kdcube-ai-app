@@ -484,7 +484,6 @@ async def load_registry(redis, logger):
             {bid: be.model_dump() for bid, be in persisted.bundles.items()},
             persisted.default_bundle_id
         )
-        serialize_to_env(get_all(), get_default_id())
         logger.info(f"Bundle mapping synced from Redis: {len(persisted.bundles)} bundles (default={persisted.default_bundle_id})")
     except Exception as _e:
         logger.warning(f"Could not sync bundles from Redis; using env-only: {_e}")

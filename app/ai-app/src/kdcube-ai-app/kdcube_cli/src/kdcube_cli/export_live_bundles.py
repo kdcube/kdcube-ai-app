@@ -150,7 +150,7 @@ def export_live_bundle_descriptors(
     if not bundle_ids:
         raise SystemExit(
             f"{meta_secret_id} does not contain bundle_ids. "
-            "Bootstrap the authoritative bundle descriptor store first by applying a live bundle update or reset-env."
+            "Bootstrap the authoritative bundle descriptor store first by applying a live bundle update or reload-authority."
         )
 
     default_bundle_id = str(meta.get("default_bundle_id") or "").strip() or None

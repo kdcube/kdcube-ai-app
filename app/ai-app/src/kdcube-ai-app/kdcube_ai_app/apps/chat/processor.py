@@ -1347,7 +1347,7 @@ class EnhancedChatRequestProcessor:
         import kdcube_ai_app.infra.namespaces as namespaces
         from kdcube_ai_app.apps.chat.sdk.config import get_settings
         from kdcube_ai_app.infra.plugin.bundle_registry import (
-            set_registry_async, serialize_to_env, get_all, get_default_id
+            set_registry_async, get_all, get_default_id
         )
         from kdcube_ai_app.infra.plugin.agentic_loader import clear_agentic_caches
         from kdcube_ai_app.infra.plugin.bundle_store import (
@@ -1422,7 +1422,6 @@ class EnhancedChatRequestProcessor:
                             {bid: be.model_dump() for bid, be in reg.bundles.items()},
                             reg.default_bundle_id
                         )
-                        serialize_to_env(get_all(), get_default_id())
                         try:
                             stopped_sidecars = stop_inactive_local_sidecars(
                                 active_bundle_ids={str(bid).strip() for bid in reg.bundles.keys() if str(bid).strip()},
@@ -1486,7 +1485,6 @@ class EnhancedChatRequestProcessor:
                             {bid: be.model_dump() for bid, be in reg.bundles.items()},
                             reg.default_bundle_id
                         )
-                        new_env = serialize_to_env(get_all(), get_default_id())
                         try:
                             stopped_sidecars = stop_local_sidecars_for_bundle_ids(
                                 bundle_ids={str(bid).strip() for bid in (bundles_patch or {}).keys() if str(bid).strip()},
@@ -1510,7 +1508,7 @@ class EnhancedChatRequestProcessor:
                         except Exception:
                             pass
 
-                        logger.info(f"Applied bundles COMMAND (op={op}); now have {len(get_all())} bundles. New env = {new_env}")
+                        logger.info(f"Applied bundles COMMAND (op={op}); now have {len(get_all())} bundles.")
                         if self._scheduler is not None:
                             try:
                                 await self._scheduler.reconcile(reg)

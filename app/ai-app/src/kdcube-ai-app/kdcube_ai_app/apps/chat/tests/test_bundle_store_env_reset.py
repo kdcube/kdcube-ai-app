@@ -282,6 +282,43 @@ async def test_reset_registry_from_env_replaces_authoritative_store(monkeypatch)
     assert saved_props == {new_bundle_id: {"feature": {"enabled": True}}}
 
 
+@pytest.mark.asyncio
+async def test_reload_registry_from_authority_replaces_redis_from_authoritative_store(monkeypatch):
+    redis = _FakeRedis()
+    tenant = "demo"
+    project = "demo-project"
+    bundle_id = "demo.bundle"
+
+    reg = bundle_store.BundlesRegistry(
+        default_bundle_id=bundle_id,
+        bundles={
+            bundle_id: bundle_store.BundleEntry(
+                id=bundle_id,
+                path="/bundles/demo.bundle",
+                module="entrypoint",
+            )
+        },
+    )
+    store = _FakeAuthoritativeStore(
+        reg=reg,
+        props_map={bundle_id: {"feature": {"enabled": True}}},
+    )
+
+    monkeypatch.setattr(bundle_store, "_merge_example_bundles", lambda reg: (reg, False))
+    monkeypatch.setattr(bundle_store, "_get_authoritative_bundle_store", lambda tenant, project: store)
+
+    loaded = await bundle_store.reload_registry_from_authority(redis, tenant=tenant, project=project)
+
+    assert loaded.default_bundle_id == bundle_id
+    assert bundle_id in loaded.bundles
+    props_key = bundle_store._props_key(tenant=tenant, project=project, bundle_id=bundle_id)
+    assert json.loads(redis.data[props_key]) == {"feature": {"enabled": True}}
+    assert store.saved
+    _saved_reg, saved_props, replace = store.saved[-1]
+    assert replace is True
+    assert saved_props == {bundle_id: {"feature": {"enabled": True}}}
+
+
 def test_file_bundle_descriptor_store_reads_config_blocks(tmp_path: Path):
     descriptor_path = tmp_path / "bundles.yaml"
     descriptor_path.write_text(
@@ -309,7 +346,7 @@ bundles:
     assert props_map == {"demo.bundle": {"feature": {"enabled": True}}}
 
 
-def test_authoritative_bundle_store_prefers_mounted_bundles_yaml_over_aws(monkeypatch, tmp_path: Path):
+def test_authoritative_bundle_store_prefers_aws_sm_over_mounted_bundles_yaml(monkeypatch, tmp_path: Path):
     descriptor_path = tmp_path / "bundles.yaml"
     descriptor_path.write_text("bundles:\n  version: '1'\n  items: []\n")
 
@@ -328,7 +365,31 @@ def test_authoritative_bundle_store_prefers_mounted_bundles_yaml_over_aws(monkey
 
     store = bundle_store._get_authoritative_bundle_store("demo", "demo-project")
 
-    assert isinstance(store, bundle_store._FileBundleDescriptorStore)
+    assert isinstance(store, bundle_store._AwsBundleDescriptorStore)
+
+
+def test_authoritative_bundle_store_ignores_agentic_bundles_json_as_authority(monkeypatch, tmp_path: Path):
+    legacy_env_path = tmp_path / "legacy-bundles.yaml"
+    legacy_env_path.write_text("bundles:\n  version: '1'\n  items: []\n")
+
+    monkeypatch.delenv("BUNDLES_YAML_DESCRIPTOR_PATH", raising=False)
+    monkeypatch.delenv("PLATFORM_DESCRIPTORS_DIR", raising=False)
+    monkeypatch.setenv("AGENTIC_BUNDLES_JSON", str(legacy_env_path.resolve()))
+    monkeypatch.setattr(
+        "kdcube_ai_app.infra.secrets.manager.build_secrets_manager_config",
+        lambda _settings: SimpleNamespace(
+            provider="aws-sm",
+            aws_sm_prefix="kdcube/demo/proj",
+            aws_region="eu-west-1",
+            aws_profile=None,
+            redis_url=None,
+        ),
+    )
+    monkeypatch.setattr(bundle_store, "get_settings", lambda: object())
+
+    store = bundle_store._get_authoritative_bundle_store("demo", "demo-project")
+
+    assert isinstance(store, bundle_store._AwsBundleDescriptorStore)
 
 
 @pytest.mark.asyncio
@@ -385,3 +446,47 @@ bundles:
         "feature": {"enabled": True},
         "limits": {"n": 3},
     }
+
+
+@pytest.mark.asyncio
+async def test_force_env_reset_is_disabled_for_aws_sm_authority(monkeypatch):
+    redis = _FakeRedis()
+
+    monkeypatch.setattr(
+        bundle_store,
+        "get_settings",
+        lambda: SimpleNamespace(
+            BUNDLES_FORCE_ENV_ON_STARTUP=True,
+            BUNDLES_FORCE_ENV_LOCK_TTL_SECONDS=60,
+            TENANT="demo",
+            PROJECT="demo-project",
+        ),
+    )
+    monkeypatch.setattr(
+        "kdcube_ai_app.infra.secrets.manager.build_secrets_manager_config",
+        lambda _settings: SimpleNamespace(
+            provider="aws-sm",
+            aws_sm_prefix="kdcube/demo/demo-project",
+            aws_region="eu-west-1",
+            aws_profile=None,
+            redis_url=None,
+        ),
+    )
+
+    called = {"reset": 0}
+
+    async def _fake_reset(*args, **kwargs):
+        called["reset"] += 1
+        raise AssertionError("reset_registry_from_env should not be called for aws-sm")
+
+    monkeypatch.setattr(bundle_store, "reset_registry_from_env", _fake_reset)
+
+    result = await bundle_store.force_env_reset_if_requested(
+        redis,
+        tenant="demo",
+        project="demo-project",
+        actor="startup-env",
+    )
+
+    assert result is None
+    assert called["reset"] == 0

@@ -389,7 +389,7 @@ def reload_bundle_from_descriptor(
         "import json,sys,urllib.request;"
         f"data={payload!r}.encode('utf-8');"
         "req=urllib.request.Request("
-        "'http://127.0.0.1:8020/internal/bundles/reset-env',"
+        "'http://127.0.0.1:8020/internal/bundles/reload-authority',"
         "data=data,"
         "headers={'content-type':'application/json'},"
         "method='POST');"
