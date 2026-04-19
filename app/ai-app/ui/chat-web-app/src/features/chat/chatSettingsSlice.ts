@@ -34,7 +34,8 @@ const chatSettingsSlice = createSlice({
                 authCookieOpts: {
                     secure: true,
                     sameSite: "Strict"
-                }
+                },
+                eventReportingEnabled: true
             }
         }
     },
@@ -63,6 +64,7 @@ const chatSettingsSlice = createSlice({
 export const selectChatSettingsLoaded = (state: RootState) => state.chatSettings.isLoaded
 export const selectChatSettingsLoading = (state: RootState) => state.chatSettings.isLoading
 export const selectChatSettingsLoadingError = (state: RootState) => state.chatSettings.isLoadingError
+export const selectChatEventReportingEnabled = (state: RootState) => state.chatSettings.settings.eventReportingEnabled
 export const selectAuthConfig = (state: RootState) => state.chatSettings.settings.auth
 export const selectTenant = (state: RootState) => state.chatSettings.settings.tenant
 export const selectProject = (state: RootState) => state.chatSettings.settings.project
