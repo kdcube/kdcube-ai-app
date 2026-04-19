@@ -89,6 +89,16 @@ curl -X POST \
   -d '{"event":"ping"}'
 ```
 
+### Public API with bundle-owned auth
+
+```bash
+curl -X POST \
+  "http://localhost:5173/api/integrations/bundles/<tenant>/<project>/<bundle_id>/public/telegram_webhook" \
+  -H "X-Telegram-Bot-Api-Secret-Token: <shared-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"update_id":1}'
+```
+
 ### Public MCP
 
 ```bash

@@ -181,6 +181,26 @@ async def incoming_webhook(self, **kwargs):
 Reference:
 - [bundle-platform-integration-README.md](../bundle-platform-integration-README.md)
 
+### Public API with bundle-owned auth
+
+```python
+from fastapi import HTTPException, Request
+from kdcube_ai_app.apps.chat.sdk.config import get_secret
+
+@api(alias="telegram_webhook", route="public", method="POST", public_auth="bundle")
+async def telegram_webhook(self, request: Request, **kwargs):
+    header_name = self.bundle_prop("telegram.webhook.auth.header_name", "X-Telegram-Bot-Api-Secret-Token")
+    expected_token = get_secret("b:telegram.webhook.auth.shared_token")
+    if request.headers.get(header_name) != expected_token:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    return {"ok": True}
+```
+
+Reference:
+- [bundle-platform-integration-README.md](../bundle-platform-integration-README.md)
+- [bundle-transports-README.md](../bundle-transports-README.md)
+- [bundle-props-secrets-README.md](../bundle-props-secrets-README.md)
+
 ### Widget plus structured API
 
 ```python

@@ -1054,7 +1054,9 @@ async def test_call_bundle_op_inner_enforces_public_vs_operations_route(monkeypa
         route="public",
         session=_session(),
     )
-    assert public_result["public_ping"] == {"user_id": "user-1", "fingerprint": "fp-1"}
+    assert public_result["public_ping"]["user_id"] == "user-1"
+    assert public_result["public_ping"]["fingerprint"] == "fp-1"
+    assert isinstance(public_result["public_ping"]["request"], Request)
 
     with pytest.raises(integrations.HTTPException) as exc:
         await integrations._call_bundle_op_inner(
@@ -1080,6 +1082,19 @@ def test_api_rejects_public_auth_on_operations_route():
             @api(alias="bad", route="operations", public_auth="none")
             async def bad(self, **kwargs):
                 return kwargs
+
+
+def test_api_accepts_bundle_owned_public_auth_mode():
+    class _Workflow:
+        @api(alias="telegram_webhook", route="public", public_auth="bundle")
+        async def telegram_webhook(self, **kwargs):
+            return kwargs
+
+    manifest = discover_bundle_interface_manifest(_Workflow(), bundle_id="bundle.demo")
+    endpoint = next(item for item in manifest.api_endpoints if item.alias == "telegram_webhook")
+
+    assert endpoint.route == "public"
+    assert endpoint.public_auth and endpoint.public_auth.mode == "bundle"
 
 
 @pytest.mark.asyncio
@@ -1183,6 +1198,108 @@ async def test_call_bundle_op_inner_enforces_public_header_secret(monkeypatch):
     )
 
     assert result["telegram_webhook"] == {"ok": True, "fingerprint": "fp-1"}
+
+
+@pytest.mark.asyncio
+async def test_call_bundle_op_inner_supports_bundle_owned_public_auth_with_request(monkeypatch):
+    class _Workflow:
+        @api(method="POST", alias="telegram_webhook", route="public", public_auth="bundle")
+        async def telegram_webhook(self, request: Request, **kwargs):
+            provided = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
+            if provided != "telegram-secret":
+                raise integrations.HTTPException(status_code=401, detail="Unauthorized")
+            return {
+                "ok": True,
+                "fingerprint": kwargs.get("fingerprint"),
+                "header": provided,
+            }
+
+    async def _load_bundle_workflow(**kwargs):
+        del kwargs
+        return _Workflow(), SimpleNamespace(id="bundle.demo"), "tenant-a", "project-a"
+
+    monkeypatch.setattr(integrations, "_load_bundle_workflow", _load_bundle_workflow)
+
+    with pytest.raises(integrations.HTTPException) as exc:
+        await integrations._call_bundle_op_inner(
+            tenant="tenant-a",
+            project="project-a",
+            bundle_id="bundle.demo",
+            payload=integrations.BundleSuggestionsRequest(),
+            request=_request(
+                method="POST",
+                path="/api/integrations/bundles/tenant-a/project-a/bundle.demo/public/telegram_webhook",
+            ),
+            operation="telegram_webhook",
+            route="public",
+            session=_session(user_type="anonymous"),
+        )
+
+    assert exc.value.status_code == 401
+    assert exc.value.detail == "Unauthorized"
+
+    result = await integrations._call_bundle_op_inner(
+        tenant="tenant-a",
+        project="project-a",
+        bundle_id="bundle.demo",
+        payload=integrations.BundleSuggestionsRequest(),
+        request=Request(
+            {
+                "type": "http",
+                "method": "POST",
+                "path": "/api/integrations/bundles/tenant-a/project-a/bundle.demo/public/telegram_webhook",
+                "query_string": b"",
+                "headers": [(b"x-telegram-bot-api-secret-token", b"telegram-secret")],
+                "scheme": "http",
+                "server": ("testserver", 80),
+                "client": ("127.0.0.1", 12345),
+                "http_version": "1.1",
+            }
+        ),
+        operation="telegram_webhook",
+        route="public",
+        session=_session(user_type="anonymous"),
+    )
+
+    assert result["telegram_webhook"] == {
+        "ok": True,
+        "fingerprint": "fp-1",
+        "header": "telegram-secret",
+    }
+
+
+@pytest.mark.asyncio
+async def test_call_bundle_op_public_uses_anonymous_request_session(monkeypatch):
+    captured: dict[str, object] = {}
+
+    async def _call_bundle_op_limited(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(integrations, "_call_bundle_op_limited", _call_bundle_op_limited)
+
+    request = _request(
+        method="POST",
+        path="/api/integrations/bundles/tenant-a/project-a/bundle.demo/public/telegram_webhook",
+        headers=[
+            (b"authorization", b"Bearer external"),
+            (b"x-id-token", b"external-id-token"),
+            (b"user-agent", b"pytest"),
+        ],
+    )
+    result = await integrations.call_bundle_op_public(
+        tenant="tenant-a",
+        project="project-a",
+        bundle_id="bundle.demo",
+        operation="telegram_webhook",
+        request=request,
+    )
+
+    assert result == {"ok": True}
+    session = captured["session"]
+    assert session.user_type == UserType.ANONYMOUS
+    assert session.request_context.authorization_header == "Bearer external"
+    assert session.request_context.id_token == "external-id-token"
 
 
 @pytest.mark.asyncio

@@ -216,14 +216,17 @@ header_name = self.bundle_prop("mcp.preferences.auth.header_name", "X-Versatile-
 expected_token = get_secret("b:mcp.preferences.auth.shared_token")
 ```
 
-That means the client contract is:
+Client call shape:
 
-- call the operations MCP route:
-  - `/api/integrations/bundles/{tenant}/{project}/{bundle_id}/mcp/preferences_tools`
-- send the header named by `config.mcp.preferences.auth.header_name`
-- send the token provisioned in `secrets.mcp.preferences.auth.shared_token`
+```bash
+curl -X POST \
+  "http://localhost:5173/api/integrations/bundles/<tenant>/<project>/<bundle_id>/mcp/preferences_tools" \
+  -H "X-Versatile-Preferences-MCP-Token: <shared-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":"1","method":"tools/list"}'
+```
 
-Example:
+Concrete local example:
 
 ```bash
 curl -X POST \
@@ -232,6 +235,14 @@ curl -X POST \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":"1","method":"tools/list"}'
 ```
+
+Share with clients:
+
+- the operations MCP route for alias `preferences_tools`
+- the header name from bundle props:
+  - `config.mcp.preferences.auth.header_name`
+- the token provisioned in bundle secrets:
+  - `secrets.mcp.preferences.auth.shared_token`
 
 What this MCP app exposes:
 
@@ -275,6 +286,9 @@ If `route="public"` then `public_auth` is mandatory. Today the accepted forms ar
 
 - `"none"`
 - `{ "mode": "header_secret", "header": "X-KDCUBE-Public-Secret", "secret_key": "bundles.<bundle>.secrets...." }`
+- `"bundle"` for bundle-owned hook auth; the method should accept `request: Request`,
+  read the inbound headers/body itself, and raise `HTTPException(401/403/...)`
+  on failure
 
 This reference bundle now includes all three common shapes:
 
