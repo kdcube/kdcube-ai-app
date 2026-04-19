@@ -186,6 +186,8 @@ services:
     image:
       repository: kdcube/kdcube-web-ui
       tag: ""
+    # Internal Service port for the frontend container behind web-proxy.
+    # This is not the public ingress/LoadBalancer port.
     servicePort: 80
 
   webProxy:
@@ -194,6 +196,8 @@ services:
     image:
       repository: kdcube/kdcube-web-proxy
       tag: ""
+    # Public chart-facing HTTP Service port. External exposure is controlled by
+    # this value together with serviceType / ingress, not by assembly.ports.ui.
     servicePort: 80
     serviceType: ClusterIP
 

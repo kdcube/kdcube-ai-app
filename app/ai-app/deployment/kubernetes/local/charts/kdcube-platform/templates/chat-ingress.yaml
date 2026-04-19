@@ -92,6 +92,9 @@ spec:
               mountPath: /bundle-storage
             - name: logs
               mountPath: /logs
+            - name: descriptors
+              mountPath: /config
+              readOnly: true
             {{- if .Values.awsCredentials.enabled }}
             - name: aws-credentials
               mountPath: /home/appuser/.aws
@@ -110,6 +113,9 @@ spec:
         - name: logs
           persistentVolumeClaim:
             claimName: {{ .Values.persistence.logs.claimName }}
+        - name: descriptors
+          configMap:
+            name: {{ .Values.configMaps.descriptors }}
         {{- if .Values.awsCredentials.enabled }}
         - name: aws-credentials
           hostPath:

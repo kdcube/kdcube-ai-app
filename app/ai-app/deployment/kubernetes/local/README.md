@@ -28,6 +28,17 @@ Services installed by `kdcube-platform`:
 - `web-ui`
 - `web-proxy`
 
+Important port boundary:
+
+- in the Kubernetes chart, the public HTTP entrypoint is `web-proxy`
+- `web-ui` is an internal backend service behind `web-proxy`
+- chart exposure is controlled by Helm values such as
+  `services.webProxy.servicePort` / `services.webProxy.serviceType`
+- descriptor `assembly.yaml -> ports.ui` does not control the public proxy port
+  in the Kubernetes deployment path
+- the new compose-only descriptor fields `ports.proxy_http` /
+  `ports.proxy_https` are not used by the Kubernetes chart
+
 PersistentVolumeClaims created by `kdcube-platform` by default:
 - `bundles`
 - `kdcube-storage`
@@ -309,6 +320,22 @@ Generates internally:
 - proxy nginx ConfigMap
 - runtime descriptors ConfigMap
 - platform Secret
+
+Runtime descriptor mounts:
+
+- `chat-proc` mounts `/config/assembly.yaml` and `/config/bundles.yaml`
+- `chat-ingress` mounts `/config/assembly.yaml` and `/config/bundles.yaml`
+- `metrics` mounts `/config/assembly.yaml` and `/config/bundles.yaml`
+
+Important boundary:
+
+- this is enough for runtime plain descriptor reads
+- it is not the same authority model as the CLI local installer path
+- in Kubernetes, the live source of truth is still the Helm release values and
+  generated cluster objects
+- the chart does not currently maintain a writable canonical descriptor folder
+- bundle live-authority docs such as `bundles-meta` and `bundles/<id>/descriptor`
+  are not managed here the same way as in the newer AWS SM deployment model
 
 For the current chart flow, you do not need to manually apply runtime manifests.
 You also do not need local `values/*.yaml` files for a fresh install.
