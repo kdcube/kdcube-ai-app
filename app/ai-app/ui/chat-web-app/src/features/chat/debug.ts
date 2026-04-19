@@ -83,6 +83,51 @@ const htmlExample = `
 </html>
 `
 
+const markdownExample = `# Project Overview
+
+## Introduction
+
+This is a **sample document** demonstrating common Markdown elements. It covers *most* of what you'll need for everyday writing.
+
+---
+
+## Features
+
+- Lightweight and readable
+- Renders in browsers, editors, and GitHub
+- Supports **bold**, *italic*, and \`inline code\`
+
+## Getting Started
+
+1. Install a Markdown editor
+2. Create a file with the \`.md\` extension
+3. Start writing!
+
+## Code Example
+
+\`\`\`python
+def greet(name):
+    return f"Hello, {name}!"
+\`\`\`
+
+## Comparison Table
+
+| Feature     | Supported |
+|-------------|-----------|
+| Headings    | ✅        |
+| Tables      | ✅        |
+| Images      | ✅        |
+| Video       | ❌        |
+
+## Resources
+
+> "Markdown is intended to be as easy-to-read and easy-to-write as is feasible."
+> — John Gruber
+
+Check out the [official spec](https://daringfireball.net/projects/markdown/) for more details.
+
+![Alt text for an image](https://example.com/image.png)`
+
 export const exampleConversationData: {
     conversationId: string
     conversationTitle: string
@@ -162,8 +207,9 @@ export const exampleConversationData: {
                     canCopy: true,
                     canSave: true,
                     complete: true,
-                } as CanvasArtifact
-            ]
+                } as CanvasArtifact,
+            ],
+            answer:markdownExample
         }
     },
     conversationId: "example_conversation",

@@ -1,6 +1,6 @@
-import {Fragment, useCallback, useEffect, useMemo, useRef} from "react";
+import {Fragment, useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {connectChat, sendChatMessage} from "../../../features/chat/chatServiceMiddleware.ts";
-import {Loader} from "lucide-react";
+import {ChevronsDown, Loader} from "lucide-react";
 import {UserMessageComponent} from "./UserMessageComponent.tsx";
 import {AssistantMessageComponent} from "./assistantMessage/AssistantMessageComponent.tsx";
 import {useAppDispatch, useAppSelector} from "../../../app/store.ts";
@@ -14,6 +14,8 @@ import {
     ConversationStatusArtifact,
     ConversationStatusArtifactType
 } from "../../../features/logExtensions/conversationStatus/types.ts";
+import {motion} from "motion/react";
+import IconContainer from "../../IconContainer.tsx";
 
 const ChatLog = () => {
     const dispatch = useAppDispatch();
@@ -43,19 +45,58 @@ const ChatLog = () => {
         }
     }, [turns, inProgress]);
 
-    const onScroll = () => {
+    const [showScrollDown, setShowScrollDown] = useState<boolean>(false)
+
+    const onScroll = useCallback(() => {
         const el = logContainerRef.current;
         if (!el) return;
         const threshold = 60;
-        const atBottom = el.scrollHeight - (el.scrollTop + el.clientHeight) < threshold;
-        autoScroll.current = atBottom;
-    };
+        autoScroll.current = el.scrollHeight - (el.scrollTop + el.clientHeight) < threshold;
+    }, [])
+
+    useEffect(() => {
+        if (logContainerRef.current) {
+            const logContainer = logContainerRef.current;
+            if (!logContainer) return;
+            const onScroll = () => {
+                setShowScrollDown(logContainer.scrollHeight - logContainer.clientHeight - logContainer.scrollTop > 400);
+            }
+            logContainer.addEventListener("scroll", onScroll);
+            return () => {
+                logContainer.removeEventListener("scroll", onScroll);
+            }
+        }
+    });
 
     const sendMessage = useCallback((message?: string) => {
         dispatch(sendChatMessage({
             message
         }))
     }, [dispatch]);
+
+    const scrollDownButton = useMemo(() => {
+        console.debug(showScrollDown);
+        return <motion.button
+            className={"block cursor-pointer z-50"}
+            initial={{
+                opacity: showScrollDown ? 0 : 1,
+            }}
+            animate={{
+                opacity: showScrollDown ? 1 : 0,
+            }}
+            onClick={() => {
+                if (logContainerRef.current) {
+                    logContainerRef.current.scrollTo({
+                        top: logContainerRef.current.scrollHeight,
+                        behavior: "smooth",
+                    })
+                }
+            }}
+        >
+            <IconContainer icon={ChevronsDown} size={2}
+                           className={"text-gray-600 hover:text-gray-800 transition-colors duration-200"}/>
+        </motion.button>
+    }, [showScrollDown])
 
     const followUpQuestionsRender = useMemo(() => {
         const disabled = inProgress;
@@ -122,7 +163,7 @@ const ChatLog = () => {
     return useMemo(() => {
         return (
             <div
-                className="h-full w-full"
+                className="h-full w-full relative"
                 id="ChatLog"
             >
                 <div
@@ -140,10 +181,12 @@ const ChatLog = () => {
                         <div className="pb-22"/>
                     </div>
                 </div>
-
+                <div className={"absolute bottom-24 right-1/4 pr-6"}>
+                    {scrollDownButton}
+                </div>
             </div>
         )
-    }, [followUpQuestionsRender, processingRender, turnsRender])
+    }, [followUpQuestionsRender, onScroll, processingRender, scrollDownButton, turnsRender])
 }
 
 export default ChatLog;
