@@ -196,6 +196,110 @@ async def test_load_registry_falls_back_to_authoritative_store(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_load_registry_file_authority_overrides_stale_redis(monkeypatch, tmp_path: Path):
+    redis = _FakeRedis()
+    tenant = "demo"
+    project = "demo-project"
+    stale_bundle_id = "stale.bundle"
+    fresh_bundle_id = "fresh.bundle"
+
+    redis.data[bundle_store.redis_key(tenant, project)] = bundle_store.BundlesRegistry(
+        default_bundle_id=stale_bundle_id,
+        bundles={
+            stale_bundle_id: bundle_store.BundleEntry(
+                id=stale_bundle_id,
+                path="/bundles/stale.bundle",
+                module="entrypoint",
+            )
+        },
+    ).model_dump_json()
+    redis.data[bundle_store._props_key(tenant=tenant, project=project, bundle_id=stale_bundle_id)] = json.dumps(
+        {"stale": True}
+    )
+
+    descriptor_path = tmp_path / "bundles.yaml"
+    descriptor_path.write_text(
+        yaml.safe_dump(
+            {
+                "bundles": {
+                    "version": "1",
+                    "default_bundle_id": fresh_bundle_id,
+                    "items": [
+                        {
+                            "id": fresh_bundle_id,
+                            "path": "/bundles/fresh.bundle",
+                            "module": "entrypoint",
+                            "config": {
+                                "feature": {
+                                    "enabled": True,
+                                }
+                            },
+                        }
+                    ],
+                }
+            },
+            sort_keys=False,
+        )
+    )
+
+    store = bundle_store._FileBundleDescriptorStore(bundles_yaml_uri=descriptor_path.resolve().as_uri())
+
+    monkeypatch.setattr(bundle_store, "_merge_example_bundles", lambda reg: (reg, False))
+    monkeypatch.setattr(bundle_store, "_get_authoritative_bundle_store", lambda tenant, project: store)
+
+    loaded = await bundle_store.load_registry(redis, tenant=tenant, project=project)
+
+    assert loaded.default_bundle_id == fresh_bundle_id
+    assert set(loaded.bundles.keys()) == {fresh_bundle_id, bundle_store.ADMIN_BUNDLE_ID}
+    assert await redis.get(bundle_store._props_key(tenant=tenant, project=project, bundle_id=stale_bundle_id)) is None
+    assert json.loads(redis.data[bundle_store._props_key(tenant=tenant, project=project, bundle_id=fresh_bundle_id)]) == {
+        "feature": {"enabled": True}
+    }
+
+
+@pytest.mark.asyncio
+async def test_load_registry_file_authority_preserves_default_example_bundle(monkeypatch, tmp_path: Path):
+    redis = _FakeRedis()
+    tenant = "demo"
+    project = "demo-project"
+    bundle_id = "example.bundle"
+
+    descriptor_path = tmp_path / "bundles.yaml"
+    descriptor_path.write_text(
+        yaml.safe_dump(
+            {
+                "bundles": {
+                    "version": "1",
+                    "default_bundle_id": bundle_id,
+                    "items": [],
+                }
+            },
+            sort_keys=False,
+        )
+    )
+
+    store = bundle_store._FileBundleDescriptorStore(bundles_yaml_uri=descriptor_path.resolve().as_uri())
+
+    monkeypatch.setattr(
+        bundle_store,
+        "_load_example_bundles",
+        lambda: {
+            bundle_id: bundle_store.BundleEntry(
+                id=bundle_id,
+                path="/bundles/example.bundle",
+                module="entrypoint",
+            )
+        },
+    )
+    monkeypatch.setattr(bundle_store, "_get_authoritative_bundle_store", lambda tenant, project: store)
+
+    loaded = await bundle_store.load_registry(redis, tenant=tenant, project=project)
+
+    assert loaded.default_bundle_id == bundle_id
+    assert bundle_id in loaded.bundles
+
+
+@pytest.mark.asyncio
 async def test_put_bundle_props_persists_to_authoritative_store(monkeypatch):
     redis = _FakeRedis()
     tenant = "demo"
