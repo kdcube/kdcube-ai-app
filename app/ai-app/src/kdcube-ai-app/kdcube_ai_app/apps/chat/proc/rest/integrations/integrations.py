@@ -1725,7 +1725,6 @@ async def call_bundle_op_public(
         bundle_id: str,
         operation: str,
         request: Request,
-        session: UserSession = Depends(get_user_session_dependency()),
 ):
     """
     Public (no authentication required) bundle operation endpoint.
@@ -1741,7 +1740,7 @@ async def call_bundle_op_public(
         request=request,
         operation=operation,
         route="public",
-        session=session,
+        session=_build_public_api_request_session(request),
     )
 
 
@@ -1752,7 +1751,6 @@ async def call_bundle_op_public_get(
         bundle_id: str,
         operation: str,
         request: Request,
-        session: UserSession = Depends(get_user_session_dependency()),
 ):
     payload = BundleSuggestionsRequest()
     return await _call_bundle_op_limited(
@@ -1764,7 +1762,7 @@ async def call_bundle_op_public_get(
         request=request,
         operation=operation,
         route="public",
-        session=session,
+        session=_build_public_api_request_session(request),
     )
 
 
@@ -2024,6 +2022,10 @@ def _build_mcp_request_session(request: Request) -> UserSession:
         timezone=context.user_timezone,
         request_context=context,
     )
+
+
+def _build_public_api_request_session(request: Request) -> UserSession:
+    return _build_mcp_request_session(request)
 
 
 async def _call_bundle_mcp_limited(
@@ -2308,7 +2310,7 @@ def _enforce_public_api_auth(
             detail=f"Bundle public operation {operation} is not configured for public auth",
         )
 
-    if public_auth.mode == "none":
+    if public_auth.mode in {"none", "bundle"}:
         return
 
     if public_auth.mode != "header_secret":
@@ -2484,6 +2486,9 @@ async def _call_bundle_op_inner(
         elif uploaded_files:
             extra = dict(extra or {})
             extra["uploaded_files"] = uploaded_files
+        if _callable_accepts_kwarg(fn, "request"):
+            extra = dict(extra or {})
+            extra["request"] = request
         extra = _with_implicit_bundle_kwargs(
             extra,
             user_id=session.user_id or session.fingerprint,
@@ -2495,6 +2500,8 @@ async def _call_bundle_op_inner(
                 result = await fn(**extra)
             else:
                 result = fn(**extra)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception(
             "Bundle operation failed tenant=%s project=%s bundle=%s route=%s method=%s operation=%s endpoint=%s",

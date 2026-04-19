@@ -225,6 +225,8 @@ def _normalize_public_api_auth(route: str, value: Any) -> PublicAPIAuthSpec | No
         mode = str(value).strip().lower()
         if mode == "none":
             return PublicAPIAuthSpec(mode="none")
+        if mode == "bundle":
+            return PublicAPIAuthSpec(mode="bundle")
         raise ValueError(f"Unsupported public bundle api auth mode: {value}")
     if not isinstance(value, dict):
         raise ValueError("Bundle api public_auth must be a string or dict")
@@ -232,6 +234,8 @@ def _normalize_public_api_auth(route: str, value: Any) -> PublicAPIAuthSpec | No
     mode = str(value.get("mode") or "header_secret").strip().lower()
     if mode == "none":
         return PublicAPIAuthSpec(mode="none")
+    if mode == "bundle":
+        return PublicAPIAuthSpec(mode="bundle")
     if mode != "header_secret":
         raise ValueError(f"Unsupported public bundle api auth mode: {mode}")
 

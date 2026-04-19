@@ -201,6 +201,8 @@ Current fields:
     - `"none"`: explicitly unauthenticated public endpoint
     - `{"mode": "header_secret", "header": "<Header-Name>", "secret_key": "<bundle-secret-path>"}`:
       request must present the expected header value
+    - `"bundle"`: proc forwards the request into the bundle method and the
+      bundle authenticates it itself
   - default: required for `route="public"`, invalid for `route="operations"`
 
 Important current rule:
@@ -213,6 +215,12 @@ Important current rule:
 - same-name fallback for undecorated methods is no longer part of the HTTP
   contract
 - `route="public"` must also declare `public_auth`
+- if the bundle method accepts `request=`, proc passes the original FastAPI
+  request object into the method
+- `public_auth="bundle"` is for hook-style integrations where the bundle, not
+  proc, verifies the inbound request
+- for `public_auth="bundle"`, keep `user_types` / `roles` empty and implement
+  the auth check inside the bundle method
 - bundle API methods do not receive a separate communicator argument from proc
   by default
 - if bundle code needs request-bound execution context, use runtime helpers:
@@ -700,6 +708,9 @@ Current rules:
 - current built-in public auth modes are:
   - `public_auth="none"` for intentionally open public endpoints
   - `public_auth={"mode":"header_secret", ...}` for shared-secret webhook headers
+  - `public_auth="bundle"` for bundle-owned webhook auth
+- with `public_auth="bundle"`, proc still owns dispatch but the bundle method
+  verifies the inbound request itself
 
 ### 3.4 Bundle MCP routes
 
@@ -896,7 +907,74 @@ async def telegram_webhook(self, **kwargs):
     ...
 ```
 
-### 7.3 Widget plus operation compatibility
+### 7.3 Bundle-authenticated public hook
+
+```python
+from fastapi import HTTPException, Request
+from kdcube_ai_app.apps.chat.sdk.config import get_secret
+
+@api(
+    alias="telegram_webhook",
+    route="public",
+    public_auth="bundle",
+)
+async def telegram_webhook(self, request: Request, **kwargs):
+    header_name = self.bundle_prop(
+        "telegram.webhook.auth.header_name",
+        "X-Telegram-Bot-Api-Secret-Token",
+    )
+    expected_token = get_secret("b:telegram.webhook.auth.shared_token")
+    provided_token = request.headers.get(header_name)
+    if not expected_token or provided_token != expected_token:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    return {"ok": True}
+```
+
+Server-side contract:
+
+```yaml
+# bundles.yaml
+bundles:
+  version: "1"
+  items:
+    - id: "partner.tools@1-0"
+      config:
+        telegram:
+          webhook:
+            auth:
+              header_name: "X-Telegram-Bot-Api-Secret-Token"
+```
+
+```yaml
+# bundles.secrets.yaml
+bundles:
+  version: "1"
+  items:
+    - id: "partner.tools@1-0"
+      secrets:
+        telegram:
+          webhook:
+            auth:
+              shared_token: "replace-in-real-deployment"
+```
+
+Client-side call shape:
+
+```bash
+curl -X POST \
+  "http://localhost:5173/api/integrations/bundles/<tenant>/<project>/<bundle_id>/public/telegram_webhook" \
+  -H "X-Telegram-Bot-Api-Secret-Token: <shared-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"update_id": 1}'
+```
+
+What the bundle shares with the client:
+
+- the public operations route for alias `telegram_webhook`
+- the header name from bundle props
+- the token provisioned in bundle secrets
+
+### 7.4 Widget plus operation compatibility
 
 ```python
 @api(alias="preferences_widget", route="operations", user_types=("registered",))
