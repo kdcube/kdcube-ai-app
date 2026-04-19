@@ -3,11 +3,11 @@ id: ks:docs/sdk/bundle/bundle-ops-README.md
 title: "Bundle Ops"
 summary: "Bundle delivery and update guide: local reload, registry updates, descriptor-authoritative config, and deployment-side bundle resolution."
 tags: ["sdk", "bundle", "ops", "registry", "git", "reload", "deployment"]
-keywords: ["bundle reload", "AGENTIC_BUNDLES_JSON", "bundles registry", "bundles.yaml", "bundle git", "kdcube cli"]
+keywords: ["bundle reload", "bundles registry", "bundles.yaml", "bundle git", "kdcube cli"]
 see_also:
   - ks:docs/sdk/bundle/bundle-dev-README.md
   - ks:docs/sdk/bundle/bundle-props-secrets-README.md
-  - ks:docs/service/configuration/bundle-configuration-README.md
+  - ks:docs/service/configuration/bundles-descriptor-README.md
 ---
 # Bundle Ops Guide
 
@@ -105,7 +105,7 @@ Proc loads it on startup and updates it when registry/config refresh is triggere
 
 Relevant controls include:
 
-- `AGENTIC_BUNDLES_JSON`
+- mounted `bundles.yaml` authority
 - `BUNDLES_FORCE_ENV_ON_STARTUP`
 - git bundle resolution env vars
 

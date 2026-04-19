@@ -5,7 +5,7 @@ summary: "Operations entry point: deployment options, service topology, and near
 tags: ["ops", "overview", "deployment", "topology", "services", "ecs", "ec2"]
 keywords: ["ingress", "proc", "metrics", "redis", "postgres", "clamav", "proxylogin", "deployment options", "ecs", "ec2"]
 see_also:
-  - ks:docs/service/environment/service-compose-env-README.md
+  - ks:docs/service/environment/setup-for-dockercompose-README.md
   - ks:docs/ops/deployment-options-index-README.md
   - ks:docs/ops/ecs/ecs-deployment-README.md
 ---

@@ -7,7 +7,7 @@ keywords: ["CloudWatch", "HPA", "metrics endpoints", "scale policies"]
 see_also:
   - ks:docs/service/scale/metrics-README.md
   - ks:docs/service/ecs/custom-ecs-README.md
-  - ks:docs/service/environment/service-compose-env-README.md
+  - ks:docs/service/environment/setup-for-ecs-README.md
 ---
 # Metrics + Autoscaling (ECS)
 
@@ -87,6 +87,6 @@ Scale by **SSE connections + 429 rate**:
 
 ## 6) Notes for Ops
 
-- If `GATEWAY_CONFIG_JSON` changes, **restart** services (or set `GATEWAY_CONFIG_FORCE_ENV_ON_STARTUP=1` to enforce env on each start).
-- Keep the same `GATEWAY_CONFIG_JSON` on ingress/proc/metrics.
+- If the effective gateway config changes, **restart** services (or set `GATEWAY_CONFIG_FORCE_ENV_ON_STARTUP=1` to enforce the env/descriptor-sourced config on each start).
+- Keep the same effective gateway config on ingress/proc/metrics. In the current ECS packages this is commonly a shared `GATEWAY_CONFIG_JSON`.
 - Do not scale processor beyond Postgres/Redis connection limits.

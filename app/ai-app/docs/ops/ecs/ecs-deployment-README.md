@@ -162,7 +162,7 @@ receive the shared `/config` mount so runtime can read:
 - `/config/bundles.yaml`
 
 See:
-- [docs/service/configuration/descriptor-plain-config-README.md](../../service/configuration/descriptor-plain-config-README.md)
+- [docs/service/configuration/service-config-README.md](../../service/configuration/service-config-README.md)
 
 ## Autoscaling Model
 

@@ -5,10 +5,10 @@ summary: "Step‑by‑step bundle release workflow: tagging, bundles.yaml update
 tags: ["service", "cicd", "release", "bundles", "delivery", "git", "baked", "props", "redis"]
 keywords: ["bundle id", "tag", "commit", "bundles.yaml", "subdir", "module", "baked bundles", "git-defined bundles", "BUNDLES_FORCE_ENV_ON_STARTUP", "BUNDLES_INCLUDE_EXAMPLES"]
 see_also:
-  - ks:docs/service/cicd/assembly-descriptor-README.md
+  - ks:docs/service/configuration/assembly-descriptor-README.md
   - ks:docs/service/cicd/custom-cicd-README.md
   - ks:docs/service/cicd/release-README.md
-  - ks:docs/service/configuration/descriptor-plain-config-README.md
+  - ks:docs/service/configuration/service-config-README.md
 ---
 ## Bundle Release Process
 
@@ -17,11 +17,11 @@ This doc describes how to release a bundle and update the **bundles descriptor**
 
 In current runtime setups, `bundles.yaml` may serve two different roles:
 
-- proc bundle-registry seed through `AGENTIC_BUNDLES_JSON`
+- proc bundle-registry seed through the mounted bundle descriptor authority
 - plain runtime metadata source through `read_plain("b:...")`
 
 See:
-[docs/service/configuration/descriptor-plain-config-README.md](../configuration/descriptor-plain-config-README.md)
+[docs/service/configuration/service-config-README.md](../configuration/service-config-README.md)
 
 ---
 
@@ -50,7 +50,7 @@ Use that tag/commit as `ref` in the bundles descriptor.
 
 ## 3) Update bundles.yaml
 
-Edit `bundles.yaml` in the **customer repo** and add/update the bundle entry.
+Edit `bundles.yaml` in the deployment repo and add/update the bundle entry.
 
 ### Example (bundle inside monorepo)
 

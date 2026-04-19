@@ -7,7 +7,7 @@ keywords: ["ingress", "proc", "metrics", "bundles", "ECS migration"]
 see_also:
   - ks:docs/service/ecs/metrics-autoscaling-README.md
   - ks:docs/service/cicd/custom-cicd-README.md
-  - ks:docs/service/environment/service-compose-env-README.md
+  - ks:docs/service/environment/setup-for-ecs-README.md
 ---
 # ECS Deployment Plan (Ingress + Proc + Metrics)
 
@@ -82,7 +82,9 @@ Processor tasks must access bundles.
 
 ## 5) Environment Strategy
 
-Use a **single shared `GATEWAY_CONFIG_JSON`** for all components:
+Use a **single shared effective gateway config** for all components. In the
+current ECS deployment packages this is commonly exported as
+`GATEWAY_CONFIG_JSON`:
 
 - `tenant` + `project`
 - capacity + rate limits

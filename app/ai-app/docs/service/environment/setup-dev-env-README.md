@@ -3,13 +3,13 @@ id: ks:docs/service/environment/setup-dev-env-README.md
 title: "Setup Dev Env"
 summary: "Minimal env and SSH setup to load bundles from bundles.yaml in local dev."
 tags: ["service", "environment", "setup", "dev", "git"]
-keywords: ["bundles.yaml", "AGENTIC_BUNDLES_JSON", "GIT_SSH_KEY_PATH", "known_hosts"]
+keywords: ["bundles.yaml", "BUNDLES_YAML_DESCRIPTOR_PATH", "GIT_SSH_KEY_PATH", "known_hosts"]
 see_also:
   - ks:docs/service/environment/setup-for-dockercompose-README.md
-  - ks:docs/service/environment/service-dev-env-README.md
+  - ks:docs/service/configuration/service-config-README.md
   - ks:docs/service/environment/setup-for-ecs-README.md
 ---
-# Setup Dev Env (Bundles from Assembly Descriptor)
+# Setup Dev Env (Bundles from Descriptor)
 
 This guide shows the **minimal env variables** needed to load bundles from a
 `bundles.yaml` descriptor during local development, and how to prepare SSH
@@ -25,8 +25,8 @@ from `workdir/config` instead of copying sample envs manually.
 Add these to your `chat-proc` env (e.g. `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/.env.proc`):
 
 ```bash
-# Path to assembly descriptor (YAML or JSON)
-AGENTIC_BUNDLES_JSON=/absolute/path/to/bundles.yaml
+# Path to bundles descriptor
+BUNDLES_YAML_DESCRIPTOR_PATH=/absolute/path/to/bundles.yaml
 
 # Overwrite Redis registry on startup (use once per rollout)
 BUNDLES_FORCE_ENV_ON_STARTUP=1

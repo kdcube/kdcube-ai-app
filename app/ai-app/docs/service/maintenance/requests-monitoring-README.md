@@ -103,11 +103,15 @@ Notes:
 ## Gateway config source (ops critical)
 On startup, the service loads gateway config in this order:
 1. Redis cache for the selected tenant/project (if present)
-2. Env defaults / `GATEWAY_CONFIG_JSON`
+2. Effective env/descriptor source:
+   - `GATEWAY_CONFIG_JSON`
+   - or `GATEWAY_YAML_PATH`
+   - or `PLATFORM_DESCRIPTORS_DIR/gateway.yaml`
+3. Code/env defaults
 
 In the **Gateway Configuration** card:
 - **Reset to Env**: writes the env‑derived config into Redis (overrides cache on all instances).
-- **Clear Cached Config**: deletes the Redis key so the next restart falls back to env/`GATEWAY_CONFIG_JSON`.
+- **Clear Cached Config**: deletes the Redis key so the next restart falls back to the current env/descriptor source.
 - **CICD**: set `GATEWAY_CONFIG_FORCE_ENV_ON_STARTUP=1` to overwrite Redis on every start.
 
 Important:
@@ -117,7 +121,7 @@ Important:
 - Endpoint policy lists live in gateway config:
   - `guarded_rest_patterns` (rate limit + backpressure for REST)
   - `bypass_throttling_patterns` (skip rate limiting for public endpoints like Stripe)
-  - Configure via `GATEWAY_CONFIG_JSON` (component‑aware) or `/admin/gateway/update-config`.
+  - Configure via the effective gateway config (component‑aware) or `/admin/gateway/update-config`.
 
 ## Redis Browser (Control Plane)
 Use the quick prefix buttons to inspect keys fast:
