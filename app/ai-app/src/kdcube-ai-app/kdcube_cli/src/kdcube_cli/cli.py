@@ -194,6 +194,7 @@ def clean_docker_images(console: Console) -> None:
 
 
 def _build_paths_for_repo(repo_root: Path, workdir: Path) -> installer_mod.PathsContext:
+    workdir = _resolve_cli_workdir(workdir)
     ai_app_root = repo_root / "app/ai-app"
     if not (ai_app_root / "deployment/docker/all_in_one_kdcube/docker-compose.yaml").exists():
         raise SystemExit(f"Could not find deployment/docker/all_in_one_kdcube under {ai_app_root}")
@@ -210,6 +211,66 @@ def _build_paths_for_repo(repo_root: Path, workdir: Path) -> installer_mod.Paths
         config_dir=workdir / "config",
         data_dir=workdir / "data",
     )
+
+
+def _runtime_env_exists(workdir: Path) -> bool:
+    return (workdir / "config" / ".env").exists()
+
+
+def _runtime_candidates(base_workdir: Path) -> list[Path]:
+    if not base_workdir.exists() or not base_workdir.is_dir():
+        return []
+    candidates: list[Path] = []
+    for child in base_workdir.iterdir():
+        if child.is_dir() and _runtime_env_exists(child):
+            candidates.append(child.resolve())
+    return sorted(candidates)
+
+
+def _descriptor_context_hint(
+    *,
+    descriptors_location: Path | None = None,
+    assembly_path: Path | None = None,
+) -> tuple[str | None, str | None]:
+    source: Path | None = None
+    if descriptors_location is not None:
+        source = descriptors_location / "assembly.yaml"
+    elif assembly_path is not None:
+        source = assembly_path
+    assembly = installer_mod.load_release_descriptor_soft(source)
+    return installer_mod.descriptor_context_from_assembly(assembly)
+
+
+def _resolve_cli_workdir(
+    workdir: Path,
+    *,
+    descriptors_location: Path | None = None,
+    assembly_path: Path | None = None,
+) -> Path:
+    workdir = workdir.expanduser().resolve()
+    if _runtime_env_exists(workdir) or (workdir / "config").exists():
+        return workdir
+
+    tenant_hint, project_hint = _descriptor_context_hint(
+        descriptors_location=descriptors_location,
+        assembly_path=assembly_path,
+    )
+    namespace = installer_mod.workspace_namespace(tenant_hint, project_hint)
+    if workdir.name == namespace or "__" in workdir.name:
+        return workdir
+
+    if descriptors_location is not None or assembly_path is not None:
+        return installer_mod.workspace_runtime_dir(workdir, tenant_hint, project_hint).resolve()
+
+    candidates = _runtime_candidates(workdir)
+    if len(candidates) == 1:
+        return candidates[0]
+    if len(candidates) > 1:
+        raise SystemExit(
+            f"Multiple runtime workdirs found under {workdir}. "
+            "Pass the namespaced runtime directory explicitly with --workdir."
+        )
+    return installer_mod.workspace_runtime_dir(workdir, tenant_hint, project_hint).resolve()
 
 
 def _ensure_secrets_service_available(docker_dir: Path) -> None:
@@ -671,6 +732,20 @@ def _uses_local_path_bundles(payload: dict | None) -> bool:
     return False
 
 
+def _local_path_bundles_need_host_root(payload: dict | None) -> bool:
+    for spec in _iter_bundle_specs(payload):
+        raw_path = spec.get("path")
+        if not _has_value(raw_path):
+            continue
+        candidate = Path(str(raw_path).strip()).expanduser()
+        normalized = str(candidate).replace("\\", "/")
+        if normalized == "/bundles" or normalized.startswith("/bundles/"):
+            return True
+        if not candidate.is_absolute():
+            return True
+    return False
+
+
 def _descriptor_fast_path_reasons(
     assembly: dict,
     *,
@@ -724,7 +799,11 @@ def _descriptor_fast_path_reasons(
     uses_local_path_bundles = _uses_local_path_bundles(bundles_descriptor)
     if not uses_local_path_bundles:
         uses_local_path_bundles = _uses_local_path_bundles(assembly)
-    if uses_local_path_bundles and not _has_value(_get_nested(assembly, "paths", "host_bundles_path")):
+    if (
+        uses_local_path_bundles
+        and _local_path_bundles_need_host_root(bundles_descriptor if _uses_local_path_bundles(bundles_descriptor) else assembly)
+        and not _has_value(_get_nested(assembly, "paths", "host_bundles_path"))
+    ):
         reasons.append("assembly paths.host_bundles_path is required for non-interactive local bundle installs")
 
     frontend = assembly.get("frontend")
@@ -832,6 +911,7 @@ def _checkout_repo_upstream(console: Console, repo_root: Path) -> str:
 
 
 def _read_install_meta(workdir: Path) -> dict | None:
+    workdir = _resolve_cli_workdir(workdir)
     meta_path = workdir / "config" / "install-meta.json"
     if not meta_path.exists():
         return None
@@ -1052,7 +1132,7 @@ def main() -> None:
             clean_docker_images(console)
             return
         if args.export_live_bundles:
-            workdir = Path(os.path.expanduser(args.workdir)).expanduser().resolve()
+            workdir = _resolve_cli_workdir(Path(os.path.expanduser(args.workdir)))
             out_dir = Path(os.path.expanduser(args.out_dir or os.getcwd())).expanduser().resolve()
             bundles_path = None
             bundles_secrets_path = None
@@ -1106,7 +1186,7 @@ def main() -> None:
             stop_compose_stack(
                 console,
                 repo_root=repo_path,
-                workdir=workdir,
+                workdir=_resolve_cli_workdir(workdir),
                 remove_volumes=args.remove_volumes,
             )
             return
@@ -1114,7 +1194,7 @@ def main() -> None:
             reload_bundle_from_descriptor(
                 console,
                 repo_root=repo_path,
-                workdir=workdir,
+                workdir=_resolve_cli_workdir(workdir),
                 bundle_id=str(args.bundle_reload).strip(),
             )
             return
@@ -1132,6 +1212,7 @@ def main() -> None:
         descriptor_bootstrap = None
         if args.descriptors_location and not args.secrets_set and not args.secrets_prompt:
             descriptors_location = Path(os.path.expanduser(args.descriptors_location)).expanduser().resolve()
+            workdir = _resolve_cli_workdir(workdir, descriptors_location=descriptors_location)
             os.environ["KDCUBE_DESCRIPTORS_LOCATION"] = str(descriptors_location)
             descriptor_bootstrap = _stage_descriptor_set(
                 repo_root=repo_path,
@@ -1231,6 +1312,7 @@ def main() -> None:
             default_descriptors_dir = str((workdir / "config").resolve())
             raw_dir = Prompt.ask("Descriptors directory", default=default_descriptors_dir).strip()
             source_dir = Path(os.path.expanduser(raw_dir)).expanduser().resolve()
+            workdir = _resolve_cli_workdir(workdir, descriptors_location=source_dir)
             staged = installer_mod.stage_descriptor_directory(
                 workdir / "config",
                 source_dir=source_dir,

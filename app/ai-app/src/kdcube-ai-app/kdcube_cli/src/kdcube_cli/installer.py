@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import posixpath
 import re
 import shutil
 import json
@@ -45,6 +46,8 @@ ENV_FILES = [
 
 DEFAULT_PG_PASSWORD = "postgres"
 DEFAULT_REDIS_PASSWORD = "redispass"
+DEFAULT_WORKSPACE_TENANT = "default_tenant"
+DEFAULT_WORKSPACE_PROJECT = "default_project"
 CANONICAL_DESCRIPTOR_FILENAMES = (
     "assembly.yaml",
     "secrets.yaml",
@@ -113,6 +116,24 @@ def is_default_tenant_project(value: Optional[str]) -> bool:
         return True
     stripped = value.strip().strip("'\"").lower()
     return stripped in {"default", "demo-tenant", "demo-project"}
+
+
+def safe_workspace_name(value: Optional[object], *, default: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return default
+    safe = re.sub(r"[^A-Za-z0-9]+", "_", text).strip("_").lower()
+    return safe or default
+
+
+def workspace_namespace(tenant: Optional[object], project: Optional[object]) -> str:
+    tenant_safe = safe_workspace_name(tenant, default=DEFAULT_WORKSPACE_TENANT)
+    project_safe = safe_workspace_name(project, default=DEFAULT_WORKSPACE_PROJECT)
+    return f"{tenant_safe}__{project_safe}"
+
+
+def workspace_runtime_dir(base_workdir: Path, tenant: Optional[object], project: Optional[object]) -> Path:
+    return base_workdir / workspace_namespace(tenant, project)
 
 
 def normalize_secrets_provider(value: Optional[object], *, default: str) -> str:
@@ -381,6 +402,46 @@ def save_release_descriptor(path: Path, data: Dict[str, object]) -> None:
         path.write_text(yaml.safe_dump(data, sort_keys=False))
     except Exception:
         pass
+
+
+def load_release_descriptor_soft(path: Optional[Path]) -> Dict[str, object]:
+    if path is None or not path.exists():
+        return {}
+    try:
+        return load_release_descriptor(path)
+    except Exception:
+        return {}
+
+
+def descriptor_context_from_assembly(assembly: Dict[str, object] | None) -> Tuple[Optional[str], Optional[str]]:
+    if not isinstance(assembly, dict):
+        return None, None
+    tenant = _get_nested(assembly, "context", "tenant")
+    project = _get_nested(assembly, "context", "project")
+    return (
+        str(tenant).strip() if isinstance(tenant, str) and str(tenant).strip() else None,
+        str(project).strip() if isinstance(project, str) and str(project).strip() else None,
+    )
+
+
+def _iter_bundle_specs(payload: Dict[str, object] | None) -> list[Dict[str, object]]:
+    if not isinstance(payload, dict):
+        return []
+    raw_bundles = payload.get("bundles")
+    if not isinstance(raw_bundles, dict):
+        return []
+    items = raw_bundles.get("items")
+    if isinstance(items, list):
+        return [item for item in items if isinstance(item, dict)]
+    specs: list[Dict[str, object]] = []
+    for key, value in raw_bundles.items():
+        if key in {"version", "default_bundle_id"}:
+            continue
+        if isinstance(value, dict):
+            spec = dict(value)
+            spec.setdefault("id", str(key))
+            specs.append(spec)
+    return specs
 
 
 def _get_nested(dct: Dict[str, object], *keys: str) -> Optional[object]:
@@ -1838,6 +1899,8 @@ def gather_configuration(
     def _autosave() -> None:
         if assembly_path:
             save_release_descriptor(assembly_path, assembly_data)
+        if bundles_path:
+            save_release_descriptor(bundles_path, bundles_data)
         for env in autosave_envs:
             try:
                 save_env_file(env)
@@ -1851,6 +1914,103 @@ def gather_configuration(
             update_if_placeholder(env, key, value)
 
     defaults = compute_paths(ctx.ai_app_root, ctx.lib_root, ctx.workdir, compose_mode)
+
+    def _normalize_local_path_bundles_for_workspace(
+        host_bundles_fallback: str,
+    ) -> str:
+        if not bundles_path or not isinstance(bundles_data, dict):
+            return ensure_directory_root(host_bundles_fallback, label="Host bundles root")
+
+        bundle_specs = _iter_bundle_specs(bundles_data)
+        local_specs = [spec for spec in bundle_specs if spec.get("path") and not spec.get("repo")]
+        if not local_specs:
+            return ensure_directory_root(host_bundles_fallback, label="Host bundles root")
+
+        seed_root_raw = _get_nested(assembly_data, "paths", "host_bundles_path")
+        seed_root: Optional[Path] = None
+        if isinstance(seed_root_raw, str) and seed_root_raw.strip() and not is_placeholder(seed_root_raw):
+            candidate = Path(seed_root_raw).expanduser()
+            if candidate.is_absolute():
+                seed_root = candidate.resolve()
+
+        resolved_paths: list[Path] = []
+        for spec in local_specs:
+            raw_path = str(spec.get("path") or "").strip()
+            if not raw_path:
+                continue
+            candidate = Path(raw_path).expanduser()
+            if candidate.is_absolute():
+                resolved = candidate.resolve()
+            elif seed_root is not None:
+                resolved = (seed_root / candidate).resolve()
+            else:
+                resolved = (bundles_path.parent / candidate).resolve()
+            resolved_paths.append(resolved)
+
+        if not resolved_paths:
+            return ensure_directory_root(host_bundles_fallback, label="Host bundles root")
+
+        if seed_root is not None:
+            try:
+                if all(path.is_relative_to(seed_root) for path in resolved_paths):
+                    host_bundles_root = seed_root
+                else:
+                    host_bundles_root = Path(os.path.commonpath([str(path) for path in resolved_paths])).resolve()
+            except Exception:
+                host_bundles_root = Path(os.path.commonpath([str(path) for path in resolved_paths])).resolve()
+        else:
+            host_bundles_root = Path(os.path.commonpath([str(path) for path in resolved_paths])).resolve()
+
+        host_bundles_root_str = ensure_directory_root(str(host_bundles_root), label="Host bundles root")
+        host_bundles_root = Path(host_bundles_root_str).resolve()
+
+        for spec, resolved in zip(local_specs, resolved_paths):
+            rel = os.path.relpath(str(resolved), str(host_bundles_root))
+            spec["path"] = posixpath.join("/bundles", rel.replace(os.sep, "/"))
+
+        return host_bundles_root_str
+
+    def _apply_workspace_local_topology() -> Tuple[str, str, str, str, str]:
+        host_storage_local = ensure_directory_root(
+            str(defaults.get("host_kb_storage") or (ctx.workdir / "data/kdcube-storage")),
+            label="Host system storage path",
+        )
+        host_bundles_local = _normalize_local_path_bundles_for_workspace(
+            str(defaults.get("host_bundles") or (ctx.workdir / "data/bundles"))
+        )
+        host_git_bundles_local = ensure_directory_root(
+            str(defaults.get("host_git_bundles") or (ctx.workdir / "data/git-bundles")),
+            label="Host git bundles cache root",
+        )
+        host_bundle_storage_local = ensure_directory_root(
+            str(defaults.get("host_bundle_storage") or (ctx.workdir / "data/bundle-storage")),
+            label="Host bundle local storage path",
+        )
+        host_exec_local = ensure_directory_root(
+            str(defaults.get("host_exec_workspace") or (ctx.workdir / "data/exec-workspace")),
+            label="Host exec workspace path",
+        )
+
+        # In descriptor-workspace mode the staged workspace is authoritative.
+        # Ignore seed descriptor local runtime topology and derive it from the
+        # selected workdir so the entire local runtime stays self-contained.
+        _set_nested(assembly_data, ["paths", "host_kdcube_storage_path"], host_storage_local)
+        _set_nested(assembly_data, ["paths", "host_bundles_path"], host_bundles_local)
+        _set_nested(assembly_data, ["paths", "host_git_bundles_path"], host_git_bundles_local)
+        _set_nested(assembly_data, ["paths", "host_bundle_storage_path"], host_bundle_storage_local)
+        _set_nested(assembly_data, ["paths", "host_exec_workspace_path"], host_exec_local)
+        _set_nested(assembly_data, ["platform", "services", "ingress", "log", "log_dir"], "/logs")
+        _set_nested(assembly_data, ["platform", "services", "proc", "log", "log_dir"], "/logs")
+        _set_nested(assembly_data, ["platform", "services", "proc", "exec", "exec_workspace_root"], "/exec-workspace")
+        _set_nested(assembly_data, ["platform", "services", "proc", "bundles", "agentic_bundles_root"], "/bundles")
+        _set_nested(assembly_data, ["platform", "services", "proc", "bundles", "bundle_storage_root"], "/bundle-storage")
+        return (
+            host_storage_local,
+            host_bundles_local,
+            host_git_bundles_local,
+            host_bundle_storage_local,
+            host_exec_local,
+        )
 
     if assembly_path:
         update_env_value(env_main, "KDCUBE_ASSEMBLY_DESCRIPTOR_PATH", str(assembly_path))
@@ -2615,79 +2775,88 @@ def gather_configuration(
 
     _autosave()
 
-    host_storage_default = _get_nested(assembly_data, "paths", "host_kdcube_storage_path") or defaults.get("host_kb_storage")
-    host_storage = ensure_absolute(
-        console,
-        "Host system storage path",
-        env_main.entries.get("HOST_KDCUBE_STORAGE_PATH", (None, None))[1],
-        str(host_storage_default) if host_storage_default else None,
-        force_prompt=force_prompt,
-    )
-    host_bundles_current = env_main.entries.get("HOST_BUNDLES_PATH", (None, None))[1]
-    agentic_root = env_main.entries.get("AGENTIC_BUNDLES_ROOT", (None, None))[1] or "/bundles"
-    if host_bundles_current:
-        normalized = str(host_bundles_current).strip()
-        if normalized.startswith("/bundles") or normalized.startswith("/app/") or normalized == agentic_root:
-            console.print(
-                "[yellow]HOST_BUNDLES_PATH points to a container path; "
-                "resetting to the local workdir bundles folder.[/yellow]"
-            )
-            host_bundles_current = None
-    host_bundles_default = _get_nested(assembly_data, "paths", "host_bundles_path") or defaults.get("host_bundles")
-    if force_prompt or not is_placeholder(host_bundles_current):
-        host_bundles = ensure_absolute(
+    if descriptor_workspace_mode:
+        (
+            host_storage,
+            host_bundles,
+            host_git_bundles,
+            host_bundle_storage,
+            host_exec,
+        ) = _apply_workspace_local_topology()
+    else:
+        host_storage_default = _get_nested(assembly_data, "paths", "host_kdcube_storage_path") or defaults.get("host_kb_storage")
+        host_storage = ensure_absolute(
             console,
-            "Host bundles root (local path bundles)",
-            host_bundles_current,
-            str(host_bundles_default) if host_bundles_default else None,
+            "Host system storage path",
+            env_main.entries.get("HOST_KDCUBE_STORAGE_PATH", (None, None))[1],
+            str(host_storage_default) if host_storage_default else None,
             force_prompt=force_prompt,
         )
-    else:
-        host_bundles = str(host_bundles_default or "")
-    host_git_bundles_current = env_main.entries.get("HOST_GIT_BUNDLES_PATH", (None, None))[1]
-    agentic_git_root = env_main.entries.get("AGENTIC_GIT_BUNDLES_ROOT", (None, None))[1] or "/git-bundles"
-    if host_git_bundles_current:
-        normalized = str(host_git_bundles_current).strip()
-        if normalized.startswith("/git-bundles") or normalized.startswith("/app/") or normalized == agentic_git_root:
-            console.print(
-                "[yellow]HOST_GIT_BUNDLES_PATH points to a container path; "
-                "resetting to the local workdir git-bundles folder.[/yellow]"
+        host_bundles_current = env_main.entries.get("HOST_BUNDLES_PATH", (None, None))[1]
+        agentic_root = env_main.entries.get("AGENTIC_BUNDLES_ROOT", (None, None))[1] or "/bundles"
+        if host_bundles_current:
+            normalized = str(host_bundles_current).strip()
+            if normalized.startswith("/bundles") or normalized.startswith("/app/") or normalized == agentic_root:
+                console.print(
+                    "[yellow]HOST_BUNDLES_PATH points to a container path; "
+                    "resetting to the local workdir bundles folder.[/yellow]"
+                )
+                host_bundles_current = None
+        host_bundles_default = _get_nested(assembly_data, "paths", "host_bundles_path") or defaults.get("host_bundles")
+        if force_prompt or not is_placeholder(host_bundles_current):
+            host_bundles = ensure_absolute(
+                console,
+                "Host bundles root (local path bundles)",
+                host_bundles_current,
+                str(host_bundles_default) if host_bundles_default else None,
+                force_prompt=force_prompt,
             )
-            host_git_bundles_current = None
-    host_git_bundles_default = (
-        _get_nested(assembly_data, "paths", "host_git_bundles_path")
-        or defaults.get("host_git_bundles")
-    )
-    if force_prompt or not is_placeholder(host_git_bundles_current):
-        host_git_bundles = ensure_absolute(
+        else:
+            host_bundles = str(host_bundles_default or "")
+        host_git_bundles_current = env_main.entries.get("HOST_GIT_BUNDLES_PATH", (None, None))[1]
+        agentic_git_root = env_main.entries.get("AGENTIC_GIT_BUNDLES_ROOT", (None, None))[1] or "/git-bundles"
+        if host_git_bundles_current:
+            normalized = str(host_git_bundles_current).strip()
+            if normalized.startswith("/git-bundles") or normalized.startswith("/app/") or normalized == agentic_git_root:
+                console.print(
+                    "[yellow]HOST_GIT_BUNDLES_PATH points to a container path; "
+                    "resetting to the local workdir git-bundles folder.[/yellow]"
+                )
+                host_git_bundles_current = None
+        host_git_bundles_default = (
+            _get_nested(assembly_data, "paths", "host_git_bundles_path")
+            or defaults.get("host_git_bundles")
+        )
+        if force_prompt or not is_placeholder(host_git_bundles_current):
+            host_git_bundles = ensure_absolute(
+                console,
+                "Host git bundles cache root",
+                host_git_bundles_current,
+                str(host_git_bundles_default) if host_git_bundles_default else None,
+                force_prompt=force_prompt,
+            )
+        else:
+            host_git_bundles = str(host_git_bundles_default or "")
+        host_bundle_storage = ensure_absolute(
             console,
-            "Host git bundles cache root",
-            host_git_bundles_current,
-            str(host_git_bundles_default) if host_git_bundles_default else None,
+            "Host bundle local storage path",
+            env_main.entries.get("HOST_BUNDLE_STORAGE_PATH", (None, None))[1],
+            str(_get_nested(assembly_data, "paths", "host_bundle_storage_path") or defaults.get("host_bundle_storage")),
             force_prompt=force_prompt,
         )
-    else:
-        host_git_bundles = str(host_git_bundles_default or "")
-    host_bundle_storage = ensure_absolute(
-        console,
-        "Host bundle local storage path",
-        env_main.entries.get("HOST_BUNDLE_STORAGE_PATH", (None, None))[1],
-        str(_get_nested(assembly_data, "paths", "host_bundle_storage_path") or defaults.get("host_bundle_storage")),
-        force_prompt=force_prompt,
-    )
-    host_exec = ensure_absolute(
-        console,
-        "Host exec workspace path",
-        env_main.entries.get("HOST_EXEC_WORKSPACE_PATH", (None, None))[1],
-        str(_get_nested(assembly_data, "paths", "host_exec_workspace_path") or defaults.get("host_exec_workspace")),
-        force_prompt=force_prompt,
-    )
+        host_exec = ensure_absolute(
+            console,
+            "Host exec workspace path",
+            env_main.entries.get("HOST_EXEC_WORKSPACE_PATH", (None, None))[1],
+            str(_get_nested(assembly_data, "paths", "host_exec_workspace_path") or defaults.get("host_exec_workspace")),
+            force_prompt=force_prompt,
+        )
 
-    host_storage = ensure_directory_root(host_storage, label="Host system storage path")
-    host_bundles = ensure_directory_root(host_bundles, label="Host bundles root")
-    host_git_bundles = ensure_directory_root(host_git_bundles, label="Host git bundles cache root")
-    host_bundle_storage = ensure_directory_root(host_bundle_storage, label="Host bundle local storage path")
-    host_exec = ensure_directory_root(host_exec, label="Host exec workspace path")
+        host_storage = ensure_directory_root(host_storage, label="Host system storage path")
+        host_bundles = ensure_directory_root(host_bundles, label="Host bundles root")
+        host_git_bundles = ensure_directory_root(host_git_bundles, label="Host git bundles cache root")
+        host_bundle_storage = ensure_directory_root(host_bundle_storage, label="Host bundle local storage path")
+        host_exec = ensure_directory_root(host_exec, label="Host exec workspace path")
 
     update_env_value(env_main, "HOST_KDCUBE_STORAGE_PATH", host_storage)
     update_env_value(env_main, "HOST_BUNDLES_PATH", host_bundles)
@@ -2704,11 +2873,15 @@ def gather_configuration(
     update_env_value(env_main, "KDCUBE_DATA_DIR", str(ctx.data_dir))
     # Always keep logs in the workdir for compose mounts.
     update_env_value(env_main, "KDCUBE_LOGS_DIR", str(ctx.workdir / "logs"))
-    if is_placeholder(env_main.entries.get("AGENTIC_BUNDLES_ROOT", (None, None))[1]):
+    if descriptor_workspace_mode:
         update_env_value(env_main, "AGENTIC_BUNDLES_ROOT", "/bundles")
-    if is_placeholder(env_main.entries.get("AGENTIC_GIT_BUNDLES_ROOT", (None, None))[1]):
         update_env_value(env_main, "AGENTIC_GIT_BUNDLES_ROOT", "/git-bundles")
-    if is_placeholder(env_main.entries.get("BUNDLE_STORAGE_ROOT", (None, None))[1]):
+        update_env_value(env_main, "BUNDLE_STORAGE_ROOT", "/bundle-storage")
+    elif is_placeholder(env_main.entries.get("AGENTIC_BUNDLES_ROOT", (None, None))[1]):
+        update_env_value(env_main, "AGENTIC_BUNDLES_ROOT", "/bundles")
+    if not descriptor_workspace_mode and is_placeholder(env_main.entries.get("AGENTIC_GIT_BUNDLES_ROOT", (None, None))[1]):
+        update_env_value(env_main, "AGENTIC_GIT_BUNDLES_ROOT", "/git-bundles")
+    if not descriptor_workspace_mode and is_placeholder(env_main.entries.get("BUNDLE_STORAGE_ROOT", (None, None))[1]):
         update_env_value(env_main, "BUNDLE_STORAGE_ROOT", "/bundle-storage")
 
     ports_block = _get_nested(assembly_data, "ports")
@@ -2818,7 +2991,10 @@ def gather_configuration(
         ("git", "http_token"),
         ("git_http_token",),
     )
-    git_cfg = _get_nested(assembly_data, "platform", "applications", "bundles", "git")
+    git_cfg = _get_nested(assembly_data, "platform", "services", "proc", "bundles", "git")
+    if not isinstance(git_cfg, dict):
+        # Backward compatibility for older drafts that used the wrong path.
+        git_cfg = _get_nested(assembly_data, "platform", "applications", "bundles", "git")
     descriptor_git_ssh_key_target = ""
     descriptor_git_known_hosts_target = ""
     if isinstance(git_cfg, dict):
@@ -2836,7 +3012,7 @@ def gather_configuration(
             if not host_git_ssh_key or is_placeholder(str(host_git_ssh_key)):
                 raise SystemExit(
                     "assembly paths.host_git_ssh_key_path is required when "
-                    "platform.applications.bundles.git.git_ssh_key_path is set."
+                    "platform.services.proc.bundles.git.git_ssh_key_path is set."
                 )
             update_env_value(
                 env_main,
@@ -2855,7 +3031,7 @@ def gather_configuration(
             if not host_git_known_hosts or is_placeholder(str(host_git_known_hosts)):
                 raise SystemExit(
                     "assembly paths.host_git_ssh_known_hosts_path is required when "
-                    "platform.applications.bundles.git.git_ssh_known_hosts is set."
+                    "platform.services.proc.bundles.git.git_ssh_known_hosts is set."
                 )
             update_env_value(
                 env_main,
@@ -3365,6 +3541,23 @@ def run_setup(
     else:
         workdir = workdir.expanduser().resolve()
 
+    env_descriptors_location = os.getenv("KDCUBE_DESCRIPTORS_LOCATION", "").strip()
+    env_descriptor = os.getenv("KDCUBE_ASSEMBLY_DESCRIPTOR_PATH", "").strip()
+    base_workdir = workdir
+    tenant_hint: Optional[str] = None
+    project_hint: Optional[str] = None
+    if env_descriptors_location:
+        source_assembly = load_release_descriptor_soft(Path(env_descriptors_location).expanduser().resolve() / "assembly.yaml")
+        tenant_hint, project_hint = descriptor_context_from_assembly(source_assembly)
+    elif env_descriptor:
+        source_assembly = load_release_descriptor_soft(Path(env_descriptor).expanduser().resolve())
+        tenant_hint, project_hint = descriptor_context_from_assembly(source_assembly)
+
+    concrete_workdir = bool((workdir / "config").exists() or (workdir / "data").exists() or (workdir / "logs").exists())
+    namespaced_name = workspace_namespace(tenant_hint, project_hint)
+    if not concrete_workdir and workdir.name != namespaced_name and "__" not in workdir.name:
+        workdir = workspace_runtime_dir(workdir, tenant_hint, project_hint).resolve()
+
     config_dir = workdir / "config"
     data_dir = workdir / "data"
     logs_dir = workdir / "logs"
@@ -3382,8 +3575,6 @@ def run_setup(
     bundles_secrets: Dict[str, object] = {}
     gateway_descriptor_path = None
     gateway_descriptor: Dict[str, object] = {}
-    env_descriptors_location = os.getenv("KDCUBE_DESCRIPTORS_LOCATION", "").strip()
-    env_descriptor = os.getenv("KDCUBE_ASSEMBLY_DESCRIPTOR_PATH", "").strip()
     env_secrets_descriptor = os.getenv("KDCUBE_SECRETS_DESCRIPTOR_PATH", "").strip()
     env_bundles_descriptor = os.getenv("KDCUBE_BUNDLES_DESCRIPTOR_PATH", "").strip()
     env_bundles_secrets = os.getenv("KDCUBE_BUNDLES_SECRETS_PATH", "").strip()
@@ -3587,16 +3778,6 @@ def run_setup(
     ensure_env_files(config_dir, sample_env_dir)
     ensure_nginx_configs(config_dir, ai_app_root, docker_dir)
     ensure_local_dirs(data_dir, logs_dir)
-    # Record installer metadata for future runs.
-    try:
-        meta = {
-            "install_mode": install_mode or "upstream",
-            "platform_ref": release_ref or "",
-            "dockerhub_namespace": docker_namespace or "",
-        }
-        (config_dir / "install-meta.json").write_text(json.dumps(meta, indent=2))
-    except Exception:
-        pass
     console.print("Launching setup wizard...")
     env_paths, runtime_secrets = gather_configuration(
         console,
@@ -3618,6 +3799,23 @@ def run_setup(
     )
     env_main = load_env_file(config_dir / ".env")
     env_proc = load_env_file(config_dir / ".env.proc")
+
+    try:
+        final_assembly = load_release_descriptor_soft(Path(release_descriptor_path).expanduser()) if release_descriptor_path else {}
+        install_tenant, install_project = descriptor_context_from_assembly(final_assembly)
+        meta = {
+            "install_mode": install_mode or "upstream",
+            "platform_ref": release_ref or "",
+            "dockerhub_namespace": docker_namespace or "",
+            "tenant": install_tenant or DEFAULT_WORKSPACE_TENANT,
+            "project": install_project or DEFAULT_WORKSPACE_PROJECT,
+            "workspace_namespace": workspace_namespace(install_tenant, install_project),
+            "workspace_root": str(base_workdir),
+            "runtime_workdir": str(workdir),
+        }
+        (config_dir / "install-meta.json").write_text(json.dumps(meta, indent=2))
+    except Exception:
+        pass
 
     console.print("\n[bold]Env files:[/bold]")
     for name, path in env_paths.items():
