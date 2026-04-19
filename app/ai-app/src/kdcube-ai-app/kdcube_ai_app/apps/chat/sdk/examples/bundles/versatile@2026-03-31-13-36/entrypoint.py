@@ -9,9 +9,11 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from fastapi import HTTPException, Request
 from langgraph.graph import END, START, StateGraph
 
 from kdcube_ai_app.apps.chat.sdk.context.vector.conv_ticket_store import ConvTicketStore
+from kdcube_ai_app.apps.chat.sdk.config import get_secret
 from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
 from kdcube_ai_app.apps.chat.sdk.runtime.exec_runtime_config import normalize_exec_runtime_config
 from kdcube_ai_app.apps.chat.sdk.runtime.tool_subsystem import create_tool_subsystem_with_mcp
@@ -24,10 +26,11 @@ from kdcube_ai_app.apps.chat.sdk.tools.exec_tools import (
 )
 from kdcube_ai_app.apps.chat.sdk.viz.patch_platform_dashboard import patch_dashboard
 from kdcube_ai_app.apps.chat.sdk.storage.ai_bundle_storage import AIBundleStorage
-from kdcube_ai_app.infra.plugin.agentic_loader import agentic_workflow, api, ui_widget
+from kdcube_ai_app.infra.plugin.agentic_loader import agentic_workflow, api, mcp, ui_widget
 from kdcube_ai_app.infra.service_hub.inventory import BundleState, Config
 
 from . import tools_descriptor
+from .tools import preference_tools as preference_tools_mod
 from .event_filter import BundleEventFilter
 from .orchestrator.workflow import VersatileWorkflow
 from .preferences_store import (
@@ -62,6 +65,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
             comm_context=comm_context,
             event_filter=BundleEventFilter(),
         )
+        self._preferences_mcp_app: Any = None
         self.graph = self._build_graph()
 
     def _build_graph(self) -> StateGraph:
@@ -162,6 +166,84 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
         root = Path(tempfile.gettempdir()) / "kdcube-versatile-ops"
         root.mkdir(parents=True, exist_ok=True)
         return root
+
+    def _preferences_mcp_scope(self, *, user_id: str | None = None) -> Dict[str, Any]:
+        storage = self._preferences_storage()
+        if not storage:
+            raise RuntimeError("Bundle storage backend is not configured for this bundle.")
+
+        actor = getattr(self.comm_context, "actor", None)
+        bundle_spec = getattr(getattr(self, "config", None), "ai_bundle_spec", None)
+        tenant = getattr(actor, "tenant_id", None) or getattr(self.comm, "tenant", None) or self.settings.TENANT
+        project = getattr(actor, "project_id", None) or getattr(self.comm, "project", None) or self.settings.PROJECT
+        bundle_id = getattr(bundle_spec, "id", None) or BUNDLE_ID
+        effective_user_id = user_id or getattr(self.comm, "user_id", None) or "anonymous"
+        return {
+            "tenant": tenant,
+            "project": project,
+            "bundle_id": bundle_id,
+            "user_id": effective_user_id,
+            "storage": storage,
+        }
+
+    def _require_preferences_mcp_auth(self, request: Request) -> None:
+        header_name = self.bundle_prop(
+            "mcp.preferences.auth.header_name",
+            "X-Versatile-Preferences-MCP-Token",
+        )
+        expected_token = get_secret("b:mcp.preferences.auth.shared_token")
+        provided_token = request.headers.get(header_name)
+
+        if not expected_token:
+            raise RuntimeError(
+                "Bundle secret b:mcp.preferences.auth.shared_token is not configured."
+            )
+        if provided_token != expected_token:
+            raise HTTPException(
+                status_code=401,
+                detail=f"Missing or invalid {header_name}",
+            )
+
+    @mcp(alias="preferences_tools", route="operations", transport="streamable-http")
+    def preferences_tools_mcp(self, request: Request, **kwargs):
+        # Bundle-owned MCP auth contract for this endpoint:
+        #
+        # bundles.yaml
+        #   items:
+        #     - id: "versatile@2026-03-31-13-36"
+        #       config:
+        #         mcp:
+        #           preferences:
+        #             auth:
+        #               header_name: "X-Versatile-Preferences-MCP-Token"
+        #
+        # bundles.secrets.yaml
+        #   items:
+        #     - id: "versatile@2026-03-31-13-36"
+        #       secrets:
+        #         mcp:
+        #           preferences:
+        #             auth:
+        #               shared_token: "<rotate-me>"
+        #
+        # Client call shape:
+        # curl -X POST \
+        #   "http://localhost:5173/api/integrations/bundles/<tenant>/<project>/<bundle_id>/mcp/preferences_tools" \
+        #   -H "X-Versatile-Preferences-MCP-Token: <shared-token>" \
+        #   -H "Content-Type: application/json" \
+        #   -d '{"jsonrpc":"2.0","id":"1","method":"tools/list"}'
+        #
+        # Share with clients:
+        # - the operations MCP route for alias "preferences_tools"
+        # - the header name from bundle props
+        # - the token provisioned in bundle secrets
+        self._require_preferences_mcp_auth(request)
+        if self._preferences_mcp_app is None:
+            self._preferences_mcp_app = preference_tools_mod.build_preferences_mcp_app(
+                name=f"{BUNDLE_ID}.preferences_tools",
+                scope_provider=lambda user_id=None: self._preferences_mcp_scope(user_id=user_id),
+            )
+        return self._preferences_mcp_app
 
     @api(
         alias="preferences_widget",

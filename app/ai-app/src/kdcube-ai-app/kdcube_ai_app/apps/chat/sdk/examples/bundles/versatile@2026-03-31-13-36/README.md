@@ -17,6 +17,7 @@ It intentionally demonstrates the main SDK bundle surfaces together in one place
 | Bundle-local skills                    | `skills/product/preferences/SKILL.md`                                                      |
 | Shared bundle storage backend          | `preferences_store.py`, `entrypoint.py`, `orchestrator/workflow.py`, `tools/preference_tools.py` |
 | MCP tools                              | `tools_descriptor.py`                                                                      |
+| Bundle-authenticated MCP endpoint      | `entrypoint.py:preferences_tools_mcp`, `tools/preference_tools.py:build_preferences_mcp_app` |
 | Direct isolated exec from bundle code  | `entrypoint.py:preferences_exec_report`                                                    |
 | Custom TSX widget                      | `ui/PreferencesBrowser.tsx`, `entrypoint.py:preferences_widget`                            |
 | Custom iframe main view                | `ui-src/src/App.tsx`, `ui-src/src/settings.ts`, `entrypoint.py`                            |
@@ -36,6 +37,11 @@ It intentionally demonstrates the main SDK bundle surfaces together in one place
 - A storage-backend snapshot can be exported through:
   - `preferences.export_preferences_snapshot(filename)`
   - when secret `bundles.<bundle_id>.secrets.preferences.snapshot_hmac_key` is configured, the export is also signed and a `.sig.json` sidecar is written
+- The bundle also exposes a bundle-authenticated MCP endpoint for preference CRUD:
+  - alias: `preferences_tools`
+  - route family: `/api/integrations/bundles/{tenant}/{project}/{bundle_id}/mcp/preferences_tools`
+  - implemented in `entrypoint.py:preferences_tools_mcp`
+  - backed by `tools/preference_tools.py:build_preferences_mcp_app`
 
 ## Preference storage layout
 
@@ -107,6 +113,9 @@ bundles:
           runtime:
             mode: docker
         mcp:
+          preferences:
+            auth:
+              header_name: "X-Versatile-Preferences-MCP-Token"
           services:
             mcpServers:
               docs:
@@ -139,6 +148,10 @@ bundles:
   items:
     - id: "versatile@2026-03-31-13-36"
       secrets:
+        mcp:
+          preferences:
+            auth:
+              shared_token: null
         preferences:
           snapshot_hmac_key: null
 ```
@@ -184,6 +197,51 @@ Important:
 - bundle secrets belong in `bundles.secrets.yaml` and in the configured secrets provider
 - `bundles.yaml` env reset is authoritative; `bundles.secrets.yaml` is currently upsert-only
 - admin UI for bundle secrets is write-only for values; it shows known keys but not secret contents
+
+### Bundle-authenticated MCP contract
+
+This bundle intentionally demonstrates bundle-owned MCP auth rather than proc-side MCP auth.
+
+Configured keys:
+
+- bundle prop:
+  - `config.mcp.preferences.auth.header_name`
+- bundle secret:
+  - `secrets.mcp.preferences.auth.shared_token`
+
+The entrypoint reads them as:
+
+```python
+header_name = self.bundle_prop("mcp.preferences.auth.header_name", "X-Versatile-Preferences-MCP-Token")
+expected_token = get_secret("b:mcp.preferences.auth.shared_token")
+```
+
+That means the client contract is:
+
+- call the operations MCP route:
+  - `/api/integrations/bundles/{tenant}/{project}/{bundle_id}/mcp/preferences_tools`
+- send the header named by `config.mcp.preferences.auth.header_name`
+- send the token provisioned in `secrets.mcp.preferences.auth.shared_token`
+
+Example:
+
+```bash
+curl -X POST \
+  "http://localhost:5173/api/integrations/bundles/demo-tenant/demo-project/versatile@2026-03-31-13-36/mcp/preferences_tools" \
+  -H "X-Versatile-Preferences-MCP-Token: <shared-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":"1","method":"tools/list"}'
+```
+
+What this MCP app exposes:
+
+- `get_preferences`
+- `capture_preferences`
+- `set_preference`
+- `delete_preference`
+- `export_preferences_snapshot`
+
+The MCP tools accept an optional `user_id` argument. If omitted, the bundle falls back to the current runtime user when available, otherwise `anonymous`.
 
 ## Widget + operations
 
