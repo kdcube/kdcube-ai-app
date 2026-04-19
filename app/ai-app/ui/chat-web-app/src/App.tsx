@@ -3,12 +3,11 @@ import AppRouter from "./AppRouter.tsx";
 import './App.css'
 import {useAppDispatch, useAppSelector, useAppStore} from "./app/store.ts";
 import {
-    loadChatSettings,
+    loadChatSettings, selectChatEventReportingEnabled,
     selectChatSettingsLoaded,
     selectChatSettingsLoading, selectChatSettingsLoadingError
 } from "./features/chat/chatSettingsSlice.ts";
 import {initializeEventLogger} from "./services/eventLogger";
-import {eventLoggerServiceEnabled} from "./BuildConfig.ts";
 
 const App = () => {
     const dispatch = useAppDispatch();
@@ -19,9 +18,9 @@ const App = () => {
 
     useEffect(() => {
         // Initialize event logger for error and log tracking
-        if (eventLoggerServiceEnabled)
+        if (settingsLoaded && selectChatEventReportingEnabled(store.getState()))
             initializeEventLogger(store);
-    }, [store]);
+    }, [store, settingsLoaded]);
 
     useEffect(() => {
         if (!settingsLoaded && !settingsLoading && !settingsLoadingError) {

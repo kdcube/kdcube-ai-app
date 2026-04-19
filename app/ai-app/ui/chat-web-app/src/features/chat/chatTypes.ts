@@ -9,14 +9,27 @@ export interface ChatScope {
     project: string;
 }
 
-export interface ChatSettings extends ChatScope {
+export interface ChatAuthSettings {
     auth: AuthConfig;
-    routesPrefix: string;
-    streamIdHeaderName: string;
     useAuthCookies: boolean;
     authCookieName: string,
     idCookieName: string,
     authCookieOpts: CookieOptions
+}
+
+export interface ChatRoutingSettings {
+    routesPrefix: string;
+}
+
+export interface ChatTransportSettings {
+    streamIdHeaderName: string;
+}
+
+export interface ChatEventReportingSettings {
+    eventReportingEnabled: boolean;
+}
+
+export interface ChatSettings extends ChatScope, ChatAuthSettings, ChatRoutingSettings, ChatTransportSettings, ChatEventReportingSettings {
 }
 
 export interface ChatSettingsState {
