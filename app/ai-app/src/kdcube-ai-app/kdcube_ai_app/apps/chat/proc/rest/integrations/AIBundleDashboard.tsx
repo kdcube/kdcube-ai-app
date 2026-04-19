@@ -71,7 +71,7 @@ interface BundleCleanupPayload {
     project?: string;
 }
 
-interface BundleResetEnvPayload {
+interface BundleReloadAuthorityPayload {
     tenant?: string;
     project?: string;
     bundle_id?: string;
@@ -390,15 +390,15 @@ class IntegrationsAPI {
         return response.json();
     }
 
-    async resetFromEnv(scope?: Scope, bundleId?: string): Promise<any> {
+    async reloadFromAuthority(scope?: Scope, bundleId?: string): Promise<any> {
         const response = await this.fetchWithAuth(
-            this.buildUrl('/bundles/reset-env'),
+            this.buildUrl('/bundles/reload-authority'),
             {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(withScope({
                     ...(bundleId ? { bundle_id: bundleId } : {})
-                } as BundleResetEnvPayload, scope))
+                } as BundleReloadAuthorityPayload, scope))
             }
         );
         return response.json();
@@ -938,11 +938,11 @@ const AIBundleDashboard: React.FC = () => {
         }
     };
 
-    const reloadBundleFromEnv = async (bundleId: string) => {
+    const reloadBundleFromAuthority = async (bundleId: string) => {
         if (!bundleId) return;
         try {
             setReloadingBundleId(bundleId);
-            await api.resetFromEnv(registryScope, bundleId);
+            await api.reloadFromAuthority(registryScope, bundleId);
             await loadBundles();
             if (propsBundleId === bundleId) {
                 await loadProps();
@@ -952,7 +952,7 @@ const AIBundleDashboard: React.FC = () => {
             }
             setError(null);
         } catch (e: any) {
-            setError(e.message || `Failed to reload bundle ${bundleId}`);
+            setError(e.message || `Failed to reload bundle ${bundleId} from authority`);
         } finally {
             setReloadingBundleId(null);
         }
@@ -1037,12 +1037,12 @@ const AIBundleDashboard: React.FC = () => {
         }
     };
 
-    const resetFromEnv = async () => {
+    const reloadFromAuthority = async () => {
         try {
-            await api.resetFromEnv(registryScope);
+            await api.reloadFromAuthority(registryScope);
             await loadBundles();
         } catch (e: any) {
-            setError(e.message || 'Failed to reset from env');
+            setError(e.message || 'Failed to reload from authority');
         }
     };
 
@@ -1229,11 +1229,11 @@ const AIBundleDashboard: React.FC = () => {
                 <Card>
                     <CardHeader
                         title="Registry"
-                        subtitle="Current bundles stored in the registry. Reset from env replaces the registry and descriptor-backed bundle props from bundles.yaml / AGENTIC_BUNDLES_JSON."
+                        subtitle="Current bundles stored in the registry. Reload from authority replaces the registry and descriptor-backed bundle props from the current authoritative bundle store."
                         action={
                             <div className="flex gap-2">
                                 <Button variant="secondary" onClick={loadBundles}>Refresh</Button>
-                                <Button variant="secondary" onClick={resetFromEnv}>Reset from env</Button>
+                                <Button variant="secondary" onClick={reloadFromAuthority}>Reload from authority</Button>
                                 <Button variant="secondary" onClick={cleanupBundles}>Cleanup old versions</Button>
                             </div>
                         }
@@ -1294,7 +1294,7 @@ const AIBundleDashboard: React.FC = () => {
                                                 <div className="flex justify-end gap-2">
                                                     <Button
                                                         variant="secondary"
-                                                        onClick={() => reloadBundleFromEnv(b.id)}
+                                                        onClick={() => reloadBundleFromAuthority(b.id)}
                                                         disabled={reloadingBundleId === b.id}
                                                     >
                                                         {reloadingBundleId === b.id ? 'Reloading…' : 'Reload'}
@@ -1348,7 +1348,7 @@ const AIBundleDashboard: React.FC = () => {
                                 ) : null}
                             </div>
                         }
-                        subtitle="Override bundle props per tenant/project. Reset from env/startup force-env re-applies bundles.yaml authoritatively; reset from code restores bundle code defaults only."
+                        subtitle="Override bundle props per tenant/project. Reload from authority re-applies the current authoritative bundle store; reset from code restores bundle code defaults only."
                         action={
                             <div className="flex gap-2">
                                 <Button variant="secondary" onClick={loadProps} disabled={!propsBundleId || propsLoading}>
@@ -1378,9 +1378,8 @@ const AIBundleDashboard: React.FC = () => {
                         <div className="text-xs text-gray-600">
                             Props resolution order: <strong>code defaults → bundles.yaml → runtime overrides</strong>.
                             The editor shows the full effective props; <strong>Save props</strong> stores exactly what you see.
-                            Use dot-path updates for precise changes. <strong>Reset from env</strong> or proc startup with
-                            <code className="mx-1">BUNDLES_FORCE_ENV_ON_STARTUP=1</code> rebuilds this Redis props layer from
-                            <code className="mx-1">bundles.yaml</code>, removes keys no longer present there, and discards runtime overrides.
+                            Use dot-path updates for precise changes. <strong>Reload from authority</strong> rebuilds this Redis props layer from the
+                            current authoritative bundle store, removes keys no longer present there, and discards runtime overrides.
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

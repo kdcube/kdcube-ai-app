@@ -547,7 +547,7 @@ class BundleCleanupRequest(BaseModel):
     project: Optional[str] = None
 
 
-class BundleResetEnvRequest(BaseModel):
+class BundleReloadAuthorityRequest(BaseModel):
     tenant: Optional[str] = None
     project: Optional[str] = None
     bundle_id: Optional[str] = None
@@ -1361,7 +1361,6 @@ async def _do_set_bundles(
     from kdcube_ai_app.infra.plugin.bundle_registry import (
         set_registry_async,
         upsert_bundles_async,
-        serialize_to_env,
     )
     from kdcube_ai_app.infra.plugin.agentic_loader import clear_agentic_caches
     from kdcube_ai_app.apps.chat.sdk.runtime.local_sidecars import stop_local_sidecars_for_bundle_ids
@@ -1428,7 +1427,6 @@ async def _do_set_bundles(
             )
         reg = get_all()
         default_id = get_default_id()
-        serialize_to_env(reg, default_id)
         clear_agentic_caches()
     else:
         reg = {bid: be.model_dump() for bid, be in updated.bundles.items()}
@@ -1455,14 +1453,14 @@ async def _do_set_bundles(
     return {"status": "ok", "default_bundle_id": default_id, "count": len(reg)}
 
 
-async def _do_reset_bundles_from_env(
+async def _do_reload_bundles_from_authority(
         request: Request,
         session: UserSession,
-        payload: Optional[BundleResetEnvRequest] = None,
+        payload: Optional[BundleReloadAuthorityRequest] = None,
 ):
     settings = get_settings()
-    from kdcube_ai_app.infra.plugin.bundle_store import reset_registry_from_env
-    from kdcube_ai_app.infra.plugin.bundle_registry import set_registry_async, serialize_to_env
+    from kdcube_ai_app.infra.plugin.bundle_store import reload_registry_from_authority
+    from kdcube_ai_app.infra.plugin.bundle_registry import set_registry_async
     from kdcube_ai_app.infra.plugin.agentic_loader import clear_agentic_caches, evict_bundle_scope, AgenticBundleSpec
     from kdcube_ai_app.apps.chat.sdk.runtime.local_sidecars import stop_local_sidecars_for_bundle_ids
 
@@ -1472,7 +1470,7 @@ async def _do_reset_bundles_from_env(
     redis = _get_app_redis(request)
 
     try:
-        reg = await reset_registry_from_env(redis, tenant_id, project_id)
+        reg = await reload_registry_from_authority(redis, tenant_id, project_id)
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
 
@@ -1489,7 +1487,6 @@ async def _do_reset_bundles_from_env(
     eviction_result: dict[str, int] | None = None
     if tenant_id == settings.TENANT and project_id == settings.PROJECT:
         await set_registry_async(bundles_dict, reg.default_bundle_id)
-        serialize_to_env(bundles_dict, reg.default_bundle_id)
         target_bundle_ids = (
             {requested_bundle_id}
             if requested_bundle_id
@@ -1504,7 +1501,7 @@ async def _do_reset_bundles_from_env(
         )
         if stopped_sidecars:
             logger.info(
-                "[bundle.reload] stopped local sidecars during reset-env: tenant=%s project=%s count=%s bundles=%s",
+                "[bundle.reload] stopped local sidecars during reload-authority: tenant=%s project=%s count=%s bundles=%s",
                 tenant_id,
                 project_id,
                 stopped_sidecars,
@@ -1538,7 +1535,7 @@ async def _do_reset_bundles_from_env(
 
     return {
         "status": "ok",
-        "source": "env",
+        "source": "authority",
         "default_bundle_id": reg.default_bundle_id,
         "count": len(reg.bundles),
         "bundle_id": requested_bundle_id,
@@ -1546,20 +1543,20 @@ async def _do_reset_bundles_from_env(
     }
 
 
-@admin_router.post("/admin/integrations/bundles/reset-env", status_code=200)
-async def admin_reset_bundles_from_env(
+@admin_router.post("/admin/integrations/bundles/reload-authority", status_code=200)
+async def admin_reload_bundles_from_authority(
         request: Request,
         session: UserSession = Depends(auth_without_pressure()),
-        payload: Optional[BundleResetEnvRequest] = None,
+        payload: Optional[BundleReloadAuthorityRequest] = None,
 ):
-    return await _do_reset_bundles_from_env(request, session, payload)
+    return await _do_reload_bundles_from_authority(request, session, payload)
 
 
-@internal_router.post("/internal/bundles/reset-env", status_code=200)
-async def internal_reset_bundles_from_env(payload: Optional[BundleResetEnvRequest], request: Request):
+@internal_router.post("/internal/bundles/reload-authority", status_code=200)
+async def internal_reload_bundles_from_authority(payload: Optional[BundleReloadAuthorityRequest], request: Request):
     """
-    Localhost-only descriptor reset for local development / CLI automation.
-    Re-applies AGENTIC_BUNDLES_JSON authoritatively and clears bundle caches.
+    Localhost-only bundle authority reload for local development / CLI automation.
+    Re-applies the current authoritative bundle descriptor store and clears bundle caches.
     """
     client_ip = request.client.host if request.client else ""
     if client_ip not in _LOCALHOST:
@@ -1573,7 +1570,7 @@ async def internal_reset_bundles_from_env(payload: Optional[BundleResetEnvReques
         roles=[],
         permissions=[],
     )
-    return await _do_reset_bundles_from_env(request, automation_session, payload)
+    return await _do_reload_bundles_from_authority(request, automation_session, payload)
 
 
 @admin_router.post("/admin/integrations/bundles/cleanup", status_code=200)

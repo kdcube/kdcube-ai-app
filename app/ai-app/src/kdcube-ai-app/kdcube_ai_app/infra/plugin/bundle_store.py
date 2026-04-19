@@ -1029,7 +1029,6 @@ def _resolve_bundles_descriptor_authority_uri() -> str | None:
     ).strip()
     candidates = [
         os.getenv("BUNDLES_YAML_DESCRIPTOR_PATH"),
-        os.getenv("AGENTIC_BUNDLES_JSON"),
         str((Path(descriptors_dir).expanduser() / "bundles.yaml").resolve()) if descriptors_dir else None,
         "/config/bundles.yaml",
     ]
@@ -1062,9 +1061,6 @@ def _get_authoritative_bundle_store(
         cfg = build_secrets_manager_config(get_settings())
     except Exception:
         return None
-    bundles_yaml_uri = _resolve_bundles_descriptor_authority_uri()
-    if bundles_yaml_uri:
-        return _FileBundleDescriptorStore(bundles_yaml_uri=bundles_yaml_uri)
     if cfg.provider == "aws-sm":
         return _AwsBundleDescriptorStore(
             tenant=tenant,
@@ -1074,6 +1070,9 @@ def _get_authoritative_bundle_store(
             profile=cfg.aws_profile,
             redis_url=cfg.redis_url,
         )
+    bundles_yaml_uri = _resolve_bundles_descriptor_authority_uri()
+    if bundles_yaml_uri:
+        return _FileBundleDescriptorStore(bundles_yaml_uri=bundles_yaml_uri)
     return None
 
 def _tp_from_env() -> Tuple[str,str]:
@@ -1259,6 +1258,7 @@ async def seed_from_env_if_any(redis, tenant: Optional[str] = None, project: Opt
 
 async def reset_registry_from_env(redis, tenant: Optional[str] = None, project: Optional[str] = None) -> BundlesRegistry:
     """
+    Legacy env-backed reset path.
     Force-reload from AGENTIC_BUNDLES_JSON and overwrite Redis for (tenant, project).
     Raise ValueError if env is missing or invalid.
     """
@@ -1294,6 +1294,49 @@ async def reset_registry_from_env(redis, tenant: Optional[str] = None, project: 
     return reg
 
 
+async def reload_registry_from_authority(
+    redis,
+    tenant: Optional[str] = None,
+    project: Optional[str] = None,
+) -> BundlesRegistry:
+    """
+    Reload the runtime registry from the current authoritative bundle store and
+    overwrite Redis for (tenant, project).
+
+    The authoritative store is resolved through _get_authoritative_bundle_store():
+      - mounted bundles.yaml in local/descriptor-backed deployments
+      - AWS Secrets Manager bundle descriptor store in aws-sm deployments
+    """
+    t, p = tenant, project
+    if not t or not p:
+        t, p = _tp_from_env()
+
+    store = _get_authoritative_bundle_store(t, p)
+    if store is None:
+        raise ValueError(
+            "No authoritative bundle store is configured. "
+            "Expected a mounted bundles.yaml descriptor or an AWS Secrets Manager bundle descriptor store."
+        )
+
+    loaded = store.load_registry()
+    if loaded is None:
+        raise ValueError(
+            "The authoritative bundle store is empty or not initialized."
+        )
+
+    reg, props_map = loaded
+    reg, _ = _merge_example_bundles(reg)
+    reg = _ensure_admin_bundle(reg)
+    await save_registry(redis, reg, t, p, props_map=props_map, replace=True)
+    await _sync_bundle_props_authoritative(
+        redis,
+        tenant=t,
+        project=p,
+        props_map=props_map,
+    )
+    return reg
+
+
 async def force_env_reset_if_requested(
     redis,
     tenant: Optional[str] = None,
@@ -1306,6 +1349,17 @@ async def force_env_reset_if_requested(
     """
     settings = get_settings()
     if not settings.BUNDLES_FORCE_ENV_ON_STARTUP:
+        return None
+    try:
+        from kdcube_ai_app.infra.secrets.manager import build_secrets_manager_config
+
+        cfg = build_secrets_manager_config(settings)
+    except Exception:
+        cfg = None
+    if cfg is not None and getattr(cfg, "provider", None) == "aws-sm":
+        _log.info(
+            "Skipping startup bundle env reset because aws-sm is the authoritative bundle store."
+        )
         return None
 
     t, p = tenant, project

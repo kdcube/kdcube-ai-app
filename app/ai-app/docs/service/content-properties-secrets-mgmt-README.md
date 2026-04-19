@@ -203,8 +203,8 @@ These operations update the authoritative descriptor docs in `aws-sm` mode:
 
 - `POST /admin/integrations/bundles`
 - `POST /internal/bundles/update`
-- `POST /admin/integrations/bundles/reset-env`
-- `POST /internal/bundles/reset-env`
+- `POST /admin/integrations/bundles/reload-authority`
+- `POST /internal/bundles/reload-authority`
 
 What is written:
 
@@ -299,8 +299,10 @@ If operators redeploy with old descriptor files, they can still overwrite curren
 So the correct redeploy flow is:
 
 1. export current effective bundle descriptors from the running environment
-2. review/edit them if needed
-3. use those exported files as deployment input
+2. reconcile them into the private descriptor source-of-truth files
+3. review/edit them there if needed
+4. copy the approved `bundles.yaml` / `bundles.secrets.yaml` into the deploy transport
+5. use those approved files as deployment input
 
 This is especially important for:
 
@@ -344,7 +346,7 @@ An old ECS environment may already have:
 
 To bootstrap the new descriptor model, perform one live authoritative bundle write, for example:
 
-- `reset-env`
+- `reload-authority`
 - or a bundle registry update through bundle admin
 
 After that:
