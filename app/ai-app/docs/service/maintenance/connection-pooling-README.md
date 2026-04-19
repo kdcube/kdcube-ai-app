@@ -78,7 +78,7 @@ During startup, proc may touch Redis while loading gateway config from cache; th
 - Separate code-executor containers or Fargate tasks are **not** part of the proc worker pool and may open their own Redis connection(s).
 
 **Size control**
-- `GATEWAY_CONFIG_JSON.pools.<component>.redis_max_connections` caps the pool size selected for that component.
+- `pools.<component>.redis_max_connections` in the effective gateway config caps the pool size selected for that component.
 
 Approx steady-state Redis connections per process:
 
@@ -131,8 +131,8 @@ app.state.pg_pool
 ```
 
 **Size control**
-- `GATEWAY_CONFIG_JSON.pools.<component>.pg_pool_max_size` → hard cap for pool size
-- `GATEWAY_CONFIG_JSON.pools.<component>.pg_pool_min_size` → minimum connections
+- `pools.<component>.pg_pool_max_size` in the effective gateway config → hard cap for pool size
+- `pools.<component>.pg_pool_min_size` in the effective gateway config → minimum connections
 - If pools are **not set**, it defaults to:
 
 ```
@@ -163,7 +163,7 @@ Where:
 - `PGPASSWORD` / `POSTGRES_PASSWORD` → database password.
 - `PGDATABASE` / `POSTGRES_DATABASE` → database name.
 - `PGSSL` / `POSTGRES_SSL` → SSL mode.
-- Pool sizing is controlled via `GATEWAY_CONFIG_JSON.pools.<component>.*`.
+- Pool sizing is controlled via `pools.<component>.*` in the effective gateway config.
 
 ---
 
@@ -240,7 +240,6 @@ Shared Redis clients also set:
 
 - `REDIS_URL` sets the Redis endpoint used by all shared pools and monitors.
 - `pools.<component>.redis_max_connections` caps the per-process Redis pool size.
-- `GATEWAY_CONFIG_JSON.pools.<component>.redis_max_connections` sets the pool cap.
 - `REDIS_CLIENT_NAME` sets the client name prefix shown in `CLIENT LIST`.
 - `REDIS_HEALTHCHECK_INTERVAL_SEC` sets the Redis health poll interval.
 - `REDIS_HEALTHCHECK_TIMEOUT_SEC` sets the Redis health poll timeout.

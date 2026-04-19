@@ -16,4 +16,6 @@ Core entry points:
 - Gateway architecture: [gateway-README.md](gateway-README.md)
 - Monitoring & observability: [README-monitoring-observability.md](README-monitoring-observability.md)
 - Control plane configuration: [instance-config-README.md](maintenance/instance-config-README.md)
+- Descriptor model and mode differences: [descriptors-README.md](cicd/descriptors-README.md)
+- Runtime env and descriptor mapping: [service-config-README.md](configuration/service-config-README.md)
 - All-in-one deployment: [README.md](../../deployment/docker/all_in_one/README.md)

@@ -124,12 +124,15 @@ Same pattern: choose either **push** (CloudWatch/Pushgateway) or **pull** (`/met
 | `METRICS_MODE` | `redis` | `redis` (direct) or `proxy` (calls configured `/monitoring/system` upstreams). |
 | `METRICS_PORT` | `8090` | Metrics server port. |
 | `METRICS_ENABLE_PG_POOL` | `0` | If `1`, create Postgres pool to query `max_connections`. |
-| `GATEWAY_CONFIG_JSON` | — | Required: provides `tenant` + `project` (used for Redis namespacing). |
+| `GATEWAY_CONFIG_JSON` | — | Optional highest-precedence gateway source. If absent, metrics falls back to `GATEWAY_YAML_PATH` or `PLATFORM_DESCRIPTORS_DIR/gateway.yaml`. |
 | `GATEWAY_CONFIG_FORCE_ENV_ON_STARTUP` | `0` | If `1`, overwrite cached gateway config from env on startup. |
 
 ### Redis mode
 Redis mode uses standard app env:
-- `REDIS_URL`, `INSTANCE_ID`, `GATEWAY_CONFIG_JSON` (with `tenant` + `project`)
+- `REDIS_URL`, `INSTANCE_ID`, plus a gateway source that provides `tenant` and `project`:
+  - `GATEWAY_CONFIG_JSON`
+  - or `GATEWAY_YAML_PATH`
+  - or `PLATFORM_DESCRIPTORS_DIR/gateway.yaml`
 Optional SSE stats tuning (gateway config):
 - `redis.sse_stats_ttl_seconds` (default `60`) – TTL for per‑process SSE stats.
 - `redis.sse_stats_max_age_seconds` (default `120`) – ignore older samples.
@@ -137,8 +140,8 @@ Optional SSE stats tuning (gateway config):
 No auth tokens required.
 
 The metrics server operates **per tenant/project**.  
-Run one metrics instance per tenant/project by setting `GATEWAY_CONFIG_JSON`
-with the target `tenant`/`project`.
+Run one metrics instance per tenant/project by supplying gateway config with the
+target `tenant`/`project`.
 
 Note:
 - The metrics server sets `GATEWAY_COMPONENT=proc` by default so queue/backpressure

@@ -5,7 +5,7 @@ summary: "Gateway behavior and configuration: rate limits, backpressure, and adm
 tags: ["service", "gateway", "admission-control", "rate-limits", "backpressure"]
 keywords: ["rate limits", "backpressure", "tenant/project config", "gateway config JSON"]
 see_also:
-  - ks:docs/service/environment/service-dev-env-README.md
+  - ks:docs/service/configuration/service-config-README.md
   - ks:docs/service/README-monitoring-observability.md
   - ks:docs/service/service-and-infrastructure-index-README.md
 ---
@@ -123,7 +123,7 @@ graph LR
 
 **Note:** Non‑ingress REST endpoints still pass through **rate limiting**, but **bypass backpressure**.
 You can explicitly **skip rate limiting** for public endpoints (e.g., Stripe webhooks) via
-`bypass_throttling_patterns` in `GATEWAY_CONFIG_JSON`.
+`bypass_throttling_patterns` in the effective gateway config.
 
 ---
 
@@ -145,10 +145,10 @@ internal endpoints without being dropped.
 ### Activation note (current code)
 - The policy includes an **explicit guarded REST pattern list** in
   [gateway_policy.py](../../src/kdcube-ai-app/kdcube_ai_app/apps/middleware/gateway_policy.py).
-- To activate or tune it, set `guarded_rest_patterns` in `GATEWAY_CONFIG_JSON`
-  (or update via `/admin/gateway/update-config`).
+- To activate or tune it, set `guarded_rest_patterns` in the effective gateway
+  config (or update via `/admin/gateway/update-config`).
 - To allow **public endpoints** that should skip rate limiting, set
-  `bypass_throttling_patterns` in `GATEWAY_CONFIG_JSON`.
+  `bypass_throttling_patterns` in the effective gateway config.
 - Both lists are **component‑aware** (`ingress` / `proc`) and are read from gateway config.
 
 Current guarded endpoints (exact patterns):
@@ -187,16 +187,31 @@ Gateway configuration is centralized in:
 - [config.py](../../src/kdcube-ai-app/kdcube_ai_app/infra/gateway/config.py)
 - [resolvers.py](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/resolvers.py)
 
-Key environment variables:
+Key runtime inputs:
 - `GATEWAY_COMPONENT` (`ingress` | `proc`). Each service sets this at startup; it selects the component slice.
-- `GATEWAY_PROFILE` (development|testing|production|load_test)
-- `GATEWAY_PRESET` (optional preset name)
-- `GATEWAY_CONFIG_JSON` (full config override; recommended)
+- `GATEWAY_CONFIG_JSON` (highest-precedence full config override when present)
+- `GATEWAY_YAML_PATH` (explicit gateway descriptor path)
+- `PLATFORM_DESCRIPTORS_DIR` (runtime descriptor directory fallback; `gateway.yaml` is read from there)
+- `GATEWAY_CONFIG_FORCE_ENV_ON_STARTUP`
 - `REDIS_URL`
-- `INSTANCE_ID` (must be **unique per replica**; do **not** include in `GATEWAY_CONFIG_JSON`)
-- `AVG_PROCESSING_TIME_SECONDS` (fallback if omitted from `GATEWAY_CONFIG_JSON.service_capacity`)
+- `INSTANCE_ID` (must be **unique per replica**; do **not** treat shared gateway config as the source of replica identity)
+- `AVG_PROCESSING_TIME_SECONDS` (fallback only when service capacity is not supplied by the effective gateway config)
 
-Capacity is configured via `GATEWAY_CONFIG_JSON.service_capacity`:
+Gateway runtime config precedence is:
+
+1. Redis cached gateway config for the selected tenant/project
+2. `GATEWAY_CONFIG_JSON`
+3. `GATEWAY_YAML_PATH`
+4. `PLATFORM_DESCRIPTORS_DIR/gateway.yaml`
+5. code/env defaults
+
+Current platform realizations:
+
+- CLI descriptor mode: services read `/config/gateway.yaml` via `PLATFORM_DESCRIPTORS_DIR=/config`
+- Kubernetes local chart: currently provides both `GATEWAY_CONFIG_JSON` and `/config/gateway.yaml`; JSON wins because runtime precedence prefers it
+- AWS/CI/CD deployments that render gateway policy into `GATEWAY_CONFIG_JSON` also use the JSON path for the same reason
+
+Capacity is configured via `service_capacity` in the effective gateway config:
 - `concurrent_requests_per_process` (per process)
 - `processes_per_instance` (per service instance)
 
@@ -221,7 +236,7 @@ Component-aware config:
 Tenant/project keys:
 - Preferred: `"tenant"` and `"project"`.
 - Accepted for compatibility: `"tenant_id"` and `"project_id"`.
-- **Required** in `GATEWAY_CONFIG_JSON` (parser now errors if missing).
+- **Required** in the effective gateway config payload (parser errors if missing).
 
 Note:
 
@@ -257,9 +272,9 @@ These signals are **tenant/project‑global** and safe for autoscaling.
 See: [docs/service/scale/metrics-README.md](scale/metrics-README.md).
 - Each service instance **applies only its own tenant/project config** (from env),
   but it can **publish updates for any tenant/project** via the admin API.
-- On startup, the service **loads Redis config first** (if present) and falls back to env defaults.
+- On startup, the service **loads Redis config first** (if present) and otherwise falls back to the runtime gateway source described above.
 - For CI/CD, set `GATEWAY_CONFIG_FORCE_ENV_ON_STARTUP=1` to **overwrite Redis**
-  with `GATEWAY_CONFIG_JSON` on every start (and broadcast to replicas).
+  with the env/descriptor-sourced gateway config on every start (and broadcast to replicas).
 
 Redis keys/channels (per tenant/project):
 - `"<tenant>:<project>:kdcube:config:gateway:current"`
@@ -275,7 +290,12 @@ Restart note:
 ### Update-config payloads
 `POST /admin/gateway/update-config`
 
-**Option A: full config (same shape as `GATEWAY_CONFIG_JSON`)**
+**Option A: full config**
+
+Use the same shape as:
+
+- `gateway.yaml` under the top-level `gateway:` key
+- or the raw `GATEWAY_CONFIG_JSON` payload when that delivery path is used
 
 ```json
 {
@@ -367,7 +387,7 @@ Notes:
 - `pools.proc.redis_max_connections` currently caps the **single steady-state shared async Redis pool** used by each proc worker.
 - `pools.ingress.redis_max_connections` still applies to the legacy three-pool ingress layout (`async`, `async_decode`, `sync`).
 
-### GATEWAY_CONFIG_JSON (example, component-aware)
+### Effective gateway config payload (example, component-aware)
 ```json
 {
   "tenant_id": "tenant-a",
@@ -445,7 +465,7 @@ Notes:
 }
 ```
 
-### .env example
+### `GATEWAY_CONFIG_JSON` example
 ```dotenv
 GATEWAY_CONFIG_JSON='{
   "tenant_id": "tenant-a",

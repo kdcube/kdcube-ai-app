@@ -175,7 +175,7 @@ host-run equivalent of the compose `/config` mounts. If they are unset, runtime
 falls back to `/config/assembly.yaml` and `/config/bundles.yaml`.
 
 See:
-- [docs/service/configuration/descriptor-plain-config-README.md](../../service/configuration/descriptor-plain-config-README.md)
+- [docs/service/configuration/service-config-README.md](../../service/configuration/service-config-README.md)
 
 Important:
 - Keys are **not written to disk**.

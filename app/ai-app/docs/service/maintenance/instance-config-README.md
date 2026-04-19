@@ -15,20 +15,26 @@ Quick reference for configuring a single chat service instance (workers, capacit
 
 ## Source of Truth
 
-Runtime capacity is driven by `GATEWAY_CONFIG_JSON.service_capacity.<component>`:
+Runtime capacity is driven by `service_capacity.<component>` in the effective
+gateway config:
 - `processes_per_instance` = number of Uvicorn workers for that service.
 - `concurrent_requests_per_process` = max concurrent chats per worker (processor) or admission capacity (ingress).
 - `avg_processing_time_seconds` = expected average turn time for capacity calculations.
 
 Each service sets `GATEWAY_COMPONENT` at startup (`ingress` or `proc`) to select its slice.
 
-Admin updates are stored in Redis (tenant/project scoped) and override `GATEWAY_CONFIG_JSON` on restart.
+Admin updates are stored in Redis (tenant/project scoped) and override the
+env/descriptor source on restart.
 
 ## Startup Precedence
 
 On startup the gateway config is loaded in this order:
 1. Redis cache for the selected tenant/project (if present).
-2. Env defaults / `GATEWAY_CONFIG_JSON`.
+2. Effective env/descriptor source:
+   - `GATEWAY_CONFIG_JSON`
+   - or `GATEWAY_YAML_PATH`
+   - or `PLATFORM_DESCRIPTORS_DIR/gateway.yaml`
+3. Code/env defaults.
 
 If you want env to apply, clear the cached config first (Control Plane → Gateway Configuration → “Clear Cached Config”), then restart.
 For CI/CD, set `GATEWAY_CONFIG_FORCE_ENV_ON_STARTUP=1` to overwrite Redis on each start.
@@ -39,7 +45,7 @@ Endpoint policy lists are part of the gateway config:
 
 ## Worker Count
 
-Worker count comes from `GATEWAY_CONFIG_JSON.service_capacity.<component>.processes_per_instance`
+Worker count comes from `service_capacity.<component>.processes_per_instance`
 when running the service `web_app.py` directly.
 
 Changing `processes_per_instance` requires a service restart to take effect.
@@ -49,7 +55,7 @@ Changing `processes_per_instance` requires a service restart to take effect.
 Each worker creates its own asyncpg pool.
 
 Pool size rules:
-- `GATEWAY_CONFIG_JSON.pools.<component>.pg_pool_max_size` if set.
+- `pools.<component>.pg_pool_max_size` if set in the effective gateway config.
 - Else `service_capacity.<component>.concurrent_requests_per_process`.
 - `pg_pool_min_size` defaults to `0` if not set.
 
@@ -76,7 +82,8 @@ Example:
 Confirm config source at startup:
 - Look for logs:
   - `Gateway config source: redis-cache ...` or
-  - `Gateway config source: env (GATEWAY_CONFIG_JSON) ...`
+  - `Gateway config source: env (GATEWAY_CONFIG_JSON) ...` or
+  - `Gateway config source: descriptor (gateway.yaml) ...`
 
 Confirm worker count:
 - Monitoring UI → Capacity Transparency → Configured/Actual/Healthy processes.
@@ -138,7 +145,8 @@ PGPASSWORD='<password>' psql "host=<rds-endpoint> port=5432 dbname=<db> user=<us
 ## Ops Notes
 
 - Reset to env in the Control Plane writes env defaults to Redis and overrides cache for all instances.
-- Clear Cached Config deletes the Redis key so the next restart uses env/`GATEWAY_CONFIG_JSON`.
+- Clear Cached Config deletes the Redis key so the next restart uses the
+  current env/descriptor gateway source.
 - Changing worker count always requires restart.
 
 

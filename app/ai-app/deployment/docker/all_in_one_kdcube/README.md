@@ -149,11 +149,7 @@ This is how bundle code becomes available to the processor in this setup.
 
 - Set `HOST_BUNDLES_DESCRIPTOR_PATH` in `.env` (host path to `bundles.yaml`)
 - Inside container it mounts to `/config/bundles.yaml`
-- In `.env.proc`, set:
-  - `AGENTIC_BUNDLES_JSON=/config/bundles.yaml`
-
-If you leave `HOST_BUNDLES_DESCRIPTOR_PATH` unset, `/dev/null` is mounted and the loader
-falls back to inline `AGENTIC_BUNDLES_JSON` or the Redis registry.
+- proc loads that mounted `bundles.yaml` as its local bundle descriptor authority
 
 ### Rebuild Code Execution Image
 ```bash

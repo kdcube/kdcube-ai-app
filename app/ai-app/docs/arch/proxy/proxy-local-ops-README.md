@@ -7,7 +7,7 @@ keywords: ["OpenResty", "nginx_proxy.conf", "all_in_one_kdcube", "docker-compose
 see_also:
   - ks:docs/arch/proxy/proxy-ops-README.md
   - ks:docs/arch/proxy/nginx_proxy.conf
-  - ks:docs/arch/configuration/bundle-configuration-README.md
+  - ks:docs/service/configuration/bundles-descriptor-README.md
 ---
 # Proxy Local Ops Guide (OpenResty — local / all-in-one)
 

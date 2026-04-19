@@ -54,8 +54,8 @@ If you want REST to be gated or exempted, configure **endpoint policy lists** in
 - `guarded_rest_patterns` (rate limit + backpressure)
 - `bypass_throttling_patterns` (skip rate limiting for public endpoints like webhooks)
 
-These lists are component‑aware (`ingress` / `proc`) and live in `GATEWAY_CONFIG_JSON`
-or are updated via `/admin/gateway/update-config`.
+These lists are component‑aware (`ingress` / `proc`) and live in the effective
+gateway config, or are updated via `/admin/gateway/update-config`.
 
 ---
 

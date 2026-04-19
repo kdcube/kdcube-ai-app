@@ -7,7 +7,7 @@ keywords: ["task definition", "EFS", "secrets", "bundles.yaml"]
 see_also:
   - ks:docs/service/environment/setup-for-dockercompose-README.md
   - ks:docs/service/environment/setup-dev-env-README.md
-  - ks:docs/service/environment/service-ecs-env-README.md
+  - ks:docs/service/configuration/service-config-README.md
 ---
 # Setup for ECS (Bundles from Assembly Descriptor)
 
@@ -21,7 +21,7 @@ This guide shows how to run **git‑defined bundles** on ECS using a
 Set these env vars on the **chat‑proc task**:
 
 ```bash
-AGENTIC_BUNDLES_JSON=/config/bundles.yaml
+BUNDLES_YAML_DESCRIPTOR_PATH=/config/bundles.yaml
 BUNDLES_FORCE_ENV_ON_STARTUP=1
 
 BUNDLE_GIT_RESOLUTION_ENABLED=1

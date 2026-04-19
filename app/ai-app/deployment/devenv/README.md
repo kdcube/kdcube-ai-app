@@ -27,14 +27,10 @@ Use the files under `sample_env/`:
 
 You can **symlink** them into the app folders or point your IDE run configs directly to these files.
 
-### Assembly descriptor (bundles)
-If you want the proc to load bundles from an **assembly descriptor**, point
-`AGENTIC_BUNDLES_JSON` at the descriptor path (recommended name: `assembly.yaml`).
-The sample proc env already uses:
-
-```
-AGENTIC_BUNDLES_JSON=/config/assembly.yaml
-```
+### Bundles descriptor
+If you want the proc to load bundles from a descriptor file, point
+`BUNDLES_YAML_DESCRIPTOR_PATH` at the descriptor path (recommended name:
+`bundles.yaml`).
 
 Use a real path when running services on the host.
 

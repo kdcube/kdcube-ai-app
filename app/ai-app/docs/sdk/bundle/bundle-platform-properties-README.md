@@ -5,7 +5,7 @@ summary: "Reserved bundle property paths interpreted by the platform entrypoints
 tags: ["sdk", "bundle", "configuration", "runtime", "economics", "exec"]
 keywords: ["role_models", "embedding", "economics.reservation_amount_dollars", "execution.runtime", "exec_runtime", "mcp.services"]
 see_also:
-  - ks:docs/service/configuration/bundle-configuration-README.md
+  - ks:docs/service/configuration/bundles-descriptor-README.md
   - ks:docs/sdk/bundle/bundle-dev-README.md
   - ks:docs/sdk/bundle/bundle-ops-README.md
   - ks:docs/exec/distributed-exec-README.md

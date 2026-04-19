@@ -7,7 +7,7 @@ keywords: ["queue depth", "SSE connections", "backpressure", "p95 latency", "sca
 see_also:
   - ks:docs/service/ecs/metrics-autoscaling-README.md
   - ks:docs/service/scale/metric-server-README.md
-  - ks:docs/service/environment/service-compose-env-README.md
+  - ks:docs/service/environment/setup-for-ecs-README.md
 ---
 # Metrics & Autoscaling Guide (Ingress + Processor)
 

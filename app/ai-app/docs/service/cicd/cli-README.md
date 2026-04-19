@@ -6,11 +6,12 @@ tags: ["service", "cicd", "cli", "env", "deployment"]
 keywords: ["kdcube cli", "env init", "docker compose", "local dev", "bundles.yaml", "assembly.yaml"]
 see_also:
   - ks:docs/service/cicd/release-README.md
-  - ks:docs/service/cicd/assembly-descriptor-README.md
-  - ks:docs/service/cicd/secrets-descriptor-README.md
-  - ks:docs/service/configuration/bundle-configuration-README.md
-  - ks:docs/service/configuration/descriptor-plain-config-README.md
-  - ks:docs/service/cicd/gateway-config-README.md
+  - ks:docs/service/cicd/descriptors-README.md
+  - ks:docs/service/configuration/assembly-descriptor-README.md
+  - ks:docs/service/configuration/secrets-descriptor-README.md
+  - ks:docs/service/configuration/bundles-descriptor-README.md
+  - ks:docs/service/configuration/service-config-README.md
+  - ks:docs/service/configuration/gateway-descriptor-README.md
   - ks:docs/service/environment/setup-dev-env-README.md
   - ks:docs/service/environment/setup-for-dockercompose-README.md
 ---
@@ -140,7 +141,7 @@ If `nginx_ui_config` is omitted, the CLI falls back to the built-in `nginx_ui.co
 When `proxy.ssl: true` and `assembly.domain` is set, the CLI also patches the
 runtime nginx SSL config so `YOUR_DOMAIN_NAME` is replaced in `server_name` and
 default Let’s Encrypt cert paths under `/etc/letsencrypt/live/<domain>/...`.
-See: [docs/service/cicd/assembly-descriptor-README.md](assembly-descriptor-README.md)
+See: [docs/service/configuration/assembly-descriptor-README.md](../configuration/assembly-descriptor-README.md)
 
 If `platform.ref` is present in the descriptor, the install source selector
 adds **assembly-descriptor**, which pulls that tag from DockerHub.
@@ -163,7 +164,7 @@ plain non-secret descriptor values directly:
 
 This is the runtime contract behind `read_plain(...)` / `get_plain(...)`.
 See:
-[docs/service/configuration/descriptor-plain-config-README.md](../configuration/descriptor-plain-config-README.md)
+[docs/service/configuration/service-config-README.md](../configuration/service-config-README.md)
 
 The same descriptor also controls workspace/session bootstrap settings for agent runtimes:
 
@@ -310,8 +311,12 @@ to configure bundles and bundle secrets.
 
 When provided, the CLI:
 - mounts `bundles.yaml` as `/config/bundles.yaml`
-- sets `AGENTIC_BUNDLES_JSON=/config/bundles.yaml`
 - injects secrets from `bundles.secrets.yaml` into the secrets sidecar
+
+Current proc behavior:
+
+- mounted `bundles.yaml` is the normal bundle descriptor authority
+- proc can seed/reset from that descriptor directly
 
 Local bundle root contract:
 
@@ -340,7 +345,7 @@ Symlink note:
 - this works only if Docker can also access the symlink target on the host
 - safest local pattern: keep the real bundle folder inside `HOST_BUNDLES_PATH`, or symlink only to another host path that is already accessible through the same Docker file-sharing scope
 
-`AGENTIC_BUNDLES_JSON` controls proc bundle-registry seeding.
+The active bundle descriptor authority controls proc bundle-registry seeding.
 It is separate from the broader descriptor mounts used by `read_plain(...)`.
 
 In `aws-sm` deployments, `bundles.yaml` is the descriptor/export shape, but the
@@ -371,12 +376,21 @@ and writes:
 - `GLOBAL_SECRETS_YAML=file:///config/secrets.yaml`
 - `BUNDLE_SECRETS_YAML=file:///config/bundles.secrets.yaml`
 
-See: [docs/service/cicd/secrets-descriptor-README.md](secrets-descriptor-README.md)
+See: [docs/service/configuration/secrets-descriptor-README.md](../configuration/secrets-descriptor-README.md)
 
 ### 2.6 Gateway config descriptor (optional)
-If you provide a `gateway.yaml`, the CLI will replace `GATEWAY_CONFIG_JSON`
-in `.env.ingress`, `.env.proc`, and `.env.metrics` with the descriptor content.
-The wizard still patches `tenant` and `project` from your prompts.
+If you provide a `gateway.yaml`, the CLI stages it into `workdir/config` and
+uses it as the runtime descriptor authority for gateway policy.
+
+In current descriptor mode:
+
+- main `.env` points `HOST_GATEWAY_YAML_DESCRIPTOR_PATH` at the staged file
+- runtime mounts it at `/config/gateway.yaml`
+- `.env.ingress`, `.env.proc`, and `.env.metrics` point runtime to `/config`
+  via `PLATFORM_DESCRIPTORS_DIR=/config`
+
+If a platform later injects `GATEWAY_CONFIG_JSON`, that JSON still wins at
+runtime because gateway loader precedence prefers it over `gateway.yaml`.
 
 Template: [`deployment/gateway.yaml`](../../../deployment/gateway.yaml)
 
@@ -385,7 +399,7 @@ You can skip the prompt by setting:
 KDCUBE_GATEWAY_DESCRIPTOR_PATH=/path/to/gateway.yaml
 ```
 
-See: [docs/service/cicd/gateway-config-README.md](gateway-config-README.md)
+See: [docs/service/configuration/gateway-descriptor-README.md](../configuration/gateway-descriptor-README.md)
 
 ### 2.7 `kdcube release validate`
 
@@ -401,7 +415,7 @@ Validates assembly descriptor schema and prints errors with line numbers.
 kdcube release render-bundles --file bundles.yaml --out bundles.json
 ```
 
-Renders `bundles.items` to a runtime registry payload for `AGENTIC_BUNDLES_JSON`.
+Stages `bundles.yaml` as the runtime bundle descriptor authority for proc.
 
 ---
 
@@ -418,7 +432,7 @@ You can also pre‑seed paths and flags via environment variables:
 | `KDCUBE_BUNDLES_SECRETS_PATH` | Path to `bundles.secrets.yaml` (used to inject secrets). |
 | `KDCUBE_USE_BUNDLES_DESCRIPTOR` | `1/0` to apply bundles descriptor. |
 | `KDCUBE_USE_BUNDLES_SECRETS` | `1/0` to apply bundles secrets. |
-| `KDCUBE_GATEWAY_DESCRIPTOR_PATH` | Path to `gateway.yaml` (used for GATEWAY_CONFIG_JSON). |
+| `KDCUBE_GATEWAY_DESCRIPTOR_PATH` | Path to `gateway.yaml` (copied into workdir config and mounted at `/config/gateway.yaml`). |
 | `KDCUBE_CLI_NONINTERACTIVE` | Internal installer flag. Prompt helpers use defaults instead of asking. The CLI sets this automatically for the descriptor fast path. |
 
 ---

@@ -7,7 +7,7 @@ keywords: ["all_in_one_kdcube", "custom-ui-managed-infra", "volume mounts", "bun
 see_also:
   - ks:docs/service/environment/setup-dev-env-README.md
   - ks:docs/service/environment/setup-for-ecs-README.md
-  - ks:docs/service/environment/service-compose-env-README.md
+  - ks:docs/service/configuration/service-config-README.md
 ---
 # Setup for Docker Compose (Bundles from bundles.yaml)
 
@@ -84,7 +84,7 @@ If you use the CLI instead of managing compose env files by hand:
 Set these in the **proc env file**:
 
 ```bash
-AGENTIC_BUNDLES_JSON=/config/bundles.yaml
+BUNDLES_YAML_DESCRIPTOR_PATH=/config/bundles.yaml
 BUNDLES_FORCE_ENV_ON_STARTUP=1
 
 BUNDLE_GIT_RESOLUTION_ENABLED=1

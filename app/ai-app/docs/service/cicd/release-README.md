@@ -6,7 +6,7 @@ tags: ["service", "cicd", "release", "versioning", "git", "images", "bundles", "
 keywords: ["assembly.yaml", "bundles.yaml", "platform.ref", "git tag", "image tags", "BUNDLES_FORCE_ENV_ON_STARTUP", "BUNDLE_GIT_REDIS_LOCK", "monorepo versioning", "PyPI"]
 see_also:
   - ks:docs/service/cicd/release-bundle-README.md
-  - ks:docs/service/cicd/assembly-descriptor-README.md
+  - ks:docs/service/configuration/assembly-descriptor-README.md
   - ks:docs/service/cicd/custom-cicd-README.md
   - ks:docs/service/cicd/cli-README.md
 ---
@@ -98,8 +98,8 @@ Notes:
 
 ## 5) Deployment-Time Descriptor Usage
 
-The processor consumes a **runtime bundle descriptor** (`AGENTIC_BUNDLES_JSON`).
-That descriptor has the same shape as `bundles.yaml`.
+The processor consumes the current **bundle descriptor authority**.
+In local and compose-style deployments that authority is `bundles.yaml`.
 
 Example (`bundles.yaml`):
 ```yaml
@@ -116,8 +116,8 @@ bundles:
 ```
 During deployment, ensure one of these:
 
-- **Baked bundles:** CI generates `AGENTIC_BUNDLES_JSON` (path `/bundles/...`) and injects it into proc.
-- **Git bundles:** CI injects `AGENTIC_BUNDLES_JSON` with `repo/ref/subdir`.
+- **Baked bundles:** CI publishes bundle code under `/bundles/...` and stages matching `bundles.yaml` entries.
+- **Git bundles:** CI stages `bundles.yaml` entries with `repo/ref/subdir`.
 
 If you need to **override existing Redis registry**, deploy proc with:
 
@@ -176,7 +176,7 @@ Immediate use cases to support:
    - `kdcube release validate --file assembly.yaml`
 2. **Render runtime bundle registry**
    - `kdcube release render-bundles --file bundles.yaml`
-   - Output `AGENTIC_BUNDLES_JSON` payload for proc
+   - Output or stage the current `bundles.yaml` authority for proc
 3. **Generate env files**
    - Uses `deployment/docker/all_in_one_kdcube/sample_env` as the reference
    - `kdcube env init --preset all-in-one --out ./env`

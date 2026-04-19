@@ -7,7 +7,8 @@ keywords: ["bundle_props", "get_plain", "get_secret", "get_user_secret", "bundle
 see_also:
   - ks:docs/sdk/bundle/bundle-dev-README.md
   - ks:docs/sdk/bundle/bundle-platform-properties-README.md
-  - ks:docs/service/configuration/bundle-configuration-README.md
+  - ks:docs/service/configuration/bundles-descriptor-README.md
+  - ks:docs/service/configuration/bundles-secrets-descriptor-README.md
 ---
 # Bundle Props and Secrets
 
@@ -145,7 +146,7 @@ These paths are descriptor-authoritative today:
 
 - `kdcube --bundle-reload <bundle_id>`
 - env/descriptor force-reset paths
-- startup env reset paths that replay `AGENTIC_BUNDLES_JSON` / `bundles.yaml`
+- startup reset paths that replay the current bundle descriptor authority
 
 Those paths replace Redis bundle props from the descriptor source, which is the mounted `bundles.yaml`.
 
@@ -452,4 +453,4 @@ Do not use bundle props or secrets for:
 - lifecycle and storage surfaces: [bundle-lifecycle-README.md](bundle-lifecycle-README.md)
 - reserved platform props: [bundle-platform-properties-README.md](bundle-platform-properties-README.md)
 - deployment config format:
-  [../../service/configuration/bundle-configuration-README.md](../../service/configuration/bundle-configuration-README.md)
+  [../../service/configuration/bundles-descriptor-README.md](../../service/configuration/bundles-descriptor-README.md)

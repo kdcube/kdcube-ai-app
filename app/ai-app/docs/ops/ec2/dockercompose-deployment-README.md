@@ -137,18 +137,12 @@ indexes or prepares data on startup.
 
 **Mounted path (current EC2 default):**
 Bundles are mounted into `/bundles` inside chat‑proc.  
-In `.env.proc`, define `AGENTIC_BUNDLES_JSON` with `path=/bundles` and `module=<bundle_folder>.entrypoint`.  
-You can set `AGENTIC_BUNDLES_JSON` to a JSON/YAML file path mounted into the container.  
 Recommended mount:
 ```
 HOST_BUNDLES_DESCRIPTOR_PATH=/path/to/bundles.yaml
 ```
-Then inside the container:
-```
-AGENTIC_BUNDLES_JSON=/config/bundles.yaml
-```
-If `HOST_BUNDLES_DESCRIPTOR_PATH` is unset, compose mounts `/dev/null` and the loader
-falls back to inline `AGENTIC_BUNDLES_JSON` or Redis.
+Then inside the container `bundles.yaml` is available at `/config/bundles.yaml`
+and acts as the local bundle descriptor authority.
 Assembly is mounted separately via:
 ```
 HOST_ASSEMBLY_YAML_DESCRIPTOR_PATH=/path/to/assembly.yaml
@@ -158,7 +152,7 @@ Set `BUNDLE_GIT_RESOLUTION_ENABLED=0`.
 Optionally set `BUNDLES_FORCE_ENV_ON_STARTUP=1` for one rollout.
 
 **Git‑defined bundles (optional):**
-Provide `repo/ref/subdir` in `AGENTIC_BUNDLES_JSON`.  
+Provide `repo/ref/subdir` in `bundles.yaml`.
 Set `BUNDLE_GIT_RESOLUTION_ENABLED=1`.  
 Set `BUNDLE_GIT_REDIS_LOCK=1` (each instance pulls once).  
 Provide `GIT_SSH_KEY_PATH` / `GIT_SSH_KNOWN_HOSTS` for private repos.
@@ -244,7 +238,7 @@ If you use the CLI instead of managing `.env` files by hand, the recommended flo
 3. run compose with the generated workdir
 
 For direct runtime descriptor reads, see:
-- [docs/service/configuration/descriptor-plain-config-README.md](../../service/configuration/descriptor-plain-config-README.md)
+- [docs/service/configuration/service-config-README.md](../../service/configuration/service-config-README.md)
 
 ---
 
