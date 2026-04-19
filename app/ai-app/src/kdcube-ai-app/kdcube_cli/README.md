@@ -630,7 +630,8 @@ docker compose --env-file /srv/kdcube-local/config/.env up -d --build
 ```
 
 Open the UI:
-- `http://localhost:${KDCUBE_UI_PORT}/chatbot/chat` (via proxy, omit `:${KDCUBE_UI_PORT}` if it is `80`)
+- `http://localhost:${KDCUBE_PROXY_HTTP_PORT:-KDCUBE_UI_PORT}/chatbot/chat`
+  (via proxy; if `KDCUBE_PROXY_HTTP_PORT` is unset, it falls back to `KDCUBE_UI_PORT`)
 
 ## Notes
 

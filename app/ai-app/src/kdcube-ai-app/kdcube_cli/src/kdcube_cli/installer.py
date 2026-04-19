@@ -2750,6 +2750,17 @@ def gather_configuration(
         update_env_value(env_main, "KDCUBE_UI_PORT", str(ui_port_current))
     ports_block["ui"] = str(ui_port_current)
     _set_port("KDCUBE_UI_SSL_PORT", "ui_ssl", "443")
+
+    proxy_http_port = ports_block.get("proxy_http")
+    if proxy_http_port is not None and not is_placeholder(str(proxy_http_port)):
+        update_env_value(env_main, "KDCUBE_PROXY_HTTP_PORT", str(proxy_http_port))
+        ports_block["proxy_http"] = str(proxy_http_port)
+
+    proxy_https_port = ports_block.get("proxy_https")
+    if proxy_https_port is not None and not is_placeholder(str(proxy_https_port)):
+        update_env_value(env_main, "KDCUBE_PROXY_HTTPS_PORT", str(proxy_https_port))
+        ports_block["proxy_https"] = str(proxy_https_port)
+
     _set_nested(assembly_data, ["ports"], ports_block)
 
     platform_services = _get_nested(assembly_data, "platform", "services")
@@ -3764,11 +3775,15 @@ def run_setup(
             )
             console.print("[green]Docker compose started.[/green]")
             console.print("Open the UI:")
-            ui_port = env_main.entries.get("KDCUBE_UI_PORT", (None, None))[1] or "80"
-            if ui_port == "80":
+            proxy_http_port = (
+                env_main.entries.get("KDCUBE_PROXY_HTTP_PORT", (None, None))[1]
+                or env_main.entries.get("KDCUBE_UI_PORT", (None, None))[1]
+                or "80"
+            )
+            if proxy_http_port == "80":
                 proxy_url = "http://localhost/chatbot/chat"
             else:
-                proxy_url = f"http://localhost:{ui_port}/chatbot/chat"
+                proxy_url = f"http://localhost:{proxy_http_port}/chatbot/chat"
             console.print(f"  [link={proxy_url}]{proxy_url}[/link]")
         except FileNotFoundError:
             console.print("[red]Docker not found. Please install Docker and rerun.[/red]")

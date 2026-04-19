@@ -429,7 +429,7 @@ services:
       - kdcube-external
       - kdcube-internal
     ports:
-      - "${KDCUBE_UI_PORT:-80}:80"
+      - "${KDCUBE_PROXY_HTTP_PORT:-${KDCUBE_UI_PORT:-80}}:80"
 
 networks:
   kdcube-external:
