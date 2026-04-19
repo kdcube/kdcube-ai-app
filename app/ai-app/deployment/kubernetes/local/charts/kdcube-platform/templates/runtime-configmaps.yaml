@@ -25,6 +25,45 @@
 {{- if not (hasKey $gateway "profile") }}{{- $_ := set $gateway "profile" "development" -}}{{- end -}}
 {{- $gatewayJson := toJson $gateway -}}
 {{- $bundles := default (dict "version" "1" "default_bundle_id" "" "items" (list)) .Values.bundles -}}
+{{- $assembly := dict
+      "domain" (default "" .Values.domain)
+      "company" (default "" .Values.company)
+      "context" (dict
+        "tenant" $tenant
+        "project" $project)
+      "auth" (dict
+        "type" $authMode
+        "idp" $authProvider
+        "cognito" (dict
+          "region" (default "" .Values.auth.cognito.region)
+          "user_pool_id" (default "" .Values.auth.cognito.user_pool_id)
+          "app_client_id" (default "" .Values.auth.cognito.app_client_id)
+          "service_client_id" (default "" .Values.auth.cognito.service_client_id)))
+      "proxy" (dict
+        "ssl" (default false .Values.proxy.ssl)
+        "route_prefix" $routePrefix)
+      "storage" (dict
+        "kdcube" (default "file:///kdcube-storage" .Values.storage.kdcube)
+        "bundles" (default "file:///bundle-storage" .Values.storage.bundles))
+      "aws" (dict
+        "region" (default .Values.auth.cognito.region .Values.aws.region))
+      "infra" (dict
+        "postgres" (dict
+          "host" (default "" .Values.postgres.host)
+          "port" (default "" .Values.postgres.port)
+          "database" (default "" .Values.postgres.database)
+          "ssl" (default "" .Values.postgres.ssl))
+        "redis" (dict
+          "host" (default "" .Values.redis.host)
+          "port" (default "" .Values.redis.port)))
+      "ports" (dict
+        "ingress" (.Values.services.chatIngress.servicePort | toString)
+        "proc" (.Values.services.chatProc.servicePort | toString)
+        "metrics" (.Values.services.metrics.servicePort | toString)
+        "ui" (.Values.services.webProxy.servicePort | toString))
+      "secrets" (dict
+        "provider" "local")
+   -}}
 {{- $frontendAuth := dict -}}
 {{- if eq $authMode "simple" -}}
 {{- $frontendAuth = dict "authType" "hardcoded" "token" (default "test-admin-token-123" .Values.frontend.authToken) -}}
@@ -88,6 +127,8 @@ metadata:
     app.kubernetes.io/name: {{ include "kdcube-platform.name" . }}
     app.kubernetes.io/instance: {{ .Release.Name }}
 data:
+  assembly.yaml: |
+{{ toYaml $assembly | indent 4 }}
   bundles.yaml: |
     {{- /* Convert descriptor format (items list) to dict format expected by bundle_store */}}
     {{- $bundlesDict := dict -}}
