@@ -34,14 +34,24 @@ for the full decorator contract and manifest model.
 
 There are two different auth ownership models:
 
-- `@api(...)`, widgets, and static UI are **KDCube-authenticated** surfaces
+- `@api(route="operations")`, widgets, and static UI are
+  **KDCube-authenticated** surfaces
+- `@api(route="public")` can be either:
+  - **KDCube-authenticated** via built-in `public_auth`
+  - **bundle-authenticated** via `public_auth="bundle"`
 - `@mcp(...)` is a **bundle-authenticated** surface, if the bundle wants auth at all
 
 So:
 
 - proc owns route dispatch for all surfaces
-- proc owns transport auth for `@api(...)` and browser-facing integration routes
+- proc owns transport auth for `@api(route="operations")` and browser-facing
+  integration routes
+- proc owns built-in `public_auth="none"` / `public_auth={"mode":"header_secret", ...}`
+  for `@api(route="public")`
+- proc does **not** own transport auth for `@api(route="public",
+  public_auth="bundle")`
 - proc does **not** own transport auth for `@mcp(...)`
+- the bundle method authenticates bundle-owned public APIs itself
 - the bundle MCP app authenticates MCP requests itself
 
 ## 2. Inbound Surface Matrix
@@ -50,7 +60,7 @@ So:
 | --- | --- | --- | --- | --- | --- |
 | chat turn | `run()` / `@on_message` | platform chat ingress + proc | chat endpoints such as `/sse/chat` or Socket.IO | KDCube | platform chat client |
 | authenticated bundle operation | `@api(route="operations")` | HTTP REST | `/api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/{alias}` | KDCube | widget, custom frontend, internal platform UI |
-| public bundle operation | `@api(route="public")` | HTTP REST | `/api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/{alias}` | KDCube | webhook, external caller |
+| public bundle operation | `@api(route="public")` | HTTP REST | `/api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/{alias}` | KDCube or bundle | webhook, external caller |
 | widget fetch | `@ui_widget(...)` | HTTP GET | `/api/integrations/bundles/{tenant}/{project}/{bundle_id}/widgets/{alias}` | KDCube | platform iframe/widget loader |
 | main bundle UI | `@ui_main` | static HTTP asset serving | `/api/integrations/static/{tenant}/{project}/{bundle_id}/...` | KDCube | browser iframe |
 | bundle-authenticated MCP | `@mcp(route="operations")` | MCP over `streamable-http` | `/api/integrations/bundles/{tenant}/{project}/{bundle_id}/mcp/{alias}` | bundle MCP app | MCP client |
@@ -138,14 +148,95 @@ POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/{alias}
 Auth model:
 
 - proc does not require the normal authenticated user-flow here
-- proc enforces the declared `public_auth`
+- proc enforces the declared `public_auth` unless the endpoint uses
+  `public_auth="bundle"`
 
 Current built-in public auth modes:
 
 - `public_auth="none"`
 - `public_auth={"mode":"header_secret", ...}`
+- `public_auth="bundle"`
 
-This is still KDCube-owned transport auth.
+Behavior by mode:
+
+- `public_auth="none"`
+  - open public route
+- `public_auth={"mode":"header_secret", ...}`
+  - proc verifies the configured header secret before invoking the bundle
+- `public_auth="bundle"`
+  - proc forwards the request into the bundle method
+  - if the bundle method accepts `request=`, proc passes the original FastAPI
+    request object
+  - the bundle reads headers/body and decides whether to accept the request
+  - if the bundle rejects it, it should raise `HTTPException(...)`
+
+Canonical bundle-authenticated public hook:
+
+```python
+from fastapi import HTTPException, Request
+
+from kdcube_ai_app.apps.chat.sdk.config import get_secret
+
+@api(
+    alias="telegram_webhook",
+    route="public",
+    public_auth="bundle",
+)
+async def telegram_webhook(self, request: Request, **kwargs):
+    header_name = self.bundle_prop(
+        "telegram.webhook.auth.header_name",
+        "X-Telegram-Bot-Api-Secret-Token",
+    )
+    expected_token = get_secret("b:telegram.webhook.auth.shared_token")
+    provided_token = request.headers.get(header_name)
+    if not expected_token or provided_token != expected_token:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    return {"ok": True}
+```
+
+Server-side contract:
+
+```yaml
+# bundles.yaml
+bundles:
+  version: "1"
+  items:
+    - id: "partner.tools@1-0"
+      config:
+        telegram:
+          webhook:
+            auth:
+              header_name: "X-Telegram-Bot-Api-Secret-Token"
+```
+
+```yaml
+# bundles.secrets.yaml
+bundles:
+  version: "1"
+  items:
+    - id: "partner.tools@1-0"
+      secrets:
+        telegram:
+          webhook:
+            auth:
+              shared_token: "replace-in-real-deployment"
+```
+
+Client call shape:
+
+```bash
+curl -X POST \
+  "http://localhost:5173/api/integrations/bundles/<tenant>/<project>/<bundle_id>/public/telegram_webhook" \
+  -H "X-Telegram-Bot-Api-Secret-Token: <shared-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"update_id": 1}'
+```
+
+What the bundle shares with the client:
+
+- the public operations route
+- the header name from bundle props
+- the token provisioned in bundle secrets
 
 ## 4. MCP Endpoints
 

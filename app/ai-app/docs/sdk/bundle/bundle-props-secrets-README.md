@@ -217,9 +217,9 @@ Do not put secrets into:
 - logs
 - artifacts
 
-### Example: bundle-defined MCP auth contract
+### Example: bundle-defined inbound auth contract
 
-For bundle-authenticated MCP, a clean split is:
+For bundle-authenticated MCP or public API hooks, a clean split is:
 
 - bundle props define the non-secret client contract
 - bundle secrets define the verification material
@@ -260,14 +260,16 @@ header_name = self.bundle_prop("mcp.inbound.auth.header_name", "X-Partner-MCP-To
 expected_token = get_secret("b:mcp.inbound.auth.shared_token")
 ```
 
-That gives the bundle a stable contract with its MCP clients:
+That gives the bundle a stable contract with its clients:
 
 - the prop tells clients which header name to send
 - the secret stores the expected token
-- proc does not verify it for MCP; the bundle verifies it itself
+- proc does not verify it for MCP, and does not verify it for
+  `@api(..., route="public", public_auth="bundle")`; the bundle verifies it
+  itself
 
-Use this only for bundle-owned MCP auth. For full code, use the worked example
-in [bundle-transports-README.md](bundle-transports-README.md).
+Use this for any bundle-owned inbound auth contract. For full code, use the
+worked examples in [bundle-transports-README.md](bundle-transports-README.md).
 
 ## User-scoped bundle props
 

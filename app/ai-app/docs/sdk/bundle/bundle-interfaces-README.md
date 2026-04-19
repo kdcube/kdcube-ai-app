@@ -266,6 +266,8 @@ Current rule:
 - `route="public"` methods must also declare `public_auth`
   - `public_auth="none"` means explicitly unauthenticated public endpoint
   - `public_auth={"mode":"header_secret","header":"X-Telegram-Bot-Api-Secret-Token","secret_key":"telegram.webhook_secret"}` verifies the incoming header against the bundle secret
+  - `public_auth="bundle"` means proc forwards the request and the bundle
+    method authenticates it itself
 - undecorated same-name methods are not invokable through HTTP
 
 Bundle operations may call helpers marked with `@venv(...)`, but the HTTP contract still belongs to proc:
