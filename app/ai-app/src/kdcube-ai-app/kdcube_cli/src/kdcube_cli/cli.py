@@ -652,21 +652,6 @@ def _has_value(value: object | None) -> bool:
     return bool(text) and not installer_mod.is_placeholder(text)
 
 
-def _load_yaml_mapping(path: Path) -> dict:
-    if not path.exists():
-        return {}
-    try:
-        payload = json.loads(path.read_text()) if path.suffix == ".json" else None
-    except Exception:
-        payload = None
-    if isinstance(payload, dict):
-        return payload
-    try:
-        return installer_mod.load_release_descriptor(path)
-    except Exception:
-        return {}
-
-
 def _iter_bundle_specs(payload: dict | None):
     if not isinstance(payload, dict):
         return
@@ -771,68 +756,12 @@ def _stage_descriptor_set(
     workdir: Path,
     descriptors_location: Path,
 ) -> dict[str, object]:
-    ai_app_root = repo_root / "app/ai-app"
-    config_dir = workdir / "config"
-    config_dir.mkdir(parents=True, exist_ok=True)
-
-    assembly_source = descriptors_location / "assembly.yaml"
-    secrets_source = descriptors_location / "secrets.yaml"
-    gateway_source = descriptors_location / "gateway.yaml"
-    bundles_source = descriptors_location / "bundles.yaml"
-    bundles_secrets_source = descriptors_location / "bundles.secrets.yaml"
-
-    assembly_target = config_dir / "assembly.yaml"
-    if not assembly_source.exists():
-        raise SystemExit(f"assembly.yaml not found under {descriptors_location}")
-    if not installer_mod.stage_assembly_descriptor(
-        assembly_target,
-        source_path=assembly_source,
-        ai_app_root=ai_app_root,
-    ):
-        raise SystemExit(f"assembly.yaml not found under {descriptors_location}")
-
-    secrets_target = config_dir / "secrets.yaml"
-    have_secrets = installer_mod.stage_secrets_descriptor(
-        secrets_target,
-        source_path=secrets_source if secrets_source.exists() else None,
-        ai_app_root=ai_app_root,
-    ) if secrets_source.exists() else False
-
-    gateway_target = config_dir / "gateway.yaml"
-    have_gateway = False
-    if gateway_source.exists():
-        installer_mod.stage_gateway_descriptor(
-            gateway_target,
-            source_path=gateway_source,
-            ai_app_root=ai_app_root,
-        )
-        have_gateway = gateway_target.exists()
-
-    bundles_target = config_dir / "bundles.yaml"
-    have_bundles = installer_mod.stage_bundles_descriptor(
-        bundles_target,
-        source_path=bundles_source if bundles_source.exists() else None,
-        ai_app_root=ai_app_root,
-    ) if bundles_source.exists() else False
-
-    bundles_secrets_target = config_dir / "bundles.secrets.yaml"
-    have_bundles_secrets = installer_mod.stage_bundles_secrets_descriptor(
-        bundles_secrets_target,
-        source_path=bundles_secrets_source if bundles_secrets_source.exists() else None,
-        ai_app_root=ai_app_root,
-    ) if bundles_secrets_source.exists() else False
-
-    assembly = _load_yaml_mapping(assembly_target)
-    return {
-        "assembly_path": assembly_target,
-        "secrets_path": secrets_target if have_secrets else None,
-        "gateway_path": gateway_target if have_gateway else None,
-        "bundles_path": bundles_target if have_bundles else None,
-        "bundles_secrets_path": bundles_secrets_target if have_bundles_secrets else None,
-        "assembly": assembly,
-        "have_secrets": have_secrets,
-        "have_gateway": have_gateway,
-    }
+    return installer_mod.stage_descriptor_directory(
+        workdir / "config",
+        source_dir=descriptors_location,
+        ai_app_root=repo_root / "app/ai-app",
+        require_complete=True,
+    )
 
 
 def ensure_repo(console: Console, repo: str, target: Path) -> None:
@@ -1000,7 +929,7 @@ def main() -> None:
     parser.add_argument(
         "--descriptors-location",
         default="",
-        help="Directory containing assembly.yaml, secrets.yaml, gateway.yaml, and optional bundle descriptors",
+        help="Directory containing the canonical descriptor set: assembly.yaml, secrets.yaml, bundles.yaml, bundles.secrets.yaml, and gateway.yaml",
     )
     parser.add_argument(
         "--latest",
@@ -1213,10 +1142,12 @@ def main() -> None:
 
         descriptor_bootstrap = None
         if args.descriptors_location and not args.secrets_set and not args.secrets_prompt:
+            descriptors_location = Path(os.path.expanduser(args.descriptors_location)).expanduser().resolve()
+            os.environ["KDCUBE_DESCRIPTORS_LOCATION"] = str(descriptors_location)
             descriptor_bootstrap = _stage_descriptor_set(
                 repo_root=repo_path,
                 workdir=workdir,
-                descriptors_location=Path(os.path.expanduser(args.descriptors_location)).expanduser().resolve(),
+                descriptors_location=descriptors_location,
             )
             assembly_path = descriptor_bootstrap["assembly_path"]
             secrets_path = descriptor_bootstrap["secrets_path"]
@@ -1251,49 +1182,51 @@ def main() -> None:
                 upstream=bool(args.upstream),
                 release=str(args.release or "").strip() or None,
             )
-            if not reasons:
-                platform_repo = str(_get_nested(assembly, "platform", "repo") or args.repo).strip()
-                if not platform_repo:
-                    platform_repo = args.repo
-                if not _is_git_repo(repo_path):
-                    ensure_repo(console, platform_repo, repo_path)
+            if reasons:
+                rendered = "\n".join(f"  - {reason}" for reason in reasons)
+                raise SystemExit(
+                    "Descriptor directory is not valid for non-interactive install.\n"
+                    f"{rendered}"
+                )
 
-                release_ref = None
-                install_mode = "release"
-                if args.upstream:
-                    release_ref = _checkout_repo_upstream(console, repo_path)
-                    install_mode = "upstream"
-                elif args.latest:
-                    release_ref = _read_remote_ref(repo_path)
-                    if not release_ref:
-                        release_ref = _read_local_ref(repo_path)
-                    if not release_ref:
-                        raise SystemExit(
-                            "Could not resolve the latest platform release from the platform repo. "
-                            "Check platform.repo or pass a repo that contains release.yaml."
-                        )
-                elif str(args.release or "").strip():
-                    release_ref = str(args.release).strip()
-                else:
-                    release_ref = str(_get_nested(assembly, "platform", "ref") or "").strip() or None
-                    if not release_ref:
-                        raise SystemExit("assembly platform.ref is required unless --latest, --upstream, or --release is used.")
+            platform_repo = str(_get_nested(assembly, "platform", "repo") or args.repo).strip()
+            if not platform_repo:
+                platform_repo = args.repo
+            if not _is_git_repo(repo_path):
+                ensure_repo(console, platform_repo, repo_path)
 
-                if args.build:
-                    if not args.upstream:
-                        _checkout_repo_ref(console, repo_path, release_ref)
-                    if install_mode != "upstream":
-                        install_mode = "skip"
-                    console.print("[green]Descriptor set is complete. Running non-interactive source build install.[/green]")
-                else:
-                    console.print("[green]Descriptor set is complete. Running non-interactive release-image install.[/green]")
-                os.environ["KDCUBE_CLI_NONINTERACTIVE"] = "1"
-                run_installer(console, repo_path, workdir, install_mode, release_ref, None, args.dry_run)
-                return
+            release_ref = None
+            install_mode = "release"
+            if args.upstream:
+                release_ref = _checkout_repo_upstream(console, repo_path)
+                install_mode = "upstream"
+            elif args.latest:
+                release_ref = _read_remote_ref(repo_path)
+                if not release_ref:
+                    release_ref = _read_local_ref(repo_path)
+                if not release_ref:
+                    raise SystemExit(
+                        "Could not resolve the latest platform release from the platform repo. "
+                        "Check platform.repo or pass a repo that contains release.yaml."
+                    )
+            elif str(args.release or "").strip():
+                release_ref = str(args.release).strip()
+            else:
+                release_ref = str(_get_nested(assembly, "platform", "ref") or "").strip() or None
+                if not release_ref:
+                    raise SystemExit("assembly platform.ref is required unless --latest, --upstream, or --release is used.")
 
-            console.print("[yellow]Descriptor set is incomplete for non-interactive install; falling back to guided setup.[/yellow]")
-            for reason in reasons:
-                console.print(f"  - {reason}")
+            if args.build:
+                if not args.upstream:
+                    _checkout_repo_ref(console, repo_path, release_ref)
+                if install_mode != "upstream":
+                    install_mode = "skip"
+                console.print("[green]Descriptor set is complete. Running non-interactive source build install.[/green]")
+            else:
+                console.print("[green]Descriptor set is complete. Running non-interactive release-image install.[/green]")
+            os.environ["KDCUBE_CLI_NONINTERACTIVE"] = "1"
+            run_installer(console, repo_path, workdir, install_mode, release_ref, None, args.dry_run)
+            return
 
         assembly_descriptor_path: Path | None = None
         secrets_descriptor_path: Path | None = None
@@ -1306,95 +1239,39 @@ def main() -> None:
         bundles_default = False
         frontend_default = False
         if not args.secrets_set and not args.secrets_prompt and not descriptor_bootstrap:
-            default_assembly = str((workdir / "config" / "assembly.yaml").resolve())
-            raw_path = Prompt.ask("Assembly descriptor path (assembly.yaml)", default=default_assembly).strip()
-            source_path = Path(os.path.expanduser(raw_path)).expanduser().resolve()
-            target_path = Path(default_assembly)
-            staged = installer_mod.stage_assembly_descriptor(
-                target_path,
-                source_path=source_path,
+            default_descriptors_dir = str((workdir / "config").resolve())
+            raw_dir = Prompt.ask("Descriptors directory", default=default_descriptors_dir).strip()
+            source_dir = Path(os.path.expanduser(raw_dir)).expanduser().resolve()
+            staged = installer_mod.stage_descriptor_directory(
+                workdir / "config",
+                source_dir=source_dir,
                 ai_app_root=repo_path / "app/ai-app",
+                require_complete=False,
             )
-            user_supplied = source_path.resolve() != target_path.resolve()
-            if staged and target_path.exists():
-                os.environ["KDCUBE_ASSEMBLY_DESCRIPTOR_PATH"] = str(target_path)
-                os.environ["KDCUBE_ASSEMBLY_USER_SUPPLIED"] = "1" if user_supplied else "0"
-                assembly_descriptor_path = target_path
-                descriptor = installer_mod.load_release_descriptor(target_path)
-                bundles_default = isinstance(descriptor, dict) and bool(descriptor.get("bundles"))
-                frontend_default = isinstance(descriptor, dict) and bool(descriptor.get("frontend"))
-                # platform.ref is no longer used for source selection (handled by source menu)
-            else:
-                console.print("[yellow]Assembly template not found; continuing without assembly descriptor.[/yellow]")
-                os.environ["KDCUBE_ASSEMBLY_SKIP"] = "1"
-                os.environ["KDCUBE_ASSEMBLY_USER_SUPPLIED"] = "0"
+            user_supplied = source_dir.resolve() != (workdir / "config").resolve()
 
-            raw_secrets = Prompt.ask(
-                "Secrets descriptor path (secrets.yaml) (leave blank to skip)",
-                default="",
-            ).strip()
-            if raw_secrets:
-                secrets_descriptor_path = Path(os.path.expanduser(raw_secrets)).expanduser().resolve()
-                if secrets_descriptor_path.exists():
-                    os.environ["KDCUBE_SECRETS_DESCRIPTOR_PATH"] = str(secrets_descriptor_path)
-                else:
-                    console.print("[yellow]Secrets descriptor not found; continuing without secrets descriptor.[/yellow]")
+            assembly_descriptor_path = staged["assembly_path"]
+            secrets_descriptor_path = staged["secrets_path"]
+            bundles_descriptor_path = staged["bundles_path"]
+            bundles_secrets_path = staged["bundles_secrets_path"]
+            gateway_descriptor_path = staged["gateway_path"]
+            descriptor = staged["assembly"]
 
-            default_gateway_path = (workdir / "config" / "gateway.yaml").resolve()
-            default_gateway = str(default_gateway_path) if default_gateway_path.exists() else ""
-            raw_gateway = Prompt.ask(
-                "Gateway config path (gateway.yaml) (leave blank to skip)",
-                default=default_gateway,
-            ).strip()
-            if raw_gateway:
-                gateway_source = Path(os.path.expanduser(raw_gateway)).expanduser().resolve()
-                target_gateway = Path(default_gateway_path)
-                installer_mod.stage_gateway_descriptor(
-                    target_gateway,
-                    source_path=gateway_source,
-                    ai_app_root=repo_path / "app/ai-app",
-                )
-                os.environ["KDCUBE_GATEWAY_DESCRIPTOR_PATH"] = str(target_gateway)
-
-            default_bundles_path = (workdir / "config" / "bundles.yaml").resolve()
-            default_bundles = str(default_bundles_path) if default_bundles_path.exists() else ""
-            raw_bundles = Prompt.ask(
-                "Bundles descriptor path (bundles.yaml) (leave blank to skip)",
-                default=default_bundles,
-            ).strip()
-            if raw_bundles:
-                source_path = Path(os.path.expanduser(raw_bundles)).expanduser().resolve()
-                target_path = Path(default_bundles_path)
-                staged = installer_mod.stage_bundles_descriptor(
-                    target_path,
-                    source_path=source_path,
-                    ai_app_root=repo_path / "app/ai-app",
-                )
-                if staged and target_path.exists():
-                    bundles_descriptor_path = target_path
-                    os.environ["KDCUBE_BUNDLES_DESCRIPTOR_PATH"] = str(target_path)
-                else:
-                    console.print("[yellow]Bundles descriptor not found; continuing without bundles descriptor.[/yellow]")
-
-            default_bundles_secrets_path = (workdir / "config" / "bundles.secrets.yaml").resolve()
-            default_bundles_secrets = ""
-            raw_bundles_secrets = Prompt.ask(
-                "Bundle secrets descriptor path (bundles.secrets.yaml) (leave blank to skip)",
-                default=default_bundles_secrets,
-            ).strip()
-            if raw_bundles_secrets:
-                source_path = Path(os.path.expanduser(raw_bundles_secrets)).expanduser().resolve()
-                if source_path.exists():
-                    bundles_secrets_path = source_path
-                    os.environ["KDCUBE_BUNDLES_SECRETS_PATH"] = str(source_path)
-                else:
-                    console.print("[yellow]Bundles secrets descriptor not found; continuing without it.[/yellow]")
-
+            os.environ["KDCUBE_ASSEMBLY_DESCRIPTOR_PATH"] = str(assembly_descriptor_path)
+            os.environ["KDCUBE_ASSEMBLY_USER_SUPPLIED"] = "1" if user_supplied else "0"
+            if secrets_descriptor_path:
+                os.environ["KDCUBE_SECRETS_DESCRIPTOR_PATH"] = str(secrets_descriptor_path)
+            if gateway_descriptor_path:
+                os.environ["KDCUBE_GATEWAY_DESCRIPTOR_PATH"] = str(gateway_descriptor_path)
             if bundles_descriptor_path:
-                use_bundles_descriptor = True
-
+                os.environ["KDCUBE_BUNDLES_DESCRIPTOR_PATH"] = str(bundles_descriptor_path)
             if bundles_secrets_path:
-                use_bundles_secrets = True
+                os.environ["KDCUBE_BUNDLES_SECRETS_PATH"] = str(bundles_secrets_path)
+
+            bundles_default = isinstance(descriptor, dict) and bool(descriptor.get("bundles"))
+            frontend_default = isinstance(descriptor, dict) and bool(descriptor.get("frontend"))
+            use_bundles_descriptor = bool(bundles_descriptor_path)
+            use_bundles_secrets = bool(bundles_secrets_path)
 
             if frontend_default:
                 use_descriptor_frontend = Confirm.ask(

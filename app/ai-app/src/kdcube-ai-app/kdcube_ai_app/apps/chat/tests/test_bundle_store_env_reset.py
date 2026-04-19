@@ -120,6 +120,50 @@ async def test_reset_registry_from_env_removes_stale_bundle_props(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_reset_registry_from_env_uses_descriptor_authority_when_env_is_unset(monkeypatch, tmp_path: Path):
+    redis = _FakeRedis()
+    tenant = "demo"
+    project = "demo-project"
+    bundle_id = "demo.bundle"
+
+    descriptor_path = tmp_path / "bundles.yaml"
+    descriptor_path.write_text(
+        yaml.safe_dump(
+            {
+                "bundles": {
+                    "version": "1",
+                    "default_bundle_id": bundle_id,
+                    "items": [
+                        {
+                            "id": bundle_id,
+                            "path": "/bundles/demo.bundle",
+                            "module": "entrypoint",
+                            "config": {
+                                "feature": {
+                                    "enabled": True,
+                                }
+                            },
+                        }
+                    ],
+                }
+            },
+            sort_keys=False,
+        )
+    )
+
+    monkeypatch.delenv("AGENTIC_BUNDLES_JSON", raising=False)
+    monkeypatch.setenv("BUNDLES_YAML_DESCRIPTOR_PATH", str(descriptor_path.resolve()))
+    monkeypatch.setattr(bundle_store, "_merge_example_bundles", lambda reg: (reg, False))
+
+    reg = await bundle_store.reset_registry_from_env(redis, tenant=tenant, project=project)
+
+    assert reg.default_bundle_id == bundle_id
+    assert bundle_id in reg.bundles
+    props_key = bundle_store._props_key(tenant=tenant, project=project, bundle_id=bundle_id)
+    assert json.loads(redis.data[props_key]) == {"feature": {"enabled": True}}
+
+
+@pytest.mark.asyncio
 async def test_load_registry_falls_back_to_authoritative_store(monkeypatch):
     redis = _FakeRedis()
     tenant = "demo"
