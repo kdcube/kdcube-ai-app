@@ -85,6 +85,8 @@ _EXECUTOR_STRIP_RUNTIME_GLOBAL_KEYS = frozenset(
     }
 )
 
+_RUNTIME_ENV_PREPARED_MARKER = "KDCUBE_RUNTIME_ENV_PREPARED"
+
 
 def _append_errors_log(message: str) -> None:
     try:
@@ -221,6 +223,30 @@ def _materialize_runtime_descriptor_payloads(logger: AgentLogger) -> pathlib.Pat
         "INFO",
     )
     return runtime_dir
+
+
+def _prepare_runtime_environment(logger: AgentLogger) -> None:
+    """
+    Prepare supervisor-visible runtime env before anything caches settings.
+
+    This must happen before logging_config.configure_logging(), because that
+    path calls get_settings() and would otherwise freeze the pre-materialized
+    env/descriptors into the process-wide settings cache.
+    """
+    if os.environ.get(_RUNTIME_ENV_PREPARED_MARKER) == "1":
+        return
+
+    _hydrate_runtime_payload_from_secret(logger)
+    _materialize_runtime_descriptor_payloads(logger)
+
+    try:
+        from kdcube_ai_app.apps.chat.sdk.config import get_settings
+
+        get_settings.cache_clear()
+    except Exception as exc:
+        logger.log(f"[exec.payload] Failed to clear settings cache after env prep: {exc}", "WARNING")
+
+    os.environ[_RUNTIME_ENV_PREPARED_MARKER] = "1"
 
 
 def _prepare_supervisor_private_root(logger: AgentLogger) -> pathlib.Path:
@@ -675,14 +701,13 @@ async def _async_main() -> int:
            - exit with the same return code.
     """
     logger = AgentLogger("py_code_exec_entry")
+    _prepare_runtime_environment(logger)
     exec_id = os.environ.get("EXECUTION_ID") or "unknown"
     ts = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
     logger.log(f"[entry] ===== EXECUTION {exec_id} START {ts} =====", level="INFO")
     # Ensure group-writable files across shared volumes (chat user is gid 1000)
     os.umask(0o002)
     _prepare_supervisor_private_root(logger)
-    _hydrate_runtime_payload_from_secret(logger)
-    _materialize_runtime_descriptor_payloads(logger)
 
     workdir = pathlib.Path(os.environ.get("WORKDIR", "/workspace/work")).resolve()
     outdir = pathlib.Path(os.environ.get("OUTPUT_DIR", "/workspace/out")).resolve()
@@ -858,6 +883,8 @@ async def _async_main() -> int:
 def main() -> None:
     try:
         os.environ.setdefault("EXECUTION_SANDBOX", "docker")
+        bootstrap_logger = AgentLogger("py_code_exec_entry.bootstrap")
+        _prepare_runtime_environment(bootstrap_logger)
         # Single, global logging setup for this process
         logging_config.configure_logging()
         rc = asyncio.run(_async_main())

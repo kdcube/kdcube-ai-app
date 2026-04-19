@@ -45,6 +45,13 @@ ENV_FILES = [
 
 DEFAULT_PG_PASSWORD = "postgres"
 DEFAULT_REDIS_PASSWORD = "redispass"
+CANONICAL_DESCRIPTOR_FILENAMES = (
+    "assembly.yaml",
+    "secrets.yaml",
+    "bundles.yaml",
+    "bundles.secrets.yaml",
+    "gateway.yaml",
+)
 
 SERVICE_ENV_KEY_MAP: dict[str, str] = {
     "uvicorn_reload": "UVICORN_RELOAD",
@@ -851,6 +858,106 @@ def stage_gateway_descriptor(
             shutil.copyfile(source_path, target_path)
         return
     ensure_gateway_template(target_path, ai_app_root)
+
+
+def stage_descriptor_directory(
+    target_dir: Path,
+    *,
+    source_dir: Optional[Path],
+    ai_app_root: Path,
+    require_complete: bool = False,
+) -> Dict[str, object]:
+    target_dir = target_dir.expanduser().resolve()
+    source_dir_resolved = source_dir.expanduser().resolve() if source_dir is not None else None
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    if source_dir_resolved is not None:
+        if not source_dir_resolved.exists():
+            raise SystemExit(f"Descriptor directory not found: {source_dir_resolved}")
+        if not source_dir_resolved.is_dir():
+            raise SystemExit(f"Descriptor location must be a directory: {source_dir_resolved}")
+        if require_complete:
+            missing = [
+                name for name in CANONICAL_DESCRIPTOR_FILENAMES
+                if not (source_dir_resolved / name).exists()
+            ]
+            if missing:
+                missing_rendered = ", ".join(missing)
+                raise SystemExit(
+                    "Descriptor directory must contain the canonical descriptor set. "
+                    f"Missing under {source_dir_resolved}: {missing_rendered}"
+                )
+
+    def _source(name: str) -> Optional[Path]:
+        if source_dir_resolved is None:
+            return None
+        candidate = source_dir_resolved / name
+        return candidate if candidate.exists() else None
+
+    assembly_target = target_dir / "assembly.yaml"
+    if not stage_assembly_descriptor(
+        assembly_target,
+        source_path=_source("assembly.yaml"),
+        ai_app_root=ai_app_root,
+    ):
+        raise SystemExit(f"assembly.yaml is required but could not be staged into {assembly_target}")
+
+    secrets_target = target_dir / "secrets.yaml"
+    have_secrets = stage_secrets_descriptor(
+        secrets_target,
+        source_path=_source("secrets.yaml"),
+        ai_app_root=ai_app_root,
+    )
+
+    bundles_target = target_dir / "bundles.yaml"
+    have_bundles = stage_bundles_descriptor(
+        bundles_target,
+        source_path=_source("bundles.yaml"),
+        ai_app_root=ai_app_root,
+    )
+
+    bundles_secrets_target = target_dir / "bundles.secrets.yaml"
+    have_bundles_secrets = stage_bundles_secrets_descriptor(
+        bundles_secrets_target,
+        source_path=_source("bundles.secrets.yaml"),
+        ai_app_root=ai_app_root,
+    )
+
+    gateway_target = target_dir / "gateway.yaml"
+    stage_gateway_descriptor(
+        gateway_target,
+        source_path=_source("gateway.yaml"),
+        ai_app_root=ai_app_root,
+    )
+    have_gateway = gateway_target.exists()
+
+    assembly = load_release_descriptor(assembly_target)
+    bundles = load_release_descriptor(bundles_target) if have_bundles and bundles_target.exists() else {}
+    bundles_secrets = (
+        load_release_descriptor(bundles_secrets_target)
+        if have_bundles_secrets and bundles_secrets_target.exists()
+        else {}
+    )
+    secrets = load_release_descriptor(secrets_target) if have_secrets and secrets_target.exists() else {}
+    gateway = load_gateway_descriptor(gateway_target) if have_gateway and gateway_target.exists() else {}
+    return {
+        "source_dir": source_dir_resolved,
+        "assembly_path": assembly_target,
+        "secrets_path": secrets_target if have_secrets else None,
+        "bundles_path": bundles_target if have_bundles else None,
+        "bundles_secrets_path": bundles_secrets_target if have_bundles_secrets else None,
+        "gateway_path": gateway_target if have_gateway else None,
+        "assembly": assembly,
+        "bundles_data": bundles,
+        "bundles_secrets_data": bundles_secrets,
+        "secrets_data": secrets,
+        "gateway_data": gateway,
+        "have_assembly": True,
+        "have_secrets": have_secrets,
+        "have_bundles": have_bundles,
+        "have_bundles_secrets": have_bundles_secrets,
+        "have_gateway": have_gateway,
+    }
 
 
 def ensure_nginx_configs(target_dir: Path, ai_app_root: Path, docker_dir: Path) -> None:
@@ -3220,6 +3327,7 @@ def run_setup(
     bundles_secrets: Dict[str, object] = {}
     gateway_descriptor_path = None
     gateway_descriptor: Dict[str, object] = {}
+    env_descriptors_location = os.getenv("KDCUBE_DESCRIPTORS_LOCATION", "").strip()
     env_descriptor = os.getenv("KDCUBE_ASSEMBLY_DESCRIPTOR_PATH", "").strip()
     env_secrets_descriptor = os.getenv("KDCUBE_SECRETS_DESCRIPTOR_PATH", "").strip()
     env_bundles_descriptor = os.getenv("KDCUBE_BUNDLES_DESCRIPTOR_PATH", "").strip()
@@ -3241,6 +3349,34 @@ def run_setup(
     use_descriptor_platform = _env_flag("KDCUBE_ASSEMBLY_USE_PLATFORM")
     use_bundles_descriptor = _env_flag("KDCUBE_USE_BUNDLES_DESCRIPTOR")
     use_bundles_secrets = _env_flag("KDCUBE_USE_BUNDLES_SECRETS")
+    if env_descriptors_location:
+        staged_descriptors = stage_descriptor_directory(
+            config_dir,
+            source_dir=Path(env_descriptors_location),
+            ai_app_root=ai_app_root,
+            require_complete=True,
+        )
+        staged_assembly = staged_descriptors.get("assembly") or {}
+        env_descriptor = str(staged_descriptors["assembly_path"])
+        env_secrets_descriptor = str(staged_descriptors["secrets_path"] or "")
+        env_bundles_descriptor = str(staged_descriptors["bundles_path"] or "")
+        env_bundles_secrets = str(staged_descriptors["bundles_secrets_path"] or "")
+        env_gateway_descriptor = str(staged_descriptors["gateway_path"] or "")
+        use_descriptor_bundles = bool(_get_nested(staged_assembly, "bundles"))
+        use_descriptor_frontend = bool(_get_nested(staged_assembly, "frontend"))
+        use_descriptor_platform = False
+        use_bundles_descriptor = bool(staged_descriptors["bundles_path"])
+        use_bundles_secrets = bool(staged_descriptors["bundles_secrets_path"])
+        os.environ["KDCUBE_ASSEMBLY_DESCRIPTOR_PATH"] = env_descriptor
+        os.environ["KDCUBE_SECRETS_DESCRIPTOR_PATH"] = env_secrets_descriptor
+        os.environ["KDCUBE_BUNDLES_DESCRIPTOR_PATH"] = env_bundles_descriptor
+        os.environ["KDCUBE_BUNDLES_SECRETS_PATH"] = env_bundles_secrets
+        os.environ["KDCUBE_GATEWAY_DESCRIPTOR_PATH"] = env_gateway_descriptor
+        os.environ["KDCUBE_ASSEMBLY_USE_BUNDLES"] = "1" if use_descriptor_bundles else "0"
+        os.environ["KDCUBE_ASSEMBLY_USE_FRONTEND"] = "1" if use_descriptor_frontend else "0"
+        os.environ["KDCUBE_ASSEMBLY_USE_PLATFORM"] = "0"
+        os.environ["KDCUBE_USE_BUNDLES_DESCRIPTOR"] = "1" if use_bundles_descriptor else "0"
+        os.environ["KDCUBE_USE_BUNDLES_SECRETS"] = "1" if use_bundles_secrets else "0"
     if (config_dir / ".env").exists():
         env_existing = load_env_file(config_dir / ".env")
         existing_mode = env_existing.entries.get("KDCUBE_COMPOSE_MODE", (None, None))[1]

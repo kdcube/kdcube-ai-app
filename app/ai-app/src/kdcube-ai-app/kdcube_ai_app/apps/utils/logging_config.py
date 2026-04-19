@@ -17,14 +17,26 @@ def _to_level(name: str, default: int) -> int:
         return default
 
 
+def _env_text(name: str) -> str | None:
+    value = str(os.getenv(name) or "").strip()
+    return value or None
+
+
+def _env_int(name: str) -> int | None:
+    raw = _env_text(name)
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except Exception:
+        return None
+
+
 def configure_logging():
     # --- Global settings from config ---
     _log = get_settings().PLATFORM.LOG
-    log_level_name = (_log.LOG_LEVEL or "INFO").upper()
-    log_format = os.getenv(
-        "LOG_FORMAT",
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
+    log_level_name = (_env_text("LOG_LEVEL") or _log.LOG_LEVEL or "INFO").upper()
+    log_format = _env_text("LOG_FORMAT") or "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     level = _to_level(log_level_name, logging.INFO)
 
     # ---- Console handler ----
@@ -33,14 +45,14 @@ def configure_logging():
     console_handler.setFormatter(logging.Formatter(log_format))
 
     # ---- File handler with rotation ----
-    log_dir = Path(_log.LOG_DIR or "logs")
+    log_dir = Path(_env_text("LOG_DIR") or _log.LOG_DIR or "logs")
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    file_prefix = _log.LOG_FILE_PREFIX or "kdcube"
+    file_prefix = _env_text("LOG_FILE_PREFIX") or _log.LOG_FILE_PREFIX or "kdcube"
     base_log_path = log_dir / f"{file_prefix}.log"
 
-    max_mb = _log.LOG_MAX_MB
-    backup_count = _log.LOG_BACKUP_COUNT
+    max_mb = _env_int("LOG_MAX_MB") or _log.LOG_MAX_MB
+    backup_count = _env_int("LOG_BACKUP_COUNT") or _log.LOG_BACKUP_COUNT
 
     file_handler = RotatingFileHandler(
         base_log_path,

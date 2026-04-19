@@ -1373,19 +1373,16 @@ def _to_entry(bid: str, v: Dict[str, Any]) -> BundleEntry:
         return reserved
     return candidate
 
-def _load_env_json(strict: bool) -> Optional[Dict[str, Any]]:
-    raw = os.getenv("AGENTIC_BUNDLES_JSON")
+def _load_bundle_descriptor_payload(raw: str, *, strict: bool, label: str) -> Optional[Dict[str, Any]]:
+    raw = str(raw or "").strip()
     if not raw:
-        if strict:
-            raise ValueError("AGENTIC_BUNDLES_JSON is not set")
         return None
-    raw = raw.strip()
     if raw.startswith("{") or raw.startswith("["):
         return json.loads(raw)
     path = Path(raw).expanduser()
     if not path.exists():
         if strict:
-            raise ValueError(f"AGENTIC_BUNDLES_JSON file not found: {path}")
+            raise ValueError(f"{label} file not found: {path}")
         return None
     text = path.read_text()
     data: Optional[Dict[str, Any]]
@@ -1431,6 +1428,32 @@ def _load_env_json(strict: bool) -> Optional[Dict[str, Any]]:
             "bundles": bundles,
         }
     return data
+
+
+def _load_env_json(strict: bool) -> Optional[Dict[str, Any]]:
+    raw = str(os.getenv("AGENTIC_BUNDLES_JSON") or "").strip()
+    if raw:
+        return _load_bundle_descriptor_payload(raw, strict=strict, label="AGENTIC_BUNDLES_JSON")
+
+    authority_uri = _resolve_bundles_descriptor_authority_uri()
+    if authority_uri:
+        authority_raw = authority_uri
+        if authority_raw.startswith("file://"):
+            authority_raw = authority_raw[len("file://"):]
+        loaded = _load_bundle_descriptor_payload(
+            authority_raw,
+            strict=strict,
+            label="bundle descriptor authority",
+        )
+        if loaded is not None:
+            return loaded
+
+    if strict:
+        raise ValueError(
+            "No bundle descriptor authority is configured. "
+            "Expected AGENTIC_BUNDLES_JSON or a mounted bundles.yaml descriptor."
+        )
+    return None
 
 
 async def put_bundle_props(

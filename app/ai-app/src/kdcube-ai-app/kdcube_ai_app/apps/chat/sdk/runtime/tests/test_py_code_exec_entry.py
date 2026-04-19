@@ -18,6 +18,7 @@ from kdcube_ai_app.apps.chat.sdk.runtime.isolated.py_code_exec_entry import (
     _ensure_dynamic_package_chain,
     _hydrate_runtime_payload_from_secret,
     _materialize_runtime_descriptor_payloads,
+    _prepare_runtime_environment,
 )
 from kdcube_ai_app.apps.chat.sdk.runtime.dynamic_module_loader import load_dynamic_module_from_file
 
@@ -97,6 +98,40 @@ def test_materialize_runtime_descriptor_payloads_restores_root_only_descriptor_f
         )
         assert "KDCUBE_RUNTIME_ASSEMBLY_YAML_B64" not in os.environ
         assert any("Materialized descriptor payloads into" in msg for _, msg in logger.messages)
+    finally:
+        shutil.rmtree(runtime_dir, ignore_errors=True)
+
+
+def test_prepare_runtime_environment_materializes_descriptors_before_settings_cache(monkeypatch):
+    exec_id = "exec-prepare-env-test"
+    runtime_dir = pathlib.Path("/tmp/kdcube-runtime-descriptors") / exec_id
+    shutil.rmtree(runtime_dir, ignore_errors=True)
+    monkeypatch.setenv("EXECUTION_ID", exec_id)
+    monkeypatch.delenv("KDCUBE_RUNTIME_ENV_PREPARED", raising=False)
+    monkeypatch.setenv(
+        "KDCUBE_RUNTIME_SECRETS_YAML_B64",
+        base64.b64encode(b"secrets:\n  services:\n    brave:\n      api_key: brave-secret\n").decode("ascii"),
+    )
+    cache_clear_calls: list[bool] = []
+
+    class _FakeSettingsFn:
+        def cache_clear(self):
+            cache_clear_calls.append(True)
+
+    monkeypatch.setattr(
+        "kdcube_ai_app.apps.chat.sdk.config.get_settings",
+        _FakeSettingsFn(),
+    )
+    logger = _CaptureLogger()
+
+    try:
+        _prepare_runtime_environment(logger)
+
+        assert os.environ["KDCUBE_RUNTIME_ENV_PREPARED"] == "1"
+        assert pathlib.Path(os.environ["GLOBAL_SECRETS_YAML"]).read_text(encoding="utf-8") == (
+            "secrets:\n  services:\n    brave:\n      api_key: brave-secret\n"
+        )
+        assert cache_clear_calls == [True]
     finally:
         shutil.rmtree(runtime_dir, ignore_errors=True)
 
