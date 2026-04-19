@@ -64,15 +64,15 @@ Descriptions are condensed from the comments in those sample files.
 | `KDCUBE_CONFIG_DIR` | Workdir layout (config + data + logs) If you keep configs in a separate workdir, point these to that root. |
 | `KDCUBE_DATA_DIR` | n/a |
 | `KDCUBE_LOGS_DIR` | n/a |
-| `HOST_KDCUBE_STORAGE_PATH` | Path on host to mount as a KDCUBE STORAGE (local filesystem or S3). If using S3 in KDCUBE_STORAGE_PATH, not needed |
-| `HOST_BUNDLES_PATH` | Host directory for local path bundles mounted into proc as `/bundles` |
-| `HOST_GIT_BUNDLES_PATH` | Optional host directory for git-resolved bundle clones/cache mounted into proc as `/git-bundles`. If unset, git bundles fall back to the legacy bundles root behavior. |
-| `HOST_BUNDLE_STORAGE_PATH` | Host directory for shared bundle local storage (bundle data; used by ks: resolvers). This is mounted into chat-proc at BUNDLE_STORAGE_ROOT. |
+| `HOST_KDCUBE_STORAGE_PATH` | Host directory mounted into proc as `/kdcube-storage`. In descriptors-first setups, set `assembly.yaml -> paths.host_kdcube_storage_path` and let the installer/export layer render this env. |
+| `HOST_BUNDLES_PATH` | Host directory for local path bundles mounted into proc as `/bundles`. In descriptors-first setups, set `assembly.yaml -> paths.host_bundles_path`. |
+| `HOST_GIT_BUNDLES_PATH` | Optional host directory for git-resolved bundle clones/cache mounted into proc as `/git-bundles`. In descriptors-first setups, set `assembly.yaml -> paths.host_git_bundles_path`. If unset, git bundles fall back to the legacy bundles root behavior. |
+| `HOST_BUNDLE_STORAGE_PATH` | Host directory for shared bundle local storage (bundle data; used by ks: resolvers). This is mounted into chat-proc at `BUNDLE_STORAGE_ROOT`. In descriptors-first setups, set `assembly.yaml -> paths.host_bundle_storage_path`. |
 | `HOST_ASSEMBLY_YAML_DESCRIPTOR_PATH` | Assembly descriptor host path. Mounted as `/config/assembly.yaml`. Runtime code may read it via `read_plain(...)`; the CLI also uses it as the local source of truth. |
 | `HOST_BUNDLES_DESCRIPTOR_PATH` | Bundles descriptor host path. Mounted as `/config/bundles.yaml`. Proc may use it as `AGENTIC_BUNDLES_JSON`, and runtime code may read it via `read_plain("b:...")`. |
 | `HOST_GIT_SSH_KEY_PATH` | Optional SSH key + known_hosts for git bundle pulls (private repos) These files are mounted into the chat-proc container at: /run/secrets/git_ssh_key /run/secrets/git_known_hosts |
 | `HOST_GIT_KNOWN_HOSTS_PATH` | n/a |
-| `HOST_EXEC_WORKSPACE_PATH` | Temporary workspace for code execution (Docker-in-Docker) |
+| `HOST_EXEC_WORKSPACE_PATH` | Host directory mounted into proc as `/exec-workspace` for Docker-in-Docker workspaces. In descriptors-first setups, set `assembly.yaml -> paths.host_exec_workspace_path`. |
 | `AGENTIC_BUNDLES_ROOT` | Mount path for bundles inside the container DO NOT CHANGE unless you modify AGENTIC_BUNDLES_JSON references |
 | `BUNDLE_STORAGE_ROOT` | Shared bundle storage root inside the container (knowledge space root) |
 | `UI_BUILD_CONTEXT` | Root of the KDCube ai-app directory (contains deployment/, ui/, src/) This works on Linux/Mac. For Windows, use a Windows-safe path (e.g., D:/path/to/kdcube-ai-app/app/ai-app) |
@@ -735,8 +735,8 @@ These values scope **bundle registries** and **control‑plane events**.
 | `BUNDLES_INCLUDE_EXAMPLES` | `1`     | Auto‑add example bundles from `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles`                                            | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_store.py`    |
 | `BUNDLES_FORCE_ENV_ON_STARTUP` | `0` | Force overwrite Redis registry from `AGENTIC_BUNDLES_JSON` (processor only)                     | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_store.py`    |
 | `BUNDLES_FORCE_ENV_LOCK_TTL_SECONDS` | `60` | Redis lock TTL for startup env reset                                                     | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_store.py`    |
-| `HOST_BUNDLES_PATH`      | _(unset)_ | Host path for local path bundles. Mounted into containers as `AGENTIC_BUNDLES_ROOT`. | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`      |
-| `HOST_GIT_BUNDLES_PATH`  | _(unset)_ | Optional host path for git-resolved bundle clones/cache. Mounted into containers as `AGENTIC_GIT_BUNDLES_ROOT`. | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`      |
+| `HOST_BUNDLES_PATH`      | _(unset)_ | Host path for local path bundles. Mounted into containers as `AGENTIC_BUNDLES_ROOT`. In descriptor-first setups, render from `assembly.paths.host_bundles_path`. | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`      |
+| `HOST_GIT_BUNDLES_PATH`  | _(unset)_ | Optional host path for git-resolved bundle clones/cache. Mounted into containers as `AGENTIC_GIT_BUNDLES_ROOT`. In descriptor-first setups, render from `assembly.paths.host_git_bundles_path`. | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`      |
 | `AGENTIC_BUNDLES_ROOT`   | _(unset)_ | Container‑visible root for local path bundles (normally `/bundles`).                         | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`      |
 | `AGENTIC_GIT_BUNDLES_ROOT` | _(unset)_ | Container-visible root for git-resolved bundles (normally `/git-bundles`). Falls back to legacy bundles root when unset. | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/git_bundle.py`      |
 | `BUNDLE_STORAGE_ROOT` | _(unset)_ | Shared local filesystem root for bundle data (used by ks:), default: `<bundles_root>/_bundle_storage`. | `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_storage.py` |
@@ -780,8 +780,8 @@ platform property paths such as `role_models`, `embedding`,
 
 **Host vs container bundles root**
 
-- `HOST_BUNDLES_PATH` is typically defined in `.env` (docker‑compose) so the host path for local path bundles can be mounted (it does not need to be in `.env.proc`).
-- `HOST_GIT_BUNDLES_PATH` is the optional host path for git-resolved bundle clones/cache.
+- `HOST_BUNDLES_PATH` should come from `assembly.yaml -> paths.host_bundles_path`; compose/ECS then render it into env where needed.
+- `HOST_GIT_BUNDLES_PATH` should come from `assembly.yaml -> paths.host_git_bundles_path`.
 - `AGENTIC_BUNDLES_ROOT` is the container root for local path bundles.
 - `AGENTIC_GIT_BUNDLES_ROOT` is the container root for git-resolved bundles.
 

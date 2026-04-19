@@ -187,7 +187,11 @@ def _make_storage_backend_from_spec(spec: PortableSpec) -> IStorageBackend|_Loca
     try:
         from kdcube_ai_app.storage.storage import create_storage_backend
 
-        storage_path = (spec.accounting_storage or {}).get("storage_path") or os.environ.get("KDCUBE_STORAGE_PATH")
+        storage_path = (
+            (spec.accounting_storage or {}).get("storage_path")
+            or get_settings().STORAGE_PATH
+            or os.environ.get("KDCUBE_STORAGE_PATH")
+        )
         logger.info(f"[Bootstrap._make_storage_backend_from_spec]. Using accounting storage path: {storage_path}")
         if storage_path:
             kdcube_storage_backend = create_storage_backend(storage_path, **{})

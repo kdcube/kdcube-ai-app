@@ -1131,7 +1131,11 @@ def _load_gateway_yaml() -> Optional[Dict[str, Any]]:
     """
     path_str = (os.getenv("GATEWAY_YAML_PATH") or "").strip()
     if not path_str:
-        descriptors_dir = str(os.getenv("PLATFORM_DESCRIPTORS_DIR") or "").strip()
+        descriptors_dir = str(
+            getattr(get_settings(), "PLATFORM_DESCRIPTORS_DIR", None)
+            or os.getenv("PLATFORM_DESCRIPTORS_DIR")
+            or ""
+        ).strip()
         if descriptors_dir:
             path_str = str((Path(descriptors_dir).expanduser() / "gateway.yaml").resolve())
     if not path_str:

@@ -85,8 +85,9 @@ def resolve_bundles_root() -> pathlib.Path:
     Resolve bundles root on the current host.
     Prefer HOST_BUNDLES_PATH (host filesystem), then AGENTIC_BUNDLES_ROOT.
     """
-    host_root = os.environ.get("HOST_BUNDLES_PATH")
-    agentic_root = get_settings().PLATFORM.APPLICATIONS.AGENTIC_BUNDLES_ROOT
+    settings = get_settings()
+    host_root = str(getattr(settings, "HOST_BUNDLES_PATH", None) or os.environ.get("HOST_BUNDLES_PATH") or "").strip()
+    agentic_root = settings.PLATFORM.APPLICATIONS.AGENTIC_BUNDLES_ROOT
     if host_root:
         host_path = pathlib.Path(host_root).expanduser()
         try:
@@ -123,7 +124,8 @@ def resolve_git_bundles_root() -> pathlib.Path:
     This keeps existing cloud/ECS behavior unchanged until a dedicated git root
     is explicitly configured.
     """
-    host_root = os.environ.get("HOST_GIT_BUNDLES_PATH")
+    settings = get_settings()
+    host_root = str(getattr(settings, "HOST_GIT_BUNDLES_PATH", None) or os.environ.get("HOST_GIT_BUNDLES_PATH") or "").strip()
     agentic_root = os.environ.get("AGENTIC_GIT_BUNDLES_ROOT")
     if host_root:
         host_path = pathlib.Path(host_root).expanduser()
@@ -211,7 +213,7 @@ def _redis_client():
         import redis  # type: ignore
     except Exception:
         return None
-    redis_url = os.environ.get("REDIS_URL")
+    redis_url = str(getattr(get_settings(), "REDIS_URL", None) or os.environ.get("REDIS_URL") or "").strip()
     if not redis_url:
         return None
     try:

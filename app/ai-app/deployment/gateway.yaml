@@ -1,3 +1,5 @@
+# Mounted into /config/gateway.yaml in descriptor-first deployments.
+# Runtime services can read this file directly when GATEWAY_CONFIG_JSON is absent.
 gateway:
   tenant: "TENANT_ID"
   project: "PROJECT_ID"

@@ -1,3 +1,5 @@
+# Mounted into proc as /config/bundles.yaml in descriptor-first deployments.
+# This file remains the portable/export descriptor view of bundle registry state.
 bundles:
   version: "1"
   default_bundle_id: "app@2-0"

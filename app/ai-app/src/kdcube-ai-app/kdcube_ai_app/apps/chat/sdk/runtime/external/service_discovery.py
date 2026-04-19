@@ -4,12 +4,80 @@
 # kdcube_ai_app/apps/chat/sdk/runtime/docker/discovery.py
 
 import pathlib, os
-from typing import Optional
+from dataclasses import dataclass
+from typing import Mapping, Optional
 
 from kdcube_ai_app.infra.service_hub.inventory import AgentLogger
 
 CONTAINER_BUNDLES_ROOT = "/bundles"
 CONTAINER_GIT_BUNDLES_ROOT = "/git-bundles"
+
+
+@dataclass(frozen=True)
+class HostMountPaths:
+    """
+    Proc-runtime host path hints used for Docker-in-Docker sibling mounts.
+
+    These are deployment topology hints. In descriptors-first deployments they
+    come from ``assembly.yaml -> paths.*`` and are promoted into the managed
+    settings contract; env vars remain the compatibility fallback.
+    """
+
+    kdcube_storage: str | None
+    bundles: str | None
+    git_bundles: str | None
+    bundle_storage: str | None
+    exec_workspace: str | None
+
+    @property
+    def effective_git_bundles(self) -> str:
+        return self.git_bundles or self.bundles or CONTAINER_GIT_BUNDLES_ROOT
+
+    @property
+    def effective_bundles(self) -> str:
+        return self.bundles or CONTAINER_BUNDLES_ROOT
+
+    @property
+    def effective_bundle_storage(self) -> str:
+        return self.bundle_storage or "/bundle-storage"
+
+    @property
+    def effective_kdcube_storage(self) -> str:
+        return self.kdcube_storage or "/kdcube-storage"
+
+    @property
+    def effective_exec_workspace(self) -> str:
+        return self.exec_workspace or "/exec-workspace"
+
+
+def get_host_mount_paths(env: Mapping[str, str] | None = None) -> HostMountPaths:
+    environ = env or os.environ
+
+    settings = None
+    if env is None:
+        try:
+            from kdcube_ai_app.apps.chat.sdk.config import get_settings
+
+            settings = get_settings()
+        except Exception:
+            settings = None
+
+    def _pick(env_key: str, settings_attr: str) -> str | None:
+        raw = (environ.get(env_key) or "").strip()
+        if raw:
+            return raw
+        if settings is None:
+            return None
+        raw = str(getattr(settings, settings_attr, None) or "").strip()
+        return raw or None
+
+    return HostMountPaths(
+        kdcube_storage=_pick("HOST_KDCUBE_STORAGE_PATH", "HOST_KDCUBE_STORAGE_PATH"),
+        bundles=_pick("HOST_BUNDLES_PATH", "HOST_BUNDLES_PATH"),
+        git_bundles=_pick("HOST_GIT_BUNDLES_PATH", "HOST_GIT_BUNDLES_PATH"),
+        bundle_storage=_pick("HOST_BUNDLE_STORAGE_PATH", "HOST_BUNDLE_STORAGE_PATH"),
+        exec_workspace=_pick("HOST_EXEC_WORKSPACE_PATH", "HOST_EXEC_WORKSPACE_PATH"),
+    )
 
 def _path(p: pathlib.Path | str) -> str:
     return str(p if isinstance(p, pathlib.Path) else pathlib.Path(p))
@@ -64,48 +132,43 @@ def _translate_container_path_to_host(container_path: pathlib.Path) -> pathlib.P
     """
     container_path = container_path.resolve()
     path_str = str(container_path)
+    host_mounts = get_host_mount_paths()
 
     running_in_docker = _is_running_in_docker()
 
     # /kdcube-storage → host path from env
     if path_str.startswith("/kdcube-storage"):
-        host_kb_storage = os.environ.get("HOST_KDCUBE_STORAGE_PATH", "/kdcube-storage")
         rel = os.path.relpath(path_str, "/kdcube-storage")
-        return pathlib.Path(host_kb_storage) / rel
+        return pathlib.Path(host_mounts.effective_kdcube_storage) / rel
 
     # /git-bundles → host path from env
     if path_str.startswith(CONTAINER_GIT_BUNDLES_ROOT):
-        host_git_bundles = os.environ.get("HOST_GIT_BUNDLES_PATH") or os.environ.get("HOST_BUNDLES_PATH") or CONTAINER_GIT_BUNDLES_ROOT
         rel = os.path.relpath(path_str, CONTAINER_GIT_BUNDLES_ROOT)
-        return pathlib.Path(host_git_bundles) / rel
+        return pathlib.Path(host_mounts.effective_git_bundles) / rel
 
     # /bundles → host path from env
     if path_str.startswith(CONTAINER_BUNDLES_ROOT):
-        host_bundles = os.environ.get("HOST_BUNDLES_PATH", "/bundles")
         rel = os.path.relpath(path_str, CONTAINER_BUNDLES_ROOT)
-        return pathlib.Path(host_bundles) / rel
+        return pathlib.Path(host_mounts.effective_bundles) / rel
 
     # /bundle-storage → host path from env
     if path_str.startswith("/bundle-storage"):
-        host_bundle_storage = os.environ.get("HOST_BUNDLE_STORAGE_PATH", "/bundle-storage")
         rel = os.path.relpath(path_str, "/bundle-storage")
-        return pathlib.Path(host_bundle_storage) / rel
+        return pathlib.Path(host_mounts.effective_bundle_storage) / rel
 
     # /exec-workspace → host path from env (NEW)
     # This handles paths that were created directly in /exec-workspace
     if path_str.startswith("/exec-workspace") and running_in_docker:
-        host_exec_workspace = os.environ.get("HOST_EXEC_WORKSPACE_PATH", "/exec-workspace")
         rel = os.path.relpath(path_str, "/exec-workspace")
-        return pathlib.Path(host_exec_workspace) / rel
+        return pathlib.Path(host_mounts.effective_exec_workspace) / rel
 
     # /tmp → Redirect to /exec-workspace (Docker-in-Docker)
     # This handles paths that were mistakenly created in /tmp
     if path_str.startswith("/tmp") and running_in_docker:
-        host_exec_workspace = os.environ.get("HOST_EXEC_WORKSPACE_PATH", "/exec-workspace")
         rel = os.path.relpath(path_str, "/tmp")
         shared_path = pathlib.Path("/exec-workspace") / rel
         shared_path.mkdir(parents=True, exist_ok=True)
-        return pathlib.Path(host_exec_workspace) / rel
+        return pathlib.Path(host_mounts.effective_exec_workspace) / rel
 
     # If no translation needed, return as-is
     return container_path

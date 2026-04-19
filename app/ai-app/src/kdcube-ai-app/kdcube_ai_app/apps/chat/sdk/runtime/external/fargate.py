@@ -159,6 +159,7 @@ def _summarize_task_state(task: Dict[str, Any]) -> str:
 
 class FargateRuntime(ExternalRuntime):
     async def run(self, request: ExternalExecRequest, *, logger: Optional[AgentLogger] = None) -> ExternalExecResult:
+        settings = get_settings()
         runtime_globals = request.runtime_globals or {}
         exec_ctx = runtime_globals.get("EXEC_CONTEXT") or {}
         exec_id = (
@@ -167,8 +168,8 @@ class FargateRuntime(ExternalRuntime):
             or runtime_globals.get("RESULT_FILENAME")
             or "run"
         )
-        payload_env = build_external_runtime_base_env(os.environ)
-        inline_env = build_external_runtime_inline_env(os.environ)
+        payload_env = build_external_runtime_base_env(os.environ, settings=settings)
+        inline_env = build_external_runtime_inline_env(os.environ, settings=settings)
         if request.extra_env:
             payload_env.update(request.extra_env)
             inline_env.update(request.extra_env)
@@ -266,27 +267,32 @@ class FargateRuntime(ExternalRuntime):
         enabled = (
             enabled_override
             if enabled_override is not None
-            else os.environ.get("FARGATE_EXEC_ENABLED", "0").lower() in {"1", "true", "yes"}
+            else str(payload_env.get("FARGATE_EXEC_ENABLED") or "0").lower() in {"1", "true", "yes"}
         )
         if not enabled:
             if logger:
                 logger.log("[fargate] Distributed execution not enabled (FARGATE_EXEC_ENABLED=1)", level="ERROR")
             return ExternalExecResult(ok=False, returncode=1, error="fargate_disabled")
 
-        cluster = str(_pick_cfg(exec_runtime_cfg, "cluster", "FARGATE_CLUSTER") or os.environ.get("FARGATE_CLUSTER") or "").strip()
-        task_def = str(_pick_cfg(exec_runtime_cfg, "task_definition", "taskDefinition", "FARGATE_TASK_DEFINITION") or os.environ.get("FARGATE_TASK_DEFINITION") or "").strip()
-        container_name = str(_pick_cfg(exec_runtime_cfg, "container_name", "containerName", "FARGATE_CONTAINER_NAME") or os.environ.get("FARGATE_CONTAINER_NAME") or "").strip()
-        subnets = _as_csv_list(_pick_cfg(exec_runtime_cfg, "subnets", "FARGATE_SUBNETS")) or [s for s in (os.environ.get("FARGATE_SUBNETS") or "").split(",") if s.strip()]
-        sec_groups = _as_csv_list(_pick_cfg(exec_runtime_cfg, "security_groups", "securityGroups", "FARGATE_SECURITY_GROUPS")) or [s for s in (os.environ.get("FARGATE_SECURITY_GROUPS") or "").split(",") if s.strip()]
-        assign_public_ip = str(_pick_cfg(exec_runtime_cfg, "assign_public_ip", "assignPublicIp", "FARGATE_ASSIGN_PUBLIC_IP") or os.environ.get("FARGATE_ASSIGN_PUBLIC_IP", "DISABLED")).strip() or "DISABLED"
-        launch_type = str(_pick_cfg(exec_runtime_cfg, "launch_type", "launchType", "FARGATE_LAUNCH_TYPE") or os.environ.get("FARGATE_LAUNCH_TYPE", "FARGATE")).strip() or "FARGATE"
-        platform_version = str(_pick_cfg(exec_runtime_cfg, "platform_version", "platformVersion", "FARGATE_PLATFORM_VERSION") or os.environ.get("FARGATE_PLATFORM_VERSION") or "").strip() or None
+        cluster = str(_pick_cfg(exec_runtime_cfg, "cluster", "FARGATE_CLUSTER") or payload_env.get("FARGATE_CLUSTER") or "").strip()
+        task_def = str(_pick_cfg(exec_runtime_cfg, "task_definition", "taskDefinition", "FARGATE_TASK_DEFINITION") or payload_env.get("FARGATE_TASK_DEFINITION") or "").strip()
+        container_name = str(_pick_cfg(exec_runtime_cfg, "container_name", "containerName", "FARGATE_CONTAINER_NAME") or payload_env.get("FARGATE_CONTAINER_NAME") or "").strip()
+        subnets = _as_csv_list(_pick_cfg(exec_runtime_cfg, "subnets", "FARGATE_SUBNETS")) or [s for s in str(payload_env.get("FARGATE_SUBNETS") or "").split(",") if s.strip()]
+        sec_groups = _as_csv_list(_pick_cfg(exec_runtime_cfg, "security_groups", "securityGroups", "FARGATE_SECURITY_GROUPS")) or [s for s in str(payload_env.get("FARGATE_SECURITY_GROUPS") or "").split(",") if s.strip()]
+        assign_public_ip = str(_pick_cfg(exec_runtime_cfg, "assign_public_ip", "assignPublicIp", "FARGATE_ASSIGN_PUBLIC_IP") or payload_env.get("FARGATE_ASSIGN_PUBLIC_IP") or "DISABLED").strip() or "DISABLED"
+        launch_type = str(_pick_cfg(exec_runtime_cfg, "launch_type", "launchType", "FARGATE_LAUNCH_TYPE") or payload_env.get("FARGATE_LAUNCH_TYPE") or "FARGATE").strip() or "FARGATE"
+        platform_version = str(_pick_cfg(exec_runtime_cfg, "platform_version", "platformVersion", "FARGATE_PLATFORM_VERSION") or payload_env.get("FARGATE_PLATFORM_VERSION") or "").strip() or None
         aws_region = str(
             _pick_cfg(exec_runtime_cfg, "region", "aws_region", "AWS_REGION")
             or payload_env.get("AWS_REGION")
             or payload_env.get("AWS_DEFAULT_REGION")
-            or os.environ.get("AWS_REGION")
-            or os.environ.get("AWS_DEFAULT_REGION")
+            or ""
+        ).strip() or None
+        aws_profile = str(payload_env.get("AWS_PROFILE") or "").strip() or None
+        secret_region = str(
+            payload_env.get("SECRETS_AWS_REGION")
+            or payload_env.get("SECRETS_SM_REGION")
+            or aws_region
             or ""
         ).strip() or None
 
@@ -298,7 +304,7 @@ class FargateRuntime(ExternalRuntime):
                 )
             return ExternalExecResult(ok=False, returncode=1, error="fargate_config_missing")
 
-        redis_url = payload_env.get("REDIS_URL") or get_settings().REDIS_URL
+        redis_url = payload_env.get("REDIS_URL") or settings.REDIS_URL
         if redis_url:
             payload_env["REDIS_URL"] = redis_url
 
@@ -318,6 +324,10 @@ class FargateRuntime(ExternalRuntime):
             bundle_dir=bundle_dir,
             bundle_id=(bundle_id or bundle_dir),
         )
+        secret_prefix = (
+            str(payload_env.get("SECRETS_AWS_SM_PREFIX") or payload_env.get("SECRETS_SM_PREFIX") or "").strip()
+            or None
+        )
         payload_secret_id = put_exec_payload_secret(
             exec_id=str(exec_id),
             payload={
@@ -325,7 +335,9 @@ class FargateRuntime(ExternalRuntime):
                 "tool_module_names": request.tool_module_names or [],
                 "env": payload_env,
             },
-            region_name=aws_region,
+            prefix=secret_prefix,
+            region_name=secret_region,
+            profile_name=aws_profile,
         )
 
         if logger:
@@ -355,7 +367,8 @@ class FargateRuntime(ExternalRuntime):
         )
 
         try:
-            ecs = boto3.client("ecs", region_name=aws_region) if aws_region else boto3.client("ecs")
+            session = boto3.Session(profile_name=aws_profile) if aws_profile else boto3.Session()
+            ecs = session.client("ecs", region_name=aws_region) if aws_region else session.client("ecs")
         except Exception as e:
             if logger:
                 logger.log(f"[fargate] Failed to create ECS client: {type(e).__name__}: {e}", level="ERROR")
@@ -537,7 +550,11 @@ class FargateRuntime(ExternalRuntime):
             return ExternalExecResult(ok=ok, returncode=int(exit_code or 1), error=None if ok else "nonzero_exit", seconds=elapsed)
         finally:
             try:
-                delete_exec_payload_secret(secret_id=payload_secret_id, region_name=aws_region)
+                delete_exec_payload_secret(
+                    secret_id=payload_secret_id,
+                    region_name=secret_region,
+                    profile_name=aws_profile,
+                )
             except Exception as e:
                 if logger:
                     logger.log(f"[fargate] Failed to delete payload secret {payload_secret_id}: {type(e).__name__}: {e}", level="WARNING")

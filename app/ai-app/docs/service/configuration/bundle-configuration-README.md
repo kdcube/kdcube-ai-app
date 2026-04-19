@@ -120,7 +120,8 @@ config:
 Notes:
 - `execution.runtime` is the canonical path.
 - `exec_runtime` is accepted as a legacy alias.
-- Missing keys fall back to proc service env vars such as `FARGATE_CLUSTER`.
+- Missing keys fall back to the proc service's resolved platform settings export.
+- Raw proc env vars still override those resolved settings when explicitly present.
 
 Example: define multiple runtime profiles for one bundle and select the default:
 

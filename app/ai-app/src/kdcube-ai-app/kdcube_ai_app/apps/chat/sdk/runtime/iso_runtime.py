@@ -573,6 +573,33 @@ except Exception:
 # --- Tool alias imports (auto-injected) ---
 <TOOL_IMPORTS_SRC>
 
+class _ToolAliasProxy:
+    def __init__(self, alias: str):
+        self._alias = str(alias or "").strip()
+
+    def __getattr__(self, name: str):
+        if not self._alias or not name or name.startswith("_"):
+            raise AttributeError(name)
+
+        tool_id = f"{self._alias}.{name}"
+
+        async def _call(**kwargs):
+            return await agent_io_tools.tool_call(
+                fn=None,
+                params=kwargs,
+                tool_id=tool_id,
+                call_reason=f"executor:{tool_id}",
+            )
+
+        _call.__name__ = name
+        _call.__qualname__ = f"{self._alias}.{name}"
+        _call.__module__ = self._alias
+        return _call
+
+for _alias in (_ALIAS_TO_DYN or {}).keys():
+    if _alias and _alias not in globals():
+        globals()[_alias] = _ToolAliasProxy(_alias)
+
 # -------- Live progress cache (safe, in-process) --------
 _PROGRESS = {
     "objective": "",
@@ -1030,6 +1057,33 @@ for _alias, _dyn_name in (_ALIAS_TO_DYN or {}).items():
 # --- Tool alias imports (auto-injected) ---
 <TOOL_IMPORTS_SRC>
 
+class _ToolAliasProxy:
+    def __init__(self, alias: str):
+        self._alias = str(alias or "").strip()
+
+    def __getattr__(self, name: str):
+        if not self._alias or not name or name.startswith("_"):
+            raise AttributeError(name)
+
+        tool_id = f"{self._alias}.{name}"
+
+        async def _call(**kwargs):
+            return await agent_io_tools.tool_call(
+                fn=None,
+                params=kwargs,
+                tool_id=tool_id,
+                call_reason=f"executor:{tool_id}",
+            )
+
+        _call.__name__ = name
+        _call.__qualname__ = f"{self._alias}.{name}"
+        _call.__module__ = self._alias
+        return _call
+
+for _alias in (_ALIAS_TO_DYN or {}).keys():
+    if _alias and _alias not in globals():
+        globals()[_alias] = _ToolAliasProxy(_alias)
+
 # -------- Live progress cache (executor-local) --------
 _PROGRESS = {
     "objective": "",
@@ -1432,6 +1486,33 @@ for _alias, _dyn_name in (_ALIAS_TO_DYN or {}).items():
 
 # --- Tool alias imports (auto-injected) ---
 <TOOL_IMPORTS_SRC>
+
+class _ToolAliasProxy:
+    def __init__(self, alias: str):
+        self._alias = str(alias or "").strip()
+
+    def __getattr__(self, name: str):
+        if not self._alias or not name or name.startswith("_"):
+            raise AttributeError(name)
+
+        tool_id = f"{self._alias}.{name}"
+
+        async def _call(**kwargs):
+            return await agent_io_tools.tool_call(
+                fn=None,
+                params=kwargs,
+                tool_id=tool_id,
+                call_reason=f"executor:{tool_id}",
+            )
+
+        _call.__name__ = name
+        _call.__qualname__ = f"{self._alias}.{name}"
+        _call.__module__ = self._alias
+        return _call
+
+for _alias in (_ALIAS_TO_DYN or {}).keys():
+    if _alias and _alias not in globals():
+        globals()[_alias] = _ToolAliasProxy(_alias)
 
 # -------- Live progress cache (executor-local) --------
 _PROGRESS = {

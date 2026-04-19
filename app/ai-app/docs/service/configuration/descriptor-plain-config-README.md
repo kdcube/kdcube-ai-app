@@ -190,6 +190,11 @@ Some values are still promoted from `assembly.yaml` into env by the CLI or deplo
 - `storage.workspace.repo` -> `REACT_WORKSPACE_GIT_REPO`
 - `storage.claude_code_session.type` -> `CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION`
 - `storage.claude_code_session.repo` -> `CLAUDE_CODE_SESSION_GIT_REPO`
+- `paths.host_kdcube_storage_path` -> `HOST_KDCUBE_STORAGE_PATH`
+- `paths.host_bundles_path` -> `HOST_BUNDLES_PATH`
+- `paths.host_git_bundles_path` -> `HOST_GIT_BUNDLES_PATH`
+- `paths.host_bundle_storage_path` -> `HOST_BUNDLE_STORAGE_PATH`
+- `paths.host_exec_workspace_path` -> `HOST_EXEC_WORKSPACE_PATH`
 
 So code may choose either:
 
