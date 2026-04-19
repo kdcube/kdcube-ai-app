@@ -23,15 +23,15 @@ class _Registry:
         self.bundles = bundles
 
 
-def test_internal_reset_env_reapplies_registry(monkeypatch):
+def test_internal_reload_authority_reapplies_registry(monkeypatch):
     app = FastAPI()
     app.state.redis_async = object()
     mount_integrations_routers(app)
 
     calls: dict[str, object] = {}
 
-    async def fake_reset_registry_from_env(redis, tenant, project):
-        calls["reset"] = (redis, tenant, project)
+    async def fake_reload_registry_from_authority(redis, tenant, project):
+        calls["reload"] = (redis, tenant, project)
         return _Registry(
             default_bundle_id="demo.bundle@1.0.0",
             bundles={
@@ -48,10 +48,6 @@ def test_internal_reset_env_reapplies_registry(monkeypatch):
     async def fake_set_registry_async(registry, default_bundle_id):
         calls["set_registry"] = (registry, default_bundle_id)
 
-    def fake_serialize_to_env(registry, default_bundle_id):
-        calls["serialize"] = (registry, default_bundle_id)
-        return "ok"
-
     def fake_clear_agentic_caches():
         calls["cleared"] = True
 
@@ -62,39 +58,41 @@ def test_internal_reset_env_reapplies_registry(monkeypatch):
 
     app.state.redis_async = _Redis()
 
-    monkeypatch.setattr(integrations, "get_settings", lambda: SimpleNamespace(TENANT="cisoteria", PROJECT="chatbot"))
+    monkeypatch.setattr(
+        integrations,
+        "get_settings",
+        lambda: SimpleNamespace(TENANT="demo-tenant", PROJECT="demo-project"),
+    )
     monkeypatch.setattr(integrations, "_LOCALHOST", {"testclient", "127.0.0.1", "::1"})
 
     import kdcube_ai_app.infra.plugin.bundle_store as bundle_store
     import kdcube_ai_app.infra.plugin.bundle_registry as bundle_registry
     import kdcube_ai_app.infra.plugin.agentic_loader as agentic_loader
 
-    monkeypatch.setattr(bundle_store, "reset_registry_from_env", fake_reset_registry_from_env)
+    monkeypatch.setattr(bundle_store, "reload_registry_from_authority", fake_reload_registry_from_authority)
     monkeypatch.setattr(bundle_registry, "set_registry_async", fake_set_registry_async)
-    monkeypatch.setattr(bundle_registry, "serialize_to_env", fake_serialize_to_env)
     monkeypatch.setattr(agentic_loader, "clear_agentic_caches", fake_clear_agentic_caches)
 
     client = TestClient(app)
-    response = client.post("/internal/bundles/reset-env", json={})
+    response = client.post("/internal/bundles/reload-authority", json={})
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
-    assert response.json()["source"] == "env"
-    assert calls["reset"][1:] == ("cisoteria", "chatbot")
+    assert response.json()["source"] == "authority"
+    assert calls["reload"][1:] == ("demo-tenant", "demo-project")
     assert calls["set_registry"][1] == "demo.bundle@1.0.0"
-    assert calls["serialize"][1] == "demo.bundle@1.0.0"
     assert calls["cleared"] is True
-    assert calls["publish"][0] == "kdcube:config:bundles:update:cisoteria:chatbot"
+    assert calls["publish"][0] == "kdcube:config:bundles:update:demo-tenant:demo-project"
 
 
-def test_internal_reset_env_evicts_requested_bundle_scope(monkeypatch):
+def test_internal_reload_authority_evicts_requested_bundle_scope(monkeypatch):
     app = FastAPI()
     mount_integrations_routers(app)
 
     calls: dict[str, object] = {}
 
-    async def fake_reset_registry_from_env(redis, tenant, project):
-        calls["reset"] = (redis, tenant, project)
+    async def fake_reload_registry_from_authority(redis, tenant, project):
+        calls["reload"] = (redis, tenant, project)
         return _Registry(
             default_bundle_id="demo.bundle@1.0.0",
             bundles={
@@ -111,10 +109,6 @@ def test_internal_reset_env_evicts_requested_bundle_scope(monkeypatch):
 
     async def fake_set_registry_async(registry, default_bundle_id):
         calls["set_registry"] = (registry, default_bundle_id)
-
-    def fake_serialize_to_env(registry, default_bundle_id):
-        calls["serialize"] = (registry, default_bundle_id)
-        return "ok"
 
     def fake_clear_agentic_caches():
         calls["cleared"] = True
@@ -135,21 +129,24 @@ def test_internal_reset_env_evicts_requested_bundle_scope(monkeypatch):
 
     app.state.redis_async = _Redis()
 
-    monkeypatch.setattr(integrations, "get_settings", lambda: SimpleNamespace(TENANT="cisoteria", PROJECT="chatbot"))
+    monkeypatch.setattr(
+        integrations,
+        "get_settings",
+        lambda: SimpleNamespace(TENANT="demo-tenant", PROJECT="demo-project"),
+    )
     monkeypatch.setattr(integrations, "_LOCALHOST", {"testclient", "127.0.0.1", "::1"})
 
     import kdcube_ai_app.infra.plugin.bundle_store as bundle_store
     import kdcube_ai_app.infra.plugin.bundle_registry as bundle_registry
     import kdcube_ai_app.infra.plugin.agentic_loader as agentic_loader
 
-    monkeypatch.setattr(bundle_store, "reset_registry_from_env", fake_reset_registry_from_env)
+    monkeypatch.setattr(bundle_store, "reload_registry_from_authority", fake_reload_registry_from_authority)
     monkeypatch.setattr(bundle_registry, "set_registry_async", fake_set_registry_async)
-    monkeypatch.setattr(bundle_registry, "serialize_to_env", fake_serialize_to_env)
     monkeypatch.setattr(agentic_loader, "clear_agentic_caches", fake_clear_agentic_caches)
     monkeypatch.setattr(agentic_loader, "evict_bundle_scope", fake_evict_bundle_scope)
 
     client = TestClient(app)
-    response = client.post("/internal/bundles/reset-env", json={"bundle_id": "demo.bundle@1.0.0"})
+    response = client.post("/internal/bundles/reload-authority", json={"bundle_id": "demo.bundle@1.0.0"})
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"

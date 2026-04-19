@@ -292,6 +292,16 @@ This is the correct export path for current live ECS state. It does not read:
 - mounted `/config/bundles.yaml`
 - GitHub secrets blobs
 
+Operational rule for `aws-sm` deployments:
+
+1. export the current live bundle state before the next provision
+2. reconcile that export into the private descriptor source-of-truth files
+3. copy the approved file contents into the GitHub Environment secrets
+4. run provision
+
+If you skip that step, a later provision can replay stale `BUNDLES_YAML` or
+`BUNDLES_SECRETS_YAML` and overwrite runtime bundle changes.
+
 ### 2.4 Bundles descriptor (optional)
 
 You can provide a **bundles descriptor** (`bundles.yaml`) and an optional
@@ -335,7 +345,9 @@ It is separate from the broader descriptor mounts used by `read_plain(...)`.
 
 In `aws-sm` deployments, `bundles.yaml` is the descriptor/export shape, but the
 live authoritative deployment-scoped bundle state is stored in grouped AWS SM
-documents and can be exported back with `--export-live-bundles`.
+documents and can be exported back with `--export-live-bundles`. In that mode,
+mounted `/config/bundles.yaml` is only a deploy snapshot, not the live
+authoritative store.
 
 Templates:
 - [`deployment/bundles.yaml`](../../../deployment/bundles.yaml)
