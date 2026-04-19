@@ -9,9 +9,9 @@ import re
 from typing import Any, Dict, Optional
 
 
-def _session_kwargs() -> Dict[str, Any]:
+def _session_kwargs(profile_name: Optional[str] = None) -> Dict[str, Any]:
     kwargs: Dict[str, Any] = {}
-    profile = (os.environ.get("AWS_PROFILE") or "").strip()
+    profile = (profile_name or os.environ.get("AWS_PROFILE") or "").strip()
     if profile:
         kwargs["profile_name"] = profile
     return kwargs
@@ -33,10 +33,10 @@ def _payload_secret_name(exec_id: str, *, prefix: Optional[str] = None) -> str:
     return f"{base_prefix}/runtime/exec-payloads/{safe_exec_id}"
 
 
-def _client(region_name: Optional[str] = None):
+def _client(region_name: Optional[str] = None, *, profile_name: Optional[str] = None):
     import boto3  # type: ignore
 
-    session = boto3.Session(**_session_kwargs())
+    session = boto3.Session(**_session_kwargs(profile_name))
     return session.client("secretsmanager", region_name=_region_name(region_name))
 
 
@@ -46,10 +46,11 @@ def put_exec_payload_secret(
     payload: Dict[str, Any],
     prefix: Optional[str] = None,
     region_name: Optional[str] = None,
+    profile_name: Optional[str] = None,
 ) -> str:
     secret_name = _payload_secret_name(exec_id, prefix=prefix)
     secret_string = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), default=str)
-    client = _client(region_name)
+    client = _client(region_name, profile_name=profile_name)
     try:
         client.put_secret_value(SecretId=secret_name, SecretString=secret_string)
     except Exception as exc:
@@ -64,8 +65,9 @@ def get_exec_payload_secret(
     *,
     secret_id: str,
     region_name: Optional[str] = None,
+    profile_name: Optional[str] = None,
 ) -> Dict[str, Any]:
-    response = _client(region_name).get_secret_value(SecretId=secret_id)
+    response = _client(region_name, profile_name=profile_name).get_secret_value(SecretId=secret_id)
     raw = response.get("SecretString") or ""
     data = json.loads(raw) if raw else {}
     return data if isinstance(data, dict) else {}
@@ -75,9 +77,10 @@ def delete_exec_payload_secret(
     *,
     secret_id: str,
     region_name: Optional[str] = None,
+    profile_name: Optional[str] = None,
 ) -> None:
     try:
-        _client(region_name).delete_secret(
+        _client(region_name, profile_name=profile_name).delete_secret(
             SecretId=secret_id,
             ForceDeleteWithoutRecovery=True,
         )

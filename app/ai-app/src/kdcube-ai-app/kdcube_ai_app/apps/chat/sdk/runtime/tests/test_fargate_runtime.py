@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import pathlib
 import sys
-import types
 
 import pytest
 
+from kdcube_ai_app.apps.chat.sdk import config as sdk_config
 from kdcube_ai_app.apps.chat.sdk.runtime.external.base import ExternalExecRequest
 from kdcube_ai_app.apps.chat.sdk.runtime.external.base import build_external_exec_env
 from kdcube_ai_app.apps.chat.sdk.runtime.external.base import format_size_summary
@@ -32,6 +33,33 @@ class _CaptureLogger(AgentLogger):
 
     def log(self, msg, level="INFO"):
         self.messages.append((str(level), str(msg)))
+
+
+class _NoopSecretsManager:
+    def get_secret(self, key: str):
+        return None
+
+
+class _FakeBoto3Session:
+    def __init__(self, client_factory, *, profile_name=None) -> None:
+        self._client_factory = client_factory
+        self.profile_name = profile_name
+
+    def client(self, *args, **kwargs):
+        return self._client_factory(*args, profile_name=self.profile_name, **kwargs)
+
+
+class _FakeBoto3Module:
+    def __init__(self, client_factory) -> None:
+        self._client_factory = client_factory
+        self.session_profiles: list[str | None] = []
+
+    def Session(self, profile_name=None):
+        self.session_profiles.append(profile_name)
+        return _FakeBoto3Session(self._client_factory, profile_name=profile_name)
+
+    def client(self, *args, **kwargs):
+        return self._client_factory(*args, **kwargs)
 
 
 def test_build_external_exec_env_matches_required_runtime_payload():
@@ -112,6 +140,73 @@ def test_build_external_runtime_base_env_uses_centralized_platform_catalog():
     assert "UNRELATED_ENV" not in base_env
     assert "KDCUBE_PLATFORM_SECRETS_JSON" not in base_env
     assert "GATEWAY_CONFIG_JSON" not in base_env
+
+
+def test_build_external_runtime_base_env_exports_descriptor_payloads_from_descriptors_dir(tmp_path):
+    descriptors_dir = tmp_path / "descriptors"
+    descriptors_dir.mkdir()
+    (descriptors_dir / "assembly.yaml").write_text("context:\n  tenant: demo\n", encoding="utf-8")
+    (descriptors_dir / "bundles.yaml").write_text("bundles:\n  demo: {}\n", encoding="utf-8")
+    (descriptors_dir / "gateway.yaml").write_text("gateway:\n  limit: 1\n", encoding="utf-8")
+    (descriptors_dir / "secrets.yaml").write_text("secrets:\n  services:\n    openai:\n      api_key: x\n", encoding="utf-8")
+    (descriptors_dir / "bundles.secrets.yaml").write_text("bundles:\n  demo:\n    secrets:\n      token: y\n", encoding="utf-8")
+
+    base_env = build_external_runtime_base_env(
+        {
+            "PLATFORM_DESCRIPTORS_DIR": str(descriptors_dir),
+            "SECRETS_PROVIDER": "secrets-file",
+            "GLOBAL_SECRETS_YAML": str(descriptors_dir / "secrets.yaml"),
+            "BUNDLE_SECRETS_YAML": str(descriptors_dir / "bundles.secrets.yaml"),
+        }
+    )
+
+    assert base_env["SECRETS_PROVIDER"] == "secrets-file"
+    assert base64.b64decode(base_env["KDCUBE_RUNTIME_ASSEMBLY_YAML_B64"]).decode("utf-8") == "context:\n  tenant: demo\n"
+    assert base64.b64decode(base_env["KDCUBE_RUNTIME_BUNDLES_YAML_B64"]).decode("utf-8") == "bundles:\n  demo: {}\n"
+    assert base64.b64decode(base_env["KDCUBE_RUNTIME_GATEWAY_YAML_B64"]).decode("utf-8") == "gateway:\n  limit: 1\n"
+    assert "KDCUBE_RUNTIME_SECRETS_YAML_B64" in base_env
+    assert "KDCUBE_RUNTIME_BUNDLES_SECRETS_YAML_B64" in base_env
+    assert "GLOBAL_SECRETS_YAML" not in base_env
+    assert "BUNDLE_SECRETS_YAML" not in base_env
+
+
+def test_build_external_runtime_base_env_uses_managed_settings_when_proc_env_is_minimal(monkeypatch, tmp_path):
+    descriptors_dir = tmp_path / "descriptors"
+    descriptors_dir.mkdir()
+    (descriptors_dir / "assembly.yaml").write_text(
+        "platform:\n"
+        "  services:\n"
+        "    proc:\n"
+        "      exec:\n"
+        "        fargate:\n"
+        "          enabled: true\n"
+        "          cluster: demo-cluster\n"
+        "          task_definition: demo-exec\n"
+        "          container_name: exec\n"
+        "          subnets:\n"
+        "            - subnet-a\n"
+        "            - subnet-b\n"
+        "          security_groups:\n"
+        "            - sg-a\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(sdk_config, "get_secrets_manager", lambda _settings: _NoopSecretsManager())
+    monkeypatch.delenv("ASSEMBLY_YAML_DESCRIPTOR_PATH", raising=False)
+    monkeypatch.delenv("BUNDLES_YAML_DESCRIPTOR_PATH", raising=False)
+    monkeypatch.setenv("GATEWAY_COMPONENT", "proc")
+    monkeypatch.setenv("PLATFORM_DESCRIPTORS_DIR", str(descriptors_dir))
+    sdk_config.get_settings.cache_clear()
+    settings = sdk_config.Settings()
+
+    base_env = build_external_runtime_base_env({}, settings=settings)
+
+    assert base_env["FARGATE_EXEC_ENABLED"] == "1"
+    assert base_env["FARGATE_CLUSTER"] == "demo-cluster"
+    assert base_env["FARGATE_TASK_DEFINITION"] == "demo-exec"
+    assert base_env["FARGATE_CONTAINER_NAME"] == "exec"
+    assert base_env["FARGATE_SUBNETS"] == "subnet-a,subnet-b"
+    assert base_env["FARGATE_SECURITY_GROUPS"] == "sg-a"
 
 
 def test_prepare_external_runtime_globals_compacts_payload_for_remote_runtime():
@@ -412,10 +507,11 @@ async def test_fargate_runtime_logs_run_task_exception(monkeypatch, tmp_path):
         "kdcube_ai_app.apps.chat.sdk.runtime.external.fargate.delete_exec_payload_secret",
         lambda **_kwargs: None,
     )
+    fake_boto3 = _FakeBoto3Module(lambda *_args, **_kwargs: fake_ecs)
     monkeypatch.setitem(
         sys.modules,
         "boto3",
-        types.SimpleNamespace(client=lambda *_args, **_kwargs: fake_ecs),
+        fake_boto3,
     )
 
     workdir = tmp_path / "work"
@@ -456,6 +552,7 @@ async def test_fargate_runtime_logs_run_task_exception(monkeypatch, tmp_path):
     env_names = {item["name"] for item in env_pairs}
     assert "KDCUBE_EXEC_PAYLOAD_SECRET_ID" in env_names
     assert "RUNTIME_GLOBALS_JSON" not in env_names
+    assert fake_boto3.session_profiles == [None]
 
 
 @pytest.mark.asyncio
@@ -508,10 +605,11 @@ async def test_fargate_runtime_snapshots_bundle_storage_when_present(monkeypatch
         "kdcube_ai_app.apps.chat.sdk.runtime.external.fargate.delete_exec_payload_secret",
         lambda **_kwargs: None,
     )
+    fake_boto3 = _FakeBoto3Module(lambda *_args, **_kwargs: fake_ecs)
     monkeypatch.setitem(
         sys.modules,
         "boto3",
-        types.SimpleNamespace(client=lambda *_args, **_kwargs: fake_ecs),
+        fake_boto3,
     )
 
     workdir = tmp_path / "work"
@@ -559,6 +657,7 @@ async def test_fargate_runtime_snapshots_bundle_storage_when_present(monkeypatch
     payload = captured_payload["payload"]
     assert payload["runtime_globals"]["BUNDLE_STORAGE_SNAPSHOT_URI"] == "s3://bucket/bundle-storage.zip"
     assert payload["env"]["BUNDLE_STORAGE_DIR"] == str(bundle_storage_dir)
+    assert fake_boto3.session_profiles == [None]
 
 
 @pytest.mark.asyncio
@@ -597,10 +696,11 @@ async def test_fargate_runtime_fails_before_run_task_when_overrides_too_large(mo
         "kdcube_ai_app.apps.chat.sdk.runtime.external.fargate.delete_exec_payload_secret",
         lambda **_kwargs: None,
     )
+    fake_boto3 = _FakeBoto3Module(lambda *_args, **_kwargs: fake_ecs)
     monkeypatch.setitem(
         sys.modules,
         "boto3",
-        types.SimpleNamespace(client=lambda *_args, **_kwargs: fake_ecs),
+        fake_boto3,
     )
 
     workdir = tmp_path / "work"
@@ -635,6 +735,7 @@ async def test_fargate_runtime_fails_before_run_task_when_overrides_too_large(mo
     assert "fargate_run_task_exception" in (res.error or "")
     assert fake_ecs.run_task_called is True
     assert any("payload_env_bytes=" in msg for _, msg in logger.messages)
+    assert fake_boto3.session_profiles == [None]
 
 
 @pytest.mark.asyncio
@@ -699,10 +800,11 @@ async def test_fargate_runtime_reports_pending_state_on_timeout(monkeypatch, tmp
         "kdcube_ai_app.apps.chat.sdk.runtime.external.fargate.delete_exec_payload_secret",
         lambda **_kwargs: None,
     )
+    fake_boto3 = _FakeBoto3Module(lambda *_args, **_kwargs: fake_ecs)
     monkeypatch.setitem(
         sys.modules,
         "boto3",
-        types.SimpleNamespace(client=lambda *_args, **_kwargs: fake_ecs),
+        fake_boto3,
     )
 
     workdir = tmp_path / "work"
@@ -749,3 +851,112 @@ async def test_fargate_runtime_reports_pending_state_on_timeout(monkeypatch, tmp
     assert "RESOURCE:SECRET" in (res.error or "")
     assert any("task state" in msg for _, msg in logger.messages)
     assert any("task timeout; stopping." in msg for _, msg in logger.messages)
+    assert fake_boto3.session_profiles == [None]
+
+
+@pytest.mark.asyncio
+async def test_fargate_runtime_uses_managed_aws_profile_and_secret_settings(monkeypatch, tmp_path):
+    class _Snapshot:
+        storage_uri = "s3://bucket"
+        base_prefix = "cb/tenants/demo/projects/demo/executions/registered/user/conv/turn/run/exec"
+        input_work_uri = "s3://bucket/in-work.zip"
+        input_out_uri = "s3://bucket/in-out.zip"
+        output_work_uri = "s3://bucket/out-work.zip"
+        output_out_uri = "s3://bucket/out-out.zip"
+
+    class _FakeEcsClient:
+        def __init__(self) -> None:
+            self.last_kwargs = None
+
+        def run_task(self, **kwargs):
+            self.last_kwargs = kwargs
+            return {"tasks": []}
+
+    fake_ecs = _FakeEcsClient()
+    fake_boto3 = _FakeBoto3Module(lambda *_args, **_kwargs: fake_ecs)
+    captured_secret_put = {}
+    captured_secret_delete = {}
+
+    descriptors_dir = tmp_path / "descriptors"
+    descriptors_dir.mkdir()
+    (descriptors_dir / "assembly.yaml").write_text(
+        "aws:\n"
+        "  aws_region: eu-west-1\n"
+        "  aws_profile: descriptor-profile\n"
+        "secrets:\n"
+        "  provider: secrets-file\n"
+        "  aws_sm_prefix: kdcube/demo/project\n"
+        "platform:\n"
+        "  services:\n"
+        "    proc:\n"
+        "      exec:\n"
+        "        fargate:\n"
+        "          enabled: true\n"
+        "          cluster: demo-cluster\n"
+        "          task_definition: demo-exec\n"
+        "          container_name: exec\n"
+        "          subnets:\n"
+        "            - subnet-a\n"
+        "          security_groups:\n"
+        "            - sg-a\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.delenv("AWS_PROFILE", raising=False)
+    monkeypatch.delenv("AWS_REGION", raising=False)
+    monkeypatch.delenv("SECRETS_SM_PREFIX", raising=False)
+    monkeypatch.delenv("ASSEMBLY_YAML_DESCRIPTOR_PATH", raising=False)
+    monkeypatch.delenv("BUNDLES_YAML_DESCRIPTOR_PATH", raising=False)
+    monkeypatch.setenv("GATEWAY_COMPONENT", "proc")
+    monkeypatch.setenv("PLATFORM_DESCRIPTORS_DIR", str(descriptors_dir))
+    monkeypatch.setattr(sdk_config, "get_secrets_manager", lambda _settings: _NoopSecretsManager())
+    sdk_config.get_settings.cache_clear()
+    settings = sdk_config.get_settings()
+    monkeypatch.setattr(
+        "kdcube_ai_app.apps.chat.sdk.runtime.external.fargate.get_settings",
+        lambda: settings,
+    )
+    monkeypatch.setitem(sys.modules, "boto3", fake_boto3)
+    monkeypatch.setattr(
+        "kdcube_ai_app.apps.chat.sdk.runtime.external.fargate.snapshot_exec_input",
+        lambda **_kwargs: _Snapshot(),
+    )
+    monkeypatch.setattr(
+        "kdcube_ai_app.apps.chat.sdk.runtime.external.fargate.build_exec_snapshot_workspace",
+        lambda **kwargs: {"workdir": kwargs["workdir"], "outdir": kwargs["outdir"]},
+    )
+    monkeypatch.setattr(
+        "kdcube_ai_app.apps.chat.sdk.runtime.external.fargate.put_exec_payload_secret",
+        lambda **kwargs: captured_secret_put.update(kwargs) or "secret-id",
+    )
+    monkeypatch.setattr(
+        "kdcube_ai_app.apps.chat.sdk.runtime.external.fargate.delete_exec_payload_secret",
+        lambda **kwargs: captured_secret_delete.update(kwargs) or None,
+    )
+
+    workdir = tmp_path / "work"
+    outdir = tmp_path / "out"
+    workdir.mkdir()
+    outdir.mkdir()
+    logger = _CaptureLogger()
+    request = ExternalExecRequest(
+        workdir=pathlib.Path(workdir),
+        outdir=pathlib.Path(outdir),
+        runtime_globals={"EXEC_RUNTIME_CONFIG": {"mode": "fargate"}},
+        tool_module_names=[],
+        timeout_s=30,
+    )
+
+    try:
+        res = await FargateRuntime().run(request, logger=logger)
+    finally:
+        sdk_config.get_settings.cache_clear()
+
+    assert res.ok is False
+    assert "fargate_run_failed" in (res.error or "")
+    assert captured_secret_put["prefix"] == "kdcube/demo/project"
+    assert captured_secret_put["region_name"] == "eu-west-1"
+    assert captured_secret_put["profile_name"] == "descriptor-profile"
+    assert captured_secret_delete["region_name"] == "eu-west-1"
+    assert captured_secret_delete["profile_name"] == "descriptor-profile"
+    assert fake_boto3.session_profiles == ["descriptor-profile"]

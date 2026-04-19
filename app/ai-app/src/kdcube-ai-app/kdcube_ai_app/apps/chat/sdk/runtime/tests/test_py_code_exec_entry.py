@@ -3,16 +3,21 @@
 
 from __future__ import annotations
 
+import base64
 import json
+import os
 import types
 import pathlib
+import shutil
 import sys
 import importlib
 
 from kdcube_ai_app.apps.chat.sdk.runtime.isolated.py_code_exec_entry import (
     _bootstrap_supervisor_runtime,
+    _build_executor_runtime_globals,
     _ensure_dynamic_package_chain,
     _hydrate_runtime_payload_from_secret,
+    _materialize_runtime_descriptor_payloads,
 )
 from kdcube_ai_app.apps.chat.sdk.runtime.dynamic_module_loader import load_dynamic_module_from_file
 
@@ -58,6 +63,42 @@ def test_hydrate_runtime_payload_from_secret_skips_when_inline_payload_present(m
 
     assert any("hydrate start" in msg for _, msg in logger.messages)
     assert any("skipping secret hydration" in msg for _, msg in logger.messages)
+
+
+def test_materialize_runtime_descriptor_payloads_restores_root_only_descriptor_files(monkeypatch):
+    exec_id = "exec-descriptor-test"
+    runtime_dir = pathlib.Path("/tmp/kdcube-runtime-descriptors") / exec_id
+    shutil.rmtree(runtime_dir, ignore_errors=True)
+
+    monkeypatch.setenv("EXECUTION_ID", exec_id)
+    monkeypatch.setenv(
+        "KDCUBE_RUNTIME_ASSEMBLY_YAML_B64",
+        base64.b64encode(b"context:\n  tenant: demo\n").decode("ascii"),
+    )
+    monkeypatch.setenv(
+        "KDCUBE_RUNTIME_BUNDLES_YAML_B64",
+        base64.b64encode(b"bundles:\n  demo: {}\n").decode("ascii"),
+    )
+    monkeypatch.setenv(
+        "KDCUBE_RUNTIME_SECRETS_YAML_B64",
+        base64.b64encode(b"secrets:\n  services:\n    openai:\n      api_key: x\n").decode("ascii"),
+    )
+    logger = _CaptureLogger()
+
+    try:
+        result = _materialize_runtime_descriptor_payloads(logger)
+
+        assert result == runtime_dir.resolve()
+        assert os.environ["PLATFORM_DESCRIPTORS_DIR"] == str(runtime_dir.resolve())
+        assert pathlib.Path(os.environ["ASSEMBLY_YAML_DESCRIPTOR_PATH"]).read_text(encoding="utf-8") == "context:\n  tenant: demo\n"
+        assert pathlib.Path(os.environ["BUNDLES_YAML_DESCRIPTOR_PATH"]).read_text(encoding="utf-8") == "bundles:\n  demo: {}\n"
+        assert pathlib.Path(os.environ["GLOBAL_SECRETS_YAML"]).read_text(encoding="utf-8") == (
+            "secrets:\n  services:\n    openai:\n      api_key: x\n"
+        )
+        assert "KDCUBE_RUNTIME_ASSEMBLY_YAML_B64" not in os.environ
+        assert any("Materialized descriptor payloads into" in msg for _, msg in logger.messages)
+    finally:
+        shutil.rmtree(runtime_dir, ignore_errors=True)
 
 
 def test_ensure_dynamic_package_chain_creates_parent_packages(tmp_path):
@@ -161,3 +202,29 @@ def test_bootstrap_supervisor_runtime_resolves_library_module_specs_without_expl
     assert bootstrapped["ps_str"] == "{\"ok\": true}"
     assert "dyn_io_tools_test" in bootstrapped["module_names"]
     assert any("resolved library module: io_tools" in msg for _, msg in logger.messages)
+
+
+def test_build_executor_runtime_globals_strips_privileged_paths_and_descriptors():
+    raw = {
+        "CONTRACT": {"ok": True},
+        "COMM_SPEC": {"channel": "chat.events"},
+        "TOOL_ALIAS_MAP": {"io_tools": "dyn_io_tools_test"},
+        "TOOL_MODULE_FILES": {"io_tools": "/workspace/bundles/demo/tools/io_tools.py"},
+        "BUNDLE_SPEC": {"id": "demo.bundle"},
+        "BUNDLE_STORAGE_DIR": "/bundle-storage/demo",
+        "RAW_TOOL_SPECS": [{"alias": "io_tools", "ref": "tools/io_tools.py"}],
+        "SKILLS_DESCRIPTOR": {"custom_skills_root": "/workspace/bundles/demo/skills"},
+        "PORTABLE_SPEC_JSON": "{\"sensitive\":true}",
+    }
+
+    sanitized = _build_executor_runtime_globals(raw)
+
+    assert sanitized["CONTRACT"] == {"ok": True}
+    assert sanitized["TOOL_ALIAS_MAP"] == {"io_tools": "dyn_io_tools_test"}
+    assert "TOOL_MODULE_FILES" not in sanitized
+    assert "BUNDLE_SPEC" not in sanitized
+    assert "BUNDLE_STORAGE_DIR" not in sanitized
+    assert "COMM_SPEC" not in sanitized
+    assert "RAW_TOOL_SPECS" not in sanitized
+    assert "SKILLS_DESCRIPTOR" not in sanitized
+    assert "PORTABLE_SPEC_JSON" not in sanitized

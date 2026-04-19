@@ -18,7 +18,7 @@ from dotenv import find_dotenv, load_dotenv
 from kdcube_ai_app.apps.chat.sdk.runtime.external.detect_aws_env import check_and_apply_cloud_environment
 from kdcube_ai_app.apps.chat.sdk.runtime.external.base import build_external_exec_env
 from kdcube_ai_app.apps.chat.sdk.runtime.external.service_discovery import CONTAINER_BUNDLES_ROOT, CONTAINER_GIT_BUNDLES_ROOT, _path, \
-    _translate_container_path_to_host, _is_running_in_docker, _resolve_redis_url_for_container
+    _translate_container_path_to_host, _is_running_in_docker, _resolve_redis_url_for_container, get_host_mount_paths
 from kdcube_ai_app.infra.service_hub.inventory import AgentLogger
 from kdcube_ai_app.infra.config import (
     build_external_runtime_base_env,
@@ -28,6 +28,10 @@ from kdcube_ai_app.apps.chat.sdk.config import get_settings
 
 _DEFAULT_IMAGE = get_settings().PLATFORM.EXEC.PY.PY_CODE_EXEC_IMAGE
 _DEFAULT_TIMEOUT_S = get_settings().PLATFORM.EXEC.PY.PY_CODE_EXEC_TIMEOUT
+_SUPERVISOR_PRIVATE_ROOT = pathlib.Path("/tmp/kdcube-supervisor")
+_SUPERVISOR_PRIVATE_BUNDLES_ROOT = _SUPERVISOR_PRIVATE_ROOT / "bundles"
+_SUPERVISOR_PRIVATE_BUNDLE_STORAGE_ROOT = _SUPERVISOR_PRIVATE_ROOT / "bundle-storage"
+_SUPERVISOR_PRIVATE_KDCUBE_STORAGE_ROOT = _SUPERVISOR_PRIVATE_ROOT / "kdcube-storage"
 
 _PROC_VISIBLE_ROOTS = (
     "/exec-workspace",
@@ -40,11 +44,12 @@ _PROC_VISIBLE_ROOTS = (
 
 
 def _log_path_translation_context(log: AgentLogger) -> None:
-    host_bundles = os.environ.get("HOST_BUNDLES_PATH")
-    host_git_bundles = os.environ.get("HOST_GIT_BUNDLES_PATH")
-    host_exec_workspace = os.environ.get("HOST_EXEC_WORKSPACE_PATH")
-    host_bundle_storage = os.environ.get("HOST_BUNDLE_STORAGE_PATH")
-    host_kdcube_storage = os.environ.get("HOST_KDCUBE_STORAGE_PATH")
+    host_mounts = get_host_mount_paths()
+    host_bundles = host_mounts.bundles
+    host_git_bundles = host_mounts.git_bundles
+    host_exec_workspace = host_mounts.exec_workspace
+    host_bundle_storage = host_mounts.bundle_storage
+    host_kdcube_storage = host_mounts.kdcube_storage
     log.log(
         "[docker.exec] path translation env "
         f"HOST_BUNDLES_PATH={host_bundles or '<unset>'} "
@@ -91,14 +96,14 @@ def _iter_locally_visible_mount_roots() -> list[pathlib.Path]:
         if root.exists():
             roots.append(root)
 
-    for env_name in (
-        "HOST_KDCUBE_STORAGE_PATH",
-        "HOST_BUNDLES_PATH",
-        "HOST_GIT_BUNDLES_PATH",
-        "HOST_BUNDLE_STORAGE_PATH",
-        "HOST_EXEC_WORKSPACE_PATH",
+    host_mounts = get_host_mount_paths()
+    for raw_value in (
+        host_mounts.kdcube_storage,
+        host_mounts.bundles,
+        host_mounts.git_bundles,
+        host_mounts.bundle_storage,
+        host_mounts.exec_workspace,
     ):
-        raw_value = os.environ.get(env_name)
         if not raw_value:
             continue
         root = _resolved_path(raw_value)
@@ -158,6 +163,11 @@ def _resolve_local_storage_mount(storage_uri: str) -> tuple[pathlib.Path, pathli
     container_path = pathlib.Path(container_raw)
     host_path = _translate_container_path_to_host(container_path)
     return container_path, host_path
+
+
+def _private_mount_path(original_path: pathlib.Path, private_root: pathlib.Path) -> pathlib.Path:
+    rel = pathlib.Path(str(original_path).lstrip("/"))
+    return (private_root / rel).resolve()
 
 
 def _bundle_tool_mount_checks(
@@ -302,6 +312,7 @@ def _build_docker_argv(
         extra_env: Dict[str, str] | None = None,
         extra_args: list[str] | None = None,
         bundle_root: pathlib.Path | None = None,
+        container_bundle_root: str | None = None,
         bundle_id: str | None = None,
         readonly_mounts: list[tuple[pathlib.Path, str]] | None = None,
         rw_mounts: list[tuple[pathlib.Path, str]] | None = None,
@@ -348,7 +359,9 @@ def _build_docker_argv(
 
     # Mount bundle root if provided
     if bundle_root is not None:
-        subpath = f"{CONTAINER_BUNDLES_ROOT}/{bundle_id}" if bundle_id else CONTAINER_BUNDLES_ROOT
+        subpath = container_bundle_root or (
+            f"{CONTAINER_BUNDLES_ROOT}/{bundle_id}" if bundle_id else CONTAINER_BUNDLES_ROOT
+        )
         argv += [
             "-v",
             f"{_path(bundle_root)}:{subpath}:ro",  # ← :ro is important
@@ -408,8 +421,9 @@ async def run_py_in_docker(
         (header injection, bootstrap, writing result.json, runtime logs, etc.)
     """
     log = logger or AgentLogger("docker.exec")
+    settings = get_settings()
 
-    base_env = build_external_runtime_base_env(os.environ)
+    base_env = build_external_runtime_base_env(os.environ, settings=settings)
     # Add any extra_env passed in
     if extra_env:
         base_env.update(extra_env)
@@ -417,7 +431,7 @@ async def run_py_in_docker(
     # Mark executor Redis clients for easy attribution in CLIENT LIST
     base_env.setdefault("REDIS_CLIENT_NAME", "exec")
 
-    redis_url = base_env.get("REDIS_URL") or get_settings().REDIS_URL
+    redis_url = base_env.get("REDIS_URL") or settings.REDIS_URL
     resolved_redis_url = _resolve_redis_url_for_container(redis_url, logger=log)
     base_env["REDIS_URL"] = resolved_redis_url
 
@@ -431,15 +445,24 @@ async def run_py_in_docker(
     raw_tool_module_files = dict(runtime_globals.get("TOOL_MODULE_FILES") or {})
     proc_bundle_root: pathlib.Path | None = bundle_root.resolve() if bundle_root is not None else None
     proc_bundle_storage_dir_raw = runtime_globals.get("BUNDLE_STORAGE_DIR")
+    original_proc_bundle_storage_dir = None
     proc_bundle_storage_dir = None
     if isinstance(proc_bundle_storage_dir_raw, str) and proc_bundle_storage_dir_raw.strip():
-        proc_bundle_storage_dir = pathlib.Path(proc_bundle_storage_dir_raw).resolve()
+        original_proc_bundle_storage_dir = pathlib.Path(proc_bundle_storage_dir_raw).resolve()
+        proc_bundle_storage_dir = _private_mount_path(
+            original_proc_bundle_storage_dir,
+            _SUPERVISOR_PRIVATE_BUNDLE_STORAGE_ROOT,
+        )
     storage_uri = _extract_accounting_storage_uri(runtime_globals, base_env)
     proc_kdcube_storage_dir = None
     host_kdcube_storage_dir = None
     local_storage_mount = _resolve_local_storage_mount(storage_uri)
     if local_storage_mount is not None:
-        proc_kdcube_storage_dir, host_kdcube_storage_dir = local_storage_mount
+        original_proc_kdcube_storage_dir, host_kdcube_storage_dir = local_storage_mount
+        proc_kdcube_storage_dir = _private_mount_path(
+            original_proc_kdcube_storage_dir,
+            _SUPERVISOR_PRIVATE_KDCUBE_STORAGE_ROOT,
+        )
         try:
             host_kdcube_storage_dir.mkdir(parents=True, exist_ok=True)
         except Exception:
@@ -467,7 +490,11 @@ async def run_py_in_docker(
         module_first_segment = module_name.split(".", 1)[0] if module_name else None
         bundle_dir = bundle_spec.get("id") or module_first_segment
 
-    container_bundle_root = f"{CONTAINER_BUNDLES_ROOT}/{bundle_dir}" if bundle_dir else None
+    container_bundle_root = (
+        str((_SUPERVISOR_PRIVATE_BUNDLES_ROOT / bundle_dir).resolve())
+        if bundle_dir
+        else None
+    )
     runtime_globals = prepare_external_runtime_globals(
         runtime_globals,
         host_bundle_root=bundle_root,
@@ -477,6 +504,8 @@ async def run_py_in_docker(
     )
     if proc_bundle_storage_dir is not None:
         base_env["BUNDLE_STORAGE_DIR"] = str(proc_bundle_storage_dir)
+    if proc_kdcube_storage_dir is not None:
+        base_env["KDCUBE_STORAGE_PATH"] = f"file://{proc_kdcube_storage_dir}"
     base_env = build_external_exec_env(
         base_env=base_env,
         runtime_globals=runtime_globals,
@@ -498,8 +527,8 @@ async def run_py_in_docker(
 
     if bundle_root is not None:
         bundle_root = _translate_container_path_to_host(bundle_root)
-    if proc_bundle_storage_dir is not None:
-        host_bundle_storage_dir = _translate_container_path_to_host(proc_bundle_storage_dir)
+    if original_proc_bundle_storage_dir is not None:
+        host_bundle_storage_dir = _translate_container_path_to_host(original_proc_bundle_storage_dir)
 
     if _is_running_in_docker():
         log.log(f"[docker.exec] Running in Docker-in-Docker mode", level="INFO")
@@ -508,9 +537,10 @@ async def run_py_in_docker(
     log.log(f"[docker.exec] Host paths: workdir={host_workdir}, outdir={host_outdir}")
     if proc_bundle_root is not None:
         log.log(f"[docker.exec] Bundle paths: container={proc_bundle_root}, host={bundle_root}", level="INFO")
-    if proc_bundle_storage_dir is not None:
+    if original_proc_bundle_storage_dir is not None:
         log.log(
-            f"[docker.exec] Bundle storage paths: container={proc_bundle_storage_dir}, host={host_bundle_storage_dir}",
+            f"[docker.exec] Bundle storage paths: proc={original_proc_bundle_storage_dir}, "
+            f"exec={proc_bundle_storage_dir}, host={host_bundle_storage_dir}",
             level="INFO",
         )
     if proc_kdcube_storage_dir is not None and host_kdcube_storage_dir is not None:
@@ -527,7 +557,7 @@ async def run_py_in_docker(
         host_outdir=host_outdir,
         proc_bundle_root=proc_bundle_root,
         host_bundle_root=bundle_root,
-        proc_bundle_storage_dir=proc_bundle_storage_dir,
+        proc_bundle_storage_dir=original_proc_bundle_storage_dir,
         host_bundle_storage_dir=host_bundle_storage_dir,
         raw_tool_module_files=raw_tool_module_files,
     )
@@ -549,6 +579,7 @@ async def run_py_in_docker(
         extra_env=base_env,
         extra_args=extra_docker_args or [],
         bundle_root=bundle_root,
+        container_bundle_root=container_bundle_root,
         bundle_id=bundle_dir,
         readonly_mounts=[
             (host_bundle_storage_dir, str(proc_bundle_storage_dir))

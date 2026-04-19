@@ -202,11 +202,10 @@ async def run_py_code(
         if k and k != "__name__":
             globals_src += f"\n{k} = {repr(v)}\n"
 
-    # # Tool alias imports (must match TOOL_ALIAS_MAP)
+    # Executor code must not import bundle tool modules directly.
+    # It only talks to the privileged supervisor through agent_io_tools.
     imports_src = ""
     alias_map = (g.get("TOOL_ALIAS_MAP") or {}) if g else {}
-    for alias, mod_name in (alias_map or {}).items():
-        imports_src += f"\nfrom {mod_name} import tools as {alias}\n"
 
     mode = child_env.get("EXECUTION_MODE") or "STANDALONE"
     if mode == "STANDALONE":
@@ -241,10 +240,6 @@ async def run_py_code(
             tool_module_names = list(json.loads(raw_modules) or [])
     except Exception:
         tool_module_names = []
-
-    for dyn_name in (alias_map or {}).values():
-        if dyn_name and dyn_name not in tool_module_names:
-            tool_module_names.append(dyn_name)
 
     child_env["RUNTIME_TOOL_MODULES"] = json.dumps(tool_module_names, ensure_ascii=False)
     # Modules to shutdown on exit (KB client included)

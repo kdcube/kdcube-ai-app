@@ -316,6 +316,11 @@ Docker notes:
 
 `exec_runtime` is accepted as a legacy alias, but `execution.runtime` is the canonical path.
 
+Fallback semantics:
+- bundle runtime props win for keys they define
+- missing keys fall back to the proc service's resolved platform settings export
+- raw proc env vars still override those resolved settings when explicitly present
+
 Storage summary:
 
 | Question | Answer |

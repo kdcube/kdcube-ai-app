@@ -47,7 +47,7 @@ Important:
 - the final agent-visible result is still assembled by `exec_tools.py` after the runtime backend returns
 
 Important distinction:
-- `BUNDLE_STORAGE_DIR` is runtime plumbing for the isolated child
+- `BUNDLE_STORAGE_DIR` is supervisor-side runtime plumbing for the isolated task
 - it is not the agent-facing browsing contract
 - if a bundle wants generated code to browse bundle readonly data safely, the agent-facing contract should be a bundle-defined exec-only namespace resolver tool
 - that tool can return:
@@ -87,6 +87,7 @@ Important distinction:
 │    RUNTIME_GLOBALS_JSON   — full runtime_globals from caller                 │
 │    RUNTIME_TOOL_MODULES   — JSON list of tool module names                   │
 │    EXECUTION_ID           — unique per call                                  │
+│    KDCUBE_RUNTIME_*_YAML_B64 — descriptor payload exports for supervisor     │
 │    WORKDIR=/workspace/work                                                   │
 │    OUTPUT_DIR=/workspace/out                                                 │
 │    LOG_DIR=/workspace/out/logs                                               │
@@ -206,6 +207,12 @@ ECS FARGATE EXEC TASK
 │
 │  startup
 │  ├── _load_runtime_globals()           parse RUNTIME_GLOBALS_JSON
+│  ├── _materialize_runtime_descriptor_payloads()
+│  │     → write root-only descriptor files under
+│  │       /tmp/kdcube-runtime-descriptors/{exec_id}
+│  │     → set PLATFORM_DESCRIPTORS_DIR / *_DESCRIPTOR_PATH env for supervisor
+│  │     → executor child does not inherit those env vars
+│  │
 │  ├── _restore_snapshot_if_present()
 │  │     EXEC_SNAPSHOT.input_work_uri → restore_zip_to_dir → /workspace/work
 │  │     EXEC_SNAPSHOT.input_out_uri  → restore_zip_to_dir → /workspace/out
@@ -219,7 +226,7 @@ ECS FARGATE EXEC TASK
 │  │
 │  ├── _restore_bundle_storage_if_present()
 │  │     BUNDLE_STORAGE_SNAPSHOT_URI present?
-│  │       yes → restore_zip_to_dir → BUNDLE_STORAGE_DIR
+│  │       yes → restore_zip_to_dir → BUNDLE_STORAGE_DIR  (supervisor-side)
 │  │       no  → continue
 │  │
 │  │     Bundle-local exec-only tools may then resolve logical bundle refs
@@ -296,7 +303,7 @@ cb/tenants/{tenant}/projects/{project}/
 Distributed exec transports three physical classes of data into the child runtime:
 - `WORKDIR=/workspace/work`
 - `OUTPUT_DIR=/workspace/out`
-- readonly per-bundle data restored to `BUNDLE_STORAGE_DIR`
+- readonly per-bundle data restored to supervisor-side `BUNDLE_STORAGE_DIR`
 
 But the agent should not be taught to browse `BUNDLE_STORAGE_DIR` directly.
 
@@ -400,7 +407,8 @@ config:
 In that model:
 - `default_profile` provides the default resolved runtime for generic exec calls
 - bundle code may explicitly choose another supported profile when needed
-- missing keys inside the selected profile still fall back to proc env vars
+- missing keys inside the selected profile still fall back to the proc service's resolved platform settings export
+- raw proc env vars still override those resolved settings when explicitly present
 - Docker profiles can override local Docker execution settings such as `image`,
   `network_mode`, `cpus`, `memory`, and raw `extra_args`
 

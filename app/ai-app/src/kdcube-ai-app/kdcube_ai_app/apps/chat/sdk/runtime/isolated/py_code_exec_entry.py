@@ -23,6 +23,7 @@ But our Python entrypoint already uses that as default, so you can skip it.
 
 # TOOL_ALIAS_MAP, TOOL_MODULE_FILES, BUNDLE_SPEC, RAW_TOOL_SPECS
 import asyncio
+import base64
 import json
 import os
 import pathlib
@@ -64,6 +65,26 @@ from kdcube_ai_app.apps.chat.sdk.runtime.dynamic_module_loader import (
     ensure_dynamic_package_chain as _ensure_dynamic_package_chain,
     load_dynamic_module_from_file,
 )
+
+_EXECUTOR_STRIP_RUNTIME_GLOBAL_KEYS = frozenset(
+    {
+        "BUNDLE_ROOT_HOST",
+        "BUNDLE_SPEC",
+        "BUNDLE_STORAGE_DIR",
+        "BUNDLE_STORAGE_SNAPSHOT_URI",
+        "COMM_SPEC",
+        "BUNDLE_SNAPSHOT_URI",
+        "EXEC_SNAPSHOT",
+        "MCP_SERVICES",
+        "MCP_TOOL_SPECS",
+        "PORTABLE_SPEC",
+        "PORTABLE_SPEC_JSON",
+        "RAW_TOOL_SPECS",
+        "SKILLS_DESCRIPTOR",
+        "TOOL_MODULE_FILES",
+    }
+)
+
 
 def _append_errors_log(message: str) -> None:
     try:
@@ -150,6 +171,74 @@ def _hydrate_runtime_payload_from_secret(logger: AgentLogger) -> None:
         f"env_keys={len(env_map) if isinstance(env_map, dict) else 0}",
         "INFO",
     )
+
+
+def _materialize_runtime_descriptor_payloads(logger: AgentLogger) -> pathlib.Path | None:
+    descriptor_specs = (
+        ("KDCUBE_RUNTIME_ASSEMBLY_YAML_B64", "assembly.yaml", "ASSEMBLY_YAML_DESCRIPTOR_PATH"),
+        ("KDCUBE_RUNTIME_BUNDLES_YAML_B64", "bundles.yaml", "BUNDLES_YAML_DESCRIPTOR_PATH"),
+        ("KDCUBE_RUNTIME_GATEWAY_YAML_B64", "gateway.yaml", "GATEWAY_YAML_PATH"),
+        ("KDCUBE_RUNTIME_SECRETS_YAML_B64", "secrets.yaml", "GLOBAL_SECRETS_YAML"),
+        ("KDCUBE_RUNTIME_BUNDLES_SECRETS_YAML_B64", "bundles.secrets.yaml", "BUNDLE_SECRETS_YAML"),
+    )
+    payload_values = [
+        (payload_env, filename, target_env, (os.environ.get(payload_env) or "").strip())
+        for payload_env, filename, target_env in descriptor_specs
+    ]
+    if not any(raw for _payload_env, _filename, _target_env, raw in payload_values):
+        return None
+
+    exec_id = (os.environ.get("EXECUTION_ID") or "unknown").strip() or "unknown"
+    runtime_dir = (pathlib.Path("/tmp/kdcube-runtime-descriptors") / exec_id).resolve()
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    os.chmod(runtime_dir, 0o700)
+
+    written: list[str] = []
+    for payload_env, filename, target_env, raw in payload_values:
+        if not raw:
+            continue
+        try:
+            data = base64.b64decode(raw.encode("ascii"))
+        except Exception as exc:
+            logger.log(
+                f"[exec.descriptors] Failed to decode {payload_env}: {exc}",
+                "ERROR",
+            )
+            continue
+        target_path = runtime_dir / filename
+        target_path.write_bytes(data)
+        os.chmod(target_path, 0o400)
+        os.environ[target_env] = str(target_path)
+        os.environ.pop(payload_env, None)
+        written.append(filename)
+
+    if not written:
+        return None
+
+    os.environ["PLATFORM_DESCRIPTORS_DIR"] = str(runtime_dir)
+    logger.log(
+        f"[exec.descriptors] Materialized descriptor payloads into {runtime_dir}: {', '.join(written)}",
+        "INFO",
+    )
+    return runtime_dir
+
+
+def _prepare_supervisor_private_root(logger: AgentLogger) -> pathlib.Path:
+    root = pathlib.Path("/tmp/kdcube-supervisor").resolve()
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        os.chmod(root, 0o700)
+    except Exception as exc:
+        logger.log(f"[exec.private_root] Failed to prepare {root}: {exc}", "ERROR")
+        raise
+    return root
+
+
+def _build_executor_runtime_globals(runtime_globals: Dict[str, Any]) -> Dict[str, Any]:
+    exec_globals = dict(runtime_globals or {})
+    for key in _EXECUTOR_STRIP_RUNTIME_GLOBAL_KEYS:
+        exec_globals.pop(key, None)
+    return exec_globals
 
 
 def _restore_snapshot_if_present(
@@ -591,7 +680,9 @@ async def _async_main() -> int:
     logger.log(f"[entry] ===== EXECUTION {exec_id} START {ts} =====", level="INFO")
     # Ensure group-writable files across shared volumes (chat user is gid 1000)
     os.umask(0o002)
+    _prepare_supervisor_private_root(logger)
     _hydrate_runtime_payload_from_secret(logger)
+    _materialize_runtime_descriptor_payloads(logger)
 
     workdir = pathlib.Path(os.environ.get("WORKDIR", "/workspace/work")).resolve()
     outdir = pathlib.Path(os.environ.get("OUTPUT_DIR", "/workspace/out")).resolve()
@@ -698,10 +789,9 @@ async def _async_main() -> int:
     except ValueError:
         timeout_s = None
 
-    # After supervisor bootstrap, drop PORTABLE_SPEC so executor never sees it
-    exec_globals = dict(runtime_globals)
-    exec_globals.pop("PORTABLE_SPEC", None)
-    exec_globals.pop("PORTABLE_SPEC_JSON", None)
+    # After supervisor bootstrap, strip any privileged or path-bearing runtime state
+    # before the untrusted executor starts.
+    exec_globals = _build_executor_runtime_globals(runtime_globals)
 
     logger.log("[entry] starting run_py_code()", level="INFO")
     res = await run_py_code(

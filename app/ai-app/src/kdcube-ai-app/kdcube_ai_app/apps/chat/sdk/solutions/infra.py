@@ -131,7 +131,7 @@ def get_exec_workspace_root() -> pathlib.Path:
             pass
         return _ensure_writable_dir(pathlib.Path("/exec-workspace"), source="docker-default")
     # Host-only fallback to HOST_EXEC_WORKSPACE_PATH
-    host_root = os.environ.get("HOST_EXEC_WORKSPACE_PATH")
+    host_root = get_settings().HOST_EXEC_WORKSPACE_PATH or os.environ.get("HOST_EXEC_WORKSPACE_PATH")
     if host_root:
         try:
             from kdcube_ai_app.infra.service_hub.inventory import AgentLogger
