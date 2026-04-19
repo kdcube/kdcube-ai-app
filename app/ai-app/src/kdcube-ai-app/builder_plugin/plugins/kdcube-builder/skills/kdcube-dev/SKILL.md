@@ -61,8 +61,30 @@ Generates all descriptors with safe local defaults (auth=simple, demo tenant/pro
 
 1. Extract `bundle_id` from the message. If missing, ask.
 2. Run `reload <bundle_id>`.
-3. Immediately run `verify-reload <bundle_id>`.
+3. **Immediately** run `verify-reload <bundle_id>` — the reload call returns before the proc
+   cache actually rotates, so verify is the only way to know the new code is live.
 4. Report combined result: reloaded + confirmed, or show the error.
+
+**Reload gotchas — check these when something looks wrong:**
+
+- Editing files in the bundle dir does not hot-reload. Without an explicit `reload`, the
+  runtime keeps serving the cached version — that is the usual cause of "my change didn't
+  take effect".
+- `reload` is a no-op if the `bundle_id` isn't registered in `bundles.yaml`, or if the
+  `path` in `bundles.yaml` isn't the **container path** (`/bundles/<bundle-id>`).
+- `verify-reload` showing `eviction: None` for a previously-active bundle is a red flag —
+  the bundle was never in the proc cache. Recheck the `id` and `path` in `bundles.yaml`.
+- Any container restart (secrets injection, `stop`/`start`, Docker restart) drops the proc
+  cache — reload every active bundle immediately after.
+- **macOS Docker Desktop + edits to `bundles.yaml`:** Docker Desktop on macOS does not
+  refresh a file-level bind mount when the host file's inode changes, and the Edit/Write
+  tools replace inodes. After editing `$WORKDIR/config/bundles.yaml` the container still
+  reads the old file until you restart `chat-proc`:
+  ```bash
+  docker restart all_in_one_kdcube-chat-proc-1
+  ```
+  Then run `reload <bundle-id>` + `verify-reload`. This is the one reload-related case
+  where `docker restart` is required — for anything else, stick to the `kdcube` CLI.
 
 ## Test flow
 
@@ -72,34 +94,42 @@ Generates all descriptors with safe local defaults (auth=simple, demo tenant/pro
 
 ## Bundle build flow
 
-Read the bundle docs and the reference bundle first, then write or fix bundle code using Edit/Write.
+**Delegate bundle authoring to `/kdcube-builder:bundle-builder`.** That skill owns the
+canonical read order, placement rules, and authoring rules — do not duplicate them here.
 
-### Resolving docs and reference bundle
+Before invoking it, resolve the bundle paths so the authoring step has them ready:
 
-Check `CLAUDE_PLUGIN_OPTION_KDCUBE_REPO_ROOT`. If set — use local paths with the `Read` tool:
+```bash
+WORKDIR="${CLAUDE_PLUGIN_OPTION_KDCUBE_WORKDIR:-${KDCUBE_WORKDIR:-}}"
+if [ -z "$WORKDIR" ]; then
+  WORKDIR=$(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/kdcube_local.py" status 2>/dev/null \
+    | awk -F': +' '/^Workdir/ {print $2}' | awk '{print $1}')
+fi
+WORKDIR="${WORKDIR:-$HOME/.kdcube/kdcube-runtime}"
+grep -E "HOST_BUNDLES_PATH|AGENTIC_BUNDLES_ROOT" "$WORKDIR/config/.env"
+```
 
-- `$CLAUDE_PLUGIN_OPTION_KDCUBE_REPO_ROOT/app/ai-app/docs/sdk/bundle/bundle-index-README.md`
-- `$CLAUDE_PLUGIN_OPTION_KDCUBE_REPO_ROOT/app/ai-app/docs/sdk/bundle/bundle-reference-versatile-README.md`
-- Reference bundle dir: `$CLAUDE_PLUGIN_OPTION_KDCUBE_REPO_ROOT/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36`
-- Tests: `$CLAUDE_PLUGIN_OPTION_KDCUBE_REPO_ROOT/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/tests/bundle/test_bundle_state.py`
+Non-negotiable rules for any bundle work:
 
-Otherwise fetch from GitHub (see `bundle-builder` skill for full URL list).
+- Write bundles only under `HOST_BUNDLES_PATH/<bundle-id>/`. Never into the repo, examples
+  dir, or the user's project dir. Symlinks across Docker mounts do not work — use real
+  directories.
+- Register in `$WORKDIR/config/bundles.yaml` with the **container path** (`/bundles/<bundle-id>`),
+  not the host path.
+- Read the bundle docs and the versatile reference bundle **before** writing code — every
+  time, even for small edits. Do not invent decorators or import paths.
 
 ### Wrap existing app into a bundle
 
-1. Read the app's code to understand entry points and APIs.
-2. Read bundle docs and reference bundle.
-3. Map app functionality to bundle primitives — keep original code untouched, call it from `entrypoint.py`.
-4. Run `bundle-tests`, then `reload` + `verify-reload`.
+Hand off to `/kdcube-builder:bundle-builder` — it has the wrap workflow. The only thing to
+do here is resolve paths (above) and gather the app's entry-point info to pass along.
 
 ### Add feature to existing bundle
 
-1. Read `entrypoint.py` of the bundle and the relevant docs section.
-2. Make the minimal change.
-3. Run `bundle-tests`, then `reload` + `verify-reload`.
+Hand off to `/kdcube-builder:bundle-builder`. After edits, always:
 
-After any edits:
 ```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/kdcube_local.py" bundle-tests <bundle_path>
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/kdcube_local.py" reload <bundle_id>
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/kdcube_local.py" verify-reload <bundle_id>
 ```
@@ -112,5 +142,6 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/kdcube_local.py" verify-reload <bundle_id
 - One short status line before each action.
 - On error: show raw output, suggest the most likely fix, do not silently retry.
 - **After any container restart** (secrets injection, manual restart, etc.) — always reload active bundles immediately. Check `bundles.yaml` default_bundle_id and reload it.
-- **Before creating a bundle** — always run `/kdcube-builder:kdcube-find-project` first to get `HOST_BUNDLES_PATH`. Never write bundles into the repo or examples directory.
+- **Before creating or editing a bundle** — resolve `HOST_BUNDLES_PATH` from `$WORKDIR/config/.env` (snippet in Bundle build flow). Bundles must live under `HOST_BUNDLES_PATH/<bundle-id>/` only, with the **container path** (`/bundles/<bundle-id>`) registered in `bundles.yaml`. Never write bundles into the repo or examples directory.
+- **Always pair `reload` with `verify-reload`** — reload alone does not confirm the new code is live.
 - **`--secrets-prompt` is interactive** — never run it from Claude Code. Use `--secrets-set` instead.

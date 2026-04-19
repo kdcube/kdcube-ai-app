@@ -7,6 +7,20 @@ description: Build or repair KDCube bundles. Use the KDCube bundle docs, the ver
 Use this skill when the task is bundle authoring: writing a bundle from scratch, wrapping an
 existing application into a bundle, or adding features to an existing bundle.
 
+## Authoring rule #1 — lean on the docs
+
+**Never write bundle code from memory.** Always read the docs and a real reference bundle
+first. Decorators, import paths, descriptor fields, and runtime bindings change between
+releases — guessing them produces bundles that load but silently misbehave.
+
+For every bundle task, the first actions are:
+
+1. Read the docs in the order below.
+2. Read the versatile reference bundle (and another example if the task is a specialized case).
+3. Only then start writing or editing code.
+
+If a doc contradicts this skill, the doc wins — surface the conflict to the user.
+
 ## What one bundle can contain
 
 One KDCube bundle can combine:
@@ -72,15 +86,38 @@ isolated exec, or the Node/TS bridge.
 
 ## Bundle placement — CRITICAL
 
-Before creating any bundle, run `/kdcube-builder:kdcube-find-project` to resolve:
-- `HOST_BUNDLES_PATH` — the host directory mounted as `/bundles` inside containers
-- `BUNDLES_YAML` — `$WORKDIR/config/bundles.yaml`
+Bundles live on the **host** under `HOST_BUNDLES_PATH` and are mounted into containers at
+`/bundles`. Writing them anywhere else (repo tree, examples dir, user project dir) means
+they are invisible to the runtime.
 
-**Always write the bundle into `HOST_BUNDLES_PATH/<bundle-id>/`.**
-Never write bundles into the repo, examples dir, or any other location.
-Symlinks do not work across Docker volume mounts — use real directories only.
+### Resolve the paths before writing
 
-After creating the bundle, register it in `BUNDLES_YAML` using this exact format:
+```bash
+# 1. Get WORKDIR — prefer plugin option, then env var, then status helper, then default.
+WORKDIR="${CLAUDE_PLUGIN_OPTION_KDCUBE_WORKDIR:-${KDCUBE_WORKDIR:-}}"
+if [ -z "$WORKDIR" ]; then
+  WORKDIR=$(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/kdcube_local.py" status 2>/dev/null \
+    | awk -F': +' '/^Workdir/ {print $2}' | awk '{print $1}')
+fi
+WORKDIR="${WORKDIR:-$HOME/.kdcube/kdcube-runtime}"
+
+# 2. Extract HOST_BUNDLES_PATH and BUNDLES_YAML from the workdir's .env.
+grep -E "HOST_BUNDLES_PATH|HOST_GIT_BUNDLES_PATH|AGENTIC_BUNDLES_ROOT" "$WORKDIR/config/.env"
+BUNDLES_YAML="$WORKDIR/config/bundles.yaml"
+```
+
+If `HOST_BUNDLES_PATH` is missing from `.env`, tell the user to run descriptor setup first
+(`/kdcube-builder:bootstrap-local` or `/kdcube-builder:use-descriptors`) — do not guess.
+
+### Rules
+
+- **Always write the bundle into `HOST_BUNDLES_PATH/<bundle-id>/`.** Never into the repo,
+  examples dir, or the user's project dir.
+- Symlinks into `HOST_BUNDLES_PATH` do **not** work across Docker volume mounts — use a
+  real directory. Copy source in; don't symlink it.
+- `<bundle-id>` must be filesystem-safe and match the `id` you register in `bundles.yaml`.
+
+### Register the bundle in `bundles.yaml`
 
 ```yaml
 bundles:
@@ -98,45 +135,59 @@ bundles:
             model: "claude-haiku-4-5-20251001"
 ```
 
-The `path` must use the **container path** (`/bundles/...`), not the host path.
+The `path` MUST be the **container path** (`/bundles/<bundle-id>`), not the host path.
+Mismatch here is the #1 source of silent reload failures.
+
+**macOS gotcha:** Docker Desktop on macOS does not refresh a file-level bind mount when
+the host file's inode changes — and the Edit/Write tools replace inodes. After editing
+`$WORKDIR/config/bundles.yaml`, restart `chat-proc` before reloading so the container
+sees the new file:
+```bash
+docker restart all_in_one_kdcube-chat-proc-1
+```
+Changes to files inside the bundle directory (`HOST_BUNDLES_PATH/<bundle-id>/...`) do
+**not** need this — the bundle dir is a directory bind, not a file bind.
 
 ## Workflows
 
 ### Write a bundle from scratch
 
-1. Run `/kdcube-builder:kdcube-find-project` to get `HOST_BUNDLES_PATH` and `BUNDLES_YAML`.
-2. Read docs (local or GitHub).
-3. Read the versatile reference bundle.
+1. Resolve `HOST_BUNDLES_PATH` and `BUNDLES_YAML` (see above).
+2. Read the docs (all seven, in order).
+3. Read the versatile reference bundle end-to-end.
 4. Create `HOST_BUNDLES_PATH/<bundle-id>/` and write `entrypoint.py` + `__init__.py`.
-5. Register the bundle in `BUNDLES_YAML` (see format above).
-6. Run bundle tests, then reload.
+5. Register the bundle in `BUNDLES_YAML` using the container path.
+6. Run bundle tests (`bundle-tests <path>`), then reload + verify-reload.
 
 ### Wrap an existing application into a bundle
 
-1. Run `/kdcube-builder:kdcube-find-project`.
-2. Read the existing application code to understand its entry points, APIs, and data.
-3. Read docs and versatile reference bundle.
+1. Resolve `HOST_BUNDLES_PATH` and `BUNDLES_YAML`.
+2. Read the existing app's code to understand entry points, APIs, and data.
+3. Read the docs and versatile reference bundle.
 4. Map the app's functionality to bundle primitives (`@api`, `@ui_main`, `@cron`, etc.).
-5. Write the bundle into `HOST_BUNDLES_PATH/<bundle-id>/` — keep the existing app code untouched, call it from `entrypoint.py`.
-6. Register in `BUNDLES_YAML`, run bundle tests, then reload.
+5. Copy the app source into `HOST_BUNDLES_PATH/<bundle-id>/` (or under a subdir inside it)
+   and call it from `entrypoint.py`. Do not modify the original app tree.
+6. Register in `BUNDLES_YAML`, run bundle tests, then reload + verify-reload.
 
 ### Add a feature to an existing bundle
 
-1. Read the existing `entrypoint.py` and relevant docs section.
+1. Read the existing `entrypoint.py` and the relevant docs section.
 2. Make the minimal change that adds the feature.
-3. Run bundle tests, then reload.
+3. Run bundle tests, then reload + verify-reload.
 
 ## Authoring rules
 
-- Read the docs and examples before writing code.
+- Read the docs and examples before writing code — every time, even for small changes.
 - Do not invent decorators, import paths, or bundle tree layout.
 - For third-party Python packages, first check whether the runtime already has them.
 - Use `@venv(...)` for dependency-heavy leaf helpers, not for request-bound orchestration.
-- Keep communicator, request context, Redis, DB clients, and other live proc/runtime bindings outside `@venv(...)`.
-- If a Node backend is needed, keep Python as the bundle boundary and put Node/TS behind a narrow bridge.
+- Keep communicator, request context, Redis, DB clients, and other live proc/runtime
+  bindings outside `@venv(...)`.
+- If a Node backend is needed, keep Python as the bundle boundary and put Node/TS behind a
+  narrow bridge.
 - If local runtime setup is needed, use `/kdcube-builder:bootstrap-local` first.
 
-## Validation
+## Validation + reload
 
 Run the shared bundle suite before considering bundle work done:
 
@@ -144,9 +195,25 @@ Run the shared bundle suite before considering bundle work done:
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/kdcube_local.py" bundle-tests /abs/path/to/bundle
 ```
 
-Then reload if the runtime is running:
+Then reload if the runtime is running — **always pair `reload` with `verify-reload`**:
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/kdcube_local.py" reload <bundle-id>
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/kdcube_local.py" verify-reload <bundle-id>
 ```
+
+### Reload rules (read before touching a running runtime)
+
+- Editing files in `HOST_BUNDLES_PATH/<bundle-id>/` does **not** hot-reload. The runtime
+  serves the cached bundle until an explicit `reload <bundle-id>`. Old code keeps running
+  until you reload — that is the usual cause of "my change didn't take effect".
+- `reload` only works if `<bundle-id>` is registered in `bundles.yaml` with the correct
+  container path (`/bundles/<bundle-id>`). A typo or host-path in `bundles.yaml` makes the
+  reload succeed-looking but no-op.
+- **Always run `verify-reload` after `reload`.** The reload call returns before the proc
+  cache actually rotates; without verify you do not know whether the new code is live.
+- `verify-reload` reporting `eviction: None` for a bundle that was supposed to be active is
+  a red flag — the bundle was never in the proc cache, which usually means the id/path in
+  `bundles.yaml` is wrong, or the bundle was never loaded in the first place.
+- Any container restart (secrets injection, `kdcube --stop`/`start`, Docker restart) drops
+  the proc cache. Reload every active bundle immediately after such events.
