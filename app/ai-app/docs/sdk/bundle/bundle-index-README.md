@@ -6,6 +6,8 @@ tags: ["sdk", "bundle", "docs", "index", "reference"]
 keywords: ["bundle docs index", "bundle developer", "versatile bundle", "bundle reload", "bundles.yaml"]
 see_also:
   - ks:docs/sdk/bundle/bundle-dev-README.md
+  - ks:docs/sdk/bundle/build/how-to-write-bundle-README.md
+  - ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
   - ks:docs/sdk/bundle/bundle-reference-versatile-README.md
   - ks:docs/sdk/bundle/bundle-props-secrets-README.md
   - ks:docs/sdk/bundle/bundle-ops-README.md
@@ -27,15 +29,19 @@ Older `docs/sdk/example-bundle` sample docs are no longer part of the bundle pat
    - minimal authoring contract
    - local bundle layout
    - config/secrets/update loop
-2. [bundle-reference-versatile-README.md](bundle-reference-versatile-README.md)
+2. [build/how-to-write-bundle-README.md](build/how-to-write-bundle-README.md)
+   - builder playbook for designing and structuring a bundle
+3. [build/how-to-test-bundle-README.md](build/how-to-test-bundle-README.md)
+   - builder playbook for validation and runtime checks
+4. [bundle-reference-versatile-README.md](bundle-reference-versatile-README.md)
    - the concrete reference bundle to study
-3. [bundle-runtime-README.md](bundle-runtime-README.md)
+5. [bundle-runtime-README.md](bundle-runtime-README.md)
    - runtime surfaces available to bundle code
-4. [bundle-platform-integration-README.md](bundle-platform-integration-README.md)
+6. [bundle-platform-integration-README.md](bundle-platform-integration-README.md)
    - exact decorator and route contract
-5. [bundle-props-secrets-README.md](bundle-props-secrets-README.md)
+7. [bundle-props-secrets-README.md](bundle-props-secrets-README.md)
    - effective props, raw descriptor reads, bundle secrets, user props, user secrets
-6. [bundle-ops-README.md](bundle-ops-README.md)
+8. [bundle-ops-README.md](bundle-ops-README.md)
    - local reload, registry updates, delivery modes, and deployment-side changes
 
 ## Core Doc Map
@@ -43,6 +49,8 @@ Older `docs/sdk/example-bundle` sample docs are no longer part of the bundle pat
 | Concern | Primary doc |
 | --- | --- |
 | Build a new bundle | [bundle-dev-README.md](bundle-dev-README.md) |
+| Builder playbook | [build/how-to-write-bundle-README.md](build/how-to-write-bundle-README.md) |
+| Testing playbook | [build/how-to-test-bundle-README.md](build/how-to-test-bundle-README.md) |
 | Study the reference bundle | [bundle-reference-versatile-README.md](bundle-reference-versatile-README.md) |
 | Runtime surfaces | [bundle-runtime-README.md](bundle-runtime-README.md) |
 | Decorators, widget/API/public integration | [bundle-platform-integration-README.md](bundle-platform-integration-README.md) |

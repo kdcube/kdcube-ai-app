@@ -12,6 +12,8 @@ __pycache__/
 # Distribution / packaging
 .Python
 build/
+!app/ai-app/docs/sdk/bundle/build/
+!app/ai-app/docs/sdk/bundle/build/*.md
 develop-eggs/
 dist/
 downloads/
