@@ -36,11 +36,13 @@ We execute untrusted, LLM-generated Python (codegen + exec tools). To keep the s
 - Separate Python process on the same host.  
 - No supervisor/executor split.  
 - Crash containment only; no extra sandboxing beyond process boundary.
+- Because there is no privileged supervisor boundary, descriptor-backed secrets and bundle props cannot be made executor-invisible in this mode.
 
 **Docker (supervised sandbox)**  
 - Supervisor executes tool calls; executor runs untrusted code with no network/keys.  
 - Read‑only root FS; only workdir/outdir writable.  
 - Stronger isolation and policy enforcement.
+- Descriptor-backed platform config is restored only for the supervisor side; the executor child does not inherit descriptor payload env or descriptor path env.
 
 ## When ISO runtime is used
 
@@ -84,8 +86,8 @@ When isolation is required, `docker.run_py_in_docker(...)` starts a **py-code-ex
 - Root filesystem is read-only (`--read-only`).
 - Only `/workspace/work` and `/workspace/out` are writable.
 - `/tmp` is tmpfs.
-- Bundle code roots are mounted read-only (if used).
-- If a bundle exposes prepared readonly local data, its per-bundle storage dir is also mounted read-only.
+- Bundle code roots are mounted read-only under a supervisor-only private root (if used).
+- If a bundle exposes prepared readonly local data, its per-bundle storage dir is also mounted read-only under a supervisor-only private root.
 
 ```
 Host
@@ -94,8 +96,8 @@ Host
    └─ out/    <----- bind mount to /workspace/out  (RW)
 
 Host bundle surfaces (optional)
-├─ /bundles/<bundle_id>/                 <----- bind mount to /bundles/<bundle_id> (RO)
-└─ /bundle-storage/<tenant>/<project>/...<----- bind mount to that same absolute path in child (RO)
+├─ /bundles/<bundle_id>/                 <----- bind mount to /tmp/kdcube-supervisor/bundles/<bundle_id> (RO)
+└─ /bundle-storage/<tenant>/<project>/...<----- bind mount to /tmp/kdcube-supervisor/bundle-storage/... (RO)
 
 Chat container (UID/GID 1000:1000)
 └─ /exec-workspace/ (bind from host)
@@ -103,8 +105,7 @@ Chat container (UID/GID 1000:1000)
 Exec container (entrypoint runs as root)
 └─ /workspace/work (RW)
 └─ /workspace/out  (RW)
-└─ /bundles/<bundle_id> (RO, if bundle-local tools are used)
-└─ <BUNDLE_STORAGE_DIR> (RO, if bundle-local readonly data is used)
+└─ /tmp/kdcube-supervisor/... (RO, supervisor-only mounts for bundle code and bundle storage)
 ```
 
 Important:
@@ -112,7 +113,8 @@ Important:
 - bundle code and bundle readonly data are separate surfaces
 - bundle code contains bundle-local tool modules, for example a path like `tools/react_tools.py` under the bundle root
 - bundle readonly data contains prepared local assets such as built knowledge indexes or cloned docs repos
-- inside isolated exec, the physical readonly data path is exposed as `BUNDLE_STORAGE_DIR`
+- in Docker supervised mode, those surfaces are mounted only for the supervisor side under `/tmp/kdcube-supervisor/...`
+- generated code in the executor does not receive those mount paths in env or runtime globals
 
 ## Supervisor vs executor
 
@@ -128,6 +130,16 @@ The exec container runs two roles inside the same container:
    - Has **no network** (network namespace unshared).
    - Only writes to `workdir` and `outdir`.
    - Delegates external actions to supervisor tools.
+
+Descriptor-backed config behavior in supervised external runtimes:
+
+- the proc exports `assembly.yaml`, `bundles.yaml`, `gateway.yaml`, `secrets.yaml`, and `bundles.secrets.yaml` as descriptor payload env values
+- `py_code_exec_entry.py` materializes them into a root-only directory under `/tmp/kdcube-runtime-descriptors/<exec_id>`
+- it then sets `PLATFORM_DESCRIPTORS_DIR`, `ASSEMBLY_YAML_DESCRIPTOR_PATH`, `BUNDLES_YAML_DESCRIPTOR_PATH`, `GATEWAY_YAML_PATH`, `GLOBAL_SECRETS_YAML`, and `BUNDLE_SECRETS_YAML` for the supervisor bootstrap
+- the executor child does not inherit those env vars
+- the executor runs as UID 1001, while the materialized descriptor files are created with root-only permissions
+
+This is the current mechanism that allows supervisor-side tools to keep using `get_settings()`, `get_plain()`, and `get_secret()` when local deployment descriptors are the source of truth.
 
 The executor is spawned by `_run_subprocess(...)` in
 `kdcube_ai_app/apps/chat/sdk/runtime/iso_runtime.py` and drops privileges:
@@ -225,13 +237,13 @@ sudo chmod -R g+rwX /path/to/exec-workspace
 - `WORKDIR=/workspace/work`
 - `OUTPUT_DIR=/workspace/out`
 - `RUNTIME_GLOBALS_JSON`
-  - Includes `PORTABLE_SPEC_JSON`, `TOOL_ALIAS_MAP`, `TOOL_MODULE_FILES`, `RAW_TOOL_SPECS`, etc.
+  - Supervisor payload. The executor child receives a sanitized subset only.
 - `RUNTIME_TOOL_MODULES`
   - List of tool module names to bind.
 - `EXECUTION_ID`
   - Used for log headers and result file names.
 - `BUNDLE_STORAGE_DIR`
-  - Absolute per-bundle readonly storage dir available inside the isolated runtime when the calling bundle needs prepared local data.
+  - Supervisor-only path for per-bundle readonly storage when the calling bundle needs prepared local data.
 - `SUPERVISOR_SOCKET_PATH`
   - Unix socket between executor and supervisor (default `/tmp/supervisor.sock`).
 - `LOG_DIR=/workspace/out/logs`
@@ -242,6 +254,7 @@ sudo chmod -R g+rwX /path/to/exec-workspace
 - **No network for executor**: unshared net namespace, only supervisor can call networked tools.
 - **Read-only root FS**: only `/workspace/work` and `/workspace/out` are writable.
 - **No secret env passthrough**: executor receives minimal, safe environment.
+- **No descriptor or bundle-path globals for executor**: descriptor payload env, bundle root paths, bundle storage paths, and communicator bootstrap data stay out of executor globals/env.
 - **Tool execution via supervisor**: network and external side effects are mediated.
 
 ## Parallel execution considerations (future)

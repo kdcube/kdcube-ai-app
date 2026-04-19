@@ -6,7 +6,7 @@ from __future__ import annotations
 import os
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 from pydantic import Field
 from pydantic import BaseModel, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -539,6 +539,11 @@ class Settings(PLATFORM_CONFIG):
 
     STORAGE_PATH: str | None = Field(default=None, alias="KDCUBE_STORAGE_PATH")
     BUNDLE_STORAGE_URL: str | None = Field(default=None, alias="CB_BUNDLE_STORAGE_URL")
+    HOST_KDCUBE_STORAGE_PATH: str | None = None
+    HOST_BUNDLES_PATH: str | None = None
+    HOST_GIT_BUNDLES_PATH: str | None = None
+    HOST_BUNDLE_STORAGE_PATH: str | None = None
+    HOST_EXEC_WORKSPACE_PATH: str | None = None
     PLATFORM_DESCRIPTORS_DIR: str | None = None
     REACT_WORKSPACE_IMPLEMENTATION: str = Field(default="custom")
     REACT_WORKSPACE_GIT_REPO: str | None = None
@@ -656,6 +661,20 @@ class Settings(PLATFORM_CONFIG):
         #    so the assembled values feed into the URL construction below.
         if not self._env_present("SECRETS_PROVIDER") and not self.SECRETS_PROVIDER:
             self.SECRETS_PROVIDER = self._assembly_str("secrets.provider")
+        if not self._env_present("SECRETS_URL") and not self.SECRETS_URL:
+            self.SECRETS_URL = self._assembly_str("secrets.url")
+        if not self._env_present("SECRETS_TOKEN") and not self.SECRETS_TOKEN:
+            self.SECRETS_TOKEN = self._assembly_str("secrets.token")
+        if not self._env_present("SECRETS_ADMIN_TOKEN") and not self.SECRETS_ADMIN_TOKEN:
+            self.SECRETS_ADMIN_TOKEN = self._assembly_str("secrets.admin_token")
+        if not self._env_present("SECRETS_AWS_SM_PREFIX") and not self.SECRETS_AWS_SM_PREFIX:
+            self.SECRETS_AWS_SM_PREFIX = self._assembly_str("secrets.aws_sm_prefix")
+        if not self._env_present("SECRETS_SM_PREFIX") and not self.SECRETS_SM_PREFIX:
+            self.SECRETS_SM_PREFIX = self._assembly_str("secrets.sm_prefix")
+        if not self.SECRETS_AWS_SM_PREFIX and self.SECRETS_SM_PREFIX:
+            self.SECRETS_AWS_SM_PREFIX = self.SECRETS_SM_PREFIX
+        if not self.SECRETS_SM_PREFIX and self.SECRETS_AWS_SM_PREFIX:
+            self.SECRETS_SM_PREFIX = self.SECRETS_AWS_SM_PREFIX
 
         if not self._env_present("GLOBAL_SECRETS_YAML") and not self.GLOBAL_SECRETS_YAML:
             self.GLOBAL_SECRETS_YAML = _descriptor_file_uri("secrets.yaml")
@@ -843,6 +862,16 @@ class Settings(PLATFORM_CONFIG):
             self.STORAGE_PATH = self._assembly_str("storage.kdcube")
         if not self._env_present("CB_BUNDLE_STORAGE_URL") and not self.BUNDLE_STORAGE_URL:
             self.BUNDLE_STORAGE_URL = self._assembly_str("storage.bundles")
+        if not self._env_present("HOST_KDCUBE_STORAGE_PATH") and not self.HOST_KDCUBE_STORAGE_PATH:
+            self.HOST_KDCUBE_STORAGE_PATH = self._assembly_str("paths.host_kdcube_storage_path")
+        if not self._env_present("HOST_BUNDLES_PATH") and not self.HOST_BUNDLES_PATH:
+            self.HOST_BUNDLES_PATH = self._assembly_str("paths.host_bundles_path")
+        if not self._env_present("HOST_GIT_BUNDLES_PATH") and not self.HOST_GIT_BUNDLES_PATH:
+            self.HOST_GIT_BUNDLES_PATH = self._assembly_str("paths.host_git_bundles_path")
+        if not self._env_present("HOST_BUNDLE_STORAGE_PATH") and not self.HOST_BUNDLE_STORAGE_PATH:
+            self.HOST_BUNDLE_STORAGE_PATH = self._assembly_str("paths.host_bundle_storage_path")
+        if not self._env_present("HOST_EXEC_WORKSPACE_PATH") and not self.HOST_EXEC_WORKSPACE_PATH:
+            self.HOST_EXEC_WORKSPACE_PATH = self._assembly_str("paths.host_exec_workspace_path")
         if not self._env_present("REACT_WORKSPACE_IMPLEMENTATION"):
             self.REACT_WORKSPACE_IMPLEMENTATION = str(
                 self._assembly_str("storage.workspace.type") or self.REACT_WORKSPACE_IMPLEMENTATION
@@ -1015,6 +1044,90 @@ class Settings(PLATFORM_CONFIG):
 @lru_cache()
 def get_settings() -> Settings:
     return Settings()
+
+
+def _export_env_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    if isinstance(value, (list, tuple, set)):
+        parts = [str(item).strip() for item in value if str(item).strip()]
+        return ",".join(parts) if parts else None
+    text = str(value).strip()
+    return text or None
+
+
+def export_managed_env(
+    *,
+    settings: Settings | None = None,
+    keys: Iterable[str] | None = None,
+) -> dict[str, str]:
+    """
+    Export the resolved platform settings as env-like key/value pairs.
+
+    This is used by isolated/external runtimes that still consume a process-env
+    contract internally, while the proc service itself may now be running from
+    descriptors as the primary source of truth.
+    """
+    resolved = settings or get_settings()
+    key_filter = {str(key) for key in (keys or []) if str(key).strip()} if keys is not None else None
+    component = str(getattr(resolved, "GATEWAY_COMPONENT", None) or "proc").strip().lower() or "proc"
+    fargate_root = f"platform.services.{component}.exec.fargate"
+    exported: dict[str, str] = {}
+
+    def _put(key: str, value: Any) -> None:
+        if key_filter is not None and key not in key_filter:
+            return
+        text = _export_env_text(value)
+        if text is not None:
+            exported[key] = text
+
+    _put("GATEWAY_COMPONENT", resolved.GATEWAY_COMPONENT)
+    _put("AUTH_PROVIDER", resolved.AUTH_PROVIDER)
+    _put("AWS_REGION", resolved.AWS_REGION)
+    _put("AWS_DEFAULT_REGION", resolved.AWS_REGION)
+    _put("AWS_PROFILE", resolved.AWS_PROFILE)
+    _put("AWS_SHARED_CREDENTIALS_FILE", resolved.AWS_SHARED_CREDENTIALS_FILE)
+    _put("AWS_CONFIG_FILE", resolved.AWS_CONFIG_FILE)
+    _put("SECRETS_PROVIDER", resolved.SECRETS_PROVIDER)
+    _put("SECRETS_URL", resolved.SECRETS_URL)
+    _put("SECRETS_TOKEN", resolved.SECRETS_TOKEN)
+    _put("SECRETS_ADMIN_TOKEN", resolved.SECRETS_ADMIN_TOKEN)
+    _put("SECRETS_AWS_SM_PREFIX", resolved.SECRETS_AWS_SM_PREFIX or resolved.SECRETS_SM_PREFIX)
+    _put("SECRETS_SM_PREFIX", resolved.SECRETS_SM_PREFIX or resolved.SECRETS_AWS_SM_PREFIX)
+    _put("SECRETS_AWS_REGION", resolved.AWS_REGION)
+    _put("SECRETS_SM_REGION", resolved.AWS_REGION)
+    _put("GLOBAL_SECRETS_YAML", resolved.GLOBAL_SECRETS_YAML)
+    _put("BUNDLE_SECRETS_YAML", resolved.BUNDLE_SECRETS_YAML)
+    _put("PLATFORM_DESCRIPTORS_DIR", resolved.PLATFORM_DESCRIPTORS_DIR)
+    _put("REDIS_URL", resolved.REDIS_URL)
+    _put("TENANT_ID", resolved.TENANT)
+    _put("PROJECT_ID", resolved.PROJECT)
+    _put("INSTANCE_ID", resolved.INSTANCE_ID)
+    _put("KDCUBE_STORAGE_PATH", resolved.STORAGE_PATH)
+    _put("HOST_KDCUBE_STORAGE_PATH", resolved.HOST_KDCUBE_STORAGE_PATH)
+    _put("HOST_BUNDLES_PATH", resolved.HOST_BUNDLES_PATH)
+    _put("HOST_GIT_BUNDLES_PATH", resolved.HOST_GIT_BUNDLES_PATH)
+    _put("HOST_BUNDLE_STORAGE_PATH", resolved.HOST_BUNDLE_STORAGE_PATH)
+    _put("HOST_EXEC_WORKSPACE_PATH", resolved.HOST_EXEC_WORKSPACE_PATH)
+    _put("BUNDLE_STORAGE_ROOT", resolved.PLATFORM.APPLICATIONS.BUNDLE_STORAGE_ROOT)
+    _put("REACT_WORKSPACE_IMPLEMENTATION", resolved.REACT_WORKSPACE_IMPLEMENTATION)
+    _put("REACT_WORKSPACE_GIT_REPO", resolved.REACT_WORKSPACE_GIT_REPO)
+    _put("PY_CODE_EXEC_IMAGE", resolved.PLATFORM.EXEC.PY.PY_CODE_EXEC_IMAGE)
+    _put("PY_CODE_EXEC_TIMEOUT", resolved.PLATFORM.EXEC.PY.PY_CODE_EXEC_TIMEOUT)
+    _put("PY_CODE_EXEC_NETWORK_MODE", resolved.PLATFORM.EXEC.PY.PY_CODE_EXEC_NETWORK_MODE)
+    _put("EXEC_WORKSPACE_ROOT", resolved.PLATFORM.EXEC.EXEC_WORKSPACE_ROOT)
+    _put("FARGATE_EXEC_ENABLED", resolved.plain(f"{fargate_root}.enabled"))
+    _put("FARGATE_CLUSTER", resolved.plain(f"{fargate_root}.cluster"))
+    _put("FARGATE_TASK_DEFINITION", resolved.plain(f"{fargate_root}.task_definition"))
+    _put("FARGATE_CONTAINER_NAME", resolved.plain(f"{fargate_root}.container_name"))
+    _put("FARGATE_SUBNETS", resolved.plain(f"{fargate_root}.subnets"))
+    _put("FARGATE_SECURITY_GROUPS", resolved.plain(f"{fargate_root}.security_groups"))
+    _put("FARGATE_ASSIGN_PUBLIC_IP", resolved.plain(f"{fargate_root}.assign_public_ip"))
+    _put("FARGATE_LAUNCH_TYPE", resolved.plain(f"{fargate_root}.launch_type"))
+    _put("FARGATE_PLATFORM_VERSION", resolved.plain(f"{fargate_root}.platform_version"))
+    return exported
 
 
 def resolve_asyncpg_ssl(settings: Settings | None = None) -> bool | str:

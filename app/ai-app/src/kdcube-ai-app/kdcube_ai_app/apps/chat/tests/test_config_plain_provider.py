@@ -35,7 +35,7 @@ def test_get_plain_reads_assembly_by_default(monkeypatch, tmp_path):
                     "workspace": {"type": "git", "repo": "https://example.com/workspace.git"},
                     "claude_code_session": {"type": "git", "repo": "https://example.com/sessions.git"},
                 },
-                "frontend": {"routes_prefix": "/cisoteria"},
+                "frontend": {"routes_prefix": "/platform"},
             },
             sort_keys=False,
         )
@@ -47,7 +47,7 @@ def test_get_plain_reads_assembly_by_default(monkeypatch, tmp_path):
     monkeypatch.setattr(sdk_config, "get_settings", lambda: settings)
 
     assert sdk_config.get_plain("storage.workspace.type") == "git"
-    assert sdk_config.read_plain("a:frontend.routes_prefix") == "/cisoteria"
+    assert sdk_config.read_plain("a:frontend.routes_prefix") == "/platform"
     assert sdk_config.get_plain("secrets.provider") == "secrets-service"
     assert settings.SECRETS_PROVIDER == "secrets-service"
     assert build_secrets_manager_config(settings).provider == "secrets-service"
@@ -142,3 +142,55 @@ def test_settings_auth_provider_falls_back_to_legacy_auth_type(monkeypatch, tmp_
     settings = sdk_config.Settings()
 
     assert settings.AUTH_PROVIDER == "cognito"
+
+
+def test_export_managed_env_includes_fargate_settings_from_assembly(monkeypatch, tmp_path):
+    assembly_path = tmp_path / "assembly.yaml"
+    assembly_path.write_text(
+        yaml.safe_dump(
+            {
+                "secrets": {
+                    "provider": "secrets-file",
+                    "aws_sm_prefix": "kdcube/demo/project",
+                },
+                "platform": {
+                    "services": {
+                        "proc": {
+                            "exec": {
+                                "fargate": {
+                                    "enabled": True,
+                                    "cluster": "demo-cluster",
+                                    "task_definition": "demo-exec",
+                                    "container_name": "exec",
+                                    "subnets": ["subnet-a", "subnet-b"],
+                                    "security_groups": ["sg-a"],
+                                    "assign_public_ip": "DISABLED",
+                                    "platform_version": "1.4.0",
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            sort_keys=False,
+        )
+    )
+
+    monkeypatch.setattr(sdk_config, "get_secrets_manager", lambda _settings: _NoopSecretsManager())
+    monkeypatch.setenv("PLATFORM_DESCRIPTORS_DIR", str(tmp_path))
+    settings = sdk_config.Settings()
+
+    exported = sdk_config.export_managed_env(settings=settings)
+
+    assert exported["PLATFORM_DESCRIPTORS_DIR"] == str(tmp_path)
+    assert exported["SECRETS_PROVIDER"] == "secrets-file"
+    assert exported["SECRETS_AWS_SM_PREFIX"] == "kdcube/demo/project"
+    assert exported["SECRETS_SM_PREFIX"] == "kdcube/demo/project"
+    assert exported["FARGATE_EXEC_ENABLED"] == "1"
+    assert exported["FARGATE_CLUSTER"] == "demo-cluster"
+    assert exported["FARGATE_TASK_DEFINITION"] == "demo-exec"
+    assert exported["FARGATE_CONTAINER_NAME"] == "exec"
+    assert exported["FARGATE_SUBNETS"] == "subnet-a,subnet-b"
+    assert exported["FARGATE_SECURITY_GROUPS"] == "sg-a"
+    assert exported["FARGATE_ASSIGN_PUBLIC_IP"] == "DISABLED"
+    assert exported["FARGATE_PLATFORM_VERSION"] == "1.4.0"

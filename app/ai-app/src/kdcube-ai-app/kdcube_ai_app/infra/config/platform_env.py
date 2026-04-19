@@ -3,7 +3,10 @@
 
 from __future__ import annotations
 
+import base64
+from pathlib import Path
 from typing import Dict, Iterable, Mapping
+from urllib.parse import unquote, urlparse
 
 from kdcube_ai_app.apps.chat.sdk.runtime.isolated.environment import filter_host_environment
 
@@ -26,8 +29,6 @@ PLATFORM_ENV_GROUPS: dict[str, tuple[str, ...]] = {
         "SECRETS_AWS_SM_PREFIX",
         "SECRETS_SM_PREFIX",
         "SECRETS_SM_REGION",
-        "GLOBAL_SECRETS_YAML",
-        "BUNDLE_SECRETS_YAML",
         "SECRETS_TOKEN",
         "SECRETS_URL",
     ),
@@ -69,10 +70,15 @@ PLATFORM_ENV_GROUPS: dict[str, tuple[str, ...]] = {
         "SECRETS_PROVIDER",
         "SECRETS_SM_PREFIX",
         "SECRETS_SM_REGION",
-        "GLOBAL_SECRETS_YAML",
-        "BUNDLE_SECRETS_YAML",
         "SECRETS_TOKEN",
         "SECRETS_URL",
+    ),
+    "descriptor_payload": (
+        "KDCUBE_RUNTIME_ASSEMBLY_YAML_B64",
+        "KDCUBE_RUNTIME_BUNDLES_YAML_B64",
+        "KDCUBE_RUNTIME_GATEWAY_YAML_B64",
+        "KDCUBE_RUNTIME_SECRETS_YAML_B64",
+        "KDCUBE_RUNTIME_BUNDLES_SECRETS_YAML_B64",
     ),
     "platform_secret_exports": (
         "KDCUBE_PLATFORM_SECRETS_JSON",
@@ -197,6 +203,7 @@ PLATFORM_ENV_PREFIX_GROUPS: dict[str, tuple[str, ...]] = {
 EXTERNAL_RUNTIME_ENV_GROUPS: tuple[str, ...] = (
     "runtime_core",
     "secrets_provider",
+    "descriptor_payload",
     "relational",
     "auth",
     "bundles",
@@ -214,6 +221,15 @@ EXTERNAL_RUNTIME_INLINE_ENV_GROUPS: tuple[str, ...] = (
 )
 
 
+_DESCRIPTOR_SOURCE_ENV_KEYS = frozenset(
+    {
+        "PLATFORM_DESCRIPTORS_DIR",
+        "GLOBAL_SECRETS_YAML",
+        "BUNDLE_SECRETS_YAML",
+    }
+)
+
+
 def _normalize_env_value(value: object) -> str | None:
     if value is None:
         return None
@@ -223,15 +239,78 @@ def _normalize_env_value(value: object) -> str | None:
     return text
 
 
+def _resolve_local_path(raw_value: object) -> Path | None:
+    text = _normalize_env_value(raw_value)
+    if text is None:
+        return None
+    if text.startswith("{") or text.startswith("["):
+        return None
+    parsed = urlparse(text)
+    if parsed.scheme and parsed.scheme != "file":
+        return None
+    path_text = unquote(parsed.path if parsed.scheme == "file" else text).strip()
+    if not path_text:
+        return None
+    return Path(path_text).expanduser()
+
+
+def _read_descriptor_payload(path: Path | None) -> str | None:
+    if path is None or not path.exists() or not path.is_file():
+        return None
+    try:
+        return base64.b64encode(path.read_bytes()).decode("ascii")
+    except Exception:
+        return None
+
+
+def _descriptor_source_path(
+    *,
+    host_env: Mapping[str, object],
+    filename: str,
+    env_keys: tuple[str, ...],
+) -> Path | None:
+    for env_key in env_keys:
+        path = _resolve_local_path(host_env.get(env_key))
+        if path is not None:
+            return path
+    descriptors_dir = _resolve_local_path(host_env.get("PLATFORM_DESCRIPTORS_DIR"))
+    if descriptors_dir is not None:
+        return descriptors_dir / filename
+    return None
+
+
+def _collect_descriptor_payload_env(host_env: Mapping[str, object]) -> Dict[str, str]:
+    specs = (
+        ("KDCUBE_RUNTIME_ASSEMBLY_YAML_B64", "assembly.yaml", ("ASSEMBLY_YAML_DESCRIPTOR_PATH",)),
+        ("KDCUBE_RUNTIME_BUNDLES_YAML_B64", "bundles.yaml", ("BUNDLES_YAML_DESCRIPTOR_PATH",)),
+        ("KDCUBE_RUNTIME_GATEWAY_YAML_B64", "gateway.yaml", ("GATEWAY_YAML_PATH",)),
+        ("KDCUBE_RUNTIME_SECRETS_YAML_B64", "secrets.yaml", ("GLOBAL_SECRETS_YAML",)),
+        ("KDCUBE_RUNTIME_BUNDLES_SECRETS_YAML_B64", "bundles.secrets.yaml", ("BUNDLE_SECRETS_YAML",)),
+    )
+    exported: Dict[str, str] = {}
+    for env_name, filename, env_keys in specs:
+        payload = _read_descriptor_payload(
+            _descriptor_source_path(
+                host_env=host_env,
+                filename=filename,
+                env_keys=env_keys,
+            )
+        )
+        if payload:
+            exported[env_name] = payload
+    return exported
+
+
 def collect_platform_env_groups(
     host_env: Mapping[str, object],
     groups: Iterable[str],
 ) -> Dict[str, str]:
+    requested = tuple(groups)
     filtered_host_env = filter_host_environment(
         {str(k): str(v) for k, v in host_env.items() if v is not None}
     )
     collected: Dict[str, str] = {}
-    for group in groups:
+    for group in requested:
         for key in PLATFORM_ENV_GROUPS.get(group, ()):
             if key not in filtered_host_env:
                 continue
@@ -250,15 +329,62 @@ def collect_platform_env_groups(
                 if value is None:
                     continue
                 collected[str(key)] = value
+    if "descriptor_payload" in requested:
+        for key, value in _collect_descriptor_payload_env(host_env).items():
+            collected.setdefault(key, value)
     return collected
 
 
-def build_external_runtime_base_env(host_env: Mapping[str, object]) -> Dict[str, str]:
-    return collect_platform_env_groups(host_env, EXTERNAL_RUNTIME_ENV_GROUPS)
+def _merge_host_and_managed_env(
+    host_env: Mapping[str, object],
+    *,
+    keys: Iterable[str],
+    settings: object | None = None,
+) -> Dict[str, object]:
+    merged: Dict[str, object] = {}
+    try:
+        from kdcube_ai_app.apps.chat.sdk.config import export_managed_env
+
+        merged.update(export_managed_env(settings=settings, keys=keys))
+    except Exception:
+        pass
+    for key, value in (host_env or {}).items():
+        if value is None:
+            continue
+        merged[str(key)] = value
+    return merged
 
 
-def build_external_runtime_inline_env(host_env: Mapping[str, object]) -> Dict[str, str]:
-    return collect_platform_env_groups(host_env, EXTERNAL_RUNTIME_INLINE_ENV_GROUPS)
+def build_external_runtime_base_env(
+    host_env: Mapping[str, object],
+    *,
+    settings: object | None = None,
+) -> Dict[str, str]:
+    requested_keys = EXTERNAL_RUNTIME_ENV_KEYS | _DESCRIPTOR_SOURCE_ENV_KEYS
+    merged_env = _merge_host_and_managed_env(
+        host_env,
+        keys=requested_keys,
+        settings=settings,
+    )
+    return collect_platform_env_groups(merged_env, EXTERNAL_RUNTIME_ENV_GROUPS)
+
+
+def build_external_runtime_inline_env(
+    host_env: Mapping[str, object],
+    *,
+    settings: object | None = None,
+) -> Dict[str, str]:
+    requested_keys = frozenset(
+        key
+        for group in EXTERNAL_RUNTIME_INLINE_ENV_GROUPS
+        for key in PLATFORM_ENV_GROUPS.get(group, ())
+    ) | _DESCRIPTOR_SOURCE_ENV_KEYS
+    merged_env = _merge_host_and_managed_env(
+        host_env,
+        keys=requested_keys,
+        settings=settings,
+    )
+    return collect_platform_env_groups(merged_env, EXTERNAL_RUNTIME_INLINE_ENV_GROUPS)
 
 
 EXTERNAL_RUNTIME_ENV_KEYS = frozenset(

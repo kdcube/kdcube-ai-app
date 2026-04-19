@@ -180,12 +180,14 @@ secrets:
   provider: "secrets-file"  # SECRETS_PROVIDER: secrets-service | aws-sm | in-memory | secrets-file
 
 # ---------------------------------------------------------------------------
-# Host paths (used by docker-compose mounts; not read by services directly)
+# Host paths (deployment topology hints promoted into managed settings)
 # ---------------------------------------------------------------------------
 paths:
-  host_bundles_path: "/YOUR/HOST/PATH/src"                           # HOST_BUNDLES_PATH; required for descriptor-driven local bundle installs; host folder mounted into /bundles
-  host_git_bundles_path: "/YOUR/HOST/PATH/.kdcube/git-bundles"       # HOST_GIT_BUNDLES_PATH; optional separate host folder for git-resolved bundle clones/cache; mounted into /git-bundles
-  host_bundle_storage_path: "/YOUR/HOST/PATH/.kdcube/bundle-storage" # HOST_BUNDLE_STORAGE_PATH; host folder for local bundle storage; mounted into container
+  host_kdcube_storage_path: "/YOUR/HOST/PATH/.kdcube/kdcube-storage"     # HOST_KDCUBE_STORAGE_PATH; host folder mounted into /kdcube-storage
+  host_bundles_path: "/YOUR/HOST/PATH/src"                               # HOST_BUNDLES_PATH; required for descriptor-driven local bundle installs; host folder mounted into /bundles
+  host_git_bundles_path: "/YOUR/HOST/PATH/.kdcube/git-bundles"           # HOST_GIT_BUNDLES_PATH; optional separate host folder for git-resolved bundle clones/cache; mounted into /git-bundles
+  host_bundle_storage_path: "/YOUR/HOST/PATH/.kdcube/bundle-storage"     # HOST_BUNDLE_STORAGE_PATH; host folder mounted into /bundle-storage
+  host_exec_workspace_path: "/YOUR/HOST/PATH/.kdcube/exec-workspace"     # HOST_EXEC_WORKSPACE_PATH; host folder mounted into /exec-workspace
 
 # ---------------------------------------------------------------------------
 # Platform metadata

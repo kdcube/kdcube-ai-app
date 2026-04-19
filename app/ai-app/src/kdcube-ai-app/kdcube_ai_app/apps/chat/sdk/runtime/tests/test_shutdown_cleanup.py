@@ -190,12 +190,18 @@ async def test_run_py_in_docker_skips_opaque_host_path_preflight_inside_proc(tmp
     assert result["ok"] is True
     assert calls, "docker run should proceed when translated host paths are opaque from proc"
     argv = calls[0][0]
+    private_bundle_root = (docker_runtime._SUPERVISOR_PRIVATE_BUNDLES_ROOT / bundle_root.name).resolve()
+    private_bundle_storage = docker_runtime._private_mount_path(
+        bundle_storage_dir.resolve(),
+        docker_runtime._SUPERVISOR_PRIVATE_BUNDLE_STORAGE_ROOT,
+    )
+    assert any(arg.endswith(f":{private_bundle_root}:ro") for arg in argv)
     assert any(
-        arg == f"BUNDLE_STORAGE_DIR={bundle_storage_dir.resolve()}"
+        arg == f"BUNDLE_STORAGE_DIR={private_bundle_storage}"
         for arg in argv
     )
     assert any(
-        arg.endswith(f":{bundle_storage_dir.resolve()}:ro")
+        arg.endswith(f":{private_bundle_storage}:ro")
         for arg in argv
     )
 
@@ -252,7 +258,12 @@ async def test_run_py_in_docker_mounts_local_kdcube_storage_rw(tmp_path, monkeyp
     assert result["ok"] is True
     assert calls, "docker run should proceed with a writable KDCUBE storage mount"
     argv = calls[0][0]
-    assert any(arg.endswith(f":{proc_storage_dir}:rw") for arg in argv)
+    private_storage_dir = docker_runtime._private_mount_path(
+        proc_storage_dir,
+        docker_runtime._SUPERVISOR_PRIVATE_KDCUBE_STORAGE_ROOT,
+    )
+    assert any(arg.endswith(f":{private_storage_dir}:rw") for arg in argv)
+    assert any(arg == f"KDCUBE_STORAGE_PATH=file://{private_storage_dir}" for arg in argv)
 
 
 @pytest.mark.asyncio

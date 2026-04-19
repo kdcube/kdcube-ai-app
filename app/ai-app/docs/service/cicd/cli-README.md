@@ -305,6 +305,9 @@ When provided, the CLI:
 
 Local bundle root contract:
 
+- `assembly.paths.host_kdcube_storage_path` becomes `HOST_KDCUBE_STORAGE_PATH`
+- `assembly.paths.host_bundle_storage_path` becomes `HOST_BUNDLE_STORAGE_PATH`
+- `assembly.paths.host_exec_workspace_path` becomes `HOST_EXEC_WORKSPACE_PATH`
 - `assembly.paths.host_bundles_path` is installer-facing config and is written to `HOST_BUNDLES_PATH`
 - compose mounts `HOST_BUNDLES_PATH` into proc as `AGENTIC_BUNDLES_ROOT` (normally `/bundles`)
 - bundle entries in `bundles.yaml` must therefore use the container-visible path, for example:
@@ -313,6 +316,7 @@ Local bundle root contract:
 
 - `assembly.paths.host_git_bundles_path` optionally becomes `HOST_GIT_BUNDLES_PATH`
 - compose mounts `HOST_GIT_BUNDLES_PATH` into proc as `AGENTIC_GIT_BUNDLES_ROOT` (normally `/git-bundles`)
+- runtime code now reads these promoted values via `get_settings()` when it needs host/container path translation
 
 Git bundle resolution uses the dedicated git cache root when configured:
 

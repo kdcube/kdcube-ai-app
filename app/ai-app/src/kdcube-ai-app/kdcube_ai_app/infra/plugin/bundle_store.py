@@ -1021,7 +1021,12 @@ class _FileBundleDescriptorStore:
 
 
 def _resolve_bundles_descriptor_authority_uri() -> str | None:
-    descriptors_dir = str(os.getenv("PLATFORM_DESCRIPTORS_DIR") or "").strip()
+    settings = get_settings()
+    descriptors_dir = str(
+        getattr(settings, "PLATFORM_DESCRIPTORS_DIR", None)
+        or os.getenv("PLATFORM_DESCRIPTORS_DIR")
+        or ""
+    ).strip()
     candidates = [
         os.getenv("BUNDLES_YAML_DESCRIPTOR_PATH"),
         os.getenv("AGENTIC_BUNDLES_JSON"),

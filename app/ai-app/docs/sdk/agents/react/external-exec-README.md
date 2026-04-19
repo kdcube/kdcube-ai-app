@@ -38,23 +38,48 @@ The per-bundle readonly storage dir is where bundles keep prepared local data su
 - built indexes
 - cached read-only knowledge space files
 
-Inside isolated exec, that directory is exposed at `BUNDLE_STORAGE_DIR`.
+In supervised external exec, that directory is restored or mounted for the supervisor side at `BUNDLE_STORAGE_DIR`.
+Generated code in the executor is not supposed to receive or browse that path directly.
 
 Current transport behavior:
 
 - Docker external exec:
-  - bundle code root is mounted read-only
-  - `BUNDLE_STORAGE_DIR` is mounted read-only
+  - bundle code root is mounted read-only under a supervisor-only private root
+  - `BUNDLE_STORAGE_DIR` is mounted read-only under a supervisor-only private root
 - Fargate external exec:
-  - bundle code root is snapshotted and restored
-  - `BUNDLE_STORAGE_DIR` is snapshotted and restored
+  - bundle code root is snapshotted and restored for the supervisor side
+  - `BUNDLE_STORAGE_DIR` is snapshotted and restored for the supervisor side
+
+### Descriptor-backed settings inside external exec
+
+When local deployment uses descriptors as the source of truth, external exec cannot rely on the proc host env carrying resolved platform variables.
+
+Current runtime behavior:
+
+- the proc exports descriptor contents for:
+  - `assembly.yaml`
+  - `bundles.yaml`
+  - `gateway.yaml`
+  - `secrets.yaml`
+  - `bundles.secrets.yaml`
+- the external runtime passes those exports as supervisor-only env payload
+- `py_code_exec_entry.py` materializes them into root-only files under `/tmp/kdcube-runtime-descriptors/<exec_id>`
+- the supervisor bootstrap then resolves `get_settings()`, `get_plain()`, `get_secret()`, and bundle props against those files
+- the executor child does not inherit those descriptor env vars
+
+Practical consequence:
+
+- supervisor-side tools may keep using managed config helpers
+- generated code in the executor must not assume descriptor files or managed secrets are directly readable
+- generated code in the executor must not assume bundle code roots or bundle storage paths are directly readable
+- if code needs privileged data access, it must go through a supervisor-side tool boundary
 
 Example: `kdcube.copilot`
 
 - bundle code lives under `/bundles/kdcube.copilot@...`
 - its built knowledge space lives under the per-bundle storage dir
 - `react.search_knowledge(...)` reads that physical knowledge space through `knowledge/resolver.py`
-- if isolated exec loads the resolver without having run the bundle entrypoint first, the resolver falls back to `BUNDLE_STORAGE_DIR`
+- if isolated exec loads the resolver without having run the bundle entrypoint first, the supervisor-side resolver falls back to `BUNDLE_STORAGE_DIR`
 
 ### What the agent calls
 
@@ -319,10 +344,13 @@ So today the safest public contract for agentic/copilot-like exec is still:
 
 ### Fargate runner
 - `FARGATE_EXEC_ENABLED=1` enables execution.
-- Required env:
+- Required config keys:
   `FARGATE_CLUSTER`, `FARGATE_TASK_DEFINITION`, `FARGATE_CONTAINER_NAME`,
   `FARGATE_SUBNETS` (comma list), `FARGATE_SECURITY_GROUPS` (comma list),
   `FARGATE_ASSIGN_PUBLIC_IP`.
+- In descriptor-first local deployments, these values are exported from the proc's
+  resolved settings into the runtime env contract; they do not need to exist as
+  raw host env vars.
 - Runner is implemented in `kdcube_ai_app/apps/chat/sdk/runtime/external/fargate.py`.
 
 ### Runtime-independent result contract
