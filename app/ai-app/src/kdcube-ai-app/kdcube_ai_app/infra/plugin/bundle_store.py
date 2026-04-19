@@ -780,8 +780,6 @@ class _AwsBundleDescriptorStore:
             default_bundle_id=str(meta.get("default_bundle_id") or "").strip() or None,
             bundles=bundles,
         )
-        if reg.default_bundle_id and reg.default_bundle_id not in reg.bundles:
-            reg.default_bundle_id = next(iter(reg.bundles.keys()), None)
         return reg, props_map
 
     def save_registry(
@@ -960,8 +958,6 @@ class _FileBundleDescriptorStore:
             if not bundles and not default_bundle_id:
                 return None
             reg = BundlesRegistry(default_bundle_id=default_bundle_id, bundles=bundles)
-            if reg.default_bundle_id and reg.default_bundle_id not in reg.bundles:
-                reg.default_bundle_id = next(iter(reg.bundles.keys()), None)
             return reg, props_map
 
     def save_registry(
@@ -1049,6 +1045,10 @@ def _resolve_bundles_descriptor_authority_uri() -> str | None:
         if path.exists() and path.is_file():
             return path.resolve().as_uri()
     return None
+
+
+def _is_live_file_authority(store: Any | None) -> bool:
+    return isinstance(store, _FileBundleDescriptorStore)
 
 
 def describe_authoritative_bundle_store(
@@ -1148,6 +1148,25 @@ async def load_registry(redis, tenant: Optional[str] = None, project: Optional[s
     t, p = tenant, project
     if not t or not p:
         t, p = _tp_from_env()
+    store = _get_authoritative_bundle_store(t, p)
+
+    # In descriptor-backed local mode, bundles.yaml is the source of truth.
+    # Redis is only a runtime cache and must be refreshed from the file-backed
+    # authority on every load so proc restarts and descriptor edits cannot
+    # revive stale bundle state.
+    if _is_live_file_authority(store):
+        loaded = store.load_registry()
+        if loaded is None:
+            reg = BundlesRegistry()
+            props_map: Dict[str, Dict[str, Any]] = {}
+        else:
+            reg, props_map = loaded
+        reg, _ = _merge_example_bundles(reg)
+        reg = _ensure_admin_bundle(reg)
+        await redis.set(key, reg.model_dump_json())
+        await _sync_bundle_props_authoritative(redis, tenant=t, project=p, props_map=props_map)
+        return reg
+
     raw = await redis.get(key)
 
     # Helper: parse raw -> BundlesRegistry (tolerant to shape)
@@ -1162,15 +1181,15 @@ async def load_registry(redis, tenant: Optional[str] = None, project: Optional[s
         reg = _parse(raw)
         # ---empty registry stored -> seed from env once ---
         if not reg.bundles or len(reg.bundles) == 0:
-            store = _get_authoritative_bundle_store(t, p)
             if store is not None:
                 loaded = store.load_registry()
                 if loaded is not None:
                     reg, props_map = loaded
-                    await redis.set(key, _ensure_admin_bundle(reg).model_dump_json())
-                    await _sync_bundle_props_authoritative(redis, tenant=t, project=p, props_map=props_map)
                     reg, _ = _merge_example_bundles(reg)
-                    return _ensure_admin_bundle(reg)
+                    reg = _ensure_admin_bundle(reg)
+                    await redis.set(key, reg.model_dump_json())
+                    await _sync_bundle_props_authoritative(redis, tenant=t, project=p, props_map=props_map)
+                    return reg
             seeded = await seed_from_env_if_any(redis, tenant, project)
             if seeded and seeded.bundles:
                 seeded, _ = _merge_example_bundles(seeded)
@@ -1188,15 +1207,15 @@ async def load_registry(redis, tenant: Optional[str] = None, project: Optional[s
         return reg
 
     # Key absent -> try seeding once
-    store = _get_authoritative_bundle_store(t, p)
     if store is not None:
         loaded = store.load_registry()
         if loaded is not None:
             reg, props_map = loaded
-            await redis.set(key, _ensure_admin_bundle(reg).model_dump_json())
-            await _sync_bundle_props_authoritative(redis, tenant=t, project=p, props_map=props_map)
             reg, _ = _merge_example_bundles(reg)
-            return _ensure_admin_bundle(reg)
+            reg = _ensure_admin_bundle(reg)
+            await redis.set(key, reg.model_dump_json())
+            await _sync_bundle_props_authoritative(redis, tenant=t, project=p, props_map=props_map)
+            return reg
     seeded = await seed_from_env_if_any(redis, tenant, project)
     if seeded:
         seeded, _ = _merge_example_bundles(seeded)
