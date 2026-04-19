@@ -18,7 +18,7 @@ from kdcube_cli.installer import (
 
 def test_descriptor_fast_path_accepts_complete_release_descriptor():
     assembly = {
-        "context": {"tenant": "example-product", "project": "chatbot"},
+        "context": {"tenant": "acme", "project": "platform"},
         "platform": {"repo": "kdcube/kdcube-ai-app", "ref": "2026.4.04.318"},
         "secrets": {"provider": "secrets-file"},
         "paths": {"host_bundles_path": "/Users/demo/bundles"},
@@ -103,7 +103,7 @@ def test_stage_descriptor_directory_stages_complete_canonical_set(tmp_path: Path
 
 def test_descriptor_fast_path_requires_platform_ref_without_latest():
     assembly = {
-        "context": {"tenant": "example-product", "project": "chatbot"},
+        "context": {"tenant": "acme", "project": "platform"},
         "secrets": {"provider": "secrets-file"},
         "paths": {"host_bundles_path": "/Users/demo/bundles"},
         "auth": {"type": "simple"},
@@ -123,7 +123,7 @@ def test_descriptor_fast_path_requires_platform_ref_without_latest():
 
 def test_descriptor_fast_path_requires_cognito_fields():
     assembly = {
-        "context": {"tenant": "example-product", "project": "chatbot"},
+        "context": {"tenant": "acme", "project": "platform"},
         "platform": {"ref": "2026.4.04.318"},
         "secrets": {"provider": "secrets-file"},
         "paths": {"host_bundles_path": "/Users/demo/bundles"},
@@ -150,7 +150,7 @@ def test_descriptor_fast_path_requires_cognito_fields():
 
 def test_descriptor_fast_path_accepts_explicit_release_without_platform_ref():
     assembly = {
-        "context": {"tenant": "example-product", "project": "chatbot"},
+        "context": {"tenant": "acme", "project": "platform"},
         "secrets": {"provider": "secrets-file"},
         "paths": {"host_bundles_path": "/Users/demo/bundles"},
         "auth": {"type": "simple"},
@@ -170,7 +170,7 @@ def test_descriptor_fast_path_accepts_explicit_release_without_platform_ref():
 
 def test_descriptor_fast_path_accepts_upstream_without_platform_ref():
     assembly = {
-        "context": {"tenant": "example-product", "project": "chatbot"},
+        "context": {"tenant": "acme", "project": "platform"},
         "secrets": {"provider": "secrets-file"},
         "paths": {"host_bundles_path": "/Users/demo/bundles"},
         "auth": {"type": "simple"},
@@ -191,7 +191,7 @@ def test_descriptor_fast_path_accepts_upstream_without_platform_ref():
 
 def test_descriptor_fast_path_requires_host_bundles_path_for_noninteractive_local_bundle_installs():
     assembly = {
-        "context": {"tenant": "example-product", "project": "chatbot"},
+        "context": {"tenant": "acme", "project": "platform"},
         "platform": {"ref": "2026.4.04.318"},
         "secrets": {"provider": "secrets-file"},
         "auth": {"type": "simple"},
@@ -223,7 +223,7 @@ def test_descriptor_fast_path_requires_host_bundles_path_for_noninteractive_loca
 
 def test_descriptor_fast_path_accepts_git_only_bundles_without_host_bundles_path():
     assembly = {
-        "context": {"tenant": "example-product", "project": "chatbot"},
+        "context": {"tenant": "acme", "project": "platform"},
         "secrets": {"provider": "secrets-file"},
         "auth": {"type": "simple"},
         "proxy": {"ssl": False},
@@ -236,11 +236,11 @@ def test_descriptor_fast_path_accepts_git_only_bundles_without_host_bundles_path
         "bundles": {
             "items": [
                 {
-                    "id": "example-product@marketing",
-                    "repo": "git@github.com:example-org/example-product_chatbot.git",
-                    "ref": "2026.4.13.051",
-                    "subdir": "src/ciso/app/service/bundle/ciso_marketing/bundle",
-                    "module": "ciso-marketing@2-0.entrypoint",
+                    "id": "acme.marketing@2-0",
+                    "repo": "git@github.com:example-org/acme-platform.git",
+                    "ref": "main",
+                    "subdir": "src/acme/bundles/marketing",
+                    "module": "acme.marketing@2-0.entrypoint",
                 }
             ]
         }
@@ -261,7 +261,7 @@ def test_descriptor_fast_path_accepts_git_only_bundles_without_host_bundles_path
 
 def test_descriptor_fast_path_accepts_frontend_build_without_frontend_config_override():
     assembly = {
-        "context": {"tenant": "example-product", "project": "chatbot"},
+        "context": {"tenant": "acme", "project": "platform"},
         "secrets": {"provider": "secrets-file"},
         "paths": {"host_bundles_path": "/Users/demo/bundles"},
         "auth": {"type": "delegated", "cognito": {"region": "eu-west-1", "user_pool_id": "pool", "app_client_id": "client"}},
@@ -272,10 +272,10 @@ def test_descriptor_fast_path_accepts_frontend_build_without_frontend_config_ove
         },
         "frontend": {
             "build": {
-                "repo": "git@github.com:example-org/example-product_chatbot.git",
-                "ref": "2026.4.13.051",
-                "dockerfile": "ops/ciso/dockercompose/Dockerfile_UI",
-                "src": "src/ciso/app/ui/chat-web-app",
+                "repo": "git@github.com:example-org/acme-platform.git",
+                "ref": "main",
+                "dockerfile": "ops/acme/dockercompose/Dockerfile_UI",
+                "src": "src/acme/ui/chat-web-app",
             }
         },
     }
@@ -788,6 +788,275 @@ def test_gather_configuration_supports_explicit_proxy_host_ports(monkeypatch, tm
     assert "KDCUBE_UI_SSL_PORT=443" in env_main
     assert "KDCUBE_PROXY_HTTP_PORT=80" in env_main
     assert "KDCUBE_PROXY_HTTPS_PORT=443" in env_main
+
+
+def test_gather_configuration_keeps_proc_and_ingress_env_minimal_for_user_descriptors(monkeypatch, tmp_path: Path):
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / ".env").write_text("")
+    (config_dir / ".env.ingress").write_text(
+        "AUTH_PROVIDER=cognito\n"
+        "GATEWAY_CONFIG_JSON='{\n"
+        "  \"tenant\": \"demo-tenant\",\n"
+        "  \"project\": \"demo-project\"\n"
+        "}'\n"
+    )
+    (config_dir / ".env.proc").write_text(
+        "POSTGRES_HOST=postgres-db\n"
+        "GIT_SSH_KEY_PATH=/run/secrets/git_ssh_key\n"
+        "GIT_SSH_KNOWN_HOSTS=/run/secrets/git_known_hosts\n"
+    )
+    (config_dir / ".env.metrics").write_text(
+        "METRICS_PORT=8090\n"
+        "GATEWAY_CONFIG_JSON='{\"tenant\":\"demo-tenant\",\"project\":\"demo-project\"}'\n"
+    )
+    for name in (".env.postgres.setup", ".env.proxylogin"):
+        (config_dir / name).write_text("")
+
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    ai_app_root = tmp_path / "ai-app"
+    ai_app_root.mkdir()
+    docker_dir = ai_app_root / "deployment" / "docker" / "custom-ui-managed-infra"
+    docker_dir.mkdir(parents=True)
+
+    assembly_path = config_dir / "assembly.yaml"
+    assembly_path.write_text("x: 1\n")
+    secrets_path = config_dir / "secrets.yaml"
+    secrets_path.write_text("x: 1\n")
+    bundles_path = config_dir / "bundles.yaml"
+    bundles_path.write_text("bundles:\n  items: []\n")
+    bundles_secrets_path = config_dir / "bundles.secrets.yaml"
+    bundles_secrets_path.write_text("bundles:\n  items: []\n")
+    gateway_path = config_dir / "gateway.yaml"
+    gateway_path.write_text("gateway:\n  tenant: demo-tenant\n  project: demo-project\n")
+    monkeypatch.setattr(
+        "kdcube_cli.installer.compute_paths",
+        lambda *_args, **_kwargs: {
+            "host_kb_storage": str(tmp_path / "kdcube-storage"),
+            "host_bundles": str(tmp_path / "bundles-root"),
+            "host_git_bundles": str(tmp_path / "git-bundles"),
+            "host_bundle_storage": str(tmp_path / "bundle-storage"),
+            "host_exec_workspace": str(tmp_path / "exec-workspace"),
+            "ui_build_context": str(ai_app_root),
+            "ui_dockerfile_path": "Dockerfile_UI",
+            "ui_source_path": "ui/chat-web-app",
+            "ui_env_build_relative": ".env.ui.build",
+            "nginx_ui_config": "nginx_ui.conf",
+            "nginx_proxy_config": "nginx_proxy_ssl_cognito.conf",
+            "proxy_build_context": str(ai_app_root),
+            "proxy_dockerfile_path": "Dockerfile_Proxy",
+        },
+    )
+    monkeypatch.setattr("kdcube_cli.installer.ask", lambda _console, _label, default=None, secret=False: str(default or ""))
+    monkeypatch.setattr("kdcube_cli.installer.ask_confirm", lambda _console, _label, default=False: default)
+    monkeypatch.setattr(
+        "kdcube_cli.installer.select_option",
+        lambda _console, _title, options, default_index=0: options[default_index],
+    )
+    monkeypatch.setattr(
+        "kdcube_cli.installer.ensure_absolute",
+        lambda _console, _label, current, default, force_prompt=False: str(Path(current or default or tmp_path).resolve()),
+    )
+    monkeypatch.setattr("kdcube_cli.installer.prompt_secret_value", lambda *args, **kwargs: None)
+    monkeypatch.setattr("kdcube_cli.installer.ensure_ui_env_build_file", lambda *args, **kwargs: None)
+    monkeypatch.setattr("kdcube_cli.installer.ensure_ui_nginx_config_file", lambda *args, **kwargs: None)
+    monkeypatch.setattr("kdcube_cli.installer.write_frontend_config", lambda *args, **kwargs: None)
+    monkeypatch.setattr("kdcube_cli.installer.git_clone_or_update", lambda *_args, **_kwargs: ai_app_root)
+    monkeypatch.setattr("kdcube_cli.installer.sync_nginx_proxy_config", lambda *args, **kwargs: None)
+    monkeypatch.setattr("kdcube_cli.installer.update_nginx_routes_prefix", lambda *args, **kwargs: None)
+    monkeypatch.setattr("kdcube_cli.installer.update_nginx_ssl_domain", lambda *args, **kwargs: None)
+    monkeypatch.setattr("kdcube_cli.installer._load_json_file", lambda *_args, **_kwargs: {})
+
+    ctx = PathsContext(
+        lib_root=tmp_path / "lib",
+        ai_app_root=ai_app_root,
+        docker_dir=docker_dir,
+        sample_env_dir=tmp_path / "sample_env",
+        workdir=workdir,
+        config_dir=config_dir,
+        data_dir=tmp_path / "data",
+    )
+
+    gather_configuration(
+        Console(file=None),
+        ctx,
+        release_descriptor_path=str(assembly_path),
+        release_descriptor={
+            "context": {"tenant": "demo-tenant", "project": "demo-project"},
+            "platform": {"ref": "2026.4.19.999"},
+            "secrets": {"provider": "secrets-file"},
+            "paths": {
+                "host_bundles_path": str(tmp_path / "bundles-root"),
+                "host_git_bundles_path": str(tmp_path / "git-bundles"),
+                "host_bundle_storage_path": str(tmp_path / "bundle-storage"),
+                "host_exec_workspace_path": str(tmp_path / "exec-workspace"),
+            },
+            "auth": {"type": "simple"},
+            "proxy": {"ssl": False},
+            "storage": {
+                "workspace": {"type": "git", "repo": "https://github.com/example/workspace.git"},
+                "claude_code_session": {"type": "git", "repo": "https://github.com/example/workspace.git"},
+            },
+        },
+        secrets_descriptor_path=str(secrets_path),
+        secrets_descriptor={"services": {}},
+        bundles_descriptor_path=str(bundles_path),
+        bundles_descriptor={"bundles": {"items": []}},
+        bundles_secrets_path=str(bundles_secrets_path),
+        bundles_secrets_descriptor={"bundles": {"items": []}},
+        gateway_descriptor={"gateway": {"tenant": "demo-tenant", "project": "demo-project"}},
+        use_bundles_descriptor=True,
+        use_bundles_secrets=True,
+    )
+
+    env_ingress = (config_dir / ".env.ingress").read_text()
+    env_proc = (config_dir / ".env.proc").read_text()
+    env_metrics = (config_dir / ".env.metrics").read_text()
+    env_main = (config_dir / ".env").read_text()
+
+    assert env_ingress.strip().splitlines() == [
+        "GATEWAY_COMPONENT=ingress",
+        "PLATFORM_DESCRIPTORS_DIR=/config",
+    ]
+    assert env_proc.strip().splitlines() == [
+        "GATEWAY_COMPONENT=proc",
+        "PLATFORM_DESCRIPTORS_DIR=/config",
+    ]
+    assert env_metrics.strip().splitlines() == [
+        "GATEWAY_COMPONENT=proc",
+        "PLATFORM_DESCRIPTORS_DIR=/config",
+    ]
+    assert f"HOST_GATEWAY_YAML_DESCRIPTOR_PATH={config_dir / 'gateway.yaml'}" in env_main
+
+
+def test_gather_configuration_uses_descriptor_git_ssh_mounts(monkeypatch, tmp_path: Path):
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    for name in (
+        ".env",
+        ".env.ingress",
+        ".env.proc",
+        ".env.metrics",
+        ".env.postgres.setup",
+        ".env.proxylogin",
+    ):
+        (config_dir / name).write_text("")
+
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    ai_app_root = tmp_path / "ai-app"
+    ai_app_root.mkdir()
+    docker_dir = ai_app_root / "deployment" / "docker" / "custom-ui-managed-infra"
+    docker_dir.mkdir(parents=True)
+
+    ssh_key = tmp_path / "id_test"
+    ssh_key.write_text("key")
+    known_hosts = tmp_path / "known_hosts"
+    known_hosts.write_text("github.com ssh-ed25519 AAAA")
+
+    assembly_path = config_dir / "assembly.yaml"
+    assembly_path.write_text("x: 1\n")
+    secrets_path = config_dir / "secrets.yaml"
+    secrets_path.write_text("services: {}\n")
+    bundles_path = config_dir / "bundles.yaml"
+    bundles_path.write_text("bundles:\n  items: []\n")
+    bundles_secrets_path = config_dir / "bundles.secrets.yaml"
+    bundles_secrets_path.write_text("bundles:\n  items: []\n")
+    gateway_path = config_dir / "gateway.yaml"
+    gateway_path.write_text("gateway:\n  tenant: demo-tenant\n  project: demo-project\n")
+
+    monkeypatch.setattr(
+        "kdcube_cli.installer.compute_paths",
+        lambda *_args, **_kwargs: {
+            "host_kb_storage": str(tmp_path / "kdcube-storage"),
+            "host_bundles": str(tmp_path / "bundles-root"),
+            "host_git_bundles": str(tmp_path / "git-bundles"),
+            "host_bundle_storage": str(tmp_path / "bundle-storage"),
+            "host_exec_workspace": str(tmp_path / "exec-workspace"),
+            "ui_build_context": str(ai_app_root),
+            "ui_dockerfile_path": "Dockerfile_UI",
+            "ui_source_path": "ui/chat-web-app",
+            "ui_env_build_relative": ".env.ui.build",
+            "nginx_ui_config": "nginx_ui.conf",
+            "nginx_proxy_config": "nginx_proxy_ssl_cognito.conf",
+            "proxy_build_context": str(ai_app_root),
+            "proxy_dockerfile_path": "Dockerfile_Proxy",
+        },
+    )
+    monkeypatch.setattr("kdcube_cli.installer.ask", lambda _console, _label, default=None, secret=False: str(default or ""))
+    monkeypatch.setattr("kdcube_cli.installer.ask_confirm", lambda _console, _label, default=False: default)
+    monkeypatch.setattr(
+        "kdcube_cli.installer.select_option",
+        lambda _console, _title, options, default_index=0: options[default_index],
+    )
+    monkeypatch.setattr(
+        "kdcube_cli.installer.ensure_absolute",
+        lambda _console, _label, current, default, force_prompt=False: str(Path(current or default or tmp_path).resolve()),
+    )
+    monkeypatch.setattr("kdcube_cli.installer.prompt_secret_value", lambda *args, **kwargs: None)
+    monkeypatch.setattr("kdcube_cli.installer.ensure_ui_env_build_file", lambda *args, **kwargs: None)
+    monkeypatch.setattr("kdcube_cli.installer.ensure_ui_nginx_config_file", lambda *args, **kwargs: None)
+    monkeypatch.setattr("kdcube_cli.installer.write_frontend_config", lambda *args, **kwargs: None)
+    monkeypatch.setattr("kdcube_cli.installer.git_clone_or_update", lambda *_args, **_kwargs: ai_app_root)
+    monkeypatch.setattr("kdcube_cli.installer.sync_nginx_proxy_config", lambda *args, **kwargs: None)
+    monkeypatch.setattr("kdcube_cli.installer.update_nginx_routes_prefix", lambda *args, **kwargs: None)
+    monkeypatch.setattr("kdcube_cli.installer.update_nginx_ssl_domain", lambda *args, **kwargs: None)
+    monkeypatch.setattr("kdcube_cli.installer._load_json_file", lambda *_args, **_kwargs: {})
+
+    ctx = PathsContext(
+        lib_root=tmp_path / "lib",
+        ai_app_root=ai_app_root,
+        docker_dir=docker_dir,
+        sample_env_dir=tmp_path / "sample_env",
+        workdir=workdir,
+        config_dir=config_dir,
+        data_dir=tmp_path / "data",
+    )
+
+    gather_configuration(
+        Console(file=None),
+        ctx,
+        release_descriptor_path=str(assembly_path),
+        release_descriptor={
+            "context": {"tenant": "demo-tenant", "project": "demo-project"},
+            "platform": {
+                "ref": "2026.4.19.999",
+                "applications": {
+                    "bundles": {
+                        "git": {
+                            "git_ssh_key_path": "/run/secrets/git_ssh_key",
+                            "git_ssh_known_hosts": "/run/secrets/git_known_hosts",
+                        }
+                    }
+                },
+            },
+            "secrets": {"provider": "secrets-file"},
+            "paths": {
+                "host_bundles_path": str(tmp_path / "bundles-root"),
+                "host_git_bundles_path": str(tmp_path / "git-bundles"),
+                "host_bundle_storage_path": str(tmp_path / "bundle-storage"),
+                "host_exec_workspace_path": str(tmp_path / "exec-workspace"),
+                "host_git_ssh_key_path": str(ssh_key),
+                "host_git_ssh_known_hosts_path": str(known_hosts),
+            },
+            "auth": {"type": "simple"},
+            "proxy": {"ssl": False},
+        },
+        secrets_descriptor_path=str(secrets_path),
+        secrets_descriptor={"services": {}},
+        bundles_descriptor_path=str(bundles_path),
+        bundles_descriptor={"bundles": {"items": []}},
+        bundles_secrets_path=str(bundles_secrets_path),
+        bundles_secrets_descriptor={"bundles": {"items": []}},
+        gateway_descriptor={"gateway": {"tenant": "demo-tenant", "project": "demo-project"}},
+        use_bundles_descriptor=True,
+        use_bundles_secrets=True,
+    )
+
+    env_main = (config_dir / ".env").read_text()
+    assert f"HOST_GIT_SSH_KEY_PATH={ssh_key}" in env_main
+    assert f"HOST_GIT_KNOWN_HOSTS_PATH={known_hosts}" in env_main
 
 
 def test_apply_runtime_secrets_to_file_descriptors_updates_secrets_files(tmp_path: Path):
