@@ -53,8 +53,10 @@ ports:
   ingress: "8010"  # CHAT_APP_PORT
   proc: "8020"     # CHAT_PROCESSOR_PORT
   metrics: "8090"
-  ui: "5174"
-  ui_ssl: "443"
+  ui: "5174"        # local/default public HTTP proxy port unless ports.proxy_http overrides it
+  ui_ssl: "443"     # legacy/default public HTTPS proxy port unless ports.proxy_https overrides it
+  # proxy_http: "80"   # optional explicit public HTTP proxy port
+  # proxy_https: "443" # optional explicit public HTTPS proxy port
 
 # ---------------------------------------------------------------------------
 # Infrastructure — Postgres and Redis

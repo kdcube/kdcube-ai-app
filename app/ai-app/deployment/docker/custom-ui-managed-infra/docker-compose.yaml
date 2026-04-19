@@ -267,8 +267,8 @@ services:
       - kdcube-external
       - kdcube-internal
     ports:
-      - "${KDCUBE_UI_PORT:-80}:80"
-      - "${KDCUBE_UI_SSL_PORT:-443}:443"
+      - "${KDCUBE_PROXY_HTTP_PORT:-${KDCUBE_UI_PORT:-80}}:80"
+      - "${KDCUBE_PROXY_HTTPS_PORT:-${KDCUBE_UI_SSL_PORT:-443}}:443"
 
 networks:
   kdcube-external:
