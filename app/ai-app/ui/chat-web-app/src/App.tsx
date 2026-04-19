@@ -7,7 +7,8 @@ import {
     selectChatSettingsLoaded,
     selectChatSettingsLoading, selectChatSettingsLoadingError
 } from "./features/chat/chatSettingsSlice.ts";
-import { initializeEventLogger } from "./services/eventLogger";
+import {initializeEventLogger} from "./services/eventLogger";
+import {eventLoggerServiceEnabled} from "./BuildConfig.ts";
 
 const App = () => {
     const dispatch = useAppDispatch();
@@ -18,7 +19,8 @@ const App = () => {
 
     useEffect(() => {
         // Initialize event logger for error and log tracking
-        initializeEventLogger(store);
+        if (eventLoggerServiceEnabled)
+            initializeEventLogger(store);
     }, [store]);
 
     useEffect(() => {

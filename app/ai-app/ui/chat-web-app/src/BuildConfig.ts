@@ -12,10 +12,13 @@ function selectValue<T>(...args: T[]) {
     return null;
 }
 
-function selectBool(...args: (boolean | undefined | null)[]) {
+function selectBool(...args: (string | boolean | undefined | null)[]) {
     for (const arg of args) {
         if (arg === undefined || arg === null)
             continue
+        if (typeof arg === "string") {
+            return (arg as string).toLowerCase() === "true";
+        }
         return Boolean(arg);
     }
     return false;
@@ -23,4 +26,5 @@ function selectBool(...args: (boolean | undefined | null)[]) {
 
 export const chatAPIBasePath = selectValue<string>(import.meta.env.CHAT_WEB_APP_CHAT_API_BASE_PATH, '') as string
 export const configPath = selectValue<string>(import.meta.env.CHAT_WEB_APP_CONFIG_FILE_PATH, "/config.json") as string
+export const eventLoggerServiceEnabled = selectBool(import.meta.env.CHAT_WEB_APP_REPORT_EVENTS, true)
 export const showDebugControls = selectBool(import.meta.env.CHAT_WEB_APP_SHOW_DEBUG_CONTROLS, false)
