@@ -12,6 +12,7 @@ from kdcube_cli.installer import (
     PathsContext,
     apply_runtime_secrets_to_file_descriptors,
     gather_configuration,
+    stage_descriptor_directory,
 )
 
 
@@ -38,6 +39,66 @@ def test_descriptor_fast_path_accepts_complete_release_descriptor():
     )
 
     assert reasons == []
+
+
+def test_stage_descriptor_directory_requires_canonical_descriptor_set(tmp_path: Path):
+    ai_app_root = tmp_path / "ai-app"
+    deployment_dir = ai_app_root / "deployment"
+    deployment_dir.mkdir(parents=True)
+    for name in ("assembly.yaml", "secrets.yaml", "bundles.yaml", "bundles.secrets.yaml", "gateway.yaml"):
+        (deployment_dir / name).write_text("x: 1\n")
+
+    source_dir = tmp_path / "descriptors"
+    source_dir.mkdir()
+    (source_dir / "assembly.yaml").write_text("context: {}\n")
+
+    target_dir = tmp_path / "workdir" / "config"
+    try:
+        stage_descriptor_directory(
+            target_dir,
+            source_dir=source_dir,
+            ai_app_root=ai_app_root,
+            require_complete=True,
+        )
+    except SystemExit as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("Expected SystemExit for incomplete canonical descriptor set")
+
+    assert "canonical descriptor set" in message
+    assert "secrets.yaml" in message
+    assert "gateway.yaml" in message
+
+
+def test_stage_descriptor_directory_stages_complete_canonical_set(tmp_path: Path):
+    ai_app_root = tmp_path / "ai-app"
+    deployment_dir = ai_app_root / "deployment"
+    deployment_dir.mkdir(parents=True)
+    for name in ("assembly.yaml", "secrets.yaml", "bundles.yaml", "bundles.secrets.yaml", "gateway.yaml"):
+        (deployment_dir / name).write_text("x: 1\n")
+
+    source_dir = tmp_path / "descriptors"
+    source_dir.mkdir()
+    (source_dir / "assembly.yaml").write_text("context:\n  tenant: demo\n  project: demo\n")
+    (source_dir / "secrets.yaml").write_text("services: {}\n")
+    (source_dir / "bundles.yaml").write_text("bundles: {}\n")
+    (source_dir / "bundles.secrets.yaml").write_text("bundles:\n  items: []\n")
+    (source_dir / "gateway.yaml").write_text("gateway:\n  tenant: demo\n  project: demo\n")
+
+    target_dir = tmp_path / "workdir" / "config"
+    staged = stage_descriptor_directory(
+        target_dir,
+        source_dir=source_dir,
+        ai_app_root=ai_app_root,
+        require_complete=True,
+    )
+
+    assert staged["assembly_path"] == target_dir / "assembly.yaml"
+    assert staged["secrets_path"] == target_dir / "secrets.yaml"
+    assert staged["bundles_path"] == target_dir / "bundles.yaml"
+    assert staged["bundles_secrets_path"] == target_dir / "bundles.secrets.yaml"
+    assert staged["gateway_path"] == target_dir / "gateway.yaml"
+    assert staged["assembly"]["context"]["tenant"] == "demo"
 
 
 def test_descriptor_fast_path_requires_platform_ref_without_latest():
