@@ -65,23 +65,6 @@ SERVICE_ENV_KEY_MAP: dict[str, str] = {
 }
 
 
-DEFAULT_BUNDLES_JSON = [
-    "AGENTIC_BUNDLES_JSON='{",
-    "  \"default_bundle_id\": \"demo.bundle@1.0.0\",",
-    "  \"bundles\": {",
-    "        \"demo.bundle@1.0.0\": {",
-    "          \"id\": \"demo.bundle@1.0.0\",",
-    "          \"name\": \"Demo Bundle\",",
-    "          \"path\": \"/bundles\",",
-    "          \"module\": \"demo.entrypoint\",",
-    "          \"singleton\": false,",
-    "          \"description\": \"Example bundle used for quickstart.\"",
-    "        }",
-    "  }",
-    "}'",
-]
-
-
 @dataclass
 class EnvFile:
     path: Path
@@ -164,6 +147,11 @@ def update_env_value(env_file: EnvFile, key: str, value: str) -> None:
         env_file.lines[idx] = f"{key}={value}"
     else:
         env_file.lines.append(f"{key}={value}")
+    env_file.entries = parse_env(env_file.lines)
+
+
+def reset_env_file(env_file: EnvFile, entries: Dict[str, str]) -> None:
+    env_file.lines = [f"{key}={value}" for key, value in entries.items()]
     env_file.entries = parse_env(env_file.lines)
 
 
@@ -1316,6 +1304,15 @@ def ensure_absolute(
         return str(resolved)
 
 
+def ensure_existing_file_path(path_value: str, *, label: str) -> str:
+    path = Path(path_value).expanduser().resolve()
+    if not path.exists():
+        raise SystemExit(f"{label} does not exist: {path}")
+    if not path.is_file():
+        raise SystemExit(f"{label} must be a file path, got: {path}")
+    return str(path)
+
+
 def ensure_directory_root(path_value: str, *, label: str) -> str:
     path = Path(path_value).expanduser().resolve()
     if path.exists() and not path.is_dir():
@@ -1727,20 +1724,6 @@ def compute_paths(ai_app_root: Path, lib_root: Path, workdir: Path, compose_mode
     return defaults
 
 
-def should_replace_bundles_config(value: Optional[str]) -> bool:
-    if is_placeholder(value):
-        return True
-    if value and "/config/assembly.yaml" in value:
-        return False
-    if value and "/config/bundles.yaml" in value:
-        return False
-    if value and "/config/release.yaml" in value:
-        return True
-    if value and ("kdcube.demo.1" in value or "<project>" in value):
-        return True
-    return False
-
-
 def gather_configuration(
     console: Console,
     ctx: PathsContext,
@@ -1780,7 +1763,14 @@ def gather_configuration(
     if bundles_path and not bundles_path.exists():
         bundles_path = None
     autosave_envs = (env_main, env_ingress, env_proc, env_metrics, env_pg, env_proxy)
-    assembly_user_supplied = parse_bool(os.getenv("KDCUBE_ASSEMBLY_USER_SUPPLIED", "")) is True
+    workspace_assembly_path = (ctx.config_dir / "assembly.yaml").resolve()
+    workspace_bundles_path = (ctx.config_dir / "bundles.yaml").resolve()
+    descriptor_workspace_mode = bool(
+        assembly_path is not None
+        and assembly_path == workspace_assembly_path
+        and workspace_assembly_path.exists()
+        and workspace_bundles_path.exists()
+    )
 
     def _secret_pick(*paths: object) -> Optional[str]:
         for path in paths:
@@ -2213,12 +2203,12 @@ def gather_configuration(
         or (pg_port_from_assembly and not is_placeholder(str(pg_port_from_assembly)))
         or pg_ssl_from_assembly is not None
     )
-    use_pg_secret = False
-    if pg_pass_from_secrets:
+    use_pg_secret = bool(pg_pass_from_secrets) if descriptor_workspace_mode else False
+    if pg_pass_from_secrets and not descriptor_workspace_mode:
         use_pg_secret = ask_confirm(console, "Use Postgres password from secrets descriptor?", default=True)
     use_pg_descriptor = False
-    if assembly_path and has_pg_descriptor and assembly_user_supplied:
-        if use_pg_secret:
+    if assembly_path and has_pg_descriptor:
+        if descriptor_workspace_mode or use_pg_secret:
             use_pg_descriptor = True
         else:
             use_pg_descriptor = ask_confirm(console, "Use Postgres settings from assembly descriptor?", default=True)
@@ -2350,13 +2340,13 @@ def gather_configuration(
         or (redis_host_from_assembly and not is_placeholder(str(redis_host_from_assembly)))
         or (redis_port_from_assembly and not is_placeholder(str(redis_port_from_assembly)))
     )
-    use_redis_secret = False
-    if redis_secret_declared:
+    use_redis_secret = bool(redis_secret_declared) if descriptor_workspace_mode else False
+    if redis_secret_declared and not descriptor_workspace_mode:
         use_redis_secret = ask_confirm(console, "Use Redis password from secrets descriptor?", default=True)
 
     use_redis_descriptor = False
-    if assembly_path and has_redis_descriptor and assembly_user_supplied:
-        if use_redis_secret:
+    if assembly_path and has_redis_descriptor:
+        if descriptor_workspace_mode or use_redis_secret:
             use_redis_descriptor = True
         else:
             use_redis_descriptor = ask_confirm(console, "Use Redis settings from assembly descriptor?", default=True)
@@ -2741,7 +2731,7 @@ def gather_configuration(
     _set_port("METRICS_PORT", "metrics", "8090")
     ui_port_current = env_main.entries.get("KDCUBE_UI_PORT", (None, None))[1]
     ui_port_from_assembly = ports_block.get("ui")
-    if assembly_user_supplied and ui_port_from_assembly is not None and not is_placeholder(str(ui_port_from_assembly)):
+    if descriptor_workspace_mode and ui_port_from_assembly is not None and not is_placeholder(str(ui_port_from_assembly)):
         update_env_value(env_main, "KDCUBE_UI_PORT", str(ui_port_from_assembly))
         ui_port_current = str(ui_port_from_assembly)
     else:
@@ -2778,9 +2768,6 @@ def gather_configuration(
 
     _autosave()
 
-    bundles_descriptor_selected = False
-    assembly_descriptor_selected = False
-
     # Mount descriptors independently from bundle-registry selection so runtime
     # code can read /config/assembly.yaml and /config/bundles.yaml directly.
     if bundles_path:
@@ -2800,35 +2787,22 @@ def gather_configuration(
         update_env_value(env_main, "HOST_BUNDLES_SECRETS_YAML_DESCRIPTOR_PATH", bundles_secrets_path)
     else:
         update_env_value(env_main, "HOST_BUNDLES_SECRETS_YAML_DESCRIPTOR_PATH", "/dev/null")
+    gateway_descriptor_path = str((ctx.config_dir / "gateway.yaml").resolve()) if gateway_data else ""
+    if gateway_descriptor_path:
+        update_env_value(env_main, "HOST_GATEWAY_YAML_DESCRIPTOR_PATH", gateway_descriptor_path)
+    else:
+        update_env_value(env_main, "HOST_GATEWAY_YAML_DESCRIPTOR_PATH", "/dev/null")
 
     if use_bundles_descriptor is None and bundles_path:
         use_bundles_descriptor = True
 
-    # bundles.yaml descriptor (preferred when provided)
-    if use_bundles_descriptor and bundles_path:
-        update_env_value(env_proc, "AGENTIC_BUNDLES_JSON", "/config/bundles.yaml")
-        bundles_descriptor_selected = True
-
-    # assembly.yaml bundles section (legacy / fallback)
-    if not bundles_descriptor_selected:
-        if release_descriptor_path and use_descriptor_bundles is not False:
-            update_env_value(env_proc, "AGENTIC_BUNDLES_JSON", "/config/assembly.yaml")
-            assembly_descriptor_selected = True
-        if use_descriptor_bundles is None:
-            if release_descriptor_path:
-                update_env_value(env_proc, "AGENTIC_BUNDLES_JSON", "/config/assembly.yaml")
-                assembly_descriptor_selected = True
-        elif use_descriptor_bundles:
-            if release_descriptor_path:
-                update_env_value(env_proc, "AGENTIC_BUNDLES_JSON", "/config/assembly.yaml")
-                assembly_descriptor_selected = True
-
-    # If any descriptor is set, force a one-time registry sync on startup.
-    if bundles_descriptor_selected or assembly_descriptor_selected:
+    bundles_descriptor_selected = bool(use_bundles_descriptor and bundles_path)
+    if bundles_descriptor_selected:
+        update_env_value(env_proc, "BUNDLES_YAML_DESCRIPTOR_PATH", "/config/bundles.yaml")
         update_env_value(env_proc, "BUNDLES_FORCE_ENV_ON_STARTUP", "1")
         update_env_value(env_proc, "BUNDLE_GIT_RESOLUTION_ENABLED", "1")
     else:
-        update_env_value(env_proc, "AGENTIC_BUNDLES_JSON", "")
+        update_env_value(env_proc, "BUNDLES_YAML_DESCRIPTOR_PATH", "")
         update_env_value(env_proc, "BUNDLES_FORCE_ENV_ON_STARTUP", "0")
 
     # Bundle secrets can be requested long after startup. Disable sidecar token expiry
@@ -2844,92 +2818,143 @@ def gather_configuration(
         ("git", "http_token"),
         ("git_http_token",),
     )
-    env_http = env_proc.entries.get("GIT_HTTP_TOKEN", (None, None))[1]
-    existing_ssh = env_proc.entries.get("GIT_SSH_KEY_PATH", (None, None))[1]
-    if env_http and not is_placeholder(env_http):
-        console.print(
-            "[yellow]Found GIT_HTTP_TOKEN in .env.proc; it will be cleared and treated as runtime-only.[/yellow]"
-        )
-        update_env_value(env_proc, "GIT_HTTP_TOKEN", "")
-        env_http = None
-    if git_token_from_secrets and not is_placeholder(git_token_from_secrets):
-        default_auth = "https-token"
-    elif not is_placeholder(existing_ssh):
-        default_auth = "ssh"
-    else:
-        default_auth = "skip"
+    git_cfg = _get_nested(assembly_data, "platform", "applications", "bundles", "git")
+    descriptor_git_ssh_key_target = ""
+    descriptor_git_known_hosts_target = ""
+    if isinstance(git_cfg, dict):
+        raw_key_target = git_cfg.get("git_ssh_key_path")
+        if raw_key_target and not is_placeholder(str(raw_key_target)):
+            descriptor_git_ssh_key_target = str(raw_key_target).strip()
+        raw_known_hosts_target = git_cfg.get("git_ssh_known_hosts")
+        if raw_known_hosts_target and not is_placeholder(str(raw_known_hosts_target)):
+            descriptor_git_known_hosts_target = str(raw_known_hosts_target).strip()
 
-    auth_options = ["ssh", "https-token", "skip"]
-    try:
-        default_idx = auth_options.index(default_auth)
-    except ValueError:
-        default_idx = 0
-    console.print("[bold]Git bundle authentication[/bold]")
-    auth_choice = select_option(
-        console,
-        "Git auth method for private bundles",
-        options=auth_options,
-        default_index=default_idx,
-    )
-    if auth_choice == "ssh":
-        if force_prompt or is_placeholder(env_main.entries.get("HOST_GIT_SSH_KEY_PATH", (None, None))[1]):
-            ssh_key = prompt_optional(console, "Host SSH key path for git bundles")
-            update_env_value(env_main, "HOST_GIT_SSH_KEY_PATH", ssh_key or "/dev/null")
-        if force_prompt or is_placeholder(env_main.entries.get("HOST_GIT_KNOWN_HOSTS_PATH", (None, None))[1]):
-            known_hosts = prompt_optional(console, "Host known_hosts path for git bundles")
-            update_env_value(env_main, "HOST_GIT_KNOWN_HOSTS_PATH", known_hosts or "/dev/null")
-
-        update_if_placeholder(env_proc, "GIT_SSH_KEY_PATH", "/run/secrets/git_ssh_key")
-        update_if_placeholder(env_proc, "GIT_SSH_KNOWN_HOSTS", "/run/secrets/git_known_hosts")
-        update_if_placeholder(env_proc, "GIT_SSH_STRICT_HOST_KEY_CHECKING", "yes")
-        # Clear HTTPS token if placeholder
-        if is_placeholder(env_proc.entries.get("GIT_HTTP_TOKEN", (None, None))[1]):
-            update_env_value(env_proc, "GIT_HTTP_TOKEN", "")
-        if is_placeholder(env_proc.entries.get("GIT_HTTP_USER", (None, None))[1]):
-            update_env_value(env_proc, "GIT_HTTP_USER", "")
-    elif auth_choice == "https-token":
-        console.print("[dim]Create a GitHub token at https://github.com/settings/tokens[/dim]")
-        use_git_secret = False
-        if git_token_from_secrets and not is_placeholder(git_token_from_secrets):
-            use_git_secret = ask_confirm(
-                console,
-                "Use Git HTTPS token from secrets descriptor?",
-                default=True,
+    if descriptor_workspace_mode:
+        host_git_ssh_key = _get_nested(assembly_data, "paths", "host_git_ssh_key_path")
+        host_git_known_hosts = _get_nested(assembly_data, "paths", "host_git_ssh_known_hosts_path")
+        if descriptor_git_ssh_key_target:
+            if not host_git_ssh_key or is_placeholder(str(host_git_ssh_key)):
+                raise SystemExit(
+                    "assembly paths.host_git_ssh_key_path is required when "
+                    "platform.applications.bundles.git.git_ssh_key_path is set."
+                )
+            update_env_value(
+                env_main,
+                "HOST_GIT_SSH_KEY_PATH",
+                ensure_existing_file_path(str(host_git_ssh_key), label="Host git SSH key path"),
             )
-        if use_git_secret:
-            runtime_secrets["services.git.http_token"] = git_token_from_secrets
+            _set_nested(
+                assembly_data,
+                ["paths", "host_git_ssh_key_path"],
+                env_main.entries.get("HOST_GIT_SSH_KEY_PATH", (None, None))[1],
+            )
         else:
-            token = prompt_secret_value(
-                console,
-                "Git HTTPS token",
-                required=True,
-                current=None,
-                force_prompt=force_prompt,
-            )
-            if token:
-                runtime_secrets["services.git.http_token"] = token
-        # Never store the token in env files.
-        update_env_value(env_proc, "GIT_HTTP_TOKEN", "")
-        # Avoid dangling SSH placeholders if user chose token
-        if is_placeholder(env_proc.entries.get("GIT_SSH_KEY_PATH", (None, None))[1]):
-            update_env_value(env_proc, "GIT_SSH_KEY_PATH", "")
-        if is_placeholder(env_proc.entries.get("GIT_SSH_KNOWN_HOSTS", (None, None))[1]):
-            update_env_value(env_proc, "GIT_SSH_KNOWN_HOSTS", "")
-        if is_placeholder(env_proc.entries.get("GIT_SSH_STRICT_HOST_KEY_CHECKING", (None, None))[1]):
-            update_env_value(env_proc, "GIT_SSH_STRICT_HOST_KEY_CHECKING", "")
-        if is_placeholder(env_proc.entries.get("GIT_HTTP_USER", (None, None))[1]):
-            update_env_value(env_proc, "GIT_HTTP_USER", "")
-        # If host SSH paths are placeholders, disable mounts to avoid missing-path binds.
-        if is_placeholder(env_main.entries.get("HOST_GIT_SSH_KEY_PATH", (None, None))[1]):
             update_env_value(env_main, "HOST_GIT_SSH_KEY_PATH", "/dev/null")
-        if is_placeholder(env_main.entries.get("HOST_GIT_KNOWN_HOSTS_PATH", (None, None))[1]):
+
+        if descriptor_git_known_hosts_target:
+            if not host_git_known_hosts or is_placeholder(str(host_git_known_hosts)):
+                raise SystemExit(
+                    "assembly paths.host_git_ssh_known_hosts_path is required when "
+                    "platform.applications.bundles.git.git_ssh_known_hosts is set."
+                )
+            update_env_value(
+                env_main,
+                "HOST_GIT_KNOWN_HOSTS_PATH",
+                ensure_existing_file_path(str(host_git_known_hosts), label="Host git known_hosts path"),
+            )
+            _set_nested(
+                assembly_data,
+                ["paths", "host_git_ssh_known_hosts_path"],
+                env_main.entries.get("HOST_GIT_KNOWN_HOSTS_PATH", (None, None))[1],
+            )
+        else:
             update_env_value(env_main, "HOST_GIT_KNOWN_HOSTS_PATH", "/dev/null")
 
-    _autosave()
+        if git_token_from_secrets and not is_placeholder(git_token_from_secrets):
+            runtime_secrets["services.git.http_token"] = git_token_from_secrets
+    else:
+        env_http = env_proc.entries.get("GIT_HTTP_TOKEN", (None, None))[1]
+        existing_ssh = env_proc.entries.get("GIT_SSH_KEY_PATH", (None, None))[1]
+        if env_http and not is_placeholder(env_http):
+            console.print(
+                "[yellow]Found GIT_HTTP_TOKEN in .env.proc; it will be cleared and treated as runtime-only.[/yellow]"
+            )
+            update_env_value(env_proc, "GIT_HTTP_TOKEN", "")
+            env_http = None
+        if git_token_from_secrets and not is_placeholder(git_token_from_secrets):
+            default_auth = "https-token"
+        elif not is_placeholder(existing_ssh):
+            default_auth = "ssh"
+        else:
+            default_auth = "skip"
 
-    bundles_json = env_proc.entries.get("AGENTIC_BUNDLES_JSON", (None, None))[1]
-    if should_replace_bundles_config(bundles_json):
-        update_env_value(env_proc, "AGENTIC_BUNDLES_JSON", "/config/assembly.yaml")
+        auth_options = ["ssh", "https-token", "skip"]
+        try:
+            default_idx = auth_options.index(default_auth)
+        except ValueError:
+            default_idx = 0
+        console.print("[bold]Git bundle authentication[/bold]")
+        auth_choice = select_option(
+            console,
+            "Git auth method for private bundles",
+            options=auth_options,
+            default_index=default_idx,
+        )
+        if auth_choice == "ssh":
+            if force_prompt or is_placeholder(env_main.entries.get("HOST_GIT_SSH_KEY_PATH", (None, None))[1]):
+                ssh_key = prompt_optional(console, "Host SSH key path for git bundles")
+                update_env_value(env_main, "HOST_GIT_SSH_KEY_PATH", ssh_key or "/dev/null")
+            if force_prompt or is_placeholder(env_main.entries.get("HOST_GIT_KNOWN_HOSTS_PATH", (None, None))[1]):
+                known_hosts = prompt_optional(console, "Host known_hosts path for git bundles")
+                update_env_value(env_main, "HOST_GIT_KNOWN_HOSTS_PATH", known_hosts or "/dev/null")
+
+            update_if_placeholder(env_proc, "GIT_SSH_KEY_PATH", "/run/secrets/git_ssh_key")
+            update_if_placeholder(env_proc, "GIT_SSH_KNOWN_HOSTS", "/run/secrets/git_known_hosts")
+            update_if_placeholder(env_proc, "GIT_SSH_STRICT_HOST_KEY_CHECKING", "yes")
+            # Clear HTTPS token if placeholder
+            if is_placeholder(env_proc.entries.get("GIT_HTTP_TOKEN", (None, None))[1]):
+                update_env_value(env_proc, "GIT_HTTP_TOKEN", "")
+            if is_placeholder(env_proc.entries.get("GIT_HTTP_USER", (None, None))[1]):
+                update_env_value(env_proc, "GIT_HTTP_USER", "")
+        elif auth_choice == "https-token":
+            console.print("[dim]Create a GitHub token at https://github.com/settings/tokens[/dim]")
+            use_git_secret = False
+            if git_token_from_secrets and not is_placeholder(git_token_from_secrets):
+                use_git_secret = ask_confirm(
+                    console,
+                    "Use Git HTTPS token from secrets descriptor?",
+                    default=True,
+                )
+            if use_git_secret:
+                runtime_secrets["services.git.http_token"] = git_token_from_secrets
+            else:
+                token = prompt_secret_value(
+                    console,
+                    "Git HTTPS token",
+                    required=True,
+                    current=None,
+                    force_prompt=force_prompt,
+                )
+                if token:
+                    runtime_secrets["services.git.http_token"] = token
+            # Never store the token in env files.
+            update_env_value(env_proc, "GIT_HTTP_TOKEN", "")
+            # Avoid dangling SSH placeholders if user chose token
+            if is_placeholder(env_proc.entries.get("GIT_SSH_KEY_PATH", (None, None))[1]):
+                update_env_value(env_proc, "GIT_SSH_KEY_PATH", "")
+            if is_placeholder(env_proc.entries.get("GIT_SSH_KNOWN_HOSTS", (None, None))[1]):
+                update_env_value(env_proc, "GIT_SSH_KNOWN_HOSTS", "")
+            if is_placeholder(env_proc.entries.get("GIT_SSH_STRICT_HOST_KEY_CHECKING", (None, None))[1]):
+                update_env_value(env_proc, "GIT_SSH_STRICT_HOST_KEY_CHECKING", "")
+            if is_placeholder(env_proc.entries.get("GIT_HTTP_USER", (None, None))[1]):
+                update_env_value(env_proc, "GIT_HTTP_USER", "")
+            # If host SSH paths are placeholders, disable mounts to avoid missing-path binds.
+            if is_placeholder(env_main.entries.get("HOST_GIT_SSH_KEY_PATH", (None, None))[1]):
+                update_env_value(env_main, "HOST_GIT_SSH_KEY_PATH", "/dev/null")
+            if is_placeholder(env_main.entries.get("HOST_GIT_KNOWN_HOSTS_PATH", (None, None))[1]):
+                update_env_value(env_main, "HOST_GIT_KNOWN_HOSTS_PATH", "/dev/null")
+
+    _autosave()
 
     if is_placeholder(env_proc.entries.get("KDCUBE_STORAGE_PATH", (None, None))[1]):
         update_env_value(env_proc, "KDCUBE_STORAGE_PATH", "/kdcube-storage")
@@ -2958,10 +2983,6 @@ def gather_configuration(
         update_env_value(env_proc, "HOST_BUNDLE_STORAGE_PATH", host_bundle_storage)
     if is_placeholder(env_proc.entries.get("HOST_GIT_BUNDLES_PATH", (None, None))[1]):
         update_env_value(env_proc, "HOST_GIT_BUNDLES_PATH", host_git_bundles)
-
-    # For compose installs, always use the container log path.
-    update_env_value(env_ingress, "LOG_DIR", "/logs")
-    update_env_value(env_proc, "LOG_DIR", "/logs")
 
     ui_build_context = env_main.entries.get("UI_BUILD_CONTEXT", (None, None))[1]
     default_ui_context = defaults.get("ui_build_context", "")
@@ -3251,6 +3272,29 @@ def gather_configuration(
     _autosave()
 
     update_env_value(env_main, "KDCUBE_COMPOSE_MODE", compose_mode)
+
+    if descriptor_workspace_mode:
+        reset_env_file(
+            env_ingress,
+            {
+                "GATEWAY_COMPONENT": "ingress",
+                "PLATFORM_DESCRIPTORS_DIR": "/config",
+            },
+        )
+        reset_env_file(
+            env_proc,
+            {
+                "GATEWAY_COMPONENT": "proc",
+                "PLATFORM_DESCRIPTORS_DIR": "/config",
+            },
+        )
+        reset_env_file(
+            env_metrics,
+            {
+                "GATEWAY_COMPONENT": "proc",
+                "PLATFORM_DESCRIPTORS_DIR": "/config",
+            },
+        )
 
     save_env_file(env_main)
     save_env_file(env_ingress)
