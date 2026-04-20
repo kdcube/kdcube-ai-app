@@ -238,6 +238,24 @@ async def test_run_claude_code_turn_resumes_regular_turn_when_bootstrap_found_ex
     assert agent.calls == [{"prompt": "hello again", "kind": "regular", "resume_existing": True}]
 
 
+@pytest.mark.asyncio
+async def test_run_claude_code_turn_does_not_resume_when_git_bootstrap_found_no_lineage(tmp_path: Path):
+    remote_repo = _init_bare_repo(tmp_path / "remote.git")
+    config = _config(tmp_path, git_repo=remote_repo)
+    agent = _FakeAgent(config.local_root)
+
+    result = await run_claude_code_turn(
+        agent=agent,  # type: ignore[arg-type]
+        prompt="fresh start",
+        kind="regular",
+        resume_existing=True,
+        session_store=config,
+    )
+
+    assert result.status == "completed"
+    assert agent.calls == [{"prompt": "fresh start", "kind": "regular", "resume_existing": False}]
+
+
 class _RetryingFakeAgent:
     def __init__(self, root: Path):
         self.root = root

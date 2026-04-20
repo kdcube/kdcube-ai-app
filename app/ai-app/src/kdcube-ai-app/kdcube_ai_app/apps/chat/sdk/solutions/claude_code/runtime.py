@@ -275,6 +275,21 @@ def _is_session_in_use_error(result: ClaudeCodeRunResult | None) -> bool:
     return "session id" in joined and "already in use" in joined
 
 
+def _is_session_missing_error(result: ClaudeCodeRunResult | None) -> bool:
+    if result is None:
+        return False
+    text_candidates = [
+        str(getattr(result, "error_message", None) or ""),
+        str((result.stderr_lines[-1] if getattr(result, "stderr_lines", None) else "") or ""),
+        str(getattr(result, "final_text", None) or ""),
+    ]
+    joined = "\n".join(part for part in text_candidates if part).lower()
+    return (
+        "no conversation found" in joined
+        and "session id" in joined
+    )
+
+
 def bootstrap_claude_code_session_store(
     *,
     config: ClaudeCodeSessionStoreConfig,
@@ -443,7 +458,11 @@ async def run_claude_code_turn(
             config=session_store,
             logger=logger,
         )
-        effective_resume_existing = effective_resume_existing or bool(bootstrap_result.get("bootstrapped"))
+        # In git-backed mode, the restored lineage is the only durable signal
+        # that a previous Claude session can be meaningfully resumed. A stale
+        # in-memory/state flag alone is not enough, especially after storage or
+        # session-store repo changes.
+        effective_resume_existing = bool(bootstrap_result.get("bootstrapped"))
         if refresh_support_files is not None:
             refresh_support_files()
 
@@ -483,6 +502,27 @@ async def run_claude_code_turn(
                 prompt,
                 kind=kind,
                 resume_existing=bool(retry_bootstrap.get("bootstrapped")) or True,
+            )
+        elif (
+            result.status == "failed"
+            and should_bootstrap
+            and session_store is not None
+            and session_store.implementation == "git"
+            and effective_resume_existing
+            and _is_session_missing_error(result)
+        ):
+            log = logger or logging.getLogger("ClaudeCodeRuntime")
+            log.warning(
+                "[ClaudeCodeRuntime] detected missing remote Claude session for agent=%s conversation=%s local_root=%s; "
+                "retrying without resume on the bootstrapped workspace",
+                session_store.agent_name,
+                session_store.conversation_id,
+                session_store.local_root,
+            )
+            result = await agent.run_turn(
+                prompt,
+                kind=kind,
+                resume_existing=False,
             )
         return result
     finally:
