@@ -649,6 +649,19 @@ def build_ui_url(proxy_http_port: Optional[str], routes_prefix: Optional[str]) -
     return f"http://localhost:{port}{entry_path}"
 
 
+def resolve_frontend_routes_prefix(config_path: Optional[str]) -> Optional[str]:
+    if not config_path:
+        return None
+    path = Path(config_path).expanduser()
+    if not path.exists():
+        return None
+    try:
+        data = _load_json_file(path)
+    except Exception:
+        return None
+    return normalize_routes_prefix(data.get("routesPrefix"))
+
+
 def normalize_domain_host(value: Optional[str], *, keep_port: bool = False) -> str:
     raw = (value or "").strip()
     if not raw:
@@ -4047,6 +4060,9 @@ def run_setup(
                 env_main.entries.get("KDCUBE_PROXY_HTTP_PORT", (None, None))[1]
                 or env_main.entries.get("KDCUBE_UI_PORT", (None, None))[1]
                 or "80"
+            )
+            routes_prefix = resolve_frontend_routes_prefix(
+                env_main.entries.get("PATH_TO_FRONTEND_CONFIG_JSON", (None, None))[1]
             )
             proxy_url = build_ui_url(proxy_http_port, routes_prefix)
             console.print(f"  [link={proxy_url}]{proxy_url}[/link]")
