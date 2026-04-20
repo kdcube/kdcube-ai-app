@@ -6,6 +6,7 @@ from rich.console import Console
 
 from kdcube_cli.cli import (
     _build_paths_for_repo,
+    _canonical_descriptor_dir_from_initialized_workdir,
     _compose_running_services,
     _descriptor_fast_path_reasons,
     _load_bundle_ids_from_descriptor,
@@ -149,6 +150,47 @@ def test_resolve_cli_repo_path_prefers_install_meta_repo_root(tmp_path: Path):
         path_provided=False,
     )
     assert resolved == repo_dir.resolve()
+
+
+def test_canonical_descriptor_dir_from_initialized_workdir_uses_runtime_config(tmp_path: Path):
+    runtime_dir = tmp_path / "workspace" / "demo_tenant__project_one"
+    config_dir = runtime_dir / "config"
+    config_dir.mkdir(parents=True)
+    (config_dir / ".env").write_text("")
+    (config_dir / "install-meta.json").write_text(json.dumps({"repo_root": str((runtime_dir / "repo").resolve())}))
+    for name in ("assembly.yaml", "secrets.yaml", "bundles.yaml", "bundles.secrets.yaml", "gateway.yaml"):
+        (config_dir / name).write_text("x: 1\n")
+
+    resolved = _canonical_descriptor_dir_from_initialized_workdir(tmp_path / "workspace")
+
+    assert resolved == config_dir.resolve()
+
+
+def test_canonical_descriptor_dir_from_initialized_workdir_requires_install_meta(tmp_path: Path):
+    runtime_dir = tmp_path / "workspace" / "demo_tenant__project_one"
+    config_dir = runtime_dir / "config"
+    config_dir.mkdir(parents=True)
+    (config_dir / ".env").write_text("")
+    for name in ("assembly.yaml", "secrets.yaml", "bundles.yaml", "bundles.secrets.yaml", "gateway.yaml"):
+        (config_dir / name).write_text("x: 1\n")
+
+    resolved = _canonical_descriptor_dir_from_initialized_workdir(tmp_path / "workspace")
+
+    assert resolved is None
+
+
+def test_canonical_descriptor_dir_from_initialized_workdir_requires_complete_descriptor_set(tmp_path: Path):
+    runtime_dir = tmp_path / "workspace" / "demo_tenant__project_one"
+    config_dir = runtime_dir / "config"
+    config_dir.mkdir(parents=True)
+    (config_dir / ".env").write_text("")
+    (config_dir / "install-meta.json").write_text(json.dumps({"repo_root": str((runtime_dir / "repo").resolve())}))
+    for name in ("assembly.yaml", "secrets.yaml", "bundles.yaml"):
+        (config_dir / name).write_text("x: 1\n")
+
+    resolved = _canonical_descriptor_dir_from_initialized_workdir(tmp_path / "workspace")
+
+    assert resolved is None
 
 
 def test_compose_running_services_uses_runtime_docker_dir(monkeypatch, tmp_path: Path):

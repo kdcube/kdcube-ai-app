@@ -120,6 +120,30 @@ GitHub `origin/main`, including:
 - nginx templates
 - installer-side deployment templates
 
+If the runtime was already initialized earlier, you can omit
+`--descriptors-location` and reuse the staged descriptors from `workdir/config`
+instead:
+
+```bash
+kdcube \
+  --workdir /path/to/workspace/<safe_tenant>__<safe_project> \
+  --build \
+  --upstream
+```
+
+This reuse path requires:
+
+- `workdir/config/install-meta.json`
+- the canonical descriptor set already present under `workdir/config`
+  - `assembly.yaml`
+  - `secrets.yaml`
+  - `bundles.yaml`
+  - `bundles.secrets.yaml`
+  - `gateway.yaml`
+
+When those files exist, the CLI treats `workdir/config` as the descriptor
+authority and reuses the repo recorded in `install-meta.json` when possible.
+
 `--latest` is different: it resolves the latest release ref for release-image
 installs. It does not mean “latest source templates from GitHub main”.
 
@@ -178,6 +202,16 @@ When the descriptor set is complete, the CLI:
 - skips interactive prompts
 - runs a release install directly
 
+The same non-interactive path is also used when:
+
+- `--descriptors-location` is omitted
+- `--workdir` points to an existing runtime
+- `config/install-meta.json` exists
+- the canonical descriptor set already exists under `config/`
+
+In that case the CLI reuses the staged runtime descriptors and the repo path
+recorded in `install-meta.json`.
+
 If required fields are missing, it falls back to the guided setup and prints
 what is incomplete.
 
@@ -192,10 +226,10 @@ what is incomplete.
 |---|---|
 | `--repo <url>` | Git repo URL (default: official kdcube repo). |
 | `--path <repo>` | Use a specific local repo checkout for templates and builds. If omitted in descriptor mode, the checkout defaults to `<workspace>/<tenant>__<project>/repo`. |
-| `--workdir <path>` | Base workspace root. In descriptor mode the effective runtime becomes `<workdir>/<tenant>__<project>`. |
+| `--workdir <path>` | Base workspace root. In descriptor mode the effective runtime becomes `<workdir>/<tenant>__<project>`. If it already points to an initialized runtime with `config/install-meta.json` and the canonical descriptor set under `config/`, the CLI can reuse that runtime non-interactively. |
 | `--descriptors-location <dir>` | Use a folder containing `assembly.yaml`, `secrets.yaml`, `gateway.yaml`, and optional bundle descriptors. |
 | `--latest` | With `--descriptors-location`, resolve the latest platform release instead of using `assembly.yaml -> platform.ref`. |
-| `--upstream` | With `--descriptors-location` and `--build`, use the latest upstream repo state (`origin/main`) instead of a released platform ref. |
+| `--upstream` | With `--build`, use the latest upstream repo state (`origin/main`) instead of a released platform ref. Requires either `--descriptors-location` or an initialized runtime with the canonical descriptor set under `config/`. |
 | `--release <ref>` | With `--descriptors-location`, use the given platform release instead of `assembly.yaml -> platform.ref`. |
 | `--bundle-reload <bundle_id>` | Reapply `config/bundles.yaml` from the active runtime workspace and clear proc bundle caches for local development. |
 | `--export-live-bundles` | Export effective live `bundles.yaml` and `bundles.secrets.yaml` from the active bundle authority: workspace descriptors when present, otherwise AWS SM grouped bundle docs. |
@@ -461,6 +495,10 @@ enough for a non-interactive install. At minimum:
 - frontend build fields are present when `frontend` is used without `frontend.image`
 
 If any of those are missing, the CLI falls back to the normal guided flow.
+
+Reusing an initialized runtime without `--descriptors-location` requires the
+same canonical descriptor set to already exist under `workdir/config`, plus
+`workdir/config/install-meta.json` so the CLI can recover the repo context.
 
 Template:
 - [`app/ai-app/deployment/assembly.yaml`](../../../deployment/assembly.yaml) (copied into the workdir if no path is provided)
