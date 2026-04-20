@@ -16,7 +16,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.claude_code.types import (
     ClaudeCodeRunResult,
     ClaudeCodeTurnKind,
 )
-from kdcube_ai_app.infra.plugin.git_bundle import _build_git_env
+from kdcube_ai_app.infra.git.auth import build_git_env as _build_git_env, normalize_git_remote_url as _normalize_git_remote_url
 
 
 ClaudeCodeSessionStoreImplementation = Literal["local", "git"]
@@ -151,6 +151,10 @@ def _ensure_session_repo(
     if not repo_url:
         raise ValueError("missing_claude_code_session_git_repo")
     env = _build_git_env()
+    normalized_repo_url = _normalize_git_remote_url(repo_url)
+    if normalized_repo_url != repo_url:
+        logging.getLogger(__name__).info("[claude_code] using HTTPS for %s", repo_url)
+        repo_url = normalized_repo_url
     cache_root = _session_cache_root(config)
     repo_root = _session_lineage_repo_root(config)
     cache_root.mkdir(parents=True, exist_ok=True)
