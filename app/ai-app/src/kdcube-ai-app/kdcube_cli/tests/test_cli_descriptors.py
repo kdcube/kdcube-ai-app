@@ -14,8 +14,11 @@ from kdcube_cli import export_live_bundles as export_mod
 from kdcube_cli.installer import (
     PathsContext,
     apply_runtime_secrets_to_file_descriptors,
+    build_ui_url,
     gather_configuration,
     stage_descriptor_directory,
+    update_nginx_routes_prefix,
+    ui_entry_path,
     workspace_namespace,
 )
 
@@ -48,6 +51,36 @@ def test_descriptor_fast_path_accepts_complete_release_descriptor():
 def test_workspace_namespace_uses_safe_names():
     assert workspace_namespace("Demo Tenant", "Project/One") == "demo_tenant__project_one"
     assert workspace_namespace("", None) == "default_tenant__default_project"
+
+
+def test_ui_entry_path_uses_routes_prefix():
+    assert ui_entry_path("/chatbot/ciso") == "/chatbot/ciso/chat"
+    assert ui_entry_path(None) == "/chatbot/chat"
+
+
+def test_build_ui_url_uses_routes_prefix():
+    assert build_ui_url("5174", "/chatbot/ciso") == "http://localhost:5174/chatbot/ciso/chat"
+    assert build_ui_url("80", None) == "http://localhost/chatbot/chat"
+
+
+def test_update_nginx_routes_prefix_adds_prefix_root_redirect(tmp_path: Path):
+    nginx = tmp_path / "nginx.conf"
+    nginx.write_text(
+        "server {\n"
+        "    location = / {\n"
+        "        return 301 /chatbot/chat;\n"
+        "    }\n"
+        "    location / {\n"
+        "        proxy_pass http://web_ui;\n"
+        "    }\n"
+        "}\n"
+    )
+
+    update_nginx_routes_prefix(nginx, "/chatbot/ciso")
+
+    updated = nginx.read_text()
+    assert "return 301 /chatbot/ciso/chat;" in updated
+    assert "location = /chatbot/ciso {" in updated
 
 
 def test_resolve_cli_workdir_uses_descriptor_context_namespace(tmp_path: Path):

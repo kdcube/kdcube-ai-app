@@ -693,7 +693,10 @@ docker compose --env-file /srv/kdcube-local/config/.env up -d --build
 ```
 
 Open the UI:
-- `http://localhost:${KDCUBE_PROXY_HTTP_PORT:-KDCUBE_UI_PORT}/chatbot/chat`
+- `http://localhost[:port]<routesPrefix>/chat`
+
+`routesPrefix` comes from the generated frontend `config.json`. When it is not
+set explicitly, the default is `/chatbot`.
   (via proxy; if `KDCUBE_PROXY_HTTP_PORT` is unset, it falls back to `KDCUBE_UI_PORT`)
 
 ## Notes
