@@ -899,6 +899,33 @@ def _normalize_component_name(component: Optional[str]) -> str:
 
 
 def _config_from_dict(data: Dict[str, Any], *, component_override: Optional[str] = None) -> GatewayConfiguration:
+    def _looks_like_scope_placeholder(value: Any) -> bool:
+        text = str(value or "").strip()
+        if not text:
+            return True
+        if text.startswith("{{") and text.endswith("}}"):
+            return True
+        return text.upper() in {
+            "TENANT_ID",
+            "PROJECT_ID",
+            "DEFAULT_PROJECT_NAME",
+            "TENANT",
+            "PROJECT",
+        }
+
+    def _resolve_scope_value(raw: Any, *, env_names: list[str], settings_attr: str) -> str:
+        if not _looks_like_scope_placeholder(raw):
+            return str(raw).strip()
+        for env_name in env_names:
+            env_value = str(os.getenv(env_name) or "").strip()
+            if env_value and not _looks_like_scope_placeholder(env_value):
+                return env_value
+        settings = get_settings()
+        settings_value = str(getattr(settings, settings_attr, "") or "").strip()
+        if settings_value and not _looks_like_scope_placeholder(settings_value):
+            return settings_value
+        return ""
+
     def _component() -> str:
         if component_override:
             return _normalize_component_name(component_override)
@@ -1047,8 +1074,16 @@ def _config_from_dict(data: Dict[str, Any], *, component_override: Optional[str]
     else:
         bypass_throttling_patterns = [str(p) for p in bypass_payload if p]
 
-    tenant_value = data.get("tenant_id") or data.get("tenant")
-    project_value = data.get("project_id") or data.get("project")
+    tenant_value = _resolve_scope_value(
+        data.get("tenant_id") or data.get("tenant"),
+        env_names=["TENANT_ID"],
+        settings_attr="TENANT",
+    )
+    project_value = _resolve_scope_value(
+        data.get("project_id") or data.get("project"),
+        env_names=["DEFAULT_PROJECT_NAME", "PROJECT_ID"],
+        settings_attr="PROJECT",
+    )
     if not tenant_value or not project_value:
         raise ValueError("Gateway config must include tenant/project (prefer keys: tenant, project)")
     cfg = GatewayConfiguration(
