@@ -51,9 +51,21 @@ def run(cmd: list[str], cwd: Path | None = None) -> None:
     subprocess.run(cmd, cwd=cwd, check=True)
 
 
-def _docker_output(cmd: list[str], env: dict[str, str] | None = None) -> str:
+def _docker_output(
+    cmd: list[str],
+    env: dict[str, str] | None = None,
+    *,
+    cwd: Path | None = None,
+) -> str:
     try:
-        return subprocess.run(cmd, check=True, capture_output=True, text=True, env=env).stdout
+        return subprocess.run(
+            cmd,
+            check=True,
+            capture_output=True,
+            text=True,
+            env=env,
+            cwd=str(cwd) if cwd else None,
+        ).stdout
     except subprocess.CalledProcessError as exc:
         stderr = (exc.stderr or "").strip()
         stdout = (exc.stdout or "").strip()
@@ -359,6 +371,7 @@ def _compose_services(docker_dir: Path, env_file: Path) -> set[str]:
                 "--services",
             ],
             env=env,
+            cwd=docker_dir,
         )
         return {line.strip() for line in output.splitlines() if line.strip()}
     except SystemExit:
@@ -381,6 +394,7 @@ def _compose_running_services(docker_dir: Path, env_file: Path) -> set[str]:
                 "status=running",
             ],
             env=env,
+            cwd=docker_dir,
         )
         return {line.strip() for line in output.splitlines() if line.strip()}
     except SystemExit:
@@ -440,9 +454,28 @@ def _load_bundle_ids_from_descriptor(path: Path) -> set[str]:
         raise SystemExit(f"Unsupported bundle descriptor format in {path}")
 
     raw_bundles = data.get("bundles") if "bundles" in data else data
-    if not isinstance(raw_bundles, dict):
-        raise SystemExit(f"Descriptor {path} does not contain a bundles mapping")
-    return {str(key) for key in raw_bundles.keys()}
+    if isinstance(raw_bundles, dict):
+        items = raw_bundles.get("items")
+        if isinstance(items, list):
+            bundle_ids = {
+                str(item.get("id"))
+                for item in items
+                if isinstance(item, dict) and item.get("id")
+            }
+            if bundle_ids:
+                return bundle_ids
+        return {str(key) for key in raw_bundles.keys() if key not in {"items", "version", "default_bundle_id"}}
+
+    if isinstance(raw_bundles, list):
+        bundle_ids = {
+            str(item.get("id"))
+            for item in raw_bundles
+            if isinstance(item, dict) and item.get("id")
+        }
+        if bundle_ids:
+            return bundle_ids
+
+    raise SystemExit(f"Descriptor {path} does not contain supported bundle declarations")
 
 
 def reload_bundle_from_descriptor(
