@@ -191,21 +191,42 @@ def test_ensure_workspace_clones_local_repos_and_writes_context(tmp_path: Path):
     assert "Write generated wiki and knowledge-base outputs only into the output repo" in prompt_path.read_text(encoding="utf-8")
 
 
-def test_ensure_workspace_rejects_ssh_repo_when_pat_auth_is_used(tmp_path: Path):
+def test_prepare_repo_rewrites_ssh_repo_to_https_when_pat_auth_is_used(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     mod = _load_module()
+    calls: list[list[str]] = []
 
-    with pytest.raises(RuntimeError, match="PAT auth only works with https:// remotes"):
-        mod.ensure_workspace(
-            local_root=tmp_path / "local-storage",
-            user_id="alice",
-            config={
-                "content_repos": [{"source": "git@github.com:acme/docs.git", "label": "Source Docs"}],
-                "output_repo": {"source": "https://github.com/acme/wiki.git", "label": "Wiki Output"},
-            },
-            git_http_token="ghp_example",
-            git_http_user="x-access-token",
-            sync_existing=False,
-        )
+    repo = mod.ManagedRepo(
+        repo_type="content",
+        slot="content-1",
+        label="Source Docs",
+        source="git@github.com:acme/docs.git",
+        branch="main",
+        local_path=tmp_path / "workspace" / "repos" / "content-1",
+        repo_id="content-1",
+    )
+
+    monkeypatch.setattr(mod, "_git_remote_branch_exists", lambda repo, branch, env: True)
+    monkeypatch.setattr(mod, "_repo_status_payload", lambda repo, env, action: {"source": repo.source, "action": action})
+
+    def _fake_run_git(args, *, cwd=None, env=None):
+        del cwd, env
+        calls.append(list(args))
+        if args[:1] == ["clone"]:
+            repo.local_path.mkdir(parents=True, exist_ok=True)
+            (repo.local_path / ".git").mkdir(parents=True, exist_ok=True)
+        return ""
+
+    monkeypatch.setattr(mod, "_run_git", _fake_run_git)
+
+    result = mod._prepare_repo(
+        repo,
+        env=mod._build_git_env(git_http_token="ghp_example", git_http_user="x-access-token"),
+        sync_existing=False,
+    )
+
+    assert result["action"] == "cloned"
+    assert calls[0][0] == "clone"
+    assert calls[0][-2] == "https://github.com/acme/docs.git"
 
 
 def test_ensure_workspace_creates_missing_output_branch_locally(tmp_path: Path):

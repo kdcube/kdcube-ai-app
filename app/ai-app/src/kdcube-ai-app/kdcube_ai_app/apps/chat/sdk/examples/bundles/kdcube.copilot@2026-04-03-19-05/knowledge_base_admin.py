@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -15,6 +14,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from kdcube_ai_app.apps.chat.sdk.storage.ai_bundle_storage import AIBundleStorage
+from kdcube_ai_app.infra.git.auth import build_git_env as _build_git_env, normalize_git_remote_url as _normalize_git_remote_url
 
 
 ROOT_KEY = "knowledge_base_admin"
@@ -401,33 +401,6 @@ def managed_repos_from_config(local_root: Path, user_id: str | None, config: Map
         )
     return repos
 
-
-def _build_git_env(*, git_http_token: str | None, git_http_user: str | None) -> dict[str, str]:
-    env = dict(os.environ)
-    token = str(git_http_token or "").strip()
-    user = str(git_http_user or "").strip() or "x-access-token"
-    if token:
-        askpass_path = Path("/tmp/kdcube_kb_admin_git_askpass.sh")
-        contents = (
-            "#!/bin/sh\n"
-            "prompt=\"$1\"\n"
-            "if echo \"$prompt\" | grep -qi \"username\"; then\n"
-            "  echo \"${GIT_HTTP_USER:-x-access-token}\"\n"
-            "else\n"
-            "  echo \"${GIT_HTTP_TOKEN}\"\n"
-            "fi\n"
-        )
-        if not askpass_path.exists() or askpass_path.read_text(encoding="utf-8") != contents:
-            askpass_path.write_text(contents, encoding="utf-8")
-            askpass_path.chmod(0o700)
-        env["GIT_HTTP_TOKEN"] = token
-        env["GIT_HTTP_USER"] = user
-        env["GIT_TERMINAL_PROMPT"] = "0"
-        env["GIT_ASKPASS"] = str(askpass_path)
-        env["GIT_ASKPASS_REQUIRE"] = "force"
-    return env
-
-
 def _run_git(
     args: list[str],
     *,
@@ -491,10 +464,7 @@ def _prepare_repo(
     env: Mapping[str, str],
     sync_existing: bool,
 ) -> dict[str, Any]:
-    if env.get("GIT_HTTP_TOKEN") and repo.source.startswith("git@"):
-        raise RuntimeError(
-            f"Repo '{repo.label}' uses SSH URL '{repo.source}'. PAT auth only works with https:// remotes."
-        )
+    repo_source = _normalize_git_remote_url(repo.source, git_http_token=str(env.get("GIT_HTTP_TOKEN") or "").strip() or None)
 
     repo.local_path.parent.mkdir(parents=True, exist_ok=True)
     if repo.local_path.exists():
@@ -503,23 +473,23 @@ def _prepare_repo(
             remote_url = _run_git(["config", "--get", "remote.origin.url"], cwd=repo.local_path, env=env)
         except Exception:
             remote_url = ""
-        if remote_url and remote_url != repo.source:
+        if remote_url and remote_url != repo_source:
             shutil.rmtree(repo.local_path, ignore_errors=True)
 
     if not (repo.local_path / ".git").exists():
-        if repo.branch and repo.repo_type == "output" and not _git_remote_branch_exists(repo.source, repo.branch, env=env):
-            _run_git(["clone", repo.source, str(repo.local_path)], env=env)
+        if repo.branch and repo.repo_type == "output" and not _git_remote_branch_exists(repo_source, repo.branch, env=env):
+            _run_git(["clone", repo_source, str(repo.local_path)], env=env)
             _run_git(["checkout", "-b", repo.branch], cwd=repo.local_path, env=env)
             action = "cloned-local-branch"
         else:
-            if repo.branch and not _git_remote_branch_exists(repo.source, repo.branch, env=env):
+            if repo.branch and not _git_remote_branch_exists(repo_source, repo.branch, env=env):
                 raise RuntimeError(
                     f"Repo '{repo.label}' is configured for branch '{repo.branch}', but that branch does not exist on remote."
                 )
             clone_args = ["clone"]
             if repo.branch:
                 clone_args += ["--branch", repo.branch, "--single-branch"]
-            clone_args += [repo.source, str(repo.local_path)]
+            clone_args += [repo_source, str(repo.local_path)]
             _run_git(clone_args, env=env)
             action = "cloned"
     else:
@@ -530,10 +500,10 @@ def _prepare_repo(
             if repo.branch:
                 if _git_local_branch_exists(repo.local_path, repo.branch, env=env):
                     _run_git(["checkout", repo.branch], cwd=repo.local_path, env=env)
-                elif repo.repo_type == "output" and not _git_remote_branch_exists(repo.source, repo.branch, env=env):
+                elif repo.repo_type == "output" and not _git_remote_branch_exists(repo_source, repo.branch, env=env):
                     _run_git(["checkout", "-b", repo.branch], cwd=repo.local_path, env=env)
                     action = "created-local-branch"
-                elif _git_remote_branch_exists(repo.source, repo.branch, env=env):
+                elif _git_remote_branch_exists(repo_source, repo.branch, env=env):
                     _run_git(["checkout", "-B", repo.branch, f"origin/{repo.branch}"], cwd=repo.local_path, env=env)
                 else:
                     raise RuntimeError(

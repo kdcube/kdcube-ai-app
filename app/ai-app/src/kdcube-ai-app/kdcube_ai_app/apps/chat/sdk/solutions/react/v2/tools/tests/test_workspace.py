@@ -420,11 +420,8 @@ def test_ensure_workspace_repo_rewrites_ssh_origin_to_https_when_pat_is_configur
         workspace_implementation="git",
         workspace_git_repo="git@github.com:org/workspace.git",
     )
-
-    class _Settings:
-        GIT_HTTP_TOKEN = "pat-token"
-
-    monkeypatch.setattr(v2_git_workspace, "get_settings", lambda: _Settings())
+    monkeypatch.setenv("GIT_HTTP_TOKEN", "pat-token")
+    monkeypatch.setenv("GIT_HTTP_USER", "x-access-token")
     monkeypatch.setattr(v2_git_workspace, "_build_git_env", lambda: {})
 
     repo_root = _ensure_workspace_repo(runtime_ctx=runtime, outdir=outdir)
