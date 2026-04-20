@@ -138,8 +138,15 @@ class PLATFORM_CONFIG(BaseSettings):
     # ── secret fetching ───────────────────────────────────────────────────────
 
     def _fetch_secret(self, key: str) -> str | None:
+        manager_factory = get_secrets_manager
         try:
-            return get_secrets_manager(self).get_secret(key)
+            from kdcube_ai_app.apps.chat.sdk import config as sdk_config
+
+            manager_factory = getattr(sdk_config, "get_secrets_manager", manager_factory)
+        except Exception:
+            pass
+        try:
+            return manager_factory(self).get_secret(key)
         except Exception:
             return None
 
