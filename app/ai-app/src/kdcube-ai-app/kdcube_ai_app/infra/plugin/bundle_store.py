@@ -3,10 +3,12 @@
 # kdcube_ai_app/infra/plugin/bundle_store.py
 
 from __future__ import annotations
+import asyncio
 import json, os, time, uuid, threading
 import logging
 import shutil
 import fcntl
+from contextlib import asynccontextmanager
 from typing import Dict, Optional, Tuple, Any, Set
 from pathlib import Path
 from functools import lru_cache
@@ -27,6 +29,9 @@ REDIS_CHANNEL_FMT = namespaces.CONFIG.BUNDLES.UPDATE_CHANNEL
 ADMIN_BUNDLE_ID = "kdcube.admin"
 _EXAMPLES_REL_PATH = Path("apps/chat/sdk/examples/bundles")
 _DEFAULT_MANAGED_BUNDLES_ROOT = Path("/managed-bundles")
+_BUNDLE_PROPS_LOCK_KEY_FMT = "bundle:props:write:{tenant}:{project}:{bundle_id}"
+_BUNDLE_PROPS_LOCK_TTL_SECONDS = 30
+_BUNDLE_PROPS_LOCK_WAIT_SECONDS = 10.0
 _log = logging.getLogger(__name__)
 
 
@@ -1157,6 +1162,97 @@ def props_update_channel(tenant: Optional[str]=None, project: Optional[str]=None
     return namespaces.CONFIG.BUNDLES.PROPS_UPDATE_CHANNEL.format(tenant=t, project=p)
 
 
+def _bundle_props_lock_key(*, tenant: str, project: str, bundle_id: str) -> str:
+    return _BUNDLE_PROPS_LOCK_KEY_FMT.format(
+        tenant=tenant,
+        project=project,
+        bundle_id=bundle_id,
+    )
+
+
+def _redis_token_matches(current: Any, token: str) -> bool:
+    if current is None:
+        return False
+    if isinstance(current, (bytes, bytearray)):
+        try:
+            current = current.decode("utf-8")
+        except Exception:
+            current = bytes(current).decode("utf-8", errors="ignore")
+    return str(current) == str(token)
+
+
+def _deep_merge_mapping(base: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, Any]:
+    merged: Dict[str, Any] = dict(base or {})
+    for key, value in (patch or {}).items():
+        existing = merged.get(key)
+        if isinstance(existing, dict) and isinstance(value, dict):
+            merged[key] = _deep_merge_mapping(existing, value)
+        else:
+            merged[key] = value
+    return merged
+
+
+async def _release_bundle_props_lock(redis: Any, *, lock_key: str, token: str) -> None:
+    if redis is None or not token:
+        return
+    eval_fn = getattr(redis, "eval", None)
+    if callable(eval_fn):
+        try:
+            await eval_fn(
+                "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+                1,
+                lock_key,
+                token,
+            )
+            return
+        except Exception:
+            _log.debug("Failed to release bundle props lock via eval", exc_info=True)
+    try:
+        current = await redis.get(lock_key)
+        if _redis_token_matches(current, token):
+            await redis.delete(lock_key)
+    except Exception:
+        _log.debug("Failed to release bundle props lock", exc_info=True)
+
+
+@asynccontextmanager
+async def _bundle_props_write_lock(
+    redis: Any,
+    *,
+    tenant: str,
+    project: str,
+    bundle_id: str,
+):
+    if redis is None:
+        yield
+        return
+    lock_key = _bundle_props_lock_key(tenant=tenant, project=project, bundle_id=bundle_id)
+    token = uuid.uuid4().hex
+    start = time.time()
+    while True:
+        acquired = False
+        try:
+            acquired = bool(await redis.set(
+                lock_key,
+                token,
+                nx=True,
+                ex=_BUNDLE_PROPS_LOCK_TTL_SECONDS,
+            ))
+        except Exception:
+            acquired = False
+        if acquired:
+            break
+        if (time.time() - start) >= _BUNDLE_PROPS_LOCK_WAIT_SECONDS:
+            raise TimeoutError(
+                f"Timed out waiting for bundle props write lock: tenant={tenant} project={project} bundle={bundle_id}"
+            )
+        await asyncio.sleep(0.1)
+    try:
+        yield
+    finally:
+        await _release_bundle_props_lock(redis, lock_key=lock_key, token=token)
+
+
 async def publish_props_update(
     redis,
     *,
@@ -1186,6 +1282,55 @@ async def publish_props_update(
         props_update_channel(t, p),
         json.dumps(payload, ensure_ascii=False),
     )
+
+
+async def _put_bundle_props_locked(
+    redis,
+    *,
+    tenant: str,
+    project: str,
+    bundle_id: str,
+    props: Dict[str, Any],
+    actor: Optional[str] = None,
+    source: Optional[str] = None,
+) -> None:
+    key = _props_key(tenant=tenant, project=project, bundle_id=bundle_id)
+    await redis.set(key, json.dumps(props, ensure_ascii=False))
+    if bundle_id in _reserved_bundle_ids():
+        try:
+            await publish_props_update(
+                redis,
+                bundle_id=bundle_id,
+                tenant=tenant,
+                project=project,
+                actor=actor,
+                source=source,
+            )
+        except Exception:
+            _log.warning("Failed to publish bundle props update", exc_info=True)
+        return
+    reg = await load_registry(redis, tenant, project)
+    entry = reg.bundles.get(bundle_id)
+    if entry is not None and bundle_id not in _reserved_bundle_ids():
+        await save_registry(
+            redis,
+            reg,
+            tenant,
+            project,
+            props_map={bundle_id: props},
+            replace=False,
+        )
+    try:
+        await publish_props_update(
+            redis,
+            bundle_id=bundle_id,
+            tenant=tenant,
+            project=project,
+            actor=actor,
+            source=source,
+        )
+    except Exception:
+        _log.warning("Failed to publish bundle props update", exc_info=True)
 
 async def load_registry(redis, tenant: Optional[str] = None, project: Optional[str] = None) -> BundlesRegistry:
     """
@@ -1630,43 +1775,56 @@ async def put_bundle_props(
     actor: Optional[str] = None,
     source: Optional[str] = None,
 ) -> None:
-    key = _props_key(tenant=tenant, project=project, bundle_id=bundle_id)
-    await redis.set(key, json.dumps(props, ensure_ascii=False))
-    if bundle_id in _reserved_bundle_ids():
-        try:
-            await publish_props_update(
-                redis,
-                bundle_id=bundle_id,
-                tenant=tenant,
-                project=project,
-                actor=actor,
-                source=source,
-            )
-        except Exception:
-            _log.warning("Failed to publish bundle props update", exc_info=True)
-        return
-    reg = await load_registry(redis, tenant, project)
-    entry = reg.bundles.get(bundle_id)
-    if entry is not None and bundle_id not in _reserved_bundle_ids():
-        await save_registry(
+    async with _bundle_props_write_lock(
+        redis,
+        tenant=tenant,
+        project=project,
+        bundle_id=bundle_id,
+    ):
+        await _put_bundle_props_locked(
             redis,
-            reg,
-            tenant,
-            project,
-            props_map={bundle_id: props},
-            replace=False,
-        )
-    try:
-        await publish_props_update(
-            redis,
-            bundle_id=bundle_id,
             tenant=tenant,
             project=project,
+            bundle_id=bundle_id,
+            props=props,
             actor=actor,
             source=source,
         )
-    except Exception:
-        _log.warning("Failed to publish bundle props update", exc_info=True)
+
+
+async def patch_bundle_props(
+    redis,
+    *,
+    tenant: str,
+    project: str,
+    bundle_id: str,
+    props_patch: Dict[str, Any],
+    actor: Optional[str] = None,
+    source: Optional[str] = None,
+) -> Dict[str, Any]:
+    async with _bundle_props_write_lock(
+        redis,
+        tenant=tenant,
+        project=project,
+        bundle_id=bundle_id,
+    ):
+        current = await get_bundle_props(
+            redis,
+            tenant=tenant,
+            project=project,
+            bundle_id=bundle_id,
+        )
+        merged = _deep_merge_mapping(dict(current or {}), dict(props_patch or {}))
+        await _put_bundle_props_locked(
+            redis,
+            tenant=tenant,
+            project=project,
+            bundle_id=bundle_id,
+            props=merged,
+            actor=actor,
+            source=source,
+        )
+        return merged
 
 def apply_update(
         current: BundlesRegistry,
