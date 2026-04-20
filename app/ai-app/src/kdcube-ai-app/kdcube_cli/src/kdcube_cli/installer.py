@@ -2001,6 +2001,17 @@ def gather_configuration(
             candidate = Path(seed_root_raw).expanduser()
             if candidate.is_absolute():
                 seed_root = candidate.resolve()
+        fallback_root = Path(host_bundles_fallback).expanduser().resolve()
+        bundles_root_raw = _get_nested(
+            assembly_data,
+            "platform",
+            "services",
+            "proc",
+            "bundles",
+            "bundles_root",
+        )
+        bundles_root = str(bundles_root_raw or "/bundles").strip() or "/bundles"
+        bundles_root_path = Path(bundles_root)
 
         resolved_paths: list[Path] = []
         for spec in local_specs:
@@ -2008,7 +2019,14 @@ def gather_configuration(
             if not raw_path:
                 continue
             candidate = Path(raw_path).expanduser()
-            if candidate.is_absolute():
+            if candidate.is_absolute() and candidate == bundles_root_path:
+                base_root = seed_root or fallback_root
+                resolved = base_root.resolve()
+            elif candidate.is_absolute() and bundles_root_path in candidate.parents:
+                base_root = seed_root or fallback_root
+                rel = candidate.relative_to(bundles_root_path)
+                resolved = (base_root / rel).resolve()
+            elif candidate.is_absolute():
                 resolved = candidate.resolve()
             elif seed_root is not None:
                 resolved = (seed_root / candidate).resolve()
