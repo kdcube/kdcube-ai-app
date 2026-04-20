@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import pytest
 
-from kdcube_ai_app.apps.chat.sdk.runtime.bundle_scheduler import resolve_effective_cron
+from kdcube_ai_app.apps.chat.sdk.runtime.bundle_scheduler import (
+    resolve_effective_cron,
+    resolve_effective_timezone,
+)
 
 
 def test_inline_only():
@@ -84,3 +87,34 @@ def test_expr_config_no_fallback_to_cron_expression_when_missing():
     """If expr_config path is missing in props, cron_expression must NOT be used."""
     result = resolve_effective_cron("*/5 * * * *", "routines.cron", {})
     assert result is None
+
+
+def test_timezone_defaults_to_utc():
+    assert resolve_effective_timezone(None, None, {}) == "UTC"
+
+
+def test_timezone_inline_only():
+    assert resolve_effective_timezone("Europe/Berlin", None, {}) == "Europe/Berlin"
+
+
+def test_tz_config_found_in_props():
+    props = {"routines": {"job": {"timezone": "Europe/Berlin"}}}
+    result = resolve_effective_timezone(None, "routines.job.timezone", props)
+    assert result == "Europe/Berlin"
+
+
+def test_tz_config_wins_over_inline_timezone():
+    props = {"routines": {"job": {"timezone": "America/New_York"}}}
+    result = resolve_effective_timezone("Europe/Berlin", "routines.job.timezone", props)
+    assert result == "America/New_York"
+
+
+def test_tz_config_missing_falls_back_to_inline_timezone():
+    result = resolve_effective_timezone("Europe/Berlin", "routines.job.timezone", {})
+    assert result == "Europe/Berlin"
+
+
+def test_tz_config_blank_falls_back_to_inline_timezone():
+    props = {"routines": {"job": {"timezone": "  "}}}
+    result = resolve_effective_timezone("Europe/Berlin", "routines.job.timezone", props)
+    assert result == "Europe/Berlin"

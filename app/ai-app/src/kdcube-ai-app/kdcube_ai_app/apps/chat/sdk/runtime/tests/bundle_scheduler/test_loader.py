@@ -50,6 +50,20 @@ class _BundleWithBothSources:
         pass
 
 
+class _BundleWithTimezone:
+    BUNDLE_ID = "test.tz"
+
+    @cron(
+        alias="job-tz",
+        cron_expression="0 2 * * *",
+        timezone="Europe/Berlin",
+        tz_config="routines.job.timezone",
+        span="system",
+    )
+    async def job_tz(self) -> None:
+        pass
+
+
 class _BundleWithNoAlias:
     BUNDLE_ID = "test.noalias"
 
@@ -111,6 +125,14 @@ def test_both_sources_preserved_in_manifest():
     assert job.cron_expression == "*/15 * * * *"
     assert job.expr_config == "routines.job.cron"
     assert job.span == "instance"
+
+
+def test_timezone_sources_preserved_in_manifest():
+    manifest = discover_bundle_interface_manifest(_BundleWithTimezone, bundle_id="test.tz")
+    assert len(manifest.scheduled_jobs) == 1
+    job = manifest.scheduled_jobs[0]
+    assert job.timezone == "Europe/Berlin"
+    assert job.tz_config == "routines.job.timezone"
 
 
 def test_alias_defaults_to_method_name():

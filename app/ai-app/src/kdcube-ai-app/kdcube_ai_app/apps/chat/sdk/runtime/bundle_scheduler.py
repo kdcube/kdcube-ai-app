@@ -23,6 +23,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from croniter import croniter
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 _log = logging.getLogger("kdcube.bundle.scheduler")
 
@@ -97,16 +98,61 @@ def resolve_effective_cron(
     return None
 
 
-def _is_valid_cron(expr: str) -> bool:
+def resolve_effective_timezone(
+    timezone_name: Optional[str],
+    tz_config: Optional[str],
+    props: Dict[str, Any],
+) -> str:
+    """
+    Return the effective IANA timezone name used to interpret the cron
+    expression. Missing / blank values fall back to the inline timezone and
+    finally to UTC.
+    """
+    resolved: Any = None
+    if tz_config:
+        from kdcube_ai_app.infra.plugin.bundle_store import resolve_dot_path
+
+        resolved = resolve_dot_path(props, tz_config)
+        if not isinstance(resolved, str):
+            try:
+                from kdcube_ai_app.apps.chat.sdk.config import read_plain
+
+                resolved = read_plain(f"b:{tz_config}", default=None)
+                if not isinstance(resolved, str):
+                    resolved = read_plain(tz_config, default=None)
+            except Exception:
+                resolved = None
+        if isinstance(resolved, str):
+            resolved = resolved.strip()
+    if isinstance(resolved, str) and resolved:
+        return resolved
+    fallback = str(timezone_name or "").strip()
+    return fallback or "UTC"
+
+
+def _resolve_zoneinfo(name: str) -> ZoneInfo | None:
     try:
-        croniter(expr, datetime.now(timezone.utc))
+        return ZoneInfo(str(name or "").strip() or "UTC")
+    except Exception:
+        return None
+
+
+def _is_valid_cron(expr: str, tz_name: str) -> bool:
+    try:
+        zone = _resolve_zoneinfo(tz_name)
+        if zone is None:
+            return False
+        croniter(expr, datetime.now(zone))
         return True
     except Exception:
         return False
 
 
-def _compute_next_run(expr: str, now: datetime) -> datetime:
-    it = croniter(expr, now)
+def _compute_next_run(expr: str, now: datetime, tz_name: str) -> datetime:
+    zone = _resolve_zoneinfo(tz_name)
+    if zone is None:
+        raise ValueError(f"Invalid cron timezone: {tz_name!r}")
+    it = croniter(expr, now.astimezone(zone))
     return it.get_next(datetime)
 
 
@@ -120,6 +166,7 @@ async def _run_job_loop(
     job_alias: str,
     method_name: str,
     cron_expr: str,
+    cron_tz: str,
     span: str,
     tenant: str,
     project: str,
@@ -133,8 +180,8 @@ async def _run_job_loop(
     then fires the job according to span semantics.
     """
     _log.info(
-        "[scheduler] Job registered: bundle=%s alias=%s expr=%r span=%s",
-        bundle_id, job_alias, cron_expr, span,
+        "[scheduler] Job registered: bundle=%s alias=%s expr=%r tz=%s span=%s",
+        bundle_id, job_alias, cron_expr, cron_tz, span,
     )
 
     # For span="process": the job runs as a background task so the tick loop
@@ -145,18 +192,18 @@ async def _run_job_loop(
     while True:
         now = datetime.now(timezone.utc)
         try:
-            next_run = _compute_next_run(cron_expr, now)
+            next_run = _compute_next_run(cron_expr, now, cron_tz)
         except Exception:
             _log.error(
-                "[scheduler] Failed to compute next run for bundle=%s alias=%s expr=%r; stopping job loop",
-                bundle_id, job_alias, cron_expr,
+                "[scheduler] Failed to compute next run for bundle=%s alias=%s expr=%r tz=%s; stopping job loop",
+                bundle_id, job_alias, cron_expr, cron_tz,
             )
             return
 
-        sleep_seconds = (next_run - now).total_seconds()
+        sleep_seconds = max((next_run.astimezone(timezone.utc) - now).total_seconds(), 0.0)
         _log.debug(
-            "[scheduler] bundle=%s alias=%s next tick in %.1fs",
-            bundle_id, job_alias, sleep_seconds,
+            "[scheduler] bundle=%s alias=%s tz=%s next tick in %.1fs",
+            bundle_id, job_alias, cron_tz, sleep_seconds,
         )
 
         try:
@@ -458,8 +505,8 @@ class BundleSchedulerManager:
         )
         from kdcube_ai_app.infra.plugin.bundle_store import get_bundle_props
 
-        desired: Dict[_JobKey, Tuple[str, str, str, Any, Any]] = {}
-        # desired[key] = (cron_expr, method_name, span, bundle_spec, bundle_config)
+        desired: Dict[_JobKey, Tuple[str, str, str, str, str, Any, Any]] = {}
+        # desired[key] = (schedule_signature, cron_expr, cron_tz, method_name, span, bundle_spec, bundle_config)
 
         for bundle_id, entry in (registry.bundles or {}).items():
             path = entry.path if hasattr(entry, "path") else entry.get("path", "")
@@ -513,6 +560,11 @@ class BundleSchedulerManager:
                     expr_config=job_spec.expr_config,
                     props=props,
                 )
+                effective_tz = resolve_effective_timezone(
+                    timezone_name=job_spec.timezone,
+                    tz_config=job_spec.tz_config,
+                    props=props,
+                )
 
                 key = _JobKey(bundle_id=bundle_id, job_alias=job_spec.alias)
 
@@ -525,23 +577,31 @@ class BundleSchedulerManager:
                     )
                     continue
 
-                if not _is_valid_cron(effective):
+                if not _is_valid_cron(effective, effective_tz):
                     _log.error(
-                        "[scheduler] Invalid cron expression — not scheduling: "
-                        "bundle=%s alias=%s expr=%r",
-                        bundle_id, job_spec.alias, effective,
+                        "[scheduler] Invalid cron schedule — not scheduling: "
+                        "bundle=%s alias=%s expr=%r tz=%r",
+                        bundle_id, job_spec.alias, effective, effective_tz,
                     )
                     continue
 
                 _log.debug(
-                    "[scheduler] Resolved cron: bundle=%s alias=%s expr=%r span=%s",
-                    bundle_id, job_spec.alias, effective, job_spec.span,
+                    "[scheduler] Resolved cron: bundle=%s alias=%s expr=%r tz=%s span=%s",
+                    bundle_id, job_spec.alias, effective, effective_tz, job_spec.span,
                 )
-                desired[key] = (effective, job_spec.method_name, job_spec.span, spec, bundle_config)
+                desired[key] = (
+                    f"{effective} @ {effective_tz}",
+                    effective,
+                    effective_tz,
+                    job_spec.method_name,
+                    job_spec.span,
+                    spec,
+                    bundle_config,
+                )
 
         # Cancel tasks that are no longer desired or whose cron changed
         for key in list(self._tasks.keys()):
-            task, old_expr = self._tasks[key]
+            task, old_schedule = self._tasks[key]
             if key not in desired:
                 _log.info(
                     "[scheduler] Cancelling removed job: bundle=%s alias=%s",
@@ -549,21 +609,21 @@ class BundleSchedulerManager:
                 )
                 task.cancel()
                 del self._tasks[key]
-            elif desired[key][0] != old_expr:
+            elif desired[key][0] != old_schedule:
                 _log.info(
-                    "[scheduler] Cron changed — rescheduling: bundle=%s alias=%s old=%r new=%r",
-                    key.bundle_id, key.job_alias, old_expr, desired[key][0],
+                    "[scheduler] Schedule changed — rescheduling: bundle=%s alias=%s old=%r new=%r",
+                    key.bundle_id, key.job_alias, old_schedule, desired[key][0],
                 )
                 task.cancel()
                 del self._tasks[key]
 
         # Start new tasks
-        for key, (cron_expr, method_name, span, spec, bundle_config) in desired.items():
+        for key, (schedule_signature, cron_expr, cron_tz, method_name, span, spec, bundle_config) in desired.items():
             if key in self._tasks:
                 continue
             _log.info(
-                "[scheduler] Scheduling job: bundle=%s alias=%s expr=%r span=%s",
-                key.bundle_id, key.job_alias, cron_expr, span,
+                "[scheduler] Scheduling job: bundle=%s alias=%s expr=%r tz=%s span=%s",
+                key.bundle_id, key.job_alias, cron_expr, cron_tz, span,
             )
             task = asyncio.create_task(
                 _run_job_loop(
@@ -571,6 +631,7 @@ class BundleSchedulerManager:
                     job_alias=key.job_alias,
                     method_name=method_name,
                     cron_expr=cron_expr,
+                    cron_tz=cron_tz,
                     span=span,
                     tenant=self._tenant,
                     project=self._project,
@@ -581,7 +642,7 @@ class BundleSchedulerManager:
                 ),
                 name=f"cron:{key.bundle_id}:{key.job_alias}",
             )
-            self._tasks[key] = (task, cron_expr)
+            self._tasks[key] = (task, schedule_signature)
 
     async def shutdown(self) -> None:
         """Cancel all running job tasks and wait for them to finish."""
