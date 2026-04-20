@@ -16,7 +16,11 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.workspace import (
     workspace_lineage_segments,
     workspace_version_ref,
 )
-from kdcube_ai_app.infra.git.auth import build_git_env as _build_git_env, normalize_git_remote_url as _normalize_git_remote_url
+from kdcube_ai_app.infra.git.auth import (
+    build_git_env as _build_git_env,
+    ensure_git_commit_identity as _ensure_git_commit_identity,
+    normalize_git_remote_url as _normalize_git_remote_url,
+)
 from kdcube_ai_app.infra.service_hub.inventory import AgentLogger
 
 _SKIP_WORKSPACE_DIRS = {".git", "__pycache__", ".pytest_cache", "node_modules", ".venv", "logs", "executed_programs"}
@@ -339,16 +343,7 @@ def ensure_current_turn_git_workspace(
         capture_output=True,
     )
     name, email = _workspace_commit_identity(runtime_ctx)
-    subprocess.run(
-        ["git", "-C", str(turn_root), "config", "user.name", name],
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "-C", str(turn_root), "config", "user.email", email],
-        check=True,
-        capture_output=True,
-    )
+    _ensure_git_commit_identity(repo_root=turn_root, name=name, email=email)
     subprocess.run(
         ["git", "-C", str(turn_root), "config", "advice.detachedHead", "false"],
         check=True,
