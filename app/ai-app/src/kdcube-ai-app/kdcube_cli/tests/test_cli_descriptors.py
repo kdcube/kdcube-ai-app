@@ -5,6 +5,7 @@ import yaml
 from rich.console import Console
 
 from kdcube_cli.cli import (
+    _compose_running_services,
     _descriptor_fast_path_reasons,
     _load_bundle_ids_from_descriptor,
     _resolve_cli_repo_path,
@@ -147,6 +148,27 @@ def test_resolve_cli_repo_path_prefers_install_meta_repo_root(tmp_path: Path):
         path_provided=False,
     )
     assert resolved == repo_dir.resolve()
+
+
+def test_compose_running_services_uses_runtime_docker_dir(monkeypatch, tmp_path: Path):
+    docker_dir = tmp_path / "docker"
+    docker_dir.mkdir()
+    env_file = tmp_path / ".env"
+    env_file.write_text("")
+    seen: dict[str, object] = {}
+
+    def _fake_output(cmd, env=None, *, cwd=None):
+        seen["cmd"] = cmd
+        seen["env"] = env
+        seen["cwd"] = cwd
+        return "chat-proc\nchat-ingress\n"
+
+    monkeypatch.setattr("kdcube_cli.cli._docker_output", _fake_output)
+
+    result = _compose_running_services(docker_dir, env_file)
+
+    assert result == {"chat-proc", "chat-ingress"}
+    assert seen["cwd"] == docker_dir
 
 
 def test_stage_descriptor_directory_requires_canonical_descriptor_set(tmp_path: Path):
@@ -443,6 +465,30 @@ bundles:
   another.bundle@2.0.0:
     path: /bundles/another
     module: another.entrypoint
+""".strip()
+    )
+
+    assert _load_bundle_ids_from_descriptor(path) == {
+        "demo.bundle@1.0.0",
+        "another.bundle@2.0.0",
+    }
+
+
+def test_load_bundle_ids_from_bundles_items_yaml(tmp_path: Path):
+    path = tmp_path / "bundles.yaml"
+    path.write_text(
+        """
+bundles:
+  version: "1"
+  default_bundle_id: demo.bundle@1.0.0
+  items:
+    - id: demo.bundle@1.0.0
+      path: /bundles/demo
+      module: demo.entrypoint
+    - id: another.bundle@2.0.0
+      repo: git@example.com:repo.git
+      ref: main
+      module: another.entrypoint
 """.strip()
     )
 
