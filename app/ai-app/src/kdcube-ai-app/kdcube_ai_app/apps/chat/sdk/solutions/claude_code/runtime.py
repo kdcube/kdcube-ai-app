@@ -16,7 +16,11 @@ from kdcube_ai_app.apps.chat.sdk.solutions.claude_code.types import (
     ClaudeCodeRunResult,
     ClaudeCodeTurnKind,
 )
-from kdcube_ai_app.infra.git.auth import build_git_env as _build_git_env, normalize_git_remote_url as _normalize_git_remote_url
+from kdcube_ai_app.infra.git.auth import (
+    build_git_env as _build_git_env,
+    ensure_git_commit_identity as _ensure_git_commit_identity,
+    normalize_git_remote_url as _normalize_git_remote_url,
+)
 
 
 ClaudeCodeSessionStoreImplementation = Literal["local", "git"]
@@ -233,16 +237,7 @@ def _ensure_local_git_repo(*, local_root: pathlib.Path, config: ClaudeCodeSessio
         capture_output=True,
     )
     name, email = _session_commit_identity(config)
-    subprocess.run(
-        ["git", "-C", str(local_root), "config", "user.name", name],
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "-C", str(local_root), "config", "user.email", email],
-        check=True,
-        capture_output=True,
-    )
+    _ensure_git_commit_identity(repo_root=local_root, name=name, email=email)
     subprocess.run(
         ["git", "-C", str(local_root), "config", "advice.detachedHead", "false"],
         check=True,

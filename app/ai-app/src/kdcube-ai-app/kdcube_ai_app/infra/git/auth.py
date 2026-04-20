@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import subprocess
 from typing import Mapping
 
 from kdcube_ai_app.apps.chat.sdk.config import get_secret, get_settings
@@ -17,6 +18,13 @@ _WARNED_HTTP_SSH = False
 def _clean(value: str | None) -> str | None:
     text = str(value or "").strip()
     return text or None
+
+
+def _safe_get_secret(key: str) -> str | None:
+    try:
+        return get_secret(key)
+    except Exception:
+        return None
 
 
 def ssh_url_to_https_url(git_url: str) -> str:
@@ -46,13 +54,13 @@ def _resolved_http_credentials(
     token = (
         _clean(git_http_token)
         or _clean(getattr(settings, "GIT_HTTP_TOKEN", None))
-        or _clean(get_secret("services.git.http_token"))
+        or _clean(_safe_get_secret("services.git.http_token"))
         or _clean(base_env.get("GIT_HTTP_TOKEN"))
     )
     user = (
         _clean(git_http_user)
         or _clean(getattr(settings, "GIT_HTTP_USER", None))
-        or _clean(get_secret("services.git.http_user"))
+        or _clean(_safe_get_secret("services.git.http_user"))
         or _clean(base_env.get("GIT_HTTP_USER"))
         or DEFAULT_GIT_HTTP_USER
     )
@@ -180,3 +188,46 @@ def normalize_git_remote_url(
     if not token:
         return str(git_url or "").strip()
     return ssh_url_to_https_url(str(git_url or "").strip())
+
+
+def ensure_git_commit_identity(
+    *,
+    repo_root: pathlib.Path,
+    name: str,
+    email: str,
+    env: Mapping[str, str] | None = None,
+) -> None:
+    """
+    Ensure repo-local git commit identity without mutating process-global git config.
+    """
+    repo_root = pathlib.Path(repo_root).resolve()
+    git_env = dict(env if env is not None else os.environ)
+
+    def _git_config_get(key: str) -> str:
+        proc = subprocess.run(
+            ["git", "-C", str(repo_root), "config", "--get", key],
+            capture_output=True,
+            text=True,
+            env=git_env,
+        )
+        if proc.returncode != 0:
+            return ""
+        return (proc.stdout or "").strip()
+
+    current_name = _git_config_get("user.name")
+    if current_name != name:
+        subprocess.run(
+            ["git", "-C", str(repo_root), "config", "user.name", name],
+            check=True,
+            capture_output=True,
+            env=git_env,
+        )
+
+    current_email = _git_config_get("user.email")
+    if current_email != email:
+        subprocess.run(
+            ["git", "-C", str(repo_root), "config", "user.email", email],
+            check=True,
+            capture_output=True,
+            env=git_env,
+        )
