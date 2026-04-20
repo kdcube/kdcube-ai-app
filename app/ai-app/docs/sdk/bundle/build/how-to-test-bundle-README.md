@@ -214,6 +214,12 @@ After unit/shared tests pass:
 - call operations through the real integrations routes
 - verify actual runtime storage and mutation behavior
 
+If the bundle shells out to git or other subprocesses that need credentials, also verify the process-boundary behavior:
+
+- the subprocess receives the expected per-call env
+- the processor process env is not being rewritten by the bundle
+- inherited processor `GIT_*` variables, if present, are understood to be shared across apps by design
+
 ## 3. Runtime Surface Checks
 
 Do not treat all runtime paths as equivalent.
@@ -258,6 +264,33 @@ If the bundle or its tools may execute in isolated runtime, test that path expli
 What to validate:
 
 - code does not depend on arbitrary host-process globals
+
+## 4. Git-Backed Bundle Checks
+
+If the bundle manages git workspaces, session stores, or external repos, test the git auth boundary explicitly.
+
+Validate all of these:
+
+- git remote normalization works as expected for your configured transport
+- descriptor-backed token or SSH settings are visible to the git subprocess
+- explicit call-site overrides affect only that subprocess invocation
+- the bundle does not mutate processor `os.environ` in order to make git work
+
+Minimal check pattern:
+
+```python
+env = build_git_env(
+    git_http_token=get_secret("services.git.http_token"),
+    git_http_user=get_secret("services.git.http_user"),
+)
+subprocess.run(["git", "config", "--get", "remote.origin.url"], env=env, check=True)
+```
+
+What the result should mean:
+
+- inherited processor env is shared by design
+- the bundle’s explicit subprocess env is local to that git command
+- one bundle’s git override must not become another bundle’s process-global mutation
 - only documented portable runtime bindings are assumed
 - isolated execution gets the inputs it actually needs
 

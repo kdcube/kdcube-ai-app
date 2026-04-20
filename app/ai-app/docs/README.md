@@ -96,6 +96,7 @@ Curated index of platform, service, and SDK documentation.
 * Streaming Exec Widget (Live Code + Execution Status): [streaming-widget-README.md](sdk/streaming/streaming-widget-README.md)
 * Channeled Streamer (Versatile Streamer): [channeled-streamer-README.md](sdk/streaming/channeled-streamer-README.md)
 * SDK Storage Layout: [sdk-store-README.md](sdk/storage/sdk-store-README.md)
+* Git Store (shared git subprocess transport): [git-store-README.md](sdk/storage/git-store-README.md)
 * KV Cache (Service Hub): [cache-README.md](sdk/storage/cache-README.md)
 
 ## Economics & OPEX

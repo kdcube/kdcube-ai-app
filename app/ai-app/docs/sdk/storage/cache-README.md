@@ -7,6 +7,7 @@ keywords: ["KVCache", "NamespacedKVCache", "tenant/project scope", "ServiceHub c
 see_also:
   - ks:docs/sdk/bundle/bundle-storage-cache-README.md
   - ks:docs/sdk/storage/sdk-store-README.md
+  - ks:docs/sdk/storage/git-store-README.md
   - ks:docs/README.md
 ---
 # KV Cache (Service Hub)
