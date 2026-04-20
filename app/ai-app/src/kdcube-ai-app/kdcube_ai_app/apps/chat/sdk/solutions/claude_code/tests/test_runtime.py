@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+import kdcube_ai_app.apps.chat.sdk.solutions.claude_code.runtime as runtime_module
 from kdcube_ai_app.apps.chat.sdk.solutions.claude_code.runtime import (
     ClaudeCodeSessionStoreConfig,
     bootstrap_claude_code_session_store,
@@ -130,6 +131,31 @@ def test_publish_pushes_session_root_to_conversation_branch(tmp_path: Path):
 
     assert result["published"] is True
     assert _read_remote_file(remote_repo, claude_code_session_branch_ref(config), "sessions/history.json") == "{\"turns\": 2}\n"
+
+
+def test_ensure_session_repo_rewrites_ssh_origin_to_https_when_pat_is_configured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    config = ClaudeCodeSessionStoreConfig(
+        implementation="git",
+        local_root=tmp_path / "workspace" / ".claude",
+        tenant="home",
+        project="demo",
+        user_id="alice",
+        conversation_id="conv-1",
+        agent_name="knowledge-base-admin",
+        git_repo="git@github.com:org/session-store.git",
+    )
+    monkeypatch.setenv("GIT_HTTP_TOKEN", "pat-token")
+    monkeypatch.setenv("GIT_HTTP_USER", "x-access-token")
+
+    repo_root = runtime_module._ensure_session_repo(config=config)
+
+    remote_url = subprocess.run(
+        ["git", "-C", str(repo_root), "config", "--get", "remote.origin.url"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert remote_url == "https://github.com/org/session-store.git"
 
 
 class _FakeAgent:

@@ -94,7 +94,6 @@ def test_build_git_env_uses_known_hosts_without_explicit_key(monkeypatch):
     monkeypatch.setenv("GIT_SSH_STRICT_HOST_KEY_CHECKING", "yes")
     monkeypatch.delenv("GIT_HTTP_TOKEN", raising=False)
     monkeypatch.delenv("GIT_HTTP_USER", raising=False)
-    monkeypatch.setattr(git_bundle, "get_secret", lambda *_args, **_kwargs: None)
 
     env = git_bundle._build_git_env()
 
@@ -110,7 +109,6 @@ def test_build_git_env_still_includes_key_when_present(monkeypatch):
     monkeypatch.setenv("GIT_SSH_STRICT_HOST_KEY_CHECKING", "yes")
     monkeypatch.delenv("GIT_HTTP_TOKEN", raising=False)
     monkeypatch.delenv("GIT_HTTP_USER", raising=False)
-    monkeypatch.setattr(git_bundle, "get_secret", lambda *_args, **_kwargs: None)
 
     env = git_bundle._build_git_env()
 
