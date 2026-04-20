@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 from kdcube_ai_app.infra.git import auth as git_auth
@@ -49,3 +50,59 @@ def test_normalize_git_remote_url_leaves_ssh_when_pat_is_absent():
         "git@github.com:org/workspace.git",
         base_env={},
     ) == "git@github.com:org/workspace.git"
+
+
+def test_ensure_git_commit_identity_sets_repo_local_identity(tmp_path: Path):
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "init", str(repo)], check=True, capture_output=True, text=True)
+
+    git_auth.ensure_git_commit_identity(
+        repo_root=repo,
+        name="Local Bundle Bot",
+        email="bundle.bot@local.invalid",
+    )
+
+    name = subprocess.run(
+        ["git", "-C", str(repo), "config", "--get", "user.name"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    email = subprocess.run(
+        ["git", "-C", str(repo), "config", "--get", "user.email"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    assert name == "Local Bundle Bot"
+    assert email == "bundle.bot@local.invalid"
+
+
+def test_ensure_git_commit_identity_updates_existing_repo_local_identity(tmp_path: Path):
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "init", str(repo)], check=True, capture_output=True, text=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.name", "Old Name"], check=True, capture_output=True, text=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.email", "old@local.invalid"], check=True, capture_output=True, text=True)
+
+    git_auth.ensure_git_commit_identity(
+        repo_root=repo,
+        name="New Name",
+        email="new@local.invalid",
+    )
+
+    name = subprocess.run(
+        ["git", "-C", str(repo), "config", "--get", "user.name"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    email = subprocess.run(
+        ["git", "-C", str(repo), "config", "--get", "user.email"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+    assert name == "New Name"
+    assert email == "new@local.invalid"
