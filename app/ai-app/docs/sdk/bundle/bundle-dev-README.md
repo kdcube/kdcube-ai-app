@@ -153,6 +153,27 @@ Read the exact model here:
 - [bundle-props-secrets-README.md](bundle-props-secrets-README.md)
 - [bundle-platform-properties-README.md](bundle-platform-properties-README.md)
 
+## Git Auth Environment Boundary
+
+If bundle code needs to run git commands, treat git auth as subprocess configuration, not as mutable bundle-local process state.
+
+Rules:
+
+- read git configuration from the managed settings/secrets layer
+- if you need a git subprocess env, build a per-call env dict and pass it to `subprocess.run(..., env=env)`
+- do not write git auth values back into `os.environ` from bundle code
+
+Important boundary:
+
+- the processor process may already start with inherited `GIT_*` variables
+- those inherited variables are shared by design across applications in the same processor
+- explicit git helper overrides are local to the subprocess env dict and do not mutate the processor process env
+
+Practical implication:
+
+- do not assume one bundle can safely rewrite processor-level git auth for itself only
+- if you need bundle-specific git auth, pass it as an explicit subprocess override instead of mutating global process env
+
 ## Local Storage Rule
 
 If your bundle needs local filesystem state on the proc instance, use the bundle-storage helper.

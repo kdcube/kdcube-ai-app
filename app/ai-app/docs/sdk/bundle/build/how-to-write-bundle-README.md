@@ -86,6 +86,38 @@ Preferred split:
 - separate admin widget/API for privileged operations
 - scheduled jobs for background automation
 
+## 2.1 Process Environment Boundary
+
+Multiple applications may run inside the same processor process.
+
+That means:
+
+- inherited processor environment variables are shared by design
+- bundle code must not treat `os.environ` as private mutable state
+
+For git-backed helpers in particular:
+
+- read git configuration through `get_settings()` / `get_secret()`
+- build a subprocess env dict for git commands
+- pass that env only to the git subprocess
+- do not write `GIT_HTTP_TOKEN`, `GIT_SSH_COMMAND`, or similar values back into the processor process env
+
+Correct pattern:
+
+```python
+env = build_git_env(
+    git_http_token=get_secret("services.git.http_token"),
+    git_http_user=get_secret("services.git.http_user"),
+)
+subprocess.run(["git", "fetch", "--prune", "origin"], env=env, check=True)
+```
+
+Interpretation:
+
+- inherited process env remains shared
+- descriptor-backed settings/secrets remain the normal source of truth
+- explicit overrides remain local to the subprocess call only
+
 ## 3. Start From The Minimal Bundle Shape
 
 Recommended layout:
@@ -200,6 +232,7 @@ Reference:
 - [bundle-platform-integration-README.md](../bundle-platform-integration-README.md)
 - [bundle-transports-README.md](../bundle-transports-README.md)
 - [bundle-props-secrets-README.md](../bundle-props-secrets-README.md)
+- [bundle-dev-README.md](../bundle-dev-README.md)
 
 ### Widget plus structured API
 
