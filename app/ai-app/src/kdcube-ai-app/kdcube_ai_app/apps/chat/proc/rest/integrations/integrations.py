@@ -776,6 +776,8 @@ def _manifest_to_descriptor(manifest: BundleInterfaceManifest) -> Dict[str, Any]
                 "alias": s.alias,
                 "cron_expression": s.cron_expression,
                 "expr_config": s.expr_config,
+                "timezone": s.timezone,
+                "tz_config": s.tz_config,
                 "span": s.span,
             }
             for s in manifest.scheduled_jobs
@@ -820,6 +822,8 @@ def _manifest_to_descriptor_filtered(
                 "alias": s.alias,
                 "cron_expression": s.cron_expression,
                 "expr_config": s.expr_config,
+                "timezone": s.timezone,
+                "tz_config": s.tz_config,
                 "span": s.span,
             }
             for s in manifest.scheduled_jobs

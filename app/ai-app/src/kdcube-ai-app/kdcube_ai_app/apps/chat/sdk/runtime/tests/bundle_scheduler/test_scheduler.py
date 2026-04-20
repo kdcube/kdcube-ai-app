@@ -46,6 +46,8 @@ def _make_job_spec(
     method_name: str = "run",
     cron_expression: str | None = "* * * * *",
     expr_config: str | None = None,
+    timezone: str | None = None,
+    tz_config: str | None = None,
     span: str = "process",
 ) -> Any:
     return SimpleNamespace(
@@ -53,6 +55,8 @@ def _make_job_spec(
         method_name=method_name,
         cron_expression=cron_expression,
         expr_config=expr_config,
+        timezone=timezone,
+        tz_config=tz_config,
         span=span,
     )
 
@@ -166,13 +170,41 @@ def test_reconcile_reschedules_job_when_cron_changes():
         with pm1, pp1, ph1:
             await mgr.reconcile(_make_registry("demo.bundle"))
         task_v1, expr_v1 = mgr._tasks[key]
-        assert expr_v1 == "* * * * *"
+        assert expr_v1 == "* * * * * @ UTC"
 
         pm2, pp2, ph2 = _patches(manifest_v2)
         with pm2, pp2, ph2:
             await mgr.reconcile(_make_registry("demo.bundle"))
         task_v2, expr_v2 = mgr._tasks[key]
-        assert expr_v2 == "*/5 * * * *"
+        assert expr_v2 == "*/5 * * * * @ UTC"
+        assert task_v1 is not task_v2
+
+        await mgr.shutdown()
+    _run(_t())
+
+
+def test_reconcile_reschedules_job_when_timezone_changes():
+    manifest_v1 = _make_manifest([
+        _make_job_spec(alias="job", cron_expression="0 2 * * *", timezone="UTC")
+    ])
+    manifest_v2 = _make_manifest([
+        _make_job_spec(alias="job", cron_expression="0 2 * * *", timezone="Europe/Berlin")
+    ])
+    key = _JobKey(bundle_id="demo.bundle", job_alias="job")
+
+    async def _t():
+        mgr = BundleSchedulerManager(redis=None, tenant="t", project="p", instance_id="i1")
+        pm1, pp1, ph1 = _patches(manifest_v1)
+        with pm1, pp1, ph1:
+            await mgr.reconcile(_make_registry("demo.bundle"))
+        task_v1, schedule_v1 = mgr._tasks[key]
+        assert schedule_v1 == "0 2 * * * @ UTC"
+
+        pm2, pp2, ph2 = _patches(manifest_v2)
+        with pm2, pp2, ph2:
+            await mgr.reconcile(_make_registry("demo.bundle"))
+        task_v2, schedule_v2 = mgr._tasks[key]
+        assert schedule_v2 == "0 2 * * * @ Europe/Berlin"
         assert task_v1 is not task_v2
 
         await mgr.shutdown()
@@ -198,6 +230,21 @@ def test_reconcile_stable_when_cron_unchanged():
 
 def test_reconcile_invalid_cron_not_scheduled():
     manifest = _make_manifest([_make_job_spec(alias="bad", cron_expression="not-a-cron")])
+    pm, pp, ph = _patches(manifest)
+
+    async def _t():
+        with pm, pp, ph:
+            mgr = BundleSchedulerManager(redis=None, tenant="t", project="p", instance_id="i1")
+            await mgr.reconcile(_make_registry("demo.bundle"))
+        assert len(mgr._tasks) == 0
+        await mgr.shutdown()
+    _run(_t())
+
+
+def test_reconcile_invalid_timezone_not_scheduled():
+    manifest = _make_manifest([
+        _make_job_spec(alias="bad-tz", cron_expression="0 2 * * *", timezone="Mars/Phobos")
+    ])
     pm, pp, ph = _patches(manifest)
 
     async def _t():

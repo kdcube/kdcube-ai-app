@@ -113,6 +113,8 @@ class CronJobSpec:
     alias: str = ""
     cron_expression: str | None = None
     expr_config: str | None = None
+    timezone: str | None = None
+    tz_config: str | None = None
     span: str = "system"
 
 
@@ -507,6 +509,8 @@ def cron(
         alias: str | None = None,
         cron_expression: str | None = None,
         expr_config: str | None = None,
+        timezone: str | None = None,
+        tz_config: str | None = None,
         span: str = "system",
 ):
     """
@@ -520,6 +524,11 @@ def cron(
             ``"apps.app1.routines.cron"``. If provided, takes precedence over
             ``cron_expression`` at runtime. If the resolved value is missing,
             blank, or ``"disable"``, the job is not scheduled.
+        timezone: IANA timezone used to interpret the cron expression,
+            e.g. ``"Europe/Berlin"``. Defaults to UTC when omitted.
+        tz_config: dot-separated path into bundle props/config for the
+            timezone override. If provided and resolved to a non-blank string,
+            it takes precedence over ``timezone`` at runtime.
         span: exclusivity level — one of ``"process"``, ``"instance"``,
             ``"system"``. Defaults to ``"system"``.
     """
@@ -539,6 +548,8 @@ def cron(
                 alias=_clean_alias(alias, method_name),
                 cron_expression=str(cron_expression).strip() if cron_expression is not None else None,
                 expr_config=str(expr_config).strip() if expr_config is not None else None,
+                timezone=str(timezone).strip() if timezone is not None else None,
+                tz_config=str(tz_config).strip() if tz_config is not None else None,
                 span=span_norm,
             ),
         )
@@ -1527,6 +1538,8 @@ def discover_bundle_interface_manifest(target: Any, *, bundle_id: str | None = N
                 alias=cron_spec.alias or member_name,
                 cron_expression=cron_spec.cron_expression,
                 expr_config=cron_spec.expr_config,
+                timezone=cron_spec.timezone,
+                tz_config=cron_spec.tz_config,
                 span=cron_spec.span,
             ))
 

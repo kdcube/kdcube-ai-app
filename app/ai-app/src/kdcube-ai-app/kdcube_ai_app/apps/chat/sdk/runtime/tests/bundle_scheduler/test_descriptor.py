@@ -45,6 +45,8 @@ def test_descriptor_includes_scheduled_jobs():
             alias="rebuild",
             cron_expression=None,
             expr_config="apps.app1.routines.cron",
+            timezone="Europe/Berlin",
+            tz_config="apps.app1.routines.timezone",
             span="system",
         )
     ]
@@ -56,6 +58,8 @@ def test_descriptor_includes_scheduled_jobs():
     assert job["alias"] == "rebuild"
     assert job["cron_expression"] is None
     assert job["expr_config"] == "apps.app1.routines.cron"
+    assert job["timezone"] == "Europe/Berlin"
+    assert job["tz_config"] == "apps.app1.routines.timezone"
     assert job["span"] == "system"
 
 
@@ -98,6 +102,8 @@ def test_descriptor_preserves_all_fields():
         alias="my-alias",
         cron_expression="*/30 * * * *",
         expr_config="some.config.path",
+        timezone="Europe/Berlin",
+        tz_config="some.timezone.path",
         span="instance",
     )
     desc = _manifest_to_descriptor(_make_manifest([job]))
@@ -106,4 +112,6 @@ def test_descriptor_preserves_all_fields():
     assert serialized["alias"] == "my-alias"
     assert serialized["cron_expression"] == "*/30 * * * *"
     assert serialized["expr_config"] == "some.config.path"
+    assert serialized["timezone"] == "Europe/Berlin"
+    assert serialized["tz_config"] == "some.timezone.path"
     assert serialized["span"] == "instance"
