@@ -6,6 +6,7 @@ tags: ["sdk", "storage", "layout", "artifacts", "accounting"]
 keywords: ["storage paths", "artifacts", "attachments", "s3", "local fs", "conversation data"]
 see_also:
   - ks:docs/sdk/storage/cache-README.md
+  - ks:docs/sdk/storage/git-store-README.md
   - ks:docs/README.md
   - ks:docs/aggregations/README-AGGREGATIONS.md
 ---
