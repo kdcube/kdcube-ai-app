@@ -441,6 +441,120 @@ async def test_compaction_preserves_internal_notes_after_summary(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_compaction_caps_preserved_internal_notes(monkeypatch):
+    async def _fake_summary(*args, **kwargs):
+        return "SUMMARY"
+
+    async def _fake_prefix(*args, **kwargs):
+        return "PREFIX"
+
+    import kdcube_ai_app.apps.chat.sdk.tools.backends.summary.conv_progressive_summary as summary_mod
+
+    monkeypatch.setattr(summary_mod, "summarize_context_blocks_progressive", _fake_summary)
+    monkeypatch.setattr(summary_mod, "summarize_turn_prefix_progressive", _fake_prefix)
+
+    runtime = RuntimeCtx(turn_id="turn_live", max_tokens=80)
+    tl = Timeline(runtime=runtime, svc=object())
+    old_turn_blocks = [
+        _blk(btype="turn.header", text="[TURN turn_old]", turn_id="turn_old"),
+        _blk(btype="user.prompt", text="old ask" * 20, turn_id="turn_old"),
+    ]
+    for idx in range(45):
+        old_turn_blocks.append(
+            {
+                "type": "react.note",
+                "author": "react",
+                "turn_id": "turn_old",
+                "ts": f"2026-02-09T00:{idx:02d}:00Z",
+                "path": f"fi:turn_old.files/memory/note-{idx}.md",
+                "text": f"[K] note {idx}",
+                "meta": {"channel": "internal"},
+            }
+        )
+    blocks = [
+        *old_turn_blocks,
+        _blk(btype="assistant.completion", text="old reply" * 20, turn_id="turn_old"),
+        _blk(btype="turn.header", text="[TURN turn_live]", turn_id="turn_live"),
+        _blk(btype="user.prompt", text="new ask" * 5, turn_id="turn_live"),
+    ]
+
+    updated = await tl.sanitize_context_blocks(
+        system_text="sys",
+        blocks=blocks,
+        max_tokens=30,
+        keep_recent_turns=0,
+        force=True,
+    )
+
+    summary_idx = next(i for i, b in enumerate(updated) if b.get("type") == "conv.range.summary")
+    preserved_notes = [
+        b for i, b in enumerate(updated)
+        if i > summary_idx and isinstance(b, dict) and b.get("type") == "react.note.preserved"
+    ]
+    assert len(preserved_notes) == 32
+    preserved_texts = {(b.get("text") or "").strip() for b in preserved_notes}
+    assert "[K] note 44" in preserved_texts
+    assert "[K] note 0" not in preserved_texts
+
+
+@pytest.mark.asyncio
+async def test_compaction_rewrites_preferences_into_summary(monkeypatch):
+    async def _fake_summary(*args, **kwargs):
+        return "SUMMARY"
+
+    async def _fake_prefix(*args, **kwargs):
+        return "PREFIX"
+
+    import kdcube_ai_app.apps.chat.sdk.tools.backends.summary.conv_progressive_summary as summary_mod
+
+    monkeypatch.setattr(summary_mod, "summarize_context_blocks_progressive", _fake_summary)
+    monkeypatch.setattr(summary_mod, "summarize_turn_prefix_progressive", _fake_prefix)
+
+    runtime = RuntimeCtx(turn_id="turn_live", max_tokens=80)
+    tl = Timeline(runtime=runtime, svc=object())
+    blocks = [
+        _blk(btype="turn.header", text="[TURN turn_old]", turn_id="turn_old"),
+        _blk(btype="user.prompt", text="old ask" * 20, turn_id="turn_old"),
+        {
+            "type": "react.note",
+            "author": "react",
+            "turn_id": "turn_old",
+            "ts": "2026-02-09T00:01:00Z",
+            "path": "fi:turn_old.files/memory/preferences.md",
+            "text": "[P] User prefers direct answers with no product pitch unless asked.",
+            "meta": {"channel": "internal"},
+        },
+        {
+            "type": "react.note",
+            "author": "react",
+            "turn_id": "turn_old",
+            "ts": "2026-02-09T00:02:00Z",
+            "path": "fi:turn_old.files/memory/preferences.md",
+            "text": "[P] User prefers concise answers and product positioning only when relevant.",
+            "meta": {"channel": "internal"},
+        },
+        _blk(btype="assistant.completion", text="old reply" * 20, turn_id="turn_old"),
+        _blk(btype="turn.header", text="[TURN turn_live]", turn_id="turn_live"),
+        _blk(btype="user.prompt", text="new ask" * 5, turn_id="turn_live"),
+    ]
+
+    updated = await tl.sanitize_context_blocks(
+        system_text="sys",
+        blocks=blocks,
+        max_tokens=30,
+        keep_recent_turns=0,
+        force=True,
+    )
+
+    summary_block = next(b for b in updated if b.get("type") == "conv.range.summary")
+    summary_text = (summary_block.get("text") or "").strip()
+    assert "[INTERNAL MEMORY DIGEST]" in summary_text
+    assert "Active conversation preferences:" in summary_text
+    assert "product positioning only when relevant" in summary_text
+    assert "no product pitch unless asked" not in summary_text
+
+
+@pytest.mark.asyncio
 async def test_compaction_preserves_external_turn_events_after_summary(monkeypatch):
     async def _fake_summary(*args, **kwargs):
         return "SUMMARY"

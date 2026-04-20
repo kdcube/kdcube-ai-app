@@ -30,6 +30,9 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.layout import (
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.plan import (
     latest_plan_block_by_id,
 )
+from kdcube_ai_app.apps.chat.sdk.solutions.react.compaction_memory import (
+    build_internal_note_compaction_result,
+)
 
 TIMELINE_KIND = "conv.timeline.v1"
 SOURCES_POOL_KIND = "conv:sources_pool"
@@ -1659,25 +1662,6 @@ class Timeline:
         idx = self._find_last_summary_index(blocks)
         return list(blocks[idx:]) if idx >= 0 else list(blocks)
 
-    def _clone_preserved_internal_note_block(
-        self,
-        *,
-        block: Dict[str, Any],
-        preserved_path: str,
-        source_path: str,
-    ) -> Dict[str, Any]:
-        cloned = dict(block or {})
-        meta = dict(cloned.get("meta") or {})
-        meta.pop("replacement_text", None)
-        meta["source_path"] = source_path
-        meta["preserved_by_compaction"] = True
-        cloned["type"] = "react.note.preserved"
-        cloned["path"] = preserved_path
-        cloned["hidden"] = False
-        cloned.pop("replacement_text", None)
-        cloned["meta"] = meta
-        return cloned
-
     def _clone_preserved_external_event_block(
         self,
         *,
@@ -1700,48 +1684,6 @@ class Timeline:
         cloned.pop("replacement_text", None)
         cloned["meta"] = meta
         return cloned
-
-    def _build_compacted_internal_note_blocks(
-        self,
-        *,
-        blocks: List[Dict[str, Any]],
-        turn_id: str,
-    ) -> List[Dict[str, Any]]:
-        entries: Dict[str, Dict[str, Any]] = {}
-        for order, blk in enumerate(blocks or []):
-            if not isinstance(blk, dict):
-                continue
-            btype = (blk.get("type") or "").strip()
-            if btype not in {"react.note", "react.note.preserved"}:
-                continue
-            text = (blk.get("text") or "").strip() if isinstance(blk.get("text"), str) else ""
-            if not text:
-                continue
-            meta = blk.get("meta") if isinstance(blk.get("meta"), dict) else {}
-            source_path = (meta.get("source_path") or blk.get("path") or "").strip()
-            key = source_path or text
-            entries[key] = {
-                "order": order,
-                "block": blk,
-                "source_path": source_path,
-            }
-        if not entries:
-            return []
-        ordered = sorted(entries.values(), key=lambda item: int(item.get("order") or 0))
-        preserved: List[Dict[str, Any]] = []
-        for idx, entry in enumerate(ordered, start=1):
-            blk = entry.get("block") if isinstance(entry.get("block"), dict) else None
-            if not blk:
-                continue
-            preserved_path = f"ar:{turn_id}.react.note.preserved.{idx}" if turn_id else ""
-            preserved.append(
-                self._clone_preserved_internal_note_block(
-                    block=blk,
-                    preserved_path=preserved_path,
-                    source_path=str(entry.get("source_path") or "").strip(),
-                )
-            )
-        return preserved
 
     def _build_compacted_external_event_blocks(
         self,
@@ -2073,20 +2015,23 @@ class Timeline:
         if is_split_turn and split_turn_id:
             meta["split_turn_id"] = split_turn_id
 
+        internal_note_compaction = build_internal_note_compaction_result(
+            blocks=compacted_blocks,
+            turn_id=summary_turn_id or self.runtime.turn_id or "",
+            summary_text=summary,
+        )
+
         summary_block = self._block(
             type="conv.range.summary",
             author="system",
             turn_id=summary_turn_id,
             ts="",
-            text=summary,
+            text=internal_note_compaction.summary_text,
             path=(f"su:{summary_turn_id}.conv.range.summary" if summary_turn_id else ""),
             meta=meta,
         )
 
-        note_preserved_blocks = self._build_compacted_internal_note_blocks(
-            blocks=compacted_blocks,
-            turn_id=summary_turn_id or self.runtime.turn_id or "",
-        )
+        note_preserved_blocks = internal_note_compaction.preserved_blocks
         external_event_preserved_blocks = self._build_compacted_external_event_blocks(
             blocks=compacted_blocks,
             turn_id=summary_turn_id or self.runtime.turn_id or "",
