@@ -197,9 +197,9 @@ what is incomplete.
 | `--latest` | With `--descriptors-location`, resolve the latest platform release instead of using `assembly.yaml -> platform.ref`. |
 | `--upstream` | With `--descriptors-location` and `--build`, use the latest upstream repo state (`origin/main`) instead of a released platform ref. |
 | `--release <ref>` | With `--descriptors-location`, use the given platform release instead of `assembly.yaml -> platform.ref`. |
-| `--bundle-reload <bundle_id>` | Reapply the mounted bundle descriptor and clear proc bundle caches for local development. |
-| `--export-live-bundles` | Export effective live `bundles.yaml` and `bundles.secrets.yaml` from the active bundle authority: mounted local descriptors when present, otherwise AWS SM grouped bundle docs. |
-| `--tenant <id>` / `--project <id>` | Scope for `--export-live-bundles` when exporting from AWS SM. Ignored when mounted local descriptors are exported directly. |
+| `--bundle-reload <bundle_id>` | Reapply `config/bundles.yaml` from the active runtime workspace and clear proc bundle caches for local development. |
+| `--export-live-bundles` | Export effective live `bundles.yaml` and `bundles.secrets.yaml` from the active bundle authority: workspace descriptors when present, otherwise AWS SM grouped bundle docs. |
+| `--tenant <id>` / `--project <id>` | Scope for `--export-live-bundles` when exporting from AWS SM. Ignored when workspace descriptors are exported directly. |
 | `--out-dir <dir>` | Output directory for `--export-live-bundles`. |
 | `--aws-region <region>` | AWS region for `--export-live-bundles` when exporting from AWS SM. |
 | `--aws-profile <profile>` | AWS profile for `--export-live-bundles` when exporting from AWS SM. |
@@ -480,13 +480,13 @@ with that path so it is reused on subsequent runs.
 Note: secrets descriptors are **not** prefilled or cached.
 
 The CLI stages `bundles.yaml` into the workdir and, when enabled:
-- mounts `bundles.yaml` as `/config/bundles.yaml`
+- mounts the runtime workspace `config/` directory at `/config`
 - sets `BUNDLES_PRELOAD_ON_START=1` in `.env.proc` by default
 - enables bundle git resolution and env sync on startup
 
 Current proc behavior:
 
-- mounted `bundles.yaml` is the normal bundle descriptor authority
+- `config/bundles.yaml` is the normal bundle descriptor authority
 - proc can seed/reset from that descriptor directly
 
 Local bundle root contract:
@@ -513,10 +513,8 @@ Symlink note:
 - safest local pattern: keep the real bundle folder inside `HOST_BUNDLES_PATH`, or symlink only to another host path that is already accessible through the same Docker file-sharing scope
 
 `bundles.secrets.yaml` is staged into the workdir only when it is provided.
-If `assembly.yaml -> secrets.provider == "secrets-file"`, it is also mounted as
-`/config/bundles.secrets.yaml` and used via:
-
-- `BUNDLE_SECRETS_YAML=file:///config/bundles.secrets.yaml`
+If `assembly.yaml -> secrets.provider == "secrets-file"`, runtime resolves it
+from `/config/bundles.secrets.yaml` via `PLATFORM_DESCRIPTORS_DIR=/config`.
 
 Example (`bundles.yaml`):
 ```yaml
@@ -574,15 +572,14 @@ References:
 
 ### Secrets descriptor (optional)
 You can provide a `secrets.yaml` path in the wizard (or via `KDCUBE_SECRETS_DESCRIPTOR_PATH`).
-The CLI stages this file into the workdir.
+The CLI stages this file into the runtime workspace `config/` directory.
 
 It is used:
 - to prefill runtime secrets (OpenAI/Anthropic/Brave/Git HTTP token and delegated Cognito client secret) during guided setup
 - or as the runtime secrets source when `assembly.yaml -> secrets.provider == "secrets-file"`
 
-In `secrets-file` mode the CLI mounts it as `/config/secrets.yaml` and writes:
-
-- `GLOBAL_SECRETS_YAML=file:///config/secrets.yaml`
+In `secrets-file` mode runtime resolves `/config/secrets.yaml` via
+`PLATFORM_DESCRIPTORS_DIR=/config`.
 
 Values injected through the `secrets-service` flow are still **not** written to `.env.proc`.
 
@@ -596,8 +593,8 @@ Reference:
 
 ### Gateway config descriptor (optional)
 You can provide a `gateway.yaml` path in the wizard (or via `KDCUBE_GATEWAY_DESCRIPTOR_PATH`).
-The CLI stages it into `workdir/config`, mounts it as `/config/gateway.yaml`,
-and points runtime at `/config` via `PLATFORM_DESCRIPTORS_DIR`.
+The CLI stages it into `workdir/config` and points runtime at `/config` via
+`PLATFORM_DESCRIPTORS_DIR`.
 
 In current descriptor mode, gateway policy authority is therefore the staged
 workspace descriptor, not a copied field-by-field block in the service env
