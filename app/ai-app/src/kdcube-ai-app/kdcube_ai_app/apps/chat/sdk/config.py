@@ -370,6 +370,27 @@ async def set_bundle_prop(
     tenant: str | None = None,
     project: str | None = None,
 ) -> None:
+    tail = str(key or "").strip().strip(".")
+    if not tail:
+        raise ValueError("Bundle prop key path is empty")
+    patch: dict[str, Any] = {}
+    _set_nested_value(patch, tail, value)
+    await set_bundle_props(
+        patch,
+        bundle_id=bundle_id,
+        tenant=tenant,
+        project=project,
+    )
+
+
+async def set_bundle_props(
+    patch: dict[str, Any],
+    *,
+    bundle_id: str | None = None,
+    tenant: str | None = None,
+    project: str | None = None,
+    replace: bool = False,
+) -> None:
     resolved_bundle_id, resolved_tenant, resolved_project = _resolve_current_bundle_scope(
         bundle_id=bundle_id,
         tenant=tenant,
@@ -384,30 +405,31 @@ async def set_bundle_prop(
 
     from kdcube_ai_app.infra.redis.client import get_async_redis_client
     from kdcube_ai_app.infra.plugin.bundle_store import (
-        get_bundle_props as _store_get_bundle_props,
+        patch_bundle_props as _store_patch_bundle_props,
         put_bundle_props as _store_put_bundle_props,
     )
 
-    tail = str(key or "").strip().strip(".")
-    if not tail:
-        raise ValueError("Bundle prop key path is empty")
+    if not isinstance(patch, dict):
+        raise TypeError("Bundle props patch must be a dict")
 
     redis = get_async_redis_client(get_settings().REDIS_URL)
-    current = await _store_get_bundle_props(
-        redis,
-        tenant=resolved_tenant,
-        project=resolved_project,
-        bundle_id=resolved_bundle_id,
-    )
-    props = dict(current or {})
-    _set_nested_value(props, tail, value)
-    await _store_put_bundle_props(
-        redis,
-        tenant=resolved_tenant,
-        project=resolved_project,
-        bundle_id=resolved_bundle_id,
-        props=props,
-    )
+    if replace:
+        props = dict(patch or {})
+        await _store_put_bundle_props(
+            redis,
+            tenant=resolved_tenant,
+            project=resolved_project,
+            bundle_id=resolved_bundle_id,
+            props=props,
+        )
+    else:
+        await _store_patch_bundle_props(
+            redis,
+            tenant=resolved_tenant,
+            project=resolved_project,
+            bundle_id=resolved_bundle_id,
+            props_patch=dict(patch or {}),
+        )
 
 
 def delete_user_prop(

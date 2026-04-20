@@ -53,6 +53,7 @@ from kdcube_ai_app.infra.plugin.bundle_store import (
     BundleEntry,
     describe_authoritative_bundle_store,
     get_bundle_props as store_get_bundle_props,
+    patch_bundle_props as store_patch_bundle_props,
     put_bundle_props as store_put_bundle_props,
 )
 from kdcube_ai_app.infra.plugin.agentic_loader import (
@@ -1005,13 +1006,16 @@ async def set_bundle_props(
     props.pop("bundle_version", None)
 
     if payload.op == "merge":
-        current = await store_get_bundle_props(
+        await store_patch_bundle_props(
             redis,
             tenant=tenant_id,
             project=project_id,
             bundle_id=bundle_id,
+            props_patch=props,
+            actor=session.username or session.user_id or "unknown",
+            source="admin",
         )
-        props = _deep_merge_props(current, props)
+        return {"status": "ok", "bundle_id": bundle_id, "tenant": tenant_id, "project": project_id}
     elif payload.op != "replace":
         raise HTTPException(status_code=400, detail="Invalid op; use 'replace' or 'merge'")
 

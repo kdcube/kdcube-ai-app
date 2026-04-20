@@ -1,5 +1,7 @@
 import fnmatch
+import asyncio
 import json
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -13,24 +15,54 @@ class _FakeRedis:
     def __init__(self):
         self.data = {}
         self.published = []
+        self.expiry = {}
+
+    def _purge_expired(self):
+        now = time.time()
+        expired = [key for key, ts in self.expiry.items() if ts <= now]
+        for key in expired:
+            self.expiry.pop(key, None)
+            self.data.pop(key, None)
 
     async def get(self, key):
+        self._purge_expired()
         return self.data.get(key)
 
     async def set(self, key, value, *args, **kwargs):
+        self._purge_expired()
+        if kwargs.get("nx") and key in self.data:
+            return False
         self.data[key] = value
+        ttl = kwargs.get("ex")
+        if ttl:
+            self.expiry[key] = time.time() + float(ttl)
+        else:
+            self.expiry.pop(key, None)
         return True
 
     async def delete(self, key):
+        self._purge_expired()
         self.data.pop(key, None)
+        self.expiry.pop(key, None)
         return 1
 
     async def keys(self, pattern):
+        self._purge_expired()
         return [key for key in self.data.keys() if fnmatch.fnmatch(key, pattern)]
 
     async def publish(self, channel, message):
         self.published.append((channel, message))
         return 1
+
+    async def eval(self, script, numkeys, *args):
+        del script, numkeys
+        key = args[0]
+        token = args[1]
+        current = await self.get(key)
+        if current == token:
+            await self.delete(key)
+            return 1
+        return 0
 
 
 class _FakeAuthoritativeStore:
@@ -392,6 +424,72 @@ async def test_put_bundle_props_publishes_props_update(monkeypatch):
     assert payload["project"] == project
     assert payload["updated_by"] == "tester"
     assert payload["source"] == "unit-test"
+
+
+@pytest.mark.asyncio
+async def test_patch_bundle_props_serializes_concurrent_writers(monkeypatch):
+    redis = _FakeRedis()
+    tenant = "demo"
+    project = "demo-project"
+    bundle_id = "demo.bundle"
+
+    reg = bundle_store.BundlesRegistry(
+        default_bundle_id=bundle_id,
+        bundles={
+            bundle_id: bundle_store.BundleEntry(
+                id=bundle_id,
+                path="/bundles/demo.bundle",
+                module="entrypoint",
+            )
+        },
+    )
+    store = _FakeAuthoritativeStore(reg=reg)
+
+    monkeypatch.setattr(bundle_store, "_merge_example_bundles", lambda reg: (reg, False))
+    monkeypatch.setattr(bundle_store, "_get_authoritative_bundle_store", lambda tenant, project: store)
+
+    await bundle_store.save_registry(redis, reg, tenant=tenant, project=project)
+    await bundle_store.put_bundle_props(
+        redis,
+        tenant=tenant,
+        project=project,
+        bundle_id=bundle_id,
+        props={"feature": {"enabled": True}},
+    )
+
+    original_put_locked = bundle_store._put_bundle_props_locked
+
+    async def _delayed_put_locked(*args, **kwargs):
+        await asyncio.sleep(0.05)
+        return await original_put_locked(*args, **kwargs)
+
+    monkeypatch.setattr(bundle_store, "_put_bundle_props_locked", _delayed_put_locked)
+
+    await asyncio.gather(
+        bundle_store.patch_bundle_props(
+            redis,
+            tenant=tenant,
+            project=project,
+            bundle_id=bundle_id,
+            props_patch={"feature": {"flag_a": True}},
+        ),
+        bundle_store.patch_bundle_props(
+            redis,
+            tenant=tenant,
+            project=project,
+            bundle_id=bundle_id,
+            props_patch={"feature": {"flag_b": True}},
+        ),
+    )
+
+    props_key = bundle_store._props_key(tenant=tenant, project=project, bundle_id=bundle_id)
+    assert json.loads(redis.data[props_key]) == {
+        "feature": {
+            "enabled": True,
+            "flag_a": True,
+            "flag_b": True,
+        }
+    }
 
 
 @pytest.mark.asyncio
