@@ -310,12 +310,12 @@ You can provide a **bundles descriptor** (`bundles.yaml`) and an optional
 to configure bundles and bundle secrets.
 
 When provided, the CLI:
-- mounts `bundles.yaml` as `/config/bundles.yaml`
+- mounts the runtime workspace `config/` directory at `/config`
 - injects secrets from `bundles.secrets.yaml` into the secrets sidecar
 
 Current proc behavior:
 
-- mounted `bundles.yaml` is the normal bundle descriptor authority
+- `config/bundles.yaml` is the normal bundle descriptor authority
 - proc can seed/reset from that descriptor directly
 
 Local bundle root contract:
@@ -371,10 +371,8 @@ In `secrets-file` mode, the CLI mounts:
 - `/config/secrets.yaml`
 - `/config/bundles.secrets.yaml`
 
-and writes:
-
-- `GLOBAL_SECRETS_YAML=file:///config/secrets.yaml`
-- `BUNDLE_SECRETS_YAML=file:///config/bundles.secrets.yaml`
+Runtime resolves those files from the staged workspace descriptor directory via
+`PLATFORM_DESCRIPTORS_DIR=/config`.
 
 See: [docs/service/configuration/secrets-descriptor-README.md](../configuration/secrets-descriptor-README.md)
 
@@ -384,8 +382,7 @@ uses it as the runtime descriptor authority for gateway policy.
 
 In current descriptor mode:
 
-- main `.env` points `HOST_GATEWAY_YAML_DESCRIPTOR_PATH` at the staged file
-- runtime mounts it at `/config/gateway.yaml`
+- compose mounts the runtime workspace `config/` directory at `/config`
 - `.env.ingress`, `.env.proc`, and `.env.metrics` point runtime to `/config`
   via `PLATFORM_DESCRIPTORS_DIR=/config`
 
@@ -432,7 +429,7 @@ You can also pre‑seed paths and flags via environment variables:
 | `KDCUBE_BUNDLES_SECRETS_PATH` | Path to `bundles.secrets.yaml` (used to inject secrets). |
 | `KDCUBE_USE_BUNDLES_DESCRIPTOR` | `1/0` to apply bundles descriptor. |
 | `KDCUBE_USE_BUNDLES_SECRETS` | `1/0` to apply bundles secrets. |
-| `KDCUBE_GATEWAY_DESCRIPTOR_PATH` | Path to `gateway.yaml` (copied into workdir config and mounted at `/config/gateway.yaml`). |
+| `KDCUBE_GATEWAY_DESCRIPTOR_PATH` | Path to `gateway.yaml` (copied into workdir config). |
 | `KDCUBE_CLI_NONINTERACTIVE` | Internal installer flag. Prompt helpers use defaults instead of asking. The CLI sets this automatically for the descriptor fast path. |
 
 ---

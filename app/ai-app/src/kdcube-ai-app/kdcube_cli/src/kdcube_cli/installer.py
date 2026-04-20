@@ -194,6 +194,16 @@ def comment_env_key(env_file: EnvFile, key: str, fallback_value: Optional[str] =
         env_file.entries = parse_env(env_file.lines)
 
 
+def remove_env_key(env_file: EnvFile, key: str) -> None:
+    active_re = re.compile(rf"^({re.escape(key)})=(.*)$")
+    commented_re = re.compile(rf"^#\s*({re.escape(key)})=(.*)$")
+    env_file.lines = [
+        line for line in env_file.lines
+        if not active_re.match(line) and not commented_re.match(line)
+    ]
+    env_file.entries = parse_env(env_file.lines)
+
+
 def update_if_placeholder(env_file: EnvFile, key: str, value: str) -> None:
     current = env_file.entries.get(key, (None, None))[1]
     if is_placeholder(current):
@@ -2012,10 +2022,6 @@ def gather_configuration(
             host_exec_local,
         )
 
-    if assembly_path:
-        update_env_value(env_main, "KDCUBE_ASSEMBLY_DESCRIPTOR_PATH", str(assembly_path))
-        _autosave()
-
     if gateway_data:
         for env in (env_ingress, env_proc, env_metrics):
             replace_multiline_block(env, "GATEWAY_CONFIG_JSON", _format_json_multiline("GATEWAY_CONFIG_JSON", gateway_data))
@@ -2873,6 +2879,16 @@ def gather_configuration(
     update_env_value(env_main, "KDCUBE_DATA_DIR", str(ctx.data_dir))
     # Always keep logs in the workdir for compose mounts.
     update_env_value(env_main, "KDCUBE_LOGS_DIR", str(ctx.workdir / "logs"))
+    for obsolete_key in (
+        "KDCUBE_ASSEMBLY_DESCRIPTOR_PATH",
+        "HOST_ASSEMBLY_YAML_DESCRIPTOR_PATH",
+        "HOST_BUNDLE_DESCRIPTOR_PATH",
+        "HOST_BUNDLES_DESCRIPTOR_PATH",
+        "HOST_SECRETS_YAML_DESCRIPTOR_PATH",
+        "HOST_BUNDLES_SECRETS_YAML_DESCRIPTOR_PATH",
+        "HOST_GATEWAY_YAML_DESCRIPTOR_PATH",
+    ):
+        remove_env_key(env_main, obsolete_key)
     if descriptor_workspace_mode:
         update_env_value(env_main, "AGENTIC_BUNDLES_ROOT", "/bundles")
         update_env_value(env_main, "AGENTIC_GIT_BUNDLES_ROOT", "/git-bundles")
@@ -2940,31 +2956,6 @@ def gather_configuration(
             _apply_service_descriptor_env(env_file, service_block.get("service"))
 
     _autosave()
-
-    # Mount descriptors independently from bundle-registry selection so runtime
-    # code can read /config/assembly.yaml and /config/bundles.yaml directly.
-    if bundles_path:
-        update_env_value(env_main, "HOST_BUNDLES_DESCRIPTOR_PATH", str(bundles_path))
-    else:
-        update_env_value(env_main, "HOST_BUNDLES_DESCRIPTOR_PATH", "/dev/null")
-
-    if release_descriptor_path:
-        update_env_value(env_main, "HOST_ASSEMBLY_YAML_DESCRIPTOR_PATH", release_descriptor_path)
-    else:
-        update_env_value(env_main, "HOST_ASSEMBLY_YAML_DESCRIPTOR_PATH", "/dev/null")
-    if secrets_provider == "secrets-file" and secrets_descriptor_path:
-        update_env_value(env_main, "HOST_SECRETS_YAML_DESCRIPTOR_PATH", secrets_descriptor_path)
-    else:
-        update_env_value(env_main, "HOST_SECRETS_YAML_DESCRIPTOR_PATH", "/dev/null")
-    if secrets_provider == "secrets-file" and bundles_secrets_path:
-        update_env_value(env_main, "HOST_BUNDLES_SECRETS_YAML_DESCRIPTOR_PATH", bundles_secrets_path)
-    else:
-        update_env_value(env_main, "HOST_BUNDLES_SECRETS_YAML_DESCRIPTOR_PATH", "/dev/null")
-    gateway_descriptor_path = str((ctx.config_dir / "gateway.yaml").resolve()) if gateway_data else ""
-    if gateway_descriptor_path:
-        update_env_value(env_main, "HOST_GATEWAY_YAML_DESCRIPTOR_PATH", gateway_descriptor_path)
-    else:
-        update_env_value(env_main, "HOST_GATEWAY_YAML_DESCRIPTOR_PATH", "/dev/null")
 
     if use_bundles_descriptor is None and bundles_path:
         use_bundles_descriptor = True
@@ -3628,14 +3619,21 @@ def run_setup(
         existing_mode = env_existing.entries.get("KDCUBE_COMPOSE_MODE", (None, None))[1]
         if existing_mode:
             compose_mode = existing_mode.strip()
-        existing_descriptor = env_existing.entries.get("HOST_ASSEMBLY_YAML_DESCRIPTOR_PATH", (None, None))[1]
-        if not existing_descriptor or is_placeholder(existing_descriptor):
-            existing_descriptor = env_existing.entries.get("HOST_BUNDLE_DESCRIPTOR_PATH", (None, None))[1]
-        if existing_descriptor and not is_placeholder(existing_descriptor):
-            release_descriptor_path = existing_descriptor
-        existing_bundles = env_existing.entries.get("HOST_BUNDLES_DESCRIPTOR_PATH", (None, None))[1]
-        if existing_bundles and not is_placeholder(existing_bundles):
-            bundles_descriptor_path = existing_bundles
+        existing_assembly = (config_dir / "assembly.yaml").resolve()
+        existing_secrets = (config_dir / "secrets.yaml").resolve()
+        existing_bundles = (config_dir / "bundles.yaml").resolve()
+        existing_bundles_secrets = (config_dir / "bundles.secrets.yaml").resolve()
+        existing_gateway = (config_dir / "gateway.yaml").resolve()
+        if existing_assembly.exists():
+            release_descriptor_path = str(existing_assembly)
+        if existing_secrets.exists():
+            secrets_descriptor_path = str(existing_secrets)
+        if existing_bundles.exists():
+            bundles_descriptor_path = str(existing_bundles)
+        if existing_bundles_secrets.exists():
+            bundles_secrets_path = str(existing_bundles_secrets)
+        if existing_gateway.exists():
+            gateway_descriptor_path = str(existing_gateway)
     if env_descriptor and (use_descriptor_bundles or use_descriptor_frontend or use_descriptor_platform):
         release_descriptor_path = env_descriptor
 
@@ -3828,16 +3826,11 @@ def run_setup(
     console.print(f"  UI_BUILD_CONTEXT={ui_ctx}")
     console.print(f"  PROXY_BUILD_CONTEXT={proxy_ctx}")
 
-    bundles_host = env_main.entries.get("HOST_BUNDLES_DESCRIPTOR_PATH", (None, None))[1]
-    assembly_host = env_main.entries.get("HOST_ASSEMBLY_YAML_DESCRIPTOR_PATH", (None, None))[1]
-    if bundles_host or assembly_host:
-        console.print("\n[dim]Descriptor files (host -> container):[/dim]")
-        if bundles_host and not is_placeholder(bundles_host) and bundles_host not in {"", "/dev/null"}:
-            exists = "exists" if Path(bundles_host).exists() else "missing"
-            console.print(f"  bundles.yaml: {bundles_host} ({exists}) -> /config/bundles.yaml")
-        if assembly_host and not is_placeholder(assembly_host) and assembly_host not in {"", "/dev/null"}:
-            exists = "exists" if Path(assembly_host).exists() else "missing"
-            console.print(f"  assembly.yaml: {assembly_host} ({exists}) -> /config/assembly.yaml")
+    console.print("\n[dim]Workspace descriptors:[/dim]")
+    for name in CANONICAL_DESCRIPTOR_FILENAMES:
+        path = config_dir / name
+        if path.exists():
+            console.print(f"  {name}: {path}")
 
     console.print("\n[dim]Small coffee break:[/dim] ☕\n")
 

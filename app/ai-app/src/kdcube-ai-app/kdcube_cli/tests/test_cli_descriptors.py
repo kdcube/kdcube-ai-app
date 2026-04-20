@@ -527,8 +527,8 @@ def test_gather_configuration_accepts_descriptor_secret_paths(monkeypatch, tmp_p
     )
 
     env_main = (config_dir / ".env").read_text()
-    assert f"HOST_SECRETS_YAML_DESCRIPTOR_PATH={secrets_path}" in env_main
-    assert f"HOST_BUNDLES_SECRETS_YAML_DESCRIPTOR_PATH={bundles_secrets_path}" in env_main
+    assert "HOST_SECRETS_YAML_DESCRIPTOR_PATH=" not in env_main
+    assert "HOST_BUNDLES_SECRETS_YAML_DESCRIPTOR_PATH=" not in env_main
     assert (tmp_path / "kdcube-storage").is_dir()
     assert (tmp_path / "bundles").is_dir()
     assert (tmp_path / "git-bundles").is_dir()
@@ -1040,12 +1040,13 @@ def test_gather_configuration_keeps_proc_and_ingress_env_minimal_for_user_descri
         "GATEWAY_COMPONENT=proc",
         "PLATFORM_DESCRIPTORS_DIR=/config",
     ]
-    assert f"HOST_GATEWAY_YAML_DESCRIPTOR_PATH={config_dir / 'gateway.yaml'}" in env_main
+    assert "HOST_GATEWAY_YAML_DESCRIPTOR_PATH=" not in env_main
     assert f"HOST_KDCUBE_STORAGE_PATH={(tmp_path / 'kdcube-storage').resolve()}" in env_main
     assert f"HOST_BUNDLES_PATH={(tmp_path / 'bundles-root').resolve()}" in env_main
     assert f"HOST_GIT_BUNDLES_PATH={(tmp_path / 'git-bundles').resolve()}" in env_main
     assert f"HOST_BUNDLE_STORAGE_PATH={(tmp_path / 'bundle-storage').resolve()}" in env_main
     assert f"HOST_EXEC_WORKSPACE_PATH={(tmp_path / 'exec-workspace').resolve()}" in env_main
+    assert f"KDCUBE_CONFIG_DIR={config_dir}" in env_main
     assert "AGENTIC_BUNDLES_ROOT=/bundles" in env_main
     assert "AGENTIC_GIT_BUNDLES_ROOT=/git-bundles" in env_main
     assert "BUNDLE_STORAGE_ROOT=/bundle-storage" in env_main

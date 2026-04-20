@@ -69,26 +69,7 @@ services:
     volumes:
       - ${KDCUBE_DATA_DIR:-./data}/kdcube-storage:/kdcube-storage
       - ${KDCUBE_LOGS_DIR:-./logs}/chat-ingress:/logs
-      - type: bind
-        source: ${HOST_ASSEMBLY_YAML_DESCRIPTOR_PATH:-/dev/null}
-        target: /config/assembly.yaml
-        read_only: true
-      - type: bind
-        source: ${HOST_BUNDLES_DESCRIPTOR_PATH:-/dev/null}
-        target: /config/bundles.yaml
-        read_only: true
-      - type: bind
-        source: ${HOST_SECRETS_YAML_DESCRIPTOR_PATH:-/dev/null}
-        target: /config/secrets.yaml
-        read_only: true
-      - type: bind
-        source: ${HOST_BUNDLES_SECRETS_YAML_DESCRIPTOR_PATH:-/dev/null}
-        target: /config/bundles.secrets.yaml
-        read_only: true
-      - type: bind
-        source: ${HOST_GATEWAY_YAML_DESCRIPTOR_PATH:-/dev/null}
-        target: /config/gateway.yaml
-        read_only: true
+      - ${KDCUBE_CONFIG_DIR:-.}:/config
       - type: bind
         source: ${HOST_GIT_BUNDLES_PATH?}
         target: ${AGENTIC_GIT_BUNDLES_ROOT:-/git-bundles}
@@ -131,26 +112,7 @@ services:
       - ${KDCUBE_DATA_DIR:-./data}/kdcube-storage:/kdcube-storage
       - ${KDCUBE_DATA_DIR:-./data}/exec-workspace:/exec-workspace
       - ${KDCUBE_LOGS_DIR:-./logs}/chat-proc:/logs
-      - type: bind
-        source: ${HOST_ASSEMBLY_YAML_DESCRIPTOR_PATH:-/dev/null}
-        target: /config/assembly.yaml
-        read_only: true
-      - type: bind
-        source: ${HOST_BUNDLES_DESCRIPTOR_PATH:-/dev/null}
-        target: /config/bundles.yaml
-        read_only: true
-      - type: bind
-        source: ${HOST_SECRETS_YAML_DESCRIPTOR_PATH:-/dev/null}
-        target: /config/secrets.yaml
-        read_only: true
-      - type: bind
-        source: ${HOST_BUNDLES_SECRETS_YAML_DESCRIPTOR_PATH:-/dev/null}
-        target: /config/bundles.secrets.yaml
-        read_only: true
-      - type: bind
-        source: ${HOST_GATEWAY_YAML_DESCRIPTOR_PATH:-/dev/null}
-        target: /config/gateway.yaml
-        read_only: true
+      - ${KDCUBE_CONFIG_DIR:-.}:/config
       - type: bind
         source: ${HOST_BUNDLES_PATH?}           # host root with all bundles
         target: ${AGENTIC_BUNDLES_ROOT?}       # e.g. /bundles inside the container
@@ -191,26 +153,14 @@ services:
         required: false
     environment:
       - LOG_FILE_PREFIX=metrics
+      - HOST_KDCUBE_STORAGE_PATH=${HOST_KDCUBE_STORAGE_PATH}
     volumes:
+      - ${KDCUBE_CONFIG_DIR:-.}:/config
+      - ${KDCUBE_DATA_DIR:-./data}/kdcube-storage:/kdcube-storage
+      - ${KDCUBE_LOGS_DIR:-./logs}/metrics:/logs
       - type: bind
-        source: ${HOST_ASSEMBLY_YAML_DESCRIPTOR_PATH:-/dev/null}
-        target: /config/assembly.yaml
-        read_only: true
-      - type: bind
-        source: ${HOST_BUNDLES_DESCRIPTOR_PATH:-/dev/null}
-        target: /config/bundles.yaml
-        read_only: true
-      - type: bind
-        source: ${HOST_SECRETS_YAML_DESCRIPTOR_PATH:-/dev/null}
-        target: /config/secrets.yaml
-        read_only: true
-      - type: bind
-        source: ${HOST_BUNDLES_SECRETS_YAML_DESCRIPTOR_PATH:-/dev/null}
-        target: /config/bundles.secrets.yaml
-        read_only: true
-      - type: bind
-        source: ${HOST_GATEWAY_YAML_DESCRIPTOR_PATH:-/dev/null}
-        target: /config/gateway.yaml
+        source: ${HOME}/.aws
+        target: /home/appuser/.aws
         read_only: true
     networks:
       - kdcube-internal
@@ -270,6 +220,8 @@ services:
       chat-ingress:
         condition: service_started
       web-ui:
+        condition: service_started
+      metrics:
         condition: service_started
       proxylogin:
         condition: service_started
