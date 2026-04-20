@@ -108,11 +108,11 @@ Backend API routes are **not** under `routesPrefix`:
 - `HOST_BUNDLE_STORAGE_PATH` (host) → `BUNDLE_STORAGE_ROOT` (container)
 - Set `BUNDLE_STORAGE_ROOT=/bundle-storage` in `.env.proc`
 
-**Optional assembly descriptor (recommended):**
+**Workspace descriptors (recommended):**
 
-- Set `HOST_BUNDLES_DESCRIPTOR_PATH` in `.env` (host path to `bundles.yaml`)
-- Inside container it mounts to `/config/bundles.yaml`
-- proc loads that mounted `bundles.yaml` as its local bundle descriptor authority
+- Set `KDCUBE_CONFIG_DIR` in `.env` to the runtime workspace config directory
+- Compose mounts that directory into the container at `/config`
+- proc reads and updates `bundles.yaml` there as its local bundle descriptor authority
 
 ## Notes
 

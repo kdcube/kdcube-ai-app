@@ -145,11 +145,11 @@ If you use the CLI installer, it pre‑creates `./logs/chat-ingress` and
 
 This is how bundle code becomes available to the processor in this setup.
 
-**Optional assembly descriptor (recommended):**
+**Workspace descriptors (recommended):**
 
-- Set `HOST_BUNDLES_DESCRIPTOR_PATH` in `.env` (host path to `bundles.yaml`)
-- Inside container it mounts to `/config/bundles.yaml`
-- proc loads that mounted `bundles.yaml` as its local bundle descriptor authority
+- Set `KDCUBE_CONFIG_DIR` in `.env` to the runtime workspace config directory
+- Compose mounts that directory into the container at `/config`
+- proc reads and updates `bundles.yaml` there as its local bundle descriptor authority
 
 ### Rebuild Code Execution Image
 ```bash

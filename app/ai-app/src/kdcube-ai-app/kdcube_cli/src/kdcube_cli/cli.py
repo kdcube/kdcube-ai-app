@@ -394,22 +394,19 @@ def _strip_env_value(raw: str | None) -> str:
     return value.strip()
 
 
+def _runtime_config_dir(env_main: installer_mod.EnvFile) -> Path:
+    return env_main.path.parent.resolve()
+
+
 def _resolve_bundle_reload_source(env_main: installer_mod.EnvFile, env_proc: installer_mod.EnvFile) -> Path:
     del env_proc
 
-    host = _strip_env_value(env_main.entries.get("HOST_BUNDLES_DESCRIPTOR_PATH", (None, None))[1])
-    if host and host != "/dev/null":
-        return Path(host).expanduser().resolve()
-
-    legacy_assembly_host = _strip_env_value(
-        env_main.entries.get("HOST_ASSEMBLY_YAML_DESCRIPTOR_PATH", (None, None))[1]
-    )
-    if legacy_assembly_host and legacy_assembly_host != "/dev/null":
-        return Path(legacy_assembly_host).expanduser().resolve()
+    bundles_path = _runtime_config_dir(env_main) / "bundles.yaml"
+    if bundles_path.exists():
+        return bundles_path.resolve()
 
     raise SystemExit(
-        "No local bundle descriptor source is configured for this runtime. "
-        "Bundle reload expects HOST_BUNDLES_DESCRIPTOR_PATH to point at bundles.yaml."
+        f"No bundles.yaml found under the runtime config directory: {_runtime_config_dir(env_main)}"
     )
 
 
@@ -417,24 +414,15 @@ def _resolve_live_bundle_export_sources(
     env_main: installer_mod.EnvFile,
     env_proc: installer_mod.EnvFile,
 ) -> tuple[Path, Path | None] | None:
-    bundles_host = _strip_env_value(env_main.entries.get("HOST_BUNDLES_DESCRIPTOR_PATH", (None, None))[1])
-    if not bundles_host or bundles_host == "/dev/null":
+    del env_proc
+
+    config_dir = _runtime_config_dir(env_main)
+    bundles_path = (config_dir / "bundles.yaml").resolve()
+    if not bundles_path.exists():
         return None
 
-    bundles_path = Path(bundles_host).expanduser().resolve()
-    if not bundles_path.exists():
-        raise SystemExit(
-            f"Mounted bundles descriptor source not found: {bundles_path}. "
-            "The runtime env points at a local bundle descriptor authority, but the host file is missing."
-        )
-
-    bundle_secrets_raw = _strip_env_value(env_proc.entries.get("BUNDLE_SECRETS_YAML", (None, None))[1])
-    bundle_secrets_host = _strip_env_value(
-        env_main.entries.get("HOST_BUNDLES_SECRETS_YAML_DESCRIPTOR_PATH", (None, None))[1]
-    )
-    if bundle_secrets_raw and bundle_secrets_host and bundle_secrets_host != "/dev/null":
-        return bundles_path, Path(bundle_secrets_host).expanduser().resolve()
-    return bundles_path, None
+    bundles_secrets_path = (config_dir / "bundles.secrets.yaml").resolve()
+    return bundles_path, bundles_secrets_path if bundles_secrets_path.exists() else None
 
 
 def _load_bundle_ids_from_descriptor(path: Path) -> set[str]:
@@ -523,7 +511,7 @@ def reload_bundle_from_descriptor(
     _run_compose(console, cmd, cwd=ctx.docker_dir)
     console.print(
         "[green]Bundle descriptor reapplied and target bundle evicted from proc caches.[/green]\n"
-        "[dim]The next request will re-import that bundle from the mounted path.[/dim]"
+        "[dim]The next request will re-import that bundle from the runtime workspace descriptor path.[/dim]"
     )
 
 
@@ -1130,7 +1118,7 @@ def main() -> None:
     parser.add_argument(
         "--bundle-reload",
         default="",
-        help="Reapply the mounted bundle descriptor and clear proc bundle caches for local development. Validates that the given bundle id exists in the current descriptor.",
+        help="Reapply runtime workspace bundles.yaml and clear proc bundle caches for local development. Validates that the given bundle id exists in the current descriptor.",
     )
     parser.add_argument(
         "--export-live-bundles",
@@ -1140,12 +1128,12 @@ def main() -> None:
     parser.add_argument(
         "--tenant",
         default="",
-        help="Tenant for --export-live-bundles when exporting from AWS SM. Ignored for mounted local descriptor exports.",
+        help="Tenant for --export-live-bundles when exporting from AWS SM. Ignored when exporting workspace descriptors directly.",
     )
     parser.add_argument(
         "--project",
         default="",
-        help="Project for --export-live-bundles when exporting from AWS SM. Ignored for mounted local descriptor exports.",
+        help="Project for --export-live-bundles when exporting from AWS SM. Ignored when exporting workspace descriptors directly.",
     )
     parser.add_argument(
         "--out-dir",
