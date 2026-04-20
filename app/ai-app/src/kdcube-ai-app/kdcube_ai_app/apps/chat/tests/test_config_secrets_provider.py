@@ -152,22 +152,13 @@ async def test_set_bundle_secret_uses_request_context_bundle_scope(monkeypatch):
 async def test_set_bundle_prop_uses_request_context_scope_and_merges_nested_key(monkeypatch):
     calls = {}
 
-    async def _fake_get_bundle_props(redis, *, tenant, project, bundle_id):
-        calls["get"] = {
+    async def _fake_patch_bundle_props(redis, *, tenant, project, bundle_id, props_patch, actor=None, source=None):
+        calls["patch"] = {
             "redis": redis,
             "tenant": tenant,
             "project": project,
             "bundle_id": bundle_id,
-        }
-        return {"features": {"existing": True}}
-
-    async def _fake_put_bundle_props(redis, *, tenant, project, bundle_id, props, actor=None, source=None):
-        calls["put"] = {
-            "redis": redis,
-            "tenant": tenant,
-            "project": project,
-            "bundle_id": bundle_id,
-            "props": props,
+            "props_patch": props_patch,
             "actor": actor,
             "source": source,
         }
@@ -196,26 +187,92 @@ async def test_set_bundle_prop_uses_request_context_scope_and_merges_nested_key(
     import kdcube_ai_app.infra.plugin.bundle_store as bundle_store_mod
 
     monkeypatch.setattr(redis_client_mod, "get_async_redis_client", lambda url: redis_client)
-    monkeypatch.setattr(bundle_store_mod, "get_bundle_props", _fake_get_bundle_props)
-    monkeypatch.setattr(bundle_store_mod, "put_bundle_props", _fake_put_bundle_props)
+    monkeypatch.setattr(bundle_store_mod, "patch_bundle_props", _fake_patch_bundle_props)
 
     await sdk_config.set_bundle_prop("features.sync.enabled", False)
 
-    assert calls["get"] == {
+    assert calls["patch"] == {
         "redis": redis_client,
         "tenant": "ctx-tenant",
         "project": "ctx-project",
         "bundle_id": "bundle.demo",
-    }
-    assert calls["put"] == {
-        "redis": redis_client,
-        "tenant": "ctx-tenant",
-        "project": "ctx-project",
-        "bundle_id": "bundle.demo",
-        "props": {
+        "props_patch": {
             "features": {
-                "existing": True,
                 "sync": {"enabled": False},
+            }
+        },
+        "actor": None,
+        "source": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_set_bundle_props_merges_patch_and_publishes_once(monkeypatch):
+    calls = {}
+
+    async def _fake_patch_bundle_props(redis, *, tenant, project, bundle_id, props_patch, actor=None, source=None):
+        calls["patch"] = {
+            "redis": redis,
+            "tenant": tenant,
+            "project": project,
+            "bundle_id": bundle_id,
+            "props_patch": props_patch,
+            "actor": actor,
+            "source": source,
+        }
+
+    redis_client = object()
+    monkeypatch.setattr(
+        sdk_config,
+        "get_settings",
+        lambda: SimpleNamespace(
+            REDIS_URL="redis://test",
+            TENANT="settings-tenant",
+            PROJECT="settings-project",
+        ),
+    )
+    monkeypatch.setattr(
+        comm_ctx,
+        "get_current_request_context",
+        lambda: ChatTaskPayload(
+            routing=ChatTaskRouting(bundle_id="bundle.demo", session_id="s-1"),
+            actor=ChatTaskActor(tenant_id="ctx-tenant", project_id="ctx-project"),
+            user=ChatTaskUser(user_type="registered", user_id="user-1"),
+        ),
+    )
+
+    import kdcube_ai_app.infra.redis.client as redis_client_mod
+    import kdcube_ai_app.infra.plugin.bundle_store as bundle_store_mod
+
+    monkeypatch.setattr(redis_client_mod, "get_async_redis_client", lambda url: redis_client)
+    monkeypatch.setattr(bundle_store_mod, "patch_bundle_props", _fake_patch_bundle_props)
+
+    await sdk_config.set_bundle_props(
+        {
+            "subsystems": {
+                "news": {
+                    "pipeline": {
+                        "cron": "57 19 * * *",
+                        "first_run_days": 3,
+                    }
+                }
+            }
+        }
+    )
+
+    assert calls["patch"] == {
+        "redis": redis_client,
+        "tenant": "ctx-tenant",
+        "project": "ctx-project",
+        "bundle_id": "bundle.demo",
+        "props_patch": {
+            "subsystems": {
+                "news": {
+                    "pipeline": {
+                        "cron": "57 19 * * *",
+                        "first_run_days": 3,
+                    }
+                }
             }
         },
         "actor": None,
