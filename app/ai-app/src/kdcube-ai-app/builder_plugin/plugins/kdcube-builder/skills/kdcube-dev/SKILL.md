@@ -97,25 +97,32 @@ Generates all descriptors with safe local defaults (auth=simple, demo tenant/pro
 **Delegate bundle authoring to `/kdcube-builder:bundle-builder`.** That skill owns the
 canonical read order, placement rules, and authoring rules — do not duplicate them here.
 
-Before invoking it, resolve the bundle paths so the authoring step has them ready:
+Before invoking it, resolve the workdir so the authoring step has it ready:
 
 ```bash
 WORKDIR="${CLAUDE_PLUGIN_OPTION_KDCUBE_WORKDIR:-${KDCUBE_WORKDIR:-}}"
+if [ -z "$WORKDIR" ] && [ -d "$HOME/.kdcube/kdcube-runtime/config" ]; then
+  WORKDIR="$HOME/.kdcube/kdcube-runtime"
+fi
 if [ -z "$WORKDIR" ]; then
   WORKDIR=$(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/kdcube_local.py" status 2>/dev/null \
     | awk -F': +' '/^Workdir/ {print $2}' | awk '{print $1}')
 fi
-WORKDIR="${WORKDIR:-$HOME/.kdcube/kdcube-runtime}"
-grep -E "HOST_BUNDLES_PATH|AGENTIC_BUNDLES_ROOT" "$WORKDIR/config/.env"
 ```
+
+If `$WORKDIR` still resolves to nothing or `$WORKDIR/config/.env` is missing,
+**ask the user** for the workdir in one short message — do not guess.
 
 Non-negotiable rules for any bundle work:
 
-- Write bundles only under `HOST_BUNDLES_PATH/<bundle-id>/`. Never into the repo, examples
-  dir, or the user's project dir. Symlinks across Docker mounts do not work — use real
-  directories.
-- Register in `$WORKDIR/config/bundles.yaml` with the **container path** (`/bundles/<bundle-id>`),
-  not the host path.
+- The bundle directory can live anywhere on the host — `~/.kdcube/bundles/<bundle-id>/`
+  by default, or wherever the user asked (Desktop, project dir, etc.). Use a real
+  directory, not a symlink.
+- Register in `$WORKDIR/config/bundles.yaml` with the **container path**
+  (`/bundles/<bundle-id>`), not the host path.
+- If the chosen host directory is outside the current `HOST_BUNDLES_PATH` (from
+  `$WORKDIR/config/.env`), re-run `bootstrap <bundle-id> <bundle-dir>` so its parent
+  becomes the mount root, then restart. `bundle-builder` covers the mechanics.
 - Read the bundle docs and the versatile reference bundle **before** writing code — every
   time, even for small edits. Do not invent decorators or import paths.
 
@@ -142,6 +149,6 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/kdcube_local.py" verify-reload <bundle_id
 - One short status line before each action.
 - On error: show raw output, suggest the most likely fix, do not silently retry.
 - **After any container restart** (secrets injection, manual restart, etc.) — always reload active bundles immediately. Check `bundles.yaml` default_bundle_id and reload it.
-- **Before creating or editing a bundle** — resolve `HOST_BUNDLES_PATH` from `$WORKDIR/config/.env` (snippet in Bundle build flow). Bundles must live under `HOST_BUNDLES_PATH/<bundle-id>/` only, with the **container path** (`/bundles/<bundle-id>`) registered in `bundles.yaml`. Never write bundles into the repo or examples directory.
+- **Before creating or editing a bundle** — resolve `$WORKDIR` (probe `~/.kdcube/kdcube-runtime` first, then ask the user if missing). The bundle directory can live anywhere on the host; register it in `bundles.yaml` with the **container path** (`/bundles/<bundle-id>`). If the host dir is outside the current `HOST_BUNDLES_PATH`, re-bootstrap so its parent becomes the mount root.
 - **Always pair `reload` with `verify-reload`** — reload alone does not confirm the new code is live.
 - **`--secrets-prompt` is interactive** — never run it from Claude Code. Use `--secrets-set` instead.

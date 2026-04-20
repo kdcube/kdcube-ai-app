@@ -85,19 +85,37 @@ Specialized examples used when the task calls for them: `kdcube.copilot@...`
 
 ## Placement and registration rules
 
-These are non-negotiable — every reload/runtime problem in practice traces back
-to violating one of them.
-
-- **Bundles live under `HOST_BUNDLES_PATH/<bundle-id>/` on the host.** They are
-  mounted into containers at `/bundles`. Anywhere else (repo tree, examples
-  dir, user's project dir) means the runtime can't see them.
-- **Use real directories, not symlinks.** Symlinks into `HOST_BUNDLES_PATH` do
-  not work across Docker volume mounts. Copy source in; don't link it.
+- **The bundle directory can live anywhere on the host.** Default is
+  `~/.kdcube/bundles/<bundle-id>/`; Desktop, a project dir, or any other real
+  directory works equally well. The plugin mounts it into the container at
+  `/bundles/<bundle-id>`.
+- **Use real directories, not symlinks.** Symlinks do not work across Docker
+  volume mounts. Copy source in; don't link it.
 - **`bundles.yaml` `path` must be the container path** (`/bundles/<bundle-id>`),
   not the host path. A host-path entry makes `reload` succeed-looking but a
   no-op — this is the #1 silent failure.
 - **`<bundle-id>` must be filesystem-safe** and match the `id` registered in
   `bundles.yaml`.
+
+### Mount coverage
+
+The runtime mounts everything under `HOST_BUNDLES_PATH` (from
+`$WORKDIR/config/.env`) into `/bundles`. If the chosen host dir is inside
+`HOST_BUNDLES_PATH`, it is already visible. If it is **outside** (e.g. Desktop),
+re-run `bootstrap <bundle-id> <bundle-dir>` — `cmd_bootstrap` sets
+`host_bundles_path` to the bundle's parent — then restart the runtime. Prefer
+putting multiple bundles under one parent to avoid re-bootstrapping each time.
+
+## Workdir resolution
+
+Every authoring step starts by resolving the workdir:
+
+1. `CLAUDE_PLUGIN_OPTION_KDCUBE_WORKDIR` / `KDCUBE_WORKDIR`.
+2. Probe the standard dotfile location `~/.kdcube/kdcube-runtime`.
+3. Fall back to `kdcube_local.py status`.
+
+If nothing resolves, the skill **asks the user** in one short message rather
+than guessing or silently bootstrapping.
 
 ## Validation
 
