@@ -16,6 +16,7 @@ from kdcube_cli.installer import (
     apply_runtime_secrets_to_file_descriptors,
     build_ui_url,
     gather_configuration,
+    resolve_frontend_routes_prefix,
     stage_descriptor_directory,
     update_nginx_routes_prefix,
     ui_entry_path,
@@ -61,6 +62,14 @@ def test_ui_entry_path_uses_routes_prefix():
 def test_build_ui_url_uses_routes_prefix():
     assert build_ui_url("5174", "/chatbot/ciso") == "http://localhost:5174/chatbot/ciso/chat"
     assert build_ui_url("80", None) == "http://localhost/chatbot/chat"
+
+
+def test_resolve_frontend_routes_prefix_reads_generated_config(tmp_path: Path):
+    config = tmp_path / "frontend.config.delegated.json"
+    config.write_text('{"routesPrefix":"/chatbot/ciso"}')
+
+    assert resolve_frontend_routes_prefix(str(config)) == "/chatbot/ciso"
+    assert resolve_frontend_routes_prefix(str(tmp_path / "missing.json")) is None
 
 
 def test_update_nginx_routes_prefix_adds_prefix_root_redirect(tmp_path: Path):
