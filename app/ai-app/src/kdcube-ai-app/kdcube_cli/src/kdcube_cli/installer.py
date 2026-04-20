@@ -636,6 +636,19 @@ def normalize_routes_prefix(value: Optional[str]) -> str:
     return prefix
 
 
+def ui_entry_path(routes_prefix: Optional[str]) -> str:
+    prefix = normalize_routes_prefix(routes_prefix)
+    return f"{prefix}/chat" if prefix != "/" else "/chat"
+
+
+def build_ui_url(proxy_http_port: Optional[str], routes_prefix: Optional[str]) -> str:
+    entry_path = ui_entry_path(routes_prefix)
+    port = (proxy_http_port or "80").strip()
+    if port == "80":
+        return f"http://localhost{entry_path}"
+    return f"http://localhost:{port}{entry_path}"
+
+
 def normalize_domain_host(value: Optional[str], *, keep_port: bool = False) -> str:
     raw = (value or "").strip()
     if not raw:
@@ -677,6 +690,25 @@ def update_nginx_routes_prefix(path: Path, routes_prefix: str) -> None:
     except Exception:
         return
     updated = current.replace("/chatbot", routes_prefix)
+    if routes_prefix != "/":
+        exact_location = f"location = {routes_prefix} {{"
+        if exact_location not in updated:
+            root_redirect_re = re.compile(
+                r"(^[ \t]*location = / \{\s*(?:\n[ \t]*)?return 301 (?P<target>[^;]+);\s*(?:\n[ \t]*)?\})",
+                re.MULTILINE,
+            )
+
+            def _insert_prefix_redirect(match: re.Match[str]) -> str:
+                target = match.group("target")
+                redirect_block = (
+                    f"{match.group(1)}\n\n"
+                    f"        location = {routes_prefix} {{\n"
+                    f"            return 301 {target};\n"
+                    f"        }}"
+                )
+                return redirect_block
+
+            updated = root_redirect_re.sub(_insert_prefix_redirect, updated, count=1)
     if updated != current:
         path.write_text(updated)
 
@@ -4016,10 +4048,7 @@ def run_setup(
                 or env_main.entries.get("KDCUBE_UI_PORT", (None, None))[1]
                 or "80"
             )
-            if proxy_http_port == "80":
-                proxy_url = "http://localhost/chatbot/chat"
-            else:
-                proxy_url = f"http://localhost:{proxy_http_port}/chatbot/chat"
+            proxy_url = build_ui_url(proxy_http_port, routes_prefix)
             console.print(f"  [link={proxy_url}]{proxy_url}[/link]")
         except FileNotFoundError:
             console.print("[red]Docker not found. Please install Docker and rerun.[/red]")
