@@ -326,6 +326,24 @@ def _repo_path_from_install_meta(workdir: Path) -> Path | None:
     return path if _is_git_repo(path) else None
 
 
+def _canonical_descriptor_dir_from_initialized_workdir(workdir: Path) -> Path | None:
+    concrete_workdir = _resolve_cli_workdir(workdir)
+    config_dir = (concrete_workdir / "config").resolve()
+    if not config_dir.exists():
+        return None
+    meta = _read_install_meta_raw(concrete_workdir)
+    if not isinstance(meta, dict):
+        return None
+    missing = [
+        name
+        for name in installer_mod.CANONICAL_DESCRIPTOR_FILENAMES
+        if not (config_dir / name).exists()
+    ]
+    if missing:
+        return None
+    return config_dir
+
+
 def _resolve_cli_repo_path(
     repo_path: Path,
     *,
@@ -1091,7 +1109,7 @@ def main() -> None:
     parser.add_argument(
         "--upstream",
         action="store_true",
-        help="With --descriptors-location and --build, use the latest upstream repo state (origin/main) instead of a released platform ref",
+        help="With --build and either --descriptors-location or an initialized workdir config, use the latest upstream repo state (origin/main) instead of a released platform ref",
     )
     parser.add_argument(
         "--release",
@@ -1211,6 +1229,21 @@ def main() -> None:
 
     repo_path = Path(os.path.expanduser(args.path)).resolve()
     path_provided = _arg_provided("--path")
+    workdir_arg = _arg_provided("--workdir")
+    workdir = Path(os.path.expanduser(args.workdir)).expanduser().resolve()
+    implicit_descriptors_location: Path | None = None
+    if (
+        workdir_arg
+        and not args.descriptors_location
+        and not args.secrets_set
+        and not args.secrets_prompt
+    ):
+        implicit_descriptors_location = _canonical_descriptor_dir_from_initialized_workdir(workdir)
+    effective_descriptors_location = (
+        Path(os.path.expanduser(args.descriptors_location)).expanduser().resolve()
+        if args.descriptors_location
+        else implicit_descriptors_location
+    )
     try:
         if args.clean:
             clean_docker_images(console)
@@ -1251,8 +1284,11 @@ def main() -> None:
         selected_version_flags = int(bool(args.latest)) + int(bool(args.upstream)) + int(bool(str(args.release or "").strip()))
         if selected_version_flags > 1:
             raise SystemExit("Choose only one of --latest, --upstream, or --release.")
-        if args.upstream and not args.descriptors_location:
-            raise SystemExit("--upstream is only supported together with --descriptors-location.")
+        if args.upstream and effective_descriptors_location is None:
+            raise SystemExit(
+                "--upstream requires either --descriptors-location or an initialized workdir "
+                "with the canonical descriptor set under config/."
+            )
         if args.upstream and not args.build:
             raise SystemExit("--upstream requires --build because arbitrary upstream commits do not map to release images.")
         if args.proxy_ssl and args.no_proxy_ssl:
@@ -1263,7 +1299,6 @@ def main() -> None:
             os.environ["KDCUBE_PROXY_SSL"] = "0"
         if args.dry_run_print_env:
             os.environ["KDCUBE_DRY_RUN_PRINT_ENV"] = "1"
-        workdir = Path(os.path.expanduser(args.workdir)).expanduser().resolve()
         if args.stop:
             stop_compose_stack(
                 console,
@@ -1288,11 +1323,10 @@ def main() -> None:
                 bundle_id=str(args.bundle_reload).strip(),
             )
             return
-        workdir_arg = _arg_provided("--workdir")
         if (
             not args.secrets_set
             and not args.secrets_prompt
-            and not args.descriptors_location
+            and effective_descriptors_location is None
             and not (args.dry_run and workdir_arg)
         ):
             workdir = Path(
@@ -1300,8 +1334,8 @@ def main() -> None:
             ).expanduser().resolve()
 
         descriptor_bootstrap = None
-        if args.descriptors_location and not args.secrets_set and not args.secrets_prompt:
-            descriptors_location = Path(os.path.expanduser(args.descriptors_location)).expanduser().resolve()
+        if effective_descriptors_location is not None and not args.secrets_set and not args.secrets_prompt:
+            descriptors_location = effective_descriptors_location
             workdir = _resolve_cli_workdir(workdir, descriptors_location=descriptors_location)
             repo_path = _resolve_cli_repo_path(
                 repo_path,
@@ -1321,9 +1355,10 @@ def main() -> None:
             bundles_path = descriptor_bootstrap["bundles_path"]
             bundles_secrets_path = descriptor_bootstrap["bundles_secrets_path"]
             assembly = descriptor_bootstrap["assembly"]
+            descriptor_is_runtime_config = descriptors_location.resolve() == (workdir / "config").resolve()
 
             os.environ["KDCUBE_ASSEMBLY_DESCRIPTOR_PATH"] = str(assembly_path)
-            os.environ["KDCUBE_ASSEMBLY_USER_SUPPLIED"] = "1"
+            os.environ["KDCUBE_ASSEMBLY_USER_SUPPLIED"] = "0" if descriptor_is_runtime_config else "1"
             if secrets_path:
                 os.environ["KDCUBE_SECRETS_DESCRIPTOR_PATH"] = str(secrets_path)
             if gateway_path:
