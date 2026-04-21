@@ -103,6 +103,17 @@ export interface ChatErrorEnvelope extends BaseEnvelope {
     data: { error: string; [k: string]: unknown };
 }
 
+export interface ChatMessageSendResponse {
+    status: string;
+    task_id: string;
+    session_id: string;
+    conversation_id: string;
+    conversation_created: number;
+    user_type: string;
+    message_kind: string;
+    message: string;
+}
+
 export interface ChatMessage {
     role: "user" | "assistant";
     content: string;
@@ -263,7 +274,7 @@ export abstract class ChatBase {
 
     // @ts-expect-error because it's an abstract class
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    public async sendChatMessage(conversationId: string, req: ChatRequest, attachments?: File[] | null) {
+    public async sendChatMessage(req: ChatRequest, attachments?: File[] | null, conversationId?: string | null): Promise<ChatMessageSendResponse> {
         throw new Error("Method not implemented.");
     }
 

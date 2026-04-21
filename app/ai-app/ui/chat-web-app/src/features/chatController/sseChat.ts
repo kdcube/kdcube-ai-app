@@ -2,7 +2,7 @@ import {
     ChatBase,
     ChatCompleteEnvelope,
     ChatDeltaEnvelope,
-    ChatErrorEnvelope,
+    ChatErrorEnvelope, ChatMessageSendResponse,
     ChatOptions,
     ChatRequest,
     ChatStartEnvelope,
@@ -104,15 +104,15 @@ class SSEChat extends ChatBase {
             this.constructEventSource()
 
             resolve();
-        }).catch((err)=>{
+        }).catch((err) => {
             this._eventHandlers?.onConnectError?.(err);
             this._connecting = false;
         })
     }
 
-    public override async sendChatMessage(conversationId: string, req: ChatRequest, attachments?: File[] | null): Promise<void> {
+    public override async sendChatMessage(req: ChatRequest, attachments?: File[] | null, conversationId?: string | null): Promise<ChatMessageSendResponse> {
         if (!this._streamId) throw new Error("no streamId provided");
-        console.info("[sse.chat] send", {
+        console.debug("[sse.chat] send", {
             sessionId: this._sessionId,
             streamId: this._streamId,
             conversationId,
@@ -128,7 +128,7 @@ class SSEChat extends ChatBase {
                 project: req.project || this.project,
                 tenant: req.tenant || this.tenant,
                 turn_id: req.turn_id || `turn_${Date.now()}`,
-                conversation_id: conversationId,
+                ...(conversationId ? {conversation_id: conversationId} : {}),
                 ...(req.bundle_id ? {bundle_id: req.bundle_id} : {}),
                 ...(req.message_kind ? {message_kind: req.message_kind} : {}),
                 ...(req.continuation_kind ? {continuation_kind: req.continuation_kind} : {}),
@@ -181,7 +181,7 @@ class SSEChat extends ChatBase {
             method: "POST",
             headers: this.addCredentialsHeader([["Content-Type", "application/json"]]),
             credentials: "include",
-            body: JSON.stringify({conversation_id: conversationId, stream_id: this._streamId }),
+            body: JSON.stringify({conversation_id: conversationId, stream_id: this._streamId}),
         });
         if (!res.ok) throw new Error(`/sse/conv_status.get failed (${res.status})`);
         return res.json();
