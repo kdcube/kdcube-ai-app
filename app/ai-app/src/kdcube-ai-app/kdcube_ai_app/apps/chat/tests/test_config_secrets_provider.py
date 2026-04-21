@@ -16,6 +16,8 @@ class _FakeSecretsManager:
             "services.openai.api_key": "sk-openai-test",
             "services.anthropic.api_key": "sk-anthropic-test",
             "services.git.http_token": "gh-token-test",
+            "infra.postgres.password": "pg-secret-test",
+            "infra.redis.password": "redis-secret-test",
             "bundles.bundle.demo.secrets.user_management.cognito_user_pool_id": "pool-123",
         }
         return values.get(key)
@@ -61,6 +63,17 @@ def test_settings_reads_secrets_through_provider(monkeypatch):
     assert settings.secret("services.openai.api_key") == "sk-openai-test"
     assert settings.GIT_HTTP_TOKEN == "gh-token-test"
     assert settings.GIT_HTTP_USER == "x-access-token"
+
+
+def test_settings_reads_infra_passwords_through_provider_when_env_absent(monkeypatch):
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+    monkeypatch.delenv("REDIS_PASSWORD", raising=False)
+    monkeypatch.setattr(sdk_config, "get_secrets_manager", lambda _settings: _FakeSecretsManager())
+
+    settings = sdk_config.Settings()
+
+    assert settings.PGPASSWORD == "pg-secret-test"
+    assert settings.REDIS_PASSWORD == "redis-secret-test"
 
 
 def test_get_user_secret_uses_request_context_scope(monkeypatch):
