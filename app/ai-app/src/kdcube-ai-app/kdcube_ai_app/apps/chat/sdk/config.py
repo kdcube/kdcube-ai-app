@@ -716,9 +716,17 @@ class Settings(PLATFORM_CONFIG):
             if val:
                 self.PGUSER = val
         if not self._env_present("POSTGRES_PASSWORD"):
-            raw = _load_assembly_plain("infra.postgres.password")
-            if raw is not None:
-                self.PGPASSWORD = str(raw)
+            secret_val = None
+            try:
+                secret_val = get_secrets_manager(self).get_secret("infra.postgres.password")
+            except Exception:
+                secret_val = None
+            if secret_val is not None and str(secret_val).strip():
+                self.PGPASSWORD = str(secret_val)
+            else:
+                raw = _load_assembly_plain("infra.postgres.password")
+                if raw is not None:
+                    self.PGPASSWORD = str(raw)
         if not self._env_present("POSTGRES_DATABASE"):
             val = self._assembly_str("infra.postgres.database")
             if val:
@@ -737,9 +745,17 @@ class Settings(PLATFORM_CONFIG):
             if val is not None:
                 self.REDIS_PORT = val
         if not self._env_present("REDIS_PASSWORD"):
-            raw = _load_assembly_plain("infra.redis.password")
-            if raw is not None:
-                self.REDIS_PASSWORD = str(raw) if str(raw).strip() else None
+            secret_val = None
+            try:
+                secret_val = get_secrets_manager(self).get_secret("infra.redis.password")
+            except Exception:
+                secret_val = None
+            if secret_val is not None:
+                self.REDIS_PASSWORD = str(secret_val) if str(secret_val).strip() else None
+            else:
+                raw = _load_assembly_plain("infra.redis.password")
+                if raw is not None:
+                    self.REDIS_PASSWORD = str(raw) if str(raw).strip() else None
 
         # 4. Build REDIS_URL from components if not explicitly set in env.
         #    Must happen after infra reads so assembly.yaml host/port/password are reflected.
