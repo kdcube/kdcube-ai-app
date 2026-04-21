@@ -2408,12 +2408,28 @@ def gather_configuration(
 
     _autosave()
 
-    aws_region = _get_nested(assembly_data, "aws", "region")
-    aws_profile = _get_nested(assembly_data, "aws", "profile")
+    aws_region = _get_nested(assembly_data, "aws", "aws_region")
+    if aws_region is None:
+        aws_region = _get_nested(assembly_data, "aws", "region")
+    aws_profile = _get_nested(assembly_data, "aws", "aws_profile")
+    if aws_profile is None:
+        aws_profile = _get_nested(assembly_data, "aws", "profile")
+    aws_sdk_load_config = _get_nested(assembly_data, "aws", "aws_sdk_load_config")
+    aws_ec2_metadata_disabled = _get_nested(assembly_data, "aws", "aws_ec2_metadata_disabled")
+    aws_no_proxy = _get_nested(assembly_data, "aws", "no_proxy")
     aws_ec2_flag = _get_nested(assembly_data, "aws", "ec2")
     aws_region_val = aws_region.strip() if isinstance(aws_region, str) else ""
     aws_profile_val = aws_profile.strip() if isinstance(aws_profile, str) else ""
+    aws_no_proxy_val = aws_no_proxy.strip() if isinstance(aws_no_proxy, str) else ""
     aws_ec2_enabled = parse_bool(str(aws_ec2_flag)) if aws_ec2_flag is not None else False
+    aws_sdk_load_config_enabled = (
+        parse_bool(str(aws_sdk_load_config)) if aws_sdk_load_config is not None else aws_ec2_enabled
+    )
+    aws_ec2_metadata_disabled_val = (
+        str(aws_ec2_metadata_disabled).strip().lower()
+        if aws_ec2_metadata_disabled is not None
+        else ("false" if aws_ec2_enabled else "")
+    )
     if aws_region_val:
         update_env_value(env_ingress, "AWS_REGION", aws_region_val)
         update_env_value(env_ingress, "AWS_DEFAULT_REGION", aws_region_val)
@@ -2429,16 +2445,21 @@ def gather_configuration(
         update_env_value(env_metrics, "AWS_PROFILE", aws_profile_val)
         update_env_value(env_proxy, "AWS_PROFILE", aws_profile_val)
 
-    if aws_ec2_enabled:
+    if aws_sdk_load_config_enabled:
         update_env_value(env_ingress, "AWS_SDK_LOAD_CONFIG", "1")
         update_env_value(env_proc, "AWS_SDK_LOAD_CONFIG", "1")
         update_env_value(env_metrics, "AWS_SDK_LOAD_CONFIG", "1")
-        update_env_value(env_ingress, "AWS_EC2_METADATA_DISABLED", "false")
-        update_env_value(env_proc, "AWS_EC2_METADATA_DISABLED", "false")
-        update_env_value(env_metrics, "AWS_EC2_METADATA_DISABLED", "false")
-        update_env_value(env_ingress, "NO_PROXY", "169.254.169.254,localhost,127.0.0.1")
-        update_env_value(env_proc, "NO_PROXY", "169.254.169.254,localhost,127.0.0.1")
-        update_env_value(env_metrics, "NO_PROXY", "169.254.169.254,localhost,127.0.0.1")
+        update_env_value(env_proxy, "AWS_SDK_LOAD_CONFIG", "1")
+    if aws_ec2_metadata_disabled_val:
+        update_env_value(env_ingress, "AWS_EC2_METADATA_DISABLED", aws_ec2_metadata_disabled_val)
+        update_env_value(env_proc, "AWS_EC2_METADATA_DISABLED", aws_ec2_metadata_disabled_val)
+        update_env_value(env_metrics, "AWS_EC2_METADATA_DISABLED", aws_ec2_metadata_disabled_val)
+        update_env_value(env_proxy, "AWS_EC2_METADATA_DISABLED", aws_ec2_metadata_disabled_val)
+    if aws_no_proxy_val:
+        update_env_value(env_ingress, "NO_PROXY", aws_no_proxy_val)
+        update_env_value(env_proc, "NO_PROXY", aws_no_proxy_val)
+        update_env_value(env_metrics, "NO_PROXY", aws_no_proxy_val)
+        update_env_value(env_proxy, "NO_PROXY", aws_no_proxy_val)
 
 
     pg_user = env_pg.entries.get("POSTGRES_USER", (None, None))[1]
