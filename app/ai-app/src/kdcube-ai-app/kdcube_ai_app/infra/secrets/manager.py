@@ -392,10 +392,24 @@ def _write_yaml_mapping_to_storage(storage_uri: str, payload: Mapping[str, Any])
 
     from kdcube_ai_app.storage.storage import create_storage_backend
 
-    backend_uri, key = _storage_backend_and_key_from_uri(storage_uri)
-    backend = create_storage_backend(backend_uri)
     try:
         rendered = yaml.safe_dump(dict(payload), allow_unicode=True, sort_keys=False)
+        parsed = urlparse(str(storage_uri or "").strip())
+        if parsed.scheme in {"", "file"}:
+            file_path = parsed.path if parsed.scheme == "file" else str(storage_uri or "").strip()
+            resolved = Path(file_path).expanduser().resolve()
+            resolved.parent.mkdir(parents=True, exist_ok=True)
+            tmp_path = resolved.with_name(f".{resolved.name}.tmp-{os.getpid()}-{uuid.uuid4().hex}")
+            try:
+                tmp_path.write_text(rendered, encoding="utf-8")
+                tmp_path.replace(resolved)
+            finally:
+                if tmp_path.exists():
+                    tmp_path.unlink(missing_ok=True)
+            return
+
+        backend_uri, key = _storage_backend_and_key_from_uri(storage_uri)
+        backend = create_storage_backend(backend_uri)
         backend.write_text(key, rendered)
     except Exception as exc:
         raise SecretsManagerWriteError(f"Failed to write secrets descriptor: {storage_uri}") from exc

@@ -445,19 +445,24 @@ const chatStateSlice = createSlice({
         },
         newTurn: (state, action: PayloadAction<NewChatTurnRequest>) => {
             const turnId = action.payload.id
+            const authoritativeUserMessage = {
+                text: action.payload.userMessage,
+                attachments: action.payload.attachments,
+                timestamp: new Date().getTime()
+            }
 
             if (state.turnOrder.includes(turnId)) {
-                throw new Error(`Turn ${turnId} already exists`)
+                const existing = state.turns[turnId]
+                if (existing) {
+                    existing.userMessage = authoritativeUserMessage
+                }
+                return
             }
 
             state.turns[turnId] = {
                 id: turnId,
                 state: "new",
-                userMessage: {
-                    text: action.payload.userMessage,
-                    attachments: action.payload.attachments,
-                    timestamp: new Date().getTime()
-                },
+                userMessage: authoritativeUserMessage,
                 events: [],
                 artifacts: [],
                 followUpQuestions: [],

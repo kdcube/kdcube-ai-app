@@ -156,6 +156,27 @@ Read the exact model here:
 - [bundle-platform-properties-README.md](bundle-platform-properties-README.md)
 - [build/how-to-configure-and-run-bundle-README.md](build/how-to-configure-and-run-bundle-README.md)
 
+## Configuration Access Rules
+
+Use the helper contract, not ad hoc access.
+
+Required rules for bundle code:
+
+- do not use `os.getenv(...)` or `os.environ[...]` for deployment-owned config
+  or secrets
+- do not call `get_secrets_manager(...).get_secret(...)` directly
+- do not open descriptor YAML files through hardcoded paths
+
+Use instead:
+
+- `self.bundle_prop(...)` for effective bundle config
+- `get_secret(...)` for deployment-scoped secrets
+- `get_plain(...)` only for raw descriptor inspection
+- `get_settings()` for effective typed platform/runtime settings
+
+The only normal exception for raw env access is code that explicitly sits at
+the iso-runtime or sandbox boundary and is intentionally driven by process env.
+
 ## Git Auth Environment Boundary
 
 If bundle code needs to run git commands, treat git auth as subprocess configuration, not as mutable bundle-local process state.
@@ -176,6 +197,22 @@ Practical implication:
 
 - do not assume one bundle can safely rewrite processor-level git auth for itself only
 - if you need bundle-specific git auth, pass it as an explicit subprocess override instead of mutating global process env
+
+Transport contract:
+
+- git-backed repos may use either HTTPS or SSH remote forms
+- if `GIT_HTTP_TOKEN` is configured, the shared helper prefers HTTPS token auth
+- when HTTPS token auth is selected, an SSH-style remote may be normalized to HTTPS before git is called
+- if SSH transport is intended, configure:
+  - `GIT_SSH_KEY_PATH`
+  - `GIT_SSH_KNOWN_HOSTS`
+  - `GIT_SSH_STRICT_HOST_KEY_CHECKING`
+
+Practical rule:
+
+- HTTPS + PAT is usually the simpler runtime/deployment path
+- SSH is supported, but it is a stricter operational contract because key and known-hosts material
+  must be present and mounted correctly
 
 ## Local Storage Rule
 

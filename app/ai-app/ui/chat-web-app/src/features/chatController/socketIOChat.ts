@@ -2,7 +2,7 @@ import {
     ChatBase,
     ChatCompleteEnvelope,
     ChatDeltaEnvelope,
-    ChatErrorEnvelope,
+    ChatErrorEnvelope, ChatMessageSendResponse,
     ChatOptions,
     ChatRequest, ChatStartEnvelope,
     ChatStepEnvelope
@@ -211,11 +211,9 @@ class SocketIOChat extends ChatBase {
         });
     }
 
-    public override async sendChatMessage(conversationId: string, req: ChatRequest, attachments?: File[]) {
+    public override async sendChatMessage(req: ChatRequest, attachments?: File[] | null, conversationId?: string | null): Promise<ChatMessageSendResponse> {
         if (!this._socket.connected)
             throw new Error("Socket not connected. Call connect() first.");
-        if (!conversationId)
-            throw new Error("No ConversationId");
 
         const message = {...req, conversation_id: conversationId};
         attachments = attachments ? attachments : [];
@@ -233,7 +231,7 @@ class SocketIOChat extends ChatBase {
         })
 
         const data = files.map(value => value.data)
-        this._socket.emit("chat_message", {message, attachment_meta}, ...data);
+        return this._socket.emitWithAck("chat_message", {message, attachment_meta}, ...data);
     }
 
     public override async requestConvStatus(conversationId: string) {

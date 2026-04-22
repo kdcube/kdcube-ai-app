@@ -6,6 +6,7 @@ tags: ["service", "configuration", "env", "descriptors"]
 keywords: ["env vars", "assembly.yaml", "bundles.yaml", "HOST_BUNDLES_PATH", "ASSEMBLY_YAML_DESCRIPTOR_PATH"]
 see_also:
   - ks:docs/service/cicd/descriptors-README.md
+  - ks:docs/service/configuration/runtime-read-write-contract-README.md
   - ks:docs/service/configuration/assembly-descriptor-README.md
   - ks:docs/service/configuration/bundles-descriptor-README.md
   - ks:docs/service/configuration/secrets-descriptor-README.md
@@ -24,6 +25,7 @@ It explains:
 
 The canonical contract tables now live in the per-descriptor pages:
 
+- [runtime-read-write-contract-README.md](runtime-read-write-contract-README.md)
 - [assembly-descriptor-README.md](assembly-descriptor-README.md)
 - [bundles-descriptor-README.md](bundles-descriptor-README.md)
 - [bundles-secrets-descriptor-README.md](bundles-secrets-descriptor-README.md)
@@ -90,14 +92,21 @@ Notes:
 | Env var | Descriptor path | Descriptor file | Modes |
 |---|---|---|---|
 | `BUNDLES_YAML_DESCRIPTOR_PATH` | `bundles.yaml` | local bundle descriptor authority | proc in direct local run; optional explicit path in compose/k8s |
+| `BUNDLES_DESCRIPTOR_PROVIDER` | `platform.services.proc.bundles.descriptor_provider` | `assembly.yaml` | proc in all modes |
 | `BUNDLES_FORCE_ENV_ON_STARTUP` | n/a | current bundle descriptor authority | proc in all modes |
 | `BUNDLE_GIT_RESOLUTION_ENABLED` | bundle items use `repo` / `ref` | `bundles.yaml` | proc in all modes |
 | `BUNDLES_PRELOAD_ON_START` | n/a | not descriptor-backed by default | proc |
 
 Important distinction:
 
-- `BUNDLES_YAML_DESCRIPTOR_PATH` controls plain reads and file-backed authority
+- `BUNDLES_YAML_DESCRIPTOR_PATH` points at the file-backed bundle descriptor source
+- `BUNDLES_DESCRIPTOR_PROVIDER` selects bundle descriptor authority independently from `SECRETS_PROVIDER`
 - proc startup/reset can use bundle descriptor authority directly
+- recommended ECS setup is:
+  - `SECRETS_PROVIDER=aws-sm`
+  - `BUNDLES_DESCRIPTOR_PROVIDER=file`
+  - writable mounted `/config/bundles.yaml` on EFS
+- if bundle admin or bundle code should persist deployment-scoped prop updates, proc must mount that descriptor path writable
 
 ### Workspace and Claude session backends
 
@@ -107,6 +116,22 @@ Important distinction:
 | `REACT_WORKSPACE_GIT_REPO` | `storage.workspace.repo` | `assembly.yaml` | CLI local compose, direct local run |
 | `CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION` | `storage.claude_code_session.type` | `assembly.yaml` | CLI local compose, direct local run |
 | `CLAUDE_CODE_SESSION_GIT_REPO` | `storage.claude_code_session.repo` | `assembly.yaml` | CLI local compose, direct local run |
+
+Git repo transport for workspace/session stores:
+
+- `storage.workspace.repo` and `storage.claude_code_session.repo` may use either HTTPS or SSH
+  remote forms
+- if HTTPS token auth is configured through `services.git.http_token`, the shared git helper
+  prefers that path and may normalize SSH-style remotes to HTTPS before invoking git
+- if SSH transport is intended, configure the matching SSH settings:
+  - `services.git.git_ssh_key_path`
+  - `services.git.git_ssh_known_hosts`
+  - `services.git.git_ssh_strict_host_key_checking`
+
+Operational guidance:
+
+- HTTPS + PAT is usually the simpler deployment/runtime choice
+- SSH is supported, but it additionally requires mounted key and host-verification material
 
 ## The `assembly.paths.*` keys you asked about
 
@@ -138,6 +163,7 @@ If proc should seed or reset the bundle registry from that same descriptor:
 
 ```bash
 BUNDLES_YAML_DESCRIPTOR_PATH=/abs/path/to/bundles.yaml
+BUNDLES_DESCRIPTOR_PROVIDER=file
 BUNDLES_FORCE_ENV_ON_STARTUP=1
 ```
 
@@ -165,6 +191,10 @@ Cloud deployment owns storage and topology separately.
 
 ## Data access API summary
 
+For the one-page read/write contract across helpers, see:
+
+- [runtime-read-write-contract-README.md](runtime-read-write-contract-README.md)
+
 | Data kind | API |
 |---|---|
 | effective typed platform setting | `get_settings()` |
@@ -174,10 +204,18 @@ Cloud deployment owns storage and topology separately.
 | platform/global secret | `get_secret("canonical.key")` |
 | bundle-scoped secret | `get_secret("b:group.key")` |
 
+For deployment-scoped bundle props in cloud:
+
+- keep secrets in the configured secrets provider
+- keep bundle descriptors and non-secret bundle props in `bundles.yaml`
+- prefer file-backed authority over provider-backed bundle descriptor docs
+
 ## Related docs
 
 - Descriptor ownership and mode differences:
   - [descriptors-README.md](../cicd/descriptors-README.md)
+- One-page runtime helper contract:
+  - [runtime-read-write-contract-README.md](runtime-read-write-contract-README.md)
 - Per-descriptor docs:
   - [assembly-descriptor-README.md](assembly-descriptor-README.md)
   - [bundles-descriptor-README.md](bundles-descriptor-README.md)

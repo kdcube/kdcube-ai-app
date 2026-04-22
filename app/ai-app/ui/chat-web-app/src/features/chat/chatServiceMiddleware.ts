@@ -1,6 +1,5 @@
 import {Middleware, UnknownAction} from "@reduxjs/toolkit";
 import {ChatBase, ChatEventHandlers, ChatMessage, ChatRequest,} from "../chatController/chatBase.ts";
-import {v4 as uuidv4} from "uuid";
 import {AppDispatch, AppStore, RootState} from "../../app/store.ts";
 import SocketIOChat from "../chatController/socketIOChat.ts";
 import {
@@ -423,20 +422,7 @@ export const chatServiceMiddleware = (transportType: TransportType): Middleware 
                         return;
                     }
 
-                    if (!isContinuation) {
-                        dispatch(newTurn({
-                            id: turnId,
-                            state: "new",
-                            userMessage: message,
-                            attachments
-                        }))
-                    }
-
-                    let conversationId = selectConversationId(state)
-                    if (!conversationId) {
-                        conversationId = uuidv4()
-                        dispatch(setConversationId(conversationId))
-                    }
+                    const conversationId = selectConversationId(state)
 
                     const chatRequest: ChatRequest = {
                         message,
@@ -455,7 +441,7 @@ export const chatServiceMiddleware = (transportType: TransportType): Middleware 
                         } : {})
                     }
 
-                    console.info(
+                    console.debug(
                         "[chat.send] sending chat message",
                         {
                             conversationId,
@@ -466,8 +452,20 @@ export const chatServiceMiddleware = (transportType: TransportType): Middleware 
                         }
                     )
 
-                    transport.sendChatMessage(conversationId, chatRequest, files).then((ack?: {status?: string; turn_id?: string; message_kind?: string}) => {
+                    transport.sendChatMessage(chatRequest, files, conversationId).then((ack) => {
+
+                        dispatch(setConversationId(ack.conversation_id))
+
                         dispatch(clearUserInput())
+
+                        if (!isContinuation) {
+                            dispatch(newTurn({
+                                id: turnId,
+                                state: "new",
+                                userMessage: message,
+                                attachments
+                            }))
+                        }
                         if (isContinuation) {
                             const ackStatus = typeof ack?.status === "string" ? ack.status : null
                             const continuationAccepted = ackStatus === "followup_accepted" || ackStatus === "steer_accepted"
@@ -477,22 +475,25 @@ export const chatServiceMiddleware = (transportType: TransportType): Middleware 
                                 text: continuationStartedNewTurn
                                     ? "The previous turn had already advanced. A new turn was started instead."
                                     : continuationAccepted
-                                    ? (
-                                        continuationKind === "steer"
-                                            ? (message ? "Steer sent to the in-progress turn." : "Stop signal sent to the in-progress turn.")
-                                            : "Follow-up sent to the in-progress turn."
-                                    )
-                                    : (
-                                        continuationKind === "steer"
-                                            ? (message ? "Steer sent to the in-progress turn." : "Stop signal sent to the in-progress turn.")
-                                            : "Follow-up sent to the in-progress turn."
-                                    ),
+                                        ? (
+                                            continuationKind === "steer"
+                                                ? (message ? "Steer sent to the in-progress turn." : "Stop signal sent to the in-progress turn.")
+                                                : "Follow-up sent to the in-progress turn."
+                                        )
+                                        : (
+                                            continuationKind === "steer"
+                                                ? (message ? "Steer sent to the in-progress turn." : "Stop signal sent to the in-progress turn.")
+                                                : "Follow-up sent to the in-progress turn."
+                                        ),
                             }))
                         }
                     }).catch(error => {
                         console.error(error)
                         if (isContinuation) {
-                            dispatch(requestConversationStatus(conversationId))
+                            const conversationId = selectConversationId(store.getState())
+                            if (conversationId) {
+                                dispatch(requestConversationStatus(conversationId))
+                            }
                             dispatch(pushNotification({
                                 type: "error",
                                 text: error instanceof Error ? error.message : String(error),

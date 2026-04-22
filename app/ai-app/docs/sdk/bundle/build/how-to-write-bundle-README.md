@@ -125,6 +125,22 @@ Interpretation:
 - descriptor-backed settings/secrets remain the normal source of truth
 - explicit overrides remain local to the subprocess call only
 
+Transport rule:
+
+- git-backed workspace or storage repos may be configured with either HTTPS or SSH remotes
+- if HTTPS token auth is configured, the shared helper prefers that path and may normalize an
+  SSH-style remote such as `git@github.com:org/repo.git` to `https://github.com/org/repo.git`
+- if SSH transport is intended, configure the SSH settings explicitly:
+  - `GIT_SSH_KEY_PATH`
+  - `GIT_SSH_KNOWN_HOSTS`
+  - `GIT_SSH_STRICT_HOST_KEY_CHECKING`
+- do not half-configure both modes and assume git will choose the intended one silently
+
+Operationally:
+
+- HTTPS + PAT is usually the simpler deployment choice
+- SSH is supported, but it requires key and host-verification material to be mounted and configured
+
 ## 3. Start From The Minimal Bundle Shape
 
 Recommended layout:
@@ -636,11 +652,56 @@ Bundle logic should not depend on raw env variable names for operational config 
 - `get_secret(...)`
 - `get_plain(...)`
 
+Treat this as prohibited in normal bundle code:
+
+- do not call `os.getenv(...)` or read `os.environ[...]` for deployment-owned
+  config or secrets
+- do not invent bundle-local env variable names as a second config contract
+
+Exception:
+
+- direct env access is acceptable only in code that explicitly lives at the
+  iso-runtime or sandbox boundary and is intentionally driven by process env
+
 If you add a standalone helper script for local debugging:
 
 - load `.env` into the platform settings path
 - then read through `get_settings()` / `get_secret()`
 - do not let the runtime bundle depend on bundle-local `.env` files
+
+### Do not call the secrets provider directly
+
+Bundle or feature code must not call secrets-provider internals such as
+`get_secrets_manager(...).get_secret(...)` directly.
+
+Use:
+
+- `get_secret(...)`
+- `get_settings()` for promoted secret-backed settings
+
+Reason:
+
+- direct provider calls bypass canonical key handling, env-first behavior, and
+  mode-specific resolution
+- they couple bundle code to one provider implementation instead of the
+  supported helper contract
+
+### Do not open descriptor YAML files through hardcoded paths
+
+Bundle code must not open `assembly.yaml`, `bundles.yaml`, or other descriptor
+YAML files through hardcoded filesystem paths.
+
+Use:
+
+- `get_plain(...)` for raw descriptor inspection
+- `bundle_prop(...)` for effective bundle config
+- `get_settings()` for effective typed platform/runtime settings
+
+Reason:
+
+- direct file opens hardcode one runtime path layout
+- they bypass descriptor path indirection and alternate runtime wiring
+- they are easier to break in direct local runs, tests, and non-default mounts
 
 ### Descriptor-backed values are the durable source of truth
 
@@ -920,6 +981,30 @@ Symptom:
 Fix:
 
 - use `bundle_prop(...)`, `get_settings()`, `get_secret(...)`, `get_plain(...)`
+
+### Pitfall: direct descriptor file reads through hardcoded paths
+
+Symptom:
+
+- bundle works only when descriptors happen to be mounted at one expected path
+- direct local runs or alternative runtime layouts break
+
+Fix:
+
+- use `get_plain(...)` for raw descriptor inspection
+- use `bundle_prop(...)` or `get_settings()` for effective runtime values
+
+### Pitfall: direct secrets-provider calls from bundle code
+
+Symptom:
+
+- bundle is coupled to one secrets backend
+- alias handling, env-first behavior, or provider substitution is bypassed
+
+Fix:
+
+- use `get_secret(...)`
+- use `get_settings()` for promoted secret-backed settings
 
 ### Pitfall: writing cron logic as if it were a request-bound widget/API call
 
