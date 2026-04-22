@@ -456,6 +456,8 @@ export const chatServiceMiddleware = (transportType: TransportType): Middleware 
 
                         dispatch(setConversationId(ack.conversation_id))
 
+                        dispatch(clearUserInput())
+
                         if (!isContinuation) {
                             dispatch(newTurn({
                                 id: turnId,
@@ -464,8 +466,6 @@ export const chatServiceMiddleware = (transportType: TransportType): Middleware 
                                 attachments
                             }))
                         }
-
-                        dispatch(clearUserInput())
                         if (isContinuation) {
                             const ackStatus = typeof ack?.status === "string" ? ack.status : null
                             const continuationAccepted = ackStatus === "followup_accepted" || ackStatus === "steer_accepted"
