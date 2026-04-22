@@ -6,6 +6,7 @@ tags: ["service", "configuration", "env", "descriptors"]
 keywords: ["env vars", "assembly.yaml", "bundles.yaml", "HOST_BUNDLES_PATH", "ASSEMBLY_YAML_DESCRIPTOR_PATH"]
 see_also:
   - ks:docs/service/cicd/descriptors-README.md
+  - ks:docs/service/configuration/runtime-read-write-contract-README.md
   - ks:docs/service/configuration/assembly-descriptor-README.md
   - ks:docs/service/configuration/bundles-descriptor-README.md
   - ks:docs/service/configuration/secrets-descriptor-README.md
@@ -24,6 +25,7 @@ It explains:
 
 The canonical contract tables now live in the per-descriptor pages:
 
+- [runtime-read-write-contract-README.md](runtime-read-write-contract-README.md)
 - [assembly-descriptor-README.md](assembly-descriptor-README.md)
 - [bundles-descriptor-README.md](bundles-descriptor-README.md)
 - [bundles-secrets-descriptor-README.md](bundles-secrets-descriptor-README.md)
@@ -165,6 +167,10 @@ Cloud deployment owns storage and topology separately.
 
 ## Data access API summary
 
+For the one-page read/write contract across helpers, see:
+
+- [runtime-read-write-contract-README.md](runtime-read-write-contract-README.md)
+
 | Data kind | API |
 |---|---|
 | effective typed platform setting | `get_settings()` |
@@ -178,6 +184,8 @@ Cloud deployment owns storage and topology separately.
 
 - Descriptor ownership and mode differences:
   - [descriptors-README.md](../cicd/descriptors-README.md)
+- One-page runtime helper contract:
+  - [runtime-read-write-contract-README.md](runtime-read-write-contract-README.md)
 - Per-descriptor docs:
   - [assembly-descriptor-README.md](assembly-descriptor-README.md)
   - [bundles-descriptor-README.md](bundles-descriptor-README.md)
