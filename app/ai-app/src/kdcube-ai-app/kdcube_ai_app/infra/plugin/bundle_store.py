@@ -172,10 +172,10 @@ def _ensure_example_bundle_shared(bundle_root: Path) -> Path:
     if not _is_running_in_docker():
         return bundle_root
 
-    version = compute_dir_sha256(bundle_root, skip_files=set())
-    dest_root = _shared_example_bundle_dir(bundle_root.name, version)
-    lock_path = _example_bundle_lock_path(bundle_root.name)
     try:
+        version = compute_dir_sha256(bundle_root, skip_files=set())
+        dest_root = _shared_example_bundle_dir(bundle_root.name, version)
+        lock_path = _example_bundle_lock_path(bundle_root.name)
         with lock_path.open("a+") as fh:
             fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
             if dest_root.exists() and (dest_root / "entrypoint.py").exists():
@@ -198,7 +198,8 @@ def _ensure_example_bundle_shared(bundle_root: Path) -> Path:
             )
             return dest_root
     except Exception as exc:
-        _log.warning("Failed to copy example bundle to %s: %s", dest_root, exc)
+        fallback_dest = locals().get("dest_root", bundle_root)
+        _log.warning("Failed to copy example bundle to %s: %s", fallback_dest, exc)
         return bundle_root
 
 def _examples_enabled() -> bool:
@@ -238,6 +239,8 @@ def _load_example_bundles() -> Dict[str, "BundleEntry"]:
     return bundles
 
 def _discover_example_bundle_ids() -> Set[str]:
+    if not _examples_enabled():
+        return set()
     root = _examples_root()
     if not root.exists():
         return set()
@@ -1005,8 +1008,6 @@ class _FileBundleDescriptorStore:
             self._write_mapping(payload)
 
     def load_bundle_props(self, bundle_id: str) -> Dict[str, Any]:
-        if bundle_id in _reserved_bundle_ids():
-            return {}
         loaded = self.load_registry()
         if loaded is None:
             return {}
@@ -1014,13 +1015,15 @@ class _FileBundleDescriptorStore:
         return dict(props_map.get(bundle_id) or {})
 
     def set_bundle_props(self, bundle_id: str, entry: "BundleEntry", props: Dict[str, Any]) -> None:
-        if bundle_id in _reserved_bundle_ids():
-            return
         with self._lock, self._acquire_file_lock():
             payload = self._load_mapping()
             items = self._bundle_items(payload)
             item = _secrets_find_bundle_item(items, bundle_id)
             if item is None:
+                if bundle_id in _reserved_bundle_ids():
+                    # Reserved bundles not explicitly listed in the descriptor
+                    # are not written — no dangling entries created.
+                    return
                 item = self._item_from_entry(entry, props)
                 items.append(item)
             else:
@@ -1030,7 +1033,7 @@ class _FileBundleDescriptorStore:
             self._write_mapping(payload)
 
 
-def _resolve_bundles_descriptor_authority_uri() -> str | None:
+def _resolve_bundles_descriptor_authority_uri(*, allow_missing: bool = False) -> str | None:
     settings = get_settings()
     descriptors_dir = str(
         getattr(settings, "PLATFORM_DESCRIPTORS_DIR", None)
@@ -1058,6 +1061,41 @@ def _resolve_bundles_descriptor_authority_uri() -> str | None:
         path = Path(path_text).expanduser()
         if path.exists() and path.is_file():
             return path.resolve().as_uri()
+        if allow_missing:
+            return path.resolve().as_uri()
+    return None
+
+
+def _normalize_bundles_descriptor_provider(value: Any) -> str | None:
+    raw = str(value or "").strip().lower().replace("_", "-")
+    if raw in {"", "auto", "default"}:
+        return None
+    if raw in {"file", "yaml", "bundles-yaml", "descriptor-file", "efs"}:
+        return "file"
+    if raw in {"aws", "aws-sm", "awssm", "secrets-manager"}:
+        return "aws-sm"
+    return raw or None
+
+
+def _resolve_bundles_descriptor_provider() -> str | None:
+    settings = get_settings()
+    explicit = _normalize_bundles_descriptor_provider(
+        getattr(settings, "BUNDLES_DESCRIPTOR_PROVIDER", None)
+        or getattr(getattr(getattr(settings, "PLATFORM", None), "APPLICATIONS", None), "BUNDLES_DESCRIPTOR_PROVIDER", None)
+        or os.getenv("BUNDLES_DESCRIPTOR_PROVIDER")
+    )
+    if explicit is not None:
+        return explicit
+    try:
+        from kdcube_ai_app.infra.secrets.manager import build_secrets_manager_config
+
+        cfg = build_secrets_manager_config(settings)
+    except Exception:
+        cfg = None
+    if cfg is not None and getattr(cfg, "provider", None) == "aws-sm":
+        return "aws-sm"
+    if _resolve_bundles_descriptor_authority_uri():
+        return "file"
     return None
 
 
@@ -1070,15 +1108,15 @@ def describe_authoritative_bundle_store(
     project: Optional[str] = None,
 ) -> Dict[str, Any]:
     del tenant, project
-    try:
-        from kdcube_ai_app.infra.secrets.manager import build_secrets_manager_config
+    provider = _resolve_bundles_descriptor_provider()
+    if provider == "aws-sm":
+        try:
+            from kdcube_ai_app.infra.secrets.manager import build_secrets_manager_config
 
-        cfg = build_secrets_manager_config(get_settings())
-    except Exception:
-        cfg = None
-
-    if cfg is not None and getattr(cfg, "provider", None) == "aws-sm":
-        prefix = str(getattr(cfg, "aws_sm_prefix", "") or "").strip()
+            cfg = build_secrets_manager_config(get_settings())
+        except Exception:
+            cfg = None
+        prefix = str(getattr(cfg, "aws_sm_prefix", "") or "").strip() if cfg is not None else ""
         return {
             "kind": "aws-sm",
             "label": "AWS Secrets Manager",
@@ -1086,8 +1124,8 @@ def describe_authoritative_bundle_store(
             "detail": prefix or None,
         }
 
-    bundles_yaml_uri = _resolve_bundles_descriptor_authority_uri()
-    if bundles_yaml_uri:
+    bundles_yaml_uri = _resolve_bundles_descriptor_authority_uri(allow_missing=(provider == "file"))
+    if provider == "file" and bundles_yaml_uri:
         raw = bundles_yaml_uri
         if raw.startswith("file://"):
             raw = raw[len("file://"):]
@@ -1112,13 +1150,15 @@ def _get_authoritative_bundle_store(
     tenant: str,
     project: str,
 ) -> Any | None:
-    try:
-        from kdcube_ai_app.infra.secrets.manager import build_secrets_manager_config
+    provider = _resolve_bundles_descriptor_provider()
+    cfg = None
+    if provider == "aws-sm":
+        try:
+            from kdcube_ai_app.infra.secrets.manager import build_secrets_manager_config
 
-        cfg = build_secrets_manager_config(get_settings())
-    except Exception:
-        return None
-    if cfg.provider == "aws-sm":
+            cfg = build_secrets_manager_config(get_settings())
+        except Exception:
+            return None
         return _AwsBundleDescriptorStore(
             tenant=tenant,
             project=project,
@@ -1127,8 +1167,8 @@ def _get_authoritative_bundle_store(
             profile=cfg.aws_profile,
             redis_url=cfg.redis_url,
         )
-    bundles_yaml_uri = _resolve_bundles_descriptor_authority_uri()
-    if bundles_yaml_uri:
+    bundles_yaml_uri = _resolve_bundles_descriptor_authority_uri(allow_missing=(provider == "file"))
+    if provider == "file" and bundles_yaml_uri:
         return _FileBundleDescriptorStore(bundles_yaml_uri=bundles_yaml_uri)
     return None
 
@@ -1297,6 +1337,18 @@ async def _put_bundle_props_locked(
     key = _props_key(tenant=tenant, project=project, bundle_id=bundle_id)
     await redis.set(key, json.dumps(props, ensure_ascii=False))
     if bundle_id in _reserved_bundle_ids():
+        # Persist to the file-backed descriptor so that _sync_bundle_props_authoritative
+        # on the next load_registry call (triggered by the listener) doesn't revert
+        # Redis to stale YAML values.
+        store = _get_authoritative_bundle_store(tenant, project)
+        if isinstance(store, _FileBundleDescriptorStore):
+            entry = _reserved_bundle_entry(bundle_id)
+            if entry is None:
+                entry = BundleEntry(id=bundle_id, path="")
+            try:
+                store.set_bundle_props(bundle_id, entry, props)
+            except Exception:
+                _log.warning("Failed to persist reserved bundle props to descriptor", exc_info=True)
         try:
             await publish_props_update(
                 redis,
@@ -1609,21 +1661,15 @@ async def force_env_reset_if_requested(
     settings = get_settings()
     if not settings.BUNDLES_FORCE_ENV_ON_STARTUP:
         return None
-    try:
-        from kdcube_ai_app.infra.secrets.manager import build_secrets_manager_config
-
-        cfg = build_secrets_manager_config(settings)
-    except Exception:
-        cfg = None
-    if cfg is not None and getattr(cfg, "provider", None) == "aws-sm":
-        _log.info(
-            "Skipping startup bundle descriptor reset because aws-sm is the authoritative bundle store."
-        )
-        return None
-
     t, p = tenant, project
     if not t or not p:
         t, p = _tp_from_env()
+    store = _get_authoritative_bundle_store(t, p)
+    if store is not None and not _is_live_file_authority(store):
+        _log.info(
+            "Skipping startup bundle descriptor reset because a non-file authoritative bundle store is configured."
+        )
+        return None
 
     lock_key = namespaces.CONFIG.BUNDLES.ENV_SYNC_LOCK_FMT.format(tenant=t, project=p)
     try:
