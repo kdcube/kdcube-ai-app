@@ -1,73 +1,61 @@
 platform:
   repo: "kdcube-ai-app"
-  ref: "2026.4.21.1656"
+  ref: "2026.4.22.1221"
   description: |
-    This release focuses on descriptor-driven runtime maturity, secret/provider alignment, bundle
-    runtime correctness, ingress conversation identity hardening, and improved operational support
-    for local and deployed environments.
+    This release focuses on bundle/runtime contract hardening, descriptor-driven metrics
+    configuration, stricter bundle enablement enforcement, chat UI correctness, and clearer
+    operator and bundle-author guidance for configuration and secret access.
 
     Highlights
 
-    - Descriptor-driven runtimes are more robust end-to-end. CLI bootstrap now seeds stronger
-      local-first defaults, preserves mounted bundle paths in reused runtimes, reads current AWS
-      descriptor values when needed, and precreates metrics log mounts for compose-based runtime
-      setups.
-    - Bundle runtime behavior was tightened in several places. Runtime inspection and split bundle
-      root handling were added, bundle prop writes are now serialized, scheduler-driven bundle prop
-      updates are published through the shared store, and shared infrastructure password lookup is
-      now driven through the configured secret provider.
-    - Gateway/runtime config resolution is more predictable. Descriptor scope placeholders are now
-      resolved centrally, and the runtime no longer depends on inconsistent ad hoc expansion paths.
-    - Chat ingress now owns conversation identity correctly. New conversations receive a
-      server-issued UUID at ingress time, supplied conversation ids are validated against the
-      authenticated user, SSE returns the resolved conversation id in the HTTP ack, and Socket.IO
-      now returns the same information via an explicit ack payload.
-    - Operator workflows were improved around git and resume behavior. Git subprocesses now use a
-      centralized repo-local commit identity contract, and Claude Code resume now treats git
-      lineage as the authority when deciding whether a session can resume safely.
-    - The control plane and proxy integration surface were extended. A single-key Redis delete
-      action was added to control-plane tooling, and integrations now expose an exact bundle list
-      route for callers that need strict bundle enumeration.
+    - Bundle enablement is now enforced at the resource level. Disabled bundles no longer rely on
+      partial or accidental runtime filtering; the enabled configuration is checked explicitly where
+      bundle resources are exposed.
+    - Metrics service configuration has been moved into descriptor-driven settings. The metrics
+      runtime now reads its operational configuration from the normal settings surface instead of
+      depending on a separate ad hoc configuration path.
+    - Runtime secret resolution is cleaner and more predictable. Secret-backed settings now follow
+      the normalized helper contract more consistently, and example-bundle cleanup no longer fails
+      noisily when shared filesystem assumptions are not met.
+    - Chat interaction behavior is more correct for users. Conversation id generation is now owned
+      by the back end, and the chat UI fix removes duplicate-turn creation and the stale input field
+      after send.
+    - Configuration and secret usage guidance is much clearer for engineers. The runtime
+      read/write contract is now documented explicitly, and bundle docs now prohibit raw env,
+      direct provider, and hardcoded descriptor-path access outside the narrow iso-runtime
+      exception.
 
     Runtime and deployment work in this release line:
 
-    - CLI compose runtimes now better preserve runtime-specific bundle mount behavior instead of
-      flattening everything back to seed descriptor assumptions.
-    - AWS-oriented descriptor flows can now read the currently configured deployment-side AWS keys,
-      reducing drift between desired and active configuration.
-    - Metrics runtime setup is more reliable in compose mode thanks to precreated log mounts and
-      the related bootstrap fixes delivered in this release line.
-    - Secret resolution is more consistent across the runtime, especially for infrastructure
-      passwords and shared service configuration, because provider lookup has been unified instead
-      of split across older code paths.
+    - Metrics runtime settings are now represented through the descriptor/settings model instead of
+      a special-case runtime surface, which makes local, compose, and deployed behavior easier to
+      reason about.
+    - Secret resolution now favors the normalized helper path for promoted settings, reducing
+      inconsistent reads across runtime bootstrap and feature code.
+    - Example-bundle shared cleanup was hardened so missing or non-writable shared bundle paths no
+      longer break routine cleanup execution.
+    - Server-side conversation id generation keeps identity issuance in the back end instead of
+      splitting that responsibility across UI and server behavior.
 
     Bundle/runtime and documentation work:
 
-    - Bundle storage and runtime documentation were rewritten to reflect actual operational
-      behavior, including the contract for mounted bundle paths, runtime descriptor reuse, and
-      storage semantics.
-    - Local runtime descriptor documentation now matches the shipped bootstrap behavior instead of
-      older partial flows.
-    - Bundle storage guidance was clarified so the runtime/storage contract is easier to operate and
-      support in real deployments.
+    - Added a dedicated runtime read/write contract page covering `get_settings()`, `get_secret()`,
+      `get_plain()`, bundle props, user props, and user secrets on one page.
+    - Bundle authoring docs now make the supported configuration access rules explicit: normal
+      bundle code must use the helper contract rather than raw `os.getenv(...)`, direct
+      secrets-provider calls, or hardcoded descriptor file paths.
+    - Metrics service configuration and export docs were clarified to match the actual runtime
+      contract after the descriptor-driven settings move.
 
     Changelog
 
-    - Added local-first descriptor bootstrap defaults for CLI-driven runtimes.
-    - Added runtime bundle inspection support and split bundle root handling.
-    - Preserved mounted local bundle paths when reusing existing runtimes.
-    - Added compose bootstrap support to precreate metrics log mounts.
-    - Added descriptor-aware AWS key lookup for CLI deployment flows.
-    - Unified secret-provider lookup for shared and infrastructure password resolution.
-    - Resolved descriptor scope placeholders centrally in gateway/runtime config handling.
-    - Serialized shared bundle prop writes and published scheduler-side prop updates from the shared
-      store.
-    - Added exact bundle list exposure for proxy/integration consumers.
-    - Added control-plane single-key Redis deletion support.
-    - Centralized repo-local git commit identity handling.
-    - Treated git lineage as the authority for Claude Code resume decisions.
-    - Issued conversation ids at ingress, rejected unknown supplied ids, and aligned SSE and
-      Socket.IO acknowledgment payloads around the resolved conversation id.
-    - Expanded bundle/runtime documentation to match the actual deployment and runtime contract.
+    - Added enabled-config enforcement for bundle resources.
+    - Moved conversation id generation fully to the back end.
+    - Moved metrics service runtime configuration into descriptor-backed settings.
+    - Normalized runtime secret resolution and hardened example-bundle cleanup behavior.
+    - Fixed duplicate-turn creation and uncleared input after send in the chat UI.
+    - Added a one-page runtime read/write contract for helper-based config and secret access.
+    - Prohibited raw env, direct secrets-provider, and hardcoded descriptor-path access in bundle
+      authoring guidance outside the explicit iso-runtime exception.
 config:
-    version: "2026.4.21.1656"
+    version: "2026.4.22.1221"
