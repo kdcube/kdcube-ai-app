@@ -25,7 +25,7 @@ For now, bundle code should **not** write platform/global props or platform/glob
 
 | Data class | Read API | Write API | Scope | Live authority today | Export / descriptor behavior |
 |---|---|---|---|---|---|
-| deployment-scoped bundle props | `self.bundle_prop(...)`, `self.bundle_props` | `await set_bundle_prop(...)` | tenant + project + bundle | mounted writable `bundles.yaml` when present; Redis is the runtime cache; grouped bundle descriptor docs are fallback only when no mounted file exists | exported to `bundles.yaml` |
+| deployment-scoped bundle props | `self.bundle_prop(...)`, `self.bundle_props` | `await set_bundle_prop(...)` | tenant + project + bundle | configured bundle descriptor authority; Redis is the runtime cache. In ECS the recommended authority is writable mounted `bundles.yaml` on EFS with `BUNDLES_DESCRIPTOR_PROVIDER=file`. | exported to `bundles.yaml` |
 | deployment-scoped bundle secrets | `get_secret("b:...")` | `await set_bundle_secret(...)` | tenant + project + bundle | configured secrets provider; in local `secrets-file` mode this is `bundles.secrets.yaml` | exported to `bundles.secrets.yaml` |
 | user-scoped bundle props | `get_user_prop(...)`, `get_user_props()` | `set_user_prop(...)`, `delete_user_prop(...)` | tenant + project + bundle + user | PostgreSQL `<SCHEMA>.user_bundle_props` | never exported to descriptors |
 | user-scoped bundle secrets | `get_user_secret(...)` | `set_user_secret(...)`, `delete_user_secret(...)` | tenant + project + bundle + user | configured secrets provider; in local `secrets-file` mode this is `secrets.yaml` | never exported to descriptors |
@@ -85,13 +85,25 @@ Typical use:
 
 ### Source-of-truth policy for bundle props
 
-`bundles.yaml` is the deployment-scoped bundle descriptor and is always mounted into the runtime.
+`bundles.yaml` is the deployment-scoped bundle descriptor.
 
 That means the intended source-of-truth policy is:
 
 - deployment-scoped bundle prop changes should be persisted into `bundles.yaml`
 - exports should reconstruct `bundles.yaml` from the current deployment-scoped bundle state
 - user-scoped state should remain outside descriptors
+
+For cloud deployments, the recommended architecture is:
+
+- keep secrets in the configured secrets provider such as AWS Secrets Manager
+- keep deployment-scoped bundle descriptors and non-secret bundle props in writable mounted `bundles.yaml`
+- set `BUNDLES_DESCRIPTOR_PROVIDER=file`
+
+Reason:
+
+- bundle props are configuration, not secrets
+- this avoids single-document size limits in Secrets Manager
+- it keeps the deployment-scoped bundle state exportable as YAML
 
 This is the policy the docs should describe.
 
@@ -129,16 +141,27 @@ Supported operational write path today:
 Current behavior:
 
 - `POST /.../props` always writes Redis
-- if mounted `bundles.yaml` exists, that same write also updates the mounted file directly
-- otherwise, in `aws-sm`, that same write updates the grouped bundle descriptor doc
+- the same write also persists into the configured bundle descriptor authority
+  - recommended cloud mode: writable mounted `bundles.yaml`
+  - optional fallback mode: grouped bundle descriptor docs in `aws-sm`
+- the write publishes `bundles.props.update` on Redis
+- proc listens to that channel and reconciles bundle-scheduler state in
+  [processor.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py)
 
 So the current implementation is:
 
 | Mode | Runtime read authority | Persistent authority today |
 |---|---|---|
-| mounted descriptor file present | Redis, backfilled from mounted `bundles.yaml` | mounted `bundles.yaml` |
-| no mounted descriptor file, `aws-sm` configured | Redis, backfilled from grouped bundle descriptor docs | grouped bundle descriptor docs in AWS Secrets Manager |
+| `BUNDLES_DESCRIPTOR_PROVIDER=file` | Redis, backfilled from mounted `bundles.yaml` | mounted writable `bundles.yaml` |
+| `BUNDLES_DESCRIPTOR_PROVIDER=aws-sm` | Redis, backfilled from grouped bundle descriptor docs | grouped bundle descriptor docs in AWS Secrets Manager |
 | other non-file providers | Redis | provider-specific operational path if configured |
+
+The important runtime guarantee is:
+
+- bundles can update their own deployment-scoped props
+- bundle admin can update deployment-scoped props
+- both paths persist the same effective props into the authoritative store
+- proc reacts to the props update channel so scheduler-driven behavior stays aligned
 
 ### Descriptor reset behavior
 
@@ -148,7 +171,8 @@ These paths are descriptor-authoritative today:
 - env/descriptor force-reset paths
 - startup reset paths that replay the current bundle descriptor authority
 
-Those paths replace Redis bundle props from the descriptor source, which is the mounted `bundles.yaml`.
+Those paths replace Redis bundle props from the configured bundle descriptor authority.
+In the recommended cloud setup, that authority is the mounted `bundles.yaml`.
 
 ### Raw descriptor reads are different
 

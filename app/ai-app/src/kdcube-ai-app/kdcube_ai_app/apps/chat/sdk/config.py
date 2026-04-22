@@ -616,6 +616,7 @@ class Settings(PLATFORM_CONFIG):
     BUNDLE_CLEANUP_INTERVAL_SECONDS: int = Field(default=3600)
     BUNDLE_CLEANUP_LOCK_TTL_SECONDS: int = Field(default=900)
     BUNDLE_REF_TTL_SECONDS: int = Field(default=3600)
+    BUNDLES_DESCRIPTOR_PROVIDER: str | None = None
     BUNDLES_PRELOAD_LOCK_TTL_SECONDS: int = Field(default=900)
     BUNDLES_INCLUDE_EXAMPLES: bool = Field(default=True)
     BUNDLES_FORCE_ENV_ON_STARTUP: bool = Field(default=False)
@@ -915,6 +916,7 @@ class Settings(PLATFORM_CONFIG):
                 BUNDLES_ROOT=self._resolve_str("BUNDLES_ROOT", f"{bundles_p}.bundles_root", "/bundles"),
                 MANAGED_BUNDLES_ROOT=self._resolve_str("MANAGED_BUNDLES_ROOT", f"{bundles_p}.managed_bundles_root", "/managed-bundles"),
                 BUNDLE_STORAGE_ROOT=self._resolve_str("BUNDLE_STORAGE_ROOT", f"{bundles_p}.bundle_storage_root"),
+                BUNDLES_DESCRIPTOR_PROVIDER=self._resolve_str("BUNDLES_DESCRIPTOR_PROVIDER", f"{bundles_p}.descriptor_provider"),
                 BUNDLES_INCLUDE_EXAMPLES=self._resolve_bool("BUNDLES_INCLUDE_EXAMPLES", f"{bundles_p}.bundles_include_examples", True),
                 BUNDLE_CLEANUP_ENABLED=self._resolve_bool("BUNDLE_CLEANUP_ENABLED", f"{bundles_p}.bundle_cleanup_enabled", True),
                 BUNDLE_CLEANUP_INTERVAL_SECONDS=self._resolve_int("BUNDLE_CLEANUP_INTERVAL_SECONDS", f"{bundles_p}.bundle_cleanup_interval_seconds", 3600),
@@ -1236,6 +1238,7 @@ def export_managed_env(
     _put("HOST_KDCUBE_STORAGE_PATH", resolved.HOST_KDCUBE_STORAGE_PATH)
     _put("HOST_BUNDLES_PATH", resolved.HOST_BUNDLES_PATH)
     _put("BUNDLES_ROOT", resolved.PLATFORM.APPLICATIONS.BUNDLES_ROOT)
+    _put("BUNDLES_DESCRIPTOR_PROVIDER", resolved.PLATFORM.APPLICATIONS.BUNDLES_DESCRIPTOR_PROVIDER or resolved.BUNDLES_DESCRIPTOR_PROVIDER)
     _put("HOST_MANAGED_BUNDLES_PATH", resolved.HOST_MANAGED_BUNDLES_PATH)
     _put("MANAGED_BUNDLES_ROOT", resolved.PLATFORM.APPLICATIONS.MANAGED_BUNDLES_ROOT)
     _put("HOST_BUNDLE_STORAGE_PATH", resolved.HOST_BUNDLE_STORAGE_PATH)

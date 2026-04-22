@@ -80,7 +80,7 @@ Why direct descriptor file path reads are prohibited:
 
 | Helper | Writes | Scope | Persistence target today | Export behavior |
 |---|---|---|---|---|
-| `await set_bundle_prop("dot.path", value)` | deployment-scoped bundle prop | deployment + bundle | Redis first; then mounted `bundles.yaml` if present, otherwise grouped bundle descriptor doc in `aws-sm` | deployment-scoped bundle props are exported to `bundles.yaml` |
+| `await set_bundle_prop("dot.path", value)` | deployment-scoped bundle prop | deployment + bundle | Redis first; then the configured bundle descriptor authority. Recommended cloud mode is writable mounted `bundles.yaml` with `BUNDLES_DESCRIPTOR_PROVIDER=file`. | deployment-scoped bundle props are exported to `bundles.yaml` |
 | `await set_bundle_secret("dot.path", value)` | deployment-scoped bundle secret | deployment + bundle | configured secrets provider | exported to `bundles.secrets.yaml` only when provider/export flow supports it; in `aws-sm` live authority is provider state |
 | `set_user_prop(...)` | user-scoped non-secret bundle state | deployment + bundle + user | PostgreSQL user bundle props table | never exported |
 | `delete_user_prop(...)` | deletes user-scoped non-secret bundle state | deployment + bundle + user | PostgreSQL user bundle props table | never exported |
@@ -152,11 +152,18 @@ They do not:
 | Data class | Authority |
 |---|---|
 | platform/runtime non-secret config | deployment env + descriptor-backed runtime snapshots |
-| deployment-scoped bundle props | Redis effective state, backfilled from mounted `bundles.yaml` or grouped bundle descriptor doc |
+| deployment-scoped bundle props | configured bundle descriptor authority plus Redis cache; recommended ECS mode is mounted writable `bundles.yaml` on EFS with `BUNDLES_DESCRIPTOR_PROVIDER=file` |
 | deployment-scoped bundle secrets | `<prefix>/bundles/<bundle_id>/secrets` |
 | platform/global secrets | mixed provider contract: grouped `platform/secrets` plus canonical per-key fallback where still used |
 | user props | PostgreSQL |
 | user secrets | configured secrets provider under user-scoped keys |
+
+Important:
+
+- `SECRETS_PROVIDER` does not have to own deployment-scoped bundle props
+- in recommended ECS deployments, keep secrets in AWS SM
+- keep deployment-scoped bundle descriptors and non-secret bundle props in mounted writable `bundles.yaml`
+- set `BUNDLES_DESCRIPTOR_PROVIDER=file`
 
 ## Current bundle prop write behavior
 
@@ -165,8 +172,9 @@ They do not:
 Current behavior:
 
 1. write the effective prop update into Redis
-2. if mounted `bundles.yaml` exists, persist the change into that file
-3. otherwise, in `aws-sm`, persist the change into the grouped deployment bundle descriptor doc
+2. persist the change into the configured bundle descriptor authority
+3. publish `bundles.props.update` on Redis
+4. proc listens to that channel and reconciles scheduler-driven runtime state in [processor.py](/Users/elenaviter/src/kdcube/kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py)
 
 That is why `self.bundle_prop(...)` should be treated as effective deployment
 config, not as a raw file read.

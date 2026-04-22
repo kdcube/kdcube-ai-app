@@ -649,7 +649,7 @@ bundles:
     assert props_map == {"demo.bundle": {"feature": {"enabled": True}}}
 
 
-def test_authoritative_bundle_store_prefers_aws_sm_over_mounted_bundles_yaml(monkeypatch, tmp_path: Path):
+def test_authoritative_bundle_store_defaults_to_aws_sm_when_provider_is_not_explicit(monkeypatch, tmp_path: Path):
     descriptor_path = tmp_path / "bundles.yaml"
     descriptor_path.write_text("bundles:\n  version: '1'\n  items: []\n")
 
@@ -671,16 +671,58 @@ def test_authoritative_bundle_store_prefers_aws_sm_over_mounted_bundles_yaml(mon
     assert isinstance(store, bundle_store._AwsBundleDescriptorStore)
 
 
+def test_authoritative_bundle_store_uses_file_when_explicitly_selected(monkeypatch, tmp_path: Path):
+    descriptor_path = tmp_path / "bundles.yaml"
+    descriptor_path.write_text("bundles:\n  version: '1'\n  items: []\n")
+
+    monkeypatch.setenv("BUNDLES_YAML_DESCRIPTOR_PATH", str(descriptor_path.resolve()))
+    monkeypatch.setenv("BUNDLES_DESCRIPTOR_PROVIDER", "file")
+    monkeypatch.setattr(
+        "kdcube_ai_app.infra.secrets.manager.build_secrets_manager_config",
+        lambda _settings: SimpleNamespace(
+            provider="aws-sm",
+            aws_sm_prefix="kdcube/demo/proj",
+            aws_region="eu-west-1",
+            aws_profile=None,
+            redis_url=None,
+        ),
+    )
+    monkeypatch.setattr(bundle_store, "get_settings", lambda: SimpleNamespace(BUNDLES_DESCRIPTOR_PROVIDER="file"))
+
+    store = bundle_store._get_authoritative_bundle_store("demo", "demo-project")
+
+    assert isinstance(store, bundle_store._FileBundleDescriptorStore)
+
+
+def test_authoritative_bundle_store_uses_file_when_explicitly_selected_even_if_descriptor_is_not_created_yet(monkeypatch, tmp_path: Path):
+    descriptor_path = tmp_path / "bundles.yaml"
+
+    monkeypatch.setenv("BUNDLES_YAML_DESCRIPTOR_PATH", str(descriptor_path.resolve()))
+    monkeypatch.setenv("BUNDLES_DESCRIPTOR_PROVIDER", "file")
+    monkeypatch.setattr(
+        "kdcube_ai_app.infra.secrets.manager.build_secrets_manager_config",
+        lambda _settings: SimpleNamespace(
+            provider="aws-sm",
+            aws_sm_prefix="kdcube/demo/proj",
+            aws_region="eu-west-1",
+            aws_profile=None,
+            redis_url=None,
+        ),
+    )
+    monkeypatch.setattr(bundle_store, "get_settings", lambda: SimpleNamespace(BUNDLES_DESCRIPTOR_PROVIDER="file"))
+
+    store = bundle_store._get_authoritative_bundle_store("demo", "demo-project")
+
+    assert isinstance(store, bundle_store._FileBundleDescriptorStore)
+
+
 def test_describe_authoritative_bundle_store_reports_bundles_yaml(monkeypatch, tmp_path: Path):
     descriptor_path = tmp_path / "bundles.yaml"
     descriptor_path.write_text("bundles:\n  version: '1'\n  items: []\n")
 
     monkeypatch.setenv("BUNDLES_YAML_DESCRIPTOR_PATH", str(descriptor_path.resolve()))
-    monkeypatch.setattr(
-        "kdcube_ai_app.infra.secrets.manager.build_secrets_manager_config",
-        lambda _settings: SimpleNamespace(provider="file"),
-    )
-    monkeypatch.setattr(bundle_store, "get_settings", lambda: object())
+    monkeypatch.setenv("BUNDLES_DESCRIPTOR_PROVIDER", "file")
+    monkeypatch.setattr(bundle_store, "get_settings", lambda: SimpleNamespace(BUNDLES_DESCRIPTOR_PROVIDER="file"))
 
     descriptor = bundle_store.describe_authoritative_bundle_store("demo", "demo-project")
 
@@ -833,3 +875,51 @@ async def test_force_env_reset_is_disabled_for_aws_sm_authority(monkeypatch):
 
     assert result is None
     assert called["reset"] == 0
+
+
+@pytest.mark.asyncio
+async def test_force_env_reset_runs_for_file_authority_even_when_secrets_stay_in_aws_sm(monkeypatch):
+    redis = _FakeRedis()
+
+    monkeypatch.setattr(
+        bundle_store,
+        "get_settings",
+        lambda: SimpleNamespace(
+            BUNDLES_FORCE_ENV_ON_STARTUP=True,
+            BUNDLES_FORCE_ENV_LOCK_TTL_SECONDS=60,
+            BUNDLES_DESCRIPTOR_PROVIDER="file",
+            TENANT="demo",
+            PROJECT="demo-project",
+        ),
+    )
+    monkeypatch.setattr(
+        "kdcube_ai_app.infra.secrets.manager.build_secrets_manager_config",
+        lambda _settings: SimpleNamespace(
+            provider="aws-sm",
+            aws_sm_prefix="kdcube/demo/demo-project",
+            aws_region="eu-west-1",
+            aws_profile=None,
+            redis_url=None,
+        ),
+    )
+    file_store = bundle_store._FileBundleDescriptorStore(bundles_yaml_uri=(Path(__file__).resolve()).as_uri())
+    monkeypatch.setattr(bundle_store, "_get_authoritative_bundle_store", lambda tenant, project: file_store)
+
+    expected = bundle_store.BundlesRegistry(default_bundle_id="demo.bundle", bundles={})
+    called = {"reset": 0}
+
+    async def _fake_reset(*args, **kwargs):
+        called["reset"] += 1
+        return expected
+
+    monkeypatch.setattr(bundle_store, "reset_registry_from_env", _fake_reset)
+
+    result = await bundle_store.force_env_reset_if_requested(
+        redis,
+        tenant="demo",
+        project="demo-project",
+        actor="startup-env",
+    )
+
+    assert result is expected
+    assert called["reset"] == 1

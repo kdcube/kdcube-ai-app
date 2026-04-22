@@ -92,14 +92,21 @@ Notes:
 | Env var | Descriptor path | Descriptor file | Modes |
 |---|---|---|---|
 | `BUNDLES_YAML_DESCRIPTOR_PATH` | `bundles.yaml` | local bundle descriptor authority | proc in direct local run; optional explicit path in compose/k8s |
+| `BUNDLES_DESCRIPTOR_PROVIDER` | `platform.services.proc.bundles.descriptor_provider` | `assembly.yaml` | proc in all modes |
 | `BUNDLES_FORCE_ENV_ON_STARTUP` | n/a | current bundle descriptor authority | proc in all modes |
 | `BUNDLE_GIT_RESOLUTION_ENABLED` | bundle items use `repo` / `ref` | `bundles.yaml` | proc in all modes |
 | `BUNDLES_PRELOAD_ON_START` | n/a | not descriptor-backed by default | proc |
 
 Important distinction:
 
-- `BUNDLES_YAML_DESCRIPTOR_PATH` controls plain reads and file-backed authority
+- `BUNDLES_YAML_DESCRIPTOR_PATH` points at the file-backed bundle descriptor source
+- `BUNDLES_DESCRIPTOR_PROVIDER` selects bundle descriptor authority independently from `SECRETS_PROVIDER`
 - proc startup/reset can use bundle descriptor authority directly
+- recommended ECS setup is:
+  - `SECRETS_PROVIDER=aws-sm`
+  - `BUNDLES_DESCRIPTOR_PROVIDER=file`
+  - writable mounted `/config/bundles.yaml` on EFS
+- if bundle admin or bundle code should persist deployment-scoped prop updates, proc must mount that descriptor path writable
 
 ### Workspace and Claude session backends
 
@@ -156,6 +163,7 @@ If proc should seed or reset the bundle registry from that same descriptor:
 
 ```bash
 BUNDLES_YAML_DESCRIPTOR_PATH=/abs/path/to/bundles.yaml
+BUNDLES_DESCRIPTOR_PROVIDER=file
 BUNDLES_FORCE_ENV_ON_STARTUP=1
 ```
 
@@ -195,6 +203,12 @@ For the one-page read/write contract across helpers, see:
 | effective current bundle config | `self.bundle_prop("...")` |
 | platform/global secret | `get_secret("canonical.key")` |
 | bundle-scoped secret | `get_secret("b:group.key")` |
+
+For deployment-scoped bundle props in cloud:
+
+- keep secrets in the configured secrets provider
+- keep bundle descriptors and non-secret bundle props in `bundles.yaml`
+- prefer file-backed authority over provider-backed bundle descriptor docs
 
 ## Related docs
 
