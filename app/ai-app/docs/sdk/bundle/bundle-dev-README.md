@@ -156,6 +156,27 @@ Read the exact model here:
 - [bundle-platform-properties-README.md](bundle-platform-properties-README.md)
 - [build/how-to-configure-and-run-bundle-README.md](build/how-to-configure-and-run-bundle-README.md)
 
+## Configuration Access Rules
+
+Use the helper contract, not ad hoc access.
+
+Required rules for bundle code:
+
+- do not use `os.getenv(...)` or `os.environ[...]` for deployment-owned config
+  or secrets
+- do not call `get_secrets_manager(...).get_secret(...)` directly
+- do not open descriptor YAML files through hardcoded paths
+
+Use instead:
+
+- `self.bundle_prop(...)` for effective bundle config
+- `get_secret(...)` for deployment-scoped secrets
+- `get_plain(...)` only for raw descriptor inspection
+- `get_settings()` for effective typed platform/runtime settings
+
+The only normal exception for raw env access is code that explicitly sits at
+the iso-runtime or sandbox boundary and is intentionally driven by process env.
+
 ## Git Auth Environment Boundary
 
 If bundle code needs to run git commands, treat git auth as subprocess configuration, not as mutable bundle-local process state.
