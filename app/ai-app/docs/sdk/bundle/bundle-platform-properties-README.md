@@ -33,8 +33,9 @@ Important:
 - the legacy omitted-bundle route still exists for generic platform callers and
   resolves the current default bundle id when `bundle_id` is not supplied
 
-If proc runs with `BUNDLES_FORCE_ENV_ON_STARTUP=1`, the descriptor-backed props layer is rebuilt
-authoritatively from `bundles.yaml`, so removed keys are deleted from Redis on env reset.
+If proc runs with `BUNDLES_FORCE_ENV_ON_STARTUP=1` and the authoritative bundle
+descriptor provider is file-backed, the props layer is rebuilt authoritatively
+from `bundles.yaml`, so removed keys are deleted from Redis on env reset.
 
 When a reserved property references a secret key, resolution still goes through
 `get_secret(...)`. That means the same property works with any configured
@@ -50,8 +51,8 @@ The storage rule is:
 
 | Mode | Authoritative store for reserved bundle props | Runtime cache | What bundle code reads |
 |---|---|---|---|
-| `aws-sm` | grouped AWS SM bundle descriptor docs | Redis per tenant/project/bundle | `self.bundle_prop(...)` / `self.bundle_props` |
-| `secrets-file` | `bundles.yaml` | Redis per tenant/project/bundle | `self.bundle_prop(...)` / `self.bundle_props` |
+| `BUNDLES_DESCRIPTOR_PROVIDER=file` | mounted writable `bundles.yaml` | Redis per tenant/project/bundle | `self.bundle_prop(...)` / `self.bundle_props` |
+| `BUNDLES_DESCRIPTOR_PROVIDER=aws-sm` | grouped AWS SM bundle descriptor docs | Redis per tenant/project/bundle | `self.bundle_prop(...)` / `self.bundle_props` |
 | no provider / code-only fallback | bundle code defaults only | none | `self.bundle_prop(...)` from defaults only |
 
 The Redis cache key format is:
@@ -83,7 +84,7 @@ In `aws-sm`, the grouped bundle descriptor docs are:
 
 All reserved paths below are still non-secret bundle props.
 
-| Path | Normal read surface | `aws-sm` authority | `secrets-file` authority | Redis role | Notes |
+| Path | Normal read surface | `aws-sm` authority | file-backed authority | Redis role | Notes |
 |---|---|---|---|---|---|
 | `role_models` | `self.bundle_prop("role_models")` or resolved `Config.role_models` | `<prefix>/bundles/<bundle_id>/descriptor` `config.role_models` | `bundles.yaml -> items[].config.role_models` | cache | platform-owned model-role routing |
 | `embedding` | `self.bundle_prop("embedding")` or resolved `Config.embedding` | `<prefix>/bundles/<bundle_id>/descriptor` `config.embedding` | `bundles.yaml -> items[].config.embedding` | cache | platform-owned embedding override |
@@ -131,6 +132,7 @@ Storage summary:
 |---|---|
 | Where do I set it for a deployment? | `bundles.yaml -> items[].config.role_models` or the live admin props API |
 | Where does it live on AWS `aws-sm`? | `<prefix>/bundles/<bundle_id>/descriptor` |
+| Where should it live in recommended ECS deployments? | mounted writable `bundles.yaml` on EFS |
 | Where does proc read it from at runtime? | Redis effective bundle props cache, with fallback to the authoritative store |
 
 This property is interpreted by `BaseEntrypoint`, not by bundle code directly.
