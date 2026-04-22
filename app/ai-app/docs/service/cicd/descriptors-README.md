@@ -5,6 +5,7 @@ summary: "Descriptor files, their authority model, and how they differ between C
 tags: ["service", "cicd", "descriptors", "configuration"]
 keywords: ["assembly.yaml", "bundles.yaml", "bundles.secrets.yaml", "secrets.yaml", "gateway.yaml", "CLI", "AWS", "direct run"]
 see_also:
+  - ks:docs/service/configuration/runtime-read-write-contract-README.md
   - ks:docs/service/configuration/assembly-descriptor-README.md
   - ks:docs/service/configuration/bundles-descriptor-README.md
   - ks:docs/service/configuration/bundles-secrets-descriptor-README.md
@@ -30,8 +31,13 @@ descriptor. Each page now includes:
 - YAML path mapping
 - mode-specific authority notes
 
+For the cross-helper one-page contract, start with:
+
+- [runtime-read-write-contract-README.md](../configuration/runtime-read-write-contract-README.md)
+
 Descriptor pages:
 
+- [runtime-read-write-contract-README.md](../configuration/runtime-read-write-contract-README.md)
 - [assembly-descriptor-README.md](../configuration/assembly-descriptor-README.md)
 - [bundles-descriptor-README.md](../configuration/bundles-descriptor-README.md)
 - [bundles-secrets-descriptor-README.md](../configuration/bundles-secrets-descriptor-README.md)
