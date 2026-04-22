@@ -31,6 +31,36 @@ It answers:
 - use `self.bundle_prop(...)` for effective deployment-scoped bundle config
 - use `get_user_prop(...)` / `get_user_secret(...)` for per-user state
 
+## Prohibited direct access in feature and bundle code
+
+Do not bypass the helper contract in normal feature code or bundle code.
+
+Prohibited patterns:
+
+- `os.getenv(...)` or `os.environ[...]` for deployment-owned config or secrets
+- direct `get_secrets_manager(...).get_secret(...)` calls
+- direct file opens of descriptor YAML files through hardcoded paths
+
+Use instead:
+
+- `get_settings()` for effective typed runtime settings
+- `get_secret(...)` for deployment-scoped secrets
+- `get_plain(...)` for raw descriptor inspection
+- `self.bundle_prop(...)` for effective bundle config
+
+The only normal exception for direct env reads is code that intentionally lives
+at the iso-runtime or sandbox boundary and is explicitly designed to be driven
+by process env.
+
+Why direct descriptor file path reads are prohibited:
+
+- it hardcodes one runtime filesystem layout
+- it bypasses descriptor path indirection such as `PLATFORM_DESCRIPTORS_DIR`,
+  `ASSEMBLY_YAML_DESCRIPTOR_PATH`, and `BUNDLES_YAML_DESCRIPTOR_PATH`
+- it makes local runs, tests, and alternative mount layouts easier to break
+- it bypasses the documented helper contract and any future mode-specific
+  resolution logic
+
 ## Read helpers
 
 | Helper | Reads | Scope | Authority today | Notes |
@@ -180,6 +210,11 @@ So `aws-sm` is not "one single JSON blob for everything".
 - `self.bundle_prop(...)` is not a raw descriptor read
 - user props/secrets are not exported back into descriptors
 - deployment-scoped bundle props/secrets are operational config, not ordinary business data
+- direct hardcoded descriptor file path reads are not part of the supported
+  runtime contract
+- direct secrets-provider calls are not part of the supported runtime contract
+- raw env access for deployment-owned config is not part of the supported
+  runtime contract outside explicit iso-runtime/sandbox boundary code
 
 ## Related pages
 
