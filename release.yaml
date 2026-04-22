@@ -1,61 +1,48 @@
 platform:
   repo: "kdcube-ai-app"
-  ref: "2026.4.22.1221"
+  ref: "2026.4.22.1914"
   description: |
-    This release focuses on bundle/runtime contract hardening, descriptor-driven metrics
-    configuration, stricter bundle enablement enforcement, chat UI correctness, and clearer
-    operator and bundle-author guidance for configuration and secret access.
+    This release focuses on making bundle descriptor authority file-backed in deployed
+    environments and clarifying the Git transport/auth contract for repo-backed bundles.
 
     Highlights
 
-    - Bundle enablement is now enforced at the resource level. Disabled bundles no longer rely on
-      partial or accidental runtime filtering; the enabled configuration is checked explicitly where
-      bundle resources are exposed.
-    - Metrics service configuration has been moved into descriptor-driven settings. The metrics
-      runtime now reads its operational configuration from the normal settings surface instead of
-      depending on a separate ad hoc configuration path.
-    - Runtime secret resolution is cleaner and more predictable. Secret-backed settings now follow
-      the normalized helper contract more consistently, and example-bundle cleanup no longer fails
-      noisily when shared filesystem assumptions are not met.
-    - Chat interaction behavior is more correct for users. Conversation id generation is now owned
-      by the back end, and the chat UI fix removes duplicate-turn creation and the stale input field
-      after send.
-    - Configuration and secret usage guidance is much clearer for engineers. The runtime
-      read/write contract is now documented explicitly, and bundle docs now prohibit raw env,
-      direct provider, and hardcoded descriptor-path access outside the narrow iso-runtime
-      exception.
+    - Bundle descriptor authority is now configurable independently from the secrets provider. In
+      deployed environments, `bundles.yaml` and non-secret bundle props can live on mounted
+      writable storage while secrets continue to live in AWS Secrets Manager.
+    - File-backed bundle descriptor writes are now atomic. This reduces the risk of partial
+      descriptor updates when bundle admin or runtime code persists deployment-scoped bundle
+      properties.
+    - The bundle props update contract is clearer and more reliable. Bundle code and bundle admin
+      both write through the same authoritative bundle store, and processor-side reconciliation
+      continues to listen for bundle property updates.
+    - Git transport and auth rules are now documented explicitly. The supported HTTPS and SSH repo
+      forms, their auth requirements, and the precedence between token and SSH auth are now clear
+      in the runtime and bundle docs.
 
     Runtime and deployment work in this release line:
 
-    - Metrics runtime settings are now represented through the descriptor/settings model instead of
-      a special-case runtime surface, which makes local, compose, and deployed behavior easier to
-      reason about.
-    - Secret resolution now favors the normalized helper path for promoted settings, reducing
-      inconsistent reads across runtime bootstrap and feature code.
-    - Example-bundle shared cleanup was hardened so missing or non-writable shared bundle paths no
-      longer break routine cleanup execution.
-    - Server-side conversation id generation keeps identity issuance in the back end instead of
-      splitting that responsibility across UI and server behavior.
+    - Added explicit bundle descriptor provider selection so bundle descriptor authority no longer
+      implicitly follows `SECRETS_PROVIDER`.
+    - File-backed bundle authority can now create a missing `bundles.yaml` on first write, which
+      makes mounted writable config usable as the live source of truth in ECS-style deployments.
+    - This supports a cleaner cloud architecture for large bundle descriptors and non-secret bundle
+      properties, which no longer need to be constrained by single-document Secrets Manager limits.
 
     Bundle/runtime and documentation work:
 
-    - Added a dedicated runtime read/write contract page covering `get_settings()`, `get_secret()`,
-      `get_plain()`, bundle props, user props, and user secrets on one page.
-    - Bundle authoring docs now make the supported configuration access rules explicit: normal
-      bundle code must use the helper contract rather than raw `os.getenv(...)`, direct
-      secrets-provider calls, or hardcoded descriptor file paths.
-    - Metrics service configuration and export docs were clarified to match the actual runtime
-      contract after the descriptor-driven settings move.
+    - Updated the service configuration, runtime read/write contract, and bundle docs to explain
+      the file-backed bundle authority model, including how bundle props are persisted and applied.
+    - Clarified the repo-backed bundle Git source rules across service config, storage, and bundle
+      authoring docs so operators know when HTTPS or SSH is expected and what credentials are
+      required.
 
     Changelog
 
-    - Added enabled-config enforcement for bundle resources.
-    - Moved conversation id generation fully to the back end.
-    - Moved metrics service runtime configuration into descriptor-backed settings.
-    - Normalized runtime secret resolution and hardened example-bundle cleanup behavior.
-    - Fixed duplicate-turn creation and uncleared input after send in the chat UI.
-    - Added a one-page runtime read/write contract for helper-based config and secret access.
-    - Prohibited raw env, direct secrets-provider, and hardcoded descriptor-path access in bundle
-      authoring guidance outside the explicit iso-runtime exception.
+    - Added file-backed bundle descriptor authority independent of the secrets provider.
+    - Made file-backed bundle descriptor writes atomic and first-write safe.
+    - Documented bundle prop persistence and processor reconciliation under the file-backed
+      authority model.
+    - Clarified HTTPS vs SSH Git repo transport rules and auth precedence.
 config:
-    version: "2026.4.22.1221"
+    version: "2026.4.22.1914"
