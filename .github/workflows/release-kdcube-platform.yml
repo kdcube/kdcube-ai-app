@@ -78,6 +78,7 @@ jobs:
   build-and-push:
     runs-on: ubuntu-latest
     needs: [resolve-version, tag-release]
+    timeout-minutes: 90
     permissions:
       contents: read
     strategy:
@@ -102,6 +103,7 @@ jobs:
             dockerfile: deployment/docker/all_in_one_kdcube/Dockerfile_ProxyOpenResty
           - image: kdcube-web-ui
             dockerfile: deployment/docker/all_in_one_kdcube/Dockerfile_UI
+            platforms: linux/amd64
             build_args: |
               UI_SOURCE_PATH=ui/chat-web-app
               NGINX_UI_CONFIG_FILE_PATH=deployment/docker/all_in_one_kdcube/nginx/conf/nginx_ui.conf
@@ -142,7 +144,7 @@ jobs:
           context: app/ai-app
           file: app/ai-app/${{ matrix.dockerfile }}
           push: true
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platforms || 'linux/amd64,linux/arm64' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: ${{ matrix.build_args }}
@@ -158,7 +160,41 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Check whether CLI version already exists on PyPI
+        id: cli_exists
+        env:
+          VERSION: ${{ needs.resolve-version.outputs.version }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          version = os.environ.get("VERSION", "").strip()
+          if not version:
+              raise SystemExit("VERSION is not set")
+
+          exists = False
+          url = "https://pypi.org/pypi/kdcube-cli/json"
+          try:
+              with urllib.request.urlopen(url, timeout=20) as response:
+                  payload = json.load(response)
+              exists = version in (payload.get("releases") or {})
+          except urllib.error.HTTPError as exc:
+              if exc.code != 404:
+                  raise
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              fh.write(f"exists={'true' if exists else 'false'}\n")
+          print(f"kdcube-cli {version} exists on PyPI: {exists}")
+          PY
+      - name: Skip CLI publish because version already exists
+        if: steps.cli_exists.outputs.exists == 'true'
+        env:
+          VERSION: ${{ needs.resolve-version.outputs.version }}
+        run: echo "kdcube-cli ${VERSION} already exists on PyPI; skipping build and publish."
       - name: Set CLI version
+        if: steps.cli_exists.outputs.exists != 'true'
         env:
           VERSION: ${{ needs.resolve-version.outputs.version }}
         run: |
@@ -175,11 +211,13 @@ jobs:
           path.write_text(text)
           PY
       - name: Build CLI package
+        if: steps.cli_exists.outputs.exists != 'true'
         working-directory: app/ai-app/src/kdcube-ai-app/kdcube_cli
         run: |
           python -m pip install --upgrade pip build
           python -m build
       - name: Publish CLI to PyPI
+        if: steps.cli_exists.outputs.exists != 'true'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: app/ai-app/src/kdcube-ai-app/kdcube_cli/dist
