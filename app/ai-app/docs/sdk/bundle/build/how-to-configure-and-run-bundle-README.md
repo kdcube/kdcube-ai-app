@@ -1,9 +1,9 @@
 ---
 id: ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
 title: "How To Configure And Run A Bundle"
-summary: "Current bundle-development runtime workflow: tenant/project environment setup, descriptors, local-path and git bundles, reload loop, and how configuration and secret scopes behave in a running local deployment."
+summary: "Current bundle-development runtime workflow: tenant/project environment setup, descriptor staging, local-path and git bundles, configuration translation, start/stop/reload loop, configuration/secret scopes, and the rule that one machine may hold many local deployment snapshots but should not be treated as running many local compose-backed KDCubes at once."
 tags: ["sdk", "bundle", "configuration", "runtime", "cli", "bundles.yaml"]
-keywords: ["local bundle development workflow", "tenant project environment boundary", "descriptor driven runtime setup", "local path bundle loop", "git bundle loop", "bundle reload workflow", "runtime sandbox selection", "bundle config and secret scopes", "current kdcube cli workflow"]
+keywords: ["local bundle development workflow", "tenant project environment boundary", "descriptor driven runtime setup", "local path bundle loop", "git bundle loop", "bundle reload workflow", "runtime sandbox selection", "bundle config and secret scopes", "bundle configurator workflow", "bundle deployer workflow", "current kdcube cli workflow", "multiple local runtime snapshots", "single active local compose deployment", "run multiple kdcubes on one machine"]
 see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/configuration/bundles-descriptor-README.md
@@ -42,6 +42,9 @@ Important:
 - `tenant/project` isolation already exists in the current model
 - the planned CLI redesign does not introduce that isolation
 - the redesign changes how the operator targets and manages deployments
+- one machine may hold many local deployment snapshots on disk
+- one machine should not be treated as supporting many concurrently running
+  local compose-backed KDCube stacks by default
 
 Use the companion docs for those:
 
@@ -63,8 +66,12 @@ Configuration rule:
 Tier 1 role of this page:
 
 - use it after `how-to-write` when you need a real local runtime
+- use it together with `bundle-runtime-configuration-and-secrets` when your job
+  is configuration modeling
 - use it first when your main task is integrating an existing bundle into a
   `tenant/project` environment
+- use it first when your main task is deploying, starting, stopping, reloading,
+  or inspecting a bundle in a local KDCube environment
 - use it when the problem is descriptor authority, reload behavior, workdir
   layout, or local runtime staging
 
@@ -91,6 +98,34 @@ Use this page for the operational phases of bundle work:
 For bundle shape, surface choice, and wrapper design, return to:
 
 - [how-to-write-bundle-README.md](how-to-write-bundle-README.md)
+
+## If Your Role Is Configurator Or Deployer
+
+Use this page differently depending on the job.
+
+### Configurator
+
+Use this page to answer:
+
+- which descriptor file should carry this value
+- which values are staged into the runtime
+- which values stay deployment-owned vs bundle-owned
+- when editing the source descriptor folder is not enough because the runtime
+  already has staged live files
+
+But decide the actual scope first in:
+
+- [bundle-runtime-configuration-and-secrets-README.md](../../../configuration/bundle-runtime-configuration-and-secrets-README.md)
+
+### Deployer
+
+Use this page to answer:
+
+- how to point one deployment at one bundle path or git ref
+- how `--workdir` resolves
+- when to rerun install versus using `--bundle-reload`
+- how to inspect one runtime and how to avoid changing the wrong deployment
+- how to think about one active local deployment versus many runtime snapshots
 
 ## Current Mental Model
 
@@ -238,6 +273,92 @@ For the planned deployment-first CLI model, use:
 
 - [how-to-configure-and-run-bundle-new-cli-README.md](how-to-configure-and-run-bundle-new-cli-README.md)
 - [cli--as-control-plane-README.md](../../../service/cicd/design/cli--as-control-plane-README.md)
+
+## Running Multiple KDCubes On One Machine
+
+This is the important distinction:
+
+- many local deployment snapshots on disk: yes
+- many concurrently running local compose-backed KDCube stacks: no, not as a
+  supported default
+
+### 1. Many runtime directories on disk are already supported
+
+One machine can hold many initialized local deployment snapshots, for example:
+
+```text
+workspace/
+  tenant1__project1/
+  tenant1__project2/
+```
+
+That is already part of the current `tenant/project` isolation model.
+
+Each runtime snapshot keeps its own:
+
+- staged descriptor set under `config/`
+- local platform snapshot
+- local PostgreSQL/Redis data
+- local bundle props and bundle secrets authority
+
+### 2. Many active local KDCubes are not the current supported mode
+
+The current local compose workflow should be treated as one active deployment at
+a time per machine.
+
+Practical reason:
+
+- the compose runtime still comes from one shared compose tree
+- the local stack publishes fixed host ports such as PostgreSQL, Redis,
+  ingress, and processor ports
+- the current CLI does not define a multi-instance local contract with
+  per-deployment compose project names and per-deployment port ranges
+
+So a second explicit `--workdir` gives you a second deployment snapshot on disk,
+not a clean guarantee of a second isolated running local KDCube stack.
+
+### 3. What happens today
+
+If multiple namespaced runtimes exist under one parent workspace and you pass
+only the parent workspace, the CLI refuses to guess and requires the concrete
+namespaced runtime path.
+
+If you explicitly target another initialized workdir, the CLI can operate on
+that workdir as a filesystem snapshot, but you should not assume this means two
+independent local KDCubes can safely run side by side.
+
+Operational rule today:
+
+- use many workdirs for many deployment snapshots
+- run one local compose-backed deployment at a time
+
+### 4. Desired behavior
+
+The desired local behavior is:
+
+1. one machine can hold many deployment snapshots on disk
+2. local `start` must target exactly one resolved deployment
+3. if another local deployment is already running, `start` should refuse with a
+   clear message and tell the operator which deployment is active
+4. `stop` should affect only the targeted deployment
+5. if the platform later adds true concurrent local deployments, that must be
+   an explicit advanced mode with:
+   - per-deployment compose project naming
+   - per-deployment published port ranges
+   - explicit runtime discovery and stop semantics
+
+### 5. Local vs remote meaning in the future CLI
+
+The planned CLI should still let one machine manage many deployments.
+
+That means:
+
+- the CLI can target many deployments
+- some of those deployments may be remote/cloud
+
+It does not mean:
+
+- many local compose-backed deployments should all run at once by default
 
 ## Config And Secret Scopes In The Local Runtime
 
