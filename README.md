@@ -1,7 +1,8 @@
 # KDCube — Build, Run, and Ship End-to-End AI Products
 
-KDCube is a platform and SDK for building, integrating, and operating
-end-to-end AI products as bundles.
+KDCube is a self-hosted platform and SDK for packaging AI applications —
+APIs, agents, UI, scheduled jobs, configuration, and state — into deployable
+bundles and running them in isolated environments.
 
 One KDCube environment can host many bundles. A bundle is not just a prompt, a
 chatbot skin, or an agent wrapper. It is one application unit that can combine:
