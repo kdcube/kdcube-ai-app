@@ -5,10 +5,10 @@ summary: "Step‑by‑step bundle release workflow: tagging, bundles.yaml update
 tags: ["service", "cicd", "release", "bundles", "delivery", "git", "baked", "props", "redis"]
 keywords: ["bundle id", "tag", "commit", "bundles.yaml", "subdir", "module", "baked bundles", "git-defined bundles", "BUNDLES_FORCE_ENV_ON_STARTUP", "BUNDLES_INCLUDE_EXAMPLES"]
 see_also:
-  - ks:docs/service/configuration/assembly-descriptor-README.md
+  - ks:docs/configuration/assembly-descriptor-README.md
   - ks:docs/service/cicd/custom-cicd-README.md
   - ks:docs/service/cicd/release-README.md
-  - ks:docs/service/configuration/service-config-README.md
+  - ks:docs/configuration/service-runtime-configuration-mapping-README.md
 ---
 ## Bundle Release Process
 
@@ -21,7 +21,7 @@ In current runtime setups, `bundles.yaml` may serve two different roles:
 - plain runtime metadata source through `read_plain("b:...")`
 
 See:
-[docs/service/configuration/service-config-README.md](../configuration/service-config-README.md)
+[docs/configuration/service-runtime-configuration-mapping-README.md](../../configuration/service-runtime-configuration-mapping-README.md)
 
 ---
 

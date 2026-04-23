@@ -1,16 +1,17 @@
 ---
-id: ks:docs/service/configuration/assembly-descriptor-README.md
-title: "Assembly Descriptor"
-summary: "What assembly.yaml controls, which fields are mode-specific, and when local host paths matter."
-tags: ["service", "configuration", "assembly", "descriptor"]
-keywords: ["assembly.yaml", "paths.host_bundles_path", "CLI", "AWS", "direct run"]
+id: ks:docs/configuration/assembly-descriptor-README.md
+title: "Platform Assembly Descriptor"
+summary: "Platform-level non-secret deployment configuration in assembly.yaml: tenant/project identity, auth, ports, storage backends, local runtime paths, and frontend/runtime wiring."
+tags: ["service", "configuration", "platform", "deployment", "assembly", "descriptor"]
+keywords: ["platform deployment identity", "tenant and project scope", "auth and cognito settings", "service port layout", "storage and workspace backends", "runtime path wiring", "bundle descriptor provider", "frontend build metadata", "local compose topology", "aws deployment mapping"]
 see_also:
   - ks:docs/service/cicd/descriptors-README.md
-  - ks:docs/service/configuration/service-config-README.md
-  - ks:docs/service/configuration/bundles-descriptor-README.md
-  - ks:docs/service/configuration/secrets-descriptor-README.md
+  - ks:docs/configuration/service-runtime-configuration-mapping-README.md
+  - ks:docs/configuration/bundles-descriptor-README.md
+  - ks:docs/configuration/secrets-descriptor-README.md
+  - ks:docs/configuration/gateway-descriptor-README.md
 ---
-# Assembly Descriptor
+# Platform Assembly Descriptor
 
 `assembly.yaml` is the platform-level non-secret descriptor.
 

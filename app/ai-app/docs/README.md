@@ -1,13 +1,15 @@
 ---
 id: ks:docs/README.md
-title: "Index"
-summary: "Main index of platform, service, SDK, and ops documentation."
+title: "Platform Documentation Index"
+summary: "Top-level map of the KDCube documentation tree: architecture, configuration, service runtime, SDK authoring, execution, economics, and deployment or operations guides."
 tags: ["docs", "index", "sdk", "service", "ops", "architecture"]
-keywords: ["docs index", "architecture", "gateway", "react", "bundles", "ops", "execution", "economics"]
+keywords: ["documentation index", "platform architecture", "configuration guides", "service runtime docs", "bundle sdk docs", "execution docs", "economics docs", "deployment and operations docs"]
 see_also:
-  - ks:docs/sdk/agents/react/artifact-storage-README.md
-  - ks:docs/sdk/agents/react/external-exec-README.md
-  - ks:docs/sdk/agents/react/artifact-discovery-README.md
+  - ks:docs/arch/architecture-short.md
+  - ks:docs/configuration/assembly-descriptor-README.md
+  - ks:docs/service/service-and-infrastructure-index-README.md
+  - ks:docs/sdk/bundle/bundle-index-README.md
+  - ks:docs/ops/ops-overview-README.md
 ---
 # Docs Index
 
@@ -22,7 +24,7 @@ Curated index of platform, service, and SDK documentation.
 
 * Auth Overview: [auth-README.md](service/auth/auth-README.md)
 * Gateway & Admission Control (Current): [gateway-README.md](service/gateway-README.md)
-* Service Configuration — Chat Platform: [service-config-README.md](service/service-config-README.md)
+* Service Runtime Configuration Mapping: [service-runtime-configuration-mapping-README.md](configuration/service-runtime-configuration-mapping-README.md)
 * Monitoring & Observability: [README-monitoring-observability.md](service/README-monitoring-observability.md)
 * Service and Infrastructure Index: [service-and-infrastructure-index-README.md](service/service-and-infrastructure-index-README.md)
 
@@ -46,13 +48,13 @@ Curated index of platform, service, and SDK documentation.
 ## SDK Bundles
 
 * Bundle docs index: [bundle-index-README.md](sdk/bundle/bundle-index-README.md)
-* Bundle developer guide: [bundle-dev-README.md](sdk/bundle/bundle-dev-README.md)
-* Bundle ops guide: [bundle-ops-README.md](sdk/bundle/bundle-ops-README.md)
+* Bundle developer guide: [bundle-developer-guide-README.md](sdk/bundle/bundle-developer-guide-README.md)
+* Bundle ops guide: [bundle-delivery-and-update-README.md](sdk/bundle/bundle-delivery-and-update-README.md)
 * Bundle interfaces: [bundle-interfaces-README.md](sdk/bundle/bundle-interfaces-README.md)
 * Bundle client UI contract: [bundle-client-ui-README.md](sdk/bundle/bundle-client-ui-README.md)
 * Bundle client communication: [bundle-client-communication-README.md](sdk/bundle/bundle-client-communication-README.md)
 * Bundle SSE events: [bundle-sse-events-README.md](sdk/bundle/bundle-sse-events-README.md)
-* Bundle storages + cache: [bundle-storage-cache-README.md](sdk/bundle/bundle-storage-cache-README.md)
+* Bundle storages + cache: [bundle-storage-and-cache-README.md](sdk/bundle/bundle-storage-and-cache-README.md)
 
 ## SDK Agents (ReAct v2)
 

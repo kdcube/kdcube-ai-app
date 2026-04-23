@@ -5,7 +5,7 @@ summary: "Redis KV cache abstraction for the SDK, including namespaced (tenant/p
 tags: ["sdk", "storage", "cache", "redis"]
 keywords: ["KVCache", "NamespacedKVCache", "tenant/project scope", "ServiceHub cache", "redis"]
 see_also:
-  - ks:docs/sdk/bundle/bundle-storage-cache-README.md
+  - ks:docs/sdk/bundle/bundle-storage-and-cache-README.md
   - ks:docs/sdk/storage/sdk-store-README.md
   - ks:docs/sdk/storage/git-store-README.md
   - ks:docs/README.md

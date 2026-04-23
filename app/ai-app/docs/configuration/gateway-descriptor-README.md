@@ -1,15 +1,16 @@
 ---
-id: ks:docs/service/configuration/gateway-descriptor-README.md
-title: "Gateway Descriptor"
-summary: "Schema and runtime effect of gateway.yaml: guarded routes, rate limits, backpressure, pools, and limits."
-tags: ["service", "configuration", "gateway", "descriptor"]
-keywords: ["gateway.yaml", "guarded_rest_patterns", "rate_limits", "backpressure", "pools", "limits"]
+id: ks:docs/configuration/gateway-descriptor-README.md
+title: "Gateway Policy Descriptor"
+summary: "Gateway runtime policy configuration in gateway.yaml: guarded and bypassed routes, rate limits, backpressure, capacity, pools, and circuit-breaker behavior for ingress and proc."
+tags: ["service", "configuration", "gateway", "policy", "deployment", "descriptor"]
+keywords: ["gateway admission control", "guarded routes", "bypass routes", "rate limiting policy", "backpressure thresholds", "service capacity", "connection pool sizing", "circuit breaker settings", "monitoring flags", "ingress and processor policy"]
 see_also:
   - ks:docs/service/cicd/descriptors-README.md
-  - ks:docs/service/configuration/service-config-README.md
+  - ks:docs/configuration/service-runtime-configuration-mapping-README.md
   - ks:docs/service/gateway-README.md
+  - ks:docs/configuration/assembly-descriptor-README.md
 ---
-# Gateway Descriptor
+# Gateway Policy Descriptor
 
 `gateway.yaml` is the gateway runtime policy descriptor.
 

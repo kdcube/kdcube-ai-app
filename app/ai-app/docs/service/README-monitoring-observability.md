@@ -1,9 +1,9 @@
 ---
 id: ks:docs/service/README-monitoring-observability.md
-title: "Monitoring Observability"
-summary: "Monitoring endpoints and access patterns for gateway/ingress/proc and metrics."
+title: "Monitoring and Observability"
+summary: "Operator-facing guide to health, monitoring, and observability surfaces for gateway, ingress, proc, and the metrics service, including what to inspect during runtime issues."
 tags: ["service", "monitoring", "observability", "metrics", "gateway"]
-keywords: ["monitoring endpoints", "gateway status", "queue metrics", "SSE", "admin access"]
+keywords: ["service monitoring", "observability endpoints", "gateway status", "processor queue visibility", "metrics service", "health inspection", "operator debugging entrypoint"]
 see_also:
   - ks:docs/service/maintenance/requests-monitoring-README.md
   - ks:docs/service/scale/metric-server-README.md

@@ -1,12 +1,12 @@
 ---
-id: ks:docs/sdk/bundle/bundle-storage-cache-README.md
-title: "Bundle Storage Cache"
-summary: "Bundle storage backend (localfs/S3), shared local bundle storage (filesystem), and KV cache."
+id: ks:docs/sdk/bundle/bundle-storage-and-cache-README.md
+title: "Bundle Storage And Cache"
+summary: "Bundle storage surfaces: per-bundle durable storage, shared local bundle storage, and KV cache, including backend choices, path layout, and access patterns."
 tags: ["sdk", "bundle", "storage", "cache", "s3", "filesystem"]
-keywords: ["CB_BUNDLE_STORAGE_URL", "BUNDLE_STORAGE_ROOT", "localfs", "s3", "bundle storage", "shared local storage", "kv cache", "read/write paths", "artifacts"]
+keywords: ["per bundle durable storage", "shared local bundle storage", "kv cache usage", "storage backend selection", "filesystem or s3 storage", "storage path layout", "artifact read write patterns", "cache backed bundle state"]
 see_also:
   - ks:docs/sdk/storage/cache-README.md
-  - ks:docs/sdk/bundle/bundle-dev-README.md
+  - ks:docs/sdk/bundle/bundle-developer-guide-README.md
   - ks:docs/sdk/bundle/bundle-index-README.md
 ---
 # Bundle Storage + Cache
@@ -155,7 +155,7 @@ ReAct integration (optional):
 
 See:
 - [docs/sdk/bundle/bundle-knowledge-space-README.md](bundle-knowledge-space-README.md) (resolver + ks namespace)
-- [docs/sdk/bundle/bundle-dev-README.md](bundle-dev-README.md) (on_bundle_load + usage)
+- [docs/sdk/bundle/bundle-developer-guide-README.md](bundle-developer-guide-README.md) (on_bundle_load + usage)
 - Example bundle: `.../examples/bundles/kdcube.copilot@2026-04-03-19-05`
 
 ---

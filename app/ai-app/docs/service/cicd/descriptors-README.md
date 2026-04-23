@@ -1,17 +1,18 @@
 ---
 id: ks:docs/service/cicd/descriptors-README.md
-title: "Descriptors"
-summary: "Descriptor files, their authority model, and how they differ between CLI compose, direct local service runs, and AWS deployment."
+title: "Deployment Descriptors Overview"
+summary: "Overview of the deployment descriptor set, what each file owns, and how descriptor authority differs between current local CLI runs, direct local service runs, and AWS deployment."
 tags: ["service", "cicd", "descriptors", "configuration"]
-keywords: ["assembly.yaml", "bundles.yaml", "bundles.secrets.yaml", "secrets.yaml", "gateway.yaml", "CLI", "AWS", "direct run"]
+keywords: ["deployment descriptors", "platform descriptor ownership", "local versus aws authority", "assembly bundles gateway secrets files", "descriptor-driven deployment contract", "runtime configuration entry files"]
 see_also:
-  - ks:docs/service/configuration/runtime-read-write-contract-README.md
-  - ks:docs/service/configuration/assembly-descriptor-README.md
-  - ks:docs/service/configuration/bundles-descriptor-README.md
-  - ks:docs/service/configuration/bundles-secrets-descriptor-README.md
-  - ks:docs/service/configuration/secrets-descriptor-README.md
-  - ks:docs/service/configuration/gateway-descriptor-README.md
-  - ks:docs/service/configuration/service-config-README.md
+  - ks:docs/configuration/runtime-read-write-contract-README.md
+  - ks:docs/configuration/runtime-configuration-and-secrets-store-README.md
+  - ks:docs/configuration/assembly-descriptor-README.md
+  - ks:docs/configuration/bundles-descriptor-README.md
+  - ks:docs/configuration/bundles-secrets-descriptor-README.md
+  - ks:docs/configuration/secrets-descriptor-README.md
+  - ks:docs/configuration/gateway-descriptor-README.md
+  - ks:docs/configuration/service-runtime-configuration-mapping-README.md
 ---
 # Descriptors
 
@@ -23,7 +24,7 @@ These are the supported deployment descriptors:
 - `secrets.yaml`
 - `gateway.yaml`
 
-Descriptor documentation lives in `docs/service/configuration/`, one page per
+Descriptor documentation lives in `docs/configuration/`, one page per
 descriptor. Each page now includes:
 
 - direct runtime access API (`get_settings()`, `get_plain()`, `get_secret()`) where applicable
@@ -33,16 +34,18 @@ descriptor. Each page now includes:
 
 For the cross-helper one-page contract, start with:
 
-- [runtime-read-write-contract-README.md](../configuration/runtime-read-write-contract-README.md)
+- [runtime-read-write-contract-README.md](../../configuration/runtime-read-write-contract-README.md)
+- [runtime-configuration-and-secrets-store-README.md](../../configuration/runtime-configuration-and-secrets-store-README.md)
 
 Descriptor pages:
 
-- [runtime-read-write-contract-README.md](../configuration/runtime-read-write-contract-README.md)
-- [assembly-descriptor-README.md](../configuration/assembly-descriptor-README.md)
-- [bundles-descriptor-README.md](../configuration/bundles-descriptor-README.md)
-- [bundles-secrets-descriptor-README.md](../configuration/bundles-secrets-descriptor-README.md)
-- [secrets-descriptor-README.md](../configuration/secrets-descriptor-README.md)
-- [gateway-descriptor-README.md](../configuration/gateway-descriptor-README.md)
+- [runtime-read-write-contract-README.md](../../configuration/runtime-read-write-contract-README.md)
+- [runtime-configuration-and-secrets-store-README.md](../../configuration/runtime-configuration-and-secrets-store-README.md)
+- [assembly-descriptor-README.md](../../configuration/assembly-descriptor-README.md)
+- [bundles-descriptor-README.md](../../configuration/bundles-descriptor-README.md)
+- [bundles-secrets-descriptor-README.md](../../configuration/bundles-secrets-descriptor-README.md)
+- [secrets-descriptor-README.md](../../configuration/secrets-descriptor-README.md)
+- [gateway-descriptor-README.md](../../configuration/gateway-descriptor-README.md)
 
 This page explains the part that differs by run mode: what the descriptors mean,
 which files are authoritative, and which `assembly.yaml` sections matter.
@@ -157,10 +160,10 @@ Typical use:
 ## Where to continue
 
 - Descriptor fields and examples:
-  - [assembly-descriptor-README.md](../configuration/assembly-descriptor-README.md)
-  - [bundles-descriptor-README.md](../configuration/bundles-descriptor-README.md)
-  - [bundles-secrets-descriptor-README.md](../configuration/bundles-secrets-descriptor-README.md)
-  - [secrets-descriptor-README.md](../configuration/secrets-descriptor-README.md)
-  - [gateway-descriptor-README.md](../configuration/gateway-descriptor-README.md)
+  - [assembly-descriptor-README.md](../../configuration/assembly-descriptor-README.md)
+  - [bundles-descriptor-README.md](../../configuration/bundles-descriptor-README.md)
+  - [bundles-secrets-descriptor-README.md](../../configuration/bundles-secrets-descriptor-README.md)
+  - [secrets-descriptor-README.md](../../configuration/secrets-descriptor-README.md)
+  - [gateway-descriptor-README.md](../../configuration/gateway-descriptor-README.md)
 - Runtime env and descriptor mapping:
-  - [service-config-README.md](../configuration/service-config-README.md)
+  - [service-runtime-configuration-mapping-README.md](../../configuration/service-runtime-configuration-mapping-README.md)

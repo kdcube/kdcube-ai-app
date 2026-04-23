@@ -1,9 +1,9 @@
 ---
 id: ks:docs/sdk/bundle/bundle-client-communication-README.md
 title: "Bundle Client Communication"
-summary: "Browser/UI transport contract for bundles across REST, SSE, Socket.IO, and integrations, including supported headers, cookies, query params, response headers, and peer targeting."
+summary: "Browser-to-bundle communication contract across widget iframes, integrations, REST, SSE, and Socket.IO: auth propagation, headers, cookies, stream and session identifiers, and peer targeting."
 tags: ["sdk", "bundle", "transport", "auth", "headers", "cookies", "sse", "socketio", "rest", "integrations"]
-keywords: ["Authorization", "X-ID-Token", "KDC-Stream-ID", "User-Session-ID", "__Secure-LATC", "__Secure-LITC", "stream_id", "peer targeting", "bundle widget"]
+keywords: ["browser to bundle transport", "widget iframe communication", "integration request headers", "auth token forwarding", "session and stream identifiers", "peer targeting", "sse and socket communication", "bundle client request contract"]
 see_also:
   - ks:docs/sdk/bundle/bundle-transports-README.md
   - ks:docs/sdk/bundle/bundle-client-ui-README.md

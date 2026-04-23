@@ -1,3 +1,16 @@
+---
+id: ks:docs/quick-start-README.md
+title: "Quick Start: Local Docker Compose"
+summary: "Shortest current path to boot a local KDCube environment with the shipped descriptors, the current kdcube CLI, and Docker Compose."
+tags: ["docs", "quickstart", "local", "docker-compose", "cli", "configuration"]
+keywords: ["local quick start", "docker compose startup", "kdcube cli", "descriptor-driven install", "assembly and bundles setup", "local environment bootstrap", "workdir initialization"]
+see_also:
+  - ks:docs/service/cicd/cli-README.md
+  - ks:docs/service/environment/setup-for-dockercompose-README.md
+  - ks:docs/configuration/assembly-descriptor-README.md
+  - ks:docs/configuration/bundles-descriptor-README.md
+  - ks:docs/configuration/secrets-descriptor-README.md
+---
 # Quick Start (Local Docker Compose)
 
 This is the shortest current path to run the platform locally with the `kdcube` CLI.
@@ -12,19 +25,19 @@ The local install flow is descriptor-driven. The main files are:
 
 - `assembly.yaml`
   - platform release, auth mode, ports, infra, runtime service settings
-  - doc: `app/ai-app/docs/service/configuration/assembly-descriptor-README.md`
+  - doc: `app/ai-app/docs/configuration/assembly-descriptor-README.md`
 - `secrets.yaml`
   - platform secrets such as model keys and infra passwords
-  - doc: `app/ai-app/docs/service/configuration/secrets-descriptor-README.md`
+  - doc: `app/ai-app/docs/configuration/secrets-descriptor-README.md`
 - `gateway.yaml`
   - gateway capacity and throttling
-  - doc: `app/ai-app/docs/service/configuration/gateway-descriptor-README.md`
+  - doc: `app/ai-app/docs/configuration/gateway-descriptor-README.md`
 - `bundles.yaml`
   - bundle registry and non-secret bundle config
-  - doc: `app/ai-app/docs/service/configuration/bundles-descriptor-README.md`
+  - doc: `app/ai-app/docs/configuration/bundles-descriptor-README.md`
 - `bundles.secrets.yaml`
   - bundle-level secrets
-  - doc: `app/ai-app/docs/service/configuration/bundles-secrets-descriptor-README.md`
+  - doc: `app/ai-app/docs/configuration/bundles-secrets-descriptor-README.md`
 
 ## 2. Run the CLI
 
@@ -122,8 +135,8 @@ kdcube --workdir ~/.kdcube/kdcube-runtime --bundle-reload <bundle_id>
 Bundle docs:
 
 - `app/ai-app/docs/sdk/bundle/bundle-index-README.md`
-- `app/ai-app/docs/sdk/bundle/bundle-dev-README.md`
-- `app/ai-app/docs/sdk/bundle/bundle-ops-README.md`
+- `app/ai-app/docs/sdk/bundle/bundle-developer-guide-README.md`
+- `app/ai-app/docs/sdk/bundle/bundle-delivery-and-update-README.md`
 
 ## 6. Stop the local stack
 

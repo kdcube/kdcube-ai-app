@@ -237,7 +237,7 @@ If you use the CLI instead of managing `.env` files by hand, the recommended flo
 3. run compose with the generated workdir
 
 For direct runtime descriptor reads, see:
-- [docs/service/configuration/service-config-README.md](../../service/configuration/service-config-README.md)
+- [docs/configuration/service-runtime-configuration-mapping-README.md](../../configuration/service-runtime-configuration-mapping-README.md)
 
 ---
 

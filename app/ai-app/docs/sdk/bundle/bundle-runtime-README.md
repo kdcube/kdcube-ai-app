@@ -1,11 +1,11 @@
 ---
 id: ks:docs/sdk/bundle/bundle-runtime-README.md
 title: "Bundle Runtime"
-summary: "Runtime surfaces available to bundle entrypoints and tool modules across chat turns, REST operations, in-process tools, and isolated execution."
+summary: "Runtime objects and capabilities available inside bundle entrypoints and tools: communicator, integrations, props and secrets, caches, artifacts, and isolated-execution surfaces."
 tags: ["sdk", "bundle", "runtime", "tools", "integrations", "communicator", "isolation"]
-keywords: ["self.comm", "comm_context", "bundle_props", "get_secret", "_SERVICE", "_INTEGRATIONS", "KV_CACHE", "get_comm", "ToolSubsystem", "bootstrap", "integrations operations", "processor"]
+keywords: ["bundle runtime objects", "communicator access", "integrations access", "props and secrets access", "cache access", "artifact handling", "isolated execution surface", "entrypoint runtime context"]
 see_also:
-  - ks:docs/sdk/bundle/bundle-dev-README.md
+  - ks:docs/sdk/bundle/bundle-developer-guide-README.md
   - ks:docs/sdk/bundle/bundle-lifecycle-README.md
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
   - ks:docs/sdk/bundle/bundle-interfaces-README.md

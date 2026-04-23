@@ -1,11 +1,11 @@
 ---
 id: ks:docs/service/environment/README.md
-title: "Environment Setup"
-summary: "Procedural setup guides for direct local run, Docker Compose, and ECS."
+title: "Runtime Environment Setup"
+summary: "Entry page for preparing direct local runs, Docker Compose deployments, and ECS environments, with links to the exact configuration and setup procedures for each mode."
 tags: ["service", "environment", "setup"]
-keywords: ["environment", "setup", "docker-compose", "ecs", "local"]
+keywords: ["environment setup", "local runtime setup", "docker compose environment", "ecs runtime setup", "descriptor-backed environment preparation", "deployment mode setup"]
 see_also:
-  - ks:docs/service/configuration/service-config-README.md
+  - ks:docs/configuration/service-runtime-configuration-mapping-README.md
   - ks:docs/service/cicd/descriptors-README.md
   - ks:docs/service/environment/setup-dev-env-README.md
   - ks:docs/service/environment/setup-for-dockercompose-README.md
@@ -26,7 +26,7 @@ Use:
 
 For the canonical env-to-descriptor mapping, use:
 
-- [../configuration/service-config-README.md](../configuration/service-config-README.md)
+- [docs/configuration/service-runtime-configuration-mapping-README.md](../../configuration/service-runtime-configuration-mapping-README.md)
 
 For descriptor ownership and mode differences, use:
 

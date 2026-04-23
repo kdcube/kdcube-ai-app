@@ -8,7 +8,7 @@ see_also:
   - ks:docs/economics/economic-README.md
   - ks:docs/economics/stripe-README.md
   - ks:docs/economics/eco-admin-README.md
-  - ks:docs/service/configuration/service-config-README.md
+  - ks:docs/configuration/service-runtime-configuration-mapping-README.md
 ---
 # Economics Operations (Schema + Jobs + Config)
 
@@ -181,7 +181,7 @@ Required env vars are listed in the service config doc.
 
 See the service configuration document and ensure these sections are set:
 
-- [service-config-README.md](../service/service-config-README.md)
+- [service-runtime-configuration-mapping-README.md](../configuration/service-runtime-configuration-mapping-README.md)
 
 At minimum, economics requires:
 

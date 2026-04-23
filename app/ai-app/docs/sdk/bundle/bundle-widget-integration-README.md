@@ -1,9 +1,9 @@
 ---
 id: ks:docs/sdk/bundle/bundle-widget-integration-README.md
 title: "Bundle Widget Integration"
-summary: "Contract for bundle iframe widgets: host config handshake, operation URL construction, auth headers, and the compatibility pattern for widgets that are also callable through operations."
+summary: "Iframe widget contract for bundles: host handshake, operation URL construction, auth propagation, and the recommended pattern when a capability is both widget and operation."
 tags: ["sdk", "bundle", "widget", "iframe", "frontend", "integrations"]
-keywords: ["bundle widget", "iframe widget", "CONFIG_REQUEST", "CONFIG_RESPONSE", "CONN_RESPONSE", "defaultAppBundleId", "operations route"]
+keywords: ["iframe widget contract", "host config handshake", "operation url construction", "auth propagation to widget", "widget and operation dual pattern", "bundle iframe integration"]
 see_also:
   - ks:docs/sdk/bundle/bundle-interfaces-README.md
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md

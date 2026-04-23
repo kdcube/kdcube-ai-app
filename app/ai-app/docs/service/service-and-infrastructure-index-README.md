@@ -1,13 +1,15 @@
 ---
 id: ks:docs/service/service-and-infrastructure-index-README.md
-title: "Service And Infrastructure Index"
-summary: "Index of core service and infrastructure docs (auth, gateway, monitoring, config)."
+title: "Service and Infrastructure Documentation Index"
+summary: "Entry index for platform service runtime docs: auth, gateway, environment setup, monitoring, scaling, secrets, descriptor wiring, and infrastructure-facing operational guides."
 tags: ["service", "index", "infrastructure"]
-keywords: ["auth", "gateway", "monitoring", "service config", "ops index"]
+keywords: ["service docs index", "runtime infrastructure docs", "gateway and auth guides", "monitoring and scaling docs", "environment setup docs", "descriptor and secrets wiring", "service operations"]
 see_also:
   - ks:docs/service/auth/auth-README.md
   - ks:docs/service/README-monitoring-observability.md
   - ks:docs/service/gateway-README.md
+  - ks:docs/service/environment/README.md
+  - ks:docs/configuration/service-runtime-configuration-mapping-README.md
 ---
 # Service and Infrastructure Index
 
@@ -17,5 +19,5 @@ Core entry points:
 - Monitoring & observability: [README-monitoring-observability.md](README-monitoring-observability.md)
 - Control plane configuration: [instance-config-README.md](maintenance/instance-config-README.md)
 - Descriptor model and mode differences: [descriptors-README.md](cicd/descriptors-README.md)
-- Runtime env and descriptor mapping: [service-config-README.md](configuration/service-config-README.md)
+- Runtime env and descriptor mapping: [service-runtime-configuration-mapping-README.md](../configuration/service-runtime-configuration-mapping-README.md)
 - All-in-one deployment: [README.md](../../deployment/docker/all_in_one/README.md)

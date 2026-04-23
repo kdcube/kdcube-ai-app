@@ -1,9 +1,9 @@
 ---
 id: ks:docs/sdk/bundle/bundle-firewall-README.md
 title: "Bundle Outbound Firewall"
-summary: "Bundle‑level event filter that decides which comm events are allowed to leave the bundle."
+summary: "Bundle-level outbound event filtering for comm events: where to enforce allow or deny rules before bundle-emitted events leave the runtime."
 tags: ["sdk", "bundle", "comm", "security", "firewall"]
-keywords: ["event filter", "outbound firewall", "ChatCommunicator", "IEventFilter", "allow_event"]
+keywords: ["outbound event policy", "comm event filtering", "bundle to client event control", "event allow deny rules", "communicator security boundary", "bundle event firewall"]
 see_also:
   - ks:docs/service/comm/comm-system.md
   - ks:docs/service/comm/README-comm.md

@@ -1,16 +1,24 @@
 ---
-id: ks:docs/sdk/bundle/bundle-platform-properties-README.md
-title: "Bundle Platform Properties"
-summary: "Reserved bundle property paths interpreted by the platform entrypoints and runtimes."
+id: ks:docs/sdk/bundle/bundle-reserved-platform-properties-README.md
+title: "Bundle Reserved Platform Properties"
+summary: "Reserved bundle config keys interpreted by the platform: model selection, embeddings, economics, execution runtime, MCP services, and other platform-owned bundle prop paths."
 tags: ["sdk", "bundle", "configuration", "runtime", "economics", "exec"]
-keywords: ["role_models", "embedding", "economics.reservation_amount_dollars", "execution.runtime", "exec_runtime", "mcp.services"]
+keywords: ["platform interpreted bundle props", "model selection props", "embedding configuration props", "economics reservation props", "execution runtime props", "mcp service props", "reserved bundle property paths", "platform owned bundle config"]
 see_also:
-  - ks:docs/service/configuration/bundles-descriptor-README.md
-  - ks:docs/sdk/bundle/bundle-dev-README.md
-  - ks:docs/sdk/bundle/bundle-ops-README.md
+  - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
+  - ks:docs/configuration/bundles-descriptor-README.md
+  - ks:docs/sdk/bundle/bundle-developer-guide-README.md
+  - ks:docs/sdk/bundle/bundle-delivery-and-update-README.md
   - ks:docs/exec/distributed-exec-README.md
 ---
-# Bundle Platform Properties
+# Bundle Reserved Platform Properties
+
+Start with:
+
+- [bundle-runtime-configuration-and-secrets-README.md](../../configuration/bundle-runtime-configuration-and-secrets-README.md)
+
+Use this page after that when you specifically need the reserved bundle prop
+paths interpreted by the platform.
 
 Most bundle props are bundle-defined and opaque to the platform.  
 Some property paths are **reserved** and interpreted by the platform entrypoints or runtimes.

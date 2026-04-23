@@ -1,9 +1,9 @@
 ---
 id: ks:docs/sdk/bundle/bundle-client-ui-README.md
 title: "Bundle Client UI"
-summary: "Start here for bundle-facing browser/UI integration: transport/auth contract, SSE events, and frontend behavior under scaling, draining, and rate limits."
+summary: "Entry page for bundle-facing frontend integration: which client docs to read for browser transport, auth, SSE lifecycle, multi-tab behavior, and widget or operation interoperability."
 tags: ["sdk", "bundle", "frontend", "transport", "auth", "sse", "socketio", "rest", "ui"]
-keywords: ["bundle ui", "client integration", "headers", "cookies", "sse", "socketio", "rest", "stream id", "session id"]
+keywords: ["frontend integration entrypoint", "bundle ui contract", "widget and operation interoperability", "browser auth and transport", "sse lifecycle guidance", "multi tab coordination", "client side bundle behavior"]
 see_also:
   - ks:docs/sdk/bundle/bundle-client-communication-README.md
   - ks:docs/sdk/bundle/bundle-sse-events-README.md
