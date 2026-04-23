@@ -6,7 +6,7 @@ tags: ["service", "cicd", "release", "versioning", "git", "images", "bundles", "
 keywords: ["assembly.yaml", "bundles.yaml", "platform.ref", "git tag", "image tags", "BUNDLES_FORCE_ENV_ON_STARTUP", "BUNDLE_GIT_REDIS_LOCK", "monorepo versioning", "PyPI"]
 see_also:
   - ks:docs/service/cicd/release-bundle-README.md
-  - ks:docs/service/configuration/assembly-descriptor-README.md
+  - ks:docs/configuration/assembly-descriptor-README.md
   - ks:docs/service/cicd/custom-cicd-README.md
   - ks:docs/service/cicd/cli-README.md
 ---

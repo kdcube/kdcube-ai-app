@@ -1,20 +1,20 @@
 ---
 id: ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
 title: "How To Configure And Run A Bundle"
-summary: "Practical guide for using KDCube with bundle descriptors, local path bundles, git bundles, bundle props/secrets, and the local runtime workflow."
+summary: "Current bundle-development runtime workflow: tenant/project environment setup, descriptors, local-path and git bundles, reload loop, and how configuration and secret scopes behave in a running local deployment."
 tags: ["sdk", "bundle", "configuration", "runtime", "cli", "bundles.yaml"]
-keywords: ["how to configure bundle", "bundle runtime", "bundles.yaml", "bundles.secrets.yaml", "assembly.yaml", "kdcube build upstream", "kdcube info"]
+keywords: ["local bundle development workflow", "tenant project environment boundary", "descriptor driven runtime setup", "local path bundle loop", "git bundle loop", "bundle reload workflow", "runtime sandbox selection", "bundle config and secret scopes", "current kdcube cli workflow"]
 see_also:
-  - ks:docs/service/configuration/bundles-descriptor-README.md
-  - ks:docs/service/configuration/bundles-secrets-descriptor-README.md
-  - ks:docs/service/configuration/assembly-descriptor-README.md
-  - ks:docs/service/configuration/runtime-read-write-contract-README.md
+  - ks:docs/configuration/bundles-descriptor-README.md
+  - ks:docs/configuration/bundles-secrets-descriptor-README.md
+  - ks:docs/configuration/assembly-descriptor-README.md
+  - ks:docs/configuration/runtime-configuration-and-secrets-store-README.md
   - ks:docs/service/cicd/design/cli--as-control-plane-README.md
+  - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
   - ks:docs/sdk/bundle/build/how-to-write-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-new-cli-README.md
-  - ks:docs/sdk/bundle/bundle-dev-README.md
-  - ks:docs/sdk/bundle/bundle-props-secrets-README.md
+  - ks:docs/sdk/bundle/bundle-developer-guide-README.md
 ---
 # How To Configure And Run A Bundle
 
@@ -45,14 +45,22 @@ Use the companion docs for those:
 - [how-to-test-bundle-README.md](how-to-test-bundle-README.md)
 - [bundle-platform-integration-README.md](../bundle-platform-integration-README.md)
 - [bundle-runtime-README.md](../bundle-runtime-README.md)
-- [bundle-props-secrets-README.md](../bundle-props-secrets-README.md)
+- [../../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../../configuration/bundle-runtime-configuration-and-secrets-README.md)
+
+Configuration rule:
+
+- [bundle-runtime-configuration-and-secrets-README.md](../../../configuration/bundle-runtime-configuration-and-secrets-README.md) is the
+  canonical author-facing page for all props and secrets across all scopes:
+  platform/global, deployment-scoped bundle, and user-scoped
+- this page keeps only the operational/runtime summary needed while installing,
+  reloading, and exporting a local deployment
 
 For exact descriptor schemas, use:
 
-- [bundles-descriptor-README.md](../../../service/configuration/bundles-descriptor-README.md)
-- [bundles-secrets-descriptor-README.md](../../../service/configuration/bundles-secrets-descriptor-README.md)
-- [assembly-descriptor-README.md](../../../service/configuration/assembly-descriptor-README.md)
-- [runtime-read-write-contract-README.md](../../../service/configuration/runtime-read-write-contract-README.md)
+- [bundles-descriptor-README.md](../../../configuration/bundles-descriptor-README.md)
+- [bundles-secrets-descriptor-README.md](../../../configuration/bundles-secrets-descriptor-README.md)
+- [assembly-descriptor-README.md](../../../configuration/assembly-descriptor-README.md)
+- [runtime-configuration-and-secrets-store-README.md](../../../configuration/runtime-configuration-and-secrets-store-README.md)
 - [how-to-configure-and-run-bundle-new-cli-README.md](how-to-configure-and-run-bundle-new-cli-README.md)
 - [cli--as-control-plane-README.md](../../../service/cicd/design/cli--as-control-plane-README.md)
 
@@ -222,8 +230,8 @@ All rows below are inside one current `tenant/project` runtime sandbox.
 
 For the exact helper contract and cloud-mode differences, use:
 
-- [bundle-props-secrets-README.md](../bundle-props-secrets-README.md)
-- [runtime-read-write-contract-README.md](../../../service/configuration/runtime-read-write-contract-README.md)
+- [bundle-runtime-configuration-and-secrets-README.md](../../../configuration/bundle-runtime-configuration-and-secrets-README.md)
+- [runtime-configuration-and-secrets-store-README.md](../../../configuration/runtime-configuration-and-secrets-store-README.md)
 
 | Scope | Typical examples | Read / write API | Live authority in the local runtime | Export / ejection path |
 |---|---|---|---|---|
@@ -794,5 +802,4 @@ If you only remember the essentials, remember these:
 
 For the exact read/write helper contract behind those rules, use:
 
-- [runtime-read-write-contract-README.md](../../../service/configuration/runtime-read-write-contract-README.md)
-- [bundle-props-secrets-README.md](../bundle-props-secrets-README.md)
+- [bundle-runtime-configuration-and-secrets-README.md](../../../configuration/bundle-runtime-configuration-and-secrets-README.md)

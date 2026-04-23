@@ -1,9 +1,9 @@
 ---
 id: ks:docs/sdk/bundle/bundle-frontend-awareness-README.md
 title: "Bundle Frontend Awareness"
-summary: "Frontend guidance for bundle UIs on a multi-replica backend: SSE lifecycle, retries, rate limits, and multi-tab coordination."
+summary: "Frontend operating guidance for bundle UIs against scaled ingress and proc backends: retries, drain behavior, rate limiting, backpressure, and multi-tab or session coordination."
 tags: ["sdk", "bundle", "frontend", "sse", "retries", "rate-limits", "backpressure", "scaling"]
-keywords: ["serverless behavior", "multi-replica", "backoff", "jitter", "draining", "http-429", "http-503", "multi-tab", "ingress", "proc", "bundle ui"]
+keywords: ["scaled frontend behavior", "sse retry strategy", "drain and shutdown behavior", "rate limit handling", "backpressure handling", "multi tab coordination", "ingress and proc awareness", "bundle ui resilience"]
 see_also:
   - ks:docs/sdk/bundle/bundle-client-ui-README.md
   - ks:docs/sdk/bundle/bundle-client-communication-README.md

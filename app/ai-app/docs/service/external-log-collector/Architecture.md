@@ -1,3 +1,14 @@
+---
+id: ks:docs/service/external-log-collector/Architecture.md
+title: "External Log Collector Architecture"
+summary: "Architecture of the browser-side log collector that intercepts frontend errors and warnings, enriches them with runtime context, and sends them to backend storage for analysis."
+tags: ["service", "frontend", "logging", "observability", "browser", "design"]
+keywords: ["browser log collection", "frontend error interception", "console warning capture", "context-enriched client logs", "backend log ingestion", "frontend observability architecture"]
+see_also:
+  - ks:docs/service/external-log-collector/frontend-events-design.md
+  - ks:docs/service/README-monitoring-observability.md
+  - ks:docs/service/comm/README-comm.md
+---
 # External Log Collector — Architecture & Design
 
 ## Overview

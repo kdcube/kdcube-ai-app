@@ -1,18 +1,17 @@
 ---
-id: ks:docs/sdk/bundle/bundle-dev-README.md
-title: "Bundle Dev"
-summary: "Compact bundle authoring guide: minimal structure, runtime contract, configuration model, reference bundle, and local reload loop."
+id: ks:docs/sdk/bundle/bundle-developer-guide-README.md
+title: "Bundle Developer Guide"
+summary: "High-level entrypoint for bundle authors: what a bundle is, how tenant/project environments work, which runtime surfaces exist, and which docs to follow for authoring, config, testing, and delivery."
 tags: ["sdk", "bundle", "development", "entrypoint", "workflow", "tools", "skills", "configuration"]
-keywords: ["bundle authoring", "agentic_workflow", "bundle_id", "tools_descriptor", "skills_descriptor", "bundle_prop", "get_secret", "bundle reload", "versatile"]
+keywords: ["bundle authoring entrypoint", "what a bundle is", "tenant project environment", "runtime surfaces overview", "configuration model overview", "reference bundle path", "local authoring loop", "bundle documentation map"]
 see_also:
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
-  - ks:docs/sdk/bundle/bundle-reference-versatile-README.md
+  - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
+  - ks:docs/sdk/bundle/versatile-reference-bundle-README.md
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
   - ks:docs/sdk/bundle/bundle-transports-README.md
   - ks:docs/sdk/bundle/bundle-runtime-README.md
-  - ks:docs/sdk/bundle/bundle-props-secrets-README.md
-  - ks:docs/sdk/bundle/bundle-ops-README.md
-  - ks:docs/service/configuration/runtime-read-write-contract-README.md
+  - ks:docs/sdk/bundle/bundle-delivery-and-update-README.md
 ---
 # Bundle Developer Guide
 
@@ -21,11 +20,11 @@ This page is the shortest complete path for bundle authors.
 Use it together with:
 
 - [build/how-to-configure-and-run-bundle-README.md](build/how-to-configure-and-run-bundle-README.md)
-- [bundle-reference-versatile-README.md](bundle-reference-versatile-README.md)
+- [versatile-reference-bundle-README.md](versatile-reference-bundle-README.md)
 - [bundle-platform-integration-README.md](bundle-platform-integration-README.md)
 - [bundle-transports-README.md](bundle-transports-README.md)
 - [bundle-runtime-README.md](bundle-runtime-README.md)
-- [bundle-props-secrets-README.md](bundle-props-secrets-README.md)
+- [../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../configuration/bundle-runtime-configuration-and-secrets-README.md)
 
 ## Start Here
 
@@ -179,10 +178,9 @@ The important split is:
 
 Read the exact model here:
 
-- [bundle-props-secrets-README.md](bundle-props-secrets-README.md)
-- [bundle-platform-properties-README.md](bundle-platform-properties-README.md)
+- [../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../configuration/bundle-runtime-configuration-and-secrets-README.md)
+- [bundle-reserved-platform-properties-README.md](bundle-reserved-platform-properties-README.md)
 - [build/how-to-configure-and-run-bundle-README.md](build/how-to-configure-and-run-bundle-README.md)
-- [../../service/configuration/runtime-read-write-contract-README.md](../../service/configuration/runtime-read-write-contract-README.md)
 
 ## Feature Gating With `enabled_config`
 
@@ -377,7 +375,7 @@ Design your subsystem roots intentionally:
 
 If you need the deployment-side details and registry behavior, use:
 
-- [bundle-ops-README.md](bundle-ops-README.md)
+- [bundle-delivery-and-update-README.md](bundle-delivery-and-update-README.md)
 - [build/how-to-configure-and-run-bundle-README.md](build/how-to-configure-and-run-bundle-README.md)
 
 ## Reference Bundle Scope

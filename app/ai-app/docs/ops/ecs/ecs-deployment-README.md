@@ -48,9 +48,9 @@ This does not mean AWS bypasses the normal descriptor model.
   Secrets Manager
 
 See:
-- [docs/service/configuration/service-config-README.md](../../service/configuration/service-config-README.md)
-- [docs/service/configuration/secrets-descriptor-README.md](../../service/configuration/secrets-descriptor-README.md)
-- [docs/service/configuration/bundles-secrets-descriptor-README.md](../../service/configuration/bundles-secrets-descriptor-README.md)
+- [docs/configuration/service-runtime-configuration-mapping-README.md](../../configuration/service-runtime-configuration-mapping-README.md)
+- [docs/configuration/secrets-descriptor-README.md](../../configuration/secrets-descriptor-README.md)
+- [docs/configuration/bundles-secrets-descriptor-README.md](../../configuration/bundles-secrets-descriptor-README.md)
 
 ## Runtime Topology
 
@@ -216,7 +216,7 @@ files to provider-backed state, while descriptor snapshots remain valid deploy
 inputs and plain-read sources.
 
 See:
-- [docs/service/configuration/service-config-README.md](../../service/configuration/service-config-README.md)
+- [docs/configuration/service-runtime-configuration-mapping-README.md](../../configuration/service-runtime-configuration-mapping-README.md)
 
 ## Autoscaling Model
 

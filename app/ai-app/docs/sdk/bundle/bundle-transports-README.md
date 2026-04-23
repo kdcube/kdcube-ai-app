@@ -1,14 +1,14 @@
 ---
 id: ks:docs/sdk/bundle/bundle-transports-README.md
 title: "Bundle Transports"
-summary: "Implemented inbound and outbound bundle transports: chat, REST operations, MCP routes, widgets, static UI, and communicator streaming."
+summary: "Complete transport map for bundle capabilities: chat, REST operations, widgets, static UI, communicator streams, public routes, and MCP endpoints."
 tags: ["sdk", "bundle", "transport", "protocol", "mcp", "rest", "sse", "socketio", "widgets", "auth"]
-keywords: ["bundle transport", "bundle protocol", "mcp endpoint", "streamable-http", "operations route", "public route", "communicator", "SSE", "Socket.IO", "header_secret"]
+keywords: ["bundle transport map", "chat transport", "operations rest transport", "widget transport", "static ui transport", "communicator streaming", "public route transport", "mcp endpoint transport"]
 see_also:
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
   - ks:docs/sdk/bundle/bundle-interfaces-README.md
   - ks:docs/sdk/bundle/bundle-client-communication-README.md
-  - ks:docs/sdk/bundle/bundle-props-secrets-README.md
+  - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
   - ks:docs/sdk/bundle/bundle-sse-events-README.md
   - ks:docs/sdk/bundle/bundle-runtime-README.md
 ---

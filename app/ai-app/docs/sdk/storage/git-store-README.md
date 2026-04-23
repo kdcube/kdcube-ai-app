@@ -7,8 +7,8 @@ keywords: ["git store", "git auth", "workspace repo", "claude session store", "G
 see_also:
   - ks:docs/sdk/storage/sdk-store-README.md
   - ks:docs/sdk/storage/cache-README.md
-  - ks:docs/sdk/bundle/bundle-dev-README.md
-  - ks:docs/sdk/bundle/bundle-storage-cache-README.md
+  - ks:docs/sdk/bundle/bundle-developer-guide-README.md
+  - ks:docs/sdk/bundle/bundle-storage-and-cache-README.md
   - ks:docs/README.md
 ---
 # Git Store
@@ -170,7 +170,7 @@ This page does not define:
 
 Use these for that:
 
-- [bundle-storage-cache-README.md](../bundle/bundle-storage-cache-README.md)
+- [bundle-storage-and-cache-README.md](../bundle/bundle-storage-and-cache-README.md)
 - [sdk-store-README.md](sdk-store-README.md)
 
 ## Recommended Rule

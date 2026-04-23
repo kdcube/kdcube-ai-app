@@ -7,7 +7,7 @@ keywords: ["OpenResty", "ECS", "Fargate", "ALB", "ACM", "real_ip_header", "set_r
 see_also:
   - ks:docs/arch/proxy/proxy-ops-README.md
   - ks:docs/arch/proxy/proxy-local-ops-README.md
-  - ks:docs/sdk/bundle/bundle-ops-README.md
+  - ks:docs/sdk/bundle/bundle-delivery-and-update-README.md
 ---
 # Proxy ECS Ops Guide (OpenResty on AWS ECS/Fargate)
 
@@ -384,6 +384,6 @@ log_format main '$remote_addr - $remote_user [$time_local] "$request" '
 
 - Proxy config (EC2/ECS base): `deployment/docker/custom-ui-managed-infra/nginx_proxy_ssl_cognito.conf`
 - Proxy Dockerfile: `deployment/docker/Dockerfile_ProxyOpenResty`
-- Bundle storage (EFS): `ks:docs/sdk/bundle/bundle-ops-README.md` — Shared bundle local storage section
+- Bundle storage (EFS): `ks:docs/sdk/bundle/bundle-delivery-and-update-README.md` — Shared bundle local storage section
 - Chat processor task def: `deployment/ecs/task-definitions/chat-proc.json`
 - Chat ingress task def: `deployment/ecs/task-definitions/chat-ingress.json`

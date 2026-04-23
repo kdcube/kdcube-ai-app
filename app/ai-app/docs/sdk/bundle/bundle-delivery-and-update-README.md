@@ -1,21 +1,21 @@
 ---
-id: ks:docs/sdk/bundle/bundle-ops-README.md
-title: "Bundle Ops"
-summary: "Bundle delivery and update guide: local reload, registry updates, descriptor-authoritative config, and deployment-side bundle resolution."
+id: ks:docs/sdk/bundle/bundle-delivery-and-update-README.md
+title: "Bundle Delivery And Update"
+summary: "Operational guide for shipping and updating bundles: local-path or git delivery modes, descriptor-authoritative reloads, runtime override hygiene, and deployment-side bundle resolution."
 tags: ["sdk", "bundle", "ops", "registry", "git", "reload", "deployment"]
-keywords: ["bundle reload", "bundles registry", "bundles.yaml", "bundle git", "kdcube cli"]
+keywords: ["bundle delivery modes", "local path bundles", "git defined bundles", "descriptor authoritative reload", "runtime override hygiene", "bundle deployment operations", "bundle registry updates", "bundle reload procedure"]
 see_also:
-  - ks:docs/sdk/bundle/bundle-dev-README.md
-  - ks:docs/sdk/bundle/bundle-props-secrets-README.md
-  - ks:docs/service/configuration/bundles-descriptor-README.md
+  - ks:docs/sdk/bundle/bundle-developer-guide-README.md
+  - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
+  - ks:docs/configuration/bundles-descriptor-README.md
 ---
-# Bundle Ops Guide
+# Bundle Delivery And Update
 
 This page is for delivery and update operations, not authoring.
 
 If you are building a bundle, start with:
 
-- [bundle-dev-README.md](bundle-dev-README.md)
+- [bundle-developer-guide-README.md](bundle-developer-guide-README.md)
 
 ## Delivery Modes
 
@@ -137,5 +137,5 @@ Use service docs only when you are changing deployment descriptors, release pack
 
 For bundle-specific config semantics, stay in:
 
-- [bundle-props-secrets-README.md](bundle-props-secrets-README.md)
-- [bundle-platform-properties-README.md](bundle-platform-properties-README.md)
+- [../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../configuration/bundle-runtime-configuration-and-secrets-README.md)
+- [bundle-reserved-platform-properties-README.md](bundle-reserved-platform-properties-README.md)

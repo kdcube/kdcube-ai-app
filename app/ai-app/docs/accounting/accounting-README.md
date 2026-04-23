@@ -1,9 +1,9 @@
 ---
 id: ks:docs/accounting/accounting-README.md
 title: "Accounting & Usage Tracking"
-summary: "How usage events are captured, stored, aggregated, and priced across the platform."
+summary: "How runtime usage and cost events are emitted, persisted, aggregated, and priced so economics, billing, and reporting can reason about platform activity."
 tags: ["accounting", "economics", "usage", "tracking", "opex"]
-keywords: ["accounting events", "usage tracking", "cost calculation", "RateCalculator", "turn cache", "aggregations", "storage layout", "ACCOUNTING_SERVICES"]
+keywords: ["usage accounting", "cost event capture", "pricing calculation", "event aggregation", "billing telemetry", "turn-level usage tracking", "accounting storage layout", "economics inputs"]
 see_also:
   - ks:docs/aggregations/README-AGGREGATIONS.md
   - ks:docs/economics/economic-README.md

@@ -1,15 +1,17 @@
 ---
-id: ks:docs/service/configuration/bundles-secrets-descriptor-README.md
-title: "Bundle Secrets Descriptor"
-summary: "What bundles.secrets.yaml stores and how its authority changes between local file mode and AWS SM."
-tags: ["service", "configuration", "bundles", "secrets", "descriptor"]
-keywords: ["bundles.secrets.yaml", "bundle secrets", "aws-sm", "secrets-file"]
+id: ks:docs/configuration/bundles-secrets-descriptor-README.md
+title: "Bundles Secrets Descriptor"
+summary: "Deployment-scoped bundle secret configuration in bundles.secrets.yaml: per-bundle credentials, integration tokens, and provider-backed bundle secrets across local file mode and AWS."
+tags: ["service", "configuration", "bundle", "secrets", "deployment", "descriptor"]
+keywords: ["bundle secret inventory", "per-bundle credentials", "integration tokens", "bundle api keys", "deployment-scoped bundle secrets", "local secrets file mode", "aws secrets manager bundle secrets", "bundle secret provider", "bundle secret export path"]
 see_also:
   - ks:docs/service/cicd/descriptors-README.md
-  - ks:docs/service/configuration/bundles-descriptor-README.md
-  - ks:docs/service/configuration/secrets-descriptor-README.md
+  - ks:docs/configuration/bundles-descriptor-README.md
+  - ks:docs/configuration/secrets-descriptor-README.md
+  - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
+  - ks:docs/configuration/runtime-configuration-and-secrets-store-README.md
 ---
-# Bundle Secrets Descriptor
+# Bundles Secrets Descriptor
 
 `bundles.secrets.yaml` stores deployment-scoped bundle secrets.
 

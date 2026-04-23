@@ -1,3 +1,13 @@
+---
+id: ks:docs/service/external-log-collector/frontend-events-design.md
+title: "Frontend Log Events Design"
+summary: "Event schema and payload design for frontend log and metric events emitted by the browser and accepted by the backend collector."
+tags: ["service", "frontend", "logging", "events", "observability", "design"]
+keywords: ["frontend log event schema", "browser metric payloads", "client telemetry models", "log collector event contract", "frontend observability payload design"]
+see_also:
+  - ks:docs/service/external-log-collector/Architecture.md
+  - ks:docs/service/README-monitoring-observability.md
+---
 # Frontend Log Events — Design
 
 ## Python models (backend)

@@ -7,7 +7,7 @@ keywords: ["all_in_one_kdcube", "custom-ui-managed-infra", "volume mounts", "bun
 see_also:
   - ks:docs/service/environment/setup-dev-env-README.md
   - ks:docs/service/environment/setup-for-ecs-README.md
-  - ks:docs/service/configuration/service-config-README.md
+  - ks:docs/configuration/service-runtime-configuration-mapping-README.md
 ---
 # Setup for Docker Compose (Bundles from bundles.yaml)
 

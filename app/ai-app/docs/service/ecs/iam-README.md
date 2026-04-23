@@ -7,7 +7,7 @@ keywords: ["task execution role", "ECR", "CloudWatch logs", "IAM policy"]
 see_also:
   - ks:docs/service/ecs/custom-ecs-README.md
   - ks:docs/service/ecs/metrics-autoscaling-README.md
-  - ks:docs/service/configuration/service-config-README.md
+  - ks:docs/configuration/service-runtime-configuration-mapping-README.md
 ---
 # ECS IAM Guide
 
