@@ -120,6 +120,7 @@ Practical rule:
 - most bundles need `@agentic_workflow(...)`, `@bundle_id(...)`, and optionally `@api(...)` / `@mcp(...)` / `@ui_widget(...)`
 - use `@cron(...)` only for scheduled work
 - use `@venv(...)` only for dependency-heavy leaf helpers, not general orchestration
+- `enabled_config` is available on bundle/workflow, API, MCP, widget, and cron decorators when you need runtime feature gating from bundle props
 
 Visibility rule:
 
@@ -155,6 +156,69 @@ Read the exact model here:
 - [bundle-props-secrets-README.md](bundle-props-secrets-README.md)
 - [bundle-platform-properties-README.md](bundle-platform-properties-README.md)
 - [build/how-to-configure-and-run-bundle-README.md](build/how-to-configure-and-run-bundle-README.md)
+
+## Feature Gating With `enabled_config`
+
+`enabled_config` is the standard way to enable or disable bundle surfaces from
+bundle props instead of branching the code manually.
+
+Use it on:
+
+- `@agentic_workflow(...)` to gate the whole bundle
+- `@api(...)` to gate one operation
+- `@mcp(...)` to gate one MCP endpoint
+- `@ui_widget(...)` to gate one widget
+- `@cron(...)` to gate one scheduled job
+
+Example:
+
+```python
+@agentic_workflow(
+    name="ops.dashboard",
+    version="1.0.0",
+    enabled_config="features.dashboard.enabled",
+)
+@bundle_id("ops.dashboard@1.0.0")
+class OpsDashboard(BaseEntrypoint):
+    @ui_widget(
+        alias="dashboard",
+        icon={"tailwind": "heroicons-outline:chart-bar"},
+        user_types=("privileged",),
+        enabled_config="features.dashboard.widget_enabled",
+    )
+    def dashboard_widget(self, **kwargs):
+        return ["<div>Dashboard</div>"]
+```
+
+```yaml
+bundles:
+  items:
+    - id: "ops.dashboard@1.0.0"
+      config:
+        features:
+          dashboard:
+            enabled: true
+            widget_enabled: false
+```
+
+Current rules:
+
+- the path is resolved against effective bundle props
+- missing path means enabled
+- disabled values are:
+  - `false`
+  - `0`
+  - `disable`
+  - `disabled`
+  - `off`
+  - plus boolean `False` and integer `0`
+- bundle-level disable wins over resource-level enable
+
+Practical rule:
+
+- use `enabled_config` for deployment/runtime feature flags
+- keep the actual flag value in `bundles.yaml -> config:`
+- do not invent parallel ad hoc `if self.bundle_prop(...): return 404` checks unless the logic is more complex than simple exposure gating
 
 ## Configuration Access Rules
 

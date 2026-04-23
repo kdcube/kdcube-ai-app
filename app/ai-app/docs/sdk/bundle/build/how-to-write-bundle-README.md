@@ -62,6 +62,98 @@ Configuration/runtime rule:
 - use this page for how to structure the bundle code
 - use [how-to-configure-and-run-bundle-README.md](how-to-configure-and-run-bundle-README.md) for `assembly.yaml`, `bundles.yaml`, `bundles.secrets.yaml`, `kdcube --build --upstream`, and `kdcube --info`
 
+## 1A. What A Bundle Is
+
+A KDCube bundle is a descriptor-addressed application unit that the platform
+can discover, load, expose, and run through one or more surfaces.
+
+In practical terms, a bundle is:
+
+- code resolved from a bundle entry in `bundles.yaml`
+- runtime metadata declared by decorators in `entrypoint.py`
+- deployment-scoped non-secret config from bundle props
+- deployment-scoped secret config from bundle secrets
+- optional local mutable filesystem state under bundle storage
+- optional remote state in platform or external storage systems
+
+A bundle is not only a chat workflow.
+
+It may expose one or more of these surfaces:
+
+- on-message/chat handling
+- authenticated operations APIs
+- public APIs
+- widgets
+- iframe apps
+- MCP endpoints
+- scheduled jobs
+
+Operational rule:
+
+- think of a bundle as a product module with a runtime contract
+- descriptors decide how it is wired into the environment
+- decorators decide what interfaces it exposes
+- runtime context decides which execution path the code is in
+
+## 1B. Bundle Lifecycle
+
+When a bundle exists in a real environment, its lifecycle is:
+
+1. A bundle entry in `bundles.yaml` identifies the code and supplies bundle props.
+2. The platform resolves the bundle root/module and imports `entrypoint.py`.
+3. Decorators are discovered and the bundle interface manifest is built.
+4. The bundle becomes discoverable through integrations listing, subject to:
+   - roles / user-types
+   - bundle-level `enabled_config`
+   - resource-level `enabled_config`
+5. The bundle is then entered through one of the runtime paths:
+   - chat/on-message
+   - operations/public API
+   - widget-driven operation calls
+   - MCP endpoint dispatch
+   - cron/scheduled job
+6. During execution, the bundle reads:
+   - effective bundle props via `bundle_prop(...)`
+   - secrets via `get_secret(...)`
+   - typed platform settings via `get_settings()`
+7. Mutable state goes to the right tier:
+   - bundle local storage for instance-local filesystem state
+   - `AIBundleStorage` for bundle artifacts
+   - DB/Redis/external systems for runtime/business state
+8. Config changes are applied by reload/reconcile:
+   - `bundles.yaml` / `bundles.secrets.yaml` changes
+   - bundle reload
+   - scheduler reconciliation for cron jobs
+
+Builder rule:
+
+- design the bundle around this lifecycle explicitly
+- do not treat the code as if it only ever runs from one widget click path
+
+## 1C. Bundle Design Decision Matrix
+
+Before writing code, classify the product surface and state model.
+
+| Product need | Primary surface | Typical runtime path | Typical state/storage | Notes |
+| --- | --- | --- | --- | --- |
+| Copilot/chat experience | `@agentic_workflow` / `@on_message` | request-bound chat path | conversation stores, retrieval systems, bundle props | start here for assistant-style products |
+| Admin console | `@ui_widget` + `@api(route="operations")` | widget -> operations | descriptor-backed config, bundle local storage, DB/Redis | keep admin separate from public/user surface |
+| External webhook/integration | `@api(route="public")` | public HTTP path | bundle props + secrets, external systems | auth boundary must be explicit |
+| Tool-serving integration | `@mcp(...)` | MCP dispatch path | bundle props + secrets, external systems | bundle owns MCP auth |
+| Background automation | `@cron(...)` plus helper service | cron/system path | bundle local storage, DB/Redis, external APIs | do not assume request-bound actor/session |
+| Mixed product app | combine widget/API/chat/cron intentionally | multiple runtime paths | split state by storage tier | this is common; design boundaries explicitly |
+
+State-placement rule:
+
+- bundle props/secrets:
+  deployment-scoped configuration
+- bundle local storage:
+  instance-local mutable files/workspaces/caches
+- `AIBundleStorage`:
+  persisted bundle artifacts
+- DB/Redis/external APIs:
+  runtime or business state
+
 ## 2. Decide What Kind Of Bundle You Are Building
 
 Before writing code, classify the bundle.
@@ -89,7 +181,7 @@ Do not collapse all concerns into one public widget.
 
 Preferred split:
 
-- customer-facing widget or operations surface
+- end-user-facing widget or operations surface
 - separate admin widget/API for privileged operations
 - scheduled jobs for background automation
 
@@ -307,13 +399,39 @@ Reference:
 ### Scheduled job
 
 ```python
-@cron(alias="sync", expr_config="task_tracker.sync", span="bundle")
+@cron(alias="sync", expr_config="task_tracker.sync", span="system")
 async def sync(self, **kwargs):
     await self._sync_tasks()
 ```
 
 Reference:
 - [bundle-scheduled-jobs-README.md](../bundle-scheduled-jobs-README.md)
+
+### Platform-gated surface with `enabled_config`
+
+```python
+@ui_widget(
+    alias="task-board",
+    icon={"tailwind": "heroicons-outline:check-badge"},
+    user_types=("registered",),
+    enabled_config="features.task_board.widget_enabled",
+)
+def task_board(self, **kwargs):
+    return ["<div id='root'></div>"]
+```
+
+```yaml
+bundles:
+  items:
+    - id: "task.board@1-0"
+      config:
+        features:
+          task_board:
+            widget_enabled: true
+```
+
+Use this when the platform should hide or suppress the surface directly instead
+of the bundle method deciding at runtime.
 
 ### Bundle props and secrets
 
@@ -346,6 +464,52 @@ def render_report(payload: dict) -> dict:
 
 Reference:
 - [bundle-venv-README.md](../bundle-venv-README.md)
+
+## 4.2 Feature Gating With `enabled_config`
+
+This feature is important enough to treat as a first-class authoring tool.
+
+`enabled_config` is the platform-native feature flag for bundle surfaces.
+
+You can attach it to:
+
+- `@agentic_workflow(...)`
+- `@api(...)`
+- `@mcp(...)`
+- `@ui_widget(...)`
+- `@cron(...)`
+
+What it does:
+
+- resolves a dot-path against effective bundle props
+- if the resolved value is disabled, the platform suppresses that surface
+- missing path means enabled
+- bundle-level disable overrides resource-level settings
+
+Current disabled values:
+
+- boolean `False`
+- integer `0`
+- strings `false`, `disable`, `disabled`, `off`, `0`
+
+Use it for:
+
+- staged rollout
+- environment-specific exposure
+- disabling one job/widget/API without deleting code
+- temporarily hiding unfinished surfaces
+
+Do not use it for:
+
+- secrets
+- per-user authorization
+- complex business predicates that depend on request payload or database state
+
+Authoring rule:
+
+- put the flag value in bundle props under `bundles.yaml -> config:`
+- keep the decorator path stable
+- let the platform do the 404/scheduler suppression instead of duplicating the check in method bodies
 
 ## 5. Entrypoint Rules
 
@@ -797,7 +961,7 @@ The widget should call the structured API alias, not the widget alias.
 Good pattern:
 
 - `task-board`
-  - customer-facing
+  - end-user-facing
   - read-only on initial load
 - `task-tracker-admin`
   - privileged/admin-only
