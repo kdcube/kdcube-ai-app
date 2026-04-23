@@ -138,7 +138,32 @@ jobs:
           tags: |
             type=raw,value=${{ needs.resolve-version.outputs.tag }}
 
+      - name: Check whether image tag already exists on DockerHub
+        id: image_exists
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          ref="$(printf '%s\n' "${TAGS}" | head -n1)"
+          if [ -z "${ref}" ]; then
+            echo "Resolved image ref is empty."
+            exit 1
+          fi
+          if docker manifest inspect "${ref}" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "ref=${ref}" >> "$GITHUB_OUTPUT"
+            echo "Image already exists on DockerHub: ${ref}"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "ref=${ref}" >> "$GITHUB_OUTPUT"
+            echo "Image is missing on DockerHub and will be built: ${ref}"
+          fi
+
+      - name: Skip build because image already exists
+        if: steps.image_exists.outputs.exists == 'true'
+        run: echo "Skipping build/push for existing image ${{ steps.image_exists.outputs.ref }}"
+
       - name: Build and push
+        if: steps.image_exists.outputs.exists != 'true'
         uses: docker/build-push-action@v5
         with:
           context: app/ai-app
