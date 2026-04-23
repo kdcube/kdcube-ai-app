@@ -1,9 +1,9 @@
 ---
 id: ks:docs/service/cicd/design/cli--as-control-plane-README.md
 title: "CLI As Control Plane"
-summary: "Design for evolving the KDCube CLI from a local installer into an application-level control plane for multiple local and cloud deployments."
+summary: "Design for evolving the KDCube CLI from a local installer into an application-level control plane for multiple local and cloud deployments, while keeping tenant/project as the deployment boundary and defaulting local compose-backed starts to one active deployment at a time."
 tags: ["service", "cicd", "cli", "control-plane", "design"]
-keywords: ["kdcube init", "kdcube defaults", "kdcube run", "kdcube stop", "kdcube reload", "kdcube export", "tenant project", "profile"]
+keywords: ["kdcube init", "kdcube defaults", "kdcube run", "kdcube stop", "kdcube reload", "kdcube export", "tenant project", "profile", "control plane for multiple deployments", "single active local deployment rule", "multiple deployment snapshots on one machine"]
 see_also:
   - ks:docs/service/cicd/cli-README.md
   - ks:docs/configuration/runtime-read-write-contract-README.md
@@ -242,6 +242,16 @@ Safety rule:
 
 This is an operator-safety rule, not a statement that concurrent local
 deployments are fundamentally impossible forever.
+
+Desired interpretation:
+
+- many deployment snapshots on disk: yes
+- many remote deployments managed by one CLI: yes
+- many concurrently running local compose-backed deployments by default: no
+
+If true concurrent local multi-instance support is ever introduced, it should be
+an explicit advanced mode with per-deployment compose naming and per-deployment
+published port allocation.
 
 ## 5. `kdcube reload`
 
