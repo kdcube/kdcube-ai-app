@@ -1,9 +1,9 @@
 ---
 id: ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
 title: "How To Test A Bundle"
-summary: "Testing guide for bundle authors: unit and suite coverage, runtime reload validation, widget and API checks, scheduled-job verification, and failure diagnosis in the local runtime."
+summary: "Testing guide for bundle authors and QA: local syntax/suite/pytest validation, runtime reload validation, widget and API checks, scheduled-job verification, and failure diagnosis in the local runtime."
 tags: ["sdk", "bundle", "testing", "pytest", "widget", "runtime", "validation"]
-keywords: ["bundle testing workflow", "shared bundle suite", "local bundle tests", "widget and api validation", "runtime reload verification", "scheduled job checks", "bundle failure diagnosis", "manual and automated test loop"]
+keywords: ["bundle testing workflow", "shared bundle suite", "local bundle tests", "widget and api validation", "runtime reload verification", "scheduled job checks", "bundle failure diagnosis", "manual and automated test loop", "local qa for bundles", "integration qa for bundles"]
 see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/sdk/bundle/build/how-to-write-bundle-README.md
@@ -38,6 +38,33 @@ Tier 1 role of this page:
 - use it after you have bundle code and a real runtime
 - use it to validate wrappers around existing user code, not only greenfield bundles
 - use it to prove the full KDCube contract, not only unit-level correctness
+- use it as the primary page for both local QA and integration QA
+
+## 0. Which QA Job Are You Doing
+
+There are two different QA jobs and this page covers both.
+
+### Local QA
+
+This means:
+
+- syntax and import checks
+- shared bundle suite
+- bundle-local pytest
+- direct checks of helpers, serializers, cron bodies, and builders
+
+### Integration QA
+
+This means:
+
+- bundle discovery in a real KDCube runtime
+- reload behavior after descriptor or code changes
+- browser/widget validation
+- API and MCP validation
+- cron/runtime-path validation inside the real environment
+
+Use the same document for both, but do not confuse them.
+Passing local tests is necessary and still not enough.
 
 ## 1. Testing Order
 

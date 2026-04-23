@@ -1,9 +1,9 @@
 ---
 id: ks:docs/sdk/bundle/build/how-to-write-bundle-README.md
 title: "How To Write A Bundle"
-summary: "Authoring guide for end-to-end bundles: bundle shape, lifecycle, decorators, runtime surfaces, configuration and storage decisions, and how to turn a product idea into a deployable bundle."
+summary: "Authoring guide for bundle creators and integrators: bundle shape, lifecycle, decorators, runtime surfaces, configuration and storage decisions, and how to turn a product idea or existing app into a deployable bundle."
 tags: ["sdk", "bundle", "authoring", "workflow", "widget", "api", "testing"]
-keywords: ["bundle authoring guide", "end to end bundle design", "decorator selection", "runtime surface selection", "widget api mcp cron choices", "configuration and storage decisions", "bundle lifecycle design", "reference authoring patterns"]
+keywords: ["bundle authoring guide", "bundle creator path", "bundle integrator path", "end to end bundle design", "decorator selection", "runtime surface selection", "widget api mcp cron choices", "configuration and storage decisions", "bundle lifecycle design", "reference authoring patterns"]
 see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
@@ -71,6 +71,8 @@ Tier 1 role of this page:
 
 - use it first when you are creating a new bundle
 - use it first when you are wrapping existing user code into a bundle
+- use it for creator and integrator work, not as the main configurator,
+  deployer, or QA page
 - do not use it as the main runtime setup guide or the main test guide
 
 ## 1A. What A Bundle Is

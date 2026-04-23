@@ -29,6 +29,15 @@ Use this page when you need to answer questions like:
 This page intentionally covers all relevant runtime value classes, not only
 bundle-scoped values.
 
+Tier 1 role of this page:
+
+- use it first when your job is configuring a bundle
+- use it first when you must translate an existing application's settings into
+  KDCube terms
+- use it after `how-to-write` when you need to decide where values belong
+- use it before `how-to-configure-and-run` when descriptor modeling is still
+  unclear
+
 If you need the detailed storage and authority model after that, use:
 
 - [runtime-configuration-and-secrets-store-README.md](runtime-configuration-and-secrets-store-README.md)

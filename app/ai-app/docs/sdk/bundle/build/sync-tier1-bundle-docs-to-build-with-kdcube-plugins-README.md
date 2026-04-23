@@ -1,12 +1,13 @@
 ---
 id: ks:docs/sdk/bundle/build/sync-tier1-bundle-docs-to-build-with-kdcube-plugins-README.md
 title: "Sync Tier 1 Bundle Docs To Build-With-KDCube Plugins"
-summary: "Handoff note for the Claude Code and Codex plugin maintainers describing the current Tier 1 bundle-doc contract that their plugin prompts, skills, and READMEs must follow."
+summary: "Handoff note for the Claude Code and Codex plugin maintainers describing the current Tier 1 bundle-doc contract that their plugin prompts, skills, and READMEs must follow for creators, integrators, configurators, deployers, QA, and document readers."
 tags: ["sdk", "bundle", "plugins", "claude-code", "codex", "handoff", "tier-1"]
-keywords: ["plugin docs sync", "claude code plugin", "codex plugin", "build with kdcube", "tier 1 bundle docs", "bundle authoring reading order", "obsolete doc names"]
+keywords: ["plugin docs sync", "claude code plugin", "codex plugin", "build with kdcube", "tier 1 bundle docs", "bundle authoring reading order", "bundle configurator docs", "bundle deployer docs", "bundle qa docs", "obsolete doc names"]
 see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/sdk/bundle/build/how-to-write-bundle-README.md
+  - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
   - ks:docs/sdk/bundle/bundle-index-README.md
@@ -22,12 +23,13 @@ The plugin implementation details may change. The doc contract below should not.
 
 Both plugins must route users through the same Tier 1 bundle-doc path.
 
-These four docs are now the primary authoring path:
+These five docs are now the primary Tier 1 path:
 
 1. [how-to-navigate-kdcube-docs-README.md](how-to-navigate-kdcube-docs-README.md)
 2. [how-to-write-bundle-README.md](how-to-write-bundle-README.md)
-3. [how-to-configure-and-run-bundle-README.md](how-to-configure-and-run-bundle-README.md)
-4. [how-to-test-bundle-README.md](how-to-test-bundle-README.md)
+3. [../../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../../configuration/bundle-runtime-configuration-and-secrets-README.md)
+4. [how-to-configure-and-run-bundle-README.md](how-to-configure-and-run-bundle-README.md)
+5. [how-to-test-bundle-README.md](how-to-test-bundle-README.md)
 
 Interpretation:
 
@@ -35,6 +37,8 @@ Interpretation:
   first router for builders, wrapper/integrators, and general doc readers
 - `how-to-write-bundle`:
   bundle design and code-structure guide
+- `bundle-runtime-configuration-and-secrets`:
+  configuration ownership, scope, and helper-selection guide
 - `how-to-configure-and-run-bundle`:
   local runtime, descriptors, workdir, and `tenant/project` environment model
 - `how-to-test-bundle`:
@@ -47,24 +51,26 @@ bundle-authoring path.
 
 Instead:
 
-- start with the 4 Tier 1 docs above
+- start with the 5 Tier 1 docs above
 - use the navigation doc as the first router when the user has not yet said
   whether they are:
   - creating a new bundle
   - wrapping existing code into a bundle
-  - integrating a bundle into a KDCube environment
+  - configuring bundle settings and secrets
+  - integrating or deploying a bundle into a KDCube environment
+  - doing local QA or integration QA
 - branch into deeper docs only when the question becomes specific
 
 ## Minimum Reading Order The Plugins Must Expose
 
 1. `how-to-navigate-kdcube-docs-README.md`
 2. `how-to-write-bundle-README.md`
-3. `how-to-configure-and-run-bundle-README.md`
-4. `how-to-test-bundle-README.md`
+3. `docs/configuration/bundle-runtime-configuration-and-secrets-README.md`
+4. `how-to-configure-and-run-bundle-README.md`
+5. `how-to-test-bundle-README.md`
 
 Then only if needed:
 
-- `docs/configuration/bundle-runtime-configuration-and-secrets-README.md`
 - `docs/sdk/bundle/bundle-platform-integration-README.md`
 - `docs/sdk/bundle/bundle-runtime-README.md`
 - `docs/sdk/bundle/versatile-reference-bundle-README.md`
@@ -78,6 +84,7 @@ Start with:
 
 1. `how-to-navigate-kdcube-docs-README.md`
 2. `how-to-write-bundle-README.md`
+3. `docs/configuration/bundle-runtime-configuration-and-secrets-README.md`
 
 ### If the user wants to wrap existing backend, UI, webhook, or cron code
 
@@ -85,28 +92,36 @@ Start with:
 
 1. `how-to-navigate-kdcube-docs-README.md`
 2. `how-to-write-bundle-README.md`
+3. `docs/configuration/bundle-runtime-configuration-and-secrets-README.md`
 
 Then branch to:
 
 - `bundle-platform-integration-README.md`
-- `bundle-runtime-configuration-and-secrets-README.md`
 - `versatile-reference-bundle-README.md`
+
+### If the user wants to model app settings, bundle props, secrets, or user state
+
+Start with:
+
+1. `how-to-navigate-kdcube-docs-README.md`
+2. `docs/configuration/bundle-runtime-configuration-and-secrets-README.md`
+3. `how-to-configure-and-run-bundle-README.md`
 
 ### If the user wants to run or integrate a bundle locally
 
 Start with:
 
 1. `how-to-navigate-kdcube-docs-README.md`
-2. `how-to-configure-and-run-bundle-README.md`
+2. `docs/configuration/bundle-runtime-configuration-and-secrets-README.md`
+3. `how-to-configure-and-run-bundle-README.md`
 
 Then branch to:
 
-- `bundle-runtime-configuration-and-secrets-README.md`
 - `bundles-descriptor-README.md`
 - `bundles-secrets-descriptor-README.md`
 - `bundle-delivery-and-update-README.md`
 
-### If the user wants to validate or debug a bundle
+### If the user wants local QA or integration QA
 
 Start with:
 
@@ -152,7 +167,7 @@ on one specific implementation layout.
 The plugin sync is done when all of this is true:
 
 - the plugin no longer points to removed bundle doc filenames
-- the plugin starts bundle-authoring users with the 4 Tier 1 docs
+- the plugin starts bundle-authoring users with the 5 Tier 1 docs
 - the plugin uses the navigation doc as the first router when task type is
   still ambiguous
 - the plugin still links deeper docs only as second-level references
