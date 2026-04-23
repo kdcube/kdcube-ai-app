@@ -1,9 +1,9 @@
 ---
 id: ks:docs/sdk/bundle/bundle-sse-events-README.md
 title: "Bundle SSE Events"
-summary: "SSE protocol reference for bundle-facing clients: envelope, lifecycle events, continuation acknowledgements, and full event catalog from ingress, proc, and bundles."
+summary: "Reference catalog for SSE events visible to bundle-facing clients: lifecycle, continuation, chat steps, rate limits, backpressure, and bundle-emitted events."
 tags: ["sdk", "bundle", "sse", "protocol", "events", "streaming", "chat"]
-keywords: ["event envelope", "chat_step", "delta", "server_shutdown", "conv_status", "rate_limit", "backpressure", "bundle events", "followup", "steer", "continuation"]
+keywords: ["sse event catalog", "client visible event lifecycle", "continuation acknowledgements", "chat step events", "rate limit events", "backpressure events", "bundle emitted events", "stream protocol reference"]
 see_also:
   - ks:docs/sdk/bundle/bundle-client-ui-README.md
   - ks:docs/sdk/bundle/bundle-client-communication-README.md

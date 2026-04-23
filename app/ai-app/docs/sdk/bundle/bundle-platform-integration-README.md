@@ -1,17 +1,17 @@
 ---
 id: ks:docs/sdk/bundle/bundle-platform-integration-README.md
 title: "Bundle Platform Integration"
-summary: "Current declarative bundle integration contract: supported decorators, manifest metadata, REST routes, MCP endpoints, and UI/static integration."
+summary: "Declarative platform contract for exposing bundle capabilities through decorators, manifest metadata, REST operations, widgets, MCP routes, static UI, public routes, and scheduled jobs."
 tags: ["sdk", "bundle", "integration", "decorators", "widgets", "operations", "mcp", "ui", "manifest", "cron", "scheduled-jobs"]
-keywords: ["agentic_workflow", "bundle_id decorator", "api decorator", "mcp decorator", "ui_widget", "ui_main", "on_message", "cron decorator", "scheduled jobs", "bundle manifest", "integrations widgets", "integrations operations", "bundle mcp endpoint", "public route"]
+keywords: ["decorator based integration", "bundle manifest contract", "rest operations exposure", "widget exposure", "mcp route exposure", "static ui exposure", "public route exposure", "scheduled job exposure"]
 see_also:
   - ks:docs/sdk/bundle/bundle-transports-README.md
   - ks:docs/sdk/bundle/bundle-interfaces-README.md
   - ks:docs/sdk/bundle/bundle-scheduled-jobs-README.md
-  - ks:docs/sdk/bundle/bundle-dev-README.md
+  - ks:docs/sdk/bundle/bundle-developer-guide-README.md
   - ks:docs/sdk/bundle/bundle-venv-README.md
   - ks:docs/sdk/bundle/bundle-index-README.md
-  - ks:docs/sdk/bundle/bundle-reference-versatile-README.md
+  - ks:docs/sdk/bundle/versatile-reference-bundle-README.md
 ---
 # Bundle Platform Integration
 

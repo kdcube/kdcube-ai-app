@@ -1,17 +1,18 @@
 ---
-id: ks:docs/service/configuration/service-config-README.md
-title: "Service Config"
-summary: "Runtime env mapping for descriptors and the exact differences between CLI compose, direct local service runs, and AWS deployment."
+id: ks:docs/configuration/service-runtime-configuration-mapping-README.md
+title: "Service Runtime Configuration Mapping"
+summary: "Cross-descriptor runtime mapping for the platform: which file or env owns which runtime values across CLI compose, direct local runs, and AWS deployment."
 tags: ["service", "configuration", "env", "descriptors"]
-keywords: ["env vars", "assembly.yaml", "bundles.yaml", "HOST_BUNDLES_PATH", "ASSEMBLY_YAML_DESCRIPTOR_PATH"]
+keywords: ["descriptor to runtime mapping", "compose versus direct run versus aws", "descriptor file locations", "runtime env translation", "bundle descriptor provider mapping", "secrets provider mapping", "workspace backend mapping", "mode specific configuration contract", "local mount variables", "deployment runtime configuration overview"]
 see_also:
   - ks:docs/service/cicd/descriptors-README.md
-  - ks:docs/service/configuration/runtime-read-write-contract-README.md
-  - ks:docs/service/configuration/assembly-descriptor-README.md
-  - ks:docs/service/configuration/bundles-descriptor-README.md
-  - ks:docs/service/configuration/secrets-descriptor-README.md
+  - ks:docs/configuration/runtime-read-write-contract-README.md
+  - ks:docs/configuration/runtime-configuration-and-secrets-store-README.md
+  - ks:docs/configuration/assembly-descriptor-README.md
+  - ks:docs/configuration/bundles-descriptor-README.md
+  - ks:docs/configuration/secrets-descriptor-README.md
 ---
-# Service Config
+# Service Runtime Configuration Mapping
 
 This is the cross-descriptor runtime mapping document.
 
@@ -26,6 +27,7 @@ It explains:
 The canonical contract tables now live in the per-descriptor pages:
 
 - [runtime-read-write-contract-README.md](runtime-read-write-contract-README.md)
+- [runtime-configuration-and-secrets-store-README.md](runtime-configuration-and-secrets-store-README.md)
 - [assembly-descriptor-README.md](assembly-descriptor-README.md)
 - [bundles-descriptor-README.md](bundles-descriptor-README.md)
 - [bundles-secrets-descriptor-README.md](bundles-secrets-descriptor-README.md)

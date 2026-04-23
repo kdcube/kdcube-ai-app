@@ -1,13 +1,13 @@
 ---
 id: ks:docs/sdk/bundle/bundle-interfaces-README.md
 title: "Bundle Interfaces"
-summary: "Bundle interface surface: communicator streaming, widgets/panels, and operations API."
+summary: "Bundle-facing interface surface: communicator streams, operations, widgets, panels, artifacts, and other bundle-visible interfaces exposed by the platform runtime."
 tags: ["sdk", "bundle", "interfaces", "streaming", "sse", "widgets", "operations", "communicator", "knowledge"]
-keywords: ["SSE", "Socket.IO", "Communicator", "operations API", "bundle widgets", "React panels", "artifacts", "attachments", "knowledge space", "ks:deployment"]
+keywords: ["communicator interface", "operations interface", "widget and panel interface", "artifact surface", "bundle visible runtime interfaces", "streaming and interaction surfaces", "knowledge and attachment surfaces"]
 see_also:
-  - ks:docs/sdk/bundle/bundle-dev-README.md
+  - ks:docs/sdk/bundle/bundle-developer-guide-README.md
   - ks:docs/sdk/bundle/bundle-runtime-README.md
-  - ks:docs/sdk/bundle/bundle-ops-README.md
+  - ks:docs/sdk/bundle/bundle-delivery-and-update-README.md
   - ks:docs/sdk/bundle/bundle-venv-README.md
   - ks:docs/sdk/bundle/bundle-index-README.md
   - ks:docs/sdk/bundle/bundle-transports-README.md
@@ -456,7 +456,7 @@ Common real-path examples in this repo:
 - `ks:src/kdcube-ai-app/<path>` — source files
 - `ks:deployment/<path>` — deployment artifacts (compose, env, Dockerfiles)
 
-See `bundle-dev-README.md` for how these roots are configured.
+See `bundle-developer-guide-README.md` for how these roots are configured.
 
 Docs:
 - Attachments system: [docs/hosting/attachments-system.md](../../hosting/attachments-system.md)

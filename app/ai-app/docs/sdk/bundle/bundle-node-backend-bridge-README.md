@@ -1,14 +1,14 @@
 ---
 id: ks:docs/sdk/bundle/bundle-node-backend-bridge-README.md
 title: "Bundle Node Backend Bridge"
-summary: "Pattern for keeping the KDCube bundle surface in Python while delegating selected backend work to a local Node or TypeScript service through an explicit bridge."
+summary: "Bridge pattern for keeping the platform-facing bundle in Python while delegating selected backend work to a local Node or TypeScript service with an explicit boundary."
 tags: ["sdk", "bundle", "node", "typescript", "bridge", "backend", "rpc"]
-keywords: ["node backend bridge", "typescript backend", "python bridge", "bundle backend", "express", "local rpc", "subprocess"]
+keywords: ["python to node bridge", "typescript backend bridge", "local rpc boundary", "split backend architecture", "bundle python surface", "delegated backend work", "subprocess service bridge"]
 see_also:
-  - ks:docs/sdk/bundle/bundle-dev-README.md
+  - ks:docs/sdk/bundle/bundle-developer-guide-README.md
   - ks:docs/sdk/bundle/bundle-runtime-README.md
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
-  - ks:docs/sdk/bundle/bundle-props-secrets-README.md
+  - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
   - ks:docs/sdk/agents/claude/claude-code-README.md
 ---
 # Bundle Node Backend Bridge

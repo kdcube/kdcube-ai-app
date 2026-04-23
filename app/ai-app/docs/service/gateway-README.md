@@ -5,7 +5,7 @@ summary: "Gateway behavior and configuration: rate limits, backpressure, and adm
 tags: ["service", "gateway", "admission-control", "rate-limits", "backpressure"]
 keywords: ["rate limits", "backpressure", "tenant/project config", "gateway config JSON"]
 see_also:
-  - ks:docs/service/configuration/service-config-README.md
+  - ks:docs/configuration/service-runtime-configuration-mapping-README.md
   - ks:docs/service/README-monitoring-observability.md
   - ks:docs/service/service-and-infrastructure-index-README.md
 ---

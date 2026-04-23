@@ -1,18 +1,18 @@
 ---
 id: ks:docs/sdk/bundle/build/how-to-write-bundle-README.md
 title: "How To Write A Bundle"
-summary: "Operational guide for building KDCube bundles: design flow, entrypoint patterns, widget/API contracts, storage, config, and the bundle-builder pitfalls to avoid."
+summary: "Authoring guide for end-to-end bundles: bundle shape, lifecycle, decorators, runtime surfaces, configuration and storage decisions, and how to turn a product idea into a deployable bundle."
 tags: ["sdk", "bundle", "authoring", "workflow", "widget", "api", "testing"]
-keywords: ["how to write bundle", "bundle builder", "bundle authoring", "versatile reference", "bundle widget", "bundle api", "bundle storage", "bundle props"]
+keywords: ["bundle authoring guide", "end to end bundle design", "decorator selection", "runtime surface selection", "widget api mcp cron choices", "configuration and storage decisions", "bundle lifecycle design", "reference authoring patterns"]
 see_also:
   - ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
-  - ks:docs/sdk/bundle/bundle-dev-README.md
-  - ks:docs/sdk/bundle/bundle-reference-versatile-README.md
+  - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
+  - ks:docs/sdk/bundle/bundle-developer-guide-README.md
+  - ks:docs/sdk/bundle/versatile-reference-bundle-README.md
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
   - ks:docs/sdk/bundle/bundle-widget-integration-README.md
   - ks:docs/sdk/bundle/bundle-runtime-README.md
-  - ks:docs/sdk/bundle/bundle-props-secrets-README.md
 ---
 # How To Write A KDCube Bundle
 
@@ -31,12 +31,12 @@ Use this document together with:
 
 - [how-to-test-bundle-README.md](how-to-test-bundle-README.md)
 - [how-to-configure-and-run-bundle-README.md](how-to-configure-and-run-bundle-README.md)
-- [bundle-dev-README.md](../bundle-dev-README.md)
-- [bundle-reference-versatile-README.md](../bundle-reference-versatile-README.md)
+- [bundle-developer-guide-README.md](../bundle-developer-guide-README.md)
+- [versatile-reference-bundle-README.md](../versatile-reference-bundle-README.md)
 - [bundle-platform-integration-README.md](../bundle-platform-integration-README.md)
 - [bundle-widget-integration-README.md](../bundle-widget-integration-README.md)
 - [bundle-runtime-README.md](../bundle-runtime-README.md)
-- [bundle-props-secrets-README.md](../bundle-props-secrets-README.md)
+- [../../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../../configuration/bundle-runtime-configuration-and-secrets-README.md)
 
 ## 1. Working Method
 
@@ -357,8 +357,8 @@ async def telegram_webhook(self, request: Request, **kwargs):
 Reference:
 - [bundle-platform-integration-README.md](../bundle-platform-integration-README.md)
 - [bundle-transports-README.md](../bundle-transports-README.md)
-- [bundle-props-secrets-README.md](../bundle-props-secrets-README.md)
-- [bundle-dev-README.md](../bundle-dev-README.md)
+- [bundle-runtime-configuration-and-secrets-README.md](../../../configuration/bundle-runtime-configuration-and-secrets-README.md)
+- [bundle-developer-guide-README.md](../bundle-developer-guide-README.md)
 
 ### Widget plus structured API
 
@@ -405,7 +405,7 @@ def docs_mcp(self, request: Request, **kwargs):
 
 Reference:
 - [bundle-transports-README.md](../bundle-transports-README.md)
-- [bundle-props-secrets-README.md](../bundle-props-secrets-README.md)
+- [bundle-runtime-configuration-and-secrets-README.md](../../../configuration/bundle-runtime-configuration-and-secrets-README.md)
 
 ### Scheduled job
 
@@ -452,7 +452,7 @@ api_key = get_secret("b:external.api_key")
 ```
 
 Reference:
-- [bundle-props-secrets-README.md](../bundle-props-secrets-README.md)
+- [bundle-runtime-configuration-and-secrets-README.md](../../../configuration/bundle-runtime-configuration-and-secrets-README.md)
 
 ### Bundle local storage
 
@@ -463,7 +463,7 @@ workspace.mkdir(parents=True, exist_ok=True)
 ```
 
 Reference:
-- [bundle-storage-cache-README.md](../bundle-storage-cache-README.md)
+- [bundle-storage-and-cache-README.md](../bundle-storage-and-cache-README.md)
 
 ### Per-bundle virtualenv helper
 

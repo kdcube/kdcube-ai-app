@@ -1,13 +1,13 @@
 ---
 id: ks:docs/sdk/bundle/bundle-knowledge-space-README.md
 title: "Bundle Knowledge Space"
-summary: "Optional bundle-defined read-only ks: namespace for React, plus exact-path reads, optional search, and optional exec-time browsing."
+summary: "Optional read-only knowledge namespace owned by a bundle for React agents and runtime code: exact reads, optional search, namespace resolution, and storage-backed implementation patterns."
 tags: ["sdk", "bundle", "knowledge", "react", "ks", "storage"]
-keywords: ["knowledge space", "ks:", "knowledge_read_fn", "knowledge_search_fn", "resolve_namespace", "bundle storage", "on_bundle_load"]
+keywords: ["read only knowledge namespace", "bundle owned knowledge space", "exact knowledge reads", "optional knowledge search", "namespace resolution", "react agent knowledge access", "storage backed knowledge patterns"]
 see_also:
   - ks:docs/sdk/bundle/bundle-lifecycle-README.md
-  - ks:docs/sdk/bundle/bundle-storage-cache-README.md
-  - ks:docs/sdk/bundle/bundle-dev-README.md
+  - ks:docs/sdk/bundle/bundle-storage-and-cache-README.md
+  - ks:docs/sdk/bundle/bundle-developer-guide-README.md
   - ks:docs/sdk/agents/react/react-turn-workspace-README.md
 ---
 # Bundle Knowledge Space

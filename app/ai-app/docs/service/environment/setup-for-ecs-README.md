@@ -7,7 +7,7 @@ keywords: ["task definition", "EFS", "secrets", "bundles.yaml"]
 see_also:
   - ks:docs/service/environment/setup-for-dockercompose-README.md
   - ks:docs/service/environment/setup-dev-env-README.md
-  - ks:docs/service/configuration/service-config-README.md
+  - ks:docs/configuration/service-runtime-configuration-mapping-README.md
 ---
 # Setup for ECS (Bundles from Assembly Descriptor)
 

@@ -1,13 +1,13 @@
 ---
-id: ks:docs/sdk/bundle/bundle-reference-versatile-README.md
+id: ks:docs/sdk/bundle/versatile-reference-bundle-README.md
 title: "Versatile Reference Bundle"
-summary: "Reference bundle for bundle builders: actual file map, demonstrated capabilities, config surfaces, and validation path for versatile@2026-03-31-13-36."
+summary: "Reference implementation guide for the versatile bundle: file layout, exposed surfaces, configuration patterns, and where to mine working bundle patterns."
 tags: ["sdk", "bundle", "reference", "example", "react", "configuration", "widget", "api", "mcp"]
-keywords: ["versatile bundle", "reference bundle", "bundle example", "preferences", "ui widget", "public endpoint", "isolated exec", "mcp"]
+keywords: ["reference implementation bundle", "working bundle patterns", "file layout example", "configuration surface example", "widget api mcp example", "versatile bundle reference"]
 see_also:
-  - ks:docs/sdk/bundle/bundle-dev-README.md
+  - ks:docs/sdk/bundle/bundle-developer-guide-README.md
   - ks:docs/sdk/bundle/bundle-runtime-README.md
-  - ks:docs/sdk/bundle/bundle-props-secrets-README.md
+  - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
 ---
 # Versatile Reference Bundle
@@ -74,8 +74,8 @@ Actual bundle secret demonstrated here:
 
 Read the exact rules here:
 
-- [bundle-props-secrets-README.md](bundle-props-secrets-README.md)
-- [bundle-platform-properties-README.md](bundle-platform-properties-README.md)
+- [../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../configuration/bundle-runtime-configuration-and-secrets-README.md)
+- [bundle-reserved-platform-properties-README.md](bundle-reserved-platform-properties-README.md)
 
 ## API and UI Surface Actually Present
 

@@ -6,7 +6,7 @@ tags: ["proxy", "openresty", "ops", "nginx", "ssl", "waf", "ddos", "rate-limitin
 keywords: ["OpenResty", "unmask_token", "limit_req", "limit_conn", "lua-resty-waf", "ModSecurity", "OWASP CRS", "proxylogin", "SSE", "WebSocket", "gzip", "HSTS"]
 see_also:
   - ks:docs/arch/proxy/nginx.conf
-  - ks:docs/service/configuration/bundles-descriptor-README.md
+  - ks:docs/configuration/bundles-descriptor-README.md
 ---
 # Proxy Ops Guide (OpenResty)
 

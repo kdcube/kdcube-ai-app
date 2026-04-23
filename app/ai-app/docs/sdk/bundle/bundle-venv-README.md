@@ -1,9 +1,9 @@
 ---
 id: ks:docs/sdk/bundle/bundle-venv-README.md
 title: "Bundle Venv"
-summary: "Reference for @venv(...): when to use it, what crosses the boundary, how the cache works, and how it reloads."
+summary: "Reference for running selected bundle helpers in cached isolated virtualenv subprocesses: boundary rules, dependency installation, cache behavior, and reload implications."
 tags: ["sdk", "bundle", "venv", "execution", "subprocess"]
-keywords: ["@venv", "bundle virtualenv", "requirements.txt", "subprocess boundary", "cached venv"]
+keywords: ["isolated virtualenv helpers", "cached subprocess execution", "dependency installation boundary", "cross boundary data flow", "venv cache behavior", "reload implications", "python dependency isolation"]
 see_also:
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
   - ks:docs/sdk/bundle/bundle-lifecycle-README.md

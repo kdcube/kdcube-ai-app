@@ -1,15 +1,17 @@
 ---
-id: ks:docs/service/configuration/secrets-descriptor-README.md
-title: "Secrets Descriptor"
-summary: "What secrets.yaml stores and when it is live authority versus installer input."
-tags: ["service", "configuration", "secrets", "descriptor"]
-keywords: ["secrets.yaml", "services.openai.api_key", "secrets-file", "aws-sm"]
+id: ks:docs/configuration/secrets-descriptor-README.md
+title: "Platform Secrets Descriptor"
+summary: "Platform-level secret configuration in secrets.yaml: model provider credentials, git and auth secrets, and other global deployment secrets across local file mode and AWS."
+tags: ["service", "configuration", "platform", "secrets", "deployment", "descriptor"]
+keywords: ["platform global secrets", "model provider credentials", "git transport credentials", "identity provider secrets", "cloud credentials", "email credentials", "local secrets file mode", "aws secrets manager global secrets", "canonical secret keys", "deployment secret inventory"]
 see_also:
   - ks:docs/service/cicd/descriptors-README.md
-  - ks:docs/service/configuration/bundles-secrets-descriptor-README.md
-  - ks:docs/service/configuration/service-config-README.md
+  - ks:docs/configuration/bundles-secrets-descriptor-README.md
+  - ks:docs/configuration/service-runtime-configuration-mapping-README.md
+  - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
+  - ks:docs/configuration/runtime-configuration-and-secrets-store-README.md
 ---
-# Secrets Descriptor
+# Platform Secrets Descriptor
 
 `secrets.yaml` stores platform/global secrets.
 

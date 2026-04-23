@@ -15,8 +15,8 @@ keywords:
 see_also:
   - ks:docs/sdk/agents/claude/claude-code-README.md
   - ks:docs/sdk/agents/claude/claude-code-accounting-README.md
-  - ks:docs/service/configuration/service-config-README.md
-  - ks:docs/service/configuration/assembly-descriptor-README.md
+  - ks:docs/configuration/service-runtime-configuration-mapping-README.md
+  - ks:docs/configuration/assembly-descriptor-README.md
   - ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/claude_code/runtime.py
   - ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/claude_code/agent.py
 ---
@@ -267,6 +267,6 @@ standard continuity mechanism.
 - Claude accounting:
   - [claude-code-accounting-README.md](claude-code-accounting-README.md)
 - service env reference:
-  - [docs/service/configuration/service-config-README.md](../../../service/configuration/service-config-README.md)
+  - [docs/configuration/service-runtime-configuration-mapping-README.md](../../../configuration/service-runtime-configuration-mapping-README.md)
 - assembly schema:
-  - [docs/service/configuration/assembly-descriptor-README.md](../../../service/configuration/assembly-descriptor-README.md)
+  - [docs/configuration/assembly-descriptor-README.md](../../../configuration/assembly-descriptor-README.md)

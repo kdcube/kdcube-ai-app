@@ -5,7 +5,7 @@ summary: "Attachments pipeline: upload, storage, access, and scanning."
 tags: ["hosting", "attachments", "storage", "api", "security"]
 keywords: ["upload", "download", "clamav", "attachments API", "storage backend"]
 see_also:
-  - ks:docs/sdk/bundle/bundle-dev-README.md
+  - ks:docs/sdk/bundle/bundle-developer-guide-README.md
   - ks:docs/hosting/artifacts-limits-README.md
   - ks:docs/arch/architecture-long.md
 ---

@@ -1,18 +1,18 @@
 ---
 id: ks:docs/service/cicd/cli-README.md
-title: "CLI (kdcube)"
-summary: "CLI design for local env bootstrapping, compose setup, and assembly descriptor validation."
+title: "Current KDCube CLI"
+summary: "Current implemented CLI surface for local environment bootstrapping, workdir preparation, Docker Compose startup, and descriptor validation."
 tags: ["service", "cicd", "cli", "env", "deployment"]
-keywords: ["kdcube cli", "env init", "docker compose", "local dev", "bundles.yaml", "assembly.yaml"]
+keywords: ["kdcube cli", "local environment bootstrap", "workdir setup", "docker compose control", "descriptor validation", "current cli contract", "local deployment tooling"]
 see_also:
   - ks:docs/service/cicd/release-README.md
   - ks:docs/service/cicd/descriptors-README.md
   - ks:docs/service/cicd/design/cli--as-control-plane-README.md
-  - ks:docs/service/configuration/assembly-descriptor-README.md
-  - ks:docs/service/configuration/secrets-descriptor-README.md
-  - ks:docs/service/configuration/bundles-descriptor-README.md
-  - ks:docs/service/configuration/service-config-README.md
-  - ks:docs/service/configuration/gateway-descriptor-README.md
+  - ks:docs/configuration/assembly-descriptor-README.md
+  - ks:docs/configuration/secrets-descriptor-README.md
+  - ks:docs/configuration/bundles-descriptor-README.md
+  - ks:docs/configuration/service-runtime-configuration-mapping-README.md
+  - ks:docs/configuration/gateway-descriptor-README.md
   - ks:docs/service/environment/setup-dev-env-README.md
   - ks:docs/service/environment/setup-for-dockercompose-README.md
 ---
@@ -173,7 +173,7 @@ If `nginx_ui_config` is omitted, the CLI falls back to the built-in `nginx_ui.co
 When `proxy.ssl: true` and `assembly.domain` is set, the CLI also patches the
 runtime nginx SSL config so `YOUR_DOMAIN_NAME` is replaced in `server_name` and
 default Let’s Encrypt cert paths under `/etc/letsencrypt/live/<domain>/...`.
-See: [docs/service/configuration/assembly-descriptor-README.md](../configuration/assembly-descriptor-README.md)
+See: [docs/configuration/assembly-descriptor-README.md](../../configuration/assembly-descriptor-README.md)
 
 If `platform.ref` is present in the descriptor, the install source selector
 adds **assembly-descriptor**, which pulls that tag from DockerHub.
@@ -196,7 +196,7 @@ plain non-secret descriptor values directly:
 
 This is the runtime contract behind `read_plain(...)` / `get_plain(...)`.
 See:
-[docs/service/configuration/service-config-README.md](../configuration/service-config-README.md)
+[docs/configuration/service-runtime-configuration-mapping-README.md](../../configuration/service-runtime-configuration-mapping-README.md)
 
 The same descriptor also controls workspace/session bootstrap settings for agent runtimes:
 
@@ -406,7 +406,7 @@ In `secrets-file` mode, the CLI mounts:
 Runtime resolves those files from the staged workspace descriptor directory via
 `PLATFORM_DESCRIPTORS_DIR=/config`.
 
-See: [docs/service/configuration/secrets-descriptor-README.md](../configuration/secrets-descriptor-README.md)
+See: [docs/configuration/secrets-descriptor-README.md](../../configuration/secrets-descriptor-README.md)
 
 ### 2.6 Gateway config descriptor (optional)
 If you provide a `gateway.yaml`, the CLI stages it into `workdir/config` and
@@ -428,7 +428,7 @@ You can skip the prompt by setting:
 KDCUBE_GATEWAY_DESCRIPTOR_PATH=/path/to/gateway.yaml
 ```
 
-See: [docs/service/configuration/gateway-descriptor-README.md](../configuration/gateway-descriptor-README.md)
+See: [docs/configuration/gateway-descriptor-README.md](../../configuration/gateway-descriptor-README.md)
 
 ### 2.7 `kdcube release validate`
 

@@ -5,8 +5,8 @@ summary: "Runtime secrets providers, persistence model, and user-scoped secret b
 tags: ["service", "secrets", "configuration", "aws", "runtime"]
 keywords: ["SECRETS_PROVIDER", "secrets-service", "aws-sm", "secrets-file", "in-memory", "user secrets", "bundle secrets"]
 see_also:
-  - ks:docs/service/configuration/service-config-README.md
-  - ks:docs/service/configuration/secrets-descriptor-README.md
+  - ks:docs/configuration/service-runtime-configuration-mapping-README.md
+  - ks:docs/configuration/secrets-descriptor-README.md
   - ks:docs/service/environment/setup-dev-env-README.md
   - ks:docs/service/environment/setup-for-ecs-README.md
 ---
@@ -23,7 +23,7 @@ It also explains what survives service restart and what does not.
 
 This document is only about secrets. For non-secret descriptor-backed runtime
 reads and descriptor/env mapping, see:
-[docs/service/configuration/service-config-README.md](../configuration/service-config-README.md)
+[docs/configuration/service-runtime-configuration-mapping-README.md](../../configuration/service-runtime-configuration-mapping-README.md)
 
 ## 1. Runtime contract
 

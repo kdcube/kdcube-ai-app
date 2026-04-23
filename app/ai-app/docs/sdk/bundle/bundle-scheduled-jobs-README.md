@@ -1,12 +1,12 @@
 ---
 id: ks:docs/sdk/bundle/bundle-scheduled-jobs-README.md
 title: "Bundle Scheduled Jobs"
-summary: "Bundle-native cron jobs via the @cron decorator: span semantics, cron resolution, runtime access, and local debug."
+summary: "Guide to bundle cron jobs: decorator contract, expression resolution, enable or disable gates, span semantics, timezone handling, locks, and local debugging."
 tags: ["sdk", "bundle", "cron", "scheduled-jobs", "scheduler", "proc"]
-keywords: ["@cron", "cron decorator", "CronJobSpec", "BundleSchedulerManager", "span", "process", "instance", "system", "expr_config", "cron_expression", "timezone", "tz_config", "enabled_config", "bundle disabled", "scheduled jobs", "BUNDLES_YAML_DESCRIPTOR_PATH"]
+keywords: ["bundle cron jobs", "cron expression resolution", "enabled config gate", "span semantics", "timezone handling", "scheduler locks", "local cron debugging", "scheduled background work"]
 see_also:
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
-  - ks:docs/sdk/bundle/bundle-props-secrets-README.md
+  - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
   - ks:docs/sdk/bundle/bundle-index-README.md
 ---
 # Bundle Scheduled Jobs

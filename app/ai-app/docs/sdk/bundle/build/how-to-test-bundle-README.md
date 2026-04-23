@@ -1,15 +1,15 @@
 ---
 id: ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
 title: "How To Test A Bundle"
-summary: "Operational testing guide for KDCube bundles: shared suite, bundle-local tests, widget/API checks, runtime reload, and bundle-specific failure diagnosis."
+summary: "Testing guide for bundle authors: unit and suite coverage, runtime reload validation, widget and API checks, scheduled-job verification, and failure diagnosis in the local runtime."
 tags: ["sdk", "bundle", "testing", "pytest", "widget", "runtime", "validation"]
-keywords: ["how to test bundle", "bundle suite", "run_bundle_suite", "bundle widget testing", "bundle reload", "bundle diagnostics"]
+keywords: ["bundle testing workflow", "shared bundle suite", "local bundle tests", "widget and api validation", "runtime reload verification", "scheduled job checks", "bundle failure diagnosis", "manual and automated test loop"]
 see_also:
   - ks:docs/sdk/bundle/build/how-to-write-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
-  - ks:docs/sdk/bundle/bundle-reference-versatile-README.md
+  - ks:docs/sdk/bundle/versatile-reference-bundle-README.md
   - ks:docs/sdk/bundle/bundle-widget-integration-README.md
-  - ks:docs/sdk/bundle/bundle-ops-README.md
+  - ks:docs/sdk/bundle/bundle-delivery-and-update-README.md
   - ks:docs/sdk/bundle/bundle-runtime-README.md
 ---
 # How To Test A KDCube Bundle
@@ -23,10 +23,10 @@ Use this together with:
 
 - [how-to-write-bundle-README.md](how-to-write-bundle-README.md)
 - [how-to-configure-and-run-bundle-README.md](how-to-configure-and-run-bundle-README.md)
-- [bundle-reference-versatile-README.md](../bundle-reference-versatile-README.md)
+- [versatile-reference-bundle-README.md](../versatile-reference-bundle-README.md)
 - [bundle-widget-integration-README.md](../bundle-widget-integration-README.md)
 - [bundle-runtime-README.md](../bundle-runtime-README.md)
-- [bundle-ops-README.md](../bundle-ops-README.md)
+- [bundle-delivery-and-update-README.md](../bundle-delivery-and-update-README.md)
 
 ## 1. Testing Order
 

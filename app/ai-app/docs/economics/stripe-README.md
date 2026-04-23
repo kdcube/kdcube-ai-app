@@ -7,8 +7,8 @@ keywords: ["stripe webhooks", "checkout session", "wallet topup", "subscription 
 see_also:
   - ks:docs/economics/eco-admin-README.md
   - ks:docs/economics/operational-README.md
-  - ks:docs/service/configuration/secrets-descriptor-README.md
-  - ks:docs/service/configuration/service-config-README.md
+  - ks:docs/configuration/secrets-descriptor-README.md
+  - ks:docs/configuration/service-runtime-configuration-mapping-README.md
 ---
 # Stripe Integration Guide
 
@@ -75,7 +75,7 @@ get_secret("services.stripe.secret_key")
 get_secret("services.stripe.webhook_secret")
 ```
 
-See: [secrets-descriptor-README.md](../service/configuration/secrets-descriptor-README.md)
+See: [secrets-descriptor-README.md](../configuration/secrets-descriptor-README.md)
 
 ### 2) Config variables (`.env`)
 

@@ -1,14 +1,15 @@
 ---
-id: ks:docs/service/configuration/bundles-descriptor-README.md
+id: ks:docs/configuration/bundles-descriptor-README.md
 title: "Bundles Descriptor"
-summary: "How bundles.yaml works in local compose, direct local runs, and AWS deployment."
-tags: ["service", "configuration", "bundles", "descriptor"]
-keywords: ["bundles.yaml", "path bundles", "git bundles", "bundle-reload", "BUNDLES_YAML_DESCRIPTOR_PATH"]
+summary: "Bundle registry and non-secret bundle deployment configuration in bundles.yaml: default bundle, git or local bundle sources, module paths, and bundle-scoped config."
+tags: ["service", "configuration", "bundle", "bundle-registry", "deployment", "descriptor"]
+keywords: ["bundle registry", "default bundle selection", "git bundle source", "local path bundle source", "bundle module mapping", "bundle configuration", "bundle inventory", "file-backed bundle authority", "bundle reload workflow", "deployment bundle catalog"]
 see_also:
   - ks:docs/service/cicd/descriptors-README.md
-  - ks:docs/service/configuration/assembly-descriptor-README.md
-  - ks:docs/service/configuration/bundles-secrets-descriptor-README.md
-  - ks:docs/service/configuration/service-config-README.md
+  - ks:docs/configuration/assembly-descriptor-README.md
+  - ks:docs/configuration/bundles-secrets-descriptor-README.md
+  - ks:docs/configuration/service-runtime-configuration-mapping-README.md
+  - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
 ---
 # Bundles Descriptor
@@ -30,7 +31,7 @@ It does not carry bundle secrets.
 This page is about the descriptor contract itself.
 For the operational local workflow for reusing a runtime, changing bundle roots, and running `kdcube`, use:
 
-- [how-to-configure-and-run-bundle-README.md](../../sdk/bundle/build/how-to-configure-and-run-bundle-README.md)
+- [how-to-configure-and-run-bundle-README.md](../sdk/bundle/build/how-to-configure-and-run-bundle-README.md)
 
 ## Direct runtime contract from this descriptor
 

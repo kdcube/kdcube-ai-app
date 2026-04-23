@@ -1,13 +1,15 @@
 ---
 id: ks:docs/ops/ops-overview-README.md
 title: "Ops Overview"
-summary: "Operations entry point: deployment options, service topology, and near‑term ECS/EKS plans."
+summary: "Primary operations entry point for deployment modes, runtime service topology, health surfaces, and the practical split between EC2, ECS, and local environments."
 tags: ["ops", "overview", "deployment", "topology", "services", "ecs", "ec2"]
-keywords: ["ingress", "proc", "metrics", "redis", "postgres", "clamav", "proxylogin", "deployment options", "ecs", "ec2"]
+keywords: ["operations overview", "deployment topology", "runtime services", "ecs and ec2 operations", "local versus cloud environments", "health and deployment guides", "service layout for operators"]
 see_also:
+  - ks:docs/ops/local/local-setup-README.md
   - ks:docs/service/environment/setup-for-dockercompose-README.md
   - ks:docs/ops/deployment-options-index-README.md
   - ks:docs/ops/ecs/ecs-deployment-README.md
+  - ks:docs/ops/health-README.md
 ---
 # Ops Overview
 
@@ -132,7 +134,7 @@ flowchart TB
 
 ## Config entry points
 
-- Service configuration: [docs/service/service-config-README.md](../service/service-config-README.md)
+- Service configuration: [docs/configuration/service-runtime-configuration-mapping-README.md](../configuration/service-runtime-configuration-mapping-README.md)
 - Gateway configuration and capacity logic: [docs/service/gateway-README.md](../service/gateway-README.md)
 - Metrics & autoscaling: [docs/service/scale/metric-server-README.md](../service/scale/metric-server-README.md) and [docs/service/scale/metrics-README.md](../service/scale/metrics-README.md)
 

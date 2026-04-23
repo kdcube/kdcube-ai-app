@@ -7,10 +7,10 @@ keywords: ["two-repo", "platform repo", "custom app repo", "assembly.yaml", "bun
 see_also:
   - ks:docs/service/cicd/release-bundle-README.md
   - ks:docs/service/cicd/descriptors-README.md
-  - ks:docs/service/configuration/assembly-descriptor-README.md
-  - ks:docs/service/configuration/secrets-descriptor-README.md
+  - ks:docs/configuration/assembly-descriptor-README.md
+  - ks:docs/configuration/secrets-descriptor-README.md
   - ks:docs/service/cicd/release-README.md
-  - ks:docs/service/configuration/service-config-README.md
+  - ks:docs/configuration/service-runtime-configuration-mapping-README.md
 ---
 # Custom CI/CD (Open Source + Custom App Repo)
 
@@ -110,7 +110,7 @@ The bundle-registry source and the descriptor-mount contract are related but not
 - ingress, proc, or metrics may read `/config/assembly.yaml` and `/config/bundles.yaml` directly through `read_plain(...)`
 
 See:
-[docs/service/configuration/service-config-README.md](../configuration/service-config-README.md)
+[docs/configuration/service-runtime-configuration-mapping-README.md](../../configuration/service-runtime-configuration-mapping-README.md)
 
 **Runtime config (where env lives):**
 - ECS: task definitions (ingress/proc/metrics)
@@ -188,14 +188,14 @@ Use Dockerfiles from `deployment/docker/custom-ui-managed-infra`.
 
 ## 3) Assembly Descriptor (Platform + Frontend)
 
-See: [docs/service/configuration/assembly-descriptor-README.md](../configuration/assembly-descriptor-README.md)
+See: [docs/configuration/assembly-descriptor-README.md](../../configuration/assembly-descriptor-README.md)
 
 This file (`assembly.yaml` in the private repo) pins platform + frontend.
 Bundle list and refs live in `bundles.yaml` (same repo).
 
 For **sensitive values** (LLM keys, Git HTTPS token, proxylogin client secret,
 infra passwords), use a separate `secrets.yaml` and keep it out of the repo.
-See: [docs/service/configuration/secrets-descriptor-README.md](../configuration/secrets-descriptor-README.md)
+See: [docs/configuration/secrets-descriptor-README.md](../../configuration/secrets-descriptor-README.md)
 
 For local compose, the CLI can also use `platform.ref` from `assembly.yaml`
 to pull the matching platform images (install source: **assembly-descriptor**).
@@ -236,14 +236,14 @@ the runtime nginx SSL config so `YOUR_DOMAIN_NAME` is replaced in `server_name`
 and the default Let’s Encrypt cert paths under `/etc/letsencrypt/live/<domain>/...`.
 
 Details are documented in:  
-[docs/service/configuration/assembly-descriptor-README.md](../configuration/assembly-descriptor-README.md)
+[docs/configuration/assembly-descriptor-README.md](../../configuration/assembly-descriptor-README.md)
 
 ---
 
 ## 4) Bundle Descriptor (Derived by CI)
 
 CI stages `bundles.yaml` for proc.
-See: [docs/service/configuration/bundles-descriptor-README.md](../configuration/bundles-descriptor-README.md)
+See: [docs/configuration/bundles-descriptor-README.md](../../configuration/bundles-descriptor-README.md)
 
 **Optional shortcut (EC2/dev):** mount `bundles.yaml` directly so it is
 available inside proc at `/config/bundles.yaml`.
@@ -367,7 +367,7 @@ If using private git repos:
 ## 8.1) Bundle Descriptor Generation
 
 CI stages `bundles.yaml` from the custom app repo.
-See: [docs/service/configuration/bundles-descriptor-README.md](../configuration/bundles-descriptor-README.md)
+See: [docs/configuration/bundles-descriptor-README.md](../../configuration/bundles-descriptor-README.md)
 
 ---
 

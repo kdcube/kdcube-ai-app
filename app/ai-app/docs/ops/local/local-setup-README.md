@@ -175,7 +175,7 @@ host-run equivalent of the compose `/config` mounts. If they are unset, runtime
 falls back to `/config/assembly.yaml` and `/config/bundles.yaml`.
 
 See:
-- [docs/service/configuration/service-config-README.md](../../service/configuration/service-config-README.md)
+- [docs/configuration/service-runtime-configuration-mapping-README.md](../../configuration/service-runtime-configuration-mapping-README.md)
 
 Important:
 - Keys are **not written to disk**.

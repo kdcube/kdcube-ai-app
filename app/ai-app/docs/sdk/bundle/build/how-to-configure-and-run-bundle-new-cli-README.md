@@ -1,14 +1,14 @@
 ---
 id: ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-new-cli-README.md
 title: "How To Configure And Run A Bundle With The New CLI"
-summary: "Forward-looking bundle runtime guide for the planned deployment-first CLI model with init/defaults/start/stop/reload/export."
+summary: "Planned bundle-development workflow for the deployment-first CLI: init, defaults, info, start, stop, reload, and export, while keeping the same tenant/project runtime isolation model."
 tags: ["sdk", "bundle", "configuration", "runtime", "cli", "control-plane"]
-keywords: ["new kdcube cli", "kdcube init", "kdcube defaults", "kdcube start", "kdcube stop", "kdcube reload", "kdcube export", "tenant project"]
+keywords: ["planned deployment first cli", "control plane workflow", "init defaults info start stop", "bundle reload by deployment", "bundle export flow", "tenant project isolation model", "local and remote profile targeting", "future bundle runtime workflow"]
 see_also:
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
   - ks:docs/service/cicd/design/cli--as-control-plane-README.md
-  - ks:docs/service/configuration/runtime-read-write-contract-README.md
-  - ks:docs/sdk/bundle/bundle-props-secrets-README.md
+  - ks:docs/configuration/runtime-configuration-and-secrets-store-README.md
+  - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
 ---
 # How To Configure And Run A Bundle With The New CLI
 
@@ -119,8 +119,8 @@ The same scope rules still apply:
 
 Use these reference pages for the exact contract:
 
-- [runtime-read-write-contract-README.md](../../../service/configuration/runtime-read-write-contract-README.md)
-- [bundle-props-secrets-README.md](../bundle-props-secrets-README.md)
+- [runtime-configuration-and-secrets-store-README.md](../../../configuration/runtime-configuration-and-secrets-store-README.md)
+- [bundle-runtime-configuration-and-secrets-README.md](../../../configuration/bundle-runtime-configuration-and-secrets-README.md)
 
 ## One Environment Can Host Many Bundles
 

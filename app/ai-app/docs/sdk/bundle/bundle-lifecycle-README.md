@@ -1,14 +1,14 @@
 ---
 id: ks:docs/sdk/bundle/bundle-lifecycle-README.md
 title: "Bundle Lifecycle"
-summary: "How a bundle is discovered, loaded, initialized, invoked, and what storage/config surfaces are available across those phases."
+summary: "Lifecycle model for bundles: discovery, load, initialization, invocation, hooks, singleton state, UI build behavior, and which storage or config surfaces exist at each phase."
 tags: ["sdk", "bundle", "lifecycle", "storage", "configuration", "entrypoint"]
-keywords: ["agentic_workflow", "on_bundle_load", "execute_core", "pre_run_hook", "post_run_hook", "singleton", "bundle_props", "bundle_storage_root", "ui", "main_view", "_ensure_ui_build"]
+keywords: ["bundle discovery and load", "initialization hooks", "invocation phases", "singleton bundle state", "ui build lifecycle", "storage availability by phase", "configuration availability by phase", "bundle lifecycle model"]
 see_also:
-  - ks:docs/sdk/bundle/bundle-dev-README.md
+  - ks:docs/sdk/bundle/bundle-developer-guide-README.md
   - ks:docs/sdk/bundle/bundle-runtime-README.md
-  - ks:docs/sdk/bundle/bundle-props-secrets-README.md
-  - ks:docs/sdk/bundle/bundle-storage-cache-README.md
+  - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
+  - ks:docs/sdk/bundle/bundle-storage-and-cache-README.md
   - ks:docs/sdk/bundle/bundle-knowledge-space-README.md
   - ks:docs/sdk/bundle/bundle-interfaces-README.md
   - ks:docs/sdk/bundle/bundle-venv-README.md
@@ -222,7 +222,7 @@ Practical implications:
 - do not assume proc-bound runtime helpers exist in the child; `self.comm`, `self.comm_context`, `get_current_comm()`, `get_current_request_context()`, `TOOL_SUBSYSTEM`, `COMMUNICATOR`, `KV_CACHE`, and `CTX_CLIENT` are proc-side surfaces, not venv-child surfaces
 
 See:
-- [Bundle Dev](bundle-dev-README.md)
+- [Bundle Dev](bundle-developer-guide-README.md)
 - [Bundle Interfaces](bundle-interfaces-README.md)
 - [Bundle Venv](bundle-venv-README.md)
 

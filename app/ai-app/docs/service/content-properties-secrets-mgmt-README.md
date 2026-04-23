@@ -5,9 +5,9 @@ summary: "Concrete storage and export model for deployment-scoped bundle descrip
 tags: ["service", "props", "secrets", "aws-sm", "bundles", "deployment"]
 keywords: ["bundle props", "bundle secrets", "bundles-meta", "bundles descriptor", "aws secrets manager", "redis cache", "bundles.yaml", "bundles.secrets.yaml"]
 see_also:
-  - ks:docs/sdk/bundle/bundle-props-secrets-README.md
-  - ks:docs/service/configuration/bundles-descriptor-README.md
-  - ks:docs/service/configuration/bundles-secrets-descriptor-README.md
+  - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
+  - ks:docs/configuration/bundles-descriptor-README.md
+  - ks:docs/configuration/bundles-secrets-descriptor-README.md
   - ks:docs/service/secrets/secrets-service-README.md
 ---
 # Content Properties and Secrets Management

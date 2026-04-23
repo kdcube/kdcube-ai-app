@@ -386,7 +386,7 @@ Key worker: [apps/chat/processor.py](../../src/kdcube-ai-app/kdcube_ai_app/apps/
 
 Bundles are **runtime‑loadable workflows** with custom logic and optional endpoints.
 
-- Registry + loader: [bundle-ops-README.md](../sdk/bundle/bundle-ops-README.md)
+- Registry + loader: [bundle-delivery-and-update-README.md](../sdk/bundle/bundle-delivery-and-update-README.md)
 - Example bundle entrypoint: [react bundle entrypoint](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/react@2026-02-10-02-44/entrypoint.py)
 
 Bundles can:
