@@ -1,9 +1,9 @@
 ---
 id: ks:docs/service/cicd/cli-README.md
 title: "Current KDCube CLI"
-summary: "Current implemented CLI surface for local environment bootstrapping, workdir preparation, Docker Compose startup, and descriptor validation."
+summary: "Current implemented CLI surface for local environment bootstrapping, workdir preparation, Docker Compose startup, descriptor validation, and the practical rule that multiple namespaced runtime snapshots may exist on one machine while local compose-backed execution remains one active deployment at a time."
 tags: ["service", "cicd", "cli", "env", "deployment"]
-keywords: ["kdcube cli", "local environment bootstrap", "workdir setup", "docker compose control", "descriptor validation", "current cli contract", "local deployment tooling"]
+keywords: ["kdcube cli", "local environment bootstrap", "workdir setup", "docker compose control", "descriptor validation", "current cli contract", "local deployment tooling", "multiple local runtime snapshots", "single active local deployment", "tenant project workdir namespace"]
 see_also:
   - ks:docs/service/cicd/release-README.md
   - ks:docs/service/cicd/descriptors-README.md
@@ -58,6 +58,15 @@ In both models, the deployment boundary is the same:
   same environment
 
 So `tenant/project` is the environment boundary, not the bundle boundary.
+
+Important local-runtime rule:
+
+- one machine may contain many local runtime snapshots under different
+  `tenant/project` namespaces
+- the current compose-backed local runtime should still be treated as a
+  one-active-deployment-at-a-time model by default
+- do not assume that two different runtime workdirs imply two safely concurrent
+  local KDCube stacks
 
 ## 1) Immediate use cases
 

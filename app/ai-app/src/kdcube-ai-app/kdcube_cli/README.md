@@ -37,6 +37,15 @@ So the current CLI does not create one runtime per bundle.
 It creates one runtime per environment, and that environment may host many
 bundles.
 
+One more practical rule is easy to miss:
+
+- one machine can hold many local runtime snapshots under different
+  `tenant/project` namespaces
+- that does not mean the current compose-backed local workflow supports many
+  concurrently running local KDCube stacks as a normal mode
+- treat the current local runtime as one active deployment at a time unless a
+  future explicit multi-instance local mode is introduced
+
 ----
 
 ## Prerequisites
