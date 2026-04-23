@@ -161,6 +161,77 @@ Current behavior:
 - A bundle with no `allowed_roles` is always included for any authenticated
   user (backwards-compatible default)
 
+### 1.3.1 Shared `enabled_config` Contract
+
+`enabled_config` is the platform-native feature-flag hook for bundle surfaces.
+
+It can be declared on:
+
+- `@agentic_workflow(...)` for the whole bundle
+- `@api(...)` for one HTTP operation
+- `@mcp(...)` for one MCP endpoint
+- `@ui_widget(...)` for one widget
+- `@cron(...)` for one scheduled job
+
+The value is a dot-separated path into effective bundle props, for example:
+
+```python
+@agentic_workflow(
+    name="News Admin",
+    version="1.0.0",
+    enabled_config="features.news_admin.enabled",
+)
+```
+
+```yaml
+bundles:
+  items:
+    - id: "news.admin@1-0"
+      config:
+        features:
+          news_admin:
+            enabled: true
+```
+
+Current resolution/enforcement rules:
+
+- the runtime resolves the path against effective bundle props
+- bundle-level `enabled_config` is checked first
+- if the bundle-level check disables the bundle:
+  - bundle listing hides it from the normal integrations listing
+  - widget/API/MCP requests return `404`
+  - scheduled jobs are not scheduled
+- resource-level `enabled_config` is checked only if the bundle itself is enabled
+- missing path means enabled
+- `None` / absent declaration means enabled
+- this is opt-in disabling, not opt-in enabling
+
+Current disabled values:
+
+- boolean `False`
+- integer `0`
+- strings `false`, `disable`, `disabled`, `off`, `0`
+  - case-insensitive after trimming
+
+Current enabled values:
+
+- boolean `True`
+- non-zero integers
+- any string not in the disabled set
+
+Operational rule:
+
+- keep the toggle value in bundle props under `bundles.yaml -> bundles.items[].config`
+- do not use `enabled_config` as a secrets mechanism
+- do not hardcode separate enable/disable logic inside the route method when platform gating is enough
+
+Use `enabled_config` when you need:
+
+- staged rollout of a bundle or widget
+- environment-specific feature exposure
+- turning off one scheduled job while leaving the rest of the bundle live
+- hiding an operation/widget without removing its code or descriptor entry
+
 ### 1.4 `@api(...)`
 
 Marks a method as a remotely callable bundle operation.

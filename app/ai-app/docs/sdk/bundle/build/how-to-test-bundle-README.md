@@ -47,6 +47,27 @@ Runtime-shape rule:
 - if the runtime itself may be misconfigured, fix `assembly.yaml`, `bundles.yaml`, and `bundles.secrets.yaml` first
 - use [how-to-configure-and-run-bundle-README.md](how-to-configure-and-run-bundle-README.md) for the exact local runtime contract before debugging widget/API behavior
 
+## 1.1 What This Test Guide Must Prove
+
+Testing is not only about “does one function work”.
+
+For a bundle, the test set should prove all of these:
+
+- the bundle loads and its manifest is discoverable
+- the expected surfaces appear:
+  - APIs
+  - widgets
+  - MCP endpoints
+  - scheduled jobs
+- each runtime path behaves correctly:
+  - request-bound entrypoint path
+  - operations/public HTTP path
+  - cron/system path
+  - isolated path when relevant
+- config and secrets are read from the supported runtime contract
+- mutable state goes to the correct storage tier
+- reload/reconcile behavior works after descriptor changes
+
 ## 2. Baseline Test Matrix
 
 Every non-trivial bundle should be tested at these layers.
@@ -140,7 +161,7 @@ If you see `////operations/...`, the widget is not correctly wired.
 Expose the cron body through a helper and test it directly:
 
 ```python
-@cron(alias="sync", expr_config="task_tracker.sync", span="bundle")
+@cron(alias="sync", expr_config="task_tracker.sync", span="system")
 async def sync(self, **kwargs):
     await self._sync_impl()
 ```
