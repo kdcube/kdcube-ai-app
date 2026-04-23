@@ -38,6 +38,30 @@ Use other docs for the exact descriptor schemas:
 - [bundles-secrets-descriptor-README.md](../../../service/configuration/bundles-secrets-descriptor-README.md)
 - [assembly-descriptor-README.md](../../../service/configuration/assembly-descriptor-README.md)
 
+## How This Page Fits In The Bundle Lifecycle
+
+Use this page for the operational phases of the bundle lifecycle:
+
+1. choose or inspect the runtime workdir
+2. stage/update `assembly.yaml`, `bundles.yaml`, and `bundles.secrets.yaml`
+3. point bundle entries at local paths or git refs
+4. apply descriptor changes with build or bundle reload
+5. verify what runtime/config the bundle is actually using
+
+This page is not the primary source for:
+
+- bundle surface design
+- request-vs-cron-vs-isolated runtime semantics
+- widget/API/MCP decorator contracts
+- testing strategy
+
+Use the companion docs for those:
+
+- [how-to-write-bundle-README.md](how-to-write-bundle-README.md)
+- [how-to-test-bundle-README.md](how-to-test-bundle-README.md)
+- [bundle-platform-integration-README.md](../bundle-platform-integration-README.md)
+- [bundle-runtime-README.md](../bundle-runtime-README.md)
+
 ## Concepts
 
 ### 1. A runtime is a real workspace, not just a command
@@ -391,6 +415,54 @@ kdcube --workdir ~/.kdcube/kdcube-runtime/my_runtime --bundle-reload my.bundle@1
 ```
 
 Use `--build --upstream` instead only if you also changed runtime topology or platform code.
+
+### If you want to gate a bundle feature with `enabled_config`
+
+`enabled_config` is resolved from bundle props, so operationally the toggle
+value belongs in `bundles.yaml`, not in code constants and not in
+`bundles.secrets.yaml`.
+
+Example bundle code:
+
+```python
+@api(
+    alias="admin_export",
+    route="operations",
+    method="POST",
+    user_types=("privileged",),
+    enabled_config="features.admin_export.enabled",
+)
+async def admin_export(self, **kwargs):
+    return {"ok": True}
+```
+
+Example runtime config:
+
+```yaml
+bundles:
+  items:
+    - id: "my.bundle@1-0"
+      config:
+        features:
+          admin_export:
+            enabled: false
+```
+
+Current operational behavior:
+
+- missing path means enabled
+- `false`, `0`, `disable`, `disabled`, and `off` disable the surface
+- changing the flag is a bundle-props change, so apply it with:
+
+```bash
+kdcube --workdir ~/.kdcube/kdcube-runtime/my_runtime --bundle-reload my.bundle@1-0
+```
+
+Use this for:
+
+- environment-specific rollout
+- temporary shutdown of one widget/API/job
+- disabling a scheduled job without deleting its descriptor entry
 
 ### If you added or changed bundle secrets
 
