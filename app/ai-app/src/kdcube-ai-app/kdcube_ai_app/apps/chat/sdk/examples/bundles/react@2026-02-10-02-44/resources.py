@@ -15,7 +15,7 @@ from typing import Dict, List
 
 from kdcube_ai_app.infra.service_hub.errors import ServiceError
 
-SUPPORT_ADDRESS = "info@nestlogic.com"
+SUPPORT_ADDRESS = "help@kdcube.tech"
 # Pool of friendly messages keyed by error category
 FRIENDLY_ERROR_MESSAGES: Dict[str, List[str]] = {
     "usage_limit": [
@@ -123,7 +123,7 @@ def get_friendly_error_message(error_code: str, fallback: bool = True) -> str:
 
 Our team has been notified. Please try again in a few moments.
 
-Contact info@nestlogic.com if you need immediate assistance."""
+Contact help@kdcube.tech if you need immediate assistance."""
 
     raise ValueError(f"Unknown error code: {error_code}")
 
