@@ -1633,12 +1633,52 @@ class EnhancedChatRequestProcessor:
                         props_update_channel,
                         props_update_channel.encode(),
                     ):
+                        evt = {}
+                        try:
+                            evt = json.loads((message.get("data") or b"{}").decode("utf-8"))
+                        except Exception:
+                            evt = {}
                         if self._scheduler is not None:
                             try:
                                 current = await store_load(self.redis)
                                 await self._scheduler.reconcile(current)
                             except Exception:
                                 logger.warning("Bundle scheduler reconcile failed after props update", exc_info=True)
+                        bundle_id = str(evt.get("bundle_id") or "").strip()
+                        if bundle_id:
+                            try:
+                                from kdcube_ai_app.infra.plugin.agentic_loader import (
+                                    AgenticBundleSpec,
+                                    notify_cached_bundle_props_changed,
+                                )
+
+                                current = await store_load(self.redis)
+                                entry = (current.bundles or {}).get(bundle_id) if current else None
+                                if entry is not None:
+                                    spec = AgenticBundleSpec(
+                                        path=entry.path,
+                                        module=entry.module,
+                                        singleton=bool(getattr(entry, "singleton", False)),
+                                    )
+                                    notified = await notify_cached_bundle_props_changed(
+                                        spec,
+                                        bundle_id=bundle_id,
+                                        tenant=tenant,
+                                        project=project,
+                                        updated_by=evt.get("updated_by"),
+                                        source=evt.get("source"),
+                                        pg_pool=getattr(self.middleware, "pg_pool", None),
+                                        redis=self.redis,
+                                    )
+                                    if notified:
+                                        logger.info(
+                                            "Applied on_props_changed to cached bundle singleton: tenant=%s project=%s bundle=%s",
+                                            tenant,
+                                            project,
+                                            bundle_id,
+                                        )
+                            except Exception:
+                                logger.warning("Cached bundle on_props_changed failed after props update", exc_info=True)
                         continue
 
                     logger.debug("Ignoring unrelated pub/sub message on bundles channel")

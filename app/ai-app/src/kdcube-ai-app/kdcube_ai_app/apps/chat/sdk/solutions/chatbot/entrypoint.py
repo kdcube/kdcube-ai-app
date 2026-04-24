@@ -33,6 +33,7 @@ from kdcube_ai_app.apps.chat.sdk.runtime.local_sidecars import (
     ensure_local_sidecar as ensure_runtime_local_sidecar,
     get_local_sidecar as get_runtime_local_sidecar,
     stop_local_sidecar as stop_runtime_local_sidecar,
+    update_local_sidecar_runtime_metadata as update_runtime_local_sidecar_runtime_metadata,
 )
 from kdcube_ai_app.apps.chat.sdk.viz.patch_platform_dashboard import patch_dashboard
 from kdcube_ai_app.infra.plugin.agentic_loader import api, on_message, ui_widget
@@ -227,6 +228,25 @@ class BaseEntrypoint:
         self._ensure_ui_build()
         return None
 
+    async def on_props_changed(
+        self,
+        *,
+        previous_props: Dict[str, Any],
+        current_props: Dict[str, Any],
+        reason: str = "refresh_bundle_props",
+        tenant: Optional[str] = None,
+        project: Optional[str] = None,
+        updated_by: Optional[str] = None,
+        source: Optional[str] = None,
+    ) -> None:
+        """
+        Optional hook fired after effective bundle props changed for this bundle instance.
+
+        Default behavior is no-op. Override in bundles that need to reconcile
+        long-lived side effects when props change.
+        """
+        return None
+
     def _ensure_ui_build(self) -> None:
         """
         Build the bundle's custom UI if `ui.main_view` is configured in bundle_props.
@@ -400,6 +420,8 @@ class BaseEntrypoint:
         port: Optional[int] = 0,
         ready_path: Optional[str] = None,
         ready_timeout_sec: float = 30.0,
+        startup_fingerprint: Optional[str] = None,
+        runtime_metadata: Optional[Dict[str, Any]] = None,
     ) -> LocalSidecarHandle:
         """
         Ensure a process-local sidecar service is running for this bundle scope.
@@ -439,6 +461,8 @@ class BaseEntrypoint:
             port=port,
             ready_path=ready_path,
             ready_timeout_sec=ready_timeout_sec,
+            startup_fingerprint=startup_fingerprint,
+            runtime_metadata=runtime_metadata,
         )
 
     def stop_local_sidecar(self, name: str) -> None:
@@ -450,6 +474,23 @@ class BaseEntrypoint:
             tenant=tenant,
             project=project,
             name=name,
+        )
+
+    def update_local_sidecar_runtime_metadata(
+        self,
+        name: str,
+        *,
+        runtime_metadata: Optional[Dict[str, Any]] = None,
+    ) -> Optional[LocalSidecarHandle]:
+        bundle_id, tenant, project = self._bundle_runtime_scope()
+        if not bundle_id:
+            return None
+        return update_runtime_local_sidecar_runtime_metadata(
+            bundle_id=bundle_id,
+            tenant=tenant,
+            project=project,
+            name=name,
+            runtime_metadata=runtime_metadata or {},
         )
 
     @staticmethod
@@ -501,12 +542,31 @@ class BaseEntrypoint:
             raw = self.get_prop_path(self.bundle_props or {}, "exec_runtime")
         runtime_ctx.exec_runtime = copy.deepcopy(normalize_exec_runtime_config(raw))
 
-    async def refresh_bundle_props(self, *, state: Dict[str, Any]) -> Dict[str, Any]:
+    async def refresh_bundle_props(
+        self,
+        *,
+        state: Dict[str, Any],
+        notify: bool = True,
+        reason: str = "refresh_bundle_props",
+        updated_by: Optional[str] = None,
+        source: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        previous_props = copy.deepcopy(self.bundle_props or {})
         defaults = dict(self.bundle_props_defaults or {})
         if not self.kv_cache and not self.redis:
             self.bundle_props = defaults
             self._apply_bundle_props_overrides()
             self._sync_runtime_ctx_bundle_props()
+            if notify and previous_props != self.bundle_props:
+                await self.on_props_changed(
+                    previous_props=previous_props,
+                    current_props=copy.deepcopy(self.bundle_props),
+                    reason=reason,
+                    tenant=state.get("tenant"),
+                    project=state.get("project"),
+                    updated_by=updated_by,
+                    source=source,
+                )
             return self.bundle_props
 
         tenant = state.get("tenant") or getattr(getattr(self.comm_context, "actor", None), "tenant_id", None)
@@ -514,12 +574,32 @@ class BaseEntrypoint:
         if not tenant or not project:
             self.bundle_props = defaults
             self._sync_runtime_ctx_bundle_props()
+            if notify and previous_props != self.bundle_props:
+                await self.on_props_changed(
+                    previous_props=previous_props,
+                    current_props=copy.deepcopy(self.bundle_props),
+                    reason=reason,
+                    tenant=tenant,
+                    project=project,
+                    updated_by=updated_by,
+                    source=source,
+                )
             return self.bundle_props
 
         bundle_id = getattr(getattr(self.config, "ai_bundle_spec", None), "id", None)
         if not bundle_id:
             self.bundle_props = defaults
             self._sync_runtime_ctx_bundle_props()
+            if notify and previous_props != self.bundle_props:
+                await self.on_props_changed(
+                    previous_props=previous_props,
+                    current_props=copy.deepcopy(self.bundle_props),
+                    reason=reason,
+                    tenant=tenant,
+                    project=project,
+                    updated_by=updated_by,
+                    source=source,
+                )
             return self.bundle_props
 
         from kdcube_ai_app.infra import namespaces
@@ -546,6 +626,16 @@ class BaseEntrypoint:
         self.bundle_props = defaults
         self._apply_bundle_props_overrides()
         self._sync_runtime_ctx_bundle_props()
+        if notify and previous_props != self.bundle_props:
+            await self.on_props_changed(
+                previous_props=previous_props,
+                current_props=copy.deepcopy(self.bundle_props),
+                reason=reason,
+                tenant=tenant,
+                project=project,
+                updated_by=updated_by,
+                source=source,
+            )
         return self.bundle_props
 
     @property

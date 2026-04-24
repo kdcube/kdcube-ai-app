@@ -1,5 +1,6 @@
 import asyncio
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -16,8 +17,11 @@ from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint_with_economic impo
 )
 from kdcube_ai_app.infra.plugin.agentic_loader import (
     AgenticBundleSpec,
+    _singleton_cache,
+    cache_key_for_spec,
     clear_agentic_caches,
     get_workflow_instance,
+    notify_cached_bundle_props_changed,
 )
 from kdcube_ai_app.infra.plugin.bundle_store import _admin_bundle_entry
 
@@ -183,3 +187,89 @@ def test_economics_entrypoint_rebind_refreshes_managers(monkeypatch):
     assert ep.budget_limiter.r is rebound_redis
     assert ep.rl is not None
     assert ep.rl.r is rebound_redis
+
+
+@pytest.mark.asyncio
+async def test_base_entrypoint_on_props_changed_fires_on_refresh(monkeypatch):
+    monkeypatch.setattr(entrypoint_mod, "get_settings", lambda: SimpleNamespace(TENANT="demo", PROJECT="demo-project"))
+    monkeypatch.setattr(entrypoint_mod, "create_kv_cache_from_env", lambda: None)
+
+    class _ProbeEntrypoint(entrypoint_mod.BaseEntrypoint):
+        def __init__(self, *args, **kwargs):
+            self.events = []
+            super().__init__(*args, **kwargs)
+
+        def configuration_defaults(self):
+            return {"feature": {"enabled": False}}
+
+        async def execute_core(self, *, state, thread_id, params):
+            del state, thread_id, params
+            return {}
+
+        async def on_props_changed(self, **kwargs):
+            self.events.append(kwargs)
+
+    ep = _ProbeEntrypoint(
+        config=_DummyConfig(bundle_id="bundle.props"),
+        comm_context=_ctx(user_type="registered"),
+    )
+    ep.kv_cache = MagicMock()
+    ep.kv_cache.get_json = AsyncMock(return_value={"feature": {"enabled": True}})
+
+    props = await ep.refresh_bundle_props(state={"tenant": "demo", "project": "demo-project"})
+
+    assert props["feature"]["enabled"] is True
+    assert len(ep.events) == 1
+    assert ep.events[0]["reason"] == "refresh_bundle_props"
+    assert ep.events[0]["current_props"]["feature"]["enabled"] is True
+
+
+@pytest.mark.asyncio
+async def test_notify_cached_bundle_props_changed_calls_singleton_hook(monkeypatch):
+    clear_agentic_caches()
+    monkeypatch.setattr(entrypoint_mod, "get_settings", lambda: SimpleNamespace(TENANT="demo", PROJECT="demo-project"))
+    monkeypatch.setattr(entrypoint_mod, "create_kv_cache_from_env", lambda: None)
+
+    class _ProbeEntrypoint(entrypoint_mod.BaseEntrypoint):
+        def __init__(self, *args, **kwargs):
+            self.events = []
+            super().__init__(*args, **kwargs)
+
+        def configuration_defaults(self):
+            return {"feature": {"enabled": False}}
+
+        async def execute_core(self, *, state, thread_id, params):
+            del state, thread_id, params
+            return {}
+
+        async def on_props_changed(self, **kwargs):
+            self.events.append(kwargs)
+
+    ep = _ProbeEntrypoint(
+        config=_DummyConfig(bundle_id="bundle.props"),
+        comm_context=_ctx(user_type="registered"),
+    )
+    ep.kv_cache = MagicMock()
+    ep.kv_cache.get_json = AsyncMock(return_value={"feature": {"enabled": True}})
+
+    spec = AgenticBundleSpec(path="/tmp/bundle.props", module="entrypoint", singleton=True)
+    _singleton_cache[cache_key_for_spec(spec)] = (ep, SimpleNamespace(__name__="bundle.props.entrypoint"))
+
+    try:
+        changed = await notify_cached_bundle_props_changed(
+            spec,
+            bundle_id="bundle.props",
+            tenant="demo",
+            project="demo-project",
+            updated_by="tester",
+            source="unit-test",
+            redis=object(),
+        )
+        assert changed is True
+        assert len(ep.events) == 1
+        assert ep.events[0]["reason"] == "bundles.props.update"
+        assert ep.events[0]["updated_by"] == "tester"
+        assert ep.events[0]["source"] == "unit-test"
+        assert ep.events[0]["current_props"]["feature"]["enabled"] is True
+    finally:
+        clear_agentic_caches()
