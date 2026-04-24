@@ -184,14 +184,44 @@ Specialized examples:
 
 KDCube is not limited to one agent shape.
 
-Inside one bundle you can use:
+Inside one bundle you can combine these runtime pieces together:
 
-- ReAct Agent for timeline-first orchestration, planning, ANNOUNCE, and
-  tool-driven work
-- Claude Code for workspace-scoped coding tasks with persistent session identity
+- ReAct Agent for timeline-first orchestration, shared/user-facing assistants,
+  full virtualization, isolated workspace work, ANNOUNCE, and tool-driven execution
+- Claude Code for owner/admin coding flows and complex coding pipelines where a
+  persistent coding agent is useful
 - custom Python agents for domain-specific flows
 - isolated exec for generated code and controlled execution
 - `@venv(...)` for dependency-heavy Python leaf helpers
+
+This is not an exclusive `either/or` choice.
+
+One bundle can, for example:
+
+- receive a chat request through the platform chat channel
+- route that request into the bundle execution path
+- use ReAct Agent for orchestration, workspace work, tools, and shared chat behavior
+- call Claude Code for selected owner/admin coding tasks inside the same app
+- delegate selected untrusted code to isolated exec
+- use `@venv(...)` helpers for dependency-heavy Python leaf jobs
+- keep other steps in ordinary Python bundle code
+
+Current product entry paths for chat are:
+
+- SSE-backed chat ingress
+- Socket.IO-backed chat ingress
+
+Those channels currently carry the chat request and attachments into the bundle
+execution path. In normal chat flow, non-`steer` and non-`followup` messages
+are routed into the bundle's main execution path. Conceptually, the channel is
+still a platform message transport, not a restriction to one internal agent
+mode.
+
+Security and isolation rule:
+
+- ReAct Agent is the strongly isolated runtime for shared and user-facing agent work
+- Claude Code is useful for some complex coding flows, especially owner/admin scenarios
+- do not treat Claude Code and ReAct Agent as equivalent from a trust-boundary perspective
 
 Important: ReAct Agent is not based on provider-native tool-calling protocol.
 The loop is controlled by the platform runtime, not by a model-specific
