@@ -35,8 +35,8 @@ need a cloud control plane to start.
 - scalable by construction: start on one machine, then keep the same bundle
   and environment model across machines with shared Redis, Postgres, blob
   storage, and Git-backed sources
-- RBAC and execution boundaries around the application and its individual
-  surfaces
+- RBAC, role-scoped surface visibility, and execution boundaries around the
+  application and its individual surfaces
 - a bundle-level outbound firewall for controlling which events are allowed to
   leave the runtime toward the client
 - an execution model with ReAct Agent, Claude Code, custom Python flows,
