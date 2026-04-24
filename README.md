@@ -1,10 +1,10 @@
 # KDCube — Platform and SDK for AI applications you control
 
 KDCube is a self-hosted platform, SDK, runtime, and control plane for AI
-applications. It packages backend logic, APIs, widgets, full frontend
-surfaces, MCP, scheduled jobs, configuration, state, streaming, and
-agent/runtime behavior into deployable application units that run inside
-isolated environments.
+applications. It is not a workflow loop wrapped around a model. It packages
+backend logic, APIs, widgets, full frontend surfaces, MCP, scheduled jobs,
+configuration, state, streaming, RBAC, and agent/runtime behavior into
+deployable application units that run inside isolated environments.
 
 Inside KDCube, those deployable application units are called `bundles`.
 A bundle is a folder with code and resources that KDCube can load directly
@@ -26,8 +26,12 @@ need a cloud control plane to start.
 ## What KDCube Gives You
 
 - a platform + SDK for building new AI apps or wrapping existing systems
+- full applications, not just workflow loops: backend, frontend, APIs,
+  widgets, MCP, cron, streaming, storage, and runtime control in one unit
 - a live control plane for enabling, disabling, gating, and hot-reapplying
   bundles and their APIs, widgets, MCP surfaces, and jobs
+- RBAC and execution boundaries around the application and its individual
+  surfaces
 - an execution model with ReAct Agent, Claude Code, custom Python flows,
   `@venv(...)`, and isolated exec
 - a real trust boundary: trusted tool calls run through bundle tools; untrusted
@@ -67,7 +71,8 @@ The main unit in KDCube is an application that the platform internally calls a
 bundle. Concretely, a bundle is a folder with code, descriptors, and optional
 UI/resources that KDCube resolves either from the local filesystem or from a
 Git repo at a specific ref and bundle path. Almost anything that can run in the
-KDCube / FastAPI runtime can be packaged this way. A bundle can expose several
+KDCube / FastAPI runtime can be packaged this way. A bundle is not one
+workflow loop. It is one application package, and it can expose several
 surfaces at once. That is the normal model, not an edge case.
 
 Typical bundle structure:
@@ -180,11 +185,12 @@ Specialized examples:
 - [`node.bridge.mcp@2026-04-24`](app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/node.bridge.mcp@2026-04-24)
   for wrapping bundle-local Node or TypeScript backend logic
 
-## Agent and Runtime Model
+## Application Runtime Composition
 
-KDCube is not limited to one agent shape.
+One KDCube application is not limited to one agent or one runtime.
 
-Inside one bundle you can combine these runtime pieces together:
+Inside one bundle you can combine multiple logic blocks and give each block the
+runtime and safety boundary it needs:
 
 - ReAct Agent for timeline-first orchestration, shared/user-facing assistants,
   full virtualization, isolated workspace work, ANNOUNCE, and tool-driven execution
@@ -193,6 +199,10 @@ Inside one bundle you can combine these runtime pieces together:
 - custom Python agents for domain-specific flows
 - isolated exec for generated code and controlled execution
 - `@venv(...)` for dependency-heavy Python leaf helpers
+
+Agents are only one part of that picture.
+The same bundle may also contain ordinary backend logic, APIs, widgets, cron
+jobs, MCP surfaces, and internal helper code that do not need the same runtime.
 
 This is not an exclusive `either/or` choice.
 
