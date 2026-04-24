@@ -1,165 +1,123 @@
 ---
 id: ks:docs/sdk/bundle/bundle-node-backend-bridge-README.md
 title: "Bundle Node Backend Bridge"
-summary: "Bridge pattern for keeping the platform-facing bundle in Python while delegating selected backend work to a local Node or TypeScript service with an explicit boundary."
-tags: ["sdk", "bundle", "node", "typescript", "bridge", "backend", "rpc"]
-keywords: ["python to node bridge", "typescript backend bridge", "local rpc boundary", "split backend architecture", "bundle python surface", "delegated backend work", "subprocess service bridge"]
+summary: "Bundle pattern for keeping the public KDCube app surface in Python while delegating selected backend logic to a bundle-local Node or TypeScript sidecar."
+tags: ["sdk", "bundle", "node", "typescript", "bridge", "backend", "sidecar"]
+keywords: ["bundle node backend", "typescript bundle backend", "python owned app surface", "node sidecar pattern", "bundle local backend process", "node integration example"]
 see_also:
-  - ks:docs/sdk/bundle/bundle-developer-guide-README.md
-  - ks:docs/sdk/bundle/bundle-runtime-README.md
+  - ks:docs/sdk/node/node-backend-sidecar-README.md
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
   - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
-  - ks:docs/sdk/agents/claude/claude-code-README.md
+  - ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/node.bridge.mcp@2026-04-24/entrypoint.py
 ---
 # Bundle Node Backend Bridge
 
-Use this pattern when:
-- the KDCube bundle remains the public app surface
-- the bundle backend is still Python-hosted
-- but some domain logic already exists in Node or TypeScript and should be reused
+Use this when:
+- the application is still a KDCube bundle
+- the public endpoints still belong to the Python bundle
+- some backend logic should stay in Node or TypeScript
 
-This is the supported mental model:
+The mental model is:
 
-- KDCube owns the bundle lifecycle, props, secrets, runtime context, and public endpoints
-- Python stays the entrypoint and integration layer
-- Node or TypeScript stays behind an explicit bridge
+- **application** = the bundle as exposed by KDCube
+- **Node backend** = one internal implementation part of that bundle
 
-Do **not** treat the Node app as a direct KDCube entrypoint replacement.
+Do **not** treat the Node backend as a direct replacement for the bundle entrypoint.
 
-## Recommended structure
+## Recommended shape
 
 ```text
 my.bundle@1-0/
   entrypoint.py
-  service.py
-  backend_bridge/
-    cli.mjs
-    ts_loader.mjs
-    sample_routes.ts
+  backend_src/
+    package.json
+    src/
+      bridge_app.ts
 ```
 
-Typical responsibility split:
+Responsibility split:
 
 - `entrypoint.py`
-  - declares `@api(...)`, `@ui_widget(...)`, `@on_message`, `@cron`
+  - declares `@api(...)`, `@mcp(...)`, `@ui_widget(...)`, `@cron(...)`
   - reads bundle props and secrets
-  - performs request validation and authorization
-- `service.py`
-  - Python orchestration
-  - prepares the payload for the Node bridge
-  - interprets the bridge result and maps failures to bundle-facing errors
-- `backend_bridge/cli.mjs`
-  - local bridge executable
-  - starts a transient or persistent local Node app
-  - forwards the requested operation
-  - returns a narrow JSON envelope
+  - owns auth, roles, and public contract
+- bundle-local Node backend
+  - keeps Node or TS domain logic
+  - runs as a bundle-local sidecar
+  - stays behind a narrow route boundary
 
-## Why the bridge exists
+If you are wrapping an existing Node backend, this is the intended migration:
 
-The Python bundle has KDCube-native access to:
+- keep the backend logic in Node or TS
+- add a Python KDCube shell around it
+- keep public KDCube surfaces in Python
+- keep the Node backend internal to the bundle
 
-- `self.bundle_prop(...)`
-- `self.bundle_props`
-- `get_secret("b:...")`
-- `get_user_prop(...)`
-- `get_user_secret(...)`
-- communicator and request context
-- bundle storage
-- proc integrations and DB/Redis surfaces
+## Public runtime support
 
-The Node side does not get those implicitly.
+Detailed runtime doc:
+- [node-backend-sidecar-README.md](../node/node-backend-sidecar-README.md)
 
-That is intentional. It keeps:
+Reusable SDK runtime helper:
+- `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/node/runtime_bridge.py`
 
-- KDCube-specific logic in Python
-- domain/backend reuse in Node or TS
-- the boundary explicit and auditable
+Runnable public example:
+- `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/node.bridge.mcp@2026-04-24/entrypoint.py`
+
+## Public example behavior
+
+The example demonstrates:
+- Python bundle APIs calling Node
+- Python MCP tools wrapping the same Node backend
+- bundle-local Node source loaded from `backend_src/`
+- no external cloud dependency
+- startup config vs live config split for props
+- lazy sidecar restart or lazy live reconfigure after props changes
 
 ## Boundary rules
 
-Keep the bridge contract narrow:
+Keep the contract narrow:
+- explicit route prefixes
+- explicit methods
+- Python-side props and secret resolution
+- Python-side auth and role gating
+- Node-side domain logic only
 
-- explicit allowed HTTP methods
-- explicit allowed path prefixes
-- explicit repo/workdir root
-- explicit JSON payload
-- explicit JSON result envelope
+That keeps the integration auditable and lets the same bundle work from:
+- local filesystem bundles
+- Git-backed bundles (`repo` + `ref` + `subdir`)
 
-Prefer a result shape like:
+Practical rule:
 
-```json
-{
-  "ok": true,
-  "status": 200,
-  "data": {
-    "items": []
-  }
-}
-```
+- public contract, auth, roles, props, and secrets stay in Python
+- Node is internal implementation code inside the bundle folder
+- use bundle props to describe the bridge
+- use the runtime bridge helper instead of custom subprocess management
 
-Avoid:
+## Reload behavior
 
-- exposing an unrestricted local Express server
-- passing raw KDCube secrets wholesale into Node
-- letting Node discover arbitrary host paths
-- treating the bridge as a generic shell executor
+Current reload behavior is:
 
-## Props and secrets
+- bundle update / bundle reload:
+  - stops the bundle-local Node sidecar
+  - evicts the Python bundle scope
+  - recreates the sidecar lazily on the next call
+- props-only live update:
+  - does **not** proactively restart the already-running Node sidecar
+  - startup-config drift is applied lazily on the next bridge call
+  - live config can be pushed lazily on the next bridge call through
+    `POST /__kdcube/reconfigure`
 
-Resolve KDCube config on the Python side first.
+Practical rule:
 
-Normal rule:
+- startup settings:
+  - treat as restart-scoped
+- live behavior settings:
+  - treat as reconfigure-scoped
 
-- Python reads bundle props and secrets
-- Python passes only the exact values the Node side needs
+If your Python wrapper also keeps long-lived state, use:
 
-Example:
+- `on_props_changed(...)`
 
-```python
-repo_path = self.bundle_prop("backend.repo_path")
-api_base = self.bundle_prop("backend.api_base", "/api/projects")
-token = get_secret("b:backend.service_token")
-```
-
-Then pass those into the bridge explicitly through:
-
-- stdin JSON
-- command args
-- a tightly scoped env block
-
-Do not make the Node side depend on direct KDCube secret lookup.
-
-## Public example
-
-Public reference files live under:
-
-- `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/resources/node-backend-bridge/cli.mjs`
-- `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/resources/node-backend-bridge/ts_loader.mjs`
-- `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/resources/node-backend-bridge/sample_routes.ts`
-
-What they demonstrate:
-
-- transient local Express app startup
-- strict route and method allowlisting
-- request forwarding through `fetch(...)`
-- a TypeScript loader trick so `.js` imports can resolve to `.ts`
-
-Treat those files as a bridge template, not as a drop-in production server.
-
-## How this fits bundle authoring
-
-This pattern is useful when a bundle also needs:
-
-- React v2 for planning or tool-driven work
-- Claude Code for workspace-scoped code tasks
-- bundle widgets or a custom main view
-- scheduled jobs with `@cron(...)`
-- dependency-heavy helpers behind `@venv(...)`
-
-In that shape:
-
-- Python bundle = app shell
-- React / Claude / custom agents = optional worker brains
-- Node bridge = optional domain backend reuse
-
-One bundle can combine all of them.
+That hook now exists on `BaseEntrypoint` and runs when effective bundle props
+changed for the active bundle instance.
