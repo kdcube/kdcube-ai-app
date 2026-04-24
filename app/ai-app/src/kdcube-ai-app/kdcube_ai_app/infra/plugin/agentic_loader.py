@@ -12,6 +12,7 @@ import sys
 import inspect
 import types
 import asyncio
+import copy
 import functools
 import hashlib
 import json
@@ -25,7 +26,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional, Tuple, Any, Dict, List
 
-from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
+from kdcube_ai_app.apps.chat.sdk.protocol import (
+    ChatTaskActor,
+    ChatTaskPayload,
+    ChatTaskRequest,
+    ChatTaskRouting,
+    ChatTaskUser,
+)
 from kdcube_ai_app.infra.service_hub.inventory import AgentLogger
 _log = logging.getLogger("kdcube.plugin.loader")
 
@@ -1228,6 +1235,87 @@ def _maybe_run_bundle_on_load(
     finally:
         with _bundle_load_lock:
             _bundle_load_inflight.discard(key)
+
+
+def _props_change_comm_context(*, bundle_id: str, tenant: str, project: str) -> ChatTaskPayload:
+    scope_id = f"bundle-props-update:{bundle_id}:{tenant}:{project}"
+    return ChatTaskPayload(
+        request=ChatTaskRequest(request_id=scope_id),
+        routing=ChatTaskRouting(
+            bundle_id=bundle_id,
+            session_id=scope_id,
+            conversation_id=scope_id,
+            turn_id=f"bundle-props-update:{bundle_id}",
+        ),
+        actor=ChatTaskActor(
+            tenant_id=tenant,
+            project_id=project,
+        ),
+        user=ChatTaskUser(
+            user_type="system",
+            user_id="kdcube-system",
+            username="kdcube-system",
+            roles=[],
+            permissions=[],
+            timezone="UTC",
+        ),
+    )
+
+
+async def notify_cached_bundle_props_changed(
+    spec: "AgenticBundleSpec",
+    *,
+    bundle_id: str,
+    tenant: str,
+    project: str,
+    updated_by: Optional[str] = None,
+    source: Optional[str] = None,
+    pg_pool: Optional[Any] = None,
+    redis: Optional[Any] = None,
+) -> bool:
+    cached = _singleton_cache.get(_cache_key(spec))
+    if not cached:
+        return False
+
+    instance, _mod = cached
+    hook = getattr(instance, "on_props_changed", None)
+    refresh = getattr(instance, "refresh_bundle_props", None)
+    if not callable(hook) or not callable(refresh):
+        return False
+
+    rebind = getattr(instance, "rebind_request_context", None)
+    if callable(rebind):
+        rebind(
+            comm_context=_props_change_comm_context(
+                bundle_id=bundle_id,
+                tenant=tenant,
+                project=project,
+            ),
+            pg_pool=pg_pool,
+            redis=redis,
+        )
+
+    previous_props = copy.deepcopy(getattr(instance, "bundle_props", {}) or {})
+    await refresh(
+        state={"tenant": tenant, "project": project},
+        notify=False,
+    )
+    current_props = copy.deepcopy(getattr(instance, "bundle_props", {}) or {})
+    if previous_props == current_props:
+        return False
+
+    result = hook(
+        previous_props=previous_props,
+        current_props=current_props,
+        reason="bundles.props.update",
+        tenant=tenant,
+        project=project,
+        updated_by=updated_by,
+        source=source,
+    )
+    if inspect.isawaitable(result):
+        await result
+    return True
 
 # --------------------------------------------------------------------------------------
 # Module loading

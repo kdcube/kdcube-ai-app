@@ -176,6 +176,56 @@ async def test_local_sidecar_reuse_and_shutdown(tmp_path: Path):
 
 
 @pytest.mark.asyncio
+async def test_local_sidecar_restarts_when_startup_fingerprint_changes(tmp_path: Path):
+    local_sidecars.clear_local_sidecars_for_tests()
+    script_path, flag_path = _write_sidecar_process(tmp_path)
+
+    handle_one = local_sidecars.ensure_local_sidecar(
+        bundle_id="bundle.sidecar",
+        tenant="demo-tenant",
+        project="demo-project",
+        name="svc",
+        command=[sys.executable, str(script_path)],
+        cwd=tmp_path,
+        env={"FLAG_PATH": str(flag_path)},
+        port=None,
+        ready_timeout_sec=5.0,
+        startup_fingerprint="v1",
+    )
+    handle_two = local_sidecars.ensure_local_sidecar(
+        bundle_id="bundle.sidecar",
+        tenant="demo-tenant",
+        project="demo-project",
+        name="svc",
+        command=[sys.executable, str(script_path)],
+        cwd=tmp_path,
+        env={"FLAG_PATH": str(flag_path)},
+        port=None,
+        ready_timeout_sec=5.0,
+        startup_fingerprint="v2",
+    )
+
+    assert handle_two.pid != handle_one.pid
+    assert handle_two.runtime_metadata["startup_fingerprint"] == "v2"
+
+    process_gone = False
+    for _ in range(20):
+        try:
+            os.kill(handle_one.pid, 0)
+        except ProcessLookupError:
+            process_gone = True
+            break
+        except PermissionError:
+            process_gone = True
+            break
+        await asyncio.sleep(0.05)
+    assert process_gone
+
+    await local_sidecars.shutdown_all_local_sidecars(terminate_timeout_sec=1.0, kill_timeout_sec=0.5)
+    local_sidecars.clear_local_sidecars_for_tests()
+
+
+@pytest.mark.asyncio
 async def test_stop_local_sidecars_for_scope_stops_only_target_bundle(tmp_path: Path):
     local_sidecars.clear_local_sidecars_for_tests()
     script_path, flag_one = _write_sidecar_process(tmp_path / "one")
