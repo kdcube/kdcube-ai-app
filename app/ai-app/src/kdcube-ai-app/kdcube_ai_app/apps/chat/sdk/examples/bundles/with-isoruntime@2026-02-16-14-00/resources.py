@@ -24,7 +24,7 @@ Our team has been notified and we expect service to resume within the hour.
 
 In the meantime, you can:
 - Check our status page at status.yourapp.com
-- Email us at info@nestlogic.com and we'll respond promptly
+- Email us at help@kdcube.tech and we'll respond promptly
 - Try again in a few minutes
 
 We're sorry for the inconvenience!""",
@@ -34,26 +34,26 @@ We're sorry for the inconvenience!""",
 I've let the team know, and they're on it. Please try again in a few minutes - 
 I should be back to my usual helpful self shortly!
 
-Need immediate help? Reach out to info@nestlogic.com""",
+Need immediate help? Reach out to help@kdcube.tech""",
 
         """We're experiencing temporary capacity limits and can't process your request at this moment.
 
 Our team is actively working to restore full service. Please try again shortly.
 
-For urgent assistance: info@nestlogic.com""",
+For urgent assistance: help@kdcube.tech""",
 
         """I'm temporarily at capacity and need a quick breather.
 
 The good news: Our team is already on it and working to get me back up to speed.
 The even better news: This usually resolves in just a few minutes.
 
-Try again soon, or reach out to info@nestlogic.com if you need immediate help.""",
+Try again soon, or reach out to help@kdcube.tech if you need immediate help.""",
 
         """My apologies - I've hit a temporary service limit and can't complete your request right now.
 
 What's happening: High usage has temporarily maxed out my capacity
 What we're doing: Our team is actively resolving this
-What you can do: Try again in 5-10 minutes or contact info@nestlogic.com
+What you can do: Try again in 5-10 minutes or contact help@kdcube.tech
 
 Thanks for your patience!"""
     ],
@@ -77,12 +77,12 @@ Try again in a moment, and I'll be happy to help."""
 
 This isn't your fault - I've logged the error and our team will investigate.
 
-Please try again, or contact info@nestlogic.com if the issue persists.""",
+Please try again, or contact help@kdcube.tech if the issue persists.""",
 
         """I've encountered an unexpected error while processing your request.
 
 Our team has been automatically notified and will investigate. 
-Please try again - if the problem continues, reach out to info@nestlogic.com""",
+Please try again - if the problem continues, reach out to help@kdcube.tech""",
 
         """Something went wrong on our end, and I couldn't complete your request.
 
@@ -122,7 +122,7 @@ def get_friendly_error_message(error_code: str, fallback: bool = True) -> str:
 
 Our team has been notified. Please try again in a few moments.
 
-Contact info@nestlogic.com if you need immediate assistance."""
+Contact help@kdcube.tech if you need immediate assistance."""
 
     raise ValueError(f"Unknown error code: {error_code}")
 

@@ -15,7 +15,7 @@ from typing import Dict, List
 
 from kdcube_ai_app.infra.service_hub.errors import ServiceError
 
-SUPPORT_ADDRESS = "info@nestlogic.com"
+SUPPORT_ADDRESS = "help@kdcube.tech"
 # Pool of friendly messages keyed by error category
 FRIENDLY_ERROR_MESSAGES: Dict[str, List[str]] = {
     "usage_limit": [
