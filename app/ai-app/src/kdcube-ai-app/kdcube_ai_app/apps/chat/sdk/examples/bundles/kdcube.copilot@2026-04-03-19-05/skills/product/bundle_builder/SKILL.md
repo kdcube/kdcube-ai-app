@@ -61,7 +61,7 @@ Start here in this order:
 
 1. `ks:docs/sdk/bundle/bundle-index-README.md`
 2. `ks:docs/sdk/bundle/bundle-reference-versatile-README.md`
-3. `ks:docs/sdk/bundle/bundle-dev-README.md`
+3. `ks:docs/sdk/bundle/bundle-developer-guide-README.md`
 4. `ks:docs/sdk/bundle/bundle-runtime-README.md`
 5. `ks:docs/sdk/bundle/bundle-platform-integration-README.md`
 6. `ks:docs/sdk/bundle/bundle-props-secrets-README.md`
@@ -73,6 +73,7 @@ Branch only after that:
 
 - `ks:docs/sdk/bundle/bundle-scheduled-jobs-README.md`
 - `ks:docs/sdk/bundle/bundle-node-backend-bridge-README.md`
+- `ks:docs/sdk/node/node-backend-sidecar-README.md`
 - `ks:docs/sdk/agents/claude/claude-code-README.md`
 - `ks:docs/sdk/agents/react/structure-README.md`
 - `ks:docs/sdk/agents/react/plan-README.md`
@@ -132,10 +133,10 @@ my.bundle@1-0/
   resources/
   tests/
   requirements.txt        # only when actually needed
-  backend_bridge/         # optional Node/TS bridge
-    cli.mjs
-    ts_loader.mjs
-    sample_routes.ts
+  backend_src/            # optional bundle-local Node/TS backend
+    package.json
+    src/
+      bridge_app.ts
 ```
 
 Minimal bundles need much less than that. Real bundles often use most of it.
@@ -144,7 +145,7 @@ Minimal bundles need much less than that. Real bundles often use most of it.
 
 | Need | Use | Read first | Example |
 | --- | --- | --- | --- |
-| normal chat participation | `@on_message` + entrypoint/workflow | `ks:docs/sdk/bundle/bundle-dev-README.md` | `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/orchestrator/workflow.py` |
+| normal chat participation | `@on_message` + entrypoint/workflow | `ks:docs/sdk/bundle/bundle-developer-guide-README.md` | `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/orchestrator/workflow.py` |
 | authenticated bundle API | `@api(route="operations")` | `ks:docs/sdk/bundle/bundle-platform-integration-README.md` | `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/entrypoint.py` |
 | anonymous or externally authenticated endpoint | `@api(route="public", public_auth=...)` | `ks:docs/sdk/bundle/bundle-platform-integration-README.md` | `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/entrypoint.py` |
 | widget | `@ui_widget(...)` | `ks:docs/sdk/bundle/bundle-interfaces-README.md` | `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/ui/PreferencesBrowser.tsx` |
@@ -152,7 +153,7 @@ Minimal bundles need much less than that. Real bundles often use most of it.
 | scheduled logic | `@cron(...)` | `ks:docs/sdk/bundle/bundle-scheduled-jobs-README.md` | `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/echo.ui@2026-03-30/entrypoint.py` |
 | dependency-heavy Python leaf work | `@venv(...)` | `ks:docs/sdk/bundle/bundle-lifecycle-README.md` | `ks:docs/sdk/bundle/design/bundle-custom-venv-README.md` |
 | direct code execution | isolated exec / `exec_tools.execute_code_python` | `ks:docs/sdk/agents/react/external-exec-README.md` | `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/with-isoruntime@2026-02-16-14-00/README.md` |
-| Node or TypeScript domain backend | Python bridge + local Node backend | `ks:docs/sdk/bundle/bundle-node-backend-bridge-README.md` | `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/resources/node-backend-bridge/cli.mjs` |
+| Node or TypeScript domain backend | Python bundle + bundle-local Node sidecar | `ks:docs/sdk/node/node-backend-sidecar-README.md` | `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/node.bridge.mcp@2026-04-24/entrypoint.py` |
 
 ## Runtime model
 
@@ -384,17 +385,18 @@ If a real backend service already exists in Node or TypeScript, keep Python as t
 Read:
 
 - `ks:docs/sdk/bundle/bundle-node-backend-bridge-README.md`
+- `ks:docs/sdk/node/node-backend-sidecar-README.md`
 
 Public example paths:
 
-- `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/resources/node-backend-bridge/cli.mjs`
-- `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/resources/node-backend-bridge/ts_loader.mjs`
-- `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/resources/node-backend-bridge/sample_routes.ts`
+- `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/node.bridge.mcp@2026-04-24/entrypoint.py`
+- `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/node.bridge.mcp@2026-04-24/backend_src/src/bridge_app.ts`
+- `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/node/runtime_bridge.py`
 
 Rules:
 
 - Python owns KDCube lifecycle, auth, props, secrets, and public APIs
-- Node stays behind an explicit local bridge
+- Node stays behind an explicit local sidecar bridge
 - pass only narrow values from Python to Node
 
 ## Dependency rule before adding packages

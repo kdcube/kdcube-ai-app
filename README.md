@@ -41,6 +41,8 @@ need a cloud control plane to start.
   leave the runtime toward the client
 - an execution model with ReAct Agent, Claude Code, custom Python flows,
   `@venv(...)`, and isolated exec
+- custom tools, custom skills, and MCP-connected tool surfaces that can be
+  wired into agent runtimes or ordinary bundle logic
 - built-in SDK/runtime capabilities including Neuro Search, rendering tools
   (PDF / PPTX / DOCX / HTML / PNG), managed shared Playwright browser runtime,
   and built-in skills with connected tools and tool-guided workflows
