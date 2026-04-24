@@ -147,6 +147,38 @@ Do not port the whole legacy application into one giant bundle class.
 The bundle should be the KDCube-facing integration boundary, not the place where
 all product logic becomes entangled with platform wiring.
 
+### If the existing backend is Node or TypeScript
+
+Use this split:
+
+- Python bundle = public KDCube application shell
+- Node or TS backend = internal backend of that bundle
+
+Keep in Python:
+
+- `@api(...)`
+- `@mcp(...)`
+- `@ui_widget(...)`
+- `@cron(...)`
+- auth and roles
+- props and secrets resolution
+
+Keep in Node or TS:
+
+- existing backend logic
+- internal bridge routes
+- optional live reconfigure handler
+
+Use the public pattern, not a custom subprocess design:
+
+- [bundle-node-backend-bridge-README.md](../bundle-node-backend-bridge-README.md)
+- [node-backend-sidecar-README.md](../../node/node-backend-sidecar-README.md)
+
+Builder rule:
+
+- the Node backend is one implementation part of the bundle
+- the bundle itself still belongs to Python from the platform point of view
+
 ## 1B. Bundle Lifecycle
 
 When a bundle exists in a real environment, its lifecycle is:
@@ -176,11 +208,20 @@ When a bundle exists in a real environment, its lifecycle is:
    - `bundles.yaml` / `bundles.secrets.yaml` changes
    - bundle reload
    - scheduler reconciliation for cron jobs
+9. If effective bundle props changed:
+   - `on_props_changed(...)` may reconcile long-lived side effects
+   - internal sidecars may restart or reconfigure lazily on next use
 
 Builder rule:
 
 - design the bundle around this lifecycle explicitly
 - do not treat the code as if it only ever runs from one widget click path
+
+Practical hook rule:
+
+- `on_bundle_load(...)` = one-time per process per tenant/project setup
+- `on_props_changed(...)` = reconcile long-lived state after effective prop change
+- `pre_run_hook(...)` = request-time validation or lazy reconcile before execution
 
 ## 1C. Bundle Design Decision Matrix
 
@@ -226,6 +267,11 @@ Hard rule:
 - bundle code reads all scopes
 - bundle code writes bundle-scoped and user-scoped values only
 - bundle code does not write platform/global props or secrets
+
+If long-lived helpers depend on bundle props:
+
+- recompute or invalidate them in `on_props_changed(...)`
+- do not assume a singleton bundle instance keeps prop-derived state valid forever
 
 Use the full contract page only when you need the deeper ownership, storage, or
 export rules:

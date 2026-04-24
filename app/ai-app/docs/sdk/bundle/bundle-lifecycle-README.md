@@ -47,7 +47,8 @@ flowchart TD
     I --> L[on_bundle_load once per process per tenant/project]
     L --> Q[Incoming turn or REST operation request]
     Q --> B[Build request routing/comm_context + refresh bundle props]
-    B --> P[pre_run_hook]
+    B --> C[on_props_changed when effective props changed]
+    C --> P[pre_run_hook]
     P --> E[execute_core]
     E --> V[@venv boundary optional]
     V --> O[post_run_hook]
@@ -80,10 +81,20 @@ The registry may enable `singleton=true`.
 
 If that happens:
 - the entrypoint instance may be reused
-- the singleton cache is by loaded bundle spec in the current proc, not by request
+- the singleton cache is by loaded bundle spec in the current proc worker, not by request
 - the same singleton instance may therefore serve multiple turns and REST operations over time
 - `rebind_request_context(...)` refreshes request-bound objects such as `comm_context`
 - `on_bundle_load(...)` still runs only once per process per tenant/project
+
+Important precision:
+
+- singleton reuse is **not** keyed by `tenant/project`
+- singleton reuse is **not** keyed by `bundle_id` alone
+- the cache key is the loaded bundle spec (`path + module`) in the current worker
+
+Operationally, the bundle registry still exposes one active loaded spec for a
+given `bundle_id` at a time, so different refs of the same `bundle_id` do not
+normally coexist as active runtime entries in one worker.
 
 Even with singleton reuse, you should still treat runtime memory as ephemeral and non-authoritative.
 
@@ -99,6 +110,7 @@ Important:
 | Method | Frequency | Purpose |
 |---|---|---|
 | `on_bundle_load(**kwargs)` | once per process per tenant/project | build indexes, warm caches, clone repos, prepare local read-only assets |
+| `on_props_changed(...)` | when effective props changed for the active instance | reconcile long-lived side effects after props refresh |
 | `pre_run_hook(state=...)` | every invocation | last-minute validation or reconciliation |
 | `execute_core(state=..., thread_id=..., params=...)` | every invocation | main bundle logic |
 | `post_run_hook(state=..., result=...)` | every invocation | final bookkeeping |
@@ -108,6 +120,14 @@ Important:
 - `on_bundle_load(...)` is intended to be deterministic and idempotent
 - do not store request-local state there
 - use storage for durable state, not instance fields
+
+`on_props_changed(...)` is different from `on_bundle_load(...)`:
+
+- it runs after effective bundle props changed
+- it is for reconciling long-lived side effects, not for request-local logic
+- it should also be deterministic and idempotent
+- it should not block on slow one-time install/build work that belongs in
+  `on_bundle_load(...)`
 
 `@venv(...)` is separate from `on_bundle_load(...)`:
 - it is not a one-time init hook
@@ -171,6 +191,7 @@ Three classes of changes matter during bundle development:
    - stored in Redis
    - picked up by `refresh_bundle_props(...)` at invocation start
    - affect new requests immediately
+   - fire `on_props_changed(...)` when the effective props actually changed
 
 2. **Descriptor-backed bundle config**
    - comes from `bundles.yaml`
@@ -193,6 +214,53 @@ Practical rule:
   - Redis prop edits immediately
   - descriptor/code changes after proc cache clear + descriptor replay
   - `requirements.txt` changes for `@venv` callables when that callable is next invoked
+
+## `on_props_changed(...)` contract
+
+`BaseEntrypoint` now exposes:
+
+```python
+async def on_props_changed(
+    *,
+    previous_props: Dict[str, Any],
+    current_props: Dict[str, Any],
+    reason: str = "refresh_bundle_props",
+    tenant: Optional[str] = None,
+    project: Optional[str] = None,
+    updated_by: Optional[str] = None,
+    source: Optional[str] = None,
+) -> None:
+    ...
+```
+
+When it runs:
+
+- after `refresh_bundle_props(...)` if effective props changed for the current invocation
+- after live `bundles.props.update` for already-loaded singleton bundle instances in the current worker
+
+When it does **not** run:
+
+- if effective props did not change
+- for a bundle instance that is not loaded in the current worker yet
+
+Practical use cases:
+
+- clear Python-side caches derived from props
+- mark long-lived helpers dirty
+- reconcile side effects that must track bundle props
+- split startup config vs live config for internal sidecars
+
+Do not use it for:
+
+- request-local validation
+- main business execution
+- slow first-time initialization that belongs in `on_bundle_load(...)`
+
+For sidecar-backed bundles, the common pattern is:
+
+- `on_props_changed(...)` updates Python-side wrapper state
+- the next sidecar call decides whether startup fingerprint changed
+- restart or live reconfigure then happens lazily at the bridge boundary
 
 ## `@venv(...)` in the lifecycle
 
