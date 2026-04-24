@@ -33,6 +33,7 @@ from kdcube_cli.tty_keys import (
 DEFAULT_REPO = "https://github.com/kdcube/kdcube-ai-app.git"
 DEFAULT_DIR = Path.home() / ".kdcube" / "kdcube-ai-app"
 DEFAULT_WORKDIR = Path.home() / ".kdcube" / "kdcube-runtime"
+DEFAULT_DEFAULTS_FILE = Path.home() / ".kdcube" / "cli-defaults.json"
 DEFAULT_REPO_DIRNAME = "repo"
 KDCUBE_REPOS = {
     "kdcube-chat-ingress",
@@ -1194,6 +1195,65 @@ def run_installer(
     )
 
 
+def _load_cli_defaults() -> dict:
+    try:
+        return json.loads(DEFAULT_DEFAULTS_FILE.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _save_cli_defaults(data: dict) -> None:
+    DEFAULT_DEFAULTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    DEFAULT_DEFAULTS_FILE.write_text(json.dumps(data, indent=2))
+
+
+def _check_no_other_local_stack_running(
+    console: Console,
+    *,
+    target_workdir: Path,
+    repo_root: Path,
+) -> None:
+    """Refuse if any sibling local KDCube compose stack is already running.
+
+    Scans runtime directories under target_workdir.parent (the base workdir)
+    AND under all sibling base directories at target_workdir.parent.parent
+    (the kdcube home dir, typically ~/.kdcube/).  The broader scan is required
+    because two commands may use different --workdir bases (e.g. kdcube-runtime
+    vs kdcube-runtime2), which would be invisible to a single-level scan.
+
+    Errors from individual candidate checks are silently skipped so a missing
+    or broken sibling does not block the operator.
+    """
+    base_workdir = target_workdir.parent
+    kdcube_home = base_workdir.parent
+
+    all_candidates: list[Path] = list(_runtime_candidates(base_workdir))
+    if kdcube_home.exists() and kdcube_home.is_dir():
+        for sibling_base in sorted(kdcube_home.iterdir()):
+            if sibling_base.is_dir() and sibling_base.resolve() != base_workdir.resolve():
+                all_candidates.extend(_runtime_candidates(sibling_base))
+
+    for candidate in all_candidates:
+        if candidate.resolve() == target_workdir.resolve():
+            continue
+        env_file = candidate / "config" / ".env"
+        if not env_file.exists():
+            continue
+        try:
+            ctx = _build_paths_for_repo(repo_root, candidate)
+            running = _compose_running_services(ctx.docker_dir, env_file)
+        except (SystemExit, Exception):
+            continue
+        if running:
+            raise SystemExit(
+                f"Another local KDCube deployment is already running.\n"
+                f"  Workdir : {candidate}\n"
+                f"  Services: {', '.join(sorted(running))}\n\n"
+                f"Stop it first, then retry:\n"
+                f"  kdcube --workdir {candidate} --stop"
+            )
+
+
 def _bootstrap_repo_for_defaults(
     console: Console,
     *,
@@ -1364,6 +1424,26 @@ def main() -> None:
         default="",
         help="Explicit AWS Secrets Manager prefix for --export-live-bundles when exporting from AWS SM. Default is kdcube/<tenant>/<project>.",
     )
+    parser.add_argument(
+        "--set-defaults",
+        action="store_true",
+        help="Save --default-tenant, --default-project, and --default-workdir as persistent operator defaults",
+    )
+    parser.add_argument(
+        "--default-tenant",
+        default="",
+        help="Default tenant to persist with --set-defaults",
+    )
+    parser.add_argument(
+        "--default-project",
+        default="",
+        help="Default project to persist with --set-defaults",
+    )
+    parser.add_argument(
+        "--default-workdir",
+        default="",
+        help="Default workdir to persist with --set-defaults",
+    )
     args = parser.parse_args()
 
     def _arg_provided(name: str) -> bool:
@@ -1378,6 +1458,9 @@ def main() -> None:
     path_provided = _arg_provided("--path")
     workdir_arg = _arg_provided("--workdir")
     workdir = Path(os.path.expanduser(args.workdir)).expanduser().resolve()
+    cli_defaults = _load_cli_defaults()
+    if not workdir_arg and "default_workdir" in cli_defaults:
+        workdir = Path(cli_defaults["default_workdir"]).resolve()
     implicit_descriptors_location: Path | None = None
     if (
         workdir_arg
@@ -1392,11 +1475,32 @@ def main() -> None:
         else implicit_descriptors_location
     )
     try:
+        if args.set_defaults:
+            updates: dict[str, str] = {}
+            if args.default_tenant.strip():
+                updates["default_tenant"] = args.default_tenant.strip()
+            if args.default_project.strip():
+                updates["default_project"] = args.default_project.strip()
+            if args.default_workdir.strip():
+                updates["default_workdir"] = str(
+                    Path(os.path.expanduser(args.default_workdir)).resolve()
+                )
+            if not updates:
+                raise SystemExit(
+                    "Provide at least one of --default-tenant, --default-project, "
+                    "or --default-workdir with --set-defaults."
+                )
+            cli_defaults.update(updates)
+            _save_cli_defaults(cli_defaults)
+            console.print(f"[green]Defaults saved to {DEFAULT_DEFAULTS_FILE}:[/green]")
+            for k, v in cli_defaults.items():
+                console.print(f"  {k}: {v}")
+            return
         if args.clean:
             clean_docker_images(console)
             return
         if args.export_live_bundles:
-            workdir = _resolve_cli_workdir(Path(os.path.expanduser(args.workdir)))
+            workdir = _resolve_cli_workdir(workdir)
             out_dir = Path(os.path.expanduser(args.out_dir or os.getcwd())).expanduser().resolve()
             bundles_path = None
             bundles_secrets_path = None
@@ -1416,8 +1520,8 @@ def main() -> None:
                 pass
             export_live_bundle_descriptors(
                 console,
-                tenant=str(args.tenant or "").strip(),
-                project=str(args.project or "").strip(),
+                tenant=str(args.tenant or cli_defaults.get("default_tenant", "") or "").strip(),
+                project=str(args.project or cli_defaults.get("default_project", "") or "").strip(),
                 out_dir=out_dir,
                 aws_region=str(args.aws_region or "").strip() or None,
                 aws_profile=str(args.aws_profile or "").strip() or None,
@@ -1603,6 +1707,10 @@ def main() -> None:
             else:
                 console.print("[green]Descriptor set is complete. Running non-interactive release-image install.[/green]")
             os.environ["KDCUBE_CLI_NONINTERACTIVE"] = "1"
+            if not args.dry_run:
+                _check_no_other_local_stack_running(
+                    console, target_workdir=workdir, repo_root=repo_path
+                )
             run_installer(console, repo_path, workdir, install_mode, release_ref, None, args.dry_run)
             return
 
@@ -1898,6 +2006,10 @@ def main() -> None:
 
         if args.reset_config or args.reset:
             os.environ["KDCUBE_RESET_CONFIG"] = "1"
+        if not args.dry_run:
+            _check_no_other_local_stack_running(
+                console, target_workdir=_resolve_cli_workdir(workdir), repo_root=repo_path
+            )
         run_installer(console, repo_path, workdir, mode, release_ref, docker_namespace, args.dry_run)
     except FileNotFoundError as exc:
         detail = str(exc).strip()
