@@ -85,6 +85,9 @@ Older `docs/sdk/example-bundle` sample docs are no longer part of the bundle pat
 | Outbound event filtering | [bundle-firewall-README.md](bundle-firewall-README.md) |
 | Python-to-Node backend bridge | [bundle-node-backend-bridge-README.md](bundle-node-backend-bridge-README.md) |
 
+Runnable sidecar details:
+- [node-backend-sidecar-README.md](../node/node-backend-sidecar-README.md)
+
 ## Reference Bundle
 
 Reference bundle root:
