@@ -13,9 +13,9 @@ import threading
 import time
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Mapping, Optional, Sequence
+from typing import Any, Mapping, Optional, Sequence
 
 logger = logging.getLogger("Bundle.LocalSidecars")
 
@@ -32,6 +32,7 @@ class LocalSidecarHandle:
     base_url: Optional[str]
     cwd: Optional[str]
     started_at: float
+    runtime_metadata: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -112,6 +113,24 @@ def _kill_process_group(proc: subprocess.Popen) -> None:
         return
 
 
+def _stop_record(
+    record: _LocalSidecarRecord,
+    *,
+    terminate_timeout_sec: float,
+    kill_timeout_sec: float,
+) -> None:
+    proc = record.process
+    _terminate_process_group(proc)
+    try:
+        proc.wait(timeout=max(0.1, terminate_timeout_sec))
+    except subprocess.TimeoutExpired:
+        _kill_process_group(proc)
+        try:
+            proc.wait(timeout=max(0.1, kill_timeout_sec))
+        except subprocess.TimeoutExpired:
+            logger.warning("Local sidecar did not exit after SIGKILL: %s", record.key)
+
+
 def ensure_local_sidecar(
     *,
     bundle_id: str,
@@ -125,6 +144,8 @@ def ensure_local_sidecar(
     port: Optional[int] = 0,
     ready_path: Optional[str] = None,
     ready_timeout_sec: float = 30.0,
+    startup_fingerprint: Optional[str] = None,
+    runtime_metadata: Mapping[str, Any] | None = None,
 ) -> LocalSidecarHandle:
     """
     Ensure a per-process local sidecar is running for the bundle scope.
@@ -137,13 +158,31 @@ def ensure_local_sidecar(
 
     key = _sidecar_key(bundle_id=bundle_id, tenant=tenant, project=project, name=name)
 
+    normalized_metadata = {
+        str(key): str(value)
+        for key, value in (runtime_metadata or {}).items()
+        if value is not None
+    }
+    if startup_fingerprint is not None:
+        normalized_metadata["startup_fingerprint"] = str(startup_fingerprint)
+
+    record_to_stop: _LocalSidecarRecord | None = None
     with _lock:
         existing = _registry.get(key)
         if existing and _is_running(existing.process):
-            return existing.handle
+            existing_fp = existing.handle.runtime_metadata.get("startup_fingerprint")
+            requested_fp = normalized_metadata.get("startup_fingerprint")
+            if requested_fp is None or requested_fp == existing_fp:
+                return existing.handle
+            _registry.pop(key, None)
+            record_to_stop = existing
         if existing:
             _registry.pop(key, None)
 
+    if record_to_stop is not None:
+        _stop_record(record_to_stop, terminate_timeout_sec=2.0, kill_timeout_sec=1.0)
+
+    with _lock:
         resolved_cwd = str(Path(cwd).resolve()) if cwd else None
         chosen_port = _allocate_port(host) if port == 0 else port
         merged_env = os.environ.copy()
@@ -172,6 +211,7 @@ def ensure_local_sidecar(
             base_url=base_url,
             cwd=resolved_cwd,
             started_at=time.time(),
+            runtime_metadata=normalized_metadata,
         )
         _registry[key] = _LocalSidecarRecord(key=key, process=proc, handle=handle)
 
@@ -250,16 +290,11 @@ def stop_local_sidecar(
     if not record:
         return
 
-    proc = record.process
-    _terminate_process_group(proc)
-    try:
-        proc.wait(timeout=max(0.1, terminate_timeout_sec))
-    except subprocess.TimeoutExpired:
-        _kill_process_group(proc)
-        try:
-            proc.wait(timeout=max(0.1, kill_timeout_sec))
-        except subprocess.TimeoutExpired:
-            logger.warning("Local sidecar did not exit after SIGKILL: %s", key)
+    _stop_record(
+        record,
+        terminate_timeout_sec=terminate_timeout_sec,
+        kill_timeout_sec=kill_timeout_sec,
+    )
 
 
 def stop_local_sidecars_for_scope(
@@ -333,6 +368,29 @@ def stop_inactive_local_sidecars(
         terminate_timeout_sec=terminate_timeout_sec,
         kill_timeout_sec=kill_timeout_sec,
     )
+
+
+def update_local_sidecar_runtime_metadata(
+    *,
+    bundle_id: str,
+    tenant: str,
+    project: str,
+    name: str,
+    runtime_metadata: Mapping[str, Any],
+) -> Optional[LocalSidecarHandle]:
+    key = _sidecar_key(bundle_id=bundle_id, tenant=tenant, project=project, name=name)
+    with _lock:
+        record = _registry.get(key)
+        if not record:
+            return None
+        if not _is_running(record.process):
+            _registry.pop(key, None)
+            return None
+        for meta_key, meta_value in (runtime_metadata or {}).items():
+            if meta_value is None:
+                continue
+            record.handle.runtime_metadata[str(meta_key)] = str(meta_value)
+        return record.handle
 
 
 async def shutdown_all_local_sidecars(
