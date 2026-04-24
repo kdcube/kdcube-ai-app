@@ -1,10 +1,10 @@
 # KDCube — Platform and SDK for AI applications you control
 
 KDCube is a self-hosted platform, SDK, runtime, and control plane for AI
-applications. It is not a workflow loop wrapped around a model. It packages
-backend logic, APIs, widgets, full frontend surfaces, MCP, scheduled jobs,
-configuration, state, streaming, RBAC, and agent/runtime behavior into
-deployable application units that run inside isolated environments.
+applications. It is not a workflow loop wrapped around a model. It is built
+for building and hosting full AI applications with APIs, UI, agents, MCP
+surfaces, scheduled jobs, configuration, state, RBAC, and live streaming in
+isolated environments.
 
 Inside KDCube, those deployable application units are called `bundles`.
 A bundle is a folder with code and resources that KDCube can load directly
