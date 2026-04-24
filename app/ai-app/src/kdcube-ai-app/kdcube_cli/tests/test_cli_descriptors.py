@@ -8,12 +8,15 @@ from kdcube_cli.cli import (
     _bootstrap_repo_for_defaults,
     _build_paths_for_repo,
     _canonical_descriptor_dir_from_initialized_workdir,
+    _check_no_other_local_stack_running,
     _collect_runtime_info,
     _compose_running_services,
     _descriptor_fast_path_reasons,
     _load_bundle_ids_from_descriptor,
+    _load_cli_defaults,
     _resolve_cli_repo_path,
     _resolve_cli_workdir,
+    _save_cli_defaults,
 )
 from kdcube_cli import export_live_bundles as export_mod
 from kdcube_cli.installer import (
@@ -2190,3 +2193,195 @@ def test_bootstrap_repo_for_defaults_raises_when_deployment_missing(tmp_path: Pa
         raise AssertionError("Expected SystemExit for missing deployment dir")
     except SystemExit as exc:
         assert "deployment descriptors" in str(exc).lower()
+
+
+# ---------------------------------------------------------------------------
+# _check_no_other_local_stack_running
+# ---------------------------------------------------------------------------
+
+def _make_minimal_runtime(base: Path, namespace: str, compose_mode: str = "all-in-one") -> Path:
+    """Create a minimal initialized runtime directory with a .env file."""
+    runtime = base / namespace
+    config = runtime / "config"
+    config.mkdir(parents=True)
+    env_content = f'KDCUBE_COMPOSE_MODE="{compose_mode}"\n'
+    (config / ".env").write_text(env_content)
+    return runtime
+
+
+def _make_minimal_repo(base: Path) -> Path:
+    """Create a minimal fake repo with the all-in-one docker-compose stub."""
+    repo = base / "repo"
+    compose_dir = repo / "app" / "ai-app" / "deployment" / "docker" / "all_in_one_kdcube"
+    compose_dir.mkdir(parents=True)
+    (compose_dir / "docker-compose.yaml").write_text("services:\n  chat-proc:\n    image: stub\n")
+    lib_root = repo / "app" / "ai-app" / "src" / "kdcube-ai-app"
+    (lib_root / "kdcube_ai_app").mkdir(parents=True)
+    return repo
+
+
+def test_check_no_other_local_stack_running_passes_when_no_siblings(monkeypatch, tmp_path: Path):
+    repo = _make_minimal_repo(tmp_path)
+    target = _make_minimal_runtime(tmp_path / "workspace", "tenant-a__proj-a")
+
+    monkeypatch.setattr("kdcube_cli.cli._compose_running_services", lambda *a, **kw: set())
+
+    console = Console(quiet=True)
+    # Should not raise
+    _check_no_other_local_stack_running(console, target_workdir=target, repo_root=repo)
+
+
+def test_check_no_other_local_stack_running_passes_for_target_itself(monkeypatch, tmp_path: Path):
+    repo = _make_minimal_repo(tmp_path)
+    workspace = tmp_path / "workspace"
+    target = _make_minimal_runtime(workspace, "tenant-a__proj-a")
+
+    # Target itself reports running services — still allowed
+    monkeypatch.setattr("kdcube_cli.cli._compose_running_services", lambda *a, **kw: {"chat-proc"})
+
+    console = Console(quiet=True)
+    _check_no_other_local_stack_running(console, target_workdir=target, repo_root=repo)
+
+
+def test_check_no_other_local_stack_running_refuses_when_sibling_is_active(monkeypatch, tmp_path: Path):
+    repo = _make_minimal_repo(tmp_path)
+    workspace = tmp_path / "workspace"
+    target = _make_minimal_runtime(workspace, "tenant-a__proj-a")
+    _make_minimal_runtime(workspace, "tenant-b__proj-b")
+
+    def fake_running_services(docker_dir, env_file):
+        # Only the sibling is "running"
+        if "tenant-b__proj-b" in str(env_file):
+            return {"chat-proc", "chat-ingress"}
+        return set()
+
+    monkeypatch.setattr("kdcube_cli.cli._compose_running_services", fake_running_services)
+
+    console = Console(quiet=True)
+    try:
+        _check_no_other_local_stack_running(console, target_workdir=target, repo_root=repo)
+        raise AssertionError("Expected SystemExit when a sibling stack is running")
+    except SystemExit as exc:
+        msg = str(exc)
+        assert "tenant-b__proj-b" in msg
+        assert "chat-ingress" in msg or "chat-proc" in msg
+        assert "--stop" in msg
+
+
+def test_check_no_other_local_stack_running_skips_broken_sibling(monkeypatch, tmp_path: Path):
+    repo = _make_minimal_repo(tmp_path)
+    workspace = tmp_path / "workspace"
+    target = _make_minimal_runtime(workspace, "tenant-a__proj-a")
+    _make_minimal_runtime(workspace, "tenant-b__proj-b")
+
+    def fake_running_services(docker_dir, env_file):
+        raise RuntimeError("docker not available")
+
+    monkeypatch.setattr("kdcube_cli.cli._compose_running_services", fake_running_services)
+
+    console = Console(quiet=True)
+    # Should not raise — broken sibling is silently skipped
+    _check_no_other_local_stack_running(console, target_workdir=target, repo_root=repo)
+
+
+def test_check_no_other_local_stack_running_refuses_when_sibling_base_is_active(
+    monkeypatch, tmp_path: Path
+):
+    # Reproduces the real scenario: two different --workdir bases under the
+    # same kdcube home (e.g. kdcube-runtime vs kdcube-runtime2).  The running
+    # stack lives in base1; the new command targets base2 — guard must still fire.
+    repo = _make_minimal_repo(tmp_path)
+    base1 = tmp_path / "kdcube-runtime"
+    base2 = tmp_path / "kdcube-runtime2"
+    running_workdir = _make_minimal_runtime(base1, "tenant-a__proj-a")
+    target = _make_minimal_runtime(base2, "tenant-b__proj-b")
+
+    def fake_running_services(docker_dir, env_file):
+        if "tenant-a__proj-a" in str(env_file):
+            return {"chat-proc", "chat-ingress"}
+        return set()
+
+    monkeypatch.setattr("kdcube_cli.cli._compose_running_services", fake_running_services)
+
+    console = Console(quiet=True)
+    try:
+        _check_no_other_local_stack_running(console, target_workdir=target, repo_root=repo)
+        raise AssertionError("Expected SystemExit when a sibling base stack is running")
+    except SystemExit as exc:
+        msg = str(exc)
+        assert "tenant-a__proj-a" in msg
+        assert "--stop" in msg
+
+
+# ---------------------------------------------------------------------------
+# Block 3: Defaults system — _load_cli_defaults / _save_cli_defaults
+# ---------------------------------------------------------------------------
+
+
+def test_load_cli_defaults_returns_empty_when_file_missing(monkeypatch, tmp_path: Path):
+    import kdcube_cli.cli as cli_mod
+
+    monkeypatch.setattr(cli_mod, "DEFAULT_DEFAULTS_FILE", tmp_path / "nonexistent.json")
+    assert _load_cli_defaults() == {}
+
+
+def test_load_cli_defaults_returns_data_when_file_exists(monkeypatch, tmp_path: Path):
+    import kdcube_cli.cli as cli_mod
+
+    defaults_file = tmp_path / "cli-defaults.json"
+    defaults_file.write_text(json.dumps({"default_tenant": "acme", "default_project": "app"}))
+    monkeypatch.setattr(cli_mod, "DEFAULT_DEFAULTS_FILE", defaults_file)
+
+    result = _load_cli_defaults()
+
+    assert result == {"default_tenant": "acme", "default_project": "app"}
+
+
+def test_load_cli_defaults_returns_empty_on_corrupt_json(monkeypatch, tmp_path: Path):
+    import kdcube_cli.cli as cli_mod
+
+    defaults_file = tmp_path / "cli-defaults.json"
+    defaults_file.write_text("{ not valid json }")
+    monkeypatch.setattr(cli_mod, "DEFAULT_DEFAULTS_FILE", defaults_file)
+
+    assert _load_cli_defaults() == {}
+
+
+def test_save_cli_defaults_creates_file_and_parent(monkeypatch, tmp_path: Path):
+    import kdcube_cli.cli as cli_mod
+
+    defaults_file = tmp_path / "nested" / "dir" / "cli-defaults.json"
+    monkeypatch.setattr(cli_mod, "DEFAULT_DEFAULTS_FILE", defaults_file)
+
+    _save_cli_defaults({"default_tenant": "demo", "default_workdir": "/tmp/runtime"})
+
+    assert defaults_file.exists()
+    saved = json.loads(defaults_file.read_text())
+    assert saved["default_tenant"] == "demo"
+    assert saved["default_workdir"] == "/tmp/runtime"
+
+
+def test_save_cli_defaults_overwrites_existing(monkeypatch, tmp_path: Path):
+    import kdcube_cli.cli as cli_mod
+
+    defaults_file = tmp_path / "cli-defaults.json"
+    defaults_file.write_text(json.dumps({"default_tenant": "old"}))
+    monkeypatch.setattr(cli_mod, "DEFAULT_DEFAULTS_FILE", defaults_file)
+
+    _save_cli_defaults({"default_tenant": "new", "default_project": "app"})
+
+    saved = json.loads(defaults_file.read_text())
+    assert saved == {"default_tenant": "new", "default_project": "app"}
+
+
+def test_save_and_load_cli_defaults_roundtrip(monkeypatch, tmp_path: Path):
+    import kdcube_cli.cli as cli_mod
+
+    defaults_file = tmp_path / "cli-defaults.json"
+    monkeypatch.setattr(cli_mod, "DEFAULT_DEFAULTS_FILE", defaults_file)
+
+    original = {"default_tenant": "corp", "default_project": "chat", "default_workdir": "/opt/rt"}
+    _save_cli_defaults(original)
+    loaded = _load_cli_defaults()
+
+    assert loaded == original
