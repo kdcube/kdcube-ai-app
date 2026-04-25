@@ -268,3 +268,128 @@ def clear_graph(session):
     """Remove all nodes and relationships. Use with caution."""
     session.run("MATCH (n) DETACH DELETE n")
     log.info("[Coding-Core] Graph cleared")
+
+
+# ---------------------------------------------------------------------------
+# Semantic layer writers
+# ---------------------------------------------------------------------------
+
+def write_semantic_nodes(session, records: list[dict]):
+    """
+    Upsert :Semantic nodes.
+
+    Each item: {id, kind, name, scope, aliases, category, summary, definition,
+                rationale, how_to_apply, pitfalls, source, source_path}
+    """
+    _run_batched(session, """
+        UNWIND $batch AS s
+        MERGE (n:Semantic {scope: s.scope, id: s.id})
+        SET n.kind = s.kind,
+            n.name = s.name,
+            n.aliases = coalesce(s.aliases, []),
+            n.category = s.category,
+            n.summary = s.summary,
+            n.definition = s.definition,
+            n.rationale = s.rationale,
+            n.how_to_apply = s.how_to_apply,
+            n.pitfalls = coalesce(s.pitfalls, []),
+            n.source = s.source,
+            n.source_path = s.source_path,
+            n.revision = coalesce(n.revision, 0) + 1,
+            n.updated_at = datetime()
+    """, records)
+
+
+def write_semantic_related(session, edges: list[dict]):
+    """Each edge: {scope, src_id, dst_scope, dst_id}"""
+    _run_batched(session, """
+        UNWIND $batch AS e
+        MATCH (a:Semantic {scope: e.scope, id: e.src_id})
+        MATCH (b:Semantic {scope: e.dst_scope, id: e.dst_id})
+        MERGE (a)-[:RELATED_TO]->(b)
+    """, edges)
+
+
+def write_semantic_realized_by(session, edges: list[dict]) -> int:
+    """
+    Each edge: {scope, id, qualified_name}
+    Creates EMBODIED_BY (Semantic -> code) and EMBODIES (code -> Semantic).
+    Returns number of edges actually wired (where the qualified_name resolved).
+    """
+    if not edges:
+        return 0
+    cypher = """
+        UNWIND $batch AS e
+        MATCH (s:Semantic {scope: e.scope, id: e.id})
+        MATCH (c {qualified_name: e.qualified_name})
+        WHERE c:Class OR c:Method OR c:Function OR c:Module OR c:Package
+        MERGE (s)-[:EMBODIED_BY]->(c)
+        MERGE (c)-[:EMBODIES]->(s)
+        RETURN count(*) AS n
+    """
+    total = 0
+    for i in range(0, len(edges), BATCH_SIZE):
+        batch = edges[i:i + BATCH_SIZE]
+        rec = session.run(cypher, batch=batch).single()
+        if rec and rec.get("n") is not None:
+            total += int(rec["n"])
+    return total
+
+
+def write_semantic_governs(session, edges: list[dict]) -> int:
+    """
+    Each edge: {scope, id, qualified_name}
+    Creates GOVERNED_BY (code -> Semantic{kind:'policy'}).
+    Returns number of edges actually wired.
+    """
+    if not edges:
+        return 0
+    cypher = """
+        UNWIND $batch AS e
+        MATCH (s:Semantic {scope: e.scope, id: e.id})
+        WHERE s.kind = 'policy'
+        MATCH (c {qualified_name: e.qualified_name})
+        WHERE c:Class OR c:Method OR c:Function OR c:Module OR c:Package
+        MERGE (c)-[:GOVERNED_BY]->(s)
+        RETURN count(*) AS n
+    """
+    total = 0
+    for i in range(0, len(edges), BATCH_SIZE):
+        batch = edges[i:i + BATCH_SIZE]
+        rec = session.run(cypher, batch=batch).single()
+        if rec and rec.get("n") is not None:
+            total += int(rec["n"])
+    return total
+
+
+def write_semantic_defined_in(session, edges: list[dict]) -> int:
+    """
+    Each edge: {scope, id, file_path, section_path}
+    Creates DEFINED_IN (Semantic -> DocSection).
+    Skipped silently when the DocSection isn't yet ingested.
+    """
+    if not edges:
+        return 0
+    cypher = """
+        UNWIND $batch AS e
+        MATCH (s:Semantic {scope: e.scope, id: e.id})
+        MATCH (d:DocSection {file_path: e.file_path, section_path: e.section_path})
+        MERGE (s)-[:DEFINED_IN]->(d)
+        RETURN count(*) AS n
+    """
+    total = 0
+    for i in range(0, len(edges), BATCH_SIZE):
+        batch = edges[i:i + BATCH_SIZE]
+        rec = session.run(cypher, batch=batch).single()
+        if rec and rec.get("n") is not None:
+            total += int(rec["n"])
+    return total
+
+
+def clear_semantic_layer(session):
+    """Remove only :Semantic nodes and their incident edges. Leaves code graph intact."""
+    session.run("""
+        MATCH (s:Semantic)
+        DETACH DELETE s
+    """)
+    log.info("[Coding-Core] Semantic layer cleared")
