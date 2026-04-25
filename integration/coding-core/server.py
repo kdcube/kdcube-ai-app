@@ -285,23 +285,69 @@ def show_architecture(package_filter: str = "", depth: int = 3) -> str:
 def class_footprint(qualified_name: str) -> str:
     """
     Get the complete context for a class: inheritance, interfaces, methods,
-    callers, callees, documentation, tests, and decorators.
+    callers, callees, documentation, tests, decorators — and the framework
+    concepts the class embodies plus the style policies that govern it.
 
     **WHEN TO USE:** To fully understand a class before working with it.
-    This is the most powerful exploration tool — combines all 7 inference steps.
+    This is the most powerful exploration tool — combines structural and
+    semantic-layer data so you see *what the class is* and *how it should
+    be written*, not just *what it has*.
 
     **ARGS:**
     - qualified_name: Fully qualified class name (e.g., "myapp.auth.AuthManager")
 
-    **RETURNS:** Complete class footprint with all relationships.
+    **RETURNS:** Complete class footprint plus `concepts` and `style_policies`.
     """
-    from graph.queries import CLASS_FOOTPRINT
+    from graph.queries import CLASS_FOOTPRINT, CLASS_SEMANTIC_LINKS
     try:
         with _session() as s:
-            result = s.run(CLASS_FOOTPRINT, qname=qualified_name).data()
-        if not result:
+            footprint = s.run(CLASS_FOOTPRINT, qname=qualified_name).data()
+            semantic = s.run(CLASS_SEMANTIC_LINKS, qname=qualified_name).single()
+        if not footprint:
             return json.dumps({"error": f"Class not found: {qualified_name}"})
-        return json.dumps({"footprint": result})
+        concepts = (semantic or {}).get("concepts") or [] if semantic else []
+        style_policies = (semantic or {}).get("style_policies") or [] if semantic else []
+        return json.dumps({
+            "footprint": footprint,
+            "concepts": concepts,
+            "style_policies": style_policies,
+        })
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool()
+def define(term: str, scope: str | None = None) -> str:
+    """
+    Look up a framework concept, style policy, or glossary term by name or alias.
+
+    **WHEN TO USE:** When the user (or you) wants the canonical definition of
+    a kdcube concept like "Bundle", "Skill", "Channel", "Knowledge Space",
+    "Timeline", or a style policy like "Null Object Pattern". Returns the
+    full long-form definition, related concepts, and the code symbols that
+    realize the concept.
+
+    **ARGS:**
+    - term: Concept name, id, or alias (case-insensitive). E.g. "Bundle",
+      "plugin", "react_loop".
+    - scope: Optional. Restrict to a specific scope ("framework" or a
+      bundle id). Defaults to all scopes.
+
+    **RETURNS:** Up to 5 matching :Semantic records with definitions,
+    related concepts, and realized_by qualified_names.
+    """
+    from graph.queries import DEFINE_SEMANTIC
+    try:
+        with _session() as s:
+            rows = s.run(DEFINE_SEMANTIC, term=term, scope=scope).data()
+        if not rows:
+            return json.dumps({"error": f"No concept or policy matched {term!r}"})
+        # Filter empty {} entries that arise from OPTIONAL MATCH on missing relatives.
+        for row in rows:
+            row["related"] = [r for r in (row.get("related") or []) if r.get("id")]
+            row["realized_by"] = [q for q in (row.get("realized_by") or []) if q]
+            row["applied_to"] = [q for q in (row.get("applied_to") or []) if q]
+        return json.dumps({"matches": rows})
     except Exception as e:
         return json.dumps({"error": str(e)})
 

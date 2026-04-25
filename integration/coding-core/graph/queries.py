@@ -115,6 +115,70 @@ CLASS_FOOTPRINT = """
            collect(DISTINCT dec.name) AS decorators
 """
 
+# Semantic links for a class — concepts it embodies and policies governing it
+CLASS_SEMANTIC_LINKS = """
+    MATCH (c {qualified_name: $qname})
+    WHERE c:Class OR c:Method OR c:Function OR c:Module OR c:Package
+    OPTIONAL MATCH (c)-[:EMBODIES]->(concept:Semantic)
+    WHERE concept IS NULL OR concept.kind = 'concept'
+    WITH c, collect(DISTINCT {
+        id: concept.id,
+        scope: concept.scope,
+        name: concept.name,
+        category: concept.category,
+        summary: concept.summary,
+        aliases: concept.aliases
+    }) AS raw_concepts
+    OPTIONAL MATCH (c)-[:GOVERNED_BY]->(policy:Semantic)
+    WHERE policy IS NULL OR policy.kind = 'policy'
+    WITH raw_concepts, collect(DISTINCT {
+        id: policy.id,
+        scope: policy.scope,
+        name: policy.name,
+        category: policy.category,
+        summary: policy.summary,
+        rationale: policy.rationale,
+        how_to_apply: policy.how_to_apply
+    }) AS raw_policies
+    RETURN [x IN raw_concepts WHERE x.id IS NOT NULL] AS concepts,
+           [x IN raw_policies WHERE x.id IS NOT NULL] AS style_policies
+"""
+
+
+# Define a single Semantic node by name or alias (case-insensitive).
+# `realized_by` is concept→code (EMBODIED_BY).
+# `applied_to`  is policy→code (inverse of GOVERNED_BY) — classes governed by a policy.
+DEFINE_SEMANTIC = """
+    MATCH (s:Semantic)
+    WHERE ($scope IS NULL OR s.scope = $scope)
+      AND (
+            toLower(s.name) = toLower($term)
+         OR toLower(s.id)   = toLower($term)
+         OR any(a IN s.aliases WHERE toLower(a) = toLower($term))
+      )
+    OPTIONAL MATCH (s)-[:RELATED_TO]-(rel:Semantic)
+    OPTIONAL MATCH (s)-[:EMBODIED_BY]->(rb)
+    WHERE rb:Class OR rb:Method OR rb:Function OR rb:Module OR rb:Package
+    OPTIONAL MATCH (gov)-[:GOVERNED_BY]->(s)
+    WHERE gov:Class OR gov:Method OR gov:Function OR gov:Module OR gov:Package
+    RETURN s.id AS id,
+           s.kind AS kind,
+           s.scope AS scope,
+           s.name AS name,
+           s.aliases AS aliases,
+           s.category AS category,
+           s.summary AS summary,
+           s.definition AS definition,
+           s.rationale AS rationale,
+           s.how_to_apply AS how_to_apply,
+           s.pitfalls AS pitfalls,
+           collect(DISTINCT {id: rel.id, scope: rel.scope, name: rel.name, kind: rel.kind}) AS related,
+           collect(DISTINCT rb.qualified_name) AS realized_by,
+           collect(DISTINCT gov.qualified_name) AS applied_to
+    LIMIT 5
+"""
+
+
 # Impact Analysis — what breaks if this changes?
 IMPACT_ANALYSIS = """
     MATCH (target {qualified_name: $qname})

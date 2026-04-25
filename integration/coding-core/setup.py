@@ -205,6 +205,7 @@ def main():
         "mcp__coding-core__code_search",
         "mcp__coding-core__impact_analysis",
         "mcp__coding-core__find_docs_for_code",
+        "mcp__coding-core__define",
     ]
 
     if settings_path.exists():
