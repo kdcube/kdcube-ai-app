@@ -19,7 +19,7 @@ from langgraph.graph import StateGraph, END
 
 from kdcube_ai_app.apps.chat.emitters import ChatCommunicator
 from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.browser import ContextBrowser
+from kdcube_ai_app.apps.chat.sdk.solutions.react.browser import ContextBrowser
 from kdcube_ai_app.apps.chat.sdk.solutions.infra import emit_event
 from kdcube_ai_app.apps.chat.sdk.runtime.execution import execute_tool, _safe_label
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.agents.decision import (
@@ -33,7 +33,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.live_events import (
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import ReactResult
 from kdcube_ai_app.apps.chat.sdk.solutions.react.runtime_state import ReactRuntimeState as ReactStateV2
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.solution_workspace import ApplicationHostingService
+from kdcube_ai_app.apps.chat.sdk.solutions.react.solution_workspace import ApplicationHostingService
 from kdcube_ai_app.apps.chat.sdk.solutions.widgets.exec import DecisionExecCodeStreamer
 from kdcube_ai_app.apps.chat.sdk.solutions.widgets.canvas import (
     ReactPatchContentStreamer,
@@ -54,8 +54,8 @@ from kdcube_ai_app.apps.chat.sdk.solutions.widgets.conversation_turn_work_status
 )
 import kdcube_ai_app.apps.chat.sdk.tools.tools_insights as tools_insights
 from kdcube_ai_app.apps.chat.sdk.tools import citations as citations_module
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.plan import apply_plan_updates
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.round import ReactRound
+from kdcube_ai_app.apps.chat.sdk.solutions.react.plan import apply_plan_updates
+from kdcube_ai_app.apps.chat.sdk.solutions.react.round import ReactRound
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import ReactStateSnapshot
 
 
@@ -648,7 +648,7 @@ class ReactSolverV2:
         if not raw_text:
             return
         try:
-            from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.layout import build_interrupted_generation_blocks
+            from kdcube_ai_app.apps.chat.sdk.solutions.react.layout import build_interrupted_generation_blocks
 
             blocks = build_interrupted_generation_blocks(
                 runtime=self.ctx_browser.runtime_ctx,
@@ -766,7 +766,7 @@ class ReactSolverV2:
         if not self.ctx_browser:
             return
         try:
-            from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.layout import build_announce_text
+            from kdcube_ai_app.apps.chat.sdk.solutions.react.layout import build_announce_text
             runtime_ctx = getattr(self.ctx_browser, "runtime_ctx", None)
             # NOTE: feedback refresh is performed at turn start (timeline load).
             # We intentionally skip per-announce refresh to avoid mid-turn fetches.
@@ -804,7 +804,7 @@ class ReactSolverV2:
                     pass
             if debug_sources:
                 try:
-                    from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.layout import build_sources_pool_text
+                    from kdcube_ai_app.apps.chat.sdk.solutions.react.layout import build_sources_pool_text
                     sources_text = build_sources_pool_text(
                         sources_pool=list(self.ctx_browser.sources_pool or []),
                     )
@@ -2237,7 +2237,7 @@ class ReactSolverV2:
             plan_steps = state.get("plan_steps") or []
             if not plan_steps and self.ctx_browser:
                 try:
-                    from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.plan import latest_current_plan_snapshot
+                    from kdcube_ai_app.apps.chat.sdk.solutions.react.plan import latest_current_plan_snapshot
                     snap = latest_current_plan_snapshot(self.ctx_browser.timeline.blocks)
                     if snap and snap.steps:
                         plan_steps = list(snap.steps)
@@ -2261,7 +2261,7 @@ class ReactSolverV2:
                     if plan_blocks and self.ctx_browser:
                         self.ctx_browser.contribute(blocks=plan_blocks)
                     if self.ctx_browser:
-                        from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.plan import latest_current_plan_snapshot
+                        from kdcube_ai_app.apps.chat.sdk.solutions.react.plan import latest_current_plan_snapshot
                         current_snap = latest_current_plan_snapshot(self.ctx_browser.timeline.blocks)
                         if current_snap:
                             state["plan_id"] = current_snap.plan_id
@@ -2698,7 +2698,7 @@ class ReactSolverV2:
             runtime_ctx = getattr(self.ctx_browser, "runtime_ctx", None) if self.ctx_browser else None
             final_text = ""
             try:
-                from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.layout import build_announce_text
+                from kdcube_ai_app.apps.chat.sdk.solutions.react.layout import build_announce_text
                 final_text = build_announce_text(
                     iteration=int(state.get("iteration") or 0),
                     max_iterations=int(state.get("max_iterations") or 0),
@@ -2771,7 +2771,7 @@ class ReactSolverV2:
         # Emit citations used in this turn (files already emitted on host)
         try:
             if self.hosting_service and self.ctx_browser and self.ctx_browser.timeline:
-                from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.timeline import extract_sources_used_from_blocks
+                from kdcube_ai_app.apps.chat.sdk.solutions.react.timeline import extract_sources_used_from_blocks
                 blocks = self.ctx_browser.timeline.get_turn_blocks()
                 used_sids = extract_sources_used_from_blocks(blocks)
                 try:

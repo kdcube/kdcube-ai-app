@@ -17,11 +17,11 @@ from kdcube_ai_app.apps.chat.sdk.streaming.versatile_streamer_v3 import (
     ChannelSpec,
     stream_with_channels,
 )
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.layout import (
+from kdcube_ai_app.apps.chat.sdk.solutions.react.layout import (
     build_tool_catalog,
     build_instruction_catalog_block,
 )
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.call import get_react_tools_catalog
+from kdcube_ai_app.apps.chat.sdk.solutions.react.call import get_react_tools_catalog
 
 from kdcube_ai_app.apps.chat.sdk.skills.instructions.shared_instructions import (
     PROMPT_EXFILTRATION_GUARD,
@@ -37,6 +37,7 @@ from kdcube_ai_app.apps.chat.sdk.skills.instructions.shared_instructions import 
     INTERNAL_NOTES_PRODUCER,
     INTERNAL_NOTES_CONSUMER,
     EXTERNAL_TURN_EVENTS_GUIDE,
+    ANNOUNCE_INTERPRETATION_GUIDE,
     SUGGESTED_FOLLOWUPS_GUIDE,
 )
 
@@ -480,6 +481,7 @@ You are the Decision module inside a ReAct loop.
 {INTERNAL_NOTES_PRODUCER}
 {INTERNAL_NOTES_CONSUMER}
 {EXTERNAL_TURN_EVENTS_GUIDE}
+{ANNOUNCE_INTERPRETATION_GUIDE}
 {ATTACHMENT_AWARENESS_IMPLEMENTER}
 {ELABORATION_NO_CLARIFY}
 {CITATION_TOKENS}
