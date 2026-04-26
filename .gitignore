@@ -202,6 +202,8 @@ articles/
 /app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/skills/draft_instructions/
 /app/ai-app/deployment/docker/all_in_one/data/
 /app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/data/
+/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/drafts/
+/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/debug/
 /app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/debug/rendering/
 /app/ai-app/deployment/docker/local-infra-stack/data_/
 /app/ai-app/deployment/docker/all_in_one_kdcube/config.hardcoded.json

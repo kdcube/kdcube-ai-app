@@ -11,7 +11,7 @@ from typing import Optional, Sequence, List, Dict, Any, Union, Callable
 
 from kdcube_ai_app.apps.chat.sdk.util import _turn_id_from_tags_safe, ts_key, isoz
 from kdcube_ai_app.infra.service_hub.inventory import ModelServiceBase
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.timeline import (
+from kdcube_ai_app.apps.chat.sdk.solutions.react.timeline import (
     TIMELINE_KIND,
     SOURCES_POOL_KIND,
     parse_timeline_payload,
@@ -480,7 +480,7 @@ class ContextRAGClient:
             extra_tags: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """Writes artifact to store and/or index (see index_only/store_only flags)."""
-        from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.turn_log import TurnLog as V2TurnLog
+        from kdcube_ai_app.apps.chat.sdk.solutions.react.turn_log import TurnLog as V2TurnLog
         payload = payload or {}
         log = V2TurnLog.from_dict(payload)
         index_text = V2TurnLog.build_index_text(payload) or ""
@@ -898,7 +898,7 @@ class ContextRAGClient:
             # Build compact turn_log index text for SQL entry
             index_text = ""
             try:
-                from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.turn_log import TurnLog as V2TurnLog
+                from kdcube_ai_app.apps.chat.sdk.solutions.react.turn_log import TurnLog as V2TurnLog
                 index_text = V2TurnLog.build_index_text(payload)
             except Exception:
                 index_text = ""
@@ -1118,7 +1118,7 @@ class ContextRAGClient:
             # Build compact turn_log index text for SQL entry
             index_text = ""
             try:
-                from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.turn_log import TurnLog as V2TurnLog
+                from kdcube_ai_app.apps.chat.sdk.solutions.react.turn_log import TurnLog as V2TurnLog
                 index_text = V2TurnLog.build_index_text(payload)
             except Exception:
                 index_text = ""
@@ -2282,7 +2282,7 @@ class ContextRAGClient:
             view: Dict[str, Any] = {}
 
             if blocks:
-                from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.timeline import Timeline
+                from kdcube_ai_app.apps.chat.sdk.solutions.react.timeline import Timeline
                 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
                 view = Timeline(runtime=RuntimeCtx()).build_turn_view(
                     turn_id=tid,
@@ -2375,7 +2375,7 @@ class ContextRAGClient:
 
                 for f in view.get("files") or []:
                     if isinstance(f, dict):
-                        from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.artifacts import normalize_file_payload
+                        from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import normalize_file_payload
                         f = normalize_file_payload(f)
                     out.append({
                         "message_id": f.get("message_id"),

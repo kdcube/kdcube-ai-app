@@ -6,8 +6,8 @@ from __future__ import annotations
 import json
 from typing import Awaitable, Callable, Dict, List, Optional, Any
 
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.tools.common import infer_format_from_path
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.artifacts import normalize_relpath
+from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.common import infer_format_from_path
+from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import normalize_relpath
 from kdcube_ai_app.apps.chat.sdk.tools import citations as citations_module
 
 

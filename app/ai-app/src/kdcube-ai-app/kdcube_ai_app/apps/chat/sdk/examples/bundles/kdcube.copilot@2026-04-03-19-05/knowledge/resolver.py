@@ -346,7 +346,7 @@ def read_knowledge(*, path: str, **kwargs: Any) -> Dict[str, Any]:
     if not rel:
         return {"missing": True}
     try:
-        from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.solution_workspace import (
+        from kdcube_ai_app.apps.chat.sdk.solutions.react.solution_workspace import (
             _safe_relpath,
             _guess_mime_from_path,
             _read_local_file,
