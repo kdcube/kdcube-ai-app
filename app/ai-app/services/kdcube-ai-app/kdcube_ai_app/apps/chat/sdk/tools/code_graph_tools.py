@@ -193,6 +193,28 @@ class CodeGraphTools:
         result = await client.find_docs_for_code(qualified_name=qualified_name)
         return _format_result(result)
 
+    @kernel_function(
+        name="define",
+        description=(
+            "Look up a framework concept, style policy, or glossary term by name, id, or alias "
+            "(case-insensitive). Returns the canonical definition, related concepts, code symbols "
+            "that realize the concept (concepts), and code symbols governed by it (policies). "
+            "Use this when the user asks 'what is a Bundle / Skill / Channel / Knowledge Space / Timeline?' "
+            "or names a style policy ('null object pattern', 'async client lifecycle', etc.)."
+        ),
+    )
+    async def define(
+        self,
+        term: Annotated[str, "Concept name, id, or alias (case-insensitive). e.g. 'Bundle', 'plugin', 'react_loop'."],
+        scope: Annotated[str, "Optional scope filter ('framework' or a bundle id). Empty = all scopes."] = "",
+    ) -> Annotated[str, "JSON with up to 5 matching :Semantic records."]:
+        client = _get_client()
+        if not client or not getattr(client, "enabled", False):
+            return _GRAPH_UNAVAILABLE
+        scope_arg = scope.strip() or None
+        result = await client.define(term=term, scope=scope_arg)
+        return _format_result(result)
+
 
 kernel = sk.Kernel()
 tools = CodeGraphTools()

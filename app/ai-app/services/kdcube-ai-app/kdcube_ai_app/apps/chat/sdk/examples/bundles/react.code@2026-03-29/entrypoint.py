@@ -204,6 +204,12 @@ class ReactCodeWorkflow(BaseEntrypoint):
                         orch.runtime_ctx.search_settings = ui_settings
                 except Exception:
                     pass
+                try:
+                    ui_mode = state.get("mode")
+                    if isinstance(ui_mode, str) and ui_mode.strip():
+                        orch.runtime_ctx.mode = ui_mode.strip()
+                except Exception:
+                    pass
 
                 # Install advanced-RAG runtime on the SDK tool's shared state.
                 # Tool reads RuntimeCtx (search settings, conv ids) at call time.
@@ -514,6 +520,11 @@ class ReactCodeWorkflow(BaseEntrypoint):
         search_settings = (params or {}).get("search_settings")
         if isinstance(search_settings, dict) and search_settings:
             state["search_settings"] = search_settings
+        # Forward per-turn UI mode hint (e.g. "config_assistant") so the
+        # decision agent can swap to a persona/system-prompt variant.
+        mode = (params or {}).get("mode")
+        if isinstance(mode, str) and mode.strip():
+            state["mode"] = mode.strip()
         return await self.graph.ainvoke(state, config={"configurable": {"thread_id": thread_id}})
 
 

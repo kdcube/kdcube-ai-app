@@ -907,6 +907,8 @@ class ReactSolverV2:
         from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.agent_retry import retry_with_compaction
         from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.agents.decision import build_decision_system_text
 
+        ui_mode = getattr(self.ctx_browser.runtime_ctx, "mode", None) if self.ctx_browser and self.ctx_browser.runtime_ctx else None
+
         async def _decision_agent(*, blocks: List[Dict[str, Any]]) -> Dict[str, Any]:
             from kdcube_ai_app.apps.chat.sdk.streaming.versatile_streamer import ChannelSubscribers
             subs = ChannelSubscribers().subscribe("ReactDecisionOutV2", _hub_on_json)
@@ -922,6 +924,7 @@ class ReactSolverV2:
                 agent_name=role,
                 max_tokens=20000,
                 user_blocks=blocks,
+                mode=ui_mode,
             )
 
         render_params = {
@@ -935,6 +938,7 @@ class ReactSolverV2:
             system_text_fn=lambda: build_decision_system_text(
                 adapters=announced_adapters,
                 infra_adapters=extra_adapters_for_decision,
+                mode=ui_mode,
             ),
             render_params=render_params,
             agent_fn=_decision_agent,

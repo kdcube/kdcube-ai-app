@@ -100,6 +100,10 @@ class RuntimeCtx:
     # Per-turn search / retrieval preferences forwarded from the UI payload.
     # Shape mirrors chat-web-app SearchSettingsState (hybrid/vector/codeCore).
     search_settings: Dict[str, Any] = field(default_factory=dict)
+    # Per-turn UI mode hint forwarded from the UI payload. Used by the
+    # decision agent to select a persona/system-prompt variant.
+    # Known values: None (default), "config_assistant".
+    mode: Optional[str] = None
     # Expected signature:
     #   (query: str, root: str = "", max_hits: int = 20, keywords: Optional[List[str]] = None, **kwargs) -> List[Dict]
     # Implementations may be sync or async; callers will await if needed.

@@ -191,6 +191,54 @@ _FIND_DOCS_FOR_CODE = """
 _VECTOR_INDEX_NAMES = ("class_embedding", "method_embedding", "function_embedding")
 
 
+# Semantic-layer queries — concepts (kind=concept) and style policies (kind=policy)
+# linked to code symbols via EMBODIES / GOVERNED_BY edges.
+
+CLASS_SEMANTIC_LINKS = """
+    MATCH (c {qualified_name: $qname})
+    WHERE c:Class OR c:Method OR c:Function OR c:Module OR c:Package
+    OPTIONAL MATCH (c)-[:EMBODIES]->(concept:Semantic)
+    WHERE concept IS NULL OR concept.kind = 'concept'
+    WITH c, collect(DISTINCT {
+        id: concept.id, scope: concept.scope, name: concept.name,
+        category: concept.category, summary: concept.summary,
+        aliases: concept.aliases
+    }) AS raw_concepts
+    OPTIONAL MATCH (c)-[:GOVERNED_BY]->(policy:Semantic)
+    WHERE policy IS NULL OR policy.kind = 'policy'
+    WITH raw_concepts, collect(DISTINCT {
+        id: policy.id, scope: policy.scope, name: policy.name,
+        category: policy.category, summary: policy.summary,
+        rationale: policy.rationale, how_to_apply: policy.how_to_apply
+    }) AS raw_policies
+    RETURN [x IN raw_concepts WHERE x.id IS NOT NULL] AS concepts,
+           [x IN raw_policies WHERE x.id IS NOT NULL] AS style_policies
+"""
+
+DEFINE_SEMANTIC = """
+    MATCH (s:Semantic)
+    WHERE ($scope IS NULL OR s.scope = $scope)
+      AND (
+            toLower(s.name) = toLower($term)
+         OR toLower(s.id)   = toLower($term)
+         OR any(a IN s.aliases WHERE toLower(a) = toLower($term))
+      )
+    OPTIONAL MATCH (s)-[:RELATED_TO]-(rel:Semantic)
+    OPTIONAL MATCH (s)-[:EMBODIED_BY]->(rb)
+    WHERE rb:Class OR rb:Method OR rb:Function OR rb:Module OR rb:Package
+    OPTIONAL MATCH (gov)-[:GOVERNED_BY]->(s)
+    WHERE gov:Class OR gov:Method OR gov:Function OR gov:Module OR gov:Package
+    RETURN s.id AS id, s.kind AS kind, s.scope AS scope, s.name AS name,
+           s.aliases AS aliases, s.category AS category, s.summary AS summary,
+           s.definition AS definition, s.rationale AS rationale,
+           s.how_to_apply AS how_to_apply, s.pitfalls AS pitfalls,
+           collect(DISTINCT {id: rel.id, scope: rel.scope, name: rel.name, kind: rel.kind}) AS related,
+           collect(DISTINCT rb.qualified_name) AS realized_by,
+           collect(DISTINCT gov.qualified_name) AS applied_to
+    LIMIT 5
+"""
+
+
 class NullCodeGraphClient:
     """No-op fallback when Neo4j is disabled."""
     enabled = False
@@ -208,7 +256,10 @@ class NullCodeGraphClient:
         return {"packages": [], "total_modules": 0}
 
     async def class_footprint(self, qualified_name: str) -> Dict[str, Any]:
-        return {"footprint": []}
+        return {"footprint": [], "concepts": [], "style_policies": []}
+
+    async def define(self, term: str, scope: Optional[str] = None) -> Dict[str, Any]:
+        return {"matches": []}
 
     async def trace_call_chain(self, qualified_name: str, max_depth: int = 5) -> Dict[str, Any]:
         return {"chains": [], "count": 0}
@@ -294,7 +345,35 @@ class CodeGraphClient:
         records = await self._run(CLASS_FOOTPRINT, qname=qualified_name)
         if not records:
             return {"error": f"Class not found: {qualified_name}"}
-        return {"footprint": records}
+        # Semantic links — present only if the Semantic layer is ingested.
+        try:
+            sem_rows = await self._run(CLASS_SEMANTIC_LINKS, qname=qualified_name)
+            sem = sem_rows[0] if sem_rows else {}
+            concepts = sem.get("concepts") or []
+            style_policies = sem.get("style_policies") or []
+        except Exception:
+            concepts, style_policies = [], []
+        return {
+            "footprint": records,
+            "concepts": concepts,
+            "style_policies": style_policies,
+        }
+
+    async def define(self, term: str, scope: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Resolve a framework concept, style policy, or glossary term by name,
+        id, or alias (case-insensitive). Returns up to 5 matching :Semantic
+        records with related concepts, realized_by code (concepts), and
+        applied_to code (policies — inverse of GOVERNED_BY).
+        """
+        records = await self._run(DEFINE_SEMANTIC, term=term, scope=scope)
+        if not records:
+            return {"matches": [], "error": f"No concept or policy matched {term!r}"}
+        for row in records:
+            row["related"] = [r for r in (row.get("related") or []) if r.get("id")]
+            row["realized_by"] = [q for q in (row.get("realized_by") or []) if q]
+            row["applied_to"] = [q for q in (row.get("applied_to") or []) if q]
+        return {"matches": records}
 
     async def trace_call_chain(self, qualified_name: str, max_depth: int = 5) -> Dict[str, Any]:
         records = await self._run(CALL_CHAIN_TRACE, qname=qualified_name, depth=max_depth)
