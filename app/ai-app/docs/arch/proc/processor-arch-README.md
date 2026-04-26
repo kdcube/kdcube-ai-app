@@ -10,7 +10,7 @@ see_also:
   - ks:docs/arch/proc/design/conversation-scheduler-streams-README.md
   - ks:docs/ops/ecs/components/proc-README.md
   - ks:docs/service/maintenance/connection-pooling-README.md
-  - ks:docs/sdk/bundle/bundle-sse-events-README.md
+  - ks:docs/sdk/bundle/bundle-chat-stream-events-README.md
   - ks:docs/sdk/bundle/bundle-frontend-awareness-README.md
 ---
 # Chat Processor Architecture

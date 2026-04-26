@@ -75,7 +75,7 @@ Older `docs/sdk/example-bundle` sample docs are no longer part of the bundle pat
 | Widgets, streaming, operations surface | [bundle-interfaces-README.md](bundle-interfaces-README.md) |
 | Bundle-facing browser/UI entry | [bundle-client-ui-README.md](bundle-client-ui-README.md) |
 | Browser/UI transport contract | [bundle-client-communication-README.md](bundle-client-communication-README.md) |
-| SSE event catalog for bundle-facing clients | [bundle-sse-events-README.md](bundle-sse-events-README.md) |
+| Chat stream event catalog for bundle-facing clients | [bundle-chat-stream-events-README.md](bundle-chat-stream-events-README.md) |
 | Frontend behavior under drains/rate limits | [bundle-frontend-awareness-README.md](bundle-frontend-awareness-README.md) |
 | Local reload and deployed registry updates | [bundle-delivery-and-update-README.md](bundle-delivery-and-update-README.md) |
 | Knowledge space (`ks:`) | [bundle-knowledge-space-README.md](bundle-knowledge-space-README.md) |
