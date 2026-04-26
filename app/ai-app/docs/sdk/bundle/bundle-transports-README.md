@@ -9,7 +9,7 @@ see_also:
   - ks:docs/sdk/bundle/bundle-interfaces-README.md
   - ks:docs/sdk/bundle/bundle-client-communication-README.md
   - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
-  - ks:docs/sdk/bundle/bundle-sse-events-README.md
+  - ks:docs/sdk/bundle/bundle-chat-stream-events-README.md
   - ks:docs/sdk/bundle/bundle-runtime-README.md
 ---
 # Bundle Transports
@@ -579,6 +579,6 @@ Choose by caller and auth ownership:
 - browser/UI request contract:
   [bundle-client-communication-README.md](bundle-client-communication-README.md)
 - streaming payload catalog:
-  [bundle-sse-events-README.md](bundle-sse-events-README.md)
+  [bundle-chat-stream-events-README.md](bundle-chat-stream-events-README.md)
 - runtime objects available to bundle code:
   [bundle-runtime-README.md](bundle-runtime-README.md)

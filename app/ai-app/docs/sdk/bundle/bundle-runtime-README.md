@@ -12,7 +12,7 @@ see_also:
   - ks:docs/sdk/tools/custom-tools-README.md
   - ks:docs/sdk/tools/tool-subsystem-README.md
   - ks:docs/sdk/bundle/bundle-client-communication-README.md
-  - ks:docs/sdk/bundle/bundle-sse-events-README.md
+  - ks:docs/sdk/bundle/bundle-chat-stream-events-README.md
 ---
 # Bundle Runtime
 
@@ -276,7 +276,7 @@ That is why:
 For actual event names, `chat.delta` shape, and predefined markers such as
 `answer`, `thinking`, `canvas`, `timeline_text`, and `subsystem`, read:
 
-- [bundle-sse-events-README.md](bundle-sse-events-README.md)
+- [bundle-chat-stream-events-README.md](bundle-chat-stream-events-README.md)
 
 ## Shared browser, cache, and retrieval from tools
 
