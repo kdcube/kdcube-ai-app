@@ -19,6 +19,7 @@ from typing import Any, Dict, List
 from kdcube_ai_app.apps.knowledge_base.db.data_models import HybridSearchParams
 from kdcube_ai_app.infra.embedding.embedding import get_embedding
 from kdcube_ai_app.infra.rerank.rerank import cross_encoder_rerank
+from kdcube_ai_app.infra.service_hub.inventory import embedding_model as _default_embedding_model
 
 from kdcube_ai_app.apps.chat.sdk.tools._advanced_rag_internal.entity_extract import extract_entities
 from kdcube_ai_app.apps.chat.sdk.tools._advanced_rag_internal.query_rewrite import rewrite_for_retrieval
@@ -128,6 +129,10 @@ def _read_history(runtime: Any, runtime_ctx: Any, max_messages: int) -> List[Dic
 def _shape_source(row: Dict[str, Any], sid: int) -> Dict[str, Any]:
     """Project a KB row into the standard source-pool schema."""
     ds = (row.get("extensions") or {}).get("datasource") or {}
+    # `datasource` in nojoin_blend rows can be either nested in extensions or
+    # a top-level dict (the blend helper enriches both ways). Check both.
+    if not ds and isinstance(row.get("datasource"), dict):
+        ds = row["datasource"]
     title = row.get("title") or ds.get("title") or row.get("rn") or "Untitled"
     url = ds.get("uri") or row.get("url") or ""
     text = row.get("content") or ""
@@ -140,7 +145,7 @@ def _shape_source(row: Dict[str, Any], sid: int) -> Dict[str, Any]:
         "provider": row.get("provider") or ds.get("provider") or "kb",
         "resource_id": row.get("resource_id"),
         "version": row.get("version"),
-        "segment_id": row.get("id"),
+        "segment_id": _segment_id(row),
         "scores": {
             "rerank":   row.get("rerank_score"),
             "semantic": row.get("semantic_score"),
@@ -154,8 +159,15 @@ def _shape_source(row: Dict[str, Any], sid: int) -> Dict[str, Any]:
 
 # ----- merge & dedup ---------------------------------------------------------
 
+def _segment_id(row: Dict[str, Any]) -> str:
+    """KBClient.hybrid_pipeline_search_nojoin_blend returns the segment id under
+    `segment_id`; the JOIN variant uses `id`. Accept either to keep the pipeline
+    independent of which retrieval method the runtime selected."""
+    return str(row.get("segment_id") or row.get("id") or "")
+
+
 def _segment_key(row: Dict[str, Any]) -> tuple:
-    return (str(row.get("resource_id") or ""), int(row.get("version") or 0), str(row.get("id") or ""))
+    return (str(row.get("resource_id") or ""), int(row.get("version") or 0), _segment_id(row))
 
 
 def _merge_dedup(*lists: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -229,11 +241,15 @@ async def run_advanced_rag(
     stats["entities"] = entities
 
     # --- Step 3: embed -----------------------------------------------------
+    # get_embedding takes a ModelRecord; reuse the platform-default helper
+    # which mirrors the dramatiq EmbeddingModule's selection.
     try:
-        emb = await get_embedding(rewritten)
+        emb_model = _default_embedding_model()
+        emb = get_embedding(emb_model, rewritten)
     except Exception:
         logger.warning("embedding failed; falling back to BM25-only retrieval", exc_info=True)
         emb = None
+        emb_model = None
 
     # --- Step 4: hybrid pass ------------------------------------------------
     # The UI's `hybrid.top_k_vector` is the user's preferred final size, when set.
@@ -263,7 +279,7 @@ async def run_advanced_rag(
     if entities:
         ent_query = " ".join(entities)
         try:
-            ent_emb = await get_embedding(ent_query)
+            ent_emb = get_embedding(emb_model or _default_embedding_model(), ent_query)
         except Exception:
             ent_emb = None
         ent_params = HybridSearchParams(
@@ -311,7 +327,9 @@ async def run_advanced_rag(
     # --- Step 8: neighbor expansion ----------------------------------------
     if knobs["neighbor_window"] > 0:
         try:
-            top = await kb.expand_neighbors(top, window=knobs["neighbor_window"])
+            # nojoin_blend rows surface the segment id as `segment_id`, not `id`.
+            id_field = "segment_id" if any(r.get("segment_id") and not r.get("id") for r in top) else "id"
+            top = await kb.expand_neighbors(top, window=knobs["neighbor_window"], id_field=id_field)
         except Exception:
             logger.warning("neighbor expansion failed", exc_info=True)
 
