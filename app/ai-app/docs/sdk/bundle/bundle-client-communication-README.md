@@ -7,7 +7,7 @@ keywords: ["browser to bundle transport", "widget iframe communication", "integr
 see_also:
   - ks:docs/sdk/bundle/bundle-transports-README.md
   - ks:docs/sdk/bundle/bundle-client-ui-README.md
-  - ks:docs/sdk/bundle/bundle-sse-events-README.md
+  - ks:docs/sdk/bundle/bundle-chat-stream-events-README.md
   - ks:docs/sdk/bundle/bundle-frontend-awareness-README.md
   - ks:docs/sdk/bundle/bundle-interfaces-README.md
   - ks:docs/service/auth/auth-README.md
@@ -31,6 +31,7 @@ Use:
 
 - [bundle-transports-README.md](bundle-transports-README.md) for the overall inbound/outbound surface map
 - [bundle-platform-integration-README.md](bundle-platform-integration-README.md) for the exact `@mcp(...)` contract
+- [bundle-chat-stream-events-README.md](bundle-chat-stream-events-README.md) for the shared event catalog seen after admission
 
 ## 1. Transport Overview
 
@@ -139,7 +140,98 @@ The Socket.IO `connect` auth payload may include:
 
 The Socket.IO connection `sid` is the peer stream identifier for direct delivery.
 
-## 7. Integrations and Bundle REST Calls
+### Send chat request
+
+Socket.IO clients send chat requests through the `chat_message` event.
+
+The logical request contract is the same as `POST /sse/chat`.
+
+---
+
+## 7. Shared Chat Send Contract
+
+This is the missing common contract between:
+
+- `POST /sse/chat`
+- Socket.IO `chat_message`
+
+Both transports send the same logical chat request.
+
+### Logical message shape
+
+Current request fields:
+
+```json
+{
+  "message": "Hello",
+  "chat_history": [],
+  "project": "demo-project",
+  "tenant": "demo-tenant",
+  "turn_id": "turn_123",
+  "conversation_id": "conv_123",
+  "bundle_id": "my.bundle@1-0",
+  "message_kind": "regular|followup|steer",
+  "continuation_kind": "regular|followup|steer",
+  "active_turn_id": "turn_current",
+  "target_turn_id": "turn_current",
+  "steer": true,
+  "followup": true
+}
+```
+
+Important:
+
+- `message_kind` / `continuation_kind` are current routing semantics
+- they do **not** yet represent a general authored event model
+- attachments are carried alongside this logical message, not inside it
+
+### Attachments on SSE
+
+For `POST /sse/chat` with attachments, the request is multipart:
+
+- form field `message`
+  - JSON string containing the logical request
+- form field `attachment_meta`
+  - JSON array of attachment descriptors
+- repeated `files`
+  - binary attachment bodies
+
+Without attachments, `POST /sse/chat` may be plain JSON.
+
+### Attachments on Socket.IO
+
+For Socket.IO `chat_message`, the logical request is wrapped as:
+
+```json
+{
+  "message": { ...logical request... },
+  "attachment_meta": [
+    { "filename": "a.txt" }
+  ]
+}
+```
+
+Binary attachment buffers are sent as additional event arguments.
+
+### Synchronous acknowledgement
+
+Both send paths return an immediate acknowledgement before the turn necessarily starts.
+
+Known `status` values:
+
+| `status` | Meaning |
+| --- | --- |
+| `processing_started` | A regular turn was admitted to the normal proc ready queue. |
+| `followup_accepted` | The conversation was busy; the message was accepted into the shared external event source as a followup. |
+| `steer_accepted` | The conversation was busy; the message was accepted into the shared external event source as a steer/control event. |
+
+Use:
+
+- [bundle-chat-stream-events-README.md](bundle-chat-stream-events-README.md)
+
+for the event semantics after acceptance.
+
+## 8. Integrations and Bundle REST Calls
 
 This is the relevant contract for:
 
@@ -188,7 +280,7 @@ Session-scoped broadcast means:
 - all connected peers on that session receive the event
 - if no peer is listening for that session, nobody receives it
 
-## 8. Response Headers Clients Should Use
+## 9. Response Headers Clients Should Use
 
 | Header | Meaning |
 | --- | --- |
@@ -201,7 +293,7 @@ Clients should:
 - keep `X-Session-ID` stable when they intend to reuse the same session
 - honor `Retry-After` when rate-limited or backpressured
 
-## 9. Supported Streaming Payload Patterns
+## 10. Supported Streaming Payload Patterns
 
 The transport is generic, but there are a few payload styles the platform
 already understands and renders consistently.
@@ -317,16 +409,26 @@ Client rule:
 
 See:
 
-- [bundle-sse-events-README.md](bundle-sse-events-README.md)
+- [bundle-chat-stream-events-README.md](bundle-chat-stream-events-README.md)
 - [README-comm.md](../../service/comm/README-comm.md)
 
-## 10. Typical Browser Patterns
+## 11. Typical Browser Patterns
 
 ### Standard app
 
 1. open SSE with `stream_id`
 2. send chat via `POST /sse/chat`
 3. receive streamed events on that stream
+
+### Standard app with Socket.IO
+
+1. connect Socket.IO with auth payload
+2. send chat via `chat_message`
+3. receive the same semantic event envelopes on socket events such as:
+   - `chat_start`
+   - `chat_step`
+   - `chat_delta`
+   - `chat_complete`
 
 ### Widget or custom bundle frontend
 
@@ -340,10 +442,10 @@ See:
 2. requests omit explicit auth headers
 3. server falls back to configured auth cookies
 
-## 11. What To Read Next
+## 12. What To Read Next
 
-- streaming payload catalog:
-  [bundle-sse-events-README.md](bundle-sse-events-README.md)
+- shared chat stream event catalog:
+  [bundle-chat-stream-events-README.md](bundle-chat-stream-events-README.md)
 - reconnect, draining, retry, and multi-tab behavior:
   [bundle-frontend-awareness-README.md](bundle-frontend-awareness-README.md)
 - server-side auth transport details:

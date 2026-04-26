@@ -60,7 +60,7 @@ Curated index of platform, service, and SDK documentation.
 * Bundle interfaces: [bundle-interfaces-README.md](sdk/bundle/bundle-interfaces-README.md)
 * Bundle client UI contract: [bundle-client-ui-README.md](sdk/bundle/bundle-client-ui-README.md)
 * Bundle client communication: [bundle-client-communication-README.md](sdk/bundle/bundle-client-communication-README.md)
-* Bundle SSE events: [bundle-sse-events-README.md](sdk/bundle/bundle-sse-events-README.md)
+* Bundle chat stream events: [bundle-chat-stream-events-README.md](sdk/bundle/bundle-chat-stream-events-README.md)
 * Bundle storages + cache: [bundle-storage-and-cache-README.md](sdk/bundle/bundle-storage-and-cache-README.md)
 
 ## SDK Agents (ReAct v2)

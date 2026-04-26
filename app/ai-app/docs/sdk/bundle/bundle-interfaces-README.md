@@ -12,7 +12,7 @@ see_also:
   - ks:docs/sdk/bundle/bundle-index-README.md
   - ks:docs/sdk/bundle/bundle-transports-README.md
   - ks:docs/sdk/bundle/bundle-client-communication-README.md
-  - ks:docs/sdk/bundle/bundle-sse-events-README.md
+  - ks:docs/sdk/bundle/bundle-chat-stream-events-README.md
 ---
 # Bundle Interfaces (Streaming + Widgets + Operations)
 
@@ -20,7 +20,7 @@ This doc describes how a bundle connects to clients:
 - **Streaming** via SSE/Socket.IO through the async communicator
 - **Widgets + React panels** returned by bundles
 - **Operations API** to invoke bundle methods over REST
-- **Artifacts & attachments** surfaced in the timeline and SSE events
+- **Artifacts & attachments** surfaced in the timeline and chat stream events
 - **Execution boundaries** when selected helper functions run through `@venv(...)`
 
 For the higher-level transport map, including how `@mcp(...)` fits beside
@@ -54,7 +54,7 @@ Bundles stream output through the platform communicator. Clients receive events 
 Docs:
 - client request contract:
   [bundle-client-communication-README.md](bundle-client-communication-README.md)
-- SSE events: [bundle-sse-events-README.md](bundle-sse-events-README.md)
+- Chat stream events: [bundle-chat-stream-events-README.md](bundle-chat-stream-events-README.md)
 - Comm system: `docs/service/comm/README-comm.md`
 
 The communicator is **asynchronous**: bundle execution and streaming can happen on
@@ -74,7 +74,7 @@ Common stream payloads:
 - `citations` (sources)
 
 See:
-- [bundle-sse-events-README.md](bundle-sse-events-README.md)
+- [bundle-chat-stream-events-README.md](bundle-chat-stream-events-README.md)
 
 ### Concrete bundle-to-client examples
 
@@ -242,7 +242,7 @@ This is not bundle-specific magic. Widget/frontend code is regular platform
 client code and should follow:
 
 - [bundle-client-communication-README.md](bundle-client-communication-README.md)
-- [bundle-sse-events-README.md](bundle-sse-events-README.md)
+- [bundle-chat-stream-events-README.md](bundle-chat-stream-events-README.md)
 
 ## 4) Bundle operations endpoint (loop-back)
 
@@ -460,7 +460,7 @@ See `bundle-developer-guide-README.md` for how these roots are configured.
 
 Docs:
 - Attachments system: [docs/hosting/attachments-system.md](../../hosting/attachments-system.md)
-- SSE events: [bundle-sse-events-README.md](bundle-sse-events-README.md)
+- Chat stream events: [bundle-chat-stream-events-README.md](bundle-chat-stream-events-README.md)
 
 ---
 

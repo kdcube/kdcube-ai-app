@@ -7,7 +7,7 @@ keywords: ["scaled frontend behavior", "sse retry strategy", "drain and shutdown
 see_also:
   - ks:docs/sdk/bundle/bundle-client-ui-README.md
   - ks:docs/sdk/bundle/bundle-client-communication-README.md
-  - ks:docs/sdk/bundle/bundle-sse-events-README.md
+  - ks:docs/sdk/bundle/bundle-chat-stream-events-README.md
   - ks:docs/sdk/bundle/bundle-interfaces-README.md
   - ks:docs/service/README-monitoring-observability.md
   - ks:docs/service/auth/auth-README.md
