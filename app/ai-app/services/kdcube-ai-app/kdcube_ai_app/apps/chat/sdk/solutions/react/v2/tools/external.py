@@ -416,6 +416,32 @@ async def handle_external_tool(*,
     summary = tool_response.get("summary") if isinstance(tool_response, dict) else ""
     tool_err = tool_response.get("error") if isinstance(tool_response, dict) else None
 
+    # Configuration Assistant: surface successful code_graph.* tool results
+    # as a typed subsystem artifact so the inspect panel tabs can populate
+    # without reading the timeline. Emission is silent if mode != config_assistant.
+    if (
+        getattr(ctx_browser.runtime_ctx, "mode", None) == "config_assistant"
+        and tool_id.startswith("code_graph.")
+        and tool_err is None
+        and output is not None
+    ):
+        try:
+            kind = tool_id.split(".", 1)[1]
+            await react.comm.delta(
+                text=json.dumps(output, ensure_ascii=False, default=str),
+                index=0,
+                marker="subsystem",
+                agent="config_assistant.code_core",
+                completed=True,
+                sub_type=f"code_core.{kind}",
+                artifact_name=f"code_core.{kind}.{tool_call_id}",
+                execution_id=tool_call_id,
+                format="json",
+                title=f"code_core.{kind}",
+            )
+        except Exception:
+            pass
+
     merged_sources_inline = False
     remapped_source_sids: List[int] = []
     if tools_insights.is_search_tool(tool_id) or tools_insights.is_fetch_uri_content_tool(tool_id):

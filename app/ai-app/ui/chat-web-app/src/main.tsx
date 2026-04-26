@@ -40,6 +40,9 @@ import {WebFetchArtifactType} from "./features/logExtensions/webFetch/types.ts";
 import WebFetchLogItem from "./features/logExtensions/webFetch/WebFetchLogItem.tsx";
 import ServiceErrorMessage from "./features/logExtensions/service/ServiceErrorMessage.tsx";
 import {ServiceErrorArtifactType} from "./features/logExtensions/service/types.ts";
+import CodeCoreLogItem from "./features/logExtensions/codeCore/CodeCoreLogItem.tsx";
+import {CODE_CORE_ARTIFACT_TYPE} from "./features/logExtensions/codeCore/types.ts";
+import {CodeCoreArtifactStreamReducer} from "./features/logExtensions/codeCore/CodeCoreArtifactStreamReducer.ts";
 
 //chat log extensions
 addChatLogExtension(CanvasArtifactType, CanvasLogItem)
@@ -48,6 +51,7 @@ addChatLogExtension(WebSearchArtifactType, WebSearchLogItem)
 addChatLogExtension(TimelineTextArtifactType, TimelineTextLogItem)
 addChatLogExtension(WebFetchArtifactType, WebFetchLogItem)
 addChatLogExtension(ServiceErrorArtifactType, ServiceErrorMessage)
+addChatLogExtension(CODE_CORE_ARTIFACT_TYPE, CodeCoreLogItem)
 
 //canvas extension
 addCanvasItemExtension(CanvasArtifactType, {
@@ -74,7 +78,8 @@ addArtifactStreamParsers(
     new CanvasArtifactStreamReducer(),
     new CodeExecArtifactStreamReducer(),
     new WebSearchArtifactStreamReducer(),
-    new WebFetchArtifactStreamReducer()
+    new WebFetchArtifactStreamReducer(),
+    new CodeCoreArtifactStreamReducer()
 )
 
 createRoot(document.getElementById('root')!).render(
