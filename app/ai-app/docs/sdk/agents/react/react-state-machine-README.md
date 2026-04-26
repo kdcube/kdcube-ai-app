@@ -11,8 +11,9 @@ see_also:
 ---
 # ReAct v2 State Machine
 
-This describes the **v2** runtime loop and its control gates.
-It matches the current `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/runtime.py` implementation.
+This describes the current React runtime loop and its control gates.
+The state-machine shape is shared by `v2` and `v3`; `v3` differs mainly in how one
+decision generation may emit multiple safe action-channel instances.
 
 ---
 
@@ -88,6 +89,13 @@ The loop uses `BudgetStateV2`:
 
 Hard stop:
 - if `decision_rounds_used >= max_iterations` ⇒ exit with `max_iterations`
+
+Important nuance:
+- `max_iterations` is not always static for the whole turn.
+- the runtime starts from `base_max_iterations`
+- when the active turn consumes a live reactive external event such as `followup`, it may mint extra iteration credit
+- that raises the effective `max_iterations` before the next decision gate
+- the extra credit is capped by `reactive_iteration_credit_cap`
 
 The budget snapshot is exposed to the decision agent in the timeline’s active state block.
 

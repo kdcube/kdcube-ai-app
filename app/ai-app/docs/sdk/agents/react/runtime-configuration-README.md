@@ -38,6 +38,9 @@ React is selected before the runtime instance is built:
 - `timezone`: user timezone.
 - `max_tokens`: max model tokens used for compaction decisions.
 - `max_iterations`: max React iterations.
+- `reactive_event_iteration_credit_enabled`: enable live reactive-event iteration credit on the current turn. Default `true`.
+- `reactive_event_iteration_credit_per_event`: default iteration credit minted by one accepted live reactive event. Default `1`.
+- `reactive_event_iteration_credit_cap`: max extra iterations that one turn may accumulate from live reactive events. When unset, React defaults it to the configured `max_iterations`.
 - `workdir`: working directory for this run.
 - `outdir`: output directory for this run.
 - `bundle_storage`: optional per-bundle managed storage directory for bundle-owned data such as cloned repos, built indexes, and other readonly data prepared by the bundle.
@@ -98,6 +101,26 @@ This is the only React workspace paradigm switch:
   - agent is instructed that the activated current-turn workspace can be explored locally with git commands except pull/push/fetch
 
 Exact attachment/binary pulls remain point-wise and hosting-backed in both modes.
+
+### Reactive external-event iteration credit
+
+These fields control how active-turn external events affect loop budget:
+
+- only **reactive** events mint credit
+- current runtime behavior treats `followup` as reactive by default
+- `steer` never mints iteration credit; it is a control interrupt
+- future structured external events may opt into the same policy through their event payload
+
+Effective loop ceiling:
+
+```text
+effective_max_iterations = base_max_iterations + reactive_iteration_credit
+```
+
+where:
+- `base_max_iterations` comes from `RuntimeCtx.max_iterations`
+- `reactive_iteration_credit` accumulates during the turn
+- `reactive_iteration_credit` is bounded by `reactive_event_iteration_credit_cap`
 
 ## RuntimeSessionConfig (RuntimeCtx.session)
 
