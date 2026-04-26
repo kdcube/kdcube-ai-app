@@ -19,14 +19,14 @@ from __future__ import annotations
 import pathlib
 from typing import Any, Dict, List
 
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.artifacts import (
+from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
     build_artifact_meta_block,     # Metadata block for an artifact (filename, mime, etc.)
     build_artifact_binary_block,   # Binary content block (images, PDFs)
     build_artifact_view,           # Unified artifact view (normalizes different output formats)
     normalize_physical_path,       # Resolves relative paths to physical filesystem paths
     detect_edit,                   # Checks if this artifact already exists in the timeline (edit vs new)
 )
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.tools.common import (
+from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.common import (
     tool_call_block,  # Creates a "tool was called" block
     add_block,        # Appends a block to the timeline
     tc_result_path,   # Generates a standard result path for a tool call

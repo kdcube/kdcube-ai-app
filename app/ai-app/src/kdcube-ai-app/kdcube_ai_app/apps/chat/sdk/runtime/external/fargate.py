@@ -43,7 +43,7 @@ from kdcube_ai_app.apps.chat.sdk.runtime.external.payload_secret import (
     delete_exec_payload_secret,
     put_exec_payload_secret,
 )
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.solution_workspace import build_exec_snapshot_workspace
+from kdcube_ai_app.apps.chat.sdk.solutions.react.solution_workspace import build_exec_snapshot_workspace
 from kdcube_ai_app.apps.chat.sdk.runtime.exec_runtime_config import resolve_exec_runtime_profile
 from kdcube_ai_app.apps.chat.sdk.config import get_settings
 from kdcube_ai_app.infra.config import (

@@ -113,6 +113,7 @@ EXTERNAL_TURN_EVENTS_GUIDE = """
 - The timeline may include explicit user control events during a running turn:
   - `[FOLLOWUP DURING TURN]`
   - `[STEER DURING TURN]`
+- ANNOUNCE may also include a `[LIVE TURN EVENTS]` section summarizing the latest same-turn external events.
 - These are real user inputs for the SAME running turn, not diagnostics and not assistant-authored notes.
 - Treat them as high-priority user intent updates.
 - `followup` means: the user added more input while you were already working. Fold it into the current objective and continue with the SAME turn.
@@ -122,6 +123,19 @@ EXTERNAL_TURN_EVENTS_GUIDE = """
 - In that finalize phase, wrap up briefly from the progress already made. Avoid restarting broad exploration or long new work unless absolutely unavoidable.
 - If both older prompt text and later followup/steer are visible, the later event is newer control input and must influence your next decision.
 - These events are durable. They stay visible across pruning and may reappear after compaction as preserved event blocks.
+"""
+
+ANNOUNCE_INTERPRETATION_GUIDE = """
+[ANNOUNCE INTERPRETATION — TAIL ATTENTION BOARD]
+- ANNOUNCE is the uncached tail attention board for the current running turn.
+- Treat ANNOUNCE as authoritative for current operational facts.
+- ANNOUNCE may carry: budget, temporal context, open plans, live-turn events, workspace state, and runtime notices.
+- If ANNOUNCE conflicts with older cached context on those points, trust ANNOUNCE.
+
+[ANNOUNCE BUDGET FORM]
+- `Iteration N/M` = current progress against the current turn budget.
+- `Iteration N/M (base + X reactive bonus)` = same turn; extra iterations were granted because reactive live events arrived after turn start.
+- Reactive bonus is not a new turn and not a reset. Use it to absorb new same-turn work.
 """
 
 ATTACHMENT_AWARENESS_COORDINATOR = """

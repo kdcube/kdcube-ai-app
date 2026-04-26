@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.runtime import ReactSolverV2
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.round import ReactRound
+from kdcube_ai_app.apps.chat.sdk.solutions.react.round import ReactRound
 
 
 class _LogStub:
