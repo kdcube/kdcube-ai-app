@@ -91,14 +91,24 @@ class KnowledgeBaseConnector:
         if version is None:
             version = resource_metadata.version
 
-        # Build datasource record
+        # Build datasource record. The `datasource.title` column is NOT NULL
+        # in the schema, but uploads through /api/kb/{project}/upload don't
+        # populate a title (FileDataElement only carries filename). Fall back
+        # to filename / uri tail / resource id so search_indexing doesn't
+        # blow up on the SQL constraint.
+        title = (
+            resource_metadata.title
+            or getattr(resource_metadata, "filename", None)
+            or (resource_metadata.uri.rsplit("/", 1)[-1] if resource_metadata.uri else None)
+            or resource_metadata.id
+        )
         datasource_data = {
             "id": resource_metadata.id,
             "version": int(version),
             "provider": resource_metadata.provider,
             "rn": resource_metadata.rn,
             "source_type": resource_metadata.source_type,
-            "title": resource_metadata.title,
+            "title": title,
             "uri": resource_metadata.uri,
             "system_uri": resource_metadata.ef_uri,
             "metadata": resource_metadata.light(),
@@ -253,14 +263,17 @@ class KnowledgeBaseConnector:
                     base_seg = base_lookup[guid]
                     base_segment_extraction_rns = base_seg.get('extracted_data_rns', []) or []
                     extraction_rns.update(base_segment_extraction_rns)
+                    # Use .get() throughout — markdown / passthrough segmenters
+                    # may not populate every positional or rn field that PDF
+                    # extractors do.
                     segment_base_segments.append({
-                        "guid": base_seg['guid'],
+                        "guid": base_seg.get('guid'),
                         # "text": base_seg['text'],
-                        "start_line_num": base_seg['start_line_num'],
-                        "end_line_num": base_seg['end_line_num'],
-                        "start_position": base_seg['start_position'],
-                        "end_position": base_seg['end_position'],
-                        "rn": base_seg['rn'],
+                        "start_line_num": base_seg.get('start_line_num'),
+                        "end_line_num": base_seg.get('end_line_num'),
+                        "start_position": base_seg.get('start_position'),
+                        "end_position": base_seg.get('end_position'),
+                        "rn": base_seg.get('rn'),
                         # "extracted_data_rns": base_segment_extraction_rns,
                         "heading": base_seg.get('heading', ''),
                         "subheading": base_seg.get('subheading', ''),
@@ -381,9 +394,12 @@ class KnowledgeBaseConnector:
                 "provider": provider
             }
 
-            # (optional) add enrichment RN to lineage if you want to navigate to it later
-            if "enrichment" in extensions:
-                lineage["enrichment"] = { "rn": extensions["enrichment"]["rn"] }
+            # (optional) add enrichment RN to lineage if you want to navigate to it later.
+            # extensions["enrichment"] may be `{}` for resources that have no enrichment
+            # produced (markdown / passthrough), so use .get to avoid KeyError 'rn'.
+            enrichment_ext = extensions.get("enrichment") or {}
+            if enrichment_ext.get("rn"):
+                lineage["enrichment"] = {"rn": enrichment_ext["rn"]}
 
             enhanced_segments.append(enhanced_segment)
 

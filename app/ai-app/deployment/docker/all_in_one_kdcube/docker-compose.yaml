@@ -185,6 +185,14 @@ services:
     build:
       context: ../../..
       dockerfile: deployment/docker/all_in_one_kdcube/Dockerfile_Dramatiq
+    # The Dockerfile CMD points at apps.knowledge_base.processor which only
+    # defines a plain async function — no @dramatiq.actor decorator there, so
+    # workers never subscribe to the kdcube_orch_* queues and uploads pile up
+    # in Redis without ever being processed. We invoke the proper launcher
+    # which calls setup_worker_broker() (registers Results/Callbacks/AsyncIO
+    # middleware that the actor declarations rely on), imports kb_actors,
+    # declares the queues, and starts the worker pool.
+    command: ["python", "-m", "kdcube_ai_app.infra.orchestration.app.dramatiq.dramatiq_app_cli"]
     env_file:
       - path: ${KDCUBE_CONFIG_DIR:-./config}/.env.kb
         required: false

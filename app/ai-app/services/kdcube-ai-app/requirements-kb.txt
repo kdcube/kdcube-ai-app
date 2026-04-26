@@ -26,6 +26,7 @@ sentence-transformers==5.1.0
 
 unstructured
 unstructured[pdf,html]
+markdown-it-py==4.0.0          # import: markdown_it (used by SegmentationModule)
 
 langchain==0.3.27
 langchain-community==0.3.27
