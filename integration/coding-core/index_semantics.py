@@ -128,6 +128,26 @@ def main() -> int:
         action="store_true",
         help="Fail on the first malformed file instead of skipping with a warning.",
     )
+    parser.add_argument(
+        "--uri",
+        default=None,
+        help="Override Neo4j URI (e.g. bolt://127.0.0.1:7687). Defaults to config.database.uri.",
+    )
+    parser.add_argument(
+        "--user",
+        default=None,
+        help="Override Neo4j user. Defaults to config.database.user.",
+    )
+    parser.add_argument(
+        "--password",
+        default=None,
+        help="Override Neo4j password. Defaults to config.database.password.",
+    )
+    parser.add_argument(
+        "--db",
+        default=None,
+        help="Override Neo4j database name. Defaults to config.database.name.",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -181,11 +201,12 @@ def main() -> int:
             log.warning("No semantic records found; nothing to write.")
             return 0
 
-    driver = GraphDatabase.driver(
-        db_cfg.get("uri", "bolt://127.0.0.1:7687"),
-        auth=(db_cfg.get("user", "neo4j"), db_cfg.get("password", "")),
-    )
-    db_name = db_cfg.get("name") or "neo4j"
+    db_uri = args.uri or db_cfg.get("uri", "bolt://127.0.0.1:7687")
+    db_user = args.user or db_cfg.get("user", "neo4j")
+    db_password = args.password if args.password is not None else db_cfg.get("password", "")
+    driver = GraphDatabase.driver(db_uri, auth=(db_user, db_password))
+    db_name = args.db or db_cfg.get("name") or "neo4j"
+    log.info("Writing semantics to %s / %s", db_uri, db_name)
     dims = int(emb_cfg.get("dimensions") or 384)
 
     try:
