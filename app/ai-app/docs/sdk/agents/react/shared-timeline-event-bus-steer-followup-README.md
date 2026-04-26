@@ -31,6 +31,7 @@ This design is now implemented in the current React runtime with these concrete 
 - ingress appends busy-turn `followup` / `steer` into one durable shared conversation event source
 - the active React turn acquires a fenced owner lease and listens to that source live
 - `followup` is folded into the current turn and can trigger another decision round before completion
+- a consumed live `followup` also mints extra iteration credit for that same turn, capped by runtime configuration, so additive followups do not exhaust the original fixed loop budget
 - `steer` is folded into the current turn and acts as a control interrupt
 - a consumed steer first interrupts the active generation or cancellable tool phase when possible
 - React then re-enters with the steer already on the current turn timeline and gets a short bounded finalize window
@@ -134,6 +135,7 @@ Events are accepted live and can have engineering-layer effects before the next 
 - they become visible to the current turn
 - they trigger hooks
 - `followup` affects the next decision boundary on the same turn
+- `followup` can extend the turn's effective iteration ceiling through live reactive-event credit
 - `steer` can cancel the active generation/tool phase first and only then hand React a bounded finalize phase
 
 ## 5. Core Decision

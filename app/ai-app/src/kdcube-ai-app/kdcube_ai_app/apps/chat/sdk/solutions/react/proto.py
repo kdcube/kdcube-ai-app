@@ -94,6 +94,9 @@ class RuntimeCtx:
     timezone: Optional[str] = None
     max_tokens: Optional[int] = None
     max_iterations: Optional[int] = None
+    reactive_event_iteration_credit_enabled: bool = True
+    reactive_event_iteration_credit_per_event: int = 1
+    reactive_event_iteration_credit_cap: Optional[int] = None
     workdir: Optional[str] = None
     outdir: Optional[str] = None
     bundle_storage: Optional[str] = None
@@ -146,6 +149,9 @@ class RuntimeCtx:
             "timezone": self.timezone,
             "max_tokens": self.max_tokens,
             "max_iterations": self.max_iterations,
+            "reactive_event_iteration_credit_enabled": bool(self.reactive_event_iteration_credit_enabled),
+            "reactive_event_iteration_credit_per_event": int(self.reactive_event_iteration_credit_per_event or 1),
+            "reactive_event_iteration_credit_cap": self.reactive_event_iteration_credit_cap,
             "workdir": self.workdir,
             "outdir": self.outdir,
             "bundle_storage": self.bundle_storage,
