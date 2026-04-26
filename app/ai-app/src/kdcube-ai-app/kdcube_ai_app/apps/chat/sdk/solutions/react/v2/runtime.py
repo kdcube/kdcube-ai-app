@@ -12,7 +12,6 @@ import traceback
 
 import time
 import uuid
-from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Callable, Awaitable, Type
 
 from langgraph.graph import StateGraph, END
@@ -23,7 +22,13 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.browser import ContextBrowse
 from kdcube_ai_app.apps.chat.sdk.solutions.infra import emit_event
 from kdcube_ai_app.apps.chat.sdk.runtime.execution import execute_tool, _safe_label
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.agents.decision import react_decision_stream_v2
+from kdcube_ai_app.apps.chat.sdk.solutions.react.live_events import (
+    compute_reactive_iteration_credit_cap,
+    resolve_reactive_iteration_credit,
+    sync_reactive_iteration_budget,
+)
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import ReactResult
+from kdcube_ai_app.apps.chat.sdk.solutions.react.runtime_state import ReactRuntimeState as ReactStateV2
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.solution_workspace import ApplicationHostingService
 from kdcube_ai_app.apps.chat.sdk.solutions.widgets.exec import DecisionExecCodeStreamer
 from kdcube_ai_app.apps.chat.sdk.solutions.widgets.canvas import (
@@ -48,37 +53,6 @@ from kdcube_ai_app.apps.chat.sdk.tools import citations as citations_module
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.plan import apply_plan_updates
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.round import ReactRound
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import ReactStateSnapshot
-
-@dataclass
-class ReactStateV2:
-    session_id: str
-    turn_id: str
-
-    adapters: List[Dict[str, Any]]
-
-    workdir: pathlib.Path
-    outdir: pathlib.Path
-    plan_steps: List[str]
-    plan_status: Dict[str, str] = field(default_factory=dict)
-    # next_decision_model: str = "strong"
-
-    # Loop control
-    iteration: int = 0
-    max_iterations: int = 15
-    decision_retries: int = 0
-    max_decision_retries: int = 2
-
-    exit_reason: Optional[str] = None
-    final_answer: Optional[str] = None
-    suggested_followups: Optional[List[str]] = None
-
-    last_decision: Optional[Dict[str, Any]] = None
-    last_tool_result: Optional[Any] = None
-
-    pending_tool_skills: Optional[List[str]] = None
-
-    session_log: List[Dict[str, Any]] = field(default_factory=list)
-    round_timings: List[Dict[str, Any]] = field(default_factory=list)
 
 
 class ReactSolverV2:
@@ -174,6 +148,9 @@ class ReactSolverV2:
         self._interrupted_generation_snapshot: Optional[Dict[str, Any]] = None
         self._active_phase_event_watch_task: Optional[asyncio.Task] = None
         self._active_phase_external_cursor: str = ""
+        self._reactive_iteration_credit_total: int = 0
+        self._reactive_iteration_credit_cap: int = 0
+        self._credited_external_event_ids: set[str] = set()
 
     def _current_turn_id(self) -> str:
         try:
@@ -233,12 +210,50 @@ class ReactSolverV2:
             pass
         try:
             event_id = getattr(event, "message_id", None) or ""
+            credit_awarded = self._award_reactive_iteration_credit(type=type_norm, event=event)
             self.log.log(
-                f"[react.v2] timeline_event accepted: type={type} event_id={event_id} seq={seq} blocks={len(blocks or [])}",
+                f"[react.v2] timeline_event accepted: type={type} event_id={event_id} seq={seq} "
+                f"blocks={len(blocks or [])} credit_awarded={credit_awarded} "
+                f"total_credit={self._reactive_iteration_credit_total}/{self._reactive_iteration_credit_cap}",
                 level="INFO",
             )
         except Exception:
             pass
+        return True
+
+    def _award_reactive_iteration_credit(self, *, type: str, event: Any) -> int:
+        runtime_ctx = getattr(self.ctx_browser, "runtime_ctx", None) if self.ctx_browser else None
+        if runtime_ctx is None:
+            return 0
+        event_id = str(getattr(event, "message_id", "") or "").strip()
+        if event_id and event_id in self._credited_external_event_ids:
+            return 0
+        credit = resolve_reactive_iteration_credit(
+            event_type=type,
+            event=event,
+            runtime_ctx=runtime_ctx,
+        )
+        if credit <= 0:
+            return 0
+        cap = max(0, int(self._reactive_iteration_credit_cap or 0))
+        if cap <= 0:
+            return 0
+        remaining = max(0, cap - int(self._reactive_iteration_credit_total or 0))
+        if remaining <= 0:
+            return 0
+        granted = min(remaining, int(credit or 0))
+        if granted <= 0:
+            return 0
+        self._reactive_iteration_credit_total = int(self._reactive_iteration_credit_total or 0) + granted
+        if event_id:
+            self._credited_external_event_ids.add(event_id)
+        return granted
+
+    def _sync_reactive_iteration_budget(self, state: Dict[str, Any]) -> int:
+        return sync_reactive_iteration_budget(
+            state=state,
+            granted_credit=int(self._reactive_iteration_credit_total or 0),
+        )
 
     async def _interrupt_active_phase_for_steer(self) -> bool:
         task = self._active_phase_task
@@ -1332,6 +1347,10 @@ class ReactSolverV2:
         max_iterations = int(getattr(self.ctx_browser.runtime_ctx, "max_iterations", None) or 15)
         if max_iterations <= 0:
             max_iterations = 15
+        reactive_iteration_credit_cap = compute_reactive_iteration_credit_cap(
+            runtime_ctx=getattr(self.ctx_browser, "runtime_ctx", None),
+            base_max_iterations=max_iterations,
+        )
 
         return ReactStateV2(
             session_id=session_id,
@@ -1342,6 +1361,9 @@ class ReactSolverV2:
             workdir=workdir,
             outdir=outdir,
             max_iterations=max_iterations,
+            base_max_iterations=max_iterations,
+            reactive_iteration_credit=0,
+            reactive_iteration_credit_cap=reactive_iteration_credit_cap,
             decision_retries=0,
             max_decision_retries=2,
         )
@@ -1364,6 +1386,9 @@ class ReactSolverV2:
         self._latest_steer_seq_seen = 0
         self._last_handled_steer_seq = 0
         self._latest_steer_text = ""
+        self._reactive_iteration_credit_total = 0
+        self._reactive_iteration_credit_cap = int(getattr(state, "reactive_iteration_credit_cap", 0) or 0)
+        self._credited_external_event_ids = set()
         try:
             if self.ctx_browser and self.ctx_browser.timeline:
                 self._latest_external_event_seq_seen = int(self.ctx_browser.timeline.last_external_event_seq or 0)
@@ -1378,7 +1403,10 @@ class ReactSolverV2:
 
         start_ts = time.time()
         try:
-            recursion_limit = max(20, (int(state.max_iterations) * 3) + 6)
+            recursion_limit = max(
+                20,
+                ((int(state.base_max_iterations) + int(state.reactive_iteration_credit_cap)) * 3) + 6,
+            )
             final_state = await self.graph.ainvoke(self._to_dict(state), config={"recursion_limit": recursion_limit})
         except Exception as exc:
             tb = traceback.format_exc()
@@ -1411,6 +1439,9 @@ class ReactSolverV2:
             # "next_decision_model": s.next_decision_model,
             "iteration": s.iteration,
             "max_iterations": s.max_iterations,
+            "base_max_iterations": s.base_max_iterations,
+            "reactive_iteration_credit": s.reactive_iteration_credit,
+            "reactive_iteration_credit_cap": s.reactive_iteration_credit_cap,
             "decision_retries": s.decision_retries,
             "max_decision_retries": s.max_decision_retries,
             "exit_reason": s.exit_reason,
@@ -1509,6 +1540,7 @@ class ReactSolverV2:
         return "exit"
 
     async def _decision_node(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        self._sync_reactive_iteration_budget(state)
         if await self._apply_steer_interrupt_if_requested(state, checkpoint="decision.start"):
             return state
         if state.get("exit_reason"):

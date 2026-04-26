@@ -34,6 +34,9 @@ def _solver_stub() -> ReactSolverV2:
     solver._active_generation_raw_chunks = []
     solver._interrupted_generation_snapshot = None
     solver._active_phase_event_watch_task = None
+    solver._reactive_iteration_credit_total = 0
+    solver._reactive_iteration_credit_cap = 0
+    solver._credited_external_event_ids = set()
     solver.multi_action_mode = "safe_fanout"
     solver.scratchpad = SimpleNamespace(turn_id="turn-1")
     solver.comm = SimpleNamespace(service_event=_noop_async)
@@ -239,6 +242,67 @@ async def test_on_timeline_event_ignores_steer_for_other_turn():
     assert interrupted["count"] == 0
     assert solver._steer_interrupt_requested is False
     assert solver._latest_steer_seq_seen == 0
+
+
+@pytest.mark.asyncio
+async def test_on_timeline_event_followup_awards_iteration_credit_for_current_turn():
+    solver = _solver_stub()
+    solver._reactive_iteration_credit_cap = 4
+    solver.ctx_browser = SimpleNamespace(
+        runtime_ctx=SimpleNamespace(
+            reactive_event_iteration_credit_enabled=True,
+            reactive_event_iteration_credit_per_event=1,
+        ),
+    )
+
+    handled = await solver.on_timeline_event(
+        type="followup",
+        event=SimpleNamespace(
+            sequence=15,
+            text="one more thing",
+            message_id="evt_15",
+            target_turn_id="turn-1",
+            active_turn_id_at_ingress="turn-1",
+            owner_turn_id="turn-1",
+            payload={},
+        ),
+        blocks=[{"type": "user.followup"}],
+    )
+
+    assert handled is True
+    assert solver._reactive_iteration_credit_total == 1
+    assert "evt_15" in solver._credited_external_event_ids
+
+
+@pytest.mark.asyncio
+async def test_decision_node_uses_live_reactive_credit_before_max_iteration_exit():
+    solver = _solver_stub()
+    solver._reactive_iteration_credit_total = 1
+    solver._reactive_iteration_credit_cap = 5
+    called = {"value": False}
+
+    async def _impl(state, iteration):
+        called["value"] = True
+        assert iteration == 5
+        assert state["max_iterations"] == 6
+        assert state["reactive_iteration_credit"] == 1
+        return state
+
+    solver._decision_node_impl = _impl
+    state = {
+        "exit_reason": None,
+        "iteration": 5,
+        "max_iterations": 5,
+        "base_max_iterations": 5,
+        "reactive_iteration_credit": 0,
+        "reactive_iteration_credit_cap": 5,
+    }
+
+    out = await solver._decision_node(state)
+
+    assert called["value"] is True
+    assert out["max_iterations"] == 6
+    assert out["reactive_iteration_credit"] == 1
 
 
 def test_persist_interrupted_generation_uses_mainstream_raw_snapshot():
