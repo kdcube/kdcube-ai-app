@@ -297,6 +297,7 @@ class ContextRAGClient:
             not_tags: Optional[Sequence[str]] = None,
             with_payload: bool = False,
             bundle_id: Optional[str] = None,
+            bundle_ids: Optional[Sequence[str]] = None,
     ) -> dict:
         """
         Pure-recency fetch (no embeddings). Fast path for "last N in track".
@@ -321,6 +322,7 @@ class ContextRAGClient:
             limit=limit,
             days=days,
             bundle_id=bundle,
+            bundle_ids=bundle_ids,
         )
         items = []
         for r in rows:
@@ -1934,7 +1936,13 @@ class ContextRAGClient:
         return {"user_id": user_id, "items": items}
 
     async def get_conversation_details(
-        self, user_id: str, conversation_id: str, *, bundle_id: Optional[str] = None, ctx: Optional[dict] = None
+        self,
+        user_id: str,
+        conversation_id: str,
+        *,
+        bundle_id: Optional[str] = None,
+        bundle_ids: Optional[Sequence[str]] = None,
+        ctx: Optional[dict] = None,
     ):
         """
         Reconstructed from conv timeseries
@@ -1960,6 +1968,7 @@ class ContextRAGClient:
                 conversation_id=conversation_id,
                 with_payload=False,
                 bundle_id=bundle_id,
+                bundle_ids=bundle_ids,
                 ctx=query_ctx,
             )
             ws_items = list(res_ws.get("items") or [])
@@ -1982,6 +1991,7 @@ class ContextRAGClient:
             user_id=user_id,
             conversation_id=conversation_id,
             bundle_id=bundle_id,
+            bundle_ids=bundle_ids,
             ctx=query_ctx,
         )
         # 4) Aggregate to first/last timestamps per turn_id, preserving first-seen order
@@ -2052,6 +2062,7 @@ class ContextRAGClient:
             user_id: str,
             conversation_id: str,
             bundle_id: Optional[str] = None,
+            bundle_ids: Optional[Sequence[str]] = None,
     ) -> bool:
         """
         Best-effort check whether a conversation exists for a given user.
@@ -2068,33 +2079,35 @@ class ContextRAGClient:
 
         try:
             # 1) Check conv.start fingerprint within this conversation
-            data = await self.search(
-                query=None,
-                embedding=None,
-                kinds=(FINGERPRINT_KIND,),
-                scope="conversation",
-                days=3650,
-                top_k=1,
-                include_deps=False,
-                with_payload=False,
-                ctx=None,
-                user_id=user_id,
-                conversation_id=conversation_id,
-                any_tags=None,
-                all_tags=[CONV_START_FPS_TAG],
-                not_tags=None,
-                timestamp_filters=None,
-                bundle_id=bundle_id,
-            )
+            if bundle_ids is None:
+                data = await self.search(
+                    query=None,
+                    embedding=None,
+                    kinds=(FINGERPRINT_KIND,),
+                    scope="conversation",
+                    days=3650,
+                    top_k=1,
+                    include_deps=False,
+                    with_payload=False,
+                    ctx=None,
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    any_tags=None,
+                    all_tags=[CONV_START_FPS_TAG],
+                    not_tags=None,
+                    timestamp_filters=None,
+                    bundle_id=bundle_id,
+                )
 
-            if data.get("items"):
-                return True
+                if data.get("items"):
+                    return True
 
             # 2) Fallback: any turn activity seen via tags
             occ = await self.idx.get_conversation_turn_ids_from_tags(
                 user_id=user_id,
                 conversation_id=conversation_id,
                 bundle_id=bundle_id,
+                bundle_ids=bundle_ids,
             )
             return bool(occ)
 
@@ -2116,6 +2129,7 @@ class ContextRAGClient:
         materialize: bool = False,
         days: int = 365,
         bundle_id: Optional[str] = None,
+        bundle_ids: Optional[Sequence[str]] = None,
         ctx: Optional[dict] = None,
     ) -> Dict[str, Any]:
         # For this endpoint, missing external bundle_id means "do not filter by bundle".
@@ -2133,6 +2147,7 @@ class ContextRAGClient:
             conversation_id=conversation_id,
             days=days,
             bundle_id=bundle_id,
+            bundle_ids=bundle_ids,
             turn_ids=turn_ids or None,
             ctx=query_ctx,
         )
@@ -2150,6 +2165,7 @@ class ContextRAGClient:
                 conversation_id=conversation_id,
                 with_payload=False,
                 bundle_id=bundle_id,
+                bundle_ids=bundle_ids,
                 ctx=query_ctx,
             )
             ws_items = list(res_ws.get("items") or [])
@@ -2289,101 +2305,87 @@ class ContextRAGClient:
                     blocks=blocks,
                     sources_pool=(sources_pool or sources_pool_for_conv or []),
                 )
-                # Extract continuation_kind from user.prompt block meta (set for followup/steer turns)
-                _user_prompt_block = next(
-                    (b for b in blocks if isinstance(b, dict) and (b.get("type") or "") == "user.prompt"),
-                    None,
-                )
-                _prompt_meta = (_user_prompt_block or {}).get("meta") if isinstance((_user_prompt_block or {}).get("meta"), dict) else {}
-                _prompt_continuation_kind = (_prompt_meta or {}).get("continuation_kind") or None
-
-                user_text = (view.get("user") or {}).get("text") or ""
-                user_ts = (view.get("user") or {}).get("ts") or ts
-                if user_text:
-                    _user_data: Dict[str, Any] = {"text": user_text, "meta": {"source": "turn_log"}}
-                    if _prompt_continuation_kind:
-                        _user_data["continuation_kind"] = _prompt_continuation_kind
-                    out.append({
-                        "message_id": None,
-                        "type": "chat:user",
-                        "ts": user_ts,
-                        "hosted_uri": None,
-                        "bundle_id": turn_log_item.get("bundle_id"),
-                        "data": _user_data,
-                    })
-                    replace_types["chat:user"] = True
-
-                # Emit user.followup blocks from Turn A (written when a followup arrived mid-turn).
-                # Track the latest followup timestamp so the assistant artifact can be placed after it.
-                _latest_followup_ts: str = ""
                 for _blk in blocks:
                     if not isinstance(_blk, dict):
                         continue
-                    _btype = (_blk.get("type") or "").strip()
-                    if _btype not in {"user.followup", "user.followup.preserved"}:
-                        continue
                     _blk_tid = str(_blk.get("turn_id") or "").strip()
                     if _blk_tid and _blk_tid != tid:
-                        continue  # belongs to a different turn
-                    _fu_text = (_blk.get("text") or "").strip()
-                    if not _fu_text:
                         continue
-                    _fu_ts = (_blk.get("ts") or ts or "")
-                    if _fu_ts > _latest_followup_ts:
-                        _latest_followup_ts = _fu_ts
+                    _btype = (_blk.get("type") or "").strip()
+                    _text = (_blk.get("text") or "").strip()
+                    if not _text:
+                        continue
+                    _row_type: Optional[str] = None
+                    _row_data: Dict[str, Any] = {}
+                    _path = str(_blk.get("path") or "").strip()
+                    _blk_meta = _blk.get("meta") if isinstance(_blk.get("meta"), dict) else {}
+                    _row_meta: Dict[str, Any] = {"source": "turn_log"}
+                    if _path:
+                        _row_meta["path"] = _path
+                    for _key in ("message_id", "stream_id", "sequence", "event_kind", "continuation_kind", "target_turn_id", "active_turn_id_at_ingress", "owner_turn_id"):
+                        if _blk_meta.get(_key) is not None:
+                            _row_meta[_key] = _blk_meta.get(_key)
+                    if _btype == "user.prompt":
+                        _continuation_kind = (_blk_meta or {}).get("continuation_kind") or None
+                        _row_type = "chat:user"
+                        _row_data = {"text": _text, "meta": _row_meta}
+                        if _continuation_kind:
+                            _row_data["continuation_kind"] = _continuation_kind
+                    elif _btype in {"user.followup", "user.followup.preserved"}:
+                        _row_type = "chat:user"
+                        _row_data = {"text": _text, "continuation_kind": "followup", "meta": _row_meta}
+                    elif _btype in {"user.steer", "user.steer.preserved"}:
+                        _row_type = "chat:user"
+                        _row_data = {"text": _text, "continuation_kind": "steer", "meta": _row_meta}
+                    elif _btype == "assistant.completion":
+                        _row_type = "chat:assistant"
+                        _row_data = {"text": _text, "meta": _row_meta}
+                    else:
+                        continue
+
+                    _row_ts = (_blk.get("ts") or ts or "")
+                    if _row_type == "chat:user":
+                        replace_types["chat:user"] = True
+                    elif _row_type == "chat:assistant":
+                        replace_types["chat:assistant"] = True
                     out.append({
                         "message_id": None,
-                        "type": "chat:user",
-                        "ts": _fu_ts,
+                        "type": _row_type,
+                        "ts": _row_ts,
                         "hosted_uri": None,
                         "bundle_id": turn_log_item.get("bundle_id"),
-                        "data": {"text": _fu_text, "continuation_kind": "followup", "meta": {"source": "turn_log"}},
+                        "data": _row_data,
                     })
 
                 for a in view.get("attachments") or []:
+                    attachment_meta = {"kind": "user.attachment", "turn_id": tid}
+                    for key in ("artifact_path", "continuation_kind", "event_kind", "message_id", "sequence", "ts"):
+                        if a.get(key) is not None:
+                            attachment_meta[key] = a.get(key)
                     out.append({
                         "message_id": a.get("message_id"),
                         "type": "artifact:user.attachment",
-                        "ts": ts,
+                        "ts": a.get("ts") or ts,
                         "hosted_uri": a.get("hosted_uri"),
                         "bundle_id": turn_log_item.get("bundle_id"),
-                        "data": {"payload": a, "meta": {"kind": "user.attachment", "turn_id": tid}},
+                        "data": {"payload": a, "meta": attachment_meta},
                     })
-
-                asst_text = (view.get("assistant") or {}).get("text") or ""
-                asst_ts = (view.get("assistant") or {}).get("ts") or ts
-                # If followups were emitted, ensure assistant ts sorts after the last followup so the
-                # global client timestamp-sort renders: user → followup(s) → assistant.
-                if _latest_followup_ts and asst_ts <= _latest_followup_ts:
-                    try:
-                        import datetime as _dt
-                        _fu_dt = _dt.datetime.fromisoformat(_latest_followup_ts.replace("Z", "+00:00"))
-                        # Use +1 second so the millisecond difference survives JS Date.parse() rounding.
-                        asst_ts = (_fu_dt + _dt.timedelta(seconds=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
-                    except Exception:
-                        pass
-                if asst_text:
-                    out.append({
-                        "message_id": None,
-                        "type": "chat:assistant",
-                        "ts": asst_ts,
-                        "hosted_uri": None,
-                        "bundle_id": turn_log_item.get("bundle_id"),
-                        "data": {"text": asst_text, "meta": {"source": "turn_log"}},
-                    })
-                    replace_types["chat:assistant"] = True
 
                 for f in view.get("files") or []:
                     if isinstance(f, dict):
                         from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import normalize_file_payload
                         f = normalize_file_payload(f)
+                    file_meta = {"kind": "assistant.file", "turn_id": tid}
+                    for key in ("artifact_path", "tool_id", "tool_call_id", "call_id", "sub_type", "ts"):
+                        if f.get(key) is not None:
+                            file_meta[key] = f.get(key)
                     out.append({
                         "message_id": f.get("message_id"),
                         "type": "artifact:assistant.file",
-                        "ts": ts,
+                        "ts": f.get("ts") or ts,
                         "hosted_uri": f.get("hosted_uri"),
                         "bundle_id": turn_log_item.get("bundle_id"),
-                        "data": {"payload": f, "meta": {"kind": "assistant.file", "turn_id": tid}},
+                        "data": {"payload": f, "meta": file_meta},
                     })
 
                 followups = [x for x in (view.get("followups") or []) if isinstance(x, str)]
@@ -2530,6 +2532,16 @@ class ContextRAGClient:
                         rendered = citation_utils.replace_citation_tokens_batch(raw_text, citation_map, opts)
                         data["text"] = rendered
 
+            for tid in order:
+                artifacts_for_turn = (turns_map.get(tid) or {}).get("artifacts") or []
+                turns_map[tid]["artifacts"] = [
+                    item
+                    for _idx, item in sorted(
+                        enumerate(artifacts_for_turn),
+                        key=lambda pair: (ts_key((pair[1] or {}).get("ts")), pair[0]),
+                    )
+                ]
+
         bundle_ids: List[str] = []
         seen_bundle_ids = set()
         for turn in (turns_map.get(tid) for tid in order):
@@ -2553,10 +2565,23 @@ class ContextRAGClient:
                 result["bundle_id"] = bundle_ids[0]
         return result
 
-    async def get_conversation_state(self, *, user_id: str, conversation_id: str) -> dict:
-        row = await self.idx.get_conversation_state_row(user_id=user_id, conversation_id=conversation_id)
+    async def get_conversation_state(
+            self,
+            *,
+            user_id: str,
+            conversation_id: str,
+            bundle_id: Optional[str] = None,
+            bundle_ids: Optional[Sequence[str]] = None,
+            missing_as_idle: bool = True,
+    ) -> Optional[dict]:
+        row = await self.idx.get_conversation_state_row(
+            user_id=user_id,
+            conversation_id=conversation_id,
+            bundle_id=bundle_id,
+            bundle_ids=bundle_ids,
+        )
         if not row:
-            return {"state": "idle", "updated_at": None, "meta": {}}
+            return {"state": "idle", "updated_at": None, "meta": {}} if missing_as_idle else None
         tags = set(row.get("tags") or [])
         state = "idle"
         for t in tags:
@@ -2643,6 +2668,7 @@ class ContextRAGClient:
             conversation_id: str,
             user_type: str,
             bundle_id: Optional[str] = None,
+            bundle_ids: Optional[Sequence[str]] = None,
             fingerprint: Optional[str] = None,
     ) -> Dict[str, int]:
         """
@@ -2665,6 +2691,7 @@ class ContextRAGClient:
             user_id=user_id,
             conversation_id=conversation_id,
             bundle_id=bundle_id,
+            bundle_ids=bundle_ids,
         )
 
         # 2) Delete blobs from storage
