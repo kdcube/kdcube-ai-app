@@ -30,6 +30,8 @@ assembled each turn.
    - Appended via `ContextBrowser.contribute(...)` and persisted into the turn log.
    - May also receive live external user contributions from the shared external-event source
      while the turn is active.
+   - May contain multiple `assistant.completion` blocks in one turn when later reactive events
+     extend the same turn after an earlier visible completion attempt.
 
 4) **Sources pool block** (optional)
    - Only included if `timeline.render(include_sources=True)`.
@@ -107,6 +109,7 @@ All paths use a concrete `turn_id` and standard `tool_call_id` (always `tc_<id>`
 
 - `ar:<turn_id>.user.prompt`
 - `ar:<turn_id>.assistant.completion`
+- `ar:<turn_id>.assistant.completion.<n>`
 - `ar:<turn_id>.react.notes.<tool_call_id>`
 - `ar:<turn_id>.react.note.preserved.<idx>`
 - `fi:<turn_id>.user.attachments/<name>`
@@ -156,6 +159,8 @@ logical_path: so:sources_pool[1-5]
 Notes:
 - Artifact‑producing tools render **summary + artifact** blocks.
 - Non‑artifact tools render a single `.result` block with `logical_path`.
+- `ar:<turn_id>.assistant.completion` is always the latest completion alias for that turn.
+  Earlier visible completions use `ar:<turn_id>.assistant.completion.<n>`.
 - For file artifacts, the content block uses `fi:<turn_id>.files/...`; hosted metadata stays in `meta`.
 - Feedback updates are fetched **only at turn start** (timeline load). If cache is cold, they are injected
   into the target turn and still announced once with “(incorporated into turn timeline)”.

@@ -32,6 +32,7 @@ This design is now implemented in the current React runtime with these concrete 
 - the active React turn acquires a fenced owner lease and listens to that source live
 - `followup` is folded into the current turn and can trigger another decision round before completion
 - a consumed live `followup` also mints extra iteration credit for that same turn, capped by runtime configuration, so additive followups do not exhaust the original fixed loop budget
+- if the user already saw a completion before a new `followup` arrived, that visible completion remains part of the same turn history; later completions are additive, not replacement-only
 - `steer` is folded into the current turn and acts as a control interrupt
 - a consumed steer first interrupts the active generation or cancellable tool phase when possible
 - React then re-enters with the steer already on the current turn timeline and gets a short bounded finalize window
@@ -41,6 +42,7 @@ Current boundary:
 - steer interruption is immediate for the active decision phase task
 - steer interruption is immediate for cancellable exec/tool phases that already honor task cancellation
 - a fully blocking tool that does not cooperate with cancellation can still delay final stop until its await boundary
+- idle arbitrary authored events that do not open React are still a future slice; current implementation here is specifically `followup` / `steer`
 
 ## 1. Problem
 
@@ -342,11 +344,11 @@ Recommended block example:
   "turn_id": active_turn_id,
   "ts": "...",
   "mime": "application/json",
-  "path": "ar:turn_123.external.followup.evt_abc",
+  "path": "ar:turn_123.external.followup.mabc123",
   "text": "{\"message\": \"also include the legal cases\", ...}",
   "meta": {
     "event_kind": "followup",
-    "message_id": "evt_abc",
+    "message_id": "mabc123",
     "sequence": 123,
     "target_turn_id": "turn_122",
     "active_turn_id_at_ingress": "turn_123",
@@ -354,6 +356,15 @@ Recommended block example:
   }
 }
 ```
+
+If the event carries attachments, their canonical paths are message-owned:
+
+- `fi:<turn_id>.external.followup.attachments/<message_id>/<filename>`
+
+Transport rule:
+
+- the live event carries only hosted reference metadata for attachments
+- the receiver hydrates readable text/PDF/image content from hosting when folding the event into the timeline
 
 Rendering rule:
 
@@ -576,8 +587,8 @@ Needed behavior:
 
 Current files:
 
-- `apps/chat/sdk/solutions/react/v2/browser.py`
-- `apps/chat/sdk/solutions/react/v2/timeline.py`
+- `apps/chat/sdk/solutions/react/browser.py`
+- `apps/chat/sdk/solutions/react/timeline.py`
 
 Needed behavior:
 

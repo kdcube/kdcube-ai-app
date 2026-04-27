@@ -514,237 +514,14 @@ async def process_chat_message(
         ),
     )
 
-    # --- Conversation lock + state ---
-    try:
-        conv_exists = await app.state.conversation_browser.conversation_exists(
-            user_id=payload.user.user_id,
-            conversation_id=conversation_id,
-            bundle_id=payload.routing.bundle_id,
-        )
+    async def _host_message_attachments(
+        *,
+        storage_turn_id: str,
+        rollback_conversation_state: bool,
+    ) -> Optional[IngressResult]:
+        if not raw_attachments:
+            return None
 
-        set_res = await app.state.conversation_browser.set_conversation_state(
-            tenant=payload.actor.tenant_id,
-            project=payload.actor.project_id,
-            user_id=payload.user.user_id,
-            conversation_id=payload.routing.conversation_id,
-            new_state="in_progress",
-            by_instance=ingress.instance_id,
-            request_id=request_id,
-            last_turn_id=payload.routing.turn_id,
-            require_not_in_progress=True,
-            user_type=payload.user.user_type,
-            bundle_id=payload.routing.bundle_id,
-        )
-    except Exception as e:
-        conv_state_update_error = f"conversation state update failed: {e}"
-        logger.error(conv_state_update_error)
-        conv_exists = True
-        set_res = {"ok": False,
-                   "error": conv_state_update_error,
-                   "updated_at": _iso(),
-                   "current_turn_id": turn_id,
-                   "error_type": "conversation_state_update_error"
-                   }
-
-    if not set_res.get("ok", True):
-        active_turn = set_res.get("current_turn_id")
-        error = set_res.get("error") or "Conversation is busy (another tab/process is answering)."
-        error_type = set_res.get("error_type") or "conversation_busy"
-        if error_type == "conversation_busy":
-            try:
-                continuation_kind, continuation_explicit = _resolve_requested_continuation_kind(
-                    message_data,
-                    conversation_busy=True,
-                )
-                payload.continuation = ChatTaskContinuation(
-                    kind=continuation_kind,
-                    explicit=continuation_explicit,
-                    target_turn_id=target_turn_id,
-                    active_turn_id=active_turn,
-                )
-                external_event_source = None
-                redis_async = getattr(app.state, "redis_async", None)
-                if redis_async is not None:
-                    external_event_source = build_conversation_external_event_source(
-                        redis=redis_async,
-                        tenant=tenant_id,
-                        project=project_id,
-                        conversation_id=conversation_id,
-                    )
-                owner = await external_event_source.get_owner() if external_event_source is not None else None
-                owner_turn_id = str(owner.turn_id or "").strip() if owner else ""
-                if external_event_source is not None:
-                    env = await external_event_source.publish(
-                        kind=continuation_kind,
-                        explicit=continuation_explicit,
-                        target_turn_id=target_turn_id,
-                        active_turn_id_at_ingress=active_turn,
-                        owner_turn_id=owner_turn_id,
-                        source=f"ingress.{ingress.transport}",
-                        text=text,
-                        payload={"message": text},
-                        task_payload=payload.model_dump(),
-                    )
-                    logger.info(
-                        "[ingress.external] published continuation conversation=%s kind=%s event_id=%s seq=%s active_turn=%s owner_turn=%s target_turn=%s live_owner=%s text=%r",
-                        conversation_id,
-                        continuation_kind,
-                        env.message_id,
-                        env.sequence,
-                        active_turn,
-                        owner_turn_id,
-                        target_turn_id,
-                        bool(owner_turn_id and active_turn and owner_turn_id == str(active_turn)),
-                        (text or "")[:160],
-                    )
-                    try:
-                        if owner_turn_id and active_turn and owner_turn_id == str(active_turn):
-                            await comm.service_event(
-                                type="timeline.external.accepted",
-                                step="timeline.external",
-                                status="completed",
-                                title="External timeline event accepted",
-                                agent="ingress",
-                                data={
-                                    "message_kind": continuation_kind,
-                                    "active_turn_id": active_turn,
-                                    "event_id": env.message_id,
-                                    "event_sequence": env.sequence,
-                                    "target_turn_id": target_turn_id,
-                                    "live_owner_detected": True,
-                                },
-                            )
-                        else:
-                            await comm.service_event(
-                                type="queue.continuation.accepted",
-                                step="queue.continuation",
-                                status="completed",
-                                title="Continuation accepted",
-                                agent="ingress",
-                                data={
-                                    "message_kind": continuation_kind,
-                                    "active_turn_id": active_turn,
-                                    "queued_turn_id": payload.routing.turn_id,
-                                    "task_id": payload.meta.task_id,
-                                    "continuation_message_id": env.message_id,
-                                    "external_event_sequence": env.sequence,
-                                    "live_owner_detected": False,
-                                },
-                            )
-                    except Exception:
-                        logger.debug("Failed to emit external continuation accepted", exc_info=True)
-                    return IngressResult(
-                        ok=True,
-                        task_id=task_id,
-                        conversation_id=conversation_id,
-                        turn_id=turn_id,
-                        session_id=session.session_id,
-                        user_type=session.user_type.value,
-                        queue_stats={
-                            "external_event_sequence": env.sequence,
-                            "live_owner_detected": bool(owner_turn_id and active_turn and owner_turn_id == str(active_turn)),
-                        },
-                        reason=f"{continuation_kind}_accepted",
-                        continuation_kind=continuation_kind,
-                    )
-                continuation_source = RedisConversationContinuationSource(
-                    redis=getattr(app.state, "redis_async", None),
-                    tenant=tenant_id,
-                    project=project_id,
-                    conversation_id=conversation_id,
-                )
-                env = await continuation_source.publish(
-                    payload,
-                    kind=continuation_kind,
-                    explicit=continuation_explicit,
-                    target_turn_id=target_turn_id,
-                    active_turn_id=active_turn,
-                )
-                queue_size = await continuation_source.pending_count()
-                try:
-                    await comm.service_event(
-                        type="queue.continuation.accepted",
-                        step="queue.continuation",
-                        status="completed",
-                        title="Continuation accepted",
-                        agent="ingress",
-                        data={
-                            "message_kind": continuation_kind,
-                            "active_turn_id": active_turn,
-                            "queued_turn_id": payload.routing.turn_id,
-                            "task_id": payload.meta.task_id,
-                            "continuation_queue_size": queue_size,
-                            "continuation_message_id": env.message_id,
-                        },
-                    )
-                except Exception:
-                    logger.debug("Failed to emit continuation accepted service event", exc_info=True)
-                return IngressResult(
-                    ok=True,
-                    task_id=task_id,
-                    conversation_id=conversation_id,
-                    turn_id=turn_id,
-                    session_id=session.session_id,
-                    user_type=session.user_type.value,
-                    queue_stats={"continuation_queue_size": queue_size},
-                    reason=f"{continuation_kind}_accepted",
-                    continuation_kind=continuation_kind,
-                )
-            except Exception:
-                logger.exception("Failed to store continuation message for conversation %s", conversation_id)
-        try:
-            await chat_comm.emit_conv_status(
-                svc,
-                conv,
-                routing,
-                state="in_progress",
-                updated_at=set_res.get("updated_at", _iso()),
-                current_turn_id=active_turn,
-                target_sid=ingress.stream_id,
-            )
-            await chat_comm.emit_error(
-                svc,
-                conv,
-                error=error,
-                target_sid=ingress.stream_id,
-                session_id=payload.routing.session_id,
-            )
-        except Exception:
-            pass
-
-        return IngressResult(
-            ok=False,
-            error_type=error_type,
-            error=error,
-            http_status=409,
-        )
-
-    # Emit conv_status created / in_progress
-    try:
-        if not conv_exists:
-            # broadcast. client can update the conversation list
-            await chat_comm.emit_conv_status(
-                svc,
-                conv,
-                routing,
-                state="created",
-                updated_at=set_res["updated_at"],
-                current_turn_id=payload.routing.turn_id,
-            )
-        # broadcast
-        await chat_comm.emit_conv_status(
-            svc,
-            conv,
-            routing,
-            state="in_progress",
-            updated_at=set_res["updated_at"],
-            current_turn_id=payload.routing.turn_id,
-        )
-    except Exception:
-        pass
-
-    # --- Attachments (host after lock; reject entire message on any failure) ---
-    if raw_attachments:
         store = getattr(app.state, "conversation_store", None)
         _av = get_settings().PLATFORM.HOSTED_SERVICES.AV
         enable_av = _av.APP_AV_SCAN
@@ -855,7 +632,7 @@ async def process_chat_message(
                         user=session.user_id,
                         fingerprint=session.fingerprint,
                         conversation_id=conversation_id,
-                        turn_id=turn_id,
+                        turn_id=storage_turn_id,
                         role="user",
                         filename=a.name or "file",
                         data=a.content,
@@ -880,7 +657,6 @@ async def process_chat_message(
                 })
 
         if attachment_errors:
-            # Best-effort cleanup for partially stored attachments in this turn
             if store:
                 try:
                     _, user_or_fp = store._who_and_id(session.user_id, session.fingerprint)
@@ -890,44 +666,37 @@ async def process_chat_message(
                         user_type=session.user_type.value,
                         user_or_fp=user_or_fp,
                         conversation_id=conversation_id,
-                        turn_id=turn_id,
+                        turn_id=storage_turn_id,
                     )
                 except Exception:
                     logger.exception("failed to cleanup attachments after failure")
-            # rollback state since nothing will process this turn
-            try:
-                res_reset = await app.state.conversation_browser.set_conversation_state(
-                    tenant=tenant_id,
-                    project=project_id,
-                    user_id=session.user_id,
-                    conversation_id=conversation_id,
-                    new_state="idle",
-                    by_instance=ingress.instance_id,
-                    request_id=request_id,
-                    last_turn_id=turn_id,
-                    require_not_in_progress=False,
-                    user_type=session.user_type.value,
-                    bundle_id=bundle_id,
-                )
-                await chat_comm.emit_conv_status(
-                    svc,
-                    conv,
-                    routing=routing,
-                    state="idle",
-                    updated_at=res_reset.get("updated_at", _iso()),
-                    current_turn_id=res_reset.get("current_turn_id"),
-                    completion="rollback",
-                    target_sid=ingress.stream_id,
-                )
-            except Exception:
-                logger.exception("failed to reset conv state after attachment failure")
-            # await chat_comm.emit_error(
-            #     svc,
-            #     conv,
-            #     error="Attachment rejected; message not processed.",
-            #     target_sid=ingress.stream_id,
-            #     session_id=session.session_id,
-            # )
+            if rollback_conversation_state:
+                try:
+                    res_reset = await app.state.conversation_browser.set_conversation_state(
+                        tenant=tenant_id,
+                        project=project_id,
+                        user_id=session.user_id,
+                        conversation_id=conversation_id,
+                        new_state="idle",
+                        by_instance=ingress.instance_id,
+                        request_id=request_id,
+                        last_turn_id=turn_id,
+                        require_not_in_progress=False,
+                        user_type=session.user_type.value,
+                        bundle_id=bundle_id,
+                    )
+                    await chat_comm.emit_conv_status(
+                        svc,
+                        conv,
+                        routing=routing,
+                        state="idle",
+                        updated_at=res_reset.get("updated_at", _iso()),
+                        current_turn_id=res_reset.get("current_turn_id"),
+                        completion="rollback",
+                        target_sid=ingress.stream_id,
+                    )
+                except Exception:
+                    logger.exception("failed to reset conv state after attachment failure")
             return IngressResult(
                 ok=False,
                 error_type="attachment_rejected",
@@ -954,6 +723,258 @@ async def process_chat_message(
                 )
             except Exception:
                 logger.exception("failed to emit attachments step")
+
+        return None
+
+    # --- Conversation lock + state ---
+    try:
+        conv_exists = await app.state.conversation_browser.conversation_exists(
+            user_id=payload.user.user_id,
+            conversation_id=conversation_id,
+            bundle_id=payload.routing.bundle_id,
+        )
+
+        set_res = await app.state.conversation_browser.set_conversation_state(
+            tenant=payload.actor.tenant_id,
+            project=payload.actor.project_id,
+            user_id=payload.user.user_id,
+            conversation_id=payload.routing.conversation_id,
+            new_state="in_progress",
+            by_instance=ingress.instance_id,
+            request_id=request_id,
+            last_turn_id=payload.routing.turn_id,
+            require_not_in_progress=True,
+            user_type=payload.user.user_type,
+            bundle_id=payload.routing.bundle_id,
+        )
+    except Exception as e:
+        conv_state_update_error = f"conversation state update failed: {e}"
+        logger.error(conv_state_update_error)
+        conv_exists = True
+        set_res = {"ok": False,
+                   "error": conv_state_update_error,
+                   "updated_at": _iso(),
+                   "current_turn_id": turn_id,
+                   "error_type": "conversation_state_update_error"
+                   }
+
+    if not set_res.get("ok", True):
+        active_turn = set_res.get("current_turn_id")
+        error = set_res.get("error") or "Conversation is busy (another tab/process is answering)."
+        error_type = set_res.get("error_type") or "conversation_busy"
+        if error_type == "conversation_busy":
+            try:
+                continuation_kind, continuation_explicit = _resolve_requested_continuation_kind(
+                    message_data,
+                    conversation_busy=True,
+                )
+                payload.continuation = ChatTaskContinuation(
+                    kind=continuation_kind,
+                    explicit=continuation_explicit,
+                    target_turn_id=target_turn_id,
+                    active_turn_id=active_turn,
+                )
+                external_event_source = None
+                redis_async = getattr(app.state, "redis_async", None)
+                if redis_async is not None:
+                    external_event_source = build_conversation_external_event_source(
+                        redis=redis_async,
+                        tenant=tenant_id,
+                        project=project_id,
+                        conversation_id=conversation_id,
+                    )
+                owner = await external_event_source.get_owner() if external_event_source is not None else None
+                owner_turn_id = str(owner.turn_id or "").strip() if owner else ""
+                if external_event_source is not None:
+                    storage_turn_id = str(active_turn or target_turn_id or turn_id or "").strip() or turn_id
+                    attachment_result = await _host_message_attachments(
+                        storage_turn_id=storage_turn_id,
+                        rollback_conversation_state=False,
+                    )
+                    if attachment_result is not None:
+                        return attachment_result
+                    env = await external_event_source.publish(
+                        kind=continuation_kind,
+                        explicit=continuation_explicit,
+                        target_turn_id=target_turn_id,
+                        active_turn_id_at_ingress=active_turn,
+                        owner_turn_id=owner_turn_id,
+                        source=f"ingress.{ingress.transport}",
+                        text=text,
+                        payload={"message": text},
+                        task_payload=payload.model_dump(),
+                    )
+                    logger.info(
+                        "[ingress.external] published continuation conversation=%s kind=%s event_id=%s seq=%s active_turn=%s owner_turn=%s target_turn=%s live_owner=%s text=%r",
+                        conversation_id,
+                        continuation_kind,
+                        env.message_id,
+                        env.sequence,
+                        active_turn,
+                        owner_turn_id,
+                        target_turn_id,
+                        bool(owner_turn_id and active_turn and owner_turn_id == str(active_turn)),
+                        (text or "")[:160],
+                    )
+                    try:
+                        if owner_turn_id and active_turn and owner_turn_id == str(active_turn):
+                            await comm.service_event(
+                                type="timeline.external.accepted",
+                                step="timeline.external",
+                                status="completed",
+                                title="External timeline event accepted",
+                                agent="ingress",
+                                data={
+                                    "message_kind": continuation_kind,
+                                    "active_turn_id": active_turn,
+                                    "event_id": env.message_id,
+                                    "event_sequence": env.sequence,
+                                    "target_turn_id": target_turn_id,
+                                    "live_owner_detected": True,
+                                },
+                            )
+                        else:
+                            await comm.service_event(
+                                type="queue.continuation.accepted",
+                                step="queue.continuation",
+                                status="completed",
+                                title="Continuation accepted",
+                                agent="ingress",
+                                data={
+                                    "message_kind": continuation_kind,
+                                    "active_turn_id": active_turn,
+                                    "queued_turn_id": payload.routing.turn_id,
+                                    "task_id": payload.meta.task_id,
+                                    "continuation_message_id": env.message_id,
+                                    "external_event_sequence": env.sequence,
+                                    "live_owner_detected": False,
+                                },
+                            )
+                    except Exception:
+                        logger.debug("Failed to emit external continuation accepted", exc_info=True)
+                    return IngressResult(
+                        ok=True,
+                        task_id=task_id,
+                        conversation_id=conversation_id,
+                        turn_id=turn_id,
+                        session_id=session.session_id,
+                        user_type=session.user_type.value,
+                        queue_stats={
+                            "external_event_sequence": env.sequence,
+                            "live_owner_detected": bool(owner_turn_id and active_turn and owner_turn_id == str(active_turn)),
+                        },
+                        reason=f"{continuation_kind}_accepted",
+                        continuation_kind=continuation_kind,
+                    )
+                continuation_source = RedisConversationContinuationSource(
+                    redis=getattr(app.state, "redis_async", None),
+                    tenant=tenant_id,
+                    project=project_id,
+                    conversation_id=conversation_id,
+                )
+                attachment_result = await _host_message_attachments(
+                    storage_turn_id=turn_id,
+                    rollback_conversation_state=False,
+                )
+                if attachment_result is not None:
+                    return attachment_result
+                env = await continuation_source.publish(
+                    payload,
+                    kind=continuation_kind,
+                    explicit=continuation_explicit,
+                    target_turn_id=target_turn_id,
+                    active_turn_id=active_turn,
+                )
+                queue_size = await continuation_source.pending_count()
+                try:
+                    await comm.service_event(
+                        type="queue.continuation.accepted",
+                        step="queue.continuation",
+                        status="completed",
+                        title="Continuation accepted",
+                        agent="ingress",
+                        data={
+                            "message_kind": continuation_kind,
+                            "active_turn_id": active_turn,
+                            "queued_turn_id": payload.routing.turn_id,
+                            "task_id": payload.meta.task_id,
+                            "continuation_queue_size": queue_size,
+                            "continuation_message_id": env.message_id,
+                        },
+                    )
+                except Exception:
+                    logger.debug("Failed to emit continuation accepted service event", exc_info=True)
+                return IngressResult(
+                    ok=True,
+                    task_id=task_id,
+                    conversation_id=conversation_id,
+                    turn_id=turn_id,
+                    session_id=session.session_id,
+                    user_type=session.user_type.value,
+                    queue_stats={"continuation_queue_size": queue_size},
+                    reason=f"{continuation_kind}_accepted",
+                    continuation_kind=continuation_kind,
+                )
+            except Exception:
+                logger.exception("Failed to store continuation message for conversation %s", conversation_id)
+        try:
+            await chat_comm.emit_conv_status(
+                svc,
+                conv,
+                routing,
+                state="in_progress",
+                updated_at=set_res.get("updated_at", _iso()),
+                current_turn_id=active_turn,
+                target_sid=ingress.stream_id,
+            )
+            await chat_comm.emit_error(
+                svc,
+                conv,
+                error=error,
+                target_sid=ingress.stream_id,
+                session_id=payload.routing.session_id,
+            )
+        except Exception:
+            pass
+
+        return IngressResult(
+            ok=False,
+            error_type=error_type,
+            error=error,
+            http_status=409,
+        )
+
+    # Emit conv_status created / in_progress
+    try:
+        if not conv_exists:
+            # broadcast. client can update the conversation list
+            await chat_comm.emit_conv_status(
+                svc,
+                conv,
+                routing,
+                state="created",
+                updated_at=set_res["updated_at"],
+                current_turn_id=payload.routing.turn_id,
+            )
+        # broadcast
+        await chat_comm.emit_conv_status(
+            svc,
+            conv,
+            routing,
+            state="in_progress",
+            updated_at=set_res["updated_at"],
+            current_turn_id=payload.routing.turn_id,
+        )
+    except Exception:
+        pass
+
+    # --- Attachments (host after lock; reject entire message on any failure) ---
+    attachment_result = await _host_message_attachments(
+        storage_turn_id=turn_id,
+        rollback_conversation_state=True,
+    )
+    if attachment_result is not None:
+        return attachment_result
 
     # --- Enqueue ---
     enqueue_started_at = time.monotonic()
@@ -1124,32 +1145,46 @@ async def get_conversation_status(
     Shared implementation for conv_status.get for SSE + WS.
     """
     reg = await _load_registry_from_redis(app, tenant, project)
+    allowed_bundle_ids = list((getattr(reg, "bundles", None) or {}).keys())
+    if not allowed_bundle_ids:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    if bundle_id and bundle_id not in allowed_bundle_ids:
+        raise HTTPException(status_code=404, detail="Conversation not found")
     conv_id = conversation_id or session.session_id
     row = None
     try:
         row = await app.state.conversation_browser.idx.get_conversation_state_row(
             user_id=session.user_id,
             conversation_id=conv_id,
+            bundle_ids=[bundle_id] if bundle_id else allowed_bundle_ids,
         )
     except Exception as e:
         logger.error("conv_status lookup failed user=%s conv=%s: %s", session.user_id, conv_id, e)
 
     if not row:
-        state = "idle"
-        updated_at = _iso()
-        current_turn_id = None
+        exists = False
+        try:
+            exists = await app.state.conversation_browser.conversation_exists(
+                user_id=session.user_id,
+                conversation_id=conv_id,
+                bundle_ids=[bundle_id] if bundle_id else allowed_bundle_ids,
+            )
+        except Exception as e:
+            logger.error("conv_status existence fallback failed user=%s conv=%s: %s", session.user_id, conv_id, e)
+        if not exists:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        row = {}
+    tags = row.get("tags", [])
+    if "conv.state:in_progress" in tags:
+        state = "in_progress"
+    elif "conv.state:error" in tags:
+        state = "error"
     else:
-        tags = row.get("tags", [])
-        if "conv.state:in_progress" in tags:
-            state = "in_progress"
-        elif "conv.state:error" in tags:
-            state = "error"
-        else:
-            state = "idle"
-        ts = row.get("ts")
-        updated_at = ts.isoformat() + "Z" if ts else _iso()
-        payload_row = row.get("payload") or {}
-        current_turn_id = payload_row.get("last_turn_id")
+        state = "idle"
+    ts = row.get("ts")
+    updated_at = ts.isoformat() + "Z" if ts else _iso()
+    payload_row = row.get("payload") or {}
+    current_turn_id = payload_row.get("last_turn_id")
     if publish:
         if not reg:
             logger.warning(

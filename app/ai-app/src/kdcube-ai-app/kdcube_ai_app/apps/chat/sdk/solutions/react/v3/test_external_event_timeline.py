@@ -65,6 +65,15 @@ class _FakeRedis:
 
 
 class _FakeCtxClient:
+    class _Store:
+        async def get_blob_bytes(self, uri_or_path):
+            if uri_or_path == "s3://bucket/brief.txt":
+                return b"attachment text from followup"
+            raise FileNotFoundError(uri_or_path)
+
+    def __init__(self):
+        self.store = self._Store()
+
     async def recent(self, *args, **kwargs):
         return {"items": []}
 
@@ -97,7 +106,6 @@ async def test_browser_folds_external_events_into_history_and_current_turn(tmp_p
                         {
                             "filename": "brief.txt",
                             "mime": "text/plain",
-                            "text": "attachment text from followup",
                             "hosted_uri": "s3://bucket/brief.txt",
                         }
                     ]
@@ -144,7 +152,7 @@ async def test_browser_folds_external_events_into_history_and_current_turn(tmp_p
         assert any(
             b.get("type") == "user.attachment.meta"
             and b.get("turn_id") == "turn_old"
-            and ".external.followup." in str(b.get("path") or "")
+            and ".external.followup.attachments/" in str(b.get("path") or "")
             for b in history_blocks
         )
         assert any(

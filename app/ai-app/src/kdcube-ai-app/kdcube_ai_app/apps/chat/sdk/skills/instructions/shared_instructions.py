@@ -118,6 +118,8 @@ EXTERNAL_TURN_EVENTS_GUIDE = """
 - Treat them as high-priority user intent updates.
 - `followup` means: the user added more input while you were already working. Fold it into the current objective and continue with the SAME turn.
 - `steer` means: the user wants to redirect or stop the current line of work. Treat it as authoritative latest intent. Do not continue the previous plan blindly.
+- Same-turn reactive events may produce another visible `assistant.completion` in the SAME turn.
+- `ar:<turn_id>.assistant.completion` means the latest completion in that turn. Earlier visible completions use `ar:<turn_id>.assistant.completion.<n>`.
 - If a steer arrives without extra text, assume the user wants the current work stopped and wrapped up at the next safe point with the progress made so far.
 - Engineering may already interrupt an in-flight generation or tool when steer arrives. If you now see a steer block, treat yourself as being in a short finalize phase, not in normal open-ended exploration.
 - In that finalize phase, wrap up briefly from the progress already made. Avoid restarting broad exploration or long new work unless absolutely unavoidable.
@@ -228,7 +230,7 @@ VISIBLE / ADDRESSABLE WORKSPACE MODEL
 - Pulling a folder/slice is supported ONLY for `fi:<turn_id>.files/<scope-or-subtree>`.
 - Pulling `fi:<turn_id>.outputs/...` is allowed only as an EXACT file ref.
 - In this CUSTOM mode, folder pulls are resolved from conversation artifact history / hosting-backed snapshot state, not from git.
-- Pulling `fi:<turn_id>.user.attachments/...` or `fi:<turn_id>.attachments/...` is allowed only as an EXACT file ref. Do not expect binary descendants to appear automatically when you pull a folder.
+- Pulling `fi:<turn_id>.user.attachments/...`, `fi:<turn_id>.external.<kind>.attachments/<message_id>/...`, or legacy `fi:<turn_id>.attachments/...` is allowed only as an EXACT file ref. Do not expect binary descendants to appear automatically when you pull a folder.
 - If you need a binary file from hosting (xlsx, pptx, pdf, image, zip, etc.), name that exact `fi:` file in `react.pull`.
 - `react.pull(...)` is for historical side materialization only. Pulled content stays under its historical turn root and should be treated as readonly reference material.
 - Use `react.checkout(mode="replace", paths=[...])` when the active current-turn workspace itself must contain a runnable/searchable/testable project snapshot under `turn_<current_turn>/files/...`.
@@ -238,6 +240,7 @@ VISIBLE / ADDRESSABLE WORKSPACE MODEL
 - After `react.pull`, the materialized local paths are available under OUT_DIR using their physical form, for example:
   - `turn_123/files/projectA/src/app.py`
   - `turn_123/attachments/template.xlsx`
+  - `turn_123/external/followup/attachments/mabc123/brief.pdf`
 - `react.read` still works on logical paths. Use it to inspect text context. Use `react.pull` when execution/code needs the local file.
 - Exec/code and historical cross-turn patching do NOT auto-materialize old files for you. If a historical file is not already local, `react.pull(...)` must happen first.
 - Write durable project/workspace state only to the current turn `files/` namespace.
@@ -296,7 +299,7 @@ VISIBLE / ADDRESSABLE WORKSPACE MODEL
 - Pulling a folder/slice is supported ONLY for `fi:<turn_id>.files/<scope-or-subtree>`.
 - In this GIT mode, `fi:<turn_id>.files/...` resolves against the conversation's git-backed workspace lineage snapshot for that version.
 - Pulling `fi:<turn_id>.outputs/...` is allowed only as an EXACT file ref and is always resolved through hosted/custom artifact history, not git.
-- Pulling `fi:<turn_id>.user.attachments/...` or `fi:<turn_id>.attachments/...` is allowed only as an EXACT file ref. Do not expect binary descendants to appear automatically when you pull a folder.
+- Pulling `fi:<turn_id>.user.attachments/...`, `fi:<turn_id>.external.<kind>.attachments/<message_id>/...`, or legacy `fi:<turn_id>.attachments/...` is allowed only as an EXACT file ref. Do not expect binary descendants to appear automatically when you pull a folder.
 - If you need a binary file from hosting (xlsx, pptx, pdf, image, zip, etc.), name that exact `fi:` file in `react.pull`.
 - The current turn root `turn_<current_turn>/` is bootstrapped as a local git repo in OUT_DIR.
 - The repo root path is `Path(OUTPUT_DIR) / "turn_<current_turn>"`.
@@ -331,6 +334,7 @@ VISIBLE / ADDRESSABLE WORKSPACE MODEL
 - After `react.pull`, the materialized local paths are available under OUT_DIR using their physical form, for example:
   - `turn_123/files/projectA/src/app.py`
   - `turn_123/attachments/template.xlsx`
+  - `turn_123/external/followup/attachments/mabc123/brief.pdf`
 - `react.read` still works on logical paths. Use it to inspect text context. Use `react.pull` when execution/code needs the local file.
 - Write durable project/workspace state only to the current turn `files/` namespace. Older pulled versions are local readonly inputs unless you copy/regenerate content into the current turn.
 - Use `outputs/<scope>/<path>` for reports, test results, exports, and other produced artifacts that should NOT become workspace history or git lineage state.
@@ -388,7 +392,9 @@ Physical → Logical mapping:
 - Assistant completion:
   physical: (none)
   logical : ar:<turn_id>.assistant.completion
-  meaning : full text of the assistant completion in that turn
+  meaning : full text of the latest assistant completion in that turn
+  note    : earlier visible completions, if any, use ar:<turn_id>.assistant.completion.<n>
+  note    : one turn may contain multiple visible assistant completions
 - Plan latest snapshot alias:
   physical: (none)
   logical : ar:plan.latest:<plan_id>
@@ -397,6 +403,10 @@ Physical → Logical mapping:
   physical: <turn_id>/attachments/<name>
   logical : fi:<turn_id>.user.attachments/<name>
   meaning : user-provided file artifact from that turn
+- External event attachment:
+  physical: <turn_id>/external/<kind>/attachments/<message_id>/<name>
+  logical : fi:<turn_id>.external.<kind>.attachments/<message_id>/<name>
+  meaning : attachment introduced by a live external event in that turn
 - File artifact (from tools):
   physical: <turn_id>/files/<relpath>
   logical : fi:<turn_id>.files/<relpath>
@@ -448,11 +458,13 @@ PATHS_EXTENDED_GUIDE = """
 #### Supported context paths
 - Messages:
     - `ar:<turn_id>.user.prompt` (brings full text content of the user prompt in that turn)
-    - `ar:<turn_id>.assistant.completion` (brings full text content of the assistant completion in that turn)
+    - `ar:<turn_id>.assistant.completion` (brings full text content of the latest assistant completion in that turn)
+    - `ar:<turn_id>.assistant.completion.<n>` (brings full text content of an earlier visible assistant completion in that same turn)
     - `ar:plan.latest:<plan_id>` (brings the latest snapshot of that plan lineage into visible context)
 - User attachments:
     - `fi:<turn_id>.user.attachments/<attachment_filepath>` (brings full text content of this file if this is text file.
       For pdf/image files, they will be attached as multimodal attachments. Filepath can be / and . delimited. relative path)
+    - `fi:<turn_id>.external.<kind>.attachments/<message_id>/<attachment_filepath>` (same rules; live events store only hosted references and the receiver hydrates readable content from hosting when the timeline is built)
       Other binary files such as xlsx/xls/pptx/docx are not decoded by `react.read`; inspect them with code and exec tool
       using the physical OUTPUT_DIR path and format-appropriate code when possible.
 - Files produced by react in that turn:

@@ -172,6 +172,7 @@ Examples:
 
 - `ar:<turn_id>.user.prompt`
 - `ar:<turn_id>.assistant.completion`
+- `ar:<turn_id>.assistant.completion.<n>`
 - `ar:plan.latest:<plan_id>`
 - `fi:<turn_id>.files/<path>`
 - `fi:<turn_id>.outputs/<path>`
@@ -496,6 +497,8 @@ So memsearch is:
 
 - indexed semantic memory lookup first
 - exact turn-snippet reconstruction second
+- assistant hits can return multiple visible `assistant.completion` snippets from one matched turn
+- attachment hits can return both original turn attachments and external followup attachment paths
 
 ### `react.search_files`
 

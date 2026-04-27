@@ -9,6 +9,7 @@ import base64
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, List
+import re
 
 from kdcube_ai_app.apps.chat.sdk.util import _truncate, token_count
 import kdcube_ai_app.apps.chat.sdk.tools.tools_insights as tools_insights
@@ -17,6 +18,53 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.common import tc_result_p
 ARTIFACT_NAMESPACE_FILES = "files"
 ARTIFACT_NAMESPACE_OUTPUTS = "outputs"
 ARTIFACT_NAMESPACE_ATTACHMENTS = "attachments"
+ARTIFACT_EXTERNAL_PREFIX = "external/"
+_EXTERNAL_LOGICAL_RE = re.compile(
+    r"^(?P<turn>turn_[^.]+)\.external\.(?P<kind>[^.]+)\.attachments/(?P<message_id>[^/]+)/(?P<rel>.+)$"
+)
+_EXTERNAL_LOGICAL_LEGACY_RE = re.compile(
+    r"^(?P<turn>turn_[^.]+)\.external\.(?P<kind>[^.]+)\.(?P<message_id>[^.]+)\.attachments/(?P<rel>.+)$"
+)
+_EXTERNAL_PHYSICAL_RE = re.compile(
+    r"^(?P<turn>turn_[^/]+)/external/(?P<kind>[^/]+)/attachments/(?P<message_id>[^/]+)/(?P<rel>.+)$"
+)
+_EXTERNAL_PHYSICAL_LEGACY_RE = re.compile(
+    r"^(?P<turn>turn_[^/]+)/external/(?P<kind>[^/]+)/(?P<message_id>[^/]+)/attachments/(?P<rel>.+)$"
+)
+
+
+def _split_external_attachment_rel(relpath: str) -> tuple[str, str, str]:
+    rel = (relpath or "").strip().lstrip("/")
+    if not rel.startswith(ARTIFACT_EXTERNAL_PREFIX):
+        return "", "", ""
+    parts = [part for part in rel.split("/") if part]
+    if len(parts) >= 5 and parts[0] == "external" and parts[2] == "attachments":
+        kind = parts[1]
+        message_id = parts[3]
+        file_rel = "/".join(parts[4:])
+        if kind and message_id and file_rel:
+            return kind, message_id, file_rel
+    if len(parts) >= 5 and parts[0] == "external" and parts[3] == "attachments":
+        kind = parts[1]
+        message_id = parts[2]
+        file_rel = "/".join(parts[4:])
+        if kind and message_id and file_rel:
+            return kind, message_id, file_rel
+    return "", "", ""
+
+
+def build_external_attachment_physical_path(*, turn_id: str, kind: str, message_id: str, relpath: str) -> str:
+    rel = (relpath or "").strip().lstrip("/")
+    if not turn_id or not kind or not message_id or not rel:
+        return ""
+    return f"{turn_id}/external/{kind}/attachments/{message_id}/{rel}"
+
+
+def build_external_attachment_logical_path(*, turn_id: str, kind: str, message_id: str, relpath: str) -> str:
+    rel = (relpath or "").strip().lstrip("/")
+    if not turn_id or not kind or not message_id or not rel:
+        return ""
+    return f"fi:{turn_id}.external.{kind}.attachments/{message_id}/{rel}"
 
 
 def _is_safe_outdir_relpath(path_value: str) -> bool:
@@ -35,6 +83,15 @@ def build_physical_artifact_path(*, turn_id: str, namespace: str, relpath: str) 
     rel = (relpath or "").strip().lstrip("/")
     if not turn_id or not namespace or not rel:
         return ""
+    if namespace == ARTIFACT_NAMESPACE_ATTACHMENTS:
+        kind, message_id, event_rel = _split_external_attachment_rel(rel)
+        if kind and message_id and event_rel:
+            return build_external_attachment_physical_path(
+                turn_id=turn_id,
+                kind=kind,
+                message_id=message_id,
+                relpath=event_rel,
+            )
     return f"{turn_id}/{namespace}/{rel}"
 
 
@@ -47,6 +104,14 @@ def build_logical_artifact_path(*, turn_id: str, namespace: str, relpath: str) -
     if namespace == ARTIFACT_NAMESPACE_OUTPUTS:
         return f"fi:{turn_id}.outputs/{rel}"
     if namespace == ARTIFACT_NAMESPACE_ATTACHMENTS:
+        kind, message_id, event_rel = _split_external_attachment_rel(rel)
+        if kind and message_id and event_rel:
+            return build_external_attachment_logical_path(
+                turn_id=turn_id,
+                kind=kind,
+                message_id=message_id,
+                relpath=event_rel,
+            )
         return f"fi:{turn_id}.user.attachments/{rel}"
     return ""
 
@@ -55,6 +120,14 @@ def split_physical_artifact_path(path_value: str) -> tuple[str, str, str]:
     raw = (path_value or "").strip().lstrip("/")
     if not raw or not raw.startswith("turn_"):
         return "", "", ""
+    match = _EXTERNAL_PHYSICAL_RE.match(raw) or _EXTERNAL_PHYSICAL_LEGACY_RE.match(raw)
+    if match:
+        turn_id = match.group("turn")
+        kind = match.group("kind")
+        message_id = match.group("message_id")
+        rel = match.group("rel")
+        if turn_id and kind and message_id and rel:
+            return turn_id, ARTIFACT_NAMESPACE_ATTACHMENTS, f"external/{kind}/attachments/{message_id}/{rel}"
     for namespace in (
         ARTIFACT_NAMESPACE_FILES,
         ARTIFACT_NAMESPACE_OUTPUTS,
@@ -75,6 +148,14 @@ def split_logical_artifact_path(path_value: str) -> tuple[str, str, str]:
         raw = raw[len("fi:"):]
     if not raw:
         return "", "", ""
+    match = _EXTERNAL_LOGICAL_RE.match(raw) or _EXTERNAL_LOGICAL_LEGACY_RE.match(raw)
+    if match:
+        turn_id = match.group("turn")
+        kind = match.group("kind")
+        message_id = match.group("message_id")
+        rel = match.group("rel")
+        if turn_id and kind and message_id and rel:
+            return turn_id, ARTIFACT_NAMESPACE_ATTACHMENTS, f"external/{kind}/attachments/{message_id}/{rel}"
     if ".files/" in raw:
         turn_id, rel = raw.split(".files/", 1)
         return turn_id, ARTIFACT_NAMESPACE_FILES, rel

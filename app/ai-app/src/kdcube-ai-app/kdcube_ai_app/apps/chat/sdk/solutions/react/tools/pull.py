@@ -38,6 +38,7 @@ TOOL_SPEC = {
             "Allowed: fi:<turn_id>.files/<path> (exact file or subtree), "
             "fi:<turn_id>.outputs/<file> (exact file only), "
             "fi:<turn_id>.user.attachments/<file> (exact file only), "
+            "fi:<turn_id>.external.<kind>.attachments/<message_id>/<file> (exact file only), "
             "and legacy fi:<turn_id>.attachments/<file> (exact file only)."
         ),
     },

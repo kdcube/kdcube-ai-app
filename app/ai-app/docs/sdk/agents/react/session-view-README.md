@@ -21,7 +21,7 @@ This document describes how the session view is derived from the timeline when c
 - The last TTL used is stored as `cache_last_ttl_seconds`.
   - **Bootstrap rule**: on the first render after loading a timeline, the stored TTL is used to decide pruning.
   - After that first render, the timeline TTL is synced to the current runtime/session TTL.
-  - If both `cache_last_touch_at` and `cache_last_ttl_seconds` are missing, `cache_last_touch_at` is inferred from the block immediately before the last `assistant.completion` (fallback: the assistant block).
+  - If both `cache_last_touch_at` and `cache_last_ttl_seconds` are missing, `cache_last_touch_at` is inferred from the block immediately before the latest `assistant.completion` block (fallback: that completion block).
 
 ## TTL Pruning Flow
 
@@ -34,7 +34,7 @@ This document describes how the session view is derived from the timeline when c
 - If `keep_recent_turns` covers all turns, old-turn pruning is skipped, but lightweight artifact pruning still applies inside the recent window.
 - The most recent M turns are guaranteed intact (no pruning).
 - Hidden blocks keep a short replacement text (no per-block `react.read` hint).
-- User/assistant blocks are eligible for pruning when they are older than `keep_recent_turns` (they remain intact in the recent windows).
+- User/assistant blocks are eligible for pruning when they are older than `keep_recent_turns` (they remain intact in the recent windows). This applies per block, so multiple prompt-like user entries or assistant completions from one older turn can be pruned independently.
 - Internal Memory Beacons (`react.note`, `react.note.preserved`) are not hidden by TTL pruning.
 - External `user.followup`, `user.steer`, and their preserved copies are also not hidden by TTL pruning.
 - If compaction also ran, older plan history may still remain directly reopenable through stable `ar:plan.latest:<plan_id>` refs that sit behind the visible history summaries.
@@ -93,7 +93,7 @@ Default replacement behavior:
 | Skip rules | Always skip `turn.header`, `conv.range.summary`, `react.note`, `react.note.preserved`, `user.followup`, `user.steer`, `user.followup.preserved`, `user.steer.preserved`; others follow window rules | Same |
 | TTL bootstrap | First render uses stored `cache_last_ttl_seconds`, then sync to runtime | Same |
 | Size thresholds | Configurable: `cache_truncation_max_text_chars`, `cache_truncation_max_field_chars`, `cache_truncation_max_list_items`, `cache_truncation_max_dict_keys`, `cache_truncation_max_base64_chars` | Same |
-| Extensibility | Per-tool truncation views in `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/session.py` | Same |
+| Extensibility | Per-tool truncation views in `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/session.py` | Same |
 
 ## Runtime Configuration
 

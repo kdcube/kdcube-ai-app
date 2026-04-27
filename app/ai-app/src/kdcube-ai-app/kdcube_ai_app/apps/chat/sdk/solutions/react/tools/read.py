@@ -11,6 +11,7 @@ import json
 import hashlib
 from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
     build_artifact_meta_block,
+    physical_path_to_logical_path,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.solution_workspace import (
     read_artifact_for_react,
@@ -563,12 +564,8 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
                         ap = (row.get("artifact_path") or "").strip()
                         if not ap:
                             physical_path = (row.get("physical_path") or row.get("local_path") or "").strip()
-                            if physical_path.startswith("turn_") and "/files/" in physical_path:
-                                tid, rel = physical_path.split("/files/", 1)
-                                ap = f"fi:{tid}.files/{rel}"
-                            elif physical_path.startswith("turn_") and "/attachments/" in physical_path:
-                                tid, rel = physical_path.split("/attachments/", 1)
-                                ap = f"fi:{tid}.user.attachments/{rel}"
+                            if physical_path.startswith("turn_"):
+                                ap = physical_path_to_logical_path(physical_path)
                         if ap:
                             await _emit_fi_path(ap)
                         else:

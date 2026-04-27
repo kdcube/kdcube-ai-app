@@ -264,6 +264,10 @@ async def test_run_py_in_docker_mounts_local_kdcube_storage_rw(tmp_path, monkeyp
     )
     assert any(arg.endswith(f":{private_storage_dir}:rw") for arg in argv)
     assert any(arg == f"KDCUBE_STORAGE_PATH=file://{private_storage_dir}" for arg in argv)
+    runtime_globals_arg = next(arg for arg in argv if arg.startswith("RUNTIME_GLOBALS_JSON="))
+    runtime_globals = json.loads(runtime_globals_arg.split("=", 1)[1])
+    portable_spec = json.loads(runtime_globals["PORTABLE_SPEC_JSON"])
+    assert portable_spec["accounting_storage"]["storage_path"] == f"file://{private_storage_dir}"
 
 
 @pytest.mark.asyncio

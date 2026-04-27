@@ -86,6 +86,7 @@ Both artifacts are indexed in `conv_messages` with:
 - Logical artifact path (used by `react.read` / `fetch_ctx`):
   - `ar:<turn_id>.user.prompt`
   - `ar:<turn_id>.assistant.completion`
+  - `ar:<turn_id>.assistant.completion.<n>` for earlier visible completions from the same turn
 - `fi:<turn_id>.user.attachments/<name>`
 - `fi:<turn_id>.files/<relative_path>`
 - `fi:<turn_id>.outputs/<relative_path>`

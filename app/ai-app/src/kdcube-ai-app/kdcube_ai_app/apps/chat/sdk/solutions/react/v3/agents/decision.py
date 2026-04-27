@@ -59,8 +59,9 @@ CODEGEN_BEST_PRACTICES_V2 = """
   However, if the source artifacts have complex structure and reusing them programmatically is error prone, 
   make sure the needed, for code generation, artifacts are visible in the context so you can properly write the needed content in code.  
 - For programmatic access inside the snippet, use ctx_tools.fetch_ctx only for the logical context objects it supports:
-  ar:<turn_id>.user.prompt, ar:<turn_id>.assistant.completion, ar:plan.latest:<plan_id>, tc:<turn_id>.<call_id>.call, tc:<turn_id>.<call_id>.result, and so:sources_pool[...].
+  ar:<turn_id>.user.prompt, ar:<turn_id>.assistant.completion, ar:<turn_id>.assistant.completion.<n>, ar:plan.latest:<plan_id>, tc:<turn_id>.<call_id>.call, tc:<turn_id>.<call_id>.result, and so:sources_pool[...].
   It does NOT support fi:, ks:, sk:, or su:.
+  ar:<turn_id>.assistant.completion is the latest completion in that turn; numbered paths address earlier visible completions from the same turn.
   fetch_ctx returns a canonical artifact dict: {path, kind, mime, sources_used, filepath?, text|base64}.
 - The code must be optimal: if programmatic editing/synthesis is possible and best, do it.
 - If some data must be generated, generate it — no guessing. Do not regenerate data that already exists in context;
