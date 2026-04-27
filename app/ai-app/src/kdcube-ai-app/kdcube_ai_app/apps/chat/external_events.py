@@ -24,6 +24,23 @@ _DEFAULT_STREAM_RETENTION_SECONDS = max(0, int(os.getenv("CHAT_EXTERNAL_EVENTS_S
 _DEFAULT_STREAM_TRIM_BATCH = max(16, int(os.getenv("CHAT_EXTERNAL_EVENTS_STREAM_TRIM_BATCH") or "256"))
 
 
+def _base36(num: int) -> str:
+    chars = "0123456789abcdefghijklmnopqrstuvwxyz"
+    n = max(0, int(num or 0))
+    if n == 0:
+        return "0"
+    out = []
+    while n:
+        n, rem = divmod(n, 36)
+        out.append(chars[rem])
+    return "".join(reversed(out))
+
+
+def _short_event_message_id(*, created_at: float, sequence: int) -> str:
+    millis = int(float(created_at or 0.0) * 1000)
+    return f"m{_base36(millis)}{_base36(sequence)}"
+
+
 @dataclass
 class ConversationExternalEvent:
     message_id: str
@@ -231,10 +248,11 @@ class RedisConversationExternalEventSource:
         task_payload: Optional[Dict[str, Any]] = None,
     ) -> ConversationExternalEvent:
         sequence = int(await self.redis.incr(self.sequence_key))
+        created_at = time.time()
         event = ConversationExternalEvent(
-            message_id=f"evt_{uuid.uuid4().hex[:10]}",
+            message_id=_short_event_message_id(created_at=created_at, sequence=sequence),
             kind=str(kind or "external"),
-            created_at=time.time(),
+            created_at=created_at,
             sequence=sequence,
             explicit=explicit,
             target_turn_id=target_turn_id,
