@@ -11,6 +11,8 @@ import time
 from kdcube_ai_app.apps.chat.sdk.solutions.react.timeline import (
     build_timeline_payload,
     TimelineView,
+    extract_assistant_completion_blocks,
+    extract_user_attachments_from_blocks,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.common import (
     tool_call_block,
@@ -121,51 +123,77 @@ async def handle_react_memsearch(*, ctx_browser: Any, state: Dict[str, Any], too
             want_attachment = "attachment" in targets
 
             if want_user:
-                path = f"ar:{tid}.user.prompt"
-                art = tv.resolve_artifact(path)
-                if isinstance(art, dict):
-                    text = art.get("text") or ""
+                for blk in blocks:
+                    if not isinstance(blk, dict):
+                        continue
+                    if (blk.get("turn_id") or "") != tid:
+                        continue
+                    btype = (blk.get("type") or "").strip()
+                    if btype not in {"user.prompt", "user.followup", "user.followup.preserved", "user.steer", "user.steer.preserved"}:
+                        continue
+                    path = (blk.get("path") or "").strip()
+                    text = (blk.get("text") or "").strip()
                     if text:
                         total_tokens += token_count(text)
                     snippets.append({
                         "role": "user",
                         "path": path,
                         "text": text,
-                        "ts": art.get("ts") or "",
-                        "meta": art.get("meta") if isinstance(art.get("meta"), dict) else {},
+                        "ts": blk.get("ts") or "",
+                        "meta": blk.get("meta") if isinstance(blk.get("meta"), dict) else {},
                     })
             if want_assistant:
-                path = f"ar:{tid}.assistant.completion"
-                art = tv.resolve_artifact(path)
-                if isinstance(art, dict):
-                    text = art.get("text") or ""
+                for blk in extract_assistant_completion_blocks(blocks):
+                    if (blk.get("turn_id") or "") != tid:
+                        continue
+                    path = (blk.get("path") or "").strip()
+                    text = (blk.get("text") or "").strip()
                     if text:
                         total_tokens += token_count(text)
                     snippets.append({
                         "role": "assistant",
                         "path": path,
                         "text": text,
-                        "ts": art.get("ts") or "",
-                        "meta": art.get("meta") if isinstance(art.get("meta"), dict) else {},
+                        "ts": blk.get("ts") or "",
+                        "meta": blk.get("meta") if isinstance(blk.get("meta"), dict) else {},
                     })
             if want_attachment:
-                # Collect attachment meta blocks from blocks
+                attachment_text_by_path: Dict[str, str] = {}
+                attachment_meta_text_by_path: Dict[str, str] = {}
                 for blk in blocks:
                     if not isinstance(blk, dict):
                         continue
-                    if blk.get("type") not in {"user.attachment.meta", "user.attachment"}:
+                    path = (blk.get("path") or "").strip()
+                    if not path:
                         continue
-                    if (blk.get("path") or "").startswith(f"fi:{tid}.user.attachments/"):
-                        text = (blk.get("text") or "").strip()
-                        if text:
-                            total_tokens += token_count(text)
-                        snippets.append({
-                            "role": "attachment",
-                            "path": blk.get("path") or "",
-                            "text": text,
-                            "ts": blk.get("ts") or "",
-                            "meta": blk.get("meta") if isinstance(blk.get("meta"), dict) else {},
-                        })
+                    btype = (blk.get("type") or "").strip()
+                    text = (blk.get("text") or "").strip()
+                    if btype == "user.attachment.text" and text:
+                        attachment_text_by_path[path] = text
+                    elif btype == "user.attachment.meta" and text:
+                        attachment_meta_text_by_path[path] = text
+
+                for att in extract_user_attachments_from_blocks(blocks):
+                    if not isinstance(att, dict):
+                        continue
+                    path = (att.get("artifact_path") or "").strip()
+                    if not path:
+                        continue
+                    text = (
+                        attachment_text_by_path.get(path)
+                        or str(att.get("summary") or "").strip()
+                        or attachment_meta_text_by_path.get(path)
+                        or ""
+                    )
+                    if text:
+                        total_tokens += token_count(text)
+                    snippets.append({
+                        "role": "attachment",
+                        "path": path,
+                        "text": text,
+                        "ts": att.get("ts") or "",
+                        "meta": dict(att),
+                    })
 
             search_hits_formatted.append({
                 "turn_id": tid,

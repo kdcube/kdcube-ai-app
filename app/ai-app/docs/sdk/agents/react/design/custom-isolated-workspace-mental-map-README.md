@@ -261,15 +261,15 @@ So:
 
 Likely implementation points:
 
-- `react/v2/timeline.py`
+- `react/timeline.py`
   - durable storage of the rolling map
-- `react/v2/layout.py`
+- `react/layout.py`
   - compact ANNOUNCE section
-- `react/v2/runtime.py`
+- `react/v2/runtime.py` and `react/v3/runtime.py`
   - refresh/update hook per turn
-- `react/v2/solution_workspace.py`
+- `react/solution_workspace.py`
   - custom-mode hydration already uses artifact/history state and should become a producer for the map
-- `react/v2/tools/write.py`
+- `react/tools/write.py`
 - `react/v2/tools/patch.py`
 - `react/v2/tools/...` delete-capable custom workspace operation
 - `react/v2/tools/external.py`

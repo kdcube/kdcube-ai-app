@@ -3,6 +3,7 @@
 import os
 import json
 import asyncio
+import datetime
 from types import SimpleNamespace
 
 import pytest
@@ -631,7 +632,11 @@ async def test_decision_complete_waits_for_exit_grace_and_retries_on_new_externa
     solver._adapters_index = lambda adapters: {}
     solver._short_json = lambda obj, max_len=800: str(obj)
     solver._protocol_violation_message = lambda **kwargs: "protocol"
-    solver.scratchpad = SimpleNamespace(turn_id="turn-1", register_agentic_response=lambda *args, **kwargs: None)
+    solver.scratchpad = SimpleNamespace(
+        turn_id="turn-1",
+        register_agentic_response=lambda *args, **kwargs: None,
+        assistant_completion_attempts=[],
+    )
 
     old = os.environ.get("REACT_EXTERNAL_EVENT_EXIT_GRACE_MS")
     os.environ["REACT_EXTERNAL_EVENT_EXIT_GRACE_MS"] = "250"
@@ -655,6 +660,7 @@ async def test_decision_complete_waits_for_exit_grace_and_retries_on_new_externa
 
     assert out["retry_decision"] is True
     assert out.get("exit_reason") is None
+    assert solver.scratchpad.assistant_completion_attempts == []
 
 
 @pytest.mark.asyncio
@@ -922,3 +928,269 @@ async def test_decision_node_always_enables_final_answer_timeline_stream(monkeyp
 
     assert timeline_streamer_calls
     assert timeline_streamer_calls[0]["stream_final_answer"] is True
+
+
+@pytest.mark.asyncio
+async def test_decision_node_uses_delta_cache_started_at_for_answer_and_notes(monkeypatch):
+    solver = _solver_stub()
+    note_calls = []
+    answer_dt = datetime.datetime(2026, 4, 27, 1, 7, 45, 645211, tzinfo=datetime.timezone.utc)
+    notes_dt = datetime.datetime(2026, 4, 27, 1, 7, 37, 849000, tzinfo=datetime.timezone.utc)
+    answer_ms = int(answer_dt.timestamp() * 1000)
+    notes_ms = int(notes_dt.timestamp() * 1000)
+
+    class _Timeline:
+        last_external_event_seq = 0
+
+    class _Browser:
+        def __init__(self):
+            self.timeline = _Timeline()
+            self.runtime_ctx = SimpleNamespace(
+                workspace_implementation="git",
+                bundle_id="bundle.test",
+            )
+            self.sources_pool = []
+
+        async def wait_and_drain_external_events(self, *, call_hooks, block_ms, limit):
+            del call_hooks, block_ms, limit
+            return 0
+
+        async def drain_external_events(self, *, call_hooks):
+            del call_hooks
+            return 0
+
+        def announce(self, *, blocks):
+            del blocks
+
+        @property
+        def feedback_updates(self):
+            return []
+
+        @property
+        def feedback_updates_integrated(self):
+            return False
+
+        def contribute_notice(self, *args, **kwargs):
+            del args, kwargs
+
+        @property
+        def timeline_visible_paths(self):
+            return []
+
+    solver.ctx_browser = _Browser()
+
+    def _fake_get_delta_aggregates(*, turn_id=None, marker=None, merge_text=False, **kwargs):
+        del kwargs, merge_text
+        assert turn_id == "turn-1"
+        if marker == "answer":
+            return [{"artifact_name": "react.final_answer.0", "ts_first": answer_ms}]
+        if marker == "timeline_text":
+            return [{"artifact_name": "timeline_text.react.decision.0", "ts_first": notes_ms}]
+        return []
+
+    solver.comm = SimpleNamespace(
+        delta=_noop_async,
+        service_event=_noop_async,
+        get_delta_aggregates=_fake_get_delta_aggregates,
+    )
+    solver._latest_external_event_seq_seen = 0
+    solver._last_consumed_external_event_seq = 0
+    solver._drain_external_events = _noop_async
+
+    async def _fake_retry_with_compaction(**kwargs):
+        del kwargs
+        return {
+            "agent_response": {
+                "action": "complete",
+                "final_answer": "Done.",
+                "tool_call": None,
+                "notes": "Short streamed note.",
+                "suggested_followups": [],
+            }
+        }
+
+    async def _fake_emit_event(**kwargs):
+        del kwargs
+
+    def _fake_note(**kwargs):
+        note_calls.append(dict(kwargs))
+
+    monkeypatch.setattr(
+        "kdcube_ai_app.apps.chat.sdk.solutions.chatbot.agent_retry.retry_with_compaction",
+        _fake_retry_with_compaction,
+    )
+    monkeypatch.setattr(
+        "kdcube_ai_app.apps.chat.sdk.solutions.react.v2.runtime.emit_event",
+        _fake_emit_event,
+    )
+    monkeypatch.setattr(ReactRound, "note", _fake_note)
+
+    async def _fake_react_decision_stream_v2(**kwargs):
+        del kwargs
+        return {}
+
+    monkeypatch.setattr(
+        "kdcube_ai_app.apps.chat.sdk.solutions.react.v2.runtime.react_decision_stream_v2",
+        _fake_react_decision_stream_v2,
+    )
+
+    async def _fake_update_announce(**kwargs):
+        del kwargs
+
+    solver._update_announce = _fake_update_announce
+    solver._mk_mainstream = lambda phase: _noop_async
+    solver._mk_exec_code_streamer = lambda phase, idx, execution_id=None: (_noop_async, None)
+    solver._mk_content_streamers = lambda phase, sources_list=None, artifact_name=None: ([], [])
+    solver._mk_timeline_streamer = lambda *args, **kwargs: (_noop_async, None)
+    solver._append_react_timing = lambda **kwargs: None
+    solver._adapters_index = lambda adapters: {}
+    solver._short_json = lambda obj, max_len=800: str(obj)
+    solver._protocol_violation_message = lambda **kwargs: "protocol"
+    solver.scratchpad = SimpleNamespace(
+        turn_id="turn-1",
+        register_agentic_response=lambda *args, **kwargs: None,
+        assistant_completion_attempts=[],
+    )
+
+    state = {
+        "iteration": 0,
+        "max_iterations": 15,
+        "adapters": [],
+        "outdir": "/tmp/out",
+        "workdir": "/tmp/work",
+        "turn_id": "turn-1",
+        "decision_retries": 0,
+        "max_decision_retries": 2,
+    }
+
+    await solver._decision_node_impl(state, 0)
+
+    assert solver.scratchpad.assistant_completion_attempts[0]["ts"] == "2026-04-27T01:07:45.645000Z"
+    assert note_calls[0]["ts"] == "2026-04-27T01:07:37.849000Z"
+
+
+@pytest.mark.asyncio
+async def test_decision_node_prefers_per_iteration_stream_started_at(monkeypatch):
+    solver = _solver_stub()
+    note_calls = []
+
+    class _Timeline:
+        last_external_event_seq = 0
+
+    class _Browser:
+        def __init__(self):
+            self.timeline = _Timeline()
+            self.runtime_ctx = SimpleNamespace(
+                workspace_implementation="git",
+                bundle_id="bundle.test",
+            )
+            self.sources_pool = []
+
+        async def wait_and_drain_external_events(self, *, call_hooks, block_ms, limit):
+            del call_hooks, block_ms, limit
+            return 0
+
+        async def drain_external_events(self, *, call_hooks):
+            del call_hooks
+            return 0
+
+        def announce(self, *, blocks):
+            del blocks
+
+        @property
+        def feedback_updates(self):
+            return []
+
+        @property
+        def feedback_updates_integrated(self):
+            return False
+
+        def contribute_notice(self, *args, **kwargs):
+            del args, kwargs
+
+        @property
+        def timeline_visible_paths(self):
+            return []
+
+    solver.ctx_browser = _Browser()
+    solver.comm = SimpleNamespace(
+        delta=_noop_async,
+        service_event=_noop_async,
+        get_delta_aggregates=lambda **kwargs: [],
+    )
+    solver._latest_external_event_seq_seen = 0
+    solver._last_consumed_external_event_seq = 0
+    solver._drain_external_events = _noop_async
+
+    async def _fake_retry_with_compaction(**kwargs):
+        del kwargs
+        return {
+            "agent_response": {
+                "action": "complete",
+                "final_answer": "Done.",
+                "tool_call": None,
+                "notes": "Short streamed note.",
+                "suggested_followups": [],
+            }
+        }
+
+    async def _fake_emit_event(**kwargs):
+        del kwargs
+
+    def _fake_note(**kwargs):
+        note_calls.append(dict(kwargs))
+
+    monkeypatch.setattr(
+        "kdcube_ai_app.apps.chat.sdk.solutions.chatbot.agent_retry.retry_with_compaction",
+        _fake_retry_with_compaction,
+    )
+    monkeypatch.setattr(
+        "kdcube_ai_app.apps.chat.sdk.solutions.react.v2.runtime.emit_event",
+        _fake_emit_event,
+    )
+    monkeypatch.setattr(ReactRound, "note", _fake_note)
+
+    async def _fake_react_decision_stream_v2(**kwargs):
+        del kwargs
+        return {}
+
+    monkeypatch.setattr(
+        "kdcube_ai_app.apps.chat.sdk.solutions.react.v2.runtime.react_decision_stream_v2",
+        _fake_react_decision_stream_v2,
+    )
+
+    async def _fake_update_announce(**kwargs):
+        del kwargs
+
+    solver._update_announce = _fake_update_announce
+    solver._mk_mainstream = lambda phase: _noop_async
+    solver._mk_exec_code_streamer = lambda phase, idx, execution_id=None: (_noop_async, None)
+    solver._mk_content_streamers = lambda phase, sources_list=None, artifact_name=None: ([], [])
+    solver._mk_timeline_streamer = lambda *args, **kwargs: (_noop_async, None)
+    solver._append_react_timing = lambda **kwargs: None
+    solver._adapters_index = lambda adapters: {}
+    solver._short_json = lambda obj, max_len=800: str(obj)
+    solver._protocol_violation_message = lambda **kwargs: "protocol"
+    solver.scratchpad = SimpleNamespace(
+        turn_id="turn-1",
+        register_agentic_response=lambda *args, **kwargs: None,
+        assistant_completion_attempts=[],
+        _react_answer_started_at_by_iteration={0: "2026-04-27T01:44:59.250000Z"},
+        _react_notes_started_at_by_iteration={0: "2026-04-27T01:44:58.900000Z"},
+    )
+
+    state = {
+        "iteration": 0,
+        "max_iterations": 15,
+        "adapters": [],
+        "outdir": "/tmp/out",
+        "workdir": "/tmp/work",
+        "turn_id": "turn-1",
+        "decision_retries": 0,
+        "max_decision_retries": 2,
+    }
+
+    await solver._decision_node_impl(state, 0)
+
+    assert solver.scratchpad.assistant_completion_attempts[0]["ts"] == "2026-04-27T01:44:59.250000Z"
+    assert note_calls[0]["ts"] == "2026-04-27T01:44:58.900000Z"

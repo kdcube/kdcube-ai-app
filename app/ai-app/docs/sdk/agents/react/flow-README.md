@@ -71,7 +71,7 @@ flowchart TD
     P --> R[Merge results into turn state]
     Q --> R
     R --> K
-    K --> S[assistant.completion]
+    K --> S[assistant.completion 1..n]
     S --> T[BaseWorkflow.finish_turn]
     T --> U[Persist timeline artifact]
     U --> V[Persist sources-pool artifact]
@@ -206,6 +206,10 @@ Typical loop behavior:
 
 Plans and notices are also added as timeline blocks when relevant.
 
+If a live reactive event lands after a visible completion attempt, the same turn may later append
+another `assistant.completion`. `finish_turn(...)` persists all visible prompt-like user entries
+and all visible assistant completions from that turn, not only the last pair.
+
 ## Workspace activation during the loop
 
 Historical/project content is not assumed to be present locally.
@@ -324,7 +328,7 @@ sequenceDiagram
 
 After React emits its final answer:
 
-1. `assistant.completion` is added
+1. one or more `assistant.completion` blocks are added
 2. `BaseWorkflow.finish_turn(...)` runs
 3. timeline artifact is persisted
 4. sources-pool artifact is persisted

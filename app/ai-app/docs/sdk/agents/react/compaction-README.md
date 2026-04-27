@@ -119,6 +119,10 @@ The retained window starts **at the cut point**.
 If the cut falls **inside a turn**, only the **prefix** of that turn is summarized
 (and included under “Turn Context (split turn)”). The cut block itself stays visible.
 
+If a turn contains multiple `assistant.completion` blocks, compaction treats each visible
+completion as an ordinary message block. The latest-path alias still points to the most recent
+completion for that turn; earlier visible completions keep their numbered paths.
+
 This includes external in-turn user contributions such as:
 - `user.followup`
 - `user.steer`

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 from typing import Awaitable, Callable, Dict, List, Optional, Any
 
@@ -777,6 +778,14 @@ class TimelineStreamer:
                 return bool(t.get("started"))
         return False
 
+    def started_at(self, name: str) -> Optional[str]:
+        for t in self.targets:
+            if t.get("name") == name:
+                value = t.get("started_at")
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+        return None
+
     def next_index(self, name: str) -> int:
         for t in self.targets:
             if t.get("name") == name:
@@ -818,6 +827,7 @@ class TimelineStreamer:
         )
         target["index"] = int(target.get("index") or 0) + 1
         target["started"] = True
+        target.setdefault("started_at", datetime.datetime.utcnow().isoformat() + "Z")
         await self.emit_delta(
             text="",
             index=int(target.get("index") or 0),
@@ -859,13 +869,12 @@ class TimelineStreamer:
     def _allow_target(self, target: Dict[str, Any]) -> Optional[bool]:
         name = target.get("name")
         if name == "notes":
+            # Notes are a user-visible short timeline signal for the current round.
+            # They must stream for both call_tool and complete/exit decisions, and
+            # they should not wait for tool_id because complete/exit rounds have none.
             if self.action_value is None:
-                return None
-            if (self.action_value or "").strip() != "call_tool":
-                return False
-            if self.tool_id_value is None:
-                return None
-            return bool(str(self.tool_id_value).strip())
+                return True
+            return (self.action_value or "").strip() in {"call_tool", "complete", "exit"}
         if name == "final_answer":
             # final_answer must stream as soon as it appears. Waiting for `action`
             # causes the whole answer to stay buffered when models emit
@@ -996,6 +1005,7 @@ class TimelineStreamer:
         )
         t["index"] = int(t.get("index") or 0) + 1
         t["started"] = True
+        t.setdefault("started_at", datetime.datetime.utcnow().isoformat() + "Z")
 
     async def _flush_pending_targets(self, *, force: bool = False) -> None:
         for t in self.targets:

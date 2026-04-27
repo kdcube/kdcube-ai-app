@@ -5,6 +5,7 @@
 
 import asyncio
 import copy
+import datetime
 import os
 import json
 import pathlib
@@ -30,6 +31,9 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.live_events import (
     compute_reactive_iteration_credit_cap,
     resolve_reactive_iteration_credit,
     sync_reactive_iteration_budget,
+)
+from kdcube_ai_app.apps.chat.sdk.solutions.react.layout import (
+    record_assistant_completion_attempt,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import ReactResult
 from kdcube_ai_app.apps.chat.sdk.solutions.react.runtime_state import ReactRuntimeState as ReactStateV2
@@ -953,6 +957,7 @@ class ReactSolverV2:
         notes_artifact_name: Optional[str] = None,
         final_answer_artifact_name: Optional[str] = None,
         plan_artifact_name: Optional[str] = None,
+        iteration: Optional[int] = None,
     ) -> tuple[Callable[[str], Awaitable[None]], TimelineStreamer]:
         sources_getter = None
         if self.ctx_browser:
@@ -965,8 +970,49 @@ class ReactSolverV2:
             )
         except Exception:
             final_answer_start_index = 0
+        self.scratchpad._latest_streamed_notes_started_at = None
+        if stream_final_answer:
+            self.scratchpad._latest_streamed_final_answer_started_at = None
+
+        async def emit_timeline_delta(**kwargs):
+            marker = str(kwargs.get("marker") or "")
+            completed = bool(kwargs.get("completed"))
+            text = str(kwargs.get("text") or "")
+            artifact_name = str(kwargs.get("artifact_name") or "")
+            started_at = datetime.datetime.utcnow().isoformat() + "Z"
+            if (
+                stream_final_answer
+                and marker == "answer"
+                and not completed
+                and text
+            ):
+                current_started_at = getattr(self.scratchpad, "_latest_streamed_final_answer_started_at", None)
+                if not current_started_at:
+                    self.scratchpad._latest_streamed_final_answer_started_at = started_at
+                if iteration is not None and artifact_name.startswith(str(final_answer_artifact_name or "")):
+                    by_iteration = getattr(self.scratchpad, "_react_answer_started_at_by_iteration", None)
+                    if not isinstance(by_iteration, dict):
+                        by_iteration = {}
+                        self.scratchpad._react_answer_started_at_by_iteration = by_iteration
+                    by_iteration.setdefault(int(iteration), started_at)
+            if (
+                marker == "timeline_text"
+                and not completed
+                and text
+                and iteration is not None
+                and artifact_name.startswith(str(notes_artifact_name or ""))
+            ):
+                by_iteration = getattr(self.scratchpad, "_react_notes_started_at_by_iteration", None)
+                if not isinstance(by_iteration, dict):
+                    by_iteration = {}
+                    self.scratchpad._react_notes_started_at_by_iteration = by_iteration
+                by_iteration.setdefault(int(iteration), started_at)
+                if not getattr(self.scratchpad, "_latest_streamed_notes_started_at", None):
+                    self.scratchpad._latest_streamed_notes_started_at = started_at
+            await self.comm.delta(**kwargs)
+
         streamer = TimelineStreamer(
-            emit_delta=self.comm.delta,
+            emit_delta=emit_timeline_delta,
             agent=agent or f"{self.MODULE_AGENT_NAME}.{phase}",
             sources_list=sources_list or [],
             sources_getter=sources_getter,
@@ -1014,6 +1060,50 @@ class ReactSolverV2:
         if len(text) > max_len:
             return text[:max_len] + "...(truncated)"
         return text
+
+    def _delta_cache_started_at(
+        self,
+        *,
+        marker: str,
+        artifact_name: Optional[str] = None,
+        artifact_name_prefix: Optional[str] = None,
+    ) -> Optional[str]:
+        getter = getattr(self.comm, "get_delta_aggregates", None)
+        if not callable(getter):
+            return None
+        turn_id = self._current_turn_id()
+        if not turn_id:
+            return None
+        try:
+            rows = getter(turn_id=turn_id, marker=marker, merge_text=False) or []
+        except Exception:
+            return None
+        best_ts_ms: Optional[int] = None
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            row_artifact_name = str(row.get("artifact_name") or "")
+            if artifact_name and row_artifact_name != artifact_name:
+                continue
+            if artifact_name_prefix and not row_artifact_name.startswith(artifact_name_prefix):
+                continue
+            try:
+                ts_first = int(row.get("ts_first") or 0)
+            except Exception:
+                ts_first = 0
+            if ts_first <= 0:
+                continue
+            if best_ts_ms is None or ts_first < best_ts_ms:
+                best_ts_ms = ts_first
+        if best_ts_ms is None:
+            return None
+        try:
+            return datetime.datetime.fromtimestamp(
+                best_ts_ms / 1000.0,
+                tz=datetime.timezone.utc,
+            ).isoformat().replace("+00:00", "Z")
+        except Exception:
+            return None
 
     def _protocol_violation_message(
         self,
@@ -1776,6 +1866,7 @@ class ReactSolverV2:
                 notes_artifact_name=f"timeline_text.react.decision.{iteration}.{safe_idx}",
                 final_answer_artifact_name=f"react.final_answer.{iteration}.{safe_idx}",
                 plan_artifact_name=f"timeline_text.react.plan.{iteration}.{safe_idx}",
+                iteration=iteration,
             )
             instance_state: Dict[str, Any] = {
                 "instance_idx": safe_idx,
@@ -1949,13 +2040,21 @@ class ReactSolverV2:
         try:
             for instance_state in decision_stream_instances.values():
                 instance_timeline_streamer = instance_state.get("timeline_streamer")
-                if instance_timeline_streamer is None or not instance_timeline_streamer.has_started("final_answer"):
+                if instance_timeline_streamer is None:
                     continue
-                self.scratchpad._final_answer_delta_emitted = True
-                self.scratchpad._react_answer_delta_idx = max(
-                    int(getattr(self.scratchpad, "_react_answer_delta_idx", 0) or 0),
-                    int(instance_timeline_streamer.next_index("final_answer") or 0),
-                )
+                if instance_timeline_streamer.has_started("final_answer"):
+                    self.scratchpad._final_answer_delta_emitted = True
+                    self.scratchpad._react_answer_delta_idx = max(
+                        int(getattr(self.scratchpad, "_react_answer_delta_idx", 0) or 0),
+                        int(instance_timeline_streamer.next_index("final_answer") or 0),
+                    )
+                    started_at = instance_timeline_streamer.started_at("final_answer")
+                    if started_at:
+                        self.scratchpad._latest_streamed_final_answer_started_at = started_at
+                if instance_timeline_streamer.has_started("notes"):
+                    notes_started_at = instance_timeline_streamer.started_at("notes")
+                    if notes_started_at:
+                        self.scratchpad._latest_streamed_notes_started_at = notes_started_at
         except Exception:
             self.log.log(
                 f"[react.v2] failed to sync streamed final-answer index: {traceback.format_exc()}",
@@ -2502,6 +2601,29 @@ class ReactSolverV2:
                 tool_id = ""
                 state["last_decision"] = decision
 
+        if action in {"complete", "exit"}:
+            try:
+                answer_started_at = None
+                by_iteration = getattr(self.scratchpad, "_react_answer_started_at_by_iteration", None)
+                if isinstance(by_iteration, dict):
+                    answer_started_at = str(by_iteration.get(int(iteration)) or "").strip() or None
+                if not answer_started_at:
+                    answer_started_at = self._delta_cache_started_at(
+                        marker="answer",
+                        artifact_name_prefix=f"react.final_answer.{iteration}.",
+                    )
+                if not answer_started_at:
+                    answer_started_at = getattr(self.scratchpad, "_latest_streamed_final_answer_started_at", None)
+                if answer_started_at:
+                    record_assistant_completion_attempt(
+                        scratchpad=self.scratchpad,
+                        answer_text=(decision.get("final_answer") or ""),
+                        ts=answer_started_at,
+                        iteration=iteration,
+                    )
+            except Exception:
+                self.log.log(traceback.format_exc(), level="ERROR")
+
         if not state.get("retry_decision") and action in {"complete", "exit"}:
             exit_grace_ms = 0
             try:
@@ -2543,6 +2665,17 @@ class ReactSolverV2:
 
         try:
             if notes and not bundle_mode:
+                notes_started_at = None
+                by_iteration = getattr(self.scratchpad, "_react_notes_started_at_by_iteration", None)
+                if isinstance(by_iteration, dict):
+                    notes_started_at = str(by_iteration.get(int(iteration)) or "").strip() or None
+                if not notes_started_at:
+                    notes_started_at = getattr(self.scratchpad, "_latest_streamed_notes_started_at", None)
+                if not notes_started_at:
+                    notes_started_at = self._delta_cache_started_at(
+                        marker="timeline_text",
+                        artifact_name_prefix=f"timeline_text.react.decision.{iteration}.",
+                    )
                 ReactRound.note(
                     ctx_browser=self.ctx_browser,
                     notes=notes,
@@ -2550,6 +2683,7 @@ class ReactSolverV2:
                     tool_id=tool_id,
                     action=action,
                     iteration=iteration,
+                    ts=notes_started_at,
                 )
         except Exception:
             pass
@@ -2627,6 +2761,7 @@ class ReactSolverV2:
                             tool_id=tool_id,
                             action="call_tool",
                             iteration=int(state.get("iteration") or 0),
+                            ts=getattr(self.scratchpad, "_latest_streamed_notes_started_at", None),
                         )
                     except Exception:
                         pass

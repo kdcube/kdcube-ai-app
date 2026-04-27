@@ -102,6 +102,26 @@ class ConvIndex:
         b = bundle_id or ctx.get("app_bundle_id") or ctx.get("bundle_id")
         return u, c, b
 
+    @staticmethod
+    def _bundle_scope_clause(
+            args: List[Any],
+            *,
+            bundle_id: Optional[str] = None,
+            bundle_ids: Optional[Sequence[str]] = None,
+            field: str = "bundle_id",
+    ) -> Optional[str]:
+        if bundle_id:
+            args.append(bundle_id)
+            return f"{field} = ${len(args)}"
+        if bundle_ids is None:
+            return None
+        normalized = [str(v).strip() for v in bundle_ids if str(v).strip()]
+        if not normalized:
+            return "FALSE"
+        args.append(normalized)
+        return f"{field} = ANY(${len(args)}::text[])"
+        return None
+
     async def ensure_schema(self):
         sql_raw = (await self._read_sql()).decode()
         sql = sql_raw.replace("<SCHEMA>", self.schema)
@@ -123,19 +143,31 @@ class ConvIndex:
         raise FileNotFoundError("conversation_history.sql / deploy-conversation-history.sql not found in package")
 
     async def get_conversation_state_row(
-            self, *, user_id: str, conversation_id: str
+            self,
+            *,
+            user_id: str,
+            conversation_id: str,
+            bundle_id: Optional[str] = None,
+            bundle_ids: Optional[Sequence[str]] = None,
     ) -> Optional[Dict[str, Any]]:
+        args: List[Any] = [user_id, conversation_id, CONV_STATE_KIND]
+        bundle_scope = self._bundle_scope_clause(
+            args,
+            bundle_id=bundle_id,
+            bundle_ids=bundle_ids,
+        )
         q = f"""
           SELECT id, message_id, role, text, hosted_uri, ts, tags, turn_id, bundle_id, conversation_id
           FROM {self.schema}.conv_messages
           WHERE user_id=$1 AND conversation_id=$2
             AND role='artifact'
             AND tags @> ARRAY[$3]::text[]   -- artifact:conversation.state
+            {f"AND {bundle_scope}" if bundle_scope else ""}
           ORDER BY ts DESC
           LIMIT 1
         """
         async with self._pool.acquire() as con:
-            row = await con.fetchrow(q, user_id, conversation_id, CONV_STATE_KIND)
+            row = await con.fetchrow(q, *args)
         return dict(row) if row else None
 
     async def delete_conversation(
@@ -144,6 +176,7 @@ class ConvIndex:
             user_id: str,
             conversation_id: str,
             bundle_id: Optional[str] = None,
+            bundle_ids: Optional[Sequence[str]] = None,
     ) -> int:
         """
         Delete all conv_messages rows (and their edges) for a given user+conversation.
@@ -152,10 +185,11 @@ class ConvIndex:
             Number of conv_messages rows deleted.
         """
         args: List[Any] = [user_id, conversation_id]
-        bundle_cond = ""
-        if bundle_id is not None:
-            args.append(bundle_id)
-            bundle_cond = f"AND bundle_id = ${len(args)}"
+        bundle_scope = self._bundle_scope_clause(
+            args,
+            bundle_id=bundle_id,
+            bundle_ids=bundle_ids,
+        )
 
         q = f"""
             WITH target AS (
@@ -163,7 +197,7 @@ class ConvIndex:
               FROM {self.schema}.conv_messages
               WHERE user_id = $1
                 AND conversation_id = $2
-                {bundle_cond}
+                {f"AND {bundle_scope}" if bundle_scope else ""}
             ),
             del_edges AS (
               DELETE FROM {self.schema}.conv_artifact_edges
@@ -781,6 +815,7 @@ class ConvIndex:
             limit: int = 30,
             days: int = 30,
             bundle_id: Optional[str] = None,
+            bundle_ids: Optional[Sequence[str]] = None,
             turn_id: Optional[str] = None,
             ctx: Optional[dict] = None,
     ) -> List[Dict[str, Any]]:
@@ -806,8 +841,13 @@ class ConvIndex:
         if turn_id is not None:
             args.append(turn_id)
             where.append(f"turn_id = ${len(args)}")
-        if bundle_id:
-            args.append(bundle_id); where.append(f"bundle_id = ${len(args)}")
+        bundle_scope = self._bundle_scope_clause(
+            args,
+            bundle_id=bundle_id,
+            bundle_ids=bundle_ids,
+        )
+        if bundle_scope:
+            where.append(bundle_scope)
         if any_tags:
             args.append(list(any_tags))
             where.append(f"tags && ${len(args)}::text[]")
@@ -1370,6 +1410,7 @@ class ConvIndex:
             conversation_id: Optional[str] = None,
             days: int = 365,
             bundle_id: Optional[str] = None,
+            bundle_ids: Optional[Sequence[str]] = None,
             turn_ids: Optional[Sequence[str]] = None,
             ctx: Optional[dict] = None,
     ) -> List[Dict[str, Any]]:
@@ -1397,8 +1438,14 @@ class ConvIndex:
             "m.ts >= now() - ($3::text || ' days')::interval",
             "m.ts + (m.ttl_days || ' days')::interval >= now()",
         ]
-        if bundle_id:
-            args.append(bundle_id); where.append(f"m.bundle_id = ${len(args)}")
+        bundle_scope = self._bundle_scope_clause(
+            args,
+            bundle_id=bundle_id,
+            bundle_ids=bundle_ids,
+            field="m.bundle_id",
+        )
+        if bundle_scope:
+            where.append(bundle_scope)
 
         turn_ids_cond = "TRUE"
         if turn_ids:

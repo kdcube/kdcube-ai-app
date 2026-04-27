@@ -47,6 +47,8 @@ Important React-specific beacon blocks:
 Important external-event blocks:
 - `user.followup`
 - `user.steer`
+- `assistant.completion` may appear more than once in the same turn when multiple visible
+  assistant completions happened before the turn finally closed
 
 These are persisted as ordinary turn blocks once folded into the active timeline. Their metadata
 retains the durable event identity (`message_id`, `stream_id`, `sequence`) and routing hints such as
@@ -62,8 +64,9 @@ The turn view is reconstructed by:
 Timeline.build_turn_view(turn_id, blocks, sources_pool)
 ```
 which yields:
-- user prompt (text + ts)
-- assistant completion (text + ts)
+- latest user prompt (text + ts)
+- latest assistant completion (text + ts)
+- full assistant completion list (`assistants[]`) when more than one completion block exists
 - user attachments (payloads with rn/hosted_uri/filename/mime)
 - assistant files (payloads with rn/hosted_uri/filename/mime)
 - citations (sources_used resolved against sources_pool)
@@ -77,6 +80,11 @@ Rendered model view (via `timeline.render`) groups tool output into:
 
 ## Notes
 - No `user` / `assistant` fields are stored in the turn log.
+- Fetch reconstructs `chat:user` / `chat:assistant` from the ordered block stream, so one turn may
+  materialize into multiple user and assistant chat entries.
+- The latest assistant completion keeps the legacy logical path alias
+  `ar:<turn_id>.assistant.completion`; earlier visible completions use
+  `ar:<turn_id>.assistant.completion.<n>`.
 - No `files` list is stored separately. Files are reconstructed from blocks.
 - All paths must include concrete `turn_id` (no `current_turn`).
 - Internal Memory Beacons are stored in the turn log as normal blocks, but they are not user-facing UI artifacts.

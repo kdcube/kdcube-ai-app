@@ -68,10 +68,10 @@ Expected types:
 - timeline `sources_pool[]` → `artifact:solver.program.citables`
 
 ### Artifacts included by fetch
-From the reconstructed turn view:
-- `chat:user` (user prompt text)
+From the reconstructed turn view / ordered turn-log block stream:
+- `chat:user` (one or more prompt-like user entries from `user.prompt`, `user.followup`, `user.steer`)
 - `artifact:user.attachment` (attachments with filename/mime/rn/hosted_uri)
-- `chat:assistant` (assistant completion text)
+- `chat:assistant` (one or more assistant completion entries from `assistant.completion` blocks)
 - `artifact:assistant.file` (external files only; kind != display)
 - `artifact:solver.program.citables` (citations resolved from sources_pool + sources_used)
 - `artifact:conv.user_shortcuts` (follow‑up suggestions, if provided this turn)
@@ -116,9 +116,9 @@ From the reconstructed turn view:
   or by adding a new artifact type.
 - Internal Memory Beacons (`react.note` / `react.note.preserved`) are not exposed as fetch/UI artifacts.
   They remain model-side timeline memory and turn-log reconstruction data.
-- External `user.followup` / `user.steer` blocks are also not surfaced today as dedicated fetch/UI
-  artifacts. They exist in the timeline and turn-log reconstruction path, but the current fetch payload
-  does not project them into a separate top-level client artifact family.
+- External `user.followup` / `user.steer` are not emitted as a separate top-level artifact family,
+  but they are now projected into the fetched `chat:user` sequence for that turn.
+- One turn can now produce multiple `chat:user` and multiple `chat:assistant` artifacts.
 - Future namespace note:
   - assistant artifact paths are now split into durable workspace `files/...` and non-workspace `outputs/...`
   - fetch does not need a new top-level artifact family immediately
