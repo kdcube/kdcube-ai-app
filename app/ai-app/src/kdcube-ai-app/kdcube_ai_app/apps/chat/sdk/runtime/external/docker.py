@@ -150,6 +150,36 @@ def _extract_accounting_storage_uri(runtime_globals: Dict[str, Any], base_env: D
     return raw
 
 
+def _rewrite_portable_spec_storage_uri(runtime_globals: Dict[str, Any], storage_uri: str) -> Dict[str, Any]:
+    spec_json = runtime_globals.get("PORTABLE_SPEC_JSON")
+    if not isinstance(spec_json, str) or not spec_json.strip():
+        return runtime_globals
+    try:
+        payload = json.loads(spec_json)
+    except Exception:
+        return runtime_globals
+    if not isinstance(payload, dict):
+        return runtime_globals
+    accounting = payload.get("accounting_storage")
+    if not isinstance(accounting, dict):
+        return runtime_globals
+    current = accounting.get("storage_path")
+    if not isinstance(current, str) or not current.strip():
+        return runtime_globals
+    rewritten_payload = dict(payload)
+    rewritten_accounting = dict(accounting)
+    rewritten_accounting["storage_path"] = storage_uri
+    rewritten_payload["accounting_storage"] = rewritten_accounting
+    out = dict(runtime_globals)
+    out["PORTABLE_SPEC_JSON"] = json.dumps(
+        rewritten_payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        default=str,
+    )
+    return out
+
+
 def _resolve_local_storage_mount(storage_uri: str) -> tuple[pathlib.Path, pathlib.Path] | None:
     raw = str(storage_uri or "").strip()
     if not raw:
@@ -505,7 +535,9 @@ async def run_py_in_docker(
     if proc_bundle_storage_dir is not None:
         base_env["BUNDLE_STORAGE_DIR"] = str(proc_bundle_storage_dir)
     if proc_kdcube_storage_dir is not None:
-        base_env["KDCUBE_STORAGE_PATH"] = f"file://{proc_kdcube_storage_dir}"
+        rewritten_storage_uri = f"file://{proc_kdcube_storage_dir}"
+        base_env["KDCUBE_STORAGE_PATH"] = rewritten_storage_uri
+        runtime_globals = _rewrite_portable_spec_storage_uri(runtime_globals, rewritten_storage_uri)
     base_env = build_external_exec_env(
         base_env=base_env,
         runtime_globals=runtime_globals,

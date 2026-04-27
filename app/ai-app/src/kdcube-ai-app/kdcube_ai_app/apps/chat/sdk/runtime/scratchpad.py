@@ -40,6 +40,8 @@ class TurnScratchpad:
         self.uvec = None
         self.user_ts = None
         self.user_attachments = attachments # USED
+        self.user_message_persisted = False
+        self.persisted_turn_entry_paths: set[str] = set()
 
         self.tlog = None
 
@@ -52,6 +54,7 @@ class TurnScratchpad:
         self.service_error = None
         self.turn_summary = None
         self.final_internal_thinking = None
+        self.assistant_completion_attempts: List[Dict[str, Any]] = []
 
         # User memory
         self.user_memory = None

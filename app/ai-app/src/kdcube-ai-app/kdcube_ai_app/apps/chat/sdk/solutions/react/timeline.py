@@ -327,12 +327,22 @@ def extract_user_prompt_block(blocks: List[Dict[str, Any]]) -> Optional[Dict[str
 
 
 def extract_assistant_completion_block(blocks: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    for b in blocks or []:
+    for b in reversed(blocks or []):
         if not isinstance(b, dict):
             continue
         if (b.get("type") or "") == "assistant.completion":
             return b
     return None
+
+
+def extract_assistant_completion_blocks(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    items: List[Dict[str, Any]] = []
+    for b in blocks or []:
+        if not isinstance(b, dict):
+            continue
+        if (b.get("type") or "") == "assistant.completion":
+            items.append(b)
+    return items
 
 
 def extract_followups_from_blocks(blocks: List[Dict[str, Any]]) -> List[str]:
@@ -368,9 +378,6 @@ def extract_clarification_questions_from_blocks(blocks: List[Dict[str, Any]]) ->
 
 
 def _attachment_name_from_path(path: str) -> str:
-    marker = ".user.attachments/"
-    if marker in path:
-        return path.split(marker, 1)[1]
     path = (path or "").rstrip("/")
     if "/" in path:
         return path.rsplit("/", 1)[-1]
@@ -389,6 +396,9 @@ def extract_user_attachments_from_blocks(blocks: List[Dict[str, Any]]) -> List[D
         if not path:
             continue
         entry = by_path.setdefault(path, {"path": path})
+        ts = (b.get("ts") or "").strip() if isinstance(b.get("ts"), str) else ""
+        if ts and not entry.get("ts"):
+            entry["ts"] = ts
         if btype == "user.attachment.meta":
             meta = b.get("meta") if isinstance(b.get("meta"), dict) else {}
             entry["meta"] = dict(meta or {})
@@ -403,7 +413,10 @@ def extract_user_attachments_from_blocks(blocks: List[Dict[str, Any]]) -> List[D
         payload = {
             "filename": filename,
             "mime": mime,
+            "artifact_path": path,
         }
+        if entry.get("ts"):
+            payload["ts"] = entry.get("ts")
         for key in ("rn", "hosted_uri", "key", "physical_path"):
             if meta.get(key):
                 payload[key] = meta.get(key)
@@ -411,12 +424,15 @@ def extract_user_attachments_from_blocks(blocks: List[Dict[str, Any]]) -> List[D
             payload["physical_path"] = meta.get("local_path")
         if meta.get("summary") or meta.get("description"):
             payload["summary"] = meta.get("summary") or meta.get("description")
+        for key in ("continuation_kind", "event_kind", "message_id", "sequence"):
+            if meta.get(key) is not None:
+                payload[key] = meta.get(key)
         out.append(payload)
     return out
 
 
 def extract_assistant_files_from_blocks(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    paths: List[str] = []
+    file_rows: List[Dict[str, Any]] = []
     seen: set[str] = set()
     for b in blocks or []:
         if not isinstance(b, dict):
@@ -441,9 +457,14 @@ def extract_assistant_files_from_blocks(blocks: List[Dict[str, Any]]) -> List[Di
         if not p or p in seen:
             continue
         seen.add(p)
-        paths.append(p)
+        file_rows.append({
+            "path": p,
+            "ts": (b.get("ts") or "").strip() if isinstance(b.get("ts"), str) else "",
+            "meta": meta,
+        })
     out: List[Dict[str, Any]] = []
-    for p in paths:
+    for row in file_rows:
+        p = str(row.get("path") or "").strip()
         art = resolve_artifact_from_timeline({"blocks": blocks, "sources_pool": []}, p)
         if not isinstance(art, dict):
             continue
@@ -459,7 +480,10 @@ def extract_assistant_files_from_blocks(blocks: List[Dict[str, Any]]) -> List[Di
         payload = {
             "filename": filename,
             "mime": art.get("mime") or "application/octet-stream",
+            "artifact_path": p,
         }
+        if row.get("ts"):
+            payload["ts"] = row.get("ts")
         for key in ("rn", "hosted_uri", "key", "physical_path"):
             if art.get(key):
                 payload[key] = art.get(key)
@@ -467,6 +491,10 @@ def extract_assistant_files_from_blocks(blocks: List[Dict[str, Any]]) -> List[Di
             payload["physical_path"] = art.get("local_path")
         if art.get("summary") or art.get("description"):
             payload["summary"] = art.get("summary") or art.get("description")
+        meta = row.get("meta") if isinstance(row.get("meta"), dict) else {}
+        for key in ("tool_id", "tool_call_id", "call_id", "sub_type"):
+            if meta.get(key):
+                payload[key] = meta.get(key)
         out.append(payload)
     return out
 
@@ -480,6 +508,7 @@ def _build_turn_view(
     sources_pool = list(sources_pool or [])
     user_block = extract_user_prompt_block(blocks)
     assistant_block = extract_assistant_completion_block(blocks)
+    assistant_blocks = extract_assistant_completion_blocks(blocks)
     attachments = extract_user_attachments_from_blocks(blocks)
     files = extract_assistant_files_from_blocks(blocks)
     used_sids = extract_sources_used_from_blocks(blocks)
@@ -498,6 +527,16 @@ def _build_turn_view(
             "text": assistant_block.get("text") if isinstance(assistant_block, dict) else "",
             "ts": assistant_block.get("ts") if isinstance(assistant_block, dict) else "",
         },
+        "assistants": [
+            {
+                "text": blk.get("text") if isinstance(blk.get("text"), str) else "",
+                "ts": blk.get("ts") if isinstance(blk.get("ts"), str) else "",
+                "path": blk.get("path") if isinstance(blk.get("path"), str) else "",
+                "meta": blk.get("meta") if isinstance(blk.get("meta"), dict) else {},
+            }
+            for blk in assistant_blocks
+            if isinstance(blk.get("text"), str) and str(blk.get("text") or "").strip()
+        ],
         "attachments": attachments,
         "files": files,
         "citations": used_sources,

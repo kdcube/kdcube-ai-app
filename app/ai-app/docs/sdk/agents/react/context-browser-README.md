@@ -16,9 +16,9 @@ It loads historical turns, builds the current‑turn user blocks, and lets agent
 progress blocks that become part of the in‑turn log.
 
 Relevant code:
-- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/browser.py`
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/browser.py`
 - `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/context/retrieval/ctx_rag.py`
-- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/layout.py` (block formatting)
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/layout.py` (block formatting)
 
 ---
 
@@ -64,6 +64,10 @@ This builds and caches:
 - `history_blocks` (prior turns + summaries)
 - `current_turn_blocks` (user prompt + attachments)
 
+Later same-turn user additions (`user.followup`, `user.steer`) and any additional
+`assistant.completion` blocks are contributed into the same timeline/turn log; they are not a
+separate fetch-only layer.
+
 ## 4) Get the timeline for an agent call
 
 ```python
@@ -89,6 +93,10 @@ blocks = await browser.timeline(
 
 Any agent can append progress blocks. These show up in the timeline and can be
 persisted into the turn log for next‑turn reconstruction.
+
+That same persistence path is also what later produces:
+- multiple prompt-like `chat:user` entries from one turn
+- multiple visible `chat:assistant` completions from one turn
 
 ```python
 block = {

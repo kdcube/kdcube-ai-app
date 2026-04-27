@@ -449,3 +449,113 @@ async def test_emit_committed_answer_once_streams_single_answer_pair():
     assert deltas[0]["completed"] is False
     assert deltas[1]["text"] == ""
     assert deltas[1]["completed"] is True
+
+
+@pytest.mark.asyncio
+async def test_persist_turn_entries_store_multiple_user_and_assistant_rows():
+    saved_messages = []
+    emitted = []
+
+    class _ConvIdxStub:
+        async def add_message(self, **kwargs):
+            saved_messages.append(dict(kwargs))
+
+    class _TimelineWithBlocks(_TimelineStub):
+        def __init__(self, blocks):
+            self.blocks = list(blocks)
+
+    async def _embed_texts(texts):
+        return [[0.1, 0.2, 0.3] for _ in texts]
+
+    wf = BaseWorkflow.__new__(BaseWorkflow)
+    wf.conv_idx = _ConvIdxStub()
+    wf.model_service = SimpleNamespace(embed_texts=_embed_texts)
+    wf.config = SimpleNamespace(ai_bundle_spec=SimpleNamespace(id="bundle.test"))
+    wf._ctx = {
+        "service": {
+            "tenant": "tenant-a",
+            "project": "project-a",
+            "user": "user-a",
+            "user_type": "registered",
+        },
+        "conversation": {
+            "conversation_id": "conv-1",
+            "turn_id": "turn-1",
+            "ts": "2026-04-26T10:00:00Z",
+        },
+    }
+    wf._emit = lambda payload: emitted.append(payload)
+    wf.logger = SimpleNamespace(log=lambda *args, **kwargs: None)
+    wf.ctx_browser = SimpleNamespace(
+        timeline=_TimelineWithBlocks(
+            [
+                {
+                    "type": "user.prompt",
+                    "turn_id": "turn-1",
+                    "ts": "2026-04-26T10:00:00Z",
+                    "path": "ar:turn-1.user.prompt",
+                    "text": "Original prompt",
+                    "meta": {},
+                },
+                {
+                    "type": "user.followup",
+                    "turn_id": "turn-1",
+                    "ts": "2026-04-26T10:00:02Z",
+                    "path": "ar:turn-1.user.followup.1",
+                    "text": "Additional requirement",
+                    "meta": {},
+                },
+                {
+                    "type": "assistant.completion",
+                    "turn_id": "turn-1",
+                    "ts": "2026-04-26T10:00:03Z",
+                    "path": "ar:turn-1.assistant.completion.1",
+                    "text": "First visible completion",
+                },
+                {
+                    "type": "assistant.completion",
+                    "turn_id": "turn-1",
+                    "ts": "2026-04-26T10:00:04Z",
+                    "path": "ar:turn-1.assistant.completion",
+                    "text": "Final completion",
+                },
+            ]
+        )
+    )
+
+    async def _emit_async(payload):
+        emitted.append(payload)
+
+    wf._emit = _emit_async
+
+    scratchpad = SimpleNamespace(
+        turn_topics_plain=[],
+        persisted_turn_entry_paths=set(),
+        answer="Final completion",
+        answer_raw="",
+        timings=[],
+    )
+
+    prompt_count = await wf.persist_turn_prompt_entries(scratchpad)
+    await wf.persist_assistant(scratchpad)
+
+    assert prompt_count == 2
+    assert [m["role"] for m in saved_messages] == ["user", "user", "assistant", "assistant"]
+    assert [m["text"] for m in saved_messages] == [
+        "Original prompt",
+        "Additional requirement",
+        "First visible completion",
+        "Final completion",
+    ]
+    assert saved_messages[1]["tags"][-1] == "continuation:followup"
+    assert {
+        "ar:turn-1.user.prompt",
+        "ar:turn-1.user.followup.1",
+        "ar:turn-1.assistant.completion.1",
+        "ar:turn-1.assistant.completion",
+    }.issubset(scratchpad.persisted_turn_entry_paths)
+    assert any(
+        payload.get("data", {}).get("count") == 2
+        for payload in emitted
+        if isinstance(payload, dict) and payload.get("step") == "conversation.persist.assistant_message"
+    )

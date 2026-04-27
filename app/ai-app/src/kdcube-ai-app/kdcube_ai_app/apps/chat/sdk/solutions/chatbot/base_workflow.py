@@ -688,87 +688,199 @@ class BaseWorkflow():
 
     async def persist_user_message(self, scratch: CTurnScratchpad):
 
-        tenant, project, user, user_type, request_id = self._ctx["service"]["tenant"], self._ctx["service"]["project"], self._ctx["service"]["user"], self._ctx["service"]["user_type"], self._ctx["service"]["request_id"]
-        conversation_id, turn_id = self._ctx["conversation"]["conversation_id"], self._ctx["conversation"]["turn_id"]
-
         if getattr(scratch, "user_message_persisted", False):
             return
-
-        # (5) persist + index the USER message
-        t5a, ms5a = _tstart()
-        truncated_text = truncate_text_by_tokens(scratch.user_text)
-        [scratch.uvec] = await self.model_service.embed_texts([truncated_text])
-        timing_user_embed = _tend(t5a, ms5a)
-
-        step_title = "User message embedded"
-        scratch.timings.append({"title": step_title, "elapsed_ms": timing_user_embed["elapsed_ms"]})
-
-        t5, ms5 = _tstart()
+        conversation_id, turn_id = self._ctx["conversation"]["conversation_id"], self._ctx["conversation"]["turn_id"]
         ts = self._ctx["conversation"]["ts"]
+        path = f"ar:{turn_id}.user.prompt"
+        await self._persist_user_conversation_entry(
+            scratchpad=scratch,
+            text=scratch.user_text or scratch.short_text,
+            ts=ts,
+            turn_id=turn_id,
+            path=path,
+            continuation_kind=None,
+        )
+        scratch.user_message_persisted = True
+        scratch.persisted_turn_entry_paths.add(path)
+
+    def _current_turn_blocks(self, *, turn_id: str) -> List[Dict[str, Any]]:
+        if not self.ctx_browser or not getattr(self.ctx_browser, "timeline", None):
+            return []
+        try:
+            return [
+                b for b in (self.ctx_browser.timeline.blocks or [])
+                if isinstance(b, dict) and str(b.get("turn_id") or "").strip() == turn_id
+            ]
+        except Exception:
+            return []
+
+    def _iter_turn_prompt_entries(self, *, turn_id: str) -> List[Dict[str, Any]]:
+        entries: List[Dict[str, Any]] = []
+        for blk in self._current_turn_blocks(turn_id=turn_id):
+            btype = str(blk.get("type") or "").strip()
+            text = str(blk.get("text") or "").strip()
+            path = str(blk.get("path") or "").strip()
+            ts = str(blk.get("ts") or "").strip()
+            meta = blk.get("meta") if isinstance(blk.get("meta"), dict) else {}
+            continuation_kind: Optional[str] = None
+            if btype == "user.prompt":
+                continuation_kind = str(meta.get("continuation_kind") or "").strip() or None
+            elif btype in {"user.followup", "user.followup.preserved"}:
+                continuation_kind = "followup"
+            elif btype in {"user.steer", "user.steer.preserved"}:
+                continuation_kind = "steer"
+            else:
+                continue
+            if not text:
+                continue
+            entries.append({
+                "text": text,
+                "ts": ts,
+                "path": path,
+                "continuation_kind": continuation_kind,
+            })
+        return entries
+
+    def _iter_turn_assistant_completion_entries(self, *, turn_id: str) -> List[Dict[str, Any]]:
+        entries: List[Dict[str, Any]] = []
+        for blk in self._current_turn_blocks(turn_id=turn_id):
+            if str(blk.get("type") or "").strip() != "assistant.completion":
+                continue
+            text = str(blk.get("text") or "").strip()
+            path = str(blk.get("path") or "").strip()
+            ts = str(blk.get("ts") or "").strip()
+            if not text or not path:
+                continue
+            entries.append({
+                "text": text,
+                "ts": ts,
+                "path": path,
+            })
+        return entries
+
+    async def _persist_user_conversation_entry(
+        self,
+        *,
+        scratchpad: CTurnScratchpad,
+        text: str,
+        ts: str,
+        turn_id: str,
+        path: str,
+        continuation_kind: Optional[str],
+    ) -> Optional[str]:
+        tenant, project, user, user_type = (
+            self._ctx["service"]["tenant"],
+            self._ctx["service"]["project"],
+            self._ctx["service"]["user"],
+            self._ctx["service"]["user_type"],
+        )
+        conversation_id = self._ctx["conversation"]["conversation_id"]
+        text = str(text or "").strip()
+        if not text or not path:
+            return None
+        truncated_text = truncate_text_by_tokens(text)
+        [uvec] = await self.model_service.embed_texts([truncated_text])
+        scratchpad.uvec = uvec
         msg_ts = time.strftime("%Y-%m-%dT%H-%M-%S", time.gmtime())
-        msgid_u = f"{_mid('user', msg_ts)}-conv.user"
-        s3u = "index_only"
-        rn_u = "index_only"
+        safe_path = re.sub(r"[^a-zA-Z0-9._-]+", "_", path).strip("_") or "prompt"
+        msgid_u = f"{_mid('user', msg_ts)}-{safe_path}"
+        tags = ["chat:user", f"turn:{turn_id}"] + [f"topic:{t}" for t in scratchpad.turn_topics_plain or []]
+        if continuation_kind:
+            tags.append(f"continuation:{continuation_kind}")
         await self.conv_idx.add_message(
             user_id=user,
             conversation_id=conversation_id,
             bundle_id=self.config.ai_bundle_spec.id,
             turn_id=turn_id,
             role="user",
-            text=scratch.short_text,
-            hosted_uri=s3u,
+            text=text,
+            hosted_uri="index_only",
             ts=ts,
-            tags=["chat:user", f"turn:{turn_id}"] + [f"topic:{t}" for t in scratch.turn_topics_plain or []],
+            tags=tags,
             ttl_days=_ttl_for(user_type, 365),
             user_type=user_type,
-            embedding=scratch.uvec,
+            embedding=uvec,
             message_id=msgid_u,
         )
-        timing_user_persist = _tend(t5, ms5)
-        step_title = "User Message Persisted"
-        await self._emit({"type": "chat.step", "agent": "store", "step": "conversation.persist.user_message",
-                          "status": "completed", "title": step_title,
-                          "data": {"hosted_uri": s3u, "message_id": msgid_u, "rn": rn_u},
-                          "timing": timing_user_persist})
-        scratch.timings.append({
-            "title": step_title,
-            "elapsed_ms": timing_user_persist["elapsed_ms"]
-        })
-        self.logger.log_step("user.persisted",
-                             {"s3": s3u, "message_id": msgid_u,
-                                   "embed_dim": len(scratch.uvec) if scratch.uvec else 0})
-        scratch.user_message_persisted = True
+        scratchpad.persisted_turn_entry_paths.add(path)
+        return msgid_u
+
+    async def persist_turn_prompt_entries(self, scratchpad: CTurnScratchpad) -> int:
+        turn_id = self._ctx["conversation"]["turn_id"]
+        persisted = 0
+        for entry in self._iter_turn_prompt_entries(turn_id=turn_id):
+            path = str(entry.get("path") or "").strip()
+            if not path or path in scratchpad.persisted_turn_entry_paths:
+                continue
+            msgid = await self._persist_user_conversation_entry(
+                scratchpad=scratchpad,
+                text=str(entry.get("text") or ""),
+                ts=str(entry.get("ts") or self._ctx["conversation"]["ts"]),
+                turn_id=turn_id,
+                path=path,
+                continuation_kind=entry.get("continuation_kind"),
+            )
+            if msgid:
+                persisted += 1
+        return persisted
 
     async def persist_assistant(self, scratchpad: TurnScratchpad):
 
-        tenant, project, user, user_type, request_id = self._ctx["service"]["tenant"], self._ctx["service"]["project"], self._ctx["service"]["user"], self._ctx["service"]["user_type"], self._ctx["service"]["request_id"]
+        tenant, project, user, user_type = (
+            self._ctx["service"]["tenant"],
+            self._ctx["service"]["project"],
+            self._ctx["service"]["user"],
+            self._ctx["service"]["user_type"],
+        )
         conversation_id, turn_id = self._ctx["conversation"]["conversation_id"], self._ctx["conversation"]["turn_id"]
 
-        t14, ms14 = _tstart()
-        scratchpad.avec = (await self.model_service.embed_texts([scratchpad.answer]))[0] if scratchpad.answer else None
-        answer_for_storage = (scratchpad.answer_raw or scratchpad.answer or "")
+        entries = self._iter_turn_assistant_completion_entries(turn_id=turn_id)
+        if not entries and (scratchpad.answer_raw or scratchpad.answer):
+            entries = [{
+                "text": scratchpad.answer_raw or scratchpad.answer or "",
+                "ts": getattr(scratchpad, "ended_at", None) or datetime.datetime.utcnow().isoformat() + "Z",
+                "path": f"ar:{turn_id}.assistant.completion",
+            }]
 
-        msg_ts = time.strftime("%Y-%m-%dT%H-%M-%S", time.gmtime())
-        msgid_a = f"{_mid('assistant', msg_ts)}-conv.assistant"
-        s3a = "index_only"
-        rn_a = "index_only"
-        await self.conv_idx.add_message(
-            user_id=user, conversation_id=conversation_id,
-            bundle_id=self.config.ai_bundle_spec.id,
-            turn_id=turn_id,
-            role="assistant", text=answer_for_storage, hosted_uri=s3a,
-            ts=datetime.datetime.utcnow().isoformat() + "Z",
-            tags=["chat:assistant", f"turn:{turn_id}"] + [f"topic:{t}" for t in scratchpad.turn_topics_plain or []],
-            ttl_days=_ttl_for(user_type, 365),
-            user_type=user_type,
-            embedding=scratchpad.avec,
-            message_id=msgid_a,
-        )
+        persisted = 0
+        t14, ms14 = _tstart()
+        for entry in entries:
+            path = str(entry.get("path") or "").strip()
+            if not path or path in scratchpad.persisted_turn_entry_paths:
+                continue
+            text = str(entry.get("text") or "").strip()
+            if not text:
+                continue
+            [avec] = await self.model_service.embed_texts([text])
+            scratchpad.avec = avec
+            msg_ts = time.strftime("%Y-%m-%dT%H-%M-%S", time.gmtime())
+            safe_path = re.sub(r"[^a-zA-Z0-9._-]+", "_", path).strip("_") or "assistant"
+            msgid_a = f"{_mid('assistant', msg_ts)}-{safe_path}"
+            await self.conv_idx.add_message(
+                user_id=user,
+                conversation_id=conversation_id,
+                bundle_id=self.config.ai_bundle_spec.id,
+                turn_id=turn_id,
+                role="assistant",
+                text=text,
+                hosted_uri="index_only",
+                ts=str(entry.get("ts") or datetime.datetime.utcnow().isoformat() + "Z"),
+                tags=["chat:assistant", f"turn:{turn_id}"] + [f"topic:{t}" for t in scratchpad.turn_topics_plain or []],
+                ttl_days=_ttl_for(user_type, 365),
+                user_type=user_type,
+                embedding=avec,
+                message_id=msgid_a,
+            )
+            scratchpad.persisted_turn_entry_paths.add(path)
+            persisted += 1
+        if persisted <= 0:
+            return
         timing_assist_persist = _tend(t14, ms14)
-        step_title = "Assistant Message Persisted"
+        step_title = "Assistant Messages Persisted"
         await self._emit({"type": "chat.step", "agent": "store", "step": "conversation.persist.assistant_message",
                           "status": "completed", "title": step_title,
-                          "data": { "hosted_uri": s3a, "message_id": msgid_a, "rn": rn_a },
+                          "data": {"count": persisted},
                           "timing": timing_assist_persist})
         scratchpad.timings.append({
             "title": step_title,
@@ -1483,7 +1595,8 @@ class BaseWorkflow():
                 self.ctx_browser.contribute(
                     blocks=build_assistant_completion_blocks(
                         runtime=self.ctx_browser.runtime_ctx,
-                        answer_text=scratchpad.answer or "",
+                        completion_entries=list(getattr(scratchpad, "assistant_completion_attempts", []) or []),
+                        final_answer_text=scratchpad.answer or "",
                         ended_at=getattr(scratchpad, "ended_at", None),
                         block_factory=self.ctx_browser.timeline.block,
                     ),
@@ -1495,6 +1608,10 @@ class BaseWorkflow():
 
             except Exception:
                 pass
+            try:
+                await self.persist_turn_prompt_entries(scratchpad)
+            except Exception:
+                self.logger.log(traceback.format_exc(), "ERROR")
             await self.persist_assistant(scratchpad)
             # Post-answer blocks (react.state / react.exit)
             try:
@@ -1553,6 +1670,10 @@ class BaseWorkflow():
                     self.ctx_browser.contribute(blocks=list(post_blocks))
             except Exception:
                 pass
+            try:
+                await self.persist_turn_prompt_entries(scratchpad)
+            except Exception:
+                self.logger.log(traceback.format_exc(), "ERROR")
         if ok:
             if on_flush_completed_hook:
                 await on_flush_completed_hook(scratchpad)

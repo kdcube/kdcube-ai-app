@@ -13,6 +13,15 @@ from kdcube_ai_app.apps.chat.emitters import ChatCommunicator
 from kdcube_ai_app.apps.chat.sdk.storage.conversation_store import ConversationStore
 from kdcube_ai_app.infra.service_hub.inventory import AgentLogger
 from kdcube_ai_app.apps.chat.sdk.solutions.react.timeline import resolve_artifact_from_timeline
+from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+    ARTIFACT_NAMESPACE_ATTACHMENTS,
+    ARTIFACT_NAMESPACE_FILES,
+    ARTIFACT_NAMESPACE_OUTPUTS,
+    build_logical_artifact_path,
+    build_physical_artifact_path,
+    split_logical_artifact_path,
+    split_physical_artifact_path,
+)
 from kdcube_ai_app.apps.chat.sdk.solutions.react.workspace import (
     _guess_mime_from_path,
     _infer_physical_from_fi,
@@ -83,16 +92,7 @@ async def read_artifact_for_react(
 
     if not isinstance(artifact, dict):
         # attempt to load from historical turn log
-        tid = ""
-        p = raw_path[len("fi:"):]
-        if ".files/" in p:
-            tid = p.split(".files/", 1)[0]
-        elif ".outputs/" in p:
-            tid = p.split(".outputs/", 1)[0]
-        elif ".user.attachments/" in p:
-            tid = p.split(".user.attachments/", 1)[0]
-        elif ".attachments/" in p:
-            tid = p.split(".attachments/", 1)[0]
+        tid, _, _ = split_logical_artifact_path(raw_path)
         if tid:
             try:
                 turn_log = await ctx_browser.get_turn_log(turn_id=tid)
@@ -188,16 +188,7 @@ async def resolve_logical_artifact(
 
     if not raw_path.startswith("fi:"):
         return None
-    tid = ""
-    p = raw_path[len("fi:"):]
-    if ".files/" in p:
-        tid = p.split(".files/", 1)[0]
-    elif ".outputs/" in p:
-        tid = p.split(".outputs/", 1)[0]
-    elif ".user.attachments/" in p:
-        tid = p.split(".user.attachments/", 1)[0]
-    elif ".attachments/" in p:
-        tid = p.split(".attachments/", 1)[0]
+    tid, _, _ = split_logical_artifact_path(raw_path)
     if not tid:
         return None
     try:
@@ -245,7 +236,23 @@ async def rehost_files_from_timeline(
     for p in paths:
         if not isinstance(p, str):
             continue
-        if "/files/" in p or p.endswith("/files"):
+        turn_id, namespace, rel = split_physical_artifact_path(p)
+        if namespace == ARTIFACT_NAMESPACE_FILES and turn_id:
+            if not _safe_relpath(p):
+                errors.append(f"unsafe_path:{p}")
+                continue
+            by_turn.setdefault(turn_id, []).append(rel)
+        elif namespace == ARTIFACT_NAMESPACE_OUTPUTS and turn_id:
+            if not _safe_relpath(p):
+                errors.append(f"unsafe_path:{p}")
+                continue
+            by_turn_outputs.setdefault(turn_id, []).append(rel)
+        elif namespace == ARTIFACT_NAMESPACE_ATTACHMENTS and turn_id:
+            if not _safe_relpath(p):
+                errors.append(f"unsafe_path:{p}")
+                continue
+            by_turn_attachments.setdefault(turn_id, []).append(rel)
+        elif "/files/" in p or p.endswith("/files"):
             if not _safe_relpath(p):
                 errors.append(f"unsafe_path:{p}")
                 continue
@@ -297,19 +304,6 @@ async def rehost_files_from_timeline(
 
     def _collect_descendant_relpaths(*, blocks: List[Dict[str, Any]], turn_id: str, rel_prefix: str, kind: str) -> List[str]:
         normalized_prefix = (rel_prefix or "").strip().strip("/")
-        if kind == "attachments":
-            logical_roots = (
-                f"fi:{turn_id}.user.attachments/",
-                f"fi:{turn_id}.attachments/",
-            )
-            physical_root = f"{turn_id}/attachments/"
-        elif kind == "outputs":
-            logical_roots = (f"fi:{turn_id}.outputs/",)
-            physical_root = f"{turn_id}/outputs/"
-        else:
-            logical_roots = (f"fi:{turn_id}.files/",)
-            physical_root = f"{turn_id}/files/"
-
         seen: set[str] = set()
         out: List[str] = []
 
@@ -330,16 +324,29 @@ async def rehost_files_from_timeline(
             candidate = (candidate or "").strip()
             if not candidate:
                 return
-            for root in logical_roots:
-                if candidate.startswith(root):
-                    _record_rel(candidate[len(root):])
-                    return
+            tid, namespace, rel = split_logical_artifact_path(candidate)
+            if tid != turn_id or not rel:
+                return
+            if kind == "attachments" and namespace == ARTIFACT_NAMESPACE_ATTACHMENTS:
+                _record_rel(rel)
+            elif kind == "outputs" and namespace == ARTIFACT_NAMESPACE_OUTPUTS:
+                _record_rel(rel)
+            elif kind == "files" and namespace == ARTIFACT_NAMESPACE_FILES:
+                _record_rel(rel)
 
         def _record_physical(candidate: str) -> None:
             candidate = (candidate or "").strip().strip("/")
-            if not candidate or not candidate.startswith(physical_root):
+            if not candidate:
                 return
-            _record_rel(candidate[len(physical_root):])
+            tid, namespace, rel = split_physical_artifact_path(candidate)
+            if tid != turn_id or not rel:
+                return
+            if kind == "attachments" and namespace == ARTIFACT_NAMESPACE_ATTACHMENTS:
+                _record_rel(rel)
+            elif kind == "outputs" and namespace == ARTIFACT_NAMESPACE_OUTPUTS:
+                _record_rel(rel)
+            elif kind == "files" and namespace == ARTIFACT_NAMESPACE_FILES:
+                _record_rel(rel)
 
         for block in blocks or []:
             if not isinstance(block, dict):
@@ -360,11 +367,23 @@ async def rehost_files_from_timeline(
 
     async def _resolve_artifact(*, turn_id: str, rel: str, kind: str) -> Optional[Dict[str, Any]]:
         if kind == "attachments":
-            artifact_path = f"fi:{turn_id}.user.attachments/{rel}"
+            artifact_path = build_logical_artifact_path(
+                turn_id=turn_id,
+                namespace=ARTIFACT_NAMESPACE_ATTACHMENTS,
+                relpath=rel,
+            )
         elif kind == "outputs":
-            artifact_path = f"fi:{turn_id}.outputs/{rel}"
+            artifact_path = build_logical_artifact_path(
+                turn_id=turn_id,
+                namespace=ARTIFACT_NAMESPACE_OUTPUTS,
+                relpath=rel,
+            )
         else:
-            artifact_path = f"fi:{turn_id}.files/{rel}"
+            artifact_path = build_logical_artifact_path(
+                turn_id=turn_id,
+                namespace=ARTIFACT_NAMESPACE_FILES,
+                relpath=rel,
+            )
         # 1) Prefer current in-memory timeline (covers current turn before persistence).
         try:
             timeline = getattr(ctx_browser, "timeline", None)
@@ -389,11 +408,24 @@ async def rehost_files_from_timeline(
                     rel_prefix=rel,
                     kind=kind,
                 )
+                physical_rel = build_physical_artifact_path(
+                    turn_id=turn_id,
+                    namespace=ARTIFACT_NAMESPACE_ATTACHMENTS if kind == "attachments" else (
+                        ARTIFACT_NAMESPACE_OUTPUTS if kind == "outputs" else ARTIFACT_NAMESPACE_FILES
+                    ),
+                    relpath=rel,
+                ) or f"{turn_id}/{target_ns}/{rel}"
                 if not rel_targets:
-                    missing.append(f"{turn_id}/{target_ns}/{rel}")
+                    missing.append(physical_rel)
                     continue
                 for target_rel in rel_targets:
-                    target_key = f"{turn_id}/{target_ns}/{target_rel}"
+                    target_key = build_physical_artifact_path(
+                        turn_id=turn_id,
+                        namespace=ARTIFACT_NAMESPACE_ATTACHMENTS if kind == "attachments" else (
+                            ARTIFACT_NAMESPACE_OUTPUTS if kind == "outputs" else ARTIFACT_NAMESPACE_FILES
+                        ),
+                        relpath=target_rel,
+                    ) or f"{turn_id}/{target_ns}/{target_rel}"
                     if target_key in processed_targets:
                         continue
                     processed_targets.add(target_key)
@@ -410,7 +442,7 @@ async def rehost_files_from_timeline(
                     expected_size = target_artifact.get("size_bytes")
                     if not isinstance(expected_size, int):
                         expected_size = None
-                    target = outdir / turn_id / target_ns / target_rel
+                    target = outdir / target_key
                     target.parent.mkdir(parents=True, exist_ok=True)
                     try:
                         needs_rehost = not target.exists()

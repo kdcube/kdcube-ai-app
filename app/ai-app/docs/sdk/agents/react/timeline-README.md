@@ -21,6 +21,10 @@ The **timeline** is the single source of truth for turn context. It stores:
 - transient **announce** blocks (in‑memory only, not persisted)
  - **plan history blocks** (`react.plan` / `react.plan.ack`) persisted in the block stream
 
+One turn may contain:
+- multiple prompt-like user blocks (`user.prompt`, `user.followup`, `user.steer`)
+- multiple `assistant.completion` blocks if the user saw more than one completion before the turn closed
+
 It is persisted as a single artifact: `artifact:conv.timeline.v1`.
 The sources pool is persisted separately as `artifact:conv:sources_pool`.
 
@@ -96,7 +100,7 @@ When the visible window exceeds the model budget, the timeline compacts earlier 
   react.notice [optional]
   react.tool.call / react.tool.result / ...
   react.note [optional]
-  assistant.completion
+  assistant.completion [0..n]
 
 [TURN <id> header]
   ...
@@ -194,6 +198,11 @@ Assistant completion blocks (`assistant.completion`) are rendered with an extra 
 ```
 [sources_used: [1,2,3]]
 ```
+
+Path convention:
+- latest completion in the turn keeps `ar:<turn_id>.assistant.completion`
+- earlier visible completions in the same turn use `ar:<turn_id>.assistant.completion.<n>`
+- fetch reconstruction can therefore emit multiple `chat:assistant` entries for one turn
 
 Debugging:
 - `timeline.render(..., debug_print=True)` prints the rendered message stream,

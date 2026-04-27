@@ -11,6 +11,7 @@ import json
 import pathlib
 import traceback
 import uuid
+import base64
 
 import time
 from datetime import datetime, timezone
@@ -32,6 +33,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.timeline import (
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
 from kdcube_ai_app.apps.chat.sdk.solutions.react.workspace import get_workspace_implementation
+from kdcube_ai_app.tools.content_type import is_text_mime_type
 
 PROJECT_LOG_SLOTS = { "project_log" }
 SOURCES_POOL_ARTIFACT_TAG = f"artifact:{SOURCES_POOL_KIND}"
@@ -399,7 +401,7 @@ class ContextBrowser:
         max_seq = int(self._timeline.last_external_event_seq or 0)
         max_cursor = str(self._timeline.last_external_event_id or "")
         for event in events:
-            blocks = self._blocks_from_external_event(event)
+            blocks = await self._blocks_from_external_event(event)
             max_seq = max(max_seq, int(getattr(event, "sequence", 0) or 0))
             if getattr(event, "stream_id", None):
                 max_cursor = str(getattr(event, "stream_id", "") or max_cursor)
@@ -487,7 +489,7 @@ class ContextBrowser:
                 continue
             if self._external_event_already_applied(event):
                 continue
-            blocks = self._blocks_from_external_event(event)
+            blocks = await self._blocks_from_external_event(event)
             stream_id = str(getattr(event, "stream_id", "") or "")
             if not blocks:
                 if stream_id:
@@ -527,7 +529,7 @@ class ContextBrowser:
             except Exception:
                 self.log.log(f"[timeline.external]: hook failure {traceback.format_exc()}", "ERROR")
 
-    def _blocks_from_external_event(self, event: Any) -> List[Dict[str, Any]]:
+    async def _blocks_from_external_event(self, event: Any) -> List[Dict[str, Any]]:
         if self._timeline is None:
             return []
         kind = str(getattr(event, "kind", "") or "").strip().lower()
@@ -556,6 +558,8 @@ class ContextBrowser:
             meta["payload"] = dict(payload)
         attachments = self._attachments_from_external_event(event) if kind == "followup" else []
         if attachments:
+            attachments = await self._hydrate_external_event_attachments(attachments)
+        if attachments:
             meta["attachments_count"] = len(attachments)
         event_ts = time.strftime(
             "%Y-%m-%dT%H:%M:%SZ",
@@ -574,25 +578,57 @@ class ContextBrowser:
             path=path,
             meta=meta,
         )]
-        if attachments and kind == "followup":
+        if attachments:
             from kdcube_ai_app.apps.chat.sdk.solutions.react.layout import build_user_attachment_blocks
 
-            event_id = str(getattr(event, "message_id", "") or "").strip() or "external"
+            event_id = str(getattr(event, "message_id", "") or "").strip() or "mext"
             blocks.extend(build_user_attachment_blocks(
                 turn_id=turn_id,
                 ts=event_ts,
                 user_attachments=attachments,
                 block_factory=self._timeline.block,
-                path_root=f"fi:{turn_id}.external.followup.{event_id}.attachments",
-                synthetic_physical_root=f"{turn_id}/external/followup/{event_id}/attachments",
+                path_root=f"fi:{turn_id}.external.{kind}.attachments/{event_id}",
+                synthetic_physical_root=f"{turn_id}/external/{kind}/attachments/{event_id}",
                 meta_extra={
-                    "continuation_kind": "followup",
-                    "event_kind": "followup",
+                    "continuation_kind": kind,
+                    "event_kind": kind,
                     "message_id": event_id,
                     "sequence": int(getattr(event, "sequence", 0) or 0),
                 },
             ))
         return blocks
+
+    async def _hydrate_external_event_attachments(self, attachments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        store = getattr(getattr(self.ctx_client, "store", None), "get_blob_bytes", None)
+        if not callable(store):
+            return [dict(item) for item in (attachments or []) if isinstance(item, dict)]
+
+        hydrated: List[Dict[str, Any]] = []
+        for raw in attachments or []:
+            if not isinstance(raw, dict):
+                continue
+            item = dict(raw)
+            if item.get("text") or item.get("base64"):
+                hydrated.append(item)
+                continue
+            hosted_uri = str(item.get("hosted_uri") or "").strip()
+            mime = str(item.get("mime") or "").strip().lower()
+            if not hosted_uri:
+                hydrated.append(item)
+                continue
+            try:
+                data = await store(hosted_uri)
+                if is_text_mime_type(mime):
+                    item["text"] = data.decode("utf-8", errors="replace")
+                elif mime == "application/pdf" or mime.startswith("image/"):
+                    item["base64"] = base64.b64encode(data).decode("utf-8")
+            except Exception:
+                self.log.log(
+                    f"[timeline.external] attachment hydration failed uri={hosted_uri!r}\n{traceback.format_exc()}",
+                    "WARNING",
+                )
+            hydrated.append(item)
+        return hydrated
 
     def _attachments_from_external_event(self, event: Any) -> List[Dict[str, Any]]:
         def _normalize(raw: Any) -> List[Dict[str, Any]]:

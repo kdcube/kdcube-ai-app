@@ -54,6 +54,10 @@ current pre‑tail boundary.
 A **round** is keyed by `tool_call_id`, plus a **final completion round** that contains:
 `assistant.completion`, `stage.suggested_followups`, `react.exit`, `react.state`.
 
+If one turn produces multiple visible `assistant.completion` blocks, they still belong to that
+turn's final completion family. Caching remains round-based; the latest unsuffixed completion path
+is preserved separately as the stable alias.
+
 Rounds are counted across the **visible timeline slice**, which may include blocks
 from previous turns (post‑compaction). Cache points are **not** restricted to the
 current turn.
@@ -73,9 +77,9 @@ Configured on `RuntimeCtx.cache`:
   anchored earlier in the visible stream.
 
 ## Implementation
-See `kdcube_ai_app/apps/chat/sdk/solutions/react/v2/caching.py`.
+See `kdcube_ai_app/apps/chat/sdk/solutions/react/caching.py`.
 
 ## Eviction Rule
 Eviction is only allowed **after** the additional checkpoint. Use
 `is_before_pre_tail_cache(...)` or `cache_points_for_blocks(...)` from
-`src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/caching.py` to validate.
+`src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/caching.py` to validate.

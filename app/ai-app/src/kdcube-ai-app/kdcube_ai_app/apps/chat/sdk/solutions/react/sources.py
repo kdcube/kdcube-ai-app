@@ -16,6 +16,10 @@ from kdcube_ai_app.apps.chat.sdk.tools.citations import (
     _get_physical_path,
 )
 from kdcube_ai_app.apps.chat.sdk.runtime.run_ctx import SOURCE_ID_CV
+from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+    build_physical_artifact_path,
+    split_logical_artifact_path,
+)
 from kdcube_ai_app.apps.chat.sdk.solutions.react.workspace import hydrate_workspace_paths
 
 logger = logging.getLogger(__name__)
@@ -213,17 +217,16 @@ async def ensure_rendering_assets(
                 physical_path = (row.get("physical_path") or row.get("local_path") or "").strip()
                 if not physical_path:
                     ap = (row.get("artifact_path") or "").strip()
-                    if ap.startswith("fi:") and ".files/" in ap:
-                        tid, rel = ap.split(".files/", 1)
-                        physical_path = f"{tid[3:]}/files/{rel}" if tid.startswith("fi:") else ""
-                    elif ap.startswith("fi:") and ".outputs/" in ap:
-                        tid, rel = ap.split(".outputs/", 1)
-                        physical_path = f"{tid[3:]}/outputs/{rel}" if tid.startswith("fi:") else ""
-                    elif ap.startswith("fi:") and ".user.attachments/" in ap:
-                        tid, rel = ap.split(".user.attachments/", 1)
-                        physical_path = f"{tid[3:]}/attachments/{rel}" if tid.startswith("fi:") else ""
-                    elif ap.startswith("fi:"):
-                        physical_path = ap[len("fi:"):].lstrip("/")
+                    if ap.startswith("fi:"):
+                        tid, namespace, rel = split_logical_artifact_path(ap)
+                        if tid and namespace and rel:
+                            physical_path = build_physical_artifact_path(
+                                turn_id=tid,
+                                namespace=namespace,
+                                relpath=rel,
+                            )
+                        else:
+                            physical_path = ap[len("fi:"):].lstrip("/")
                 if physical_path and physical_path.startswith("turn_") and (
                     "/files/" in physical_path or "/outputs/" in physical_path or "/attachments/" in physical_path
                 ):

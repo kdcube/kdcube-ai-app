@@ -510,7 +510,7 @@ class ContextTools:
             "SUPPORTED PATHS (same as react.read)\n"
             "• so:sources_pool[<sid>,<sid>] or sources_pool[<sid>,<sid>]\n"
             "• ar:<turn_id>.user.prompt\n"
-            "• ar:<turn_id>.assistant.completion\n"
+            "• ar:<turn_id>.assistant.completion or ar:<turn_id>.assistant.completion.<n>\n"
             "• tc:<turn_id>.<tool_call_id>.call\n"
             "• tc:<turn_id>.<tool_call_id>.result\n"
             "\n"
@@ -563,8 +563,12 @@ class ContextTools:
             timeline = _read_timeline() or {}
             # Strict path gating for exec use: only allow user/assistant or sources_pool or tc: call/result.
             if p.startswith("ar:"):
-                if not (p.endswith(".user.prompt") or p.endswith(".assistant.completion")):
-                    return {"ret": None, "err": _err("invalid_path_ar", "fetch_ctx supports only ar:<turn>.user.prompt or ar:<turn>.assistant.completion")}
+                if not (
+                    p.endswith(".user.prompt")
+                    or p.endswith(".assistant.completion")
+                    or ".assistant.completion." in p
+                ):
+                    return {"ret": None, "err": _err("invalid_path_ar", "fetch_ctx supports only ar:<turn>.user.prompt or ar:<turn>.assistant.completion[.<n>]")}
             elif p.startswith("tc:"):
                 if not (p.endswith(".call") or p.endswith(".result")):
                     return {"ret": None, "err": _err("invalid_path_tc", "fetch_ctx supports only tc:<turn>.<call>.call or tc:<turn>.<call>.result")}

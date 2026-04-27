@@ -191,6 +191,36 @@ class _QueueManagerShouldNotRun:
         raise AssertionError("main queue should not be used for busy continuations")
 
 
+class _DummyConversationStore:
+    async def put_attachment(
+        self,
+        *,
+        tenant,
+        project,
+        user,
+        fingerprint,
+        conversation_id,
+        turn_id,
+        role,
+        filename,
+        data,
+        mime,
+        user_type,
+        origin,
+    ):
+        del tenant, project, user, fingerprint, conversation_id, role, data, mime, user_type, origin
+        hosted_uri = f"file:///tmp/{turn_id}/{filename}"
+        key = f"k/{turn_id}/{filename}"
+        rn = f"rn:{turn_id}:{filename}"
+        return hosted_uri, key, rn
+
+    def _who_and_id(self, user_id, fingerprint):
+        return user_id, fingerprint or user_id
+
+    async def delete_turn(self, **kwargs):
+        del kwargs
+
+
 @pytest.fixture
 def _patch_ingress_dependencies(monkeypatch):
     _DummyCommunicator.service_events = []
@@ -199,7 +229,22 @@ def _patch_ingress_dependencies(monkeypatch):
             default_bundle_id="bundle.demo",
             bundles={"bundle.demo": SimpleNamespace(id="bundle.demo")},
         )
-    monkeypatch.setattr(chat_core, "get_settings", lambda: SimpleNamespace(TENANT="tenant-a", PROJECT="project-a"))
+    monkeypatch.setattr(
+        chat_core,
+        "get_settings",
+        lambda: SimpleNamespace(
+            TENANT="tenant-a",
+            PROJECT="project-a",
+            PLATFORM=SimpleNamespace(
+                HOSTED_SERVICES=SimpleNamespace(
+                    AV=SimpleNamespace(
+                        APP_AV_SCAN=False,
+                        APP_AV_TIMEOUT_S=5,
+                    )
+                )
+            ),
+        ),
+    )
     monkeypatch.setattr(chat_core, "_load_registry_from_redis", _load_registry)
     monkeypatch.setattr(chat_core, "build_envelope_from_session", lambda **_kwargs: _DummyEnvelope())
     monkeypatch.setattr(chat_core, "ChatCommunicator", _DummyCommunicator)
@@ -211,6 +256,7 @@ async def test_busy_message_is_stored_as_followup(_patch_ingress_dependencies):
     app = SimpleNamespace(state=SimpleNamespace(
         redis_async=redis,
         conversation_browser=_BusyConversationBrowser(),
+        conversation_store=_DummyConversationStore(),
     ))
     session = SimpleNamespace(
         session_id="sess-1",
@@ -257,11 +303,74 @@ async def test_busy_message_is_stored_as_followup(_patch_ingress_dependencies):
 
 
 @pytest.mark.asyncio
+async def test_busy_followup_attachment_is_persisted_into_external_event_payload(_patch_ingress_dependencies):
+    redis = _MiniRedis()
+    app = SimpleNamespace(state=SimpleNamespace(
+        redis_async=redis,
+        conversation_browser=_BusyConversationBrowser(),
+        conversation_store=_DummyConversationStore(),
+    ))
+    session = SimpleNamespace(
+        session_id="sess-1",
+        user_type=UserType.REGISTERED,
+        user_id="user-1",
+        username="user",
+        fingerprint="fp-1",
+        roles=[],
+        permissions=[],
+        timezone="UTC",
+    )
+    result = await process_chat_message(
+        app=app,
+        chat_queue_manager=_QueueManagerShouldNotRun(),
+        chat_comm=_DummyRelay(),
+        session=session,
+        request_context=SimpleNamespace(user_utc_offset_min=None),
+        message_data={"conversation_id": "conv-1", "payload": {}},
+        message_text="followup text",
+        raw_attachments=[
+            chat_core.RawAttachment(
+                content=b"hello",
+                name="notes.txt",
+                mime="text/plain",
+                meta={"source": "test"},
+            )
+        ],
+        ingress=IngressConfig(
+            transport="sse",
+            entrypoint="/sse/chat",
+            component="chat.sse",
+            instance_id="ingress-1",
+            stream_id="stream-1",
+        ),
+    )
+
+    assert result.ok is True
+    source = build_conversation_external_event_source(
+        redis=redis,
+        tenant="tenant-a",
+        project="project-a",
+        conversation_id="conv-1",
+    )
+    events = await source.read_since(0)
+    assert len(events) == 1
+    payload = events[0].task_payload["request"]["payload"]
+    attachments = payload.get("attachments") or []
+    assert len(attachments) == 1
+    assert attachments[0]["filename"] == "notes.txt"
+    assert attachments[0]["hosted_uri"] == "file:///tmp/turn-active/notes.txt"
+    assert attachments[0]["rn"] == "rn:turn-active:notes.txt"
+    assert "base64" not in attachments[0]
+    assert "text" not in attachments[0]
+
+
+@pytest.mark.asyncio
 async def test_busy_blank_explicit_steer_is_stored(_patch_ingress_dependencies):
     redis = _MiniRedis()
     app = SimpleNamespace(state=SimpleNamespace(
         redis_async=redis,
         conversation_browser=_BusyConversationBrowser(),
+        conversation_store=_DummyConversationStore(),
     ))
     session = SimpleNamespace(
         session_id="sess-1",

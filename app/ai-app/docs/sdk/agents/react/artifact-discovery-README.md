@@ -31,6 +31,7 @@ For bundle namespace browsing such as `ks:` via generated exec code, the relevan
 Stable identifier used in `react.read` / `fetch_ctx`. Examples:
 - `ar:<turn_id>.user.prompt`
 - `ar:<turn_id>.assistant.completion`
+- `ar:<turn_id>.assistant.completion.<n>`
 - `ar:plan.latest:<plan_id>` (stable latest snapshot of a plan lineage)
 - `fi:<turn_id>.files/<relpath>`
 - `fi:<turn_id>.outputs/<relpath>`
@@ -90,6 +91,8 @@ Artifacts are reconstructed from **timeline blocks**, not from the turn log dire
 
 1) **Find by logical path**
    - Match blocks by `path == logical_path`.
+   - `ar:<turn_id>.assistant.completion` resolves to the latest completion in that turn.
+   - `ar:<turn_id>.assistant.completion.<n>` resolves to an earlier visible completion from that same turn.
    - If a metadata JSON block exists with `artifact_path == logical_path`, it supplies the canonical
      `mime/kind/visibility/physical_path` metadata.
 

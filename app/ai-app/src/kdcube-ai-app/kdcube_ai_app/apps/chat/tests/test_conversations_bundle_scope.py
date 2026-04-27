@@ -25,6 +25,14 @@ class _FakeConversationBrowser:
             "turns": [{"turn_id": "turn-1", "artifacts": [], "bundle_id": "bundle.from.db"}],
         }
 
+    async def get_conversation_state(self, **kwargs):
+        self.calls.append(("get_conversation_state", kwargs))
+        return {
+            "state": "idle",
+            "updated_at": "2026-04-27T10:00:00Z",
+            "meta": {},
+        }
+
     async def fetch_conversation_artifacts(self, **kwargs):
         self.calls.append(("fetch_conversation_artifacts", kwargs))
         return {
@@ -185,13 +193,21 @@ async def test_list_conversations_respects_explicit_bundle_id(monkeypatch, _rout
 async def test_conversation_details_does_not_resolve_default_bundle_and_preserves_inferred_bundle_id(
     monkeypatch, _router_state
 ):
-    async def _unexpected(*args, **kwargs):
-        raise AssertionError("default bundle resolver should not be called")
+    async def _load_registry(runtime_ctx, tenant, project):
+        assert runtime_ctx is conversations.router.state
+        assert tenant == "tenant-a"
+        assert project == "project-a"
+        return SimpleNamespace(
+            bundles={
+                "bundle.from.db": object(),
+                "bundle.other": object(),
+            }
+        )
 
     monkeypatch.setattr(
         conversations,
-        "resolve_default_bundle_id_from_runtime_ctx",
-        _unexpected,
+        "load_persisted_registry_from_runtime_ctx",
+        _load_registry,
     )
 
     session = SimpleNamespace(user_id="user-1")
@@ -212,6 +228,7 @@ async def test_conversation_details_does_not_resolve_default_bundle_and_preserve
             "user_id": "user-1",
             "conversation_id": "conv-1",
             "bundle_id": None,
+            "bundle_ids": ["bundle.from.db", "bundle.other"],
         },
     )
 
@@ -220,13 +237,21 @@ async def test_conversation_details_does_not_resolve_default_bundle_and_preserve
 async def test_fetch_conversation_does_not_resolve_default_bundle_and_preserves_inferred_bundle_id(
     monkeypatch, _router_state
 ):
-    async def _unexpected(*args, **kwargs):
-        raise AssertionError("default bundle resolver should not be called")
+    async def _load_registry(runtime_ctx, tenant, project):
+        assert runtime_ctx is conversations.router.state
+        assert tenant == "tenant-a"
+        assert project == "project-a"
+        return SimpleNamespace(
+            bundles={
+                "bundle.from.db": object(),
+                "bundle.other": object(),
+            }
+        )
 
     monkeypatch.setattr(
         conversations,
-        "resolve_default_bundle_id_from_runtime_ctx",
-        _unexpected,
+        "load_persisted_registry_from_runtime_ctx",
+        _load_registry,
     )
 
     session = SimpleNamespace(user_id="user-1")
@@ -244,6 +269,15 @@ async def test_fetch_conversation_does_not_resolve_default_bundle_and_preserves_
     assert resp["bundle_ids"] == ["bundle.from.db"]
     assert resp["turns"][0]["artifacts"][0]["bundle_id"] == "bundle.from.db"
     assert _router_state.browser.calls[0] == (
+        "get_conversation_details",
+        {
+            "user_id": "user-1",
+            "conversation_id": "conv-1",
+            "bundle_id": None,
+            "bundle_ids": ["bundle.from.db", "bundle.other"],
+        },
+    )
+    assert _router_state.browser.calls[1] == (
         "fetch_conversation_artifacts",
         {
             "user_id": "user-1",
@@ -252,21 +286,146 @@ async def test_fetch_conversation_does_not_resolve_default_bundle_and_preserves_
             "materialize": False,
             "days": 365,
             "bundle_id": None,
+            "bundle_ids": ["bundle.from.db", "bundle.other"],
         },
     )
+
+
+@pytest.mark.asyncio
+async def test_conversation_status_scopes_to_registry_bundle_set(monkeypatch, _router_state):
+    async def _load_registry(runtime_ctx, tenant, project):
+        assert runtime_ctx is conversations.router.state
+        assert tenant == "tenant-a"
+        assert project == "project-a"
+        return SimpleNamespace(
+            bundles={
+                "bundle.from.db": object(),
+                "bundle.other": object(),
+            }
+        )
+
+    monkeypatch.setattr(
+        conversations,
+        "load_persisted_registry_from_runtime_ctx",
+        _load_registry,
+    )
+
+    session = SimpleNamespace(user_id="user-1")
+    resp = await conversations.conversation_status(
+        tenant="tenant-a",
+        project="project-a",
+        conversation_id="conv-1",
+        session=session,
+    )
+
+    assert resp.state == "idle"
+    assert _router_state.browser.calls[0] == (
+        "get_conversation_details",
+        {
+            "user_id": "user-1",
+            "conversation_id": "conv-1",
+            "bundle_id": None,
+            "bundle_ids": ["bundle.from.db", "bundle.other"],
+        },
+    )
+    assert _router_state.browser.calls[1] == (
+        "get_conversation_state",
+        {
+            "user_id": "user-1",
+            "conversation_id": "conv-1",
+            "bundle_ids": ["bundle.from.db", "bundle.other"],
+            "missing_as_idle": True,
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_fetch_conversation_returns_404_when_not_in_scoped_registry(monkeypatch, _router_state):
+    async def _load_registry(runtime_ctx, tenant, project):
+        return SimpleNamespace(bundles={"bundle.scoped": object()})
+
+    async def _empty_fetch(**kwargs):
+        _router_state.browser.calls.append(("fetch_conversation_artifacts", kwargs))
+        return {
+            "user_id": kwargs["user_id"],
+            "conversation_id": kwargs["conversation_id"],
+            "conversation_title": None,
+            "turns": [],
+        }
+
+    monkeypatch.setattr(conversations, "load_persisted_registry_from_runtime_ctx", _load_registry)
+    _router_state.browser.fetch_conversation_artifacts = _empty_fetch
+
+    session = SimpleNamespace(user_id="user-1")
+    req = conversations.ConversationFetchRequest()
+    with pytest.raises(conversations.HTTPException) as exc:
+        await conversations.fetch_conversation(
+            tenant="tenant-a",
+            project="project-a",
+            conversation_id="conv-foreign",
+            req=req,
+            bundle_id=None,
+            session=session,
+        )
+
+    assert exc.value.status_code == 404
+    assert exc.value.detail == "Conversation not found"
+
+
+@pytest.mark.asyncio
+async def test_delete_conversation_scopes_index_delete_to_registry_bundle_set(monkeypatch, _router_state):
+    async def _load_registry(runtime_ctx, tenant, project):
+        return SimpleNamespace(
+            bundles={
+                "bundle.from.db": object(),
+                "bundle.other": object(),
+            }
+        )
+
+    monkeypatch.setattr(conversations, "load_persisted_registry_from_runtime_ctx", _load_registry)
+
+    session = SimpleNamespace(user_id="user-1", session_id="session-1", user_type="standard", fingerprint="fp-1")
+    resp = await conversations.delete_conversation(
+        tenant="tenant-a",
+        project="project-a",
+        conversation_id="conv-1",
+        session=session,
+    )
+
+    assert resp.conversation_id == "conv-1"
+    assert ("get_conversation_details", {
+        "user_id": "user-1",
+        "conversation_id": "conv-1",
+        "bundle_id": None,
+        "bundle_ids": ["bundle.from.db", "bundle.other"],
+    }) in _router_state.browser.calls
+    assert ("delete_conversation", {
+        "tenant": "tenant-a",
+        "project": "project-a",
+        "user_id": "user-1",
+        "conversation_id": "conv-1",
+        "user_type": "standard",
+        "bundle_id": None,
+        "bundle_ids": ["bundle.from.db", "bundle.other"],
+    }) in _router_state.browser.calls
 
 
 @pytest.mark.asyncio
 async def test_fetch_turns_with_feedbacks_does_not_resolve_default_bundle_and_preserves_inferred_bundle_id(
     monkeypatch, _router_state
 ):
-    async def _unexpected(*args, **kwargs):
-        raise AssertionError("default bundle resolver should not be called")
+    async def _load_registry(runtime_ctx, tenant, project):
+        return SimpleNamespace(
+            bundles={
+                "bundle.from.db": object(),
+                "bundle.other": object(),
+            }
+        )
 
     monkeypatch.setattr(
         conversations,
-        "resolve_default_bundle_id_from_runtime_ctx",
-        _unexpected,
+        "load_persisted_registry_from_runtime_ctx",
+        _load_registry,
     )
 
     session = SimpleNamespace(user_id="user-1")
@@ -283,6 +442,15 @@ async def test_fetch_turns_with_feedbacks_does_not_resolve_default_bundle_and_pr
     assert resp["bundle_ids"] == ["bundle.from.db"]
     assert resp["turns"][0]["bundle_id"] == "bundle.from.db"
     assert _router_state.browser.calls[0] == (
+        "get_conversation_details",
+        {
+            "user_id": "user-1",
+            "conversation_id": "conv-1",
+            "bundle_id": None,
+            "bundle_ids": ["bundle.from.db", "bundle.other"],
+        },
+    )
+    assert _router_state.browser.calls[1] == (
         "fetch_turns_with_feedbacks",
         {
             "user_id": "user-1",
@@ -295,13 +463,21 @@ async def test_fetch_turns_with_feedbacks_does_not_resolve_default_bundle_and_pr
 
 @pytest.mark.asyncio
 async def test_delete_conversation_does_not_resolve_default_bundle(monkeypatch, _router_state):
-    async def _unexpected(*args, **kwargs):
-        raise AssertionError("default bundle resolver should not be called")
+    async def _load_registry(runtime_ctx, tenant, project):
+        assert runtime_ctx is conversations.router.state
+        assert tenant == "tenant-a"
+        assert project == "project-a"
+        return SimpleNamespace(
+            bundles={
+                "bundle.from.db": object(),
+                "bundle.other": object(),
+            }
+        )
 
     monkeypatch.setattr(
         conversations,
-        "resolve_default_bundle_id_from_runtime_ctx",
-        _unexpected,
+        "load_persisted_registry_from_runtime_ctx",
+        _load_registry,
     )
 
     session = SimpleNamespace(user_id="user-1", session_id="session-1", user_type="standard", fingerprint="fp-1")
@@ -319,9 +495,19 @@ async def test_delete_conversation_does_not_resolve_default_bundle(monkeypatch, 
             "user_id": "user-1",
             "conversation_id": "conv-1",
             "bundle_id": None,
+            "bundle_ids": ["bundle.from.db", "bundle.other"],
         },
     )
     assert _router_state.browser.calls[1] == (
+        "get_conversation_details",
+        {
+            "user_id": "user-1",
+            "conversation_id": "conv-1",
+            "bundle_id": None,
+            "bundle_ids": ["bundle.from.db", "bundle.other"],
+        },
+    )
+    assert _router_state.browser.calls[2] == (
         "delete_conversation",
         {
             "tenant": "tenant-a",
@@ -330,6 +516,7 @@ async def test_delete_conversation_does_not_resolve_default_bundle(monkeypatch, 
             "conversation_id": "conv-1",
             "user_type": "standard",
             "bundle_id": None,
+            "bundle_ids": ["bundle.from.db", "bundle.other"],
         },
     )
     assert _router_state.chat_comm.calls[0]["bundle_id"] == "bundle.from.db"
@@ -337,13 +524,18 @@ async def test_delete_conversation_does_not_resolve_default_bundle(monkeypatch, 
 
 @pytest.mark.asyncio
 async def test_submit_turn_feedback_add_does_not_resolve_default_bundle(monkeypatch, _router_state):
-    async def _unexpected(*args, **kwargs):
-        raise AssertionError("default bundle resolver should not be called")
+    async def _load_registry(runtime_ctx, tenant, project):
+        return SimpleNamespace(
+            bundles={
+                "bundle.from.db": object(),
+                "bundle.other": object(),
+            }
+        )
 
     monkeypatch.setattr(
         conversations,
-        "resolve_default_bundle_id_from_runtime_ctx",
-        _unexpected,
+        "load_persisted_registry_from_runtime_ctx",
+        _load_registry,
     )
 
     session = SimpleNamespace(user_id="user-1", user_type=SimpleNamespace(value="standard"))
@@ -358,21 +550,35 @@ async def test_submit_turn_feedback_add_does_not_resolve_default_bundle(monkeypa
     )
 
     assert resp.success is True
-    assert _router_state.browser.calls[0][0] == "append_reaction_to_turn_log"
-    assert _router_state.browser.calls[0][1]["bundle_id"] is None
-    assert _router_state.browser.calls[1][0] == "apply_feedback_to_turn_log"
+    assert _router_state.browser.calls[0] == (
+        "get_conversation_details",
+        {
+            "user_id": "user-1",
+            "conversation_id": "conv-1",
+            "bundle_id": None,
+            "bundle_ids": ["bundle.from.db", "bundle.other"],
+        },
+    )
+    assert _router_state.browser.calls[1][0] == "append_reaction_to_turn_log"
     assert _router_state.browser.calls[1][1]["bundle_id"] is None
+    assert _router_state.browser.calls[2][0] == "apply_feedback_to_turn_log"
+    assert _router_state.browser.calls[2][1]["bundle_id"] is None
 
 
 @pytest.mark.asyncio
 async def test_submit_turn_feedback_clear_does_not_resolve_default_bundle(monkeypatch, _router_state):
-    async def _unexpected(*args, **kwargs):
-        raise AssertionError("default bundle resolver should not be called")
+    async def _load_registry(runtime_ctx, tenant, project):
+        return SimpleNamespace(
+            bundles={
+                "bundle.from.db": object(),
+                "bundle.other": object(),
+            }
+        )
 
     monkeypatch.setattr(
         conversations,
-        "resolve_default_bundle_id_from_runtime_ctx",
-        _unexpected,
+        "load_persisted_registry_from_runtime_ctx",
+        _load_registry,
     )
 
     session = SimpleNamespace(user_id="user-1", user_type=SimpleNamespace(value="standard"))
@@ -387,6 +593,15 @@ async def test_submit_turn_feedback_clear_does_not_resolve_default_bundle(monkey
     )
 
     assert resp.success is True
-    assert _router_state.browser.calls[0][0] == "remove_user_reaction"
-    assert _router_state.browser.calls[1][0] == "clear_user_feedback_in_turn_log"
-    assert _router_state.browser.calls[1][1]["bundle_id"] is None
+    assert _router_state.browser.calls[0] == (
+        "get_conversation_details",
+        {
+            "user_id": "user-1",
+            "conversation_id": "conv-1",
+            "bundle_id": None,
+            "bundle_ids": ["bundle.from.db", "bundle.other"],
+        },
+    )
+    assert _router_state.browser.calls[1][0] == "remove_user_reaction"
+    assert _router_state.browser.calls[2][0] == "clear_user_feedback_in_turn_log"
+    assert _router_state.browser.calls[2][1]["bundle_id"] is None

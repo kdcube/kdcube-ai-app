@@ -35,6 +35,8 @@ This describes how context is built and updated during a turn.
 - While a turn is active, the timeline owner can also fold external `followup` / `steer`
   events into the same in-memory timeline. These become `user.followup` / `user.steer`
   blocks and trigger `on_timeline_event(...)` hooks.
+- If a live reactive event arrives after a visible completion attempt, the same turn may later
+  append another `assistant.completion`. These completions are persisted individually.
 - The rendered model view groups tool output into:
   - `[TOOL CALL <id>].call <tool_id>`
   - `[TOOL RESULT <id>].summary <tool_id>` (artifact tools)
@@ -132,8 +134,8 @@ Retry on context-limit:
 │ CURRENT TURN USER BLOCKS    │   (prompt + attachments)                  [stable]
 └────────────────────────────┘
 ┌────────────────────────────┐
-│ TURN PROGRESS LOG          │   (agent contributions, react logs and finally final_answer)       [growing]
-│                            │   (+ live-folded external followup/steer blocks)                  [growing]
+│ TURN PROGRESS LOG          │   (agent contributions, prompt-like followups/steers,             [growing]
+│                            │    and one or more assistant.completion blocks)                   [growing]
 └────────────────────────────┘
 ┌────────────────────────────┐
 │ SOURCES POOL (optional)     │   (tail, uncached)                        [ephemeral]

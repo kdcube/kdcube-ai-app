@@ -22,6 +22,8 @@ This document describes the ReactRound concept and how decision attempts and too
   - `react.round.start`
   - `react.decision.raw`
   - `react.notice`
+- A single turn may later contain multiple visible `assistant.completion` blocks if reactive
+  same-turn events arrive after an earlier completion attempt.
 
 So a React round is the unit of visible reasoning/execution progress, not only the unit of successful tool execution.
 
@@ -59,7 +61,10 @@ Tool result blocks are emitted per artifact or per result type:
 
 ## Reading Results
 `react.read` can load:
-- Artifacts via `ar:<turn_id>.artifacts.<path>`
+- Turn-level artifacts via:
+  - `ar:<turn_id>.user.prompt`
+  - `ar:<turn_id>.assistant.completion`
+  - `ar:<turn_id>.assistant.completion.<n>`
 - Files via `fi:<turn_id>.files/<filepath>`
 - Sources via `so:sources_pool[...]`
 - Tool call payloads via `tc:<turn_id>.<id>.call` or `.result`

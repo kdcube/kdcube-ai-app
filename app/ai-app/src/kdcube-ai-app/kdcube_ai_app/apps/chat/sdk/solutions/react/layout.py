@@ -35,6 +35,95 @@ MAX_VISIBLE_OPEN_PLANS = 4
 MAX_VISIBLE_LIVE_TURN_EVENTS = 4
 
 
+def record_assistant_completion_attempt(
+    *,
+    scratchpad: Any,
+    answer_text: str,
+    ts: Optional[str],
+    iteration: Optional[int] = None,
+) -> Optional[Dict[str, Any]]:
+    text = str(answer_text or "").strip()
+    if not text:
+        return None
+    entries = getattr(scratchpad, "assistant_completion_attempts", None)
+    if not isinstance(entries, list):
+        entries = []
+        setattr(scratchpad, "assistant_completion_attempts", entries)
+    entry: Dict[str, Any] = {
+        "text": text,
+        "ts": (ts or "").strip(),
+    }
+    if iteration is not None:
+        try:
+            entry["iteration"] = int(iteration)
+        except Exception:
+            pass
+    try:
+        sources_used = citations_module.extract_citation_sids_any(text)
+    except Exception:
+        sources_used = []
+    if sources_used:
+        entry["sources_used"] = list(sources_used)
+    entries.append(entry)
+    return entry
+
+
+def _normalized_assistant_completion_entries(
+    *,
+    runtime: RuntimeCtx,
+    completion_entries: Optional[List[Dict[str, Any]]],
+    final_answer_text: str,
+    ended_at: Optional[str],
+) -> List[Dict[str, Any]]:
+    tid = (getattr(runtime, "turn_id", None) or "").strip()
+    if not tid:
+        return []
+    ts_fallback = (ended_at or getattr(runtime, "started_at", "") or "").strip()
+    normalized: List[Dict[str, Any]] = []
+    for raw in completion_entries or []:
+        if not isinstance(raw, dict):
+            continue
+        text = str(raw.get("text") or "").strip()
+        if not text:
+            continue
+        item: Dict[str, Any] = {
+            "text": text,
+            "ts": str(raw.get("ts") or ts_fallback or "").strip(),
+        }
+        sources_used = raw.get("sources_used")
+        if isinstance(sources_used, list) and sources_used:
+            item["sources_used"] = list(sources_used)
+        else:
+            try:
+                extracted = citations_module.extract_citation_sids_any(text)
+            except Exception:
+                extracted = []
+            if extracted:
+                item["sources_used"] = list(extracted)
+        if raw.get("iteration") is not None:
+            item["iteration"] = raw.get("iteration")
+        normalized.append(item)
+
+    latest_text = str(final_answer_text or "").strip()
+    if latest_text:
+        if normalized and str(normalized[-1].get("text") or "").strip() == latest_text:
+            if not str(normalized[-1].get("ts") or "").strip():
+                normalized[-1]["ts"] = ts_fallback
+        else:
+            item = {
+                "text": latest_text,
+                "ts": ts_fallback,
+            }
+            try:
+                extracted = citations_module.extract_citation_sids_any(latest_text)
+            except Exception:
+                extracted = []
+            if extracted:
+                item["sources_used"] = list(extracted)
+            normalized.append(item)
+    return normalized
+
+
 
 def build_user_input_blocks(
     *,
@@ -47,14 +136,15 @@ def build_user_input_blocks(
     tid = (getattr(runtime, "turn_id", None) or "").strip()
     if not tid:
         return []
+    prompt_message_id = "m0"
     ts = (getattr(runtime, "started_at", "") or "").strip()
     blocks: List[Dict[str, Any]] = []
     user_text = (user_text or "").strip()
     if user_text:
         prompt_path = f"ar:{tid}.user.prompt"
-        prompt_meta: Optional[Dict[str, Any]] = None
+        prompt_meta: Dict[str, Any] = {"message_id": prompt_message_id}
         if continuation_kind and continuation_kind != "regular":
-            prompt_meta = {"continuation_kind": continuation_kind}
+            prompt_meta["continuation_kind"] = continuation_kind
         blocks.append(block_factory(
             type="user.prompt",
             author="user",
@@ -71,6 +161,7 @@ def build_user_input_blocks(
         block_factory=block_factory,
         path_root=f"fi:{tid}.user.attachments",
         synthetic_physical_root=f"{tid}/attachments",
+        meta_extra={"message_id": prompt_message_id},
     ))
     return blocks
 
@@ -182,28 +273,45 @@ def build_user_attachment_blocks(
 def build_assistant_completion_blocks(
     *,
     runtime: RuntimeCtx,
-    answer_text: str,
+    completion_entries: Optional[List[Dict[str, Any]]] = None,
+    final_answer_text: str = "",
     ended_at: Optional[str],
     block_factory,
 ) -> List[Dict[str, Any]]:
     tid = runtime.turn_id
     if not tid:
         return []
-    ts = (ended_at or getattr(runtime, "started_at", "") or "").strip()
-    asst_text = (answer_text or "").strip()
-    if not asst_text:
+    entries = _normalized_assistant_completion_entries(
+        runtime=runtime,
+        completion_entries=completion_entries,
+        final_answer_text=final_answer_text,
+        ended_at=ended_at,
+    )
+    if not entries:
         return []
-    sources_used = citations_module.extract_citation_sids_any(asst_text)
-    meta = {"sources_used": sources_used} if sources_used else None
-    return [block_factory(
-        type="assistant.completion",
-        author="assistant",
-        turn_id=tid,
-        ts=ts,
-        path=f"ar:{tid}.assistant.completion",
-        text=asst_text,
-        meta=meta,
-    )]
+    blocks: List[Dict[str, Any]] = []
+    total = len(entries)
+    for idx, entry in enumerate(entries, start=1):
+        path = f"ar:{tid}.assistant.completion" if idx == total else f"ar:{tid}.assistant.completion.{idx}"
+        meta: Dict[str, Any] = {}
+        sources_used = entry.get("sources_used") if isinstance(entry.get("sources_used"), list) else []
+        if sources_used:
+            meta["sources_used"] = list(sources_used)
+        if total > 1:
+            meta["completion_index"] = idx
+            meta["completion_count"] = total
+        if entry.get("iteration") is not None:
+            meta["iteration"] = entry.get("iteration")
+        blocks.append(block_factory(
+            type="assistant.completion",
+            author="assistant",
+            turn_id=tid,
+            ts=str(entry.get("ts") or "").strip(),
+            path=path,
+            text=str(entry.get("text") or ""),
+            meta=meta or None,
+        ))
+    return blocks
 
 
 def build_interrupted_generation_blocks(

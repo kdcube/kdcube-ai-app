@@ -116,6 +116,9 @@ active timeline:
      - `active_turn_id_at_ingress`
      - `owner_turn_id`
      - `explicit`
+   - attachments, when present, use:
+     - `fi:<turn_id>.external.followup.attachments/<message_id>/<filename>`
+   - live transport stores only hosted attachment references; the receiver hydrates readable content from hosting when materializing timeline blocks
      - `source`
      - optional `payload`
 
@@ -170,6 +173,12 @@ this is injected as a separate line:
 ```
 [sources_used: [1,2,3]]
 ```
+
+Path convention:
+- latest completion in the turn: `ar:<turn_id>.assistant.completion`
+- earlier visible completions in the same turn: `ar:<turn_id>.assistant.completion.<n>`
+
+One turn can therefore contain multiple `assistant.completion` blocks.
 
 ### Internal Memory Beacons (react.note / react.note.preserved)
 `react.write(channel="internal")` emits an Internal Memory Beacon:

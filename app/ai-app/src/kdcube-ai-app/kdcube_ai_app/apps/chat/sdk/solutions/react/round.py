@@ -109,11 +109,12 @@ class ReactRound:
         tool_id: str,
         action: str,
         iteration: int,
+        ts: Optional[str] = None,
     ) -> None:
         if not ctx_browser or not isinstance(notes, str) or not notes.strip():
             return
         turn_id = (ctx_browser.runtime_ctx.turn_id or "")
-        ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        ts = str(ts or "").strip() or (_dt.datetime.utcnow().isoformat() + "Z")
         add_block(ctx_browser, {
             "type": "react.notes",
             "author": "react",

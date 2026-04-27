@@ -20,7 +20,10 @@ from kdcube_ai_app.apps.chat.ingress.resolvers import (
 from kdcube_ai_app.auth.AuthManager import RequireUser
 from kdcube_ai_app.auth.sessions import UserSession
 from kdcube_ai_app.apps.chat.sdk.tools.citations import strip_base64_from_citables_artifact
-from kdcube_ai_app.infra.plugin.bundle_registry import resolve_default_bundle_id_from_runtime_ctx
+from kdcube_ai_app.infra.plugin.bundle_registry import (
+    load_persisted_registry_from_runtime_ctx,
+    resolve_default_bundle_id_from_runtime_ctx,
+)
 
 """
 Conversations API
@@ -171,6 +174,42 @@ async def _resolve_bundle_id_or_default(
         detail="Default bundle_id unavailable for this tenant/project",
     )
 
+
+async def _resolve_allowed_bundle_ids_or_404(
+    tenant: str,
+    project: str,
+    bundle_id: Optional[str] = None,
+) -> List[str]:
+    reg = await load_persisted_registry_from_runtime_ctx(router.state, tenant, project)
+    bundles = list((getattr(reg, "bundles", None) or {}).keys())
+    if not bundles:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    if bundle_id:
+        if bundle_id not in bundles:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+        return [bundle_id]
+    return bundles
+
+
+async def _ensure_conversation_in_scope_or_404(
+    tenant: str,
+    project: str,
+    *,
+    user_id: str,
+    conversation_id: str,
+    bundle_id: Optional[str] = None,
+) -> List[str]:
+    allowed_bundle_ids = await _resolve_allowed_bundle_ids_or_404(tenant, project, bundle_id)
+    details = await router.state.conversation_browser.get_conversation_details(
+        user_id=user_id,
+        conversation_id=conversation_id,
+        bundle_id=bundle_id,
+        bundle_ids=allowed_bundle_ids,
+    )
+    if not (details or {}).get("turns"):
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return allowed_bundle_ids
+
 @router.get("/{tenant}/{project}", response_model=ConversationListResponse)
 async def list_conversations(
         tenant: str,
@@ -212,8 +251,17 @@ async def list_conversations(
 async def conversation_status(tenant: str, project: str, conversation_id: str, session: UserSession = Depends(require_auth(RequireUser()))):
     if not session.user_id:
         raise HTTPException(status_code=401, detail="No user in session")
+    allowed_bundle_ids = await _ensure_conversation_in_scope_or_404(
+        tenant,
+        project,
+        user_id=session.user_id,
+        conversation_id=conversation_id,
+    )
     st = await router.state.conversation_browser.get_conversation_state(
-        user_id=session.user_id, conversation_id=conversation_id
+        user_id=session.user_id,
+        conversation_id=conversation_id,
+        bundle_ids=allowed_bundle_ids,
+        missing_as_idle=True,
     )
     return ConversationStatus(conversation_id=conversation_id, **st)
 
@@ -230,12 +278,22 @@ async def conversation_details(
 ):
     if not session.user_id:
         raise HTTPException(status_code=401, detail="No user in session")
+    allowed_bundle_ids = await _ensure_conversation_in_scope_or_404(
+        tenant,
+        project,
+        user_id=session.user_id,
+        conversation_id=conversation_id,
+        bundle_id=bundle_id,
+    )
 
     out = await router.state.conversation_browser.get_conversation_details(
         user_id=session.user_id,
         conversation_id=conversation_id,
         bundle_id=bundle_id,
+        bundle_ids=allowed_bundle_ids,
     )
+    if not (out or {}).get("turns"):
+        raise HTTPException(status_code=404, detail="Conversation not found")
     #  Shape is:
     # {
     #   'conversation_id': ...,
@@ -269,6 +327,13 @@ async def fetch_conversation(
     """
     if not session.user_id:
         raise HTTPException(status_code=401, detail="No user in session")
+    allowed_bundle_ids = await _ensure_conversation_in_scope_or_404(
+        tenant,
+        project,
+        user_id=session.user_id,
+        conversation_id=conversation_id,
+        bundle_id=bundle_id,
+    )
 
     data = await router.state.conversation_browser.fetch_conversation_artifacts(
         user_id=session.user_id,
@@ -277,7 +342,10 @@ async def fetch_conversation(
         materialize=bool(req.materialize),
         days=int(req.days),
         bundle_id=bundle_id,
+        bundle_ids=allowed_bundle_ids,
     )
+    if not (data or {}).get("turns"):
+        raise HTTPException(status_code=404, detail="Conversation not found")
     for turn in (data or {}).get("turns", []):
         for artifact in turn.get("artifacts", []):
             strip_base64_from_citables_artifact(artifact)
@@ -318,21 +386,31 @@ async def delete_conversation(
     """
     if not session.user_id:
         raise HTTPException(status_code=401, detail="No user in session")
+    allowed_bundle_ids = await _ensure_conversation_in_scope_or_404(
+        tenant,
+        project,
+        user_id=session.user_id,
+        conversation_id=conversation_id,
+    )
 
     # Resolve user_type as the string used when writing messages (e.g. "standard")
     raw_user_type = getattr(session, "user_type", "standard")
     user_type_str = getattr(raw_user_type, "value", str(raw_user_type))
 
     inferred_bundle_id = None
+    details = None
     try:
         details = await router.state.conversation_browser.get_conversation_details(
             user_id=session.user_id,
             conversation_id=conversation_id,
             bundle_id=None,
+            bundle_ids=allowed_bundle_ids,
         )
         inferred_bundle_id = (details or {}).get("bundle_id")
     except Exception:
         inferred_bundle_id = None
+    if not (details or {}).get("turns"):
+        raise HTTPException(status_code=404, detail="Conversation not found")
 
     try:
         result = await router.state.conversation_browser.delete_conversation(
@@ -342,6 +420,7 @@ async def delete_conversation(
             conversation_id=conversation_id,
             user_type=user_type_str,
             bundle_id=None,
+            bundle_ids=allowed_bundle_ids,
         )
     except HTTPException:
         raise
@@ -435,6 +514,12 @@ async def submit_turn_feedback(
         raise HTTPException(status_code=401, detail="No user in session")
 
     try:
+        await _ensure_conversation_in_scope_or_404(
+            tenant,
+            project,
+            user_id=session.user_id,
+            conversation_id=conversation_id,
+        )
         # Get tenant, project info from session or config
         user_type = session.user_type if hasattr(session, 'user_type') else 'standard'
 
@@ -576,6 +661,12 @@ async def fetch_turns_with_feedbacks(
         raise HTTPException(status_code=401, detail="No user in session")
 
     try:
+        await _ensure_conversation_in_scope_or_404(
+            tenant,
+            project,
+            user_id=session.user_id,
+            conversation_id=conversation_id,
+        )
         data = await router.state.conversation_browser.fetch_turns_with_feedbacks(
             user_id=session.user_id,
             conversation_id=conversation_id,

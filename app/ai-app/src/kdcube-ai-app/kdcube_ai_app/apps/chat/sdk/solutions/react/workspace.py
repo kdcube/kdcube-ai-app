@@ -14,6 +14,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
     ARTIFACT_NAMESPACE_ATTACHMENTS,
     ARTIFACT_NAMESPACE_FILES,
     ARTIFACT_NAMESPACE_OUTPUTS,
+    build_physical_artifact_path,
     physical_path_to_logical_path,
     split_logical_artifact_path,
 )
@@ -151,12 +152,9 @@ def _infer_physical_from_fi(path: str) -> str:
     p = path.strip()
     tid, namespace, rel = split_logical_artifact_path(p)
     if tid and rel:
-        if namespace == ARTIFACT_NAMESPACE_FILES:
-            return f"{tid}/files/{rel}"
-        if namespace == ARTIFACT_NAMESPACE_OUTPUTS:
-            return f"{tid}/outputs/{rel}"
-        if namespace == ARTIFACT_NAMESPACE_ATTACHMENTS:
-            return f"{tid}/attachments/{rel}"
+        physical = build_physical_artifact_path(turn_id=tid, namespace=namespace, relpath=rel)
+        if physical:
+            return physical
     if p and _safe_relpath(p):
         return p
     return ""

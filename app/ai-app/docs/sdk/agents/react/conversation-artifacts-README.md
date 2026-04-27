@@ -52,6 +52,9 @@ Reference implementations:
   They are surfaced through stream artifacts (timeline/artifacts streams).
 - Turn log blocks are stored and used by ContextBrowser; they are not
   UI artifacts in the fetch payload.
+- Fetch reconstruction can emit multiple `chat:user` and multiple `chat:assistant` artifacts
+  from a single turn. Opening prompts, preserved followups/steers, and each visible assistant
+  completion are indexed separately in conversation history.
 - User attachments and produced files are hosted separately (rn/hosted_uri) and referenced
   via block metadata; they are not standalone conversation artifacts here.
 - Feedback is persisted as `artifact:turn.log.reaction` and mirrored into the **turn log payload**
@@ -93,7 +96,7 @@ Reference implementations:
   ```
 - The timeline artifact stores only a lightweight sources_pool snapshot for indexing/local access;
   the full pool lives in `conv:sources_pool` and is loaded at turn start.
-- Loading happens in `ContextBrowser.load_timeline` (`src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/v2/browser.py`).
+- Loading happens in `ContextBrowser.load_timeline` (`src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/browser.py`).
 
 ## Storage Layout (Blob Store)
 
