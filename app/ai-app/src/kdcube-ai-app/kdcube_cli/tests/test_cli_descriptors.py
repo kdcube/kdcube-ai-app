@@ -2211,11 +2211,14 @@ def _make_minimal_runtime(base: Path, namespace: str, compose_mode: str = "all-i
 
 
 def _make_minimal_repo(base: Path) -> Path:
-    """Create a minimal fake repo with the all-in-one docker-compose stub."""
+    """Create a minimal fake repo with stubs for all supported compose modes."""
     repo = base / "repo"
-    compose_dir = repo / "app" / "ai-app" / "deployment" / "docker" / "all_in_one_kdcube"
-    compose_dir.mkdir(parents=True)
-    (compose_dir / "docker-compose.yaml").write_text("services:\n  chat-proc:\n    image: stub\n")
+    for mode in ("all_in_one_kdcube", "custom-ui-managed-infra"):
+        compose_dir = repo / "app" / "ai-app" / "deployment" / "docker" / mode
+        compose_dir.mkdir(parents=True)
+        (compose_dir / "docker-compose.yaml").write_text(
+            "services:\n  chat-proc:\n    image: stub\n"
+        )
     lib_root = repo / "app" / "ai-app" / "src" / "kdcube-ai-app"
     (lib_root / "kdcube_ai_app").mkdir(parents=True)
     return repo
@@ -2247,11 +2250,12 @@ def test_check_no_other_local_stack_running_passes_for_target_itself(monkeypatch
 def test_check_no_other_local_stack_running_refuses_when_sibling_is_active(monkeypatch, tmp_path: Path):
     repo = _make_minimal_repo(tmp_path)
     workspace = tmp_path / "workspace"
-    target = _make_minimal_runtime(workspace, "tenant-a__proj-a")
-    _make_minimal_runtime(workspace, "tenant-b__proj-b")
+    # target uses default all-in-one; sibling uses a different compose mode so
+    # they have different docker_dirs and are truly independent deployments.
+    target = _make_minimal_runtime(workspace, "tenant-a__proj-a", compose_mode="all-in-one")
+    _make_minimal_runtime(workspace, "tenant-b__proj-b", compose_mode="custom-ui-managed-infra")
 
     def fake_running_services(docker_dir, env_file):
-        # Only the sibling is "running"
         if "tenant-b__proj-b" in str(env_file):
             return {"chat-proc", "chat-ingress"}
         return set()
@@ -2288,14 +2292,16 @@ def test_check_no_other_local_stack_running_skips_broken_sibling(monkeypatch, tm
 def test_check_no_other_local_stack_running_refuses_when_sibling_base_is_active(
     monkeypatch, tmp_path: Path
 ):
-    # Reproduces the real scenario: two different --workdir bases under the
-    # same kdcube home (e.g. kdcube-runtime vs kdcube-runtime2).  The running
-    # stack lives in base1; the new command targets base2 — guard must still fire.
+    # Two different --workdir bases under the same kdcube home
+    # (e.g. kdcube-runtime vs kdcube-runtime2).  The guard must fire when the
+    # sibling uses a DIFFERENT docker_dir (different compose project name) —
+    # those are truly independent deployments that could conflict on ports.
     repo = _make_minimal_repo(tmp_path)
     base1 = tmp_path / "kdcube-runtime"
     base2 = tmp_path / "kdcube-runtime2"
-    running_workdir = _make_minimal_runtime(base1, "tenant-a__proj-a")
-    target = _make_minimal_runtime(base2, "tenant-b__proj-b")
+    # sibling uses a different compose mode → different docker_dir → independent
+    _make_minimal_runtime(base1, "tenant-a__proj-a", compose_mode="custom-ui-managed-infra")
+    target = _make_minimal_runtime(base2, "tenant-b__proj-b", compose_mode="all-in-one")
 
     def fake_running_services(docker_dir, env_file):
         if "tenant-a__proj-a" in str(env_file):
@@ -2312,6 +2318,29 @@ def test_check_no_other_local_stack_running_refuses_when_sibling_base_is_active(
         msg = str(exc)
         assert "tenant-a__proj-a" in msg
         assert "--stop" in msg
+
+
+def test_check_no_other_local_stack_running_skips_sibling_with_same_docker_dir(
+    monkeypatch, tmp_path: Path
+):
+    # Both workdirs use the same docker_dir (same compose project name).
+    # docker compose ps from the sibling would report the target's own
+    # containers — a false positive.  Guard must not fire in this case.
+    repo = _make_minimal_repo(tmp_path)
+    base1 = tmp_path / "kdcube-runtime"
+    base2 = tmp_path / "kdcube-runtime2"
+    _make_minimal_runtime(base1, "tenant-a__proj-a")
+    target = _make_minimal_runtime(base2, "tenant-b__proj-b")
+
+    # Sibling reports running services — but same docker_dir as target
+    monkeypatch.setattr(
+        "kdcube_cli.cli._compose_running_services",
+        lambda docker_dir, env_file: {"chat-proc"},
+    )
+
+    console = Console(quiet=True)
+    # Should not raise — sibling shares docker_dir with target (false positive)
+    _check_no_other_local_stack_running(console, target_workdir=target, repo_root=repo)
 
 
 # ---------------------------------------------------------------------------

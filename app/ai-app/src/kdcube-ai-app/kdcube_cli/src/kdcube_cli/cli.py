@@ -1254,6 +1254,12 @@ def _check_no_other_local_stack_running(
             if sibling_base.is_dir() and sibling_base.resolve() != base_workdir.resolve():
                 all_candidates.extend(_runtime_candidates(sibling_base))
 
+    target_docker_dir: Path | None = None
+    try:
+        target_docker_dir = _build_paths_for_repo(repo_root, target_workdir).docker_dir.resolve()
+    except Exception:
+        pass
+
     for candidate in all_candidates:
         if candidate.resolve() == target_workdir.resolve():
             continue
@@ -1262,6 +1268,13 @@ def _check_no_other_local_stack_running(
             continue
         try:
             ctx = _build_paths_for_repo(repo_root, candidate)
+            # Two workdirs that share the same docker_dir use the same Docker
+            # Compose project name.  docker compose ps would report the
+            # target's own running containers as belonging to this sibling —
+            # a false positive.  They are not independent deployments and
+            # cannot run concurrently regardless of ports, so skip them.
+            if target_docker_dir is not None and ctx.docker_dir.resolve() == target_docker_dir:
+                continue
             running = _compose_running_services(ctx.docker_dir, env_file)
         except (SystemExit, Exception):
             continue
