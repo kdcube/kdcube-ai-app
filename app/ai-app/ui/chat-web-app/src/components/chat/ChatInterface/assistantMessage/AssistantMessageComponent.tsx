@@ -2,7 +2,6 @@ import {RNFile, TurnStep} from "../../../../features/chatController/chatBase.ts"
 import {useAppSelector} from "../../../../app/store.ts";
 import {selectCurrentTurn} from "../../../../features/chat/chatStateSlice.ts";
 import React, {ReactNode, useCallback, useMemo, useRef, useState} from "react";
-import {UserMessageComponent} from "../UserMessageComponent.tsx";
 import {closeUpMarkdown, useWordStreamEffect} from "../../../WordStreamingEffects.tsx";
 import ReactMarkdown from "react-markdown";
 import {markdownComponents, markdownComponentsTight, rehypePlugins, remarkPlugins} from "../markdownRenderUtils.tsx";
@@ -31,8 +30,7 @@ import {
     CitationArtifact,
     FileArtifact,
     ThinkingArtifact,
-    UnknownArtifact,
-    UserMessage
+    UnknownArtifact
 } from "../../../../features/chat/chatTypes.ts";
 import {downloadResourceByRN} from "../../../../app/api/utils.ts";
 import {getFileIcon} from "../../../FileIcons.tsx";
@@ -135,8 +133,9 @@ interface AssistantMessageProps {
     isGreeting: boolean;
     isError: boolean;
     isHistorical: boolean | undefined | null;
-    followupMessages?: UserMessage[];
     turnId?: string;
+    showActivity?: boolean;
+    showTimelineArtifacts?: boolean;
 }
 
 export const AssistantMessageComponent = ({
@@ -145,8 +144,8 @@ export const AssistantMessageComponent = ({
                                               artifacts,
                                               isHistorical,
                                               isGreeting = false,
-                                              followupMessages,
-                                              turnId,
+                                              showActivity = true,
+                                              showTimelineArtifacts = true,
                                           }: AssistantMessageProps) => {
     const currentTurn = useAppSelector(selectCurrentTurn)
     const inProgress = useMemo(() => !!currentTurn, [currentTurn])
@@ -307,58 +306,25 @@ export const AssistantMessageComponent = ({
         </div>)
     }, [citations])
 
-    const thinkingStartMs = useMemo(() => {
-        if (thinkingItems.length === 0) return null;
-        return Math.min(...thinkingItems.map(t => t.timestamp));
-    }, [thinkingItems]);
-
-    const {beforeThinkingFollowups, afterThinkingFollowups} = useMemo(() => {
-        const msgs = followupMessages ?? [];
-        if (msgs.length === 0) return {beforeThinkingFollowups: [], afterThinkingFollowups: []};
-        if (thinkingStartMs === null) return {beforeThinkingFollowups: msgs, afterThinkingFollowups: []};
-        return {
-            beforeThinkingFollowups: msgs.filter(m => m.timestamp < thinkingStartMs),
-            afterThinkingFollowups: msgs.filter(m => m.timestamp >= thinkingStartMs),
-        };
-    }, [followupMessages, thinkingStartMs]);
-
     const thinkingItemsMemo = useMemo(() => {
-        const thinkingBlock = thinkingItems.length > 0 ? (
-            <>
-                {thinkingItems.map((item, i) => <Thinking item={item} key={i}/>)}
-            </>
-        ) : null;
-
-        if (beforeThinkingFollowups.length === 0) return thinkingBlock;
-
-        return (
-            <>
-                {beforeThinkingFollowups.map(msg => (
-                    <UserMessageComponent key={`followup_${msg.timestamp}`} turnId={turnId ?? ""} message={msg}/>
-                ))}
-                {thinkingBlock}
-            </>
-        );
-    }, [thinkingItems, beforeThinkingFollowups, turnId])
+        if (!showActivity || thinkingItems.length === 0) return null;
+        return <>{thinkingItems.map((item, i) => <Thinking item={item} key={i}/>)}</>;
+    }, [thinkingItems, showActivity])
 
     const timelineMemo = useMemo(() => {
-        type MixedItem = UnknownArtifact | UserMessage;
-        const items: MixedItem[] = [...other, ...afterThinkingFollowups];
+        if (!showTimelineArtifacts) return null;
+        const items: UnknownArtifact[] = [...other];
         items.sort((a, b) => a.timestamp - b.timestamp);
 
         return <div className={"w-full min-w-0 flex flex-col"}>
             {items.map((item) => {
-                if ('text' in item && 'attachments' in item) {
-                    const msg = item as UserMessage;
-                    return <UserMessageComponent key={`followup_${msg.timestamp}`} turnId={turnId ?? ""} message={msg}/>
-                }
                 const artifact = item as UnknownArtifact;
                 const Component = getChatLogComponent(artifact.artifactType)
                 if (!Component) return null
                 return <Component key={`${artifact.artifactType}_${artifact.timestamp}`} item={artifact} historical={isHistorical}/>
             })}
         </div>
-    }, [isHistorical, other, afterThinkingFollowups, turnId])
+    }, [isHistorical, other, showTimelineArtifacts])
 
     return useMemo(() => {
         return (

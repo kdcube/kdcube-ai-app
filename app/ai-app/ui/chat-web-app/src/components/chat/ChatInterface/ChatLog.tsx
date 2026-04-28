@@ -1,4 +1,4 @@
-import {Fragment, useCallback, useEffect, useMemo, useRef, useState} from "react";
+import {Fragment, ReactNode, useCallback, useEffect, useMemo, useRef, useState} from "react";
 import {connectChat, sendChatMessage} from "../../../features/chat/chatServiceMiddleware.ts";
 import {ChevronsDown, Loader} from "lucide-react";
 import {UserMessageComponent} from "./UserMessageComponent.tsx";
@@ -16,6 +16,63 @@ import {
 } from "../../../features/logExtensions/conversationStatus/types.ts";
 import {motion} from "motion/react";
 import IconContainer from "../../IconContainer.tsx";
+import {AssistantMessage, UserMessage, UnknownArtifact} from "../../../features/chat/chatTypes.ts";
+import {getChatLogComponent} from "../../../features/extensions/logExtesnions.ts";
+
+type OrderedTurnItem =
+    | { kind: "user"; item: UserMessage; timestamp: number; index: number }
+    | { kind: "assistant"; item: AssistantMessage; artifacts: UnknownArtifact[]; timestamp: number; index: number }
+    | { kind: "activity"; timestamp: number; index: number }
+    | { kind: "artifact"; item: UnknownArtifact; timestamp: number; index: number };
+
+const isRenderableArtifact = (artifact: UnknownArtifact) => {
+    if (artifact.artifactType === ConversationStatusArtifactType) return false;
+    return !!getChatLogComponent(artifact.artifactType);
+}
+
+const activityArtifacts = (artifacts: UnknownArtifact[]) => {
+    return artifacts.filter((artifact) => {
+        switch (artifact.artifactType) {
+            case "thinking":
+                return true;
+            default:
+                return false;
+        }
+    });
+}
+
+const assistantArtifacts = (artifacts: UnknownArtifact[]) => {
+    return artifacts.filter((artifact) => {
+        switch (artifact.artifactType) {
+            case "citation":
+            case "file":
+                return true;
+            default:
+                return false;
+        }
+    });
+}
+
+const getActivityTimestamp = (
+    artifacts: UnknownArtifact[],
+    steps: { timestamp: number }[],
+    fallback: number,
+) => {
+    const artifactTimestamps = artifacts
+        .map((artifact) => artifact.timestamp)
+        .filter(Number.isFinite);
+
+    const stepTimestamps = steps
+        .map((step) => step.timestamp)
+        .filter(Number.isFinite);
+
+    const timestamps = [...artifactTimestamps, ...stepTimestamps];
+    if (timestamps.length > 0) {
+        return Math.min(...timestamps);
+    }
+
+    return fallback;
+}
 
 const ChatLog = () => {
     const dispatch = useAppDispatch();
@@ -141,19 +198,148 @@ const ChatLog = () => {
         return (<>
             {turnOrder.map(turnId => {
                 const turn = turns[turnId];
+                const orderedItems: OrderedTurnItem[] = [];
+                let index = 0;
+                const sharedActivityArtifacts = activityArtifacts(turn.artifacts);
+                const assistantScopedArtifacts = assistantArtifacts(turn.artifacts);
+                const renderableArtifacts = turn.artifacts.filter(isRenderableArtifact);
+                const turnSteps = Object.values(turn.steps);
+
+                if (turn.userMessage.text || turn.userMessage.attachments?.length) {
+                    orderedItems.push({
+                        kind: "user",
+                        item: turn.userMessage,
+                        timestamp: turn.userMessage.timestamp,
+                        index: index++,
+                    });
+                }
+
+                (turn.additionalUserMessages ?? []).forEach((message) => {
+                    orderedItems.push({
+                        kind: "user",
+                        item: message,
+                        timestamp: message.timestamp,
+                        index: index++,
+                    });
+                });
+
+                if (sharedActivityArtifacts.length > 0 || turnSteps.length > 0 || turn.state === "inProgress") {
+                    orderedItems.push({
+                        kind: "activity",
+                        timestamp: getActivityTimestamp(
+                            sharedActivityArtifacts,
+                            turnSteps,
+                            turn.userMessage.timestamp + 1,
+                        ),
+                        index: index++,
+                    });
+                }
+
+                const assistantMessages = (turn.assistantMessages && turn.assistantMessages.length > 0)
+                    ? turn.assistantMessages
+                    : (turn.answer ? [{text: turn.answer, timestamp: turn.events.find((event) => event.eventType === "answer")?.timestamp ?? turn.userMessage.timestamp + 1}] : []);
+
+                assistantMessages.forEach((message, assistantIndex) => {
+                    orderedItems.push({
+                        kind: "assistant",
+                        item: message,
+                        artifacts: assistantIndex === assistantMessages.length - 1 ? assistantScopedArtifacts : [],
+                        timestamp: message.timestamp,
+                        index: index++,
+                    });
+                });
+
+                renderableArtifacts.forEach((artifact) => {
+                    orderedItems.push({
+                        kind: "artifact",
+                        item: artifact,
+                        timestamp: artifact.timestamp,
+                        index: index++,
+                    });
+                });
+
+                orderedItems.sort((a, b) => a.timestamp - b.timestamp || a.index - b.index);
+
+                const rendered: ReactNode[] = [];
+                let renderedActivity = false;
+                let renderedAssistant = false;
+
+                const renderActivityCarrier = (key: string) => {
+                    const showActivity = !renderedActivity;
+                    renderedActivity = true;
+                    renderedAssistant = true;
+                    return (
+                        <AssistantMessageComponent
+                            key={key}
+                            message={null}
+                            isGreeting={false}
+                            artifacts={showActivity ? sharedActivityArtifacts : []}
+                            steps={showActivity ? turnSteps : []}
+                            isError={turn.state === 'error'}
+                            isHistorical={turn.historical}
+                            turnId={turnId}
+                            showActivity={showActivity}
+                            showTimelineArtifacts={showActivity}
+                        />
+                    );
+                };
+
+                const renderAssistantMessage = (key: string, message: AssistantMessage, artifacts: UnknownArtifact[]) => {
+                    renderedAssistant = true;
+                    return (
+                        <AssistantMessageComponent
+                            key={key}
+                            message={message.text}
+                            isGreeting={false}
+                            artifacts={artifacts}
+                            steps={[]}
+                            isError={turn.state === 'error'}
+                            isHistorical={turn.historical}
+                            turnId={turnId}
+                            showActivity={false}
+                            showTimelineArtifacts={false}
+                        />
+                    );
+                };
+
+                orderedItems.forEach((entry) => {
+                    if (entry.kind === "user") {
+                        rendered.push(
+                            <UserMessageComponent
+                                key={`user_${turnId}_${entry.item.timestamp}_${entry.index}`}
+                                message={entry.item}
+                                turnId={turnId}
+                            />
+                        );
+                        return;
+                    }
+
+                    if (entry.kind === "assistant") {
+                        rendered.push(renderAssistantMessage(`assistant_${turnId}_${entry.item.timestamp}_${entry.index}`, entry.item, entry.artifacts));
+                        return;
+                    }
+
+                    if (entry.kind === "activity") {
+                        rendered.push(renderActivityCarrier(`activity_${turnId}_${entry.timestamp}_${entry.index}`));
+                        return;
+                    }
+
+                    const Component = getChatLogComponent(entry.item.artifactType);
+                    if (Component) {
+                        rendered.push(
+                            <Component
+                                key={`artifact_${turnId}_${entry.item.artifactType}_${entry.item.timestamp}_${entry.index}`}
+                                item={entry.item}
+                                historical={turn.historical}
+                            />
+                        );
+                    }
+                });
 
                 return (<Fragment key={turnId}>
-                    {turn.userMessage.text && <UserMessageComponent message={turn.userMessage} turnId={turnId}/>}
-                    <AssistantMessageComponent
-                        message={turn.answer}
-                        isGreeting={false}
-                        artifacts={turn.artifacts}
-                        steps={Object.values(turn.steps)}
-                        isError={turn.state === 'error'}
-                        isHistorical={turn.historical}
-                        followupMessages={turn.additionalUserMessages}
-                        turnId={turnId}
-                    />
+                    {rendered}
+                    {!renderedAssistant && (sharedActivityArtifacts.length > 0 || turnSteps.length > 0 || turn.state === "inProgress") &&
+                        renderActivityCarrier(`assistant_activity_${turnId}`)}
                 </Fragment>)
             })}
         </>)

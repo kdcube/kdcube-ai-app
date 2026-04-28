@@ -5,6 +5,7 @@ import SocketIOChat from "../chatController/socketIOChat.ts";
 import {
     chatCompleted,
     chatConnected,
+    appendTurnUserMessage,
     chatDelta,
     chatDisconnected,
     chatStarted,
@@ -389,6 +390,7 @@ export const chatServiceMiddleware = (transportType: TransportType): Middleware 
                     const isContinuation = continuationKind === "followup" || continuationKind === "steer"
                     const targetTurnId = request.targetTurnId ?? activeTurn?.id ?? undefined
                     const turnId = `turn_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+                    const sentAt = new Date().getTime();
 
                     const message = request.message ?? selectUserMessage(state)
 
@@ -470,6 +472,15 @@ export const chatServiceMiddleware = (transportType: TransportType): Middleware 
                             const ackStatus = typeof ack?.status === "string" ? ack.status : null
                             const continuationAccepted = ackStatus === "followup_accepted" || ackStatus === "steer_accepted"
                             const continuationStartedNewTurn = !!ackStatus && !continuationAccepted
+                            if (!continuationStartedNewTurn && continuationKind === "followup" && targetTurnId) {
+                                dispatch(appendTurnUserMessage({
+                                    turnId: targetTurnId,
+                                    text: message,
+                                    attachments,
+                                    timestamp: sentAt,
+                                    continuationKind: "followup",
+                                }))
+                            }
                             dispatch(pushNotification({
                                 type: "info",
                                 text: continuationStartedNewTurn

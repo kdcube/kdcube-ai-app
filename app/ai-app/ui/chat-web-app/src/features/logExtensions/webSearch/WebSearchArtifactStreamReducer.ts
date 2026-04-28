@@ -26,6 +26,7 @@ export class WebSearchArtifactStreamReducer implements ArtifactStreamParser {
     private addWebSearchArtifact(codeExec: WebSearchArtifact) {
         const idx = this.artifacts.findIndex(c => c.content.searchId === codeExec.content.searchId)
         if (idx >= 0) {
+            codeExec.timestamp = Math.min(codeExec.timestamp, this.artifacts[idx].timestamp)
             this.artifacts.splice(idx, 1, codeExec)
         } else {
             this.artifacts.push(codeExec)
