@@ -49,6 +49,24 @@ Effect:
 
 ## Reset Anonymous Rate Limits
 
+When a request is already rate-limited, inspect the response first. Gateway
+429/503 responses include the resolved server session:
+
+```json
+{
+  "detail": "Hourly limit exceeded (493/120)",
+  "user_type": "anonymous",
+  "session_id": "<session_id>"
+}
+```
+
+The same value is also exposed as:
+
+```text
+X-Session-ID: <session_id>
+X-User-Type: anonymous
+```
+
 If you know the `session_id`, delete only that session's rate-limit keys:
 
 ```text

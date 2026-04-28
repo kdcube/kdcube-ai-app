@@ -195,6 +195,24 @@ paths:
   host_exec_workspace_path: "/YOUR/HOST/PATH/.kdcube/exec-workspace"     # HOST_EXEC_WORKSPACE_PATH; host folder mounted into /exec-workspace
 
 # ---------------------------------------------------------------------------
+# Frontend runtime config
+# frontend.config is public client config. It is merged into the generated
+# frontend config and into GET /api/cp-frontend-config.
+# Keep secrets out of this section.
+# ---------------------------------------------------------------------------
+# frontend:
+#   config:
+#     auth:
+#       authType: "delegated"       # hardcoded | delegated | oauth
+#       totpAppName: "Example App"  # delegated auth display name
+#       totpIssuer: "Example App"   # delegated auth TOTP issuer
+#       apiBase: "/auth/"           # delegated auth proxy base visible to the browser
+#     routesPrefix: "/chatbot"      # SPA route prefix
+#     debug:
+#       injectDebugCommands: false
+#       animateStreaming: true
+
+# ---------------------------------------------------------------------------
 # Platform metadata
 # ---------------------------------------------------------------------------
 platform:

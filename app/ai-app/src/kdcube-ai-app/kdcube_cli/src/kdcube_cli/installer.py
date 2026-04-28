@@ -739,6 +739,29 @@ def update_nginx_ssl_domain(path: Path, domain: str) -> None:
         path.write_text(updated)
 
 
+def _write_frontend_config_file(path: Path, **kwargs):
+    try:
+        from kdcube_ai_app.infra.config.frontend_config import write_frontend_config_file
+    except ModuleNotFoundError as first_error:
+        if first_error.name != "kdcube_ai_app":
+            raise
+        for parent in Path(__file__).resolve().parents:
+            if (parent / "kdcube_ai_app").exists():
+                parent_text = str(parent)
+                if parent_text not in sys.path:
+                    sys.path.insert(0, parent_text)
+                break
+        try:
+            from kdcube_ai_app.infra.config.frontend_config import write_frontend_config_file
+        except ModuleNotFoundError as second_error:
+            raise RuntimeError(
+                "Cannot build frontend config: kdcube_ai_app source is not available. "
+                "Run the installer from a kdcube-ai-app release/worktree or install the platform package."
+            ) from second_error
+
+    return write_frontend_config_file(path, **kwargs)
+
+
 def write_frontend_config(
     path: Path,
     tenant: str,
@@ -752,62 +775,22 @@ def write_frontend_config(
     routes_prefix: Optional[str] = None,
     company_name: Optional[str] = None,
     turnstile_development_token: Optional[str] = None,
+    assembly: Optional[Dict[str, object]] = None,
 ) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    template_data: Dict[str, object] = {}
-    if template_path and template_path.exists():
-        template_data = _load_json_file(template_path)
-
-    data: Dict[str, object] = {}
-    if path.exists():
-        data = _load_json_file(path)
-
-    merged: Dict[str, object] = {}
-    merged.update(template_data)
-    merged.update(data)
-
-    merged["tenant"] = tenant
-    merged["project"] = project
-    if "tenant_id" in merged:
-        merged["tenant_id"] = tenant
-    if "project_id" in merged:
-        merged["project_id"] = project
-    if routes_prefix:
-        merged["routesPrefix"] = routes_prefix
-    else:
-        merged.setdefault("routesPrefix", "/chatbot")
-
-    auth = merged.get("auth") if isinstance(merged.get("auth"), dict) else {}
-    auth_type = auth.get("authType") or "hardcoded"
-    auth["authType"] = auth_type
-    if auth_type == "hardcoded":
-        if auth.get("token") in (None, "", "test-admin-token-123"):
-            auth["token"] = token
-    elif auth_type == "cognito":
-        if "token" in auth:
-            auth.pop("token", None)
-        oidc_cfg = auth.get("oidcConfig") if isinstance(auth.get("oidcConfig"), dict) else {}
-        if cognito_region and cognito_user_pool_id:
-            oidc_cfg["authority"] = f"https://cognito-idp.{cognito_region}.amazonaws.com/{cognito_user_pool_id}"
-        if cognito_app_client_id:
-            oidc_cfg["client_id"] = cognito_app_client_id
-        auth["oidcConfig"] = oidc_cfg
-    elif auth_type == "delegated":
-        if "token" in auth:
-            auth.pop("token", None)
-        if company_name:
-            if auth.get("totpAppName") in (None, "", "COMPANY_NAME", "<COMPANY_NAME>"):
-                auth["totpAppName"] = company_name
-            if auth.get("totpIssuer") in (None, "", "COMPANY_NAME", "<COMPANY_NAME>"):
-                auth["totpIssuer"] = company_name
-        auth.setdefault("apiBase", "/auth/")
-    if turnstile_development_token and not is_placeholder(turnstile_development_token):
-        auth["turnstileDevelopmentToken"] = turnstile_development_token
-    else:
-        auth.pop("turnstileDevelopmentToken", None)
-    merged["auth"] = auth
-
-    path.write_text(json.dumps(merged, indent=2) + "\n")
+    _write_frontend_config_file(
+        path,
+        tenant=tenant,
+        project=project,
+        token=token,
+        template_path=template_path,
+        cognito_region=cognito_region,
+        cognito_user_pool_id=cognito_user_pool_id,
+        cognito_app_client_id=cognito_app_client_id,
+        routes_prefix=routes_prefix,
+        company_name=company_name,
+        turnstile_development_token=turnstile_development_token,
+        assembly=assembly,
+    )
 
 
 def replace_multiline_block(env_file: EnvFile, key: str, new_lines: List[str]) -> None:
@@ -3486,6 +3469,7 @@ def gather_configuration(
         routes_prefix=proxy_route_prefix or None,
         company_name=company_name,
         turnstile_development_token=turnstile_development_token,
+        assembly=assembly_data,
     )
     routes_prefix = proxy_route_prefix or normalize_routes_prefix(_load_json_file(compose_ui_config).get("routesPrefix"))
     runtime_proxy_path = env_main.entries.get("NGINX_PROXY_RUNTIME_CONFIG_PATH", (None, None))[1]
@@ -3536,6 +3520,7 @@ def gather_configuration(
             routes_prefix=proxy_route_prefix or None,
             company_name=company_name,
             turnstile_development_token=turnstile_development_token,
+            assembly=assembly_data,
         )
     except Exception:
         pass
@@ -3557,6 +3542,7 @@ def gather_configuration(
         routes_prefix=proxy_route_prefix or None,
         company_name=company_name,
         turnstile_development_token=turnstile_development_token,
+        assembly=assembly_data,
     )
 
     proxy_build_context = env_main.entries.get("PROXY_BUILD_CONTEXT", (None, None))[1]

@@ -113,6 +113,33 @@ the Turnstile widget. Leave the field empty in shared, staging, and production
 descriptors unless that environment is intentionally using Cloudflare's test
 credentials.
 
+### `frontend.config`
+
+`frontend.config` is public browser config. The installer and
+`GET /api/cp-frontend-config` use the same builder and merge this section into
+the generated frontend config. Do not put secrets here.
+
+Example:
+
+```yaml
+frontend:
+  config:
+    auth:
+      authType: "delegated"      # hardcoded | delegated | oauth
+      totpAppName: "Example App"
+      totpIssuer: "Example App"
+      apiBase: "/auth/"
+    routesPrefix: "/chatbot"
+    debug:
+      injectDebugCommands: false
+      animateStreaming: true
+```
+
+Use this section for browser-only deployment differences, for example a local
+development auth proxy path or a custom SPA route prefix. `auth.turnstile_development_token`
+is still read from the `auth` section and is published as
+`auth.turnstileDevelopmentToken` when it is non-placeholder.
+
 ## Fields that are local-run only
 
 `paths.*` is local-run topology, not cloud deployment topology.
