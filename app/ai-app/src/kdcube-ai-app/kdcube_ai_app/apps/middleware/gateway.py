@@ -242,19 +242,31 @@ class FastAPIGatewayAdapter:
             raise HTTPException(status_code=403, detail=e.message)
         except RateLimitError as e:
             sess = e.session
-            content={"detail": e.message, "user_type": sess.user_type.value}
+            session_id = getattr(sess, "session_id", None)
+            user_type = sess.user_type.value
+            content={"detail": e.message, "user_type": user_type, "session_id": session_id}
             raise HTTPException(
                 status_code=429,
                 detail=content,
-                headers={"Retry-After": str(e.retry_after)}
+                headers={
+                    "Retry-After": str(e.retry_after),
+                    "X-User-Type": user_type,
+                    "X-Session-ID": session_id or "",
+                }
             )
         except BackpressureError as e:
             sess = e.session
-            content={"detail": e.message, "user_type": sess.user_type.value}
+            session_id = getattr(sess, "session_id", None)
+            user_type = sess.user_type.value
+            content={"detail": e.message, "user_type": user_type, "session_id": session_id}
             raise HTTPException(
                 status_code=503,
                 detail=content,
-                headers={"Retry-After": str(e.retry_after)}
+                headers={
+                    "Retry-After": str(e.retry_after),
+                    "X-User-Type": user_type,
+                    "X-Session-ID": session_id or "",
+                }
             )
         except GatewayError as e:
             raise HTTPException(status_code=e.code, detail=e.message)
