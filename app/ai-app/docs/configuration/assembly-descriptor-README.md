@@ -92,6 +92,27 @@ They are consumed either:
 - by runtime env rendering
 - or by direct `read_plain(...)` reads from `assembly.yaml`
 
+### `auth.turnstile_development_token`
+
+`auth.turnstile_development_token` is an optional installer-facing setting for
+local or development registration flows that use Cloudflare Turnstile.
+
+When it is set to a non-placeholder value, the CLI installer writes it into the
+generated frontend runtime config as:
+
+```json
+{
+  "auth": {
+    "turnstileDevelopmentToken": "XXXX.DUMMY.TOKEN.XXXX"
+  }
+}
+```
+
+A frontend that supports this field can submit that token instead of rendering
+the Turnstile widget. Leave the field empty in shared, staging, and production
+descriptors unless that environment is intentionally using Cloudflare's test
+credentials.
+
 ## Fields that are local-run only
 
 `paths.*` is local-run topology, not cloud deployment topology.

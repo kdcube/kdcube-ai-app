@@ -21,6 +21,7 @@ auth:
   auth_token_cookie_name: "__Secure-LATC"    # AUTH_TOKEN_COOKIE_NAME
   id_token_cookie_name: "__Secure-LITC"      # ID_TOKEN_COOKIE_NAME
   jwks_cache_ttl_seconds: 86400              # JWKS_CACHE_TTL_SECONDS
+  turnstile_development_token: ""            # optional local/dev frontend Turnstile bypass token; leave empty outside development
 
   # OIDC service account credentials → secrets.yaml: auth.oidc.{admin_email,admin_username,admin_password}
 
