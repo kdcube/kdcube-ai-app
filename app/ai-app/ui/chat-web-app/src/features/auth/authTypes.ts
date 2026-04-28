@@ -1,4 +1,4 @@
-export type AuthType = "none" | "cognito" | "hardcoded"
+export type AuthType = "none" | "cognito" | "simple" | "hardcoded"
 
 export interface AuthConfig {
     authType: AuthType;
@@ -8,8 +8,8 @@ export interface NoAuthConfig extends AuthConfig {
     authType: "none";
 }
 
-export interface HardcodedAuthConfig extends AuthConfig {
-    authType: "hardcoded";
+export interface SimpleAuthConfig extends AuthConfig {
+    authType: "simple" | "hardcoded";
     token: string;
 }
 

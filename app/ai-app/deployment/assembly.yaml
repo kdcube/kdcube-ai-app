@@ -196,18 +196,51 @@ paths:
 
 # ---------------------------------------------------------------------------
 # Frontend runtime config
-# frontend.config is public client config. It is merged into the generated
-# frontend config and into GET /api/cp-frontend-config.
-# Keep secrets out of this section.
+# frontend.config is public browser config. It is used by the installer when
+# writing static frontend config and by ingress when serving
+# GET /api/cp-frontend-config. Keep secrets out of this section.
+#
+# If frontend.config.auth is omitted, the frontend authType is derived from
+# top-level auth as follows:
+#   auth.type="simple" or auth.idp="simple"       -> authType "simple"
+#   auth.type="cognito" or auth.idp="cognito"     -> authType "cognito"
+#   auth.type="delegated"                         -> authType "delegated"
+#
+# Keep top-level auth and frontend auth aligned:
+#   - auth.type controls the deployment/nginx shape: simple | cognito | delegated
+#   - auth.idp controls backend identity validation: simple | cognito
+#   - frontend.config.auth.authType controls the browser auth implementation
+#     and overrides the derived value when set explicitly.
+#
+# Frontend authType values:
+#   - "simple": simple/dev frontend auth. Uses a public test token and must
+#     only be used with auth.idp="simple" or controlled local/dev deployments.
+#     The old value "hardcoded" is accepted by clients as a legacy alias only.
+#   - "cognito": OSS Cognito frontend auth. OIDC authority/client_id are derived
+#     from auth.cognito.* unless explicitly overridden under oidcConfig.
+#   - "delegated": custom delegated frontend auth via proxy-login. Backend idp
+#     is still usually "cognito"; browser talks to auth.apiBase.
+#
+# Minimal examples are shown below; normally set only the block matching
+# top-level auth.type/auth.idp.
 # ---------------------------------------------------------------------------
 # frontend:
 #   config:
 #     auth:
-#       authType: "delegated"       # hardcoded | delegated | oauth
-#       totpAppName: "Example App"  # delegated auth display name
-#       totpIssuer: "Example App"   # delegated auth TOTP issuer
-#       apiBase: "/auth/"           # delegated auth proxy base visible to the browser
-#     routesPrefix: "/chatbot"      # SPA route prefix
+#       authType: "simple"
+#       token: "test-admin-token-123"
+#     # auth:
+#     #   authType: "cognito"
+#     #   idTokenHeaderName: "X-ID-Token"
+#     #   oidcConfig:
+#     #     authority: "https://cognito-idp.eu-west-1.amazonaws.com/eu-west-1_XXXXXXXXX"
+#     #     client_id: "<app_client_id>"
+#     # auth:
+#     #   authType: "delegated"
+#     #   totpAppName: "Example App"
+#     #   totpIssuer: "Example App"
+#     #   apiBase: "/auth/"
+#     routesPrefix: "/platform"
 #     debug:
 #       injectDebugCommands: false
 #       animateStreaming: true

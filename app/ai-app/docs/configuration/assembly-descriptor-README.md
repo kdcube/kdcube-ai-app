@@ -125,7 +125,7 @@ Example:
 frontend:
   config:
     auth:
-      authType: "delegated"      # hardcoded | delegated | oauth
+      authType: "delegated"      # simple | cognito | delegated
       totpAppName: "Example App"
       totpIssuer: "Example App"
       apiBase: "/auth/"
@@ -139,6 +139,13 @@ Use this section for browser-only deployment differences, for example a local
 development auth proxy path or a custom SPA route prefix. `auth.turnstile_development_token`
 is still read from the `auth` section and is published as
 `auth.turnstileDevelopmentToken` when it is non-placeholder.
+
+If `frontend.config.auth.authType` is omitted, it is derived from top-level
+auth: `auth.type: simple` emits browser `authType: simple`, `auth.type:
+cognito` emits `authType: cognito`, and `auth.type: delegated` emits
+`authType: delegated`. The older browser value `hardcoded` is a legacy alias
+for `simple`; new descriptors should use `simple`. `oauth` is not a deployment
+auth mode; use `cognito` for the OSS browser Cognito/OIDC flow.
 
 ## Fields that are local-run only
 
