@@ -1,6 +1,6 @@
 {
   "auth": {
-    "authType": "hardcoded",
+    "authType": "simple",
     "token": "test-admin-token-123"
   },
   "tenant": "TENANT_ID",

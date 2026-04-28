@@ -3,7 +3,7 @@
  * Copyright (c) 2025 Elena Viter
  */
 
-import {BrowserRouter as Router, Route, Routes} from "react-router-dom"
+import {BrowserRouter as Router, Navigate, Route, Routes} from "react-router-dom"
 import NotFoundPage from "./components/notfound/NotFoundPage.tsx";
 import {ReactNode, useCallback, useMemo} from "react";
 import Dummy from "./components/chat/Dummy.tsx";
@@ -17,6 +17,7 @@ import {selectChatPath, selectRoutesPrefix} from "./features/chat/chatSettingsSl
 function AppRouter() {
     const routePrefix = useAppSelector(selectRoutesPrefix)
     const chatPagePath = useAppSelector(selectChatPath)
+    const routeRootPath = routePrefix || "/"
 
     const withAuthRequired = useCallback((children: ReactNode | ReactNode[]) => {
         return <WithAuthRequired>{children}</WithAuthRequired>
@@ -29,6 +30,7 @@ function AppRouter() {
     return useMemo(() => {
         return <Router>
             <Routes>
+                <Route path={routeRootPath} element={<Navigate to={chatPagePath} replace/>}/>
                 <Route path={`${routePrefix}/callback`} element={<AuthCallback/>}/>
                 <Route path={chatPagePath} element={chatPage}/>
                 <Route path={`${chatPagePath}/:conversationID`} element={chatPage}/>
@@ -36,7 +38,7 @@ function AppRouter() {
                 <Route path='*' element={<NotFoundPage/>}/>
             </Routes>
         </Router>
-    }, [routePrefix, chatPagePath, chatPage, withAuthRequired])
+    }, [routePrefix, routeRootPath, chatPagePath, chatPage, withAuthRequired])
 }
 
 export default AppRouter
