@@ -157,6 +157,40 @@ Do not confuse this with `AIBundleStorage`:
 - local helper root = shared instance-local filesystem
 - `AIBundleStorage` = backend storage API for bundle artifacts
 
+## AWS and IAM scoping
+
+Bundles run in the same processor process, so AWS identity must be scoped by
+the boto client/session that performs the operation. Do not treat a bundle
+configuration value such as `aws_profile` as a process-wide IAM context.
+
+Best practice:
+
+- create explicit `boto3.Session(...)` / `aioboto3.Session(...)` objects for
+  bundle-specific AWS work
+- pass `profile_name`, `region_name`, or assumed-role credentials into that
+  session/client explicitly
+- keep those sessions local to the operation or bundle component that needs
+  them
+- do not call `boto3.setup_default_session(...)` from bundle code
+- do not mutate `AWS_PROFILE`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, or related
+  process environment variables at runtime
+
+Why this matters:
+
+- a scoped `boto3.Session(profile_name="...")` does not change other bundles
+- direct `boto3.client(...)` calls use the process default credential chain
+- platform SDK helpers use their own configuration, not arbitrary bundle props
+- a later bundle-specific session does not re-scope clients already created by
+  another bundle or by the platform
+
+`AIBundleStorage` is platform storage. It uses its explicit `storage_uri` or
+the platform `KDCUBE_STORAGE_PATH` / `settings.STORAGE_PATH`. Bundle-specific
+props such as `my_feature.aws_profile` do not automatically apply to
+`AIBundleStorage`. If a bundle needs artifact storage under a non-default AWS
+identity, pass storage configuration explicitly through the storage API or add a
+bundle-owned storage wrapper that constructs the backend with an explicit
+profile/region.
+
 Important current communicator rule for REST operations:
 - communicator is available
 - if the request carries the `KDC-Stream-ID` HTTP header, configurable via

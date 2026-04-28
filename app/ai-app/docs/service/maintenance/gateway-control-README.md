@@ -1,0 +1,133 @@
+---
+id: ks:docs/service/maintenance/gateway-control-README.md
+title: "Gateway Control Maintenance"
+summary: "Operational notes for clearing gateway rate-limit and backpressure state without flushing Redis."
+tags: ["service", "maintenance", "gateway", "redis", "rate-limit", "backpressure"]
+keywords: ["gateway control", "rate limit reset", "anonymous burst limit", "redis browser", "throttling reset"]
+see_also:
+  - ks:docs/service/maintenance/requests-monitoring-README.md
+  - ks:docs/configuration/gateway-descriptor-README.md
+---
+# Gateway Control Maintenance
+
+Use this when a development or operations incident leaves gateway throttling
+state behind after a client bug, bad auth state, IDP switch, or burst test.
+Prefer targeted key deletion over flushing Redis.
+
+## Rate-Limit Key Shape
+
+Gateway rate-limit keys are tenant/project scoped:
+
+```text
+<tenant>:<project>:kdcube:system:ratelimit:<session_id>:burst
+<tenant>:<project>:kdcube:system:ratelimit:<session_id>:hour:<epoch-hour>
+```
+
+The burst key is a short-window sorted set. The hourly key is a counter. Both
+are keyed by `session_id`, not by user type alone.
+
+## Anonymous Users
+
+Anonymous users are not all grouped into one shared limiter. The gateway first
+maps the request to an anonymous session:
+
+```text
+<tenant>:<project>:kdcube:session:anonymous:<fingerprint>
+```
+
+The fingerprint is derived from client IP and user agent. In local development,
+the same browser, IP, and user agent normally reuse the same anonymous session
+until the session TTL expires or the session key is deleted. Multiple tabs and
+reloads can therefore share the same anonymous burst budget.
+
+Effect:
+
+- One noisy anonymous browser can rate-limit itself across tabs/reloads.
+- Other browsers or different user agents usually get different anonymous sessions.
+- Deleting rate-limit keys does not clear stale browser cookies or local session state.
+- After changing IDP/auth mode, also clear the browser cookies/session storage or use a fresh browser profile.
+
+## Reset Anonymous Rate Limits
+
+If you know the `session_id`, delete only that session's rate-limit keys:
+
+```text
+<tenant>:<project>:kdcube:system:ratelimit:<session_id>:burst
+<tenant>:<project>:kdcube:system:ratelimit:<session_id>:hour:*
+```
+
+In Redis Browser:
+
+1. Open the Redis Browser admin UI.
+2. Search with prefix:
+
+```text
+<tenant>:<project>:kdcube:system:ratelimit:<session_id>
+```
+
+3. Delete the `:burst` key.
+4. Delete any matching `:hour:<epoch-hour>` keys if the hourly counter is also exhausted.
+
+If you do not know the session id, search by tenant/project prefix:
+
+```text
+<tenant>:<project>:kdcube:system:ratelimit:
+```
+
+For local development only, it is usually acceptable to delete all matching
+rate-limit keys for the tenant/project. Do not do this in shared environments
+unless you intentionally want to clear throttling state for all active sessions.
+
+## Reset Via Admin Endpoint
+
+The control-plane reset endpoint can clear the same keys:
+
+```http
+POST /admin/throttling/reset
+```
+
+Single session:
+
+```json
+{
+  "tenant": "<tenant>",
+  "project": "<project>",
+  "reset_rate_limits": true,
+  "reset_backpressure": false,
+  "reset_throttling_stats": false,
+  "all_sessions": false,
+  "session_id": "<session_id>"
+}
+```
+
+All sessions for one tenant/project:
+
+```json
+{
+  "tenant": "<tenant>",
+  "project": "<project>",
+  "reset_rate_limits": true,
+  "reset_backpressure": false,
+  "reset_throttling_stats": false,
+  "all_sessions": true
+}
+```
+
+Use an authenticated admin user. Keep `reset_backpressure` false unless you are
+also recovering from stale capacity counters or queue pressure.
+
+## Backpressure Reset
+
+Backpressure capacity counters are separate from rate-limit counters. Reset
+them only when requests are blocked with backpressure/503 symptoms and the
+queue/capacity state is known to be stale.
+
+Relevant keys:
+
+```text
+<tenant>:<project>:kdcube:system:capacity:counter
+<tenant>:<project>:kdcube:system:capacity:counter:total
+```
+
+Do not purge chat queues during normal rate-limit recovery. Queue purge drops
+pending work and should be reserved for explicit incident recovery.
