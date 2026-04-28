@@ -42,6 +42,13 @@ export interface ChatSettingsState {
 export interface UserAttachmentDescription {
     name: string;
     size: number;
+    timestamp?: number;
+    mime?: string | null;
+    rn?: string | null;
+    artifactPath?: string;
+    sourceMessageId?: string;
+    continuationKind?: string;
+    historyMeta?: Record<string, unknown>;
 }
 
 export interface UserAttachment extends UserAttachmentDescription {
@@ -69,6 +76,16 @@ export interface ChatState extends ConversationState {
 export interface UserMessage extends Timestamped {
     text: string,
     attachments: UserAttachmentDescription[],
+    continuationKind?: string;
+    sourceMessageId?: string;
+    artifactPath?: string;
+    historyMeta?: Record<string, unknown>;
+}
+
+export interface AssistantMessage extends Timestamped {
+    text: string;
+    artifactPath?: string;
+    historyMeta?: Record<string, unknown>;
 }
 
 export interface AgentTiming {
@@ -173,6 +190,7 @@ export interface ChatTurn {
     state: TurnState;
     userMessage: UserMessage;
     additionalUserMessages?: UserMessage[];
+    assistantMessages?: AssistantMessage[];
     answer?: string | null;
     events: TurnEvent<unknown>[];
     steps: Record<string, TurnStep>;
