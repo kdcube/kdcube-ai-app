@@ -1,12 +1,29 @@
 import {createAsyncThunk, createSlice} from "@reduxjs/toolkit";
 import {ChatSettings, ChatSettingsState} from "./chatTypes.ts";
 import {RootState} from "../../app/store.ts";
-import {configPath} from "../../BuildConfig.ts";
+import {configEndpoint, configPath} from "../../BuildConfig.ts";
+
+const fetchChatSettings = async (path: string): Promise<ChatSettings | null> => {
+    try {
+        const response = await fetch(path, {cache: "no-store"});
+        if (!response.ok) {
+            console.warn(`Chat settings request failed: ${path}`, response.status);
+            return null;
+        }
+        return await response.json() as ChatSettings;
+    } catch (error) {
+        console.warn(`Chat settings request failed: ${path}`, error);
+        return null;
+    }
+}
 
 export const loadChatSettings = createAsyncThunk("chatSettings/load", async () => {
-    const response = await fetch(configPath)
-    if (response.ok) {
-        return await response.json() as ChatSettings;
+    let settings = await fetchChatSettings(configEndpoint);
+    if (!settings && configPath !== configEndpoint) {
+        settings = await fetchChatSettings(configPath);
+    }
+    if (settings) {
+        return settings;
     }
     throw new Error("Could not load chatSettings from server");
 }, {
