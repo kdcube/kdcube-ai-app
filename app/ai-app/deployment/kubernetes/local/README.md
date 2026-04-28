@@ -141,7 +141,7 @@ Current chart behavior:
 - if `auth.idp` is omitted, chart falls back for backward compatibility:
   `simple` -> backend `AUTH_PROVIDER=simple`; `cognito` / `delegated` -> backend `AUTH_PROVIDER=cognito`
 - frontend remains:
-  `simple` -> `authType=hardcoded`
+  `simple` -> `authType=simple`
   `cognito` / `delegated` -> `authType=cognito`
 
 Do not configure auth mode in bundles.

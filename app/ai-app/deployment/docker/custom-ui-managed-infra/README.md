@@ -87,7 +87,7 @@ Your frontend should route API traffic through OpenResty and use a stable `route
 Recommended UI config fields:
 - `routesPrefix: "/chatbot"` (UI is served under `/chatbot/*`)
 - Auth config depends on your chosen mode:
-  - `authType: "hardcoded"` (static token)
+  - `authType: "simple"` (static token)
   - `authType: "cognito"` (browser sends Cognito tokens)
   - `authType: "delegated"` with `apiBase: "/auth/"` (requires proxylogin)
 

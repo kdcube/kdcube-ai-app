@@ -9,7 +9,7 @@ import {
     selectIdCookieName, selectUseAuthCookies
 } from "../chat/chatSettingsSlice.ts";
 import {AuthAction, setCredentials} from "./authSlice.ts";
-import {HardcodedAuthConfig} from "./authTypes.ts";
+import {SimpleAuthConfig} from "./authTypes.ts";
 import {removeCookie, setCookie} from "../../utils/cookies.ts";
 
 export const LOG_IN = "auth/LogIn"
@@ -113,10 +113,11 @@ export const authMiddleware = (): Middleware => {
                                 loggedIn: true,
                             }));
                             break;
+                        case "simple":
                         case "hardcoded":
                             store.dispatch(setCredentials({
                                 loggedIn: true,
-                                authToken: (authConfig as HardcodedAuthConfig).token,
+                                authToken: (authConfig as SimpleAuthConfig).token,
                             }));
                             break;
                         case "cognito":
@@ -136,6 +137,7 @@ export const authMiddleware = (): Middleware => {
             case setCredentials.type:
                 if (selectUseAuthCookies(store.getState())) {
                     switch (authConfig.authType) {
+                        case "simple":
                         case "hardcoded":
                         case "cognito": {
                             const payload = (action as PayloadAction<AuthAction>).payload;

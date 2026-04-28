@@ -131,10 +131,17 @@ def _assembly_auth_type(assembly: Mapping[str, Any] | None) -> str:
     if auth_type == "delegated":
         return "delegated"
     if auth_type == "simple" or auth_idp == "simple":
-        return "hardcoded"
+        return "simple"
     if auth_type == "cognito" or auth_idp == "cognito":
         return "cognito"
-    return "hardcoded"
+    return "simple"
+
+
+def _normalize_frontend_auth_type(value: Any) -> str:
+    auth_type = as_text(value).lower()
+    if auth_type == "hardcoded":
+        return "simple"
+    return auth_type
 
 
 def _build_oidc_authority(region: str, user_pool_id: str) -> str:
@@ -186,11 +193,11 @@ def build_frontend_config(
     assembly_company = as_text(get_nested(assembly or {}, "company"))
     company = as_text(company_name) or assembly_company or "KDCube"
     auth = copy.deepcopy(merged.get("auth") if isinstance(merged.get("auth"), dict) else {})
-    auth_type = as_text(auth.get("authType")) or _assembly_auth_type(assembly)
+    auth_type = _normalize_frontend_auth_type(auth.get("authType")) or _assembly_auth_type(assembly)
     auth["authType"] = auth_type
 
     id_token_header = as_text(get_nested(assembly or {}, "auth", "id_token_header_name")) or "X-ID-Token"
-    if auth_type == "hardcoded":
+    if auth_type == "simple":
         if auth.get("token") in (None, "", "test-admin-token-123"):
             auth["token"] = token
     elif auth_type in {"cognito", "oauth"}:
