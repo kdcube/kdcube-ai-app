@@ -1,5 +1,15 @@
 # React + TypeScript + Vite
 
+## Runtime Config
+
+The frontend first requests runtime config from `CHAT_WEB_APP_CONFIG_ENDPOINT`,
+defaulting to `/api/cp-frontend-config`. If that endpoint is unavailable, it
+falls back to `CHAT_WEB_APP_CONFIG_FILE_PATH`, defaulting to `/config.json`.
+
+Use the server endpoint for descriptor-driven deployments. Keep the static file
+fallback for local development and static hosting scenarios where the ingress
+endpoint is not available.
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:
