@@ -751,6 +751,7 @@ def write_frontend_config(
     cognito_app_client_id: Optional[str] = None,
     routes_prefix: Optional[str] = None,
     company_name: Optional[str] = None,
+    turnstile_development_token: Optional[str] = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     template_data: Dict[str, object] = {}
@@ -800,6 +801,10 @@ def write_frontend_config(
             if auth.get("totpIssuer") in (None, "", "COMPANY_NAME", "<COMPANY_NAME>"):
                 auth["totpIssuer"] = company_name
         auth.setdefault("apiBase", "/auth/")
+    if turnstile_development_token and not is_placeholder(turnstile_development_token):
+        auth["turnstileDevelopmentToken"] = turnstile_development_token
+    else:
+        auth.pop("turnstileDevelopmentToken", None)
     merged["auth"] = auth
 
     path.write_text(json.dumps(merged, indent=2) + "\n")
@@ -3468,6 +3473,7 @@ def gather_configuration(
     proxy_route_prefix = normalize_routes_prefix(proxy_route_prefix_raw) if proxy_route_prefix_raw else ""
     if proxy_route_prefix:
         _set_nested(assembly_data, ["proxy", "route_prefix"], proxy_route_prefix)
+    turnstile_development_token = _as_str(_get_nested(assembly_data, "auth", "turnstile_development_token"))
 
     write_frontend_config(
         compose_ui_config,
@@ -3479,6 +3485,7 @@ def gather_configuration(
         cognito_app_client_id=cognito_app_client_id_val,
         routes_prefix=proxy_route_prefix or None,
         company_name=company_name,
+        turnstile_development_token=turnstile_development_token,
     )
     routes_prefix = proxy_route_prefix or normalize_routes_prefix(_load_json_file(compose_ui_config).get("routesPrefix"))
     runtime_proxy_path = env_main.entries.get("NGINX_PROXY_RUNTIME_CONFIG_PATH", (None, None))[1]
@@ -3528,6 +3535,7 @@ def gather_configuration(
             cognito_app_client_id=cognito_app_client_id_val,
             routes_prefix=proxy_route_prefix or None,
             company_name=company_name,
+            turnstile_development_token=turnstile_development_token,
         )
     except Exception:
         pass
@@ -3548,6 +3556,7 @@ def gather_configuration(
         cognito_app_client_id=cognito_app_client_id_val,
         routes_prefix=proxy_route_prefix or None,
         company_name=company_name,
+        turnstile_development_token=turnstile_development_token,
     )
 
     proxy_build_context = env_main.entries.get("PROXY_BUILD_CONTEXT", (None, None))[1]

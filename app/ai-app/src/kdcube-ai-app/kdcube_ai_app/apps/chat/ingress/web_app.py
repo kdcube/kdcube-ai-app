@@ -471,7 +471,16 @@ async def gateway_middleware(request: Request, call_next):
             status_code=503,
             content={"detail": "Service is draining", "status": "draining"},
         )
-    if request.method == "OPTIONS" or request.url.path.startswith(("/profile", "/monitoring", "/admin", "/health", "/docs", "/openapi.json", "/favicon.ico")):
+    if request.method == "OPTIONS" or request.url.path.startswith((
+        "/api/cp-frontend-config",
+        "/profile",
+        "/monitoring",
+        "/admin",
+        "/health",
+        "/docs",
+        "/openapi.json",
+        "/favicon.ico",
+    )):
         return await call_next(request)
 
     if getattr(request.state, STATE_FLAG, False):
