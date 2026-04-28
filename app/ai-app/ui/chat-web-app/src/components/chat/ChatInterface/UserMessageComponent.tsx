@@ -27,11 +27,12 @@ export const UserMessageComponent = ({turnId, message}: UserMessageProps) => {
                             {message.attachments && message.attachments.length > 0 && (
                                 <div className="flex flex-row gap-1 flex-wrap">
                                     {message.attachments?.map(attachment => {
+                                        const key = attachment.artifactPath ?? attachment.sourceMessageId ?? `${attachment.name}_${attachment.size}`;
                                         return (
                                             <div
-                                                key={attachment.name}
+                                                key={key}
                                                 className="flex items-center border-2 px-2 py-1 rounded-xl border-gray-300 bg-gray-100"
-                                            >{getFileIcon(attachment.name, 18, undefined, "mr-1")}{attachment.name}</div>
+                                            >{getFileIcon(attachment.name, 18, attachment.mime ?? undefined, "mr-1")}{attachment.name}</div>
                                         )
                                     })}
                                 </div>)}

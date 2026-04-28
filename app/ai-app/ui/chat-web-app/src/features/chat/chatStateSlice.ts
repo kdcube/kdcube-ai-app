@@ -12,6 +12,7 @@ import {
 import {v4 as uuidv4} from "uuid";
 import {
     AgentTiming,
+    AssistantMessage,
     AnswerEvent,
     CanvasEvent,
     ChatTurn,
@@ -25,7 +26,9 @@ import {
     ThinkingArtifact,
     ThinkingEvent,
     TimelineTextEvent,
-    TurnError
+    TurnError,
+    UserMessage,
+    UserAttachmentDescription
 } from "./chatTypes.ts";
 import {
     CodeExecArtifact,
@@ -335,6 +338,84 @@ const createSyntheticTurn = (
     }
 }
 
+const splitAssistantAnswerAttempts = (events: AnswerEvent[]): AssistantMessage[] => {
+    const attempts: AnswerEvent[][] = [];
+    let current: AnswerEvent[] = [];
+
+    events
+        .slice()
+        .sort((a, b) => a.timestamp - b.timestamp || a.index - b.index)
+        .forEach((event) => {
+            const prev = current[current.length - 1];
+            const startsNewAttempt =
+                current.length > 0 &&
+                (
+                    !!prev?.completed ||
+                    event.index <= (prev?.index ?? -1)
+                );
+
+            if (startsNewAttempt) {
+                attempts.push(current);
+                current = [];
+            }
+
+            current.push(event);
+
+            if (event.completed) {
+                attempts.push(current);
+                current = [];
+            }
+        });
+
+    if (current.length > 0) {
+        attempts.push(current);
+    }
+
+    return attempts
+        .filter((attempt) => attempt.length > 0)
+        .map((attempt) => ({
+            text: attempt.map((event) => event.data.text).join(""),
+            timestamp: attempt[0].timestamp,
+        }));
+}
+
+const isUserOriginAttachmentItem = (item: unknown) => {
+    if (!item || typeof item !== "object") return false;
+    const data = item as Record<string, unknown>;
+    const meta = data.meta && typeof data.meta === "object" ? data.meta as Record<string, unknown> : {};
+    const role = String(data.role ?? meta.role ?? "").toLowerCase();
+    const origin = String(data.origin ?? meta.origin ?? "").toLowerCase();
+    return role === "user" || origin === "user";
+}
+
+const isUserOriginAttachmentStep = (stepId: string, data: Record<string, unknown> | undefined) => {
+    if (stepId !== "attachments") return false;
+    const items = Array.isArray(data?.items) ? data.items : [];
+    return items.length > 0 && items.every((item) => isUserOriginAttachmentItem(item));
+}
+
+const appendUserMessageToTurn = (
+    turn: WritableDraft<ChatTurn>,
+    message: UserMessage,
+) => {
+    const continuationKind = String(message.continuationKind ?? "").toLowerCase();
+    const isFollowupLike = continuationKind === "followup" || continuationKind === "steer";
+
+    if (!isFollowupLike && !turn.userMessage.text) {
+        turn.userMessage = message;
+        return;
+    }
+
+    turn.additionalUserMessages = turn.additionalUserMessages ?? [];
+    const alreadyExists = turn.additionalUserMessages.some((existing) => {
+        if (message.sourceMessageId && existing.sourceMessageId === message.sourceMessageId) return true;
+        return existing.timestamp === message.timestamp && existing.text === message.text;
+    });
+    if (!alreadyExists) {
+        turn.additionalUserMessages.push(message);
+    }
+}
+
 const chatStateSlice = createSlice({
     name: 'chatState',
     initialState: (): ChatState => {
@@ -470,6 +551,31 @@ const chatStateSlice = createSlice({
             };
             state.turnOrder.push(turnId);
         },
+        appendTurnUserMessage: (state, action: PayloadAction<{
+            turnId: string;
+            text: string;
+            attachments: UserAttachmentDescription[];
+            timestamp: number;
+            continuationKind?: string;
+            sourceMessageId?: string;
+            artifactPath?: string;
+            historyMeta?: Record<string, unknown>;
+        }>) => {
+            const turn = state.turns[action.payload.turnId];
+            if (!turn) {
+                console.warn("Received user message for an unknown turn", action.payload.turnId);
+                return;
+            }
+            appendUserMessageToTurn(turn, {
+                text: action.payload.text,
+                attachments: action.payload.attachments,
+                timestamp: action.payload.timestamp,
+                continuationKind: action.payload.continuationKind,
+                sourceMessageId: action.payload.sourceMessageId,
+                artifactPath: action.payload.artifactPath,
+                historyMeta: action.payload.historyMeta,
+            });
+        },
         turnError: (state, action: PayloadAction<TurnError>) => {
             const turn = state.turns[action.payload.turnId];
             turn.state = "error";
@@ -509,6 +615,15 @@ const chatStateSlice = createSlice({
             const turn = state.turns[turnId]
             const stepId = env.event.step
             const stepStatus = env.event.status
+
+            if (!turn) {
+                console.warn("Received step for an unknown turn", env);
+                return;
+            }
+
+            if (isUserOriginAttachmentStep(stepId, env.data)) {
+                return;
+            }
 
             const existing = Object.hasOwn(state.turns[turnId].steps, stepId) ? state.turns[turnId].steps[stepId] : null;
 
@@ -585,6 +700,10 @@ const chatStateSlice = createSlice({
             const completed = !!env.delta.completed;
 
             const turn = state.turns[turnId]
+            if (!turn) {
+                console.warn("Received delta for an unknown turn", env);
+                return;
+            }
 
             switch (marker) {
                 case "thinking": {
@@ -625,7 +744,9 @@ const chatStateSlice = createSlice({
                     }
                     turn.events.push(event);
                     const turnEvents = turn.events.filter(ev => ev.eventType === "answer") as AnswerEvent[]
-                    turn.answer = turnEvents.map(event => event.data.text).join("")
+                    const attempts = splitAssistantAnswerAttempts(turnEvents);
+                    turn.assistantMessages = attempts;
+                    turn.answer = attempts.at(-1)?.text ?? "";
                     break;
                 }
                 case "canvas": {
@@ -886,6 +1007,7 @@ export const {
     addUserAttachments,
     removeUserAttachment,
     clearUserInput,
+    appendTurnUserMessage,
     newConversation,
     loadConversation,
     loadExampleConversation,
