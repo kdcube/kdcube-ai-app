@@ -31,11 +31,13 @@ import {
 } from "./conversationsTypes.ts";
 import {
     AgentTiming,
+    AssistantMessage,
     ChatTurn,
     CitationArtifact,
     FileArtifact,
     ThinkingArtifact,
     UnknownArtifact,
+    UserAttachmentDescription,
     UserMessage
 } from "../chat/chatTypes.ts";
 import {RichLink, RNFile} from "../chatController/chatBase.ts";
@@ -96,6 +98,86 @@ export const addArtifactStreamParsers = (...parsers: ArtifactStreamParser[]) => 
     artifactStreamParsers.push(...parsers);
 }
 
+const parseExternalAttachmentPath = (artifactPath?: string | null) => {
+    if (!artifactPath || typeof artifactPath !== "string") return {};
+
+    const externalMatch = artifactPath.match(/^fi:([^.]*)\.external\.([^.]+)\.attachments\/([^/]+)\/(.+)$/);
+    if (externalMatch) {
+        return {
+            continuationKind: externalMatch[2],
+            sourceMessageId: externalMatch[3],
+        };
+    }
+
+    const legacyExternalMatch = artifactPath.match(/^fi:([^.]*)\.external\.([^.]+)\.([^.]+)\.attachments\/(.+)$/);
+    if (legacyExternalMatch) {
+        return {
+            continuationKind: legacyExternalMatch[2],
+            sourceMessageId: legacyExternalMatch[3],
+        };
+    }
+
+    return {};
+}
+
+const parseExternalMessageIdFromPath = (path?: string | null) => {
+    if (!path || typeof path !== "string") return undefined;
+    const match = path.match(/^ar:([^.]*)\.external\.([^.]+)\.([^.]+)$/);
+    return match?.[3];
+}
+
+const isExternalAttachmentArtifact = (artifactPath?: string | null) => {
+    return !!artifactPath && (
+        /^fi:([^.]*)\.external\.([^.]+)\.attachments\//.test(artifactPath) ||
+        /^fi:([^.]*)\.external\.([^.]+)\.([^.]+)\.attachments\//.test(artifactPath)
+    );
+}
+
+const getArtifactMeta = (data: unknown): Record<string, unknown> => {
+    if (!data || typeof data !== "object") return {};
+    const meta = (data as { meta?: unknown }).meta;
+    return meta && typeof meta === "object" ? meta as Record<string, unknown> : {};
+}
+
+const getUserMessageIdentity = (message: UserMessage) => {
+    if (message.sourceMessageId) return message.sourceMessageId;
+    const meta = message.historyMeta;
+    if (meta && typeof meta.message_id === "string") return meta.message_id;
+    if (meta && typeof meta.path === "string") return parseExternalMessageIdFromPath(meta.path);
+    if (message.artifactPath) return parseExternalMessageIdFromPath(message.artifactPath);
+    return undefined;
+}
+
+const bindAttachmentsToUserMessages = (messages: UserMessage[], attachments: UserAttachmentDescription[]) => {
+    if (!messages.length || !attachments.length) return;
+
+    attachments.forEach((attachment) => {
+        let target = messages.find((message) => {
+            const sourceMessageId = attachment.sourceMessageId;
+            return !!sourceMessageId && sourceMessageId === getUserMessageIdentity(message);
+        });
+
+        if (!target && attachment.continuationKind) {
+            const attachmentTs = attachment.timestamp ?? Number.MAX_SAFE_INTEGER;
+            const candidates = messages.filter((message) => message.continuationKind === attachment.continuationKind);
+            target = candidates
+                .filter((message) => message.timestamp <= attachmentTs)
+                .sort((a, b) => b.timestamp - a.timestamp)[0] ?? candidates.at(-1);
+        }
+
+        if (!target) {
+            const attachmentTs = attachment.timestamp ?? Number.MAX_SAFE_INTEGER;
+            target = messages
+                .filter((message) => message.timestamp <= attachmentTs)
+                .sort((a, b) => b.timestamp - a.timestamp)[0] ?? messages.at(-1);
+        }
+
+        if (target) {
+            target.attachments.push(attachment);
+        }
+    });
+}
+
 const conversationsMiddleware = (): Middleware => {
     const loadConversationList = (store: AppStore) => {
         const dispatch = store.dispatch
@@ -128,6 +210,9 @@ const conversationsMiddleware = (): Middleware => {
                 turns: conversation.turns.reduce((previousValue, currentValue, i, arr) => {
                     let userMessage: UserMessage | null = null;
                     const additionalUserMessages: UserMessage[] = [];
+                    const userMessages: UserMessage[] = [];
+                    const userAttachments: UserAttachmentDescription[] = [];
+                    const assistantMessages: AssistantMessage[] = [];
                     let answer: string | null = null;
                     const followUpQuestions: string[] = []
                     const turnArtifacts: UnknownArtifact[] = []
@@ -135,39 +220,75 @@ const conversationsMiddleware = (): Middleware => {
                     currentValue.artifacts.forEach(it => {
                         switch (it.type) {
                             case "chat:user": {
-                                const isFollowup = it.data.continuation_kind === "followup";
-                                if (isFollowup && userMessage) {
-                                    // Followup message within the active turn — append after original
-                                    additionalUserMessages.push({
-                                        text: it.data.text,
-                                        timestamp: Date.parse(it.ts),
-                                        attachments: [],
-                                    });
-                                } else if (!isFollowup) {
-                                    userMessage = {
-                                        text: it.data.text,
-                                        timestamp: Date.parse(it.ts),
-                                        attachments: userMessage ? userMessage.attachments : []
-                                    };
-                                }
-                                // isFollowup && !userMessage → Turn B, skip
+                                const meta = getArtifactMeta(it.data);
+                                const artifactPath = typeof meta.path === "string" ? meta.path : undefined;
+                                const continuationKind = it.data.continuation_kind ?? (typeof meta.continuation_kind === "string" ? meta.continuation_kind : undefined);
+                                const sourceMessageId =
+                                    (typeof meta.message_id === "string" ? meta.message_id : undefined) ??
+                                    parseExternalMessageIdFromPath(artifactPath);
+                                userMessages.push({
+                                    text: it.data.text,
+                                    timestamp: Date.parse(it.ts),
+                                    attachments: [],
+                                    continuationKind,
+                                    sourceMessageId,
+                                    artifactPath,
+                                    historyMeta: meta,
+                                });
                                 break;
                             }
-                            case "artifact:user.attachment":
-                                userMessage = {
-                                    text: userMessage ? userMessage.text : "",
-                                    timestamp: userMessage ? userMessage.timestamp : Date.parse(it.ts),
-                                    attachments: []
-                                }
+                            case "artifact:user.attachment": {
+                                const dto = it.data as {
+                                    payload?: {
+                                        filename?: string;
+                                        name?: string;
+                                        size?: number;
+                                        mime?: string | null;
+                                        rn?: string | null;
+                                        artifact_path?: string;
+                                        message_id?: string;
+                                        continuation_kind?: string;
+                                        meta?: Record<string, unknown>;
+                                    };
+                                    meta?: Record<string, unknown>;
+                                };
+                                const payload = dto.payload ?? {};
+                                const meta = getArtifactMeta(it.data);
+                                const artifactPath = payload.artifact_path;
+                                const parsedPath = parseExternalAttachmentPath(artifactPath);
+                                userAttachments.push({
+                                    name: payload.filename ?? payload.name ?? "file",
+                                    size: payload.size ?? 0,
+                                    timestamp: Date.parse(it.ts),
+                                    mime: payload.mime,
+                                    rn: payload.rn,
+                                    artifactPath,
+                                    sourceMessageId: payload.message_id ?? (typeof meta.message_id === "string" ? meta.message_id : undefined) ?? parsedPath.sourceMessageId,
+                                    continuationKind: payload.continuation_kind ?? (typeof meta.continuation_kind === "string" ? meta.continuation_kind : undefined) ?? parsedPath.continuationKind,
+                                    historyMeta: meta,
+                                });
                                 break
+                            }
                             case "chat:assistant":
-                                answer = it.data.text
+                                {
+                                    const meta = getArtifactMeta(it.data);
+                                    assistantMessages.push({
+                                        text: it.data.text,
+                                        timestamp: Date.parse(it.ts),
+                                        artifactPath: typeof meta.path === "string" ? meta.path : undefined,
+                                        historyMeta: meta,
+                                    });
+                                    answer = it.data.text
+                                }
                                 break
                             case "artifact:assistant.file": {
                                 const dto = it.data as AssistantFileData;
+                                if (isExternalAttachmentArtifact(dto.payload.artifact_path)) {
+                                    break;
+                                }
                                 const tf: FileArtifact = {
                                     artifactType: "file",
-                                    timestamp: Date.now(), //todo: use actual date
+                                    timestamp: Date.parse(it.ts),
                                     content: {
                                         filename: dto.payload.filename,
                                         rn: dto.payload.rn,
@@ -197,7 +318,7 @@ const conversationsMiddleware = (): Middleware => {
                                 })
                                 const r: ThinkingArtifact = {
                                     artifactType: "thinking",
-                                    timestamp: Date.now(), //todo: use actual date
+                                    timestamp: startTime,
                                     content: {
                                         agentTimes,
                                         agents,
@@ -220,7 +341,7 @@ const conversationsMiddleware = (): Middleware => {
                                         const r: CitationArtifact = {
                                             artifactType: "citation",
                                             content: t,
-                                            timestamp: Date.now(), //todo: use actual date
+                                            timestamp: Date.parse(it.ts),
                                         }
                                         turnArtifacts.push(r)
                                     }
@@ -272,6 +393,30 @@ const conversationsMiddleware = (): Middleware => {
                         turnArtifacts.push(...r.flush())
                     })
 
+                    userMessages.sort((a, b) => a.timestamp - b.timestamp);
+                    userAttachments.sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
+                    bindAttachmentsToUserMessages(userMessages, userAttachments);
+
+                    const skipRestoredUserMessages =
+                        userMessages.length > 0 &&
+                        assistantMessages.length === 0 &&
+                        userMessages.every((message) => message.continuationKind === "followup");
+
+                    if (!skipRestoredUserMessages) {
+                        for (const message of userMessages) {
+                            const isFollowup = message.continuationKind === "followup";
+                            if (isFollowup) {
+                                additionalUserMessages.push(message);
+                            } else if (!userMessage) {
+                                userMessage = message;
+                            } else {
+                                additionalUserMessages.push(message);
+                            }
+                        }
+                    }
+
+                    assistantMessages.sort((a, b) => a.timestamp - b.timestamp);
+
                     turnArtifacts.forEach(a => a.historical = true)
 
                     previousValue[currentValue.turn_id] = {
@@ -279,6 +424,7 @@ const conversationsMiddleware = (): Middleware => {
                         state: i < arr.length - 2 ? "finished" : "inProgress",
                         userMessage: userMessage ?? {text: "", attachments: [], timestamp: 0},
                         ...(additionalUserMessages.length > 0 ? {additionalUserMessages} : {}),
+                        ...(assistantMessages.length > 0 ? {assistantMessages} : {}),
                         events: [],
                         artifacts: turnArtifacts,
                         steps: {},

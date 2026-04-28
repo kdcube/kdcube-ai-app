@@ -18,6 +18,7 @@ export interface ArtifactDataDTO {
     payload: unknown,
     text: string,
     continuation_kind?: string,
+    meta?: Record<string, unknown>,
 }
 
 export interface AssistantFileData {
@@ -26,7 +27,12 @@ export interface AssistantFileData {
         rn: string,
         mime: string | null | undefined,
         description: string | null | undefined,
+        artifact_path?: string,
+        message_id?: string,
+        continuation_kind?: string,
+        meta?: Record<string, unknown>,
     },
+    meta?: Record<string, unknown>,
 }
 
 interface CitationsItem {
