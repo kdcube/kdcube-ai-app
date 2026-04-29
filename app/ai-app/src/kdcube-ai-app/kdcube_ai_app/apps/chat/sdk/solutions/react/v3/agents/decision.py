@@ -4,6 +4,7 @@
 # kdcube_ai_app/apps/chat/sdk/runtime/solution/react/agents/ver2/decision.py
 
 import json
+import hashlib
 import logging
 import re
 from typing import Any, Dict, List, Optional, Literal
@@ -693,10 +694,12 @@ It is preferable to use react.write for streaming large content and use renderin
     sys_msg = sys_1 + "\n" + "\n" + tool_block
     extra_instructions = str(additional_instructions or "").strip()
     if extra_instructions:
+        digest = hashlib.sha256(extra_instructions.encode("utf-8")).hexdigest()[:12]
         preview = " ".join(extra_instructions.split())[:200]
         _LOG.info(
-            "[react.v3.decision] agent admin customization applied len=%s preview=%r",
+            "[react.v3.decision] agent admin customization applied len=%s sha256=%s preview=%r",
             len(extra_instructions),
+            digest,
             preview,
         )
         sys_msg += "\n\n" + AGENT_ADMIN_CUSTOMIZATION_HEADER.strip() + "\n" + extra_instructions
