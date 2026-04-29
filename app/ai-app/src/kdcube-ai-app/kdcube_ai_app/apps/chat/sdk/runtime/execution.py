@@ -654,13 +654,17 @@ async def execute_tool_in_isolation(
             "message": timeout_detail or f"Tool execution exceeded {res.get('seconds', 240)}s timeout",
             "where": "subprocess",
             "managed": True,
+            "details": {"run": res},
         }
     elif not res.get("ok", True):
+        runtime_code = raw_error.split(":", 1)[0].strip() or "subprocess_exit"
+        runtime_summary = str(res.get("error_summary") or "").strip()
         subprocess_error = {
-            "code": "subprocess_exit",
-            "message": f"Subprocess exited with code {res.get('returncode', '?')}",
+            "code": runtime_code,
+            "message": runtime_summary or f"Subprocess exited with code {res.get('returncode', '?')}",
             "where": "subprocess",
             "managed": True,
+            "details": {"run": res},
         }
 
     # Read saved call
