@@ -61,7 +61,7 @@ def test_descriptor_fast_path_accepts_complete_release_descriptor():
 
 def test_workspace_namespace_uses_safe_names():
     assert workspace_namespace("Demo Tenant", "Project/One") == "demo_tenant__project_one"
-    assert workspace_namespace("", None) == "default_tenant__default_project"
+    assert workspace_namespace("", None) == "default__default"
 
 
 def test_ui_entry_path_uses_routes_prefix():
