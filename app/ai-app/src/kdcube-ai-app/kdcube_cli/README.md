@@ -104,7 +104,7 @@ installed admin assistant and bundled tools.
 If you already have a descriptor folder, you can skip the wizard:
 
 ```bash
-kdcube \
+kdcube init \
   --descriptors-location /path/to/descriptors \
   --workdir /path/to/workspace
 ```
@@ -131,24 +131,34 @@ Or pull the latest platform release from the platform repo instead of
 `assembly.yaml -> platform.ref`:
 
 ```bash
-kdcube \
+kdcube init \
   --descriptors-location /path/to/descriptors \
   --workdir /path/to/workspace \
   --latest
 ```
 
-Or build from the latest upstream repo state instead of a released ref:
+Or initialize from the latest upstream repo state instead of a released ref:
 
 ```bash
-kdcube \
+kdcube init \
   --descriptors-location /path/to/descriptors \
   --workdir /path/to/workspace \
-  --build \
   --upstream
 ```
 
-Use `--build --upstream` when you want the deployment assets from the latest
-GitHub `origin/main`, including:
+If you also want the runtime ready with freshly built local images, build during
+init:
+
+```bash
+kdcube init \
+  --descriptors-location /path/to/descriptors \
+  --workdir /path/to/workspace \
+  --upstream \
+  --build
+```
+
+Use `--upstream` when you want the deployment assets from the latest GitHub
+`origin/main`, including:
 
 - compose files
 - nginx templates
@@ -159,9 +169,8 @@ If the runtime was already initialized earlier, you can omit
 instead:
 
 ```bash
-kdcube \
+kdcube init \
   --workdir /path/to/workspace/<safe_tenant>__<safe_project> \
-  --build \
   --upstream
 ```
 
@@ -219,13 +228,13 @@ installs. It does not mean “latest source templates from GitHub main”.
 Or pin a specific release explicitly:
 
 ```bash
-kdcube \
+kdcube init \
   --descriptors-location /path/to/descriptors \
   --release 2026.4.11.012
 ```
 
 Choose exactly one source selector:
-- `--upstream` with `--build` for the latest upstream repo state
+- `--upstream` for the latest upstream repo state
 - `--latest` for the latest released platform ref
 - `--release <ref>` for a specific released ref
 - otherwise `assembly.yaml -> platform.ref`
@@ -287,7 +296,7 @@ what is incomplete.
 - Base workspace: `~/.kdcube/kdcube-runtime`
 - Runtime namespace: `~/.kdcube/kdcube-runtime/<safe_tenant>__<safe_project>`
 - Repo clone default: `~/.kdcube/kdcube-runtime/<safe_tenant>__<safe_project>/repo`
-- Docker images: pulled (**release-latest**/**release-tag**) or built (**upstream**/**workspace**/**local**)
+- Docker images: prepared by `init --build` or rebuilt as a convenience by `start --build`
 
 ### CLI options (common)
 | Option | Purpose |
@@ -297,8 +306,9 @@ what is incomplete.
 | `--workdir <path>` | Base workspace root. In descriptor mode the effective runtime becomes `<workdir>/<tenant>__<project>`. If it already points to an initialized runtime with `config/install-meta.json` and the canonical descriptor set under `config/`, the CLI can reuse that runtime non-interactively. |
 | `--descriptors-location <dir>` | Use a folder containing `assembly.yaml`, `secrets.yaml`, `gateway.yaml`, and optional bundle descriptors. |
 | `--latest` | With `--descriptors-location`, resolve the latest platform release instead of using `assembly.yaml -> platform.ref`. |
-| `--upstream` | With `--build`, use the latest upstream repo state (`origin/main`) instead of a released platform ref. Requires either `--descriptors-location` or an initialized runtime with the canonical descriptor set under `config/`. |
+| `--upstream` | Use the latest upstream repo state (`origin/main`) instead of a released platform ref. Requires either `--descriptors-location` or an initialized runtime with the canonical descriptor set under `config/`. |
 | `--release <ref>` | With `--descriptors-location`, use the given platform release instead of `assembly.yaml -> platform.ref`. |
+| `--build` | With `kdcube init`, build images after staging the runtime without starting containers. With `kdcube start`, rebuild images before starting. |
 | `--info` | Print global CLI state (defaults, running deployment). With `--workdir`, print resolved runtime info for that workdir: descriptor paths, install metadata, and host/container bundle mount mappings. |
 | `--remove-volumes` | With `kdcube stop`, also remove local volumes. |
 | `--reset-config` | Re‑prompt for config values without deleting files. |
@@ -315,8 +325,8 @@ what is incomplete.
 
 | Subcommand | Purpose |
 |---|---|
-| `kdcube init [--workdir <path>] [--descriptors-location <dir>] [--latest\|--upstream\|--release <ref>\|--build] [-i]` | Initialize a workdir (stage descriptors, generate env files) **without** starting Docker. |
-| `kdcube start [--workdir <path>] [--build]` | Start the Docker Compose stack for an already-initialized workdir. |
+| `kdcube init [--workdir <path>] [--descriptors-location <dir>] [--latest\|--upstream\|--release <ref>] [--build] [-i]` | Initialize a workdir (stage descriptors, generate env files). With `--build`, also build images **without** starting containers. |
+| `kdcube start [--workdir <path>] [--build]` | Start the Docker Compose stack for an already-initialized workdir. `--build` is a convenience rebuild before start, not required if `init --build` was already run. |
 | `kdcube stop [--workdir <path>] [--remove-volumes]` | Stop the local Docker Compose stack. |
 | `kdcube reload <bundle_id> [--workdir <path>]` | Reapply `bundles.yaml` from the active runtime and clear proc bundle caches. |
 | `kdcube export [--workdir <path>] [--tenant <id>] [--project <id>] [--out-dir <dir>] [--aws-region <region>]` | Export effective live `bundles.yaml` and `bundles.secrets.yaml`. |
@@ -570,7 +580,7 @@ It creates a workdir (default: `~/.kdcube/kdcube-runtime`) and lets you:
 - start `docker compose` (optional)
 
 Install source menu (shown only when `--path` is **not** provided):
-- **upstream**: clone/pull the repo into the workspace and build images locally
+- **upstream**: clone/pull the repo into the workspace; use `init --build` to prebuild images before start
 - **release-latest**: pull prebuilt images for the latest release
 - **release-tag**: pull prebuilt images for a specific version (platform.ref)
 - **local**: use a local repo path you provide (build locally)
