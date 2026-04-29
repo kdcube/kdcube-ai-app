@@ -1257,6 +1257,22 @@ class BaseWorkflow():
             },
             bundle_root=bundle_root,
         )
+        extra_instructions = str(additional_instructions or "").strip()
+        try:
+            if extra_instructions:
+                preview = re.sub(r"\s+", " ", extra_instructions)[:200]
+                self.logger.log(
+                    f"[react.{react_version}] additional instructions provided "
+                    f"len={len(extra_instructions)} preview={preview!r}",
+                    level="INFO",
+                )
+            else:
+                self.logger.log(
+                    f"[react.{react_version}] additional instructions not provided",
+                    level="INFO",
+                )
+        except Exception:
+            pass
         ReactSolver = _react_symbol("runtime", "ReactSolverV2")
         react = ReactSolver(
             service=self.model_service,
@@ -1268,7 +1284,7 @@ class BaseWorkflow():
             hosting_service=self.hosting_service,
             ctx_browser=self.ctx_browser,
             scratchpad=scratchpad,
-            additional_instructions=additional_instructions,
+            additional_instructions=extra_instructions or None,
         )
         try:
             self.logger.log(
