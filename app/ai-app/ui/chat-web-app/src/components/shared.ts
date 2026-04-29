@@ -4,10 +4,11 @@ export const handleContentDownload = (fileName: string, content: string | Blob |
     const link = document.createElement('a');
     link.href = url;
     link.download = fileName;
+    link.style.display = 'none';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 function openUrlSafely(url: string): boolean {
