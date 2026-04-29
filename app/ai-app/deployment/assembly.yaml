@@ -224,26 +224,26 @@ paths:
 # Minimal examples are shown below; normally set only the block matching
 # top-level auth.type/auth.idp.
 # ---------------------------------------------------------------------------
-# frontend:
-#   config:
-#     auth:
-#       authType: "simple"
-#       token: "test-admin-token-123"
-#     # auth:
-#     #   authType: "cognito"
-#     #   idTokenHeaderName: "X-ID-Token"
-#     #   oidcConfig:
-#     #     authority: "https://cognito-idp.eu-west-1.amazonaws.com/eu-west-1_XXXXXXXXX"
-#     #     client_id: "<app_client_id>"
-#     # auth:
-#     #   authType: "delegated"
-#     #   totpAppName: "Example App"
-#     #   totpIssuer: "Example App"
-#     #   apiBase: "/auth/"
-#     routesPrefix: "/platform"
-#     debug:
-#       injectDebugCommands: false
-#       animateStreaming: true
+frontend:
+ config:
+   auth:
+     authType: "simple"
+     token: "test-admin-token-123"
+   # auth:
+   #   authType: "cognito"
+   #   idTokenHeaderName: "X-ID-Token"
+   #   oidcConfig:
+   #     authority: "https://cognito-idp.eu-west-1.amazonaws.com/eu-west-1_XXXXXXXXX"
+   #     client_id: "<app_client_id>"
+   # auth:
+   #   authType: "delegated"
+   #   totpAppName: "Example App"
+   #   totpIssuer: "Example App"
+   #   apiBase: "/auth/"
+   routesPrefix: "/platform"
+   debug:
+     injectDebugCommands: false
+     animateStreaming: true
 
 # ---------------------------------------------------------------------------
 # Platform metadata
