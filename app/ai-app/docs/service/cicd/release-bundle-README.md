@@ -1,182 +1,204 @@
 ---
 id: ks:docs/service/cicd/release-bundle-README.md
-title: "Release Bundle"
-summary: "Step‑by‑step bundle release workflow: tagging, bundles.yaml updates, delivery mode, props, and validation."
-tags: ["service", "cicd", "release", "bundles", "delivery", "git", "baked", "props", "redis"]
-keywords: ["bundle id", "tag", "commit", "bundles.yaml", "subdir", "module", "baked bundles", "git-defined bundles", "BUNDLES_FORCE_ENV_ON_STARTUP", "BUNDLES_INCLUDE_EXAMPLES"]
+title: "Release A Bundle"
+summary: "Human and agent guide for releasing KDCube bundles: prepare bundle-local README/config/release files, commit/tag the content repository, then update deployment descriptors separately."
+tags: ["service", "cicd", "release", "bundle", "content-release", "descriptors", "configuration"]
+keywords: ["bundle release", "content release", "release.yaml", "bundle config shape", "bundles.yaml", "bundles.secrets.yaml", "bundle tag", "descriptor update", "customer bundle release"]
 see_also:
-  - ks:docs/configuration/assembly-descriptor-README.md
-  - ks:docs/service/cicd/custom-cicd-README.md
-  - ks:docs/service/cicd/release-README.md
-  - ks:docs/configuration/service-runtime-configuration-mapping-README.md
+  - ks:deployment/cicd/kdcube/procedures/content-release.md
+  - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
+  - ks:docs/sdk/bundle/build/how-to-write-bundle-README.md
+  - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
+  - ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
+  - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
+  - ks:docs/configuration/bundles-descriptor-README.md
+  - ks:docs/configuration/bundles-secrets-descriptor-README.md
+  - ks:docs/sdk/bundle/bundle-delivery-and-update-README.md
 ---
-## Bundle Release Process
+# Release A Bundle
 
-This doc describes how to release a bundle and update the **bundles descriptor**
-(`bundles.yaml`). It applies to both **baked** bundles and **git‑defined** bundles.
+This page explains the bundle release workflow in simple terms.
 
-In current runtime setups, `bundles.yaml` may serve two different roles:
+Use it when you want to release bundle code/content, for example a customer
+bundle repo that contains one or more KDCube bundles.
 
-- proc bundle-registry seed through the mounted bundle descriptor authority
-- plain runtime metadata source through `read_plain("b:...")`
+For the executable agent procedure, use:
 
-See:
-[docs/configuration/service-runtime-configuration-mapping-README.md](../../configuration/service-runtime-configuration-mapping-README.md)
+- `deployment/cicd/kdcube/procedures/content-release.md`
 
----
+## Short Version For Humans
 
-## 1) Prepare the bundle
+A bundle release has two separate parts.
 
-1. Update the bundle code.
-2. Decide the new **bundle id** (versioned id). Example:  
-   `react@2026-02-10-02-44` or `app@2-0`.
-3. Ensure the bundle entrypoint contains the agentic decorator (`@agentic_workflow` or factory).
+1. Release the bundle repository.
+   - update the bundle docs/config shape/release notes
+   - commit those changes
+   - tag the bundle repository with the release version
 
----
+2. Later, update deployment descriptors to use that release.
+   - update `bundles.yaml` entries to point to the new `ref`
+   - update any environment descriptors that should consume this bundle version
+   - deploy or reload through the deployment/runtime procedure
 
-## 2) Tag the bundle source
+Do not mix these by accident.
 
-Tag the repo where the bundle lives:
+The bundle release says:
 
+- "this bundle repository now has version X"
+
+The deployment descriptor says:
+
+- "this tenant/project/environment should run version X"
+
+## What Must Be In A Releasable Bundle
+
+Each releasable bundle should keep these files in the bundle root:
+
+- `README.md`
+  - explains what the bundle does, what config it reads, what secrets it needs,
+    and how operators should run or validate it
+
+- `release.yaml`
+  - contains the bundle repository URL, release `ref`, and release notes
+  - only `bundle.ref` is the release version; do not add a separate config version
+
+- `config/bundles.yaml`
+  - documents the non-secret `bundles.yaml` shape for this bundle
+  - use placeholders or safe non-sensitive example values
+
+- `config/bundles.secrets.yaml`
+  - documents the bundle-scoped secrets shape
+  - if the bundle has no bundle-scoped secrets, keep an explicit empty shape:
+
+```yaml
+secrets: {}
 ```
-git tag <bundle-tag>
-git push origin <bundle-tag>
+
+Never put real secrets in bundle-local config examples.
+
+## What The Human Tells The Agent
+
+Tell the agent:
+
+- release version
+- repository or repositories
+- bundle ids
+- whether to commit
+- whether to tag
+- whether to push
+
+Example:
+
+```text
+Use deployment/cicd/kdcube/procedures/content-release.md.
+Make content release 2026.4.29.1545 for the customer bundle repo.
+Release bundles ciso-marketing@2-0 and user-mgmt@1-0.
+Prepare descriptor and plan first.
 ```
 
-Use that tag/commit as `ref` in the bundles descriptor.  
-**Branch refs are for dev only** and require `BUNDLE_GIT_ALWAYS_PULL=1`.
+If you already know you want to finish the release:
 
----
+```text
+Use deployment/cicd/kdcube/procedures/content-release.md.
+Release version is 2026.4.29.1545.
+Repository is customer.
+Bundles are ciso-marketing@2-0 and user-mgmt@1-0.
+Commit, tag, and push after I approve the plan.
+```
 
-## 3) Update bundles.yaml
+## What The Agent Does
 
-Edit `bundles.yaml` in the deployment repo and add/update the bundle entry.
+The agent follows a simple pipeline:
 
-### Example (bundle inside monorepo)
+1. Create a descriptor.
+2. Create a readable plan.
+3. Wait for human approval.
+4. Update bundle files.
+5. Validate.
+6. Commit only scoped release files.
+7. Create the release tag.
+8. Push commit and tag if requested.
+9. Write the execution journal after every step.
+
+The journal lives under:
+
+```text
+deployment/cicd/kdcube/cicd/content-release-history/<dd.mm.yyyy>/
+```
+
+The files are:
+
+- `descriptor-<dd.mm.yyyy.hhmm>.yaml`
+- `plan-<dd.mm.yyyy.hhmm>.log`
+- `execute-<dd.mm.yyyy.hhmm>.yaml`
+
+## Agent Rules
+
+- Read existing `release.yaml` before changing it.
+- Set `bundle.ref` to the requested release version.
+- Do not invent a release version from the date unless the human asks.
+- Do not stage unrelated files.
+- Do not commit generated files, scratch files, or local secrets.
+- If a bundle config changed, update `README.md`, `config/bundles.yaml`, and
+  `config/bundles.secrets.yaml` in the same release.
+- If the repo has unrelated dirty files, leave them untouched and mention them.
+
+## Updating Deployment Descriptors
+
+After the bundle repository is released, deployment descriptors can consume it.
+
+For a git-defined bundle, update the bundle entry in `bundles.yaml`:
 
 ```yaml
 bundles:
   version: "1"
-  default_bundle_id: "react@2026-02-10-02-44"
   items:
-    - id: "react@2026-02-10-02-44"
-      name: "ReAct (example)"
-      repo: "git@github.com:kdcube/kdcube-ai-app.git"
-      ref: "v0.3.2"
-      subdir: "app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles"
-      module: "react@2026-02-10-02-44.entrypoint"
-```
-
-**Rule:** `subdir` points to the **parent bundles directory** and `module` includes the bundle folder
-(`id.entrypoint`). Keep `module` aligned with your local path convention.
-
----
-
-## 4) Configure bundle props (optional)
-
-Bundles may require **runtime props** (for example: knowledge repo + docs root).
-You can define props directly in `bundles.yaml` **per bundle item**:
-
-```yaml
-bundles:
-  version: "1"
-  items:
-    - id: "react@2026-02-10-02-44"
-      repo: "git@github.com:kdcube/kdcube-ai-app.git"
-      ref: "v0.3.2"
-      subdir: "app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles"
-      module: "react@2026-02-10-02-44.entrypoint"
+    - id: "my-bundle@1-0"
+      name: "My Bundle"
+      repo: "git@github.com:example/my-bundle-repo.git"
+      ref: "2026.4.29.1545"
+      subdir: "src/path/to/bundles"
+      module: "my-bundle@1-0.entrypoint"
       config:
-        knowledge:
-          repo: "git@github.com:kdcube/kdcube-ai-app.git"
-          ref: "v0.3.2"
-          docs_root: "app/ai-app/docs"
-          src_root: "app/ai-app/src/kdcube-ai-app/kdcube_ai_app"
-          deploy_root: "app/ai-app/deployment"
-          validate_refs: true
+        my_bundle:
+          example_setting: "value"
 ```
 
-**Ref props** are resolved at deployment time:
-- `env:NAME` → environment variable `NAME`
-- `file:/path/to/secret` → file contents
+Rule:
 
-Any string **without** these prefixes is treated as a literal value.
+- `subdir` points to the parent directory that contains the bundle folder
+- `module` includes the bundle folder/module name and entrypoint
+- `config` carries non-secret bundle props
+- bundle secrets go to `bundles.secrets.yaml`, not `bundles.yaml`
 
-You can also override props at runtime via the Admin API:
+## Delivery Modes
 
-```
-POST /admin/integrations/bundles/<bundle_id>/props
-{
-  "tenant": "<tenant>",
-  "project": "<project>",
-  "op": "merge",
-  "props": { ... }
-}
-```
+Most customer/content releases use git-defined bundles:
 
----
+- bundle source is in a separate repo
+- release creates a git tag
+- deployment descriptors use that tag as `ref`
 
-## 5) Decide delivery mode
+Baked bundles are different:
 
-### A) Baked bundles (copy into image)
-- CI copies `<subdir>/<id>` into `/bundles/<id>`.
-- Runtime descriptor uses:
-  - `path=/bundles`
-  - `module=<id>.entrypoint`
+- bundle code is copied into the platform image
+- this is part of the platform release, not only content release
 
-### B) Git‑defined bundles (clone at runtime)
-- Runtime descriptor uses:
-  - `repo`, `ref`, `subdir`, `module`
-- Proc must have git enabled and SSH keys (if private).
+Do not treat baked bundle release and git-defined content release as the same
+operation.
 
----
+## Validation
 
-## 6) Deploy with env reset (optional)
+Before tagging, validate what changed.
 
-If you need to **override existing Redis registry** on deploy:
+Minimum checks:
 
-```
-BUNDLES_FORCE_ENV_ON_STARTUP=1
-```
+- YAML parses for `release.yaml`, `config/bundles.yaml`, and
+  `config/bundles.secrets.yaml`
+- changed Python files compile with `python3 -m py_compile`
+- `git status` confirms only scoped files are staged
 
-Apply for one rollout, then return to `0`.
+If the bundle has tests, run the relevant bundle tests before tagging.
 
-### What is the source of truth?
-
-- **Redis is the runtime source of truth.**
-- The release/bundle descriptor is **only applied to Redis** when
-  `BUNDLES_FORCE_ENV_ON_STARTUP=1` (one‑time overwrite, guarded by a Redis lock).
-- If `BUNDLES_FORCE_ENV_ON_STARTUP=0`, Redis stays as‑is; the descriptor is only
-  used to seed Redis when no registry exists.
-
-### Do admin + example bundles stay even if not in the descriptor?
-
-Yes:
-
-- **Admin bundle** is always injected and cannot be removed.
-- **Example bundles** are merged if `BUNDLES_INCLUDE_EXAMPLES=1` (default).
-  Set `BUNDLES_INCLUDE_EXAMPLES=0` to suppress them.
-
-### Bundle secrets + sidecar tokens
-
-Bundle secrets can be updated at runtime (admin UI) and fetched long after
-startup. When using `bundles.secrets.yaml` with the local secrets sidecar,
-keep the read tokens **non‑expiring**:
-- `SECRETS_TOKEN_TTL_SECONDS=0`
-- `SECRETS_TOKEN_MAX_USES=0`
-
-These should be set in the workdir `.env` so `get_secret()` continues to work
-for bundle secrets over time.
-
-Bundle secrets are **write‑only**; admin UI shows key names only, never values.
-If secrets are provisioned via `bundles.secrets.yaml`, the CLI also stores
-`bundles.<bundle_id>.secrets.__keys` in the secrets sidecar so the UI can show
-the keys list.
-
----
-
-## 7) Validate
-
-- Check the bundle registry in `/admin/integrations/bundles`.
-- Run a test chat with `agentic_bundle_id=<your bundle id>`.
-- Verify streaming and steps appear in the client.
+Runtime validation happens after descriptors are updated and the environment is
+started/reloaded.
