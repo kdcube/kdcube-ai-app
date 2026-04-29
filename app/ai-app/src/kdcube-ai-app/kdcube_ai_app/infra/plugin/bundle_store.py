@@ -1780,7 +1780,9 @@ def _to_entry(bid: str, v: Dict[str, Any]) -> BundleEntry:
         subdir=subdir,
         git_commit=_norm_str(v.get("git_commit")),
     )
-    reserved = _reserved_bundle_entry(bid) if bid in _reserved_bundle_ids() else None
+    # Explicit descriptor references to built-in bundles should resolve even
+    # when automatic example inclusion is disabled.
+    reserved = _reserved_bundle_entry(bid)
     if reserved:
         # Allow reserved ids in bundles.yaml only to override props.
         # Ignore any repo/ref/path/module fields and keep the built-in entry.
