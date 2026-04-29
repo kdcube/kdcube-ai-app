@@ -1262,13 +1262,13 @@ class BaseWorkflow():
             if extra_instructions:
                 preview = re.sub(r"\s+", " ", extra_instructions)[:200]
                 self.logger.log(
-                    f"[react.{react_version}] additional instructions provided "
+                    f"[react.{react_version}] agent admin customization provided "
                     f"len={len(extra_instructions)} preview={preview!r}",
                     level="INFO",
                 )
             else:
                 self.logger.log(
-                    f"[react.{react_version}] additional instructions not provided",
+                    f"[react.{react_version}] agent admin customization not provided",
                     level="INFO",
                 )
         except Exception:

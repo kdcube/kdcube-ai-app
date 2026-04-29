@@ -54,14 +54,15 @@ def test_build_decision_system_text_uses_selected_workspace_implementation():
     assert "ls workspace" in text
 
 
-def test_build_decision_system_text_appends_additional_runtime_instructions():
+def test_build_decision_system_text_appends_agent_admin_customization():
     text = build_decision_system_text(
         adapters=[],
         infra_adapters=[],
         workspace_implementation="custom",
         additional_instructions="Always prefer the product knowledge skill before web search.",
     )
-    assert "[ADDITIONAL RUNTIME INSTRUCTIONS]" in text
+    assert "[AGENT ADMIN CUSTOMIZATION - HARD OVERRIDE]" in text
+    assert "system-level customization for this agent" in text
     assert "Always prefer the product knowledge skill before web search." in text
 
 
