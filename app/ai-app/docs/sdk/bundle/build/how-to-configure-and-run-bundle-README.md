@@ -494,22 +494,38 @@ Use a canonical descriptor directory and let `kdcube` stage it into the runtime.
 Recommended command shape:
 
 ```bash
-kdcube \
+kdcube init \
   --path /abs/path/to/kdcube-ai-app \
   --workdir ~/.kdcube/kdcube-runtime \
   --descriptors-location /abs/path/to/descriptors
 ```
 
-Without `--build`, this runs the release-image flow using:
+Then start the initialized runtime:
+
+```bash
+kdcube start --workdir ~/.kdcube/kdcube-runtime/<tenant>__<project>
+```
+
+Without `--build`, `init` stages descriptors and generates runtime env files.
+The platform source/ref is selected using:
 
 - `assembly.platform.ref`
 - or `--latest`
 - or `--release <ref>`
+- or `--upstream`
 
-### Release-image install from `assembly.platform.ref`
+Use `init --build` when you want images prepared before starting. `start
+--build` remains available as a convenience rebuild before start, but normal
+operator flow is:
+
+1. `init` prepares the runtime
+2. `init --build` optionally prebuilds images
+3. `start` starts containers
+
+### Initialize from `assembly.platform.ref`
 
 ```bash
-kdcube \
+kdcube init \
   --path /abs/path/to/kdcube-ai-app \
   --workdir ~/.kdcube/kdcube-runtime \
   --descriptors-location /abs/path/to/descriptors
@@ -517,53 +533,65 @@ kdcube \
 
 Use this when you want the normal local runtime based on a released platform version.
 
-### Release-image install from an explicit release
+### Initialize from an explicit release
 
 ```bash
-kdcube \
+kdcube init \
   --path /abs/path/to/kdcube-ai-app \
   --workdir ~/.kdcube/kdcube-runtime \
   --descriptors-location /abs/path/to/descriptors \
   --release 2026.4.23.17
 ```
 
-### Release-image install from the latest known platform release
+### Initialize from the latest known platform release
 
 ```bash
-kdcube \
+kdcube init \
   --path /abs/path/to/kdcube-ai-app \
   --workdir ~/.kdcube/kdcube-runtime \
   --descriptors-location /abs/path/to/descriptors \
   --latest
 ```
 
-### Source build from a released platform ref
+### Prebuild images from a released platform ref
 
 ```bash
-kdcube \
+kdcube init \
   --path /abs/path/to/kdcube-ai-app \
   --workdir ~/.kdcube/kdcube-runtime \
   --descriptors-location /abs/path/to/descriptors \
   --build
 ```
 
-Use this when you want to build locally from the selected release source rather than pull release images.
+Use this when you want to build locally from the selected release source before
+starting containers.
 
-### Source build from upstream `origin/main`
+### Initialize from upstream `origin/main`
 
 ```bash
-kdcube \
+kdcube init \
   --path /abs/path/to/kdcube-ai-app \
   --workdir ~/.kdcube/kdcube-runtime \
   --descriptors-location /abs/path/to/descriptors \
-  --build --upstream
+  --upstream
+```
+
+### Prebuild images from upstream `origin/main`
+
+```bash
+kdcube init \
+  --path /abs/path/to/kdcube-ai-app \
+  --workdir ~/.kdcube/kdcube-runtime \
+  --descriptors-location /abs/path/to/descriptors \
+  --upstream \
+  --build
 ```
 
 Important:
 
-- `--upstream` requires `--build`
+- `--upstream` selects the upstream source/ref and does not require `--build`
+- `--build` on `init` builds images after staging the runtime and does not start containers
 - `--upstream` requires either `--descriptors-location` or an already initialized runtime
-
 Use this when you are validating current platform source, not when you only need to update bundle descriptors.
 
 ## Inspecting The Runtime You Already Have
@@ -698,7 +726,7 @@ Use `kdcube --info` to verify both host/container mappings.
 If you edited files in the source descriptor directory passed via `--descriptors-location`, rerun install so those changes are restaged into the runtime:
 
 ```bash
-kdcube \
+kdcube init \
   --path /abs/path/to/kdcube-ai-app \
   --workdir ~/.kdcube/kdcube-runtime \
   --descriptors-location /abs/path/to/descriptors
@@ -901,12 +929,15 @@ Use the existing runtime when you want to:
 Example:
 
 ```bash
-kdcube \
+kdcube init \
   --workdir ~/.kdcube/kdcube-runtime/mytenant__myproject \
-  --build --upstream
+  --upstream \
+  --build
 ```
 
-This reuses the initialized runtime and rebuilds from upstream source.
+This reuses the initialized runtime, refreshes the platform source from
+upstream, and rebuilds images without starting containers. Run `kdcube start`
+afterward when you want to start the stack.
 
 ### Fresh runtime
 
@@ -924,7 +955,7 @@ But for normal bundle development, prefer a descriptor-driven initialized runtim
 - Forgetting that the staged runtime files under `workdir/config/` are the active local authority.
 - Passing host paths in `bundles.yaml` instead of runtime-visible `/bundles/...` paths.
 - Mixing `path` with `repo`/`ref`/`subdir` in the same bundle entry.
-- Using `--upstream` without `--build`.
+- Expecting `--upstream` to rebuild images. It only selects the upstream source/ref; add `init --build` to prebuild images.
 - Assuming the base `--workdir` is the concrete runtime when the CLI has resolved a namespaced runtime under it.
 - Using `kdcube reload` before the stack is running.
 - Overwriting live bundle-admin changes with stale descriptor source files.
