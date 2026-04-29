@@ -46,8 +46,8 @@ ENV_FILES = [
 
 DEFAULT_PG_PASSWORD = "postgres"
 DEFAULT_REDIS_PASSWORD = "redispass"
-DEFAULT_WORKSPACE_TENANT = "default_tenant"
-DEFAULT_WORKSPACE_PROJECT = "default_project"
+DEFAULT_WORKSPACE_TENANT = "default"
+DEFAULT_WORKSPACE_PROJECT = "default"
 CANONICAL_DESCRIPTOR_FILENAMES = (
     "assembly.yaml",
     "secrets.yaml",

@@ -1426,6 +1426,27 @@ def _resolve_subcommand_repo(path_arg: str, *, workdir: Path) -> Path:
     return Path(os.path.expanduser(path_arg)).resolve()
 
 
+def _descriptor_platform_repo(assembly: dict, fallback_repo: str) -> str:
+    platform_repo = str(_get_nested(assembly, "platform", "repo") or fallback_repo).strip()
+    return platform_repo or fallback_repo
+
+
+def _ensure_descriptor_platform_repo(
+    console: Console,
+    *,
+    repo_path: Path,
+    path_provided: bool,
+    assembly: dict,
+    fallback_repo: str,
+) -> None:
+    if path_provided:
+        if not _is_git_repo(repo_path):
+            raise SystemExit(f"Provided --path is not a git repo: {repo_path}")
+        return
+
+    ensure_repo(console, _descriptor_platform_repo(assembly, fallback_repo), repo_path)
+
+
 
 
 
@@ -1790,7 +1811,8 @@ def main() -> None:
             return
         if args.command == "init":
             _init_workdir = Path(os.path.expanduser(args.workdir)).resolve()
-            _init_repo = _resolve_subcommand_repo(args.path, workdir=_init_workdir)
+            _init_path_provided = bool(_arg_provided("--path"))
+            _init_repo = Path(os.path.expanduser(args.path)).resolve()
             _init_descriptors_location: Path | None = None
             if str(args.descriptors_location or "").strip():
                 _init_descriptors_location = Path(
@@ -1801,7 +1823,7 @@ def main() -> None:
                     console,
                     repo=args.path,
                     repo_path=_init_repo,
-                    path_provided=bool(_arg_provided("--path")),
+                    path_provided=_init_path_provided,
                 )
                 console.print(
                     f"[dim]No --descriptors-location provided. "
@@ -1839,6 +1861,14 @@ def main() -> None:
                     _init_workdir, descriptors_location=_init_descriptors_location
                 )
 
+            if str(args.descriptors_location or "").strip():
+                _init_repo = _resolve_cli_repo_path(
+                    _init_repo,
+                    workdir=_init_resolved,
+                    path_provided=_init_path_provided,
+                    descriptors_location=_init_descriptors_location,
+                )
+
             _descriptor_bootstrap = _stage_descriptor_set(
                 repo_root=_init_repo,
                 workdir=_init_resolved,
@@ -1871,6 +1901,14 @@ def main() -> None:
             os.environ["KDCUBE_USE_BUNDLES_DESCRIPTOR"] = "1" if _descriptor_bootstrap["bundles_path"] else "0"
             os.environ["KDCUBE_USE_BUNDLES_SECRETS"] = "1" if _descriptor_bootstrap["bundles_secrets_path"] else "0"
 
+            _ensure_descriptor_platform_repo(
+                console,
+                repo_path=_init_repo,
+                path_provided=_init_path_provided,
+                assembly=_init_assembly,
+                fallback_repo=args.repo,
+            )
+
             _init_release_ref: str | None = None
             _init_mode = "release"
             if args.upstream:
@@ -1899,6 +1937,8 @@ def main() -> None:
                     _checkout_repo_ref(console, _init_repo, _init_release_ref)
                 if _init_mode != "upstream":
                     _init_mode = "skip"
+            elif not _init_path_provided and not args.upstream:
+                _checkout_repo_ref(console, _init_repo, _init_release_ref)
 
             if not args.interactive:
                 os.environ["KDCUBE_CLI_NONINTERACTIVE"] = "1"
@@ -2011,11 +2051,13 @@ def main() -> None:
                     "Use -i to configure missing fields interactively."
                 )
 
-            platform_repo = str(_get_nested(assembly, "platform", "repo") or args.repo).strip()
-            if not platform_repo:
-                platform_repo = args.repo
-            if not _is_git_repo(repo_path):
-                ensure_repo(console, platform_repo, repo_path)
+            _ensure_descriptor_platform_repo(
+                console,
+                repo_path=repo_path,
+                path_provided=path_provided,
+                assembly=assembly,
+                fallback_repo=args.repo,
+            )
 
             release_ref = None
             install_mode = "release"
@@ -2044,6 +2086,9 @@ def main() -> None:
                 if install_mode != "upstream":
                     install_mode = "skip"
                 console.print("[green]Descriptor set is complete. Running non-interactive source build install.[/green]")
+            elif not path_provided and not args.upstream:
+                _checkout_repo_ref(console, repo_path, release_ref)
+                console.print("[green]Descriptor set is complete. Running non-interactive release-image install.[/green]")
             else:
                 console.print("[green]Descriptor set is complete. Running non-interactive release-image install.[/green]")
             if not args.interactive:
