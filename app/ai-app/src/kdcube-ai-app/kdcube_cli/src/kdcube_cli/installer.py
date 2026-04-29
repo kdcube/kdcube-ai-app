@@ -4005,7 +4005,11 @@ def run_setup(
     console.print("\n[dim]Small coffee break:[/dim] ☕\n")
 
     if dry_run:
-        console.print(f"[bold]Dry run:[/bold] no Docker actions will be executed. Workdir: {workdir}")
+        prepare_only = parse_bool(os.getenv("KDCUBE_INIT_PREPARE_ONLY", "")) is True
+        if prepare_only:
+            console.print(f"[bold]Init prepared runtime:[/bold] Docker start was not executed. Workdir: {workdir}")
+        else:
+            console.print(f"[bold]Dry run:[/bold] no Docker actions will be executed. Workdir: {workdir}")
         console.print("\n[bold]Env files:[/bold]")
         for name, path in env_paths.items():
             console.print(f"  {name}: {path}")

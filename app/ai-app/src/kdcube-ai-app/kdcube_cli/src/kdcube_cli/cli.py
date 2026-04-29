@@ -207,6 +207,56 @@ def start_compose_stack(
             runtime_env.unlink(missing_ok=True)
 
 
+def build_compose_images(
+    console: Console,
+    *,
+    repo_root: Path,
+    workdir: Path,
+) -> None:
+    ctx = _build_paths_for_repo(repo_root, workdir)
+    env_file = ctx.config_dir / ".env"
+    if not env_file.exists():
+        raise SystemExit(
+            f"Compose env file not found: {env_file}.\n"
+            "Initialize the workdir before building images:\n"
+            "  kdcube init --build"
+        )
+
+    env_main = installer_mod.load_env_file(env_file)
+    missing = installer_mod.missing_build_keys(env_main)
+    if missing:
+        details = "\n".join(f"  - {key}" for key in missing)
+        raise SystemExit(
+            "Cannot build images; missing required build settings in .env:\n"
+            f"{details}\n"
+            "Fix the staged runtime env or rerun init with a complete descriptor set."
+        )
+
+    ui_image_override = env_main.entries.get("KDCUBE_UI_IMAGE", (None, None))[1]
+    build_services = [
+        "chat-ingress",
+        "chat-proc",
+        "metrics",
+        "web-proxy",
+        "postgres-setup",
+        "kdcube-secrets",
+    ]
+    if not (ui_image_override and not installer_mod.is_placeholder(ui_image_override)):
+        build_services.append("web-ui")
+
+    _run_compose(
+        console,
+        ["docker", "compose", "--env-file", str(env_file), "build", *build_services],
+        cwd=ctx.docker_dir,
+    )
+    _run_compose(
+        console,
+        ["docker", "build", "-t", "py-code-exec:latest", "-f", "Dockerfile_Exec", "../../.."],
+        cwd=ctx.docker_dir,
+    )
+    console.print("[green]Docker images built. The stack was not started.[/green]")
+
+
 def clean_docker_images(console: Console) -> None:
     console.print("[bold]Cleaning Docker cache and unused KDCube images...[/bold]")
     try:
@@ -1464,7 +1514,7 @@ def _bootstrap_repo_for_defaults(
     Used when --descriptors-location is omitted but a source selector (--latest,
     --upstream, --release, --build) implies non-interactive mode.  The repo's
     deployment/ directory is used as the implicit descriptor source so that a
-    plain ``kdcube --build --upstream`` works without pre-prepared descriptors.
+    plain ``kdcube --upstream`` works without pre-prepared descriptors.
     """
     if path_provided:
         if not _is_git_repo(repo_path):
@@ -1509,7 +1559,7 @@ def main() -> None:
     parser.add_argument(
         "--upstream",
         action="store_true",
-        help="With --build and either --descriptors-location or an initialized workdir config, use the latest upstream repo state (origin/main) instead of a released platform ref",
+        help="With --descriptors-location or an initialized workdir config, use the latest upstream repo state (origin/main) instead of a released platform ref",
     )
     parser.add_argument(
         "--release",
@@ -1662,16 +1712,16 @@ def main() -> None:
     _sp = subparsers.add_parser("start", help="Start the Docker Compose stack for an initialized workdir")
     _sp.add_argument("--workdir", default=None, help="Namespaced runtime workdir to start")
     _sp.add_argument("--path", default=str(DEFAULT_DIR), help="Platform repo path")
-    _sp.add_argument("--build", action="store_true", help="Build images before starting")
+    _sp.add_argument("--build", action="store_true", help="Build/rebuild images before starting")
 
     _sp = subparsers.add_parser("init", help="Initialize a workdir (stage descriptors and env files) without starting Docker")
     _sp.add_argument("--workdir", default=str(DEFAULT_WORKDIR), help="Base or namespaced runtime workdir")
     _sp.add_argument("--path", default=str(DEFAULT_DIR), help="Platform repo path")
     _sp.add_argument("--descriptors-location", default="", help="Directory containing the descriptor set")
     _sp.add_argument("--latest", action="store_true", help="Use the latest platform release")
-    _sp.add_argument("--upstream", action="store_true", help="Use upstream repo state (requires --build)")
+    _sp.add_argument("--upstream", action="store_true", help="Use upstream repo state instead of assembly platform.ref")
     _sp.add_argument("--release", default="", help="Use a specific platform release ref")
-    _sp.add_argument("--build", action="store_true", help="Checkout source and build images locally")
+    _sp.add_argument("--build", action="store_true", help="Build images after staging the runtime, without starting containers")
     _sp.add_argument("--tenant", default="", help="Tenant for the deployment namespace")
     _sp.add_argument("--project", default="", help="Project for the deployment namespace")
     _sp.add_argument(
@@ -1942,7 +1992,10 @@ def main() -> None:
 
             if not args.interactive:
                 os.environ["KDCUBE_CLI_NONINTERACTIVE"] = "1"
+            os.environ["KDCUBE_INIT_PREPARE_ONLY"] = "1"
             run_installer(console, _init_repo, _init_resolved, _init_mode, _init_release_ref, None, True)
+            if args.build:
+                build_compose_images(console, repo_root=_init_repo, workdir=_init_resolved)
             return
         if args.clean:
             clean_docker_images(console)
@@ -1950,8 +2003,6 @@ def main() -> None:
         selected_version_flags = int(bool(args.latest)) + int(bool(args.upstream)) + int(bool(str(args.release or "").strip()))
         if selected_version_flags > 1:
             raise SystemExit("Choose only one of --latest, --upstream, or --release.")
-        if args.upstream and not args.build:
-            raise SystemExit("--upstream requires --build because arbitrary upstream commits do not map to release images.")
         if args.proxy_ssl and args.no_proxy_ssl:
             raise SystemExit("Choose only one of --proxy-ssl or --no-proxy-ssl.")
         if args.proxy_ssl:
@@ -1963,7 +2014,7 @@ def main() -> None:
         # No-descriptors fast path: when a source selector is given without
         # --descriptors-location (and no initialized workdir was found), bootstrap
         # the platform repo and use its deployment/ directory as the descriptor
-        # source.  This lets operators run e.g. ``kdcube --build --upstream``
+        # source.  This lets operators run e.g. ``kdcube --upstream``
         # without pre-preparing a descriptor set.
         if (
             effective_descriptors_location is None

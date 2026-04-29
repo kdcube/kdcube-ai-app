@@ -229,7 +229,7 @@ Repo field contract:
 The CLI now supports a descriptor-folder driven install path:
 
 ```bash
-kdcube \
+kdcube init \
   --descriptors-location /path/to/descriptors \
   --workdir ~/.kdcube/kdcube-runtime
 ```
@@ -249,35 +249,49 @@ Use `--latest` to resolve the platform release from the platform repo instead
 of using `assembly.yaml -> platform.ref`:
 
 ```bash
-kdcube \
+kdcube init \
   --descriptors-location /path/to/descriptors \
   --latest
 ```
 
-Use `--upstream` together with `--build` to build from the latest upstream
-repo state (`origin/main`) instead of a released ref:
+Use `--upstream` to initialize from the latest upstream repo state
+(`origin/main`) instead of a released ref:
 
 ```bash
-kdcube \
+kdcube init \
   --descriptors-location /path/to/descriptors \
-  --build \
   --upstream
+```
+
+Use `init --build` when you also want the runtime prepared with freshly built
+local images before the stack is started:
+
+```bash
+kdcube init \
+  --descriptors-location /path/to/descriptors \
+  --upstream \
+  --build
 ```
 
 Use `--release` to pin a specific released platform ref explicitly:
 
 ```bash
-kdcube \
+kdcube init \
   --descriptors-location /path/to/descriptors \
   --release 2026.4.11.012
 ```
 
 Choose exactly one source selector:
 
-- `--upstream` with `--build` for the latest upstream repo state
+- `--upstream` for the latest upstream repo state
 - `--latest` for the latest released platform ref
 - `--release <ref>` for a specific released ref
 - otherwise `assembly.yaml -> platform.ref`
+
+Build rule:
+
+- `init --build` builds images after staging the runtime, but does not start containers
+- `start --build` is a convenience rebuild before starting an already initialized runtime
 
 Fast-path requirements:
 
@@ -565,6 +579,16 @@ kdcube init \
   --workdir ~/.kdcube/kdcube-runtime \
   --descriptors-location /path/to/descriptors \
   --latest
+```
+
+Initialize and build images without starting Docker:
+
+```bash
+kdcube init \
+  --workdir ~/.kdcube/kdcube-runtime \
+  --descriptors-location /path/to/descriptors \
+  --upstream \
+  --build
 ```
 
 Start the stack for an already-initialized workdir:
