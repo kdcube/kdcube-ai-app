@@ -83,7 +83,18 @@ def _normalize(d: Dict[str, Any]) -> Dict[str, Any]:
         except Exception:
             d["path"] = ""
     elif not d.get("path"):
-        raise ValueError(f"BundleSpec '{d['id']}' missing 'path'")
+        try:
+            from kdcube_ai_app.infra.plugin.bundle_store import _reserved_bundle_entry
+
+            reserved = _reserved_bundle_entry(str(d["id"]))
+        except Exception:
+            reserved = None
+        if reserved is not None:
+            reserved_dict = reserved.model_dump(exclude_none=True)
+            reserved_dict["id"] = d["id"]
+            d = reserved_dict
+        else:
+            raise ValueError(f"BundleSpec '{d['id']}' missing 'path'")
     if not d.get("version"):
         d["version"] = d.get("bundle_version")
     if not d.get("git_commit"):
