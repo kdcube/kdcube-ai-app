@@ -61,8 +61,9 @@ def test_build_decision_system_text_appends_agent_admin_customization():
         workspace_implementation="custom",
         additional_instructions="Always prefer the product knowledge skill before web search.",
     )
-    assert "[AGENT ADMIN CUSTOMIZATION - HARD OVERRIDE]" in text
-    assert "system-level customization for this agent" in text
+    assert "[START AGENT ADMIN CUSTOMIZATION - HARD OVERRIDE]" in text
+    assert "[END AGENT ADMIN CUSTOMIZATION]" in text
+    assert "the entire START/END block as system-level customization for this agent" in text
     assert "Always prefer the product knowledge skill before web search." in text
 
 
