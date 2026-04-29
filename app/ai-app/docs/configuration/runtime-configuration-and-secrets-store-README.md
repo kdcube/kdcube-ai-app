@@ -211,6 +211,10 @@ They do not create a new store class.
 
 The special part is interpretation, not storage.
 
+For `execution.runtime`, platform defaults such as ISO runtime file/workspace
+limits stay in `assembly.yaml` under `platform.services.proc.exec`; the bundle
+prop stores only that bundle's per-run override.
+
 Use the author-facing page for those paths:
 
 - [bundle-reserved-platform-properties-README.md](../../sdk/bundle/bundle-reserved-platform-properties-README.md)

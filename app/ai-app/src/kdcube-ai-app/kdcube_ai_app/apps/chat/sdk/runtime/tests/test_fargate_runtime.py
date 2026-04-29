@@ -402,6 +402,7 @@ async def test_execute_py_code_routes_to_fargate_from_runtime_config(monkeypatch
                 "task_definition": "demo-exec",
                 "container_name": "exec",
                 "subnets": ["subnet-a"],
+                "max_file_bytes": "100m",
             }
         },
         isolation="docker",
@@ -411,6 +412,7 @@ async def test_execute_py_code_routes_to_fargate_from_runtime_config(monkeypatch
     assert res["ok"] is True
     assert captured["runtime_globals"]["EXEC_RUNTIME_CONFIG"]["mode"] == "fargate"
     assert captured["extra_env"]["EXECUTION_SANDBOX"] == "fargate"
+    assert captured["extra_env"]["EXEC_MAX_FILE_BYTES"] == "100m"
 
 
 @pytest.mark.asyncio
@@ -449,6 +451,8 @@ async def test_execute_py_code_routes_to_docker_with_selected_profile_settings(m
                         "network_mode": "bridge",
                         "cpus": "1.5",
                         "memory": "2g",
+                        "max_file_bytes": "100m",
+                        "max_workspace_bytes": "250m",
                         "extra_args": ["--pids-limit", "256"],
                     },
                 },
@@ -470,6 +474,58 @@ async def test_execute_py_code_routes_to_docker_with_selected_profile_settings(m
         "256",
     ]
     assert captured["extra_env"]["EXECUTION_SANDBOX"] == "docker"
+    assert captured["extra_env"]["EXEC_MAX_FILE_BYTES"] == "100m"
+    assert captured["extra_env"]["EXEC_MAX_WORKSPACE_BYTES"] == "250m"
+
+
+@pytest.mark.asyncio
+async def test_execute_py_code_injects_descriptor_filesystem_limits(monkeypatch, tmp_path):
+    captured = {}
+
+    async def _fake_run_py_in_docker(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True, "returncode": 0, "error": None, "seconds": 0.1}
+
+    descriptors_dir = tmp_path / "descriptors"
+    descriptors_dir.mkdir()
+    (descriptors_dir / "assembly.yaml").write_text(
+        "platform:\n"
+        "  services:\n"
+        "    proc:\n"
+        "      exec:\n"
+        "        max_file_bytes: 64m\n"
+        "        max_workspace_bytes: 128m\n"
+        "        workspace_monitor_interval_s: 0.25\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("GATEWAY_COMPONENT", "proc")
+    monkeypatch.setenv("PLATFORM_DESCRIPTORS_DIR", str(descriptors_dir))
+    monkeypatch.setenv("EXEC_MAX_FILE_BYTES", "999m")
+    sdk_config.get_settings.cache_clear()
+    monkeypatch.setattr(
+        "kdcube_ai_app.apps.chat.sdk.runtime.external.docker.run_py_in_docker",
+        _fake_run_py_in_docker,
+    )
+
+    runtime = _InProcessRuntime(AgentLogger("test.exec"))
+    try:
+        res = await runtime.execute_py_code(
+            workdir=tmp_path / "work",
+            output_dir=tmp_path / "out",
+            bundle_root=None,
+            tool_modules=[],
+            globals={},
+            isolation="docker",
+            timeout_s=30,
+        )
+    finally:
+        sdk_config.get_settings.cache_clear()
+
+    assert res["ok"] is True
+    assert captured["extra_env"]["EXEC_MAX_FILE_BYTES"] == "64m"
+    assert captured["extra_env"]["EXEC_MAX_WORKSPACE_BYTES"] == "128m"
+    assert captured["extra_env"]["EXEC_WORKSPACE_MONITOR_INTERVAL_S"] == "0.25"
 
 
 @pytest.mark.asyncio

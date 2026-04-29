@@ -105,22 +105,21 @@ cd /path/to/project/deployment/docker/py-code-exec
 docker build -t py-code-exec:latest .
 ```
 
-#### 2. Configure Environment
+#### 2. Configure Execution Settings
 
-Create `.env.backend`:
-```bash
-# AWS Credentials (for supervisor)
-AWS_REGION=us-east-1
-AWS_DEFAULT_REGION=us-east-1
-AWS_ACCESS_KEY_ID=AKIA...           # Your AWS key
-AWS_SECRET_ACCESS_KEY=xxx...         # Your AWS secret
+Set platform execution defaults in `assembly.yaml`:
 
-# Execution settings
-PY_CODE_EXEC_IMAGE=py-code-exec:latest
-PY_CODE_EXEC_TIMEOUT=600             # 10 minutes
-PY_CODE_EXEC_NETWORK_MODE=host       # Supervisor needs network
-
-# No Docker-in-Docker path translation needed (running on host)
+```yaml
+platform:
+  services:
+    proc:
+      exec:
+        py_code_exec_image: py-code-exec:latest
+        py_code_exec_timeout: 600
+        py_code_exec_network_mode: host
+        max_file_bytes: 100m
+        max_workspace_bytes: 250m
+        workspace_monitor_interval_s: 0.5
 ```
 
 #### 3. Run Chat Service

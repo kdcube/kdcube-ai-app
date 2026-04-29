@@ -9,6 +9,52 @@ from kdcube_ai_app.apps.chat.sdk.runtime.external import docker as docker_runtim
 from kdcube_ai_app.apps.chat.sdk.runtime import iso_runtime
 
 
+def test_exec_limit_bytes_supports_units_and_disable():
+    assert iso_runtime._as_limit_bytes("100m") == 100 * 1024 * 1024
+    assert iso_runtime._as_limit_bytes("1.5gb") == int(1.5 * 1024 * 1024 * 1024)
+    assert iso_runtime._as_limit_bytes("disabled", default=123) is None
+    assert iso_runtime._as_limit_bytes("", default=123) == 123
+
+
+def test_workspace_limit_violation_detects_new_large_file(tmp_path):
+    root = tmp_path / "out"
+    root.mkdir()
+    existing = root / "existing.bin"
+    existing.write_bytes(b"x" * 16)
+    baseline = iso_runtime._snapshot_workspace_file_sizes([root])
+
+    generated = root / "generated.bin"
+    generated.write_bytes(b"x" * 128)
+    current = iso_runtime._snapshot_workspace_file_sizes([root])
+
+    violation = iso_runtime._workspace_limit_violation(
+        baseline=baseline,
+        current=current,
+        max_file_bytes=64,
+        max_workspace_bytes=1024,
+    )
+
+    assert violation is not None
+    assert violation["error"] == "file_size_limit"
+    assert violation["offending_path"].endswith("generated.bin")
+
+
+def test_workspace_limit_violation_ignores_unchanged_baseline_file(tmp_path):
+    root = tmp_path / "out"
+    root.mkdir()
+    existing = root / "existing.bin"
+    existing.write_bytes(b"x" * 128)
+    baseline = iso_runtime._snapshot_workspace_file_sizes([root])
+    current = iso_runtime._snapshot_workspace_file_sizes([root])
+
+    assert iso_runtime._workspace_limit_violation(
+        baseline=baseline,
+        current=current,
+        max_file_bytes=64,
+        max_workspace_bytes=1024,
+    ) is None
+
+
 class _FakeProc:
     def __init__(self):
         self.returncode = None

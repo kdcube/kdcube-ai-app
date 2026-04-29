@@ -204,6 +204,7 @@ These are transported separately in external exec.
 │  │  • Runs untrusted user code                                   │    │
 │  │  • NO network (unshare CLONE_NEWNET)                          │    │
 │  │  • Read-only FS except /workspace/{work,out}                  │    │
+│  │  • Max generated file/workspace size limits are enforced      │    │
 │  │  • Tools proxied to supervisor via Unix socket                │    │
 │  │                                                                │    │
 │  │  Used for: Production, untrusted code execution               │    │

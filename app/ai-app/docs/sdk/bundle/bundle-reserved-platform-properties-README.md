@@ -210,7 +210,9 @@ Storage summary:
 This property is reserved for bundle-level execution runtime control.
 
 It is copied into runtime context and then propagated into exec tool execution.
-The current primary use case is selecting distributed Fargate execution per bundle instead of relying only on proc-wide env vars.
+The current primary use case is selecting Docker/Fargate execution and
+overriding ISO runtime limits per bundle run instead of relying only on
+proc-wide assembly defaults.
 
 Example:
 
@@ -230,6 +232,9 @@ config:
       security_groups:
         - sg-xxxx
       assign_public_ip: DISABLED
+      max_file_bytes: 100m
+      max_workspace_bytes: 250m
+      workspace_monitor_interval_s: 0.5
 ```
 
 Bundles can also declare multiple supported runtime profiles in bundle props and
@@ -268,7 +273,7 @@ Current behavior:
 - `mode: fargate` routes exec tools to the external Fargate runtime
 - `mode: docker` routes exec tools to the Docker runtime
 - remaining keys are used as per-bundle runtime overrides
-- any missing keys fall back to proc service env vars where supported
+- any missing ISO runtime limit keys fall back to `assembly.yaml` under `platform.services.proc.exec`
 - `profiles` lets a bundle declare multiple supported runtimes for itself
 - `default_profile` / `profile` / `selected_profile` picks the default resolved runtime
 - if a bundle defines profiles but no default, bundle code can choose explicitly at call time
@@ -304,6 +309,9 @@ Supported keys and defaults:
 | `cpus` | docker | unset | Passed as `--cpus <value>` |
 | `memory` | docker | unset | Passed as `--memory <value>` |
 | `extra_args` | docker | unset | Extra raw `docker run` args; list or shell-style string |
+| `max_file_bytes` | docker, fargate, local | `platform.services.proc.exec.max_file_bytes` -> `100m` | Max single generated file per run |
+| `max_workspace_bytes` | docker, fargate, local | `platform.services.proc.exec.max_workspace_bytes` -> `250m` | Max net-new workdir/outdir bytes per run |
+| `workspace_monitor_interval_s` | docker, fargate, local | `platform.services.proc.exec.workspace_monitor_interval_s` -> `0.5` | Workspace quota polling interval |
 | `enabled` | fargate | `FARGATE_EXEC_ENABLED` -> disabled | Enables distributed exec |
 | `region` | fargate | `AWS_REGION` / `AWS_DEFAULT_REGION` | ECS client region |
 | `cluster` | fargate | `FARGATE_CLUSTER` | ECS cluster ARN/name |
@@ -328,8 +336,9 @@ Docker notes:
 
 Fallback semantics:
 - bundle runtime props win for keys they define
-- missing keys fall back to the proc service's resolved platform settings export
-- raw proc env vars still override those resolved settings when explicitly present
+- missing ISO runtime limit keys fall back to proc settings from `assembly.yaml`
+- the isolated runtime receives those values as internal `EXEC_*` env transport;
+  configure descriptors and bundle props, not those env names
 
 Storage summary:
 

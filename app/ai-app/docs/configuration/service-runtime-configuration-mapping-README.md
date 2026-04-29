@@ -135,6 +135,29 @@ Operational guidance:
 - HTTPS + PAT is usually the simpler deployment/runtime choice
 - SSH is supported, but it additionally requires mounted key and host-verification material
 
+### Isolated execution defaults
+
+The proc service reads ISO runtime defaults from `assembly.yaml` through
+`get_settings().PLATFORM.EXEC`. These are platform defaults, not bundle config.
+
+| Descriptor path | Settings API | Meaning |
+|---|---|---|
+| `platform.services.proc.exec.exec_workspace_root` | `get_settings().PLATFORM.EXEC.EXEC_WORKSPACE_ROOT` | container-visible exec workspace root |
+| `platform.services.proc.exec.py_code_exec_image` | `get_settings().PLATFORM.EXEC.PY.PY_CODE_EXEC_IMAGE` | default ISO runtime image |
+| `platform.services.proc.exec.py_code_exec_timeout` | `get_settings().PLATFORM.EXEC.PY.PY_CODE_EXEC_TIMEOUT` | default execution timeout |
+| `platform.services.proc.exec.py_code_exec_network_mode` | `get_settings().PLATFORM.EXEC.PY.PY_CODE_EXEC_NETWORK_MODE` | Docker network mode for the supervisor container |
+| `platform.services.proc.exec.max_file_bytes` | `get_settings().PLATFORM.EXEC.PY.EXEC_MAX_FILE_BYTES` | max single generated file per run |
+| `platform.services.proc.exec.max_workspace_bytes` | `get_settings().PLATFORM.EXEC.PY.EXEC_MAX_WORKSPACE_BYTES` | max net-new workspace/output bytes per run |
+| `platform.services.proc.exec.workspace_monitor_interval_s` | `get_settings().PLATFORM.EXEC.PY.EXEC_WORKSPACE_MONITOR_INTERVAL_S` | workspace monitor polling interval |
+
+The runtime forwards these values into the isolated process as internal
+`EXEC_*` env values because the isolated boundary consumes env. Do not treat
+those env names as the public configuration source.
+
+Bundles may override execution limits and routing for a single run through
+`bundles.yaml` non-secret props under `config.execution.runtime` or the legacy
+`config.exec_runtime` alias.
+
 ## The `assembly.paths.*` keys you asked about
 
 | Env var | Descriptor path | CLI local compose | Direct local run | AWS deployment |

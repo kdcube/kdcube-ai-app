@@ -147,6 +147,45 @@ cognito` emits `authType: cognito`, and `auth.type: delegated` emits
 for `simple`; new descriptors should use `simple`. `oauth` is not a deployment
 auth mode; use `cognito` for the OSS browser Cognito/OIDC flow.
 
+### `platform.services.<component>.exec`
+
+`platform.services.proc.exec` owns platform defaults for isolated Python
+execution. Access these defaults through `get_settings().PLATFORM.EXEC`.
+
+Example:
+
+```yaml
+platform:
+  services:
+    proc:
+      exec:
+        exec_workspace_root: ""
+        py_code_exec_image: "py-code-exec:latest"
+        py_code_exec_timeout: 600
+        py_code_exec_network_mode: "host"
+        max_file_bytes: "100m"
+        max_workspace_bytes: "250m"
+        workspace_monitor_interval_s: 0.5
+```
+
+| Field | Settings API | Meaning |
+|---|---|---|
+| `exec_workspace_root` | `get_settings().PLATFORM.EXEC.EXEC_WORKSPACE_ROOT` | container-visible exec workspace root |
+| `py_code_exec_image` | `get_settings().PLATFORM.EXEC.PY.PY_CODE_EXEC_IMAGE` | Docker image for the ISO runtime |
+| `py_code_exec_timeout` | `get_settings().PLATFORM.EXEC.PY.PY_CODE_EXEC_TIMEOUT` | default Python execution timeout in seconds |
+| `py_code_exec_network_mode` | `get_settings().PLATFORM.EXEC.PY.PY_CODE_EXEC_NETWORK_MODE` | Docker network mode for the ISO supervisor container |
+| `max_file_bytes` | `get_settings().PLATFORM.EXEC.PY.EXEC_MAX_FILE_BYTES` | max single generated file size per isolated run |
+| `max_workspace_bytes` | `get_settings().PLATFORM.EXEC.PY.EXEC_MAX_WORKSPACE_BYTES` | max net-new workdir/outdir bytes per isolated run |
+| `workspace_monitor_interval_s` | `get_settings().PLATFORM.EXEC.PY.EXEC_WORKSPACE_MONITOR_INTERVAL_S` | polling interval for workspace quota enforcement |
+
+The ISO runtime passes the limit values into the isolated executor as internal
+`EXEC_*` transport env vars. Those env vars are not the operator-facing source
+of configuration; set the descriptor fields above instead.
+
+Bundles may override these limits for their own execution profile through
+bundle props (`config.execution.runtime` or legacy `config.exec_runtime`). The
+override is applied only to that bundle run.
+
 ## Fields that are local-run only
 
 `paths.*` is local-run topology, not cloud deployment topology.

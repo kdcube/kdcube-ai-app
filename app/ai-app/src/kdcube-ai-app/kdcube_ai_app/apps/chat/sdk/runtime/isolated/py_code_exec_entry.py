@@ -35,6 +35,7 @@ from typing import Any, Dict, List, Optional
 
 from kdcube_ai_app.infra.service_hub.inventory import AgentLogger
 from kdcube_ai_app.apps.chat.sdk.runtime.isolated.py_code_exec import run_py_code
+from kdcube_ai_app.apps.chat.sdk.runtime.iso_runtime import apply_exec_file_size_limit
 from kdcube_ai_app.apps.chat.sdk.runtime.isolated.supervisor_entry import PrivilegedSupervisor
 import kdcube_ai_app.apps.utils.logging_config as logging_config
 
@@ -885,6 +886,7 @@ def main() -> None:
         os.environ.setdefault("EXECUTION_SANDBOX", "docker")
         bootstrap_logger = AgentLogger("py_code_exec_entry.bootstrap")
         _prepare_runtime_environment(bootstrap_logger)
+        apply_exec_file_size_limit(env=os.environ, logger=bootstrap_logger)
         # Single, global logging setup for this process
         logging_config.configure_logging()
         rc = asyncio.run(_async_main())
