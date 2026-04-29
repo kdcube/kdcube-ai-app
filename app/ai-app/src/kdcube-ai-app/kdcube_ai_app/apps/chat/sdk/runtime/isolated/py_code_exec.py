@@ -182,7 +182,10 @@ async def run_py_code(
         "EXECUTION_SANDBOX",
         "EXEC_USER_LOG_MODE",
         "EXECUTION_MODE",
-        "EXEC_NO_UNEXPECTED_EXIT"
+        "EXEC_NO_UNEXPECTED_EXIT",
+        "EXEC_MAX_FILE_BYTES",
+        "EXEC_MAX_WORKSPACE_BYTES",
+        "EXEC_WORKSPACE_MONITOR_INTERVAL_S",
     }
     for k in SAFE_KEYS:
         v = base_env.get(k)

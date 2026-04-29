@@ -39,12 +39,14 @@ The Fargate exec task is the replacement:
 | Task lifetime | Container exits → docker rm | Task STOPPED |
 | Caller waits | `asyncio.wait_for(proc.communicate())` | Poll `describe_tasks` until STOPPED |
 | Parallel executions | One Docker child per call | One ECS run-task per call |
+| Filesystem size limits | `RLIMIT_FSIZE` + workspace monitor | Same entrypoint-level controls before output snapshot upload |
 
 Important:
 
 - distributed exec changes how code is transported and run
 - it does **not** change the logical result contract seen by the agent
 - the final agent-visible result is still assembled by `exec_tools.py` after the runtime backend returns
+- generated file/workspace limits are configured in `assembly.yaml` under `platform.services.proc.exec` and enforced inside the remote task
 
 Important distinction:
 - `BUNDLE_STORAGE_DIR` is supervisor-side runtime plumbing for the isolated task
@@ -371,6 +373,9 @@ config:
       security_groups:
         - sg-xxxx
       assign_public_ip: DISABLED
+      max_file_bytes: 100m
+      max_workspace_bytes: 250m
+      workspace_monitor_interval_s: 0.5
 ```
 
 Example with multiple bundle-scoped profiles:
@@ -407,27 +412,32 @@ config:
 In that model:
 - `default_profile` provides the default resolved runtime for generic exec calls
 - bundle code may explicitly choose another supported profile when needed
-- missing keys inside the selected profile still fall back to the proc service's resolved platform settings export
-- raw proc env vars still override those resolved settings when explicitly present
+- missing keys inside the selected profile fall back to proc service settings
+  resolved from descriptors
 - Docker profiles can override local Docker execution settings such as `image`,
   `network_mode`, `cpus`, `memory`, and raw `extra_args`
 
-Global proc env vars are still useful as defaults/fallbacks:
+Platform Fargate defaults belong in `assembly.yaml`:
 
-| Variable | Value | Source |
-|---|---|---|
-| `EXEC_RUNTIME_MODE` | `fargate` | proc env fallback |
-| `FARGATE_EXEC_ENABLED` | `1` | task def environment |
-| `FARGATE_CLUSTER` | `{name_prefix}-cluster` | task def environment |
-| `FARGATE_TASK_DEFINITION` | `{name_prefix}-exec` | task def environment |
-| `FARGATE_CONTAINER_NAME` | `exec` | task def environment |
-| `FARGATE_SUBNETS` | `subnet-xxx,subnet-yyy` | task def environment |
-| `FARGATE_SECURITY_GROUPS` | `sg-xxx` | task def environment |
-| `FARGATE_ASSIGN_PUBLIC_IP` | `DISABLED` | task def environment |
-| `FARGATE_PLATFORM_VERSION` | _(optional)_ | task def environment |
+```yaml
+platform:
+  services:
+    proc:
+      exec:
+        fargate:
+          enabled: true
+          cluster: "{name_prefix}-cluster"
+          task_definition: "{name_prefix}-exec"
+          container_name: exec
+          subnets:
+            - subnet-xxx
+            - subnet-yyy
+          security_groups:
+            - sg-xxx
+          assign_public_ip: DISABLED
+```
 
-Bundle props win over these env vars for keys they provide; missing keys still
-fall back to env.
+Bundle props win over descriptor defaults for keys they provide.
 
 ---
 
@@ -609,20 +619,24 @@ terraform output -raw ecs_tasks_sg_id
 | `security_groups` | `terraform output -raw ecs_tasks_sg_id` | `sg-<group_id>` |
 | `assign_public_ip` | always `DISABLED` (private subnets + NAT) | `DISABLED` |
 
-Proc-level env var fallback (still supported — bundle props override, missing keys fall back to these):
+Descriptor-backed Fargate defaults:
 
-```bash
-# On a machine with AWS credentials + ECS access
-export FARGATE_EXEC_ENABLED=1
-export EXEC_RUNTIME_MODE=fargate
-export FARGATE_CLUSTER=kdcube-staging-cluster
-export FARGATE_TASK_DEFINITION=kdcube-staging-exec
-export FARGATE_CONTAINER_NAME=exec
-export FARGATE_SUBNETS=subnet-<id1>,subnet-<id2>
-export FARGATE_SECURITY_GROUPS=sg-<group_id>
-export FARGATE_ASSIGN_PUBLIC_IP=DISABLED
-
-# then trigger a bundle execution through the proc API
+```yaml
+platform:
+  services:
+    proc:
+      exec:
+        fargate:
+          enabled: true
+          cluster: kdcube-staging-cluster
+          task_definition: kdcube-staging-exec
+          container_name: exec
+          subnets:
+            - subnet-<id1>
+            - subnet-<id2>
+          security_groups:
+            - sg-<group_id>
+          assign_public_ip: DISABLED
 ```
 
 #### bundles.yaml entry for the smoke test bundle (staging)
@@ -668,7 +682,7 @@ Selection semantics:
 - `self.resolve_exec_runtime(profile=...)` resolves only from the canonical
   bundle runtime config already loaded into `RuntimeCtx.exec_runtime`
 - it does not consult proc env vars directly
-- env vars remain backend-level fallback for missing keys after profile selection
+- missing backend keys fall back to resolved proc settings from descriptors
 
 ```mermaid
 flowchart LR

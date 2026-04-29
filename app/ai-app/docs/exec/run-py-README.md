@@ -164,8 +164,32 @@ Execution layout:
 
 - Executor has **no network access**.
 - Only `/workspace/work` and `/workspace/out` are writable.
+- Generated file sizes are bounded by the ISO runtime. Defaults are `100MiB` for a single file and `250MiB` net new workspace bytes per run.
 - Use `OUTPUT_DIR` and write to `turn_<id>/files/...`.
 - Treat `BUNDLE_STORAGE_DIR` as readonly when it is present.
+
+Filesystem limit controls are configured in `assembly.yaml`:
+
+```yaml
+platform:
+  services:
+    proc:
+      exec:
+        max_file_bytes: 100m
+        max_workspace_bytes: 250m
+        workspace_monitor_interval_s: 0.5
+```
+
+The runtime forwards these values into the isolated executor as internal
+`EXEC_*` env values. Do not use those env names as the public configuration
+surface.
+
+The same values may be provided in an exec runtime profile as:
+```yaml
+max_file_bytes: 100m
+max_workspace_bytes: 250m
+workspace_monitor_interval_s: 0.5
+```
 
 ---
 

@@ -63,6 +63,33 @@ For the operational local workflow for reusing a runtime, changing bundle roots,
 | `bundles.items[].path` / `module` | proc local-path loading | local development bundle definition |
 | `bundles.items[].config` | `self.bundle_prop("...")` | non-secret effective bundle config |
 
+### Reserved runtime config under `config`
+
+Most values under `bundles.items[].config` belong only to the bundle. A small
+set is platform-reserved and interpreted by the runtime.
+
+`config.execution.runtime` controls per-bundle execution runtime routing and
+per-run ISO runtime limits. `config.exec_runtime` is the legacy alias.
+
+Example:
+
+```yaml
+bundles:
+  items:
+    - id: "my.bundle@1-0"
+      config:
+        execution:
+          runtime:
+            mode: "docker"              # none | local | docker | fargate | external
+            max_file_bytes: "50m"       # overrides assembly default for this bundle run
+            max_workspace_bytes: "100m" # overrides assembly default for this bundle run
+            workspace_monitor_interval_s: 0.5
+```
+
+Platform defaults for these limits live in `assembly.yaml` under
+`platform.services.proc.exec`. Bundle overrides are applied only to the
+execution run that uses that bundle profile.
+
 ## Two supported bundle styles
 
 ### 1. Git bundles

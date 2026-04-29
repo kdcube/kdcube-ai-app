@@ -12,12 +12,16 @@ import asyncio
 import time
 import pathlib
 import tokenize
-from typing import Dict, Any, List, Tuple, Optional, Literal
+from typing import Dict, Any, List, Tuple, Optional, Literal, Mapping
 
 from kdcube_ai_app.apps.chat.sdk.config import get_settings
 from kdcube_ai_app.apps.chat.sdk.runtime.exec_runtime_config import resolve_exec_runtime_profile
 from kdcube_ai_app.apps.chat.sdk.util import strip_lone_surrogates
 from kdcube_ai_app.infra.service_hub.inventory import AgentLogger
+
+_DEFAULT_EXEC_MAX_FILE_BYTES = 100 * 1024 * 1024
+_DEFAULT_EXEC_MAX_WORKSPACE_BYTES = 250 * 1024 * 1024
+_DEFAULT_EXEC_WORKSPACE_MONITOR_INTERVAL_S = 0.5
 
 
 def _pick_runtime_cfg(cfg: Dict[str, Any], *keys: str) -> Any:
@@ -33,6 +37,209 @@ def _as_runtime_arg_list(val: Any) -> List[str]:
     if isinstance(val, str) and val.strip():
         return [part for part in shlex.split(val) if part]
     return []
+
+
+def _as_limit_bytes(raw: Any, *, default: Optional[int] = None) -> Optional[int]:
+    if raw is None or raw == "":
+        return default
+    if isinstance(raw, bool):
+        return default
+    text = str(raw).strip().lower()
+    if not text:
+        return default
+    if text in {"0", "false", "off", "none", "no", "disabled", "unlimited"}:
+        return None
+
+    multiplier = 1
+    for suffix, value in (
+        ("gib", 1024 ** 3),
+        ("gb", 1024 ** 3),
+        ("g", 1024 ** 3),
+        ("mib", 1024 ** 2),
+        ("mb", 1024 ** 2),
+        ("m", 1024 ** 2),
+        ("kib", 1024),
+        ("kb", 1024),
+        ("k", 1024),
+        ("b", 1),
+    ):
+        if text.endswith(suffix):
+            text = text[: -len(suffix)].strip()
+            multiplier = value
+            break
+    try:
+        value = int(float(text) * multiplier)
+    except (TypeError, ValueError):
+        return default
+    return value if value > 0 else None
+
+
+def _exec_limit_bytes(
+        env: Optional[Mapping[str, str]],
+        key: str,
+        *,
+        default: Optional[int],
+) -> Optional[int]:
+    raw = (env or {}).get(key)
+    return _as_limit_bytes(raw, default=default)
+
+
+def _exec_limit_float(
+        env: Optional[Mapping[str, str]],
+        key: str,
+        *,
+        default: float,
+) -> float:
+    raw = (env or {}).get(key)
+    try:
+        value = float(raw) if raw not in (None, "") else default
+    except (TypeError, ValueError):
+        value = default
+    return max(value, 0.1)
+
+
+def apply_exec_file_size_limit(
+        *,
+        env: Optional[Mapping[str, str]] = None,
+        logger: Any = None,
+) -> Optional[int]:
+    """
+    Apply a kernel-enforced max file size to the current process.
+
+    This limit is inherited by subprocesses. We use it both in the isolated
+    entrypoint process and in local subprocess children so agent-written code
+    cannot create very large single files even if it bypasses tool contracts.
+    """
+    limit = _exec_limit_bytes(env, "EXEC_MAX_FILE_BYTES", default=_DEFAULT_EXEC_MAX_FILE_BYTES)
+    if limit is None:
+        return None
+    try:
+        import resource
+
+        resource.setrlimit(resource.RLIMIT_FSIZE, (int(limit), int(limit)))
+        if logger is not None:
+            try:
+                logger.info("[executor] Applied RLIMIT_FSIZE=%s bytes", int(limit))
+            except Exception:
+                try:
+                    logger.log(f"[executor] Applied RLIMIT_FSIZE={int(limit)} bytes", level="INFO")
+                except Exception:
+                    pass
+        return int(limit)
+    except Exception as exc:
+        if logger is not None:
+            try:
+                logger.warning("[executor] Failed to apply file size limit: %s", exc)
+            except Exception:
+                try:
+                    logger.log(f"[executor] Failed to apply file size limit: {exc}", level="WARNING")
+                except Exception:
+                    pass
+        return None
+
+
+def _workspace_roots(*, env: Mapping[str, str], cwd: pathlib.Path, outdir: pathlib.Path) -> List[pathlib.Path]:
+    candidates = [
+        outdir,
+        cwd,
+        pathlib.Path(env["OUTPUT_DIR"]) if env.get("OUTPUT_DIR") else None,
+        pathlib.Path(env["WORKDIR"]) if env.get("WORKDIR") else None,
+    ]
+    roots: List[pathlib.Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        if candidate is None:
+            continue
+        try:
+            root = candidate.resolve()
+        except Exception:
+            root = pathlib.Path(candidate)
+        marker = str(root)
+        if marker in seen or not root.exists() or not root.is_dir():
+            continue
+        seen.add(marker)
+        roots.append(root)
+    return roots
+
+
+def _snapshot_workspace_file_sizes(roots: List[pathlib.Path]) -> Dict[str, int]:
+    sizes: Dict[str, int] = {}
+    for root in roots:
+        try:
+            iterator = root.rglob("*")
+        except Exception:
+            continue
+        for path in iterator:
+            try:
+                if not path.is_file():
+                    continue
+                resolved = str(path.resolve())
+                sizes[resolved] = int(path.stat().st_size)
+            except Exception:
+                continue
+    return sizes
+
+
+def _workspace_limit_violation(
+        *,
+        baseline: Dict[str, int],
+        current: Dict[str, int],
+        max_file_bytes: Optional[int],
+        max_workspace_bytes: Optional[int],
+) -> Optional[Dict[str, Any]]:
+    changed: List[Tuple[str, int, int]] = []
+    for path, size in current.items():
+        previous = int(baseline.get(path, 0))
+        if size > previous:
+            changed.append((path, size, previous))
+        if max_file_bytes is not None and size > max_file_bytes and size > previous:
+            return {
+                "error": "file_size_limit",
+                "error_summary": f"file exceeds max size ({size} > {max_file_bytes} bytes): {path}",
+                "offending_path": path,
+                "size_bytes": size,
+                "limit_bytes": max_file_bytes,
+            }
+
+    if max_workspace_bytes is None:
+        return None
+
+    created_bytes = sum(max(0, size - previous) for _path, size, previous in changed)
+    if created_bytes <= max_workspace_bytes:
+        return None
+
+    changed.sort(key=lambda item: max(0, item[1] - item[2]), reverse=True)
+    return {
+        "error": "workspace_size_limit",
+        "error_summary": f"workspace output delta exceeds max size ({created_bytes} > {max_workspace_bytes} bytes)",
+        "size_bytes": created_bytes,
+        "limit_bytes": max_workspace_bytes,
+        "offending_paths": [path for path, _size, _previous in changed[:20]],
+    }
+
+
+def _cleanup_limit_violation_files(violation: Dict[str, Any], baseline: Dict[str, int], log: Any) -> None:
+    paths: List[str] = []
+    offending_path = violation.get("offending_path")
+    if isinstance(offending_path, str) and offending_path:
+        paths.append(offending_path)
+    for item in violation.get("offending_paths") or []:
+        if isinstance(item, str) and item:
+            paths.append(item)
+
+    for raw_path in dict.fromkeys(paths):
+        try:
+            path = pathlib.Path(raw_path)
+            current_size = path.stat().st_size if path.exists() else 0
+            if current_size <= int(baseline.get(str(path.resolve()), 0)):
+                continue
+            path.unlink(missing_ok=True)
+            try:
+                log.warning("[executor] Removed oversized generated file: %s", raw_path)
+            except Exception:
+                pass
+        except Exception:
+            continue
 
 
 def _run_in_executor_with_ctx(loop, fn, *args, **kwargs):
@@ -230,7 +437,7 @@ async def _run_subprocess(entry_path: pathlib.Path, *,
                           allow_network: bool = True,
                           exec_id: Optional[str] = None) -> Dict[str, Any]:
     """
-    Environment toggles (per-call via env, or global via os.environ):
+    Environment toggles (per-call via env):
       - allow_network: True (default) -> network allowed
                        False          -> network disabled (--unshare-net)
     """
@@ -243,11 +450,23 @@ async def _run_subprocess(entry_path: pathlib.Path, *,
     EXECUTOR_UID = int(os.environ.get("EXECUTOR_UID", "1001"))
     # Use chat's GID so executor-created files are group-writable by appuser (UID/GID 1000)
     EXECUTOR_GID = int(os.environ.get("EXECUTOR_GID", "1000"))
+    max_file_bytes = _exec_limit_bytes(env, "EXEC_MAX_FILE_BYTES", default=_DEFAULT_EXEC_MAX_FILE_BYTES)
+    max_workspace_bytes = _exec_limit_bytes(
+        env,
+        "EXEC_MAX_WORKSPACE_BYTES",
+        default=_DEFAULT_EXEC_MAX_WORKSPACE_BYTES,
+    )
+    monitor_interval_s = _exec_limit_float(
+        env,
+        "EXEC_WORKSPACE_MONITOR_INTERVAL_S",
+        default=_DEFAULT_EXEC_WORKSPACE_MONITOR_INTERVAL_S,
+    )
 
     def preexec_fn():
         """This runs in the child process BEFORE exec.
         We're still root here, so we can create namespace and drop privileges."""
         try:
+            apply_exec_file_size_limit(env=env, logger=log)
             # 1. Create isolated network namespace (requires root)
             libc = ctypes.CDLL("libc.so.6")
             if libc.unshare(CLONE_NEWNET) != 0:
@@ -263,6 +482,17 @@ async def _run_subprocess(entry_path: pathlib.Path, *,
         except Exception as e:
             log.error(f"[executor] Isolation failed: {e}")
             raise
+
+    def limit_preexec_fn():
+        try:
+            apply_exec_file_size_limit(env=env, logger=log)
+        except Exception:
+            raise
+
+    workspace_roots = _workspace_roots(env=env, cwd=cwd, outdir=outdir)
+    workspace_baseline = _snapshot_workspace_file_sizes(workspace_roots)
+    resource_violation: Optional[Dict[str, Any]] = None
+
     if not allow_network:
         # Original behavior
         log.info(f"[_run_subprocess] Starting isolated executor (root→uid 1001, no network)")
@@ -281,6 +511,7 @@ async def _run_subprocess(entry_path: pathlib.Path, *,
             sys.executable, "-u", str(entry_path),
             cwd=str(cwd),
             env=env,
+            preexec_fn=limit_preexec_fn if max_file_bytes is not None else None,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -290,6 +521,36 @@ async def _run_subprocess(entry_path: pathlib.Path, *,
     timed_out = False
     stderr_tail = ""
     error_summary = ""
+
+    async def _monitor_workspace_limits() -> None:
+        nonlocal resource_violation
+        if max_file_bytes is None and max_workspace_bytes is None:
+            return
+        while proc.returncode is None:
+            current = _snapshot_workspace_file_sizes(workspace_roots)
+            violation = _workspace_limit_violation(
+                baseline=workspace_baseline,
+                current=current,
+                max_file_bytes=max_file_bytes,
+                max_workspace_bytes=max_workspace_bytes,
+            )
+            if violation is not None:
+                resource_violation = violation
+                log.error("[executor] %s", violation.get("error_summary") or violation.get("error"))
+                try:
+                    proc.terminate()
+                except ProcessLookupError:
+                    pass
+                await asyncio.sleep(1)
+                if proc.returncode is None:
+                    try:
+                        proc.kill()
+                    except ProcessLookupError:
+                        pass
+                return
+            await asyncio.sleep(monitor_interval_s)
+
+    monitor_task = asyncio.create_task(_monitor_workspace_limits())
 
     async def _terminate_proc_for_shutdown() -> tuple[bytes, bytes]:
         try:
@@ -321,6 +582,14 @@ async def _run_subprocess(entry_path: pathlib.Path, *,
         out += out2
         err += err2
     finally:
+        if not monitor_task.done():
+            monitor_task.cancel()
+            try:
+                await monitor_task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                pass
         try:
             log_dir = outdir / "logs"
             err_path = log_dir / "runtime.err.log"
@@ -362,6 +631,35 @@ async def _run_subprocess(entry_path: pathlib.Path, *,
         except Exception:
             pass
 
+    current_workspace = _snapshot_workspace_file_sizes(workspace_roots)
+    final_violation = _workspace_limit_violation(
+        baseline=workspace_baseline,
+        current=current_workspace,
+        max_file_bytes=max_file_bytes,
+        max_workspace_bytes=max_workspace_bytes,
+    )
+    if final_violation is not None and resource_violation is None:
+        resource_violation = final_violation
+
+    if resource_violation is not None:
+        _cleanup_limit_violation_files(resource_violation, workspace_baseline, log)
+        summary = str(resource_violation.get("error_summary") or "execution output exceeded filesystem limits")
+        try:
+            log_dir = outdir / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            with open(log_dir / "runtime.err.log", "ab") as f:
+                f.write(f"[runtime] ERROR: {summary}\n".encode("utf-8", errors="ignore"))
+        except Exception:
+            pass
+        return {
+            "ok": False,
+            "returncode": proc.returncode if proc.returncode is not None else 153,
+            "error": resource_violation.get("error") or "workspace_size_limit",
+            "stderr_tail": stderr_tail,
+            "error_summary": summary,
+            "details": resource_violation,
+        }
+
     if timed_out:
         return {
             "error": "timeout",
@@ -369,6 +667,22 @@ async def _run_subprocess(entry_path: pathlib.Path, *,
             "stderr_tail": stderr_tail,
             "error_summary": error_summary,
         }
+
+    try:
+        import signal as _signal
+
+        if proc.returncode is not None and proc.returncode < 0 and -proc.returncode == _signal.SIGXFSZ:
+            summary = f"file exceeds max size ({max_file_bytes} bytes)"
+            return {
+                "ok": False,
+                "returncode": proc.returncode,
+                "error": "file_size_limit",
+                "stderr_tail": stderr_tail,
+                "error_summary": summary,
+                "details": {"limit_bytes": max_file_bytes},
+            }
+    except Exception:
+        pass
 
     return {
         "ok": proc.returncode == 0,
@@ -1851,6 +2165,34 @@ class _InProcessRuntime:
                 or os.environ.get("EXEC_RUNTIME_MODE")
                 or ""
             ).strip().lower()
+        try:
+            py_exec_cfg = get_settings().PLATFORM.EXEC.PY
+        except Exception:
+            py_exec_cfg = None
+        platform_limit_env = (
+            ("EXEC_MAX_FILE_BYTES", getattr(py_exec_cfg, "EXEC_MAX_FILE_BYTES", "100m")),
+            ("EXEC_MAX_WORKSPACE_BYTES", getattr(py_exec_cfg, "EXEC_MAX_WORKSPACE_BYTES", "250m")),
+            (
+                "EXEC_WORKSPACE_MONITOR_INTERVAL_S",
+                getattr(py_exec_cfg, "EXEC_WORKSPACE_MONITOR_INTERVAL_S", 0.5),
+            ),
+        )
+        for env_key, value in platform_limit_env:
+            if value not in (None, ""):
+                extra_env[env_key] = str(value).strip()
+
+        limit_env_from_profile = (
+            ("EXEC_MAX_FILE_BYTES", ("max_file_bytes", "exec_max_file_bytes", "max_output_file_bytes")),
+            ("EXEC_MAX_WORKSPACE_BYTES", ("max_workspace_bytes", "exec_max_workspace_bytes", "max_output_bytes")),
+            (
+                "EXEC_WORKSPACE_MONITOR_INTERVAL_S",
+                ("workspace_monitor_interval_s", "exec_workspace_monitor_interval_s"),
+            ),
+        )
+        for env_key, cfg_keys in limit_env_from_profile:
+            value = _pick_runtime_cfg(exec_runtime_cfg, *cfg_keys)
+            if value not in (None, ""):
+                extra_env[env_key] = str(value).strip()
 
         # --- EXTERNAL BRANCH: distributed exec ---
         if isolation in ("fargate", "external") or runtime_mode in ("fargate", "external"):

@@ -185,13 +185,19 @@ Common reserved paths:
 | `role_models` | platform entrypoint/runtime | model-role routing |
 | `embedding` | platform entrypoint/runtime | embedding provider/model override |
 | `economics.reservation_amount_dollars` | economics entrypoint/runtime | reservation floor |
-| `execution.runtime` | runtime/exec subsystem | bundle-level execution runtime routing |
+| `execution.runtime` | runtime/exec subsystem | bundle-level execution routing and per-run ISO limits |
 | `exec_runtime` | runtime/exec subsystem | legacy alias for `execution.runtime` |
 | `mcp.services` | MCP runtime/bootstrap | MCP transport/auth config |
 
 Use the detailed page for those reserved paths:
 
 - [bundle-reserved-platform-properties-README.md](../sdk/bundle/bundle-reserved-platform-properties-README.md)
+
+For ISO runtime filesystem limits, platform defaults come from
+`assembly.yaml` under `platform.services.proc.exec`. A bundle may override only
+its own run with `execution.runtime.max_file_bytes`,
+`execution.runtime.max_workspace_bytes`, and
+`execution.runtime.workspace_monitor_interval_s`.
 
 ## User-scoped bundle props and secrets
 

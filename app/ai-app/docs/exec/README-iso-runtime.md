@@ -234,6 +234,12 @@ sudo chmod -R g+rwX /path/to/exec-workspace
   - Max runtime in seconds for isolated runs.
 - `PY_CODE_EXEC_NETWORK_MODE`
   - Docker network mode for the exec container (`host` is typical).
+- `platform.services.proc.exec.max_file_bytes`
+  - Descriptor source for max single generated file size.
+- `platform.services.proc.exec.max_workspace_bytes`
+  - Descriptor source for max net-new workspace/output bytes per run.
+- `platform.services.proc.exec.workspace_monitor_interval_s`
+  - Descriptor source for workspace quota polling interval.
 
 ### Exec container runtime (set by chat runtime)
 - `WORKDIR=/workspace/work`
@@ -255,9 +261,35 @@ sudo chmod -R g+rwX /path/to/exec-workspace
 
 - **No network for executor**: unshared net namespace, only supervisor can call networked tools.
 - **Read-only root FS**: only `/workspace/work` and `/workspace/out` are writable.
+- **Filesystem abuse limits**: the isolated entrypoint applies `RLIMIT_FSIZE` and a live workspace monitor so generated code cannot create oversized files or fill the writable workspace. Defaults are `100MiB` per file and `250MiB` net new bytes per run.
 - **No secret env passthrough**: executor receives minimal, safe environment.
 - **No descriptor or bundle-path globals for executor**: descriptor payload env, bundle root paths, bundle storage paths, and communicator bootstrap data stay out of executor globals/env.
 - **Tool execution via supervisor**: network and external side effects are mediated.
+
+## Filesystem limits
+
+The ISO runtime enforces filesystem limits in the runtime boundary, not only in
+React/tool contract validation. This applies to Docker and Fargate because both
+paths enter the same `py_code_exec_entry.py -> run_py_code() -> _run_subprocess()`
+executor path.
+
+Descriptor controls:
+- `platform.services.proc.exec.max_file_bytes`: maximum size for any generated single file. Default: `100m`. The value accepts raw bytes or suffixes such as `50m`, `100mb`, `1g`. Set to `0`, `disabled`, or `unlimited` only for trusted debugging.
+- `platform.services.proc.exec.max_workspace_bytes`: maximum net new bytes across writable workdir/outdir for one run. Default: `250m`.
+- `platform.services.proc.exec.workspace_monitor_interval_s`: live monitor interval. Default: `0.5`.
+
+The proc runtime reads these values through `get_settings().PLATFORM.EXEC.PY`
+and forwards them to the isolated process as internal `EXEC_*` env transport.
+Do not configure them as platform env vars.
+
+Bundles can override these limits for their own run in an exec runtime profile
+using `max_file_bytes`, `max_workspace_bytes`, and
+`workspace_monitor_interval_s`. If a limit is exceeded, the executor is
+terminated and oversized generated files are removed where possible.
+
+These size controls are separate from the broader information-disclosure
+hardening work: they prevent resource exhaustion and oversized downloads, but
+do not by themselves decide which internal paths the agent may inspect.
 
 ## Parallel execution considerations (future)
 
