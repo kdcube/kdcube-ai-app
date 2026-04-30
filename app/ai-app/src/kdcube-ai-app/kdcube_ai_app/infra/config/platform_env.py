@@ -179,6 +179,7 @@ PLATFORM_ENV_GROUPS: dict[str, tuple[str, ...]] = {
         "FARGATE_SUBNETS",
         "FARGATE_TASK_DEFINITION",
         "PY_CODE_EXEC_IMAGE",
+        "PY_CODE_EXEC_CONTAINER_STRATEGY",
         "PY_CODE_EXEC_NETWORK_MODE",
         "PY_CODE_EXEC_TIMEOUT",
     ),

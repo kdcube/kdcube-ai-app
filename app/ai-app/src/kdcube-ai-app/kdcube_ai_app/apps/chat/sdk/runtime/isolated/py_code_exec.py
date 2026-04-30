@@ -143,6 +143,7 @@ async def run_py_code(
     workdir.mkdir(parents=True, exist_ok=True)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    _prepare_workspace_for_executor(workdir, executor_uid=1001, executor_gid=None, logger=log)
     _prepare_workspace_for_executor(output_dir, executor_uid=1001, executor_gid=None, logger=log)
 
     main_path = workdir / "main.py"
@@ -271,6 +272,10 @@ async def run_py_code(
     log.log(f"[py_code_exec] base_env PYTHONPATH: {base_env.get('PYTHONPATH')}", level="INFO")
     log.log(f"[py_code_exec] child_env PYTHONPATH: {child_env.get('PYTHONPATH')}", level="INFO")
     log.log(f"[py_code_exec] child_env keys: {sorted(child_env.keys())}", level="INFO")
+    preisolated_network = str(base_env.get("EXEC_NETWORK_PREISOLATED") or "").strip().lower() in {"1", "true", "yes"}
+    if preisolated_network:
+        log.log("[py_code_exec] executor container is already network-isolated", level="INFO")
+        child_env["EXEC_NETWORK_PREISOLATED"] = "1"
     res = await _run_subprocess(
         entry_path=main_path,
         cwd=output_dir,

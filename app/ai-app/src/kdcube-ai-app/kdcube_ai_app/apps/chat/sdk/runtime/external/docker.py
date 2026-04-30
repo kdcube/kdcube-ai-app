@@ -9,6 +9,7 @@ import datetime as _dt
 import json
 import os
 import pathlib
+import secrets
 import time
 from typing import Dict, Any, Optional
 from urllib.parse import unquote, urlparse
@@ -24,6 +25,7 @@ from kdcube_ai_app.infra.config import (
     build_external_runtime_base_env,
     prepare_external_runtime_globals,
 )
+from kdcube_ai_app.apps.chat.sdk.runtime.isolated.executor_payload import build_executor_runtime_globals
 from kdcube_ai_app.apps.chat.sdk.config import get_settings
 
 _DEFAULT_IMAGE = get_settings().PLATFORM.EXEC.PY.PY_CODE_EXEC_IMAGE
@@ -164,6 +166,69 @@ def _error_summary_from_text(text: str) -> str:
         ):
             return line.strip()
     return ""
+
+
+def _is_split_container_strategy(value: str | None) -> bool:
+    normalized = str(value or "").strip().lower().replace("-", "_")
+    return normalized in {"split", "split_container", "two_container", "two_containers"}
+
+
+def _safe_docker_token(value: str, *, fallback: str) -> str:
+    token = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value or "").strip())
+    token = token.strip("._-")
+    return token[:80] or fallback
+
+
+def _sanitize_docker_argv(argv: list[str]) -> list[str]:
+    sanitized: list[str] = []
+    skip_next = False
+    for idx, arg in enumerate(argv):
+        if skip_next:
+            skip_next = False
+            continue
+        sanitized.append(arg)
+        if arg == "-e" and idx + 1 < len(argv):
+            env_val = argv[idx + 1]
+            if "=" in env_val:
+                key = env_val.split("=", 1)[0]
+                sanitized.append(f"{key}=******")
+            else:
+                sanitized.append(env_val)
+            skip_next = True
+    return sanitized
+
+
+def _prepare_split_executor_tree(path: pathlib.Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    for item in [path, *path.rglob("*")]:
+        try:
+            if item.is_dir():
+                os.chmod(item, 0o777)
+            elif item.is_file():
+                os.chmod(item, 0o666)
+        except Exception:
+            pass
+
+
+async def _docker_control(args: list[str], *, timeout_s: int = 10) -> tuple[int, str, str]:
+    proc = await asyncio.create_subprocess_exec(
+        *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
+    except asyncio.TimeoutError:
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+        out, err = await proc.communicate()
+    return (
+        proc.returncode if proc.returncode is not None else 1,
+        out.decode("utf-8", errors="ignore"),
+        err.decode("utf-8", errors="ignore"),
+    )
 
 
 def _extract_accounting_storage_uri(runtime_globals: Dict[str, Any], base_env: Dict[str, str]) -> str:
@@ -451,6 +516,347 @@ def _build_docker_argv(
     argv.append(image)
     return argv
 
+
+def _build_split_supervisor_argv(
+        *,
+        image: str,
+        name: str,
+        socket_volume: str,
+        host_workdir: pathlib.Path,
+        host_outdir: pathlib.Path,
+        extra_env: Dict[str, str],
+        extra_args: list[str] | None = None,
+        bundle_root: pathlib.Path | None = None,
+        container_bundle_root: str | None = None,
+        bundle_id: str | None = None,
+        readonly_mounts: list[tuple[pathlib.Path, str]] | None = None,
+        rw_mounts: list[tuple[pathlib.Path, str]] | None = None,
+        network_mode: str | None = None,
+) -> list[str]:
+    argv: list[str] = [
+        "docker", "run", "--rm",
+        "--name", name,
+        "--network", network_mode or "host",
+        "--read-only",
+        "-v", f"{_path(host_workdir)}:/workspace/work:rw",
+        "-v", f"{_path(host_outdir)}:/workspace/out:rw",
+        "-v", f"{socket_volume}:/supervisor-socket:rw",
+        "--tmpfs", "/tmp:rw,noexec,nosuid,size=128m",
+        "-e", "WORKDIR=/workspace/work",
+        "-e", "OUTPUT_DIR=/workspace/out",
+        "-e", "EXEC_CONTAINER_ROLE=supervisor",
+        "-e", "SUPERVISOR_SOCKET_PATH=/supervisor-socket/supervisor.sock",
+    ]
+    if extra_args:
+        argv.extend(extra_args)
+    if bundle_root is not None:
+        subpath = container_bundle_root or (
+            f"{CONTAINER_BUNDLES_ROOT}/{bundle_id}" if bundle_id else CONTAINER_BUNDLES_ROOT
+        )
+        argv += ["-v", f"{_path(bundle_root)}:{subpath}:ro"]
+    for host_path, container_path in (readonly_mounts or []):
+        argv += ["-v", f"{_path(host_path)}:{container_path}:ro"]
+    for host_path, container_path in (rw_mounts or []):
+        argv += ["-v", f"{_path(host_path)}:{container_path}:rw"]
+    for k, v in (extra_env or {}).items():
+        if k in {"WORKDIR", "OUTPUT_DIR", "EXEC_CONTAINER_ROLE", "SUPERVISOR_SOCKET_PATH"}:
+            continue
+        argv += ["-e", f"{k}={v}"]
+    argv.append(image)
+    return argv
+
+
+def _build_split_executor_argv(
+        *,
+        image: str,
+        name: str,
+        socket_volume: str,
+        host_workdir: pathlib.Path,
+        host_outdir: pathlib.Path,
+        extra_env: Dict[str, str],
+        timeout_s: int,
+) -> list[str]:
+    argv: list[str] = [
+        "docker", "run", "--rm",
+        "--name", name,
+        "--network", "none",
+        "--cap-drop=ALL",
+        "--cap-add=CHOWN",
+        "--cap-add=SETUID",
+        "--cap-add=SETGID",
+        "--cap-add=FOWNER",
+        "--security-opt", "no-new-privileges",
+        "--read-only",
+        "-v", f"{_path(host_workdir)}:/workspace/work:rw",
+        "-v", f"{_path(host_outdir)}:/workspace/out:rw",
+        "-v", f"{socket_volume}:/supervisor-socket:rw",
+        "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m",
+        "-e", "WORKDIR=/workspace/work",
+        "-e", "OUTPUT_DIR=/workspace/out",
+        "-e", "HOME=/workspace/out",
+        "-e", "EXEC_CONTAINER_ROLE=executor",
+        "-e", "EXEC_NETWORK_PREISOLATED=1",
+        "-e", "SUPERVISOR_SOCKET_PATH=/supervisor-socket/supervisor.sock",
+        "-e", "PYTHONDONTWRITEBYTECODE=1",
+        "-e", f"PY_CODE_EXEC_TIMEOUT={timeout_s}",
+    ]
+    for k, v in (extra_env or {}).items():
+        if k in {"WORKDIR", "OUTPUT_DIR", "EXEC_CONTAINER_ROLE", "SUPERVISOR_SOCKET_PATH"}:
+            continue
+        argv += ["-e", f"{k}={v}"]
+    argv.append(image)
+    return argv
+
+
+async def _run_py_in_split_docker_prepared(
+        *,
+        img: str,
+        to: int,
+        exec_id: str,
+        host_workdir: pathlib.Path,
+        host_outdir: pathlib.Path,
+        base_env: Dict[str, str],
+        runtime_globals: Dict[str, Any],
+        log: AgentLogger,
+        outdir: pathlib.Path,
+        bundle_root: pathlib.Path | None,
+        container_bundle_root: str | None,
+        bundle_dir: str | None,
+        readonly_mounts: list[tuple[pathlib.Path, str]],
+        rw_mounts: list[tuple[pathlib.Path, str]],
+        extra_docker_args: list[str] | None,
+        network_mode: str | None,
+) -> Dict[str, Any]:
+    safe_exec_id = _safe_docker_token(exec_id, fallback="exec")
+    unique_suffix = _safe_docker_token(f"{int(time.time() * 1000)}", fallback="run")
+    supervisor_name = f"kdcube-supervisor-{safe_exec_id}-{unique_suffix}"[:120]
+    executor_name = f"kdcube-executor-{safe_exec_id}-{unique_suffix}"[:120]
+    socket_volume = f"kdcube-supervisor-socket-{safe_exec_id}-{unique_suffix}"[:120]
+    supervisor_auth_token = secrets.token_urlsafe(32)
+
+    if _can_preflight_translated_host_path(host_workdir):
+        _prepare_split_executor_tree(host_workdir)
+    else:
+        log.log(f"[docker.exec.split] host workdir is not locally visible; skipping chmod: {host_workdir}", level="INFO")
+    if _can_preflight_translated_host_path(host_outdir):
+        _prepare_split_executor_tree(host_outdir)
+    else:
+        log.log(f"[docker.exec.split] host outdir is not locally visible; skipping chmod: {host_outdir}", level="INFO")
+
+    volume_rc, volume_out, volume_err = await _docker_control(["docker", "volume", "create", socket_volume])
+    if volume_rc != 0:
+        summary = (volume_err or volume_out or "docker volume create failed").strip()
+        log.log(f"[docker.exec.split] socket volume create failed: {summary}", level="ERROR")
+        return {
+            "ok": False,
+            "returncode": volume_rc,
+            "error": "docker_volume_create_failed",
+            "stderr_tail": summary,
+            "error_summary": summary,
+        }
+
+    supervisor_env = dict(base_env)
+    supervisor_env["SUPERVISOR_AUTH_TOKEN"] = supervisor_auth_token
+    supervisor_env["SUPERVISOR_SOCKET_PATH"] = "/supervisor-socket/supervisor.sock"
+    supervisor_env["EXEC_CONTAINER_ROLE"] = "supervisor"
+    supervisor_env["EXECUTION_SANDBOX"] = "docker-split-supervisor"
+
+    exec_runtime_globals = build_executor_runtime_globals(runtime_globals)
+    executor_env_keys = {
+        "EXECUTION_ID",
+        "EXECUTION_MODE",
+        "EXEC_NO_UNEXPECTED_EXIT",
+        "RESULT_FILENAME",
+        "EXEC_MAX_FILE_BYTES",
+        "EXEC_MAX_WORKSPACE_BYTES",
+        "EXEC_WORKSPACE_MONITOR_INTERVAL_S",
+    }
+    executor_env = {
+        key: str(base_env[key])
+        for key in executor_env_keys
+        if key in base_env and base_env[key] not in (None, "")
+    }
+    executor_env.update(
+        {
+            "EXECUTION_ID": exec_id,
+            "EXECUTION_SANDBOX": "docker-split-executor",
+            "SUPERVISOR_AUTH_TOKEN": supervisor_auth_token,
+            "SUPERVISOR_SOCKET_PATH": "/supervisor-socket/supervisor.sock",
+            "SUPERVISOR_CONNECT_TIMEOUT_S": "10",
+            "RUNTIME_GLOBALS_JSON": json.dumps(exec_runtime_globals, ensure_ascii=False, default=str),
+            "RUNTIME_TOOL_MODULES": "[]",
+        }
+    )
+
+    supervisor_argv = _build_split_supervisor_argv(
+        image=img,
+        name=supervisor_name,
+        socket_volume=socket_volume,
+        host_workdir=host_workdir,
+        host_outdir=host_outdir,
+        extra_env=supervisor_env,
+        extra_args=extra_docker_args or [],
+        bundle_root=bundle_root,
+        container_bundle_root=container_bundle_root,
+        bundle_id=bundle_dir,
+        readonly_mounts=readonly_mounts,
+        rw_mounts=rw_mounts,
+        network_mode=network_mode or "host",
+    )
+    executor_argv = _build_split_executor_argv(
+        image=img,
+        name=executor_name,
+        socket_volume=socket_volume,
+        host_workdir=host_workdir,
+        host_outdir=host_outdir,
+        extra_env=executor_env,
+        timeout_s=to,
+    )
+
+    log.log(f"[docker.exec.split] Supervisor: {' '.join(_sanitize_docker_argv(supervisor_argv))}")
+    log.log(f"[docker.exec.split] Executor: {' '.join(_sanitize_docker_argv(executor_argv))}")
+
+    supervisor_proc: asyncio.subprocess.Process | None = None
+    executor_proc: asyncio.subprocess.Process | None = None
+    supervisor_out = supervisor_err = executor_out = executor_err = b""
+    supervisor_collected = False
+    supervisor_start_failed = False
+    supervisor_start_rc = 1
+    supervisor_start_summary = ""
+    timed_out = False
+
+    async def _stop_container(name: str) -> None:
+        await _docker_control(["docker", "stop", "-t", "2", name], timeout_s=8)
+
+    try:
+        supervisor_proc = await asyncio.create_subprocess_exec(
+            *supervisor_argv,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        await asyncio.sleep(0.25)
+        if supervisor_proc.returncode is not None:
+            supervisor_out, supervisor_err = await supervisor_proc.communicate()
+            supervisor_collected = True
+            supervisor_start_failed = True
+            supervisor_start_rc = supervisor_proc.returncode
+            supervisor_start_summary = _error_summary_from_text(
+                supervisor_err.decode("utf-8", errors="ignore")
+                or supervisor_out.decode("utf-8", errors="ignore")
+            ) or "split supervisor exited before executor started"
+        else:
+            executor_proc = await asyncio.create_subprocess_exec(
+                *executor_argv,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            try:
+                executor_out, executor_err = await asyncio.wait_for(executor_proc.communicate(), timeout=to)
+            except asyncio.TimeoutError:
+                timed_out = True
+                await _stop_container(executor_name)
+                executor_out, executor_err = await executor_proc.communicate()
+    except asyncio.CancelledError:
+        if executor_proc is not None:
+            await _stop_container(executor_name)
+        if supervisor_proc is not None:
+            await _stop_container(supervisor_name)
+        raise
+    finally:
+        if supervisor_proc is not None:
+            if not supervisor_collected:
+                await _stop_container(supervisor_name)
+                try:
+                    supervisor_out, supervisor_err = await asyncio.wait_for(supervisor_proc.communicate(), timeout=5)
+                except asyncio.TimeoutError:
+                    try:
+                        supervisor_proc.kill()
+                    except ProcessLookupError:
+                        pass
+                    supervisor_out, supervisor_err = await supervisor_proc.communicate()
+        await _docker_control(["docker", "volume", "rm", "-f", socket_volume], timeout_s=10)
+
+    log_dir = outdir / "logs"
+    stderr_tail = ""
+    error_summary = ""
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        ts = _dt.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        header = f"\n===== EXECUTION {exec_id} START {ts} =====\n".encode("utf-8")
+        with open(log_dir / "docker.out.log", "ab") as f:
+            f.write(header)
+            for label, payload in (
+                (b"[split supervisor stdout]\n", supervisor_out),
+                (b"[split executor stdout]\n", executor_out),
+            ):
+                if payload:
+                    f.write(label)
+                    f.write(payload)
+                    if not payload.endswith(b"\n"):
+                        f.write(b"\n")
+        with open(log_dir / "docker.err.log", "ab") as f:
+            f.write(header)
+            for label, payload in (
+                (b"[split supervisor stderr]\n", supervisor_err),
+                (b"[split executor stderr]\n", executor_err),
+            ):
+                if payload:
+                    f.write(label)
+                    f.write(payload)
+                    if not payload.endswith(b"\n"):
+                        f.write(b"\n")
+    except Exception:
+        pass
+
+    docker_err_text = "\n".join(
+        part.decode("utf-8", errors="ignore")
+        for part in (supervisor_err, executor_err)
+        if part
+    )
+    stderr_tail = docker_err_text[-4000:] if docker_err_text else ""
+    runtime_tail = _read_tail(log_dir / "runtime.err.log", max_chars=4000)
+    user_tail = _read_tail(log_dir / "user.log", max_chars=4000)
+    stderr_tail = _append_unique_text(stderr_tail, runtime_tail)
+    stderr_tail = _append_unique_text(stderr_tail, user_tail)
+    error_summary = _error_summary_from_text(stderr_tail)
+
+    if supervisor_start_failed:
+        log.log(f"[docker.exec.split] Supervisor failed before executor start: {supervisor_start_summary}", level="ERROR")
+        return {
+            "ok": False,
+            "returncode": supervisor_start_rc,
+            "error": "split_supervisor_start_failed",
+            "stderr_tail": stderr_tail,
+            "error_summary": supervisor_start_summary or error_summary,
+        }
+
+    if timed_out:
+        log.log(f"[docker.exec.split] Timeout after {to}s", level="ERROR")
+        return {
+            "ok": False,
+            "returncode": 124,
+            "error": "timeout",
+            "seconds": to,
+            "stderr_tail": stderr_tail,
+            "error_summary": error_summary or f"Timeout after {to}s",
+        }
+
+    rc = executor_proc.returncode if executor_proc is not None else 1
+    ok = rc == 0
+    if not ok:
+        log.log(f"[docker.exec.split] Executor exited with {rc}", level="ERROR")
+        if error_summary:
+            log.log(f"[docker.exec.split] stderr summary: {error_summary}", level="ERROR")
+        elif stderr_tail:
+            log.log(f"[docker.exec.split] stderr tail: {stderr_tail[-1000:]}", level="ERROR")
+
+    return {
+        "ok": ok,
+        "returncode": rc,
+        "stderr_tail": stderr_tail,
+        "error_summary": error_summary,
+    }
+
 async def run_py_in_docker(
         *,
         workdir: pathlib.Path,
@@ -463,7 +869,8 @@ async def run_py_in_docker(
         extra_env: Optional[Dict[str, str]] = None,
         bundle_root: Optional[pathlib.Path] = None,
         extra_docker_args: Optional[list[str]] = None,
-        network_mode: Optional[str] = None
+        network_mode: Optional[str] = None,
+        container_strategy: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     High-level helper used by iso_runtime / ReAct execution:
@@ -636,6 +1043,42 @@ async def run_py_in_docker(
             "error_summary": preflight_problems[0],
         }
 
+    readonly_mounts = [
+        (host_bundle_storage_dir, str(proc_bundle_storage_dir))
+        for host_bundle_storage_dir, proc_bundle_storage_dir in (
+            (host_bundle_storage_dir, proc_bundle_storage_dir),
+        )
+        if host_bundle_storage_dir is not None and proc_bundle_storage_dir is not None
+    ]
+    rw_mounts = [
+        (host_kdcube_storage_dir, str(proc_kdcube_storage_dir))
+        for host_kdcube_storage_dir, proc_kdcube_storage_dir in (
+            (host_kdcube_storage_dir, proc_kdcube_storage_dir),
+        )
+        if host_kdcube_storage_dir is not None and proc_kdcube_storage_dir is not None
+    ]
+
+    if _is_split_container_strategy(container_strategy):
+        log.log("[docker.exec] using split container strategy", level="INFO")
+        return await _run_py_in_split_docker_prepared(
+            img=img,
+            to=to,
+            exec_id=exec_id,
+            host_workdir=host_workdir,
+            host_outdir=host_outdir,
+            base_env=base_env,
+            runtime_globals=runtime_globals,
+            log=log,
+            outdir=outdir,
+            bundle_root=bundle_root,
+            container_bundle_root=container_bundle_root,
+            bundle_dir=bundle_dir,
+            readonly_mounts=readonly_mounts,
+            rw_mounts=rw_mounts,
+            extra_docker_args=extra_docker_args or [],
+            network_mode=network_mode or "host",
+        )
+
     argv = _build_docker_argv(
         image=img,
         host_workdir=host_workdir,
@@ -645,41 +1088,12 @@ async def run_py_in_docker(
         bundle_root=bundle_root,
         container_bundle_root=container_bundle_root,
         bundle_id=bundle_dir,
-        readonly_mounts=[
-            (host_bundle_storage_dir, str(proc_bundle_storage_dir))
-            for host_bundle_storage_dir, proc_bundle_storage_dir in (
-                (host_bundle_storage_dir, proc_bundle_storage_dir),
-            )
-            if host_bundle_storage_dir is not None and proc_bundle_storage_dir is not None
-        ],
-        rw_mounts=[
-            (host_kdcube_storage_dir, str(proc_kdcube_storage_dir))
-            for host_kdcube_storage_dir, proc_kdcube_storage_dir in (
-                (host_kdcube_storage_dir, proc_kdcube_storage_dir),
-            )
-            if host_kdcube_storage_dir is not None and proc_kdcube_storage_dir is not None
-        ],
+        readonly_mounts=readonly_mounts,
+        rw_mounts=rw_mounts,
         network_mode=network_mode or "host",
     )
 
-    sanitized_argv = []
-    skip_next = False
-    for idx, arg in enumerate(argv):
-        if skip_next:
-            skip_next = False
-            continue
-
-        sanitized_argv.append(arg)
-        if arg == "-e" and idx + 1 < len(argv):
-            env_val = argv[idx + 1]
-            if "=" in env_val:
-                key = env_val.split("=", 1)[0]
-                sanitized_argv.append(f"{key}=******")
-            else:
-                sanitized_argv.append(env_val)
-            skip_next = True
-
-    log.log(f"[docker.exec] Running: {' '.join(sanitized_argv)}")
+    log.log(f"[docker.exec] Running: {' '.join(_sanitize_docker_argv(argv))}")
 
     proc = await asyncio.create_subprocess_exec(
         *argv,
