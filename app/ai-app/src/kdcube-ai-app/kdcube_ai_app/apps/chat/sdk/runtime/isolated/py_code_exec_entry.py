@@ -277,6 +277,13 @@ def _restore_bundle_if_present(
     runtime_globals: Dict[str, Any],
     logger: AgentLogger,
 ) -> Dict[str, Any]:
+    mounted_root_raw = os.environ.get("EXEC_BUNDLE_ROOT") or os.environ.get("BUNDLE_ROOT")
+    if mounted_root_raw:
+        mounted_root = pathlib.Path(mounted_root_raw)
+        if mounted_root.exists():
+            logger.log(f"[exec.bundle] Using mounted bundle root {mounted_root}; skipping restore.", "INFO")
+            return rewrite_runtime_globals_for_bundle(runtime_globals, new_bundle_root=mounted_root)
+
     uri = runtime_globals.get("BUNDLE_SNAPSHOT_URI")
     if not uri:
         return _maybe_restore_bundle_from_git(runtime_globals, logger)

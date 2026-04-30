@@ -1879,6 +1879,9 @@ class BaseWorkflow():
             from kdcube_ai_app.apps.chat.sdk.config import get_settings
             if not get_settings().SOLUTION_RETAIN_TURN_WORKSPACE:
                 _cleanup_turn_workspace(getattr(self, "runtime_ctx", None), self.logger)
+                browser_ctx = getattr(getattr(self, "ctx_browser", None), "runtime_ctx", None)
+                if browser_ctx is not getattr(self, "runtime_ctx", None):
+                    _cleanup_turn_workspace(browser_ctx, self.logger)
         except Exception:
             self.logger.log(traceback.format_exc(), "ERROR")
 
@@ -2045,6 +2048,16 @@ class BaseWorkflow():
             )
         except Exception as e:
             self.logger.log(f"Rollback delete_turn(index_only) failed: {traceback.format_exc()}")
+
+        try:
+            from kdcube_ai_app.apps.chat.sdk.config import get_settings
+            if not get_settings().SOLUTION_RETAIN_TURN_WORKSPACE:
+                _cleanup_turn_workspace(getattr(self, "runtime_ctx", None), self.logger)
+                browser_ctx = getattr(getattr(self, "ctx_browser", None), "runtime_ctx", None)
+                if browser_ctx is not getattr(self, "runtime_ctx", None):
+                    _cleanup_turn_workspace(browser_ctx, self.logger)
+        except Exception:
+            self.logger.log(traceback.format_exc(), "ERROR")
 
         # ---- bubble ----
         if managed_exception is not None:
