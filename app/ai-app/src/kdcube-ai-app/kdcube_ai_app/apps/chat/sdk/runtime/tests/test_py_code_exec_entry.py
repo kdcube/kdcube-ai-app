@@ -19,6 +19,7 @@ from kdcube_ai_app.apps.chat.sdk.runtime.isolated.py_code_exec_entry import (
     _hydrate_runtime_payload_from_secret,
     _materialize_runtime_descriptor_payloads,
     _prepare_runtime_environment,
+    _restore_bundle_if_present,
 )
 from kdcube_ai_app.apps.chat.sdk.runtime.isolated.supervisor_entry import PrivilegedSupervisor
 from kdcube_ai_app.apps.chat.sdk.runtime.isolated.secure_client import ToolStub
@@ -313,3 +314,28 @@ def test_build_executor_runtime_globals_strips_privileged_paths_and_descriptors(
     assert "RAW_TOOL_SPECS" not in sanitized
     assert "SKILLS_DESCRIPTOR" not in sanitized
     assert "PORTABLE_SPEC_JSON" not in sanitized
+
+
+def test_restore_bundle_prefers_mounted_bundle_root(monkeypatch, tmp_path):
+    mounted_root = tmp_path / "mounted-bundle"
+    mounted_root.mkdir()
+    logger = _CaptureLogger()
+    monkeypatch.setenv("EXEC_BUNDLE_ROOT", str(mounted_root))
+
+    restored = _restore_bundle_if_present(
+        {
+            "BUNDLE_SPEC": {
+                "id": "demo",
+                "repo": "git@example.com:demo/repo.git",
+                "path": "/host/bundle",
+            },
+            "BUNDLE_ROOT_HOST": "/host/bundle",
+            "TOOL_MODULE_FILES": {"demo": "/host/bundle/tools/demo.py"},
+        },
+        logger,
+    )
+
+    assert restored["BUNDLE_SPEC"]["path"] == str(mounted_root)
+    assert restored["TOOL_MODULE_FILES"]["demo"] == str(mounted_root / "tools/demo.py")
+    assert any("Using mounted bundle root" in msg for _, msg in logger.messages)
+    assert not any("Git restore" in msg for _, msg in logger.messages)

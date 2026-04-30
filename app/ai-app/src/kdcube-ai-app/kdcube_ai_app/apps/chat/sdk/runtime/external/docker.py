@@ -660,8 +660,10 @@ async def _run_py_in_split_docker_prepared(
     supervisor_env["SUPERVISOR_SOCKET_PATH"] = "/supervisor-socket/supervisor.sock"
     supervisor_env["EXEC_CONTAINER_ROLE"] = "supervisor"
     supervisor_env["EXECUTION_SANDBOX"] = "docker-split-supervisor"
+    supervisor_env["HOME"] = "/workspace/out"
     supervisor_env["LOG_DIR"] = "/workspace/out/logs"
     supervisor_env["LOG_FILE_PREFIX"] = "supervisor"
+    supervisor_env["PLAYWRIGHT_BROWSERS_PATH"] = "/opt/ms-playwright"
 
     exec_runtime_globals = build_executor_runtime_globals(runtime_globals)
     executor_env_keys = {
@@ -687,6 +689,7 @@ async def _run_py_in_split_docker_prepared(
             "SUPERVISOR_CONNECT_TIMEOUT_S": "10",
             "LOG_DIR": "/workspace/out/logs",
             "LOG_FILE_PREFIX": "executor",
+            "PLAYWRIGHT_BROWSERS_PATH": "/opt/ms-playwright",
             "RUNTIME_GLOBALS_JSON": json.dumps(exec_runtime_globals, ensure_ascii=False, default=str),
             "RUNTIME_TOOL_MODULES": "[]",
         }

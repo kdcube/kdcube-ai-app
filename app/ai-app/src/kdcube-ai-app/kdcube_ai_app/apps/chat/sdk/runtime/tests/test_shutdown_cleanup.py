@@ -125,6 +125,7 @@ def test_split_executor_argv_is_networkless_and_does_not_mount_supervisor_data(t
             "RUNTIME_GLOBALS_JSON": "{}",
             "SUPERVISOR_AUTH_TOKEN": "secret",
             "EXECUTION_ID": "exec-1",
+            "PLAYWRIGHT_BROWSERS_PATH": "/opt/ms-playwright",
         },
         timeout_s=60,
     )
@@ -135,8 +136,34 @@ def test_split_executor_argv_is_networkless_and_does_not_mount_supervisor_data(t
     assert "--cap-add=SYS_ADMIN" not in argv
     assert "--read-only" in argv
     assert "no-new-privileges" in argv
+    assert any(item == "PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright" for item in argv)
     assert all("/tmp/kdcube-supervisor/bundles" not in item for item in argv)
     assert all("KDCUBE_RUNTIME_SECRETS_YAML_B64=" not in item for item in argv)
+
+
+def test_split_supervisor_argv_uses_writable_home_and_playwright_path(tmp_path):
+    workdir = tmp_path / "work"
+    outdir = tmp_path / "out"
+    workdir.mkdir()
+    outdir.mkdir()
+
+    argv = docker_runtime._build_split_supervisor_argv(
+        image="py-code-exec:latest",
+        name="supervisor-test",
+        socket_volume="socket-volume",
+        host_workdir=workdir,
+        host_outdir=outdir,
+        extra_env={
+            "HOME": "/workspace/out",
+            "LOG_DIR": "/workspace/out/logs",
+            "PLAYWRIGHT_BROWSERS_PATH": "/opt/ms-playwright",
+        },
+    )
+
+    assert "--read-only" in argv
+    assert any(item == "HOME=/workspace/out" for item in argv)
+    assert any(item == "LOG_DIR=/workspace/out/logs" for item in argv)
+    assert any(item == "PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright" for item in argv)
 
 
 def test_executor_payload_strips_privileged_runtime_globals():
