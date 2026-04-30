@@ -161,8 +161,6 @@ def _error_summary_from_text(text: str) -> str:
         if (
                 re.search(r"\b\w+Error\b", line)
                 or "Exception" in line
-                or line.startswith("bwrap:")
-                or line.startswith("bubblewrap:")
         ):
             return line.strip()
     return ""
@@ -390,14 +388,9 @@ def _build_docker_argv(
       - uses `image` as the container image
     """
     argv: list[str] = ["docker", "run", "--rm"]
-    # Required by bubblewrap: SYS_ADMIN for mount namespaces, NET_ADMIN for
-    # initializing loopback inside the isolated no-network namespace, and
-    # relaxed Docker LSM profiles because the trusted supervisor container must
-    # let bwrap create a stricter child sandbox before untrusted code starts.
+    # Required for the generated-code child to create its own network namespace
+    # before it drops from root to the executor UID.
     argv += ["--cap-add=SYS_ADMIN"]
-    argv += ["--cap-add=NET_ADMIN"]
-    argv += ["--security-opt", "seccomp=unconfined"]
-    argv += ["--security-opt", "apparmor=unconfined"]
     argv += ["--network", network_mode]
 
     # Optional extra args (e.g. --cpus, --memory) if you ever need them
@@ -480,7 +473,7 @@ async def run_py_in_docker(
     - `runtime_globals` is exactly the dict you currently pass as `globals`
       to _InProcessRuntime.execute_py_code:
         { "CONTRACT": ..., "COMM_SPEC": ..., "PORTABLE_SPEC_JSON": ...,
-          "TOOL_ALIAS_MAP": ..., "TOOL_MODULE_FILES": ..., "SANDBOX_FS": ..., ... }
+          "TOOL_ALIAS_MAP": ..., "TOOL_MODULE_FILES": ..., ... }
     - `tool_module_names` is the list of tool module names
       (e.g. from ToolSubsystem.tool_modules_tuple_list(): [name for name, _ in ...])
 
@@ -758,8 +751,6 @@ async def run_py_in_docker(
                     if (
                             re.search(r"\b\w+Error\b", line)
                             or "Exception" in line
-                            or line.startswith("bwrap:")
-                            or line.startswith("bubblewrap:")
                     ):
                         error_summary = line.strip()
                         break

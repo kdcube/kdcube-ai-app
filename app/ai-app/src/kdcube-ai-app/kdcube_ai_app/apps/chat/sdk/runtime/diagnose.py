@@ -139,9 +139,8 @@ def extract_error_lines(text: str) -> str:
         ln for ln in lines
         if (
             re.search(r"\bERROR\b", ln, flags=re.IGNORECASE)
+            or re.search(r"\b\w+Error\b", ln)
             or "Exception" in ln
-            or ln.startswith("bwrap:")
-            or ln.startswith("bubblewrap:")
         )
     ]
     if not hits:

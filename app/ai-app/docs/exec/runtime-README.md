@@ -76,7 +76,7 @@ These are transported separately in external exec.
 │  │ (async server)       │◄─────────┼───│ (main.py loader)         │  │  │
 │  │                      │  Unix    │   │                          │  │  │
 │  │ - Port 0 (no listen) │  Socket  │   │ sandbox launcher:        │  │  │
-│  │ - UID 0 (root)       │          │   │  1. bwrap/no-network     │  │  │
+│  │ - UID 0 (root)       │          │   │  1. unshare network      │  │  │
 │  │ - Full network       │          │   │  2. setuid(1001)         │  │  │
 │  │ - Has secrets        │          │   │                          │  │  │
 │  │ - ModelService       │          │   │ Result:                  │  │  │
@@ -84,7 +84,7 @@ These are transported separately in external exec.
 │  │ - Redis comm         │          │   │ - NO network namespace   │  │  │
 │  │                      │          │   │ - Cannot reach Redis     │  │  │
 │  │ Executes:            │          │   │ - Cannot reach internet  │  │  │
-│  │                      │          │   │ - Narrow bwrap FS view   │  │  │
+│  │                      │          │   │ - Minimal safe env       │  │  │
 │  │ • web_search()       │          │   │                          │  │  │
 │  │ • web_fetch()        │          │   │ ENV:                     │  │  │
 │  │ • kb_client.search() │          │   │ - PYTHONPATH=/opt/app ✅ │  │  │
@@ -279,7 +279,7 @@ These are transported separately in external exec.
 │                                                                         │
 │  Layer 2: Network Isolation                                            │
 │  • Container runs with --network host (for supervisor)                 │
-│  • Executor child runs in a bwrap/no-network sandbox when available    │
+│  • Executor child runs in an isolated no-network namespace             │
 │  • Creates isolated network namespace with no interfaces               │
 │  • Untrusted code cannot reach network                                 │
 │                                                                         │

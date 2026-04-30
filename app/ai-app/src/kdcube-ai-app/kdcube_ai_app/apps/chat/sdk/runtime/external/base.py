@@ -107,7 +107,6 @@ def build_external_exec_env(
             "LOG_FILE_PREFIX": log_file_prefix,
             "EXECUTION_ID": str(exec_id),
             "EXECUTION_SANDBOX": sandbox,
-            "EXEC_REQUIRE_FS_SANDBOX": "1",
             "SUPERVISOR_SOCKET_PATH": str(env.get("SUPERVISOR_SOCKET_PATH") or "/tmp/supervisor.sock"),
         }
     )
