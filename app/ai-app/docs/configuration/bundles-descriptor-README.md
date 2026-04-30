@@ -81,6 +81,7 @@ bundles:
         execution:
           runtime:
             mode: "docker"              # none | local | docker | fargate | external
+            container_strategy: "split" # optional: combined | split; docker mode only
             max_file_bytes: "50m"       # overrides assembly default for this bundle run
             max_workspace_bytes: "100m" # overrides assembly default for this bundle run
             workspace_monitor_interval_s: 0.5

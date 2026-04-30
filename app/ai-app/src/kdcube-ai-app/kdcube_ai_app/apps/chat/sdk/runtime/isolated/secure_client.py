@@ -59,31 +59,37 @@ class ToolStub:
         Now ASYNC to properly integrate with the executor's event loop.
         """
         payload = self._build_payload(tool_id=tool_id, params=params or {}, reason=reason)
+        deadline = asyncio.get_running_loop().time() + float(os.environ.get("SUPERVISOR_CONNECT_TIMEOUT_S") or 5.0)
 
-        try:
-            # Use asyncio Unix socket connection
-            reader, writer = await asyncio.open_unix_connection(self.socket_path)
+        while True:
+            try:
+                # Use asyncio Unix socket connection
+                reader, writer = await asyncio.open_unix_connection(self.socket_path)
 
-            # Send request
-            request = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-            writer.write(request)
-            await writer.drain()
+                # Send request
+                request = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+                writer.write(request)
+                await writer.drain()
 
-            # Signal we're done sending
-            writer.write_eof()
+                # Signal we're done sending
+                writer.write_eof()
 
-            # Read response until EOF
-            response_bytes = await reader.read()
+                # Read response until EOF
+                response_bytes = await reader.read()
 
-            writer.close()
-            await writer.wait_closed()
+                writer.close()
+                await writer.wait_closed()
 
-            if not response_bytes:
-                return {"ok": False, "error": "Empty response from supervisor"}
+                if not response_bytes:
+                    return {"ok": False, "error": "Empty response from supervisor"}
 
-            return json.loads(response_bytes.decode("utf-8"))
+                return json.loads(response_bytes.decode("utf-8"))
 
-        except json.JSONDecodeError as e:
-            return {"ok": False, "error": f"Invalid JSON from supervisor: {e}"}
-        except Exception as e:
-            return {"ok": False, "error": f"Stub connection failed: {e}"}
+            except json.JSONDecodeError as e:
+                return {"ok": False, "error": f"Invalid JSON from supervisor: {e}"}
+            except (FileNotFoundError, ConnectionRefusedError, ConnectionResetError) as e:
+                if asyncio.get_running_loop().time() >= deadline:
+                    return {"ok": False, "error": f"Stub connection failed: {e}"}
+                await asyncio.sleep(0.1)
+            except Exception as e:
+                return {"ok": False, "error": f"Stub connection failed: {e}"}

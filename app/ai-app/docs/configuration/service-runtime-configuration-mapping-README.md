@@ -146,6 +146,7 @@ The proc service reads ISO runtime defaults from `assembly.yaml` through
 | `platform.services.proc.exec.py_code_exec_image` | `get_settings().PLATFORM.EXEC.PY.PY_CODE_EXEC_IMAGE` | default ISO runtime image |
 | `platform.services.proc.exec.py_code_exec_timeout` | `get_settings().PLATFORM.EXEC.PY.PY_CODE_EXEC_TIMEOUT` | default execution timeout |
 | `platform.services.proc.exec.py_code_exec_network_mode` | `get_settings().PLATFORM.EXEC.PY.PY_CODE_EXEC_NETWORK_MODE` | Docker network mode for the supervisor container |
+| `platform.services.proc.exec.py_code_exec_container_strategy` | `get_settings().PLATFORM.EXEC.PY.PY_CODE_EXEC_CONTAINER_STRATEGY` | Docker container strategy: `combined` or `split` |
 | `platform.services.proc.exec.max_file_bytes` | `get_settings().PLATFORM.EXEC.PY.EXEC_MAX_FILE_BYTES` | max single generated file per run |
 | `platform.services.proc.exec.max_workspace_bytes` | `get_settings().PLATFORM.EXEC.PY.EXEC_MAX_WORKSPACE_BYTES` | max net-new workspace/output bytes per run |
 | `platform.services.proc.exec.workspace_monitor_interval_s` | `get_settings().PLATFORM.EXEC.PY.EXEC_WORKSPACE_MONITOR_INTERVAL_S` | workspace monitor polling interval |

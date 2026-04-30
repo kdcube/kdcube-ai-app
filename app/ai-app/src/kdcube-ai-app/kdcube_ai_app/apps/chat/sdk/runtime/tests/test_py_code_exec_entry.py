@@ -136,6 +136,13 @@ def test_materialize_runtime_descriptor_payloads_restores_root_only_descriptor_f
         assert "KDCUBE_RUNTIME_ASSEMBLY_YAML_B64" not in os.environ
         assert any("Materialized descriptor payloads into" in msg for _, msg in logger.messages)
     finally:
+        for key in (
+            "PLATFORM_DESCRIPTORS_DIR",
+            "ASSEMBLY_YAML_DESCRIPTOR_PATH",
+            "BUNDLES_YAML_DESCRIPTOR_PATH",
+            "GLOBAL_SECRETS_YAML",
+        ):
+            os.environ.pop(key, None)
         shutil.rmtree(runtime_dir, ignore_errors=True)
 
 
@@ -170,6 +177,12 @@ def test_prepare_runtime_environment_materializes_descriptors_before_settings_ca
         )
         assert cache_clear_calls == [True]
     finally:
+        for key in (
+            "PLATFORM_DESCRIPTORS_DIR",
+            "GLOBAL_SECRETS_YAML",
+            "KDCUBE_RUNTIME_ENV_PREPARED",
+        ):
+            os.environ.pop(key, None)
         shutil.rmtree(runtime_dir, ignore_errors=True)
 
 

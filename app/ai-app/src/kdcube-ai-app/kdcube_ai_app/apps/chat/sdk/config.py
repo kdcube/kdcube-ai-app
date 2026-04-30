@@ -907,6 +907,7 @@ class Settings(PLATFORM_CONFIG):
                     PY_CODE_EXEC_IMAGE=self._resolve_str("PY_CODE_EXEC_IMAGE", f"{exec_p}.py_code_exec_image", "py-code-exec:latest"),
                     PY_CODE_EXEC_TIMEOUT=self._resolve_int("PY_CODE_EXEC_TIMEOUT", f"{exec_p}.py_code_exec_timeout", 600),
                     PY_CODE_EXEC_NETWORK_MODE=self._resolve_str("PY_CODE_EXEC_NETWORK_MODE", f"{exec_p}.py_code_exec_network_mode", "host"),
+                    PY_CODE_EXEC_CONTAINER_STRATEGY=self._resolve_str("PY_CODE_EXEC_CONTAINER_STRATEGY", f"{exec_p}.py_code_exec_container_strategy", "combined"),
                     EXEC_MAX_FILE_BYTES=self._assembly_str(f"{exec_p}.max_file_bytes") or "100m",
                     EXEC_MAX_WORKSPACE_BYTES=self._assembly_str(f"{exec_p}.max_workspace_bytes") or "250m",
                     EXEC_WORKSPACE_MONITOR_INTERVAL_S=self._assembly_float(f"{exec_p}.workspace_monitor_interval_s") or 0.5,
@@ -1252,6 +1253,7 @@ def export_managed_env(
     _put("PY_CODE_EXEC_IMAGE", resolved.PLATFORM.EXEC.PY.PY_CODE_EXEC_IMAGE)
     _put("PY_CODE_EXEC_TIMEOUT", resolved.PLATFORM.EXEC.PY.PY_CODE_EXEC_TIMEOUT)
     _put("PY_CODE_EXEC_NETWORK_MODE", resolved.PLATFORM.EXEC.PY.PY_CODE_EXEC_NETWORK_MODE)
+    _put("PY_CODE_EXEC_CONTAINER_STRATEGY", resolved.PLATFORM.EXEC.PY.PY_CODE_EXEC_CONTAINER_STRATEGY)
     _put("EXEC_WORKSPACE_ROOT", resolved.PLATFORM.EXEC.EXEC_WORKSPACE_ROOT)
     _put("FARGATE_EXEC_ENABLED", resolved.plain(f"{fargate_root}.enabled"))
     _put("FARGATE_CLUSTER", resolved.plain(f"{fargate_root}.cluster"))

@@ -67,25 +67,7 @@ from kdcube_ai_app.apps.chat.sdk.runtime.dynamic_module_loader import (
     ensure_dynamic_package_chain as _ensure_dynamic_package_chain,
     load_dynamic_module_from_file,
 )
-
-_EXECUTOR_STRIP_RUNTIME_GLOBAL_KEYS = frozenset(
-    {
-        "BUNDLE_ROOT_HOST",
-        "BUNDLE_SPEC",
-        "BUNDLE_STORAGE_DIR",
-        "BUNDLE_STORAGE_SNAPSHOT_URI",
-        "COMM_SPEC",
-        "BUNDLE_SNAPSHOT_URI",
-        "EXEC_SNAPSHOT",
-        "MCP_SERVICES",
-        "MCP_TOOL_SPECS",
-        "PORTABLE_SPEC",
-        "PORTABLE_SPEC_JSON",
-        "RAW_TOOL_SPECS",
-        "SKILLS_DESCRIPTOR",
-        "TOOL_MODULE_FILES",
-    }
-)
+from kdcube_ai_app.apps.chat.sdk.runtime.isolated.executor_payload import build_executor_runtime_globals
 
 _RUNTIME_ENV_PREPARED_MARKER = "KDCUBE_RUNTIME_ENV_PREPARED"
 
@@ -263,10 +245,7 @@ def _prepare_supervisor_private_root(logger: AgentLogger) -> pathlib.Path:
 
 
 def _build_executor_runtime_globals(runtime_globals: Dict[str, Any]) -> Dict[str, Any]:
-    exec_globals = dict(runtime_globals or {})
-    for key in _EXECUTOR_STRIP_RUNTIME_GLOBAL_KEYS:
-        exec_globals.pop(key, None)
-    return exec_globals
+    return build_executor_runtime_globals(runtime_globals)
 
 
 def _restore_snapshot_if_present(
@@ -686,6 +665,63 @@ async def _supervisor_loop(sup: PrivilegedSupervisor, stop_event: asyncio.Event,
     log.log("[supervisor.entry] stop_event set, leaving accept loop", level="INFO")
 
 
+async def _async_executor_main(logger: AgentLogger) -> int:
+    """Run only generated code. Used by split-container Docker execution."""
+    exec_id = os.environ.get("EXECUTION_ID") or "unknown"
+    ts = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
+    logger.log(f"[entry.executor] ===== EXECUTION {exec_id} START {ts} =====", level="INFO")
+    os.umask(0o002)
+
+    workdir = pathlib.Path(os.environ.get("WORKDIR", "/workspace/work")).resolve()
+    outdir = pathlib.Path(os.environ.get("OUTPUT_DIR", "/workspace/out")).resolve()
+    workdir.mkdir(parents=True, exist_ok=True)
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    runtime_globals = _load_runtime_globals()
+    timeout_env = os.environ.get("PY_CODE_EXEC_TIMEOUT")
+    try:
+        timeout_s = int(timeout_env) if timeout_env else None
+    except ValueError:
+        timeout_s = None
+
+    logger.log("[entry.executor] starting run_py_code()", level="INFO")
+    res = await run_py_code(
+        workdir=workdir,
+        output_dir=outdir,
+        globals=runtime_globals,
+        logger=logger,
+        timeout_s=timeout_s or 600,
+    )
+
+    if isinstance(res, dict):
+        logger.log(
+            f"[entry.executor] run_py_code() finished: ok={res.get('ok', True)} "
+            f"returncode={res.get('returncode')} error={res.get('error')}",
+            level="INFO",
+        )
+        ok = res.get("ok", True)
+        error = res.get("error")
+        if not ok or error:
+            summary = res.get("error_summary") or (str(error) if error else "")
+            if not summary and res.get("returncode") is not None:
+                summary = f"subprocess failed (returncode={res.get('returncode')})"
+            if summary:
+                logger.log(f"[entry.executor] ERROR: {summary}", level="ERROR")
+                _append_errors_log(f"[entry.executor] ERROR: {summary}")
+            stderr_tail = str(res.get("stderr_tail") or "").strip()
+            if stderr_tail:
+                tail = stderr_tail[-4000:]
+                logger.log(f"[entry.executor] subprocess stderr tail:\n{tail}", level="ERROR")
+                _append_errors_log(f"[entry.executor] subprocess stderr tail:\n{tail}")
+        if res.get("error") == "timeout":
+            return 124
+        rc = res.get("returncode")
+        if isinstance(rc, int):
+            return rc
+
+    return 0
+
+
 async def _async_main() -> int:
     """
     Container-side main:
@@ -704,6 +740,10 @@ async def _async_main() -> int:
     """
     logger = AgentLogger("py_code_exec_entry")
     _prepare_runtime_environment(logger)
+    role = (os.environ.get("EXEC_CONTAINER_ROLE") or "combined").strip().lower()
+    if role == "executor":
+        return await _async_executor_main(logger)
+
     exec_id = os.environ.get("EXECUTION_ID") or "unknown"
     ts = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
     logger.log(f"[entry] ===== EXECUTION {exec_id} START {ts} =====", level="INFO")
@@ -812,6 +852,23 @@ async def _async_main() -> int:
         except NotImplementedError:
             pass
 
+    if role == "supervisor":
+        logger.log("[entry] supervisor role active; waiting for external executor", level="INFO")
+        await stop_event.wait()
+        _dump_delta_cache_file(outdir, logger)
+        try:
+            await _shutdown_supervisor_modules(tool_module_names, logger)
+        except Exception as e:
+            logger.log(f"[entry] module shutdown failed: {e}", level="ERROR")
+        _upload_snapshot_outputs(runtime_globals, workdir, outdir, logger, baseline_work, baseline_out)
+        try:
+            await asyncio.wait_for(server_task, timeout=1.0)
+        except asyncio.TimeoutError:
+            logger.log("[entry] supervisor server did not exit in time", level="WARNING")
+        except Exception as e:
+            logger.log(f"[entry] supervisor server error on shutdown: {e}", level="ERROR")
+        return 0
+
     # 🔹 4. Run executor (networkless, no PORTABLE_SPEC) in parallel
     timeout_env = os.environ.get("PY_CODE_EXEC_TIMEOUT")
     try:
@@ -821,7 +878,7 @@ async def _async_main() -> int:
 
     # After supervisor bootstrap, strip any privileged or path-bearing runtime state
     # before the untrusted executor starts.
-    exec_globals = _build_executor_runtime_globals(runtime_globals)
+    exec_globals = build_executor_runtime_globals(runtime_globals)
 
     logger.log("[entry] starting run_py_code()", level="INFO")
     res = await run_py_code(

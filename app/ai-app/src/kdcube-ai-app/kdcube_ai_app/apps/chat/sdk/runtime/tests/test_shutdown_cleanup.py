@@ -109,6 +109,58 @@ def test_docker_argv_grants_network_namespace_capability(tmp_path):
     assert "apparmor=unconfined" not in argv
 
 
+def test_split_executor_argv_is_networkless_and_does_not_mount_supervisor_data(tmp_path):
+    workdir = tmp_path / "work"
+    outdir = tmp_path / "out"
+    workdir.mkdir()
+    outdir.mkdir()
+
+    argv = docker_runtime._build_split_executor_argv(
+        image="py-code-exec:latest",
+        name="exec-test",
+        socket_volume="socket-volume",
+        host_workdir=workdir,
+        host_outdir=outdir,
+        extra_env={
+            "RUNTIME_GLOBALS_JSON": "{}",
+            "SUPERVISOR_AUTH_TOKEN": "secret",
+            "EXECUTION_ID": "exec-1",
+        },
+        timeout_s=60,
+    )
+
+    assert "--network" in argv
+    assert "none" in argv
+    assert "--cap-drop=ALL" in argv
+    assert "--cap-add=SYS_ADMIN" not in argv
+    assert "--read-only" in argv
+    assert "no-new-privileges" in argv
+    assert all("/tmp/kdcube-supervisor/bundles" not in item for item in argv)
+    assert all("KDCUBE_RUNTIME_SECRETS_YAML_B64=" not in item for item in argv)
+
+
+def test_executor_payload_strips_privileged_runtime_globals():
+    from kdcube_ai_app.apps.chat.sdk.runtime.isolated.executor_payload import build_executor_runtime_globals
+
+    payload = build_executor_runtime_globals(
+        {
+            "PORTABLE_SPEC_JSON": "secret-ish spec",
+            "COMM_SPEC": {"x": 1},
+            "TOOL_MODULE_FILES": {"web_tools": "/bundle/tool.py"},
+            "BUNDLE_STORAGE_DIR": "/bundle-storage/demo",
+            "TOOL_ALIAS_MAP": {"web_tools": "dyn_web_tools"},
+            "RESULT_FILENAME": "result.json",
+        }
+    )
+
+    assert "PORTABLE_SPEC_JSON" not in payload
+    assert "COMM_SPEC" not in payload
+    assert "TOOL_MODULE_FILES" not in payload
+    assert "BUNDLE_STORAGE_DIR" not in payload
+    assert payload["TOOL_ALIAS_MAP"] == {"web_tools": "dyn_web_tools"}
+    assert payload["RESULT_FILENAME"] == "result.json"
+
+
 @pytest.mark.asyncio
 async def test_run_py_in_docker_terminates_child_process_when_cancelled(tmp_path, monkeypatch):
     fake_proc = _FakeProc()

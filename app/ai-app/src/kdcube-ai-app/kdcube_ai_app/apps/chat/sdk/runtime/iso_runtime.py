@@ -467,10 +467,14 @@ async def _run_subprocess(entry_path: pathlib.Path, *,
         We're still root here, so we can create namespace and drop privileges."""
         try:
             apply_exec_file_size_limit(env=env, logger=log)
-            # 1. Create isolated network namespace (requires root)
-            libc = ctypes.CDLL("libc.so.6")
-            if libc.unshare(CLONE_NEWNET) != 0:
-                raise OSError(f"unshare(CLONE_NEWNET) failed")
+            network_preisolated = str(env.get("EXEC_NETWORK_PREISOLATED") or "").strip().lower() in {"1", "true", "yes"}
+            if not network_preisolated:
+                # 1. Create isolated network namespace (requires root)
+                libc = ctypes.CDLL("libc.so.6")
+                if libc.unshare(CLONE_NEWNET) != 0:
+                    raise OSError(f"unshare(CLONE_NEWNET) failed")
+            else:
+                log.info("[executor] Network isolation already provided by container runtime")
 
             # 2. Drop to unprivileged user
             # Ensure group-writable files so chat (gid 1000) can update context.json
@@ -2242,6 +2246,16 @@ class _InProcessRuntime:
             docker_memory = _pick_runtime_cfg(exec_runtime_cfg, "memory", "docker_memory")
             if docker_memory not in (None, ""):
                 docker_extra_args.extend(["--memory", str(docker_memory).strip()])
+            container_strategy = str(
+                _pick_runtime_cfg(
+                    exec_runtime_cfg,
+                    "container_strategy",
+                    "docker_container_strategy",
+                    "executor_container_strategy",
+                )
+                or getattr(get_settings().PLATFORM.EXEC.PY, "PY_CODE_EXEC_CONTAINER_STRATEGY", "")
+                or ""
+            ).strip() or None
             docker_extra_args.extend(
                 _as_runtime_arg_list(
                     _pick_runtime_cfg(
@@ -2267,7 +2281,8 @@ class _InProcessRuntime:
                 bundle_root=pathlib.Path(bundle_root).resolve() if bundle_root else None,
                 extra_env=extra_env,  # propagate explicit env (e.g., EXECUTION_MODE)
                 extra_docker_args=docker_extra_args or None,
-                network_mode=network_mode
+                network_mode=network_mode,
+                container_strategy=container_strategy,
             )
 
         # --- LOCAL BRANCH: Prepare file and run subprocess ---
