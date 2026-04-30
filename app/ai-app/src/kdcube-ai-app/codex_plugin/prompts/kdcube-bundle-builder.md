@@ -83,6 +83,7 @@ Base URL (for reference): `https://raw.githubusercontent.com/kdcube/kdcube-ai-ap
 - `https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/app/ai-app/docs/sdk/bundle/build/how-to-write-bundle-README.md`
 - `https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/app/ai-app/docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md`
 - `https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/app/ai-app/docs/sdk/bundle/build/how-to-test-bundle-README.md`
+- `https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/app/ai-app/docs/service/cicd/release-bundle-README.md` — bundle release workflow: two-phase process (repository files first, deployment descriptors second), required per-bundle release files, and agent pipeline structure
 
 Reference bundle `versatile@2026-03-31-13-36` — directories aren't web-fetchable; fetch
 these individually:
@@ -93,6 +94,104 @@ these individually:
   `https://api.github.com/repos/kdcube/kdcube-ai-app/contents/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36`
   then fetch individual files by name (e.g. `skills_descriptor.py`, `tools_descriptor.py`,
   anything under `agents/`, `skills/`, `tools/`).
+
+### Content Release Procedure
+
+A content release is a versioned bundle/content repository release that is independent of the
+platform release. The human supplies the version and target bundles; the agent produces a
+descriptor, waits for approval, then executes and journals each step.
+
+**When this applies:** any time the human asks to release, tag, or publish a bundle repository
+without touching the platform Docker image or PyPI CLI.
+
+**Four files every releasable bundle must have:**
+- `README.md` — explains current runtime behavior, config props, secrets, and operational notes
+- `release.yaml` — carries `bundle.ref` set to the release version and human-readable release notes
+- `config/bundles.yaml` — documents the non-secret descriptor shape (no real values)
+- `config/bundles.secrets.yaml` — documents the bundle-scoped secrets shape; if none exist, keep `secrets: {}`
+
+**Pipeline — always in this order:**
+
+When activated, the agent creates pipeline files under:
+```text
+deployment/cicd/kdcube/cicd/content-release-history/<dd.mm.yyyy>/
+```
+
+Files are created in this order:
+- `descriptor-<dd.mm.yyyy.hhmm>.yaml`
+- `plan-<dd.mm.yyyy.hhmm>.log`
+- `execute-<dd.mm.yyyy.hhmm>.yaml`
+
+Descriptor shape:
+
+```yaml
+context: "Short human-readable context for this content release"
+keywords: [content, release, bundles]
+timestamp: "dd.mm.yyyy.hhmm"
+version: "YYYY.M.D.hhmm"
+
+repositories:
+  - name: <repo-alias>
+    repo: git@github.com:<org>/<repo>.git
+    https_repo: https://github.com/<org>/<repo>
+    locally: /path/to/local/checkout
+    bundles_root: path/to/bundles/root
+    perform: true
+    commit: true
+    tag: true
+    push: true
+    bundles:
+      - id: <bundle-id>@<version>
+        path: path/to/bundle/root/<bundle-id>@<version>
+        perform: true
+        changes:
+          - "Describe release change for this bundle"
+      - id: <other-bundle-id>@<version>
+        path: path/to/bundle/root/<other-bundle-id>@<version>
+        perform: false
+        changes: []
+```
+
+Execution journal shape:
+
+```yaml
+- step: "<step name>"
+  start_time: "<timestamp>"
+  end_time: "<timestamp>"
+  status: success   # success | error | skipped | paused
+  output: "<commit hash, tag, validation result, or other useful output>"
+  error: ""
+```
+
+**Approval flow:**
+1. Agent writes the descriptor.
+2. Agent writes the plan (lists every file that will change).
+3. Human reviews the plan.
+4. Human says `approve` / `go` / `go ahead` — agent does not proceed before this.
+5. Agent executes step by step, writing each outcome to the execution journal.
+6. On failure: agent stops, human decides whether to fix, retry, skip, or pause.
+7. On `stop`/`pause`: agent writes `status: paused` and halts.
+
+**Prepare bundle files — for every bundle with `perform: true`:**
+1. Inspect bundle code and current descriptor usage.
+2. Update `README.md` — runtime behavior, config props, secrets, operational notes.
+3. Update `config/bundles.yaml` — non-secret descriptor shape.
+4. Update `config/bundles.secrets.yaml` — bundle-scoped secrets shape; if none: `secrets: {}`.
+5. Update `release.yaml` — set `bundle.ref` to the release version, add human-readable bullets.
+
+**Validate before commit:**
+- `git status` — confirm no unrelated or generated files are staged
+- Validate YAML files if a parser is available
+- `python3 -m py_compile` on changed Python files
+
+**Agent rules:**
+- Use the human-provided version string exactly — never infer it from the date.
+- Read existing `release.yaml` before writing; do not overwrite release notes blindly.
+- Stage only the release files for in-scope bundles; never stage unrelated or generated files.
+- If `commit: false` / `tag: false` / `push: false`, skip that step entirely.
+- If a git tag already exists at the requested version, stop and ask what to do.
+- Never put real secrets into `bundles.yaml` or `bundles.secrets.yaml` config examples.
+- Keep customer-specific repository details inside customer repositories; keep this procedure generic.
 
 ### Tier 2 — read only on demand
 
