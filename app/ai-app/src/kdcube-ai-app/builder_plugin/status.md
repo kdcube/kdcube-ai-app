@@ -111,6 +111,14 @@ Early work happened on `feat/claude-kdcube-cli-plugin` (now deleted); later work
   `docs/service/cicd/design/cli--as-control-plane-README.md`,
   `docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md`
 
+**2026-04-30** — Content release procedure + release-bundle doc in Tier 1
+- Added `release-bundle-README.md` raw URL to Tier 1 in both `bundle-builder/SKILL.md`
+  (builder_plugin) and `kdcube-bundle-builder.md` (codex_plugin)
+- Added **Content Release Procedure** section to Tier 1 in both files: covers when a content
+  release applies, four required bundle files, descriptor/pipeline/execution journal YAML shapes,
+  approval flow, prepare-bundle steps, validate step, and agent rules — all with generic
+  placeholders (no customer-specific URLs or paths)
+
 **2026-04-24** — `13a764e8` — Agent facets + Tier 1 doc reorder + URL path fix
 - Added **Agent task facets** section to both `bundle-builder/SKILL.md` and `kdcube-dev/SKILL.md`:
   lists creator/integrator/configurator/deployer/local-QA/integration-QA/document-reader as
