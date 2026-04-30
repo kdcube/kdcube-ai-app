@@ -261,7 +261,7 @@ ECS FARGATE EXEC TASK
 │  ├── run_py_code()     ← main.py loader in executor subprocess
 │  │     executor subprocess:
 │  │       setuid(1001)                  (unprivileged)
-│  │       bwrap/no-network sandbox      (network + filesystem isolated)
+│  │       no-network UID-dropped child  (generated-code executor)
 │  │       executes main.py
 │  │       main.py loads and executes user_code.py
 │  │       tool calls → Unix socket → supervisor
@@ -498,7 +498,6 @@ Injected via `containerOverrides.environment` at `run_task` call time:
 | `EXEC_RUNTIME_CONFIG` | bundle/runtime exec routing config (for example `mode=fargate`) |
 | `CONTRACT` | output contract spec |
 | `COMM_SPEC` | communicator/SSE spec |
-| `SANDBOX_FS` | filesystem sandbox settings |
 | `SKILLS_DESCRIPTOR` | custom skills config |
 
 ---

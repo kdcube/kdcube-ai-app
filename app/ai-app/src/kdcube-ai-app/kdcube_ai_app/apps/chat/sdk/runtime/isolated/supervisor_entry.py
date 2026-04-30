@@ -177,10 +177,12 @@ class PrivilegedSupervisor:
             allowed_uids = self._allowed_peer_uids()
             if uid not in allowed_uids:
                 self.log.log(
-                    f"[supervisor] Non-standard peer UID {uid} for authenticated request "
-                    f"(allowed_hint={sorted(allowed_uids)})",
+                    f"[supervisor] Rejected connection from UID {uid} "
+                    f"(allowed={sorted(allowed_uids)})",
                     level="WARNING",
                 )
+                conn.sendall(json.dumps({"ok": False, "error": "Wrong UID"}).encode("utf-8"))
+                return
             result = self.execute_privileged_operation(request)
 
             # Send complete response
@@ -317,10 +319,13 @@ class PrivilegedSupervisor:
             allowed_uids = self._allowed_peer_uids()
             if uid not in allowed_uids:
                 self.log.log(
-                    f"[supervisor] Non-standard peer UID {uid} for authenticated request "
-                    f"(allowed_hint={sorted(allowed_uids)})",
+                    f"[supervisor] Rejected connection from UID {uid} "
+                    f"(allowed={sorted(allowed_uids)})",
                     level="WARNING",
                 )
+                writer.write(json.dumps({"ok": False, "error": "Wrong UID"}).encode("utf-8"))
+                await writer.drain()
+                return
 
             # ✅ Await the async method
             result = await self.execute_privileged_operation(request)

@@ -133,7 +133,7 @@ async def run_py_code(
 
     It mirrors the behavior of _InProcessRuntime.execute_py_code, but:
       - assumes we are already in an isolated Docker container
-      - optionally disables bwrap (if SANDBOX_FS is 0 in globals)
+      - runs generated code as a no-network UID-dropped child process
       - writes runtime.out.log / runtime.err.log into OUTPUT_DIR
     """
     log = logger or AgentLogger("py_code_exec")
@@ -187,7 +187,6 @@ async def run_py_code(
         "EXEC_MAX_FILE_BYTES",
         "EXEC_MAX_WORKSPACE_BYTES",
         "EXEC_WORKSPACE_MONITOR_INTERVAL_S",
-        "EXEC_REQUIRE_FS_SANDBOX",
         "PLAYWRIGHT_BROWSERS_PATH",
         "SSL_CERT_DIR",
         "SSL_CERT_FILE",
@@ -232,7 +231,6 @@ async def run_py_code(
     child_env["HOME"] = str(output_dir)
     child_env["LOG_DIR"] = str(output_dir / "logs")
     child_env["LOG_FILE_PREFIX"] = "executor"
-    child_env.setdefault("EXEC_REQUIRE_FS_SANDBOX", "1")
     # Matplotlib/fontconfig caches must be writable in iso runtime
     mpl_cache_dir = output_dir / ".mplconfig"
     font_cache_dir = output_dir / ".fontconfig"

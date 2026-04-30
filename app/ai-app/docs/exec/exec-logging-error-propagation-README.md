@@ -81,8 +81,7 @@ Current source split:
 - **Infra errors** are detected by scanning `infra.log` for:
   - `ERROR` lines (case-insensitive)
   - `Traceback`
-  - launcher/runtime lines that do not use Python logging format, for example
-    `bwrap:` or `bubblewrap:`
+  - Python-style runtime error lines such as `RuntimeError:` / `OSError:`
 
 Diagnostics always slice logs by the most recent execution banner:
 `===== EXECUTION <exec_id> START ... =====`, so per-run log extraction is reliable.
@@ -209,7 +208,7 @@ Typical shape:
 | Field | What it is | Where it is produced |
 | --- | --- | --- |
 | `run_res.error` | explicit backend error string, if the backend sets one | local and Docker timeout paths set `error=\"timeout\"`; Fargate copies `ExternalExecResult.error` |
-| `run_res.error_summary` | one-line backend summary extracted from diagnostic text | Docker starts from `docker.err.log` and, on failure, also merges child `runtime.err.log` and `user.log`; local and Fargate extract it from `runtime.err.log` by scanning for the first meaningful error line, including Python errors/exceptions and launcher lines such as `bwrap:` |
+| `run_res.error_summary` | one-line backend summary extracted from diagnostic text | Docker starts from `docker.err.log` and, on failure, also merges child `runtime.err.log` and `user.log`; local and Fargate extract it from `runtime.err.log` by scanning for the first meaningful error line, including Python errors/exceptions |
 | `run_res.stderr_tail` | tail slice of backend diagnostic text | Docker starts from `docker.err.log` and, on failure, appends child `runtime.err.log` / `user.log`; local and Fargate take it from `runtime.err.log` |
 
 Mode-by-mode source map:
@@ -217,7 +216,7 @@ Mode-by-mode source map:
 | Runtime mode | `run_res.error` | `run_res.error_summary` | `run_res.stderr_tail` |
 | --- | --- | --- | --- |
 | local / in-process isolated executor | explicit timeout/error string only when backend sets one | derived from captured child diagnostics in `out/logs/runtime.err.log` | tail of captured child diagnostics in `out/logs/runtime.err.log` |
-| Docker | explicit timeout/error string only when backend sets one | derived from `docker.err.log`; if the container started and child logs exist, child runtime/user logs are merged into the summary source; launcher failures such as `bwrap:` are also recognized | tail of `docker.err.log` plus child `runtime.err.log` / `user.log` on failure |
+| Docker | explicit timeout/error string only when backend sets one | derived from `docker.err.log`; if the container started and child logs exist, child runtime/user logs are merged into the summary source | tail of `docker.err.log` plus child `runtime.err.log` / `user.log` on failure |
 | Fargate | copied from `ExternalExecResult.error` | derived from `out/logs/runtime.err.log`, with fallback to `run_res.error` | tail of `out/logs/runtime.err.log` |
 
 Supervisor socket failures are reported through the same path. For example,

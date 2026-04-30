@@ -492,54 +492,17 @@ async def _run_subprocess(entry_path: pathlib.Path, *,
     workspace_roots = _workspace_roots(env=env, cwd=cwd, outdir=outdir)
     workspace_baseline = _snapshot_workspace_file_sizes(workspace_roots)
     resource_violation: Optional[Dict[str, Any]] = None
-    require_fs_sandbox = str(env.get("EXEC_REQUIRE_FS_SANDBOX") or "").strip().lower() in {"1", "true", "yes"}
 
     if not allow_network:
-        try:
-            from kdcube_ai_app.apps.chat.sdk.runtime import bubblewrap
-        except Exception:
-            bubblewrap = None  # type: ignore[assignment]
-
-        if bubblewrap is not None and bubblewrap.bwrap_available():
-            log.info("[_run_subprocess] Starting filesystem-isolated executor (bubblewrap, no network)")
-            sandbox_workdir = pathlib.Path(env.get("WORKDIR") or cwd)
-            argv = bubblewrap.mk_bwrap_argv(
-                host_cwd=sandbox_workdir,
-                entry_path=entry_path,
-                env=env,
-                net_enabled=False,
-                host_outdir=outdir,
-                uid=EXECUTOR_UID,
-                gid=EXECUTOR_GID,
-            )
-            proc = await asyncio.create_subprocess_exec(
-                *argv,
-                cwd=str(cwd),
-                env=env,
-                preexec_fn=limit_preexec_fn if max_file_bytes is not None else None,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-        elif require_fs_sandbox:
-            summary = "filesystem sandbox is required but bubblewrap is not available"
-            log.error("[_run_subprocess] %s", summary)
-            return {
-                "ok": False,
-                "returncode": 126,
-                "error": "filesystem_sandbox_unavailable",
-                "stderr_tail": summary,
-                "error_summary": summary,
-            }
-        else:
-            log.info(f"[_run_subprocess] Starting isolated executor (root->uid 1001, no network)")
-            proc = await asyncio.create_subprocess_exec(
-                sys.executable, "-u", str(entry_path),
-                cwd=str(cwd),
-                env=env,
-                preexec_fn=preexec_fn,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
+        log.info(f"[_run_subprocess] Starting isolated executor (root->uid 1001, no network)")
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable, "-u", str(entry_path),
+            cwd=str(cwd),
+            env=env,
+            preexec_fn=preexec_fn,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
     else:
         # Original behavior
         log.info(f"[_run_subprocess] Using plain subprocess for {entry_path}")
@@ -665,8 +628,6 @@ async def _run_subprocess(entry_path: pathlib.Path, *,
                         if (
                                 re.search(r"\b\w+Error\b", line)
                                 or "Exception" in line
-                                or line.startswith("bwrap:")
-                                or line.startswith("bubblewrap:")
                         ):
                             error_summary = line.strip()
                             break

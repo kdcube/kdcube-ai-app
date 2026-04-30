@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from kdcube_ai_app.apps.chat.sdk.runtime.external import docker as docker_runtime
-from kdcube_ai_app.apps.chat.sdk.runtime import bubblewrap, iso_runtime
+from kdcube_ai_app.apps.chat.sdk.runtime import iso_runtime
 
 
 def test_exec_limit_bytes_supports_units_and_disable():
@@ -88,7 +88,7 @@ class _FakeCompletedProc:
         return self._stdout, self._stderr
 
 
-def test_docker_argv_grants_bwrap_namespace_capabilities(tmp_path):
+def test_docker_argv_grants_network_namespace_capability(tmp_path):
     workdir = tmp_path / "work"
     outdir = tmp_path / "out"
     workdir.mkdir()
@@ -102,10 +102,11 @@ def test_docker_argv_grants_bwrap_namespace_capabilities(tmp_path):
     )
 
     assert "--cap-add=SYS_ADMIN" in argv
-    assert "--cap-add=NET_ADMIN" in argv
-    assert "--security-opt" in argv
-    assert "seccomp=unconfined" in argv
-    assert "apparmor=unconfined" in argv
+    assert "--network" in argv
+    assert "host" in argv
+    assert "--cap-add=NET_ADMIN" not in argv
+    assert "seccomp=unconfined" not in argv
+    assert "apparmor=unconfined" not in argv
 
 
 @pytest.mark.asyncio
@@ -435,51 +436,6 @@ async def test_iso_runtime_terminates_child_process_when_cancelled(tmp_path, mon
 
     assert fake_proc.terminate_calls == 1
     assert fake_proc.kill_calls == 0
-
-
-@pytest.mark.asyncio
-async def test_iso_runtime_bubblewrap_mounts_declared_workdir_not_output_dir(tmp_path, monkeypatch):
-    workdir = tmp_path / "work"
-    outdir = tmp_path / "out"
-    workdir.mkdir()
-    outdir.mkdir()
-    entry_path = workdir / "main.py"
-    entry_path.write_text("print('ok')\n", encoding="utf-8")
-
-    captured = {}
-
-    def _fake_mk_bwrap_argv(**kwargs):
-        captured.update(kwargs)
-        return ["python", "-c", "print('ok')"]
-
-    async def _fake_create_subprocess_exec(*_args, **_kwargs):
-        return _FakeCompletedProc(returncode=0, stdout=b"ok\n")
-
-    monkeypatch.setattr(bubblewrap, "bwrap_available", lambda: True)
-    monkeypatch.setattr(bubblewrap, "mk_bwrap_argv", _fake_mk_bwrap_argv)
-    monkeypatch.setattr(iso_runtime.asyncio, "create_subprocess_exec", _fake_create_subprocess_exec)
-
-    result = await iso_runtime._run_subprocess(
-        entry_path=entry_path,
-        cwd=outdir,
-        env={
-            "WORKDIR": str(workdir),
-            "OUTPUT_DIR": str(outdir),
-            "EXECUTION_ID": "exec-bwrap-workdir",
-            "EXEC_REQUIRE_FS_SANDBOX": "1",
-        },
-        timeout_s=60,
-        outdir=outdir,
-        allow_network=False,
-        exec_id="exec-bwrap-workdir",
-    )
-
-    assert result["ok"] is True
-    assert captured["host_cwd"] == workdir
-    assert captured["host_outdir"] == outdir
-    assert captured["entry_path"] == entry_path
-    assert captured["uid"] == 1001
-    assert captured["gid"] == 1000
 
 
 @pytest.mark.asyncio

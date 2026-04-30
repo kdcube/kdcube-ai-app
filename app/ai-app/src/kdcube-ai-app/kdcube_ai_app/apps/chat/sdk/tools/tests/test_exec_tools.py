@@ -58,32 +58,32 @@ def test_build_exec_error_payload_uses_stderr_tail_when_summary_missing():
     assert "Missing output files" in error["message"]
 
 
-def test_build_exec_error_payload_preserves_bwrap_runtime_failure():
+def test_build_exec_error_payload_preserves_runtime_failure():
     error = _build_exec_error_payload(
         missing=["turn_1/files/out.txt"],
         errors=[],
         run_res={
             "ok": False,
             "returncode": 1,
-            "stderr_tail": "bwrap: Specifying --uid requires --unshare-user or --userns",
+            "stderr_tail": "RuntimeError: Stub connection failed: [Errno 104] Connection reset by peer",
         },
-        infra_text="bwrap: Specifying --uid requires --unshare-user or --userns",
+        infra_text="RuntimeError: Stub connection failed: [Errno 104] Connection reset by peer",
     )
 
     assert error is not None
-    assert "bwrap: Specifying --uid requires --unshare-user or --userns" in error["message"]
-    assert "bwrap: Specifying --uid requires --unshare-user or --userns" in error["details"]["stderr_tail"]
+    assert "RuntimeError: Stub connection failed" in error["message"]
+    assert "RuntimeError: Stub connection failed" in error["details"]["stderr_tail"]
     assert error["details"]["runtime_code"] == "execution_failed"
-    assert error["details"]["runtime_message"] == "bwrap: Specifying --uid requires --unshare-user or --userns"
+    assert error["details"]["runtime_message"] == "RuntimeError: Stub connection failed: [Errno 104] Connection reset by peer"
 
 
 def test_extract_error_lines_includes_infra_launcher_failures():
     text = "\n".join([
         "2026-04-29 INFO starting",
-        "bwrap: Specifying --uid requires --unshare-user or --userns",
+        "RuntimeError: Stub connection failed: [Errno 104] Connection reset by peer",
     ])
 
-    assert "bwrap: Specifying --uid requires --unshare-user or --userns" in extract_error_lines(text)
+    assert "RuntimeError: Stub connection failed" in extract_error_lines(text)
 
 
 def test_build_exec_error_payload_uses_timeout_summary_from_backend_result():
