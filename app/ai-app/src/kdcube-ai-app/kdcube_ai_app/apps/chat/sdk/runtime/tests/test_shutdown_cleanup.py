@@ -171,6 +171,8 @@ def test_split_executor_argv_is_networkless_and_does_not_mount_supervisor_data(t
     assert all("/workspace/runtime-out" not in item for item in argv)
     assert all("/workspace/logs/supervisor" not in item for item in argv)
     assert any(item == "PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright" for item in argv)
+    assert any(item == "EXEC_BLOCK_AF_ALG=1" for item in argv)
+    assert any(item == "EXEC_REQUIRE_AF_ALG_BLOCK=1" for item in argv)
     assert any(item == "KDCUBE_ARTIFACT_OUTPUT_DIR=/workspace/out" for item in argv)
     assert all("/tmp/kdcube-supervisor/bundles" not in item for item in argv)
     assert all("KDCUBE_RUNTIME_SECRETS_YAML_B64=" not in item for item in argv)

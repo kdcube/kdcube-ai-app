@@ -587,6 +587,8 @@ Do not print file contents.
 Expected in split Docker:
 
 - `uid=1001`, `gid=1000`, and groups do not include `0(root)`.
+- `socket(AF_ALG, ...)` fails with `EAFNOSUPPORT`/`Address family not supported by protocol`.
+- `find / -xdev \( -perm -4000 -o -perm -2000 \) -type f` should return no setuid/setgid helper binaries in the rebuilt executor image.
 - `/workspace/logs` contains only `executor/`.
 - Supervisor logs, `infra.log`, `docker.out.log`, and `docker.err.log` are not
   visible from the executor.

@@ -628,6 +628,8 @@ def _build_split_executor_argv(
         "-e", "SUPERVISOR_SOCKET_PATH=/supervisor-socket/supervisor.sock",
         "-e", "PYTHONDONTWRITEBYTECODE=1",
         "-e", f"PY_CODE_EXEC_TIMEOUT={timeout_s}",
+        "-e", "EXEC_BLOCK_AF_ALG=1",
+        "-e", "EXEC_REQUIRE_AF_ALG_BLOCK=1",
     ]
     if host_logdir is not None:
         argv += ["-v", f"{_path(host_logdir)}:{_EXECUTOR_LOG_CONTAINER}:rw"]
@@ -729,6 +731,8 @@ async def _run_py_in_split_docker_prepared(
         "EXEC_MAX_FILE_BYTES",
         "EXEC_MAX_WORKSPACE_BYTES",
         "EXEC_WORKSPACE_MONITOR_INTERVAL_S",
+        "EXEC_BLOCK_AF_ALG",
+        "EXEC_REQUIRE_AF_ALG_BLOCK",
     }
     executor_env = {
         key: str(base_env[key])
@@ -742,6 +746,8 @@ async def _run_py_in_split_docker_prepared(
             "SUPERVISOR_AUTH_TOKEN": supervisor_auth_token,
             "SUPERVISOR_SOCKET_PATH": "/supervisor-socket/supervisor.sock",
             "SUPERVISOR_CONNECT_TIMEOUT_S": "10",
+            "EXEC_BLOCK_AF_ALG": executor_env.get("EXEC_BLOCK_AF_ALG") or "1",
+            "EXEC_REQUIRE_AF_ALG_BLOCK": executor_env.get("EXEC_REQUIRE_AF_ALG_BLOCK") or "1",
             "LOG_DIR": _EXECUTOR_LOG_CONTAINER,
             "EXECUTOR_LOG_DIR": _EXECUTOR_LOG_CONTAINER,
             "LOG_FILE_PREFIX": "executor",

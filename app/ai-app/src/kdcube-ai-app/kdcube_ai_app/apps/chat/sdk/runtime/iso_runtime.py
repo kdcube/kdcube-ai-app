@@ -12,6 +12,9 @@ import asyncio
 import time
 import pathlib
 import tokenize
+import errno
+import platform
+import ctypes
 from typing import Dict, Any, List, Tuple, Optional, Literal, Mapping
 
 from kdcube_ai_app.apps.chat.sdk.config import get_settings
@@ -22,6 +25,13 @@ from kdcube_ai_app.infra.service_hub.inventory import AgentLogger
 _DEFAULT_EXEC_MAX_FILE_BYTES = 100 * 1024 * 1024
 _DEFAULT_EXEC_MAX_WORKSPACE_BYTES = 250 * 1024 * 1024
 _DEFAULT_EXEC_WORKSPACE_MONITOR_INTERVAL_S = 0.5
+_AF_ALG = 38
+_SOCKET_SYSCALL_BY_MACHINE = {
+    "x86_64": 41,
+    "amd64": 41,
+    "aarch64": 198,
+    "arm64": 198,
+}
 
 
 def _drop_executor_identity(*, executor_uid: int, executor_gid: int, logger=None) -> None:
@@ -37,6 +47,86 @@ def _drop_executor_identity(*, executor_uid: int, executor_gid: int, logger=None
     os.setuid(executor_uid)
     if logger is not None:
         logger.info("[executor] Dropped to UID %s GID %s groups=[%s]", executor_uid, executor_gid, executor_gid)
+
+
+def _exec_bool_env(env: Optional[Mapping[str, str]], key: str, *, default: bool) -> bool:
+    raw = (env or {}).get(key)
+    if raw is None or raw == "":
+        return default
+    return str(raw).strip().lower() not in {"0", "false", "off", "none", "no", "disabled"}
+
+
+def _install_af_alg_seccomp_filter(*, logger=None) -> bool:
+    """
+    Add a narrow child-process seccomp filter that rejects socket(AF_ALG, ...).
+
+    This is intentionally applied inside the executor child before user code
+    starts, rather than as a Docker-only profile. It therefore survives
+    Docker-in-Docker / remote daemon path translation differences and is
+    inherited by subprocesses spawned by generated code.
+    """
+    if sys.platform != "linux":
+        if logger is not None:
+            logger.warning("[executor] AF_ALG seccomp filter is only available on Linux")
+        return False
+
+    machine = platform.machine().lower()
+    socket_syscall = _SOCKET_SYSCALL_BY_MACHINE.get(machine)
+    if socket_syscall is None:
+        if logger is not None:
+            logger.warning("[executor] AF_ALG seccomp filter unsupported on architecture %s", machine)
+        return False
+
+    class SockFilter(ctypes.Structure):
+        _fields_ = [
+            ("code", ctypes.c_ushort),
+            ("jt", ctypes.c_ubyte),
+            ("jf", ctypes.c_ubyte),
+            ("k", ctypes.c_uint32),
+        ]
+
+    class SockFprog(ctypes.Structure):
+        _fields_ = [
+            ("len", ctypes.c_ushort),
+            ("filter", ctypes.POINTER(SockFilter)),
+        ]
+
+    BPF_LD = 0x00
+    BPF_W = 0x00
+    BPF_ABS = 0x20
+    BPF_JMP = 0x05
+    BPF_JEQ = 0x10
+    BPF_K = 0x00
+    BPF_RET = 0x06
+
+    SECCOMP_RET_ALLOW = 0x7FFF0000
+    SECCOMP_RET_ERRNO = 0x00050000
+    PR_SET_NO_NEW_PRIVS = 38
+    PR_SET_SECCOMP = 22
+    SECCOMP_MODE_FILTER = 2
+
+    # struct seccomp_data: nr @ 0, args[0] low word @ 16.
+    instructions = (SockFilter * 6)(
+        SockFilter(BPF_LD | BPF_W | BPF_ABS, 0, 0, 0),
+        SockFilter(BPF_JMP | BPF_JEQ | BPF_K, 0, 3, int(socket_syscall)),
+        SockFilter(BPF_LD | BPF_W | BPF_ABS, 0, 0, 16),
+        SockFilter(BPF_JMP | BPF_JEQ | BPF_K, 0, 1, _AF_ALG),
+        SockFilter(BPF_RET | BPF_K, 0, 0, SECCOMP_RET_ERRNO | errno.EAFNOSUPPORT),
+        SockFilter(BPF_RET | BPF_K, 0, 0, SECCOMP_RET_ALLOW),
+    )
+    program = SockFprog(len=len(instructions), filter=instructions)
+
+    libc = ctypes.CDLL("libc.so.6", use_errno=True)
+    if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
+        err = ctypes.get_errno()
+        raise OSError(err, f"prctl(PR_SET_NO_NEW_PRIVS) failed: {os.strerror(err)}")
+    if libc.prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, ctypes.byref(program)) != 0:
+        err = ctypes.get_errno()
+        raise OSError(err, f"prctl(PR_SET_SECCOMP) failed: {os.strerror(err)}")
+
+    if logger is not None:
+        logger.info("[executor] Installed seccomp deny rule for socket(AF_ALG)")
+    return True
 
 
 def _pick_runtime_cfg(cfg: Dict[str, Any], *keys: str) -> Any:
@@ -490,6 +580,11 @@ async def _run_subprocess(entry_path: pathlib.Path, *,
                     raise OSError(f"unshare(CLONE_NEWNET) failed")
             else:
                 log.info("[executor] Network isolation already provided by container runtime")
+
+            if _exec_bool_env(env, "EXEC_BLOCK_AF_ALG", default=True):
+                if not _install_af_alg_seccomp_filter(logger=log):
+                    if _exec_bool_env(env, "EXEC_REQUIRE_AF_ALG_BLOCK", default=True):
+                        raise OSError("AF_ALG seccomp filter is required but unsupported on this architecture")
 
             # 2. Drop to unprivileged user without keeping root as a supplementary group.
             _drop_executor_identity(executor_uid=EXECUTOR_UID, executor_gid=EXECUTOR_GID, logger=log)
