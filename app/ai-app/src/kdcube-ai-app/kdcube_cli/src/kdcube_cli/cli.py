@@ -1248,6 +1248,10 @@ def ensure_repo(console: Console, repo: str, target: Path) -> None:
         console.print(f"Repo already exists at {target}")
         return
 
+    if _is_platform_source_tree(target):
+        console.print(f"[dim]Using local platform source at:[/dim] {target}")
+        return
+
     normalized_repo = installer_mod.normalize_git_repo_source(repo)
     target.parent.mkdir(parents=True, exist_ok=True)
     console.print(f"Cloning {normalized_repo} to {target}")
@@ -1923,53 +1927,89 @@ def main() -> None:
             _init_repo = Path(os.path.expanduser(args.path)).resolve()
             _init_descriptors_location: Path | None = None
             _init_version_selector = bool(args.upstream or args.latest or str(args.release or "").strip())
+            if sum([bool(args.latest), bool(args.upstream), bool(str(args.release or "").strip())]) > 1:
+                raise SystemExit("Choose only one of --latest, --upstream, or --release.")
             _init_local_source_copy = _init_path_provided and not _init_version_selector
+            # Pre-declare; may be set early in the no-descriptors path below.
+            _init_preset_tenant: str | None = None
+            _init_preset_project: str | None = None
+            _init_resolved: Path | None = None
             if str(args.descriptors_location or "").strip():
                 _init_descriptors_location = Path(
                     os.path.expanduser(args.descriptors_location)
                 ).resolve()
-            elif args.latest or args.upstream or str(args.release or "").strip() or args.build:
+            else:
+                # No --descriptors-location: determine tenant/project, create the
+                # scoped workdir, then clone the platform repo into <workdir>/repo
+                # and use its deployment/ directory as the descriptor source.
+                # Applies to plain init, --latest, --upstream, --release, and --build.
+                if "__" in _init_workdir.name:
+                    # --workdir already encodes tenant__project; use it directly
+                    # and derive the namespace from the directory name.
+                    _init_resolved = _init_workdir.resolve()
+                    _ns = _init_workdir.name.split("__", 1)
+                    _init_preset_tenant = _ns[0]
+                    _init_preset_project = _ns[1]
+                elif args.interactive:
+                    _init_preset_tenant = installer_mod.ask(
+                        console,
+                        "Tenant ID",
+                        default=str(args.tenant or "").strip() or "default",
+                    )
+                    _init_preset_project = installer_mod.ask(
+                        console,
+                        "Project name",
+                        default=str(args.project or "").strip() or "default",
+                    )
+                    _init_resolved = installer_mod.workspace_runtime_dir(
+                        _init_workdir, _init_preset_tenant, _init_preset_project
+                    ).resolve()
+                else:
+                    _init_preset_tenant = str(args.tenant or "").strip() or "default"
+                    _init_preset_project = str(args.project or "").strip() or "default"
+                    _init_resolved = installer_mod.workspace_runtime_dir(
+                        _init_workdir, _init_preset_tenant, _init_preset_project
+                    ).resolve()
+                _init_resolved.mkdir(parents=True, exist_ok=True)
+                _repo_target = _init_repo if _init_path_provided else _init_resolved / DEFAULT_REPO_DIRNAME
                 _init_repo, _init_descriptors_location = _bootstrap_repo_for_defaults(
                     console,
-                    repo=args.path,
-                    repo_path=_init_repo,
+                    repo=args.repo,
+                    repo_path=_repo_target,
                     path_provided=_init_path_provided,
                 )
                 console.print(
                     f"[dim]No --descriptors-location provided. "
                     f"Using repo defaults from:[/dim] {_init_descriptors_location}"
                 )
-            else:
-                raise SystemExit(
-                    "kdcube init requires a descriptor source.\n"
-                    "Pass --descriptors-location <dir>, or use --latest/--upstream/--release/--build "
-                    "to bootstrap from the platform repo."
-                )
+                if not _init_version_selector:
+                    # No explicit version selector: default to latest release.
+                    args.latest = True
 
             # For --interactive: prompt tenant/project BEFORE resolving/creating the workdir
             # so the directory is created with the correct namespace from the start.
-            _init_preset_tenant: str | None = None
-            _init_preset_project: str | None = None
-            if args.interactive:
+            # Skipped when tenant/project were already collected in the no-descriptors path above.
+            if args.interactive and _init_preset_tenant is None:
                 _src_assembly = installer_mod.load_release_descriptor_soft(
                     _init_descriptors_location / "assembly.yaml"
                 ) or {}
                 _t_default, _p_default = installer_mod.descriptor_context_from_assembly(_src_assembly)
                 _init_preset_tenant = installer_mod.ask(
-                    console, "Tenant ID", default=_t_default or "demo-tenant"
+                    console, "Tenant ID", default=_t_default or "default"
                 )
                 _init_preset_project = installer_mod.ask(
-                    console, "Project name", default=_p_default or "demo-project"
+                    console, "Project name", default=_p_default or "default"
                 )
 
-            if _init_preset_tenant and _init_preset_project:
-                _init_resolved = installer_mod.workspace_runtime_dir(
-                    _init_workdir, _init_preset_tenant, _init_preset_project
-                ).resolve()
-            else:
-                _init_resolved = _resolve_cli_workdir(
-                    _init_workdir, descriptors_location=_init_descriptors_location
-                )
+            if _init_resolved is None:
+                if _init_preset_tenant and _init_preset_project:
+                    _init_resolved = installer_mod.workspace_runtime_dir(
+                        _init_workdir, _init_preset_tenant, _init_preset_project
+                    ).resolve()
+                else:
+                    _init_resolved = _resolve_cli_workdir(
+                        _init_workdir, descriptors_location=_init_descriptors_location
+                    )
 
             if str(args.descriptors_location or "").strip():
                 _init_repo = _resolve_cli_repo_path(
@@ -2025,6 +2065,12 @@ def main() -> None:
                     path_provided=_init_path_provided,
                     assembly=_init_assembly,
                     fallback_repo=args.repo,
+                )
+
+            if _init_version_selector and not _is_git_repo(_init_repo):
+                raise SystemExit(
+                    f"Cannot use --upstream/--latest/--release with a local source tree at {_init_repo} (no .git).\n"
+                    f"Remove {_init_repo} and re-run, or use --path to point to a git repo."
                 )
 
             _init_release_ref: str | None = None
