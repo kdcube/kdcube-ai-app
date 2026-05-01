@@ -209,7 +209,9 @@ Docker ISO runtime supports two strategies:
   shared supervisor socket, a minimal safe env, and stripped runtime globals.
   The executor container runs with `--network none`, `--read-only`,
   `--cap-drop=ALL`, a small capability add-back only for ownership/UID drop,
-  and `no-new-privileges`.
+  and `no-new-privileges`. The generated-code child also installs an inherited
+  seccomp deny rule for `socket(AF_ALG, ...)`, and the executor image removes
+  setuid/setgid bits from base-image helper binaries.
 
 Configure platform default:
 

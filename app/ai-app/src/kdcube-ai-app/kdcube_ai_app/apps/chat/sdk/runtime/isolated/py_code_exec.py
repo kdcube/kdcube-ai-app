@@ -192,6 +192,8 @@ async def run_py_code(
         "EXEC_MAX_FILE_BYTES",
         "EXEC_MAX_WORKSPACE_BYTES",
         "EXEC_WORKSPACE_MONITOR_INTERVAL_S",
+        "EXEC_BLOCK_AF_ALG",
+        "EXEC_REQUIRE_AF_ALG_BLOCK",
         "PLAYWRIGHT_BROWSERS_PATH",
         "SSL_CERT_DIR",
         "SSL_CERT_FILE",

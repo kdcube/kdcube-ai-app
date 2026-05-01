@@ -296,6 +296,8 @@ entrypoint flow. The split filesystem tree is documented in
 │    and supervisor socket mounts                                        │
 │  • split executor uses --network none, --cap-drop=ALL,                 │
 │    no-new-privileges, and narrow UID/ownership capability add-backs    │
+│  • generated-code child denies socket(AF_ALG) via inherited seccomp    │
+│    filter; executor image removes setuid/setgid helper bits            │
 │                                                                         │
 │  Layer 2: Network Isolation                                            │
 │  • Supervisor keeps configured network path for approved tools         │

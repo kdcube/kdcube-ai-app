@@ -26,6 +26,10 @@ RUN python -m playwright install --with-deps chromium && \
 RUN groupadd --gid 1001 executor && \
     useradd --uid 1001 --gid 1001 --no-create-home executor
 
+# Generated code never needs setuid/setgid helpers. Remove these bits from the
+# executor image so kernel/page-cache bugs have no obvious privilege target.
+RUN find / -xdev \( -perm -4000 -o -perm -2000 \) -type f -exec chmod ug-s {} + || true
+
 # --- Environment variables ---
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
