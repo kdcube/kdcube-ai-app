@@ -224,9 +224,58 @@ Repo field contract:
   backward compatibility, but new descriptors should use one of the cloneable
   forms above
 
-### 2.3a Descriptor folder fast path
+### 2.3a Plain init (no descriptor source required)
 
-The CLI now supports a descriptor-folder driven install path:
+`kdcube init` can be run with no additional flags. The CLI clones the platform
+repo directly into the scoped runtime directory and uses its bundled
+`app/ai-app/deployment/` as the descriptor source:
+
+```bash
+kdcube init
+```
+
+This is equivalent to `kdcube init --latest`. The runtime is created under:
+
+```text
+~/.kdcube/kdcube-runtime/default__default/repo
+```
+
+Pass `--tenant` / `--project` (or `-i` for interactive prompts) to use a
+non-default namespace. Interactive prompts happen **before** cloning so the
+directory is created with the correct namespace from the start:
+
+```bash
+kdcube init -i
+kdcube init --tenant acme --project prod
+```
+
+`--workdir` sets the base directory. If the value already contains `__`
+(i.e. it is itself a namespaced runtime path), it is used directly without
+appending a tenant/project subdirectory:
+
+```bash
+# base dir → creates ~/.kdcube/kdcube-runtime/default__default/
+kdcube init --workdir ~/.kdcube/kdcube-runtime
+
+# namespaced dir → used as-is
+kdcube init --workdir ~/.kdcube/kdcube-runtime/acme__prod
+```
+
+All version selectors work the same way without `--descriptors-location`:
+
+```bash
+kdcube init --latest
+kdcube init --upstream
+kdcube init --release 2026.4.30.317
+kdcube init --build
+```
+
+`--latest`, `--upstream`, and `--release` are mutually exclusive — combining
+any two raises an error.
+
+### 2.3b Descriptor folder fast path
+
+The CLI also supports a descriptor-folder driven install path:
 
 ```bash
 kdcube init \
@@ -306,10 +355,12 @@ kdcube init \
   --release 2026.4.11.012
 ```
 
-Choose exactly one source selector:
+Choose at most one source selector (`--latest`, `--upstream`, `--release` are
+mutually exclusive — combining any two raises an error):
 
 - `--upstream` for the latest upstream repo state
-- `--latest` for the latest released platform ref
+- `--latest` for the latest released platform ref (also the default when no
+  `--descriptors-location` is provided and no selector is specified)
 - `--release <ref>` for a specific released ref
 - explicit `--path <repo>` without the selectors above for dirty local source
   staging
@@ -602,7 +653,15 @@ Inspect a specific workdir deployment:
 kdcube --info --workdir ~/.kdcube/kdcube-runtime/acme__prod
 ```
 
-Initialize a workdir without starting Docker:
+Initialize a workdir without starting Docker (clones platform repo automatically):
+
+```bash
+kdcube init
+kdcube init --latest
+kdcube init --tenant acme --project prod --latest
+```
+
+Initialize from a prepared descriptor folder:
 
 ```bash
 kdcube init \

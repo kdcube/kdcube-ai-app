@@ -116,7 +116,7 @@ def is_default_tenant_project(value: Optional[str]) -> bool:
     if value is None:
         return True
     stripped = value.strip().strip("'\"").lower()
-    return stripped in {"default", "demo-tenant", "demo-project"}
+    return stripped == "default"
 
 
 def safe_workspace_name(value: Optional[object], *, default: str) -> str:
@@ -2156,8 +2156,8 @@ def gather_configuration(
 
     descriptor_tenant = _get_nested(assembly_data, "context", "tenant")
     descriptor_project = _get_nested(assembly_data, "context", "project")
-    tenant_default = str(descriptor_tenant) if descriptor_tenant else existing_tenant or "demo-tenant"
-    project_default = str(descriptor_project) if descriptor_project else existing_project or "demo-project"
+    tenant_default = str(descriptor_tenant) if descriptor_tenant else existing_tenant or "default"
+    project_default = str(descriptor_project) if descriptor_project else existing_project or "default"
     preset_tenant = os.getenv("KDCUBE_PRESET_TENANT", "").strip()
     preset_project = os.getenv("KDCUBE_PRESET_PROJECT", "").strip()
     if preset_tenant and preset_project and not force_prompt:
@@ -2170,9 +2170,9 @@ def gather_configuration(
         tenant = ask(console, "Tenant ID", default=tenant_default)
         project = ask(console, "Project name", default=project_default)
     if is_placeholder(tenant):
-        tenant = "demo-tenant"
+        tenant = "default"
     if is_placeholder(project):
-        project = "demo-project"
+        project = "default"
     _set_nested(assembly_data, ["context", "tenant"], tenant)
     _set_nested(assembly_data, ["context", "project"], project)
     for env in (env_ingress, env_proc, env_metrics):
