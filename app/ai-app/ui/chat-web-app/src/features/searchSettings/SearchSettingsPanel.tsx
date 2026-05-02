@@ -670,13 +670,25 @@ const AdvancedRagSection = () => {
 // Toggles the bundle-developer Configuration Assistant mode. When on, the
 // agent is primed (via persona prompt) to use code_graph.* tools, and the
 // inspect drawer slides in from the right whenever a code_graph.* call lands.
+//
+// Configuration Assistant *requires* the code-graph tool plugin to be active
+// (otherwise the agent's tool calls return GRAPH_UNAVAILABLE and no artifacts
+// emit). Turning the section on therefore also flips Code Core on; turning
+// off leaves Code Core in whatever state the user had it in.
 const ConfigAssistantSection = () => {
     const dispatch = useAppDispatch();
     const mode = useAppSelector(selectConfigAssistantMode);
     const enabled = mode === "config_assistant";
 
     const onToggle = useCallback(
-        (v: boolean) => dispatch(setConfigAssistantMode(v ? "config_assistant" : null)),
+        (v: boolean) => {
+            dispatch(setConfigAssistantMode(v ? "config_assistant" : null));
+            if (v) {
+                // Imply Code Core on — without it the agent's code_graph.*
+                // calls hit NullCodeGraphClient and the drawer stays empty.
+                dispatch(setCodeCoreEnabled(true));
+            }
+        },
         [dispatch],
     );
 
@@ -685,7 +697,8 @@ const ConfigAssistantSection = () => {
             <span className="text-[11px] text-gray-500 leading-snug">
                 Bundle-developer helper. Activates a slide-in graph + details drawer
                 on the right of the chat when the agent calls code-graph tools, and
-                primes the agent to lean on those tools when answering.
+                primes the agent to lean on those tools when answering. Implies
+                <strong> Code Core </strong>(auto-enabled below).
             </span>
             <span className="text-[10px] text-gray-400 leading-snug">
                 Best with bundles that already register the <code>code_graph</code> plugin
