@@ -1,9 +1,8 @@
 {
   "auth": {
-    "authType": "hardcoded",
-    "token": "test-admin-token-123"
+    "authType": "none"
   },
-  "tenant": "kdcube",
-  "project": "default",
+  "tenant": "TENANT_ID",
+  "project": "PROJECT_ID",
   "routesPrefix": "/chatbot"
 }
