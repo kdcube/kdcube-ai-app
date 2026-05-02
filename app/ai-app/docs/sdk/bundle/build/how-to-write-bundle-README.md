@@ -482,12 +482,13 @@ You should explicitly decide:
 - what state must persist locally on the instance
 - what state must be descriptor-backed
 
-Do not collapse all concerns into one public widget.
+Do not collapse all authority into one public widget.
 
 Preferred split:
 
-- end-user-facing widget or operations surface
-- separate admin widget/API for privileged operations
+- one end-user-facing React widget/web app when the product is naturally one app
+- separate admin APIs for privileged operations
+- separate admin widget only when the product needs a distinct admin app
 - scheduled jobs for background automation
 
 ## 2.1 Process Environment Boundary
@@ -804,7 +805,7 @@ Reference:
 @api(alias="task-board", route="operations", method="POST", user_types=("registered",))
 @ui_widget(alias="task-board", icon={"tailwind": "heroicons-outline:check-badge"}, user_types=("registered",))
 def task_board(self, **kwargs):
-    return ["<div id='root'></div>"]
+    return [self._render_dashboard_html(content=rendered_tsx, title="Task Board")]
 
 @api(alias="task-board-api", route="operations", method="POST", user_types=("registered",))
 async def task_board_api(self, **kwargs):
@@ -1365,7 +1366,10 @@ Mental model:
 Widget bundles fail most often because authors treat them like isolated frontends.
 They are not.
 
-KDCube widgets run inside a platform iframe shell.
+KDCube widgets are React/TSX web apps rendered inside a platform iframe shell.
+Do not create ad hoc HTML fragments unless you are maintaining a legacy widget.
+For a product with several panels, prefer one React widget with internal tabs or
+routes over several disconnected widgets.
 
 ### Required contract
 
@@ -1403,6 +1407,26 @@ For `/sse/chat`, new conversations must omit `conversation_id`. The UI should
 bind the server-generated conversation id from the HTTP ack or the first SSE
 envelope.
 
+### Widget routes and subpaths
+
+The side panel fetches widgets through:
+
+```text
+/api/integrations/bundles/{tenant}/{project}/{bundle_id}/widgets/{widget_alias}
+```
+
+That API returns a JSON envelope containing the rendered widget HTML for the
+platform iframe. The same route can serve direct HTML when requested by a
+browser, and subpaths are supported for single-web-app routing:
+
+```text
+/api/integrations/bundles/{tenant}/{project}/{bundle_id}/widgets/{widget_alias}/{widget_path}
+```
+
+If the widget method accepts `widget_path` or `path`, the platform passes the
+subpath so the React app can select its initial route or tab. This is the
+preferred shape when the same widget will become a Telegram WebApp.
+
 ### Separate display and structured API
 
 Recommended pattern:
@@ -1416,18 +1440,17 @@ Recommended pattern:
 
 The widget should call the structured API alias, not the widget alias.
 
-### Public and admin surfaces should be separate
+### Public and admin capabilities should be separated
 
 Good pattern:
 
-- `task-board`
-  - end-user-facing
-  - read-only on initial load
-- `task-tracker-admin`
-  - privileged/admin-only
-  - mutating operations
+- one end-user React web app when the product is naturally one app
+- admin controls are separate panels or routes only when the product requires
+  them in that app
+- mutating/admin operations are always separate `@api` methods with roles
 
-Do not put destructive or administrative actions into the normal public widget unless that is explicitly the product.
+Do not expose destructive or administrative operations without role checks.
+Use widget composition for UX, and API roles for authority.
 
 ### Read-only load by default
 
@@ -1673,7 +1696,7 @@ Fix:
 - use `singleton` only for instance reuse
 - use `@cron(span=...)` or an explicit lock for exclusivity
 
-### Pitfall: public widget and admin controls mixed together
+### Pitfall: public widget and admin authority mixed together
 
 Symptom:
 
@@ -1682,7 +1705,8 @@ Symptom:
 
 Fix:
 
-- keep a separate admin widget/API
+- keep privileged operations in separate role-protected APIs
+- use a separate admin widget only when the UX should be a distinct admin app
 
 ## 16. Writing Checklist
 

@@ -165,7 +165,8 @@ class _DecoratedWorkflow:
         user_types=("registered",),
     )
     def preferences_widget(self, **kwargs):
-        return [f"<p>{kwargs.get('fingerprint')}</p>"]
+        suffix = f":{kwargs.get('widget_path')}" if kwargs.get("widget_path") else ""
+        return [f"<p>{kwargs.get('fingerprint')}{suffix}</p>"]
 
     @ui_main
     def main_ui(self):
@@ -567,6 +568,27 @@ async def test_get_bundle_interface_and_widgets_use_decorators(monkeypatch):
     assert widget_payload["widget"]["user_types"] == ["registered"]
     assert widget_payload["widget"]["roles"] == []
     assert widget_payload["preferences"] == ["<p>fp-1</p>"]
+
+    html_payload = await integrations.fetch_bundle_widget(
+        tenant="tenant-a",
+        project="project-a",
+        bundle_id="bundle.demo",
+        widget_alias="preferences",
+        request=_request(headers=[(b"accept", b"text/html")]),
+        session=session,
+    )
+    assert html_payload.body.decode("utf-8") == "<p>fp-1</p>"
+
+    routed_payload = await integrations.serve_bundle_widget_path(
+        tenant="tenant-a",
+        project="project-a",
+        bundle_id="bundle.demo",
+        widget_alias="preferences",
+        widget_path="settings/profile",
+        request=request,
+        session=session,
+    )
+    assert routed_payload.body.decode("utf-8") == "<p>fp-1:settings/profile</p>"
 
 
 @pytest.mark.asyncio

@@ -75,6 +75,7 @@ def test_gateway_policy_resolver_treats_public_bundle_mcp_route_as_guarded_ingre
         "/api/integrations/bundles/tenant-a/project-a/bundle.demo",
         "/api/integrations/bundles/tenant-a/project-a/bundle.demo/widgets",
         "/api/integrations/bundles/tenant-a/project-a/bundle.demo/widgets/preferences",
+        "/api/integrations/bundles/tenant-a/project-a/bundle.demo/widgets/preferences/settings/profile",
         "/api/integrations/bundles/tenant-a/project-a/bundle.demo/mcp/tools",
         "/api/integrations/bundles/tenant-a/project-a/bundle.demo/mcp/tools/list",
         "/api/integrations/static/tenant-a/project-a/bundle.demo",
