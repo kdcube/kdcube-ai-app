@@ -14,7 +14,7 @@ from typing import Optional, Dict, Any, Set, List, Tuple
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
@@ -1986,14 +1986,15 @@ async def list_bundle_widgets(
     }
 
 
-@router.get("/bundles/{tenant}/{project}/{bundle_id}/widgets/{widget_alias}")
-async def fetch_bundle_widget(
+async def _fetch_bundle_widget_payload(
+        *,
         tenant: str,
         project: str,
         bundle_id: str,
         widget_alias: str,
         request: Request,
-        session: UserSession = Depends(require_auth(RequireUser())),
+        session: UserSession,
+        widget_path: str = "",
 ):
     payload = BundleSuggestionsRequest()
     workflow, spec_resolved, tenant_id, project_id, comm_context = _unpack_loaded_bundle_workflow(
@@ -2027,6 +2028,10 @@ async def fetch_bundle_widget(
         user_id=session.user_id or session.fingerprint,
         fingerprint=session.fingerprint,
     )
+    cleaned_widget_path = str(widget_path or "").lstrip("/")
+    if cleaned_widget_path:
+        extra.setdefault("widget_path", cleaned_widget_path)
+        extra.setdefault("path", cleaned_widget_path)
     runtime_comm = _resolve_bound_runtime_comm(workflow=workflow, comm_context=comm_context)
     with bind_current_request_context(comm_context, comm=runtime_comm):
         result = await _invoke_bundle_callable(fn, **extra)
@@ -2043,6 +2048,70 @@ async def fetch_bundle_widget(
         },
         widget_alias: result,
     }
+
+
+def _widget_payload_content(payload: Dict[str, Any], widget_alias: str) -> str:
+    value = payload.get(widget_alias)
+    if isinstance(value, list):
+        value = value[0] if value else ""
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _request_prefers_widget_html(request: Request) -> bool:
+    accept = request.headers.get("accept", "").lower()
+    return "text/html" in accept and "application/json" not in accept
+
+
+@router.get("/bundles/{tenant}/{project}/{bundle_id}/widgets/{widget_alias}")
+async def fetch_bundle_widget(
+        tenant: str,
+        project: str,
+        bundle_id: str,
+        widget_alias: str,
+        request: Request,
+        session: UserSession = Depends(require_auth(RequireUser())),
+):
+    payload = await _fetch_bundle_widget_payload(
+        tenant=tenant,
+        project=project,
+        bundle_id=bundle_id,
+        widget_alias=widget_alias,
+        request=request,
+        session=session,
+    )
+    if _request_prefers_widget_html(request):
+        return HTMLResponse(
+            content=_widget_payload_content(payload, widget_alias),
+            headers={"Cache-Control": "no-cache"},
+        )
+    return payload
+
+
+@router.get("/bundles/{tenant}/{project}/{bundle_id}/widgets/{widget_alias}/{widget_path:path}")
+async def serve_bundle_widget_path(
+        tenant: str,
+        project: str,
+        bundle_id: str,
+        widget_alias: str,
+        widget_path: str,
+        request: Request,
+        session: UserSession = Depends(require_auth(RequireUser())),
+):
+    payload = await _fetch_bundle_widget_payload(
+        tenant=tenant,
+        project=project,
+        bundle_id=bundle_id,
+        widget_alias=widget_alias,
+        widget_path=widget_path,
+        request=request,
+        session=session,
+    )
+    return HTMLResponse(
+        content=_widget_payload_content(payload, widget_alias),
+        headers={"Cache-Control": "no-cache"},
+    )
 
 
 def _callable_accepts_kwarg(fn: Any, name: str) -> bool:

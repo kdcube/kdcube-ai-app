@@ -630,7 +630,7 @@ Example failure mode:
 
 Rule:
 
-- if Python is generating HTML/JS/CSS, directly evaluate the builder function before runtime testing
+- if Python renders a React/TSX widget into iframe HTML, directly evaluate the widget method before runtime testing
 
 ### 5.2 Widget iframe contract
 
@@ -644,6 +644,8 @@ Check:
 - widget uses `defaultAppBundleId`, not a source-folder guess
 - widget uses host-provided auth headers
 - widget unwraps the `[alias]` field from integrations responses
+- if the widget is one web app with internal routes, direct widget subpaths
+  return HTML and pass `widget_path` / `path` to the widget method
 
 Manual test:
 
@@ -654,6 +656,15 @@ Manual test:
 ```text
 /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/{alias}
 ```
+
+For a single-widget web app, also open:
+
+```text
+/api/integrations/bundles/{tenant}/{project}/{bundle_id}/widgets/{widget_alias}/{subpath}
+```
+
+It should return the same React widget shell with the requested panel/route
+selected.
 
 If you see:
 
@@ -946,7 +957,7 @@ Symptoms:
 Before calling the bundle complete, verify all of these:
 
 - `py_compile` passes for entrypoint and helper modules
-- HTML/JS builder functions execute if the bundle generates widget HTML in Python
+- React/TSX widget render functions execute if the bundle renders widget HTML in Python
 - shared SDK bundle suite passes
 - bundle-local pytest tests pass
 - bundle reload works through the local descriptor-driven flow
