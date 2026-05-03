@@ -775,6 +775,71 @@ async def test_call_bundle_op_inner_supports_decorated_get_api(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_call_bundle_op_inner_applies_persisted_bundle_props_before_invoking_api(monkeypatch):
+    class _Workflow(_DecoratedWorkflow):
+        @property
+        def bundle_props_defaults(self):
+            return {
+                "integrations": {
+                    "email": {
+                        "enabled": False,
+                        "google": {"client_id": ""},
+                    },
+                },
+            }
+
+        def bundle_prop(self, path, default=None):
+            cursor = getattr(self, "bundle_props", {}) or {}
+            for part in str(path or "").split("."):
+                if not isinstance(cursor, dict) or part not in cursor:
+                    return default
+                cursor = cursor[part]
+            return cursor
+
+        @api(method="POST", alias="email_status", route="operations")
+        async def email_status(self, **kwargs):
+            del kwargs
+            return {
+                "enabled": self.bundle_prop("integrations.email.enabled", False),
+                "client_id": self.bundle_prop("integrations.email.google.client_id", ""),
+            }
+
+    async def _load_bundle_workflow(**kwargs):
+        del kwargs
+        return _Workflow(), SimpleNamespace(id="bundle.demo"), "tenant-a", "project-a"
+
+    async def _store_get_bundle_props(*args, **kwargs):
+        del args, kwargs
+        return {
+            "integrations": {
+                "email": {
+                    "enabled": True,
+                    "google": {"client_id": "google-client-id"},
+                },
+            },
+        }
+
+    monkeypatch.setattr(integrations, "_load_bundle_workflow", _load_bundle_workflow)
+    monkeypatch.setattr(integrations, "store_get_bundle_props", _store_get_bundle_props)
+
+    result = await integrations._call_bundle_op_inner(
+        tenant="tenant-a",
+        project="project-a",
+        bundle_id="bundle.demo",
+        payload=integrations.BundleSuggestionsRequest(),
+        request=_request(
+            method="POST",
+            path="/api/integrations/bundles/tenant-a/project-a/bundle.demo/operations/email_status",
+        ),
+        operation="email_status",
+        route="operations",
+        session=_session(),
+    )
+
+    assert result["email_status"] == {"enabled": True, "client_id": "google-client-id"}
+
+
+@pytest.mark.asyncio
 async def test_call_bundle_op_inner_supports_widget_compat_api(monkeypatch):
     async def _load_bundle_workflow(**kwargs):
         del kwargs
