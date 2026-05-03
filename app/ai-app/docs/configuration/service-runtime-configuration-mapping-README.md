@@ -227,8 +227,9 @@ For the one-page read/write contract across helpers, see:
 | raw `assembly.yaml` value | `read_plain("...")` |
 | raw `bundles.yaml` value | `read_plain("b:...")` |
 | effective current bundle config | `self.bundle_prop("...")` |
-| platform/global secret | `get_secret("canonical.key")` |
-| bundle-scoped secret | `get_secret("b:group.key")` |
+| platform/global secret | `await get_secret_async("canonical.key")` in async code; `get_secret(...)` only for sync compatibility |
+| bundle-scoped secret | `await get_secret_async("b:group.key")` in async code; `get_secret(...)` only for sync compatibility |
+| user-scoped bundle secret | `await get_user_secret_async("group.key")`, `await set_user_secret_async(...)`, `await delete_user_secret_async(...)` |
 
 For deployment-scoped bundle props in cloud:
 

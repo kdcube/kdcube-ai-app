@@ -5,6 +5,7 @@ import pytest
 
 from kdcube_ai_app.infra.secrets import (
     AwsSecretsManagerSecretsManager,
+    InMemorySecretsManager,
     SecretsManagerConfig,
     SecretsFileSecretsManager,
     build_secrets_manager_config,
@@ -429,6 +430,45 @@ def test_secrets_file_manager_reads_and_writes_user_bundle_secrets(tmp_path, mon
     assert "user-1:" in text
     assert "rms@06-04-26-156" in text
     assert "sk-user" in text
+
+
+@pytest.mark.asyncio
+async def test_in_memory_manager_reads_and_writes_user_bundle_secrets_async():
+    manager = InMemorySecretsManager()
+
+    await manager.set_user_secret_async(
+        user_id="user-1",
+        bundle_id="task-and-memo-app@1-0",
+        key="email.accounts.google_1.tokens",
+        value='{"access_token":"secret"}',
+    )
+
+    assert (
+        await manager.get_user_secret_async(
+            user_id="user-1",
+            bundle_id="task-and-memo-app@1-0",
+            key="email.accounts.google_1.tokens",
+        )
+        == '{"access_token":"secret"}'
+    )
+    assert await manager.list_user_secret_keys_async(
+        user_id="user-1",
+        bundle_id="task-and-memo-app@1-0",
+    ) == []
+
+    await manager.delete_user_secret_async(
+        user_id="user-1",
+        bundle_id="task-and-memo-app@1-0",
+        key="email.accounts.google_1.tokens",
+    )
+    assert (
+        await manager.get_user_secret_async(
+            user_id="user-1",
+            bundle_id="task-and-memo-app@1-0",
+            key="email.accounts.google_1.tokens",
+        )
+        is None
+    )
 
 
 class _FakeSyncRedis:

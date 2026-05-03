@@ -39,7 +39,8 @@ Top-level fields are platform-visible:
 2. The stream writes to a tenant/project stream by queue, for example registered-user jobs and privileged jobs.
 3. The processor loop polls chat work and background work in a simple round-robin.
 4. For background work, the processor uses a Redis Stream consumer group and `XAUTOCLAIM` to recover idle pending jobs.
-5. The processor builds a `ChatTaskPayload` with operation `__kdcube_on_job__`.
+5. The processor builds a `ChatTaskPayload` with operation `__kdcube_on_job__`
+   and sets `bundle_call_context.kind=background_job`.
 6. The proc runtime loads the target bundle and calls its async `@on_job` method.
 7. The stream message is acknowledged only after the handler returns. Cancellation leaves the message pending for recovery.
 
@@ -55,6 +56,9 @@ The task-and-memo bundle uses this pattern:
 | Widget/API run-now action | `task.execution.manual` | `task_id`, `execution_id` |
 
 The producer creates a queued execution first. The queued execution is the user-visible source of truth. The job stream only transports the ready work.
+If the job then starts a nested tool/agent runtime, put task ids and other
+agreed metadata in the reserved `bundle_call_context` instead of asking the
+model to repeat those ids as tool arguments.
 
 The bundle `@on_job` handler then:
 

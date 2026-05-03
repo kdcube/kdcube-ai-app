@@ -388,7 +388,7 @@ Important:
   - put the client-facing header name in bundle props such as
     `self.bundle_prop("mcp.inbound.auth.header_name")`
   - put the verification material in bundle secrets such as
-    `get_secret("b:mcp.inbound.auth.shared_token")`
+    `await get_secret_async("b:mcp.inbound.auth.shared_token")`
   - read `request.headers[...]` in the provider and reject with
     `HTTPException(status_code=401, ...)` before returning the MCP app
 - full worked example:
@@ -1078,7 +1078,7 @@ async def telegram_webhook(self, **kwargs):
 
 ```python
 from fastapi import HTTPException, Request
-from kdcube_ai_app.apps.chat.sdk.config import get_secret
+from kdcube_ai_app.apps.chat.sdk.config import get_secret_async
 
 @api(
     alias="telegram_webhook",
@@ -1090,7 +1090,7 @@ async def telegram_webhook(self, request: Request, **kwargs):
         "telegram.webhook.auth.header_name",
         "X-Telegram-Bot-Api-Secret-Token",
     )
-    expected_token = get_secret("b:telegram.webhook.auth.shared_token")
+    expected_token = await get_secret_async("b:telegram.webhook.auth.shared_token")
     provided_token = request.headers.get(header_name)
     if not expected_token or provided_token != expected_token:
         raise HTTPException(status_code=401, detail="Unauthorized")

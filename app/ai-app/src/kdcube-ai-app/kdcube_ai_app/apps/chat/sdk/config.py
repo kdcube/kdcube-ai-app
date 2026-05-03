@@ -141,8 +141,31 @@ def get_secret(key: str, default: str | None = None) -> str | None:
     return default
 
 
+async def get_secret_async(key: str, default: str | None = None) -> str | None:
+    settings = get_settings()
+    normalized_key = _normalize_secret_lookup_key(key)
+    for candidate in _secret_candidates(normalized_key):
+        env_val = os.getenv(candidate)
+        if env_val:
+            return env_val
+        if hasattr(settings, candidate):
+            value = getattr(settings, candidate)
+            if value:
+                return value
+        if candidate in _LEGACY_SECRET_TO_CANON:
+            continue
+        value = await settings.secret_async(candidate, default=None)
+        if value:
+            return value
+    return default
+
+
 def read_secret(key: str, default: str | None = None) -> str | None:
     return get_secret(key, default=default)
+
+
+async def read_secret_async(key: str, default: str | None = None) -> str | None:
+    return await get_secret_async(key, default=default)
 
 
 def get_plain(key: str, default: Any = None) -> Any:
@@ -246,6 +269,31 @@ def get_user_secret(
     return value or default
 
 
+async def get_user_secret_async(
+    key: str,
+    *,
+    bundle_id: str | None = None,
+    user_id: str | None = None,
+    default: str | None = None,
+) -> str | None:
+    resolved_user_id, resolved_bundle_id = _resolve_current_user_bundle_scope(
+        user_id=user_id,
+        bundle_id=bundle_id,
+    )
+    if not resolved_user_id:
+        return default
+    settings = get_settings()
+    try:
+        value = await get_secrets_manager(settings).get_user_secret_async(
+            user_id=resolved_user_id,
+            bundle_id=resolved_bundle_id,
+            key=key,
+        )
+    except Exception:
+        value = None
+    return value or default
+
+
 def set_user_secret(
     key: str,
     value: str,
@@ -267,6 +315,27 @@ def set_user_secret(
     )
 
 
+async def set_user_secret_async(
+    key: str,
+    value: str,
+    *,
+    bundle_id: str | None = None,
+    user_id: str | None = None,
+) -> None:
+    resolved_user_id, resolved_bundle_id = _resolve_current_user_bundle_scope(
+        user_id=user_id,
+        bundle_id=bundle_id,
+    )
+    if not resolved_user_id:
+        raise RuntimeError("Current user id is unavailable for user-scoped secret write")
+    await get_secrets_manager(get_settings()).set_user_secret_async(
+        user_id=resolved_user_id,
+        bundle_id=resolved_bundle_id,
+        key=key,
+        value=value,
+    )
+
+
 async def set_bundle_secret(
     key: str,
     value: str,
@@ -279,7 +348,7 @@ async def set_bundle_secret(
     tail = str(key or "").strip().strip(".")
     if not tail:
         raise ValueError("Bundle secret key path is empty")
-    get_secrets_manager(get_settings()).set_secret(
+    await get_secrets_manager(get_settings()).set_secret_async(
         f"bundles.{resolved_bundle_id}.secrets.{tail}",
         value,
     )
@@ -298,6 +367,25 @@ def delete_user_secret(
     if not resolved_user_id:
         raise RuntimeError("Current user id is unavailable for user-scoped secret delete")
     get_secrets_manager(get_settings()).delete_user_secret(
+        user_id=resolved_user_id,
+        bundle_id=resolved_bundle_id,
+        key=key,
+    )
+
+
+async def delete_user_secret_async(
+    key: str,
+    *,
+    bundle_id: str | None = None,
+    user_id: str | None = None,
+) -> None:
+    resolved_user_id, resolved_bundle_id = _resolve_current_user_bundle_scope(
+        user_id=user_id,
+        bundle_id=bundle_id,
+    )
+    if not resolved_user_id:
+        raise RuntimeError("Current user id is unavailable for user-scoped secret delete")
+    await get_secrets_manager(get_settings()).delete_user_secret_async(
         user_id=resolved_user_id,
         bundle_id=resolved_bundle_id,
         key=key,
@@ -1165,6 +1253,18 @@ class Settings(PLATFORM_CONFIG):
         provider_key = _provider_secret_key(normalized_key)
         try:
             value = get_secrets_manager(self).get_secret(provider_key)
+        except Exception:
+            value = None
+        return value or default
+
+    async def secret_async(self, key: str, default: str | None = None) -> str | None:
+        normalized_key = _normalize_secret_lookup_key(key)
+        env_val = os.getenv(normalized_key)
+        if env_val:
+            return env_val
+        provider_key = _provider_secret_key(normalized_key)
+        try:
+            value = await get_secrets_manager(self).get_secret_async(provider_key)
         except Exception:
             value = None
         return value or default

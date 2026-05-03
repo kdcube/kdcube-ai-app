@@ -88,19 +88,19 @@ Those remain deployment-owned.
 | Data class | Read API | Write API from bundle code | Ownership boundary | Live authority today | Export / ejection path |
 |---|---|---|---|---|---|
 | platform/global props | `get_settings()` for effective values; `get_plain("...")` for raw descriptor inspection | none supported | tenant + project deployment | promoted runtime config assembled from env plus descriptor files such as `assembly.yaml` and `gateway.yaml` | outside `kdcube export`; manage through deployment descriptors |
-| platform/global secrets | `get_secret("canonical.key")` | none supported | tenant + project deployment | configured secrets provider; in local `secrets-file` mode this is `secrets.yaml` | outside `kdcube export`; manage through deployment secret workflows |
+| platform/global secrets | async: `await get_secret_async("canonical.key")`; compatibility sync: `get_secret("canonical.key")` | none supported | tenant + project deployment | configured secrets provider; in local `secrets-file` mode this is `secrets.yaml` | outside `kdcube export`; manage through deployment secret workflows |
 | deployment-scoped bundle props | `self.bundle_prop(...)`, `self.bundle_props` | `await set_bundle_prop(...)` | tenant + project + bundle | configured bundle descriptor authority; Redis is the runtime cache. Recommended cloud mode is writable mounted `bundles.yaml` with `BUNDLES_DESCRIPTOR_PROVIDER=file`. | exported to `bundles.yaml`; `kdcube export` includes it |
-| deployment-scoped bundle secrets | `get_secret("b:...")` | `await set_bundle_secret(...)` | tenant + project + bundle | configured secrets provider; in local `secrets-file` mode this is `bundles.secrets.yaml` | exported to `bundles.secrets.yaml` when the provider/export flow can reconstruct them |
+| deployment-scoped bundle secrets | async: `await get_secret_async("b:...")`; compatibility sync: `get_secret("b:...")` | `await set_bundle_secret(...)` | tenant + project + bundle | configured secrets provider; in local `secrets-file` mode this is `bundles.secrets.yaml` | exported to `bundles.secrets.yaml` when the provider/export flow can reconstruct them |
 | user-scoped bundle props | `get_user_prop(...)`, `get_user_props()` | `set_user_prop(...)`, `delete_user_prop(...)` | tenant + project + bundle + user | PostgreSQL `<SCHEMA>.user_bundle_props` | never exported to descriptors or bundle export |
-| user-scoped bundle secrets | `get_user_secret(...)` | `set_user_secret(...)`, `delete_user_secret(...)` | tenant + project + bundle + user | configured secrets provider; in local `secrets-file` mode this is `secrets.yaml` | never exported to descriptors or bundle export |
+| user-scoped bundle secrets | async: `await get_user_secret_async(...)`; compatibility sync: `get_user_secret(...)` | async: `await set_user_secret_async(...)`, `await delete_user_secret_async(...)`; compatibility sync: `set_user_secret(...)`, `delete_user_secret(...)` | tenant + project + bundle + user | configured secrets provider; in local `secrets-file` mode this is `secrets.yaml` | never exported to descriptors or bundle export |
 
 ## Decide the scope before you write code
 
 | If the value belongs to... | Use | Do not use |
 |---|---|---|
-| the environment or platform deployment as a whole | `get_settings()` or `get_secret("canonical.key")` | `self.bundle_prop(...)` |
-| one bundle for the whole deployment | `self.bundle_prop(...)` or `get_secret("b:...")` | user props or user secrets |
-| one user inside one bundle | `get_user_prop(...)` or `get_user_secret(...)` | `bundles.yaml` or `bundles.secrets.yaml` |
+| the environment or platform deployment as a whole | `get_settings()` or `await get_secret_async("canonical.key")` | `self.bundle_prop(...)` |
+| one bundle for the whole deployment | `self.bundle_prop(...)` or `await get_secret_async("b:...")` | user props or user secrets |
+| one user inside one bundle | `get_user_prop(...)` or `await get_user_secret_async(...)` | `bundles.yaml` or `bundles.secrets.yaml` |
 
 Examples:
 
@@ -111,6 +111,44 @@ Examples:
 - one user's theme preference -> user-scoped bundle prop
 - one user's personal GitHub token -> user-scoped bundle secret
 
+## Async-first helper rule
+
+Bundle runtime paths are async. In new bundle code, especially `@api`,
+`@mcp`, `@ui_widget`, `@cron`, `@on_job`, lifecycle hooks, and tool functions,
+use the async helpers:
+
+```python
+from kdcube_ai_app.apps.chat.sdk.config import (
+    get_secret_async,
+    get_user_secret_async,
+    set_user_secret_async,
+    delete_user_secret_async,
+    set_bundle_secret,
+)
+```
+
+Use:
+
+- `await get_secret_async("canonical.key")` for platform/global secrets
+- `await get_secret_async("b:group.key")` for current-bundle deployment secrets
+- `await get_user_secret_async("group.key")` for current-user bundle secrets
+- `await set_user_secret_async("group.key", value)` for user secret writes
+- `await delete_user_secret_async("group.key")` for user secret deletes
+- `await set_bundle_secret("group.key", value)` for deployment-scoped bundle
+  secret writes
+
+The sync helpers still exist for older sync-only code. Do not use them in new
+async request paths, because bundle execution should not block the event loop
+on secret provider IO.
+
+Scope resolution:
+
+- `b:...` uses the bound current bundle id
+- user-secret helpers use the bound current user and bundle when explicit
+  `user_id` / `bundle_id` are not supplied
+- background jobs restore the runtime request context before bundle execution,
+  so job tools can read user secrets through the same helper contract
+
 ## Platform/global props and secrets
 
 These are deployment-owned values, not bundle-owned values.
@@ -118,7 +156,7 @@ These are deployment-owned values, not bundle-owned values.
 Use:
 
 - `get_settings()` for effective typed runtime settings
-- `get_secret("canonical.key")` for deployment-scoped platform/global secrets
+- `await get_secret_async("canonical.key")` for deployment-scoped platform/global secrets
 - `get_plain("...")` only when you intentionally need the raw descriptor file
 
 Typical examples:
@@ -147,7 +185,7 @@ Read effective bundle props through:
 
 Read deployment-scoped bundle secrets through:
 
-- `get_secret("b:...")`
+- `await get_secret_async("b:...")`
 
 Write them through:
 
@@ -208,9 +246,9 @@ Use:
 - `get_user_prop(...)`
 - `set_user_prop(...)`
 - `delete_user_prop(...)`
-- `get_user_secret(...)`
-- `set_user_secret(...)`
-- `delete_user_secret(...)`
+- `await get_user_secret_async(...)`
+- `await set_user_secret_async(...)`
+- `await delete_user_secret_async(...)`
 
 Typical use:
 
@@ -256,13 +294,14 @@ So the rule is:
 Supported directly from normal bundle code:
 
 - read platform/global props via `get_settings()`
-- read platform/global secrets via `get_secret("canonical.key")`
+- read platform/global secrets via `await get_secret_async("canonical.key")`
 - read deployment-scoped bundle props via `self.bundle_prop(...)`
-- read deployment-scoped bundle secrets via `get_secret("b:...")`
+- read deployment-scoped bundle secrets via `await get_secret_async("b:...")`
 - write deployment-scoped bundle props via `await set_bundle_prop(...)`
 - write deployment-scoped bundle secrets via `await set_bundle_secret(...)`
 - read/write user-scoped bundle props via `get_user_prop(...)`, `set_user_prop(...)`
-- read/write user-scoped bundle secrets via `get_user_secret(...)`, `set_user_secret(...)`
+- read/write user-scoped bundle secrets via `await get_user_secret_async(...)`,
+  `await set_user_secret_async(...)`, and `await delete_user_secret_async(...)`
 
 That distinction matters:
 
@@ -280,10 +319,10 @@ Use these categories deliberately.
 These are the values the runtime is actually meant to use:
 
 - `get_settings()`
-- `get_secret(...)`
+- `get_secret_async(...)`
 - `self.bundle_prop(...)`
 - `get_user_prop(...)`
-- `get_user_secret(...)`
+- `get_user_secret_async(...)`
 
 ### Raw descriptor reads
 

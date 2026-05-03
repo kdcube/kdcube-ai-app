@@ -139,6 +139,34 @@ That means:
 
 Bundle secrets are not meant to become plain non-secret descriptor data.
 
+## Async secrets helper behavior
+
+KDCube services and bundle runtimes are async. The supported async helper
+contract is:
+
+| Data class | Async helper |
+|---|---|
+| platform/global secrets | `await get_secret_async("canonical.key")` |
+| deployment-scoped bundle secrets | `await get_secret_async("b:group.key")` |
+| user-scoped bundle secrets | `await get_user_secret_async("group.key")` |
+| deployment-scoped bundle secret write | `await set_bundle_secret("group.key", value)` |
+| user-scoped bundle secret write | `await set_user_secret_async("group.key", value)` |
+| user-scoped bundle secret delete | `await delete_user_secret_async("group.key")` |
+
+The older sync helpers remain for compatibility, but new async request,
+tool, cron, and job code should not use them.
+
+Provider behavior:
+
+- `secrets-service` uses native async HTTP calls
+- `in-memory` is immediate
+- `secrets-file` and `aws-sm` currently expose async helpers through a
+  compatibility offload because their storage, distributed-lock, and provider
+  clients are sync internally
+
+This means callers get a stable async contract while provider implementations
+can move to deeper native async clients independently.
+
 ## User-scoped state storage
 
 User-scoped bundle state is intentionally outside descriptors.

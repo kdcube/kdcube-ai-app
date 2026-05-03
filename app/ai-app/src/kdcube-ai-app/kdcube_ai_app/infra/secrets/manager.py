@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import asyncio
 import threading
 import time
 import uuid
@@ -107,34 +108,70 @@ class ISecretsManager(ABC):
     def get_secret(self, key: str) -> Optional[str]:
         raise NotImplementedError
 
+    async def get_secret_async(self, key: str) -> Optional[str]:
+        return await asyncio.to_thread(self.get_secret, key)
+
     def can_write(self) -> bool:
         return False
 
     def set_secret(self, key: str, value: str) -> None:
         raise SecretsManagerWriteError(f"{self.provider_type} provider does not support writes")
 
+    async def set_secret_async(self, key: str, value: str) -> None:
+        await asyncio.to_thread(self.set_secret, key, value)
+
     def delete_secret(self, key: str) -> None:
         raise SecretsManagerWriteError(f"{self.provider_type} provider does not support deletes")
+
+    async def delete_secret_async(self, key: str) -> None:
+        await asyncio.to_thread(self.delete_secret, key)
 
     def set_many(self, values: Mapping[str, str]) -> None:
         for key, value in values.items():
             self.set_secret(key, value)
 
+    async def set_many_async(self, values: Mapping[str, str]) -> None:
+        await asyncio.to_thread(self.set_many, values)
+
     def delete_many(self, keys: Iterable[str]) -> None:
         for key in keys:
             self.delete_secret(key)
 
+    async def delete_many_async(self, keys: Iterable[str]) -> None:
+        await asyncio.to_thread(self.delete_many, list(keys))
+
     def get_user_secret(self, *, user_id: str, key: str, bundle_id: str | None = None) -> Optional[str]:
         return self.get_secret(build_user_secret_key(user_id=user_id, key=key, bundle_id=bundle_id))
+
+    async def get_user_secret_async(self, *, user_id: str, key: str, bundle_id: str | None = None) -> Optional[str]:
+        return await self.get_secret_async(build_user_secret_key(user_id=user_id, key=key, bundle_id=bundle_id))
 
     def set_user_secret(self, *, user_id: str, key: str, value: str, bundle_id: str | None = None) -> None:
         self.set_secret(build_user_secret_key(user_id=user_id, key=key, bundle_id=bundle_id), value)
 
+    async def set_user_secret_async(self, *, user_id: str, key: str, value: str, bundle_id: str | None = None) -> None:
+        await self.set_secret_async(build_user_secret_key(user_id=user_id, key=key, bundle_id=bundle_id), value)
+
     def delete_user_secret(self, *, user_id: str, key: str, bundle_id: str | None = None) -> None:
         self.delete_secret(build_user_secret_key(user_id=user_id, key=key, bundle_id=bundle_id))
 
+    async def delete_user_secret_async(self, *, user_id: str, key: str, bundle_id: str | None = None) -> None:
+        await self.delete_secret_async(build_user_secret_key(user_id=user_id, key=key, bundle_id=bundle_id))
+
     def list_user_secret_keys(self, *, user_id: str, bundle_id: str | None = None) -> list[str]:
         raw = self.get_secret(build_user_secret_metadata_key(user_id=user_id, bundle_id=bundle_id))
+        if not raw:
+            return []
+        try:
+            data = json.loads(raw)
+        except Exception:
+            return []
+        if isinstance(data, list):
+            return [str(item) for item in data if str(item).strip()]
+        return []
+
+    async def list_user_secret_keys_async(self, *, user_id: str, bundle_id: str | None = None) -> list[str]:
+        raw = await self.get_secret_async(build_user_secret_metadata_key(user_id=user_id, bundle_id=bundle_id))
         if not raw:
             return []
         try:
@@ -157,6 +194,9 @@ class InMemorySecretsManager(ISecretsManager):
         with self._lock:
             return self._data.get(key)
 
+    async def get_secret_async(self, key: str) -> Optional[str]:
+        return self.get_secret(key)
+
     def can_write(self) -> bool:
         return True
 
@@ -164,9 +204,15 @@ class InMemorySecretsManager(ISecretsManager):
         with self._lock:
             self._data[key] = value
 
+    async def set_secret_async(self, key: str, value: str) -> None:
+        self.set_secret(key, value)
+
     def delete_secret(self, key: str) -> None:
         with self._lock:
             self._data.pop(key, None)
+
+    async def delete_secret_async(self, key: str) -> None:
+        self.delete_secret(key)
 
 
 def _split_bundle_secret_key(key: str) -> tuple[str, str] | None:
@@ -784,6 +830,27 @@ class SecretsServiceSecretsManager(ISecretsManager):
             logger.debug("Secrets service GET %s failed", key, exc_info=True)
         return None
 
+    async def get_secret_async(self, key: str) -> Optional[str]:
+        if not self._url:
+            return None
+        httpx = _get_httpx()
+        headers: dict[str, str] = {}
+        if self._token:
+            headers["X-KDCUBE-SECRET-TOKEN"] = self._token
+        try:
+            async with httpx.AsyncClient(timeout=self._read_timeout) as client:
+                response = await client.get(self._key_url(key), headers=headers)
+            if response.status_code == 200:
+                payload = response.json() or {}
+                value = payload.get("value")
+                return str(value) if value is not None else None
+            if response.status_code in {403, 404}:
+                return None
+            logger.warning("Secrets service async GET %s failed with status %s", key, response.status_code)
+        except Exception:
+            logger.debug("Secrets service async GET %s failed", key, exc_info=True)
+        return None
+
     def can_write(self) -> bool:
         return bool(self._url and self._admin_token)
 
@@ -800,6 +867,19 @@ class SecretsServiceSecretsManager(ISecretsManager):
         if response.status_code != 200:
             raise SecretsManagerWriteError(f"secrets-service set failed for {key}: {response.status_code}")
 
+    async def set_secret_async(self, key: str, value: str) -> None:
+        if not self.can_write():
+            raise SecretsManagerWriteError("secrets-service provider is not configured for writes")
+        httpx = _get_httpx()
+        async with httpx.AsyncClient(timeout=self._write_timeout) as client:
+            response = await client.post(
+                f"{self._url}/set",
+                json={"key": key, "value": value},
+                headers={"X-KDCUBE-ADMIN-TOKEN": self._admin_token},
+            )
+        if response.status_code != 200:
+            raise SecretsManagerWriteError(f"secrets-service async set failed for {key}: {response.status_code}")
+
     def delete_secret(self, key: str) -> None:
         if not self.can_write():
             raise SecretsManagerWriteError("secrets-service provider is not configured for writes")
@@ -815,6 +895,21 @@ class SecretsServiceSecretsManager(ISecretsManager):
             return
         if response.status_code not in {200, 204, 404}:
             raise SecretsManagerWriteError(f"secrets-service delete failed for {key}: {response.status_code}")
+
+    async def delete_secret_async(self, key: str) -> None:
+        if not self.can_write():
+            raise SecretsManagerWriteError("secrets-service provider is not configured for writes")
+        httpx = _get_httpx()
+        async with httpx.AsyncClient(timeout=self._write_timeout) as client:
+            response = await client.delete(
+                self._key_url(key),
+                headers={"X-KDCUBE-ADMIN-TOKEN": self._admin_token},
+            )
+        if response.status_code == 405:
+            await self.set_secret_async(key, "")
+            return
+        if response.status_code not in {200, 204, 404}:
+            raise SecretsManagerWriteError(f"secrets-service async delete failed for {key}: {response.status_code}")
 
 
 class AwsSecretsManagerSecretsManager(ISecretsManager):

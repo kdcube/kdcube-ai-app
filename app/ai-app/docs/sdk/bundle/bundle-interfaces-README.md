@@ -182,6 +182,9 @@ Rules:
 - define it as `async def`
 - receive a job envelope with platform routing fields plus bundle-owned
   `work_kind`, `source`, `metadata`, and `payload`
+- use the reserved `bundle_call_context` for metadata that nested tools or
+  external runtimes must inherit, such as task id, execution id, or a compact
+  task definition
 - validate `work_kind` inside the bundle
 - load durable bundle-owned records by id from `payload`
 - update execution/status/result records in bundle storage

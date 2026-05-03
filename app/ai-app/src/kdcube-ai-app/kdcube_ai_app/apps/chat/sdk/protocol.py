@@ -182,3 +182,4 @@ class ChatTaskPayload(_ProtoBase):
     config: Optional[ChatTaskConfig] = None
     accounting: Optional[ChatTaskAccounting] = None
     continuation: Optional[ChatTaskContinuation] = None
+    bundle_call_context: Dict[str, Any] = Field(default_factory=dict)
