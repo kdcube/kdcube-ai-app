@@ -3,6 +3,7 @@
 
 # chat/proc/rest/integrations/integrations.py
 import asyncio
+import copy
 import html
 import hmac
 import inspect
@@ -184,6 +185,50 @@ def _with_implicit_bundle_kwargs(
     if "fingerprint" not in merged:
         merged["fingerprint"] = fingerprint
     return merged
+
+
+def _deep_merge_bundle_props(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    out = copy.deepcopy(base or {})
+    for key, value in (override or {}).items():
+        if isinstance(value, dict) and isinstance(out.get(key), dict):
+            out[key] = _deep_merge_bundle_props(out[key], value)
+        else:
+            out[key] = copy.deepcopy(value)
+    return out
+
+
+def _apply_rest_bundle_props_to_workflow(
+        *,
+        workflow: Any,
+        props: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    REST/MCP/widget calls bypass BaseEntrypoint.run(), so apply persisted
+    bundle props explicitly before invoking decorated bundle methods.
+    """
+    defaults = copy.deepcopy(getattr(workflow, "bundle_props_defaults", None) or {})
+    if not defaults:
+        defaults = copy.deepcopy(getattr(workflow, "bundle_props", None) or {})
+
+    merger = getattr(workflow, "_deep_merge_props", None)
+    if callable(merger):
+        merged = merger(defaults, props or {})
+    else:
+        merged = _deep_merge_bundle_props(defaults, props or {})
+
+    try:
+        setattr(workflow, "bundle_props", merged)
+    except Exception:
+        return merged
+
+    for hook_name in ("_apply_bundle_props_overrides", "_sync_runtime_ctx_bundle_props"):
+        hook = getattr(workflow, hook_name, None)
+        if callable(hook):
+            try:
+                hook()
+            except Exception:
+                logger.debug("Bundle prop hook failed during REST apply: %s", hook_name, exc_info=True)
+    return getattr(workflow, "bundle_props", None) or merged
 
 
 def _clean_scope_value(value: Optional[str]) -> Optional[str]:
@@ -2038,12 +2083,12 @@ async def _fetch_bundle_widget_payload(
     _props = await store_get_bundle_props(
         _get_app_redis(request), tenant=tenant_id, project=project_id, bundle_id=spec_resolved.id,
     )
+    workflow_props = _apply_rest_bundle_props_to_workflow(workflow=workflow, props=_props)
     if not _is_enabled_from_props(_props, manifest.enabled_config):
         raise HTTPException(status_code=404, detail=f"Bundle {spec_resolved.id} is disabled")
     if not _is_enabled_from_props(_props, widget_spec.enabled_config):
         raise HTTPException(status_code=404, detail=f"Bundle widget {widget_alias} is not available")
 
-    workflow_props = getattr(workflow, "bundle_props", None) or {}
     widget_static_cfg = None
     if not _static_widget_explicitly_disabled(_props or {}, widget_alias=widget_spec.alias):
         widget_static_cfg = (
@@ -2212,11 +2257,11 @@ async def _serve_static_widget_app(
     _props = await store_get_bundle_props(
         _get_app_redis(request), tenant=tenant_id, project=project_id, bundle_id=spec_resolved.id,
     )
+    workflow_props = _apply_rest_bundle_props_to_workflow(workflow=workflow, props=_props)
     if not _is_enabled_from_props(_props, manifest.enabled_config):
         raise HTTPException(status_code=404, detail=f"Bundle {spec_resolved.id} is disabled")
     if not _is_enabled_from_props(_props, widget_spec.enabled_config):
         raise HTTPException(status_code=404, detail=f"Bundle widget {widget_alias} is not available")
-    workflow_props = getattr(workflow, "bundle_props", None) or {}
     widget_static_cfg = None
     if not _static_widget_explicitly_disabled(_props or {}, widget_alias=widget_spec.alias):
         widget_static_cfg = (
@@ -2569,6 +2614,7 @@ async def _call_bundle_mcp_inner(
     _props = await store_get_bundle_props(
         _get_app_redis(request), tenant=tenant_id, project=project_id, bundle_id=spec_resolved.id,
     )
+    _apply_rest_bundle_props_to_workflow(workflow=workflow, props=_props)
     if not _is_enabled_from_props(_props, manifest.enabled_config):
         raise HTTPException(status_code=404, detail=f"Bundle {spec_resolved.id} is disabled")
     if not _is_enabled_from_props(_props, endpoint_spec.enabled_config):
@@ -2956,6 +3002,7 @@ async def _call_bundle_op_inner(
     _props = await store_get_bundle_props(
         _get_app_redis(request), tenant=tenant_id, project=project_id, bundle_id=spec_resolved.id,
     )
+    _apply_rest_bundle_props_to_workflow(workflow=workflow, props=_props)
     if not _is_enabled_from_props(_props, manifest.enabled_config):
         raise HTTPException(status_code=404, detail=f"Bundle {spec_resolved.id} is disabled")
     if not _is_enabled_from_props(_props, endpoint_spec.enabled_config):
