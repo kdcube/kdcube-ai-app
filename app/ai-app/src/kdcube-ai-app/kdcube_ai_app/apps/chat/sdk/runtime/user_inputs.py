@@ -46,6 +46,11 @@ async def ingest_user_attachments(
                 data = await store.get_blob_bytes(src)
             except Exception as ex:
                 base["error"] = f"read_failed: {ex}"
+        if data is None and a.get("base64"):
+            try:
+                data = base64.b64decode(str(a.get("base64") or ""), validate=True)
+            except Exception as ex:
+                base["error"] = f"base64_decode_failed: {ex}"
 
         if data is None:
             out.append(base)

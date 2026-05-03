@@ -202,6 +202,12 @@ Good React smoke tests:
 - a webhook test proves the public endpoint is exposed and authenticated
 - transport tests prove Telegram or other adapters render/send from the turn
   result or timeline rather than duplicating task/memory logic
+- public webhook tests cover duplicate delivery of the same provider event id,
+  for example Telegram `update_id`, and prove the bundle acknowledges the
+  duplicate without running the React turn again
+- attachment transport tests cover both captioned and attachment-only messages;
+  provider file ids must be hydrated into normal bundle attachments before the
+  React turn starts
 - a runtime test or manual check proves the webhook triggers the React turn when
   the bundle is loaded in proc
 
@@ -247,6 +253,11 @@ Classify failures by boundary:
   found": user-actionable setup failure
 - webhook returns only an acknowledgement: check the timeline and outbound
   transport rendering path, because webhook JSON is usually not the bot reply
+- same old user request repeats after a webhook retry: check event-id
+  idempotency before checking React behavior
+- attachment message gets no answer: check whether attachment-only messages are
+  dropped before React and whether provider file ids are converted to readable
+  bundle attachments
 
 Multiworker rule:
 
