@@ -94,6 +94,12 @@ Those remain deployment-owned.
 | user-scoped bundle props | `get_user_prop(...)`, `get_user_props()` | `set_user_prop(...)`, `delete_user_prop(...)` | tenant + project + bundle + user | PostgreSQL `<SCHEMA>.user_bundle_props` | never exported to descriptors or bundle export |
 | user-scoped bundle secrets | async: `await get_user_secret_async(...)`; compatibility sync: `get_user_secret(...)` | async: `await set_user_secret_async(...)`, `await delete_user_secret_async(...)`; compatibility sync: `set_user_secret(...)`, `delete_user_secret(...)` | tenant + project + bundle + user | configured secrets provider; in local `secrets-file` mode this is `secrets.yaml` | never exported to descriptors or bundle export |
 
+In the user-scoped rows, `user` means the resolved bundle user scope. It may be
+a KDCube account id in control-plane chat/widgets, but public integrations can
+resolve a bundle-owned external identity such as `telegram_<telegram_user_id>`
+or another stable mapped user key. Do not assume every bundle user owns a KDCube
+login.
+
 ## Decide the scope before you write code
 
 | If the value belongs to... | Use | Do not use |
@@ -309,6 +315,8 @@ That distinction matters:
   code
 - deployment-scoped bundle writes are operational/configuration writes
 - user-scoped writes are part of normal bundle runtime behavior
+- user-scoped writes are keyed by bundle user scope, which may be an external
+  identity accepted by the bundle
 
 ## Raw reads versus effective reads
 

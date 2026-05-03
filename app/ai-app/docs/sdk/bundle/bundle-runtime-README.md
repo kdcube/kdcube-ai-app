@@ -296,6 +296,17 @@ Current `INTEGRATIONS` contents are:
 - `kv_cache`
 - `tool_subsystem`
 
+Reusable helper:
+
+- `kdcube_ai_app.apps.chat.sdk.tools.bundle_tool_context.scope()` returns the
+  current tenant, project, bundle id, bundle user scope, user type,
+  conversation/turn ids, bundle props, storage root, output/work dirs, and
+  `bundle_call_context`.
+- The returned `user_id` is the bundle user scope. It is not guaranteed to be a
+  KDCube account id; public integrations may resolve stable external identities.
+- Use `bundle_call_context` for runtime ids that tools need but the model should
+  not provide, such as task id, execution id, job metadata, or provider context.
+
 ### 4) Tool execution in isolated runtime
 
 When policy or tool runtime sends execution into isolated runtime, the tool

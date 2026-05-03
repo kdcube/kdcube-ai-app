@@ -210,6 +210,15 @@ Good React smoke tests:
   React turn starts
 - a runtime test or manual check proves the webhook triggers the React turn when
   the bundle is loaded in proc
+- user-scope tests prove that state and user secrets are keyed by the resolved
+  bundle user scope, not by an assumed KDCube account id
+- if the bundle has public/external users, test both the KDCube-authenticated
+  path and the public integration path, for example Telegram `initData`
+  verification plus mapping/fallback to a stable external user scope
+- tool-signature tests verify the model is not asked to invent runtime ids such
+  as user id, task id, execution id, conversation id, internal account id, or
+  storage paths; those must come from runtime context, job payload, or opaque
+  references returned by earlier tools
 
 Do not add a gate-agent test unless the bundle intentionally has a gate.
 For simple React bundles, a deterministic prepare step plus solver is enough.
@@ -239,6 +248,10 @@ Prove the sequence:
 - React was built with the expected `allowed_plugins` and `tool_ids`
 - skill loading exposed the expected bundle-local skills
 - the requested tool actually executed, not only appeared in the catalog
+- the resolved bundle user scope and user type match the path being tested
+  (KDCube-authenticated, Telegram/public, cron, or `@on_job`)
+- `bundle_call_context` or job payload contains expected runtime ids for job
+  tools instead of those ids being supplied by the model
 - the turn timeline contains the events needed by the transport adapter
 
 Classify failures by boundary:
