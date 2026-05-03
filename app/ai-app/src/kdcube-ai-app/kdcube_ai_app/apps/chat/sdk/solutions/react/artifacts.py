@@ -210,7 +210,7 @@ def normalize_physical_path(
 ) -> tuple[str, str, bool]:
     """
     Normalize a user-supplied path to a physical OUT_DIR-relative path.
-    For writer-like callers, paths are normalized to "<turn_id>/files/…".
+    For writer-like callers, paths are normalized to "turn_<id>/files/...".
     When allow_generic_fi=True, generic fi:<outdir-relative-path> inputs are preserved
     as OUT_DIR-relative physical paths instead of being rewritten to current turn files.
     Returns (physical_path, relpath, rewritten_flag).

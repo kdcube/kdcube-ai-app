@@ -196,9 +196,9 @@ Notes:
 ### Path conventions used inside the workspace
 
 Logical `fi:` paths map to physical `out/` paths by convention:
-- `fi:<turn_id>.files/<rel>` -> `<turn_id>/files/<rel>`
-- `fi:<turn_id>.user.attachments/<rel>` -> `<turn_id>/attachments/<rel>`
-- legacy `fi:<turn_id>.attachments/<rel>` -> `<turn_id>/attachments/<rel>`
+- `fi:<turn_id>.files/<rel>` -> `turn_<id>/files/<rel>`
+- `fi:<turn_id>.user.attachments/<rel>` -> `turn_<id>/attachments/<rel>`
+- legacy `fi:<turn_id>.attachments/<rel>` -> `turn_<id>/attachments/<rel>`
 - `fi:<outdir-relative-path>` -> `<outdir-relative-path>` for any readable file already present under `out/`
   Example: `fi:logs/docker.err.log` -> `logs/docker.err.log`
 

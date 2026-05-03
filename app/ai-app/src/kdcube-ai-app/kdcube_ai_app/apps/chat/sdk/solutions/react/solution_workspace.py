@@ -689,7 +689,7 @@ async def rehost_previous_files(
         turn_id: str  # ← turn_id for this deliverable's source turn
 ) -> list[dict]:
     """
-    Copy files from conversation storage into workdir/<turn_id>/files/,
+    Copy files from conversation storage into workdir/turn_<id>/files/,
     organizing historical files by their source turn.
 
     Structure:
@@ -701,7 +701,7 @@ async def rehost_previous_files(
         turn_1765841834567_a2bc3d/
           chart.png
 
-    Updated paths in artifacts reflect this structure: "<turn_id>/files/<relative_path>"
+    Updated paths in artifacts reflect this structure: "turn_<id>/files/<relative_path>"
 
     **Draft file slots:** File slots with `path: ""` are draft artifacts (no actual file).
     These are skipped with `rehosted: False` and `file_exists: False` flags.
@@ -856,7 +856,7 @@ async def rehost_previous_attachments(
         turn_id: str,
 ) -> list[dict]:
     """
-    Copy attachments from conversation storage into workdir/<turn_id>/attachments/.
+    Copy attachments from conversation storage into workdir/turn_<id>/attachments/.
 
     Structure:
       workdir/

@@ -370,7 +370,7 @@ def _normalize_artifacts_spec(artifacts: Any) -> Tuple[Optional[List[Dict[str, A
         if "/attachments/" in safe_filename:
             return None, {
                 "code": "invalid_filename",
-                "message": "Contract filename must be under <turn_id>/files/ or <turn_id>/outputs/ (attachments not allowed)",
+                "message": "Contract filename must be under turn_<id>/files/ or turn_<id>/outputs/ (attachments not allowed)",
             }
         qualified = _split_turn_artifact_path(safe_filename)
         if not qualified or qualified[1] not in {"files", "outputs"}:
@@ -378,7 +378,7 @@ def _normalize_artifacts_spec(artifacts: Any) -> Tuple[Optional[List[Dict[str, A
                 "code": "invalid_filename",
                 "message": (
                     "filename must be OUTPUT_DIR-relative and start with "
-                    "'<turn_id>/files/' or '<turn_id>/outputs/': "
+                    "'turn_<id>/files/' or 'turn_<id>/outputs/': "
                     f"{filename}"
                 ),
             }
@@ -491,7 +491,7 @@ def normalize_exec_contract_for_turn(
         ):
             return None, [], {
                 "code": "invalid_filename",
-                "message": "Contract filename must be under <turn_id>/files/ or <turn_id>/outputs/ (attachments not allowed)",
+                "message": "Contract filename must be under turn_<id>/files/ or turn_<id>/outputs/ (attachments not allowed)",
             }
         rewritten = None
         if qualified:
@@ -542,7 +542,7 @@ def rewrite_exec_code_paths(
 ) -> Tuple[str, List[Dict[str, str]]]:
     """
     Rewrite unqualified files/, outputs/, or attachments/ paths in code to current turn_id.
-    Leaves already qualified <turn_id>/files|outputs|attachments paths intact.
+    Leaves already qualified turn_<id>/files|outputs|attachments paths intact.
     Returns (rewritten_code, rewrites).
     """
     if not isinstance(code, str) or not code.strip() or not turn_id:
@@ -707,7 +707,7 @@ class ExecTools:
             "[INPUTS]\n"
             "- When called from React decision, the code is provided in <channel:code> (not in params).\n"
             "1) `contract` (list or JSON string, REQUIRED): list of output files specs with fields:\n"
-            "   - filename (OUTPUT_DIR‑relative; MUST start with the current <turn_id>/files/ or <turn_id>/outputs/, or use concise files/... / outputs/...)\n"
+            "   - filename (OUTPUT_DIR-relative; MUST start with the current turn_<id>/files/ or turn_<id>/outputs/, or use concise files/... / outputs/...)\n"
             "   - description (what this file contains / why it was produced)\n"
             "   - visibility (optional: `external` or `internal`; default `external`)\n"
             "   These are outputs of this program that it promises to produce.\n"
@@ -732,14 +732,14 @@ class ExecTools:
             "FILES & PATHS\n"
             "- `OUTPUT_DIR` is the output data/artifact root.\n"
             "- `OUT_DIR` is also available as `Path(OUTPUT_DIR)` if you prefer Path operations.\n"
-            "- Input workspace artifacts from context are available by their filenames under OUTPUT_DIR/<turn_id>/files/.\n"
-            "- Historical or generated non-workspace artifacts may also be under OUTPUT_DIR/<turn_id>/outputs/.\n"
-            "- User attachments are available under OUTPUT_DIR/<turn_id>/attachments/.\n"
-            "- Write durable project/workspace state to OUTPUT_DIR/<turn_id>/files/.\n"
-            "- Write reports, test results, and other non-workspace deliverables to OUTPUT_DIR/<turn_id>/outputs/.\n"
+            "- Input workspace artifacts from context are available by their filenames under OUTPUT_DIR/turn_<id>/files/.\n"
+            "- Historical or generated non-workspace artifacts may also be under OUTPUT_DIR/turn_<id>/outputs/.\n"
+            "- User attachments are available under OUTPUT_DIR/turn_<id>/attachments/.\n"
+            "- Write durable project/workspace state to OUTPUT_DIR/turn_<id>/files/.\n"
+            "- Write reports, test results, and other non-workspace deliverables to OUTPUT_DIR/turn_<id>/outputs/.\n"
             "- Build paths like:\n"
-            "  `Path(OUTPUT_DIR) / \"<turn_id>/files/my_file.ext\"` or `Path(OUTPUT_DIR) / \"<turn_id>/outputs/report.txt\"`.\n"
-            "- Do not rename the current turn id. If the current turn is `telegram_turn_...`, use that exact id or the concise `files/...` / `outputs/...` form.\n"
+            "  `Path(OUTPUT_DIR) / \"turn_<id>/files/my_file.ext\"` or `Path(OUTPUT_DIR) / \"turn_<id>/outputs/report.txt\"`.\n"
+            "- Do not invent or rename the current turn id. It starts with `turn_`; use the exact current id or the concise `files/...` / `outputs/...` form.\n"
             "- Network access is disabled in the sandbox; any network calls will fail.\n"
             "- Read/write outside OUTPUT_DIR or the current workdir is not permitted.\n"
             "- The runtime filesystem view is restricted; do not inspect, list, copy, archive, or report system/runtime paths.\n"
@@ -806,11 +806,11 @@ class ExecTools:
     #         "      raise RuntimeError(resp[\"err\"])\n"
     #         "\n"
     #         "FILES & PATHS\n"
-    #         "- Input artifacts from context are available by their filenames under OUTPUT_DIR/<turn_id>/files/.\n"
-    #         "- User attachments are available under OUTPUT_DIR/<turn_id>/attachments/.\n"
-    #         "- Write your outputs to OUTPUT_DIR/<turn_id>/files/.\n"
+    #         "- Input artifacts from context are available by their filenames under OUTPUT_DIR/turn_<id>/files/.\n"
+    #         "- User attachments are available under OUTPUT_DIR/turn_<id>/attachments/.\n"
+    #         "- Write your outputs to OUTPUT_DIR/turn_<id>/files/.\n"
     #         "- `OUTPUT_DIR` is a global string path in the runtime; build paths like:\n"
-    #         "  `os.path.join(OUTPUT_DIR, \"<turn_id>/files/my_file.ext\")` or `Path(OUTPUT_DIR) / \"<turn_id>/attachments/user_file.ext\"`.\n"
+    #         "  `os.path.join(OUTPUT_DIR, \"turn_<id>/files/my_file.ext\")` or `Path(OUTPUT_DIR) / \"turn_<id>/attachments/user_file.ext\"`.\n"
     #         "- Network access is disabled in the sandbox; any network calls will fail.\n"
     #         "- Read/write outside OUTPUT_DIR or the current workdir is not permitted.\n"
     #         "\n"

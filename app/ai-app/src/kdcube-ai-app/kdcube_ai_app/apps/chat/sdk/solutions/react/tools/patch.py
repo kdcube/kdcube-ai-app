@@ -37,7 +37,7 @@ TOOL_SPEC = {
         "If kind='file' the updated file is shared; if kind='display' it is streamed only."
     ),
     "args": {
-        "path": "str (FIRST FIELD). Filepath of the artifact to patch (relative under <turn_id>/files/).",
+        "path": "str (FIRST FIELD). Filepath of the artifact to patch (relative under turn_<id>/files/).",
         "channel": "str (SECOND FIELD). 'canvas' (default) or 'timeline_text'.",
         "patch": "str (THIRD FIELD). Unified diff if starts with ---/+++/@@; otherwise full replacement.",
         "kind": "str (FOURTH FIELD). 'display' or 'file'.",

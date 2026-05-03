@@ -531,7 +531,7 @@ refs/kdcube/<tenant>/<project>/<user_id>/<conversation_id>/versions/<turn_id>
 4. if React called `react.pull(...)`, runtime materializes the requested path or subtree locally under:
 
 ```text
-<turn_id>/files/<scope>/<path>
+turn_<id>/files/<scope>/<path>
 ```
 
 5. tooling and exec can then use the local path naturally

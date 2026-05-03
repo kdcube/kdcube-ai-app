@@ -44,9 +44,9 @@ Stable identifier used in `react.read` / `fetch_ctx`. Examples:
 **Physical path**  
 OUT_DIR‑relative path used for `react.patch`, rendering tools, and exec code file I/O.
 Common forms:
-- `<turn_id>/files/<relpath>` (files; current or historical)
-- `<turn_id>/outputs/<relpath>` (non-workspace produced artifacts)
-- `<turn_id>/attachments/<name>` (attachments)
+- `turn_<id>/files/<relpath>` (files; current or historical)
+- `turn_<id>/outputs/<relpath>` (non-workspace produced artifacts)
+- `turn_<id>/attachments/<name>` (attachments)
 - `logs/<name>` and other runtime-managed files already present in OUT_DIR
 
 This `physical_path` means:

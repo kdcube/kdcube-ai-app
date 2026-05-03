@@ -400,15 +400,15 @@ Physical → Logical mapping:
   logical : ar:plan.latest:<plan_id>
   meaning : stable alias for the latest snapshot of a plan lineage; use it with react.read or fetch_ctx
 - User attachment:
-  physical: <turn_id>/attachments/<name>
+  physical: turn_<id>/attachments/<name>
   logical : fi:<turn_id>.user.attachments/<name>
   meaning : user-provided file artifact from that turn
 - External event attachment:
-  physical: <turn_id>/external/<kind>/attachments/<message_id>/<name>
+  physical: turn_<id>/external/<kind>/attachments/<message_id>/<name>
   logical : fi:<turn_id>.external.<kind>.attachments/<message_id>/<name>
   meaning : attachment introduced by a live external event in that turn
 - File artifact (from tools):
-  physical: <turn_id>/files/<relpath>
+  physical: turn_<id>/files/<relpath>
   logical : fi:<turn_id>.files/<relpath>
   meaning : assistant/tool-produced file artifact from that turn
 - Other readable files already present inside current-turn OUT_DIR:
@@ -530,13 +530,13 @@ Using unsupported logical namespaces with fetch_ctx returns an error rather than
 - react.read uses LOGICAL paths.
 - ctx_tools.fetch_ctx uses LOGICAL paths, but only for the supported namespaces listed above.
 - react.patch uses PHYSICAL paths:
-  - `react.patch(path="<turn_id>/files/draft.md", patch="...")`
+  - `react.patch(path="turn_<id>/files/draft.md", patch="...")`
 - rendering_tools.write_* use PHYSICAL paths:
-  - `rendering_tools.write_pdf(path="<turn_id>/outputs/report.pdf", content=...)`
+  - `rendering_tools.write_pdf(path="turn_<id>/outputs/report.pdf", content=...)`
 - exec code uses PHYSICAL OUTPUT_DIR-relative paths:
-  - `Path(OUTPUT_DIR) / "<turn_id>/files/app.py"`
-  - `Path(OUTPUT_DIR) / "<turn_id>/outputs/report.pdf"`
-- Do not rename the current turn id. If the current turn id is `telegram_turn_...`, use that exact id or use the concise current-turn form such as `files/report.md` / `outputs/report.pdf` where the tool supports it.
+  - `Path(OUTPUT_DIR) / "turn_<id>/files/app.py"`
+  - `Path(OUTPUT_DIR) / "turn_<id>/outputs/report.pdf"`
+- Do not invent or rename the current turn id. It starts with `turn_`; use the exact current id or use the concise current-turn form such as `files/report.md` / `outputs/report.pdf` where the tool supports it.
 - Exec contract files may declare optional `visibility="external"|"internal"`:
   - `external` (default): user-shareable produced artifact
   - `internal`: agent/runtime-only file kept in OUT_DIR/timeline, not sent to the user

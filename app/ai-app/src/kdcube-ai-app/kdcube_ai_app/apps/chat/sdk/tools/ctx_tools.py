@@ -515,7 +515,7 @@ class ContextTools:
             "• tc:<turn_id>.<tool_call_id>.result\n"
             "\n"
             "NOT SUPPORTED in fetch_ctx (use physical paths instead):\n"
-            "• fi:<turn_id>.* (attachments/files) — use OUT_DIR/<turn_id>/attachments/... or OUT_DIR/<turn_id>/files/...\n"
+            "• fi:<turn_id>.* (attachments/files) — use OUT_DIR/turn_<id>/attachments/... or OUT_DIR/turn_<id>/files/...\n"
             "• sk:<skill id> — skills cannot be read from code. Only with react.read (NOT FROM EXEC)\n"
             "\n"
             "CANONICAL ARTIFACT SHAPE\n"
