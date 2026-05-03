@@ -174,20 +174,27 @@ The important split is:
 
 - platform/global config and secrets:
   - `get_settings()`
-  - `get_secret("canonical.key")`
+  - `await get_secret_async("canonical.key")` in async code
 - non-secret bundle config:
   - `self.bundle_prop(...)`
   - code defaults -> `bundles.yaml` -> runtime/admin overrides
 - bundle secrets:
-  - `get_secret("b:...")`
+  - `await get_secret_async("b:...")` in async code
   - provisioned through `bundles.secrets.yaml` or the configured secrets provider
 - user-scoped bundle state:
   - `get_user_prop(...)`
-  - `get_user_secret(...)`
+  - `await get_user_secret_async(...)`
   - never exported back into descriptors
 - raw mounted descriptor reads:
   - `get_plain(...)`
   - only when bundle code really must inspect descriptor files directly
+
+Compatibility note:
+
+- sync helpers such as `get_secret(...)` and `get_user_secret(...)` still exist
+  for old sync-only code
+- new async bundle paths should use async helpers so provider IO does not block
+  the event loop directly
 
 Read the exact model here:
 

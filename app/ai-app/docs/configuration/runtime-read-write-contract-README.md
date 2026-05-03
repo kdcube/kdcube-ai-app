@@ -26,14 +26,17 @@ Use that SDK page for:
 
 - `get_settings()`
 - `get_plain(...)`
-- `get_secret(...)`
+- `get_secret_async(...)` / `read_secret_async(...)`
+- `get_secret(...)` / `read_secret(...)` for sync compatibility
 - `self.bundle_prop(...)`
 - `await set_bundle_prop(...)`
 - `await set_bundle_secret(...)`
 - `get_user_prop(...)`
 - `set_user_prop(...)`
-- `get_user_secret(...)`
-- `set_user_secret(...)`
+- `get_user_secret_async(...)`
+- `set_user_secret_async(...)`
+- `delete_user_secret_async(...)`
+- `get_user_secret(...)` / `set_user_secret(...)` for sync compatibility
 
 The detailed storage and authority model now lives here:
 
@@ -61,3 +64,9 @@ Avoid:
 - direct hardcoded opens of descriptor YAML files
 
 Use the SDK configuration page above as the single programmatic reference.
+
+Async rule:
+
+- new bundle APIs, hooks, tools, cron handlers, and `@on_job` handlers should
+  use async secret helpers
+- sync secret helpers exist only for legacy sync-only code

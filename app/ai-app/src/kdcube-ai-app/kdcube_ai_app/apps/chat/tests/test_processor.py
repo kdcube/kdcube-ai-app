@@ -14,9 +14,16 @@ from kdcube_ai_app.apps.chat.processor_scheduler_backend import (
     SCHEDULER_BACKEND_LEGACY_LISTS,
 )
 from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import (
+    bind_current_request_context,
+    get_current_bundle_call_context,
     get_current_comm,
     get_current_request_context,
+    restore_ctxvars as restore_comm_ctxvars,
+    set_current_bundle_call_context,
+    set_current_request_context,
+    snapshot_ctxvars as snapshot_comm_ctxvars,
 )
+from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
 
 
 class _FakePool:
@@ -249,6 +256,21 @@ def _build_task_payload(task_id="task-1", *, user_type="registered"):
     }
 
 
+def test_comm_ctx_snapshots_bundle_call_context():
+    payload = ChatTaskPayload.model_validate(_build_task_payload("bundle-call-context"))
+    payload.bundle_call_context = {"task_id": "task-a", "execution_id": "exec-a"}
+    with bind_current_request_context(payload):
+        snapshot = snapshot_comm_ctxvars()
+
+    try:
+        restore_comm_ctxvars(snapshot)
+        assert get_current_bundle_call_context() == {"task_id": "task-a", "execution_id": "exec-a"}
+        assert get_current_request_context().bundle_call_context["execution_id"] == "exec-a"
+    finally:
+        set_current_request_context(None)
+        set_current_bundle_call_context({})
+
+
 def _build_processor(
         redis_client,
         *,
@@ -290,7 +312,20 @@ def _build_processor(
 @pytest.fixture
 def _patch_processor_dependencies(monkeypatch):
     _DummyChatCommunicator.error_calls = []
-    monkeypatch.setattr(processor_mod, "get_settings", lambda: SimpleNamespace(STORAGE_PATH="/tmp"))
+    service_settings = SimpleNamespace(
+        CHAT_SCHEDULER_BACKEND=SCHEDULER_BACKEND_LEGACY_LISTS,
+        CHAT_TASK_TIMEOUT_SEC=30,
+        CHAT_TASK_IDLE_TIMEOUT_SEC=30,
+        CHAT_TASK_MAX_WALL_TIME_SEC=120,
+        CHAT_TASK_WATCHDOG_POLL_INTERVAL_SEC=0.01,
+    )
+    settings = SimpleNamespace(
+        STORAGE_PATH="/tmp",
+        TENANT="tenant-a",
+        PROJECT="project-a",
+        PLATFORM=SimpleNamespace(SERVICE=service_settings),
+    )
+    monkeypatch.setattr(processor_mod, "get_settings", lambda: settings)
     monkeypatch.setattr(processor_mod, "create_storage_backend", lambda *_args, **_kwargs: object())
     monkeypatch.setattr(processor_mod, "record_metric", _noop_handler)
     monkeypatch.setattr(processor_mod, "ChatCommunicator", _DummyChatCommunicator)
@@ -697,6 +732,7 @@ async def test_process_task_binds_runtime_request_context(_patch_processor_depen
             getattr(getattr(current, "user", None), "user_id", None),
             getattr(getattr(current, "routing", None), "socket_id", None),
             current_comm is not None,
+            get_current_bundle_call_context().get("purpose"),
         )
         await asyncio.sleep(0)
         current = get_current_request_context()
@@ -705,11 +741,13 @@ async def test_process_task_binds_runtime_request_context(_patch_processor_depen
             getattr(getattr(current, "user", None), "user_id", None),
             getattr(getattr(current, "routing", None), "socket_id", None),
             current_comm is not None,
+            get_current_bundle_call_context().get("purpose"),
         )
         return {}
 
     processor = _build_processor(redis, handler=_handler)
     task_payload = _build_task_payload("ctx-task")
+    task_payload["bundle_call_context"] = {"purpose": "test-context"}
     raw_payload = json.dumps(task_payload).encode("utf-8")
     inflight_key = "queue:inflight:registered"
     lock_key = "lock:ctx-task"
@@ -726,8 +764,8 @@ async def test_process_task_binds_runtime_request_context(_patch_processor_depen
 
     await processor._process_task(task_data)
 
-    assert captured["before"] == ("user-1", "socket-1", True)
-    assert captured["after"] == ("user-1", "socket-1", True)
+    assert captured["before"] == ("user-1", "socket-1", True, "test-context")
+    assert captured["after"] == ("user-1", "socket-1", True, "test-context")
 
 
 @pytest.mark.asyncio

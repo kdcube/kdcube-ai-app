@@ -25,14 +25,26 @@ class _FakeSecretsManager:
         self.get_calls.append(key)
         return self.values.get(key)
 
+    async def get_secret_async(self, key: str):
+        return self.get_secret(key)
+
     def get_user_secret(self, *, user_id: str, key: str, bundle_id: str | None = None):
         values = {
             ("user-1", "bundle.demo", "anthropic.api_key"): "sk-user-anthropic",
         }
         return values.get((user_id, bundle_id, key))
 
+    async def get_user_secret_async(self, *, user_id: str, key: str, bundle_id: str | None = None):
+        return self.get_user_secret(user_id=user_id, key=key, bundle_id=bundle_id)
+
     def set_secret(self, key: str, value: str):
         self.set_calls.append((key, value))
+
+    async def set_secret_async(self, key: str, value: str):
+        self.set_secret(key, value)
+
+    async def set_user_secret_async(self, *, user_id: str, key: str, value: str, bundle_id: str | None = None):
+        self.set_calls.append((user_id, bundle_id, key, value))
 
 
 class _FakePropsManager:
@@ -138,6 +150,21 @@ def test_get_user_secret_uses_request_context_scope(monkeypatch):
     )
 
     assert sdk_config.get_user_secret("anthropic.api_key") == "sk-user-anthropic"
+
+
+@pytest.mark.asyncio
+async def test_get_user_secret_async_uses_request_context_scope(monkeypatch):
+    monkeypatch.setattr(sdk_config, "get_secrets_manager", lambda _settings: _FakeSecretsManager())
+    monkeypatch.setattr(
+        comm_ctx,
+        "get_current_request_context",
+        lambda: ChatTaskPayload(
+            routing=ChatTaskRouting(bundle_id="bundle.demo", session_id="s-1"),
+            user=ChatTaskUser(user_type="registered", user_id="user-1"),
+        ),
+    )
+
+    assert await sdk_config.get_user_secret_async("anthropic.api_key") == "sk-user-anthropic"
 
 
 def test_get_user_prop_uses_request_context_scope(monkeypatch):

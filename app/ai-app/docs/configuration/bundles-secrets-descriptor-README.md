@@ -48,8 +48,10 @@ Do not put these values into:
 
 | Need | API | Notes |
 |---|---|---|
-| secret for the current bundle | `get_secret("b:group.key")` | Expands to `bundles.<current_bundle_id>.secrets.group.key` |
-| explicit bundle-scoped secret | `get_secret("bundles.<bundle_id>.secrets.group.key")` | Use when bundle id is known explicitly |
+| secret for the current bundle in async code | `await get_secret_async("b:group.key")` | Expands to `bundles.<current_bundle_id>.secrets.group.key` |
+| explicit bundle-scoped secret in async code | `await get_secret_async("bundles.<bundle_id>.secrets.group.key")` | Use when bundle id is known explicitly |
+| compatibility sync reads | `get_secret("b:group.key")` | Keep for old sync-only code |
+| write current bundle secret | `await set_bundle_secret("group.key", value)` | Persists into the configured secrets provider |
 
 ### File-resolution env vars
 
@@ -63,7 +65,7 @@ Do not put these values into:
 | `bundles.secrets.yaml` field | Used by | Notes |
 |---|---|---|
 | `bundles.items[].id` | bundle-scoped secret path resolution | must match the bundle id in `bundles.yaml` |
-| `bundles.items[].secrets.*` | `get_secret("b:...")` | values are bundle-scoped secret leaves |
+| `bundles.items[].secrets.*` | `get_secret_async("b:...")` in async code | values are bundle-scoped secret leaves |
 
 ## Authority by mode
 

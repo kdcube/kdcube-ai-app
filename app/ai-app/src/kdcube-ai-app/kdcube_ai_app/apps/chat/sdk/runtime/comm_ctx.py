@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Mapping
 
 from kdcube_ai_app.apps.chat.emitters import ChatCommunicator
 from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
@@ -15,8 +15,10 @@ from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
 COMM_CV: ContextVar[object | None] = ContextVar("COMM_CV", default=None)
 REQUEST_CONTEXT_CV: ContextVar[ChatTaskPayload | None] = ContextVar("REQUEST_CONTEXT_CV", default=None)
 BUNDLE_ID_CV: ContextVar[str | None] = ContextVar("BUNDLE_ID_CV", default=None)
+BUNDLE_CALL_CONTEXT_CV: ContextVar[Dict[str, Any]] = ContextVar("BUNDLE_CALL_CONTEXT_CV", default={})
 _BIND_COMM_UNSET = object()
 _BIND_BUNDLE_UNSET = object()
+_BIND_BUNDLE_CALL_CONTEXT_UNSET = object()
 
 def set_comm(comm: object) -> None:
     """Register the ChatCommunicator singleton for this context."""
@@ -40,6 +42,26 @@ def set_current_request_context(request_context: ChatTaskPayload | None) -> None
 def get_current_request_context() -> Optional[ChatTaskPayload]:
     """Get the current request/task payload bound to this execution context."""
     return REQUEST_CONTEXT_CV.get()
+
+
+def set_current_bundle_call_context(context: Mapping[str, Any] | None) -> None:
+    """Register bundle-owned call metadata for tools and child runtimes."""
+    BUNDLE_CALL_CONTEXT_CV.set(dict(context or {}))
+
+
+def get_current_bundle_call_context() -> Dict[str, Any]:
+    """Get JSON-safe bundle-owned call metadata bound to this execution context."""
+    value = BUNDLE_CALL_CONTEXT_CV.get({})
+    return dict(value) if isinstance(value, dict) else {}
+
+
+@contextmanager
+def bind_current_bundle_call_context(context: Mapping[str, Any] | None):
+    token = BUNDLE_CALL_CONTEXT_CV.set(dict(context or {}))
+    try:
+        yield BUNDLE_CALL_CONTEXT_CV.get()
+    finally:
+        BUNDLE_CALL_CONTEXT_CV.reset(token)
 
 
 def set_current_bundle_id(bundle_id: str | None) -> None:
@@ -67,6 +89,7 @@ def bind_current_request_context(
     *,
     comm: object | ChatCommunicator | None = _BIND_COMM_UNSET,
     bundle_id: str | None | object = _BIND_BUNDLE_UNSET,
+    bundle_call_context: Mapping[str, Any] | None | object = _BIND_BUNDLE_CALL_CONTEXT_UNSET,
 ):
     """
     Bind request-local execution context for the lifetime of one invocation.
@@ -75,6 +98,7 @@ def bind_current_request_context(
     req_token = REQUEST_CONTEXT_CV.set(request_context)
     comm_token = None
     bundle_token = None
+    bundle_call_token = None
     if comm is not _BIND_COMM_UNSET:
         comm_token = COMM_CV.set(comm)
     resolved_bundle_id = bundle_id
@@ -84,9 +108,18 @@ def bind_current_request_context(
         ).strip() or None
     if resolved_bundle_id is not _BIND_BUNDLE_UNSET:
         bundle_token = BUNDLE_ID_CV.set(str(resolved_bundle_id or "").strip() or None)
+    resolved_bundle_call_context = bundle_call_context
+    if resolved_bundle_call_context is _BIND_BUNDLE_CALL_CONTEXT_UNSET and request_context is not None:
+        resolved_bundle_call_context = getattr(request_context, "bundle_call_context", None)
+    if resolved_bundle_call_context is not _BIND_BUNDLE_CALL_CONTEXT_UNSET:
+        bundle_call_token = BUNDLE_CALL_CONTEXT_CV.set(
+            dict(resolved_bundle_call_context or {}) if isinstance(resolved_bundle_call_context, Mapping) else {}
+        )
     try:
         yield request_context
     finally:
+        if bundle_call_token is not None:
+            BUNDLE_CALL_CONTEXT_CV.reset(bundle_call_token)
         if bundle_token is not None:
             BUNDLE_ID_CV.reset(bundle_token)
         if comm_token is not None:
@@ -130,15 +163,22 @@ def snapshot_ctxvars() -> dict:
         "COMM_PRESENT": COMM_CV.get() is not None,
         "REQUEST_CONTEXT": request_context,
         "BUNDLE_ID": BUNDLE_ID_CV.get(),
+        "BUNDLE_CALL_CONTEXT": get_current_bundle_call_context(),
     }
 
 def restore_ctxvars(payload: dict) -> None:
     raw_request_context = (payload or {}).get("REQUEST_CONTEXT")
+    restored_request_context = None
     if raw_request_context:
         try:
-            REQUEST_CONTEXT_CV.set(ChatTaskPayload.model_validate(raw_request_context))
+            restored_request_context = ChatTaskPayload.model_validate(raw_request_context)
+            REQUEST_CONTEXT_CV.set(restored_request_context)
         except Exception:
             REQUEST_CONTEXT_CV.set(None)
     else:
         REQUEST_CONTEXT_CV.set(None)
     BUNDLE_ID_CV.set((payload or {}).get("BUNDLE_ID") or None)
+    bundle_call_context = (payload or {}).get("BUNDLE_CALL_CONTEXT")
+    if not isinstance(bundle_call_context, dict) and restored_request_context is not None:
+        bundle_call_context = getattr(restored_request_context, "bundle_call_context", None)
+    BUNDLE_CALL_CONTEXT_CV.set(dict(bundle_call_context or {}) if isinstance(bundle_call_context, dict) else {})

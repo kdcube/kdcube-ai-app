@@ -1362,6 +1362,14 @@ class EnhancedChatRequestProcessor:
             ),
             config=ChatTaskConfig(values={}),
             accounting=ChatTaskAccounting(envelope={"request_id": request_id}),
+            bundle_call_context={
+                "kind": "background_job",
+                "job_id": job.job_id,
+                "work_kind": job.work_kind,
+                "source": dict(job.source or {}),
+                "metadata": metadata,
+                "payload": job_payload,
+            },
         )
         task_data = payload.model_dump()
         task_data["_background_job_claim"] = claim

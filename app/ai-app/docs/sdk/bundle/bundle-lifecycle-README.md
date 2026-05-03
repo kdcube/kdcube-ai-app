@@ -215,6 +215,9 @@ Lifecycle implications:
 - define at most one `@on_job` handler per bundle
 - the job envelope is the handoff contract; bundle-owned fields live in
   `work_kind`, `metadata`, and `payload`
+- `bundle_call_context` is the reserved JSON context that proc snapshots and
+  restores into nested runtimes; use it for task/execution metadata tools must
+  inherit without model-supplied arguments
 - the handler should assume retry is possible until the stream message is acked
 - cron should decide what is due; `@on_job` should execute the ready job
 - long-running per-user work should be queued as jobs instead of executed inside
@@ -340,7 +343,8 @@ See:
 | Surface | Access | Isolation | Use it for |
 |---|---|---|---|
 | `bundle_props` | read | tenant + project + bundle | effective non-secret configuration |
-| `get_secret(...)` | read | secret key namespace | API keys, tokens, credentials |
+| `get_secret_async(...)` | read | secret key namespace | API keys, tokens, credentials |
+| `get_user_secret_async(...)` | read/write | tenant + project + bundle + user | per-user tokens and credentials |
 | Redis KV cache | read/write | whatever keys you choose | lightweight distributed state, flags, small caches |
 | Bundle storage backend (`CB_BUNDLE_STORAGE_URL`) | read/write | tenant + project + bundle | persistent bundle data on file/S3 storage |
 | Shared local bundle storage (`BUNDLE_STORAGE_ROOT`) | read/write by bundle code | tenant + project + bundle | large local/EFS caches, cloned repos, indexes, read-only assets |
@@ -353,7 +357,8 @@ Bundle developer surfaces
 
   Config / identity
     bundle_props
-    get_secret(...)
+    get_secret_async(...)
+    get_user_secret_async(...)
     comm_context.actor.{tenant_id, project_id, user_id, ...}
 
   Distributed state

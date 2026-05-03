@@ -183,7 +183,7 @@ Canonical bundle-authenticated public hook:
 ```python
 from fastapi import HTTPException, Request
 
-from kdcube_ai_app.apps.chat.sdk.config import get_secret
+from kdcube_ai_app.apps.chat.sdk.config import get_secret_async
 
 @api(
     alias="telegram_webhook",
@@ -195,7 +195,7 @@ async def telegram_webhook(self, request: Request, **kwargs):
         "telegram.webhook.auth.header_name",
         "X-Telegram-Bot-Api-Secret-Token",
     )
-    expected_token = get_secret("b:telegram.webhook.auth.shared_token")
+    expected_token = await get_secret_async("b:telegram.webhook.auth.shared_token")
     provided_token = request.headers.get(header_name)
     if not expected_token or provided_token != expected_token:
         raise HTTPException(status_code=401, detail="Unauthorized")
@@ -393,7 +393,7 @@ Bundle code:
 from fastapi import HTTPException, Request
 from mcp.server.fastmcp import FastMCP
 
-from kdcube_ai_app.apps.chat.sdk.config import get_secret
+from kdcube_ai_app.apps.chat.sdk.config import get_secret_async
 from kdcube_ai_app.infra.plugin.agentic_loader import mcp
 
 @mcp(
@@ -401,12 +401,12 @@ from kdcube_ai_app.infra.plugin.agentic_loader import mcp
     route="operations",
     transport="streamable-http",
 )
-def partner_tools_mcp(self, request: Request, **kwargs):
+async def partner_tools_mcp(self, request: Request, **kwargs):
     header_name = self.bundle_prop(
         "mcp.inbound.auth.header_name",
         "X-Partner-MCP-Token",
     )
-    expected_token = get_secret("b:mcp.inbound.auth.shared_token")
+    expected_token = await get_secret_async("b:mcp.inbound.auth.shared_token")
     provided_token = request.headers.get(header_name)
 
     if not expected_token:
