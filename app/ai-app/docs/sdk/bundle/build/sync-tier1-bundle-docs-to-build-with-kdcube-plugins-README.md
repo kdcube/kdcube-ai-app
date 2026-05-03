@@ -101,6 +101,12 @@ The plugin should steer agents away from these recurring mistakes:
 - do not use source folder names or compiled example ids when the host provides `defaultAppBundleId`
 - do not treat `bundles.yaml` example config as enabling built-in examples; `bundles_include_examples` owns that
 - do not treat `singleton` as cross-process exclusivity or shared-storage initialization
+- do not treat bundle `user_id` as always being a KDCube account id; it is the
+  resolved bundle user scope and may be a mapped external identity such as a
+  Telegram user
+- do not expose model-facing tool parameters for runtime ids the model cannot
+  know; use runtime context, `bundle_call_context`, job payload, or opaque refs
+  returned by prior tools
 - do not commit, tag, push, or update descriptor refs unless the user has
   explicitly agreed to the content release values
 

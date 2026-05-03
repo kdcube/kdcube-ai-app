@@ -427,6 +427,18 @@ Use this quick map while writing code:
 | user-scoped bundle props | `get_user_prop(...)`, `get_user_props()` | `set_user_prop(...)`, `delete_user_prop(...)` |
 | user-scoped bundle secrets | `await get_user_secret_async(...)` | `await set_user_secret_async(...)`, `await delete_user_secret_async(...)` |
 
+Bundle user-scope rule:
+
+- `user_id` in bundle storage, user props, and user secrets means the current
+  bundle user scope. It is not guaranteed to be a KDCube control-plane account id.
+- In KDCube-authenticated chat/widgets it may be the logged-in KDCube user.
+- In public integrations such as Telegram it may be a bundle-approved external
+  identity or a stable synthetic scope such as `telegram_<telegram_user_id>`.
+- Roles/auth and user scope are related but separate: a Telegram user can be
+  registered/admin for this bundle without owning a KDCube login.
+- Never require every external user to map to a KDCube account unless the
+  product design explicitly says so.
+
 Hard rule:
 
 - bundle code reads all scopes
@@ -1171,11 +1183,32 @@ They should use the documented tool bindings such as:
 - `_KV_CACHE`
 - `_CTX_CLIENT`
 
+For common tool context, prefer:
+
+- `kdcube_ai_app.apps.chat.sdk.tools.bundle_tool_context.scope()`
+- `ok(...)` / `error(...)`
+- `log_tool_start(...)`, `log_tool_success(...)`, `log_tool_error(...)`
+
+That helper resolves tenant/project/bundle id, bundle user scope, user type,
+conversation/turn ids, bundle props, bundle storage root, output/work dirs, and
+`bundle_call_context`.
+
 Do not assume a tool module has:
 
 - `self.comm`
 - `self.comm_context`
 - arbitrary entrypoint internals
+
+Tool signature rule:
+
+- only expose parameters the model can reasonably know or derive from the chat
+- do not expose runtime ids such as `user_id`, `task_id`, `execution_id`,
+  `conversation_id`, `turn_id`, internal `account_id`, or storage paths unless
+  a previous tool returned an opaque reference specifically for the model to pass
+- inject runtime identity through the tool subsystem, `bundle_call_context`, or
+  job payload/context, then read it inside the tool implementation
+- return opaque references for follow-up actions when a later tool needs exact
+  storage/execution identity
 
 ### Tool execution in isolated runtime
 

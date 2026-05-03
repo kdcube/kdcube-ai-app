@@ -387,6 +387,13 @@ For the exact helper contract and cloud-mode differences, use:
 | user-scoped bundle props | one user's preferences or bundle-managed non-secret state | read/write: `get_user_prop(...)`, `set_user_prop(...)`, `delete_user_prop(...)` | PostgreSQL user bundle props table | never exported |
 | user-scoped bundle secrets | one user's personal tokens or credentials managed by the bundle | async read/write: `await get_user_secret_async(...)`, `await set_user_secret_async(...)`, `await delete_user_secret_async(...)` | configured secrets provider; in local `secrets-file` mode this is `secrets.yaml` | never exported |
 
+In the user-scoped rows, "user" means the bundle user scope, not necessarily a
+KDCube control-plane account. A KDCube-authenticated widget may use the KDCube
+user id, while a public Telegram Mini App may use a bundle-approved Telegram
+scope or another stable external identity. Configure deployment credentials in
+bundle secrets; keep personal OAuth tokens and preferences under the resolved
+bundle user scope.
+
 Two hard rules:
 
 - `kdcube export` is a bundle-state export only. It exports `bundles.yaml` and `bundles.secrets.yaml`. It does not export `assembly.yaml`, `gateway.yaml`, `secrets.yaml`, user props, or user secrets.
@@ -1027,6 +1034,10 @@ User-scoped runtime state is not deployment-scoped descriptor state:
 
 - user props do not belong in `bundles.yaml`
 - user secrets do not belong in `bundles.secrets.yaml`
+- user scope does not have to be a KDCube account id; public integrations may
+  resolve a bundle-owned external identity such as a Telegram user
+- descriptors may configure how external users are allowed or mapped, but the
+  resulting per-user state remains runtime state
 
 Descriptor export/reload is for deployment-scoped bundle config, not per-user business state.
 

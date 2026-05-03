@@ -79,6 +79,10 @@ Rules:
 - `config/bundles.template.yaml` documents non-secret deployment props
 - `config/bundles.secrets.template.yaml` documents deployment-scoped bundle
   secrets, but never real secret values
+- if the bundle has public/external users, docs explain the bundle user-scope
+  model and do not imply every user must have a KDCube control-plane account
+- personal OAuth tokens or user credentials are described as user-scoped runtime
+  state/secrets, not committed deployment descriptors
 - `docs/design/` reflects the implemented design, not only early notes
 - `docs/journal/journal.md` records important implementation and release
   decisions
@@ -139,6 +143,12 @@ If the bundle is or may be git-managed, run the import-shape checks from
 
 If runtime behavior changed, also run the relevant manual/API/widget checks
 from the test guide.
+
+If user identity or external auth changed, validate both:
+
+- the KDCube-authenticated path
+- each public/external path, such as Telegram Mini App/webhook mapping to the
+  resolved bundle user scope
 
 If a validation cannot be run, record that explicitly in the release notes or
 journal. Do not silently treat skipped validation as passing validation.

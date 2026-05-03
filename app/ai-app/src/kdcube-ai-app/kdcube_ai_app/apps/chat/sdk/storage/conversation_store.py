@@ -53,7 +53,7 @@ class ConversationStore:
         parsed = urlparse(self.storage_uri)
         self.scheme = parsed.scheme or "file"
         self.root_prefix = "cb"
-        self._file_base = parsed.path if self.scheme == "file" else ""
+        self._file_base = unquote(parsed.path) if self.scheme == "file" else ""
         self._s3_bucket = parsed.netloc if self.scheme == "s3" else ""
         self._s3_prefix = parsed.path.lstrip("/") if self.scheme == "s3" else ""
 
@@ -64,9 +64,9 @@ class ConversationStore:
 
     def _uri_for_path(self, relpath: str) -> str:
         if self.scheme == "file":
-            base = self._file_base.rstrip("/")
-            abs_path = self._join(base, relpath)
-            return "file://" + abs_path
+            base = pathlib.Path(self._file_base or "/")
+            abs_path = base / str(relpath or "").lstrip("/")
+            return abs_path.as_uri()
         if self.scheme == "s3":
             prefix = self._s3_prefix.rstrip("/")
             key = self._join(prefix, relpath)
