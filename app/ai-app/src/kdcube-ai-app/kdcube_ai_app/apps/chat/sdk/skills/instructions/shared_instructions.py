@@ -205,7 +205,7 @@ VISIBLE / ADDRESSABLE WORKSPACE MODEL
 
 1) CURRENT TURN OUT_DIR (physical; current-turn execution surface)
    out/
-     turn_<current_turn>/
+     <current_turn_id>/
        files/           # current-turn writable namespace
        outputs/         # current-turn produced artifacts, not workspace history
        attachments/     # current-turn attachments only
@@ -233,7 +233,7 @@ VISIBLE / ADDRESSABLE WORKSPACE MODEL
 - Pulling `fi:<turn_id>.user.attachments/...`, `fi:<turn_id>.external.<kind>.attachments/<message_id>/...`, or legacy `fi:<turn_id>.attachments/...` is allowed only as an EXACT file ref. Do not expect binary descendants to appear automatically when you pull a folder.
 - If you need a binary file from hosting (xlsx, pptx, pdf, image, zip, etc.), name that exact `fi:` file in `react.pull`.
 - `react.pull(...)` is for historical side materialization only. Pulled content stays under its historical turn root and should be treated as readonly reference material.
-- Use `react.checkout(mode="replace", paths=[...])` when the active current-turn workspace itself must contain a runnable/searchable/testable project snapshot under `turn_<current_turn>/files/...`.
+- Use `react.checkout(mode="replace", paths=[...])` when the active current-turn workspace itself must contain a runnable/searchable/testable project snapshot under `<current_turn_id>/files/...`.
 - Use `react.checkout(mode="overlay", paths=[...])` when you want to import or overwrite selected historical files into an already materialized current-turn workspace.
 - `react.checkout(mode="replace", ...)` replaces the current-turn `files/` tree, then applies the requested `fi:<turn_id>.files/...` refs in order.
 - `react.checkout(mode="overlay", ...)` keeps the current-turn `files/` tree and applies the requested refs on top without deleting unspecified files.
@@ -274,7 +274,7 @@ VISIBLE / ADDRESSABLE WORKSPACE MODEL
 
 1) CURRENT TURN OUT_DIR (physical; current-turn execution surface)
    out/
-     turn_<current_turn>/
+     <current_turn_id>/
        files/           # current-turn writable namespace
        outputs/         # current-turn produced artifacts, not workspace history
        attachments/     # current-turn attachments only
@@ -301,15 +301,15 @@ VISIBLE / ADDRESSABLE WORKSPACE MODEL
 - Pulling `fi:<turn_id>.outputs/...` is allowed only as an EXACT file ref and is always resolved through hosted/custom artifact history, not git.
 - Pulling `fi:<turn_id>.user.attachments/...`, `fi:<turn_id>.external.<kind>.attachments/<message_id>/...`, or legacy `fi:<turn_id>.attachments/...` is allowed only as an EXACT file ref. Do not expect binary descendants to appear automatically when you pull a folder.
 - If you need a binary file from hosting (xlsx, pptx, pdf, image, zip, etc.), name that exact `fi:` file in `react.pull`.
-- The current turn root `turn_<current_turn>/` is bootstrapped as a local git repo in OUT_DIR.
-- The repo root path is `Path(OUTPUT_DIR) / "turn_<current_turn>"`.
+- The current turn root `<current_turn_id>/` is bootstrapped as a local git repo in OUT_DIR.
+- The repo root path is `Path(OUTPUT_DIR) / "<current_turn_id>"`.
 - Runtime keeps git history/refs available there, but it does NOT eagerly populate the worktree with project files.
 - In git mode, that current-turn repo is the active lineage workspace for ongoing project work.
-- Your main workspace, as you should mentally organize and inspect it, is `turn_<current_turn>/files/...`.
-- `turn_<current_turn>/outputs/...` is for current-turn produced artifacts that should not become workspace history.
-- Treat `turn_<current_turn>/files/...` as the authoritative project tree for the turn.
+- Your main workspace, as you should mentally organize and inspect it, is `<current_turn_id>/files/...`.
+- `<current_turn_id>/outputs/...` is for current-turn produced artifacts that should not become workspace history.
+- Treat `<current_turn_id>/files/...` as the authoritative project tree for the turn.
 - `react.pull(fi:<older_turn>.files/...)` creates a version-scoped historical snapshot view under `turn_<older_turn>/files/...`; it does NOT implicitly replace or activate the current-turn worktree.
-- Use `react.checkout(mode="replace", paths=[...])` when the current-turn workspace itself must contain a runnable/searchable/testable project snapshot under `turn_<current_turn>/files/...`.
+- Use `react.checkout(mode="replace", paths=[...])` when the current-turn workspace itself must contain a runnable/searchable/testable project snapshot under `<current_turn_id>/files/...`.
 - Use `react.checkout(mode="overlay", paths=[...])` when you want to import or overwrite selected historical files into an already materialized current-turn workspace.
 - `react.checkout(mode="replace", ...)` replaces the current-turn `files/` tree, then applies the requested `fi:<turn_id>.files/...` refs in order.
 - `react.checkout(mode="overlay", ...)` keeps the current-turn `files/` tree and applies the requested refs on top without deleting unspecified files.
@@ -324,7 +324,7 @@ VISIBLE / ADDRESSABLE WORKSPACE MODEL
   1. Read ANNOUNCE workspace status first.
   2. If the current-turn local files are already enough, work directly there.
   3. If you need historical content by turn id for comparison or explicit reuse, use `react.pull(fi:...)`.
-  4. If you need the active project tree in `turn_<current_turn>/files/...`, use `react.checkout(mode="replace", paths=[...])` early in the turn.
+  4. If you need the active project tree in `<current_turn_id>/files/...`, use `react.checkout(mode="replace", paths=[...])` early in the turn.
   5. If you later need to import or overwrite only part of that workspace from an older version, use `react.checkout(mode="overlay", paths=[...])`.
   6. After checkout, work directly in `files/<scope>/...` and use local git commands in the current-turn repo when they help.
   7. Use exact `fi:` refs for binaries; never assume folder pulls bring them.
@@ -530,12 +530,13 @@ Using unsupported logical namespaces with fetch_ctx returns an error rather than
 - react.read uses LOGICAL paths.
 - ctx_tools.fetch_ctx uses LOGICAL paths, but only for the supported namespaces listed above.
 - react.patch uses PHYSICAL paths:
-  - `react.patch(path="turn_<id>/files/draft.md", patch="...")`
+  - `react.patch(path="<turn_id>/files/draft.md", patch="...")`
 - rendering_tools.write_* use PHYSICAL paths:
-  - `rendering_tools.write_pdf(path="turn_<id>/outputs/report.pdf", content=...)`
+  - `rendering_tools.write_pdf(path="<turn_id>/outputs/report.pdf", content=...)`
 - exec code uses PHYSICAL OUTPUT_DIR-relative paths:
   - `Path(OUTPUT_DIR) / "<turn_id>/files/app.py"`
   - `Path(OUTPUT_DIR) / "<turn_id>/outputs/report.pdf"`
+- Do not rename the current turn id. If the current turn id is `telegram_turn_...`, use that exact id or use the concise current-turn form such as `files/report.md` / `outputs/report.pdf` where the tool supports it.
 - Exec contract files may declare optional `visibility="external"|"internal"`:
   - `external` (default): user-shareable produced artifact
   - `internal`: agent/runtime-only file kept in OUT_DIR/timeline, not sent to the user

@@ -55,6 +55,19 @@ def _safe_relpath(path: str) -> Optional[str]:
         return None
     return str(p)
 
+
+def _split_turn_artifact_path(path: str) -> Optional[Tuple[str, str, str]]:
+    safe = _safe_relpath(path)
+    if not safe:
+        return None
+    parts = safe.split("/", 2)
+    if len(parts) != 3:
+        return None
+    turn_id, namespace, rel = parts
+    if not turn_id or namespace not in {"files", "outputs", "attachments"} or not rel:
+        return None
+    return turn_id, namespace, rel
+
 EXEC_TEXT_PREVIEW_MAX_BYTES = 20000
 INFRA_LOG_TAIL_CHARS = 12000
 USER_LOG_TAIL_CHARS = 4000
@@ -357,14 +370,15 @@ def _normalize_artifacts_spec(artifacts: Any) -> Tuple[Optional[List[Dict[str, A
         if "/attachments/" in safe_filename:
             return None, {
                 "code": "invalid_filename",
-                "message": "Contract filename must be under turn_<id>/files/ or turn_<id>/outputs/ (attachments not allowed)",
+                "message": "Contract filename must be under <turn_id>/files/ or <turn_id>/outputs/ (attachments not allowed)",
             }
-        if not re.match(r"^turn_[^/]+/(files|outputs)/", safe_filename):
+        qualified = _split_turn_artifact_path(safe_filename)
+        if not qualified or qualified[1] not in {"files", "outputs"}:
             return None, {
                 "code": "invalid_filename",
                 "message": (
                     "filename must be OUTPUT_DIR-relative and start with "
-                    "'turn_<id>/files/' or 'turn_<id>/outputs/': "
+                    "'<turn_id>/files/' or '<turn_id>/outputs/': "
                     f"{filename}"
                 ),
             }
@@ -426,7 +440,7 @@ def normalize_exec_contract_for_turn(
 ) -> Tuple[Optional[List[Dict[str, Any]]], List[Dict[str, str]], Optional[Dict[str, Any]]]:
     """
     Normalize exec contract to current turn:
-    - contract entries must target turn_<id>/files/<name> or turn_<id>/outputs/<name>
+    - contract entries must target <current_turn_id>/files/<name> or <current_turn_id>/outputs/<name>
     - if turn_id is missing in filename, rewrite to current turn
     - attachments are forbidden in contract
     Returns (normalized_list, rewrites, error)
@@ -462,29 +476,43 @@ def normalize_exec_contract_for_turn(
                 "code": "invalid_artifact_spec",
                 "message": "visibility must be either 'external' or 'internal'",
             }
-        if "/attachments/" in filename or filename.startswith("attachments/") or filename.startswith(f"{turn_id}/attachments/"):
+        safe_filename = _safe_relpath(filename)
+        if not safe_filename:
             return None, [], {
                 "code": "invalid_filename",
-                "message": "Contract filename must be under turn_<id>/files/ or turn_<id>/outputs/ (attachments not allowed)",
+                "message": f"Invalid filename path: {filename}",
+            }
+        qualified = _split_turn_artifact_path(safe_filename)
+        if (
+            "/attachments/" in safe_filename
+            or safe_filename.startswith("attachments/")
+            or safe_filename.startswith(f"{turn_id}/attachments/")
+            or (qualified and qualified[1] == "attachments")
+        ):
+            return None, [], {
+                "code": "invalid_filename",
+                "message": "Contract filename must be under <turn_id>/files/ or <turn_id>/outputs/ (attachments not allowed)",
             }
         rewritten = None
-        if filename.startswith("turn_"):
+        if qualified:
+            qualified_turn_id, namespace, _rel = qualified
             if not (
-                filename.startswith(f"{turn_id}/files/")
-                or filename.startswith(f"{turn_id}/outputs/")
+                qualified_turn_id == turn_id
+                and namespace in {"files", "outputs"}
             ):
                 return None, [], {
                     "code": "invalid_filename",
                     "message": "Contract filename must use current turn_id and files/ or outputs/ path",
                 }
-        elif filename.startswith("files/"):
-            rel = filename[len("files/") :]
+            filename = safe_filename
+        elif safe_filename.startswith("files/"):
+            rel = safe_filename[len("files/") :]
             rewritten = f"{turn_id}/files/{rel}"
-        elif filename.startswith("outputs/"):
-            rel = filename[len("outputs/") :]
+        elif safe_filename.startswith("outputs/"):
+            rel = safe_filename[len("outputs/") :]
             rewritten = f"{turn_id}/outputs/{rel}"
         else:
-            rewritten = f"{turn_id}/files/{filename}"
+            rewritten = f"{turn_id}/files/{safe_filename}"
         if rewritten:
             rewrites.append({"original": filename, "rewritten": rewritten})
             filename = rewritten
@@ -503,7 +531,7 @@ def normalize_exec_contract_for_turn(
     return normalized, rewrites, None
 
 
-_QUALIFIED_PATH_RE = re.compile(r"turn_[A-Za-z0-9_]+/(files|outputs|attachments)/[^\s'\"\)\];,]+")
+_QUALIFIED_PATH_RE = re.compile(r"[A-Za-z0-9_.:@-]+/(files|outputs|attachments)/[^\s'\"\)\];,]+")
 _UNQUALIFIED_PATH_RE = re.compile(r"(files|outputs|attachments)/[^\s'\"\)\];,]+")
 
 
@@ -514,7 +542,7 @@ def rewrite_exec_code_paths(
 ) -> Tuple[str, List[Dict[str, str]]]:
     """
     Rewrite unqualified files/, outputs/, or attachments/ paths in code to current turn_id.
-    Leaves already qualified turn_<id>/files|outputs|attachments paths intact.
+    Leaves already qualified <turn_id>/files|outputs|attachments paths intact.
     Returns (rewritten_code, rewrites).
     """
     if not isinstance(code, str) or not code.strip() or not turn_id:
@@ -679,7 +707,7 @@ class ExecTools:
             "[INPUTS]\n"
             "- When called from React decision, the code is provided in <channel:code> (not in params).\n"
             "1) `contract` (list or JSON string, REQUIRED): list of output files specs with fields:\n"
-            "   - filename (OUTPUT_DIR‑relative; MUST start with turn_<id>/files/ or turn_<id>/outputs/)\n"
+            "   - filename (OUTPUT_DIR‑relative; MUST start with the current <turn_id>/files/ or <turn_id>/outputs/, or use concise files/... / outputs/...)\n"
             "   - description (what this file contains / why it was produced)\n"
             "   - visibility (optional: `external` or `internal`; default `external`)\n"
             "   These are outputs of this program that it promises to produce.\n"
@@ -711,6 +739,7 @@ class ExecTools:
             "- Write reports, test results, and other non-workspace deliverables to OUTPUT_DIR/<turn_id>/outputs/.\n"
             "- Build paths like:\n"
             "  `Path(OUTPUT_DIR) / \"<turn_id>/files/my_file.ext\"` or `Path(OUTPUT_DIR) / \"<turn_id>/outputs/report.txt\"`.\n"
+            "- Do not rename the current turn id. If the current turn is `telegram_turn_...`, use that exact id or the concise `files/...` / `outputs/...` form.\n"
             "- Network access is disabled in the sandbox; any network calls will fail.\n"
             "- Read/write outside OUTPUT_DIR or the current workdir is not permitted.\n"
             "- The runtime filesystem view is restricted; do not inspect, list, copy, archive, or report system/runtime paths.\n"

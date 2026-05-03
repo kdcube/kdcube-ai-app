@@ -17,6 +17,8 @@ from kdcube_ai_app.apps.chat.sdk.tools.exec_tools import (
     _normalize_artifacts_spec,
     _validate_contract_artifact_egress,
     build_exec_output_contract,
+    normalize_exec_contract_for_turn,
+    rewrite_exec_code_paths,
     run_exec_tool,
 )
 
@@ -234,6 +236,99 @@ def test_build_exec_output_contract_accepts_outputs_namespace():
             "visibility": "external",
         }
     }
+
+
+def test_build_exec_output_contract_accepts_telegram_turn_id():
+    contract, normalized, err = build_exec_output_contract([
+        {
+            "filename": "telegram_turn_13083631/outputs/tech_news_emails.xlsx",
+            "description": "Excel report generated in a Telegram turn.",
+        },
+    ])
+
+    assert err is None
+    assert normalized is not None
+    assert normalized[0]["filename"] == "telegram_turn_13083631/outputs/tech_news_emails.xlsx"
+    assert contract is not None
+    assert contract["tech_news_emails"]["filename"] == "telegram_turn_13083631/outputs/tech_news_emails.xlsx"
+
+
+def test_normalize_exec_contract_rewrites_outputs_for_telegram_turn_id():
+    normalized, rewrites, err = normalize_exec_contract_for_turn(
+        [
+            {
+                "filename": "outputs/tech_news_emails.xlsx",
+                "description": "Excel report generated in a Telegram turn.",
+            }
+        ],
+        turn_id="telegram_turn_13083631",
+    )
+
+    assert err is None
+    assert rewrites == [
+        {
+            "original": "outputs/tech_news_emails.xlsx",
+            "rewritten": "telegram_turn_13083631/outputs/tech_news_emails.xlsx",
+        }
+    ]
+    assert normalized is not None
+    assert normalized[0]["filename"] == "telegram_turn_13083631/outputs/tech_news_emails.xlsx"
+
+
+def test_normalize_exec_contract_preserves_current_telegram_turn_id():
+    normalized, rewrites, err = normalize_exec_contract_for_turn(
+        [
+            {
+                "filename": "telegram_turn_13083631/outputs/tech_news_emails.xlsx",
+                "description": "Excel report generated in a Telegram turn.",
+            }
+        ],
+        turn_id="telegram_turn_13083631",
+    )
+
+    assert err is None
+    assert rewrites == []
+    assert normalized is not None
+    assert normalized[0]["filename"] == "telegram_turn_13083631/outputs/tech_news_emails.xlsx"
+
+
+def test_normalize_exec_contract_rejects_different_telegram_turn_id():
+    normalized, rewrites, err = normalize_exec_contract_for_turn(
+        [
+            {
+                "filename": "telegram_turn_other/outputs/tech_news_emails.xlsx",
+                "description": "Excel report generated in a different Telegram turn.",
+            }
+        ],
+        turn_id="telegram_turn_13083631",
+    )
+
+    assert normalized is None
+    assert rewrites == []
+    assert err == {
+        "code": "invalid_filename",
+        "message": "Contract filename must use current turn_id and files/ or outputs/ path",
+    }
+
+
+def test_rewrite_exec_code_paths_does_not_double_prefix_telegram_turn_id():
+    code = (
+        "from pathlib import Path\n"
+        "xlsx = Path(OUTPUT_DIR) / \"telegram_turn_13083631/outputs/tech_news_emails.xlsx\"\n"
+        "csv = Path(OUTPUT_DIR) / \"outputs/tech_news_emails.csv\"\n"
+    )
+
+    rewritten, rewrites = rewrite_exec_code_paths(code, turn_id="telegram_turn_13083631")
+
+    assert "telegram_turn_13083631/files/telegram_turn_13083631" not in rewritten
+    assert "telegram_turn_13083631/outputs/tech_news_emails.xlsx" in rewritten
+    assert "telegram_turn_13083631/outputs/tech_news_emails.csv" in rewritten
+    assert rewrites == [
+        {
+            "original": "outputs/tech_news_emails.csv",
+            "rewritten": "telegram_turn_13083631/outputs/tech_news_emails.csv",
+        }
+    ]
 
 
 def test_build_exec_output_contract_rejects_invalid_visibility():

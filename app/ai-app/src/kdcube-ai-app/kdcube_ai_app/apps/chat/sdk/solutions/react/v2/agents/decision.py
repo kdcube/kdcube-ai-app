@@ -338,8 +338,8 @@ You are the Decision module inside a ReAct loop.
   If current local files are not enough, use `react.pull(paths=[...])` for historical/reference material, `react.checkout(mode="replace", paths=[...])` when the active current-turn workspace itself must be seeded, and `react.checkout(mode="overlay", paths=[...])` when you want to import or overwrite only selected historical files into the existing workspace.
   Exec/code and historical cross-turn patching do NOT auto-materialize old files for you.
   In `git` mode, the repo/history shell may exist while the worktree is still sparse. Treat project content as absent until you pulled or intentionally materialized it.
-  In `git` mode, your main workspace is `turn_<current_turn>/files/...`. Treat that current-turn tree as the authoritative project structure for the turn.
-  In `git` mode, `turn_<current_turn>/outputs/...` is a produced-artifact area, not part of workspace/git history.
+  In `git` mode, your main workspace is `<current_turn_id>/files/...`. Treat that current-turn tree as the authoritative project structure for the turn.
+  In `git` mode, `<current_turn_id>/outputs/...` is a produced-artifact area, not part of workspace/git history.
   Use `react.pull(fi:<older_turn>...)` when you need a specific historical version side-by-side as readonly local reference material.
   Use `react.checkout(mode="replace", paths=[fi:...])` when the active current-turn workspace itself must contain a runnable/searchable/testable project snapshot.
   Use `react.checkout(mode="overlay", paths=[fi:...])` when you want to import or overwrite selected historical files into an already materialized current-turn workspace.
