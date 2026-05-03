@@ -320,17 +320,32 @@ const layoutWithDagre = (
     });
 };
 
+/** Generic source feeding the builder — kind + payload. */
+export interface GraphInputSource {
+    kind: string;
+    payload: Record<string, unknown> | null;
+}
+
 export function buildGraphFromArtifacts(
     artifacts: ReadonlyArray<CodeCoreArtifact>,
+): BuiltGraph {
+    return buildGraphFromSources(artifacts.map((a) => ({
+        kind: a.content.kind,
+        payload: a.content.payload as Record<string, unknown> | null,
+    })));
+}
+
+export function buildGraphFromSources(
+    sources: ReadonlyArray<GraphInputSource>,
 ): BuiltGraph {
     const g: MutableGraph = {
         nodes: new Map(),
         edges: new Map(),
     };
 
-    for (const a of artifacts) {
-        const payload = a.content.payload as Record<string, unknown> | null;
-        switch (a.content.kind) {
+    for (const a of sources) {
+        const payload = a.payload;
+        switch (a.kind) {
             case "define":
                 ingestDefine(g, payload);
                 break;
@@ -349,6 +364,28 @@ export function buildGraphFromArtifacts(
         nodes: layoutWithDagre(rawNodes, edges),
         edges,
     };
+}
+
+/** Convenience: build the graph from artifacts AND the explored pool. */
+export function buildGraphCombined(
+    artifacts: ReadonlyArray<CodeCoreArtifact>,
+    exploredDefines: Record<string, unknown>,
+    exploredFootprints: Record<string, unknown>,
+): BuiltGraph {
+    const sources: GraphInputSource[] = [];
+    for (const a of artifacts) {
+        sources.push({
+            kind: a.content.kind,
+            payload: a.content.payload as Record<string, unknown> | null,
+        });
+    }
+    for (const data of Object.values(exploredDefines)) {
+        sources.push({kind: "define", payload: data as Record<string, unknown> | null});
+    }
+    for (const data of Object.values(exploredFootprints)) {
+        sources.push({kind: "class_footprint", payload: data as Record<string, unknown> | null});
+    }
+    return buildGraphFromSources(sources);
 }
 
 export const NODE_STYLE = STYLE;

@@ -24,6 +24,7 @@ import {
     ScopeFilter,
     selectClass,
     selectConcept,
+    selectConfigAssistantExplored,
     selectConfigAssistantScope,
     selectConfigAssistantSelection,
     setScopeFilter,
@@ -36,7 +37,7 @@ import {
     BuiltGraph,
     NODE_STYLE,
     SemanticNodeData,
-    buildGraphFromArtifacts,
+    buildGraphCombined,
 } from "./buildGraph.ts";
 
 const DEMO: BuiltGraph = {
@@ -104,17 +105,24 @@ function GraphPane() {
     const scope = useAppSelector(selectConfigAssistantScope);
     const selection = useAppSelector(selectConfigAssistantSelection);
     const latestTurn = useAppSelector(selectLatestTurn);
+    const explored = useAppSelector(selectConfigAssistantExplored);
 
-    // Build the live graph from the latest turn's code_core.* artifacts
-    // (in-progress OR just-completed — see selectLatestTurn).
-    // Empty -> show the small demo cluster as a friendly default.
+    // Build the live graph from BOTH the agent's artifacts AND the explored
+    // pool (everything the user has clicked + lookup hooks have fetched).
+    // Empty on both sides -> small demo cluster as a friendly default.
     const live = useMemo<BuiltGraph>(() => {
         const artifacts = (latestTurn?.artifacts ?? []).filter(
             (a): a is CodeCoreArtifact => a.artifactType === CODE_CORE_ARTIFACT_TYPE,
         );
-        if (!artifacts.length) return DEMO;
-        return buildGraphFromArtifacts(artifacts);
-    }, [latestTurn]);
+        const exploredDefines = explored.defines;
+        const exploredFootprints = explored.footprints;
+        const hasAny =
+            artifacts.length > 0
+            || Object.keys(exploredDefines).length > 0
+            || Object.keys(exploredFootprints).length > 0;
+        if (!hasAny) return DEMO;
+        return buildGraphCombined(artifacts, exploredDefines, exploredFootprints);
+    }, [latestTurn, explored]);
 
     // Apply scope filter + highlight the current selection.
     const visible = useMemo(() => {

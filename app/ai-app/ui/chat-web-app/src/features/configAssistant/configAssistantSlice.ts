@@ -15,6 +15,19 @@ export interface ConfigAssistantSelection {
     conceptId: string | null;
 }
 
+/**
+ * Pool of code-graph data the UI has fetched directly (not via the agent).
+ * Populated as the user clicks graph nodes and useCodeCoreLookup hooks
+ * resolve. Merged into the graph alongside the agent's artifacts so the
+ * graph grows as the user explores.
+ */
+export interface ExploredPool {
+    /** conceptId -> serialised /define response (kept generic to avoid a circular import) */
+    defines: Record<string, unknown>;
+    /** qualified_name -> serialised /class_footprint response */
+    footprints: Record<string, unknown>;
+}
+
 export interface ConfigAssistantState {
     mode: string | null;
     drawerOpen: boolean;
@@ -31,6 +44,7 @@ export interface ConfigAssistantState {
         packageFilter: string;
         scopeFilter: ScopeFilter;
     };
+    explored: ExploredPool;
 }
 
 const initialState: ConfigAssistantState = {
@@ -40,6 +54,7 @@ const initialState: ConfigAssistantState = {
     userClosed: false,
     selection: {kind: null, qualifiedName: null, conceptId: null},
     scope: {packageFilter: "", scopeFilter: "all"},
+    explored: {defines: {}, footprints: {}},
 };
 
 const configAssistantSlice = createSlice({
@@ -82,6 +97,17 @@ const configAssistantSlice = createSlice({
         resetDrawerStickiness(state) {
             state.userClosed = false;
             state.drawerOpen = false;
+            state.explored = {defines: {}, footprints: {}};
+        },
+        rememberDefine(state, action: PayloadAction<{conceptId: string; data: unknown}>) {
+            const key = action.payload.conceptId.toLowerCase();
+            state.explored.defines[key] = action.payload.data;
+        },
+        rememberFootprint(state, action: PayloadAction<{qualifiedName: string; data: unknown}>) {
+            state.explored.footprints[action.payload.qualifiedName] = action.payload.data;
+        },
+        clearExplored(state) {
+            state.explored = {defines: {}, footprints: {}};
         },
         selectClass(state, action: PayloadAction<string | null>) {
             const qn = action.payload;
@@ -125,6 +151,9 @@ export const {
     toggleDrawerMaximized,
     ensureDrawerOpen,
     resetDrawerStickiness,
+    rememberDefine,
+    rememberFootprint,
+    clearExplored,
     selectClass,
     selectConcept,
     clearSelection,
@@ -138,5 +167,6 @@ export const selectConfigAssistantDrawerOpen = (state: RootState) => state.confi
 export const selectConfigAssistantDrawerMaximized = (state: RootState) => state.configAssistant.drawerMaximized;
 export const selectConfigAssistantSelection = (state: RootState) => state.configAssistant.selection;
 export const selectConfigAssistantScope = (state: RootState) => state.configAssistant.scope;
+export const selectConfigAssistantExplored = (state: RootState) => state.configAssistant.explored;
 
 export default configAssistantSlice.reducer;

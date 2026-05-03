@@ -11,6 +11,8 @@
  */
 import {useEffect, useRef, useState} from "react";
 
+import {useAppDispatch} from "../../app/store.ts";
+import {rememberDefine, rememberFootprint} from "../../features/configAssistant/configAssistantSlice.ts";
 import {useCodeCoreArtifact} from "./useCodeCoreArtifact.ts";
 import {ClassFootprintResponse, DefineResponse, fetchClassFootprint, fetchDefine} from "./codeCoreService.ts";
 
@@ -30,6 +32,7 @@ interface FootprintState {
 }
 
 export function useDefineLookup(conceptId: string | null): DefineState {
+    const dispatch = useAppDispatch();
     const artifact = useCodeCoreArtifact(["define"]);
     const cacheKey = useRef<string | null>(null);
     const [remote, setRemote] = useState<{
@@ -70,6 +73,9 @@ export function useDefineLookup(conceptId: string | null): DefineState {
                 // effects, the first cleanup would otherwise drop the result.
                 if (cacheKey.current !== key) return;
                 setRemote({loading: false, error: null, data});
+                // Make the data available to the graph so clicking a node
+                // expands the graph with its neighbours.
+                dispatch(rememberDefine({conceptId, data}));
             })
             .catch((err: Error) => {
                 if (cacheKey.current !== key) return;
@@ -87,6 +93,7 @@ export function useDefineLookup(conceptId: string | null): DefineState {
 }
 
 export function useFootprintLookup(qualifiedName: string | null): FootprintState {
+    const dispatch = useAppDispatch();
     const artifact = useCodeCoreArtifact(["class_footprint"]);
     const cacheKey = useRef<string | null>(null);
     const [remote, setRemote] = useState<{
@@ -123,6 +130,7 @@ export function useFootprintLookup(qualifiedName: string | null): FootprintState
             .then((data) => {
                 if (cacheKey.current !== key) return;
                 setRemote({loading: false, error: null, data});
+                dispatch(rememberFootprint({qualifiedName, data}));
             })
             .catch((err: Error) => {
                 if (cacheKey.current !== key) return;
