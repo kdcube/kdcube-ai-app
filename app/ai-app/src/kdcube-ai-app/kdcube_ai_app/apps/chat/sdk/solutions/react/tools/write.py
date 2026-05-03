@@ -265,7 +265,7 @@ async def handle_react_write(*, react: Any, ctx_browser: Any, state: Dict[str, A
         scratchpad=None,
     )
     artifact = artifact_view.raw
-    # Ensure hosting reads the physical path (outdir/<turn_id>/files/...)
+    # Ensure hosting reads the physical path (outdir/turn_<id>/files/...)
     if isinstance(artifact.get("value"), dict):
         artifact["value"]["path"] = artifact_name
     hosted = []

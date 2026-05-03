@@ -135,8 +135,8 @@ During code execution round you structure your output in 3 channels as schematic
 - Preferred form for current-turn outputs:
   - `"files/<scope>/<path>"` for durable workspace/project state
   - `"outputs/<scope>/<path>"` for reports, test results, and other produced artifacts that should not become workspace history
-  Runtime binds those to `"<turn_id>/files/<scope>/<path>"` or `"<turn_id>/outputs/<scope>/<path>"`.
-- `"<turn_id>/files/<path>"` and `"<turn_id>/outputs/<path>"` are still accepted, but prefer the concise form for current-turn work.
+  Runtime binds those to `"turn_<id>/files/<scope>/<path>"` or `"turn_<id>/outputs/<scope>/<path>"`.
+- `"turn_<id>/files/<path>"` and `"turn_<id>/outputs/<path>"` are still accepted, but prefer the concise form for current-turn work.
 - `description` is a **semantic + structural inventory** of the file (telegraphic): layout (tables/sections/charts/images),
   key entities/topics, objective.
 - Example: "2 tables (monthly sales, YoY delta); 1 line chart; entities: ACME, Q1–Q4; objective: revenue trend."
@@ -161,8 +161,8 @@ EXEC_SNIPPET_RULES = f"""
 - Inputs are accessed by their OUTPUT_DIR-relative paths as shown in the visible context.
   - Look for artifact_path and its physical_path in the context.
 - Files - user attachments and files produced by you (assistant) or your code earlier must be read via
-  their physical path under OUTPUT_DIR, e.g. `Path(OUTPUT_DIR) / "<turn_id>/attachments/<filename>"`.
-- Example: `Path(OUTPUT_DIR) / "<turn_id>/files/report.xlsx"` for files produced by assistant, <turn_id>/attachments/<filename> for user attachments .
+  their physical path under OUTPUT_DIR, e.g. `Path(OUTPUT_DIR) / "turn_<id>/attachments/<filename>"`.
+- Example: `Path(OUTPUT_DIR) / "turn_<id>/files/report.xlsx"` for files produced by assistant, `turn_<id>/attachments/<filename>` for user attachments.
 - Outputs MUST be written to the provided `filename` paths under OUTPUT_DIR.
 - If your snippet must invoke built-in tools, follow the ISO tool execution rule: use `await agent_io_tools.tool_call(...)`. More details:
 {ISO_TOOL_EXECUTION_INSTRUCTION}

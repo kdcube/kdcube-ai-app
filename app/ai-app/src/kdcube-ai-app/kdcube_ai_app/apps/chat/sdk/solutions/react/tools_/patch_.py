@@ -36,7 +36,7 @@ DOC = {
     "purpose": (
         "Apply a multi-file patch using the apply_patch format (*** Begin Patch/End Patch). "
         "Supports add, delete, update, and move hunks in a single patch. "
-        "Paths inside the patch are resolved relative to OUT_DIR/<turn_id>/files/. "
+        "Paths inside the patch are resolved relative to OUT_DIR/turn_<id>/files/. "
         "Use this to modify multiple files at once or to add/delete/move files."
     ),
     "args": {
