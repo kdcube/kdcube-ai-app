@@ -716,7 +716,7 @@ enough for a non-interactive install. At minimum:
 - `assembly.domain` is set when `proxy.ssl: true`
 - any git-backed workspace/session config includes its repo URL
 - Cognito auth fields are present when `auth.type` requires them
-- frontend build fields are present when `frontend` is used without `frontend.image`
+- frontend build fields are present when `frontend.build` is set without `frontend.image`
 
 If any of those are missing, the CLI falls back to the normal guided flow.
 
@@ -875,8 +875,11 @@ Reference:
 - https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/configuration/gateway-descriptor-README.md
 
 ### Custom UI via assembly descriptor (build or image)
-If your `assembly.yaml` includes a `frontend` section, the CLI will switch to
+If your `assembly.yaml` includes `frontend.build` or `frontend.image`, the CLI will switch to
 **custom‑ui‑managed‑infra** compose mode.
+
+`frontend.config` alone (auth type, routes prefix, debug flags) is runtime metadata used in
+both modes — it does **not** trigger `custom‑ui‑managed‑infra`.
 
 Minimal example:
 ```yaml

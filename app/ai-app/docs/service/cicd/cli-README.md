@@ -80,10 +80,11 @@ Important local-runtime rule:
    - Create data folders
 
 2b) **Compose with custom UI (advanced)**
-   - Use an `assembly.yaml` that includes a `frontend` section
+   - Use an `assembly.yaml` that includes `frontend.build` or `frontend.image`
    - If `frontend.image` is set, the UI build is skipped
    - If `frontend.build` is set, the UI repo is cloned and built
    - Switches compose mode to `custom‑ui‑managed‑infra`
+   - `frontend.config` alone does **not** trigger this mode
 
 3) **Validate assembly descriptor**
    - Validate schema + refs
@@ -165,11 +166,14 @@ kdcube env init \
 
 ### 2.3 Custom UI via assembly descriptor (compose)
 
-When `assembly.yaml` contains a `frontend` section, the CLI uses
+When `assembly.yaml` contains `frontend.build` or `frontend.image`, the CLI uses
 **custom‑ui‑managed‑infra** compose mode:
 
 - `frontend.image` → use a prebuilt UI image (skip build)
 - `frontend.build` → clone repo and build UI
+
+`frontend.config` (auth type, routes prefix, debug flags) is runtime metadata consumed in
+both modes and does **not** trigger `custom‑ui‑managed‑infra` on its own.
 
 The CLI also generates runtime `config.json` from `frontend_config`.
 If `frontend_config` is omitted, it falls back to a built-in template based on auth mode:
