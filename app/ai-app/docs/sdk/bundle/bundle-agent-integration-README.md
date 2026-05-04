@@ -1,0 +1,662 @@
+---
+id: ks:docs/sdk/bundle/bundle-agent-integration-README.md
+title: "Bundle Agent Integration"
+summary: "Canonical bundle guide for wiring React agents, bundle-local tools and skills, MCP connectors, bundle-served MCP endpoints, and Claude Code subagents with deployable auth and network requirements."
+tags: ["sdk", "bundle", "agents", "react", "claude-code", "tools", "skills", "mcp", "deployment"]
+keywords: ["bundle agent integration", "React tools descriptor", "skills descriptor", "MCP_TOOL_SPECS", "bundle served MCP", "Claude Code MCP", "ClaudeCodeAgent", "mcp_base_url", "agent runtime context"]
+see_also:
+  - ks:docs/sdk/bundle/bundle-runtime-README.md
+  - ks:docs/sdk/bundle/bundle-platform-integration-README.md
+  - ks:docs/sdk/bundle/bundle-transports-README.md
+  - ks:docs/sdk/bundle/bundle-reserved-platform-properties-README.md
+  - ks:docs/sdk/tools/mcp-README.md
+  - ks:docs/sdk/agents/claude/claude-code-README.md
+  - ks:docs/sdk/agents/claude/claude-code-workspace-bootstrap-README.md
+  - ks:docs/sdk/agents/react/react-tools-README.md
+---
+# Bundle Agent Integration
+
+This page is the canonical bundle-level map for agent integration points.
+
+Use it when a bundle needs any of these:
+
+- a KDCube React agent with bundle-local tools and skills
+- MCP tools available to the React tool subsystem
+- a bundle-served MCP endpoint exposed through `@mcp(...)`
+- a Claude Code subprocess agent that uses custom MCP tools
+- separate agent surfaces for chat turns, scheduled jobs, or background jobs
+
+This document intentionally describes public SDK patterns. Reference bundles may
+implement these patterns with product-specific names, but bundle docs should not
+depend on private bundle paths.
+
+## 1. Agent Surfaces
+
+There are two different agent runtimes in this SDK surface.
+
+| Runtime | Who runs it | Tool source | Skill source | Typical use |
+| --- | --- | --- | --- | --- |
+| React | KDCube chat runtime | `tools_descriptor.py`, `MCP_TOOL_SPECS`, SDK tools | `skills_descriptor.py` and bundle `skills/` | normal chat turns, task execution turns, transport-backed assistant work |
+| Claude Code | `claude` CLI subprocess | Claude built-ins plus Claude MCP config written into workspace | `CLAUDE.md`, Claude settings, future custom Claude skill support | scoped code/file/research subagent work, private sub-processing, specialized tool loops |
+
+Important:
+
+- Claude Code does not inherit React tools or React skills automatically.
+- React does not read Claude `.mcp.json` or `CLAUDE.md`.
+- If both runtimes need the same capability, wire it explicitly for each one.
+
+## 2. What A Bundle Can Provide To Agents
+
+Think of a bundle agent surface as:
+
+```text
+agent runtime + descriptors + bundle props/secrets + runtime context + transport context
+```
+
+The SDK lets the bundle provide different inputs depending on the agent runtime.
+
+### Shared Inputs
+
+These concepts apply to both React and Claude Code, although the concrete API is
+different:
+
+| Input | What it is | Who provides it | Where it comes from |
+| --- | --- | --- | --- |
+| user/turn context | user id, conversation id, turn id, timezone, request text, attachments | platform runtime | `scratchpad`, `ChatTaskPayload`, request context |
+| bundle context | tenant, project, bundle id, user scope, storage roots, job ids | platform runtime plus bundle workflow | `BaseWorkflow`, `bundle_call_context`, job payload |
+| config | non-secret behavior switches, model choices, URLs, feature flags | descriptor/admin/bundle code | `self.bundle_prop(...)`, bundle props |
+| secrets | API keys, auth signing keys, OAuth client secrets | deployment/admin/user secret store | `get_secret(...)`, `get_user_secret(...)` |
+| custom instructions | product-specific operating rules | bundle code/config | React `additional_instructions`, Claude `CLAUDE.md` |
+| tools | callable capabilities | bundle descriptors or Claude config | React tool subsystem, Claude allowed tools/MCP |
+| MCP connectivity | how to reach MCP servers and authenticate | bundle config/code | `mcp.services`, `MCP_TOOL_SPECS`, `ClaudeCodeWorkspaceConfig` |
+| streaming | progress, deltas, steps, subsystem events | agent runtime | communicator |
+| persistence | durable state, artifacts, workspace/session files | bundle/runtime | bundle storage, conversation store, Claude workspace/session store |
+
+The model should not be asked to invent runtime ids or paths. Those must come
+from runtime context, job payload, bundle props, secret lookups, or prior tool
+results.
+
+### React Agent Inputs
+
+A React bundle agent is configured through `BaseWorkflow.build_react(...)`.
+
+| Input | SDK surface | Notes |
+| --- | --- | --- |
+| local Python tools | `tools_descriptor.py` / `TOOLS_SPECS` | exposes bundle tool modules by alias |
+| MCP tools | `tools_descriptor.py` / `MCP_TOOL_SPECS` | selects which configured MCP server tools enter the catalog |
+| MCP server connection config | bundle props `config.mcp.services` | controls server URLs, transports, and auth |
+| skills | `skills_descriptor.py`, `CUSTOM_SKILLS_ROOT`, `AGENTS_CONFIG` | exposes bundle skill prompts and visibility rules |
+| skill-tool mapping | skill `tools.yaml` | tells the agent which tool ids belong to a skill |
+| custom instructions | `additional_instructions` argument | should combine product defaults with bundle-configured instructions |
+| model/runtime version | platform/bundle config | React version is selected by platform config; bundle code should call `build_react(...)` |
+| allowed tool groups | `react.run(allowed_plugins=...)` | keeps the active turn limited to the aliases intended for that surface |
+| turn state | `scratchpad` | carries user text, attachments, conversation metadata, and current turn paths |
+| tool runtime context | bound runtime globals/helpers | tools receive service, integrations, communicator, cache, context client, and bundle scope helpers |
+
+Example:
+
+```python
+react = self.build_react(
+    tools_runtime=getattr(tools_mod, "TOOL_RUNTIME", None),
+    mod_tools_spec=tools_mod.TOOLS_SPECS,
+    mcp_tools_spec=getattr(tools_mod, "MCP_TOOL_SPECS", None) or [],
+    custom_skills_root=skills_mod.CUSTOM_SKILLS_ROOT,
+    skills_visibility_agents_config=skills_mod.AGENTS_CONFIG or {},
+    scratchpad=scratchpad,
+    additional_instructions=additional_instructions,
+)
+
+result = await react.run(allowed_plugins=allowed_plugins)
+```
+
+### Claude Code Agent Inputs
+
+A Claude Code subagent is configured through `ClaudeCodeAgentConfig`,
+`ClaudeCodeBinding`, and optional `ClaudeCodeWorkspaceConfig`.
+
+| Input | SDK surface | Notes |
+| --- | --- | --- |
+| agent identity | `agent_name` | participates in Claude session identity and accounting metadata |
+| user/conversation binding | `ClaudeCodeBinding` | controls stable Claude session id boundary |
+| model/command | `model`, `command` | `command` defaults to `claude`; model may be alias or full name |
+| workspace | `workspace_path` | subprocess working directory, not a sandbox |
+| additional directories | `additional_directories` | passed to Claude as `--add-dir` |
+| built-in allowed tools | `allowed_tools` | forwarded as Claude `--allowedTools` |
+| permission mode | `permission_mode` | forwarded to Claude Code |
+| environment | `env` | caller passes resolved env values deliberately |
+| timeout | `timeout_seconds` | SDK terminates/marks failed when exceeded |
+| streaming markers | `step_name`, `delta_marker` | controls communicator event labels |
+| structured progress | `structured_output_prefixes`, callbacks | parses caller-defined line-framed JSON from streamed text |
+| MCP servers | `ClaudeCodeWorkspaceConfig.mcp_servers` | SDK writes `.mcp.json` |
+| Claude MCP enablement | `enabled_mcp_servers` | SDK writes `.claude/settings.local.json` |
+| Claude allow/deny tools | `allowed_tools`, `denied_tools` in workspace config | SDK writes local Claude settings |
+| Claude instructions | `instructions_markdown` | SDK writes `CLAUDE.md` |
+
+The bundle still owns policy:
+
+- which MCP URL is correct for the deployment
+- which short-lived token/header should be written
+- which built-in Claude tools are allowed or denied
+- which instructions are safe for the scenario
+- which env secrets are passed into the subprocess
+
+The SDK can write the standard workspace files from `ClaudeCodeWorkspaceConfig`,
+but it does not decide those values automatically.
+
+## 3. React Bundle Agent Integration
+
+Recommended layout:
+
+```text
+my.bundle@1-0/
+  entrypoint.py
+  orchestrator/
+    workflow.py
+  tools_descriptor.py
+  skills_descriptor.py
+  tools/
+    domain_tools.py
+  skills/
+    product/
+      domain/
+        SKILL.md
+        tools.yaml
+```
+
+`tools_descriptor.py` exposes local Python tools and optional MCP tool specs:
+
+```python
+TOOLS_SPECS = [
+    {"ref": "tools/domain_tools.py", "alias": "domain", "use_sk": True},
+]
+
+MCP_TOOL_SPECS = [
+    {"server_id": "docs", "alias": "docs", "tools": ["search", "fetch"]},
+]
+```
+
+`skills_descriptor.py` exposes bundle skill roots and visibility rules:
+
+```python
+CUSTOM_SKILLS_ROOT = "skills"
+
+AGENTS_CONFIG = {
+    "product.domain": {
+        "include": True,
+        "when_to_use": "Use when the user asks to inspect or update domain assets.",
+    }
+}
+```
+
+Each skill's `tools.yaml` should reference real tool ids from the descriptor.
+For example, with alias `domain`, a Python function `search_assets` becomes:
+
+```yaml
+tools:
+  - domain.search_assets
+  - domain.update_asset
+```
+
+The workflow builds React from those descriptors:
+
+```python
+base_instructions = (
+    "You are the product assistant. Use product tools for durable product state."
+)
+configured_instructions = self.bundle_prop("react.additional_instructions", "")
+additional_instructions = "\n".join(
+    item for item in [base_instructions, configured_instructions] if item
+)
+
+react = self.build_react(
+    tools_runtime=getattr(tools_mod, "TOOL_RUNTIME", None),
+    mod_tools_spec=tools_mod.TOOLS_SPECS,
+    mcp_tools_spec=getattr(tools_mod, "MCP_TOOL_SPECS", None) or [],
+    custom_skills_root=skills_mod.CUSTOM_SKILLS_ROOT,
+    skills_visibility_agents_config=skills_mod.AGENTS_CONFIG or {},
+    scratchpad=scratchpad,
+    additional_instructions=additional_instructions,
+)
+
+allowed_plugins = [
+    spec["alias"]
+    for spec in tools_mod.TOOLS_SPECS
+    if spec.get("alias")
+]
+
+for spec in getattr(tools_mod, "MCP_TOOL_SPECS", None) or []:
+    allowed_plugins.append(spec.get("alias") or f"mcp_{spec.get('server_id')}")
+
+result = await react.run(allowed_plugins=list(dict.fromkeys(allowed_plugins)))
+```
+
+React configuration sources:
+
+- `tools_descriptor.py` controls local Python tool modules and aliases
+- `MCP_TOOL_SPECS` controls which MCP server tools enter the React catalog
+- `skills_descriptor.py` controls skill roots and visibility
+- bundle props such as `mcp.services` control MCP connection details
+- bundle props may add product-specific instructions, for example
+  `react.additional_instructions`
+- platform config selects the React runtime version; bundle code should call
+  `BaseWorkflow.build_react(...)` instead of hardcoding a React version
+
+Runtime context rule:
+
+- user id, conversation id, turn id, task id, execution id, storage roots, and
+  provider context must come from runtime context, job payload, or previous tool
+  results
+- do not ask the model to invent runtime ids or filesystem paths
+- use bundle tool helpers and `bundle_call_context` for ids that should not be
+  model-provided
+
+Multiple agent surfaces are allowed. A bundle can keep separate descriptors for
+normal chat and scheduled job execution:
+
+```text
+tools_descriptor.py
+skills_descriptor.py
+job_tools_descriptor.py
+job_skills_descriptor.py
+```
+
+This keeps job tools narrower and prevents the scheduled-job agent from editing
+task definitions when it should only execute one task.
+
+## 4. MCP Has Three Different Meanings
+
+Do not collapse these concepts:
+
+| Concept | Config/code | Consumer |
+| --- | --- | --- |
+| MCP client config for React/KDCube tools | `config.mcp.services` plus `MCP_TOOL_SPECS` | KDCube `ToolSubsystem` |
+| Bundle-served MCP endpoint | `@mcp(...)` on the bundle entrypoint | external MCP clients, Claude Code, other services |
+| Claude Code MCP config | `.mcp.json` in the Claude workspace | the `claude` CLI subprocess |
+
+`config.mcp.services` does not configure Claude Code.
+
+Claude Code sees an MCP server only if the bundle writes Claude-compatible MCP
+configuration into the workspace that Claude runs from.
+
+## 5. External MCP Server
+
+If the MCP server is external to the bundle, do not declare `@mcp(...)`.
+
+For React/KDCube tools, configure the external server in bundle props:
+
+```yaml
+config:
+  mcp:
+    services:
+      mcpServers:
+        docs:
+          transport: http
+          url: https://mcp.internal.example.com
+          auth:
+            type: bearer
+            secret: b:docs.token
+```
+
+Then expose only the needed tools in `MCP_TOOL_SPECS`:
+
+```python
+MCP_TOOL_SPECS = [
+    {"server_id": "docs", "alias": "docs", "tools": ["search", "fetch"]},
+]
+```
+
+For Claude Code, the same external server must still be written into Claude's
+workspace `.mcp.json`. Claude Code does not read KDCube bundle props directly.
+
+## 6. Bundle-Served MCP Endpoint
+
+Use `@mcp(...)` when the bundle itself exposes an MCP server.
+
+Entrypoint shape:
+
+```python
+from typing import Any
+
+from kdcube_ai_app.infra.plugin.agentic_loader import mcp
+
+
+@mcp(alias="scoped_data", route="public", transport="streamable-http")
+def scoped_data_mcp(self, request: Any, **kwargs):
+    return build_scoped_data_mcp_app(
+        entrypoint=self,
+        request=request,
+        storage_root=self.storage_root,
+    )
+```
+
+Route shape:
+
+```text
+/api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/mcp/{alias}
+/api/integrations/bundles/{tenant}/{project}/{bundle_id}/mcp/{alias}
+```
+
+For MCP, `public` and `operations` are URL families. They are not proc-side
+auth modes. Proc forwards the request into the bundle MCP app, and the bundle
+owns authentication.
+
+MCP service shape:
+
+```python
+from typing import Any
+
+from fastapi import HTTPException
+from mcp.server.fastmcp import FastMCP
+
+
+TOKEN_HEADER = "X-Example-MCP-Token"
+SERVER_NAME = "example_scoped_data"
+
+
+def build_scoped_data_mcp_app(*, entrypoint: Any, request: Any, storage_root: str):
+    expected = load_or_verify_run_token(entrypoint=entrypoint, request=request)
+    if not expected.ok:
+        raise HTTPException(status_code=401, detail=expected.error)
+
+    mcp = FastMCP(SERVER_NAME, stateless_http=True)
+
+    @mcp.tool(name="task_context")
+    async def task_context() -> dict:
+        return {"task_id": expected.task_id, "instruction": expected.instruction}
+
+    @mcp.tool(name="list_items")
+    async def list_items(limit: int = 20) -> dict:
+        return {"items": expected.items[: max(1, min(int(limit or 20), 50))]}
+
+    @mcp.tool(name="get_item")
+    async def get_item(item_id: str) -> dict:
+        if item_id not in expected.allowed_item_ids:
+            return {"ok": False, "error": {"code": "item_not_in_scope"}}
+        return {"ok": True, "item": expected.items_by_id[item_id]}
+
+    @mcp.tool(name="record_result")
+    async def record_result(processed_item_ids: list[str], matched_item_ids: list[str]) -> dict:
+        persist_result(storage_root, expected.run_id, processed_item_ids, matched_item_ids)
+        return {"ok": True}
+
+    return mcp
+```
+
+For scoped data, prefer short-lived run-scoped auth:
+
+- token is signed by a bundle secret
+- token includes `user_id`, `run_id`, `scope`, and `exp`
+- token is sent in a custom header named by bundle props
+- server validates the token before returning MCP tools
+- tools enforce candidate item ids from the saved run document
+
+This pattern lets the MCP endpoint be reachable without making the data public.
+
+## 7. Claude Code Agent With Bundle MCP
+
+Claude Code is configured by files in the workspace and by
+`ClaudeCodeAgentConfig`.
+
+Responsibility split:
+
+- the bundle decides which MCP server URL, token, allowed tools, denied tools,
+  and instructions are appropriate for the current run
+- the SDK can write the standard Claude Code workspace files from that config
+  by using `ClaudeCodeWorkspaceConfig`
+- the SDK does not invent auth policy, resolve secrets, or decide which MCP
+  tools are safe for a product scenario
+
+Workspace files usually include:
+
+```text
+workspace/
+  .mcp.json
+  .claude/
+    settings.local.json
+  CLAUDE.md
+```
+
+Example `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "example_scoped_data": {
+      "type": "http",
+      "url": "https://internal.example/api/integrations/bundles/demo/project/example.bundle@1-0/public/mcp/scoped_data",
+      "headers": {
+        "X-Example-MCP-Token": "<short-lived-run-token>"
+      }
+    }
+  }
+}
+```
+
+Example `.claude/settings.local.json`:
+
+```json
+{
+  "enableAllProjectMcpServers": false,
+  "enabledMcpjsonServers": ["example_scoped_data"],
+  "permissions": {
+    "allow": [
+      "mcp__example_scoped_data__task_context",
+      "mcp__example_scoped_data__list_items",
+      "mcp__example_scoped_data__get_item",
+      "mcp__example_scoped_data__record_result"
+    ],
+    "deny": ["Bash", "Read", "Edit", "Write", "WebFetch", "WebSearch"]
+  }
+}
+```
+
+Example `CLAUDE.md`:
+
+```markdown
+# Scoped Data Processor
+
+Use only the configured example_scoped_data MCP tools.
+Always call task_context first.
+Only inspect candidate items returned by the MCP server.
+Call record_result before the final answer.
+```
+
+The bundle creates and runs the Claude agent:
+
+```python
+from pathlib import Path
+
+from kdcube_ai_app.apps.chat.sdk.solutions.claude_code import (
+    ClaudeCodeAgent,
+    ClaudeCodeAgentConfig,
+    ClaudeCodeBinding,
+    ClaudeCodeWorkspaceConfig,
+    run_claude_code_turn,
+)
+
+workspace_config = ClaudeCodeWorkspaceConfig(
+    mcp_servers={
+        "example_scoped_data": {
+            "type": "http",
+            "url": mcp_url,
+            "headers": {"X-Example-MCP-Token": short_lived_token},
+        }
+    },
+    allowed_tools=[
+        "mcp__example_scoped_data__task_context",
+        "mcp__example_scoped_data__list_items",
+        "mcp__example_scoped_data__get_item",
+        "mcp__example_scoped_data__record_result",
+    ],
+    denied_tools=["Bash", "Read", "Edit", "Write", "WebFetch", "WebSearch"],
+    instructions_markdown=(
+        "# Scoped Data Processor\n\n"
+        "Use only the configured example_scoped_data MCP tools.\n"
+        "Always call task_context first, inspect only scoped items, and call "
+        "record_result before the final answer.\n"
+    ),
+)
+
+agent = ClaudeCodeAgent(
+    config=ClaudeCodeAgentConfig(
+        agent_name="scoped-data-processor",
+        workspace_path=Path(workspace),
+        model=bundle_prop("integrations.scoped_data.claude_code.model", "sonnet"),
+        allowed_tools=list(workspace_config.allowed_tools),
+        workspace_config=workspace_config,
+        env={
+            "ANTHROPIC_API_KEY": anthropic_key,
+            "CLAUDE_CODE_KEY": claude_code_key,
+            "MCP_TIMEOUT": "10000",
+            "MCP_TOOL_TIMEOUT": "60000",
+            "MAX_MCP_OUTPUT_TOKENS": "50000",
+            "DISABLE_AUTOUPDATER": "1",
+        },
+        command=bundle_prop("integrations.scoped_data.claude_code.command", "claude"),
+        permission_mode="acceptEdits",
+        timeout_seconds=300,
+        step_name="scoped_data.claude_code",
+        delta_marker="scoped_data_processing",
+    ),
+    binding=ClaudeCodeBinding(
+        user_id=user_id,
+        conversation_id=conversation_id,
+        session_id=session_id,
+        claude_session_id=stable_claude_session_id,
+    ),
+    comm=comm,
+)
+
+result = await run_claude_code_turn(agent=agent, prompt=prompt)
+```
+
+When `workspace_config` is present, `ClaudeCodeAgent.run_turn(...)` writes the
+standard files before starting Claude. A bundle can still write those files
+itself for specialized cases, but the normal path should use the SDK helper.
+
+Current Claude Code customization knobs exposed by the SDK runner:
+
+- `agent_name` for Claude session identity and accounting metadata
+- `workspace_path` for the caller-owned Claude workspace
+- `model` and `command`
+- `allowed_tools`
+- `additional_directories`
+- `extra_args`
+- `env`
+- `permission_mode`
+- `timeout_seconds`
+- `step_name` and `delta_marker` for communicator events
+- `structured_output_prefixes`, `on_structured_output`, and `on_text_chunk`
+- `workspace_config` for SDK-managed `.mcp.json`,
+  `.claude/settings.local.json`, and `CLAUDE.md`
+
+Workspace and secret boundary:
+
+- `workspace_path` means "run Claude from this directory."
+- `additional_directories` means "also pass these paths via `--add-dir`."
+- That is workspace scoping, but not security isolation. Claude is still a
+  subprocess in the same OS/container security boundary. It is not a sandbox,
+  chroot, container, or per-user filesystem jail.
+- Repo bootstrap/publish means hydrating/persisting Claude's own
+  session/workspace files, for example via git-backed session store. That
+  remains handled by the higher-level runtime, not the low-level subprocess
+  runner.
+- Secret injection policy means the runner should not decide which secrets are
+  safe to resolve/write. The caller must pass resolved short-lived tokens or env
+  values deliberately.
+
+Do not treat a completed Claude process as proof that the MCP workflow
+succeeded. If the MCP workflow requires `record_result`, read the run document
+after Claude exits and report failure when no result was recorded.
+
+## 8. MCP URL Reachability
+
+`@mcp(...)` creates the route path. It does not solve which host name Claude
+should use.
+
+The URL must be reachable from the process or container running `claude`.
+
+Recommended config:
+
+```yaml
+config:
+  integrations:
+    scoped_data:
+      claude_code:
+        mcp_base_url: "http://chat-processor.internal:8020"
+```
+
+The bundle then builds:
+
+```python
+base = entrypoint.bundle_prop("integrations.scoped_data.claude_code.mcp_base_url")
+url = f"{base}/api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/mcp/scoped_data"
+```
+
+Deployment matrix:
+
+| Deployment | Can use `127.0.0.1`? | Correct base URL |
+| --- | --- | --- |
+| local dev, Claude and proc on same host | yes | `http://127.0.0.1:<CHAT_PROCESSOR_PORT>` |
+| same container as proc | yes, if proc listens there | `http://127.0.0.1:<container-port>` |
+| different Docker container | no | Docker service DNS or internal host name |
+| ECS same task, shared task network | usually yes, if target listens on the port | `http://127.0.0.1:<container-port>` or the task-local container endpoint |
+| ECS separate task/service | no | Cloud Map name, internal ALB, or other internal service endpoint |
+
+If the URL is wrong, Claude will see MCP connection or invalid-session errors
+even though the bundle's `@mcp(...)` endpoint is implemented correctly.
+
+## 9. Claude Code Deployment Requirements
+
+For Claude Code plus bundle MCP to work in any deployment, all of these must be
+true:
+
+- the `claude` CLI exists in the runtime image/container
+- Anthropic or Claude Code credentials are available to the subprocess
+- the Claude workspace path is writable
+- any required workspace files are written before the turn starts
+- the bundle MCP endpoint is enabled by bundle props
+- Claude can reach the MCP URL over HTTP from its network namespace
+- the MCP endpoint authenticates itself because proc does not authenticate MCP
+- the MCP app is stateless HTTP or correctly handles lifespan/session startup
+- the MCP tools use bounded schemas and bounded outputs
+- write tools are idempotent or run-scoped enough to survive retries
+- logs identify run id, user scope, MCP URL, allowed tools, and final status
+
+Managed container recommendations:
+
+- set `DISABLE_AUTOUPDATER=1` for the Claude subprocess
+- avoid relying on globally cached Claude or MCP state
+- construct the workspace under bundle storage or another deterministic,
+  writable runtime path
+- configure `mcp_base_url` per environment instead of hardcoding localhost
+
+## 10. Testing Checklist
+
+Before debugging the model, prove the runtime boundary:
+
+1. Verify the bundle endpoint is discoverable through `@mcp(...)`.
+2. Call `tools/list` against the final MCP URL from the same host/container that
+   will run Claude.
+3. Confirm missing or invalid MCP auth returns `401`.
+4. Confirm valid MCP auth returns only the scoped tools.
+5. Confirm each tool enforces the run scope.
+6. Generate the Claude workspace and inspect `.mcp.json` and
+   `.claude/settings.local.json`.
+7. Run the Claude turn with only the MCP allowed tools.
+8. Assert the run-scoped result was recorded.
+9. Assert a Claude timeout, MCP connection failure, or missing recorded result
+   is reported as MCP sub-processing failure, not as success.
+
+Useful route probes:
+
+```bash
+curl -X POST \
+  "$MCP_URL" \
+  -H "Content-Type: application/json" \
+  -H "X-Example-MCP-Token: $TOKEN" \
+  -d '{"jsonrpc":"2.0","id":"1","method":"tools/list"}'
+```
+
+For Docker or ECS, run that probe from the same container or task context that
+will spawn `claude`.

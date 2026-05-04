@@ -6,6 +6,7 @@ tags: ["sdk", "bundle", "reference", "example", "react", "configuration", "widge
 keywords: ["reference implementation bundle", "working bundle patterns", "file layout example", "configuration surface example", "widget api mcp example", "versatile bundle reference"]
 see_also:
   - ks:docs/sdk/bundle/bundle-developer-guide-README.md
+  - ks:docs/sdk/bundle/bundle-agent-integration-README.md
   - ks:docs/sdk/bundle/bundle-runtime-README.md
   - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
@@ -42,11 +43,13 @@ Do not use `versatile` as the reference for:
 
 - `@cron`
 - `@venv`
+- Claude Code subagents with generated MCP workspace config
 
 Those are documented separately:
 
 - [bundle-scheduled-jobs-README.md](bundle-scheduled-jobs-README.md)
 - [bundle-venv-README.md](bundle-venv-README.md)
+- [bundle-agent-integration-README.md](bundle-agent-integration-README.md)
 
 ## Study Order
 

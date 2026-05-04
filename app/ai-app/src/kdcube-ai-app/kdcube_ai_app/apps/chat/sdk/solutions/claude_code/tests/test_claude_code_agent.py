@@ -17,7 +17,11 @@ from kdcube_ai_app.apps.chat.sdk.protocol import (
     ChatTaskUser,
 )
 from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import bind_current_request_context
-from kdcube_ai_app.apps.chat.sdk.solutions.claude_code import ClaudeCodeAgent
+from kdcube_ai_app.apps.chat.sdk.solutions.claude_code import (
+    ClaudeCodeAgent,
+    ClaudeCodeWorkspaceConfig,
+    prepare_claude_code_workspace,
+)
 from kdcube_ai_app.apps.chat.sdk.solutions.claude_code.types import ClaudeCodeAgentConfig, ClaudeCodeBinding
 from kdcube_ai_app.infra.accounting import AccountingSystem, clear_context
 
@@ -226,6 +230,40 @@ def test_build_args_includes_selected_model(tmp_path: Path):
 
     assert "--model" in args
     assert "claude-opus-4-6" in args
+
+
+def test_prepare_claude_code_workspace_writes_mcp_settings_and_instructions(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+
+    prepared = prepare_claude_code_workspace(
+        workspace,
+        ClaudeCodeWorkspaceConfig(
+            mcp_servers={
+                "scoped_data": {
+                    "type": "http",
+                    "url": "http://127.0.0.1:8020/mcp",
+                    "headers": {"X-Test-Token": "token"},
+                }
+            },
+            allowed_tools=("mcp__scoped_data__task_context",),
+            denied_tools=("Bash", "Read"),
+            instructions_markdown="# Scoped Data\nUse only MCP tools.\n",
+        ),
+    )
+
+    assert prepared["mcp_servers"] == ["scoped_data"]
+    assert (workspace / ".mcp.json").exists()
+    assert (workspace / ".claude" / "settings.local.json").exists()
+    assert (workspace / "CLAUDE.md").read_text(encoding="utf-8") == "# Scoped Data\nUse only MCP tools.\n"
+
+    mcp_config = json.loads((workspace / ".mcp.json").read_text(encoding="utf-8"))
+    assert mcp_config["mcpServers"]["scoped_data"]["headers"]["X-Test-Token"] == "token"
+
+    settings = json.loads((workspace / ".claude" / "settings.local.json").read_text(encoding="utf-8"))
+    assert settings["enableAllProjectMcpServers"] is False
+    assert settings["enabledMcpjsonServers"] == ["scoped_data"]
+    assert settings["permissions"]["allow"] == ["mcp__scoped_data__task_context"]
+    assert settings["permissions"]["deny"] == ["Bash", "Read"]
 
 
 @pytest.mark.asyncio

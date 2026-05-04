@@ -5,6 +5,7 @@ summary: "Complete transport map for bundle capabilities: chat, background jobs,
 tags: ["sdk", "bundle", "transport", "protocol", "mcp", "rest", "sse", "socketio", "widgets", "auth", "background-jobs"]
 keywords: ["bundle transport map", "chat transport", "background job transport", "on_job transport", "operations rest transport", "widget transport", "static ui transport", "communicator streaming", "public route transport", "mcp endpoint transport"]
 see_also:
+  - ks:docs/sdk/bundle/bundle-agent-integration-README.md
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
   - ks:docs/sdk/bundle/bundle-interfaces-README.md
   - ks:docs/sdk/bundle/bundle-client-communication-README.md
@@ -26,6 +27,9 @@ It answers:
 - what `operations` vs `public` means for REST and MCP
 
 This page is transport-focused.
+
+For agent-level wiring of React tools/skills, bundle-served MCP, and Claude Code
+MCP clients, read [Bundle Agent Integration](bundle-agent-integration-README.md).
 
 It intentionally does **not** repeat the full field-by-field decorator reference.
 Use [bundle-platform-integration-README.md](bundle-platform-integration-README.md)

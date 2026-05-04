@@ -5,6 +5,7 @@ summary: "Declarative platform contract for exposing bundle capabilities through
 tags: ["sdk", "bundle", "integration", "decorators", "widgets", "operations", "mcp", "ui", "manifest", "cron", "scheduled-jobs", "background-jobs"]
 keywords: ["decorator based integration", "bundle manifest contract", "rest operations exposure", "widget exposure", "mcp route exposure", "static ui exposure", "public route exposure", "scheduled job exposure", "on_job background job handler"]
 see_also:
+  - ks:docs/sdk/bundle/bundle-agent-integration-README.md
   - ks:docs/sdk/bundle/bundle-transports-README.md
   - ks:docs/sdk/bundle/bundle-interfaces-README.md
   - ks:docs/sdk/bundle/bundle-scheduled-jobs-README.md
@@ -25,6 +26,10 @@ It covers:
 - widget discovery and widget fetch
 - bundle main UI entrypoints and static asset serving
 - background job stream dispatch through `@on_job`
+
+For how these decorators fit into React agents, tools/skills descriptors, MCP
+connectors, and Claude Code subagents, read
+[Bundle Agent Integration](bundle-agent-integration-README.md).
 
 For the higher-level inbound/outbound transport map, use
 [bundle-transports-README.md](bundle-transports-README.md).

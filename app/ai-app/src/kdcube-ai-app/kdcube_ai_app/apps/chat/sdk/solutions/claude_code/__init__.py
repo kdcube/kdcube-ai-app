@@ -14,7 +14,9 @@ from kdcube_ai_app.apps.chat.sdk.solutions.claude_code.types import (
     ClaudeCodeBinding,
     ClaudeCodeRunResult,
     ClaudeCodeTurnKind,
+    ClaudeCodeWorkspaceConfig,
 )
+from kdcube_ai_app.apps.chat.sdk.solutions.claude_code.workspace import prepare_claude_code_workspace
 
 __all__ = [
     "ClaudeCodeAgent",
@@ -22,9 +24,11 @@ __all__ = [
     "ClaudeCodeBinding",
     "ClaudeCodeRunResult",
     "ClaudeCodeTurnKind",
+    "ClaudeCodeWorkspaceConfig",
     "ClaudeCodeSessionStoreConfig",
     "bootstrap_claude_code_session_store",
     "claude_code_session_branch_ref",
     "publish_claude_code_session_store",
+    "prepare_claude_code_workspace",
     "run_claude_code_turn",
 ]

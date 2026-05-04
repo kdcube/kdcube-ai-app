@@ -11,6 +11,7 @@ see_also:
   - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-release-bundle-content-README.md
+  - ks:docs/sdk/bundle/bundle-agent-integration-README.md
 ---
 # Tier 1 Bundle Pack For Build-With-KDCube Plugins
 
@@ -35,6 +36,11 @@ This optional lifecycle doc should also be available:
 
 It is used only after the user agrees to release, commit, tag, push, or update
 a git-backed descriptor ref.
+
+This conditional agent-integration doc should be available whenever the bundle
+uses React tools/skills, MCP, or Claude Code:
+
+7. [../bundle-agent-integration-README.md](../bundle-agent-integration-README.md)
 
 Preferred reading order:
 
@@ -70,6 +76,9 @@ Recommended:
 - keep [bundle-widget-integration-README.md](../bundle-widget-integration-README.md)
   reachable for source-folder widget work, especially the `OUTDIR` /
   `<VI_BUILD_DEST_ABSOLUTE_PATH>` build command contract
+- keep [bundle-agent-integration-README.md](../bundle-agent-integration-README.md)
+  reachable for React descriptors, MCP connector/server wiring, and Claude Code
+  subprocess agents
 - branch to deeper docs only after Tier 1
 - expose the release procedure as optional and user-approved, not automatic
 

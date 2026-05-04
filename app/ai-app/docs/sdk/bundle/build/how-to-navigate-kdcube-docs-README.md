@@ -10,6 +10,7 @@ see_also:
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-release-bundle-content-README.md
+  - ks:docs/sdk/bundle/bundle-agent-integration-README.md
   - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
   - ks:docs/sdk/bundle/versatile-reference-bundle-README.md
   - ks:docs/sdk/bundle/bundle-storage-and-cache-README.md
@@ -64,6 +65,12 @@ There is also one optional Tier 1 lifecycle procedure:
 Use it when the user agrees that the bundle should be committed, tagged,
 pushed, or wired into a git-backed descriptor ref. It is recommended for
 repeatable bundle work, but it is not an automatic step.
+
+When the bundle defines an agent surface, custom tools/skills, MCP connectors,
+bundle-served MCP, or Claude Code subagents, add this focused page to the Tier 1
+pack:
+
+- [../bundle-agent-integration-README.md](../bundle-agent-integration-README.md)
 
 The order helps, but the important rule is:
 

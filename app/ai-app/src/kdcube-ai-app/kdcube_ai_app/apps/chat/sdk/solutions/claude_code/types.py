@@ -14,6 +14,49 @@ ClaudeCodeTextChunkCallback = Callable[[str], Awaitable[None] | None]
 
 
 @dataclass(frozen=True)
+class ClaudeCodeWorkspaceConfig:
+    mcp_servers: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
+    enabled_mcp_servers: Sequence[str] | None = None
+    allowed_tools: Sequence[str] = field(default_factory=tuple)
+    denied_tools: Sequence[str] = field(default_factory=tuple)
+    instructions_markdown: str | None = None
+    settings: Mapping[str, Any] = field(default_factory=dict)
+    mcp_config: Mapping[str, Any] = field(default_factory=dict)
+    overwrite: bool = True
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "mcp_servers",
+            {
+                str(name): dict(config)
+                for name, config in dict(self.mcp_servers or {}).items()
+                if str(name).strip() and isinstance(config, Mapping)
+            },
+        )
+        if self.enabled_mcp_servers is not None:
+            object.__setattr__(
+                self,
+                "enabled_mcp_servers",
+                tuple(str(item).strip() for item in self.enabled_mcp_servers if str(item).strip()),
+            )
+        object.__setattr__(
+            self,
+            "allowed_tools",
+            tuple(str(tool).strip() for tool in self.allowed_tools if str(tool).strip()),
+        )
+        object.__setattr__(
+            self,
+            "denied_tools",
+            tuple(str(tool).strip() for tool in self.denied_tools if str(tool).strip()),
+        )
+        object.__setattr__(self, "settings", dict(self.settings or {}))
+        object.__setattr__(self, "mcp_config", dict(self.mcp_config or {}))
+        if self.instructions_markdown is not None:
+            object.__setattr__(self, "instructions_markdown", str(self.instructions_markdown))
+
+
+@dataclass(frozen=True)
 class ClaudeCodeAgentConfig:
     agent_name: str
     workspace_path: Path
@@ -31,6 +74,7 @@ class ClaudeCodeAgentConfig:
     structured_output_prefixes: Sequence[str] = field(default_factory=tuple)
     on_structured_output: ClaudeCodeStructuredEventCallback | None = None
     on_text_chunk: ClaudeCodeTextChunkCallback | None = None
+    workspace_config: ClaudeCodeWorkspaceConfig | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "workspace_path", Path(self.workspace_path))

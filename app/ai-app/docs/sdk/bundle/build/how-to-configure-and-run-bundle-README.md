@@ -17,6 +17,7 @@ see_also:
   - ks:docs/sdk/bundle/build/how-to-release-bundle-content-README.md
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-new-cli-README.md
   - ks:docs/sdk/bundle/bundle-developer-guide-README.md
+  - ks:docs/sdk/bundle/bundle-agent-integration-README.md
 ---
 # How To Configure And Run A Bundle
 

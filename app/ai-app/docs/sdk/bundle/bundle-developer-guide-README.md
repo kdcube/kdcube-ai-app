@@ -8,6 +8,7 @@ see_also:
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
   - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
   - ks:docs/sdk/bundle/versatile-reference-bundle-README.md
+  - ks:docs/sdk/bundle/bundle-agent-integration-README.md
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
   - ks:docs/sdk/bundle/bundle-transports-README.md
   - ks:docs/sdk/bundle/bundle-runtime-README.md
@@ -22,6 +23,7 @@ Use it together with:
 
 - [build/how-to-configure-and-run-bundle-README.md](build/how-to-configure-and-run-bundle-README.md)
 - [versatile-reference-bundle-README.md](versatile-reference-bundle-README.md)
+- [bundle-agent-integration-README.md](bundle-agent-integration-README.md)
 - [bundle-platform-integration-README.md](bundle-platform-integration-README.md)
 - [bundle-transports-README.md](bundle-transports-README.md)
 - [bundle-runtime-README.md](bundle-runtime-README.md)
@@ -41,6 +43,7 @@ Read in this order:
 4. `orchestrator/workflow.py`
 5. `tools_descriptor.py`
 6. `skills_descriptor.py`
+7. [bundle-agent-integration-README.md](bundle-agent-integration-README.md) when the bundle has React tools/skills, MCP, or Claude Code subagents
 
 ## Environment Boundary
 

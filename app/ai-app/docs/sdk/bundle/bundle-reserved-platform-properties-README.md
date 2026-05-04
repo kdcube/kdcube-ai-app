@@ -8,6 +8,7 @@ see_also:
   - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
   - ks:docs/configuration/bundles-descriptor-README.md
   - ks:docs/sdk/bundle/bundle-developer-guide-README.md
+  - ks:docs/sdk/bundle/bundle-agent-integration-README.md
   - ks:docs/sdk/bundle/bundle-delivery-and-update-README.md
   - ks:docs/exec/distributed-exec-README.md
 ---

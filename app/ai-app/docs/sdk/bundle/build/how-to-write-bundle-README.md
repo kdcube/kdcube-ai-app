@@ -12,6 +12,7 @@ see_also:
   - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
   - ks:docs/sdk/bundle/bundle-developer-guide-README.md
   - ks:docs/sdk/bundle/versatile-reference-bundle-README.md
+  - ks:docs/sdk/bundle/bundle-agent-integration-README.md
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
   - ks:docs/sdk/bundle/bundle-widget-integration-README.md
   - ks:docs/sdk/bundle/bundle-runtime-README.md
@@ -680,6 +681,10 @@ Use dedicated docs for those:
 Use React when the bundle's behavior should be driven by tools and skills.
 Do not put business behavior directly in a public webhook or REST method if the
 same behavior belongs to the agent.
+
+For the full integration map across React descriptors, bundle-served MCP, MCP
+client config, and Claude Code subagents, read
+[bundle-agent-integration-README.md](../bundle-agent-integration-README.md).
 
 Canonical examples:
 

@@ -8,6 +8,9 @@ see_also:
   - ks:docs/sdk/tools/tool-subsystem-README.md
   - ks:docs/sdk/tools/custom-tools-README.md
   - ks:docs/sdk/agents/react/react-tools-README.md
+  - ks:docs/sdk/bundle/bundle-agent-integration-README.md
+  - ks:docs/sdk/bundle/bundle-transports-README.md
+  - ks:docs/sdk/agents/claude/claude-code-README.md
   - ks:docs/exec/README-iso-runtime.md
 ---
 # MCP Integration
@@ -60,7 +63,7 @@ mcp:
         url: https://mcp.example.com
         auth:
           type: bearer
-          secret: bundles.react.mcp@2026-03-09.secrets.docs.token
+          secret: b:docs.token
       local:
         transport: sse
         url: http://127.0.0.1:8787/sse
@@ -80,6 +83,74 @@ export MCP_SERVICES='{"mcpServers":{"docs":{"transport":"http","url":"https://mc
 | `http`           | `url`                          | Streamable HTTP JSON-RPC |
 | `streamable-http`| `url`                          | Alias of `http` |
 | `sse`            | `url`                          | Server-sent events |
+
+## Correct MCP server requirements
+
+An MCP integration is considered correct when it is explicit about all runtime
+boundaries: discovery, transport, auth, network reachability, lifecycle, tool
+schemas, output size, and retry behavior.
+
+Minimum checklist:
+
+- the server is configured in bundle props `mcp.services` or in a generated MCP
+  client config owned by the caller
+- the visible tools are allow-listed through `MCP_TOOL_SPECS` or the client
+  runtime's equivalent allow-list
+- every tool name is stable and has a bounded input schema
+- every tool returns bounded structured data; large files or artifacts should be
+  returned as references, not huge inline payloads
+- write tools are idempotent, run-scoped, or protected by caller-supplied ids so
+  retries do not duplicate side effects
+- auth is non-interactive in production and secrets are resolved through
+  `get_secret(...)`, bundle secrets, or the runtime secret provider
+- no secret values are written to bundle props, logs, tool responses, or
+  generated workspace files unless the file is explicitly a short-lived local
+  client config
+- HTTP/SSE endpoints are reachable from the process that acts as MCP client
+- stdio commands and their dependencies exist in the process that starts them
+- streamable HTTP FastMCP apps are either created with `stateless_http=True` or
+  are run behind a server/lifespan path that correctly initializes the MCP
+  session manager
+- logs include enough non-secret context to debug failures: server alias,
+  transport, URL host, tool id, run id when applicable, and final status
+
+For bundle-served MCP endpoints exposed with `@mcp(...)`, read:
+
+- [Bundle Transports](../bundle/bundle-transports-README.md)
+- [Bundle Agent Integration](../bundle/bundle-agent-integration-README.md)
+
+For Claude Code consumers, remember that KDCube `mcp.services` does not
+configure Claude Code. The bundle must write Claude-compatible MCP config into
+the Claude workspace, usually `.mcp.json`, and the configured URL must be
+reachable from the process/container that runs `claude`.
+Use `ClaudeCodeWorkspaceConfig` / `prepare_claude_code_workspace(...)` from the
+Claude Code SDK when you want the SDK to write the standard workspace files.
+
+## HTTP reachability and localhost
+
+For HTTP, `url` means "reachable from the MCP client process", not "reachable
+from the developer's browser".
+
+Deployment rules:
+
+- same local host: `http://127.0.0.1:<port>` can work
+- same container as the client process: `http://127.0.0.1:<port>` can work if
+  the server listens there
+- different Docker container: `127.0.0.1` points at the client container, so use
+  Docker service DNS or another internal host name
+- ECS same task with shared task networking: localhost can work if the target
+  container listens on the expected port
+- ECS separate task/service: use Cloud Map, internal ALB, or another private
+  service endpoint
+
+If the server is bundle-served through `@mcp(...)`, the route path is:
+
+```text
+/api/integrations/bundles/{tenant}/{project}/{bundle_id}/mcp/{alias}
+/api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/mcp/{alias}
+```
+
+The caller still needs the correct scheme, host, and port for its deployment.
 
 ## Auth behavior
 
@@ -205,3 +276,9 @@ mcp:
 - MCP call fails at runtime:
   - confirm final tool ID is `mcp.<alias>.<tool_id>`.
   - confirm server exposes that `tool_id` and allow-list includes it.
+  - confirm the MCP URL is reachable from the client process, not just from the
+    host browser or another container.
+  - for bundle-served FastMCP over streamable HTTP, confirm the app is
+    `stateless_http=True` or has a valid lifespan/session-manager path.
+  - confirm auth headers are present and that secrets resolve in the runtime
+    that creates the MCP client.
