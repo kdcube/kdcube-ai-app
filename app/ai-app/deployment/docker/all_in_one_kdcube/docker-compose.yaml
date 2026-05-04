@@ -148,6 +148,7 @@ services:
 
   kb:
     image: kdcube-kb:latest
+    restart: unless-stopped
     build:
       context: ../../..
       dockerfile: deployment/docker/all_in_one_kdcube/Dockerfile_KB
@@ -182,6 +183,7 @@ services:
 
   dramatiq:
     image: kdcube-dramatiq:latest
+    restart: unless-stopped
     build:
       context: ../../..
       dockerfile: deployment/docker/all_in_one_kdcube/Dockerfile_Dramatiq
@@ -221,6 +223,7 @@ services:
 
   chat-ingress:
     image: kdcube-chat-ingress:latest
+    restart: unless-stopped
     build:
       context: ../../..
       dockerfile: deployment/docker/all_in_one_kdcube/Dockerfile_Ingress
@@ -261,6 +264,7 @@ services:
 
   chat-proc:
     image: kdcube-chat-proc:latest
+    restart: unless-stopped
     build:
       context: ../../..
       dockerfile: deployment/docker/all_in_one_kdcube/Dockerfile_Chatproc
@@ -323,6 +327,7 @@ services:
 
   metrics:
     image: kdcube-metrics:latest
+    restart: unless-stopped
     build:
       context: ../../..
       dockerfile: deployment/docker/all_in_one_kdcube/Dockerfile_Metricservice

@@ -39,7 +39,60 @@ class PDFExtractor:
     def extract(self,
                 content: Union[str, bytes],
                 file_path: str) -> List[DataSourceExtractionResult]:
-        """Extract content from PDF using marker library, including images and other assets."""
+        """Extract text from PDF using pypdf (lightweight, no model downloads).
+
+        Returns one DataSourceExtractionResult per PDF, with a single markdown-ish
+        text body containing per-page content separated by `\n\n---\n\n`.
+        """
+        try:
+            from pypdf import PdfReader
+        except ImportError as e:
+            self.logger.error(f"pypdf not installed: {e}")
+            return []
+
+        import io
+        filename = get_filename_from_path(file_path)
+        if isinstance(content, str):
+            stream = io.BytesIO(content.encode("utf-8"))
+        else:
+            stream = io.BytesIO(content)
+
+        try:
+            reader = PdfReader(stream)
+        except Exception as e:
+            self.logger.error(f"pypdf failed to open {filename}: {e}")
+            return []
+
+        page_chunks: List[str] = []
+        for i, page in enumerate(reader.pages):
+            try:
+                text = page.extract_text() or ""
+            except Exception as e:
+                self.logger.warning(f"pypdf page {i} extract failed for {filename}: {e}")
+                text = ""
+            text = text.strip()
+            if text:
+                page_chunks.append(f"## Page {i + 1}\n\n{text}")
+
+        if not page_chunks:
+            self.logger.error(f"pypdf produced no text for {filename}")
+            return []
+
+        body = "\n\n---\n\n".join(page_chunks)
+        metadata = {
+            "source_file": file_path,
+            "filename": filename,
+            "extraction_index": 0,
+            "type": "markdown",
+            "extractor": "pypdf",
+            "page_count": len(reader.pages),
+        }
+        return [DataSourceExtractionResult(content=body, metadata=metadata)]
+
+    def _legacy_extract_marker(self,
+                content: Union[str, bytes],
+                file_path: str) -> List[DataSourceExtractionResult]:
+        """Legacy marker-based extraction (kept for reference, not invoked)."""
         try:
             from marker.converters.pdf import PdfConverter
             from marker.models import create_model_dict

@@ -104,4 +104,30 @@ async def code_core_class_footprint(
     return result
 
 
+@router.get("/code-core/search")
+async def code_core_search(
+    request: Request,
+    q: str = Query(..., min_length=2),
+    search_type: str = Query(default="hybrid"),
+    limit: int = Query(default=10, ge=1, le=30),
+    session: UserSession = Depends(require_auth(RequireUser())),
+) -> Dict[str, Any]:
+    """
+    Hybrid (BM25 + vector) search over the code graph for the seed input
+    in the Configuration Assistant. Returns class/method candidates the
+    user can click to start exploring.
+    """
+    if not session.user_id:
+        raise HTTPException(status_code=401, detail="No user in session")
+    client = await _get_client()
+    if not getattr(client, "enabled", False):
+        raise HTTPException(status_code=503, detail="Code graph disabled (APP_GRAPH_ENABLED=false)")
+    try:
+        result = await client.code_search(search_query=q.strip(), search_type=search_type, limit=limit)
+    except Exception as exc:
+        logger.exception("code_core.search failed for q=%r type=%r", q, search_type)
+        raise HTTPException(status_code=500, detail=f"search failed: {exc}") from exc
+    return result
+
+
 __all__ = ["router"]

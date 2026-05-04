@@ -52,3 +52,9 @@ export type RootState = ReturnType<typeof store.getState>
 export type AppThunk = ThunkAction<void, RootState, unknown, Action>
 export const useAppDispatch = useDispatch.withTypes<AppDispatch>()
 export const useAppSelector = useSelector.withTypes<RootState>()
+
+// Dev-only handle so e2e checks (Playwright) can dispatch / read state
+// without spinning up Redux DevTools. Stripped in production builds.
+if (import.meta.env.DEV) {
+    (window as unknown as {__APP_STORE__?: typeof store}).__APP_STORE__ = store;
+}

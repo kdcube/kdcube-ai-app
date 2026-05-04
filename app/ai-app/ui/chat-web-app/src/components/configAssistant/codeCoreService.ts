@@ -104,3 +104,30 @@ export async function fetchClassFootprint(qualifiedName: string): Promise<ClassF
     });
     return handle<ClassFootprintResponse>(res);
 }
+
+export interface CodeSearchHit {
+    qualified_name?: string;
+    name?: string;
+    kind?: string;
+    docstring?: string;
+    score?: number;
+    source?: string;
+}
+
+export interface CodeSearchResponse {
+    results?: CodeSearchHit[];
+    count?: number;
+}
+
+export async function fetchCodeSearch(
+    query: string,
+    limit = 10,
+    searchType: "hybrid" | "fulltext" | "vector" = "hybrid",
+): Promise<CodeSearchResponse> {
+    const params = new URLSearchParams({q: query, limit: String(limit), search_type: searchType});
+    const res = await fetch(`${BASE}/search?${params.toString()}`, {
+        method: "GET",
+        headers: buildHeaders(),
+    });
+    return handle<CodeSearchResponse>(res);
+}
