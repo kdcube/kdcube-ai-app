@@ -7,6 +7,7 @@ keywords: ["bundle runtime objects", "communicator access", "integrations access
 see_also:
   - ks:docs/sdk/bundle/bundle-developer-guide-README.md
   - ks:docs/sdk/bundle/bundle-lifecycle-README.md
+  - ks:docs/sdk/bundle/bundle-agent-integration-README.md
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
   - ks:docs/sdk/bundle/bundle-interfaces-README.md
   - ks:docs/sdk/tools/custom-tools-README.md
@@ -23,6 +24,7 @@ This page explains the actual runtime surfaces available to:
 
 Use this together with:
 - [Bundle Lifecycle](bundle-lifecycle-README.md) for phase ordering
+- [Bundle Agent Integration](bundle-agent-integration-README.md) for React, tools/skills, MCP, and Claude Code wiring
 - [Bundle Platform Integration](bundle-platform-integration-README.md) for public entrypoint design
 - [Tool Subsystem](../tools/tool-subsystem-README.md) for descriptor and execution internals
 

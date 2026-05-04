@@ -5,6 +5,7 @@ summary: "Native Python SDK runner for Claude Code with deterministic user and c
 tags: ["sdk", "agents", "claude", "claude-code", "streaming", "communicator", "workspace"]
 keywords: ["ClaudeCodeAgent", "run_followup", "run_steer", "allowedTools", "session-id", "resume", "add-dir", "permission-mode", "stream-json", "ChatCommunicator", "timeout_seconds", "structured_output_prefixes"]
 see_also:
+  - ks:docs/sdk/bundle/bundle-agent-integration-README.md
   - ks:docs/sdk/bundle/bundle-runtime-README.md
   - ks:docs/sdk/streaming/channeled-streamer-README.md
   - ks:docs/sdk/tools/tool-subsystem-README.md
@@ -21,6 +22,10 @@ This page documents the native Python Claude Code runner added under:
 - [src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/claude_code/streaming.py](../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/claude_code/streaming.py)
 
 Use this when a bundle or SDK component wants to run `claude` directly from Python without introducing a Node bridge or bundle-local subprocess glue.
+
+For bundle-level wiring with React, bundle-served MCP endpoints, generated
+`.mcp.json`, and deployment reachability requirements, read
+[Bundle Agent Integration](../../bundle/bundle-agent-integration-README.md).
 
 ## What it gives you
 
@@ -39,6 +44,8 @@ Main features:
 - native Python subprocess execution of `claude`
 - deterministic Claude session binding from current KDCube user + conversation + agent name
 - explicit caller-supplied workspace path
+- optional SDK writing of standard Claude workspace support files:
+  `.mcp.json`, `.claude/settings.local.json`, and `CLAUDE.md`
 - explicit caller-supplied allowed tools
 - explicit additional writable / accessible directories via `--add-dir`
 - explicit Claude permission mode such as `acceptEdits`
@@ -288,10 +295,9 @@ See [ks:docs/sdk/agents/claude/claude-code-accounting-README.md](ks:docs/sdk/age
 
 The caller must provide `workspace_path`.
 
-The runner does not:
+By default, the low-level runner does not:
 
 - clone repos
-- create workspaces
 - isolate concurrent worktrees
 - publish or push changes
 
@@ -300,6 +306,90 @@ That is intentional. Workspace orchestration belongs to the caller or a higher-l
 If the Claude run needs access outside the main workspace root, the caller
 should pass `additional_directories`. These are forwarded to Claude Code as
 `--add-dir` entries.
+
+Important distinction:
+
+- `workspace_path` controls the subprocess working directory
+- `additional_directories` controls extra paths passed to Claude through
+  `--add-dir`
+- neither one is a security sandbox
+
+Plain-language boundary summary:
+
+- `workspace_path` means "run Claude from this directory."
+- `additional_directories` means "also pass these paths via `--add-dir`."
+- That is workspace scoping, but not security isolation. Claude is still a
+  subprocess in the same OS/container security boundary. It is not a sandbox,
+  chroot, container, or per-user filesystem jail.
+- Repo bootstrap/publish means hydrating/persisting Claude's own
+  session/workspace files, for example via git-backed session store. That
+  remains handled by the higher-level runtime, not the low-level subprocess
+  runner.
+- Secret injection policy means the runner should not decide which secrets are
+  safe to resolve/write. The caller must pass resolved short-lived tokens or env
+  values deliberately.
+
+The caller must choose a per-user/per-conversation/per-agent workspace path when
+concurrent or cross-user isolation is required.
+
+## Workspace support files
+
+The SDK includes a helper for standard Claude Code workspace files:
+
+- `ClaudeCodeWorkspaceConfig`
+- `prepare_claude_code_workspace(...)`
+
+Use it when the bundle wants the SDK to write `.mcp.json`,
+`.claude/settings.local.json`, and `CLAUDE.md` before the Claude subprocess
+starts.
+
+Example:
+
+```python
+from kdcube_ai_app.apps.chat.sdk.solutions.claude_code import (
+    ClaudeCodeAgent,
+    ClaudeCodeAgentConfig,
+    ClaudeCodeWorkspaceConfig,
+)
+
+workspace_config = ClaudeCodeWorkspaceConfig(
+    mcp_servers={
+        "scoped_data": {
+            "type": "http",
+            "url": mcp_url,
+            "headers": {"X-Example-MCP-Token": short_lived_token},
+        }
+    },
+    allowed_tools=[
+        "mcp__scoped_data__task_context",
+        "mcp__scoped_data__list_items",
+        "mcp__scoped_data__record_result",
+    ],
+    denied_tools=["Bash", "Read", "Edit", "Write", "WebFetch", "WebSearch"],
+    instructions_markdown=(
+        "# Scoped Data Processor\n\n"
+        "Use only the configured scoped_data MCP tools.\n"
+        "Call task_context first and record_result before the final answer.\n"
+    ),
+)
+
+agent = ClaudeCodeAgent(
+    config=ClaudeCodeAgentConfig(
+        agent_name="scoped-data-processor",
+        workspace_path=workspace_path,
+        workspace_config=workspace_config,
+        allowed_tools=list(workspace_config.allowed_tools),
+    ),
+    binding=binding,
+    comm=comm,
+)
+```
+
+When `workspace_config` is set, `ClaudeCodeAgent.run_turn(...)` prepares the
+workspace before checking that `workspace_path` exists.
+
+The helper does not resolve secrets. The caller must pass already-resolved
+short-lived tokens, headers, or non-secret MCP URLs.
 
 ## Session-store bootstrap
 
@@ -379,9 +469,13 @@ The runner is designed so failures are visible both:
 This first cut does not provide:
 
 - PTY-backed interactive stdin sessions
-- workspace isolation
-- automatic secret injection policy
+- security-grade workspace isolation or sandboxing
+- automatic secret injection or secret-resolution policy
 - bundle UI integration
+
+It can write standard workspace support files when `workspace_config` is
+provided, but the caller still owns the policy for which MCP servers, headers,
+instructions, and permissions are safe to write.
 
 The generic runner still does not itself own repo bootstrap/publish policy. That
 is handled by the higher-level Claude workspace/session-store runtime layer.

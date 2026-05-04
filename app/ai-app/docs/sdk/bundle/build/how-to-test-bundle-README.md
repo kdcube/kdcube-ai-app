@@ -9,6 +9,7 @@ see_also:
   - ks:docs/sdk/bundle/build/how-to-write-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-release-bundle-content-README.md
+  - ks:docs/sdk/bundle/bundle-agent-integration-README.md
   - ks:docs/sdk/bundle/versatile-reference-bundle-README.md
   - ks:docs/sdk/bundle/bundle-widget-integration-README.md
   - ks:docs/sdk/bundle/bundle-delivery-and-update-README.md
@@ -170,6 +171,10 @@ Do this before building UI, tools, or scheduler logic. A clean skeleton makes
 later failures narrower.
 
 ## 1C. React Tool/Skill Checks
+
+Use [bundle-agent-integration-README.md](../bundle-agent-integration-README.md)
+as the full contract for React descriptors, MCP connector/server wiring, and
+Claude Code subagent requirements.
 
 For a React-backed bundle, prove the agent surface before manual testing:
 

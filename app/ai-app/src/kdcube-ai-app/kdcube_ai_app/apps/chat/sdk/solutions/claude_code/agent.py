@@ -504,6 +504,22 @@ class ClaudeCodeAgent:
         resume_existing: bool = False,
     ) -> ClaudeCodeRunResult:
         workspace_path = self.config.workspace_path
+        if self.config.workspace_config is not None:
+            from kdcube_ai_app.apps.chat.sdk.solutions.claude_code.workspace import (
+                prepare_claude_code_workspace,
+            )
+
+            prepared = prepare_claude_code_workspace(
+                workspace_path,
+                self.config.workspace_config,
+            )
+            self.logger.info(
+                "[ClaudeCodeAgent] workspace prepared agent=%s workspace=%s files=%s mcp_servers=%s",
+                self.config.agent_name,
+                prepared.get("workspace_path"),
+                prepared.get("written_files"),
+                prepared.get("mcp_servers"),
+            )
         if not workspace_path.exists() or not workspace_path.is_dir():
             message = f"Claude workspace path does not exist or is not a directory: {workspace_path}"
             await self._emit_final_error(

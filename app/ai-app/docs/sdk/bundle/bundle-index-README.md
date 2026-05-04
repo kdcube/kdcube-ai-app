@@ -13,6 +13,7 @@ see_also:
   - ks:docs/sdk/bundle/versatile-reference-bundle-README.md
   - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
   - ks:docs/sdk/bundle/bundle-delivery-and-update-README.md
+  - ks:docs/sdk/bundle/bundle-agent-integration-README.md
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
   - ks:docs/sdk/bundle/bundle-transports-README.md
 ---
@@ -47,13 +48,15 @@ Older `docs/sdk/example-bundle` sample docs are no longer part of the bundle pat
    - the concrete reference bundle to study
 7. [bundle-runtime-README.md](bundle-runtime-README.md)
    - runtime surfaces available to bundle code
-8. [bundle-platform-integration-README.md](bundle-platform-integration-README.md)
+8. [bundle-agent-integration-README.md](bundle-agent-integration-README.md)
+   - React tools/skills, MCP connector/server patterns, and Claude Code subagent requirements
+9. [bundle-platform-integration-README.md](bundle-platform-integration-README.md)
    - exact decorator and route contract
-9. [bundle-transports-README.md](bundle-transports-README.md)
+10. [bundle-transports-README.md](bundle-transports-README.md)
    - canonical inbound/outbound protocol and transport map
-10. [../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../configuration/bundle-runtime-configuration-and-secrets-README.md)
+11. [../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../configuration/bundle-runtime-configuration-and-secrets-README.md)
    - platform/global, bundle-scoped, and user-scoped configuration and secrets
-11. [bundle-delivery-and-update-README.md](bundle-delivery-and-update-README.md)
+12. [bundle-delivery-and-update-README.md](bundle-delivery-and-update-README.md)
    - local reload, registry updates, delivery modes, and deployment-side changes
 
 ## Core Doc Map
@@ -67,6 +70,7 @@ Older `docs/sdk/example-bundle` sample docs are no longer part of the bundle pat
 | Testing playbook | [build/how-to-test-bundle-README.md](build/how-to-test-bundle-README.md) |
 | Study the reference bundle | [versatile-reference-bundle-README.md](versatile-reference-bundle-README.md) |
 | Runtime surfaces | [bundle-runtime-README.md](bundle-runtime-README.md) |
+| React, tools/skills, MCP, and Claude Code agent integration | [bundle-agent-integration-README.md](bundle-agent-integration-README.md) |
 | Decorators, widget/API/public integration, `@on_job` | [bundle-platform-integration-README.md](bundle-platform-integration-README.md) |
 | Inbound/outbound transports and protocols | [bundle-transports-README.md](bundle-transports-README.md) |
 | Props, secrets, raw descriptor reads | [../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../configuration/bundle-runtime-configuration-and-secrets-README.md) |
