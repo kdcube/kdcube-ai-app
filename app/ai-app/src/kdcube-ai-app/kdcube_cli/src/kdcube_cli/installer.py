@@ -3781,7 +3781,11 @@ def run_setup(
         env_bundles_secrets = str(staged_descriptors["bundles_secrets_path"] or "")
         env_gateway_descriptor = str(staged_descriptors["gateway_path"] or "")
         use_descriptor_bundles = bool(_get_nested(staged_assembly, "bundles"))
-        use_descriptor_frontend = bool(_get_nested(staged_assembly, "frontend"))
+        _staged_fd = _get_nested(staged_assembly, "frontend")
+        use_descriptor_frontend = bool(
+            isinstance(_staged_fd, dict)
+            and (_get_nested(_staged_fd, "build", "repo") or _staged_fd.get("image"))
+        )
         use_descriptor_platform = False
         use_bundles_descriptor = bool(staged_descriptors["bundles_path"])
         use_bundles_secrets = bool(staged_descriptors["bundles_secrets_path"])
@@ -3934,12 +3938,24 @@ def run_setup(
             elif use_descriptor_frontend is False:
                 if not compose_mode_env:
                     compose_mode = "all-in-one"
-            elif isinstance(release_descriptor, dict) and release_descriptor.get("frontend"):
-                compose_mode = "custom-ui-managed-infra"
+            elif isinstance(release_descriptor, dict):
+                _fd = release_descriptor.get("frontend")
+                _has_ui_source = isinstance(_fd, dict) and bool(
+                    _get_nested(_fd, "build", "repo") or _fd.get("image")
+                )
+                if _has_ui_source:
+                    compose_mode = "custom-ui-managed-infra"
+                elif not compose_mode_env:
+                    compose_mode = "all-in-one"
             elif not compose_mode_env:
                 compose_mode = "all-in-one"
-            if isinstance(release_descriptor, dict) and not release_descriptor.get("frontend") and use_descriptor_frontend is not True:
-                compose_mode = "all-in-one"
+            if isinstance(release_descriptor, dict) and use_descriptor_frontend is not True:
+                _fd = release_descriptor.get("frontend")
+                _has_ui_source = isinstance(_fd, dict) and bool(
+                    _get_nested(_fd, "build", "repo") or _fd.get("image")
+                )
+                if not _has_ui_source:
+                    compose_mode = "all-in-one"
     if env_use_frontend is False and not compose_mode_env:
         compose_mode = "all-in-one"
 
