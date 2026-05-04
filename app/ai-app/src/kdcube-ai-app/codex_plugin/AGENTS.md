@@ -56,40 +56,16 @@ After success, offer to start.
 
 ## Configuration flow
 
-When the user asks about editing descriptors, configuring a bundle, what a field in
-`assembly.yaml` / `bundles.yaml` / `bundles.secrets.yaml` / `gateway.yaml` / `secrets.yaml`
-means, or how props/secrets reach a bundle — **do not guess from memory. Ever. Read the
-docs first, every single time, no exceptions.**
+**Never guess descriptor shapes from memory — read the docs first, every time.**
+Docs are NOT on disk — fetch from GitHub (`KDCUBE_REPO_ROOT` fast path: strip
+`https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/` and read locally).
 
-This rule is absolute. The most common failure mode here is skipping the read step on
-"small" edits and ending up with a `bundles.yaml` entry that uses the host path instead
-of the container path, or an `assembly.yaml` whose `host_bundles_path` does not actually
-cover the bundle directory on disk. Both look fine until the runtime silently serves
-nothing. Re-read even if you think you remember from a previous session — descriptor
-shapes change between releases.
-
-**Especially when the bundle lives outside the current runtime workdir / outside
-`host_bundles_path`:** the host path is NOT the container path. `bundles.yaml` takes the
-container path `/bundles/<relative-from-host_bundles_path>`. The documented fix is to
-edit `assembly.yaml -> paths.host_bundles_path` to the parent that contains the bundle,
-then `kdcube --workdir $WORKDIR --build --upstream`. The plugin's `bootstrap` helper with
-`--host-bundles-path` does the same thing in one call.
-
-Docs are NOT on disk — always fetch from GitHub. Only fall back to local `Read` if
-`KDCUBE_REPO_ROOT` is already set; if it is, strip the
-`https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/` prefix and read the
-repo-relative path. Do not ask the user for a local repo.
-
-1. Fetch the how-to first and read it in full:
-   `https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/app/ai-app/docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md`
-2. Fetch the matching descriptor doc — **header-first gate:** read only the title and
-   first section first, confirm it covers the specific field you need, then read the rest.
-   Base URL `https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/app/ai-app/docs/configuration/<filename>`:
+1. `https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/app/ai-app/docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md` — read in full
+2. Matching descriptor doc with **header-first gate** (title + first section, then full if relevant).
+   Base: `https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/app/ai-app/docs/configuration/<filename>`:
    `assembly-descriptor-README.md`, `bundles-descriptor-README.md`,
-   `bundles-secrets-descriptor-README.md`, `gateway-descriptor-README.md`,
-   `secrets-descriptor-README.md`.
-3. After editing `$WORKDIR/config/bundles.yaml` on macOS, restart `chat-proc` (see
-   **Reload gotchas** below), then reload + verify-reload.
+   `bundles-secrets-descriptor-README.md`, `gateway-descriptor-README.md`, `secrets-descriptor-README.md`
+3. On macOS after editing `$WORKDIR/config/bundles.yaml`: restart `chat-proc` (see Reload gotchas), then reload + verify-reload.
 
 ## Reload flow
 
@@ -116,14 +92,8 @@ repo-relative path. Do not ask the user for a local repo.
   the bundle was never in the proc cache. Recheck the `id` and `path` in `bundles.yaml`.
 - Any container restart (secrets injection, `stop`/`start`, Docker restart) drops the
   proc cache — reload every active bundle immediately after.
-- **macOS Docker Desktop + edits to `bundles.yaml`:** Docker Desktop on macOS does not
-  refresh a file-level bind mount when the host file's inode changes, and file edits
-  replace inodes. After editing `$WORKDIR/config/bundles.yaml` the container still reads
-  the old file until you restart `chat-proc`:
-  ```bash
-  docker restart all_in_one_kdcube-chat-proc-1
-  ```
-  Then reload + verify-reload.
+- **macOS + `bundles.yaml` edits:** Docker Desktop doesn't refresh bind mounts on inode change.
+  Run `docker restart all_in_one_kdcube-chat-proc-1` after editing, then reload + verify-reload.
 
 ## Test flow
 
@@ -140,37 +110,18 @@ repo-relative path. Do not ask the user for a local repo.
 **Delegate bundle authoring to `/kdcube-bundle-builder`.** That prompt owns the canonical
 read order, placement rules, and authoring rules.
 
-Before invoking it, resolve the workdir:
-
-```bash
-WORKDIR="${KDCUBE_WORKDIR:-}"
-if [ -z "$WORKDIR" ] && [ -d "$HOME/.kdcube/kdcube-runtime/config" ]; then
-  WORKDIR="$HOME/.kdcube/kdcube-runtime"
-fi
-if [ -z "$WORKDIR" ]; then
-  WORKDIR=$(python3 "${KDCUBE_BUILDER_ROOT:-$HOME/.codex/kdcube-builder}/kdcube_local.py" status 2>/dev/null \
-    | awk -F': +' '/^Workdir/ {print $2}' | awk '{print $1}')
-fi
-```
-
-If `$WORKDIR` still resolves to nothing or `$WORKDIR/config/.env` is missing, **ask the
-user** for the workdir in one short message — do not guess.
+Before invoking it, resolve the workdir: check `$KDCUBE_WORKDIR`, then
+`$HOME/.kdcube/kdcube-runtime`, then `kdcube_local.py status | grep Workdir`.
+If still unresolved or `$WORKDIR/config/.env` is missing, ask the user in one message.
 
 Non-negotiable rules for any bundle work:
 
-- **Read the docs before writing or editing anything — every time, no exceptions.** Start
-  with `how-to-write-bundle-README.md` and `how-to-configure-and-run-bundle-README.md`,
-  plus the versatile reference bundle. The descriptor shapes and mount semantics change
-  between releases and the runtime fails silently when you get them wrong.
-- The bundle directory can live anywhere on the host — `~/.kdcube/bundles/<bundle-id>/`
-  by default, or wherever the user asked. Use a real directory, not a symlink.
+- **Read the docs before writing or editing anything — `/kdcube-bundle-builder` owns the
+  canonical read order and authoring rules.**
 - Register in `$WORKDIR/config/bundles.yaml` with the **container path**
   (`/bundles/<relative-from-host_bundles_path>`), not the host path.
-- If the chosen host directory is outside the current `HOST_BUNDLES_PATH`, widen
-  `host_bundles_path` in `assembly.yaml` and rebuild with
-  `kdcube --workdir $WORKDIR --build --upstream`. The `bootstrap <bundle-id> <bundle-dir>
-  --host-bundles-path <parent>` helper does the same thing in one call.
-- Do not invent decorators, import paths, or descriptor fields.
+- If the bundle directory is outside `HOST_BUNDLES_PATH`, use
+  `bootstrap <id> <dir> --host-bundles-path <parent>` to widen the mount root atomically.
 
 ## General rules
 

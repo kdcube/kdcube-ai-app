@@ -54,21 +54,6 @@ same thing (it writes `host_bundles_path` into `assembly.yaml`).
 Do not put the host path directly into `bundles.yaml` — the runtime path and host path
 are different namespaces.
 
-## What one bundle can contain
-
-- Python backend entrypoint
-- authenticated APIs via `@api(route="operations")`
-- public APIs via `@api(route="public", public_auth=...)`
-- widgets via `@ui_widget(...)`
-- a full custom iframe UI via `@ui_main`
-- storage
-- deploy-scoped props and secrets
-- user-scoped props and secrets
-- scheduled jobs via `@cron(...)`
-- dependency-isolated helpers via `@venv(...)`
-- React v2 and/or Claude Code and/or custom agents
-- optional Node or TypeScript backend logic behind a Python bridge
-
 ## Read order
 
 **The plugin ships without docs — they are NOT on disk.** Always fetch from the web. Do
@@ -80,10 +65,14 @@ Base URL (for reference): `https://raw.githubusercontent.com/kdcube/kdcube-ai-ap
 
 ### Tier 1 — always read (operational canon)
 
-- `https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/app/ai-app/docs/sdk/bundle/build/how-to-write-bundle-README.md`
-- `https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/app/ai-app/docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md`
-- `https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/app/ai-app/docs/sdk/bundle/build/how-to-test-bundle-README.md`
-- `https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/app/ai-app/docs/service/cicd/release-bundle-README.md` — bundle release workflow: two-phase process (repository files first, deployment descriptors second), required per-bundle release files, and agent pipeline structure
+Fetch in this order:
+
+- `https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/app/ai-app/docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md` — routing entry point; read first
+- `https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/app/ai-app/docs/sdk/bundle/build/how-to-test-bundle-README.md` — testing / QA expectations
+- `https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/app/ai-app/docs/sdk/bundle/build/how-to-write-bundle-README.md` — authoring / implementation design
+- `https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/app/ai-app/docs/configuration/bundle-runtime-configuration-and-secrets-README.md` — configuration ownership model
+- `https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/app/ai-app/docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md` — deployment wiring, descriptor paths, reload
+- `https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/app/ai-app/docs/sdk/bundle/build/how-to-release-bundle-content-README.md` — optional lifecycle procedure: align docs/config templates/release.yaml, validate, commit/tag/push
 
 Reference bundle `versatile@2026-03-31-13-36` — directories aren't web-fetchable; fetch
 these individually:
@@ -104,64 +93,20 @@ descriptor, waits for approval, then executes and journals each step.
 **When this applies:** any time the human asks to release, tag, or publish a bundle repository
 without touching the platform Docker image or PyPI CLI.
 
-**Four files every releasable bundle must have:**
-- `README.md` — explains current runtime behavior, config props, secrets, and operational notes
-- `release.yaml` — carries `bundle.ref` set to the release version and human-readable release notes
-- `config/bundles.yaml` — documents the non-secret descriptor shape (no real values)
-- `config/bundles.secrets.yaml` — documents the bundle-scoped secrets shape; if none exist, keep `secrets: {}`
+**Four files every bundle must have** (see Rule #1 above — applies always, not only on release):
+- `README.md` — current runtime behavior, config props, secrets, operational notes
+- `release.yaml` — `bundle.ref` set to the release version + human-readable release notes
+- `config/bundles.template.yaml` — non-secret descriptor shape (no real values)
+- `config/bundles.secrets.template.yaml` — bundle-scoped secrets shape; if none: `secrets: {}`
 
 **Pipeline — always in this order:**
 
-When activated, the agent creates pipeline files under:
-```text
-deployment/cicd/kdcube/cicd/content-release-history/<dd.mm.yyyy>/
-```
+Agent creates pipeline files under `deployment/cicd/kdcube/cicd/content-release-history/<dd.mm.yyyy>/`:
+- `descriptor-<dd.mm.yyyy.hhmm>.yaml` — release plan (repos, bundles, perform/commit/tag/push flags)
+- `plan-<dd.mm.yyyy.hhmm>.log` — list of every file that will change
+- `execute-<dd.mm.yyyy.hhmm>.yaml` — execution journal (step, start/end time, status, output)
 
-Files are created in this order:
-- `descriptor-<dd.mm.yyyy.hhmm>.yaml`
-- `plan-<dd.mm.yyyy.hhmm>.log`
-- `execute-<dd.mm.yyyy.hhmm>.yaml`
-
-Descriptor shape:
-
-```yaml
-context: "Short human-readable context for this content release"
-keywords: [content, release, bundles]
-timestamp: "dd.mm.yyyy.hhmm"
-version: "YYYY.M.D.hhmm"
-
-repositories:
-  - name: <repo-alias>
-    repo: git@github.com:<org>/<repo>.git
-    https_repo: https://github.com/<org>/<repo>
-    locally: /path/to/local/checkout
-    bundles_root: path/to/bundles/root
-    perform: true
-    commit: true
-    tag: true
-    push: true
-    bundles:
-      - id: <bundle-id>@<version>
-        path: path/to/bundle/root/<bundle-id>@<version>
-        perform: true
-        changes:
-          - "Describe release change for this bundle"
-      - id: <other-bundle-id>@<version>
-        path: path/to/bundle/root/<other-bundle-id>@<version>
-        perform: false
-        changes: []
-```
-
-Execution journal shape:
-
-```yaml
-- step: "<step name>"
-  start_time: "<timestamp>"
-  end_time: "<timestamp>"
-  status: success   # success | error | skipped | paused
-  output: "<commit hash, tag, validation result, or other useful output>"
-  error: ""
-```
+For the YAML shapes of descriptor and journal, read the Tier 1 release how-to doc.
 
 **Approval flow:**
 1. Agent writes the descriptor.
@@ -175,8 +120,8 @@ Execution journal shape:
 **Prepare bundle files — for every bundle with `perform: true`:**
 1. Inspect bundle code and current descriptor usage.
 2. Update `README.md` — runtime behavior, config props, secrets, operational notes.
-3. Update `config/bundles.yaml` — non-secret descriptor shape.
-4. Update `config/bundles.secrets.yaml` — bundle-scoped secrets shape; if none: `secrets: {}`.
+3. Update `config/bundles.template.yaml` — non-secret descriptor shape.
+4. Update `config/bundles.secrets.template.yaml` — bundle-scoped secrets shape; if none: `secrets: {}`.
 5. Update `release.yaml` — set `bundle.ref` to the release version, add human-readable bullets.
 
 **Validate before commit:**
@@ -190,7 +135,7 @@ Execution journal shape:
 - Stage only the release files for in-scope bundles; never stage unrelated or generated files.
 - If `commit: false` / `tag: false` / `push: false`, skip that step entirely.
 - If a git tag already exists at the requested version, stop and ask what to do.
-- Never put real secrets into `bundles.yaml` or `bundles.secrets.yaml` config examples.
+- Never put real secrets into `bundles.template.yaml` or `bundles.secrets.template.yaml`.
 - Keep customer-specific repository details inside customer repositories; keep this procedure generic.
 
 ### Tier 2 — read only on demand
@@ -216,11 +161,11 @@ All under `https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/app/ai-ap
 **Descriptor / service configuration** — read the matching file **only when editing that
 specific descriptor**. Apply the same header-first gate: fetch, read the title and first
 section, confirm it covers your specific field, then read in full. Base:
-`https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/app/ai-app/docs/service/configuration/<filename>`:
+`https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/app/ai-app/docs/configuration/<filename>`:
 
-- `service-config-README.md` (overview), `assembly-descriptor-README.md`,
-  `bundles-descriptor-README.md`, `bundles-secrets-descriptor-README.md`,
-  `gateway-descriptor-README.md`, `secrets-descriptor-README.md`.
+- `assembly-descriptor-README.md`, `bundles-descriptor-README.md`,
+  `bundles-secrets-descriptor-README.md`, `gateway-descriptor-README.md`,
+  `secrets-descriptor-README.md`.
 
 **Specialized example bundles** — use the GitHub contents API at
 `https://api.github.com/repos/kdcube/kdcube-ai-app/contents/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/<dir>`:
@@ -312,15 +257,4 @@ python3 "${KDCUBE_BUILDER_ROOT:-$HOME/.codex/kdcube-builder}/kdcube_local.py" ve
 `bundle-tests` needs `KDCUBE_REPO_ROOT` to point at a local `kdcube-ai-app` clone — if
 it's unset, ask the user whether they have one.
 
-### Reload rules (read before touching a running runtime)
-
-- Editing files in `HOST_BUNDLES_PATH/<bundle-id>/` does **not** hot-reload. The runtime
-  serves the cached bundle until an explicit `reload <bundle-id>`.
-- `reload` only works if `<bundle-id>` is registered in `bundles.yaml` with the correct
-  container path.
-- **Always run `verify-reload` after `reload`.** The reload call returns before the proc
-  cache actually rotates.
-- `verify-reload` reporting `eviction: None` for a bundle that was supposed to be active
-  is a red flag — the bundle was never in the proc cache.
-- Any container restart drops the proc cache. Reload every active bundle immediately
-  after such events.
+Reload rules are in `AGENTS.md` — always pair `reload` with `verify-reload`.

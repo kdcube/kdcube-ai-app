@@ -34,8 +34,8 @@ verify that all four files exist and are non-empty:
 |------|---------|
 | `README.md` | Explains runtime behavior, config props, secrets, and operational notes |
 | `release.yaml` | Carries `bundle.ref` (release version) and human-readable release notes |
-| `config/bundles.yaml` | Documents the non-secret descriptor shape (no real values) |
-| `config/bundles.secrets.yaml` | Documents bundle-scoped secrets shape; if none exist, keep `secrets: {}` |
+| `config/bundles.template.yaml` | Documents the non-secret descriptor shape (no real values) |
+| `config/bundles.secrets.template.yaml` | Documents bundle-scoped secrets shape; if none exist, keep `secrets: {}` |
 
 **This applies to every bundle task without exception:** new bundles, modified bundles,
 bundles wrapped from existing apps. Do not mark a bundle task complete until all four files
@@ -158,7 +158,7 @@ Fetch each with `WebFetch` **in this order** (navigate first, then the rest):
 - `https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/app/ai-app/docs/sdk/bundle/build/how-to-write-bundle-README.md` — authoring / implementation design
 - `https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/app/ai-app/docs/configuration/bundle-runtime-configuration-and-secrets-README.md` — configuration ownership model (props, secrets, runtime config)
 - `https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/app/ai-app/docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md` — configuration + runtime (`assembly.yaml`, `bundles.yaml`, `bundles.secrets.yaml`, props/secrets, reload)
-- `https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/app/ai-app/docs/service/cicd/release-bundle-README.md` — bundle release workflow: two-phase process (repository files first, deployment descriptors second), required per-bundle release files, and agent pipeline structure
+- `https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/app/ai-app/docs/sdk/bundle/build/how-to-release-bundle-content-README.md` — optional Tier 1 lifecycle procedure: align bundle docs/config templates/release.yaml, validate, commit/tag/push, update descriptor ref
 
 Reference bundle `versatile@2026-03-31-13-36` — read end-to-end. Directories are not
 WebFetch-able; fetch these files individually:
@@ -183,8 +183,8 @@ without touching the platform Docker image or PyPI CLI.
 not only during content releases):
 - `README.md` — explains current runtime behavior, config props, secrets, and operational notes
 - `release.yaml` — carries `bundle.ref` set to the release version and human-readable release notes
-- `config/bundles.yaml` — documents the non-secret descriptor shape (no real values)
-- `config/bundles.secrets.yaml` — documents the bundle-scoped secrets shape; if none exist, keep `secrets: {}`
+- `config/bundles.template.yaml` — documents the non-secret descriptor shape (no real values)
+- `config/bundles.secrets.template.yaml` — documents the bundle-scoped secrets shape; if none exist, keep `secrets: {}`
 
 **Pipeline — always in this order:**
 
@@ -251,8 +251,8 @@ Execution journal shape:
 **Prepare bundle files — for every bundle with `perform: true`:**
 1. Inspect bundle code and current descriptor usage.
 2. Update `README.md` — runtime behavior, config props, secrets, operational notes.
-3. Update `config/bundles.yaml` — non-secret descriptor shape.
-4. Update `config/bundles.secrets.yaml` — bundle-scoped secrets shape; if none: `secrets: {}`.
+3. Update `config/bundles.template.yaml` — non-secret descriptor shape.
+4. Update `config/bundles.secrets.template.yaml` — bundle-scoped secrets shape; if none: `secrets: {}`.
 5. Update `release.yaml` — set `bundle.ref` to the release version, add human-readable bullets.
 
 **Validate before commit:**
@@ -266,7 +266,7 @@ Execution journal shape:
 - Stage only the release files for in-scope bundles; never stage unrelated or generated files.
 - If `commit: false` / `tag: false` / `push: false`, skip that step entirely.
 - If a git tag already exists at the requested version, stop and ask what to do.
-- Never put real secrets into `bundles.yaml` or `bundles.secrets.yaml` config examples.
+- Never put real secrets into `bundles.template.yaml` or `bundles.secrets.template.yaml` config examples.
 - Keep customer-specific repository details inside customer repositories; keep this procedure generic.
 
 ### Tier 2 — read only on demand (when Tier 1 is not enough)
