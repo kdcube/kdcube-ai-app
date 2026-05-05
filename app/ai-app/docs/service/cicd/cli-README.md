@@ -439,10 +439,80 @@ Operational rule for `aws-sm` deployments:
 If you skip that step, a later provision can replay stale `BUNDLES_YAML` or
 `BUNDLES_SECRETS_YAML` and overwrite runtime bundle changes.
 
-### 2.3c Patch staged bundle config and secrets
+### 2.3c Manage staged bundle entries
 
-`kdcube bundle` patches the staged descriptor files in the active runtime workdir
-without a full reinstall or manual YAML edit.
+`kdcube bundle` creates, updates, or deletes entries in the staged descriptor
+files in the active runtime workdir without a full reinstall or manual YAML edit.
+All non-delete flag groups can be combined in one invocation — the command does a
+single atomic read-modify-write of `bundles.yaml` / `bundles.secrets.yaml`.
+
+When `--local-path` or `--git-repo` is provided and `<bundle_id>` does not yet
+exist in `bundles.yaml`, the command **creates** a new entry (upsert).
+For all other operations (identity, config, secrets) the bundle must already exist.
+
+#### Source mode
+
+Switch where proc loads the bundle from.
+
+**Local path** — proc reads from a host-mounted directory.
+The path must be the **container-visible** path (under `/bundles/`, not the host path):
+
+```bash
+kdcube bundle <bundle_id> \
+  --local-path /bundles/my.bundle \
+  --workdir ~/.kdcube/kdcube-runtime/<tenant_id>__<project_id>
+```
+
+Setting `--local-path` clears any `repo`/`ref`/`subdir` fields.
+
+**Git repo** — proc clones the repo into `/managed-bundles/` on first `kdcube reload`:
+
+```bash
+kdcube bundle <bundle_id> \
+  --git-repo git@github.com:org/my-bundle.git \
+  --git-ref 2026.4.30 \
+  --workdir ~/.kdcube/kdcube-runtime/<tenant_id>__<project_id>
+```
+
+`--git-ref` is required with `--git-repo`.
+
+If the bundle root is a subdirectory of the repo:
+
+```bash
+kdcube bundle <bundle_id> \
+  --git-repo git@github.com:org/monorepo.git \
+  --git-ref main \
+  --git-subdir src/my.bundle \
+  --workdir ~/.kdcube/kdcube-runtime/<tenant_id>__<project_id>
+```
+
+`--git-subdir` requires `--git-repo`.
+
+After proc resolves a git bundle it writes the concrete resolved path back into
+the descriptor (e.g. `/managed-bundles/org__my-bundle__2026.4.30`).
+This is expected — the source-of-truth for the next reload is the
+`repo`/`ref`/`subdir` fields.
+
+Setting `--git-repo` clears any `path` field.
+
+#### Identity fields
+
+```bash
+kdcube bundle <bundle_id> \
+  --name "My Bundle" \
+  --module entrypoint \
+  --singleton \
+  --workdir ~/.kdcube/kdcube-runtime/<tenant_id>__<project_id>
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--name NAME` | bundle_id | Human-readable display name |
+| `--module MODULE` | `entrypoint` | Python module used as the bundle entry point |
+| `--singleton` | `false` | Only one instance may run at a time |
+| `--no-singleton` | — | Explicitly set `singleton: false` |
+
+#### Config and secrets patch
 
 **Set a config value by dotted key path:**
 
@@ -476,11 +546,11 @@ kdcube bundle <bundle_id> \
   --workdir ~/.kdcube/kdcube-runtime/<tenant_id>__<project_id>
 ```
 
-Multiple operations can be chained in a single invocation:
+Multiple patch operations can be chained:
 
 ```bash
 kdcube bundle <bundle_id> \
-  --set-config model.name claude-3-5-sonnet \
+  --set-config model.name claude-opus-4-7 \
   --set-config features.debug false \
   --del-config features.legacy_mode \
   --workdir ~/.kdcube/kdcube-runtime/<tenant_id>__<project_id>
@@ -496,6 +566,22 @@ Value coercion rules:
 | `'{"a": 1}'` (shell-quoted JSON) | string (the JSON literal) |
 
 `--del-config` and `--del-secret` raise an error if the key does not exist.
+
+#### Delete a bundle entry
+
+Remove a bundle from `bundles.yaml` (and its secrets entry from
+`bundles.secrets.yaml`, if present):
+
+```bash
+kdcube bundle <bundle_id> \
+  --delete \
+  --workdir ~/.kdcube/kdcube-runtime/<tenant_id>__<project_id>
+```
+
+`--delete` cannot be combined with any other flag. Exits with an error if the
+bundle is not found.
+
+#### Apply changes
 
 After patching, apply the change with:
 
