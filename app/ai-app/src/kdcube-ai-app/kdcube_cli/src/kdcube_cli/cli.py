@@ -1772,9 +1772,59 @@ def main() -> None:
     _sp.add_argument("--workdir", default=None, help="Namespaced runtime workdir")
     _sp.add_argument("--path", default=str(DEFAULT_DIR), help="Platform repo path")
 
-    _sp = subparsers.add_parser("bundle", help="Patch config or secrets for a staged bundle")
+    _sp = subparsers.add_parser("bundle", help="Create, update, or delete a staged bundle entry")
     _sp.add_argument("bundle_id", help="Bundle ID to patch")
     _sp.add_argument("--workdir", default=None, help="Namespaced runtime workdir")
+    # Source mode (mutually exclusive)
+    _src_grp = _sp.add_mutually_exclusive_group()
+    _src_grp.add_argument(
+        "--local-path",
+        metavar="PATH",
+        default=None,
+        dest="local_path",
+        help="Set bundle source to a local/container-visible path (clears git fields)",
+    )
+    _src_grp.add_argument(
+        "--git-repo",
+        metavar="REPO",
+        default=None,
+        dest="git_repo",
+        help="Set bundle source to a git repo URL (clears path field)",
+    )
+    _sp.add_argument(
+        "--git-ref",
+        metavar="REF",
+        default=None,
+        dest="git_ref",
+        help="Git ref/tag (required with --git-repo)",
+    )
+    _sp.add_argument(
+        "--git-subdir",
+        metavar="SUBDIR",
+        default=None,
+        dest="git_subdir",
+        help="Subdirectory within the git repo that contains the bundle",
+    )
+    # Identity fields
+    _sp.add_argument("--name", default=None, help="Display name for the bundle")
+    _sp.add_argument("--module", default=None, help="Python module name (default: entrypoint)")
+    _sg = _sp.add_mutually_exclusive_group()
+    _sg.add_argument(
+        "--singleton",
+        dest="singleton",
+        action="store_const",
+        const=True,
+        default=None,
+        help="Mark bundle as singleton",
+    )
+    _sg.add_argument(
+        "--no-singleton",
+        dest="singleton",
+        action="store_const",
+        const=False,
+        help="Mark bundle as non-singleton",
+    )
+    # Config / secrets patch ops
     _sp.add_argument(
         "--set-config",
         nargs=2,
@@ -1808,6 +1858,12 @@ def main() -> None:
         default=[],
         dest="del_secret",
         help="Delete a secret key by dotted path",
+    )
+    _sp.add_argument(
+        "--delete",
+        action="store_true",
+        default=False,
+        help="Remove this bundle entry from bundles.yaml (and its secrets entry if present)",
     )
 
     _sp = subparsers.add_parser("export", help="Export live bundle descriptors")
@@ -1951,18 +2007,68 @@ def main() -> None:
                 )
 
             _bundle_id = str(args.bundle_id).strip()
+            _local_path: str | None = args.local_path
+            _git_repo: str | None = args.git_repo
+            _git_ref: str | None = args.git_ref
+            _git_subdir: str | None = args.git_subdir
+            _b_name: str | None = args.name
+            _b_module: str | None = args.module
+            _b_singleton: bool | None = args.singleton
             _set_config_ops: list[list[str]] = args.set_config or []
             _set_secret_ops: list[list[str]] = args.set_secret or []
             _del_config_ops: list[str] = args.del_config or []
             _del_secret_ops: list[str] = args.del_secret or []
+            _delete: bool = args.delete
 
-            if not any([_set_config_ops, _set_secret_ops, _del_config_ops, _del_secret_ops]):
+            _has_source_op = _local_path is not None or _git_repo is not None
+            _has_identity_op = _b_name is not None or _b_module is not None or _b_singleton is not None
+            _has_config_op = bool(_set_config_ops or _del_config_ops)
+            _has_secret_op = bool(_set_secret_ops or _del_secret_ops)
+
+            if _git_subdir is not None and _git_repo is None:
+                raise SystemExit("--git-subdir can only be used together with --git-repo.")
+
+            if _delete and any([_has_source_op, _has_identity_op, _has_config_op, _has_secret_op]):
+                raise SystemExit("--delete cannot be combined with other flags.")
+
+            if not any([_delete, _has_source_op, _has_identity_op, _has_config_op, _has_secret_op]):
                 raise SystemExit(
-                    "No operations specified. "
-                    "Use --set-config, --set-secret, --del-config, or --del-secret."
+                    "No operations specified. Use --local-path, --git-repo, --name, --module, "
+                    "--singleton/--no-singleton, --set-config, --set-secret, --del-config, --del-secret, or --delete."
                 )
 
-            if _set_config_ops or _del_config_ops:
+            if _git_repo is not None and not _git_ref:
+                raise SystemExit("--git-ref is required when --git-repo is specified.")
+
+            if _delete:
+                _bundles_data = installer_mod.load_release_descriptor(_bundles_path)
+                _b_block = _bundles_data.get("bundles") if isinstance(_bundles_data, dict) else None
+                _b_items = _b_block.get("items", []) if isinstance(_b_block, dict) else []
+                _b_idx = next(
+                    (i for i, it in enumerate(_b_items) if isinstance(it, dict) and str(it.get("id", "")) == _bundle_id),
+                    None,
+                )
+                if _b_idx is None:
+                    raise SystemExit(f"Bundle '{_bundle_id}' not found in {_bundles_path}")
+                del _b_items[_b_idx]
+                installer_mod.save_release_descriptor(_bundles_path, _bundles_data)
+                console.print(f"[green]Removed from bundles.yaml:[/green] {_bundle_id!r}")
+                if _bundles_secrets_path.exists():
+                    _bs_data = installer_mod.load_release_descriptor(_bundles_secrets_path)
+                    _bs_block = _bs_data.get("bundles") if isinstance(_bs_data, dict) else None
+                    _bs_items = _bs_block.get("items", []) if isinstance(_bs_block, dict) else []
+                    _bs_idx = next(
+                        (i for i, it in enumerate(_bs_items) if isinstance(it, dict) and str(it.get("id", "")) == _bundle_id),
+                        None,
+                    )
+                    if _bs_idx is not None:
+                        del _bs_items[_bs_idx]
+                        installer_mod.save_release_descriptor(_bundles_secrets_path, _bs_data)
+                        console.print(f"[green]Removed from bundles.secrets.yaml:[/green] {_bundle_id!r}")
+                return
+
+            # --- bundles.yaml operations (source mode + identity + config) ---
+            if _has_source_op or _has_identity_op or _has_config_op:
                 _bundles_data = installer_mod.load_release_descriptor(_bundles_path)
                 _b_block = _bundles_data.get("bundles") if isinstance(_bundles_data, dict) else None
                 _b_items = _b_block.get("items", []) if isinstance(_b_block, dict) else []
@@ -1971,21 +2077,66 @@ def main() -> None:
                     None,
                 )
                 if _b_item is None:
-                    raise SystemExit(f"Bundle '{_bundle_id}' not found in {_bundles_path}")
-                _cfg = _b_item.setdefault("config", {})
-                if not isinstance(_cfg, dict):
-                    _cfg = {}
-                    _b_item["config"] = _cfg
-                for _key, _raw in _set_config_ops:
-                    _val = _parse_yaml_scalar(_raw)
-                    installer_mod._set_nested(_cfg, _key.split("."), _val)
-                    console.print(f"[dim]set config[/dim] {_key} = {_val!r}")
-                for _key in _del_config_ops:
-                    _parts = _key.split(".")
-                    if not _nested_key_exists(_cfg, _parts):
-                        raise SystemExit(f"Config key '{_key}' not found in bundle '{_bundle_id}'")
-                    installer_mod._delete_nested(_cfg, _parts)
-                    console.print(f"[dim]del config[/dim] {_key}")
+                    if not _has_source_op:
+                        raise SystemExit(
+                            f"Bundle '{_bundle_id}' not found in {_bundles_path}. "
+                            "Provide --local-path or --git-repo to create a new entry."
+                        )
+                    _b_item = {"id": _bundle_id}
+                    if isinstance(_b_block, dict):
+                        _b_block.setdefault("items", []).append(_b_item)
+                    console.print(f"[dim]creating new bundle entry[/dim] {_bundle_id!r}")
+
+                if _local_path is not None:
+                    _b_item["path"] = _local_path
+                    for _stale in ("repo", "ref", "subdir"):
+                        _b_item.pop(_stale, None)
+                    console.print(f"[dim]set source[/dim] local-path = {_local_path!r}")
+
+                if _git_repo is not None:
+                    _b_item["repo"] = _git_repo
+                    _b_item["ref"] = _git_ref
+                    if _git_subdir is not None:
+                        _b_item["subdir"] = _git_subdir
+                    else:
+                        _b_item.pop("subdir", None)
+                    _b_item.pop("path", None)
+                    console.print(f"[dim]set source[/dim] git-repo = {_git_repo!r} ref = {_git_ref!r}")
+                    if _git_subdir:
+                        console.print(f"[dim]set source[/dim] git-subdir = {_git_subdir!r}")
+
+                if _b_name is not None:
+                    _b_item["name"] = _b_name
+                    console.print(f"[dim]set name[/dim] {_b_name!r}")
+
+                if _b_module is not None:
+                    _b_item["module"] = _b_module
+                    console.print(f"[dim]set module[/dim] {_b_module!r}")
+                elif "module" not in _b_item:
+                    _b_item["module"] = "entrypoint"
+
+                if _b_singleton is not None:
+                    _b_item["singleton"] = _b_singleton
+                    console.print(f"[dim]set singleton[/dim] {_b_singleton!r}")
+                elif "singleton" not in _b_item:
+                    _b_item["singleton"] = False
+
+                if _has_config_op:
+                    _cfg = _b_item.setdefault("config", {})
+                    if not isinstance(_cfg, dict):
+                        _cfg = {}
+                        _b_item["config"] = _cfg
+                    for _key, _raw in _set_config_ops:
+                        _val = _parse_yaml_scalar(_raw)
+                        installer_mod._set_nested(_cfg, _key.split("."), _val)
+                        console.print(f"[dim]set config[/dim] {_key} = {_val!r}")
+                    for _key in _del_config_ops:
+                        _parts = _key.split(".")
+                        if not _nested_key_exists(_cfg, _parts):
+                            raise SystemExit(f"Config key '{_key}' not found in bundle '{_bundle_id}'")
+                        installer_mod._delete_nested(_cfg, _parts)
+                        console.print(f"[dim]del config[/dim] {_key}")
+
                 installer_mod.save_release_descriptor(_bundles_path, _bundles_data)
                 console.print(f"[green]Updated:[/green] {_bundles_path}")
 

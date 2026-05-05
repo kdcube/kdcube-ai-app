@@ -117,7 +117,7 @@ showing what is running and how to stop it first.
 | Command | What it does |
 |---|---|
 | `kdcube reload <bundle_id>` | Reapply bundle config and clear proc caches — no full restart needed |
-| `kdcube bundle <bundle_id>` | Patch bundle config or secrets by dotted key path |
+| `kdcube bundle <bundle_id>` | Patch bundle source, identity, config, or secrets |
 | `kdcube export` | Export live `bundles.yaml` / `bundles.secrets.yaml` |
 
 ### Configuration
@@ -130,30 +130,55 @@ showing what is running and how to stop it first.
 
 ---
 
-## `kdcube bundle` — patch config at runtime
+## `kdcube bundle` — manage bundles at runtime
 
-Patch a staged bundle without touching YAML files by hand:
+Patch a staged bundle — source, identity, config, or secrets — without touching
+YAML files by hand. Changes are staged and take effect after `kdcube reload`.
+
+**Source mode** — switch where proc loads the bundle from:
 
 ```bash
-# Change a cron schedule
+# Local path (container-visible path under /bundles/)
+kdcube bundle <bundle_id> --local-path /bundles/my.bundle
+
+# Git repo (proc clones to /managed-bundles/ on reload)
 kdcube bundle <bundle_id> \
-  --set-config routines.heartbeat.cron "*/5 * * * *"
+  --git-repo git@github.com:org/my-bundle.git \
+  --git-ref 2026.4.30
 
-# Disable a feature flag
+# Git monorepo with a bundle subdirectory
 kdcube bundle <bundle_id> \
-  --set-config features.some_feature.enabled false
+  --git-repo git@github.com:org/monorepo.git \
+  --git-ref main \
+  --git-subdir src/my.bundle
+```
 
-# Set a secret
+**Identity and config/secrets patch:**
+
+```bash
+# Set display name, module, singleton flag
 kdcube bundle <bundle_id> \
-  --set-secret api.token "sk-..."
+  --name "My Bundle" --module entrypoint --singleton
 
-# Remove a key
-kdcube bundle <bundle_id>  \
-  --del-config routines.heartbeat.cron
+# Patch config and secrets by dotted key path
+kdcube bundle <bundle_id> \
+  --set-config routines.heartbeat.cron "*/5 * * * *" \
+  --set-secret api.token "sk-..." \
+  --del-config features.legacy_mode
 
-# Apply changes
+# Apply all staged changes
 kdcube reload <bundle_id>
 ```
+
+```bash
+# Delete a bundle entry (also removes its secrets entry)
+kdcube bundle <bundle_id> --delete
+```
+
+When `--local-path` or `--git-repo` is given and the bundle doesn't exist yet,
+the command creates a new entry (upsert). All other flags require an existing entry.
+All non-delete flags can be combined in one invocation (single atomic write).
+`--git-ref` is required with `--git-repo`. `--git-subdir` requires `--git-repo`.
 
 ---
 
