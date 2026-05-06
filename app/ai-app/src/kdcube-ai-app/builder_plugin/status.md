@@ -130,6 +130,14 @@ Early work happened on `feat/claude-kdcube-cli-plugin` (now deleted); later work
 - Fixed URL path for descriptor docs in builder_plugin skills: `docs/service/configuration/` → `docs/configuration/`
 - Removed `service-config-README.md` from descriptor doc list (no longer exists at that path)
 
+**2026-05-06** — Tier 1 update: `bundle-agent-integration` + CLI URLs to main (builder + codex)
+- Added `bundle-agent-integration-README.md` to Tier 1 in both `bundle-builder/SKILL.md` and
+  `kdcube-bundle-builder.md` — conditional fetch: React agents with tools, file-producing tools,
+  MCP endpoints/client config, Claude Code subprocess agents; covers agent runtime comparison,
+  tool/skill descriptors, `@mcp(...)`, `ClaudeCodeAgentConfig`, SDK-managed skill materialization
+- All 4 CLI reference doc URLs in `kdcube-cli` (builder + codex) switched from commit-pinned
+  `blob/7da35c7...` to `raw.githubusercontent.com/main/` — now track latest
+
 **2026-05-06** — `kdcube bundle` subcommand added to `kdcube-cli` (builder + codex)
 - Added `kdcube bundle <bundle_id>` to the command surface table in both plugins
 - Added new row to **Reference docs** table: `kdcube bundle` full reference →
