@@ -9,14 +9,23 @@ Take the intent from the text after `/kdcube-cli` and map it to the right comman
 
 | Doc | URL |
 |---|---|
-| CLI quickstart & command table | https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/app/ai-app/src/kdcube-ai-app/kdcube_cli/README.md |
-| Current CLI contract (all commands, flags, env overrides) | https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/app/ai-app/docs/service/cicd/cli-README.md |
-| Bundle configure & run workflow | https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/app/ai-app/docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md |
+| CLI quickstart & command table | https://github.com/kdcube/kdcube-ai-app/blob/7da35c7bdc7f7a532272752cd32d3c6d7cecb496/app/ai-app/src/kdcube-ai-app/kdcube_cli/README.md |
+| `kdcube bundle` full reference (source, identity, config/secrets patch, delete) | https://github.com/kdcube/kdcube-ai-app/blob/7da35c7bdc7f7a532272752cd32d3c6d7cecb496/app/ai-app/src/kdcube-ai-app/kdcube_cli/additional_README.md |
+| Current CLI contract (all commands, flags, env overrides) | https://github.com/kdcube/kdcube-ai-app/blob/7da35c7bdc7f7a532272752cd32d3c6d7cecb496/app/ai-app/docs/service/cicd/cli-README.md |
+| Bundle configure & run workflow | https://github.com/kdcube/kdcube-ai-app/blob/7da35c7bdc7f7a532272752cd32d3c6d7cecb496/app/ai-app/docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md |
 | CLI as control plane design (reload, init, defaults) | https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/app/ai-app/docs/service/cicd/design/cli--as-control-plane-README.md |
 | PyPI package reference | https://pypi.org/project/kdcube-cli/ |
 
 Fetch the relevant doc(s) via WebFetch when the user asks about a specific command or flag
 not covered by the quick-reference below.
+
+`kdcube bundle <bundle_id>` manages a bundle entry in `bundles.yaml` / `bundles.secrets.yaml`
+without editing YAML by hand. It can create a new entry or update an existing one — switching
+the source between a local host-mounted path and a git repo (with optional ref and subdir),
+setting identity fields (display name, module, singleton flag), patching config values or
+secrets by dotted key path (e.g. `llm.model`, `routines.heartbeat.cron`), and deleting
+individual keys or the whole entry. All flag groups can be combined in one atomic call.
+Changes are staged to disk; apply them to the running proc with `kdcube reload <bundle_id>`.
 
 ## Command surface
 
@@ -28,6 +37,7 @@ Current CLI uses subcommands:
 | `kdcube start` | Launch Docker Compose stack |
 | `kdcube stop` | Stop running stack |
 | `kdcube reload <bundle_id>` | Reapply bundle descriptors and clear proc cache |
+| `kdcube bundle <bundle_id>` | Create / update / delete a bundle entry in bundles.yaml |
 | `kdcube export` | Export live bundle descriptors from AWS Secrets Manager |
 | `kdcube defaults` | Save persistent operator preferences |
 | `kdcube --info` | Show configured defaults and active deployment lock state |
@@ -53,6 +63,9 @@ Workdir resolution precedence when `--workdir` is omitted from a subcommand:
 | start stack | `kdcube start --workdir <workdir>` |
 | stop stack | **Stop flow** |
 | reload bundle via CLI | **Reload flow** |
+| register / create / update / delete bundle entry | fetch `kdcube bundle` reference from **Reference docs** |
+| switch bundle source / change git repo | fetch `kdcube bundle` reference from **Reference docs** |
+| patch bundle config or secrets by dotted key | fetch `kdcube bundle` reference from **Reference docs** |
 | inject secrets / set API key | **Secrets flow** |
 | clean docker / clean images | `kdcube --clean` |
 | reset config | `kdcube --reset` |

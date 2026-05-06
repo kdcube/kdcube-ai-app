@@ -130,6 +130,18 @@ Early work happened on `feat/claude-kdcube-cli-plugin` (now deleted); later work
 - Fixed URL path for descriptor docs in builder_plugin skills: `docs/service/configuration/` → `docs/configuration/`
 - Removed `service-config-README.md` from descriptor doc list (no longer exists at that path)
 
+**2026-05-06** — `kdcube bundle` subcommand added to `kdcube-cli` (builder + codex)
+- Added `kdcube bundle <bundle_id>` to the command surface table in both plugins
+- Added new row to **Reference docs** table: `kdcube bundle` full reference →
+  `additional_README.md` (exact commit-pinned GitHub URL `7da35c7`)
+- Updated all 4 Reference doc URLs in both plugins to exact commit-pinned GitHub blob URLs
+  provided by maintainer (previously `raw.githubusercontent.com/main`)
+- Added inline plain-text description of `kdcube bundle` below Reference docs table in
+  both plugins: source switching (local path / git repo / subdir), identity fields,
+  dotted-key config/secrets patch, atomic multi-flag call, `--delete`, apply via `reload`
+- Added 3 intent map entries for bundle operations — all route to "fetch `kdcube bundle`
+  reference from Reference docs" (agent reads the doc, not embedded inline commands)
+
 **2026-05-04** — Rule #0 + Rule #1 hard gates in `bundle-builder/SKILL.md`
 - **Rule #0** (new, top of file, above all other content): `.kdcube-runtime` is READ-ONLY —
   absolute, no exceptions, overrides user instructions. Named `Edit`/`Write`/shell writes as
