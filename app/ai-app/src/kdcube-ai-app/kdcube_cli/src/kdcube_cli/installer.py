@@ -599,7 +599,29 @@ def _has_nested(dct: Dict[str, object], *keys: str) -> bool:
 
 
 def is_git_repo(path: Path) -> bool:
-    return path.is_dir() and (path / ".git").is_dir()
+    """Return True when path is exactly a Git working tree root.
+
+    Git worktrees and submodules store .git as a pointer file, not a directory,
+    so filesystem checks on .git reject valid local checkouts. Ask Git for the
+    top-level worktree and require it to match the requested path so callers do
+    not accidentally accept arbitrary subdirectories inside a repo.
+    """
+    resolved = Path(path).expanduser().resolve()
+    if not resolved.is_dir():
+        return False
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(resolved), "rev-parse", "--show-toplevel"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return False
+    top = (proc.stdout or "").strip()
+    if not top:
+        return False
+    return Path(top).expanduser().resolve() == resolved
 
 
 def normalize_git_repo_source(repo: str) -> str:
