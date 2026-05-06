@@ -48,7 +48,7 @@ async def _load_registry_from_redis(app, tenant: str, project: str):
     return await load_persisted_registry_from_runtime_ctx(app.state, tenant, project)
 
 
-TransportKind = Literal["sse", "socket"]
+TransportKind = Literal["sse", "socket", "telegram"]
 
 # Hard limit for input text length.
 # Chosen so that we can embed it with OpenAI embeddings without chunking.
@@ -157,9 +157,9 @@ class RawAttachment:
 
 @dataclass
 class IngressConfig:
-    transport: TransportKind                # "sse" or "socket"
-    entrypoint: str                         # "/sse/chat" or "/socket.io/chat"
-    component: str                          # "chat.sse" or "chat.socket"
+    transport: TransportKind                # "sse", "socket", or proc-local transports such as "telegram"
+    entrypoint: str                         # "/sse/chat", "/socket.io/chat", "/telegram/webhook", ...
+    component: str                          # "chat.sse", "chat.socket", "chat.telegram", ...
     instance_id: str
     stream_id: Optional[str] = None         # SSE stream_id or Socket.IO sid
     metadata: Optional[Dict[str, Any]] = None
