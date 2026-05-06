@@ -1739,7 +1739,9 @@ const AIBundleDashboard: React.FC = () => {
                                                             <th className="px-3 py-2 text-left font-semibold">Alias</th>
                                                             <th className="px-3 py-2 text-left font-semibold">Method</th>
                                                             <th className="px-3 py-2 text-left font-semibold">Cron</th>
+                                                            <th className="px-3 py-2 text-left font-semibold">Expr config</th>
                                                             <th className="px-3 py-2 text-left font-semibold">Timezone</th>
+                                                            <th className="px-3 py-2 text-left font-semibold">Tz config</th>
                                                             <th className="px-3 py-2 text-left font-semibold">Span</th>
                                                             <th className="px-3 py-2 text-left font-semibold">Enabled config</th>
                                                         </tr>
@@ -1749,8 +1751,10 @@ const AIBundleDashboard: React.FC = () => {
                                                             <tr key={i} className="hover:bg-gray-50/70">
                                                                 <td className="px-3 py-2 font-mono font-semibold text-gray-900">{job.alias || '—'}</td>
                                                                 <td className="px-3 py-2 font-mono text-gray-700">{job.method_name}</td>
-                                                                <td className="px-3 py-2 font-mono text-gray-700">{job.cron_expression || job.expr_config || '—'}</td>
-                                                                <td className="px-3 py-2 text-gray-600">{job.timezone || job.tz_config || '—'}</td>
+                                                                <td className="px-3 py-2 font-mono text-gray-700">{job.cron_expression || '—'}</td>
+                                                                <td className="px-3 py-2 font-mono text-gray-500">{job.expr_config || '—'}</td>
+                                                                <td className="px-3 py-2 text-gray-600">{job.timezone || '—'}</td>
+                                                                <td className="px-3 py-2 font-mono text-gray-500">{job.tz_config || '—'}</td>
                                                                 <td className="px-3 py-2 text-gray-600">{job.span || '—'}</td>
                                                                 <td className="px-3 py-2 font-mono text-gray-500">{job.enabled_config || '—'}</td>
                                                             </tr>
