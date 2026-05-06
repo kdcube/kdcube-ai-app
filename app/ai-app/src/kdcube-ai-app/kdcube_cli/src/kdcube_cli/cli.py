@@ -397,7 +397,7 @@ def _resolve_cli_workdir(
 
 
 def _is_git_repo(path: Path) -> bool:
-    return path.exists() and (path / ".git").is_dir()
+    return installer_mod.is_git_repo(path)
 
 
 def _is_platform_source_tree(path: Path) -> bool:
@@ -1264,7 +1264,7 @@ def _copy_dirty_local_source(console: Console, *, source_repo: Path, workdir: Pa
 
 
 def ensure_repo(console: Console, repo: str, target: Path) -> None:
-    if target.exists() and (target / ".git").is_dir():
+    if _is_git_repo(target):
         console.print(f"Repo already exists at {target}")
         return
 
@@ -2369,7 +2369,7 @@ def main() -> None:
 
             if _init_version_selector and not _is_git_repo(_init_repo):
                 raise SystemExit(
-                    f"Cannot use --upstream/--latest/--release with a local source tree at {_init_repo} (no .git).\n"
+                    f"Cannot use --upstream/--latest/--release with a local source tree at {_init_repo} (not a git repo root).\n"
                     f"Remove {_init_repo} and re-run, or use --path to point to a git repo."
                 )
 
