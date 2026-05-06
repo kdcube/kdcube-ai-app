@@ -309,6 +309,18 @@ def _resolve_bound_runtime_comm(*, workflow: Any, comm_context: Optional[ChatTas
         return None
 
 
+def _bind_proc_runtime_services_to_workflow(*, workflow: Any, request: Request) -> None:
+    state = getattr(getattr(request, "app", None), "state", None)
+    if state is None:
+        state = getattr(router, "state", None)
+    chat_submitter = getattr(state, "chat_submitter", None) if state is not None else None
+    if chat_submitter is not None:
+        try:
+            setattr(workflow, "chat_submitter", chat_submitter)
+        except Exception:
+            logger.debug("Failed to bind chat_submitter to workflow", exc_info=True)
+
+
 def _session_user_type(session: UserSession) -> str | None:
     value = str(getattr(getattr(session, "user_type", None), "value", "") or "").strip()
     return value or None
@@ -2959,6 +2971,7 @@ async def _load_bundle_workflow(
         except Exception:
             raise HTTPException(status_code=500, detail=f"Failed to load bundle: {e}")
 
+    _bind_proc_runtime_services_to_workflow(workflow=workflow, request=request)
     return workflow, spec_resolved, tenant_id, project_id, comm_context
 
 

@@ -67,6 +67,7 @@ from kdcube_ai_app.infra.rendering.link_preview import close_shared_link_preview
 from kdcube_ai_app.infra.rendering.shared_browser import close_shared_browser
 
 from kdcube_ai_app.apps.chat.emitters import ChatRelayCommunicator
+from kdcube_ai_app.apps.chat.ingress.chat_submitter import ChatIngressSubmitter
 from kdcube_ai_app.apps.chat.processor import prefetch_git_bundles
 from kdcube_ai_app.apps.chat.ingress.resolvers import (
     get_fastapi_adapter,
@@ -647,6 +648,7 @@ async def lifespan(app: FastAPI):
         app.state.conversation_browser = conversation_browser
         app.state.conversation_index = conversation_index
         app.state.conversation_store = conversation_store
+        app.state.chat_submitter = ChatIngressSubmitter(app=app)
 
         processor = get_external_request_processor(middleware, agentic_app_func, app, redis=redis_async)
         app.state.processor = processor
