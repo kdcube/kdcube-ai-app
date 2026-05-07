@@ -448,6 +448,73 @@ async def test_telegram_activity_streamer_subscribes_to_relay_and_dedupes_local_
 
 
 @pytest.mark.asyncio
+async def test_telegram_activity_streamer_filters_by_turn_id():
+    from kdcube_ai_app.apps.chat.sdk.integrations.telegram.stream import TelegramActivityStreamer
+
+    class _FakeComm:
+        def __init__(self):
+            self.listeners = []
+
+        def add_activity_listener(self, cb):
+            self.listeners.append(cb)
+
+        def remove_activity_listener(self, cb):
+            self.listeners.remove(cb)
+
+        async def emit(self, activity):
+            for cb in list(self.listeners):
+                await cb(activity)
+
+    sent_a = []
+    sent_b = []
+
+    async def _send_a(messages):
+        sent_a.extend(messages)
+        return {"ok": True}
+
+    async def _send_b(messages):
+        sent_b.extend(messages)
+        return {"ok": True}
+
+    def _event(turn_id, text):
+        return {
+            "event": "chat_delta",
+            "data": {
+                "type": "chat.delta",
+                "conversation": {"session_id": "conv-1", "conversation_id": "conv-1", "turn_id": turn_id},
+                "event": {"agent": "react.decision"},
+                "delta": {"marker": "timeline_text", "text": text, "index": 0, "completed": True},
+                "extra": {"artifact_name": "react.notes", "format": "markdown"},
+            },
+        }
+
+    comm = _FakeComm()
+    async with TelegramActivityStreamer(
+        comm=comm,
+        bot_token="token",
+        chat_id="chat",
+        turn_id="turn-a",
+        send_messages=_send_a,
+        quiet_seconds=0.01,
+        min_send_interval_seconds=0.01,
+    ):
+        async with TelegramActivityStreamer(
+            comm=comm,
+            bot_token="token",
+            chat_id="chat",
+            turn_id="turn-b",
+            send_messages=_send_b,
+            quiet_seconds=0.01,
+            min_send_interval_seconds=0.01,
+        ):
+            await comm.emit(_event("turn-a", "note from A"))
+            await comm.emit(_event("turn-b", "note from B"))
+
+    assert [message.text for message in sent_a] == ["<b>Notes</b>\n<blockquote>note from A</blockquote>"]
+    assert [message.text for message in sent_b] == ["<b>Notes</b>\n<blockquote>note from B</blockquote>"]
+
+
+@pytest.mark.asyncio
 async def test_telegram_activity_streamer_sends_files_event_immediately():
     from kdcube_ai_app.apps.chat.sdk.integrations.telegram.stream import TelegramActivityStreamer
 

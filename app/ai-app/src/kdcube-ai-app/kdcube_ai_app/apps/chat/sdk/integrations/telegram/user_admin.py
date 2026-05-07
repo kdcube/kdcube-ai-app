@@ -5,6 +5,7 @@ import uuid
 import asyncio
 import base64
 import binascii
+import threading
 from dataclasses import asdict
 from typing import Any, Callable, Dict
 
@@ -29,6 +30,8 @@ log = logging.getLogger(__name__)
 _storage_factory: Callable[[Any], Any] | None = None
 _storage_root_or_error: Callable[[Any], Any] | None = None
 _migrate_telegram_user_to_kdcube_scope: Callable[..., Any] | None = None
+_conversation_locks_guard = threading.Lock()
+_conversation_locks: dict[str, asyncio.Lock] = {}
 
 
 def configure_telegram_user_admin(
@@ -71,6 +74,41 @@ def _attachment_log_items(attachments: list[Dict[str, Any]] | None) -> list[Dict
             }
         )
     return items
+
+
+def _scope_prefix(entrypoint: Any) -> str:
+    comm_context = getattr(entrypoint, "comm_context", None)
+    tenant = str(getattr(getattr(comm_context, "actor", None), "tenant_id", "") or get_settings().TENANT or "").strip()
+    project = str(getattr(getattr(comm_context, "actor", None), "project_id", "") or get_settings().PROJECT or "").strip()
+    return f"{tenant or 'tenant'}:{project or 'project'}"
+
+
+def _telegram_conversation_lock_key(entrypoint: Any, summary: Dict[str, Any]) -> str:
+    chat_id = str(summary.get("chat_id") or "unknown").strip()
+    telegram_user_id = str(summary.get("user_id") or chat_id or "anonymous").strip()
+    conversation_id = str(summary.get("conversation_id") or "").strip()
+    if not conversation_id:
+        try:
+            identity = storage(entrypoint).resolve_telegram_user(
+                telegram_user_id=telegram_user_id,
+                telegram_chat_id=chat_id,
+                telegram_username=str(summary.get("username") or "").strip(),
+                create_if_missing=False,
+            )
+            conversation_id = str(identity.get("conversation_id") or "").strip()
+        except Exception:
+            conversation_id = ""
+    return f"{_scope_prefix(entrypoint)}:{conversation_id or f'telegram_chat_{chat_id}'}"
+
+
+def _telegram_conversation_lock(key: str) -> asyncio.Lock:
+    loop_key = f"{id(asyncio.get_running_loop())}:{key}"
+    with _conversation_locks_guard:
+        lock = _conversation_locks.get(loop_key)
+        if lock is None:
+            lock = asyncio.Lock()
+            _conversation_locks[loop_key] = lock
+        return lock
 
 
 def _decode_inline_attachment_bytes(item: Dict[str, Any]) -> bytes | None:
@@ -540,6 +578,7 @@ async def run_react_turn(entrypoint: Any, *, summary: Dict[str, Any]) -> Dict[st
         comm=getattr(entrypoint, "comm", None),
         bot_token=bot_token(),
         chat_id=chat_id,
+        turn_id=turn_id,
         enabled=stream_enabled,
     ) as telegram_streamer:
         result = await entrypoint.run(text=text, attachments=state["attachments"])
@@ -595,30 +634,39 @@ async def run_with_queued_telegram_delivery(entrypoint: Any, *, runner: Any) -> 
 
     chat_id = str(telegram_meta.get("chat_id") or "").strip()
     update_id = str(telegram_meta.get("update_id") or "").strip()
+    comm_context = getattr(entrypoint, "comm_context", None)
+    turn_id = str(
+        telegram_meta.get("turn_id")
+        or getattr(getattr(comm_context, "routing", None), "turn_id", "")
+        or ""
+    ).strip()
+    lock_key = _telegram_conversation_lock_key(entrypoint, telegram_meta)
     stream_enabled = bool(
         _bundle_prop(entrypoint, "integrations.telegram.stream_activity", True)
         and _bundle_prop(entrypoint, "integrations.telegram.send_responses", True)
     )
-    async with TelegramActivityStreamer(
-        comm=getattr(entrypoint, "comm", None),
-        bot_token=bot_token(),
-        chat_id=chat_id,
-        enabled=stream_enabled,
-    ) as telegram_streamer:
-        result = await runner()
-    if not isinstance(result, dict):
-        result = {}
-    delivery = await deliver_react_turn_to_telegram(
-        bundle_id=BUNDLE_ID,
-        bot_token=bot_token(),
-        chat_id=chat_id,
-        update_id=update_id,
-        react_turn=result,
-        delivered_file_keys=telegram_streamer.delivered_file_keys() if telegram_streamer else set(),
-        progress_message_id=telegram_streamer.progress_message_id() if telegram_streamer else None,
-        progress_summary=telegram_streamer.progress_summary() if telegram_streamer else "",
-        send_responses=bool(_bundle_prop(entrypoint, "integrations.telegram.send_responses", True)),
-    )
+    async with _telegram_conversation_lock(lock_key):
+        async with TelegramActivityStreamer(
+            comm=getattr(entrypoint, "comm", None),
+            bot_token=bot_token(),
+            chat_id=chat_id,
+            turn_id=turn_id,
+            enabled=stream_enabled,
+        ) as telegram_streamer:
+            result = await runner()
+        if not isinstance(result, dict):
+            result = {}
+        delivery = await deliver_react_turn_to_telegram(
+            bundle_id=BUNDLE_ID,
+            bot_token=bot_token(),
+            chat_id=chat_id,
+            update_id=update_id,
+            react_turn=result,
+            delivered_file_keys=telegram_streamer.delivered_file_keys() if telegram_streamer else set(),
+            progress_message_id=telegram_streamer.progress_message_id() if telegram_streamer else None,
+            progress_summary=telegram_streamer.progress_summary() if telegram_streamer else "",
+            send_responses=bool(_bundle_prop(entrypoint, "integrations.telegram.send_responses", True)),
+        )
     result["telegram"] = {
         "queued_delivery": True,
         "chat_id": chat_id,
@@ -659,6 +707,10 @@ async def handle_webhook(entrypoint: Any, **update) -> Dict[str, Any]:
             "idempotency": claim,
         }
 
+    lock_key = _telegram_conversation_lock_key(entrypoint, summary)
+    turn_lock = _telegram_conversation_lock(lock_key)
+    await turn_lock.acquire()
+    lock_held = True
     try:
         if summary.get("attachments"):
             log.info(
@@ -699,6 +751,8 @@ async def handle_webhook(entrypoint: Any, **update) -> Dict[str, Any]:
                 "telegram_response": None,
                 "telegram_delivery": None,
             }
+            turn_lock.release()
+            lock_held = False
             await asyncio.to_thread(telegram_store.complete_telegram_update, update_id=update_id, result=result_payload)
             return result_payload
         react_turn = await run_react_turn(entrypoint, summary=summary)
@@ -719,6 +773,9 @@ async def handle_webhook(entrypoint: Any, **update) -> Dict[str, Any]:
             telegram_delivery = delivery_result.get("telegram_delivery")
             telegram_messages = list(delivery_result.get("messages") or [])
     except Exception as exc:
+        if lock_held:
+            turn_lock.release()
+            lock_held = False
         await asyncio.to_thread(telegram_store.fail_telegram_update, update_id=update_id, error=str(exc))
         raise
     log.info(
@@ -755,5 +812,8 @@ async def handle_webhook(entrypoint: Any, **update) -> Dict[str, Any]:
         ),
         "telegram_delivery": telegram_delivery,
     }
+    if lock_held:
+        turn_lock.release()
+        lock_held = False
     await asyncio.to_thread(telegram_store.complete_telegram_update, update_id=update_id, result=result_payload)
     return result_payload

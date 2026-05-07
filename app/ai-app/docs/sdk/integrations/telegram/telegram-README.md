@@ -103,6 +103,7 @@ Telegram update
   -> summarize_telegram_update(update)
   -> hydrate_telegram_attachments(...)
   -> bundle resolves Telegram user, role, conversation_id
+  -> acquire per-conversation Telegram turn lock
   -> telegram_command_kind_and_text(text)
   -> raw_attachments_from_telegram(attachments)
   -> ChatIngressSubmitter.submit(...)
@@ -275,6 +276,7 @@ async with TelegramActivityStreamer(
     comm=chat_comm,
     bot_token=bot_token,
     chat_id=chat_id,
+    turn_id=turn_id,
 ) as streamer:
     result = await run_workflow(...)
 
@@ -290,6 +292,13 @@ ReAct turns where the final answer may take minutes.
 Thinking and note deltas are rendered as Telegram HTML blockquotes. The streamer
 tracks already-sent file keys so final delivery does not duplicate files that
 were emitted during the turn.
+
+When `turn_id` is provided, the streamer ignores activity whose
+`conversation.turn_id` belongs to another turn. This matters because the relay
+channel is conversation-scoped: two overlapping turns in one Telegram
+conversation must not write progress into each other's cards. The webhook and
+queued-delivery helpers also use a per-conversation async lock so Telegram
+turns for the same conversation are processed and finalized in order.
 
 ## Mini App Auth
 
