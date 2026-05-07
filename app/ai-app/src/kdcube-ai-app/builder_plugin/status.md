@@ -172,6 +172,12 @@ Early work happened on `feat/claude-kdcube-cli-plugin` (now deleted); later work
 - Removed duplicate `.kdcube-runtime` mention from "Authoring rules" section (now points to Rule #0).
 - Content Release section 4-file list updated to reference Rule #1 instead of re-defining the requirement.
 
+**2026-05-07** — journal.md requirement
+- Added `journal.md` to the mandatory 5-file list in Rule #1 of `bundle-builder/SKILL.md`
+  (alongside `README.md`, `release.yaml`, `config/bundles.template.yaml`,
+  `config/bundles.secrets.template.yaml`). Every bundle task is not considered done until
+  `journal.md` exists and has a session entry recording what changed and why.
+
 ---
 
 ## Cross-tool notes

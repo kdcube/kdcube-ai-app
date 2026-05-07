@@ -36,6 +36,7 @@ verify that all four files exist and are non-empty:
 | `release.yaml` | Carries `bundle.ref` (release version) and human-readable release notes |
 | `config/bundles.template.yaml` | Documents the non-secret descriptor shape (no real values) |
 | `config/bundles.secrets.template.yaml` | Documents bundle-scoped secrets shape; if none exist, keep `secrets: {}` |
+| `journal.md` | **MANDATORY** — session log; append one entry per work session recording what changed and why |
 
 **This applies to every bundle task without exception:** new bundles, modified bundles,
 bundles wrapped from existing apps. Do not mark a bundle task complete until all four files
