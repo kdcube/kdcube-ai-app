@@ -409,6 +409,7 @@ class ApplicationsConfig(BaseModel):
     BUNDLES_FORCE_ENV_LOCK_TTL_SECONDS: int = 60
     BUNDLES_PRELOAD_ON_START: bool = False
     BUNDLES_PRELOAD_LOCK_TTL_SECONDS: int = 900
+    BUNDLE_SCHEDULER_RECONCILE_INTERVAL_SECONDS: int = 60
     GIT: GitBundlesConfig = Field(default_factory=GitBundlesConfig)
 
 

@@ -101,7 +101,7 @@ kdcube:config:bundles:props:{tenant}:{project}:{bundle_id}
 What Redis does:
 
 - serves effective bundle props at runtime
-- receives updates from bundle-admin or bundle-code write paths
+- receives cache updates after bundle-admin or bundle-code writes persist to authority
 - publishes bundle-prop update events for proc reconciliation
 
 What Redis does not do:
@@ -120,10 +120,15 @@ If Redis misses:
 
 Current behavior:
 
-1. write the effective prop update into Redis
-2. persist the same change into the configured bundle descriptor authority
-3. publish `bundles.props.update` on Redis
-4. proc listens to that channel and reconciles scheduler-driven runtime state
+1. load/merge against the configured bundle descriptor authority
+2. persist the effective prop update into that authority
+3. update the Redis effective-props cache
+4. publish `bundles.props.update` on Redis
+
+Proc listens to that channel and reconciles scheduler-driven runtime state.
+It also periodically reloads the active bundle descriptor authority and
+reconciles the scheduler so a lost Pub/Sub notification does not leave scheduled
+jobs stale forever.
 
 That is why `self.bundle_prop(...)` must be treated as effective deployment
 config, not as a raw file read.

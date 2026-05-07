@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import random
 import time
 import traceback
 import uuid
@@ -308,6 +309,7 @@ class EnhancedChatRequestProcessor:
         self._processor_task: Optional[asyncio.Task] = None
         self._config_task: Optional[asyncio.Task] = None
         self._reaper_task: Optional[asyncio.Task] = None
+        self._scheduler_reconcile_task: Optional[asyncio.Task] = None
         self._scheduler: Optional[Any] = None
         self._active_tasks: set[asyncio.Task] = set()
         self._active_task_details: dict[asyncio.Task, Dict[str, Any]] = {}
@@ -359,6 +361,11 @@ class EnhancedChatRequestProcessor:
             0.1,
             get_settings().PLATFORM.SERVICE.CHAT_TASK_WATCHDOG_POLL_INTERVAL_SEC,
         )
+        _apps = getattr(getattr(get_settings(), "PLATFORM", None), "APPLICATIONS", None)
+        self._bundle_scheduler_reconcile_interval_sec = max(
+            0.0,
+            float(getattr(_apps, "BUNDLE_SCHEDULER_RECONCILE_INTERVAL_SECONDS", 60) or 0),
+        )
         self._host_draining = False
         self._host_draining_since: Optional[str] = None
 
@@ -396,7 +403,6 @@ class EnhancedChatRequestProcessor:
         if self._scheduler is None:
             from kdcube_ai_app.apps.chat.sdk.config import get_settings
             from kdcube_ai_app.apps.chat.sdk.runtime.bundle_scheduler import BundleSchedulerManager
-            from kdcube_ai_app.infra.plugin.bundle_store import load_registry
             _settings = get_settings()
             self._scheduler = BundleSchedulerManager(
                 redis=self.redis,
@@ -406,10 +412,17 @@ class EnhancedChatRequestProcessor:
                 instance_id=_settings.INSTANCE_ID,
             )
             try:
-                _reg = await load_registry(self.redis, _settings.TENANT, _settings.PROJECT)
-                await self._scheduler.reconcile(_reg)
+                await self._reconcile_bundle_scheduler_from_authority("startup")
             except Exception:
-                logger.warning("Initial bundle scheduler reconcile failed; will retry on next registry update", exc_info=True)
+                logger.warning("Initial bundle scheduler reconcile failed; will retry from listener or periodic reconcile", exc_info=True)
+        if (
+            self._bundle_scheduler_reconcile_interval_sec > 0
+            and (not self._scheduler_reconcile_task or self._scheduler_reconcile_task.done())
+        ):
+            self._scheduler_reconcile_task = asyncio.create_task(
+                self._bundle_scheduler_reconcile_loop(),
+                name="bundle-scheduler-periodic-reconcile-loop",
+            )
 
     async def _await_background_task_exit(
             self,
@@ -485,6 +498,11 @@ class EnhancedChatRequestProcessor:
             name="chat-host-drain-watch-loop",
         )
         self._host_drain_watch_task = None
+        await self._await_background_task_exit(
+            self._scheduler_reconcile_task,
+            name="bundle-scheduler-periodic-reconcile-loop",
+        )
+        self._scheduler_reconcile_task = None
         if self._scheduler is not None:
             await self._scheduler.shutdown()
             self._scheduler = None
@@ -726,6 +744,39 @@ class EnhancedChatRequestProcessor:
             except Exception:
                 logger.warning("ECS host-drain watcher failed", exc_info=True)
                 await asyncio.sleep(self._host_drain_poll_interval_sec)
+
+    async def _reconcile_bundle_scheduler_from_authority(self, reason: str) -> None:
+        if self._scheduler is None:
+            return
+        from kdcube_ai_app.infra.plugin.bundle_store import load_registry
+
+        settings = get_settings()
+        reg = await load_registry(self.redis, settings.TENANT, settings.PROJECT)
+        await self._scheduler.reconcile(reg)
+        logger.info(
+            "Bundle scheduler reconcile complete: reason=%s bundles=%s default=%s",
+            reason,
+            len(getattr(reg, "bundles", {}) or {}),
+            getattr(reg, "default_bundle_id", None),
+        )
+
+    async def _bundle_scheduler_reconcile_loop(self) -> None:
+        interval = self._bundle_scheduler_reconcile_interval_sec
+        logger.info(
+            "Bundle scheduler periodic reconcile enabled: interval_sec=%s",
+            interval,
+        )
+        while not self._stop_event.is_set():
+            try:
+                jitter = random.uniform(0.0, min(interval * 0.1, 5.0)) if interval > 0 else 0.0
+                await asyncio.sleep(interval + jitter)
+                if self._stop_event.is_set():
+                    break
+                await self._reconcile_bundle_scheduler_from_authority("periodic")
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                logger.warning("Periodic bundle scheduler reconcile failed", exc_info=True)
 
     def _latch_host_draining(self) -> None:
         if self._host_draining:
@@ -1573,9 +1624,6 @@ class EnhancedChatRequestProcessor:
         from kdcube_ai_app.infra.plugin.agentic_loader import clear_agentic_caches
         from kdcube_ai_app.infra.plugin.bundle_store import (
             load_registry as store_load,
-            save_registry as store_save,
-            publish_update as store_publish,
-            apply_update,
             BundlesRegistry
         )
 
@@ -1586,8 +1634,8 @@ class EnhancedChatRequestProcessor:
         cleanup_channel = namespaces.CONFIG.BUNDLES.CLEANUP_CHANNEL.format(tenant=tenant, project=project)
         props_update_channel = namespaces.CONFIG.BUNDLES.PROPS_UPDATE_CHANNEL.format(tenant=tenant, project=project)
 
-        async def _catch_up_runtime_snapshot(reason: str) -> None:
-            current = await store_load(self.redis)
+        async def _catch_up_runtime_snapshot(reason: str, changed_bundle_ids: Optional[set[str]] = None) -> None:
+            current = await store_load(self.redis, tenant, project)
             await set_registry_async(
                 {bid: be.model_dump() for bid, be in (current.bundles or {}).items()},
                 current.default_bundle_id,
@@ -1597,6 +1645,27 @@ class EnhancedChatRequestProcessor:
                 clear_agentic_caches()
             except Exception:
                 pass
+            if changed_bundle_ids:
+                try:
+                    from kdcube_ai_app.apps.chat.sdk.runtime.local_sidecars import stop_local_sidecars_for_bundle_ids
+
+                    stopped_sidecars = stop_local_sidecars_for_bundle_ids(
+                        bundle_ids={str(bid).strip() for bid in changed_bundle_ids if str(bid).strip()},
+                        tenant=tenant,
+                        project=project,
+                        terminate_timeout_sec=2.0,
+                        kill_timeout_sec=1.0,
+                    )
+                    if stopped_sidecars:
+                        logger.info(
+                            "Stopped local sidecars after bundle runtime catch-up: tenant=%s project=%s count=%s bundles=%s",
+                            tenant,
+                            project,
+                            stopped_sidecars,
+                            sorted(str(bid).strip() for bid in changed_bundle_ids if str(bid).strip()),
+                        )
+                except Exception:
+                    logger.warning("Failed to stop local sidecars after bundle runtime catch-up", exc_info=True)
             try:
                 from kdcube_ai_app.apps.chat.sdk.runtime.local_sidecars import stop_inactive_local_sidecars
 
@@ -1677,108 +1746,30 @@ class EnhancedChatRequestProcessor:
                         continue
 
                     if "registry" in evt:
-                        from kdcube_ai_app.apps.chat.sdk.runtime.local_sidecars import stop_inactive_local_sidecars
+                        raw_registry = evt.get("registry") or {}
+                        raw_bundles = raw_registry.get("bundles") if isinstance(raw_registry, dict) else {}
+                        changed_bundle_ids = {
+                            str(bid).strip()
+                            for bid in ((raw_bundles or {}).keys() if isinstance(raw_bundles, dict) else [])
+                            if str(bid).strip()
+                        }
                         try:
-                            reg = BundlesRegistry(**(evt.get("registry") or {}))
+                            await _catch_up_runtime_snapshot("bundles.snapshot", changed_bundle_ids=changed_bundle_ids)
                         except Exception:
-                            logger.warning("Invalid registry payload; ignoring")
-                            continue
-                        await set_registry_async(
-                            {bid: be.model_dump() for bid, be in reg.bundles.items()},
-                            reg.default_bundle_id
-                        )
-                        try:
-                            stopped_sidecars = stop_inactive_local_sidecars(
-                                active_bundle_ids={str(bid).strip() for bid in reg.bundles.keys() if str(bid).strip()},
-                                tenant=tenant,
-                                project=project,
-                                terminate_timeout_sec=2.0,
-                                kill_timeout_sec=1.0,
-                            )
-                            if stopped_sidecars:
-                                logger.info(
-                                    "Stopped inactive local sidecars after bundles SNAPSHOT: tenant=%s project=%s count=%s",
-                                    tenant,
-                                    project,
-                                    stopped_sidecars,
-                                )
-                        except Exception:
-                            logger.warning("Failed to stop inactive local sidecars after snapshot", exc_info=True)
-                        try:
-                            clear_agentic_caches()
-                        except Exception:
-                            pass
-
-                        try:
-                            await store_save(self.redis, reg)
-                        except Exception:
-                            logger.debug("Could not save snapshot to Redis; continuing")
-
-                        logger.info(f"Applied bundles SNAPSHOT; now have {len(reg.bundles or {})} bundles")
-                        if self._scheduler is not None:
-                            try:
-                                await self._scheduler.reconcile(reg)
-                            except Exception:
-                                logger.warning("Bundle scheduler reconcile failed after snapshot", exc_info=True)
+                            logger.warning("Bundle runtime catch-up failed after snapshot", exc_info=True)
                         continue
 
                     if evt.get("type") == "bundles.update":
-                        from kdcube_ai_app.apps.chat.sdk.runtime.local_sidecars import stop_local_sidecars_for_bundle_ids
-                        op = evt.get("op", "merge")
                         bundles_patch = evt.get("bundles") or {}
-                        default_id = evt.get("default_bundle_id")
-
+                        changed_bundle_ids = {
+                            str(bid).strip()
+                            for bid in ((bundles_patch or {}).keys() if isinstance(bundles_patch, dict) else [])
+                            if str(bid).strip()
+                        }
                         try:
-                            current = await store_load(self.redis)
-                        except Exception as e:
-                            logger.error(f"Failed to load active registry: {e}")
-                            current = BundlesRegistry()
-
-                        try:
-                            reg = apply_update(current, op, bundles_patch, default_id)
-                        except Exception as e:
-                            logger.error(f"Ignoring invalid bundles.update: {e}")
-                            continue
-
-                        try:
-                            await store_save(self.redis, reg)
-                            await store_publish(self.redis, reg, op=op, actor=evt.get("updated_by") or None)
-                        except Exception as e:
-                            logger.error(f"Failed to persist/broadcast bundles: {e}")
-
-                        await set_registry_async(
-                            {bid: be.model_dump() for bid, be in reg.bundles.items()},
-                            reg.default_bundle_id
-                        )
-                        try:
-                            stopped_sidecars = stop_local_sidecars_for_bundle_ids(
-                                bundle_ids={str(bid).strip() for bid in (bundles_patch or {}).keys() if str(bid).strip()},
-                                tenant=tenant,
-                                project=project,
-                                terminate_timeout_sec=2.0,
-                                kill_timeout_sec=1.0,
-                            )
-                            if stopped_sidecars:
-                                logger.info(
-                                    "Stopped local sidecars after bundles.update: tenant=%s project=%s count=%s bundles=%s",
-                                    tenant,
-                                    project,
-                                    stopped_sidecars,
-                                    list((bundles_patch or {}).keys()),
-                                )
+                            await _catch_up_runtime_snapshot("bundles.update", changed_bundle_ids=changed_bundle_ids)
                         except Exception:
-                            logger.warning("Failed to stop local sidecars after bundles.update", exc_info=True)
-                        try:
-                            clear_agentic_caches()
-                        except Exception:
-                            pass
-
-                        logger.info(f"Applied bundles COMMAND (op={op}); now have {len(reg.bundles or {})} bundles.")
-                        if self._scheduler is not None:
-                            try:
-                                await self._scheduler.reconcile(reg)
-                            except Exception:
-                                logger.warning("Bundle scheduler reconcile failed after bundles.update", exc_info=True)
+                            logger.warning("Bundle runtime catch-up failed after bundles.update", exc_info=True)
                         continue
 
                     if evt.get("type") == "bundles.cleanup":
@@ -1802,7 +1793,7 @@ class EnhancedChatRequestProcessor:
                         from types import SimpleNamespace
 
                         try:
-                            current_reg = await store_load(self.redis)
+                            current_reg = await store_load(self.redis, tenant, project)
                         except Exception:
                             current_reg = BundlesRegistry()
 

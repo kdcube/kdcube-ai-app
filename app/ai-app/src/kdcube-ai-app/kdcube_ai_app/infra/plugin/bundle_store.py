@@ -481,18 +481,31 @@ async def get_bundle_props(
     project: str,
     bundle_id: str,
 ) -> Dict[str, Any]:
-    """Return the stored props dict for a bundle, or {} if not set."""
+    """Return bundle props from descriptor authority, falling back to Redis."""
     key = _props_key(tenant=tenant, project=project, bundle_id=bundle_id)
+    store = _get_authoritative_bundle_store(tenant, project)
+    if store is not None:
+        props = store.load_bundle_props(bundle_id)
+        props = dict(props or {})
+        await redis.set(key, json.dumps(props, ensure_ascii=False))
+        return props
     raw = await redis.get(key)
     if not raw:
-        store = _get_authoritative_bundle_store(tenant, project)
-        if store is None:
-            return {}
-        props = store.load_bundle_props(bundle_id)
-        if props:
-            await redis.set(key, json.dumps(props, ensure_ascii=False))
-        return props
+        return {}
     return json.loads(raw)
+
+
+def _get_bundle_props_from_authority(
+    *,
+    tenant: str,
+    project: str,
+    bundle_id: str,
+) -> Dict[str, Any] | None:
+    store = _get_authoritative_bundle_store(tenant, project)
+    if store is None:
+        return None
+    props = store.load_bundle_props(bundle_id)
+    return dict(props or {})
 
 
 def resolve_dot_path(obj: Any, path: str) -> Any:
@@ -1492,17 +1505,15 @@ async def _put_bundle_props_locked(
     source: Optional[str] = None,
 ) -> None:
     key = _props_key(tenant=tenant, project=project, bundle_id=bundle_id)
-    await redis.set(key, json.dumps(props, ensure_ascii=False))
+    store = _get_authoritative_bundle_store(tenant, project)
+
     if bundle_id in _reserved_bundle_ids():
-        store = _get_authoritative_bundle_store(tenant, project)
         if store is not None:
             entry = _reserved_bundle_entry(bundle_id)
             if entry is None:
                 entry = BundleEntry(id=bundle_id, path="")
-            try:
-                store.set_bundle_props(bundle_id, entry, props)
-            except Exception:
-                _log.warning("Failed to persist reserved bundle props to descriptor", exc_info=True)
+            store.set_bundle_props(bundle_id, entry, props)
+        await redis.set(key, json.dumps(props, ensure_ascii=False))
         try:
             await publish_props_update(
                 redis,
@@ -1515,9 +1526,12 @@ async def _put_bundle_props_locked(
         except Exception:
             _log.warning("Failed to publish bundle props update", exc_info=True)
         return
+
     reg = await load_registry(redis, tenant, project)
     entry = reg.bundles.get(bundle_id)
-    if entry is not None and bundle_id not in _reserved_bundle_ids():
+    if entry is None:
+        raise ValueError(f"Bundle '{bundle_id}' is not present in the active descriptor")
+    if store is not None:
         await save_registry(
             redis,
             reg,
@@ -1526,6 +1540,7 @@ async def _put_bundle_props_locked(
             props_map={bundle_id: props},
             replace=False,
         )
+    await redis.set(key, json.dumps(props, ensure_ascii=False))
     try:
         await publish_props_update(
             redis,
@@ -1640,14 +1655,15 @@ async def save_registry(
 ) -> None:
     key = redis_key(tenant, project)
     reg = _ensure_admin_bundle(reg)
-    await redis.set(key, reg.model_dump_json())
     t, p = tenant, project
     if not t or not p:
         t, p = _tp_from_env()
     store = _get_authoritative_bundle_store(t, p)
     if store is None:
+        await redis.set(key, reg.model_dump_json())
         return
     if not replace and not _deployment_bundle_ids(reg):
+        await redis.set(key, reg.model_dump_json())
         return
     effective_props: Dict[str, Dict[str, Any]] = {}
     incoming_props = props_map or {}
@@ -1657,17 +1673,18 @@ async def save_registry(
         else:
             candidate = incoming_props.get(bid)
             if candidate is None:
+                candidate = store.load_bundle_props(bid)
+            if candidate is None:
                 raw_existing = await redis.get(_props_key(tenant=t, project=p, bundle_id=bid))
                 if raw_existing:
                     try:
                         candidate = json.loads(raw_existing)
                     except Exception:
                         candidate = None
-                if candidate is None:
-                    candidate = store.load_bundle_props(bid)
         if isinstance(candidate, dict) and candidate:
             effective_props[bid] = candidate
     store.save_registry(reg, effective_props, replace=replace)
+    await redis.set(key, reg.model_dump_json())
 
 async def publish_update(redis, reg: BundlesRegistry, *, tenant: Optional[str]=None, project: Optional[str]=None, op: str="merge", actor: Optional[str]=None):
     t,p = tenant, project
@@ -2012,12 +2029,18 @@ async def patch_bundle_props(
         project=project,
         bundle_id=bundle_id,
     ):
-        current = await get_bundle_props(
-            redis,
+        current = _get_bundle_props_from_authority(
             tenant=tenant,
             project=project,
             bundle_id=bundle_id,
         )
+        if current is None:
+            current = await get_bundle_props(
+                redis,
+                tenant=tenant,
+                project=project,
+                bundle_id=bundle_id,
+            )
         merged = _deep_merge_mapping(dict(current or {}), dict(props_patch or {}))
         await _put_bundle_props_locked(
             redis,

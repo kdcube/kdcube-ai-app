@@ -1133,29 +1133,34 @@ async def set_bundle_props(
     props = dict(payload.props or {})
     props.pop("bundle_version", None)
 
-    if payload.op == "merge":
-        await store_patch_bundle_props(
+    try:
+        if payload.op == "merge":
+            await store_patch_bundle_props(
+                redis,
+                tenant=tenant_id,
+                project=project_id,
+                bundle_id=bundle_id,
+                props_patch=props,
+                actor=session.username or session.user_id or "unknown",
+                source="admin",
+            )
+            return {"status": "ok", "bundle_id": bundle_id, "tenant": tenant_id, "project": project_id}
+        elif payload.op != "replace":
+            raise HTTPException(status_code=400, detail="Invalid op; use 'replace' or 'merge'")
+
+        await store_put_bundle_props(
             redis,
             tenant=tenant_id,
             project=project_id,
             bundle_id=bundle_id,
-            props_patch=props,
+            props=props,
             actor=session.username or session.user_id or "unknown",
             source="admin",
         )
-        return {"status": "ok", "bundle_id": bundle_id, "tenant": tenant_id, "project": project_id}
-    elif payload.op != "replace":
-        raise HTTPException(status_code=400, detail="Invalid op; use 'replace' or 'merge'")
-
-    await store_put_bundle_props(
-        redis,
-        tenant=tenant_id,
-        project=project_id,
-        bundle_id=bundle_id,
-        props=props,
-        actor=session.username or session.user_id or "unknown",
-        source="admin",
-    )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve)) from ve
+    except HTTPException:
+        raise
 
     return {"status": "ok", "bundle_id": bundle_id, "tenant": tenant_id, "project": project_id}
 
@@ -1180,15 +1185,18 @@ async def reset_bundle_props_from_code(
     )
 
     redis = _get_app_redis(request)
-    await store_put_bundle_props(
-        redis,
-        tenant=tenant_id,
-        project=project_id,
-        bundle_id=bundle_id,
-        props=defaults,
-        actor=session.username or session.user_id or "unknown",
-        source="admin.reset-code",
-    )
+    try:
+        await store_put_bundle_props(
+            redis,
+            tenant=tenant_id,
+            project=project_id,
+            bundle_id=bundle_id,
+            props=defaults,
+            actor=session.username or session.user_id or "unknown",
+            source="admin.reset-code",
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve)) from ve
 
     return {"status": "ok", "bundle_id": bundle_id, "tenant": tenant_id, "project": project_id, "source": "code"}
 
