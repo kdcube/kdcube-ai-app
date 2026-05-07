@@ -55,6 +55,7 @@ class TelegramActivityStreamer:
         comm: Any,
         bot_token: str,
         chat_id: str | int,
+        turn_id: str | None = None,
         enabled: bool = True,
         quiet_seconds: float = 1.5,
         min_send_interval_seconds: float = 3.0,
@@ -65,6 +66,7 @@ class TelegramActivityStreamer:
         self.comm = comm
         self.bot_token = str(bot_token or "").strip()
         self.chat_id = str(chat_id or "").strip()
+        self.turn_id = str(turn_id or "").strip()
         self.enabled = bool(enabled and self.bot_token and self.chat_id)
         self.quiet_seconds = max(0.3, float(quiet_seconds or 1.5))
         self.min_send_interval_seconds = max(0.5, float(min_send_interval_seconds or 3.0))
@@ -133,6 +135,8 @@ class TelegramActivityStreamer:
         log.info("[telegram.stream] detached chat_id=%s", self.chat_id)
 
     async def _on_activity(self, activity: dict[str, Any]) -> None:
+        if not self._activity_matches_turn(activity):
+            return
         sig = self._activity_signature(activity)
         if sig:
             now = time.monotonic()
@@ -148,6 +152,22 @@ class TelegramActivityStreamer:
             self._queue.put_nowait(activity)
         except asyncio.QueueFull:
             log.warning("[telegram.stream] dropping activity because queue is full")
+
+    def _activity_matches_turn(self, activity: Mapping[str, Any]) -> bool:
+        if not self.turn_id:
+            return True
+        event_turn_id = self._activity_turn_id(activity)
+        return not event_turn_id or event_turn_id == self.turn_id
+
+    @staticmethod
+    def _activity_turn_id(activity: Mapping[str, Any]) -> str:
+        env = activity.get("data") if isinstance(activity, Mapping) else None
+        conv = env.get("conversation") if isinstance(env, Mapping) and isinstance(env.get("conversation"), Mapping) else None
+        if conv is None and isinstance(activity, Mapping) and isinstance(activity.get("conversation"), Mapping):
+            conv = activity.get("conversation")
+        if not isinstance(conv, Mapping):
+            return ""
+        return str(conv.get("turn_id") or "").strip()
 
     async def _on_relay_message(self, message: dict[str, Any]) -> None:
         if not isinstance(message, dict):
