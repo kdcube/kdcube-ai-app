@@ -715,6 +715,7 @@ class Settings(PLATFORM_CONFIG):
     BUNDLES_FORCE_ENV_ON_STARTUP: bool = Field(default=False)
     BUNDLES_FORCE_ENV_LOCK_TTL_SECONDS: int = Field(default=60)
     BUNDLES_PRELOAD_ON_START: bool = Field(default=False)
+    BUNDLE_SCHEDULER_RECONCILE_INTERVAL_SECONDS: int = Field(default=60)
 
     # Email notifications (admin alerts for Stripe events)
     EMAIL_ENABLED: bool = Field(default=True)
@@ -1023,6 +1024,7 @@ class Settings(PLATFORM_CONFIG):
                 BUNDLES_FORCE_ENV_LOCK_TTL_SECONDS=self._resolve_int("BUNDLES_FORCE_ENV_LOCK_TTL_SECONDS", f"{bundles_p}.bundles_force_env_lock_ttl_seconds", 60),
                 BUNDLES_PRELOAD_ON_START=self._resolve_bool("BUNDLES_PRELOAD_ON_START", f"{bundles_p}.bundles_preload_on_start", False),
                 BUNDLES_PRELOAD_LOCK_TTL_SECONDS=self._resolve_int("BUNDLES_PRELOAD_LOCK_TTL_SECONDS", f"{bundles_p}.bundles_preload_lock_ttl_seconds", 900),
+                BUNDLE_SCHEDULER_RECONCILE_INTERVAL_SECONDS=self._resolve_int("BUNDLE_SCHEDULER_RECONCILE_INTERVAL_SECONDS", f"{bundles_p}.bundle_scheduler_reconcile_interval_seconds", 60),
                 GIT=GitBundlesConfig(
                     BUNDLE_GIT_RESOLUTION_ENABLED=self._resolve_bool("BUNDLE_GIT_RESOLUTION_ENABLED", f"{git_p}.bundle_git_resolution_enabled", True),
                     BUNDLE_GIT_ATOMIC=self._resolve_bool("BUNDLE_GIT_ATOMIC", f"{git_p}.bundle_git_atomic", True),
@@ -1376,6 +1378,7 @@ def export_managed_env(
     _put("HOST_BUNDLES_PATH", resolved.HOST_BUNDLES_PATH)
     _put("BUNDLES_ROOT", resolved.PLATFORM.APPLICATIONS.BUNDLES_ROOT)
     _put("BUNDLES_DESCRIPTOR_PROVIDER", resolved.PLATFORM.APPLICATIONS.BUNDLES_DESCRIPTOR_PROVIDER or resolved.BUNDLES_DESCRIPTOR_PROVIDER)
+    _put("BUNDLE_SCHEDULER_RECONCILE_INTERVAL_SECONDS", resolved.PLATFORM.APPLICATIONS.BUNDLE_SCHEDULER_RECONCILE_INTERVAL_SECONDS)
     _put("HOST_MANAGED_BUNDLES_PATH", resolved.HOST_MANAGED_BUNDLES_PATH)
     _put("MANAGED_BUNDLES_ROOT", resolved.PLATFORM.APPLICATIONS.MANAGED_BUNDLES_ROOT)
     _put("HOST_BUNDLE_STORAGE_PATH", resolved.HOST_BUNDLE_STORAGE_PATH)

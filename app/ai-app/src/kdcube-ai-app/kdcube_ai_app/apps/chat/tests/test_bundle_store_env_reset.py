@@ -707,6 +707,152 @@ async def test_put_bundle_props_publishes_props_update(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_save_registry_persists_authority_before_redis_cache(monkeypatch):
+    redis = _FakeRedis()
+    tenant = "demo"
+    project = "demo-project"
+    bundle_id = "demo.bundle"
+    registry_key = bundle_store.redis_key(tenant, project)
+
+    reg = bundle_store.BundlesRegistry(
+        default_bundle_id=bundle_id,
+        bundles={
+            bundle_id: bundle_store.BundleEntry(
+                id=bundle_id,
+                path="/bundles/demo.bundle",
+                module="entrypoint",
+            )
+        },
+    )
+
+    class _OrderingStore(_FakeAuthoritativeStore):
+        def save_registry(self, reg, props_map, *, replace):
+            assert registry_key not in redis.data
+            super().save_registry(reg, props_map, replace=replace)
+
+    store = _OrderingStore(reg=reg)
+    monkeypatch.setattr(bundle_store, "_merge_example_bundles", lambda reg: (reg, False))
+    monkeypatch.setattr(bundle_store, "_get_authoritative_bundle_store", lambda tenant, project: store)
+
+    await bundle_store.save_registry(
+        redis,
+        reg,
+        tenant=tenant,
+        project=project,
+        props_map={bundle_id: {"feature": {"enabled": True}}},
+    )
+
+    assert store.saved
+    assert registry_key in redis.data
+
+
+@pytest.mark.asyncio
+async def test_put_bundle_props_does_not_publish_or_cache_when_authority_write_fails(monkeypatch):
+    redis = _FakeRedis()
+    tenant = "demo"
+    project = "demo-project"
+    bundle_id = "demo.bundle"
+    props_key = bundle_store._props_key(tenant=tenant, project=project, bundle_id=bundle_id)
+
+    reg = bundle_store.BundlesRegistry(
+        default_bundle_id=bundle_id,
+        bundles={
+            bundle_id: bundle_store.BundleEntry(
+                id=bundle_id,
+                path="/bundles/demo.bundle",
+                module="entrypoint",
+            )
+        },
+    )
+
+    class _FailingStore(_FakeAuthoritativeStore):
+        def save_registry(self, reg, props_map, *, replace):
+            raise RuntimeError("authority write failed")
+
+    store = _FailingStore(reg=reg)
+    monkeypatch.setattr(bundle_store, "_merge_example_bundles", lambda reg: (reg, False))
+    monkeypatch.setattr(bundle_store, "_get_authoritative_bundle_store", lambda tenant, project: store)
+
+    with pytest.raises(RuntimeError, match="authority write failed"):
+        await bundle_store.put_bundle_props(
+            redis,
+            tenant=tenant,
+            project=project,
+            bundle_id=bundle_id,
+            props={"feature": {"enabled": True}},
+        )
+
+    assert props_key not in redis.data
+    assert redis.published == []
+
+
+@pytest.mark.asyncio
+async def test_patch_bundle_props_merges_against_authority_not_stale_redis(monkeypatch):
+    redis = _FakeRedis()
+    tenant = "demo"
+    project = "demo-project"
+    bundle_id = "demo.bundle"
+    props_key = bundle_store._props_key(tenant=tenant, project=project, bundle_id=bundle_id)
+
+    reg = bundle_store.BundlesRegistry(
+        default_bundle_id=bundle_id,
+        bundles={
+            bundle_id: bundle_store.BundleEntry(
+                id=bundle_id,
+                path="/bundles/demo.bundle",
+                module="entrypoint",
+            )
+        },
+    )
+    store = _FakeAuthoritativeStore(
+        reg=reg,
+        props_map={bundle_id: {"feature": {"enabled": True}}},
+    )
+    await redis.set(props_key, json.dumps({"feature": {"enabled": False}}))
+
+    monkeypatch.setattr(bundle_store, "_merge_example_bundles", lambda reg: (reg, False))
+    monkeypatch.setattr(bundle_store, "_get_authoritative_bundle_store", lambda tenant, project: store)
+
+    merged = await bundle_store.patch_bundle_props(
+        redis,
+        tenant=tenant,
+        project=project,
+        bundle_id=bundle_id,
+        props_patch={"feature": {"flag": True}},
+    )
+
+    assert merged == {"feature": {"enabled": True, "flag": True}}
+    assert store.saved[-1][1][bundle_id] == {"feature": {"enabled": True, "flag": True}}
+    assert json.loads(redis.data[props_key]) == {"feature": {"enabled": True, "flag": True}}
+
+
+@pytest.mark.asyncio
+async def test_get_bundle_props_reads_authority_before_stale_redis(monkeypatch):
+    redis = _FakeRedis()
+    tenant = "demo"
+    project = "demo-project"
+    bundle_id = "demo.bundle"
+    props_key = bundle_store._props_key(tenant=tenant, project=project, bundle_id=bundle_id)
+
+    store = _FakeAuthoritativeStore(
+        props_map={bundle_id: {"feature": {"enabled": True}}},
+    )
+    await redis.set(props_key, json.dumps({"feature": {"enabled": False}}))
+
+    monkeypatch.setattr(bundle_store, "_get_authoritative_bundle_store", lambda tenant, project: store)
+
+    props = await bundle_store.get_bundle_props(
+        redis,
+        tenant=tenant,
+        project=project,
+        bundle_id=bundle_id,
+    )
+
+    assert props == {"feature": {"enabled": True}}
+    assert json.loads(redis.data[props_key]) == {"feature": {"enabled": True}}
+
+
+@pytest.mark.asyncio
 async def test_patch_bundle_props_serializes_concurrent_writers(monkeypatch):
     redis = _FakeRedis()
     tenant = "demo"

@@ -25,6 +25,7 @@ from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import (
 )
 from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
 from kdcube_ai_app.infra.jobs.stream import BackgroundJob, BackgroundJobClaim
+from kdcube_ai_app.infra.plugin import bundle_store
 
 
 class _FakePool:
@@ -361,6 +362,40 @@ def test_processor_defaults_to_legacy_lists_scheduler_backend():
 def test_processor_accepts_legacy_scheduler_alias_via_constructor_override():
     processor = _build_processor(_MinimalRedis(), scheduler_backend="legacy")
     assert processor.scheduler_backend_name == SCHEDULER_BACKEND_LEGACY_LISTS
+
+
+@pytest.mark.asyncio
+async def test_bundle_scheduler_reconcile_from_authority_reads_active_registry(monkeypatch, _patch_processor_dependencies):
+    redis = _MinimalRedis()
+    processor = _build_processor(redis)
+    reg = bundle_store.BundlesRegistry(
+        default_bundle_id="bundle.demo",
+        bundles={
+            "bundle.demo": bundle_store.BundleEntry(
+                id="bundle.demo",
+                path="/bundles/demo",
+                module="entrypoint",
+            )
+        },
+    )
+    load_calls = []
+    reconcile_calls = []
+
+    async def _fake_load_registry(redis_arg, tenant, project):
+        load_calls.append((redis_arg, tenant, project))
+        return reg
+
+    class _FakeScheduler:
+        async def reconcile(self, registry):
+            reconcile_calls.append(registry)
+
+    monkeypatch.setattr(bundle_store, "load_registry", _fake_load_registry)
+    processor._scheduler = _FakeScheduler()
+
+    await processor._reconcile_bundle_scheduler_from_authority("unit-test")
+
+    assert load_calls == [(redis, "tenant-a", "project-a")]
+    assert reconcile_calls == [reg]
 
 
 def test_background_job_chat_task_carries_accounting_context(_patch_processor_dependencies):

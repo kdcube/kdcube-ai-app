@@ -51,6 +51,7 @@ For the operational local workflow for reusing a runtime, changing bundle roots,
 | `HOST_BUNDLES_DESCRIPTOR_PATH` | host file staged into `/config/bundles.yaml` | CLI installer mount | CLI local compose |
 | `PLATFORM_DESCRIPTORS_DIR` | fallback directory containing `bundles.yaml` | descriptor file discovery | direct local service run |
 | `BUNDLES_FORCE_ENV_ON_STARTUP` | startup flag, not a YAML field | proc reseeds from current local descriptor authority | proc |
+| `BUNDLE_SCHEDULER_RECONCILE_INTERVAL_SECONDS` | `assembly.yaml` proc bundle setting | periodic scheduler catch-up from active bundle descriptor authority; `0` disables | proc |
 | `BUNDLE_GIT_RESOLUTION_ENABLED` | git bundle items in `bundles.yaml` | enables git bundle resolution | proc |
 
 ### Descriptor fields that matter to runtime

@@ -867,9 +867,7 @@ class BaseEntrypoint:
             bundle_id=bundle_id,
         )
         overrides: Dict[str, Any] = {}
-        if self.kv_cache:
-            overrides = await self.kv_cache.get_json(key) or {}
-        if not overrides and self.redis is not None:
+        if self.redis is not None:
             from kdcube_ai_app.infra.plugin.bundle_store import get_bundle_props as _get_bundle_props
             overrides = await _get_bundle_props(
                 self.redis,
@@ -877,6 +875,8 @@ class BaseEntrypoint:
                 project=project,
                 bundle_id=bundle_id,
             )
+        if not overrides and self.kv_cache:
+            overrides = await self.kv_cache.get_json(key) or {}
         if overrides:
             defaults = self._deep_merge_props(defaults, overrides)
 
