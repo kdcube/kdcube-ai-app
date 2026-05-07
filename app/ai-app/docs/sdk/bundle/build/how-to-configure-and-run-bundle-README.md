@@ -13,6 +13,7 @@ see_also:
   - ks:docs/service/cicd/design/cli--as-control-plane-README.md
   - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
   - ks:docs/sdk/bundle/build/how-to-write-bundle-README.md
+  - ks:docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
   - ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-release-bundle-content-README.md
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-new-cli-README.md
@@ -57,6 +58,7 @@ Use the companion docs for those:
 
 - [how-to-navigate-kdcube-docs-README.md](how-to-navigate-kdcube-docs-README.md)
 - [how-to-write-bundle-README.md](how-to-write-bundle-README.md)
+- [how-to-assemble-bundle-with-sdk-building-blocks-README.md](how-to-assemble-bundle-with-sdk-building-blocks-README.md)
 - [how-to-test-bundle-README.md](how-to-test-bundle-README.md)
 - [bundle-platform-integration-README.md](../bundle-platform-integration-README.md)
 - [bundle-runtime-README.md](../bundle-runtime-README.md)
@@ -69,6 +71,16 @@ Configuration rule:
   platform/global, deployment-scoped bundle, and user-scoped
 - this page keeps only the operational/runtime summary needed while installing,
   reloading, and exporting a local deployment
+
+SDK block configuration rule:
+
+- when a bundle uses an SDK integration or solution, configure it through
+  bundle props/secrets and user settings rather than hardcoded local constants
+- use [how-to-assemble-bundle-with-sdk-building-blocks-README.md](how-to-assemble-bundle-with-sdk-building-blocks-README.md)
+  to find the package-level docs
+- use the package external-prerequisites doc when provider setup is outside
+  KDCube, for example Telegram BotFather/webhook setup or Google Cloud OAuth
+  setup
 
 Tier 1 role of this page:
 

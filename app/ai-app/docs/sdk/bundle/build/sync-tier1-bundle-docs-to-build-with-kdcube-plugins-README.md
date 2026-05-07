@@ -7,6 +7,7 @@ keywords: ["tier 1 bundle pack", "build with kdcube plugin", "claude code plugin
 see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
+  - ks:docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
   - ks:docs/sdk/bundle/build/how-to-write-bundle-README.md
   - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
@@ -22,17 +23,18 @@ This doc is the contract, not the old tree.
 
 ## Tier 1 Pack
 
-These 5 docs form the compact Tier 1 build baseline and should be available together:
+These 6 docs form the compact Tier 1 build baseline and should be available together:
 
 1. [how-to-navigate-kdcube-docs-README.md](how-to-navigate-kdcube-docs-README.md)
 2. [how-to-test-bundle-README.md](how-to-test-bundle-README.md)
-3. [how-to-write-bundle-README.md](how-to-write-bundle-README.md)
-4. [../../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../../configuration/bundle-runtime-configuration-and-secrets-README.md)
-5. [how-to-configure-and-run-bundle-README.md](how-to-configure-and-run-bundle-README.md)
+3. [how-to-assemble-bundle-with-sdk-building-blocks-README.md](how-to-assemble-bundle-with-sdk-building-blocks-README.md)
+4. [how-to-write-bundle-README.md](how-to-write-bundle-README.md)
+5. [../../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../../configuration/bundle-runtime-configuration-and-secrets-README.md)
+6. [how-to-configure-and-run-bundle-README.md](how-to-configure-and-run-bundle-README.md)
 
 This optional lifecycle doc should also be available:
 
-6. [how-to-release-bundle-content-README.md](how-to-release-bundle-content-README.md)
+7. [how-to-release-bundle-content-README.md](how-to-release-bundle-content-README.md)
 
 It is used only after the user agrees to release, commit, tag, push, or update
 a git-backed descriptor ref.
@@ -40,15 +42,16 @@ a git-backed descriptor ref.
 This conditional agent-integration doc should be available whenever the bundle
 uses React tools/skills, file-producing tools, MCP, or Claude Code:
 
-7. [../bundle-agent-integration-README.md](../bundle-agent-integration-README.md)
+8. [../bundle-agent-integration-README.md](../bundle-agent-integration-README.md)
 
 Preferred reading order:
 
 1. navigation
 2. test expectations
-3. implementation design
-4. configuration ownership
-5. runtime and deployment wiring
+3. reusable SDK/platform building blocks
+4. implementation design
+5. configuration ownership
+6. runtime and deployment wiring
 
 ## Agent Model
 
@@ -69,9 +72,13 @@ They are routing hints for one planning agent.
 
 Recommended:
 
-- expose the 5 docs as one Tier 1 pack
+- expose the 6 docs as one Tier 1 pack
 - use [how-to-navigate-kdcube-docs-README.md](how-to-navigate-kdcube-docs-README.md) as the first router
 - make [how-to-test-bundle-README.md#1a-working-environment-for-agents](how-to-test-bundle-README.md#1a-working-environment-for-agents) the preflight before code or test changes
+- keep [how-to-assemble-bundle-with-sdk-building-blocks-README.md](how-to-assemble-bundle-with-sdk-building-blocks-README.md)
+  visible before implementation so agents reuse SDK Tasks, Email, Telegram,
+  Delivery, tools, storage, widgets, jobs, MCP, and Claude Code blocks when
+  they fit
 - keep the rest of the Tier 1 pack visible as the required baseline
 - keep [bundle-widget-integration-README.md](../bundle-widget-integration-README.md)
   reachable for source-folder widget work, especially the `OUTDIR` /
@@ -108,6 +115,8 @@ The plugin should steer agents away from these recurring mistakes:
 - do not recommend bare `python3` or bare `pytest` before proving the project venv
 - do not interpret async test failures until `pytest-asyncio` is installed in the active venv
 - do not start a new bundle without the skeleton files from `how-to-write-bundle-README.md#1b1-new-bundle-skeleton-checklist`
+- do not reimplement provider/runtime mechanics before checking the SDK
+  building-block map
 - do not write `/bundles/...` into a seed/source descriptor that is also used by host-side IntelliJ/proc runs; first determine whether you are editing a seed descriptor or a staged runtime descriptor
 - do not manually build `ui-src` into runtime bundle storage as the fix for stale bundle UI
 - do not use source folder names or compiled example ids when the host provides `defaultAppBundleId`
@@ -133,7 +142,7 @@ The plugin should steer agents away from these recurring mistakes:
 
 The plugin handoff is clean when:
 
-- the 5 Tier 1 docs are exposed as one pack
+- the 6 Tier 1 docs are exposed as one pack
 - the optional release lifecycle doc is available for user-approved releases
 - the working environment preflight is visible before any test command
 - the source-folder widget build contract is discoverable from Tier 1 routing

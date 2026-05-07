@@ -7,6 +7,7 @@ keywords: ["bundle testing workflow", "shared bundle suite", "local bundle tests
 see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/sdk/bundle/build/how-to-write-bundle-README.md
+  - ks:docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-release-bundle-content-README.md
   - ks:docs/sdk/bundle/bundle-agent-integration-README.md
@@ -35,6 +36,7 @@ Use this together with:
 
 - [how-to-navigate-kdcube-docs-README.md](how-to-navigate-kdcube-docs-README.md)
 - [how-to-write-bundle-README.md](how-to-write-bundle-README.md)
+- [how-to-assemble-bundle-with-sdk-building-blocks-README.md](how-to-assemble-bundle-with-sdk-building-blocks-README.md)
 - [how-to-configure-and-run-bundle-README.md](how-to-configure-and-run-bundle-README.md)
 - [how-to-release-bundle-content-README.md](how-to-release-bundle-content-README.md)
 - [versatile-reference-bundle-README.md](../versatile-reference-bundle-README.md)
@@ -169,6 +171,23 @@ For a brand-new bundle skeleton, prove the contract before adding product logic:
 
 Do this before building UI, tools, or scheduler logic. A clean skeleton makes
 later failures narrower.
+
+## 1B.1 Reusable SDK Block Checks
+
+When the bundle uses SDK integrations or solutions, test the bundle binding
+instead of duplicating the SDK package tests.
+
+Check that:
+
+- `entrypoint.py` configures the SDK module with the intended storage root,
+  target user resolver, bundle id, role policy, or widget modules;
+- operations/public route tests prove the right auth boundary, for example
+  KDCube auth, Telegram webhook secret, or Telegram Mini App `initData`;
+- user-owned credentials use user-scoped secrets/state;
+- deployment-owned provider settings use bundle props/secrets;
+- design docs name the SDK blocks being used and describe what policy remains
+  in the bundle;
+- package-level SDK tests cover the reusable mechanics.
 
 ## 1C. React Tool/Skill Checks
 

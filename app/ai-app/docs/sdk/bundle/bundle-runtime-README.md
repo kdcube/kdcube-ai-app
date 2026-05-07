@@ -6,6 +6,7 @@ tags: ["sdk", "bundle", "runtime", "tools", "integrations", "communicator", "iso
 keywords: ["bundle runtime objects", "communicator access", "integrations access", "props and secrets access", "cache access", "artifact handling", "isolated execution surface", "entrypoint runtime context"]
 see_also:
   - ks:docs/sdk/bundle/bundle-developer-guide-README.md
+  - ks:docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
   - ks:docs/sdk/bundle/bundle-lifecycle-README.md
   - ks:docs/sdk/bundle/bundle-agent-integration-README.md
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
@@ -23,6 +24,7 @@ This page explains the actual runtime surfaces available to:
 - tool code running in isolated execution
 
 Use this together with:
+- [How To Assemble A Bundle With SDK Building Blocks](build/how-to-assemble-bundle-with-sdk-building-blocks-README.md) for the reusable SDK/platform blocks to prefer before writing a custom subsystem
 - [Bundle Lifecycle](bundle-lifecycle-README.md) for phase ordering
 - [Bundle Agent Integration](bundle-agent-integration-README.md) for React, tools/skills, MCP, and Claude Code wiring
 - [Bundle Platform Integration](bundle-platform-integration-README.md) for public entrypoint design

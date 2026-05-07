@@ -6,6 +6,7 @@ tags: ["sdk", "bundle", "agents", "react", "claude-code", "tools", "skills", "mc
 keywords: ["bundle agent integration", "React tools descriptor", "skills descriptor", "MCP_TOOL_SPECS", "bundle served MCP", "Claude Code MCP", "ClaudeCodeAgent", "mcp_base_url", "agent runtime context"]
 see_also:
   - ks:docs/sdk/bundle/bundle-runtime-README.md
+  - ks:docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
   - ks:docs/sdk/bundle/bundle-transports-README.md
   - ks:docs/sdk/bundle/bundle-reserved-platform-properties-README.md
@@ -25,6 +26,11 @@ Use it when a bundle needs any of these:
 - a bundle-served MCP endpoint exposed through `@mcp(...)`
 - a Claude Code subprocess agent that uses custom MCP tools
 - separate agent surfaces for chat turns, scheduled jobs, or background jobs
+
+Before adding bundle-local tools or subagents, check
+[How To Assemble A Bundle With SDK Building Blocks](build/how-to-assemble-bundle-with-sdk-building-blocks-README.md).
+The SDK already provides reusable task, email, Telegram, delivery, web,
+rendering, execution, storage, MCP, and Claude Code building blocks.
 
 This document intentionally describes public SDK patterns. Reference bundles may
 implement these patterns with product-specific names, but bundle docs should not

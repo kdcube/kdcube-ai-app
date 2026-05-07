@@ -9,6 +9,7 @@ see_also:
   - ks:docs/sdk/bundle/bundle-developer-guide-README.md
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-write-bundle-README.md
+  - ks:docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
   - ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
   - ks:docs/sdk/bundle/versatile-reference-bundle-README.md
   - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
@@ -42,21 +43,23 @@ Older `docs/sdk/example-bundle` sample docs are no longer part of the bundle pat
    - sharp `path` / `module` rules
 4. [build/how-to-write-bundle-README.md](build/how-to-write-bundle-README.md)
    - builder playbook for designing and structuring a bundle
-5. [build/how-to-test-bundle-README.md](build/how-to-test-bundle-README.md)
+5. [build/how-to-assemble-bundle-with-sdk-building-blocks-README.md](build/how-to-assemble-bundle-with-sdk-building-blocks-README.md)
+   - reusable SDK/platform blocks: Tasks, Email, Telegram, Delivery, tools, storage, widgets, jobs, MCP, Claude Code
+6. [build/how-to-test-bundle-README.md](build/how-to-test-bundle-README.md)
    - builder playbook for validation and runtime checks
-6. [versatile-reference-bundle-README.md](versatile-reference-bundle-README.md)
+7. [versatile-reference-bundle-README.md](versatile-reference-bundle-README.md)
    - the concrete reference bundle to study
-7. [bundle-runtime-README.md](bundle-runtime-README.md)
+8. [bundle-runtime-README.md](bundle-runtime-README.md)
    - runtime surfaces available to bundle code
-8. [bundle-agent-integration-README.md](bundle-agent-integration-README.md)
+9. [bundle-agent-integration-README.md](bundle-agent-integration-README.md)
    - React tools/skills, MCP connector/server patterns, and Claude Code subagent requirements
-9. [bundle-platform-integration-README.md](bundle-platform-integration-README.md)
+10. [bundle-platform-integration-README.md](bundle-platform-integration-README.md)
    - exact decorator and route contract
-10. [bundle-transports-README.md](bundle-transports-README.md)
+11. [bundle-transports-README.md](bundle-transports-README.md)
    - canonical inbound/outbound protocol and transport map
-11. [../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../configuration/bundle-runtime-configuration-and-secrets-README.md)
+12. [../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../configuration/bundle-runtime-configuration-and-secrets-README.md)
    - platform/global, bundle-scoped, and user-scoped configuration and secrets
-12. [bundle-delivery-and-update-README.md](bundle-delivery-and-update-README.md)
+13. [bundle-delivery-and-update-README.md](bundle-delivery-and-update-README.md)
    - local reload, registry updates, delivery modes, and deployment-side changes
 
 ## Core Doc Map
@@ -67,6 +70,7 @@ Older `docs/sdk/example-bundle` sample docs are no longer part of the bundle pat
 | Build a new bundle | [bundle-developer-guide-README.md](bundle-developer-guide-README.md) |
 | Configure local runtime, descriptors, and CLI loop | [build/how-to-configure-and-run-bundle-README.md](build/how-to-configure-and-run-bundle-README.md) |
 | Builder playbook | [build/how-to-write-bundle-README.md](build/how-to-write-bundle-README.md) |
+| Reusable SDK/platform building blocks for bundle assembly | [build/how-to-assemble-bundle-with-sdk-building-blocks-README.md](build/how-to-assemble-bundle-with-sdk-building-blocks-README.md) |
 | Testing playbook | [build/how-to-test-bundle-README.md](build/how-to-test-bundle-README.md) |
 | Study the reference bundle | [versatile-reference-bundle-README.md](versatile-reference-bundle-README.md) |
 | Runtime surfaces | [bundle-runtime-README.md](bundle-runtime-README.md) |
@@ -86,6 +90,8 @@ Older `docs/sdk/example-bundle` sample docs are no longer part of the bundle pat
 | Bundle storage and cache | [bundle-storage-and-cache-README.md](bundle-storage-and-cache-README.md) |
 | Scheduled jobs (`@cron`) and job handoff (`@on_job`) | [bundle-scheduled-jobs-README.md](bundle-scheduled-jobs-README.md) |
 | Background jobs stream | [../../service/jobs/jobs-stream-README.md](../../service/jobs/jobs-stream-README.md) |
+| SDK integrations | [../integrations/README.md](../integrations/README.md) |
+| Tasks SDK solution | [../solutions/tasks-README.md](../solutions/tasks-README.md) |
 | Cached subprocess virtualenv helpers (`@venv`) | [bundle-venv-README.md](bundle-venv-README.md) |
 | Outbound event filtering | [bundle-firewall-README.md](bundle-firewall-README.md) |
 | Python-to-Node backend bridge | [bundle-node-backend-bridge-README.md](bundle-node-backend-bridge-README.md) |
