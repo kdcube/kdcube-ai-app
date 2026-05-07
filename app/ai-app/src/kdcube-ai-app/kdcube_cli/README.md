@@ -136,6 +136,21 @@ kdcube start
 `init` generates runtime config and env files under a namespaced workdir.
 `start` launches the Docker Compose stack.
 
+To fill common service secrets during init:
+
+```bash
+kdcube init --prompt-secrets
+kdcube start
+```
+
+To stage known secret values without prompts, use dotted descriptor keys:
+
+```bash
+kdcube init \
+  --set-secret services.openai.api_key "sk-..." \
+  --set-secret services.anthropic.api_key "sk-ant-..."
+```
+
 ### Descriptor-driven init (reproducible / automated)
 
 When you have a descriptor set (`assembly.yaml`, `bundles.yaml`, etc.):
@@ -189,7 +204,7 @@ kdcube defaults \
 
 | Command | What it does |
 |---|---|
-| `kdcube init` | Stage descriptors, generate env files, optionally build images |
+| `kdcube init` | Stage descriptors, generate env files, optionally stage local secrets, optionally build images |
 | `kdcube start` | Start the platform stack for an initialized workdir |
 | `kdcube stop` | Stop the stack; `--remove-volumes` also wipes local volumes |
 
@@ -206,8 +221,9 @@ kdcube defaults \
 | Command | What it does |
 |---|---|
 | `kdcube defaults` | Save persistent `--workdir`, `--tenant`, `--project` defaults |
-| `kdcube --info` | Show global CLI state and resolved runtime info |
-| `kdcube --reset` | Re-prompt for config values without deleting files |
+| `kdcube info` | Show global CLI state; `--workdir` shows resolved runtime info |
+| `kdcube init --reset-config` | Re-prompt for config values without deleting files |
+| `kdcube clean` | Clean local Docker cache and unused KDCube images |
 
 ---
 

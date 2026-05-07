@@ -15,6 +15,7 @@ from kdcube_cli.cli import (
     _descriptor_fast_path_reasons,
     _load_bundle_ids_from_descriptor,
     _load_cli_defaults,
+    _parse_init_secret_pairs,
     _copy_dirty_local_source,
     _repo_path_from_install_meta,
     _resolve_cli_repo_path,
@@ -82,6 +83,18 @@ def test_ui_entry_path_uses_routes_prefix():
 def test_build_ui_url_uses_routes_prefix():
     assert build_ui_url("5174", "/chatbot/demo") == "http://localhost:5174/chatbot/demo/chat"
     assert build_ui_url("80", None) == "http://localhost/chatbot/chat"
+
+
+def test_parse_init_secret_pairs_accepts_dotted_keys_and_aliases():
+    assert _parse_init_secret_pairs(
+        [
+            ["services.openai.api_key", "sk-openai"],
+            ["ANTHROPIC_API_KEY", "sk-anthropic"],
+        ]
+    ) == {
+        "services.openai.api_key": "sk-openai",
+        "services.anthropic.api_key": "sk-anthropic",
+    }
 
 
 def test_ensure_local_dirs_creates_metrics_logs_dir(tmp_path: Path):
