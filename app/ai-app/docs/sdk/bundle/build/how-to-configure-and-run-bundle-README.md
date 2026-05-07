@@ -547,6 +547,26 @@ kdcube init \
   --descriptors-location /abs/path/to/descriptors
 ```
 
+When the local run needs platform service keys, stage them during init with
+dotted descriptor keys:
+
+```bash
+kdcube init \
+  --workdir ~/.kdcube/kdcube-runtime \
+  --descriptors-location /abs/path/to/descriptors \
+  --set-secret services.openai.api_key "sk-..." \
+  --set-secret services.anthropic.api_key "sk-ant-..."
+```
+
+For guided secret entry, use:
+
+```bash
+kdcube init --prompt-secrets
+```
+
+These values are written to the active runtime `config/secrets.yaml`, not to
+`.env` files.
+
 Then start the initialized runtime:
 
 ```bash
@@ -630,8 +650,7 @@ kdcube init \
 
 Use this when you need to test uncommitted platform changes. The CLI copies the
 local checkout into the concrete runtime workdir and builds from that staged
-copy. Do not combine this flow with `--upstream`, `--latest`, or `--release`,
-because those flags explicitly select a managed source version.
+copy.
 
 ### Initialize from upstream `origin/main`
 
@@ -666,7 +685,7 @@ Use this when you are validating current platform source, not when you only need
 ### Show active runtime info
 
 ```bash
-kdcube --info --workdir ~/.kdcube/kdcube-runtime/mytenant__myproject
+kdcube info --workdir ~/.kdcube/kdcube-runtime/mytenant__myproject
 ```
 
 This prints:
@@ -825,7 +844,7 @@ In practice:
 - `assembly.yaml -> paths.host_bundles_path` points to the host root for non-managed local bundles
 - `assembly.yaml -> paths.host_managed_bundles_path` points to the runtime-managed bundle cache
 
-Use `kdcube --info` to verify both host/container mappings.
+Use `kdcube info` to verify both host/container mappings.
 
 Built-in examples live in the managed-bundle path when the deployment includes
 examples. They do not need one `bundles.yaml` item per example unless you are
@@ -1185,7 +1204,7 @@ If you only remember the essentials, remember these:
 - rerun install when you changed the canonical source descriptor set or runtime topology
 - use `kdcube bundle <bundle_id> --set-config / --set-secret / --del-config / --del-secret` for targeted staged config or secret patches
 - use `kdcube reload <bundle_id>` when you changed active runtime bundle descriptors or need proc cache eviction
-- use `kdcube --info --workdir <path>` to inspect the runtime you are actually using
+- use `kdcube info --workdir <path>` to inspect the runtime you are actually using
 - use `kdcube export` before overwriting runtime bundle state with older descriptor copies
 
 For the exact read/write helper contract behind those rules, use:

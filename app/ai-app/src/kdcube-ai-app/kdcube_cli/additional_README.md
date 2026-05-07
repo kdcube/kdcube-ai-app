@@ -85,7 +85,7 @@ python3 -m venv ~/.venvs/kdcube-cli
 ## Run
 
 ```bash
-kdcube
+kdcube init
 ```
 
 ## Quick start (new users)
@@ -318,38 +318,17 @@ what is incomplete.
 - Repo clone default: `~/.kdcube/kdcube-runtime/<safe_tenant>__<safe_project>/repo`
 - Docker images: prepared by `init --build` or rebuilt as a convenience by `start --build`
 
-### CLI options (common)
-| Option | Purpose |
-|---|---|
-| `--repo <url>` | Git repo URL (default: official kdcube repo). |
-| `--path <repo>` | For `kdcube init` without `--upstream`, `--latest`, or `--release`, copy this local platform checkout into the runtime and use the staged copy. With a version selector, use this path as the local repo/cache location. If omitted in descriptor mode, the checkout defaults to `<workspace>/<tenant>__<project>/repo`. |
-| `--workdir <path>` | Base workspace root. In descriptor mode the effective runtime becomes `<workdir>/<tenant>__<project>`. If it already points to an initialized runtime with `config/install-meta.json` and the canonical descriptor set under `config/`, the CLI can reuse that runtime non-interactively. |
-| `--descriptors-location <dir>` | Use a folder containing `assembly.yaml`, `secrets.yaml`, `gateway.yaml`, and optional bundle descriptors. |
-| `--latest` | With `--descriptors-location`, resolve the latest platform release instead of using `assembly.yaml -> platform.ref`. |
-| `--upstream` | Use the latest upstream repo state (`origin/main`) instead of a released platform ref. Requires either `--descriptors-location` or an initialized runtime with the canonical descriptor set under `config/`. |
-| `--release <ref>` | With `--descriptors-location`, use the given platform release instead of `assembly.yaml -> platform.ref`. |
-| `--build` | With `kdcube init`, build images after staging the runtime without starting containers. With `kdcube start`, rebuild images before starting. |
-| `--info` | Print global CLI state (defaults, running deployment). With `--workdir`, print resolved runtime info for that workdir: descriptor paths, install metadata, and host/container bundle mount mappings. |
-| `--remove-volumes` | With `kdcube stop`, also remove local volumes. |
-| `--reset-config` | Re‑prompt for config values without deleting files. |
-| `--reset` | Alias for `--reset-config`. |
-| `--clean` | Clean local Docker cache and unused KDCube images. |
-| `--secrets-prompt` | Prompt for OpenAI, Anthropic, and Git HTTPS token values and inject them at runtime (sidecar). |
-| `--secrets-set KEY=VALUE` | Inject a secret value without prompting (repeatable). |
-| `--proxy-ssl` | Force SSL proxy config (overrides assembly descriptor). |
-| `--no-proxy-ssl` | Force non‑SSL proxy config (overrides assembly descriptor). |
-| `--dry-run` | Generate env files and print their paths without running Docker. |
-| `--dry-run-print-env` | With `--dry-run`, also print the full env file contents. |
-
 ### Subcommands
 
 | Subcommand | Purpose |
 |---|---|
-| `kdcube init [--workdir <path>] [--path <repo>] [--descriptors-location <dir>] [--latest\|--upstream\|--release <ref>] [--build] [-i]` | Initialize a workdir (stage descriptors, generate env files). Explicit `--path` stages that local source tree unless a version selector is used. With `--build`, also build images **without** starting containers. |
+| `kdcube init [--workdir <path>] [--path <repo>] [--descriptors-location <dir>] [--latest\|--upstream\|--release <ref>] [--build] [-i] [--reset-config] [--prompt-secrets] [--set-secret KEY VALUE]...` | Initialize a workdir (stage descriptors, generate env files). Explicit `--path` stages that local source tree unless a version selector is used. With `--build`, also build images **without** starting containers. |
 | `kdcube start [--workdir <path>] [--build]` | Start the Docker Compose stack for an already-initialized workdir. `--build` is a convenience rebuild before start, not required if `init --build` was already run. |
 | `kdcube stop [--workdir <path>] [--remove-volumes]` | Stop the local Docker Compose stack. |
 | `kdcube reload <bundle_id> [--workdir <path>]` | Reapply `bundles.yaml` from the active runtime and clear proc bundle caches. |
 | `kdcube export [--workdir <path>] [--tenant <id>] [--project <id>] [--out-dir <dir>] [--aws-region <region>]` | Export effective live `bundles.yaml` and `bundles.secrets.yaml`. |
+| `kdcube info [--workdir <path>]` | Print global CLI state, or resolved runtime info for a workdir: descriptor paths, install metadata, and host/container bundle mount mappings. |
+| `kdcube clean` | Clean local Docker cache and unused KDCube images. |
 | `kdcube defaults [--default-workdir <path>] [--default-tenant <t>] [--default-project <p>]` | Save persistent operator defaults to `~/.kdcube/cli-defaults.json`. |
 
 ### Operator defaults (`kdcube defaults`)
@@ -359,8 +338,8 @@ what is incomplete.
 | Field | Flag | Purpose |
 |---|---|---|
 | `default_workdir` | `--default-workdir` | Fallback workdir when `--workdir` is omitted from a subcommand |
-| `default_tenant` | `--default-tenant` | Displayed in global `--info`; used by `kdcube export` as fallback tenant |
-| `default_project` | `--default-project` | Displayed in global `--info`; used by `kdcube export` as fallback project |
+| `default_tenant` | `--default-tenant` | Displayed by `kdcube info`; used by `kdcube export` as fallback tenant |
+| `default_project` | `--default-project` | Displayed by `kdcube info`; used by `kdcube export` as fallback project |
 
 `kdcube start`, `kdcube stop`, `kdcube reload`, and `kdcube export` resolve the
 target workdir with the following precedence:
@@ -369,7 +348,7 @@ target workdir with the following precedence:
 2. `--workdir` omitted, `default_workdir` present in `cli-defaults.json` → use that.
 3. Neither provided → error with a hint to run `kdcube defaults --default-workdir <path>`.
 
-`kdcube --info` (without `--workdir`) reads `cli-defaults.json` and displays the
+`kdcube info` reads `cli-defaults.json` and displays the
 configured values, or reports that no defaults are set.
 
 ### Single-deployment guard (`cli-lock.json`)
@@ -406,14 +385,14 @@ Format:
    clear the lock.
 3. Something running but lock points to a **different** deployment → abort.
 
-**`kdcube --info` and stale locks** — global `--info` verifies the lock via
+**`kdcube info` and stale locks** — `kdcube info` verifies the lock via
 `docker compose ps`. If the recorded deployment is no longer running, the lock is
 reported as stale and cleared automatically.
 
 ### Use a local checkout (dev)
 
 ```bash
-kdcube --path /Users/you/src/kdcube/kdcube-ai-app
+kdcube init --path /Users/you/src/kdcube/kdcube-ai-app
 ```
 
 When `--path` is provided, the wizard **uses that repo for templates and local builds**
@@ -431,20 +410,18 @@ kdcube init \
 ```
 
 This copies the dirty local checkout into the namespaced runtime workdir and
-builds from the staged copy. Do not combine this flow with `--upstream`,
-`--latest`, or `--release`, because those flags explicitly select a managed
-version instead of the dirty local source.
+builds from the staged copy.
 
 Re-run prompts (edit existing values):
 
 ```bash
-kdcube --reset
+kdcube init --reset-config
 ```
 
 Clean local Docker images/cache:
 
 ```bash
-kdcube --clean
+kdcube clean
 ```
 
 Stop the local stack:
@@ -462,13 +439,13 @@ kdcube stop --workdir ~/.kdcube/kdcube-runtime --remove-volumes
 Inspect global CLI state (defaults + running deployment):
 
 ```bash
-kdcube --info
+kdcube info
 ```
 
 Inspect the resolved runtime, including how local non-git bundles are mounted:
 
 ```bash
-kdcube --info --workdir ~/.kdcube/kdcube-runtime/acme__prod_demo
+kdcube info --workdir ~/.kdcube/kdcube-runtime/acme__prod_demo
 ```
 
 When `--workdir` points at the base workspace root, `kdcube stop` resolves the
@@ -534,45 +511,32 @@ runtime nginx SSL config so `YOUR_DOMAIN_NAME` becomes the configured domain in:
 
 ### Secrets (third services tokens)
 The wizard **does not** write OpenAI/Anthropic/Git token values to `.env` files.
-If you provide them during setup, they are injected at runtime into the
-`kdcube-secrets` sidecar (in‑memory only) when `assembly.yaml` uses
-`secrets.provider: secrets-service`. If you restart the stack, you’ll be
-prompted again to re‑inject them.
+During init, secret values are staged into `config/secrets.yaml` with dotted
+descriptor keys.
 
-Order (automatic):
-1) Start `kdcube-secrets`
-2) Wait for it to be ready
-3) Inject keys
-4) Start/restart ingress + proc (they fetch secrets)
-
-Manual re‑inject:
+Prompt for the standard local secret set:
 
 ```bash
-kdcube --secrets-prompt --workdir ~/.kdcube/kdcube-runtime
+kdcube init --prompt-secrets
 ```
 
-Or pass explicit values:
+Stage explicit values without prompts:
 
 ```bash
-kdcube --secrets-set OPENAI_API_KEY=... --secrets-set ANTHROPIC_API_KEY=...
+kdcube init \
+  --set-secret services.openai.api_key "sk-..." \
+  --set-secret services.anthropic.api_key "sk-ant-..." \
+  --set-secret services.git.http_token "ghp_..."
 ```
 
-You can also override the git HTTPS token this way:
+The full interactive wizard (`kdcube init -i`) also includes the standard
+secret prompts.
 
-```bash
-kdcube --secrets-set GIT_HTTP_TOKEN=...
-```
-
-Note: re‑inject will **restart** `kdcube-secrets`, `chat-ingress`, and `chat-proc`
-to refresh per‑run tokens (and the web proxy to keep upstreams in sync).
-Per‑run tokens are generated by the CLI and are **not stored** in `config/`.
-
-If you set LLM keys in env files (managed infra / custom setups), those env
-values still work and take precedence. The secrets sidecar is only used when
-env keys are missing.
+If you set LLM keys in env files for custom setups, those env values still work
+and take precedence.
 
 ### First-run defaults
-Plain `kdcube` now seeds the full canonical descriptor set into `workdir/config/`
+Plain `kdcube init` seeds the full canonical descriptor set into `workdir/config/`
 from the tracked reference descriptors:
 
 - `assembly.yaml`
@@ -609,9 +573,8 @@ bundle storage, and exec workspace.
 
 ### Git HTTPS token (private bundles)
 If you choose or provide a Git HTTPS token for private bundles, the token is
-treated as a secret and is **not stored** in `.env.proc`. It is injected at
-runtime (same flow as LLM keys). You will be prompted again on the next run
-unless you pass it via `--secrets-set GIT_HTTP_TOKEN=...`.
+treated as a secret and is **not stored** in `.env.proc`. It is staged into
+`config/secrets.yaml` and reused on later local runs.
 
 More details:
 https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/ops/local/local-setup-README.md
@@ -926,13 +889,14 @@ Full details:
 - **Logs:** `workdir/logs/`
 
 Infra credentials (Postgres/Redis) are stored in `config/.env*` for local compose.
-LLM keys are **not** stored in files; they live only in the secrets sidecar.
+LLM keys are staged in `config/secrets.yaml` and loaded through the descriptor
+secret flow.
 
 ## Notes
 
 - The wizard **does not overwrite** existing config files in your workdir. It only fills
   placeholders in newly created files.
-- Use `kdcube --reset` to re-enter values without deleting files.
+- Use `kdcube init --reset-config` to re-enter values without deleting files.
 - Config upgrades/migrations will be added later when configs are versioned.
 - The wizard auto‑saves after major sections, so if you exit early (Ctrl+C) most
   values entered so far are preserved in `config/` and will appear as defaults next run.
@@ -951,12 +915,12 @@ container. Docker compose mounts the host file defined by
 ## Clean / reset
 Clean local Docker cache and unused KDCube images:
 ```bash
-kdcube --clean
+kdcube clean
 ```
 
 Reset prompts without deleting files:
 ```bash
-kdcube --reset
+kdcube init --reset-config
 ```
 
 Full reset (delete workdir):

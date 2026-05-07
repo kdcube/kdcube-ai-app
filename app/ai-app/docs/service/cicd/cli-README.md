@@ -253,6 +253,24 @@ kdcube init -i
 kdcube init --tenant acme --project prod
 ```
 
+To stage common local service secrets without editing YAML:
+
+```bash
+kdcube init --prompt-secrets
+```
+
+To provide known secret values non-interactively, use dotted descriptor keys:
+
+```bash
+kdcube init \
+  --set-secret services.openai.api_key "sk-..." \
+  --set-secret services.anthropic.api_key "sk-ant-..." \
+  --set-secret services.git.http_token "ghp_..."
+```
+
+These values are written to the staged runtime `config/secrets.yaml`; they are
+not written to `.env` files.
+
 `--workdir` sets the base directory. If the value already contains `__`
 (i.e. it is itself a namespaced runtime path), it is used directly without
 appending a tenant/project subdirectory:
@@ -600,7 +618,7 @@ to configure bundles and bundle secrets.
 
 When provided, the CLI:
 - mounts the runtime workspace `config/` directory at `/config`
-- injects secrets from `bundles.secrets.yaml` into the secrets sidecar
+- stages `bundles.secrets.yaml` alongside `bundles.yaml` for the proc runtime
 
 Current proc behavior:
 
@@ -800,13 +818,13 @@ This is intended for **local development** only.
 Inspect global CLI state (defaults + running deployment):
 
 ```bash
-kdcube --info
+kdcube info
 ```
 
 Inspect a specific workdir deployment:
 
 ```bash
-kdcube --info --workdir ~/.kdcube/kdcube-runtime/<tenant_id>__<project_id>
+kdcube info --workdir ~/.kdcube/kdcube-runtime/<tenant_id>__<project_id>
 ```
 
 Initialize a workdir without starting Docker (clones platform repo automatically):
@@ -815,6 +833,7 @@ Initialize a workdir without starting Docker (clones platform repo automatically
 kdcube init
 kdcube init --latest
 kdcube init --tenant acme --project prod --latest
+kdcube init --prompt-secrets
 ```
 
 Initialize from a prepared descriptor folder:
@@ -846,8 +865,8 @@ kdcube init \
   --build
 ```
 
-Use this for uncommitted platform changes. Do not combine this flow with
-`--upstream`, `--latest`, or `--release`.
+Use this for uncommitted platform changes. The CLI copies the local checkout
+into the concrete runtime workdir and builds from that staged copy.
 
 Start the stack for an already-initialized workdir:
 
@@ -916,8 +935,8 @@ kdcube defaults \
 | Field | Flag | Purpose |
 |---|---|---|
 | `default_workdir` | `--default-workdir` | Fallback workdir when `--workdir` is omitted from a subcommand |
-| `default_tenant` | `--default-tenant` | Displayed in global `--info`; used by `kdcube export` as fallback tenant |
-| `default_project` | `--default-project` | Displayed in global `--info`; used by `kdcube export` as fallback project |
+| `default_tenant` | `--default-tenant` | Displayed by `kdcube info`; used by `kdcube export` as fallback tenant |
+| `default_project` | `--default-project` | Displayed by `kdcube info`; used by `kdcube export` as fallback project |
 
 `kdcube start`, `kdcube stop`, `kdcube reload`, and `kdcube export` resolve the
 target workdir with the following precedence:
@@ -932,7 +951,7 @@ target workdir with the following precedence:
      kdcube defaults --default-workdir <path>
    ```
 
-`kdcube --info` (without `--workdir`) reads `cli-defaults.json` and displays the
+`kdcube info` reads `cli-defaults.json` and displays the
 configured values, or reports that no defaults are set.
 
 ---
@@ -977,8 +996,8 @@ Before stopping, the CLI checks:
 3. If something is running but the lock points to a **different** deployment →
    abort with a message identifying the running deployment.
 
-### `kdcube --info` and stale locks
+### `kdcube info` and stale locks
 
-Global `kdcube --info` (without `--workdir`) verifies the recorded lock via
+`kdcube info` verifies the recorded lock via
 `docker compose ps`. If the recorded deployment is no longer running, the lock
 is considered stale, reported as such, and cleared automatically.

@@ -37,6 +37,23 @@ DEFAULT_WORKDIR = Path.home() / ".kdcube" / "kdcube-runtime"
 DEFAULT_DEFAULTS_FILE = Path.home() / ".kdcube" / "cli-defaults.json"
 CLI_LOCK_FILE = Path.home() / ".kdcube" / "cli-lock.json"
 DEFAULT_REPO_DIRNAME = "repo"
+STANDARD_INIT_SECRET_PROMPTS: tuple[tuple[str, str], ...] = (
+    ("services.openai.api_key", "OpenAI API key"),
+    ("services.anthropic.api_key", "Anthropic API key"),
+    ("services.git.http_token", "Git HTTPS token"),
+)
+SECRET_KEY_ALIASES: dict[str, str] = {
+    "OPENAI_API_KEY": "services.openai.api_key",
+    "ANTHROPIC_API_KEY": "services.anthropic.api_key",
+    "GIT_HTTP_TOKEN": "services.git.http_token",
+    "BRAVE_API_KEY": "services.brave.api_key",
+    "GOOGLE_API_KEY": "services.google.api_key",
+    "GEMINI_API_KEY": "services.google.api_key",
+    "OPENROUTER_API_KEY": "services.openrouter.api_key",
+    "HUGGINGFACE_API_KEY": "services.huggingface.api_key",
+    "STRIPE_SECRET_KEY": "services.stripe.secret_key",
+    "STRIPE_WEBHOOK_SECRET": "services.stripe.webhook_secret",
+}
 KDCUBE_REPOS = {
     "kdcube-chat-ingress",
     "kdcube-chat-proc",
@@ -854,6 +871,35 @@ def _parse_secret_pairs(items: list[str]) -> dict[str, str]:
     return secrets
 
 
+def _canonical_secret_key(key: str) -> str:
+    stripped = str(key or "").strip()
+    return SECRET_KEY_ALIASES.get(stripped, stripped)
+
+
+def _parse_init_secret_pairs(items: list[list[str]] | None) -> dict[str, str]:
+    secrets: dict[str, str] = {}
+    for item in items or []:
+        if len(item) != 2:
+            raise SystemExit("Invalid --set-secret usage. Use: --set-secret KEY VALUE.")
+        raw_key, value = item
+        key = _canonical_secret_key(raw_key)
+        if not key or "." not in key:
+            raise SystemExit(f"Invalid secret key '{raw_key}'. Use a dotted descriptor key.")
+        secrets[key] = value
+    return secrets
+
+
+def _prompt_init_standard_secrets(console: Console, existing: dict[str, str]) -> dict[str, str]:
+    secrets = dict(existing)
+    for key, label in STANDARD_INIT_SECRET_PROMPTS:
+        if key in secrets:
+            continue
+        value = Prompt.ask(f"{label} ({key}; leave blank to skip)", default="", password=True)
+        if value:
+            secrets[key] = value
+    return secrets
+
+
 def _select_option(console: Console, title: str, options: list[str], default_index: int = 0) -> str:
     def _debug_enabled() -> bool:
         raw = os.environ.get("KDCUBE_CLI_DEBUG_SELECTOR", "").strip().lower()
@@ -1613,151 +1659,148 @@ def main() -> None:
     console = Console()
     print_cli_banner()
     parser = argparse.ArgumentParser(description="KDCube Apps bootstrap CLI")
-    parser.add_argument("--repo", default=DEFAULT_REPO, help="Git repo URL")
+    parser.add_argument("--repo", default=DEFAULT_REPO, help=argparse.SUPPRESS)
     parser.add_argument(
         "--path",
         default=str(DEFAULT_DIR),
-        help="Install directory for the repo",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--workdir",
         default=str(DEFAULT_WORKDIR),
-        help="Compose workdir (config+data root)",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--descriptors-location",
         default="",
-        help="Directory containing the canonical descriptor set: assembly.yaml, secrets.yaml, bundles.yaml, bundles.secrets.yaml, and gateway.yaml",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--latest",
         action="store_true",
-        help="With --descriptors-location, use the latest platform release from the platform repo instead of assembly platform.ref",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--upstream",
         action="store_true",
-        help="With --descriptors-location or an initialized workdir config, use the latest upstream repo state (origin/main) instead of a released platform ref",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--release",
         default="",
-        help="With --descriptors-location, use the given platform release instead of assembly platform.ref",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--build",
         action="store_true",
-        help="With --descriptors-location, checkout the selected platform release source and build images locally instead of pulling release images",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "-i",
         "--interactive",
         action="store_true",
-        help=(
-            "When using the default-descriptor bootstrap (no --descriptors-location), "
-            "prompt for required fields that are missing in the assembly instead of failing"
-        ),
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--reset-config",
         action="store_true",
-        help="Re-run config prompts and allow editing existing values",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--reset",
         action="store_true",
-        help="Alias for --reset-config",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--clean",
         action="store_true",
-        help="Clean dangling images, build cache, and old KDCube image tags",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--remove-volumes",
         action="store_true",
-        help="With --stop, also pass -v to docker compose down",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--secrets-set",
         action="append",
         default=[],
-        help="Inject runtime secret as KEY=VALUE into the secrets sidecar (repeatable)",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--secrets-prompt",
         action="store_true",
-        help="Prompt for LLM keys and inject into the secrets sidecar",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--proxy-ssl",
         action="store_true",
-        help="Force SSL nginx proxy config (overrides assembly descriptor)",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--no-proxy-ssl",
         action="store_true",
-        help="Disable SSL nginx proxy config (overrides assembly descriptor)",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Generate env files and print a preview without running Docker",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--dry-run-print-env",
         action="store_true",
-        help="With --dry-run, print full env file contents",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--tenant",
         default="",
-        help="Tenant for --export-live-bundles when exporting from AWS SM. Ignored when exporting workspace descriptors directly.",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--project",
         default="",
-        help="Project for --export-live-bundles when exporting from AWS SM. Ignored when exporting workspace descriptors directly.",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--out-dir",
         default="",
-        help="Output directory for --export-live-bundles. Defaults to the current directory.",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--aws-region",
         default="",
-        help="AWS region for --export-live-bundles when exporting from AWS SM. Falls back to current AWS CLI environment if omitted.",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--aws-profile",
         default="",
-        help="AWS profile for --export-live-bundles when exporting from AWS SM. Falls back to current AWS CLI environment if omitted.",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--aws-sm-prefix",
         default="",
-        help="Explicit AWS Secrets Manager prefix for --export-live-bundles when exporting from AWS SM. Default is kdcube/<tenant>/<project>.",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--default-tenant",
         default="",
-        help="Default tenant to persist with --set-defaults",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--default-project",
         default="",
-        help="Default project to persist with --set-defaults",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--default-workdir",
         default="",
-        help="Default workdir to persist with --set-defaults",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--info",
         action="store_true",
-        help="Print global CLI info (defaults, running deployment) or, when --workdir is given, deployment-level runtime info",
+        help=argparse.SUPPRESS,
     )
 
     subparsers = parser.add_subparsers(dest="command")
@@ -1876,6 +1919,12 @@ def main() -> None:
     _sp.add_argument("--aws-profile", default="", help="AWS profile for AWS SM export")
     _sp.add_argument("--aws-sm-prefix", default="", help="AWS SM prefix override")
 
+    _sp = subparsers.add_parser("info", help="Show CLI defaults and runtime info")
+    _sp.add_argument("--workdir", default="", help="Initialized runtime workdir to inspect")
+    _sp.add_argument("--path", default=str(DEFAULT_DIR), help="Platform repo path")
+
+    _sp = subparsers.add_parser("clean", help="Clean local Docker image/cache artifacts")
+
     _sp = subparsers.add_parser("defaults", help="Save persistent operator defaults")
     _sp.add_argument("--default-tenant", default="", help="Default tenant to persist")
     _sp.add_argument("--default-project", default="", help="Default project to persist")
@@ -1900,6 +1949,29 @@ def main() -> None:
     _sp.add_argument("--build", action="store_true", help="Build images after staging the runtime, without starting containers")
     _sp.add_argument("--tenant", default="", help="Tenant for the deployment namespace")
     _sp.add_argument("--project", default="", help="Project for the deployment namespace")
+    _sp.add_argument(
+        "--reset-config",
+        action="store_true",
+        help="Re-run config prompts and allow editing existing values",
+    )
+    _sp.add_argument(
+        "--reset",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
+    _sp.add_argument(
+        "--prompt-secrets",
+        action="store_true",
+        help="Prompt for standard secret values and stage them into config/secrets.yaml",
+    )
+    _sp.add_argument(
+        "--set-secret",
+        action="append",
+        nargs=2,
+        metavar=("KEY", "VALUE"),
+        default=[],
+        help="Stage one dotted secret key into config/secrets.yaml (repeatable)",
+    )
     _sp.add_argument(
         "-i",
         "--interactive",
@@ -1958,6 +2030,21 @@ def main() -> None:
             console.print(f"[green]Defaults saved to {DEFAULT_DEFAULTS_FILE}:[/green]")
             for k, v in cli_defaults.items():
                 console.print(f"  {k}: {v}")
+            return
+        if args.command == "clean":
+            clean_docker_images(console)
+            return
+        if args.command == "info":
+            if str(args.workdir or "").strip():
+                _workdir = Path(os.path.expanduser(args.workdir)).resolve()
+                _repo = _resolve_subcommand_repo(args.path, workdir=_workdir)
+                print_runtime_info(
+                    console,
+                    repo_root=_repo,
+                    workdir=_resolve_cli_workdir(_workdir),
+                )
+            else:
+                print_global_info(console, cli_defaults)
             return
         if args.command == "stop":
             _workdir = _resolve_subcommand_workdir(args.workdir, cli_defaults)
@@ -2331,6 +2418,15 @@ def main() -> None:
                 workdir=_init_resolved,
                 descriptors_location=_init_descriptors_location,
             )
+            _init_runtime_secrets = _parse_init_secret_pairs(args.set_secret)
+            if args.prompt_secrets and not args.interactive:
+                _init_runtime_secrets = _prompt_init_standard_secrets(console, _init_runtime_secrets)
+            if _init_runtime_secrets:
+                installer_mod.apply_runtime_secrets_to_file_descriptors(
+                    config_dir=_init_resolved / "config",
+                    runtime_secrets=_init_runtime_secrets,
+                )
+                console.print("[dim]Staged init secrets into config/secrets.yaml.[/dim]")
 
             if _init_preset_tenant and _init_preset_project:
                 os.environ["KDCUBE_PRESET_TENANT"] = _init_preset_tenant
@@ -2406,6 +2502,8 @@ def main() -> None:
             elif not _init_path_provided and not args.upstream and not _init_local_source_copy:
                 _checkout_repo_ref(console, _init_repo, _init_release_ref)
 
+            if args.reset_config or args.reset:
+                os.environ["KDCUBE_RESET_CONFIG"] = "1"
             if not args.interactive:
                 os.environ["KDCUBE_CLI_NONINTERACTIVE"] = "1"
             os.environ["KDCUBE_INIT_PREPARE_ONLY"] = "1"
