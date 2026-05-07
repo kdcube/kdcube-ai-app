@@ -96,7 +96,7 @@ Notes:
 | `BUNDLES_YAML_DESCRIPTOR_PATH` | `bundles.yaml` | local bundle descriptor authority | proc in direct local run; optional explicit path in compose/k8s |
 | `BUNDLES_DESCRIPTOR_PROVIDER` | `platform.services.proc.bundles.descriptor_provider` | `assembly.yaml` | proc in all modes |
 | `BUNDLES_FORCE_ENV_ON_STARTUP` | n/a | current bundle descriptor authority | proc in all modes |
-| `BUNDLE_SCHEDULER_RECONCILE_INTERVAL_SECONDS` | `platform.services.proc.bundles.bundle_scheduler_reconcile_interval_seconds` | `assembly.yaml` | proc in all modes |
+| `BUNDLE_SCHEDULER_RECONCILE_INTERVAL_SECONDS` | `platform.services.proc.bundles.bundle_scheduler_reconcile_interval_seconds` | `assembly.yaml` | proc in all modes; `0` disables the periodic loop |
 | `BUNDLE_GIT_RESOLUTION_ENABLED` | bundle items use `repo` / `ref` | `bundles.yaml` | proc in all modes |
 | `BUNDLES_PRELOAD_ON_START` | n/a | not descriptor-backed by default | proc |
 
@@ -110,7 +110,7 @@ Important distinction:
   - `BUNDLES_DESCRIPTOR_PROVIDER=file`
   - writable mounted `/config/bundles.yaml` on EFS
 - if bundle admin or bundle code should persist deployment-scoped prop updates, proc must mount that descriptor path writable
-- proc also periodically reconciles scheduled bundle jobs from the active descriptor authority; set `BUNDLE_SCHEDULER_RECONCILE_INTERVAL_SECONDS=0` only when Pub/Sub-only scheduler updates are acceptable
+- proc also periodically reconciles scheduled bundle jobs from the active descriptor authority when `BUNDLE_SCHEDULER_RECONCILE_INTERVAL_SECONDS` is greater than `0`; reference descriptors set it to `0`, so startup and Pub/Sub-driven reconciliation are the active paths unless an environment opts in
 
 ### Workspace and Claude session backends
 

@@ -353,7 +353,7 @@ platform:
         bundles_force_env_lock_ttl_seconds: 60        # BUNDLES_FORCE_ENV_LOCK_TTL_SECONDS
         bundles_preload_on_start: true                # BUNDLES_PRELOAD_ON_START
         bundles_preload_lock_ttl_seconds: 900         # BUNDLES_PRELOAD_LOCK_TTL_SECONDS
-        bundle_scheduler_reconcile_interval_seconds: 60  # BUNDLE_SCHEDULER_RECONCILE_INTERVAL_SECONDS; set 0 to disable periodic scheduler catch-up
+        bundle_scheduler_reconcile_interval_seconds: 0   # BUNDLE_SCHEDULER_RECONCILE_INTERVAL_SECONDS; 0 disables periodic scheduler catch-up
         git:
           bundle_git_resolution_enabled: true         # BUNDLE_GIT_RESOLUTION_ENABLED
           bundle_git_atomic: true                     # BUNDLE_GIT_ATOMIC
