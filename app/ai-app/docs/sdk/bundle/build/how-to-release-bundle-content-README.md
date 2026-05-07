@@ -7,6 +7,7 @@ keywords: ["bundle content release", "bundle release procedure", "release yaml",
 see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/sdk/bundle/build/how-to-write-bundle-README.md
+  - ks:docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
   - ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
   - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
@@ -84,6 +85,8 @@ Rules:
 - personal OAuth tokens or user credentials are described as user-scoped runtime
   state/secrets, not committed deployment descriptors
 - `docs/design/` reflects the implemented design, not only early notes
+- if the bundle uses SDK integrations or solutions, `docs/design/` names those
+  blocks and explains which product policy remains in the bundle
 - `docs/journal/journal.md` records important implementation and release
   decisions
 - tests prove the bundle contract before release

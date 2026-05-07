@@ -7,6 +7,7 @@ keywords: ["bundle authoring guide", "bundle creator path", "bundle integrator p
 see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
+  - ks:docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-release-bundle-content-README.md
   - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
@@ -47,6 +48,7 @@ Use this document together with:
 
 - [how-to-navigate-kdcube-docs-README.md](how-to-navigate-kdcube-docs-README.md)
 - [how-to-test-bundle-README.md](how-to-test-bundle-README.md)
+- [how-to-assemble-bundle-with-sdk-building-blocks-README.md](how-to-assemble-bundle-with-sdk-building-blocks-README.md)
 - [how-to-configure-and-run-bundle-README.md](how-to-configure-and-run-bundle-README.md)
 - [how-to-release-bundle-content-README.md](how-to-release-bundle-content-README.md)
 - [bundle-developer-guide-README.md](../bundle-developer-guide-README.md)
@@ -63,12 +65,14 @@ When you build a bundle, do not invent the platform contract from memory.
 Work in this order:
 
 1. read the test guide first so you know the runtime contract you must satisfy
-2. read the relevant bundle docs
-3. inspect the `versatile` reference bundle for the nearest working pattern
-4. inspect the platform implementation only when docs/reference are not enough
-5. then write the bundle
-6. then run the shared bundle suite and bundle-local tests
-7. then verify the actual UI/API runtime behavior
+2. read the SDK building-block map so you reuse existing integrations,
+   solutions, tools, storage, widgets, and job helpers
+3. read the relevant bundle docs
+4. inspect the `versatile` reference bundle for the nearest working pattern
+5. inspect the platform implementation only when docs/reference are not enough
+6. then write the bundle
+7. then run the shared bundle suite and bundle-local tests
+8. then verify the actual UI/API runtime behavior
 
 Practical rule:
 
@@ -420,6 +424,36 @@ State-placement rule:
   persisted bundle artifacts
 - DB/Redis/external APIs:
   runtime or business state
+
+## 1D.1 Reuse SDK Building Blocks First
+
+Before creating a new `services/`, `subsystems/`, `tools/`, or provider adapter
+module, check:
+
+- [how-to-assemble-bundle-with-sdk-building-blocks-README.md](how-to-assemble-bundle-with-sdk-building-blocks-README.md)
+
+Current reusable blocks include:
+
+- Tasks Solution for saved tasks, schedules, executions, execution artifacts,
+  due scans, task tools, and task/job skills;
+- Email Integration for Gmail/iCloud accounts, OAuth/settings, attachment
+  materialization, Email MCP, and Claude Code email processing;
+- Telegram Integration for webhooks, Bot API rendering, progress streaming,
+  Mini App auth, widget operations, registry storage, and signed downloads;
+- Delivery Integration for email/Telegram report delivery and delivered-file
+  metadata;
+- built-in web, rendering, exec, io, and context tools;
+- storage/cache/git helpers, widgets, MCP, `@cron`, `@on_job`, `@venv`, and
+  Node sidecar support.
+
+Bundle code should normally supply:
+
+- route aliases and decorators;
+- product prompts and skills;
+- user-scope and role policy;
+- UI composition;
+- deployment prop/secret paths;
+- domain-specific storage that is not already part of a reusable SDK block.
 
 ## 1E. SDK Configuration And Secrets Cheat Sheet
 

@@ -7,6 +7,7 @@ keywords: ["bundle docs navigation", "tier 1 reading order", "new bundle path", 
 see_also:
   - ks:docs/sdk/bundle/bundle-index-README.md
   - ks:docs/sdk/bundle/build/how-to-write-bundle-README.md
+  - ks:docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-release-bundle-content-README.md
@@ -48,15 +49,16 @@ Do not start by reading every bundle doc.
 
 Do treat Tier 1 as one compact pack.
 
-Start with these five Tier 1 baseline pages in this order:
+Start with these six Tier 1 baseline pages in this order:
 
 1. this page
 2. [how-to-test-bundle-README.md](how-to-test-bundle-README.md)
-3. [how-to-write-bundle-README.md](how-to-write-bundle-README.md)
-4. [../../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../../configuration/bundle-runtime-configuration-and-secrets-README.md)
-5. [how-to-configure-and-run-bundle-README.md](how-to-configure-and-run-bundle-README.md)
+3. [how-to-assemble-bundle-with-sdk-building-blocks-README.md](how-to-assemble-bundle-with-sdk-building-blocks-README.md)
+4. [how-to-write-bundle-README.md](how-to-write-bundle-README.md)
+5. [../../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../../configuration/bundle-runtime-configuration-and-secrets-README.md)
+6. [how-to-configure-and-run-bundle-README.md](how-to-configure-and-run-bundle-README.md)
 
-Read those five together as one bundle-authoring baseline.
+Read those six together as one bundle-authoring baseline.
 
 There is also one optional Tier 1 lifecycle procedure:
 
@@ -88,10 +90,11 @@ So the practical Tier 1 reading order is:
 
 1. navigation
 2. test expectations
-3. bundle design
-4. configuration ownership
-5. local runtime and deployment wiring
-6. optional release lifecycle, only when agreed with the user
+3. reusable SDK/platform building blocks
+4. bundle design
+5. configuration ownership
+6. local runtime and deployment wiring
+7. optional release lifecycle, only when agreed with the user
 
 ## 2. Which Path Fits Your Job
 
@@ -117,18 +120,21 @@ Example:
 Start here, then complete the rest of the Tier 1 pack:
 
 1. [how-to-test-bundle-README.md](how-to-test-bundle-README.md)
-2. [how-to-write-bundle-README.md](how-to-write-bundle-README.md)
-3. [../../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../../configuration/bundle-runtime-configuration-and-secrets-README.md)
-4. [how-to-configure-and-run-bundle-README.md](how-to-configure-and-run-bundle-README.md)
-5. [../bundle-platform-integration-README.md](../bundle-platform-integration-README.md)
-6. [../bundle-runtime-README.md](../bundle-runtime-README.md)
-7. [../versatile-reference-bundle-README.md](../versatile-reference-bundle-README.md)
-8. [how-to-release-bundle-content-README.md](how-to-release-bundle-content-README.md), only when the user wants a pinned release
+2. [how-to-assemble-bundle-with-sdk-building-blocks-README.md](how-to-assemble-bundle-with-sdk-building-blocks-README.md)
+3. [how-to-write-bundle-README.md](how-to-write-bundle-README.md)
+4. [../../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../../configuration/bundle-runtime-configuration-and-secrets-README.md)
+5. [how-to-configure-and-run-bundle-README.md](how-to-configure-and-run-bundle-README.md)
+6. [../bundle-platform-integration-README.md](../bundle-platform-integration-README.md)
+7. [../bundle-runtime-README.md](../bundle-runtime-README.md)
+8. [../versatile-reference-bundle-README.md](../versatile-reference-bundle-README.md)
+9. [how-to-release-bundle-content-README.md](how-to-release-bundle-content-README.md), only when the user wants a pinned release
 
 Interpretation:
 
 - `how-to-test` tells you what the bundle must prove and which runtime paths
   must exist
+- `how-to-assemble` tells you which SDK/platform blocks already exist before
+  you write new services
 - `how-to-write` tells you what to build
 - `bundle-runtime-configuration-and-secrets` tells you where values belong
 - `how-to-configure-and-run` tells you how the runtime is staged and wired
@@ -141,15 +147,17 @@ Interpretation:
 Start here, then complete the rest of the Tier 1 pack:
 
 1. [how-to-test-bundle-README.md](how-to-test-bundle-README.md)
-2. [how-to-write-bundle-README.md](how-to-write-bundle-README.md)
-3. [../bundle-platform-integration-README.md](../bundle-platform-integration-README.md)
-4. [../../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../../configuration/bundle-runtime-configuration-and-secrets-README.md)
-5. [how-to-configure-and-run-bundle-README.md](how-to-configure-and-run-bundle-README.md)
-6. [../versatile-reference-bundle-README.md](../versatile-reference-bundle-README.md)
+2. [how-to-assemble-bundle-with-sdk-building-blocks-README.md](how-to-assemble-bundle-with-sdk-building-blocks-README.md)
+3. [how-to-write-bundle-README.md](how-to-write-bundle-README.md)
+4. [../bundle-platform-integration-README.md](../bundle-platform-integration-README.md)
+5. [../../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../../configuration/bundle-runtime-configuration-and-secrets-README.md)
+6. [how-to-configure-and-run-bundle-README.md](how-to-configure-and-run-bundle-README.md)
+7. [../versatile-reference-bundle-README.md](../versatile-reference-bundle-README.md)
 
 Practical rule:
 
 - read the test page early so you know the bundle contract you must satisfy
+- check the assembly map before copying or writing provider/runtime mechanics
 - keep the existing business logic in reusable helpers or a delegated service
 - make the bundle layer a thin KDCube adapter
 - map the existing surface to the right decorator contract:
@@ -244,6 +252,7 @@ Then jump only to the row that matches your question.
 | --- | --- | --- |
 | What is a bundle? | [how-to-write-bundle-README.md](how-to-write-bundle-README.md) | It defines bundle as the application unit and `tenant/project` as the environment boundary. |
 | What files do I create first for a new bundle? | [how-to-write-bundle-README.md#1b1-new-bundle-skeleton-checklist](how-to-write-bundle-README.md#1b1-new-bundle-skeleton-checklist) | It gives the first-pass README, release, config template, docs/design, docs/journal, entrypoint, and test layout. |
+| What SDK integrations, solutions, tools, storage, and runtime blocks can I reuse? | [how-to-assemble-bundle-with-sdk-building-blocks-README.md](how-to-assemble-bundle-with-sdk-building-blocks-README.md) | It maps product needs to reusable SDK/platform blocks such as Tasks, Email, Telegram, Delivery, web/rendering/exec tools, widgets, storage, jobs, MCP, and Claude Code. |
 | How do I turn a finished bundle into a release tag and descriptor ref? | [how-to-release-bundle-content-README.md](how-to-release-bundle-content-README.md) | It is the optional, user-approved lifecycle procedure for release notes, validation, commit/tag/push, and descriptor ref updates. |
 | I have existing code. How do I wrap it? | [how-to-write-bundle-README.md](how-to-write-bundle-README.md) | It contains the design matrix and process-boundary guidance. |
 | How do I map existing app settings into KDCube settings, bundle props, and user state? | [../../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../../configuration/bundle-runtime-configuration-and-secrets-README.md) | It is the Tier 1 configuration model and ownership map. |
