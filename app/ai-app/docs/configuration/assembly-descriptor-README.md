@@ -78,6 +78,7 @@ These env vars are the direct runtime surface for assembly-backed settings.
 | `AI_REACT_CACHE_KEEP_RECENT_INTACT_TURNS` | `ai.react.cache_keep_recent_intact_turns` | `get_settings()` | all modes |
 | `CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION` | `storage.claude_code_session.type` | `get_settings()` | CLI local compose, direct local service run |
 | `CLAUDE_CODE_SESSION_GIT_REPO` | `storage.claude_code_session.repo` | `get_settings()` | CLI local compose, direct local service run |
+| `BUNDLE_SCHEDULER_RECONCILE_INTERVAL_SECONDS` | `platform.services.proc.bundles.bundle_scheduler_reconcile_interval_seconds` | `get_settings().PLATFORM.APPLICATIONS` | proc in all modes |
 
 ## Fields that are always meaningful
 
@@ -228,6 +229,29 @@ of configuration; set the descriptor fields above instead.
 Bundles may override these limits for their own execution profile through
 bundle props (`config.execution.runtime` or legacy `config.exec_runtime`). The
 override is applied only to that bundle run.
+
+### `platform.services.proc.bundles`
+
+`platform.services.proc.bundles` owns proc runtime bundle behavior that is not
+part of the bundle inventory itself. Bundle inventory stays in `bundles.yaml`.
+
+Example:
+
+```yaml
+platform:
+  services:
+    proc:
+      bundles:
+        bundle_scheduler_reconcile_interval_seconds: 0
+```
+
+| Field | Settings API | Meaning |
+|---|---|---|
+| `bundle_scheduler_reconcile_interval_seconds` | `get_settings().PLATFORM.APPLICATIONS.BUNDLE_SCHEDULER_RECONCILE_INTERVAL_SECONDS` | periodic scheduler reconciliation interval in seconds; `0` disables the periodic loop |
+
+The scheduler still reconciles on proc startup and on bundle update
+notifications. The periodic loop is only the catch-up path for environments
+that want scheduler convergence even if a notification is missed.
 
 ## Fields that are local-run only
 
