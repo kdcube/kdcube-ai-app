@@ -788,25 +788,7 @@ def update_nginx_ssl_domain(path: Path, domain: str) -> None:
 
 
 def _write_frontend_config_file(path: Path, **kwargs):
-    try:
-        from kdcube_ai_app.infra.config.frontend_config import write_frontend_config_file
-    except ModuleNotFoundError as first_error:
-        if first_error.name != "kdcube_ai_app":
-            raise
-        for parent in Path(__file__).resolve().parents:
-            if (parent / "kdcube_ai_app").exists():
-                parent_text = str(parent)
-                if parent_text not in sys.path:
-                    sys.path.insert(0, parent_text)
-                break
-        try:
-            from kdcube_ai_app.infra.config.frontend_config import write_frontend_config_file
-        except ModuleNotFoundError as second_error:
-            raise RuntimeError(
-                "Cannot build frontend config: kdcube_ai_app source is not available. "
-                "Run the installer from a kdcube-ai-app release/worktree or install the platform package."
-            ) from second_error
-
+    from kdcube_cli.frontend_config import write_frontend_config_file
     return write_frontend_config_file(path, **kwargs)
 
 
