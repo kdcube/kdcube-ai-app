@@ -34,6 +34,7 @@ from kdcube_cli.installer import (
     stage_descriptor_directory,
     update_nginx_routes_prefix,
     ui_entry_path,
+    write_frontend_config,
     workspace_namespace,
 )
 
@@ -100,6 +101,40 @@ def test_resolve_frontend_routes_prefix_reads_generated_config(tmp_path: Path):
 
     assert resolve_frontend_routes_prefix(str(config)) == "/chatbot/ciso"
     assert resolve_frontend_routes_prefix(str(tmp_path / "missing.json")) is None
+
+
+def test_write_frontend_config_uses_cli_frontend_config_module(tmp_path: Path):
+    template = tmp_path / "template.json"
+    template.write_text(
+        json.dumps(
+            {
+                "routesPrefix": "/chatbot",
+                "auth": {"authType": "hardcoded", "token": "test-admin-token-123"},
+                "debug": {"injectDebugCommands": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+    target = tmp_path / "frontend.config.json"
+
+    write_frontend_config(
+        target,
+        "tenant-one",
+        "project-one",
+        template_path=template,
+        routes_prefix="/platform",
+        assembly={
+            "auth": {"type": "simple"},
+            "frontend": {"config": {"debug": {"animateStreaming": True}}},
+        },
+    )
+
+    config = json.loads(target.read_text())
+    assert config["tenant"] == "tenant-one"
+    assert config["project"] == "project-one"
+    assert config["routesPrefix"] == "/platform"
+    assert config["auth"]["authType"] == "simple"
+    assert config["debug"] == {"injectDebugCommands": True, "animateStreaming": True}
 
 
 def test_update_nginx_routes_prefix_adds_prefix_root_redirect(tmp_path: Path):
