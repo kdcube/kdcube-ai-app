@@ -45,16 +45,11 @@ from kdcube_ai_app.apps.chat.sdk.runtime.http_ops import (
     BundleFileResponse,
     BundleUploadedFile,
 )
-from kdcube_ai_app.infra.plugin.bundle_registry import (
-    resolve_bundle_async,
-    get_all,
-    get_default_id,
-)
 from kdcube_ai_app.infra.plugin.bundle_store import (
     load_registry,
     BundlesRegistry,
-    BundleEntry,
     describe_authoritative_bundle_store,
+    resolve_bundle_spec_from_store,
     get_bundle_props as store_get_bundle_props,
     patch_bundle_props as store_patch_bundle_props,
     put_bundle_props as store_put_bundle_props,
@@ -727,6 +722,21 @@ def _deep_merge_props(base: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, 
     return merged
 
 
+async def _resolve_bundle_spec_from_runtime(
+        *,
+        request: Request,
+        tenant: str,
+        project: str,
+        bundle_id: Optional[str],
+):
+    return await resolve_bundle_spec_from_store(
+        _get_app_redis(request),
+        tenant=tenant,
+        project=project,
+        bundle_id=bundle_id,
+    )
+
+
 async def _load_bundle_props_defaults(
         *,
         bundle_id: str,
@@ -735,7 +745,12 @@ async def _load_bundle_props_defaults(
         request: Request,
         session: UserSession,
 ) -> Dict[str, Any]:
-    spec_resolved = await resolve_bundle_async(bundle_id, override=None)
+    spec_resolved = await _resolve_bundle_spec_from_runtime(
+        request=request,
+        tenant=tenant,
+        project=project,
+        bundle_id=bundle_id,
+    )
     if not spec_resolved:
         raise HTTPException(status_code=404, detail=f"Bundle {bundle_id} not found")
 
@@ -822,7 +837,12 @@ async def _get_bundle_manifest(
     Reads from _manifest_cache when available (populated by get_workflow_instance).
     Falls back to loading the bundle on-demand when the cache is cold.
     """
-    spec_resolved = await resolve_bundle_async(bundle_id, override=None)
+    spec_resolved = await _resolve_bundle_spec_from_runtime(
+        request=request,
+        tenant=tenant,
+        project=project,
+        bundle_id=bundle_id,
+    )
     if not spec_resolved:
         return None
     spec = AgenticBundleSpec(
@@ -957,10 +977,7 @@ async def get_available_bundles(
         project: Optional[str] = None,
         session: UserSession = Depends(require_auth(RequireUser())),
 ):
-    """
-    Returns configured bundles for selection in the UI.
-    Read from Redis (source of truth), fallback to in-memory if needed.
-    """
+    """Returns configured bundles for selection in the UI."""
     settings = get_settings()
     tenant_id = tenant or settings.TENANT
     project_id = project or settings.PROJECT
@@ -968,13 +985,7 @@ async def get_available_bundles(
         redis = _get_app_redis(request)
         reg = await load_registry(redis, tenant_id, project_id)
     except Exception:
-        if tenant_id == settings.TENANT and project_id == settings.PROJECT:
-            reg = BundlesRegistry(
-                default_bundle_id=get_default_id(),
-                bundles={bid: BundleEntry(**info) for bid, info in get_all().items()},
-            )
-        else:
-            raise HTTPException(status_code=503, detail="Failed to load bundles registry for tenant/project")
+        raise HTTPException(status_code=503, detail="Failed to load bundles registry for tenant/project")
 
     bundles_out = {}
     for bid, entry in reg.bundles.items():
@@ -1031,13 +1042,7 @@ async def get_bundles(
         redis = _get_app_redis(request)
         reg = await load_registry(redis, tenant_id, project_id)
     except Exception:
-        if tenant_id == settings.TENANT and project_id == settings.PROJECT:
-            reg = BundlesRegistry(
-                default_bundle_id=get_default_id(),
-                bundles={bid: BundleEntry(**info) for bid, info in get_all().items()},
-            )
-        else:
-            raise HTTPException(status_code=503, detail="Failed to load bundles registry for tenant/project")
+        raise HTTPException(status_code=503, detail="Failed to load bundles registry for tenant/project")
 
     redis = _get_app_redis(request)
     bundles_out = {}
@@ -1522,8 +1527,8 @@ async def _do_set_bundles(
                 stopped_sidecars,
                 list((payload.bundles or {}).keys()),
             )
-        reg = get_all()
-        default_id = get_default_id()
+        reg = {bid: be.model_dump() for bid, be in updated.bundles.items()}
+        default_id = updated.default_bundle_id
         clear_agentic_caches()
     else:
         reg = {bid: be.model_dump() for bid, be in updated.bundles.items()}
@@ -1664,7 +1669,7 @@ async def admin_reload_bundles_from_authority(
 async def internal_reload_bundles_from_authority(payload: Optional[BundleReloadAuthorityRequest], request: Request):
     """
     Localhost-only bundle authority reload for local development / CLI automation.
-    Re-applies the current authoritative bundle descriptor store and clears bundle caches.
+    Re-applies the current bundles.yaml descriptor authority and clears bundle caches.
     """
     client_ip = request.client.host if request.client else ""
     if client_ip not in _LOCALHOST:
@@ -1693,16 +1698,21 @@ async def admin_cleanup_bundles(
     from kdcube_ai_app.infra.plugin.agentic_loader import evict_inactive_specs, AgenticBundleSpec
 
     result = {"status": "ok"}
+    redis = _get_app_redis(request)
 
     if tenant_id == settings.TENANT and project_id == settings.PROJECT:
         active_specs = []
-        for _bid, entry in (get_all() or {}).items():
+        try:
+            current = await load_registry(redis, tenant_id, project_id)
+        except Exception:
+            current = BundlesRegistry()
+        for _bid, entry in (current.bundles or {}).items():
             try:
                 active_specs.append(
                     AgenticBundleSpec(
-                        path=entry.get("path"),
-                        module=entry.get("module"),
-                        singleton=bool(entry.get("singleton")),
+                        path=entry.path,
+                        module=entry.module,
+                        singleton=bool(entry.singleton),
                     )
                 )
             except Exception:
@@ -1723,7 +1733,6 @@ async def admin_cleanup_bundles(
             "updated_by": session.username or session.user_id or "unknown",
             "ts": datetime.utcnow().isoformat() + "Z",
         }
-        redis = _get_app_redis(request)
         await redis.publish(
             _bundles_channel(namespaces.CONFIG.BUNDLES.CLEANUP_CHANNEL, tenant=tenant_id, project=project_id),
             json.dumps(msg, ensure_ascii=False),
@@ -1753,7 +1762,12 @@ async def serve_static_asset(
     from kdcube_ai_app.infra.plugin.bundle_storage import storage_for_spec
 
     tenant_id, project_id = _resolve_path_scope(tenant=tenant, project=project)
-    spec = await resolve_bundle_async(bundle_id, override=None)
+    spec = await _resolve_bundle_spec_from_runtime(
+        request=request,
+        tenant=tenant_id,
+        project=project_id,
+        bundle_id=bundle_id,
+    )
     if not spec:
         raise HTTPException(status_code=404, detail=f"Bundle '{bundle_id}' not found")
 
@@ -2295,9 +2309,7 @@ async def _serve_static_widget_app(
     if not widget_static_cfg:
         return None
 
-    spec = await resolve_bundle_async(bundle_id, override=None)
-    if not spec:
-        raise HTTPException(status_code=404, detail=f"Bundle '{bundle_id}' not found")
+    spec = spec_resolved
 
     storage_root = storage_for_spec(spec=spec, tenant=tenant_id, project=project_id, ensure=False)
     ui_root = storage_root / "ui" / "widgets" / widget_spec.alias if storage_root else None
@@ -2795,10 +2807,13 @@ async def _call_bundle_op_limited(
     )
 
 
-def _resolve_requested_bundle_id(
+async def _resolve_requested_bundle_id(
         *,
         path_bundle_id: Optional[str],
         payload: BundleSuggestionsRequest,
+        request: Request,
+        tenant: str,
+        project: str,
 ) -> str:
     if path_bundle_id and str(path_bundle_id).strip():
         return str(path_bundle_id).strip()
@@ -2811,7 +2826,8 @@ def _resolve_requested_bundle_id(
     if cfg_bundle_id:
         return cfg_bundle_id
 
-    default_bundle_id = str(get_default_id() or "").strip()
+    reg = await load_registry(_get_app_redis(request), tenant, project)
+    default_bundle_id = str(reg.default_bundle_id or "").strip()
     if default_bundle_id:
         return default_bundle_id
 
@@ -2906,11 +2922,22 @@ async def _load_bundle_workflow(
     if not cfg_req.claude_api_key:
         cfg_req.claude_api_key = settings.ANTHROPIC_API_KEY
 
-    requested_bundle_id = _resolve_requested_bundle_id(path_bundle_id=bundle_id, payload=payload)
+    requested_bundle_id = await _resolve_requested_bundle_id(
+        path_bundle_id=bundle_id,
+        payload=payload,
+        request=request,
+        tenant=tenant_id,
+        project=project_id,
+    )
     cfg_req.agentic_bundle_id = requested_bundle_id
     request_id = str(uuid.uuid4())
 
-    spec_resolved = await resolve_bundle_async(cfg_req.agentic_bundle_id, override=None)
+    spec_resolved = await _resolve_bundle_spec_from_runtime(
+        request=request,
+        tenant=tenant_id,
+        project=project_id,
+        bundle_id=cfg_req.agentic_bundle_id,
+    )
     if not spec_resolved:
         raise HTTPException(status_code=404, detail=f"Bundle {cfg_req.agentic_bundle_id} not found")
 
@@ -2955,7 +2982,12 @@ async def _load_bundle_workflow(
     except Exception as e:
         logger.exception(f"[call_bundle_op.{tenant}.{project}] Failed to load bundle {asdict(spec)}")
         try:
-            admin_spec = await resolve_bundle_async("kdcube.admin", override=None)
+            admin_spec = await _resolve_bundle_spec_from_runtime(
+                request=request,
+                tenant=tenant_id,
+                project=project_id,
+                bundle_id="kdcube.admin",
+            )
             if not admin_spec:
                 raise e
             wf_config.ai_bundle_spec = admin_spec

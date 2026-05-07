@@ -397,7 +397,7 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error(f"Failed to start chat relay listener: {e}")
 
-        # Bundles registry is always sourced from Redis by request-time sync in ingress.
+        # Bundles registry is loaded on demand from the active runtime registry.
         #
         # await processor.start_processing()
         # await health_checker.start_monitoring()

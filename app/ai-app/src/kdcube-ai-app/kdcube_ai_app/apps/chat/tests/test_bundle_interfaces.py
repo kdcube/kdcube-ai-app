@@ -736,7 +736,7 @@ async def test_static_widget_subpaths_fall_back_to_index_html(monkeypatch, tmp_p
 
     monkeypatch.setattr(integrations, "_load_bundle_workflow", _load_bundle_workflow)
     monkeypatch.setattr(integrations, "store_get_bundle_props", _store_get_bundle_props)
-    monkeypatch.setattr(integrations, "resolve_bundle_async", _resolve_bundle_async)
+    monkeypatch.setattr(integrations, "_resolve_bundle_spec_from_runtime", _resolve_bundle_async)
     monkeypatch.setattr(integrations, "run_static_bundle_entrypoint_load_once", _run_static_bundle_entrypoint_load_once)
     monkeypatch.setattr(bundle_storage, "storage_for_spec", lambda **kwargs: storage_root)
 
@@ -1683,7 +1683,7 @@ async def test_load_bundle_workflow_rejects_config_scope_override(monkeypatch):
             ANTHROPIC_API_KEY="claude-key",
         ),
     )
-    monkeypatch.setattr(integrations, "resolve_bundle_async", _resolve_bundle_async)
+    monkeypatch.setattr(integrations, "_resolve_bundle_spec_from_runtime", _resolve_bundle_async)
     monkeypatch.setattr(integrations, "create_workflow_config", _create_workflow_config)
     monkeypatch.setattr(integrations, "get_workflow_instance_async", _get_workflow_instance)
     monkeypatch.setattr(integrations, "_get_app_redis", lambda request: "redis-client")

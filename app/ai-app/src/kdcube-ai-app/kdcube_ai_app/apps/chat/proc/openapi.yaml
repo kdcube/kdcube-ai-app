@@ -1091,7 +1091,7 @@ paths:
       summary: Get Available Bundles
       description: 'Returns configured bundles for selection in the UI.
 
-        Read from Redis (source of truth), fallback to in-memory if needed.'
+        Read from the active runtime bundle registry.'
       operationId: get_available_bundles_admin_integrations_bundles_get
       parameters:
       - name: tenant
@@ -1404,7 +1404,7 @@ paths:
       summary: Internal Reload Bundles From Authority
       description: 'Localhost-only bundle authority reload for local development / CLI automation.
 
-        Re-applies the current authoritative bundle descriptor store and clears bundle caches.'
+        Re-applies the current bundles.yaml descriptor authority and clears bundle caches.'
       operationId: internal_reload_bundles_from_authority_internal_bundles_reload_authority_post
       requestBody:
         content:

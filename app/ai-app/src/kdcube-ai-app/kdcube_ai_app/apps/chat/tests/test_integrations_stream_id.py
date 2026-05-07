@@ -40,8 +40,13 @@ def _request(*, stream_id: str | None = None) -> SimpleNamespace:
     return SimpleNamespace(
         headers=headers,
         state=SimpleNamespace(**({STATE_STREAM_ID: stream_id} if stream_id else {})),
-        app=SimpleNamespace(state=SimpleNamespace(redis_async=object())),
+        app=SimpleNamespace(state=SimpleNamespace(redis_async=object(), pg_pool=object())),
     )
+
+
+async def _empty_bundle_props(*args, **kwargs):
+    del args, kwargs
+    return {}
 
 
 def test_bind_stream_id_to_request_state_extracts_header():
@@ -69,8 +74,8 @@ def test_bind_stream_id_to_request_state_extracts_header():
 async def test_load_bundle_props_defaults_preserves_request_stream_id(monkeypatch):
     captured = {}
 
-    async def _resolve_bundle_async(bundle_id, override=None):
-        del override
+    async def _resolve_bundle_async(*args, **kwargs):
+        bundle_id = kwargs.get("bundle_id") or (args[0] if args else None)
         return SimpleNamespace(id=bundle_id, path="/tmp/demo", module="entrypoint", singleton=False)
 
     def _create_workflow_config(_cfg_req):
@@ -82,7 +87,7 @@ async def test_load_bundle_props_defaults_preserves_request_stream_id(monkeypatc
         workflow = SimpleNamespace(bundle_props_defaults={"demo": True}, configuration={"bundle_version": "1.0.0"})
         return workflow, None
 
-    monkeypatch.setattr(integrations, "resolve_bundle_async", _resolve_bundle_async)
+    monkeypatch.setattr(integrations, "_resolve_bundle_spec_from_runtime", _resolve_bundle_async)
     monkeypatch.setattr(integrations, "create_workflow_config", _create_workflow_config)
     monkeypatch.setattr(integrations, "get_workflow_instance_async", _get_workflow_instance)
 
@@ -103,8 +108,8 @@ async def test_load_bundle_props_defaults_preserves_request_stream_id(monkeypatc
 async def test_call_bundle_op_inner_preserves_request_stream_id(monkeypatch):
     captured = {}
 
-    async def _resolve_bundle_async(bundle_id, override=None):
-        del override
+    async def _resolve_bundle_async(*args, **kwargs):
+        bundle_id = kwargs.get("bundle_id") or (args[0] if args else None)
         return SimpleNamespace(id=bundle_id, path="/tmp/demo", module="entrypoint", singleton=False)
 
     def _create_workflow_config(_cfg_req):
@@ -131,11 +136,10 @@ async def test_call_bundle_op_inner_preserves_request_stream_id(monkeypatch):
             PROJECT="project-a",
         ),
     )
-    monkeypatch.setattr(integrations, "resolve_bundle_async", _resolve_bundle_async)
+    monkeypatch.setattr(integrations, "_resolve_bundle_spec_from_runtime", _resolve_bundle_async)
     monkeypatch.setattr(integrations, "create_workflow_config", _create_workflow_config)
     monkeypatch.setattr(integrations, "get_workflow_instance_async", _get_workflow_instance)
-    monkeypatch.setattr(integrations, "get_default_id", lambda: None)
-
+    monkeypatch.setattr(integrations, "store_get_bundle_props", _empty_bundle_props)
     result = await integrations._call_bundle_op_inner(
         tenant="tenant-a",
         project="project-a",
@@ -162,8 +166,8 @@ async def test_call_bundle_op_inner_preserves_request_stream_id(monkeypatch):
 async def test_call_bundle_op_inner_preserves_explicit_user_id_payload(monkeypatch):
     captured = {}
 
-    async def _resolve_bundle_async(bundle_id, override=None):
-        del override
+    async def _resolve_bundle_async(*args, **kwargs):
+        bundle_id = kwargs.get("bundle_id") or (args[0] if args else None)
         return SimpleNamespace(id=bundle_id, path="/tmp/demo", module="entrypoint", singleton=False)
 
     def _create_workflow_config(_cfg_req):
@@ -189,11 +193,10 @@ async def test_call_bundle_op_inner_preserves_explicit_user_id_payload(monkeypat
             PROJECT="project-a",
         ),
     )
-    monkeypatch.setattr(integrations, "resolve_bundle_async", _resolve_bundle_async)
+    monkeypatch.setattr(integrations, "_resolve_bundle_spec_from_runtime", _resolve_bundle_async)
     monkeypatch.setattr(integrations, "create_workflow_config", _create_workflow_config)
     monkeypatch.setattr(integrations, "get_workflow_instance_async", _get_workflow_instance)
-    monkeypatch.setattr(integrations, "get_default_id", lambda: None)
-
+    monkeypatch.setattr(integrations, "store_get_bundle_props", _empty_bundle_props)
     result = await integrations._call_bundle_op_inner(
         tenant="tenant-a",
         project="project-a",
@@ -218,8 +221,8 @@ async def test_call_bundle_op_inner_preserves_explicit_user_id_payload(monkeypat
 async def test_call_bundle_op_inner_binds_runtime_request_context(monkeypatch):
     captured = {}
 
-    async def _resolve_bundle_async(bundle_id, override=None):
-        del override
+    async def _resolve_bundle_async(*args, **kwargs):
+        bundle_id = kwargs.get("bundle_id") or (args[0] if args else None)
         return SimpleNamespace(id=bundle_id, path="/tmp/demo", module="entrypoint", singleton=True)
 
     def _create_workflow_config(_cfg_req):
@@ -262,11 +265,10 @@ async def test_call_bundle_op_inner_binds_runtime_request_context(monkeypatch):
             PROJECT="project-a",
         ),
     )
-    monkeypatch.setattr(integrations, "resolve_bundle_async", _resolve_bundle_async)
+    monkeypatch.setattr(integrations, "_resolve_bundle_spec_from_runtime", _resolve_bundle_async)
     monkeypatch.setattr(integrations, "create_workflow_config", _create_workflow_config)
     monkeypatch.setattr(integrations, "get_workflow_instance_async", _get_workflow_instance)
-    monkeypatch.setattr(integrations, "get_default_id", lambda: None)
-
+    monkeypatch.setattr(integrations, "store_get_bundle_props", _empty_bundle_props)
     await integrations._call_bundle_op_inner(
         tenant="tenant-a",
         project="project-a",
@@ -286,8 +288,8 @@ async def test_call_bundle_op_inner_binds_runtime_request_context(monkeypatch):
 async def test_call_bundle_op_inner_uses_default_bundle_when_omitted(monkeypatch):
     captured = {}
 
-    async def _resolve_bundle_async(bundle_id, override=None):
-        del override
+    async def _resolve_bundle_async(*args, **kwargs):
+        bundle_id = kwargs.get("bundle_id") or (args[0] if args else None)
         captured["resolved_bundle_id"] = bundle_id
         return SimpleNamespace(id=bundle_id, path="/tmp/demo", module="entrypoint", singleton=False)
 
@@ -315,10 +317,15 @@ async def test_call_bundle_op_inner_uses_default_bundle_when_omitted(monkeypatch
             PROJECT="project-a",
         ),
     )
-    monkeypatch.setattr(integrations, "resolve_bundle_async", _resolve_bundle_async)
+    monkeypatch.setattr(integrations, "_resolve_bundle_spec_from_runtime", _resolve_bundle_async)
     monkeypatch.setattr(integrations, "create_workflow_config", _create_workflow_config)
     monkeypatch.setattr(integrations, "get_workflow_instance_async", _get_workflow_instance)
-    monkeypatch.setattr(integrations, "get_default_id", lambda: "bundle.default")
+    monkeypatch.setattr(integrations, "store_get_bundle_props", _empty_bundle_props)
+    async def _load_registry(*args, **kwargs):
+        del args, kwargs
+        return SimpleNamespace(default_bundle_id="bundle.default", bundles={})
+
+    monkeypatch.setattr(integrations, "load_registry", _load_registry)
 
     result = await integrations._call_bundle_op_inner(
         tenant="tenant-a",
@@ -342,8 +349,8 @@ def test_serve_static_asset_builds_ui_on_first_request(monkeypatch, tmp_path):
     bundle_root.mkdir()
     storage_root = tmp_path / "storage"
 
-    async def _resolve_bundle_async(bundle_id, override=None):
-        del override
+    async def _resolve_bundle_async(*args, **kwargs):
+        bundle_id = kwargs.get("bundle_id") or (args[0] if args else None)
         return SimpleNamespace(id=bundle_id, path=str(bundle_root), module="entrypoint", singleton=False, version="v1")
 
     async def _load_bundle_props_defaults(**kwargs):
@@ -358,7 +365,7 @@ def test_serve_static_asset_builds_ui_on_first_request(monkeypatch, tmp_path):
         "get_settings",
         lambda: SimpleNamespace(TENANT="tenant-a", PROJECT="project-a"),
     )
-    monkeypatch.setattr(integrations, "resolve_bundle_async", _resolve_bundle_async)
+    monkeypatch.setattr(integrations, "_resolve_bundle_spec_from_runtime", _resolve_bundle_async)
     monkeypatch.setattr(integrations, "_load_bundle_props_defaults", _load_bundle_props_defaults)
     monkeypatch.setattr(bundle_storage, "storage_for_spec", lambda **kwargs: storage_root)
 
@@ -386,8 +393,8 @@ def test_serve_static_asset_refreshes_existing_ui_on_entrypoint_request(monkeypa
     (ui_root / "index.html").write_text("<html><head></head><body>Stale UI</body></html>", encoding="utf-8")
     load_calls = []
 
-    async def _resolve_bundle_async(bundle_id, override=None):
-        del override
+    async def _resolve_bundle_async(*args, **kwargs):
+        bundle_id = kwargs.get("bundle_id") or (args[0] if args else None)
         return SimpleNamespace(id=bundle_id, path=str(bundle_root), module="entrypoint", singleton=False, version="v1")
 
     async def _load_bundle_props_defaults(**kwargs):
@@ -400,7 +407,7 @@ def test_serve_static_asset_refreshes_existing_ui_on_entrypoint_request(monkeypa
         "get_settings",
         lambda: SimpleNamespace(TENANT="tenant-a", PROJECT="project-a"),
     )
-    monkeypatch.setattr(integrations, "resolve_bundle_async", _resolve_bundle_async)
+    monkeypatch.setattr(integrations, "_resolve_bundle_spec_from_runtime", _resolve_bundle_async)
     monkeypatch.setattr(integrations, "_load_bundle_props_defaults", _load_bundle_props_defaults)
     monkeypatch.setattr(bundle_storage, "storage_for_spec", lambda **kwargs: storage_root)
 
@@ -442,8 +449,8 @@ def test_serve_static_asset_does_not_refresh_existing_asset_request(monkeypatch,
     asset.parent.mkdir(parents=True)
     asset.write_text("console.log('cached asset');", encoding="utf-8")
 
-    async def _resolve_bundle_async(bundle_id, override=None):
-        del override
+    async def _resolve_bundle_async(*args, **kwargs):
+        bundle_id = kwargs.get("bundle_id") or (args[0] if args else None)
         return SimpleNamespace(id=bundle_id, path=str(bundle_root), module="entrypoint", singleton=False, version="v1")
 
     async def _load_bundle_props_defaults(**kwargs):
@@ -455,7 +462,7 @@ def test_serve_static_asset_does_not_refresh_existing_asset_request(monkeypatch,
         "get_settings",
         lambda: SimpleNamespace(TENANT="tenant-a", PROJECT="project-a"),
     )
-    monkeypatch.setattr(integrations, "resolve_bundle_async", _resolve_bundle_async)
+    monkeypatch.setattr(integrations, "_resolve_bundle_spec_from_runtime", _resolve_bundle_async)
     monkeypatch.setattr(integrations, "_load_bundle_props_defaults", _load_bundle_props_defaults)
     monkeypatch.setattr(bundle_storage, "storage_for_spec", lambda **kwargs: storage_root)
 

@@ -573,9 +573,9 @@ paths:
           anyOf:
           - type: string
           - type: 'null'
-          description: If omitted, the default bundle_id from Redis is used.
+          description: If omitted, the default bundle_id from the active bundle registry is used.
           title: Bundle Id
-        description: If omitted, the default bundle_id from Redis is used.
+        description: If omitted, the default bundle_id from the active bundle registry is used.
       responses:
         '200':
           description: Successful Response

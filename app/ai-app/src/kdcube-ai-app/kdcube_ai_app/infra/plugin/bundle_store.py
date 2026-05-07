@@ -637,6 +637,51 @@ class BundlesRegistry(BaseModel):
     bundles: Dict[str, BundleEntry] = Field(default_factory=dict)
 
 
+def bundle_entry_to_spec(entry: BundleEntry):
+    from kdcube_ai_app.infra.plugin.bundle_registry import BundleSpec
+
+    return BundleSpec(
+        id=entry.id,
+        name=entry.name,
+        path=entry.path,
+        module=entry.module,
+        singleton=bool(entry.singleton),
+        description=entry.description,
+        repo=entry.repo,
+        ref=entry.ref,
+        subdir=entry.subdir,
+        git_commit=entry.git_commit,
+    )
+
+
+async def resolve_bundle_spec_from_store(
+    redis,
+    *,
+    tenant: Optional[str] = None,
+    project: Optional[str] = None,
+    bundle_id: Optional[str] = None,
+    override: Optional[Dict[str, Any]] = None,
+):
+    """
+    Resolve a BundleSpec from the active bundle registry.
+
+    In file-backed deployments this rereads bundles.yaml through load_registry
+    and refreshes Redis only as a runtime cache. Request paths should resolve
+    here rather than from process-local _REGISTRY.
+    """
+    if override and (override.get("path") or override.get("repo")):
+        return bundle_entry_to_spec(_to_entry(str(override.get("id") or "override"), override))
+
+    reg = await load_registry(redis, tenant, project)
+    bid = str(bundle_id or reg.default_bundle_id or "").strip()
+    if not bid:
+        return None
+    entry = (reg.bundles or {}).get(bid)
+    if entry is None:
+        return None
+    return bundle_entry_to_spec(entry)
+
+
 def _deployment_bundle_ids(reg: "BundlesRegistry") -> list[str]:
     reserved = _reserved_bundle_ids()
     return [bid for bid in reg.bundles.keys() if bid not in reserved]
@@ -718,6 +763,13 @@ def _entry_and_props_from_descriptor_doc(bundle_id: str, payload: Dict[str, Any]
 
 
 class _AwsBundleDescriptorStore:
+    """
+    Low-level AWS Secrets Manager mapping helper.
+
+    The active bundle registry authority is still bundles.yaml. This helper is
+    retained for explicit admin/migration flows that need to read, store, or
+    delete concrete AWS SM documents by secret id.
+    """
     _LOCK_TTL_SECONDS = 30
     _LOCK_WAIT_SECONDS = 10.0
 
@@ -1199,14 +1251,6 @@ def _resolve_bundles_descriptor_provider() -> str | None:
     )
     if explicit is not None:
         return explicit
-    try:
-        from kdcube_ai_app.infra.secrets.manager import build_secrets_manager_config
-
-        cfg = build_secrets_manager_config(settings)
-    except Exception:
-        cfg = None
-    if cfg is not None and getattr(cfg, "provider", None) == "aws-sm":
-        return "aws-sm"
     if _resolve_bundles_descriptor_authority_uri():
         return "file"
     return None
@@ -1496,9 +1540,12 @@ async def _put_bundle_props_locked(
 
 async def load_registry(redis, tenant: Optional[str] = None, project: Optional[str] = None) -> BundlesRegistry:
     """
-    Load per-tenant/project registry from Redis.
-    If the key is missing OR contains an 'effectively empty' registry
-    (e.g. {"default_bundle_id": null, "bundles": {}}), seed once from env.
+    Load the active per-tenant/project bundle registry.
+
+    In file-backed descriptor mode the descriptor authority is reread on every
+    call, and Redis is refreshed as a runtime cache. If no descriptor file is
+    configured, legacy env-seeded runtime state is still supported. Explicit
+    provider-backed descriptor mode is also supported.
     """
     key = redis_key(tenant, project)
     t, p = tenant, project
@@ -1506,7 +1553,7 @@ async def load_registry(redis, tenant: Optional[str] = None, project: Optional[s
         t, p = _tp_from_env()
     store = _get_authoritative_bundle_store(t, p)
 
-    # In descriptor-backed local mode, bundles.yaml is the source of truth.
+    # In descriptor-backed mode, bundles.yaml is the source of truth.
     # Redis is only a runtime cache and must be refreshed from the file-backed
     # authority on every load so proc restarts and descriptor edits cannot
     # revive stale bundle state.
@@ -1722,8 +1769,8 @@ async def reload_registry_from_authority(
     overwrite Redis for (tenant, project).
 
     The authoritative store is resolved through _get_authoritative_bundle_store():
-      - mounted bundles.yaml in local/descriptor-backed deployments
-      - AWS Secrets Manager bundle descriptor store in aws-sm deployments
+      - mounted bundles.yaml in descriptor-backed deployments
+      - AWS Secrets Manager bundle descriptor store in explicit aws-sm deployments
     """
     t, p = tenant, project
     if not t or not p:
@@ -1733,7 +1780,7 @@ async def reload_registry_from_authority(
     if store is None:
         raise ValueError(
             "No authoritative bundle store is configured. "
-            "Expected a mounted bundles.yaml descriptor or an AWS Secrets Manager bundle descriptor store."
+            "Expected a mounted bundles.yaml descriptor or an explicit AWS Secrets Manager bundle descriptor store."
         )
 
     loaded = store.load_registry()
