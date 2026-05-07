@@ -475,23 +475,17 @@ async def test_prefetch_git_bundles_skips_existing_paths(monkeypatch, tmp_path):
     bundle_root.mkdir()
     ensure_calls = []
 
-    monkeypatch.setattr(
-        processor_mod,
-        "_get_bundle_registry",
-        lambda: {
-            "bundle.ready": {
-                "repo": "https://example.invalid/repo.git",
-                "path": str(bundle_root),
-            }
-        },
-    )
-
     async def _ensure_git_bundle_async(**kwargs):
         ensure_calls.append(kwargs)
 
     monkeypatch.setattr(processor_mod, "ensure_git_bundle_async", _ensure_git_bundle_async)
 
-    errors = await processor_mod.prefetch_git_bundles()
+    errors = await processor_mod.prefetch_git_bundles({
+        "bundle.ready": {
+            "repo": "https://example.invalid/repo.git",
+            "path": str(bundle_root),
+        }
+    })
 
     assert errors == {}
     assert ensure_calls == []
@@ -500,24 +494,6 @@ async def test_prefetch_git_bundles_skips_existing_paths(monkeypatch, tmp_path):
 @pytest.mark.asyncio
 async def test_prefetch_git_bundles_resolves_missing_paths_and_collects_errors(monkeypatch):
     ensure_calls = []
-
-    monkeypatch.setattr(
-        processor_mod,
-        "_get_bundle_registry",
-        lambda: {
-            "bundle.ok": {
-                "repo": "https://example.invalid/ok.git",
-                "ref": "main",
-                "subdir": "bundle",
-            },
-            "bundle.cooldown": {
-                "repo": "https://example.invalid/cooldown.git",
-            },
-            "bundle.fail": {
-                "repo": "https://example.invalid/fail.git",
-            },
-        },
-    )
 
     monkeypatch.setattr(
         processor_mod,
@@ -536,7 +512,19 @@ async def test_prefetch_git_bundles_resolves_missing_paths_and_collects_errors(m
 
     from kdcube_ai_app.apps.chat.sdk.config import get_settings
     monkeypatch.setattr(get_settings().PLATFORM.APPLICATIONS.GIT, "BUNDLE_GIT_ATOMIC", True)
-    errors = await processor_mod.prefetch_git_bundles()
+    errors = await processor_mod.prefetch_git_bundles({
+        "bundle.ok": {
+            "repo": "https://example.invalid/ok.git",
+            "ref": "main",
+            "subdir": "bundle",
+        },
+        "bundle.cooldown": {
+            "repo": "https://example.invalid/cooldown.git",
+        },
+        "bundle.fail": {
+            "repo": "https://example.invalid/fail.git",
+        },
+    })
 
     assert errors == {
         "bundle.cooldown": "cooldown",

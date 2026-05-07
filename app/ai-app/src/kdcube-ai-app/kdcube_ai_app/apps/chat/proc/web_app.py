@@ -90,7 +90,11 @@ from kdcube_ai_app.apps.chat.sdk.infra.economics.policy import EconomicsLimitExc
 from kdcube_ai_app.apps.chat.sdk.runtime.local_sidecars import shutdown_all_local_sidecars
 from kdcube_ai_app.apps.chat.proc.rest.integrations import mount_integrations_routers
 from kdcube_ai_app.infra.namespaces import CONFIG
-from kdcube_ai_app.infra.plugin.bundle_registry import get_all as _get_bundle_registry
+from kdcube_ai_app.infra.plugin.bundle_store import (
+    bundle_entry_to_spec,
+    load_registry as load_bundle_runtime_registry,
+    resolve_bundle_spec_from_store,
+)
 from kdcube_ai_app.infra.availability.shutdown_diagnostics import (
     install_uvicorn_shutdown_diagnostics,
     log_shutdown_diagnostics,
@@ -240,13 +244,13 @@ def _bundle_preload_lock_ttl_seconds() -> int:
     return int(get_settings().PLATFORM.APPLICATIONS.BUNDLES_PRELOAD_LOCK_TTL_SECONDS)
 
 
-async def _prefetch_git_bundles_loop(app) -> None:
+async def _prefetch_git_bundles_loop(app, registry=None) -> None:
     """
     Prefetch git bundles once on startup to gate readiness.
     No retries here; config updates or restarts trigger a new resolution.
     """
     try:
-        errors = await prefetch_git_bundles()
+        errors = await prefetch_git_bundles(registry)
         if not errors:
             app.state.bundle_git_ready = True
             app.state.bundle_git_errors = {}
@@ -273,12 +277,16 @@ async def _initial_git_bundle_prefetch(app) -> None:
     if not (_git_prefetch_enabled() and _git_resolution_enabled()):
         return
 
-    reg_now = _get_bundle_registry()
-    if not any(entry.get("repo") for entry in reg_now.values()):
+    settings = get_settings()
+    redis = getattr(app.state, "redis_async", None)
+    if redis is None:
+        return
+    reg_now = await load_bundle_runtime_registry(redis, settings.TENANT, settings.PROJECT)
+    if not any(getattr(entry, "repo", None) for entry in (reg_now.bundles or {}).values()):
         return
 
     app.state.bundle_git_ready = False
-    await _prefetch_git_bundles_loop(app)
+    await _prefetch_git_bundles_loop(app, reg_now)
 
     if app.state.bundle_git_errors:
         logger.warning(
@@ -297,7 +305,7 @@ async def _preload_bundles_loop(app) -> None:
     individual bundle failures, so a broken bundle does not block startup.
     """
     from kdcube_ai_app.infra.plugin.agentic_loader import preload_bundle_async
-    from kdcube_ai_app.infra.plugin.bundle_registry import ADMIN_BUNDLE_ID, resolve_bundle
+    from kdcube_ai_app.infra.plugin.bundle_registry import ADMIN_BUNDLE_ID
 
     # Git repos must be cloned before we can import Python modules from them.
     git_task = getattr(app.state, "bundle_git_task", None)
@@ -337,25 +345,25 @@ async def _preload_bundles_loop(app) -> None:
     else:
         logger.info("[Bundles] Redis not configured; running preload without lock")
 
-    reg = _get_bundle_registry()
+    reg = await load_bundle_runtime_registry(redis, settings.TENANT, settings.PROJECT) if redis is not None else None
     total = 0
     ok = 0
     errors: dict[str, str] = {}
     try:
-        for bid, entry in reg.items():
+        for bid, entry in ((reg.bundles if reg is not None else {}) or {}).items():
             if bid == ADMIN_BUNDLE_ID:
                 continue
-            path = (entry.get("path") or "").strip()
+            path = (entry.path or "").strip()
             if not path:
                 logger.warning("[Bundles] Preload skip (no path): id=%s", bid)
                 continue
             total += 1
             spec = AgenticBundleSpec(
                 path=path,
-                module=entry.get("module"),
-                singleton=bool(entry.get("singleton", False)),
+                module=entry.module,
+                singleton=bool(entry.singleton),
             )
-            bundle_spec = resolve_bundle(bid)
+            bundle_spec = bundle_entry_to_spec(entry)
             try:
                 await preload_bundle_async(
                     spec,
@@ -517,7 +525,6 @@ async def lifespan(app: FastAPI):
         Entry-point invoked by the processor.
         """
         import inspect
-        from kdcube_ai_app.infra.plugin.bundle_registry import resolve_bundle_async
         from kdcube_ai_app.infra.plugin.agentic_loader import (
             discover_bundle_interface_manifest,
             get_workflow_instance_async,
@@ -528,7 +535,16 @@ async def lifespan(app: FastAPI):
         cfg_req = ConfigRequest(**(comm_context.config.values or {}))
         wf_config = create_workflow_config(cfg_req)
         bundle_id = comm_context.routing.bundle_id
-        spec_resolved = await resolve_bundle_async(bundle_id, override=None)
+        tenant_id = getattr(getattr(comm_context, "actor", None), "tenant_id", None) or get_settings().TENANT
+        project_id = getattr(getattr(comm_context, "actor", None), "project_id", None) or get_settings().PROJECT
+        spec_resolved = await resolve_bundle_spec_from_store(
+            app.state.redis_async,
+            tenant=tenant_id,
+            project=project_id,
+            bundle_id=bundle_id,
+        )
+        if not spec_resolved:
+            raise HTTPException(status_code=404, detail=f"Bundle {bundle_id} not found")
 
         wf_config.ai_bundle_spec = spec_resolved
         spec = AgenticBundleSpec(
@@ -546,7 +562,12 @@ async def lifespan(app: FastAPI):
             )
         except Exception as e:
             try:
-                admin_spec = await resolve_bundle_async("kdcube.admin", override=None)
+                admin_spec = await resolve_bundle_spec_from_store(
+                    app.state.redis_async,
+                    tenant=tenant_id,
+                    project=project_id,
+                    bundle_id="kdcube.admin",
+                )
                 if not admin_spec:
                     raise e
                 wf_config.ai_bundle_spec = admin_spec
@@ -675,13 +696,13 @@ async def lifespan(app: FastAPI):
             bundles_dict = {bid: entry.model_dump() for bid, entry in reg.bundles.items()}
             _set_mem_registry(bundles_dict, reg.default_bundle_id)
             logger.info(
-                "Bundles registry loaded from Redis: %s items (default=%s)",
+                "Bundles registry loaded from active registry: %s items (default=%s)",
                 len(bundles_dict),
                 reg.default_bundle_id,
             )
         except Exception as e:
             logger.warning(
-                "Failed to load bundles registry from Redis; using env-only registry. %s",
+                "Failed to load bundles registry from active registry; using env-only registry. %s",
                 e,
             )
 

@@ -17,7 +17,7 @@ dotenv.find_dotenv = lambda *args, **kwargs: ""
 sdk_config.get_settings.cache_clear()
 
 from kdcube_ai_app.apps.chat.proc import web_app
-from kdcube_ai_app.infra.plugin import agentic_loader, bundle_registry
+from kdcube_ai_app.infra.plugin import agentic_loader, bundle_store
 
 
 class _FakeRedis:
@@ -60,6 +60,21 @@ def _settings() -> SimpleNamespace:
         TENANT="tenant-a",
         PROJECT="project-a",
         BUNDLES_PRELOAD_LOCK_TTL_SECONDS=45,
+        PLATFORM=SimpleNamespace(
+            APPLICATIONS=SimpleNamespace(
+                BUNDLES_PRELOAD_LOCK_TTL_SECONDS=45,
+            )
+        ),
+    )
+
+
+def _registry(items: dict) -> bundle_store.BundlesRegistry:
+    return bundle_store.BundlesRegistry(
+        default_bundle_id=next(iter(items.keys()), None),
+        bundles={
+            bid: bundle_store.BundleEntry(id=bid, **entry)
+            for bid, entry in items.items()
+        },
     )
 
 
@@ -75,14 +90,12 @@ async def test_preload_bundles_loop_acquires_and_releases_leader_lock(monkeypatc
         assert kwargs["project"] == "project-a"
 
     monkeypatch.setattr(web_app, "get_settings", _settings)
-    monkeypatch.setattr(
-        web_app,
-        "_get_bundle_registry",
-        lambda: {"bundle.demo": {"path": "/tmp/demo", "module": "entrypoint", "singleton": False}},
-    )
+    async def _load_runtime_registry(redis_arg, tenant, project):
+        del redis_arg, tenant, project
+        return _registry({"bundle.demo": {"path": "/tmp/demo", "module": "entrypoint", "singleton": False}})
+
+    monkeypatch.setattr(web_app, "load_bundle_runtime_registry", _load_runtime_registry)
     monkeypatch.setattr(agentic_loader, "preload_bundle_async", _fake_preload)
-    monkeypatch.setattr(bundle_registry, "resolve_bundle", lambda bid: SimpleNamespace(id=bid))
-    monkeypatch.setattr(bundle_registry, "ADMIN_BUNDLE_ID", "kdcube.admin")
 
     await web_app._preload_bundles_loop(app)
 
@@ -105,14 +118,12 @@ async def test_preload_bundles_loop_skips_when_another_instance_holds_lock(monke
         preload_calls.append("called")
 
     monkeypatch.setattr(web_app, "get_settings", _settings)
-    monkeypatch.setattr(
-        web_app,
-        "_get_bundle_registry",
-        lambda: {"bundle.demo": {"path": "/tmp/demo", "module": "entrypoint", "singleton": False}},
-    )
+    async def _load_runtime_registry(redis_arg, tenant, project):
+        del redis_arg, tenant, project
+        return _registry({"bundle.demo": {"path": "/tmp/demo", "module": "entrypoint", "singleton": False}})
+
+    monkeypatch.setattr(web_app, "load_bundle_runtime_registry", _load_runtime_registry)
     monkeypatch.setattr(agentic_loader, "preload_bundle_async", _fake_preload)
-    monkeypatch.setattr(bundle_registry, "resolve_bundle", lambda bid: SimpleNamespace(id=bid))
-    monkeypatch.setattr(bundle_registry, "ADMIN_BUNDLE_ID", "kdcube.admin")
 
     await web_app._preload_bundles_loop(app)
 
@@ -129,13 +140,14 @@ async def test_initial_git_bundle_prefetch_marks_ready_after_success(monkeypatch
 
     monkeypatch.setattr(web_app, "_git_prefetch_enabled", lambda: True)
     monkeypatch.setattr(web_app, "_git_resolution_enabled", lambda: True)
-    monkeypatch.setattr(
-        web_app,
-        "_get_bundle_registry",
-        lambda: {"bundle.demo": {"repo": "https://example.invalid/repo.git"}},
-    )
+    async def _load_runtime_registry(redis_arg, tenant, project):
+        del redis_arg, tenant, project
+        return _registry({"bundle.demo": {"path": "/tmp/demo", "repo": "https://example.invalid/repo.git"}})
 
-    async def _fake_prefetch(app_obj):
+    monkeypatch.setattr(web_app, "load_bundle_runtime_registry", _load_runtime_registry)
+
+    async def _fake_prefetch(app_obj, registry=None):
+        assert "bundle.demo" in (registry.bundles or {})
         app_obj.state.bundle_git_ready = True
         app_obj.state.bundle_git_errors = {}
 
@@ -154,13 +166,14 @@ async def test_initial_git_bundle_prefetch_preserves_prefetch_errors(monkeypatch
 
     monkeypatch.setattr(web_app, "_git_prefetch_enabled", lambda: True)
     monkeypatch.setattr(web_app, "_git_resolution_enabled", lambda: True)
-    monkeypatch.setattr(
-        web_app,
-        "_get_bundle_registry",
-        lambda: {"bundle.demo": {"repo": "https://example.invalid/repo.git"}},
-    )
+    async def _load_runtime_registry(redis_arg, tenant, project):
+        del redis_arg, tenant, project
+        return _registry({"bundle.demo": {"path": "/tmp/demo", "repo": "https://example.invalid/repo.git"}})
 
-    async def _fake_prefetch(app_obj):
+    monkeypatch.setattr(web_app, "load_bundle_runtime_registry", _load_runtime_registry)
+
+    async def _fake_prefetch(app_obj, registry=None):
+        assert "bundle.demo" in (registry.bundles or {})
         app_obj.state.bundle_git_ready = False
         app_obj.state.bundle_git_errors = {"bundle.demo": "boom"}
 

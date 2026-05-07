@@ -398,10 +398,10 @@ async def _run_bundle_cleanup_once() -> None:
         logger.info("[Bundles] Redis not configured; running cleanup without lock")
 
     try:
-        from kdcube_ai_app.infra.plugin.bundle_registry import get_all
         from kdcube_ai_app.infra.plugin.bundle_store import (
             _discover_example_bundle_ids,
             cleanup_old_shared_example_bundles,
+            load_registry,
         )
         from kdcube_ai_app.infra.plugin.git_bundle import (
             cleanup_old_git_bundles_async,
@@ -412,12 +412,13 @@ async def _run_bundle_cleanup_once() -> None:
 
         active_paths = await get_active_paths(redis, tenant=tenant, project=project)
         total_removed = 0
-        bundles = get_all() or {}
+        reg = await load_registry(redis, tenant, project)
+        bundles = reg.bundles or {}
         for bid, entry in bundles.items():
-            repo = entry.get("repo")
+            repo = getattr(entry, "repo", None)
             if not repo:
                 continue
-            base_dir = bundle_dir_for_git(bid, entry.get("ref"))
+            base_dir = bundle_dir_for_git(bid, getattr(entry, "ref", None))
             removed = await cleanup_old_git_bundles_async(
                 bundle_id=base_dir,
                 bundles_root=resolve_managed_bundles_root(),

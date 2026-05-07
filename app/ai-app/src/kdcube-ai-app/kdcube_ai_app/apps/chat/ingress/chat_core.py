@@ -40,10 +40,11 @@ from kdcube_ai_app.auth.AuthManager import AuthenticationError, PRIVILEGED_ROLES
 
 logger = logging.getLogger(__name__)
 
-async def _load_registry_from_redis(app, tenant: str, project: str):
+async def _load_active_registry(app, tenant: str, project: str):
     """
-    Ingress must never update bundles. It only reads registry from Redis
-    to validate bundle IDs and fetch the default bundle id.
+    Ingress must not mutate bundle descriptors. It reads the active registry
+    via bundle_store; file-backed deployments reread descriptor authority and
+    refresh Redis only as a runtime cache.
     """
     return await load_persisted_registry_from_runtime_ctx(app.state, tenant, project)
 
@@ -317,8 +318,8 @@ async def process_chat_message(
     request_id = str(uuid.uuid4())
     provided_bundle_id = message_data.get("bundle_id")
 
-    # Ingress only reads registry from Redis (no updates).
-    reg = await _load_registry_from_redis(app, tenant_id, project_id)
+    # Ingress only reads the active registry; it does not mutate descriptors.
+    reg = await _load_active_registry(app, tenant_id, project_id)
 
     svc = ServiceCtx(request_id=request_id, user=session.user_id, project=project_id, tenant=tenant_id)
     conv = ConversationCtx(
@@ -338,9 +339,9 @@ async def process_chat_message(
         target_sid=ingress.stream_id,
     )
 
-    # If registry is not available from Redis, fail early to avoid stale defaults.
+    # If the active registry is not available, fail early to avoid stale defaults.
     if not reg:
-        err = "Bundle registry unavailable (Redis not ready)"
+        err = "Bundle registry unavailable"
         await chat_comm.emit_error(
             svc,
             conv,
@@ -1145,7 +1146,7 @@ async def get_conversation_status(
     """
     Shared implementation for conv_status.get for SSE + WS.
     """
-    reg = await _load_registry_from_redis(app, tenant, project)
+    reg = await _load_active_registry(app, tenant, project)
     allowed_bundle_ids = list((getattr(reg, "bundles", None) or {}).keys())
     if not allowed_bundle_ids:
         raise HTTPException(status_code=404, detail="Conversation not found")

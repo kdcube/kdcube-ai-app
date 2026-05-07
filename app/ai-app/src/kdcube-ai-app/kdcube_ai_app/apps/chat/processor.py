@@ -33,7 +33,6 @@ from kdcube_ai_app.infra.aws.ecs_container_instance_drain import (
 from kdcube_ai_app.infra.aws.task_protection import build_task_scale_in_protection
 from kdcube_ai_app.infra.metrics.rolling_stats import record_metric
 from kdcube_ai_app.infra.namespaces import REDIS
-from kdcube_ai_app.infra.plugin.bundle_registry import get_all as _get_bundle_registry
 from kdcube_ai_app.infra.plugin.git_bundle import (
     ensure_git_bundle_async,
     GitBundleCooldown,
@@ -172,7 +171,7 @@ class _ActivityTrackingCommunicator:
         return result
 
 
-async def prefetch_git_bundles() -> dict[str, str]:
+async def prefetch_git_bundles(registry: Optional[Any] = None) -> dict[str, str]:
     """
     Resolve configured git-backed bundles into the local bundle store once.
 
@@ -181,7 +180,15 @@ async def prefetch_git_bundles() -> dict[str, str]:
     enabled.
     """
     errors: dict[str, str] = {}
-    reg = _get_bundle_registry()
+    if registry is None:
+        reg = {}
+    elif hasattr(registry, "bundles"):
+        reg = {
+            bid: entry.model_dump() if hasattr(entry, "model_dump") else dict(entry or {})
+            for bid, entry in (getattr(registry, "bundles", {}) or {}).items()
+        }
+    else:
+        reg = dict(registry or {})
     force_pull = get_settings().PLATFORM.APPLICATIONS.GIT.BUNDLE_GIT_ALWAYS_PULL
 
     for bid, entry in reg.items():
@@ -1562,9 +1569,7 @@ class EnhancedChatRequestProcessor:
     async def _config_listener_loop(self):
         import kdcube_ai_app.infra.namespaces as namespaces
         from kdcube_ai_app.apps.chat.sdk.config import get_settings
-        from kdcube_ai_app.infra.plugin.bundle_registry import (
-            set_registry_async, get_all, get_default_id
-        )
+        from kdcube_ai_app.infra.plugin.bundle_registry import set_registry_async
         from kdcube_ai_app.infra.plugin.agentic_loader import clear_agentic_caches
         from kdcube_ai_app.infra.plugin.bundle_store import (
             load_registry as store_load,
@@ -1580,6 +1585,46 @@ class EnhancedChatRequestProcessor:
         update_channel = namespaces.CONFIG.BUNDLES.UPDATE_CHANNEL.format(tenant=tenant, project=project)
         cleanup_channel = namespaces.CONFIG.BUNDLES.CLEANUP_CHANNEL.format(tenant=tenant, project=project)
         props_update_channel = namespaces.CONFIG.BUNDLES.PROPS_UPDATE_CHANNEL.format(tenant=tenant, project=project)
+
+        async def _catch_up_runtime_snapshot(reason: str) -> None:
+            current = await store_load(self.redis)
+            await set_registry_async(
+                {bid: be.model_dump() for bid, be in (current.bundles or {}).items()},
+                current.default_bundle_id,
+                source=reason,
+            )
+            try:
+                clear_agentic_caches()
+            except Exception:
+                pass
+            try:
+                from kdcube_ai_app.apps.chat.sdk.runtime.local_sidecars import stop_inactive_local_sidecars
+
+                stopped_sidecars = stop_inactive_local_sidecars(
+                    active_bundle_ids={str(bid).strip() for bid in (current.bundles or {}).keys() if str(bid).strip()},
+                    tenant=tenant,
+                    project=project,
+                    terminate_timeout_sec=2.0,
+                    kill_timeout_sec=1.0,
+                )
+                if stopped_sidecars:
+                    logger.info(
+                        "Stopped inactive local sidecars after bundle runtime catch-up: tenant=%s project=%s count=%s",
+                        tenant,
+                        project,
+                        stopped_sidecars,
+                    )
+            except Exception:
+                logger.warning("Failed to stop inactive local sidecars after bundle runtime catch-up", exc_info=True)
+            if self._scheduler is not None:
+                await self._scheduler.reconcile(current)
+            logger.info(
+                "Bundle runtime catch-up complete: reason=%s bundles=%s default=%s",
+                reason,
+                len(current.bundles or {}),
+                current.default_bundle_id,
+            )
+
         backoff = 0.5
         while not self._stop_event.is_set():
             pubsub = None
@@ -1594,6 +1639,10 @@ class EnhancedChatRequestProcessor:
                     "Subscribed to bundles channels: "
                     f"{update_channel}, {cleanup_channel}, {props_update_channel}"
                 )
+                try:
+                    await _catch_up_runtime_snapshot("config-listener.subscribe")
+                except Exception:
+                    logger.warning("Bundle runtime catch-up after subscribe failed", exc_info=True)
                 backoff = 0.5
                 self._last_config_error = None
 
@@ -1665,7 +1714,7 @@ class EnhancedChatRequestProcessor:
                         except Exception:
                             logger.debug("Could not save snapshot to Redis; continuing")
 
-                        logger.info(f"Applied bundles SNAPSHOT; now have {len(get_all())} bundles")
+                        logger.info(f"Applied bundles SNAPSHOT; now have {len(reg.bundles or {})} bundles")
                         if self._scheduler is not None:
                             try:
                                 await self._scheduler.reconcile(reg)
@@ -1682,7 +1731,7 @@ class EnhancedChatRequestProcessor:
                         try:
                             current = await store_load(self.redis)
                         except Exception as e:
-                            logger.error(f"Failed to load registry from Redis: {e}")
+                            logger.error(f"Failed to load active registry: {e}")
                             current = BundlesRegistry()
 
                         try:
@@ -1724,7 +1773,7 @@ class EnhancedChatRequestProcessor:
                         except Exception:
                             pass
 
-                        logger.info(f"Applied bundles COMMAND (op={op}); now have {len(get_all())} bundles.")
+                        logger.info(f"Applied bundles COMMAND (op={op}); now have {len(reg.bundles or {})} bundles.")
                         if self._scheduler is not None:
                             try:
                                 await self._scheduler.reconcile(reg)
@@ -1752,13 +1801,18 @@ class EnhancedChatRequestProcessor:
                         from kdcube_ai_app.infra.plugin.bundle_refs import get_active_paths
                         from types import SimpleNamespace
 
+                        try:
+                            current_reg = await store_load(self.redis)
+                        except Exception:
+                            current_reg = BundlesRegistry()
+
                         active_specs = []
-                        for _bid, entry in (get_all() or {}).items():
+                        for _bid, entry in (current_reg.bundles or {}).items():
                             try:
                                 active_specs.append(AgenticBundleSpec(
-                                    path=entry.get("path"),
-                                    module=entry.get("module"),
-                                    singleton=bool(entry.get("singleton")),
+                                    path=entry.path,
+                                    module=entry.module,
+                                    singleton=bool(entry.singleton),
                                 ))
                             except Exception:
                                 continue
@@ -1769,7 +1823,7 @@ class EnhancedChatRequestProcessor:
                         )
                         try:
                             stopped_sidecars = stop_inactive_local_sidecars(
-                                active_bundle_ids={str(_bid).strip() for _bid in (get_all() or {}).keys() if str(_bid).strip()},
+                                active_bundle_ids={str(_bid).strip() for _bid in (current_reg.bundles or {}).keys() if str(_bid).strip()},
                                 tenant=tenant,
                                 project=project,
                                 terminate_timeout_sec=2.0,
@@ -1784,22 +1838,22 @@ class EnhancedChatRequestProcessor:
                                 )
                         except Exception:
                             logger.warning("Failed to stop inactive local sidecars during bundles cleanup", exc_info=True)
-                        # Git bundle cleanup (skip active refs from Redis)
+                        # Git bundle cleanup (skip active refs from active registry)
                         try:
                             active_paths = await get_active_paths(
                                 self.redis,
                                 tenant=tenant,
                                 project=project,
                             )
-                            bundles = get_all() or {}
+                            bundles = current_reg.bundles or {}
                             active_storage_paths = []
                             for _bid, entry in bundles.items():
                                 try:
                                     spec = SimpleNamespace(
                                         id=_bid,
-                                        git_commit=entry.get("git_commit"),
-                                        ref=entry.get("ref"),
-                                        version=entry.get("version"),
+                                        git_commit=getattr(entry, "git_commit", None),
+                                        ref=getattr(entry, "ref", None),
+                                        version=getattr(entry, "version", None),
                                     )
                                     storage_path = storage_for_spec(
                                         spec=spec,
@@ -1812,11 +1866,11 @@ class EnhancedChatRequestProcessor:
                                 except Exception:
                                     continue
                             for _bid, entry in bundles.items():
-                                repo = entry.get("repo")
+                                repo = getattr(entry, "repo", None)
                                 if not repo:
                                     pass
                                 else:
-                                    base_dir = bundle_dir_for_git(_bid, entry.get("ref"))
+                                    base_dir = bundle_dir_for_git(_bid, getattr(entry, "ref", None))
                                     await cleanup_old_git_bundles_async(
                                         bundle_id=base_dir,
                                         bundles_root=resolve_managed_bundles_root(),

@@ -220,7 +220,7 @@ async def list_conversations(
         include_titles: bool = Query(default=True),
         bundle_id: Optional[str] = Query(
             default=None,
-            description="If omitted, the default bundle_id from Redis is used.",
+            description="If omitted, the default bundle_id from the active bundle registry is used.",
         ),
         session: UserSession = Depends(require_auth(RequireUser())),
 ):

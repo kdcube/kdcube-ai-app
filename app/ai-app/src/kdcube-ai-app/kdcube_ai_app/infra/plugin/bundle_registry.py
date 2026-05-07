@@ -499,9 +499,9 @@ async def load_registry(redis, logger):
             {bid: be.model_dump() for bid, be in persisted.bundles.items()},
             persisted.default_bundle_id
         )
-        logger.info(f"Bundle mapping synced from Redis: {len(persisted.bundles)} bundles (default={persisted.default_bundle_id})")
+        logger.info(f"Bundle mapping synced from active registry: {len(persisted.bundles)} bundles (default={persisted.default_bundle_id})")
     except Exception as _e:
-        logger.warning(f"Could not sync bundles from Redis; using env-only: {_e}")
+        logger.warning(f"Could not sync bundles from active registry; using env-only: {_e}")
 
 
 def get_registry_redis_client(runtime_ctx) -> Optional[object]:
@@ -521,8 +521,12 @@ async def load_persisted_registry_from_runtime_ctx(
     project: str,
 ) -> Optional[object]:
     """
-    Read the persisted bundle registry for the given tenant/project directly
-    from Redis-backed storage without touching the process-local registry.
+    Read the active bundle registry for the given tenant/project from the
+    configured runtime registry store without touching process-local _REGISTRY.
+
+    For file-backed descriptors, bundle_store.load_registry rereads the
+    descriptor authority and refreshes Redis as a runtime cache. Redis is not
+    treated as the authority in that mode.
     """
     redis_client = get_registry_redis_client(runtime_ctx)
     if not redis_client:
@@ -538,7 +542,7 @@ async def load_persisted_registry_from_runtime_ctx(
         reg = await _load_store_registry(redis_client, tenant, project)
     except Exception as e:
         logger.warning(
-            "Failed to load bundle registry from Redis (tenant=%s project=%s): %s",
+            "Failed to load active bundle registry (tenant=%s project=%s): %s",
             tenant,
             project,
             e,
@@ -549,7 +553,7 @@ async def load_persisted_registry_from_runtime_ctx(
         return reg
 
     logger.error(
-        "Bundle registry missing/empty in Redis (tenant=%s project=%s)",
+        "Active bundle registry missing/empty (tenant=%s project=%s)",
         tenant,
         project,
     )
@@ -571,7 +575,7 @@ async def resolve_default_bundle_id_from_runtime_ctx(
         return default_bundle_id
 
     logger.error(
-        "Default bundle id missing or invalid in Redis registry "
+        "Default bundle id missing or invalid in active registry "
         "(tenant=%s project=%s default=%s)",
         tenant,
         project,
