@@ -263,6 +263,15 @@ In both cases the semantic contract returned to React is the same. What changes 
 
 Runtime prepares the local exec environment and runs the code without remote transport.
 
+In split Docker execution, two output roots are visible:
+- the runtime output root contains `timeline.json`, sources, logs, and runtime
+  metadata
+- the artifact output root is exposed to generated code as `OUTPUT_DIR` and is
+  used for files the code creates
+
+`ctx_tools.fetch_ctx` resolves logical `ar:`, `tc:`, and `so:` paths from the
+runtime output root, then falls back to the artifact root for legacy layouts.
+
 If referenced paths belong to a git-backed turn root:
 - the whole `out/<turn_id>/` tree is copied into the exec snapshot
 - this preserves `.git`

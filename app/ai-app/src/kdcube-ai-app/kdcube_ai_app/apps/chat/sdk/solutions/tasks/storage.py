@@ -32,6 +32,7 @@ except ImportError:
 
 
 TASK_STATUSES = {"enabled", "disabled", "archived", "deleted"}
+DEFAULT_VISIBLE_TASK_STATUSES = {"enabled", "disabled"}
 
 
 def _utc_now() -> str:
@@ -182,6 +183,8 @@ def _filter_markdown_assets(
         meta["path"] = str(path.relative_to(root))
         _normalize_task_schedule(meta)
         if status_norm and str(meta.get("status") or "").lower() != status_norm:
+            continue
+        if not status_norm and str(meta.get("status") or "").lower() not in DEFAULT_VISIBLE_TASK_STATUSES:
             continue
         haystack = "\n".join(
             [
@@ -531,6 +534,9 @@ class TaskStorage:
             if status_norm:
                 where.append("LOWER(t.status) = ?")
                 params.append(status_norm)
+            else:
+                where.append("LOWER(t.status) IN (?, ?)")
+                params.extend(["enabled", "disabled"])
             sql = f"""
                 SELECT
                     t.id, t.owner_user_id, t.title, t.status, t.created_at, t.updated_at,

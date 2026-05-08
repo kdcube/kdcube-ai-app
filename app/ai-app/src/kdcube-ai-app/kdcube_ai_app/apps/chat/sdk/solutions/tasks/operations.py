@@ -749,6 +749,32 @@ async def run_task_execution(
             "error": {"code": "task_not_found", "message": f"Task {task_id!r} was not found."},
             "execution": None,
         }
+    task_status = str(task.get("status") or "").strip().lower()
+    trigger_norm = str(trigger or "").strip().lower()
+    if task_status in {"archived", "deleted"} or (trigger_norm == "scheduled" and task_status != "enabled"):
+        execution = await storage.get_execution(execution_id=execution_id, task_id=task_id) if execution_id else None
+        summary = (
+            f"Scheduled execution skipped because task status is {task_status or 'unknown'}."
+            if trigger_norm == "scheduled"
+            else f"Task execution skipped because task status is {task_status or 'unknown'}."
+        )
+        if execution:
+            execution = await storage.update_execution(
+                execution_id=str(execution.get("id") or execution_id),
+                task_id=task_id,
+                status="cancelled",
+                summary=summary,
+                log_excerpt=summary,
+            )
+        return {
+            "ok": True,
+            "skipped": True,
+            "reason": "task_not_runnable",
+            "user_id": target_user,
+            "task": task,
+            "execution": execution,
+            "answer": summary,
+        }
 
     run_conversation_id = str(run_conversation_id or "").strip() or f"task_job_{uuid.uuid4().hex}"
     execution = await storage.get_execution(execution_id=execution_id, task_id=task_id) if execution_id else None

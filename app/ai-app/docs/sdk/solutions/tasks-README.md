@@ -166,6 +166,16 @@ The operations module owns generic mechanics:
 - fresh task-job ReAct turn execution
 - optional Telegram delivery for completed task executions
 
+Default task listings return active user-facing definitions only:
+`enabled` and `disabled`. Archived revisions and soft-deleted tasks remain
+addressable through explicit `status="archived"` / `status="deleted"` filters,
+but they are not shown in the normal task list and are not scanned by the due
+scheduler.
+
+Task execution also re-checks task status when a queued job is picked up. A
+scheduled job for a task that became `disabled`, `archived`, or `deleted` after
+enqueue is marked `cancelled` and does not start an agent turn.
+
 The bundle still supplies route authentication, public/operations route aliases,
 storage root resolution, and target user selection.
 

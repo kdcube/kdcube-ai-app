@@ -13,7 +13,7 @@ except Exception:
 
 import logging
 # ---- Working set from timeline.json ----
-from kdcube_ai_app.apps.chat.sdk.runtime.workdir_discovery import resolve_output_dir
+from kdcube_ai_app.apps.chat.sdk.runtime.workdir_discovery import resolve_output_dir, resolve_runtime_output_dir
 
 from kdcube_ai_app.apps.chat.sdk.tools.citations import (
     CITATION_OPTIONAL_ATTRS,
@@ -175,16 +175,33 @@ class SourcesUsedStore:
         return []
 
 def _read_timeline() -> Dict[str, Any]:
-    p = _outdir() / "timeline.json"
-    if not p.exists():
-        log.error("Timeline file not found: %s", str(p))
-        return {}
+    candidates: List[pathlib.Path] = []
     try:
-        data = json.loads(p.read_text(encoding="utf-8"))
-        log.info("Timeline file read: %s", str(p))
-        return data
+        candidates.append(resolve_runtime_output_dir() / "timeline.json")
     except Exception:
-        return {}
+        pass
+    try:
+        candidates.append(_outdir() / "timeline.json")
+    except Exception:
+        pass
+
+    seen: set[str] = set()
+    for p in candidates:
+        key = str(p)
+        if key in seen:
+            continue
+        seen.add(key)
+        if not p.exists():
+            continue
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+            log.info("Timeline file read: %s", str(p))
+            return data
+        except Exception:
+            log.exception("Timeline file could not be read: %s", str(p))
+            return {}
+    log.error("Timeline file not found in candidates: %s", [str(p) for p in candidates])
+    return {}
 
 def _flatten_history_citations(history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
