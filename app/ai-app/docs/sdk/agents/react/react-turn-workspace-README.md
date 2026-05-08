@@ -246,6 +246,12 @@ This is for diagnostics/forensics, not canonical conversation reconstruction.
 
 ## Phase 4: Distributed/Fargate workspace serialization and restore
 
+Local split Docker execution keeps the same distinction as remote snapshots:
+the runtime output root owns `timeline.json`, sources, logs, and runtime
+metadata, while the artifact root is exposed to generated code as `OUTPUT_DIR`.
+`ctx_tools.fetch_ctx` reads logical timeline refs from the runtime output root
+first and only falls back to the artifact root for legacy layouts.
+
 ### 4.1 Host-side lightweight snapshot build
 
 Before remote execution, host builds a reduced workspace (`build_exec_snapshot_workspace(...)`):
