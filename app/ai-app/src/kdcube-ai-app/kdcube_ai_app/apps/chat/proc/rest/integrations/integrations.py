@@ -899,6 +899,7 @@ def _manifest_to_descriptor(manifest: BundleInterfaceManifest) -> Dict[str, Any]
     """Serialise a full (unfiltered) manifest to a plain dict."""
     return {
         "enabled_path": canonical_enabled_path("bundle"),
+        "allowed_roles": list(manifest.allowed_roles),
         "apis": [
             {
                 "alias": s.alias,
@@ -954,6 +955,7 @@ def _manifest_to_descriptor_filtered(
     """Serialise a manifest filtered to the endpoint visibility rules for session."""
     return {
         "enabled_path": canonical_enabled_path("bundle"),
+        "allowed_roles": list(manifest.allowed_roles),
         "apis": [
             {
                 "alias": s.alias,
