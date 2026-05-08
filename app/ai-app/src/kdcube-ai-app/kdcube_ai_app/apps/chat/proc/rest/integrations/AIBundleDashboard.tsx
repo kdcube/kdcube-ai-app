@@ -45,6 +45,14 @@ interface BundleMCPEndpoint {
     enabled_path?: string | null;
 }
 
+interface BundleWidget {
+    alias: string;
+    icon?: Record<string, string> | null;
+    user_types: string[];
+    roles: string[];
+    enabled_path?: string | null;
+}
+
 interface BundleScheduledJob {
     method_name: string;
     alias?: string | null;
@@ -70,10 +78,12 @@ interface BundleEntry {
     git_commit?: string | null;
     apis?: BundleAPIEndpoint[] | null;
     mcp_endpoints?: BundleMCPEndpoint[] | null;
+    widgets?: BundleWidget[] | null;
     scheduled_jobs?: BundleScheduledJob[] | null;
     on_message?: string | null;
     on_job?: string | null;
     enabled_path?: string | null;
+    allowed_roles?: string[] | null;
 }
 
 interface BundlesResponse {
@@ -1634,15 +1644,32 @@ const AIBundleDashboard: React.FC = () => {
 
                             const apis = b.apis || [];
                             const mcp = b.mcp_endpoints || [];
+                            const widgets = b.widgets || [];
                             const jobs = b.scheduled_jobs || [];
-                            const hasAny = apis.length > 0 || mcp.length > 0 || jobs.length > 0 || b.on_message || b.on_job;
+                            const allowedRoles = b.allowed_roles || [];
+                            const hasAny = apis.length > 0 || mcp.length > 0 || widgets.length > 0 || jobs.length > 0 || b.on_message || b.on_job;
 
-                            if (!hasAny) return (
+                            if (!hasAny && allowedRoles.length === 0) return (
                                 <div className="text-sm text-gray-500">No interface declared for this bundle.</div>
                             );
 
                             return (
                                 <div className="space-y-5">
+                                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                                        <span className="font-semibold text-gray-700">Bundle visibility:</span>
+                                        {allowedRoles.length === 0 ? (
+                                            <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800">
+                                                Visible to all authenticated users
+                                            </span>
+                                        ) : (
+                                            allowedRoles.map((r, i) => (
+                                                <span key={i} className="inline-flex items-center px-2.5 py-1 rounded-full bg-indigo-50 border border-indigo-200 font-mono text-indigo-800">
+                                                    {r}
+                                                </span>
+                                            ))
+                                        )}
+                                    </div>
+
                                     {(b.on_message || b.on_job) && (
                                         <div className="flex flex-wrap gap-3 text-xs text-gray-600">
                                             {b.on_message && (
@@ -1689,6 +1716,44 @@ const AIBundleDashboard: React.FC = () => {
                                                                 <td className="px-3 py-2 font-mono text-gray-500">{ep.enabled_path || '—'}</td>
                                                             </tr>
                                                         ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {widgets.length > 0 && (
+                                        <div>
+                                            <div className="text-sm font-semibold text-gray-800 mb-2">
+                                                Widgets
+                                                <span className="ml-2 text-xs font-normal text-gray-500">({widgets.length})</span>
+                                            </div>
+                                            <div className="overflow-x-auto rounded-xl border border-gray-200">
+                                                <table className="w-full text-xs">
+                                                    <thead className="bg-gray-50 border-b border-gray-200">
+                                                        <tr className="text-gray-600">
+                                                            <th className="px-3 py-2 text-left font-semibold">Alias</th>
+                                                            <th className="px-3 py-2 text-left font-semibold">Icon</th>
+                                                            <th className="px-3 py-2 text-left font-semibold">User types</th>
+                                                            <th className="px-3 py-2 text-left font-semibold">Roles</th>
+                                                            <th className="px-3 py-2 text-left font-semibold">Enabled path</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-gray-100">
+                                                        {widgets.map((w, i) => {
+                                                            const iconLabel = w.icon
+                                                                ? Object.entries(w.icon).map(([k, v]) => `${k}:${v}`).join(', ')
+                                                                : '';
+                                                            return (
+                                                                <tr key={i} className="hover:bg-gray-50/70">
+                                                                    <td className="px-3 py-2 font-mono font-semibold text-gray-900">{w.alias}</td>
+                                                                    <td className="px-3 py-2 font-mono text-gray-500">{iconLabel || '—'}</td>
+                                                                    <td className="px-3 py-2 text-gray-600">{w.user_types?.join(', ') || '—'}</td>
+                                                                    <td className="px-3 py-2 text-gray-600">{w.roles?.join(', ') || '—'}</td>
+                                                                    <td className="px-3 py-2 font-mono text-gray-500">{w.enabled_path || '—'}</td>
+                                                                </tr>
+                                                            );
+                                                        })}
                                                     </tbody>
                                                 </table>
                                             </div>
@@ -1751,7 +1816,7 @@ const AIBundleDashboard: React.FC = () => {
                                                             <tr key={i} className="hover:bg-gray-50/70">
                                                                 <td className="px-3 py-2 font-mono font-semibold text-gray-900">{job.alias || '—'}</td>
                                                                 <td className="px-3 py-2 font-mono text-gray-700">{job.method_name}</td>
-                                                                <td className="px-3 py-2 font-mono text-gray-700">{job.cron_expression || '—'}</td>
+                                                                <td className="px-3 py-2 font-mono text-gray-700 whitespace-nowrap">{job.cron_expression || '—'}</td>
                                                                 <td className="px-3 py-2 font-mono text-gray-500">{job.expr_config || '—'}</td>
                                                                 <td className="px-3 py-2 text-gray-600">{job.timezone || '—'}</td>
                                                                 <td className="px-3 py-2 font-mono text-gray-500">{job.tz_config || '—'}</td>
