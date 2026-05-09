@@ -250,10 +250,12 @@ Exec tools produce:
 - A **text report** at `tc:<turn_id>.<tool_call_id>.result` describing runtime error (if any),
   file‑level errors, and the list of produced files.
 - Per‑file blocks **only for produced artifacts** (meta + optional binary/text).
-- For **text files**, exec embeds a bounded text preview in the content block.
+- For **text files**, exec emits a bounded `text_preview` in the artifact payload
+  and a text artifact block rendered from that preview.
   The cap is `ai.react.exec_text_preview_max_symbols` /
   `AI_REACT_EXEC_TEXT_PREVIEW_MAX_SYMBOLS` and is measured in text characters.
-  Larger files are truncated with a `...[truncated]` suffix.
+  Larger files are marked with `[TEXT FILE PREVIEW TRUNCATED]`; the full file
+  remains available by its `fi:` path.
 - Each contracted output may optionally declare `visibility=external|internal`.
   - `external` is the default and is user-shareable.
   - `internal` remains agent-visible in timeline/OUT_DIR but is not hosted or sent to the user.
@@ -277,7 +279,7 @@ The model does **not** see raw blocks; it sees the rendered message content:
 **Text file (exec output)**
 ```
 <text: meta JSON including tool_call_id, size_bytes, etc.>
-<text: file contents up to exec_text_preview_max_symbols, then "...[truncated]" if longer>
+<text: [TEXT FILE PREVIEW] with line window, size metadata, and bounded file excerpt>
 ```
 
 **Important:** Exec tools do **not** emit `tool_call_error` or `tool_result_error` notices.

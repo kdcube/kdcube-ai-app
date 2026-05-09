@@ -1055,7 +1055,7 @@ async def run_exec_tool(
             })
             continue
         text_content = ""
-        text_visible_preview = ""
+        text_preview = ""
         text_truncated = False
         text_symbols = None
         line_count = None
@@ -1102,13 +1102,13 @@ async def run_exec_tool(
                     header.append(f"visible_text_symbols: {len(text_content)}")
                     header.append(f"preview_cap_text_symbols: {preview_max_symbols}")
                     header.append("line_numbers: true")
-                    text_visible_preview = "\n".join(header + ["", numbered]).strip()
+                    text_preview = "\n".join(header + ["", numbered]).strip()
                 if text_truncated:
-                    if text_visible_preview:
-                        text_visible_preview = (text_visible_preview.rstrip() + "\n\n[TEXT FILE PREVIEW TRUNCATED]").strip()
+                    if text_preview:
+                        text_preview = (text_preview.rstrip() + "\n\n[TEXT FILE PREVIEW TRUNCATED]").strip()
             except Exception:
                 text_content = ""
-                text_visible_preview = ""
+                text_preview = ""
                 text_symbols = None
                 line_count = None
         out_dyn[a["name"]] = {
@@ -1116,7 +1116,7 @@ async def run_exec_tool(
             "path": rel,
             "filename": pathlib.Path(rel).name,
             "mime": a["mime"],
-            "text_visible_preview": text_visible_preview if is_text else "",
+            "text_preview": text_preview if is_text else "",
             "description": a["description"],
             "visibility": a.get("visibility") or "external",
             "size_bytes": stats.get("size_bytes") if isinstance(stats, dict) else None,
