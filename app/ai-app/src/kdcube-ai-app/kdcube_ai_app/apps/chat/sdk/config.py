@@ -773,6 +773,30 @@ class Settings(PLATFORM_CONFIG):
     def model_post_init(self, __context) -> None:
         descriptors_dir = str(getattr(self, "PLATFORM_DESCRIPTORS_DIR", None) or os.getenv("PLATFORM_DESCRIPTORS_DIR") or "").strip()
         descriptors_root = Path(descriptors_dir).expanduser() if descriptors_dir else None
+        if descriptors_root is None:
+            for env_name in (
+                "ASSEMBLY_YAML_DESCRIPTOR_PATH",
+                "BUNDLES_YAML_DESCRIPTOR_PATH",
+                "GLOBAL_SECRETS_YAML",
+                "BUNDLE_SECRETS_YAML",
+            ):
+                raw = str(os.getenv(env_name) or "").strip()
+                if not raw:
+                    continue
+                if raw.startswith("file://"):
+                    try:
+                        from urllib.parse import unquote, urlparse
+
+                        raw = unquote(urlparse(raw).path)
+                    except Exception:
+                        pass
+                if raw.startswith("{") or raw.startswith("["):
+                    continue
+                candidate = Path(raw).expanduser()
+                if candidate.name:
+                    descriptors_root = candidate.parent
+                    self.PLATFORM_DESCRIPTORS_DIR = str(descriptors_root)
+                    break
 
         def _descriptor_file_uri(filename: str) -> str | None:
             if descriptors_root is None:

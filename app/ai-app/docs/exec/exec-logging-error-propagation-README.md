@@ -123,6 +123,24 @@ Diagnostics always slice logs by the most recent execution banner:
 The banner is written only when `EXECUTION_SANDBOX` is set (e.g., `docker` or
 `fargate`) and `EXECUTION_ID` is present.
 
+### Descriptor payload diagnostics
+
+Descriptor materialization is supervisor-side bootstrap work. When diagnosing a
+tool failure that says a descriptor-backed secret or config value is missing,
+look in runtime/infra logs for the current `exec_id`:
+
+- Docker/Fargate launch should include masked `KDCUBE_RUNTIME_*_YAML_B64`
+  payload env entries for assembly, bundles, gateway, global secrets, and
+  bundle secrets.
+- `supervisor.log` / `infra.log` should show descriptor materialization before
+  tool bootstrap.
+- Generated-code `user.log` should not contain descriptor payloads, descriptor
+  paths, or provider secret values. Absence there is expected.
+
+If a supervisor-side tool such as web search reports `BRAVE_API_KEY not set`,
+that is a config propagation or secrets-provider resolution issue in the
+supervisor, not something generated code should repair by reading raw env.
+
 ### Infra log merging
 Infra logs are merged into `infra.log` by the library helper:
 ```

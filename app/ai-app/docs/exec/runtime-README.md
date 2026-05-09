@@ -11,10 +11,19 @@ see_also:
 ---
 # **Isolated Code Execution Architecture (Docker + External Modes)**
 
+## Doc map and terminology
+
+- [README-iso-runtime.md](README-iso-runtime.md) is the main supervisor/executor isolation guide.
+- This file is the detailed architecture reference.
+- [distributed-exec-README.md](distributed-exec-README.md) covers Fargate transport, snapshots, and exec launch payloads.
+- [operations.md](operations.md) covers deployment checks and troubleshooting.
+
 Important distinction used throughout this document:
 
 - **bundle code root** = bundle-local Python/code files, for example a path like `tools/react_tools.py` under the bundle root
 - **bundle readonly data** = prepared local bundle data such as built knowledge indexes, cloned docs repos, and other per-bundle cached assets
+- **descriptor payloads** = base64-encoded `assembly.yaml`, `bundles.yaml`, `gateway.yaml`, `secrets.yaml`, and `bundles.secrets.yaml` shipped to the supervisor so it can materialize the same descriptor-backed settings/secrets view as proc.
+- **exec launch payload** = one execution's runtime globals, tool module list, contract, communicator spec, and snapshot metadata.
 
 These are transported separately in external exec.
 
@@ -57,6 +66,7 @@ entrypoint flow. The split filesystem tree is documented in
 │  │   -v /host/bundles/<bundle_id>:/bundles/<bundle_id>:ro        │    │
 │  │   -v /host/bundle-storage/...:/bundle-storage/...:ro          │    │
 │  │   -e RUNTIME_GLOBALS_JSON='{"PORTABLE_SPEC_JSON":{...},...}'  │    │
+│  │   -e KDCUBE_RUNTIME_*_YAML_B64='<descriptor payloads>'         │    │
 │  │   py-code-exec:latest                                         │    │
 │  └───────────────────────────────────┬─────────────────────────────┘    │
 │                                      │                                  │
@@ -92,7 +102,8 @@ entrypoint flow. The split filesystem tree is documented in
 │  │ - Port 0 (no listen) │  Socket  │   │ sandbox launcher:        │  │  │
 │  │ - UID 0 (root)       │          │   │  1. unshare network      │  │  │
 │  │ - Full network       │          │   │  2. clear groups         │  │  │
-│  │ - Has secrets        │          │   │  3. setgid(1000)         │  │  │
+│  │ - Settings/secrets   │          │   │  3. setgid(1000)         │  │  │
+│  │   provider access    │          │   │                          │  │  │
 │  │ - Runtime storage    │          │   │  4. setuid(1001)         │  │  │
 │  │ - ModelService       │          │   │ Result:                  │  │  │
 │  │ - KB client          │          │   │ - UID 1001 (unprivileged)│  │  │
@@ -214,7 +225,7 @@ entrypoint flow. The split filesystem tree is documented in
 │  ┌───────────────────────────────────────────────────────────────┐    │
 │  │ Docker runtime → Supervisor + Executor                         │    │
 │  │                                                                │    │
-│  │  Supervisor (root, network, secrets):                         │    │
+│  │  Supervisor (root, network, settings/secrets provider):        │    │
 │  │  • Executes privileged tools                                  │    │
 │  │  • Has ModelService, KB, Redis                                │    │
 │  │  • Full network access                                        │    │

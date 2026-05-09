@@ -85,7 +85,8 @@ Important distinction:
 │                                                                              │
 │  IAM task role = proc_task_role  (same permissions as chat-proc)             │
 │    • S3: GetObject / PutObject / DeleteObject on kdcube-storage bucket       │
-│    • Secrets Manager: GetSecretValue on kdcube/services/*                    │
+│    • Secrets Manager: GetSecretValue on exec payload secret path and any      │
+│      configured provider-secret paths needed by supervisor tools             │
 │    • SSM: GetParameter on kdcube/config/*                                    │
 │    • CloudWatch Logs: CreateLogStream / PutLogEvents                         │
 │    • ECS: NOT required (no self-management)                                  │
@@ -95,8 +96,8 @@ Important distinction:
 │    (workdir, outdir, bundles are ephemeral local FS restored from S3)       │
 │                                                                              │
 │  Environment (injected at run-task time via containerOverrides):            │
-│    RUNTIME_GLOBALS_JSON   — full runtime_globals from caller                 │
-│    RUNTIME_TOOL_MODULES   — JSON list of tool module names                   │
+│    KDCUBE_EXEC_PAYLOAD_SECRET_ID — AWS Secrets Manager secret name holding   │
+│      the exec launch payload                                                │
 │    EXECUTION_ID           — unique per call                                  │
 │    KDCUBE_RUNTIME_*_YAML_B64 — descriptor payload exports for supervisor     │
 │    WORKDIR=/workspace/work                                                   │
@@ -105,7 +106,8 @@ Important distinction:
 │    LOG_FILE_PREFIX=executor                                                  │
 │    EXECUTION_SANDBOX=fargate                                                 │
 │    EXEC_BUNDLE_ROOT=/workspace/bundles/{bundle_dir}                          │
-│    REDIS_URL, POSTGRES_HOST, POSTGRES_PASSWORD, ...  (same as proc)         │
+│    service connection env required by supervisor runtime, plus descriptor     │
+│    payloads for settings/secrets provider resolution                         │
 │                                                                              │
 │  Networking: private subnets, ecs-tasks SG (same SG as proc)                │
 │  No load balancer — ephemeral run-task only, never a service                │
@@ -216,10 +218,15 @@ For Docker/local debugging, use `file://` storage roots in the assembly descript
 ```
 ECS FARGATE EXEC TASK
 │
-│  ENV: RUNTIME_GLOBALS_JSON, RUNTIME_TOOL_MODULES, WORKDIR, OUTPUT_DIR, ...
+│  ENV: KDCUBE_EXEC_PAYLOAD_SECRET_ID, WORKDIR, OUTPUT_DIR, ...
 │
 │  startup
-│  ├── _load_runtime_globals()           parse RUNTIME_GLOBALS_JSON
+│  ├── _hydrate_runtime_payload_from_secret()
+│  │     → get_exec_payload_secret(secret_id)
+│  │     → AWS Secrets Manager GetSecretValue(SecretId=secret_id)
+│  │     → parse SecretString JSON and restore RUNTIME_GLOBALS_JSON,
+│  │       RUNTIME_TOOL_MODULES, and packaged supervisor env into os.environ
+│  ├── _load_runtime_globals()           parse restored RUNTIME_GLOBALS_JSON
 │  ├── _materialize_runtime_descriptor_payloads()
 │  │     → write root-only descriptor files under
 │  │       /tmp/kdcube-runtime-descriptors/{exec_id}
@@ -475,6 +482,63 @@ All gaps are closed. Summary of changes made:
 
 ---
 
+## Descriptor payloads vs exec launch payload
+
+Fargate uses the same supervisor/executor contract as Docker, but the transport
+is remote. There are two different payload families:
+
+1. **Descriptor payloads** carry platform and bundle configuration:
+   - `KDCUBE_RUNTIME_ASSEMBLY_YAML_B64`
+   - `KDCUBE_RUNTIME_BUNDLES_YAML_B64`
+   - `KDCUBE_RUNTIME_GATEWAY_YAML_B64`
+   - `KDCUBE_RUNTIME_SECRETS_YAML_B64`
+   - `KDCUBE_RUNTIME_BUNDLES_SECRETS_YAML_B64`
+
+   The task entrypoint materializes these files under
+   `/tmp/kdcube-runtime-descriptors/<exec_id>/`, sets the normal descriptor path
+   env vars, clears settings cache, and then supervisor-side tools use the same
+   `get_settings()`, `get_plain()`, and `get_secret()` APIs as the host.
+
+2. **Exec launch payload** carries one execution's runtime globals, tool module
+   list, contract, communicator spec, and snapshot metadata. The current
+   Fargate path stores this JSON object in AWS Secrets Manager before
+   `ecs.run_task(...)` and passes only `KDCUBE_EXEC_PAYLOAD_SECRET_ID` in the
+   task env.
+
+Concretely, proc calls `put_exec_payload_secret(...)`, which writes a
+Secrets Manager secret named like:
+
+```text
+<SECRETS_SM_PREFIX or kdcube>/runtime/exec-payloads/<exec_id>
+```
+
+The secret `SecretString` is JSON with:
+
+```json
+{
+  "runtime_globals": {...},
+  "tool_module_names": ["..."],
+  "env": {"KEY": "VALUE"}
+}
+```
+
+The Fargate entrypoint calls `_hydrate_runtime_payload_from_secret()`, which
+calls `get_exec_payload_secret(secret_id=...)`. That helper uses boto3
+Secrets Manager `GetSecretValue(SecretId=secret_id)`, parses `SecretString`,
+and restores `RUNTIME_GLOBALS_JSON`, `RUNTIME_TOOL_MODULES`, and the packaged
+supervisor env into `os.environ` before descriptor materialization and tool
+bootstrap. After the task completes, proc calls `delete_exec_payload_secret(...)`
+with `ForceDeleteWithoutRecovery=True`.
+
+`KDCUBE_EXEC_PAYLOAD_SECRET_ID` is therefore an AWS Secrets Manager secret name
+for temporary exec launch state. It is not the provider secret mechanism for
+API keys. Provider secrets should be resolved through the descriptor-backed
+secrets provider on the supervisor side. Generated code receives only the
+filtered executor env and does not inherit descriptor payloads or descriptor
+path env vars.
+
+---
+
 ## Env vars the exec task receives (full list)
 
 Injected via `containerOverrides.environment` at `run_task` call time:
@@ -487,13 +551,14 @@ Injected via `containerOverrides.environment` at `run_task` call time:
 | `LOG_FILE_PREFIX` | fargate.py | `executor` |
 | `EXECUTION_ID` | fargate.py | Unique run ID |
 | `EXECUTION_SANDBOX` | fargate.py | `fargate` |
-| `RUNTIME_GLOBALS_JSON` | fargate.py | All runtime context (see below) |
-| `RUNTIME_TOOL_MODULES` | fargate.py | JSON list of tool module names |
+| `KDCUBE_EXEC_PAYLOAD_SECRET_ID` | fargate.py | AWS Secrets Manager secret name for the temporary exec launch payload |
+| `RUNTIME_GLOBALS_JSON` | entrypoint after hydration | Restored from the exec payload secret before supervisor bootstrap |
+| `RUNTIME_TOOL_MODULES` | entrypoint after hydration | Restored from the exec payload secret before supervisor bootstrap |
 | `EXEC_BUNDLE_ROOT` | fargate.py | `/workspace/bundles/{bundle_dir}` |
 | `REDIS_URL` | fargate.py (from base_env) | Redis connection string |
 | `REDIS_CLIENT_NAME` | fargate.py | `exec` |
 | `AWS_REGION` etc. | task def + fargate.py | AWS SDK config |
-| All proc secrets | task definition | Postgres, API keys, SM, etc. |
+| `KDCUBE_RUNTIME_*_YAML_B64` | fargate.py | Descriptor payloads for assembly, bundles, gateway, global secrets, and bundle secrets |
 
 These values are available to the remote task supervisor because approved tools
 need runtime services. The generated-code executor child receives a filtered
@@ -547,6 +612,30 @@ statement {
   resources = [
     var.execution_role_arn,
     var.proc_task_role_arn,   # exec task role = reuse proc task role
+  ]
+}
+
+# Proc writes the temporary exec launch payload before ecs:RunTask and deletes it
+# after the task finishes. The exec task reads the same secret once at startup.
+statement {
+  sid    = "FargateExecPayloadSecretWrite"
+  effect = "Allow"
+  actions = [
+    "secretsmanager:CreateSecret",
+    "secretsmanager:PutSecretValue",
+    "secretsmanager:DeleteSecret",
+  ]
+  resources = [
+    "arn:aws:secretsmanager:${region}:${account}:secret:${secrets_prefix}/runtime/exec-payloads/*",
+  ]
+}
+
+statement {
+  sid    = "FargateExecPayloadSecretRead"
+  effect = "Allow"
+  actions = ["secretsmanager:GetSecretValue"]
+  resources = [
+    "arn:aws:secretsmanager:${region}:${account}:secret:${secrets_prefix}/runtime/exec-payloads/*",
   ]
 }
 ```

@@ -172,6 +172,72 @@ def test_build_external_runtime_base_env_exports_descriptor_payloads_from_descri
     assert "BUNDLE_SECRETS_YAML" not in base_env
 
 
+def test_build_external_runtime_base_env_exports_root_services_secret_descriptor(monkeypatch, tmp_path):
+    descriptors_dir = tmp_path / "descriptors"
+    descriptors_dir.mkdir()
+    (descriptors_dir / "assembly.yaml").write_text("secrets:\n  provider: secrets-file\n", encoding="utf-8")
+    (descriptors_dir / "secrets.yaml").write_text(
+        "services:\n"
+        "  brave:\n"
+        "    api_key: brave-secret\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("GATEWAY_COMPONENT", "proc")
+    monkeypatch.setenv("PLATFORM_DESCRIPTORS_DIR", str(descriptors_dir))
+    sdk_config.get_settings.cache_clear()
+    settings = sdk_config.Settings()
+
+    base_env = build_external_runtime_base_env(
+        {
+            "GATEWAY_COMPONENT": "proc",
+            "PLATFORM_DESCRIPTORS_DIR": str(descriptors_dir),
+        },
+        settings=settings,
+    )
+
+    assert base_env["SECRETS_PROVIDER"] == "secrets-file"
+    assert base64.b64decode(base_env["KDCUBE_RUNTIME_SECRETS_YAML_B64"]).decode("utf-8") == (
+        "services:\n"
+        "  brave:\n"
+        "    api_key: brave-secret\n"
+    )
+    assert "BRAVE_API_KEY" not in base_env
+
+
+def test_build_external_runtime_base_env_keeps_managed_descriptors_when_host_env_is_empty(monkeypatch, tmp_path):
+    descriptors_dir = tmp_path / "descriptors"
+    descriptors_dir.mkdir()
+    (descriptors_dir / "assembly.yaml").write_text("secrets:\n  provider: secrets-file\n", encoding="utf-8")
+    (descriptors_dir / "bundles.yaml").write_text("bundles:\n  demo: {}\n", encoding="utf-8")
+    (descriptors_dir / "gateway.yaml").write_text("gateway:\n  limit: 1\n", encoding="utf-8")
+    (descriptors_dir / "secrets.yaml").write_text(
+        "secrets:\n  services:\n    brave:\n      api_key: brave-secret\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(sdk_config, "get_secrets_manager", lambda _settings: _NoopSecretsManager())
+    monkeypatch.setenv("PLATFORM_DESCRIPTORS_DIR", str(descriptors_dir))
+    monkeypatch.delenv("GLOBAL_SECRETS_YAML", raising=False)
+    monkeypatch.delenv("BUNDLE_SECRETS_YAML", raising=False)
+    sdk_config.get_settings.cache_clear()
+    settings = sdk_config.Settings()
+
+    base_env = build_external_runtime_base_env(
+        {
+            "PLATFORM_DESCRIPTORS_DIR": "",
+            "GLOBAL_SECRETS_YAML": "",
+            "BUNDLE_SECRETS_YAML": "",
+        },
+        settings=settings,
+    )
+
+    assert base_env["SECRETS_PROVIDER"] == "secrets-file"
+    assert base64.b64decode(base_env["KDCUBE_RUNTIME_SECRETS_YAML_B64"]).decode("utf-8") == (
+        "secrets:\n  services:\n    brave:\n      api_key: brave-secret\n"
+    )
+
+
 def test_build_external_runtime_base_env_uses_managed_settings_when_proc_env_is_minimal(monkeypatch, tmp_path):
     descriptors_dir = tmp_path / "descriptors"
     descriptors_dir.mkdir()

@@ -351,7 +351,7 @@ def _merge_host_and_managed_env(
     except Exception:
         pass
     for key, value in (host_env or {}).items():
-        if value is None:
+        if _normalize_env_value(value) is None:
             continue
         merged[str(key)] = value
     return merged
