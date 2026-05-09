@@ -994,7 +994,10 @@ async def handle_external_tool(*,
                 add_block(ctx_browser, bin_block)
         visible_text = ""
         if isinstance(value, dict):
-            preview_text = value.get("text_visible_preview")
+            preview_text = value.get("text_preview")
+            if not (isinstance(preview_text, str) and preview_text.strip()):
+                # Backward compatibility for artifacts produced before the field was shortened.
+                preview_text = value.get("text_visible_preview")
             visible_text = preview_text if isinstance(preview_text, str) and preview_text.strip() else value.get("text")
         if isinstance(value, dict) and isinstance(visible_text, str) and visible_text.strip():
             mime_out = (value.get("mime") or "").strip() or "text/plain"
