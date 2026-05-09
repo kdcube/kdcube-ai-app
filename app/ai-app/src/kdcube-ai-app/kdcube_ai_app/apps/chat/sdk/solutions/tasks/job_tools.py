@@ -171,7 +171,8 @@ class JobTaskTools:
         name="update_execution_journal",
         description=(
             "Update the current execution journal with substantial progress or final outcome. Use when status, "
-            "user-facing summary, durable logs, structured result, or produced artifacts must not be lost."
+            "user-facing summary, durable logs, structured result, or produced artifacts must not be lost. "
+            "Call this as a direct ReAct tool call; do not call it from inside exec_tools.execute_code_python code."
         ),
     )
     async def update_execution_journal(

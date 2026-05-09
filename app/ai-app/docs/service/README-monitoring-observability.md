@@ -34,7 +34,8 @@ It reflects the actual behavior in code (SSE/Socket.IO are gated; REST is sessio
 - **Proc runtime metadata in raw heartbeats**: queue/config loop lag, recent Redis errors, and proc watchdog state (idle/hard-cap config plus active-task ages) are attached to proc process heartbeats
 - **Active task activity**: processor task idle age is refreshed by normal chat
   communicator emissions and by explicit SDK internal activity touches for
-  long-running subprocesses that may not emit user-facing events
+  long-running subprocesses or isolated exec runtimes that may not emit
+  user-facing events
 
 ```mermaid
 graph TD

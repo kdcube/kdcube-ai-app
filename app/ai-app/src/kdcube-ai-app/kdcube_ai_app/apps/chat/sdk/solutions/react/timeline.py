@@ -1419,7 +1419,7 @@ class Timeline:
             out_path = pathlib.Path(outdir) / TIMELINE_FILENAME
             payload = build_timeline_payload(
                 blocks=self._blocks_for_persist(),
-                sources_pool=_compact_sources_pool_for_index(self.sources_pool or []),
+                sources_pool=list(self.sources_pool or []),
                 conversation_title=self.conversation_title,
                 conversation_started_at=self.conversation_started_at,
                 last_external_event_id=self.last_external_event_id,
@@ -2283,6 +2283,10 @@ class Timeline:
         tool_id: str,
     ) -> str:
         text = raw_text if isinstance(raw_text, str) else str(raw_text or "")
+        if (tool_id or "").strip() == "react.read":
+            return text
+        if (path or "").strip().startswith("so:sources_pool["):
+            return text
         cap = self._tool_result_preview_max_text_symbols()
         if len(text) <= cap:
             return text
@@ -3961,6 +3965,9 @@ class Timeline:
         max_tokens: int,
         keep_recent_turns: int = 6,
         force: bool = False,
+        trigger_reason: Optional[str] = None,
+        trigger_tokens_estimate: Optional[int] = None,
+        trigger_visible_block_count: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         if not blocks:
             return []
@@ -3977,9 +3984,19 @@ class Timeline:
             latest_current_plan_snapshot = None
             latest_plan_snapshot_by_id = None
         sys_est = max(1, int(len(system_text or "") / 4))
-        block_est = self._estimate_blocks_tokens(blocks)
-        total_est = sys_est + block_est
-        before_visible_tokens = self._estimate_blocks_tokens(self._slice_after_compaction_summary(blocks))
+        threshold_tokens = int(max_tokens * 0.9)
+        visible_estimate_blocks = self._slice_after_compaction_summary(blocks)
+        before_visible_tokens = self._estimate_blocks_tokens(visible_estimate_blocks)
+        before_visible_blocks = len(visible_estimate_blocks)
+        fallback_trigger_estimate = sys_est + before_visible_tokens
+        try:
+            total_est = int(trigger_tokens_estimate) if trigger_tokens_estimate is not None else fallback_trigger_estimate
+        except Exception:
+            total_est = fallback_trigger_estimate
+        try:
+            trigger_block_count = int(trigger_visible_block_count) if trigger_visible_block_count is not None else before_visible_blocks
+        except Exception:
+            trigger_block_count = before_visible_blocks
 
         async def _emit_before_compaction(payload: Dict[str, Any]) -> None:
             if not self.runtime.on_before_compaction:
@@ -4003,7 +4020,7 @@ class Timeline:
                 force,
                 total_est,
                 max_tokens,
-                int(max_tokens * 0.9),
+                threshold_tokens,
                 len(blocks),
             )
             return blocks
@@ -4142,10 +4159,13 @@ class Timeline:
             "status": "started",
             "kind": compaction_kind,
             "force": bool(force),
+            "trigger_reason": (trigger_reason or ("forced" if force else "token_budget")),
             "blocks": len(blocks),
             "before_tokens": before_visible_tokens,
             "input_tokens_estimate": total_est,
             "max_tokens": max_tokens,
+            "threshold_tokens": threshold_tokens,
+            "trigger_visible_blocks": trigger_block_count,
             "boundary_start": boundary_start,
             "cut_index": cut_index,
             "turn_start_index": turn_start_index,
@@ -4245,7 +4265,8 @@ class Timeline:
 
         if split_current_turn and not history_blocks:
             self.blocks = list(blocks)
-            if int(current_turn_compaction.get("blocks_hidden") or 0) > 0:
+            blocks_hidden = int(current_turn_compaction.get("blocks_hidden") or 0)
+            if blocks_hidden > 0:
                 self.update_timestamp()
             logger.info(
                 "[context.compaction:current_turn_only] split_turn_id=%s current_blocks_preserved=true blocks_hidden=%s tokens_hidden=%s",
@@ -4254,16 +4275,29 @@ class Timeline:
                 current_turn_compaction.get("tokens_hidden"),
             )
             after_visible_tokens = self._estimate_blocks_tokens(self._slice_after_compaction_summary(blocks))
+            after_visible_blocks = len(self._slice_after_compaction_summary(blocks))
             tokens_hidden = int(current_turn_compaction.get("tokens_hidden") or 0)
+            reduced_tokens = tokens_hidden or max(0, before_visible_tokens - after_visible_tokens)
+            reduced_visible_blocks = max(0, before_visible_blocks - after_visible_blocks)
+            current_turn_compacted = bool(reduced_tokens > 0)
             await _emit_after_compaction({
                 "compaction_id": compaction_id,
-                "status": "completed",
+                "status": "completed" if current_turn_compacted else "skipped",
                 "kind": compaction_kind,
                 "force": bool(force),
+                "trigger_reason": (trigger_reason or ("forced" if force else "token_budget")),
                 "before_tokens": before_visible_tokens,
                 "after_tokens": after_visible_tokens,
-                "compacted_tokens": tokens_hidden or max(0, before_visible_tokens - after_visible_tokens),
-                "blocks_hidden": int(current_turn_compaction.get("blocks_hidden") or 0),
+                "compacted_tokens": reduced_tokens,
+                "input_tokens_estimate": total_est,
+                "max_tokens": max_tokens,
+                "threshold_tokens": threshold_tokens,
+                "trigger_visible_blocks": trigger_block_count,
+                "before_visible_blocks": before_visible_blocks,
+                "after_visible_blocks": after_visible_blocks,
+                "compacted_visible_blocks": reduced_visible_blocks,
+                **({"reason": "no_visible_token_reduction"} if not current_turn_compacted else {}),
+                "blocks_hidden": blocks_hidden,
                 "tokens_hidden": tokens_hidden,
                 "split_turn": True,
                 "split_turn_id": split_turn_id,
@@ -4336,10 +4370,13 @@ class Timeline:
                         "status": "skipped",
                         "kind": compaction_kind,
                         "force": bool(force),
-                        "before_tokens": before_visible_tokens,
-                        "after_tokens": before_visible_tokens,
-                        "compacted_tokens": 0,
-                        "reason": "empty_turn_prefix_summary_no_safe_history_cut",
+                "before_tokens": before_visible_tokens,
+                "after_tokens": before_visible_tokens,
+                "compacted_tokens": 0,
+                "input_tokens_estimate": total_est,
+                "max_tokens": max_tokens,
+                "threshold_tokens": threshold_tokens,
+                "reason": "empty_turn_prefix_summary_no_safe_history_cut",
                         "split_turn": bool(is_split_turn),
                         "split_turn_id": split_turn_id,
                         "current_turn": bool(split_current_turn),
@@ -4361,9 +4398,13 @@ class Timeline:
                 "status": "skipped",
                 "kind": compaction_kind,
                 "force": bool(force),
+                "trigger_reason": (trigger_reason or ("forced" if force else "token_budget")),
                 "before_tokens": before_visible_tokens,
                 "after_tokens": before_visible_tokens,
                 "compacted_tokens": 0,
+                "input_tokens_estimate": total_est,
+                "max_tokens": max_tokens,
+                "threshold_tokens": threshold_tokens,
                 "reason": "empty_history_summary",
                 "history_blocks": len(history_blocks),
                 "split_turn": bool(is_split_turn),
@@ -4513,6 +4554,56 @@ class Timeline:
                     ),
                 )
                 inserted_blocks += 1
+        after_visible_tokens = self._estimate_blocks_tokens(self._slice_after_compaction_summary(updated_blocks))
+        after_visible_blocks = len(self._slice_after_compaction_summary(updated_blocks))
+        compacted_tokens = max(0, before_visible_tokens - after_visible_tokens)
+        compacted_visible_blocks = max(0, before_visible_blocks - after_visible_blocks)
+        if compacted_tokens <= 0:
+            logger.info(
+                "[context.compaction:no_effect] reason=no_visible_token_reduction compacted_blocks=%s inserted_blocks=%s "
+                "before_tokens=%s after_tokens=%s before_visible_blocks=%s after_visible_blocks=%s "
+                "force=%s split_turn=%s split_turn_id=%s",
+                len(compacted_blocks),
+                inserted_blocks,
+                before_visible_tokens,
+                after_visible_tokens,
+                before_visible_blocks,
+                after_visible_blocks,
+                force,
+                bool(is_split_turn),
+                split_turn_id,
+            )
+            await _emit_after_compaction({
+                "compaction_id": compaction_id,
+                "status": "skipped",
+                "kind": compaction_kind,
+                "force": bool(force),
+                "before_tokens": before_visible_tokens,
+                "after_tokens": after_visible_tokens,
+                "compacted_tokens": 0,
+                "input_tokens_estimate": total_est,
+                "max_tokens": max_tokens,
+                "threshold_tokens": threshold_tokens,
+                "trigger_visible_blocks": trigger_block_count,
+                "before_visible_blocks": before_visible_blocks,
+                "after_visible_blocks": after_visible_blocks,
+                "compacted_visible_blocks": compacted_visible_blocks,
+                "reason": "no_visible_token_reduction",
+                "compacted_blocks": len(compacted_blocks),
+                "inserted_blocks": inserted_blocks,
+                "covered_turns": len(covered_turn_ids),
+                "covered_turn_ids": covered_turn_ids,
+                "split_turn": bool(is_split_turn),
+                "split_turn_id": split_turn_id,
+                "current_turn": bool(split_current_turn),
+                "summary_chars": len(summary or ""),
+                "before_blocks": len(blocks),
+                "after_blocks": len(updated_blocks),
+                "compacted_range_start_ts": compacted_range_start_ts,
+                "compacted_range_end_ts": compacted_range_end_ts,
+                "conversation_first_message_ts": conversation_first_message_ts,
+            })
+            return blocks
         self.blocks = list(updated_blocks)
         self.update_timestamp()
         if self.current_turn_offset is not None and cut_index <= self.current_turn_offset:
@@ -4545,15 +4636,22 @@ class Timeline:
             len(blocks),
             len(updated_blocks),
         )
-        after_visible_tokens = self._estimate_blocks_tokens(self._slice_after_compaction_summary(updated_blocks))
         await _emit_after_compaction({
             "compaction_id": compaction_id,
             "status": "completed",
             "kind": compaction_kind,
             "force": bool(force),
+            "trigger_reason": (trigger_reason or ("forced" if force else "token_budget")),
             "before_tokens": before_visible_tokens,
             "after_tokens": after_visible_tokens,
-            "compacted_tokens": max(0, before_visible_tokens - after_visible_tokens),
+            "compacted_tokens": compacted_tokens,
+            "input_tokens_estimate": total_est,
+            "max_tokens": max_tokens,
+            "threshold_tokens": threshold_tokens,
+            "trigger_visible_blocks": trigger_block_count,
+            "before_visible_blocks": before_visible_blocks,
+            "after_visible_blocks": after_visible_blocks,
+            "compacted_visible_blocks": compacted_visible_blocks,
             "compacted_blocks": len(compacted_blocks),
             "inserted_blocks": inserted_blocks,
             "covered_turns": len(covered_turn_ids),
@@ -4625,6 +4723,7 @@ class Timeline:
         blocks = self._collect_blocks()
         if self.runtime.max_tokens:
             render_forces_sanitize = bool(force_sanitize)
+            sanitize_trigger_reasons: List[str] = ["forced"] if force_sanitize else []
             try:
                 visible_probe = self._slice_after_compaction_summary(blocks)
                 visible_probe = self._apply_hidden_replacements(visible_probe)
@@ -4634,19 +4733,20 @@ class Timeline:
                     include_announce=include_announce,
                 )
                 msg_probe = self._blocks_to_message_blocks(visible_probe)
-                rendered_tokens = self._estimate_model_message_tokens(msg_probe)
+                sys_probe_tokens = max(1, int(len(system_text or "") / 4))
+                rendered_tokens = sys_probe_tokens + self._estimate_model_message_tokens(msg_probe)
                 rendered_limit = int((self.runtime.max_tokens or 0) * 0.9)
-                rendered_block_limit = 700
-                if rendered_tokens > rendered_limit or len(msg_probe) > rendered_block_limit:
+                if rendered_tokens > rendered_limit:
+                    sanitize_trigger_reasons.append("render_token_limit")
+                if sanitize_trigger_reasons:
                     render_forces_sanitize = True
                     try:
                         logging.getLogger("kdcube.react.cache").info(
                             "[compaction:render_probe] forcing sanitize rendered_tokens=%s limit=%s "
-                            "message_blocks=%s block_limit=%s",
+                            "message_blocks=%s",
                             rendered_tokens,
                             rendered_limit,
                             len(msg_probe),
-                            rendered_block_limit,
                         )
                     except Exception:
                         pass
@@ -4658,6 +4758,9 @@ class Timeline:
                 max_tokens=int(self.runtime.max_tokens or 28000),
                 keep_recent_turns=keep_recent_turns,
                 force=render_forces_sanitize,
+                trigger_reason=", ".join(dict.fromkeys(sanitize_trigger_reasons)) if render_forces_sanitize else None,
+                trigger_tokens_estimate=rendered_tokens,
+                trigger_visible_block_count=len(msg_probe),
             )
         visible_blocks = self._slice_after_compaction_summary(blocks)
         visible_blocks = self._restore_missing_turn_headers_for_render(visible_blocks)
@@ -5770,6 +5873,10 @@ class Timeline:
                             lines.append(f"logical_path: {path}")
                         if mime_val:
                             lines.append(f"mime: {mime_val}")
+                        items_stats = meta.get("items_stats") if isinstance(meta, dict) else None
+                        if isinstance(items_stats, dict) and items_stats:
+                            lines.append("items_stats:")
+                            lines.append(json.dumps(items_stats, ensure_ascii=False, indent=2))
                         lines.append("payload:")
                         lines.append(self._tool_result_payload_text_for_prompt(
                             raw_text=text,
@@ -5793,6 +5900,10 @@ class Timeline:
                             lines.append(f"logical_path: {path}")
                         if mime_val:
                             lines.append(f"mime: {mime_val}")
+                        items_stats = meta.get("items_stats") if isinstance(meta, dict) else None
+                        if isinstance(items_stats, dict) and items_stats:
+                            lines.append("items_stats:")
+                            lines.append(json.dumps(items_stats, ensure_ascii=False, indent=2))
                         lines.append("payload:")
                         lines.append(self._tool_result_payload_text_for_prompt(
                             raw_text=text,
@@ -5923,7 +6034,7 @@ class Timeline:
             return
         payload = build_timeline_payload(
             blocks=self._blocks_for_persist(),
-            sources_pool=_compact_sources_pool_for_index(self.sources_pool or []),
+            sources_pool=list(self.sources_pool or []),
             conversation_title=self.conversation_title,
             conversation_started_at=self.conversation_started_at,
             last_external_event_id=self.last_external_event_id,

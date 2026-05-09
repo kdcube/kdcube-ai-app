@@ -34,6 +34,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.workspace import (
     extract_code_file_paths,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.sources import (
+    build_sources_pool_items_stats,
     ensure_rendering_assets,
     merge_sources_pool_for_attachment_rows,
     merge_sources_pool_for_file_rows,
@@ -60,6 +61,62 @@ def _format_sources_pool_path(sids: List[int]) -> str:
     ranges.append((start, prev))
     parts = [str(a) if a == b else f"{a}-{b}" for a, b in ranges]
     return f"so:sources_pool[{', '.join(parts)}]"
+
+
+def _shape_of(value: Any, *, depth: int = 0, max_depth: int = 3) -> Any:
+    if depth >= max_depth:
+        if isinstance(value, str):
+            return f"str[{len(value)}]"
+        if isinstance(value, list):
+            return f"list[{len(value)}]"
+        if isinstance(value, dict):
+            return f"dict[{len(value)}]"
+        return type(value).__name__
+    if isinstance(value, dict):
+        out = {}
+        for key, child in list(value.items())[:12]:
+            out[str(key)] = _shape_of(child, depth=depth + 1, max_depth=max_depth)
+        if len(value) > 12:
+            out["..."] = f"+{len(value) - 12} keys"
+        return {"type": f"dict[{len(value)}]", "fields": out}
+    if isinstance(value, list):
+        out: Dict[str, Any] = {"type": f"list[{len(value)}]"}
+        if value:
+            out["sample"] = _shape_of(value[0], depth=depth + 1, max_depth=max_depth)
+        if len(value) > 1:
+            out["more_items"] = len(value) - 1
+        return out
+    if isinstance(value, str):
+        return f"str[{len(value)}]"
+    return type(value).__name__
+
+
+def _items_stats_for_output(output: Any) -> Dict[str, Any]:
+    data = output
+    if isinstance(data, dict) and "ret" in data:
+        data = data.get("ret")
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except Exception:
+            return {}
+    if not isinstance(data, list):
+        return {}
+    source_like = [
+        r for r in data
+        if isinstance(r, dict) and (r.get("sid") is not None or r.get("url") or r.get("content") is not None)
+    ]
+    if source_like and len(source_like) == len(data):
+        return build_sources_pool_items_stats(source_like)
+    dict_items = [r for r in data if isinstance(r, dict)]
+    keys = sorted({str(k) for row in dict_items[:50] for k in row.keys()}) if dict_items else []
+    return {
+        "kind": "items",
+        "items_count": len(data),
+        "item_type": type(data[0]).__name__ if data else "",
+        "item_keys": keys,
+        "sample_shape": _shape_of(data[0]) if data else None,
+    }
 
 
 def _extract_tool_source_rows(output: Any) -> List[Dict[str, Any]]:
@@ -873,6 +930,9 @@ async def handle_external_tool(*,
         raw_val = artifact_view.raw or {}
         raw_value = raw_val.get("value") if isinstance(raw_val.get("value"), dict) else {}
         meta_extra = {"tool_call_id": tool_call_id, "turn_id": turn_id, "visibility": visibility}
+        items_stats = _items_stats_for_output(output)
+        if items_stats:
+            meta_extra["items_stats"] = items_stats
         try:
             meta_text = meta_block.get("text") if isinstance(meta_block, dict) else None
             if isinstance(meta_text, str) and meta_text.strip():

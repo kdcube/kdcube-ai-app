@@ -294,6 +294,12 @@ Compaction summaries are model-generated. If the model returns an empty summary,
 the caller must treat that as a failed/empty compaction result and avoid replacing
 history with a mechanical fallback summary.
 
+Compaction is triggered by model-visible token pressure. If the candidate
+compacted projection does not reduce model-visible tokens, the runtime skips
+applying it and emits `chat.compaction` with `status=skipped` and
+`reason=no_visible_token_reduction`. This prevents a compaction pass from
+replacing clear history with a longer summary/checkpoint.
+
 ---
 
 ## What Exactly Gets Summarized

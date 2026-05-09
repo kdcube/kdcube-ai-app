@@ -25,15 +25,17 @@ The sources pool is a per‑conversation registry of canonical source rows colle
 
 The full pool is stored as a separate conversation‑level artifact `conv:sources_pool`.
 When a turn starts, the runtime loads that artifact and hydrates the in‑memory pool.
-For local turn access, a compact snapshot is written into `timeline.json` under `sources_pool`.
+For local turn and exec access, the full current pool is also written into `timeline.json`
+under `sources_pool`. The rendered timeline tail remains compact.
 
 The pool is rendered as a single “SOURCES POOL” tail block when timeline rendering includes sources.
 
-### Compact snapshot contents
+### Rendered compact view
 
-The snapshot stored in the timeline artifact / local `timeline.json` is lightweight and
-keeps only essential fields (e.g., `sid`, `title`, `url`, short `text`, and limited metadata like
-`published_time_iso` or `favicon`). The full source rows remain in `conv:sources_pool`.
+The visible “SOURCES POOL” tail block is lightweight and shows essential fields
+(e.g., `sid`, `title`, `url`, short `text`, and limited metadata like `published_time_iso`
+or `favicon`). The stored rows remain full so `react.read` and exec `fetch_ctx` can recover
+fetched `content`.
 
 ## Dedupe and SID behavior
 
@@ -82,10 +84,22 @@ Notes:
 ### In the model context
 - Load sources with `react.read(["so:sources_pool[1-5]"])` or a comma list
   like `react.read(["so:sources_pool[1,3,7]"])`.
+- `react.read` returns an `application/json` list of source rows, not a prose
+  rendering. It also records `items_stats` in the read status/result metadata so
+  the model can see row counts and content sizes.
+- Source rows are returned in full by default. If `max_text_symbols` is supplied
+  explicitly, only text-bearing fields such as `content`/`text` are capped; the
+  JSON remains valid and all rows remain present.
+- `so:sources_pool[...]` result blocks are exempt from the generic
+  `tool_result_preview_max_text_symbols` prompt cap.
+- For web rows, use `content` first when full fetched text is needed. `text` is
+  the search preview/snippet.
 
 ### In code (exec)
 - Use `context_tools.fetch_ctx("so:sources_pool[1,3]")`.
 - `fetch_ctx` returns the raw list of source rows (not a canonical artifact object).
+- For web rows, use `row.get("content") or row.get("text")` when you need source text.
+  `text` is the search preview; `content` is the fetched page body when available.
 - For files/attachments, read from `OUT_DIR / physical_path`.
 
 ## Citing sources

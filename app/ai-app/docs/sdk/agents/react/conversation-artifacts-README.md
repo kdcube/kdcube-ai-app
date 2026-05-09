@@ -32,7 +32,7 @@ Reference implementations:
 
 | Artifact kind                               | Stored blob     | Indexed | Tags (base)                                                                 | When stored                                   | Embedding                        | Description |
 |---------------------------------------------|-----------------|---------|------------------------------------------------------------------------------|------------------------------------------------|----------------------------------|-------------|
-| `conv.timeline.v1`                          | Yes             | Yes     | `artifact:conv.timeline.v1`, `turn:<turn_id>`                               | End of turn (persist timeline).               | Yes (compact summary text)       | Timeline payload with blocks + metadata + **compact** sources_pool snapshot. |
+| `conv.timeline.v1`                          | Yes             | Yes     | `artifact:conv.timeline.v1`, `turn:<turn_id>`                               | End of turn (persist timeline).               | Yes (compact summary text)       | Timeline payload with blocks + metadata + current full `sources_pool` for local/exec recovery. |
 | `conv:sources_pool`                         | Yes             | Yes     | `artifact:conv:sources_pool`, `turn:<turn_id>`                              | End of turn (persist sources pool).           | Yes (compact summary text)       | Full sources pool (authoritative, progressive conversation‑level artifact). |
 | `turn.log` (`artifact:turn.log`)            | Yes             | No      | `kind:turn.log`, `artifact:turn.log`, `turn:<turn_id>`                      | End of turn when `TurnLog` is persisted.      | No                               | Minimal turn log: blocks produced this turn (JSON payload). Index text is a compact JSON summary. |
 | `turn.log.reaction`                         | Yes             | No      | `artifact:turn.log.reaction`, `turn:<turn_id>`, `origin:<user|machine>`     | When feedback is added.                       | No                               | Feedback / reaction linked to a turn. |
@@ -94,8 +94,9 @@ Reference implementations:
     }
   }
   ```
-- The timeline artifact stores only a lightweight sources_pool snapshot for indexing/local access;
-  the full pool lives in `conv:sources_pool` and is loaded at turn start.
+- The timeline artifact payload includes the current full `sources_pool` so logical source reads and
+  exec `fetch_ctx` can recover fetched source content. The indexed text remains compact, and the
+  authoritative progressive pool is also persisted as `conv:sources_pool` and loaded at turn start.
 - Loading happens in `ContextBrowser.load_timeline` (`src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/react/browser.py`).
 
 ## Storage Layout (Blob Store)

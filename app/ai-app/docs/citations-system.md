@@ -21,7 +21,8 @@ Our system uses a single canonical “source row” shape across web search, fet
 
 Key points:
 - Sources are normalized to a canonical row shape and deduped by URL / physical path.
-- `sources_pool` lives in `timeline.json` and is the source of truth for current SIDs.
+- The in-memory `sources_pool` is the source of truth for current SIDs. It is persisted both in
+  `timeline.json` for local/exec recovery and as `artifact:conv:sources_pool` for cross-turn recovery.
 - Citations are expressed as `[[S:...]]` (Markdown/Text), HTML `<sup class="cite" ...>`, or JSON/YAML sidecar entries.
 - `sources_used` is stored as a list of SIDs (ints) for each artifact.
 
@@ -71,12 +72,10 @@ Notes:
 ## Sources Pool (Conversation Registry)
 
 `sources_pool` is a per-conversation list of canonical source rows managed as a progressive
-conversation‑level artifact. The full pool is stored separately as `conv:sources_pool`.
-When a turn starts, the latest `conv:sources_pool` is loaded into memory and a compact
-snapshot is written into `timeline.json` for local access during the turn.
-
-The timeline artifact stores only this lightweight snapshot (for indexing and local access),
-not the full sources pool.
+conversation‑level artifact. The full pool is stored as `conv:sources_pool`, and the local
+`timeline.json` also carries the full current pool so `react.read` and exec `ctx_tools.fetch_ctx`
+can recover fetched source content during the same turn. Index text and rendered timeline views
+remain compact.
 
 It is merged/deduped by normalized URL or physical path:
 - Existing rows keep their SID.
@@ -84,7 +83,7 @@ It is merged/deduped by normalized URL or physical path:
 - New unique sources receive the next SID.
 
 ### How items get into the pool
-- `web_tools.web_search`: discovery; returns canonical rows with `sid`, `title`, `url`, `text`.
+- `web_tools.web_search`: discovery; returns canonical rows with `sid`, `title`, `url`, `text`, and `content` when fetched.
 - `web_tools.web_fetch`: fetches known URLs; returns canonical rows with `content`/`text`.
 - Attachments and produced files: added only if MIME is `text/*`, `image/*`, or `application/pdf`.
 - Skills: if a skill has `sources.yaml`, `react.read` merges them into the pool and rewrites `[[S:...]]` tokens in the skill body to the merged SIDs.
@@ -181,6 +180,6 @@ Renderers (`write_pdf`, `write_png`, `write_pptx`, `write_docx`) extract citatio
 
 ## Access & Validation
 
-- Use `react.read(["so:sources_pool[1-5]"])` to load sources into visible context.
+- Use `react.read(["so:sources_pool[1-5]"])` to load JSON source rows into visible context. Rows are full by default and include item stats metadata; for web rows prefer `content` over `text` when evidence needs full fetched page text.
 - Use `context_tools.fetch_ctx("so:sources_pool[1,3]")` for programmatic access (returns raw rows).
 - Use `extract_citation_sids_any` or `citations_present_inline` for validation/debug.

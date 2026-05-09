@@ -135,18 +135,57 @@ def merge_infra_logs(
         pass
     return merged
 
+def _benign_infra_noise_line_indexes(lines: List[str]) -> set[int]:
+    """
+    Identify known Python asyncio subprocess transport shutdown noise.
+
+    Python may print this during interpreter teardown after a successful exec:
+    "Exception ignored in: <function BaseSubprocessTransport.__del__ ...>"
+    followed by "RuntimeError: Event loop is closed". It is not an execution
+    failure and should not be promoted into the ReAct exec report.
+    """
+    skip: set[int] = set()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if "BaseSubprocessTransport.__del__" not in line:
+            i += 1
+            continue
+        saw_runtime_closed = False
+        block: set[int] = set()
+        j = i
+        while j < len(lines):
+            block.add(j)
+            if "RuntimeError: Event loop is closed" in lines[j]:
+                saw_runtime_closed = True
+                j += 1
+                break
+            if j > i and re.match(r"^\d{4}-\d{2}-\d{2} ", lines[j]):
+                break
+            if j > i and lines[j].startswith("===== EXECUTION"):
+                break
+            j += 1
+        if saw_runtime_closed:
+            skip.update(block)
+        i = max(j, i + 1)
+    return skip
+
+
 def extract_error_lines(text: str) -> str:
     if not text:
         return ""
     lines = text.splitlines()
-    hits = [
-        ln for ln in lines
+    benign = _benign_infra_noise_line_indexes(lines)
+    hits = []
+    for idx, ln in enumerate(lines):
+        if idx in benign:
+            continue
         if (
             re.search(r"\bERROR\b", ln, flags=re.IGNORECASE)
             or re.search(r"\b\w+Error\b", ln)
             or "Exception" in ln
-        )
-    ]
+        ):
+            hits.append(ln)
     if not hits:
         return ""
     return "\n".join(hits)

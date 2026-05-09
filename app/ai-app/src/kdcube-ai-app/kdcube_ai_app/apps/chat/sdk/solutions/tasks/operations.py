@@ -594,7 +594,8 @@ def _run_prompt(*, task: Dict[str, Any], execution: Dict[str, Any], trigger: str
             "Do not invent or pass task id, execution id, or task definition to email tools; those are injected from the bundle call context.",
             "Never ask for email passwords or raw credentials.",
             "Use task_job.update_execution_journal for substantial progress, errors, result data, and produced artifacts.",
-            "At the end, call task_job.update_execution_journal with the final status and then summarize the outcome briefly.",
+            "Call task_job tools directly as ReAct tool calls, not from inside exec_tools.execute_code_python code.",
+            "At the end, call task_job.update_execution_journal directly with the final status and then summarize the outcome briefly.",
         ]
     ).strip()
 

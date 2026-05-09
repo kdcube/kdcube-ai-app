@@ -22,7 +22,16 @@ const CompactionLogItem = ({item}: ChatLogComponentProps) => {
     const compactedTokens = formatTokens(compaction.content.compactedTokens);
     const beforeTokens = formatTokens(compaction.content.beforeTokens);
     const afterTokens = formatTokens(compaction.content.afterTokens);
+    const compactedVisibleBlocks = formatTokens(compaction.content.compactedVisibleBlocks);
+    const inputTokensEstimate = formatTokens(compaction.content.inputTokensEstimate);
+    const thresholdTokens = formatTokens(compaction.content.thresholdTokens);
     const reason = normalizeKind(compaction.content.reason);
+    const triggerReason = normalizeKind(compaction.content.triggerReason);
+    const tokenDeltaReduced = (
+        typeof compaction.content.beforeTokens === "number"
+        && typeof compaction.content.afterTokens === "number"
+        && compaction.content.beforeTokens > compaction.content.afterTokens
+    );
 
     const Icon = status === "started"
         ? Loader2
@@ -45,7 +54,10 @@ const CompactionLogItem = ({item}: ChatLogComponentProps) => {
     const detailParts = [
         kind,
         compactedTokens ? `compacted ~${compactedTokens} tokens` : "",
-        !compactedTokens && beforeTokens && afterTokens ? `${beforeTokens} -> ${afterTokens} tokens` : "",
+        !compactedTokens && compactedVisibleBlocks ? `compacted ${compactedVisibleBlocks} visible blocks` : "",
+        !compactedTokens && tokenDeltaReduced && beforeTokens && afterTokens ? `${beforeTokens} -> ${afterTokens} tokens` : "",
+        inputTokensEstimate && thresholdTokens ? `estimate ${inputTokensEstimate} / threshold ${thresholdTokens}` : "",
+        triggerReason ? `trigger: ${triggerReason}` : "",
         reason ? `reason: ${reason}` : "",
     ].filter(Boolean);
 

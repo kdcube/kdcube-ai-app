@@ -4,6 +4,7 @@
 # chat/sdk/tools/exec_tools.py
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import pathlib
@@ -15,6 +16,7 @@ from typing import Any, Dict, Optional, Annotated, Tuple, List
 
 import semantic_kernel as sk
 
+from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import touch_current_task_activity
 from kdcube_ai_app.apps.chat.sdk.runtime.iso_runtime import _InProcessRuntime, build_packages_installed_block
 from kdcube_ai_app.apps.chat.sdk.runtime.diagnose import (
     read_log_tail,
@@ -69,6 +71,7 @@ def _split_turn_artifact_path(path: str) -> Optional[Tuple[str, str, str]]:
     return turn_id, namespace, rel
 
 EXEC_TEXT_PREVIEW_MAX_SYMBOLS = 8000
+EXEC_ACTIVITY_TOUCH_INTERVAL_SEC = 30.0
 INFRA_LOG_TAIL_CHARS = 12000
 USER_LOG_TAIL_CHARS = 4000
 TEXT_MIME_TYPES = {
@@ -723,6 +726,8 @@ class ExecTools:
             "- If your snippet needs to load the text data for the artifact you see on timeline, you may call\n"
             "  ctx_tools.fetch_ctx inside the snippet using agent_io_tools.tool_call.\n"
             "- The paths allowed with this tool are only logical ar: so: tc:\n"
+            "- Only execution-enabled runtime tool handles are available inside snippets. Orchestration/job tools\n"
+            "  such as task_job.* must be called as direct ReAct tool calls, not from generated Python.\n"
             "- Do NOT rely on fetch_ctx unless you are the code author for this run.\n"
             "\n"
             "Example:\n"
@@ -863,6 +868,12 @@ async def run_exec_tool(
 
     # 1) unique per invocation
     result_filename = f"exec_result_{exec_id}.json" if exec_id else f"exec_result_{uuid.uuid4().hex[:10]}.json"
+    activity_exec_id = (exec_id or result_filename).strip()
+
+    async def _touch_running_runtime() -> None:
+        while True:
+            await asyncio.sleep(EXEC_ACTIVITY_TOUCH_INTERVAL_SEC)
+            touch_current_task_activity(f"exec_tool.runtime.running:{activity_exec_id}")
 
     # 2) prepare workspace
     workdir.mkdir(parents=True, exist_ok=True)
@@ -912,22 +923,32 @@ async def run_exec_tool(
         if isinstance(mode, str) and mode.strip():
             log.log(f"[exec.tool] runtime override active: mode={mode.strip()}", level="INFO")
 
+    touch_current_task_activity(f"exec_tool.runtime.started:{activity_exec_id}")
+    activity_task = asyncio.create_task(_touch_running_runtime())
     try:
-        run_res = await runtime.execute_py_code(
-            workdir=workdir,
-            output_dir=outdir,
-            tool_modules=tool_manager.tool_modules_tuple_list(),
-            globals=globals_for_runtime,
-            timeout_s=timeout_s,
-            isolation="docker",
-            bundle_root=tool_manager.bundle_root,
-            extra_env={
-                "EXECUTION_MODE": "TOOL",
-                "EXEC_NO_UNEXPECTED_EXIT": "1",
-                "RESULT_FILENAME": result_filename,
-                **({"EXECUTION_ID": exec_id} if exec_id else {}),
-            },
-        )
+        try:
+            run_res = await runtime.execute_py_code(
+                workdir=workdir,
+                output_dir=outdir,
+                tool_modules=tool_manager.tool_modules_tuple_list(),
+                globals=globals_for_runtime,
+                timeout_s=timeout_s,
+                isolation="docker",
+                bundle_root=tool_manager.bundle_root,
+                extra_env={
+                    "EXECUTION_MODE": "TOOL",
+                    "EXEC_NO_UNEXPECTED_EXIT": "1",
+                    "RESULT_FILENAME": result_filename,
+                    **({"EXECUTION_ID": exec_id} if exec_id else {}),
+                },
+            )
+        finally:
+            activity_task.cancel()
+            try:
+                await activity_task
+            except asyncio.CancelledError:
+                pass
+            touch_current_task_activity(f"exec_tool.runtime.finished:{activity_exec_id}")
     except Exception as e:
         log.log(f"[exec.tool] runtime.execute_py_code failed: {type(e).__name__}: {e}", level="ERROR")
         log.log(traceback.format_exc(), level="ERROR")

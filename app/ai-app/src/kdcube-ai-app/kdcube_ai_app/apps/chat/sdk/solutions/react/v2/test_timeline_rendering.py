@@ -204,6 +204,118 @@ def test_large_tool_result_is_rendered_as_preview_with_shape():
     assert "A" * 1000 not in joined
 
 
+def test_source_result_render_includes_items_stats():
+    ctx = RuntimeCtx(
+        turn_id="turn_sources",
+        started_at="2026-05-08T00:00:00Z",
+        tool_result_preview_max_text_symbols=200,
+    )
+    tl = Timeline(runtime=ctx)
+    payload = [
+        {
+            "sid": 1,
+            "url": "https://example.com/security",
+            "title": "Security Article",
+            "text": "short preview",
+            "content": "full source content " * 80,
+        }
+    ]
+
+    tl.blocks.extend([
+        tl._block(type="turn.header", author="system", turn_id=ctx.turn_id, ts=ctx.started_at, text=""),
+        tl._block(
+            type="react.tool.call",
+            author="agent",
+            turn_id=ctx.turn_id,
+            ts=ctx.started_at,
+            mime="application/json",
+            path="tc:turn_sources.tc_search.call",
+            text=json.dumps({
+                "tool_id": "web_tools.web_search",
+                "tool_call_id": "tc_search",
+                "params": {"queries": ["security"]},
+            }),
+        ),
+        tl._block(
+            type="react.tool.result",
+            author="agent",
+            turn_id=ctx.turn_id,
+            ts=ctx.started_at,
+            mime="application/json",
+            path="so:sources_pool[1]",
+            text=json.dumps(payload, ensure_ascii=False),
+            meta={
+                "tool_call_id": "tc_search",
+                "items_stats": {
+                    "kind": "sources_pool",
+                    "items_count": 1,
+                    "content_rows": 1,
+                    "total_content_symbols": len(payload[0]["content"]),
+                },
+            },
+        ),
+    ])
+
+    rendered = _run(tl.render(cache_last=True))
+    joined = "\n".join(b.get("text", "") for b in rendered if b.get("type") == "text")
+
+    assert "items_stats:" in joined
+    assert '"items_count": 1' in joined
+    assert '"content_rows": 1' in joined
+    assert "[TOOL RESULT PREVIEW TRUNCATED]" not in joined
+    assert "full source content full source content" in joined
+
+
+def test_react_read_output_is_not_capped_again_by_tool_result_preview():
+    ctx = RuntimeCtx(
+        turn_id="turn_read",
+        started_at="2026-05-08T00:00:00Z",
+        tool_result_preview_max_text_symbols=120,
+    )
+    tl = Timeline(runtime=ctx)
+    read_preview = "\n".join([
+        "A" * 300,
+        "",
+        "[READ PREVIEW TRUNCATED]",
+        "path: tc:turn_src.tc_big.result",
+        "visible_text_symbols: 300",
+    ])
+
+    tl.blocks.extend([
+        tl._block(type="turn.header", author="system", turn_id=ctx.turn_id, ts=ctx.started_at, text=""),
+        tl._block(
+            type="react.tool.call",
+            author="agent",
+            turn_id=ctx.turn_id,
+            ts=ctx.started_at,
+            mime="application/json",
+            path="tc:turn_read.r_big.call",
+            text=json.dumps({
+                "tool_id": "react.read",
+                "tool_call_id": "r_big",
+                "params": {"paths": ["tc:turn_src.tc_big.result"]},
+            }),
+        ),
+        tl._block(
+            type="react.tool.result",
+            author="agent",
+            turn_id=ctx.turn_id,
+            ts=ctx.started_at,
+            mime="text/plain",
+            path="tc:turn_src.tc_big.result",
+            text=read_preview,
+            meta={"tool_call_id": "r_big", "tool_id": "react.read", "read_preview_truncated": True},
+        ),
+    ])
+
+    rendered = _run(tl.render(cache_last=True))
+    joined = "\n".join(b.get("text", "") for b in rendered if b.get("type") == "text")
+
+    assert "[READ PREVIEW TRUNCATED]" in joined
+    assert "[TOOL RESULT PREVIEW TRUNCATED]" not in joined
+    assert "A" * 200 in joined
+
+
 def test_timeline_does_not_emit_non_pdf_binary_attachment_as_model_document():
     ctx = RuntimeCtx(turn_id="turn_123", started_at="2026-02-09T00:00:00Z")
     tl = Timeline(runtime=ctx)

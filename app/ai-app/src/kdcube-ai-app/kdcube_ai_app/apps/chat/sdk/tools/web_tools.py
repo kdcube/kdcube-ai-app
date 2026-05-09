@@ -76,7 +76,9 @@ class WebTools:
                 "Use when you need to FIND pages. For known URLs only, use web_fetch.\n"
                 "Returns an envelope: {ok, error, ret}.\n"
                 "Returned items are added to sources_pool with their sid. "
-                "You can use them immediately; only read from sources_pool later if a snippet is no longer visible.\n"
+                "`text` is the search preview/snippet. `content` is full fetched page text when available. "
+                "Use react.read on so:sources_pool[...] to bring JSON source rows into visible context; use content before text. "
+                "Use ctx_tools.fetch_ctx on so:sources_pool[...] from exec code for bulk source processing.\n"
         )
     )
     async def web_search(
@@ -223,7 +225,8 @@ class WebTools:
                 "- Use ONLY when you already have concrete HTTP/HTTPS URLs.\n"
                 "- Never performs search or discovery.\n"
                 "- If you need to FIND pages, use web_search / web_search_links.\n"
-                "- Do not call web_search and web_fetch for the same discovery task.\n\n"
+                "- Do not call web_fetch for URLs whose web_search row already has usable `content`; "
+                "fetch only selected URLs whose content is missing/insufficient.\n\n"
                 "Objective-aware refinement is optional and best-effort: URLs are never dropped; "
                 "pages without reliable spans keep full content (recall-first).\n"
                 "Refinement modes:\n"
@@ -234,7 +237,8 @@ class WebTools:
                 "Without objective, refinement is ignored and full content is returned.\n"
                 "Returns an envelope: {ok, error, ret}.\n"
                 "Returned items are added to sources_pool with their sid. "
-                "You can use them immediately; only read from sources_pool later if a snippet is no longer visible."
+                "`content` contains fetched page text and `text` is the preview/snippet. Use react.read on "
+                "so:sources_pool[...] to bring JSON source rows into visible context; use ctx_tools.fetch_ctx from exec code for bulk processing."
         )
     )
     async def web_fetch(

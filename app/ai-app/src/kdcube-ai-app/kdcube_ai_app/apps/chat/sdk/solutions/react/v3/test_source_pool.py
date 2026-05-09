@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: MIT
 
+import json
+
+from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
+from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.timeline import Timeline
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.tools.external import (
     _format_sources_pool_path,
     _remap_tool_sources,
@@ -62,3 +66,27 @@ def test_inline_merge_remap_reuses_existing_sid_for_duplicates():
     assert [r["sid"] for r in remapped_rows] == [3, 5, 6]
     assert used_sids == [3, 5, 6]
     assert _format_sources_pool_path(used_sids) == "so:sources_pool[3, 5-6]"
+
+
+def test_timeline_write_local_preserves_full_source_content(tmp_path):
+    runtime = RuntimeCtx(turn_id="turn_src", outdir=str(tmp_path), workdir=str(tmp_path))
+    timeline = Timeline(runtime=runtime, svc=None)
+    full_content = "full fetched article body " * 50
+    timeline.sources_pool = [
+        {
+            "sid": 1,
+            "url": "https://example.com/security",
+            "title": "Security Article",
+            "text": "short search preview",
+            "content": full_content,
+            "content_length": len(full_content),
+        }
+    ]
+
+    timeline.write_local()
+
+    payload = json.loads((tmp_path / "timeline.json").read_text(encoding="utf-8"))
+    row = payload["sources_pool"][0]
+    assert row["text"] == "short search preview"
+    assert row["content"] == full_content
+    assert row["content_length"] == len(full_content)

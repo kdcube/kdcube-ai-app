@@ -38,7 +38,7 @@ s3://<bucket>/<prefix>/cb/tenants/<tenant>/projects/<project>/attachments/<role>
 
 ## Conversation State Artifacts
 Conversation state is stored as two artifacts:
-- `artifact:conv.timeline.v1` — timeline blocks + conversation metadata (no sources_pool)
+- `artifact:conv.timeline.v1` — timeline blocks + conversation metadata + current full `sources_pool`
 - `artifact:conv:sources_pool` — sources pool only
 
 The timeline snapshot includes `react.thinking` blocks (hidden) but **does not**

@@ -413,9 +413,18 @@ class TelegramActivityStreamer:
         compaction_id = str(data.get("compaction_id") or "").strip()
         kind = str(data.get("kind") or "").replace("_", " ").strip()
         reason = str(data.get("reason") or "").replace("_", " ").strip()
+        trigger_reason = str(data.get("trigger_reason") or "").replace("_", " ").strip()
         compacted_tokens = _format_int(data.get("compacted_tokens"))
+        compacted_visible_blocks = _format_int(data.get("compacted_visible_blocks"))
         before_tokens = _format_int(data.get("before_tokens"))
         after_tokens = _format_int(data.get("after_tokens"))
+        input_tokens_estimate = _format_int(data.get("input_tokens_estimate"))
+        threshold_tokens = _format_int(data.get("threshold_tokens"))
+        token_delta_reduced = False
+        try:
+            token_delta_reduced = int(data.get("before_tokens") or 0) > int(data.get("after_tokens") or 0)
+        except Exception:
+            token_delta_reduced = False
 
         if status == "started":
             detail = f" ({kind})" if kind else ""
@@ -424,8 +433,14 @@ class TelegramActivityStreamer:
             details: list[str] = []
             if compacted_tokens:
                 details.append(f"compacted ~{compacted_tokens} tokens")
-            elif before_tokens and after_tokens:
+            elif compacted_visible_blocks:
+                details.append(f"compacted {compacted_visible_blocks} visible blocks")
+            elif token_delta_reduced and before_tokens and after_tokens:
                 details.append(f"{before_tokens} -> {after_tokens} tokens")
+            if trigger_reason:
+                details.append(f"trigger: {trigger_reason}")
+            if input_tokens_estimate and threshold_tokens:
+                details.append(f"estimate {input_tokens_estimate} / threshold {threshold_tokens}")
             if kind:
                 details.append(kind)
             suffix = f" ({'; '.join(details)})" if details else ""
