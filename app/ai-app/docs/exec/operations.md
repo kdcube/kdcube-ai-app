@@ -599,6 +599,30 @@ Expected in split Docker:
 
 ## Troubleshooting
 
+### Issue: supervisor tool reports `BRAVE_API_KEY not set` or another missing descriptor-backed secret
+
+In Docker/Fargate supervised exec, provider secrets are not copied into the
+generated-code env as raw `*_API_KEY` variables. Proc packages descriptor
+payloads and the supervisor materializes them before tool bootstrap.
+
+Check this in order:
+
+1. The running proc has access to the intended descriptor root or explicit
+   descriptor files (`PLATFORM_DESCRIPTORS_DIR`, `ASSEMBLY_YAML_DESCRIPTOR_PATH`,
+   `GLOBAL_SECRETS_YAML`, `BUNDLE_SECRETS_YAML`, etc.).
+2. Docker/Fargate launch logs show descriptor payload env vars being passed to
+   the supervisor, for example `KDCUBE_RUNTIME_SECRETS_YAML_B64` and
+   `KDCUBE_RUNTIME_BUNDLES_SECRETS_YAML_B64` (values should be masked in logs).
+3. Supervisor logs contain descriptor materialization for the current
+   `exec_id`, usually under `/tmp/kdcube-runtime-descriptors/<exec_id>/`.
+4. The failure is from the supervisor-side tool. Generated code is expected not
+   to see descriptor paths or provider secret env vars.
+
+If descriptor payloads are absent, the proc did not package/pass its deployment
+descriptors to the runtime. If payloads are present but the supervisor still
+cannot resolve the secret, inspect the descriptor shape and active bundle id
+used by the relevant `get_secret(...)` lookup.
+
 ### Issue: `docker: command not found` in chat container
 
 **Symptom:**

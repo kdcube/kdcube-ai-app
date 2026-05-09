@@ -97,6 +97,39 @@ def test_get_plain_reads_assembly_by_default(monkeypatch, tmp_path):
     assert settings.CLAUDE_CODE_SESSION_GIT_REPO == "https://example.com/sessions.git"
 
 
+def test_settings_infers_descriptor_root_from_explicit_assembly_path(monkeypatch, tmp_path):
+    for key in (
+        "PLATFORM_DESCRIPTORS_DIR",
+        "GLOBAL_SECRETS_YAML",
+        "BUNDLE_SECRETS_YAML",
+        "BRAVE_API_KEY",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    assembly_path = tmp_path / "assembly.yaml"
+    secrets_path = tmp_path / "secrets.yaml"
+    assembly_path.write_text(
+        yaml.safe_dump({"secrets": {"provider": "secrets-file"}}, sort_keys=False),
+        encoding="utf-8",
+    )
+    secrets_path.write_text(
+        yaml.safe_dump(
+            {"secrets": {"services": {"brave": {"api_key": "brave-secret"}}}},
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("ASSEMBLY_YAML_DESCRIPTOR_PATH", str(assembly_path))
+    settings = sdk_config.Settings()
+    exported = sdk_config.export_managed_env(settings=settings)
+
+    assert settings.PLATFORM_DESCRIPTORS_DIR == str(tmp_path)
+    assert settings.GLOBAL_SECRETS_YAML == secrets_path.resolve().as_uri()
+    assert settings.BRAVE_API_KEY == "brave-secret"
+    assert exported["PLATFORM_DESCRIPTORS_DIR"] == str(tmp_path)
+    assert exported["GLOBAL_SECRETS_YAML"] == secrets_path.resolve().as_uri()
+
+
 def test_get_plain_reads_bundles_namespace(monkeypatch, tmp_path):
     bundles_path = tmp_path / "bundles.yaml"
     bundles_path.write_text(

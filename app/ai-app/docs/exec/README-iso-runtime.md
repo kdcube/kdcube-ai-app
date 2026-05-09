@@ -21,6 +21,16 @@ It is aligned with `exec/operations.md` and the current implementation in:
 - `kdcube_ai_app/apps/chat/sdk/runtime/isolated/py_code_exec_entry.py`
 - `kdcube_ai_app/apps/chat/sdk/runtime/isolated/py_code_exec.py`
 
+## Exec docs map
+
+- This file is the main entry point for the supervisor/executor isolation model.
+- [runtime-README.md](runtime-README.md) is the architecture reference with detailed diagrams.
+- [distributed-exec-README.md](distributed-exec-README.md) covers Fargate and remote snapshot transport.
+- [operations.md](operations.md) is the deployment and troubleshooting guide.
+- [run-py-README.md](run-py-README.md) is the minimal developer quickstart.
+- [README-runtime-modes-builtin-tools.md](README-runtime-modes-builtin-tools.md) explains tool runtime selection.
+- [exec-logging-error-propagation-README.md](exec-logging-error-propagation-README.md) explains log streams and error surfacing.
+
 ## Why ISO runtime exists
 
 We execute untrusted, LLM-generated Python (codegen + exec tools). To keep the system safe:
@@ -173,11 +183,20 @@ container. In `split` strategy, the same roles run in sibling containers:
 
 Descriptor-backed config behavior in supervised external runtimes:
 
-- the proc exports `assembly.yaml`, `bundles.yaml`, `gateway.yaml`, `secrets.yaml`, and `bundles.secrets.yaml` as descriptor payload env values
-- `py_code_exec_entry.py` materializes them into a root-only directory under `/tmp/kdcube-runtime-descriptors/<exec_id>`
-- it then sets `PLATFORM_DESCRIPTORS_DIR`, `ASSEMBLY_YAML_DESCRIPTOR_PATH`, `BUNDLES_YAML_DESCRIPTOR_PATH`, `GATEWAY_YAML_PATH`, `GLOBAL_SECRETS_YAML`, and `BUNDLE_SECRETS_YAML` for the supervisor bootstrap
-- the executor child does not inherit those env vars
-- the materialized descriptor files are created with root-only permissions and are not passed to generated code
+- Proc does not promote provider API keys such as `BRAVE_API_KEY` into generated-code env. It packages the same deployment descriptor inputs the host uses.
+- The Docker/Fargate supervisor receives descriptor payload env values:
+  - `KDCUBE_RUNTIME_ASSEMBLY_YAML_B64` for `assembly.yaml`
+  - `KDCUBE_RUNTIME_BUNDLES_YAML_B64` for `bundles.yaml`
+  - `KDCUBE_RUNTIME_GATEWAY_YAML_B64` for `gateway.yaml`
+  - `KDCUBE_RUNTIME_SECRETS_YAML_B64` for `secrets.yaml`
+  - `KDCUBE_RUNTIME_BUNDLES_SECRETS_YAML_B64` for `bundles.secrets.yaml`
+- `py_code_exec_entry.py` materializes them into a root-only directory under `/tmp/kdcube-runtime-descriptors/<exec_id>`.
+- It then sets `PLATFORM_DESCRIPTORS_DIR`, `ASSEMBLY_YAML_DESCRIPTOR_PATH`, `BUNDLES_YAML_DESCRIPTOR_PATH`, `GATEWAY_YAML_PATH`, `GLOBAL_SECRETS_YAML`, and `BUNDLE_SECRETS_YAML` for the supervisor bootstrap and clears the settings cache.
+- Supervisor-side tools use the normal config APIs: `get_settings()`, `get_plain()`, and `get_secret()` / `get_secret_async()`.
+- Bundle props come from `bundles.yaml` bundle `config` (or legacy `props`) and are exposed to bundle tools through `bundle_props` / `ScopedBundleConfig`.
+- Bundle secrets come from `bundles.secrets.yaml` or the configured secrets provider. A bundle-scoped lookup such as `b:docs.api_key` resolves under the active bundle id.
+- The executor child does not inherit descriptor payload env vars, descriptor path env vars, or secret-provider material.
+- The materialized descriptor files are created with root-only permissions and are not passed to generated code.
 
 This is the current mechanism that allows supervisor-side tools to keep using `get_settings()`, `get_plain()`, and `get_secret()` when local deployment descriptors are the source of truth.
 

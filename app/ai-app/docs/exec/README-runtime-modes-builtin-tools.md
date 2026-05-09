@@ -42,6 +42,13 @@ Native libraries (HTML parsers, PDFs, browser bindings) can crash the process. I
 
 Execution uses the ISO runtime (`kdcube_ai_app/apps/chat/sdk/runtime/iso_runtime.py`). For `local`, it spawns a standalone subprocess via `py_code_exec_entry.py`. For `docker`, the supervisor brokers tool execution while the exec sandbox stays restricted (no network, no secrets).
 
+In supervised Docker/Fargate modes, proc ships descriptor payloads
+(`KDCUBE_RUNTIME_*_YAML_B64`) to the supervisor. The supervisor materializes
+those descriptors, clears settings cache, and resolves platform config,
+platform secrets, bundle props, and bundle secrets through the same APIs as the
+host. The generated-code executor does not inherit descriptor payloads,
+descriptor paths, or provider secret material.
+
 Docker currently supports two strategies:
 
 - `combined`: supervisor and generated-code executor run inside one

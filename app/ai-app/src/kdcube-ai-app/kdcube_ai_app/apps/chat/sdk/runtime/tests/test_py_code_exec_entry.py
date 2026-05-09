@@ -26,6 +26,7 @@ from kdcube_ai_app.apps.chat.sdk.runtime.isolated.py_code_exec_entry import (
 from kdcube_ai_app.apps.chat.sdk.runtime.isolated.supervisor_entry import PrivilegedSupervisor
 from kdcube_ai_app.apps.chat.sdk.runtime.isolated.secure_client import ToolStub
 from kdcube_ai_app.apps.chat.sdk.runtime.dynamic_module_loader import load_dynamic_module_from_file
+from kdcube_ai_app.apps.chat.sdk import config as sdk_config
 
 
 class _CaptureLogger:
@@ -201,6 +202,75 @@ def test_prepare_runtime_environment_materializes_descriptors_before_settings_ca
     finally:
         for key in (
             "PLATFORM_DESCRIPTORS_DIR",
+            "GLOBAL_SECRETS_YAML",
+            "KDCUBE_RUNTIME_ENV_PREPARED",
+        ):
+            os.environ.pop(key, None)
+        shutil.rmtree(runtime_dir, ignore_errors=True)
+
+
+def test_prepare_runtime_environment_makes_materialized_secrets_visible_to_settings(monkeypatch):
+    exec_id = "exec-prepare-env-settings-test"
+    runtime_dir = pathlib.Path("/tmp/kdcube-runtime-descriptors") / exec_id
+    shutil.rmtree(runtime_dir, ignore_errors=True)
+    monkeypatch.setenv("EXECUTION_ID", exec_id)
+    monkeypatch.delenv("KDCUBE_RUNTIME_ENV_PREPARED", raising=False)
+    monkeypatch.setenv(
+        "KDCUBE_RUNTIME_ASSEMBLY_YAML_B64",
+        base64.b64encode(b"secrets:\n  provider: secrets-file\n").decode("ascii"),
+    )
+    monkeypatch.setenv(
+        "KDCUBE_RUNTIME_SECRETS_YAML_B64",
+        base64.b64encode(b"secrets:\n  services:\n    brave:\n      api_key: brave-secret\n").decode("ascii"),
+    )
+    logger = _CaptureLogger()
+
+    try:
+        _prepare_runtime_environment(logger)
+        sdk_config.get_settings.cache_clear()
+        settings = sdk_config.Settings()
+
+        assert settings.BRAVE_API_KEY == "brave-secret"
+    finally:
+        sdk_config.get_settings.cache_clear()
+        for key in (
+            "PLATFORM_DESCRIPTORS_DIR",
+            "ASSEMBLY_YAML_DESCRIPTOR_PATH",
+            "GLOBAL_SECRETS_YAML",
+            "KDCUBE_RUNTIME_ENV_PREPARED",
+        ):
+            os.environ.pop(key, None)
+        shutil.rmtree(runtime_dir, ignore_errors=True)
+
+
+def test_prepare_runtime_environment_reads_root_services_secret_descriptor(monkeypatch):
+    exec_id = "exec-root-services-settings-test"
+    runtime_dir = pathlib.Path("/tmp/kdcube-runtime-descriptors") / exec_id
+    shutil.rmtree(runtime_dir, ignore_errors=True)
+    monkeypatch.setenv("EXECUTION_ID", exec_id)
+    monkeypatch.delenv("KDCUBE_RUNTIME_ENV_PREPARED", raising=False)
+    monkeypatch.setenv(
+        "KDCUBE_RUNTIME_ASSEMBLY_YAML_B64",
+        base64.b64encode(b"secrets:\n  provider: secrets-file\n").decode("ascii"),
+    )
+    monkeypatch.setenv(
+        "KDCUBE_RUNTIME_SECRETS_YAML_B64",
+        base64.b64encode(b"services:\n  brave:\n    api_key: brave-secret\n").decode("ascii"),
+    )
+    logger = _CaptureLogger()
+
+    try:
+        _prepare_runtime_environment(logger)
+        sdk_config.get_settings.cache_clear()
+        settings = sdk_config.Settings()
+
+        assert settings.GLOBAL_SECRETS_YAML == str((runtime_dir / "secrets.yaml").resolve())
+        assert settings.BRAVE_API_KEY == "brave-secret"
+    finally:
+        sdk_config.get_settings.cache_clear()
+        for key in (
+            "PLATFORM_DESCRIPTORS_DIR",
+            "ASSEMBLY_YAML_DESCRIPTOR_PATH",
             "GLOBAL_SECRETS_YAML",
             "KDCUBE_RUNTIME_ENV_PREPARED",
         ):

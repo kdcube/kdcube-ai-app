@@ -6,14 +6,16 @@ import subprocess
 
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.layout import build_announce_text
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
+from kdcube_ai_app.apps.chat.sdk.runtime.workspace import artifact_outdir_for
 
 
 def test_build_announce_text_includes_git_workspace_summary(tmp_path):
     outdir = tmp_path / "out"
-    turn_root = outdir / "turn_123"
+    artifact_outdir = artifact_outdir_for(outdir)
+    turn_root = artifact_outdir / "turn_123"
     (turn_root / "files" / "projectA" / "src").mkdir(parents=True, exist_ok=True)
     (turn_root / "files" / "projectA" / "src" / "app.py").write_text("print('hi')\n", encoding="utf-8")
-    (outdir / "turn_122" / "files").mkdir(parents=True, exist_ok=True)
+    (artifact_outdir / "turn_122" / "files").mkdir(parents=True, exist_ok=True)
 
     subprocess.run(["git", "init", str(turn_root)], check=True, capture_output=True)
     subprocess.run(["git", "-C", str(turn_root), "config", "user.name", "Test User"], check=True, capture_output=True)
@@ -109,7 +111,8 @@ def test_build_announce_text_includes_context_caps(tmp_path):
 
 def test_build_announce_text_includes_lineage_scopes_even_when_current_turn_is_sparse(tmp_path):
     outdir = tmp_path / "out"
-    turn_root = outdir / "turn_123"
+    artifact_outdir = artifact_outdir_for(outdir)
+    turn_root = artifact_outdir / "turn_123"
     (turn_root / "files" / "customer_portal" / "src").mkdir(parents=True, exist_ok=True)
     (turn_root / "files" / "customer_portal" / "src" / "app.py").write_text("print('hi')\n", encoding="utf-8")
 
