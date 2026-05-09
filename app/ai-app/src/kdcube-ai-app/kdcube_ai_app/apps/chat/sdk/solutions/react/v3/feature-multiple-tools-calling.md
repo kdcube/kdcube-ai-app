@@ -10,7 +10,7 @@ This note describes the `v3` implementation path for multi-action rounds and the
 | Per-instance subscriber factory | Implemented | Done in `versatile_streamer_v3.py` |
 | Per-instance record/timeline streamers | Implemented | Spawned on `ReactDecisionOutV2` channel-open |
 | Safe multi-action bundle execution | Implemented | Sequential only |
-| Multi-action read/search tools | Implemented | `react.read`, `react.memsearch`, `react.search_files`, `web_tools.*` |
+| Multi-action read/search tools | Implemented | `react.read`, `react.memsearch`, `react.rg`, `web_tools.*` |
 | Multi-action `react.write` / `react.patch` / rendering tools | Not enabled yet | Router supports per-instance streamers, policy still blocks these bundles |
 | Exec + code | Implemented only for single-action round | Exactly one `ReactDecisionOutV2` plus one `code` channel |
 | Multiple actions plus `code` | Explicitly rejected | Not supported |

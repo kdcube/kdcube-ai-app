@@ -201,8 +201,8 @@ class ReactRound:
             return await react_tools.handle_react_memsearch(ctx_browser=ctx_browser, state=state, tool_call_id=tool_call_id)
         if tool_id == "react.hide":
             return await react_tools.handle_react_hide(ctx_browser=ctx_browser, state=state, tool_call_id=tool_call_id)
-        if tool_id == "react.search_files":
-            return await react_tools.handle_react_search_files(ctx_browser=ctx_browser, state=state, tool_call_id=tool_call_id)
+        if tool_id == "react.rg":
+            return await react_tools.handle_react_rg(ctx_browser=ctx_browser, state=state, tool_call_id=tool_call_id)
         if tool_id == "react.plan":
             return await react_tools.handle_react_plan(react=react, ctx_browser=ctx_browser, state=state, tool_call_id=tool_call_id)
         if tool_id == "react.write":

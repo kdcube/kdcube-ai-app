@@ -13,7 +13,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.tools import (
     PATCH_SPEC,
     MEMSEARCH_SPEC,
     HIDE_SPEC,
-    SEARCH_FILES_SPEC,
+    RG_SPEC,
     PLAN_SPEC,
     handle_react_read,
     handle_react_pull,
@@ -22,7 +22,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.tools import (
     handle_react_patch,
     handle_react_memsearch,
     handle_react_hide,
-    handle_react_search_files,
+    handle_react_rg,
     handle_react_plan,
     handle_external_tool,
 )
@@ -37,7 +37,7 @@ def get_react_tools_catalog() -> List[Dict[str, object]]:
         PATCH_SPEC,
         MEMSEARCH_SPEC,
         HIDE_SPEC,
-        SEARCH_FILES_SPEC,
+        RG_SPEC,
         PLAN_SPEC,
     ]
 
@@ -51,7 +51,7 @@ __all__ = [
     "handle_react_patch",
     "handle_react_memsearch",
     "handle_react_hide",
-    "handle_react_search_files",
+    "handle_react_rg",
     "handle_react_plan",
     "handle_external_tool",
 ]

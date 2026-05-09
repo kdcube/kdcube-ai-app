@@ -821,6 +821,8 @@ async def test_run_exec_tool_uses_configured_text_preview_symbols(tmp_path, monk
 
     output = next(item["output"] for item in result["artifacts"] if item["resource_id"] == "artifact:report")
     assert output["text"].startswith("abcdefabcdef")
-    assert "...[truncated]" in output["text"]
+    assert "...[truncated]" not in output["text"]
+    assert "[TEXT FILE PREVIEW TRUNCATED]" in output["text_visible_preview"]
     assert output["text_truncated"] is True
     assert output["text_preview_max_symbols"] == 12
+    assert output["text_is_preview"] is True

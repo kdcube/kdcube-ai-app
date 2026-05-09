@@ -14,6 +14,9 @@ from typing import Any, Dict, Optional, List
 import json
 import pathlib
 
+from kdcube_ai_app.apps.chat.sdk.util import count_text_lines, count_text_symbols, guess_mime_type
+from kdcube_ai_app.tools.content_type import is_text_mime_type
+
 _LOG = logging.getLogger("kdcube.react.artifacts")
 _TOOL_LOG_DEFAULT_MAX_CHARS = 120_000
 
@@ -41,6 +44,62 @@ def _safe_json(value: Any) -> str:
             return str(value)
         except Exception:
             return "<unserializable>"
+
+
+def enrich_artifact_file_metadata(
+        *,
+        artifact: Dict[str, Any],
+        outdir: pathlib.Path,
+        physical_path: Optional[str] = None,
+        mime: Optional[str] = None,
+) -> None:
+    if not isinstance(artifact, dict):
+        return
+    value = artifact.get("value")
+    if not isinstance(value, dict):
+        value = {}
+        artifact["value"] = value
+
+    candidate = (
+        physical_path
+        or value.get("physical_path")
+        or value.get("local_path")
+        or value.get("path")
+        or artifact.get("physical_path")
+        or artifact.get("local_path")
+        or artifact.get("path")
+        or ""
+    )
+    abs_path: Optional[pathlib.Path] = None
+    if isinstance(candidate, str) and candidate.strip():
+        p = pathlib.Path(candidate.strip())
+        abs_path = p if p.is_absolute() else outdir / p
+
+    text_value = value.get("text") if isinstance(value.get("text"), str) else value.get("content")
+    if value.get("size_bytes") is None:
+        if abs_path and abs_path.exists() and abs_path.is_file():
+            try:
+                value["size_bytes"] = abs_path.stat().st_size
+            except Exception:
+                pass
+        elif isinstance(text_value, str):
+            value["size_bytes"] = len(text_value.encode("utf-8", errors="ignore"))
+
+    mime_value = str(mime or value.get("mime") or artifact.get("mime") or "").strip()
+    if not mime_value and abs_path:
+        mime_value = guess_mime_type(str(abs_path))
+    if value.get("text_symbols") is None and is_text_mime_type(mime_value):
+        text_symbols = count_text_symbols(abs_path) if abs_path else None
+        if text_symbols is None and isinstance(text_value, str):
+            text_symbols = len(text_value)
+        if text_symbols is not None:
+            value["text_symbols"] = int(text_symbols)
+    if value.get("line_count") is None and is_text_mime_type(mime_value):
+        line_count = count_text_lines(abs_path) if abs_path else None
+        if line_count is None and isinstance(text_value, str):
+            line_count = len(text_value.splitlines())
+        if line_count is not None:
+            value["line_count"] = int(line_count)
 
 
 def _turn_from_path(path: str) -> str:
@@ -437,6 +496,7 @@ async def host_artifact_file(
         hosted_key = (h0.get("key") or "").strip()
         hosted_rn = (h0.get("rn") or "").strip()
         hosted_physical = (h0.get("physical_path") or h0.get("local_path") or "").strip()
+        hosted_size = h0.get("size")
         if isinstance(artifact.get("value"), dict):
             if hosted_uri:
                 artifact["value"]["hosted_uri"] = hosted_uri
@@ -446,6 +506,14 @@ async def host_artifact_file(
                 artifact["value"]["rn"] = hosted_rn
             if hosted_physical:
                 artifact["value"]["physical_path"] = hosted_physical
+            if hosted_size is not None and artifact["value"].get("size_bytes") is None:
+                artifact["value"]["size_bytes"] = hosted_size
+            enrich_artifact_file_metadata(
+                artifact=artifact,
+                outdir=outdir,
+                physical_path=hosted_physical or str(artifact["value"].get("path") or ""),
+                mime=str(artifact_log.get("mime") or ""),
+            )
         if hosted_uri:
             artifact["hosted_uri"] = hosted_uri
         if hosted_rn:

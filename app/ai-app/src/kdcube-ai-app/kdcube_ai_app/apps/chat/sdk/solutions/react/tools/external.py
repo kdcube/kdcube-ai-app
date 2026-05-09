@@ -29,6 +29,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.common import (
     host_artifact_file,
     emit_hosted_files,
     tc_result_path,
+    enrich_artifact_file_metadata,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.workspace import (
     extract_code_file_paths,
@@ -900,6 +901,17 @@ async def handle_external_tool(*,
             artifact_path=artifact_path if artifact_path.startswith("fi:") else "",
             tool_call_id=tool_call_id,
         )
+        enrich_artifact_file_metadata(
+            artifact=artifact_view.raw,
+            outdir=pathlib.Path(state["outdir"]),
+            physical_path=physical_path,
+            mime=artifact_view.mime or "",
+        )
+        if isinstance((artifact_view.raw or {}).get("value"), dict):
+            try:
+                artifact_view.size_bytes = (artifact_view.raw.get("value") or {}).get("size_bytes")
+            except Exception:
+                pass
         # Add produced images to sources_pool (for rendering/embedding only).
         if visibility == "external" and physical_path:
             try:
@@ -943,6 +955,25 @@ async def handle_external_tool(*,
             val = raw_value.get(key) or raw_val.get(key)
             if val:
                 meta_extra[key] = val
+        size_bytes = raw_value.get("size_bytes") or raw_val.get("size_bytes")
+        if size_bytes is not None and size_bytes != "":
+            meta_extra["size_bytes"] = size_bytes
+        text_symbols = raw_value.get("text_symbols") or raw_val.get("text_symbols")
+        if text_symbols is None and isinstance(raw_value.get("text"), str):
+            text_symbols = len(raw_value.get("text") or "")
+        if text_symbols is not None and text_symbols != "":
+            meta_extra["text_symbols"] = text_symbols
+        line_count = raw_value.get("line_count") or raw_val.get("line_count")
+        if line_count is not None and line_count != "":
+            meta_extra["line_count"] = line_count
+        text_preview_line_start = raw_value.get("text_preview_line_start") or raw_val.get("text_preview_line_start")
+        text_preview_line_end = raw_value.get("text_preview_line_end") or raw_val.get("text_preview_line_end")
+        if text_preview_line_start is not None and text_preview_line_end is not None:
+            meta_extra["text_preview_lines"] = {
+                "line_start": text_preview_line_start,
+                "line_end": text_preview_line_end,
+                "line_numbers": bool(raw_value.get("text_preview_line_numbers") or raw_val.get("text_preview_line_numbers")),
+            }
         if not meta_extra.get("physical_path"):
             legacy = raw_value.get("local_path") or raw_val.get("local_path")
             if legacy:
@@ -961,7 +992,11 @@ async def handle_external_tool(*,
             )
             if bin_block:
                 add_block(ctx_browser, bin_block)
-        if isinstance(value, dict) and isinstance(value.get("text"), str) and value.get("text").strip():
+        visible_text = ""
+        if isinstance(value, dict):
+            preview_text = value.get("text_visible_preview")
+            visible_text = preview_text if isinstance(preview_text, str) and preview_text.strip() else value.get("text")
+        if isinstance(value, dict) and isinstance(visible_text, str) and visible_text.strip():
             mime_out = (value.get("mime") or "").strip() or "text/plain"
             if is_text_mime_type(mime_out):
                 add_block(ctx_browser, {
@@ -970,7 +1005,7 @@ async def handle_external_tool(*,
                     "call_id": tool_call_id,
                     "mime": mime_out,
                     "path": artifact_path,
-                    "text": value.get("text"),
+                    "text": visible_text,
                     "meta": meta_extra,
                 })
         elif visibility == "external" and meta_extra and artifact_path:
@@ -1110,6 +1145,17 @@ async def handle_external_tool(*,
             artifact_path=artifact_path if artifact_path.startswith("fi:") else "",
             tool_call_id=tool_call_id,
         )
+        enrich_artifact_file_metadata(
+            artifact=artifact_view.raw,
+            outdir=pathlib.Path(state["outdir"]),
+            physical_path=physical_path,
+            mime=artifact_view.mime or "",
+        )
+        if isinstance((artifact_view.raw or {}).get("value"), dict):
+            try:
+                artifact_view.size_bytes = (artifact_view.raw.get("value") or {}).get("size_bytes")
+            except Exception:
+                pass
         if visibility == "external" and physical_path:
             try:
                 merge_sources_pool_for_file_rows(

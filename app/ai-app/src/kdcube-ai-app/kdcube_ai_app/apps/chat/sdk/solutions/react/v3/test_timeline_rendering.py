@@ -268,6 +268,62 @@ def test_large_tool_result_is_rendered_as_preview_with_shape():
     assert "A" * 1000 not in joined
 
 
+def test_file_artifact_render_includes_size_bytes():
+    ctx = RuntimeCtx(turn_id="turn_file", started_at="2026-05-08T00:00:00Z")
+    tl = Timeline(runtime=ctx)
+
+    tl.blocks.extend([
+        tl._block(type="turn.header", author="system", turn_id=ctx.turn_id, ts=ctx.started_at, text=""),
+        tl._block(
+            type="react.tool.call",
+            author="agent",
+            turn_id=ctx.turn_id,
+            ts=ctx.started_at,
+            mime="application/json",
+            path="tc:turn_file.tc_exec.call",
+            text=json.dumps({
+                "tool_id": "exec_tools.execute_code_python",
+                "tool_call_id": "tc_exec",
+                "params": {"contract": [{"filename": "outputs/report.md"}]},
+            }),
+        ),
+        tl._block(
+            type="react.tool.result",
+            author="agent",
+            turn_id=ctx.turn_id,
+            ts=ctx.started_at,
+            mime="application/json",
+            path="tc:turn_file.tc_exec.result",
+            text=json.dumps({
+                "artifact_path": "fi:turn_file.outputs/report.md",
+                "physical_path": "turn_file/outputs/report.md",
+                "mime": "text/markdown",
+                "kind": "file",
+                "visibility": "external",
+                "tool_call_id": "tc_exec",
+                "text_symbols": 12000,
+                "size_bytes": 12345,
+            }),
+        ),
+        tl._block(
+            type="react.tool.result",
+            author="agent",
+            turn_id=ctx.turn_id,
+            ts=ctx.started_at,
+            mime="text/markdown",
+            path="fi:turn_file.outputs/report.md",
+            text="# Report\n\n...[truncated]",
+            meta={"tool_call_id": "tc_exec", "text_symbols": 12000, "size_bytes": 12345},
+        ),
+    ])
+
+    rendered = _run(tl.render(cache_last=True))
+    joined = "\n".join(b.get("text", "") for b in rendered if b.get("type") == "text")
+
+    assert "- logical_path: fi:turn_file.outputs/report.md | kind: file | visibility: external | text_symbols: 12000 | size_bytes: 12345" in joined
+    assert "logical_path: fi:turn_file.outputs/report.md | text_symbols: 12000 | size_bytes: 12345" in joined
+
+
 def test_source_result_render_includes_items_stats():
     ctx = RuntimeCtx(
         turn_id="turn_sources",

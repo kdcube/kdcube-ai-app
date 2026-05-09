@@ -27,7 +27,8 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.common import (
     is_safe_relpath,
     host_artifact_file,
     emit_hosted_files,
-    infer_format_from_path
+    infer_format_from_path,
+    enrich_artifact_file_metadata,
 )
 from kdcube_ai_app.apps.chat.sdk.runtime.workspace import resolve_artifact_path
 
@@ -268,6 +269,11 @@ async def handle_react_write(*, react: Any, ctx_browser: Any, state: Dict[str, A
     # Ensure hosting reads the physical path (outdir/turn_<id>/files/...)
     if isinstance(artifact.get("value"), dict):
         artifact["value"]["path"] = artifact_name
+    enrich_artifact_file_metadata(
+        artifact=artifact,
+        outdir=pathlib.Path(state["outdir"]),
+        physical_path=artifact_name,
+    )
     hosted = []
     if visibility != "internal":
         hosted = await host_artifact_file(

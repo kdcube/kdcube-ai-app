@@ -260,7 +260,7 @@ VISIBLE / ADDRESSABLE WORKSPACE MODEL
   - `outputs/customer_portal/report.md`
   - `outputs/analytics_dashboard/test_results.txt`
 - Reserve `outputs/tmp/...` only for disposable scratch outputs.
-- `react.search_files` searches local physical spaces (`outdir`, `outdir/<subdir>`, `workdir`, `workdir/<subdir>`). It does not browse logical snapshot memory directly.
+- `react.rg` searches local physical spaces (`outdir`, `outdir/<subdir>`, `workdir`, `workdir/<subdir>`) and returns file metadata plus line-numbered regex matches. It does not browse logical snapshot memory directly.
 - `ks:` remains read-only and separate from OUT_DIR. Use `react.read` or bundle-specific tools for it.
 - `workdir` is scratch, not durable collaboration state.
 """
@@ -353,7 +353,7 @@ VISIBLE / ADDRESSABLE WORKSPACE MODEL
   - `outputs/customer_portal/report.md`
   - `outputs/analytics_dashboard/test_results.txt`
 - Reserve `outputs/tmp/...` only for disposable scratch outputs.
-- `react.search_files` searches local physical spaces (`outdir`, `outdir/<subdir>`, `workdir`, `workdir/<subdir>`). It does not browse logical snapshot memory directly.
+- `react.rg` searches local physical spaces (`outdir`, `outdir/<subdir>`, `workdir`, `workdir/<subdir>`) and returns file metadata plus line-numbered regex matches. It does not browse logical snapshot memory directly.
 - `ks:` remains read-only and separate from OUT_DIR. Use `react.read` or bundle-specific tools for it.
 - `workdir` is scratch, not durable collaboration state.
 """
@@ -446,7 +446,7 @@ Skills (react.read only):
 HARD:
 - `react.read` expects LOGICAL paths.
 - If you need several exact objects, pass all known paths in one react.read call instead of spending one round per path.
-- For large text, `react.read` is visible-context retrieval, not bulk loading. It returns a configured bounded text preview by default; use `max_text_symbols` only when you need a smaller explicit preview. Exception: `so:sources_pool[...]` reads return JSON source rows in full by default, with item stats; if you explicitly pass `max_text_symbols`, only source text fields are capped and the JSON rows remain valid. Use exec code with `ctx_tools.fetch_ctx(path)` for exact bulk processing when supported. `max_text_symbols` does not apply to PDF/image multimodal data; those are attached only when under the configured byte cap.
+- For large text, `react.read` is visible-context retrieval, not bulk loading. It returns a configured bounded text preview by default. `max_text_symbols` is a request, not a guarantee: the runtime clamps it by configured visible-read, token-budget, and context-fraction caps. If a text artifact was shown truncated and its `text_symbols` is visible, request `max_text_symbols` at least that value to ask for the full visible text; if only `size_bytes` is visible, use it as a safe fallback. After reading, verify the status/footer; if it still says truncated/omitted/capped, do not assume full content. Exception: `so:sources_pool[...]` reads return JSON source rows in full by default, with item stats; if you explicitly pass `max_text_symbols`, only source text fields are capped and the JSON rows remain valid. For exact full processing, use exec: read `fi:` files by physical OUTPUT_DIR-relative path (derive `<turn>/outputs/x` from `fi:<turn>.outputs/x`, and similarly for `files`), and use `ctx_tools.fetch_ctx(path)` only for supported logical context paths (`ar:`, `tc:`, `so:`). `max_text_symbols` does not apply to PDF/image multimodal data; those are attached only when under the configured byte cap.
 - Large initial tool results may also be rendered as bounded previews, except `so:sources_pool[...]` source-row results which remain structured JSON. When you see `[TOOL RESULT PREVIEW TRUNCATED]`, use the included shape/sample to plan; use `react.read` for a bounded visible preview or exec code with `ctx_tools.fetch_ctx(path)` for exact bulk processing when supported.
 - `react.read` caps apply per path, not across the whole path list. For cheap discovery without content, use `stats_only:true`; it returns size/mime/token metadata in the status block and does not add content blocks.
 - `ctx_tools.fetch_ctx` expects LOGICAL paths, but only supports `ar:`, `tc:`, `so:` namespaces. `fi:`, `ks:`, `sk:`, or `su:` are not supported.
@@ -459,7 +459,7 @@ HARD:
 - If exec code browses a resolved namespace root and finds useful descendants, emit logical refs by combining the original resolver input logical_ref with the discovered relative path.
 - Example: resolve `ks:<bundle-defined-root>`, inspect the returned directory in exec, find `foo/bar.py`, then emit `ks:<bundle-defined-root>/foo/bar.py` in an OUTPUT_DIR file or short user.log note so the agent can later call `react.read(["ks:<bundle-defined-root>/foo/bar.py"])`.
 - If you have a physical path, derive logical as above before calling react.read.
-- react.search_files returns `root` plus hits with `path`, `size_bytes`, and optional `logical_path`.
+- react.rg returns `root` plus hits with `path`, `size_bytes`, optional `text_symbols`/`line_count`/`logical_path`, and content `matches` with `read_item` ranges.
 - `path` is relative to the searched root and does not include that root prefix.
 - OUT_DIR hits include `logical_path` and are readable with react.read.
 - Using a physical path with `react.read` is a protocol violation and results in an error.
@@ -532,14 +532,17 @@ Using unsupported logical namespaces with fetch_ctx returns an error rather than
   - emit logical ref `ks:<bundle-defined-root>/foo/bar.py`
 - Emit those logical refs in an `OUTPUT_DIR` file or short `user.log` note so the agent can later use `react.read(...)`.
 
-#### react.search_files results
-- `react.search_files` does not load file contents into context.
+#### react.rg results
+- `react.rg` does not load full file contents into context.
 - Each hit returns:
   - `path`: relative to the searched root
   - `size_bytes`
+  - `text_symbols` for recognizable text files
+  - `line_count` for recognizable text files
   - `logical_path`: for OUT_DIR hits, suitable for `react.read`
-- OUT_DIR hits are readable via `react.read(logical_path)`.
-- If the text file is large and you only need to inspect shape/content, call `react.read({"paths":[logical_path]})` for the configured preview, or add `max_text_symbols` for a smaller explicit preview. If you only need metadata first, call `react.read({"paths":[logical_path],"stats_only":true})`. If you need all bytes, process it with exec using the physical OUTPUT_DIR path or a supported logical `ctx_tools.fetch_ctx` path.
+- Content matches include line-numbered previews and `read_item` ranges. Pass `read_items` back to `react.read({"items":[...]})` to inspect exact regions.
+- OUT_DIR hits are readable via `react.read({"paths":[logical_path]})` or exact ranges via `react.read({"items":[read_item,...]})`.
+- If the text file is large, use `react.rg` to locate regions and `react.read({"items":[...]})` to inspect exact ranges. If you need all bytes, process it with exec using the physical OUTPUT_DIR path or a supported logical `ctx_tools.fetch_ctx` path.
 - workdir hits remain discovery-only with the current toolset.
 - For exec diagnostics, prefer the exec tool result first because it already extracts the relevant exec-specific log segment. Read raw log files directly only when you specifically need that file itself.
 
@@ -557,7 +560,7 @@ Using unsupported logical namespaces with fetch_ctx returns an error rather than
 - Exec contract files may declare optional `visibility="external"|"internal"`:
   - `external` (default): user-shareable produced artifact
   - `internal`: agent/runtime-only file kept in OUT_DIR/timeline, not sent to the user
-- If `react.search_files` returns `logical_path`, prefer that for react.read.
+- If `react.rg` returns `read_items`, prefer those for exact-range `react.read`; otherwise use the returned `logical_path`.
 
 If you pass a logical path to a physical-path tool (or vice‑versa), runtime may rewrite it and logs a protocol notice, but you must not rely on that recovery path.
 """

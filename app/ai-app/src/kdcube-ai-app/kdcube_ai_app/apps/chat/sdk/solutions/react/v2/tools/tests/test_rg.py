@@ -5,7 +5,7 @@ import json
 import pytest
 
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.tools.search_files import handle_react_search_files
+from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.tools.rg import handle_react_rg
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.tools.tests.helpers import FakeBrowser
 
 
@@ -29,7 +29,7 @@ def _latest_payload(ctx: FakeBrowser) -> dict:
 
 
 @pytest.mark.asyncio
-async def test_search_files_finds_file_under_outdir_root(tmp_path):
+async def test_rg_finds_file_under_outdir_root(tmp_path):
     outdir = tmp_path / "out"
     workdir = tmp_path / "work"
     runtime = RuntimeCtx(turn_id="turn_search", outdir=str(outdir), workdir=str(workdir))
@@ -46,26 +46,28 @@ async def test_search_files_finds_file_under_outdir_root(tmp_path):
                 "params": {
                     "root": "outdir",
                     "name_regex": r"docker\.err\.log$",
-                    "max_hits": 5,
+                    "max_files": 5,
                 }
             }
         },
         "outdir": str(outdir),
     }
 
-    await handle_react_search_files(ctx_browser=ctx, state=state, tool_call_id="sf1")
+    await handle_react_rg(ctx_browser=ctx, state=state, tool_call_id="rg1")
 
     payload = _latest_payload(ctx)
     assert payload["root"] == "outdir"
     assert payload["hits"] == [{
         "path": "logs/docker.err.log",
         "size_bytes": 4,
+        "text_symbols": 4,
+        "line_count": 1,
         "logical_path": "fi:logs/docker.err.log",
     }]
 
 
 @pytest.mark.asyncio
-async def test_search_files_supports_workdir_subdir_root(tmp_path):
+async def test_rg_supports_workdir_subdir_root(tmp_path):
     outdir = tmp_path / "out"
     workdir = tmp_path / "work"
     runtime = RuntimeCtx(turn_id="turn_search", outdir=str(outdir), workdir=str(workdir))
@@ -82,25 +84,27 @@ async def test_search_files_supports_workdir_subdir_root(tmp_path):
                 "params": {
                     "root": "workdir/runtime",
                     "name_regex": r"docker\.err\.log$",
-                    "max_hits": 5,
+                    "max_files": 5,
                 }
             }
         },
         "outdir": str(outdir),
     }
 
-    await handle_react_search_files(ctx_browser=ctx, state=state, tool_call_id="sf2")
+    await handle_react_rg(ctx_browser=ctx, state=state, tool_call_id="rg2")
 
     payload = _latest_payload(ctx)
     assert payload["root"] == "workdir/runtime"
     assert payload["hits"] == [{
         "path": "logs/docker.err.log",
         "size_bytes": 4,
+        "text_symbols": 4,
+        "line_count": 1,
     }]
 
 
 @pytest.mark.asyncio
-async def test_search_files_includes_logical_path_for_turn_files(tmp_path):
+async def test_rg_includes_logical_path_for_turn_files(tmp_path):
     outdir = tmp_path / "out"
     workdir = tmp_path / "work"
     runtime = RuntimeCtx(turn_id="turn_search", outdir=str(outdir), workdir=str(workdir))
@@ -122,18 +126,20 @@ async def test_search_files_includes_logical_path_for_turn_files(tmp_path):
         "outdir": str(outdir),
     }
 
-    await handle_react_search_files(ctx_browser=ctx, state=state, tool_call_id="sf_logic")
+    await handle_react_rg(ctx_browser=ctx, state=state, tool_call_id="rg_logic")
 
     hits = _latest_hits(ctx)
     assert hits == [{
         "path": "turn_prev/files/report.md",
         "size_bytes": 5,
+        "text_symbols": 5,
+        "line_count": 1,
         "logical_path": "fi:turn_prev.files/report.md",
     }]
 
 
 @pytest.mark.asyncio
-async def test_search_files_rejects_removed_fi_root_syntax(tmp_path):
+async def test_rg_rejects_removed_fi_root_syntax(tmp_path):
     outdir = tmp_path / "out"
     workdir = tmp_path / "work"
     runtime = RuntimeCtx(turn_id="turn_search", outdir=str(outdir), workdir=str(workdir))
@@ -151,7 +157,55 @@ async def test_search_files_rejects_removed_fi_root_syntax(tmp_path):
         "outdir": str(outdir),
     }
 
-    await handle_react_search_files(ctx_browser=ctx, state=state, tool_call_id="sf3")
+    await handle_react_rg(ctx_browser=ctx, state=state, tool_call_id="rg3")
 
     assert state["last_tool_result"] == []
     assert any(b.get("type") == "react.notice" for b in ctx.timeline.blocks)
+
+
+@pytest.mark.asyncio
+async def test_rg_returns_line_matches_and_read_items(tmp_path):
+    outdir = tmp_path / "out"
+    workdir = tmp_path / "work"
+    runtime = RuntimeCtx(turn_id="turn_search", outdir=str(outdir), workdir=str(workdir))
+    ctx = FakeBrowser(runtime)
+
+    target = outdir / "turn_search" / "outputs" / "page.html"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("\n".join([
+        "<html>",
+        "<body>",
+        "<section id=\"pricing\">",
+        "Checkout now",
+        "</section>",
+        "</body>",
+        "</html>",
+    ]), encoding="utf-8")
+
+    state = {
+        "last_decision": {
+            "tool_call": {
+                "params": {
+                    "root": "outdir",
+                    "name_regex": r"page\.html$",
+                    "pattern": r"pricing|Checkout",
+                    "context_lines": 1,
+                    "max_matches": 10,
+                }
+            }
+        },
+        "outdir": str(outdir),
+    }
+
+    await handle_react_rg(ctx_browser=ctx, state=state, tool_call_id="rg_match")
+
+    payload = _latest_payload(ctx)
+    assert payload["match_count"] == 2
+    assert payload["read_items"] == [
+        {"path": "fi:turn_search.outputs/page.html", "line_start": 2, "line_count": 3},
+        {"path": "fi:turn_search.outputs/page.html", "line_start": 3, "line_count": 3},
+    ]
+    hit = payload["hits"][0]
+    assert hit["logical_path"] == "fi:turn_search.outputs/page.html"
+    assert hit["matches"][0]["line"] == 3
+    assert hit["matches"][0]["read_item"] == payload["read_items"][0]

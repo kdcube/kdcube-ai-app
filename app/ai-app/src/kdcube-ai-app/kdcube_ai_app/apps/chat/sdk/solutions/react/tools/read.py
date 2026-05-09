@@ -9,6 +9,7 @@ import pathlib
 
 import json
 import hashlib
+from kdcube_ai_app.apps.chat.sdk.util import format_visible_line_window, line_number_text, visible_line_window
 from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
     build_artifact_meta_block,
 )
@@ -46,7 +47,7 @@ TOOL_SPEC = {
         "For old-turn recovery, ar:<turn_id>.react.turn.index reconstructs a compact semantic inventory; "
         "use it with react.memsearch hits when the summary does not name enough refs. "
         "Batch multiple known paths in one read call. "
-        "search_files results are directly readable here only when they include logical_path. "
+        "react.rg read_items are directly readable here via params.items. "
         "Each path you read becomes visible in the timeline; skills are shown with ACTIVE 💡 banner. "
         "Use ks:<relpath> to read files from the knowledge space (read-only reference files prepared by the system). "
         "For fi: files, normal readable content is text, plus multimodal PDF/image payloads. "
@@ -59,7 +60,10 @@ TOOL_SPEC = {
         "from that generating step; do not expect react.read on the binary fi: file itself to reveal its content. "
         "Oversized text results are rematerialized as bounded visible previews using configured text/token/byte caps. "
         "Caps apply independently per requested path. "
-        "For bulk processing of such payloads, use exec_tools.execute_code_python and call ctx_tools.fetch_ctx(path=...) inside the exec code."
+        "For exact full processing, use exec_tools.execute_code_python. "
+        "Inside exec, read fi: files by their physical OUTPUT_DIR-relative path "
+        "(for example fi:<turn>.outputs/x maps to <turn>/outputs/x); "
+        "use ctx_tools.fetch_ctx(path=...) for supported logical context objects such as ar:, tc:, or so:."
     ),
     "args": {
         "paths": (
@@ -71,10 +75,17 @@ TOOL_SPEC = {
             "knowledge space via ks:<relpath> (read-only reference files). "
             "fi: normally yields full text for text files and multimodal/base64 payloads for PDF/images only."
         ),
+        "items": (
+            "optional list of read specs, each with path plus optional line_start/line_count or "
+            "offset_text_symbols/max_text_symbols. Use read_items returned by react.rg to materialize exact regions."
+        ),
+        "line_numbers": (
+            "optional bool; when reading line ranges, include line numbers. Defaults true for ranged items."
+        ),
         "max_text_symbols": (
             "optional int; for text payloads, materialize at most this many visible characters/symbols per path. "
             "Use when a large file/result needs a smaller explicit in-context preview than the configured default. "
-            "The runtime clamps it to the configured ai.react.read_visible_max_text_symbols and token budget. "
+            "This is a request, not a guarantee: the runtime clamps it to the configured ai.react.read_visible_max_text_symbols, token budget, and context caps. "
             "For so:sources_pool[...] this is an explicit structured cap for large text fields only; without it, source rows are read in full."
         ),
         "stats_only": (
@@ -87,9 +98,10 @@ TOOL_SPEC = {
         "PDF/image payloads are not partially read; they are attached as multimodal content only when under the configured byte cap. "
         "For unsupported binary files react.read may only surface metadata/path presence. "
         "so:sources_pool[...] returns application/json source rows and item stats; source content is full unless max_text_symbols was explicitly supplied. "
+        "Ranged item reads return exact labeled chunks when they fit configured visible caps. "
         "Oversized non-source text payloads return status=truncated_for_visible_context with a bounded preview. "
         "Oversized PDF/image payloads return status=too_large_for_visible_context_bytes instead of partial content. "
-        "Deeper inspection should be done with code and exec tool, or via related tc: and text/code fi: artifacts from the generating step."
+        "Deeper inspection should be done with code and exec tool, using physical OUTPUT_DIR-relative paths for fi: files or ctx_tools.fetch_ctx for supported ar:/tc:/so: context paths."
     ),
 }
 
@@ -108,6 +120,92 @@ def _bool_param(value: Any) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "on"}
     return bool(value)
+
+
+def _read_item_requests(params: Dict[str, Any]) -> List[Dict[str, Any]]:
+    raw_items = params.get("items")
+    if not isinstance(raw_items, list):
+        return []
+    requests: List[Dict[str, Any]] = []
+    for raw in raw_items:
+        if isinstance(raw, str):
+            path = raw.strip()
+            if path:
+                requests.append({"path": path})
+            continue
+        if not isinstance(raw, dict):
+            continue
+        path = str(raw.get("path") or "").strip()
+        if not path:
+            continue
+        req: Dict[str, Any] = {"path": path}
+        for key in ("line_start", "line_count", "offset_text_symbols", "max_text_symbols"):
+            value = _positive_int(raw.get(key))
+            if value is not None:
+                req[key] = value
+        if "line_numbers" in raw:
+            req["line_numbers"] = _bool_param(raw.get("line_numbers"))
+        requests.append(req)
+    return requests
+
+
+def _has_range_request(req: Dict[str, Any]) -> bool:
+    return any(req.get(k) is not None for k in ("line_start", "line_count", "offset_text_symbols"))
+
+
+def _apply_text_range(text: str, req: Dict[str, Any]) -> tuple[str, Optional[Dict[str, Any]]]:
+    if not _has_range_request(req):
+        return text, None
+    if req.get("line_start") is not None or req.get("line_count") is not None:
+        start = max(1, int(req.get("line_start") or 1))
+        count = max(1, int(req.get("line_count") or 1))
+        lines = text.splitlines()
+        selected = lines[start - 1:start - 1 + count]
+        if req.get("line_numbers", True):
+            ranged = line_number_text("\n".join(selected), line_start=start)
+        else:
+            ranged = "\n".join(selected)
+        visible = len(selected)
+        return ranged, {
+            "range_kind": "lines",
+            "line_start": start,
+            "line_end": start + visible - 1,
+            "requested_line_count": count,
+            "visible_lines": visible,
+            "total_line_count": len(lines),
+            "line_numbers": bool(req.get("line_numbers", True)),
+        }
+    offset = max(0, int(req.get("offset_text_symbols") or 0))
+    count = max(1, int(req.get("max_text_symbols") or len(text)))
+    ranged = text[offset:offset + count]
+    return ranged, {
+        "range_kind": "text_symbols",
+        "offset_text_symbols": offset,
+        "visible_text_symbols": len(ranged),
+        "requested_text_symbols": count,
+    }
+
+
+def _range_header(*, path: str, view: Optional[Dict[str, Any]]) -> str:
+    if not isinstance(view, dict) or not view:
+        return ""
+    lines = ["[READ RANGE]", f"path: {path}"]
+    if view.get("range_kind") == "lines":
+        window = {
+            "line_start": view.get("line_start"),
+            "line_end": view.get("line_end"),
+            "visible_lines": view.get("visible_lines"),
+            "total_line_count": view.get("total_line_count"),
+        }
+        lines.append(f"lines: {format_visible_line_window(window)}")
+        lines.append(f"visible_lines: {view.get('visible_lines')}")
+        lines.append(f"line_numbers: {str(bool(view.get('line_numbers'))).lower()}")
+    elif view.get("range_kind") == "text_symbols":
+        offset = int(view.get("offset_text_symbols") or 0)
+        visible = int(view.get("visible_text_symbols") or 0)
+        lines.append(f"text_symbols: {offset}-{offset + max(0, visible)}")
+        lines.append(f"visible_text_symbols: {visible}")
+    return "\n".join(lines) + "\n\n"
 
 
 def _count_tokens(text: str) -> int:
@@ -234,13 +332,28 @@ def _truncated_read_text(
     source_tokens: int,
     source_text_symbols: int,
     source_bytes: int,
+    source_line_count: Optional[int],
     limit_text_symbols: int,
     byte_cap: int,
 ) -> str:
     clipped = text[:max(0, limit_text_symbols)].rstrip()
     omitted_text_symbols = max(0, source_text_symbols - len(clipped))
-    return "\n".join([
+    line_window = visible_line_window(
         clipped,
+        source_truncated=True,
+        total_line_count=source_line_count,
+    )
+    visible_lines = int(line_window.get("visible_lines") or 0)
+    numbered = line_number_text(clipped) if clipped else ""
+    return "\n".join([
+        "[READ PREVIEW]",
+        f"path: {path}",
+        f"lines: {format_visible_line_window(line_window)}",
+        f"partial_line: {line_window.get('partial_line')}" if line_window.get("partial_line") is not None else "",
+        f"visible_lines: {visible_lines}",
+        "line_numbers: true" if visible_lines else "line_numbers: false",
+        "",
+        numbered if numbered else clipped,
         "",
         "[READ PREVIEW TRUNCATED]",
         f"path: {path}",
@@ -264,7 +377,9 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
         raw_paths = params
     raw_paths = raw_paths if isinstance(raw_paths, list) else []
     paths = [str(p).strip() for p in raw_paths if str(p).strip()]
+    read_item_requests = _read_item_requests(params)
     stats_only = _bool_param(params.get("stats_only"))
+    default_line_numbers = _bool_param(params.get("line_numbers")) if "line_numbers" in params else True
 
     turn_id = (ctx_browser.runtime_ctx.turn_id or "")
     tool_call_block(
@@ -278,6 +393,7 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
         },
     )
 
+    item_paths = [str(req.get("path") or "").strip() for req in read_item_requests if str(req.get("path") or "").strip()]
     skill_paths = [p for p in paths if p.startswith("sk:") or p.startswith("SK") or p.startswith("skill:") or p.startswith("skills.")]
     artifact_paths = [p for p in paths if p not in skill_paths]
     ks_paths = [p for p in artifact_paths if isinstance(p, str) and p.startswith("ks:")]
@@ -286,6 +402,11 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
     turn_index_paths = [p for p in artifact_paths if parse_turn_index_path(p)]
     if turn_index_paths:
         artifact_paths = [p for p in artifact_paths if p not in turn_index_paths]
+    for item_path in item_paths:
+        if item_path.startswith(("fi:", "sk:", "SK", "skill:", "skills.", "ks:")) or parse_turn_index_path(item_path):
+            continue
+        if item_path not in artifact_paths:
+            artifact_paths.append(item_path)
     pending_blocks: List[Dict[str, Any]] = []
     missing_skills: List[str] = []
     exists_paths: List[str] = []
@@ -564,6 +685,11 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
     large_paths: List[Dict[str, Any]] = []
     truncated_paths: List[Dict[str, Any]] = []
     items_by_path = {item.get("context_path"): item for item in (items or []) if item.get("context_path")}
+    item_requests_by_path: Dict[str, List[Dict[str, Any]]] = {}
+    for req in read_item_requests:
+        path_key = str(req.get("path") or "").strip()
+        if path_key:
+            item_requests_by_path.setdefault(path_key, []).append(req)
 
     def _stats_entry_for_text(*, path: str, text: str, mime: str = "", bytes_override: Optional[int] = None) -> Dict[str, Any]:
         entry: Dict[str, Any] = {
@@ -622,9 +748,11 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
         meta_extra: Dict[str, Any],
         force_truncated: bool = False,
         source_bytes_override: Optional[int] = None,
+        source_line_count_override: Optional[int] = None,
     ) -> Dict[str, Any]:
         source_tokens = _count_tokens(text)
         source_text_symbols = len(text)
+        source_line_count = int(source_line_count_override) if source_line_count_override is not None else len(text.splitlines())
         actual_text_bytes = len(text.encode("utf-8", errors="ignore"))
         source_bytes = int(source_bytes_override or actual_text_bytes)
         if source_tokens:
@@ -666,6 +794,7 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
                 source_tokens=source_tokens,
                 source_text_symbols=source_text_symbols_for_footer,
                 source_bytes=source_bytes,
+                source_line_count=source_line_count,
                 limit_text_symbols=len(clipped),
                 byte_cap=visible_read_byte_cap,
             )
@@ -723,8 +852,12 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
         })
         return {"added": added, "tokens": total}
 
-    async def _emit_fi_path(ctx_path: str) -> None:
+    async def _emit_fi_path(ctx_path: str, item_req: Optional[Dict[str, Any]] = None) -> None:
         nonlocal total_tokens
+        item_req = item_req or {}
+        item_has_range = _has_range_request(item_req)
+        item_max_text_symbols = _positive_int(item_req.get("max_text_symbols")) or requested_read_text_symbols or visible_read_text_symbol_cap
+        item_line_numbers = bool(item_req.get("line_numbers", default_line_numbers if item_has_range else False))
         outdir_raw = (
             state.get("outdir")
             or getattr(getattr(ctx_browser, "runtime_ctx", None), "outdir", "")
@@ -739,8 +872,12 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
                     path=ctx_path,
                     outdir=outdir,
                     max_bytes=visible_read_byte_cap,
-                    max_text_symbols=requested_read_text_symbols or visible_read_text_symbol_cap,
+                    max_text_symbols=item_max_text_symbols,
                     stats_only=stats_only,
+                    line_start=_positive_int(item_req.get("line_start")),
+                    line_count=_positive_int(item_req.get("line_count")),
+                    offset_text_symbols=_positive_int(item_req.get("offset_text_symbols")),
+                    line_numbers=item_line_numbers,
                 )
             except Exception:
                 res = {"missing": True}
@@ -822,27 +959,38 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
                 meta_extra[key] = val
         if not meta_extra.get("physical_path") and artifact.get("local_path"):
             meta_extra["physical_path"] = artifact.get("local_path")
+        view_meta = res.get("view") if isinstance(res.get("view"), dict) else None
+        if view_meta and res.get("line_count") is not None and view_meta.get("total_line_count") is None:
+            view_meta["total_line_count"] = int(res.get("line_count") or 0)
+        if view_meta:
+            meta_extra["read_range"] = view_meta
 
         art_text = res.get("text")
         art_base64 = res.get("base64")
         tokens = 0
 
         added_any = False
-        if isinstance(art_text, str) and art_text.strip():
+        if isinstance(art_text, str) and (art_text.strip() or view_meta):
+            if view_meta:
+                art_text = _range_header(path=ctx_path, view=view_meta) + art_text
             emitted = _materialize_text_block(
                 ctx_path=ctx_path,
                 text=art_text,
                 mime=art_mime if art_mime else "text/markdown",
                 meta_extra=meta_extra,
                 force_truncated=bool(res.get("source_truncated")),
-                source_bytes_override=int(res.get("size_bytes") or 0) or None,
+                source_bytes_override=None if view_meta else (int(res.get("size_bytes") or 0) or None),
+                source_line_count_override=res.get("line_count") if res.get("line_count") is not None else None,
             )
             tokens = int(emitted.get("tokens") or 0)
             total_tokens += tokens
             if emitted.get("added"):
                 added_any = True
             if emitted.get("truncated"):
-                per_path.append(_truncated_text_status_entry(ctx_path, emitted))
+                entry = _truncated_text_status_entry(ctx_path, emitted)
+                if view_meta:
+                    entry["read_range"] = view_meta
+                per_path.append(entry)
                 return
         elif isinstance(art_base64, str) and art_base64:
             estimated_bytes = (len(art_base64) * 3) // 4
@@ -873,6 +1021,10 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
                 added_any = True
 
         per_path_entry = {"path": ctx_path}
+        if view_meta:
+            per_path_entry["read_range"] = view_meta
+        if res.get("size_bytes") is not None:
+            per_path_entry["bytes"] = int(res.get("size_bytes") or 0)
         if not added_any:
             per_path_entry["status"] = "exists_in_visible_context"
             exists_paths.append(ctx_path)
@@ -1114,6 +1266,14 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
             entry["tokens"] = tokens
         per_path.append(entry)
 
+    for item_req in read_item_requests:
+        item_path = str(item_req.get("path") or "").strip()
+        if not item_path:
+            continue
+        if item_path.startswith("fi:"):
+            await _emit_fi_path(item_path, item_req)
+            continue
+
     if turn_index_paths:
         for turn_index_path in turn_index_paths:
             await _emit_turn_index_path(turn_index_path)
@@ -1247,23 +1407,37 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
         pending_blocks.append(meta_block)
 
         tokens = 0
+        view_meta_for_entry = None
         if isinstance(art_text, str) and art_text.strip():
+            view_meta = None
+            reqs_for_path = item_requests_by_path.get(ctx_path) or item_requests_by_path.get(raw_path) or []
+            if reqs_for_path:
+                art_text, view_meta = _apply_text_range(art_text, reqs_for_path[0])
+                if view_meta:
+                    art_text = _range_header(path=ctx_path, view=view_meta) + art_text
+                    view_meta_for_entry = view_meta
             if art_fmt in {"json"}:
                 mime = "application/json"
             elif art_fmt in {"html"}:
                 mime = "text/html"
             else:
                 mime = "text/markdown"
+            meta_extra = {"tool_call_id": tool_call_id, "tool_id": tool_id}
+            if view_meta:
+                meta_extra["read_range"] = view_meta
             emitted = _materialize_text_block(
                 ctx_path=ctx_path or tc_result_path(turn_id=turn_id, call_id=tool_call_id),
                 text=art_text,
                 mime=mime,
-                meta_extra={"tool_call_id": tool_call_id, "tool_id": tool_id},
+                meta_extra=meta_extra,
             )
             tokens = int(emitted.get("tokens") or 0)
             total_tokens += tokens
             if emitted.get("truncated"):
-                per_path.append(_truncated_text_status_entry(ctx_path, emitted))
+                entry = _truncated_text_status_entry(ctx_path, emitted)
+                if view_meta:
+                    entry["read_range"] = view_meta
+                per_path.append(entry)
                 continue
             if not emitted.get("added"):
                 exists_paths.append(ctx_path)
@@ -1297,11 +1471,13 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
             if not _maybe_add_block(blk):
                 exists_paths.append(ctx_path)
         per_path_entry = {"path": ctx_path}
+        if view_meta_for_entry:
+            per_path_entry["read_range"] = view_meta_for_entry
         if tokens:
             per_path_entry["tokens"] = tokens
         per_path.append(per_path_entry)
 
-    if artifact_paths or skill_paths or ks_paths or turn_index_paths:
+    if artifact_paths or skill_paths or ks_paths or turn_index_paths or read_item_requests:
         summary = {
             "paths": per_path,
             "total_tokens": total_tokens,

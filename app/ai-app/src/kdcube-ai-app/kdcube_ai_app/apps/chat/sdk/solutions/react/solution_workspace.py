@@ -9,6 +9,7 @@ import json
 import traceback, pathlib, logging
 from typing import Any, Optional, List, Dict, Union
 
+from kdcube_ai_app.apps.chat.sdk.util import count_text_lines
 from kdcube_ai_app.apps.chat.emitters import ChatCommunicator
 from kdcube_ai_app.apps.chat.sdk.storage.conversation_store import ConversationStore
 from kdcube_ai_app.infra.service_hub.inventory import AgentLogger
@@ -62,12 +63,76 @@ def _read_local_file(
     *,
     max_bytes: Optional[int] = None,
     max_text_symbols: Optional[int] = None,
-) -> tuple[Optional[str], Optional[str], Optional[str], Optional[int], bool]:
+    line_start: Optional[int] = None,
+    line_count: Optional[int] = None,
+    offset_text_symbols: Optional[int] = None,
+    line_numbers: bool = False,
+) -> tuple[Optional[str], Optional[str], Optional[str], Optional[int], bool, Optional[Dict[str, Any]]]:
+    def _line_range_text() -> tuple[str, Dict[str, Any]]:
+        start = max(1, int(line_start or 1))
+        count = max(1, int(line_count or 1))
+        end = start + count - 1
+        lines: List[str] = []
+        actual_end = start - 1
+        with abs_path.open("r", encoding="utf-8", errors="replace") as fh:
+            for lineno, raw_line in enumerate(fh, start=1):
+                if lineno < start:
+                    continue
+                if lineno > end:
+                    break
+                actual_end = lineno
+                line = raw_line.rstrip("\n\r")
+                if line_numbers:
+                    lines.append(f"{lineno:>6}\t{line}")
+                else:
+                    lines.append(line)
+        meta = {
+            "range_kind": "lines",
+            "line_start": start,
+            "line_end": actual_end,
+            "requested_line_count": count,
+            "visible_lines": max(0, actual_end - start + 1),
+            "line_numbers": bool(line_numbers),
+        }
+        return "\n".join(lines), meta
+
+    def _symbol_range_text() -> tuple[str, Dict[str, Any]]:
+        offset = max(0, int(offset_text_symbols or 0))
+        count = max(1, int(max_text_symbols or 1))
+        end = offset + count
+        chunks: List[str] = []
+        pos = 0
+        with abs_path.open("r", encoding="utf-8", errors="replace") as fh:
+            while pos < end:
+                chunk = fh.read(8192)
+                if not chunk:
+                    break
+                next_pos = pos + len(chunk)
+                if next_pos > offset and pos < end:
+                    left = max(0, offset - pos)
+                    right = min(len(chunk), end - pos)
+                    chunks.append(chunk[left:right])
+                pos = next_pos
+        text = "".join(chunks)
+        meta = {
+            "range_kind": "text_symbols",
+            "offset_text_symbols": offset,
+            "visible_text_symbols": len(text),
+            "requested_text_symbols": count,
+        }
+        return text, meta
+
     try:
         if not abs_path.exists() or not abs_path.is_file():
-            return None, None, None, None, False
+            return None, None, None, None, False, None
         size_bytes = abs_path.stat().st_size
         if _is_text_mime(mime or ""):
+            if line_start is not None or line_count is not None:
+                text, view_meta = _line_range_text()
+                return text, None, None, size_bytes, False, view_meta
+            if offset_text_symbols is not None:
+                text, view_meta = _symbol_range_text()
+                return text, None, None, size_bytes, False, view_meta
             read_limit: Optional[int] = None
             if max_bytes and max_bytes > 0:
                 read_limit = int(max_bytes)
@@ -77,17 +142,17 @@ def _read_local_file(
             if read_limit and read_limit > 0 and size_bytes > read_limit:
                 with abs_path.open("rb") as fh:
                     data = fh.read(read_limit + 1)
-                return data.decode("utf-8", errors="replace"), None, None, size_bytes, True
-            return abs_path.read_text(encoding="utf-8", errors="replace"), None, None, size_bytes, False
+                return data.decode("utf-8", errors="replace"), None, None, size_bytes, True, None
+            return abs_path.read_text(encoding="utf-8", errors="replace"), None, None, size_bytes, False, None
         if max_bytes and max_bytes > 0 and size_bytes > max_bytes:
-            return None, None, "file_too_large_for_visible_context", size_bytes, False
+            return None, None, "file_too_large_for_visible_context", size_bytes, False, None
         if _is_base64_allowed_mime(mime or ""):
             data = abs_path.read_bytes()
             import base64 as _b64
-            return None, _b64.b64encode(data).decode("utf-8"), None, size_bytes, False
+            return None, _b64.b64encode(data).decode("utf-8"), None, size_bytes, False, None
     except Exception:
-        return None, None, None, None, False
-    return None, None, None, None, False
+        return None, None, None, None, False, None
+    return None, None, None, None, False, None
 
 
 async def read_artifact_for_react(
@@ -98,6 +163,10 @@ async def read_artifact_for_react(
         max_bytes: Optional[int] = None,
         max_text_symbols: Optional[int] = None,
         stats_only: bool = False,
+        line_start: Optional[int] = None,
+        line_count: Optional[int] = None,
+        offset_text_symbols: Optional[int] = None,
+        line_numbers: bool = False,
 ) -> Dict[str, Any]:
     """
     Resolve a fi: artifact path to a local file (rehosting if needed) and read its
@@ -179,19 +248,25 @@ async def read_artifact_for_react(
                 size_bytes = abs_path.stat().st_size
             except Exception:
                 size_bytes = None
+            line_count = count_text_lines(abs_path) if _is_text_mime(mime or "") else None
             return {
                 "artifact": artifact,
                 "mime": mime,
                 "physical_path": physical_path,
                 "size_bytes": size_bytes,
+                "line_count": line_count,
                 "stats_only": True,
                 "missing": False,
             }
-        text, b64, read_error, size_bytes, source_truncated = _read_local_file(
+        text, b64, read_error, size_bytes, source_truncated, view_meta = _read_local_file(
             abs_path,
             mime,
             max_bytes=max_bytes,
             max_text_symbols=max_text_symbols,
+            line_start=line_start,
+            line_count=line_count,
+            offset_text_symbols=offset_text_symbols,
+            line_numbers=line_numbers,
         )
         if read_error:
             return {
@@ -204,6 +279,7 @@ async def read_artifact_for_react(
                 "max_bytes": max_bytes,
             }
         if text is not None or b64 is not None:
+            line_count = count_text_lines(abs_path) if text is not None and _is_text_mime(mime or "") else None
             return {
                 "artifact": artifact,
                 "mime": mime,
@@ -211,7 +287,9 @@ async def read_artifact_for_react(
                 "base64": b64,
                 "physical_path": physical_path,
                 "size_bytes": size_bytes,
+                "line_count": line_count,
                 "source_truncated": source_truncated,
+                "view": view_meta,
                 "missing": False,
             }
 
