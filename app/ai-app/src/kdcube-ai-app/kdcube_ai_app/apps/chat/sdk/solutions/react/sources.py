@@ -24,6 +24,76 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.workspace import hydrate_worksp
 
 logger = logging.getLogger(__name__)
 
+SOURCE_TEXT_FIELDS = ("content", "text", "snippet", "summary", "preview")
+
+
+def _source_text_len(row: Dict[str, Any], key: str) -> int:
+    val = row.get(key)
+    return len(val) if isinstance(val, str) else 0
+
+
+def _brief(value: Any, *, limit: int = 180) -> str:
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 3)].rstrip() + "..."
+
+
+def build_sources_pool_items_stats(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Compact, structured stats for source-row lists.
+
+    This is intentionally metadata only: it helps the model decide whether it
+    has full source content without replacing the source rows themselves.
+    """
+    pool = [r for r in (rows or []) if isinstance(r, dict)]
+    items: List[Dict[str, Any]] = []
+    total_content_symbols = 0
+    total_text_symbols = 0
+    total_size_bytes = 0
+    content_rows = 0
+
+    for row in pool:
+        content_symbols = _source_text_len(row, "content")
+        text_symbols = _source_text_len(row, "text")
+        total_content_symbols += content_symbols
+        total_text_symbols += text_symbols
+        if content_symbols:
+            content_rows += 1
+
+        size_bytes = row.get("size_bytes")
+        if isinstance(size_bytes, (int, float)) and size_bytes > 0:
+            total_size_bytes += int(size_bytes)
+
+        item: Dict[str, Any] = {
+            "sid": row.get("sid"),
+            "source_type": row.get("source_type") or "",
+            "mime": row.get("mime") or "",
+            "title": _brief(row.get("title") or row.get("name") or ""),
+            "url": _brief(row.get("url") or row.get("artifact_path") or row.get("physical_path") or "", limit=260),
+            "has_content": bool(content_symbols),
+            "content_symbols": content_symbols,
+            "text_symbols": text_symbols,
+            "fields": sorted([str(k) for k in row.keys()]),
+        }
+        content_length = row.get("content_length")
+        if isinstance(content_length, (int, float)):
+            item["content_length"] = int(content_length)
+        if isinstance(size_bytes, (int, float)):
+            item["size_bytes"] = int(size_bytes)
+        items.append(item)
+
+    return {
+        "kind": "sources_pool",
+        "items_count": len(pool),
+        "sids": [r.get("sid") for r in pool],
+        "content_rows": content_rows,
+        "total_content_symbols": total_content_symbols,
+        "total_text_symbols": total_text_symbols,
+        "total_size_bytes": total_size_bytes,
+        "items": items,
+    }
+
 
 def _log_render_assets(ctx_browser: Any, message: str, *, level: str = "INFO") -> None:
     try:

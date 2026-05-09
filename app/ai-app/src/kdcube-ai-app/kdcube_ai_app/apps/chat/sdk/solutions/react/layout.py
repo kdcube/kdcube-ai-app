@@ -892,12 +892,20 @@ def build_announce_text(
     return "\n".join(lines) + "\n"
 
 
-def build_sources_pool_text(*, sources_pool: List[Dict[str, Any]]) -> str:
+def build_sources_pool_text(
+    *,
+    sources_pool: List[Dict[str, Any]],
+    prefer_content: bool = False,
+    snippet_chars: Optional[int] = 200,
+) -> str:
     pool = [s for s in (sources_pool or []) if isinstance(s, dict)]
     pool.sort(key=lambda s: int(s.get("sid") or 0))
     total = len(pool)
 
-    header = f" SOURCES POOL  ({total} sources)   use react.read to load full text if not on a timeline"
+    if prefer_content:
+        header = f" SOURCES POOL CONTENT  ({total} sources)   explicit read; prefers fetched content over search preview"
+    else:
+        header = f" SOURCES POOL  ({total} sources)   use react.read to load full text if not on a timeline"
     width = max(80, len(header))
     hr = "━" * width
 
@@ -924,12 +932,14 @@ def build_sources_pool_text(*, sources_pool: List[Dict[str, Any]]) -> str:
             return f"~{n} tok"
         return f"~{n/1000:.1f}K tok"
 
-    def _snippet_from(src: Dict[str, Any]) -> str:
-        for key in ("text", "snippet", "summary", "preview", "content"):
+    def _text_from(src: Dict[str, Any]) -> tuple[str, str]:
+        keys = ("content", "text", "snippet", "summary", "preview") if prefer_content else ("text", "snippet", "summary", "preview", "content")
+        for key in keys:
             val = src.get(key)
             if isinstance(val, str) and val.strip():
-                return " ".join(val.strip().split())
-        return ""
+                text = val.strip() if prefer_content else " ".join(val.strip().split())
+                return text, key
+        return "", ""
 
     lines: List[str] = [hr, header.ljust(width), hr, ""]
 
@@ -956,7 +966,7 @@ def build_sources_pool_text(*, sources_pool: List[Dict[str, Any]]) -> str:
                 domain = (src.get("domain") or "").strip() or _domain_from_url(url)
             domain = domain or "-"
             mime_label = mime or "-"
-            text_val = _snippet_from(src)
+            text_val, text_key = _text_from(src)
             tok_count = token_count(text_val) if text_val else 0
             if tok_count <= 0:
                 size_bytes = src.get("size_bytes")
@@ -964,8 +974,13 @@ def build_sources_pool_text(*, sources_pool: List[Dict[str, Any]]) -> str:
                     tok_count = max(1, int(size_bytes) // 4)
             tok_label = _fmt_tokens(tok_count)
             lines.append(f"SID:{sid_label}  {title:<{title_w}}  {mime_label}  {domain}  {tok_label}")
-            snippet = _shorten(text_val, 200) if text_val else ("<base64>" if (mime.startswith("image/") or mime == "application/pdf") else "<text>")
-            lines.append(f"        {snippet}")
+            if text_val:
+                snippet = text_val if snippet_chars is None else _shorten(text_val, snippet_chars)
+                label = f"{text_key}: " if prefer_content and text_key else ""
+            else:
+                snippet = "<base64>" if (mime.startswith("image/") or mime == "application/pdf") else "<text>"
+                label = ""
+            lines.append(f"        {label}{snippet}")
             lines.append("")
 
         for row in display:
@@ -975,6 +990,7 @@ def build_sources_pool_text(*, sources_pool: List[Dict[str, Any]]) -> str:
     if pool:
         lines.append("  Hint: to see the full snippet if not visible / hide if no need and big (example)")
         lines.append("  Load:  react.read([\"so:sources_pool[1,3,5]\"])")
+        lines.append("  Exec:  ctx_tools.fetch_ctx(\"so:sources_pool[1]\") returns rows; for web rows use content first, text second")
         lines.append("  Hide:  react.hide([\"so:sources_pool[1]\"])")
         lines.append(hr)
     return "\n".join(lines) + "\n"

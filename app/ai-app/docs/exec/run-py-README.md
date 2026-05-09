@@ -109,6 +109,9 @@ Example: `kdcube.copilot` reads its built knowledge space from `BUNDLE_STORAGE_D
 - You provide a **contract** listing expected output files.
 - After execution, files are validated.
 - Missing/invalid outputs are reported as errors.
+- While the isolated runtime is still running, the exec tool refreshes the
+  processor idle watchdog with internal activity touches. These touches do not
+  emit synthetic chat messages; the processor hard wall-time cap still applies.
 
 **Contract item**
 ```

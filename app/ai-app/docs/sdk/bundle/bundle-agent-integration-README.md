@@ -758,6 +758,10 @@ Runtime behavior:
 - The runner touches the processor task watchdog on subprocess start,
   stdout/stderr activity, and while the subprocess remains alive. These touches
   are internal activity signals; they do not emit synthetic chat events.
+- Contracted isolated execution through `exec_tools.execute_code_python` also
+  touches the same watchdog while the isolated runtime is still running, so a
+  long computation is not treated as idle solely because it has no visible chat
+  deltas yet.
 - The processor hard wall-time cap still applies even when internal activity is
   present.
 

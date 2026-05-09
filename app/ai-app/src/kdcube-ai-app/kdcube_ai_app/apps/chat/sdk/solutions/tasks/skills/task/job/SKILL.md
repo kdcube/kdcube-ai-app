@@ -41,6 +41,10 @@ execution id; the bundle injects both through runtime context. Keep journal
 entries compact and user-facing. Avoid dumping raw logs unless they are
 important evidence.
 
+Call `task_job.*` tools directly as normal ReAct tool calls. Do not call them
+from inside `exec_tools.execute_code_python` generated Python; `task_job` is not
+available as a Python global in the isolated exec runtime.
+
 When you produce files, include artifact metadata in the journal:
 
 - `logical_path` for React `fi:` references

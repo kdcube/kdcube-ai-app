@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import zipfile
 import json
 from types import SimpleNamespace
@@ -145,6 +146,44 @@ async def test_fetch_ctx_exposes_payload_for_tc_result(tmp_path, monkeypatch):
     assert json.dumps(header) not in ret["text"]
 
 
+@pytest.mark.asyncio
+async def test_fetch_ctx_sources_pool_returns_full_content_field(tmp_path, monkeypatch):
+    runtime_out = tmp_path / "runtime-out"
+    artifact_out = runtime_out / "workdir"
+    runtime_out.mkdir()
+    artifact_out.mkdir()
+    full_content = "full fetched source text " * 20
+    (runtime_out / "timeline.json").write_text(
+        json.dumps(
+            {
+                "blocks": [],
+                "sources_pool": [
+                    {
+                        "sid": 1,
+                        "url": "https://example.com/security",
+                        "title": "Security",
+                        "text": "short preview",
+                        "content": full_content,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    token = OUTDIR_CV.set(str(artifact_out))
+    monkeypatch.setenv("EXEC_CONTAINER_ROLE", "supervisor")
+    monkeypatch.setenv("KDCUBE_RUNTIME_OUTPUT_DIR", str(runtime_out))
+    try:
+        result = await ctx_tools_module.tools.fetch_ctx(path="so:sources_pool[1]")
+    finally:
+        OUTDIR_CV.reset(token)
+
+    assert result["err"] is None
+    row = result["ret"][0]
+    assert row["text"] == "short preview"
+    assert row["content"] == full_content
+
+
 def test_build_exec_error_payload_uses_stderr_tail_when_summary_missing():
     error = _build_exec_error_payload(
         missing=["turn_1/files/hello.txt"],
@@ -189,6 +228,19 @@ def test_extract_error_lines_includes_infra_launcher_failures():
     ])
 
     assert "RuntimeError: Stub connection failed" in extract_error_lines(text)
+
+
+def test_extract_error_lines_ignores_benign_asyncio_subprocess_shutdown_noise():
+    text = "\n".join([
+        "Exception ignored in: <function BaseSubprocessTransport.__del__ at 0xffff94901120>",
+        "Traceback (most recent call last):",
+        "  File \"/usr/local/lib/python3.12/asyncio/base_subprocess.py\", line 126, in __del__",
+        "  File \"/usr/local/lib/python3.12/asyncio/base_subprocess.py\", line 104, in close",
+        "RuntimeError: Event loop is closed",
+        "2026-04-29 INFO finished",
+    ])
+
+    assert extract_error_lines(text) == ""
 
 
 def test_build_exec_error_payload_uses_timeout_summary_from_backend_result():
@@ -610,6 +662,56 @@ async def test_run_exec_tool_forwards_bundle_storage_dir_to_runtime(tmp_path, mo
 
     assert result["ok"] is True
     assert captured["globals"]["BUNDLE_STORAGE_DIR"] == "/bundle-storage/demo-tenant/demo-project/kdcube.copilot__test"
+
+
+@pytest.mark.asyncio
+async def test_run_exec_tool_touches_task_activity_while_runtime_runs(tmp_path, monkeypatch):
+    activity_kinds = []
+
+    class _FakeRuntime:
+        def __init__(self, logger):
+            self.logger = logger
+
+        async def execute_py_code(self, **kwargs):
+            await asyncio.sleep(0.035)
+            return {"ok": True, "returncode": 0}
+
+    monkeypatch.setattr(exec_tools_module, "_InProcessRuntime", _FakeRuntime)
+    monkeypatch.setattr(exec_tools_module, "EXEC_ACTIVITY_TOUCH_INTERVAL_SEC", 0.01)
+    monkeypatch.setattr(
+        exec_tools_module,
+        "touch_current_task_activity",
+        lambda kind: activity_kinds.append(kind) or True,
+    )
+    monkeypatch.setattr(
+        exec_tools_module,
+        "build_portable_spec",
+        lambda **_kwargs: SimpleNamespace(to_json=lambda: "{}"),
+    )
+
+    tool_manager = SimpleNamespace(
+        svc=object(),
+        comm=SimpleNamespace(_export_comm_spec_for_runtime=lambda: {}),
+        export_runtime_globals=lambda: {},
+        tool_modules_tuple_list=lambda: [],
+        bundle_root=None,
+    )
+
+    result = await run_exec_tool(
+        tool_manager=tool_manager,
+        output_contract={},
+        code="print('ok')",
+        contract=[],
+        timeout_s=30,
+        workdir=tmp_path / "work",
+        outdir=tmp_path / "out",
+        exec_id="exec_long",
+    )
+
+    assert result["ok"] is True
+    assert "exec_tool.runtime.started:exec_long" in activity_kinds
+    assert any(kind == "exec_tool.runtime.running:exec_long" for kind in activity_kinds)
+    assert "exec_tool.runtime.finished:exec_long" in activity_kinds
 
 
 @pytest.mark.asyncio

@@ -543,8 +543,10 @@ class ContextTools:
             "NOTE: For so:sources_pool[...] fetch_ctx returns the raw list of source rows (not the\n"
             "canonical artifact shape). If a row includes base64, it will be returned as-is.\n"
             "File/attachment rows use physical_path (OUT_DIR-relative) for file access.\n"
-            "Common row fields: sid, source_type, title, text, url, mime, size_bytes,\n"
+            "Common row fields: sid, source_type, title, text, content, url, mime, size_bytes,\n"
             "artifact_path, physical_path, hosted_uri/rn/key, base64 (rare).\n"
+            "For web rows, text is the search preview/snippet; content is the full fetched page text when available.\n"
+            "Use row.get('content') or row.get('text') when exact source text is needed.\n"
         ),
     )
     async def fetch_ctx(

@@ -142,10 +142,17 @@ export interface CompactionEventData {
     title?: string | null;
     kind?: string | null;
     reason?: string | null;
+    triggerReason?: string | null;
     beforeTokens?: number | null;
     afterTokens?: number | null;
     compactedTokens?: number | null;
+    inputTokensEstimate?: number | null;
+    maxTokens?: number | null;
+    thresholdTokens?: number | null;
     compactedBlocks?: number | null;
+    beforeVisibleBlocks?: number | null;
+    afterVisibleBlocks?: number | null;
+    compactedVisibleBlocks?: number | null;
     splitTurn?: boolean;
     splitTurnId?: string | null;
     currentTurn?: boolean;

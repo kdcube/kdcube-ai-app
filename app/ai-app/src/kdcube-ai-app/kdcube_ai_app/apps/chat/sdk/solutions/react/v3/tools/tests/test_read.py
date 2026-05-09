@@ -119,6 +119,81 @@ async def test_read_tc_result_prefers_inline_payload_over_meta(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_read_sources_pool_prefers_fetched_content_over_preview(tmp_path):
+    runtime = RuntimeCtx(
+        turn_id="turn_read",
+        outdir=str(tmp_path),
+        workdir=str(tmp_path),
+        max_tokens=80_000,
+        read_visible_max_text_symbols=120,
+    )
+    ctx = FakeBrowser(runtime)
+    full_content = "full fetched article body with CVE evidence " * 40
+    ctx.timeline.sources_pool = [
+        {
+            "sid": 1,
+            "url": "https://example.com/security",
+            "title": "Security Article",
+            "text": "short search preview only",
+            "content": full_content,
+            "content_length": len(full_content),
+        }
+    ]
+
+    state = {"last_decision": {"tool_call": {"params": {"paths": ["so:sources_pool[1]"]}}}}
+    await handle_react_read(ctx_browser=ctx, state=state, tool_call_id="r_source")
+
+    block = next(
+        b for b in ctx.timeline.blocks
+        if b.get("type") == "react.tool.result"
+        and b.get("path") == "so:sources_pool[1]"
+        and b.get("call_id") == "r_source"
+    )
+    assert block.get("mime") == "application/json"
+    rows = json.loads(block.get("text") or "[]")
+    assert rows[0]["text"] == "short search preview only"
+    assert rows[0]["content"] == full_content
+    assert rows[0]["content"].endswith("CVE evidence ")
+
+    status_block = next(
+        b for b in ctx.timeline.blocks
+        if b.get("type") == "react.tool.result"
+        and b.get("path") == "tc:turn_read.r_source.result"
+        and b.get("call_id") == "r_source"
+    )
+    status = json.loads(status_block["text"])
+    assert status["paths"][0]["kind"] == "sources_pool"
+    assert status["paths"][0]["items_stats"]["content_rows"] == 1
+    assert status["paths"][0]["content_policy"] == "full_source_rows"
+
+
+@pytest.mark.asyncio
+async def test_read_sources_pool_max_text_symbols_preserves_json_items(tmp_path):
+    runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path), max_tokens=80_000)
+    ctx = FakeBrowser(runtime)
+    ctx.timeline.sources_pool = [
+        {"sid": 1, "url": "https://example.com/1", "title": "One", "text": "snippet one", "content": "A" * 100},
+        {"sid": 2, "url": "https://example.com/2", "title": "Two", "text": "snippet two", "content": "B" * 100},
+    ]
+
+    state = {"last_decision": {"tool_call": {"params": {"paths": ["so:sources_pool[1,2]"], "max_text_symbols": 50}}}}
+    await handle_react_read(ctx_browser=ctx, state=state, tool_call_id="r_source_cap")
+
+    block = next(
+        b for b in ctx.timeline.blocks
+        if b.get("type") == "react.tool.result"
+        and b.get("path") == "so:sources_pool[1,2]"
+        and b.get("call_id") == "r_source_cap"
+    )
+    rows = json.loads(block.get("text") or "[]")
+    assert [r["sid"] for r in rows] == [1, 2]
+    assert rows[0]["content"] == "A" * 50
+    assert rows[0]["content_truncated_for_visible_context"] is True
+    assert rows[1]["content"] == ""
+    assert rows[1]["content_truncated_for_visible_context"] is True
+
+
+@pytest.mark.asyncio
 async def test_read_large_tc_result_returns_configured_preview_not_full_payload(tmp_path):
     runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path), max_tokens=80_000)
     ctx = FakeBrowser(runtime)

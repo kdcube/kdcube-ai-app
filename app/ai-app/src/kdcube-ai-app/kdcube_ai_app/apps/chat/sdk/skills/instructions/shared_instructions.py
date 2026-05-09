@@ -446,11 +446,13 @@ Skills (react.read only):
 HARD:
 - `react.read` expects LOGICAL paths.
 - If you need several exact objects, pass all known paths in one react.read call instead of spending one round per path.
-- For large text, `react.read` is visible-context retrieval, not bulk loading. It returns a configured bounded text preview by default; use `max_text_symbols` only when you need a smaller explicit preview. Use exec code with `ctx_tools.fetch_ctx(path)` for exact bulk processing when supported. `max_text_symbols` does not apply to PDF/image multimodal data; those are attached only when under the configured byte cap.
-- Large initial tool results may also be rendered as bounded previews. When you see `[TOOL RESULT PREVIEW TRUNCATED]`, use the included shape/sample to plan; use `react.read` for a bounded visible preview or exec code with `ctx_tools.fetch_ctx(path)` for exact bulk processing when supported.
+- For large text, `react.read` is visible-context retrieval, not bulk loading. It returns a configured bounded text preview by default; use `max_text_symbols` only when you need a smaller explicit preview. Exception: `so:sources_pool[...]` reads return JSON source rows in full by default, with item stats; if you explicitly pass `max_text_symbols`, only source text fields are capped and the JSON rows remain valid. Use exec code with `ctx_tools.fetch_ctx(path)` for exact bulk processing when supported. `max_text_symbols` does not apply to PDF/image multimodal data; those are attached only when under the configured byte cap.
+- Large initial tool results may also be rendered as bounded previews, except `so:sources_pool[...]` source-row results which remain structured JSON. When you see `[TOOL RESULT PREVIEW TRUNCATED]`, use the included shape/sample to plan; use `react.read` for a bounded visible preview or exec code with `ctx_tools.fetch_ctx(path)` for exact bulk processing when supported.
 - `react.read` caps apply per path, not across the whole path list. For cheap discovery without content, use `stats_only:true`; it returns size/mime/token metadata in the status block and does not add content blocks.
 - `ctx_tools.fetch_ctx` expects LOGICAL paths, but only supports `ar:`, `tc:`, `so:` namespaces. `fi:`, `ks:`, `sk:`, or `su:` are not supported.
 - `ctx_tools.fetch_ctx` returns artifact fields `path`, `mime`, and `payload`. For JSON mime, `payload` is parsed JSON. Compatibility fields such as `text` or `base64` may also be present.
+- For `so:sources_pool[...]`, `react.read` and `ctx_tools.fetch_ctx` return a list of source rows, not an artifact dict.
+  Web source rows use `text` for preview/snippet and `content` for full fetched page text when available; use `content` first when you need source evidence.
 - Tools that take paths (`react.patch`, `rendering_tools.write_*`) expect PHYSICAL paths.
 - Exec code reads and writes PHYSICAL OUTPUT_DIR-relative paths.
 - Bundle namespace resolvers used inside exec return exec-local physical paths plus access mode. Those physical paths are not valid inputs to react.read or other normal react tools.
@@ -608,6 +610,9 @@ ISO_TOOL_EXECUTION_INSTRUCTION = """
 [Using builtin tools in generated code (HARD)]:
 - Do NOT import built-in tool modules (web_tools, rendering_tools, ctx_tools, etc.). Imports will fail.
 - To invoke any built-in tool from generated code, ALWAYS use `await agent_io_tools.tool_call(...)`.
+- Only execution-enabled runtime tool handles are available inside generated code. Orchestration/job tools such
+  as `task_job.*` are not Python globals inside exec snippets; call them as normal top-level ReAct tool calls,
+  not from `exec_tools.execute_code_python`.
 - Minimal pattern:
 ```python
 resp = await agent_io_tools.tool_call(
@@ -617,7 +622,7 @@ resp = await agent_io_tools.tool_call(
     tool_id="rendering_tools.write_pdf",
 )
 ```
-- The tool function handle (`fn=...`) is already available in the runtime; execution must go through tool_call.
+- The tool function handle (`fn=...`) must already be available in the exec runtime; execution must go through tool_call.
 """
 
 TEMPERATURE_GUIDANCE = """
@@ -726,10 +731,13 @@ CRITICAL: Filesystem paths can be used in exec snippets, in react.write, react.p
 - Reserve `outputs/tmp/...` only for disposable scratch outputs.
 
 ### Using Search/Fetch results (SPECIAL RULE)
-- Search/fetch tool calls result are list of {sid, url, text, content, ..}, and the content (snippet of data from that source) can be large. 
+- Search/fetch tool calls result are list of {sid, url, text, content, ..}. `text` is the search preview/snippet;
+  `content` is the fetched page body when available and can be large.
   Therefore the timeline management process can truncate such results in the visible context as the timeline progresses (older/large data pruning).
   However, the results of such tools are added in the sources_pool. 
-- Whenever some sids are invisible/truncated while you need them, you can bring the selected sids into visibilty by reading them from sources pool with react.read(paths=["so:sources_pool[sid1, sid2, ..]"]) using slice operator, for the enumeration of SIDs `so:sources_pool[1,3,5]` or for range of sids `so:sources_pool[2:6]`
+- Whenever some sids are invisible/truncated while you need them, you can bring the selected sids into visibility as JSON source rows with react.read(paths=["so:sources_pool[sid1, sid2, ..]"]) using slice operator, for the enumeration of SIDs `so:sources_pool[1,3,5]` or for range of sids `so:sources_pool[2:6]`. For web rows, inspect/use `content` before `text`.
+- In exec code, `ctx_tools.fetch_ctx(path="so:sources_pool[1]")` returns source rows. For web rows, use
+  `row.get("content") or row.get("text")`; never prefer `text` over `content` when you need full page text.
 """
 
 REACT_PLANNING = """

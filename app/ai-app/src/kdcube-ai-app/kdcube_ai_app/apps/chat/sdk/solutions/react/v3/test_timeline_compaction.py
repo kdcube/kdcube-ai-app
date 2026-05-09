@@ -772,6 +772,55 @@ async def test_compaction_hooks_fire_only_for_actual_compaction(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_compaction_skips_candidate_that_only_reduces_visible_blocks(monkeypatch):
+    async def _fake_summary(*args, **kwargs):
+        return "EXPANDED SUMMARY " * 1000
+
+    import kdcube_ai_app.apps.chat.sdk.tools.backends.summary.conv_progressive_summary as summary_mod
+
+    monkeypatch.setattr(summary_mod, "summarize_context_blocks_progressive", _fake_summary)
+
+    events = []
+
+    async def _before(payload):
+        events.append(("before", payload))
+
+    async def _after(payload):
+        events.append(("after", payload))
+
+    runtime = RuntimeCtx(
+        turn_id="turn_2",
+        max_tokens=120,
+        on_before_compaction=_before,
+        on_after_compaction=_after,
+    )
+    tl = Timeline(runtime=runtime, svc=object())
+    blocks = [
+        _blk(btype="turn.header", text="[TURN turn_0]", turn_id="turn_0"),
+        _blk(btype="user.prompt", text="ask " * 80, turn_id="turn_0"),
+        _blk(btype="assistant.completion", text="reply " * 80, turn_id="turn_0"),
+        _blk(btype="turn.header", text="[TURN turn_2]", turn_id="turn_2"),
+        _blk(btype="user.prompt", text="new ask", turn_id="turn_2"),
+    ]
+
+    updated = await tl.sanitize_context_blocks(
+        system_text="sys",
+        blocks=blocks,
+        max_tokens=40,
+        keep_recent_turns=0,
+        force=True,
+    )
+
+    assert [kind for kind, _payload in events] == ["before", "after"]
+    assert updated == blocks
+    assert events[1][1]["status"] == "skipped"
+    assert events[1][1]["reason"] == "no_visible_token_reduction"
+    assert events[1][1]["after_tokens"] >= events[1][1]["before_tokens"]
+    assert events[1][1]["compacted_visible_blocks"] > 0
+    assert not any(b.get("type") == "conv.range.summary" for b in updated)
+
+
+@pytest.mark.asyncio
 async def test_compaction_after_existing_summary(monkeypatch):
     async def _fake_summary(*args, **kwargs):
         return "SUMMARY"
@@ -1462,7 +1511,7 @@ def test_cache_ttl_pruning_keeps_external_turn_events_visible():
 
 
 @pytest.mark.asyncio
-async def test_render_compacts_when_pruned_skeleton_has_too_many_message_blocks(monkeypatch):
+async def test_render_does_not_compact_for_block_count_without_token_pressure(monkeypatch):
     import kdcube_ai_app.apps.chat.sdk.tools.backends.summary.conv_progressive_summary as summary_mod
 
     async def _fake_summary(*args, **kwargs):
@@ -1497,9 +1546,8 @@ async def test_render_compacts_when_pruned_skeleton_has_too_many_message_blocks(
 
     rendered = await tl.render(cache_last=False, include_sources=False, include_announce=False)
 
-    assert any(b.get("type") == "conv.range.summary" for b in tl.blocks)
-    assert len(rendered) < 760
-    assert "compacted rendered skeleton" in rendered[0]["text"]
+    assert not any(b.get("type") == "conv.range.summary" for b in tl.blocks)
+    assert len(rendered) >= 760
 
 
 def test_cache_ttl_pruning_collapses_old_prune_notices():

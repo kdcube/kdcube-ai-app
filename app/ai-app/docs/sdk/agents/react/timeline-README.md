@@ -260,6 +260,9 @@ Tool calls/results are rendered into a compact, consistent view:
   `[TOOL RESULT PREVIEW TRUNCATED]`, size metadata, a depth-limited shape,
   a bounded raw preview, and recovery instructions. The stored `tc:` result is
   not truncated.
+- **Source-row payloads**: `so:sources_pool[...]` JSON rows are not passed
+  through the generic tool-result preview cap. They stay structured and visible
+  so the model can cite/use searched content without guessing from a blind cut.
 - **Each artifact**: `[TOOL RESULT <id>].artifact <tool_id>`  
   `logical_path: ...` (+ `physical_path` only if hosted) followed immediately by content
 
@@ -271,6 +274,11 @@ rules are separate from TTL pruning:
 - text content is bounded by `read_visible_max_text_symbols`,
   `read_visible_max_tokens`, `read_visible_context_fraction`, and optional
   per-call `max_text_symbols`; the cap is per requested path
+- once `react.read` has admitted or explicitly preview-capped content, prompt
+  rendering does not apply the generic tool-result preview cap again
+- `so:sources_pool[...]` reads are structured JSON source-row reads. They are
+  full by default and include `items_stats`; explicit `max_text_symbols` caps
+  only source text fields while preserving valid JSON rows.
 - raw payloads are bounded by `read_visible_max_bytes`
 - `stats_only: true` records path metadata in the `react.read` status block
   without adding content blocks to the visible timeline
@@ -300,7 +308,7 @@ Debugging:
 ## Storage location
 Timeline is stored as:
 - **artifact**: `artifact:conv.timeline.v1`
-- **payload**: timeline JSON (blocks + metadata; no sources_pool)
+- **payload**: timeline JSON (blocks + metadata + current full `sources_pool` for local/exec recovery)
 - **content_str**: compact summary (counts/title/turn_ids/last_activity_at)
 
 Sources pool is stored as:

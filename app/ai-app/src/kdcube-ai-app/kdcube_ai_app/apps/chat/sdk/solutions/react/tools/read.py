@@ -11,7 +11,6 @@ import json
 import hashlib
 from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
     build_artifact_meta_block,
-    physical_path_to_logical_path,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.solution_workspace import (
     read_artifact_for_react,
@@ -25,6 +24,10 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.common import (
     notice_block,
     add_block,
     tc_result_path,
+)
+from kdcube_ai_app.apps.chat.sdk.solutions.react.sources import (
+    SOURCE_TEXT_FIELDS,
+    build_sources_pool_items_stats,
 )
 
 DEFAULT_VISIBLE_READ_MAX_TEXT_SYMBOLS = 48_000
@@ -47,6 +50,8 @@ TOOL_SPEC = {
         "Each path you read becomes visible in the timeline; skills are shown with ACTIVE 💡 banner. "
         "Use ks:<relpath> to read files from the knowledge space (read-only reference files prepared by the system). "
         "For fi: files, normal readable content is text, plus multimodal PDF/image payloads. "
+        "For so:sources_pool[...] paths, react.read returns JSON source rows; web rows use content for full fetched text "
+        "when available and text for the search preview/snippet. Source rows are materialized in full by default. "
         "⚠️ BINARY FILE RESTRICTION (HARD): Other binary files such as xlsx/xls/pptx/docx/zip are not decoded into usable content by react.read; "
         "calling react.read on unsupported binary files returns only metadata, NOT content."
         "Inspect those with code and exec tool against their physical OUTPUT_DIR path. "
@@ -69,7 +74,8 @@ TOOL_SPEC = {
         "max_text_symbols": (
             "optional int; for text payloads, materialize at most this many visible characters/symbols per path. "
             "Use when a large file/result needs a smaller explicit in-context preview than the configured default. "
-            "The runtime clamps it to the configured ai.react.read_visible_max_text_symbols and token budget."
+            "The runtime clamps it to the configured ai.react.read_visible_max_text_symbols and token budget. "
+            "For so:sources_pool[...] this is an explicit structured cap for large text fields only; without it, source rows are read in full."
         ),
         "stats_only": (
             "optional bool, default false. When true, resolve each path and return size/mime/token metadata in "
@@ -80,7 +86,8 @@ TOOL_SPEC = {
         "ok for readable text/PDF/image paths; max_text_symbols applies only to text. "
         "PDF/image payloads are not partially read; they are attached as multimodal content only when under the configured byte cap. "
         "For unsupported binary files react.read may only surface metadata/path presence. "
-        "Oversized text payloads return status=truncated_for_visible_context with a bounded preview. "
+        "so:sources_pool[...] returns application/json source rows and item stats; source content is full unless max_text_symbols was explicitly supplied. "
+        "Oversized non-source text payloads return status=truncated_for_visible_context with a bounded preview. "
         "Oversized PDF/image payloads return status=too_large_for_visible_context_bytes instead of partial content. "
         "Deeper inspection should be done with code and exec tool, or via related tc: and text/code fi: artifacts from the generating step."
     ),
@@ -109,6 +116,62 @@ def _count_tokens(text: str) -> int:
         return int(token_count(text))
     except Exception:
         return 0
+
+
+def _source_rows_for_visible_json(
+    rows: List[Dict[str, Any]],
+    *,
+    content_text_budget: Optional[int] = None,
+) -> tuple[List[Dict[str, Any]], bool]:
+    """
+    Return source rows as JSON-safe dicts. By default this preserves source
+    fields exactly. If an explicit max_text_symbols was requested, truncate only
+    text-bearing fields while preserving every item and annotating the truncation.
+    """
+    budget = int(content_text_budget) if content_text_budget and content_text_budget > 0 else None
+    remaining = budget
+    truncated = False
+    out: List[Dict[str, Any]] = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        copied = dict(row)
+        if remaining is not None:
+            for key in SOURCE_TEXT_FIELDS:
+                val = copied.get(key)
+                if not isinstance(val, str) or not val:
+                    continue
+                original_len = len(val)
+                if remaining <= 0:
+                    copied[key] = ""
+                    copied[f"{key}_truncated_for_visible_context"] = True
+                    copied[f"{key}_original_symbols"] = original_len
+                    copied[f"{key}_visible_symbols"] = 0
+                    truncated = True
+                    continue
+                if original_len > remaining:
+                    copied[key] = val[:remaining]
+                    copied[f"{key}_truncated_for_visible_context"] = True
+                    copied[f"{key}_original_symbols"] = original_len
+                    copied[f"{key}_visible_symbols"] = remaining
+                    remaining = 0
+                    truncated = True
+                else:
+                    remaining -= original_len
+        out.append(copied)
+    return out, truncated
+
+
+def _source_rows_json_text(
+    rows: List[Dict[str, Any]],
+    *,
+    content_text_budget: Optional[int] = None,
+) -> tuple[str, bool]:
+    visible_rows, truncated = _source_rows_for_visible_json(
+        rows,
+        content_text_budget=content_text_budget,
+    )
+    return json.dumps(visible_rows, ensure_ascii=False, indent=2, default=str), truncated
 
 
 def _visible_read_limits(runtime_ctx: Any, *, params: Dict[str, Any]) -> Dict[str, Optional[int] | float]:
@@ -1072,63 +1135,61 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
                 except Exception:
                     rows = []
                 if rows:
+                    items_stats = build_sources_pool_items_stats(rows)
                     if stats_only:
                         per_path.append({
                             "path": raw_path,
                             "status": "stats_only",
                             "kind": "sources_pool",
                             "items": len(rows),
+                            "items_stats": items_stats,
                             "content_materialized": False,
                         })
                         continue
-                    file_rows = []
-                    other_rows = []
-                    for row in rows:
-                        if not isinstance(row, dict):
-                            continue
-                        ap = (row.get("artifact_path") or "").strip()
-                        source_type = (row.get("source_type") or "").strip().lower()
-                        if source_type in {"file", "attachment"} or (ap.startswith("fi:")):
-                            file_rows.append(row)
-                        else:
-                            other_rows.append(row)
-                    for row in file_rows:
-                        ap = (row.get("artifact_path") or "").strip()
-                        if not ap:
-                            physical_path = (row.get("physical_path") or row.get("local_path") or "").strip()
-                            if physical_path.startswith("turn_"):
-                                ap = physical_path_to_logical_path(physical_path)
-                        if ap:
-                            await _emit_fi_path(ap)
-                        else:
-                            missing_artifacts.append(raw_path)
-                    if other_rows:
-                        try:
-                            from kdcube_ai_app.apps.chat.sdk.solutions.react.layout import build_sources_pool_text
-                            art_text = build_sources_pool_text(sources_pool=other_rows)
-                            emitted = _materialize_text_block(
-                                ctx_path=raw_path or tc_result_path(turn_id=turn_id, call_id=tool_call_id),
-                                text=art_text,
-                                mime="text/markdown",
-                                meta_extra={"tool_call_id": tool_call_id},
-                            )
-                            tokens = int(emitted.get("tokens") or 0)
-                            total_tokens += tokens
-                            if emitted.get("truncated"):
-                                per_path.append(_truncated_text_status_entry(raw_path, emitted))
-                            elif emitted.get("added"):
-                                per_path_entry = {"path": raw_path}
-                                if tokens:
-                                    per_path_entry["tokens"] = tokens
-                                per_path.append(per_path_entry)
-                            else:
-                                exists_paths.append(raw_path)
-                                per_path.append({"path": raw_path, "status": "exists_in_visible_context"})
-                            continue
-                        except Exception:
-                            pass
-                    if file_rows:
-                        continue
+                    art_text, source_text_truncated = _source_rows_json_text(
+                        rows,
+                        content_text_budget=requested_read_text_symbols,
+                    )
+                    tokens = _count_tokens(art_text)
+                    total_tokens += tokens
+                    meta_extra = {
+                        "tool_call_id": tool_call_id,
+                        "tool_id": tool_id,
+                        "source_kind": "sources_pool",
+                        "items_stats": items_stats,
+                        "content_policy": "full_source_rows" if not source_text_truncated else "content_fields_truncated_by_request",
+                    }
+                    if requested_read_text_symbols is not None:
+                        meta_extra["requested_text_symbols"] = requested_read_text_symbols
+                    added = _maybe_add_block({
+                        "turn": turn_id,
+                        "type": "react.tool.result",
+                        "call_id": tool_call_id,
+                        "mime": "application/json",
+                        "path": raw_path,
+                        "text": art_text,
+                        "meta": meta_extra,
+                    })
+                    entry = {
+                        "path": raw_path,
+                        "kind": "sources_pool",
+                        "mime": "application/json",
+                        "items": len(rows),
+                        "items_stats": items_stats,
+                        "content_materialized": True,
+                        "content_policy": meta_extra["content_policy"],
+                    }
+                    if tokens:
+                        entry["tokens"] = tokens
+                    if requested_read_text_symbols is not None:
+                        entry["requested_text_symbols"] = requested_read_text_symbols
+                    if source_text_truncated:
+                        entry["status"] = "content_fields_truncated_by_request"
+                    elif not added:
+                        exists_paths.append(raw_path)
+                        entry["status"] = "exists_in_visible_context"
+                    per_path.append(entry)
+                    continue
 
         path = raw_path
         display_path = raw_path
@@ -1154,7 +1215,11 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
                 from kdcube_ai_app.apps.chat.sdk.solutions.react.layout import build_sources_pool_text
                 sources = ctx_browser.timeline.resolve_sources_pool(path)
                 if sources:
-                    art_text = build_sources_pool_text(sources_pool=sources)
+                    art_text = build_sources_pool_text(
+                        sources_pool=sources,
+                        prefer_content=True,
+                        snippet_chars=None,
+                    )
                     art_fmt = "text"
             except Exception:
                 pass

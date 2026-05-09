@@ -1431,7 +1431,7 @@ class BaseEntrypoint:
                 "solver.react.decision": {"provider": "anthropic", "model": sonnet_45},
                 "solver.react.decision.strong": {"provider": "anthropic", "model": sonnet_45},
                 "solver.react.decision.regular": {"provider": "anthropic", "model": haiku_4},
-                "solver.react.v2.decision.v2.strong": {"provider": "anthropic", "model": sonnet_45}, # Solver — hard reasoning
+                "solver.react.v2.decision.v2.strong": {"provider": "anthropic", "model": sonnet_46}, # Solver — hard reasoning
                 "solver.react.v2.decision.v2.regular": {"provider": "anthropic", "model": haiku_4},  # Solver — routine steps
                 "solver.react.summary": {"provider": "anthropic", "model": haiku_4},
                 "context.compaction.summary": {"provider": "anthropic", "model": sonnet_46},

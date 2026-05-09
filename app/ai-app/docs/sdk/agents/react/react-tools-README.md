@@ -100,6 +100,16 @@ the exec code. `fetch_ctx` returns `path`, `mime`, and `payload`; for JSON mime,
 returns another bounded preview and should not be used as a bulk-data processing
 loop.
 
+For `so:sources_pool[...]`, `fetch_ctx` returns source rows. Web rows use `text`
+for the preview/snippet and `content` for the fetched page body when available;
+bulk processors should prefer `content` over `text`.
+
+`react.read` on `so:sources_pool[...]` also returns JSON source rows, not a prose
+view. These reads are full by default and include `items_stats` metadata. If
+`max_text_symbols` is explicitly provided, the runtime caps only source text
+fields while preserving valid JSON rows. `so:sources_pool[...]` result blocks
+are not passed through the generic prompt preview cap.
+
 Example bounded preview:
 
 ```json
