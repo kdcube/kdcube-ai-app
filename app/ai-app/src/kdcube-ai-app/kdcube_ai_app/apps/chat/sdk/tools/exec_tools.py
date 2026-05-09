@@ -1116,7 +1116,6 @@ async def run_exec_tool(
             "path": rel,
             "filename": pathlib.Path(rel).name,
             "mime": a["mime"],
-            "text": text_content if is_text else "",
             "text_visible_preview": text_visible_preview if is_text else "",
             "description": a["description"],
             "visibility": a.get("visibility") or "external",
