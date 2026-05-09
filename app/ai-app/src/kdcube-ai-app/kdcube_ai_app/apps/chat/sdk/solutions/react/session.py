@@ -670,6 +670,14 @@ def _ttl_retrieval_stub(
     mime = (block.get("mime") or block.get("media_type") or meta.get("mime") or "").strip()
     if mime:
         parts.append(f"mime={mime}")
+    read_range = meta.get("read_range") if isinstance(meta.get("read_range"), dict) else None
+    if read_range:
+        if read_range.get("range_kind") == "lines":
+            parts.append(f"range=lines:{read_range.get('line_start')}-{read_range.get('line_end')}")
+        elif read_range.get("range_kind") == "text_symbols":
+            offset = int(read_range.get("offset_text_symbols") or 0)
+            visible = int(read_range.get("visible_text_symbols") or 0)
+            parts.append(f"range=text_symbols:{offset}-{offset + max(0, visible)}")
     return " ".join(parts)
 
 
@@ -686,6 +694,12 @@ _TTL_REPLACEMENT_KEEP_KEYS = (
     "bytes:",
     "tokens:",
     "text_symbols:",
+    "line_count:",
+    "line_numbers:",
+    "lines:",
+    "visible_lines:",
+    "read_range",
+    "range=",
     "visible_read_limit",
     "url",
     "sid",
@@ -746,6 +760,13 @@ def _bound_ttl_replacement(
     """
     if not isinstance(replacement, str) or not replacement:
         return replacement
+    meta = block.get("meta") if isinstance(block.get("meta"), dict) else {}
+    call_id = str(block.get("call_id") or meta.get("tool_call_id") or "").strip()
+    tool_id = str(block.get("tool_id") or meta.get("tool_id") or "").strip()
+    if call_id and not tool_id and isinstance(call_meta, dict):
+        tool_id = str((call_meta.get(call_id) or {}).get("tool_id") or "").strip()
+    if (block.get("type") or "").strip() == "react.tool.result" and tool_id == "react.rg":
+        return _ttl_retrieval_stub(block, call_meta=call_meta)
     try:
         max_tokens = int(getattr(cfg, "replacement_max_tokens", DEFAULT_REPLACEMENT_MAX_TOKENS))
     except Exception:

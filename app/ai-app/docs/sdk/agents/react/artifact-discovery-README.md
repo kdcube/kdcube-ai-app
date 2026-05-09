@@ -147,13 +147,15 @@ The rewrite is recorded as a **protocol notice** in the timeline so the agent ca
   - `visibility=internal` files are **not hosted** (stored only in OUT_DIR + timeline).
 - For `kind=display`, content is emitted and stored as text block.
 
-**react.search_files**
-- Searches under `outdir` or `workdir` and returns discovery metadata only.
+**react.rg**
+- Searches under `outdir` or `workdir` and returns discovery metadata plus optional line-numbered content matches.
 - Result shape is `{root, hits}`.
 - Each hit contains:
   - `path`: relative to the searched root
   - `size_bytes`
+  - `text_symbols` and `line_count` for recognizable text files
   - `logical_path` for OUT_DIR hits, suitable for `react.read`
+- Content matches also include `read_item` ranges; pass them to `react.read({"items":[...]})` to inspect exact regions.
 - This is the bridge from filesystem discovery to content loading.
 
 **react.pull**

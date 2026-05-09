@@ -36,6 +36,7 @@ MAX_VISIBLE_LIVE_TURN_EVENTS = 4
 DEFAULT_READ_VISIBLE_MAX_TEXT_SYMBOLS = 48_000
 DEFAULT_READ_VISIBLE_MAX_TOKENS = 12_000
 DEFAULT_READ_VISIBLE_MAX_BYTES = 10 * 1024 * 1024
+DEFAULT_READ_VISIBLE_CONTEXT_FRACTION = 0.15
 DEFAULT_EXEC_TEXT_PREVIEW_MAX_SYMBOLS = 8_000
 DEFAULT_TOOL_RESULT_PREVIEW_MAX_TEXT_SYMBOLS = 12_000
 
@@ -717,6 +718,12 @@ def build_announce_context_cap_lines(*, runtime_ctx: Optional[RuntimeCtx]) -> Li
     read_text = _int_attr("read_visible_max_text_symbols", DEFAULT_READ_VISIBLE_MAX_TEXT_SYMBOLS)
     read_tokens = _int_attr("read_visible_max_tokens", DEFAULT_READ_VISIBLE_MAX_TOKENS)
     read_bytes = _int_attr("read_visible_max_bytes", DEFAULT_READ_VISIBLE_MAX_BYTES)
+    try:
+        read_fraction = float(getattr(runtime_ctx, "read_visible_context_fraction", None))
+    except Exception:
+        read_fraction = DEFAULT_READ_VISIBLE_CONTEXT_FRACTION
+    if read_fraction <= 0:
+        read_fraction = DEFAULT_READ_VISIBLE_CONTEXT_FRACTION
     exec_preview = _int_attr("exec_text_preview_max_symbols", DEFAULT_EXEC_TEXT_PREVIEW_MAX_SYMBOLS)
     tool_preview = _int_attr(
         "tool_result_preview_max_text_symbols",
@@ -725,9 +732,10 @@ def build_announce_context_cap_lines(*, runtime_ctx: Optional[RuntimeCtx]) -> Li
     return [
         "[CONTEXT CAPS]",
         (
-            f"  read text={read_text} tok={read_tokens} bytes={_bytes_label(read_bytes)}; "
+            f"  read text={read_text} tok={read_tokens} bytes={_bytes_label(read_bytes)} ctx_frac={read_fraction:g}; "
             f"tool_result_preview={tool_preview}; exec_file_preview={exec_preview}"
         ),
+        "  react.read max_text_symbols is clamped by these caps; use exec for exact full processing when still truncated.",
     ]
 
 

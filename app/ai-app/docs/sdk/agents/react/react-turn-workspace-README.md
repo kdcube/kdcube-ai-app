@@ -95,7 +95,7 @@ Workspace implementation (`RuntimeCtx.workspace_implementation`):
 `ks:` is readable by logical path, for example `react.read(["ks:<bundle-defined-path>"])`.
 
 Important constraints:
-- `react.search_files` does not browse `ks:`.
+- `react.rg` does not browse `ks:`.
 - `fetch_ctx` does not support `ks:`.
 - `ks:` becomes a physical directory tree only inside isolated exec **if** the bundle exposes a namespace resolver/helper for it.
 
@@ -224,7 +224,7 @@ Workspace/read-write summary:
 - when continuing the same project, React is expected to reuse the existing top-level `files/<scope>/...` folder rather than inventing a sibling scope
 - if the old scope name is clearly weak or misleading, React may intentionally rename/migrate the project tree to a better canonical scope
 - a rename is different from sibling drift: the project should continue under the new scope instead of leaving the old scope active and starting a second one
-- `react.search_files` can search all of OUT_DIR and returns `logical_path` for OUT_DIR hits so the agent can immediately call `react.read`.
+- `react.rg` can search all of OUT_DIR and returns `logical_path` for OUT_DIR hits so the agent can immediately call `react.read`. For content matches it also returns `read_item` ranges for exact `react.read({"items":[...]})` inspection.
 - workdir is searchable but is still not a general-purpose readable namespace for `react.read`.
 
 ## Phase 3: Optional turn snapshot persistence (`react.persist_workspace()`)

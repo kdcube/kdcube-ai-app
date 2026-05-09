@@ -49,7 +49,7 @@ Tool result blocks are emitted per artifact or per result type:
 - `react.write`: Create a text artifact for display, file delivery, or internal note keeping.
 - `react.patch`: Update an existing file. If `patch` starts with `---/+++/@@`, treat as unified diff; otherwise replace full file content.
 - `react.memsearch`: Query conversation index for prior turns; returns snippets.
-- `react.hide`, `react.search_files`, and `react.plan` provide cache-tail cleanup, safe file search, and in-loop planning.
+- `react.hide`, `react.rg`, and `react.plan` provide cache-tail cleanup, safe file/region search, and in-loop planning.
 
 ## Storage
 - Tool results are **not** persisted as files by default.

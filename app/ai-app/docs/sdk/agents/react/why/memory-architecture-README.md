@@ -501,14 +501,14 @@ So memsearch is:
 - assistant hits can return multiple visible `assistant.completion` snippets from one matched turn
 - attachment hits can return both original turn attachments and external followup attachment paths
 
-### `react.search_files`
+### `react.rg`
 
 Use to search the current local filesystem surface:
 
 - OUT_DIR
 - optionally workdir
 
-It returns `logical_path` for OUT_DIR hits so the agent can immediately reopen content with `react.read`.
+It returns `logical_path` for OUT_DIR hits, and content matches include `read_item` ranges so the agent can immediately reopen exact regions with `react.read({"items":[...]})`.
 
 ### `react.pull`
 

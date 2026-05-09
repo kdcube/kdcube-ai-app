@@ -3,7 +3,7 @@ id: ks:docs/sdk/agents/react/react-tools-README.md
 title: "React Tools"
 summary: "Current built-in react.* tool catalog, path contracts, and execution semantics."
 tags: ["sdk", "agents", "react", "tools"]
-keywords: ["react.read", "react.pull", "react.checkout", "react.write", "react.patch", "react.memsearch", "react.hide", "react.search_files", "react.plan"]
+keywords: ["react.read", "react.pull", "react.checkout", "react.write", "react.patch", "react.memsearch", "react.hide", "react.rg", "react.plan"]
 see_also:
   - ks:docs/sdk/agents/react/artifact-discovery-README.md
   - ks:docs/sdk/agents/react/react-round-README.md
@@ -58,8 +58,16 @@ Do not pass logical `fi:` paths to `react.write` or `react.patch`.
 Reads existing logical artifacts back into the visible timeline.
 
 - input: `paths: list[str]`
+- optional input: `items: list[object]` — exact read specs with `path` plus
+  optional `line_start`/`line_count` or `offset_text_symbols`/`max_text_symbols`.
+  `react.rg` returns ready-to-pass `read_item` entries for this field.
 - optional input: `max_text_symbols` — maximum visible text characters per text
   path. This requests a smaller explicit preview than the configured default.
+- optional input: `line_numbers: true|false` — include line numbers for ranged
+  line reads. Defaults to true for ranged items.
+- line range previews are labeled as `lines: [start-end]/total`; if a text
+  preview is cut mid-line, that partial line is called out separately and is not
+  counted as fully visible.
 - optional input: `stats_only: true` — return size/mime/token metadata in the
   status block without emitting content blocks.
 - byte cap: `read_visible_max_bytes` is a raw-payload guard for every path.
@@ -114,6 +122,12 @@ Example bounded preview:
 
 ```json
 {"paths":["fi:turn_abc.outputs/report.md"],"max_text_symbols":4000}
+```
+
+Example exact range read:
+
+```json
+{"items":[{"path":"fi:turn_abc.outputs/page.html","line_start":812,"line_count":60}]}
 ```
 
 Example metadata-only read:
@@ -259,13 +273,17 @@ Replaces a visible tail block with a short placeholder.
 
 Use it to shrink still-visible bulky material that is no longer needed in the active prompt.
 
-### `react.search_files`
+### `react.rg`
 
 Searches safely under `outdir` or `workdir` without shell execution.
 
-- input: search pattern / path filters
+- input: file name regex and/or content regex
 - scope: rooted search only, under runtime-managed directories
 - OUT_DIR hits: include logical paths suitable for `react.read`
+- content matches: include line-numbered previews and `read_item` ranges
+- `context_lines` controls how many surrounding lines are included in the
+  suggested `read_item` range around each match
+- next step: pass `read_items` to `react.read({"items":[...]})` for exact visible regions
 - workdir hits: filesystem hits only; they do not automatically become logical artifacts
 
 ### `react.plan`

@@ -147,3 +147,58 @@ async def test_read_tc_result_prefers_inline_payload_over_meta(tmp_path):
         for b in ctx.timeline.blocks
         if b.get("type") == "react.tool.result"
     )
+
+
+@pytest.mark.asyncio
+async def test_read_items_materializes_multiple_line_ranges(tmp_path):
+    runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path), max_tokens=80_000)
+    ctx = FakeBrowser(runtime)
+    out_file = tmp_path / "turn_read" / "outputs" / "page.html"
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+    out_file.write_text("\n".join([
+        "<html>",
+        "<body>",
+        "<section id=\"hero\">Hero</section>",
+        "<section id=\"pricing\">Pricing</section>",
+        "<section id=\"checkout\">Checkout</section>",
+        "</body>",
+        "</html>",
+    ]), encoding="utf-8")
+
+    source_path = "fi:turn_read.outputs/page.html"
+    state = {
+        "last_decision": {
+            "tool_call": {
+                "params": {
+                    "items": [
+                        {"path": source_path, "line_start": 3, "line_count": 2},
+                        {"path": source_path, "line_start": 5, "line_count": 1},
+                    ]
+                }
+            }
+        }
+    }
+
+    await handle_react_read(ctx_browser=ctx, state=state, tool_call_id="r_ranges")
+
+    range_blocks = [
+        b for b in ctx.timeline.blocks
+        if b.get("type") == "react.tool.result"
+        and b.get("call_id") == "r_ranges"
+        and b.get("path") == source_path
+        and "[READ RANGE]" in (b.get("text") or "")
+    ]
+    assert len(range_blocks) == 2
+    assert "lines: [3-4]/7" in range_blocks[0]["text"]
+    assert "     3\t<section id=\"hero\">Hero</section>" in range_blocks[0]["text"]
+    assert "     4\t<section id=\"pricing\">Pricing</section>" in range_blocks[0]["text"]
+    assert "lines: [5-5]/7" in range_blocks[1]["text"]
+
+    status = next(
+        json.loads(b["text"])
+        for b in ctx.timeline.blocks
+        if b.get("path") == "tc:turn_read.r_ranges.result" and b.get("mime") == "application/json"
+    )
+    assert len(status["paths"]) == 2
+    assert status["paths"][0]["read_range"]["line_start"] == 3
+    assert status["paths"][1]["read_range"]["line_start"] == 5

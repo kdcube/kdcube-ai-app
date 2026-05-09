@@ -18,7 +18,7 @@ Important constraints:
 - `ks:` is **not mandatory**. A bundle may not expose it at all.
 - The internal shape of `ks:` is **entirely bundle-defined**.
 - `ks:` is **not** part of the turn `OUT_DIR`.
-- `ks:` is **not** browsed by `react.search_files`.
+- `ks:` is **not** browsed by `react.rg`.
 - `ks:` may be readable by exact path, searchable, both, or neither, depending on what the bundle implements.
 
 ## Mental model

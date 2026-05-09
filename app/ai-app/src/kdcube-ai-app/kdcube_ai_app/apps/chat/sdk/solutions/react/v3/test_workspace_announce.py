@@ -101,9 +101,10 @@ def test_build_announce_text_includes_context_caps(tmp_path):
     )
 
     assert "[CONTEXT CAPS]" in announce_text
-    assert "read text=48000 tok=12000 bytes=10MB" in announce_text
+    assert "read text=48000 tok=12000 bytes=10MB ctx_frac=0.15" in announce_text
     assert "tool_result_preview=12000" in announce_text
     assert "exec_file_preview=8000" in announce_text
+    assert "max_text_symbols is clamped" in announce_text
 
 
 def test_build_announce_text_includes_lineage_scopes_even_when_current_turn_is_sparse(tmp_path):

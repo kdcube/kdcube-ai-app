@@ -38,7 +38,15 @@ from kdcube_ai_app.apps.chat.sdk.runtime.workspace import (
 )
 from kdcube_ai_app.apps.chat.sdk.runtime.snapshot import build_portable_spec
 from kdcube_ai_app.apps.chat.sdk.runtime.exec_runtime_config import resolve_exec_runtime_profile
-from kdcube_ai_app.apps.chat.sdk.util import guess_mime_type, normalize_artifact_visibility
+from kdcube_ai_app.apps.chat.sdk.util import (
+    count_text_lines,
+    count_text_symbols,
+    guess_mime_type,
+    format_visible_line_window,
+    line_number_text,
+    normalize_artifact_visibility,
+    visible_line_window,
+)
 from kdcube_ai_app.infra.service_hub.inventory import AgentLogger
 
 try:
@@ -1047,29 +1055,80 @@ async def run_exec_tool(
             })
             continue
         text_content = ""
+        text_visible_preview = ""
         text_truncated = False
+        text_symbols = None
+        line_count = None
+        text_preview_symbols = 0
+        text_preview_line_start = None
+        text_preview_line_end = None
         is_text = _is_text_mime(a.get("mime") or "")
         if is_text:
+            raw_preview = ""
             try:
                 with p.open("r", encoding="utf-8", errors="ignore") as fh:
-                    text_content = fh.read(preview_max_symbols + 1) if preview_max_symbols else ""
-                text_truncated = len(text_content) > preview_max_symbols
+                    raw_preview = fh.read(preview_max_symbols + 1) if preview_max_symbols else ""
+                if preview_max_symbols:
+                    text_content = raw_preview[:preview_max_symbols]
+                text_preview_symbols = len(text_content)
+                text_symbols = count_text_symbols(p)
+                if text_symbols is not None:
+                    text_truncated = text_symbols > preview_max_symbols
+                else:
+                    text_truncated = len(raw_preview) > preview_max_symbols
+                line_count = count_text_lines(p)
+                if text_content:
+                    line_window = visible_line_window(
+                        text_content,
+                        source_truncated=bool(text_truncated),
+                        total_line_count=line_count,
+                    )
+                    start = line_window.get("line_start")
+                    end = line_window.get("line_end")
+                    text_preview_line_start = start
+                    text_preview_line_end = end
+                    numbered = line_number_text(text_content)
+                    header = [
+                        "[TEXT FILE PREVIEW]",
+                        f"path: {rel}",
+                    ]
+                    header.append(f"lines: {format_visible_line_window(line_window)}")
+                    if line_window.get("partial_line") is not None:
+                        header.append(f"partial_line: {line_window.get('partial_line')}")
+                    if line_count is not None:
+                        header.append(f"line_count: {line_count}")
+                    if text_symbols is not None:
+                        header.append(f"text_symbols: {text_symbols}")
+                    header.append(f"visible_text_symbols: {len(text_content)}")
+                    header.append(f"preview_cap_text_symbols: {preview_max_symbols}")
+                    header.append("line_numbers: true")
+                    text_visible_preview = "\n".join(header + ["", numbered]).strip()
                 if text_truncated:
-                    text_content = text_content[:preview_max_symbols]
-                    text_content = (text_content.rstrip() + "\n...[truncated]").strip()
+                    if text_visible_preview:
+                        text_visible_preview = (text_visible_preview.rstrip() + "\n\n[TEXT FILE PREVIEW TRUNCATED]").strip()
             except Exception:
                 text_content = ""
+                text_visible_preview = ""
+                text_symbols = None
+                line_count = None
         out_dyn[a["name"]] = {
             "type": "file",
             "path": rel,
             "filename": pathlib.Path(rel).name,
             "mime": a["mime"],
             "text": text_content if is_text else "",
+            "text_visible_preview": text_visible_preview if is_text else "",
             "description": a["description"],
             "visibility": a.get("visibility") or "external",
             "size_bytes": stats.get("size_bytes") if isinstance(stats, dict) else None,
-            "text_preview_symbols": len(text_content) if is_text else 0,
+            "text_symbols": text_symbols if is_text else None,
+            "line_count": line_count if is_text else None,
+            "text_preview_symbols": text_preview_symbols if is_text else 0,
             "text_preview_max_symbols": preview_max_symbols if is_text else 0,
+            "text_is_preview": bool(is_text),
+            "text_preview_line_start": text_preview_line_start if is_text else None,
+            "text_preview_line_end": text_preview_line_end if is_text else None,
+            "text_preview_line_numbers": bool(text_content) if is_text else False,
             "text_truncated": bool(text_truncated) if is_text else False,
             "write_warning": stats.get("write_warning") if isinstance(stats, dict) else None,
         }

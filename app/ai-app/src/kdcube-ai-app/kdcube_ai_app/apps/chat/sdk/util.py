@@ -27,10 +27,13 @@ FALLBACK_MIME_BY_EXT: Dict[str, str] = {
     "html": "text/html",
     "ini": "text/plain",
     "json": "application/json",
+    "jsonl": "application/json",
     "js": "text/javascript",
     "jsx": "text/plain",
+    "log": "text/plain",
     "markdown": "text/markdown",
     "md": "text/markdown",
+    "mjs": "text/javascript",
     "py": "text/x-python",
     "rst": "text/plain",
     "sh": "text/x-shellscript",
@@ -58,6 +61,83 @@ def guess_mime_type(path: str, content: Optional[bytes] = None, default: str = "
             pass
     ext = pathlib.Path(path).suffix.lower().lstrip(".")
     return FALLBACK_MIME_BY_EXT.get(ext, default)
+
+
+def count_text_symbols(path: Union[str, pathlib.Path]) -> Optional[int]:
+    try:
+        total = 0
+        with pathlib.Path(path).open("r", encoding="utf-8", errors="ignore") as fh:
+            while True:
+                chunk = fh.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+        return total
+    except Exception:
+        return None
+
+
+def count_text_lines(path: Union[str, pathlib.Path]) -> Optional[int]:
+    try:
+        with pathlib.Path(path).open("r", encoding="utf-8", errors="ignore") as fh:
+            return sum(1 for _ in fh)
+    except Exception:
+        return None
+
+
+def line_number_text(text: str, *, line_start: int = 1, width: int = 6) -> str:
+    start = max(1, int(line_start or 1))
+    return "\n".join(
+        f"{lineno:>{width}}\t{line}"
+        for lineno, line in enumerate((text or "").splitlines(), start=start)
+    )
+
+
+def text_line_span(text: str, *, line_start: int = 1) -> tuple[int, int, int]:
+    start = max(1, int(line_start or 1))
+    visible = len((text or "").splitlines())
+    if visible <= 0:
+        return start, start - 1, 0
+    return start, start + visible - 1, visible
+
+
+def visible_line_window(
+    text: str,
+    *,
+    line_start: int = 1,
+    source_truncated: bool = False,
+    total_line_count: Optional[int] = None,
+) -> Dict[str, Optional[int]]:
+    """Return the fully visible line window for a possibly char-truncated text preview."""
+    start = max(1, int(line_start or 1))
+    chunks = (text or "").splitlines(keepends=True)
+    fully_visible = 0
+    partial_line: Optional[int] = None
+    for idx, chunk in enumerate(chunks):
+        is_last = idx == len(chunks) - 1
+        ends_with_newline = chunk.endswith(("\n", "\r"))
+        if source_truncated and is_last and not ends_with_newline:
+            partial_line = start + fully_visible
+            break
+        fully_visible += 1
+    line_end = start + fully_visible - 1 if fully_visible > 0 else None
+    return {
+        "line_start": start if fully_visible > 0 else None,
+        "line_end": line_end,
+        "visible_lines": fully_visible,
+        "total_line_count": int(total_line_count) if total_line_count is not None else None,
+        "partial_line": partial_line,
+    }
+
+
+def format_visible_line_window(window: Dict[str, Optional[int]]) -> str:
+    total = window.get("total_line_count")
+    denom = str(total) if total is not None else "?"
+    start = window.get("line_start")
+    end = window.get("line_end")
+    if start is None or end is None:
+        return f"[none]/{denom}"
+    return f"[{start}-{end}]/{denom}"
 
 
 def normalize_artifact_visibility(value: Any, *, default: str = "internal") -> str:

@@ -27,6 +27,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.common import (
     emit_hosted_files,
     tc_result_path,
     infer_format_from_path,
+    enrich_artifact_file_metadata,
 )
 
 TOOL_SPEC = {
@@ -240,6 +241,11 @@ async def handle_react_patch(*, react: Any, ctx_browser: Any, state: Dict[str, A
             artifact["value"]["content"] = patched
             artifact["value"]["mime"] = _mime_for_format(fmt)
             artifact["path"] = artifact_name
+    enrich_artifact_file_metadata(
+        artifact=artifact,
+        outdir=outdir,
+        physical_path=artifact_name,
+    )
     hosted = []
     if kind == "file":
         hosted = await host_artifact_file(

@@ -598,9 +598,8 @@ When explaining issues to the user, avoid internal/technical terminology (e.g., 
 Use user-friendly language like "I no longer have the earlier details here" or "I don't have that file in view right now".
 
 Artifacts produced in your react loop are shown in the tool result blocks.
-Sometimes artifact content is large; we only show summary/truncated content in the tool result block and mark it. 
-If you do not see enough of an artifact in the visible context, use react.read. Large text returns a configured bounded visible preview by default; add max_text_symbols only for a smaller explicit preview. Exception: so:sources_pool[...] reads return JSON source rows in full by default, with item stats; web rows use content for full fetched page text and text for the search snippet. For exact bulk processing, use exec code with ctx_tools.fetch_ctx(path).
-The artifact description includes the path you use with react.read and the tool id + tool call id they resulted from.
+Sometimes artifact content is large; we only show summary/truncated content in the tool result block and mark it.
+Large/capped artifact handling is defined in [react.read (CRITICAL)] below. The artifact block includes the path, tool id + tool call id, and size fields such as `text_symbols` or `size_bytes` when available.
 Provide telegraphic notes in the root-level `notes` field when you call tools. We show these notes in the user timeline (user visible). 
 
 [ON BUILT-IN TOOLS]
@@ -644,8 +643,8 @@ You have following tools to capture content which you produce in the named and d
 - react.hide: hide a large snippet by logical path (ar:/fi:/tc:/so:/ks:), not a query. Use only when the large barely useful snippet is near the tail of your visible context, and clearly no longer needed. The original content remains retrievable via react.read(path).
   This is very useful tool when results retrieved by react.read, react.memsearch or web_tools.web_search / web_tools/web_fetch are irrelevant. In that case you can hide the, to avoid spending tokens, and provide the replacement which explains the irrelevance and helps later to correlate the retrieval query (path or semantic query) 
   to result it returned so do not repeat the same irrelevant retrieval later. This is also useful when you have already seen the content but it is far in the tail of your visible context and you want to keep the context clean and focused on more relevant content.
-- react.search_files: safe file search under OUTPUT_DIR or workdir (no shell). Use to locate files by name/content when needed.
-  It returns discovery metadata, not file contents. OUTPUT_DIR hits include `logical_path`; follow up with react.read on that path when you need the content.
+- react.rg: safe ripgrep-like file/region search under OUTPUT_DIR or workdir (no shell). Use it to locate files by name or regex content before reading/editing.
+  It returns discovery metadata (`size_bytes`, `text_symbols`, `line_count`, `logical_path`) and, for content matches, line-numbered previews plus `read_item` ranges. Follow up with react.read using `items`/`read_items` when you need exact visible regions.
 
 - Use rendering_tools.write_* to render and write the special formats (pdf, pptx, docx, png).
 You can call these tools either by generating their content param on the fly or by binding the content you already generated with react.write.
@@ -713,15 +712,18 @@ It is preferable to use react.write for streaming large content and use renderin
 [react.read (CRITICAL)]
 - Use react.read([...]) to control what artifacts/skills are visible in your context so you can refer to them.
   If the artifacts are already visible in the timeline, you do not need to read them again. This is for artifacts which content is not visible. 
-- For large text, `react.read` will not dump the whole payload into context; it returns a configured bounded preview by default. Use `max_text_symbols` only when you need a smaller in-context preview; use exec + `ctx_tools.fetch_ctx(path)` when you need to process all bytes.
+- For large text, `react.read` is visible-context retrieval, not bulk loading. It returns a configured bounded preview by default. `max_text_symbols` is a request, not a guarantee: the runtime clamps it by configured visible-read, token-budget, and context-fraction caps. If a text artifact was shown truncated and its `text_symbols` is visible, request `max_text_symbols` at least that value to ask for the full visible text. If only `size_bytes` is visible, use it as a safe fallback. After reading, verify the returned status/footer; if it still says truncated/omitted/capped, do not assume you saw the whole file/result.
 - Exception: `react.read` on `so:sources_pool[...]` returns JSON source rows in full by default, with item stats. For web rows, use `content` first for full fetched page text; `text` is only the search preview/snippet. If you explicitly pass `max_text_symbols`, only source text fields are capped and the JSON rows remain valid.
-- If a tool result is shown as `[TOOL RESULT PREVIEW TRUNCATED]`, use the included shape/sample to plan. Use `react.read` for another bounded visible preview, or exec + `ctx_tools.fetch_ctx(path)` for exact bulk processing. Source rows at `so:sources_pool[...]` stay JSON and are not subject to this prompt preview cap.
-- In exec code, `ctx_tools.fetch_ctx` returns an artifact with `payload`; use it before parsing compatibility fields like `text`.
+- For exact full processing, use exec. For `fi:` files, read the physical OUTPUT_DIR-relative path from artifact metadata; if only `fi:<turn>.outputs/x` or `fi:<turn>.files/x` is shown, the physical path is `<turn>/outputs/x` or `<turn>/files/x`. For supported logical context objects (`ar:`, `tc:`, `so:`), exec code can call `ctx_tools.fetch_ctx(path)`. In exec code, `ctx_tools.fetch_ctx` returns an artifact with `payload`; use it before parsing compatibility fields like `text`.
+- If a tool result is shown as `[TOOL RESULT PREVIEW TRUNCATED]`, use the included shape/sample to plan. Use `react.read` for another bounded visible preview, or exec + `ctx_tools.fetch_ctx(path)` for exact bulk processing of supported context objects. Source rows at `so:sources_pool[...]` stay JSON and are not subject to this prompt preview cap.
 - `react.read` caps apply per path. For metadata-only discovery, use `stats_only:true`; it returns size/mime/token metadata without adding content blocks.
+- For large text editing, use `react.rg` to locate regions, then `react.read({"items":[...]})` to materialize exact line ranges. Do not edit blind just because a full file preview is capped.
 - Example tool_call (load sources + artifact + skill):
   {{"tool_id":"react.read","params":["so:sources_pool[2,3]","fi:<turn_id>.files/some_art.md","sk:<skill id or num>"]}}
 - Example bounded preview:
   {{"tool_id":"react.read","params":{{"paths":["fi:<turn_id>.outputs/report.md"],"max_text_symbols":4000}}}}
+- Example exact line ranges:
+  {{"tool_id":"react.read","params":{{"items":[{{"path":"fi:<turn_id>.outputs/page.html","line_start":806,"line_count":80}}]}}}}
 
 {REACT_ARTIFACTS_AND_PATHS}
 """

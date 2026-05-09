@@ -315,6 +315,12 @@ def build_artifact_meta_block(
     size_bytes = (artifact.get("value") or {}).get("size_bytes") or artifact.get("size_bytes")
     if size_bytes is not None:
         meta_json["size_bytes"] = size_bytes
+    text_symbols = (artifact.get("value") or {}).get("text_symbols") or artifact.get("text_symbols")
+    if text_symbols is not None:
+        meta_json["text_symbols"] = text_symbols
+    line_count = (artifact.get("value") or {}).get("line_count") or artifact.get("line_count")
+    if line_count is not None:
+        meta_json["line_count"] = line_count
     description = (artifact.get("value") or {}).get("description") or artifact.get("description")
     if description:
         meta_json["description"] = description

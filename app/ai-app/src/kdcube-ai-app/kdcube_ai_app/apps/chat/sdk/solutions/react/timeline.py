@@ -22,7 +22,14 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.caching import (
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
 
 from kdcube_ai_app.apps.chat.sdk.tools import citations as citations_module
-from kdcube_ai_app.apps.chat.sdk.util import token_count, isoz, ts_key
+from kdcube_ai_app.apps.chat.sdk.util import (
+    format_visible_line_window,
+    line_number_text,
+    token_count,
+    visible_line_window,
+    isoz,
+    ts_key,
+)
 from kdcube_ai_app.apps.chat.sdk.solutions.react.layout import (
     build_sources_pool_text,
     build_turn_header_text,
@@ -2321,6 +2328,12 @@ class Timeline:
             return text
 
         preview = text[:cap].rstrip()
+        line_window = visible_line_window(
+            preview,
+            source_truncated=True,
+            total_line_count=len(text.splitlines()),
+        )
+        numbered_preview = line_number_text(preview) if preview else ""
         tokens_estimate = max(1, len(text) // 4)
         try:
             byte_count = len(text.encode("utf-8"))
@@ -2339,8 +2352,12 @@ class Timeline:
             f"tokens_estimate: {tokens_estimate}",
             f"visible_preview_chars: {len(preview)}",
             f"preview_cap_text_symbols: {cap}",
+            f"preview_lines: {format_visible_line_window(line_window)}",
+            "line_numbers: true" if line_window.get("visible_lines") else "line_numbers: false",
             f"shape_depth: {TOOL_RESULT_PREVIEW_SHAPE_DEPTH}",
         ]
+        if line_window.get("partial_line") is not None:
+            lines.append(f"partial_line: {line_window.get('partial_line')}")
         if tool_id:
             lines.append(f"tool: {tool_id}")
         if path:
@@ -2348,7 +2365,7 @@ class Timeline:
         lines.append("shape:")
         lines.append(json.dumps(self._payload_shape_tree(shape_payload), ensure_ascii=False, indent=2))
         lines.append("preview:")
-        lines.append(preview)
+        lines.append(numbered_preview if numbered_preview else preview)
         lines.append("...[truncated]")
         lines.append("recovery:")
         if path:
@@ -5840,6 +5857,8 @@ class Timeline:
                         channel = (payload.get("channel") or "").strip()
                         tokens = payload.get("tokens")
                         sources_used = payload.get("sources_used")
+                        text_symbols = payload.get("text_symbols")
+                        size_bytes = payload.get("size_bytes")
                         if ap:
                             meta_bits = []
                             if kind:
@@ -5848,6 +5867,10 @@ class Timeline:
                                 meta_bits.append(f"visibility: {visibility}")
                             if channel:
                                 meta_bits.append(f"channel: {channel}")
+                            if text_symbols is not None:
+                                meta_bits.append(f"text_symbols: {text_symbols}")
+                            if size_bytes is not None:
+                                meta_bits.append(f"size_bytes: {size_bytes}")
                             if tokens is not None:
                                 meta_bits.append(f"tokens: {tokens}")
                             if isinstance(sources_used, list) and sources_used:
@@ -5988,7 +6011,12 @@ class Timeline:
                             header += f" {tool_id}"
                         lines.append(header)
                         if path:
-                            lines.append(f"logical_path: {path}")
+                            logical_line = f"logical_path: {path}"
+                            if isinstance(meta, dict) and meta.get("text_symbols") is not None:
+                                logical_line += f" | text_symbols: {meta.get('text_symbols')}"
+                            if isinstance(meta, dict) and meta.get("size_bytes") is not None:
+                                logical_line += f" | size_bytes: {meta.get('size_bytes')}"
+                            lines.append(logical_line)
                         if meta and (meta.get("hosted_uri") or meta.get("rn") or meta.get("key")):
                             phys = (meta.get("physical_path") or "").strip()
                             if phys:

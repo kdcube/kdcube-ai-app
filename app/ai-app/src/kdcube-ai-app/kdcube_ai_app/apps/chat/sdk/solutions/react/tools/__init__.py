@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from .patch import TOOL_SPEC as PATCH_SPEC, handle_react_patch
     from .memsearch import TOOL_SPEC as MEMSEARCH_SPEC, handle_react_memsearch
     from .hide import TOOL_SPEC as HIDE_SPEC, handle_react_hide
-    from .search_files import TOOL_SPEC as SEARCH_FILES_SPEC, handle_react_search_files
+    from .rg import TOOL_SPEC as RG_SPEC, handle_react_rg
     from .plan import TOOL_SPEC as PLAN_SPEC, handle_react_plan
     from .external import TOOL_SPEC as EXTERNAL_SPEC, handle_external_tool
 
@@ -32,7 +32,7 @@ __all__ = [
     "PATCH_SPEC",
     "MEMSEARCH_SPEC",
     "HIDE_SPEC",
-    "SEARCH_FILES_SPEC",
+    "RG_SPEC",
     "PLAN_SPEC",
     "EXTERNAL_SPEC",
     "handle_react_read",
@@ -42,7 +42,7 @@ __all__ = [
     "handle_react_patch",
     "handle_react_memsearch",
     "handle_react_hide",
-    "handle_react_search_files",
+    "handle_react_rg",
     "handle_react_plan",
     "handle_external_tool",
 ]
@@ -62,8 +62,8 @@ _LAZY_ATTRS = {
     "handle_react_memsearch": ("memsearch", "handle_react_memsearch"),
     "HIDE_SPEC": ("hide", "TOOL_SPEC"),
     "handle_react_hide": ("hide", "handle_react_hide"),
-    "SEARCH_FILES_SPEC": ("search_files", "TOOL_SPEC"),
-    "handle_react_search_files": ("search_files", "handle_react_search_files"),
+    "RG_SPEC": ("rg", "TOOL_SPEC"),
+    "handle_react_rg": ("rg", "handle_react_rg"),
     "PLAN_SPEC": ("plan", "TOOL_SPEC"),
     "handle_react_plan": ("plan", "handle_react_plan"),
     "EXTERNAL_SPEC": ("external", "TOOL_SPEC"),

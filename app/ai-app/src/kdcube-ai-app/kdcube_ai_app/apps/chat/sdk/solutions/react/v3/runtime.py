@@ -70,7 +70,7 @@ class ReactSolverV2:
     SAFE_MULTI_ACTION_TOOL_IDS = {
         "react.read",
         "react.memsearch",
-        "react.search_files",
+        "react.rg",
     }
     SAFE_MULTI_ACTION_TOOL_PREFIXES = (
         "web_tools.",
@@ -1436,7 +1436,7 @@ class ReactSolverV2:
                 "react.hide",
                 "react.memsearch",
                 "react.patch",
-                "react.search_files",
+                "react.rg",
             }
             if tool_id not in adapters_by_id and tool_id not in react_tool_ids:
                 violations.append({
@@ -1454,10 +1454,10 @@ class ReactSolverV2:
             "react.hide",
             "react.memsearch",
             "react.patch",
-            "react.search_files",
+            "react.rg",
         }:
             if tool_id == "react.read":
-                allowed_params.update({"paths", "max_text_symbols"})
+                allowed_params.update({"paths", "items", "max_text_symbols", "line_numbers", "stats_only"})
             elif tool_id == "react.pull":
                 allowed_params.update({"paths"})
             elif tool_id == "react.checkout":
@@ -1470,8 +1470,8 @@ class ReactSolverV2:
                 allowed_params.update({"query", "targets", "top_k", "days"})
             elif tool_id == "react.patch":
                 allowed_params.update({"path", "channel", "patch", "kind"})
-            elif tool_id == "react.search_files":
-                allowed_params.update({"root", "name_regex", "content_regex", "max_bytes", "max_hits"})
+            elif tool_id == "react.rg":
+                allowed_params.update({"root", "name_regex", "pattern", "context_lines", "max_bytes", "max_matches", "max_files"})
             else:
                 allowed_params.update({"path", "channel", "content", "kind"})
         else:
@@ -1540,10 +1540,10 @@ class ReactSolverV2:
                     })
         if tool_id == "react.read":
             if isinstance(params, dict):
-                if not isinstance(params.get("paths"), list):
+                if not isinstance(params.get("paths"), list) and not isinstance(params.get("items"), list):
                     violations.append({
                         "code": "bad_params",
-                        "message": "react.read params.paths must be a list",
+                        "message": "react.read params.paths or params.items must be a list",
                         "tool_id": tool_id,
                     })
         # ref: bindings validated separately (need visibility + sources_pool rules)

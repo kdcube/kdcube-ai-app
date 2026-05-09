@@ -1,9 +1,9 @@
 ---
 id: ks:docs/sdk/agents/react/agent-workspace-collboration-README.md
 title: "Agent Workspace Collaboration"
-summary: "How react.read, react.write, react.patch, and react.search_files cooperate across current-turn OUT_DIR, conversation artifacts, and read-only bundle knowledge space."
+summary: "How react.read, react.write, react.patch, and react.rg cooperate across current-turn OUT_DIR, conversation artifacts, and read-only bundle knowledge space."
 tags: ["sdk", "agents", "react", "workspace", "artifacts", "files"]
-keywords: ["outdir", "workdir", "react.read", "react.search_files", "react.patch", "versioned workspace"]
+keywords: ["outdir", "workdir", "react.read", "react.rg", "react.patch", "versioned workspace"]
 see_also:
   - ks:docs/sdk/agents/react/react-turn-workspace-README.md
   - ks:docs/sdk/agents/react/artifact-discovery-README.md
@@ -66,9 +66,9 @@ The logical workspace view is:
   - `ks:<relpath>`
   - example: `ks:<bundle-defined-path>`
 
-`react.search_files`
-- searches under `outdir` or `workdir`
-- returns discovery metadata only
+`react.rg`
+- searches filenames and/or text under `outdir` or `workdir`
+- returns discovery metadata and line-oriented match ranges
 - does not browse `ks:` or conversation artifact memory
 - result shape:
   - `root`
@@ -76,7 +76,9 @@ The logical workspace view is:
 - each hit contains:
   - `path`: relative to the searched root
   - `size_bytes`
+  - `text_symbols` and `line_count` for text files when available
   - `logical_path` for OUT_DIR hits
+  - `matches[]` for text searches, each with a line number and a ready-to-pass `read_item`
 
 `react.write`
 - creates or replaces files in the current turn namespaces
@@ -93,7 +95,7 @@ The logical workspace view is:
 
 Current rules:
 - if the exact `ks:` path is known, `react.read` can load it directly
-- `react.search_files` does not browse `ks:`
+- `react.rg` does not browse `ks:`
 - directory-style `ks:` browsing is only possible inside isolated exec if the bundle exposes a namespace resolver/helper
 
 When exec-time `ks:` browsing exists:
@@ -108,9 +110,9 @@ If no resolver exists, `ks:` is still readable by exact path, but not browseable
 ## Safe collaboration rules
 
 The intended cooperation pattern is:
-1. Use `react.search_files` to discover candidate files.
+1. Use `react.rg` to discover candidate files or exact text regions.
 2. If the hit is under OUT_DIR, take its `logical_path`.
-3. Use `react.read` on that `logical_path` to load content into context.
+3. Use `react.read` on that `logical_path`, or pass `read_item` ranges as `items`, to load the needed content into context.
 4. If editing is needed, write or patch into `<current_turn>/files/...`.
 5. If producing a report/export/result that should not become workspace state, write it into `<current_turn>/outputs/...`.
 
@@ -122,7 +124,7 @@ This keeps:
 ## Current limitations
 
 - `react.read` is OUT_DIR-aware, not general workdir-aware.
-- workdir hits from `react.search_files` are still discovery-only with the current toolset.
+- workdir hits from `react.rg` are still discovery-only with the current toolset.
 - `react.patch` is for assistant file artifacts, not arbitrary runtime-owned files like `logs/...`.
 
 ## Examples
