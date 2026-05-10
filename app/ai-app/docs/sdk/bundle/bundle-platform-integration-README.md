@@ -149,13 +149,12 @@ Current fields relevant to access control:
   - do **not** use derived platform types here (`"registered"`, `"privileged"`)
   - empty or omitted means the bundle is visible to all authenticated users
   - OR semantics: user passes if at least one of their raw roles matches
-- `enabled_config`
-  - dot-separated path into bundle props that resolves to a boolean
+- bundle-level feature gate: `enabled.bundle` in bundle props
+  - boolean (or string equivalent) that controls the whole bundle
   - if the resolved value is falsy, the bundle is treated as disabled:
     all its HTTP routes return 404 and all its scheduled jobs are skipped,
-    regardless of any resource-level `enabled_config` values
-  - absent or `None` means always enabled
-  - prop absent in Redis also means enabled (opt-in disabling, not opt-in enabling)
+    regardless of any resource-level `enabled.*` values
+  - absent key means always enabled (opt-in disabling, not opt-in enabling)
   - enforced in `integrations.py` for HTTP resources (widgets, operations, MCP endpoints)
     and in `bundle_scheduler.py` for scheduled jobs, before any per-resource check
 
@@ -169,25 +168,48 @@ Current behavior:
 - A bundle with no `allowed_roles` is always included for any authenticated
   user (backwards-compatible default)
 
-### 1.3.1 Shared `enabled_config` Contract
+### 1.3.1 Canonical `enabled.*` Contract
 
-`enabled_config` is the platform-native feature-flag hook for bundle surfaces.
+The platform-native feature-flag hook for bundle surfaces lives under the
+`enabled.*` section of effective bundle props. The platform derives the
+lookup path from decorator metadata, so every surface has one canonical place
+to switch it on or off.
 
-It can be declared on:
+Canonical bundle-props shape:
 
-- `@agentic_workflow(...)` for the whole bundle
-- `@api(...)` for one HTTP operation
-- `@mcp(...)` for one MCP endpoint
-- `@ui_widget(...)` for one widget
-- `@cron(...)` for one scheduled job
+```yaml
+enabled:
+  bundle: true|false
+  api:
+    "<api-alias>.<METHOD>": true|false   # flat key with literal dot
+  mcp:
+    <mcp-alias>: true|false
+  widget:
+    <widget-alias>: true|false
+  cron:
+    <cron-alias>: true|false
+```
 
-The value is a dot-separated path into effective bundle props, for example:
+Mapping per decorator:
+
+| Decorator | Canonical path |
+| --- | --- |
+| `@agentic_workflow(...)` | `enabled.bundle` |
+| `@api(alias=A, method=M, ...)` | `enabled.api["A.M"]` (flat key) |
+| `@mcp(alias=A, ...)` | `enabled.mcp.A` |
+| `@ui_widget(alias=A, ...)` | `enabled.widget.A` |
+| `@cron(alias=A, ...)` | `enabled.cron.A` |
+
+Aliases must not contain `.`; the validator rejects them at decoration time.
+The flat `<alias>.<METHOD>` key under `enabled.api` is the only place a
+literal dot appears inside a section key.
+
+Example:
 
 ```python
 @agentic_workflow(
     name="News Admin",
     version="1.0.0",
-    enabled_config="features.news_admin.enabled",
 )
 ```
 
@@ -196,32 +218,33 @@ bundles:
   items:
     - id: "news.admin@1-0"
       config:
-        features:
-          news_admin:
-            enabled: true
+        enabled:
+          bundle: true
+          widget:
+            news-admin: true
+          cron:
+            news-sync: false
 ```
 
-Current resolution/enforcement rules:
+Resolution/enforcement rules:
 
-- the runtime resolves the path against effective bundle props
-- bundle-level `enabled_config` is checked first
+- bundle-level `enabled.bundle` is checked first
 - if the bundle-level check disables the bundle:
   - bundle listing hides it from the normal integrations listing
   - widget/API/MCP requests return `404`
   - scheduled jobs are not scheduled
-- resource-level `enabled_config` is checked only if the bundle itself is enabled
-- missing path means enabled
-- `None` / absent declaration means enabled
+- resource-level `enabled.<kind>.<alias>` is checked only if the bundle itself is enabled
+- missing section, missing sub-section, or missing key means enabled
 - this is opt-in disabling, not opt-in enabling
 
-Current disabled values:
+Disabled values:
 
 - boolean `False`
 - integer `0`
 - strings `false`, `disable`, `disabled`, `off`, `0`
   - case-insensitive after trimming
 
-Current enabled values:
+Enabled values:
 
 - boolean `True`
 - non-zero integers
@@ -229,11 +252,11 @@ Current enabled values:
 
 Operational rule:
 
-- keep the toggle value in bundle props under `bundles.yaml -> bundles.items[].config`
-- do not use `enabled_config` as a secrets mechanism
+- keep the switches in bundle props under `bundles.yaml -> bundles.items[].config -> enabled: ...`
+- do not use these flags as a secrets mechanism
 - do not hardcode separate enable/disable logic inside the route method when platform gating is enough
 
-Use `enabled_config` when you need:
+Use the canonical `enabled.*` switches when you need:
 
 - staged rollout of a bundle or widget
 - environment-specific feature exposure
@@ -283,6 +306,13 @@ Current fields:
   - tuple/list of raw external roles
   - use actual auth role ids such as `kdcube:role:super-admin`
   - empty means no raw-role restriction
+- `user_types_config` / `roles_config`
+  - optional dot-paths into bundle props
+  - when set and the path resolves to a list of strings, the resolved value
+    overrides the decorator default at request time (per-request lookup)
+  - empty list is a valid intentional override; invalid types fall back
+    silently to the decorator default
+  - missing path also falls back to the decorator default
 - `public_auth`
   - used only with `route="public"`
   - current built-in modes:
@@ -292,11 +322,11 @@ Current fields:
     - `"bundle"`: proc forwards the request into the bundle method and the
       bundle authenticates it itself
   - default: required for `route="public"`, invalid for `route="operations"`
-- `enabled_config`
-  - dot-separated path into bundle props that resolves to a boolean
+- canonical feature gate: `enabled.api["<alias>.<METHOD>"]` (flat key)
+  - boolean (or string equivalent) under `enabled.api` in bundle props
   - if the resolved value is falsy, this endpoint returns 404
-  - absent or `None` means always enabled
-  - checked after the bundle-level `enabled_config` — if the bundle is disabled,
+  - absent key means always enabled
+  - checked after the bundle-level `enabled.bundle` — if the bundle is disabled,
     this check is never reached
 
 Important current rule:
@@ -356,11 +386,17 @@ Current fields:
   - default: `operations`
 - `transport`
   - current supported value: `streamable-http`
-- `enabled_config`
-  - dot-separated path into bundle props that resolves to a boolean
+- `transport_config`
+  - optional dot-path into bundle props
+  - when set and the path resolves to a supported transport string, the
+    resolved value overrides the decorator default at request time
+  - invalid / unknown transport values fall back silently to the decorator default
+  - missing path also falls back to the decorator default
+- canonical feature gate: `enabled.mcp.<alias>`
+  - boolean (or string equivalent) nested under `enabled.mcp` in bundle props
   - if the resolved value is falsy, the MCP endpoint returns 404
-  - absent or `None` means always enabled
-  - checked after the bundle-level `enabled_config`
+  - absent key means always enabled
+  - checked after the bundle-level `enabled.bundle`
 
 Current rule:
 
@@ -440,11 +476,18 @@ Current fields:
 - `roles`
   - raw external roles allowed to see the widget
   - use values such as `kdcube:role:super-admin`
-- `enabled_config`
-  - dot-separated path into bundle props that resolves to a boolean
+- `user_types_config` / `roles_config`
+  - optional dot-paths into bundle props
+  - when set and the path resolves to a list of strings, the resolved value
+    overrides the decorator default at request time (per-request lookup)
+  - empty list is a valid intentional override; invalid types fall back
+    silently to the decorator default
+  - missing path also falls back to the decorator default
+- canonical feature gate: `enabled.widget.<alias>`
+  - boolean (or string equivalent) nested under `enabled.widget` in bundle props
   - if the resolved value is falsy, the widget fetch returns 404
-  - absent or `None` means always enabled
-  - checked after the bundle-level `enabled_config`
+  - absent key means always enabled
+  - checked after the bundle-level `enabled.bundle`
 
 Current rule:
 
@@ -576,11 +619,11 @@ Current fields:
 - `tz_config`
   - dot-separated path into bundle props/config for the timezone override
   - if set and resolved to a non-blank string, takes precedence over `timezone`
-- `enabled_config`
-  - dot-separated path into bundle props that resolves to a boolean
+- canonical feature gate: `enabled.cron.<alias>`
+  - boolean (or string equivalent) nested under `enabled.cron` in bundle props
   - if the resolved value is falsy, this job is not scheduled
-  - absent or `None` means always enabled
-  - checked after the bundle-level `enabled_config` in `bundle_scheduler.py` —
+  - absent key means always enabled
+  - checked after the bundle-level `enabled.bundle` in `bundle_scheduler.py` —
     if the bundle itself is disabled, no per-job check is performed
 
 Current behavior:
@@ -662,8 +705,9 @@ class APIEndpointSpec:
     http_method: str = "POST"
     route: str = "operations"
     user_types: tuple[str, ...] = ()
+    user_types_config: str | None = None
     roles: tuple[str, ...] = ()
-    enabled_config: str | None = None
+    roles_config: str | None = None
 ```
 
 ### 2.2 `UIWidgetSpec`
@@ -675,8 +719,9 @@ class UIWidgetSpec:
     alias: str
     icon: dict[str, str]
     user_types: tuple[str, ...] = ()
+    user_types_config: str | None = None
     roles: tuple[str, ...] = ()
-    enabled_config: str | None = None
+    roles_config: str | None = None
 ```
 
 ### 2.3 `MCPEndpointSpec`
@@ -688,7 +733,7 @@ class MCPEndpointSpec:
     alias: str
     route: str = "operations"
     transport: str = "streamable-http"
-    enabled_config: str | None = None
+    transport_config: str | None = None
 ```
 
 ### 2.4 `OnMessageSpec`
@@ -727,7 +772,6 @@ class CronJobSpec:
     timezone: str | None = None
     tz_config: str | None = None
     span: str = "system"
-    enabled_config: str | None = None
 ```
 
 ### 2.8 `BundleInterfaceManifest`
@@ -744,7 +788,6 @@ class BundleInterfaceManifest:
     on_message: OnMessageSpec | None = None
     on_job: OnJobSpec | None = None
     scheduled_jobs: tuple[CronJobSpec, ...] = ()
-    enabled_config: str | None = None
 ```
 
 `allowed_roles` is populated from the `allowed_roles` argument of

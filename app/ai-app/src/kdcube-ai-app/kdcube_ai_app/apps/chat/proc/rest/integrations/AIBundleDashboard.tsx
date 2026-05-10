@@ -29,6 +29,60 @@ interface TenantProjectItem {
     source?: string;
 }
 
+interface BundleAPIEndpoint {
+    alias: string;
+    http_method: string;
+    route: string;
+    user_types: string[];
+    user_types_default?: string[];
+    user_types_config?: string | null;
+    user_types_overridden?: boolean;
+    roles: string[];
+    roles_default?: string[];
+    roles_config?: string | null;
+    roles_overridden?: boolean;
+    enabled_path?: string | null;
+}
+
+interface BundleMCPEndpoint {
+    alias: string;
+    route: string;
+    transport: string;
+    transport_default?: string;
+    transport_config?: string | null;
+    transport_overridden?: boolean;
+    enabled_path?: string | null;
+}
+
+interface BundleWidget {
+    alias: string;
+    icon?: Record<string, string> | null;
+    user_types: string[];
+    user_types_default?: string[];
+    user_types_config?: string | null;
+    user_types_overridden?: boolean;
+    roles: string[];
+    roles_default?: string[];
+    roles_config?: string | null;
+    roles_overridden?: boolean;
+    enabled_path?: string | null;
+}
+
+interface BundleScheduledJob {
+    method_name: string;
+    alias?: string | null;
+    cron_expression?: string | null;
+    cron_expression_default?: string | null;
+    expr_config?: string | null;
+    cron_expression_overridden?: boolean;
+    timezone?: string | null;
+    timezone_default?: string | null;
+    tz_config?: string | null;
+    timezone_overridden?: boolean;
+    span?: string | null;
+    enabled_path?: string | null;
+}
+
 interface BundleEntry {
     id: string;
     name?: string | null;
@@ -41,6 +95,14 @@ interface BundleEntry {
     ref?: string | null;
     subdir?: string | null;
     git_commit?: string | null;
+    apis?: BundleAPIEndpoint[] | null;
+    mcp_endpoints?: BundleMCPEndpoint[] | null;
+    widgets?: BundleWidget[] | null;
+    scheduled_jobs?: BundleScheduledJob[] | null;
+    on_message?: string | null;
+    on_job?: string | null;
+    enabled_path?: string | null;
+    allowed_roles?: string[] | null;
 }
 
 interface BundlesResponse {
@@ -485,6 +547,137 @@ const Card: React.FC<{ children: React.ReactNode; className?: string }> = ({ chi
     <div className={`bg-white rounded-2xl shadow-sm border border-gray-200/70 ${className}`}>{children}</div>
 );
 
+const OverridableValue: React.FC<{
+    value: string | string[] | null | undefined;
+    defaultValue?: string | string[] | null;
+    overridden?: boolean;
+}> = ({ value, defaultValue, overridden }) => {
+    const display = Array.isArray(value)
+        ? (value.length ? value.join(', ') : '—')
+        : (value || '—');
+    const defaultDisplay = Array.isArray(defaultValue)
+        ? (defaultValue.length ? defaultValue.join(', ') : '—')
+        : (defaultValue || '—');
+    const title = overridden ? `default: ${defaultDisplay}` : undefined;
+    return (
+        <span className="inline-flex items-center gap-1.5" title={title}>
+            <span>{display}</span>
+            {overridden && (
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-semibold uppercase tracking-wide">
+                    overridden
+                </span>
+            )}
+        </span>
+    );
+};
+
+// =============================================================================
+// Override editing helpers
+// =============================================================================
+
+// Build a nested patch object from a regular dot-path: "a.b.c" -> {a:{b:{c:value}}}
+function nestedDotPathPatch(path: string, value: unknown): Record<string, any> {
+    const parts = path.split('.').filter(Boolean);
+    if (parts.length === 0) return {};
+    const root: Record<string, any> = {};
+    let cursor: Record<string, any> = root;
+    for (let i = 0; i < parts.length - 1; i++) {
+        cursor[parts[i]] = {};
+        cursor = cursor[parts[i]];
+    }
+    cursor[parts[parts.length - 1]] = value;
+    return root;
+}
+
+// Read a value at a regular dot-path; returns undefined when the path is absent.
+function readDotPath(obj: any, path: string | null | undefined): any {
+    if (!path) return undefined;
+    const parts = path.split('.').filter(Boolean);
+    let cursor: any = obj;
+    for (const p of parts) {
+        if (cursor == null || typeof cursor !== 'object') return undefined;
+        cursor = cursor[p];
+    }
+    return cursor;
+}
+
+// enabled.api uses a flat key for "<alias>.<METHOD>" (literal dot in key).
+function buildEnabledApiPatch(alias: string, method: string, value: unknown): Record<string, any> {
+    return { enabled: { api: { [`${alias}.${method}`]: value } } };
+}
+
+// enabled.<kind>.<alias> for non-api kinds — alias is a single map key.
+function buildEnabledKindPatch(kind: 'mcp' | 'widget' | 'cron' | 'bundle', alias: string | null, value: unknown): Record<string, any> {
+    if (kind === 'bundle') return { enabled: { bundle: value } };
+    return { enabled: { [kind]: { [alias as string]: value } } };
+}
+
+// Deep-merge two record trees (used to combine multiple per-field patches into one Save call).
+function deepMergeMaps(a: Record<string, any>, b: Record<string, any>): Record<string, any> {
+    const out: Record<string, any> = { ...a };
+    for (const [k, v] of Object.entries(b)) {
+        if (v && typeof v === 'object' && !Array.isArray(v) && out[k] && typeof out[k] === 'object' && !Array.isArray(out[k])) {
+            out[k] = deepMergeMaps(out[k], v);
+        } else {
+            out[k] = v;
+        }
+    }
+    return out;
+}
+
+// Parse comma-separated string into a tuple of trimmed non-empty strings.
+function parseChips(s: string): string[] {
+    return s.split(',').map(x => x.trim()).filter(Boolean);
+}
+
+const KNOWN_USER_TYPES: ReadonlyArray<string> = ['anonymous', 'registered', 'paid', 'privileged'];
+const KNOWN_TRANSPORTS: ReadonlyArray<string> = ['streamable-http'];
+
+// Pill that renders next to a field name to flag whether the field is currently
+// overridden, configurable but not overridden, or hard-coded (no *_config).
+const FieldStatePill: React.FC<{ overridden?: boolean; configurable: boolean }> = ({ overridden, configurable }) => {
+    if (overridden) {
+        return <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-semibold uppercase tracking-wide">overridden</span>;
+    }
+    if (configurable) {
+        return <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] font-semibold uppercase tracking-wide">configurable</span>;
+    }
+    return <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-gray-100 border border-gray-200 text-gray-500 text-[10px] font-semibold uppercase tracking-wide">hard-coded</span>;
+};
+
+const FieldHint: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+    <p className="mt-1 text-[11px] text-gray-500">{children}</p>
+);
+
+const FieldRow: React.FC<{
+    label: string;
+    overridden?: boolean;
+    configurable?: boolean;
+    onResetToDefault?: () => void;
+    children: React.ReactNode;
+    hint?: React.ReactNode;
+}> = ({ label, overridden, configurable, onResetToDefault, children, hint }) => (
+    <div>
+        <div className="flex items-center justify-between mb-1.5">
+            <label className="block text-sm font-medium text-gray-800">
+                <span className="mr-2">{label}</span>
+                <FieldStatePill overridden={overridden} configurable={configurable === true} />
+            </label>
+            {onResetToDefault && (
+                <button
+                    type="button"
+                    onClick={onResetToDefault}
+                    className="text-[11px] text-gray-500 hover:text-gray-700 cursor-pointer underline-offset-2 hover:underline"
+                >
+                    Reset to default
+                </button>
+            )}
+        </div>
+        {children}
+        {hint && <FieldHint>{hint}</FieldHint>}
+    </div>
+);
+
 const CardHeader: React.FC<{ title: string; subtitle?: string; action?: React.ReactNode }> = ({ title, subtitle, action }) => (
     <div className="px-6 py-5 border-b border-gray-200/70">
         <div className="flex items-start justify-between gap-4">
@@ -646,6 +839,399 @@ const deepMergeObjects = (base: Record<string, unknown>, patch: Record<string, u
 };
 
 // =============================================================================
+// ResourceEditorCard — per-kind override editor with combobox + form + Save
+// =============================================================================
+
+type EditableKind = 'api' | 'widget' | 'mcp' | 'cron';
+
+interface ResourceEditorCardProps {
+    kind: EditableKind;
+    bundle: BundleEntry;
+    editorProps: Record<string, any>;
+    editorPropsLoading: boolean;
+    onSave: (patch: Record<string, any>) => Promise<void>;
+}
+
+const ResourceEditorCard: React.FC<ResourceEditorCardProps> = ({
+    kind, bundle, editorProps, editorPropsLoading, onSave,
+}) => {
+    // Build the resource list for the combobox.
+    const resources: Array<{ key: string; label: string }> = useMemo(() => {
+        if (kind === 'api') {
+            return (bundle.apis || []).map(ep => ({
+                key: `${ep.alias}|${ep.http_method}`,
+                label: `${ep.alias} [${ep.http_method}] ${ep.route}`,
+            }));
+        }
+        if (kind === 'widget') {
+            return (bundle.widgets || []).map(w => ({ key: w.alias, label: w.alias }));
+        }
+        if (kind === 'mcp') {
+            return (bundle.mcp_endpoints || []).map(m => ({
+                key: m.alias,
+                label: `${m.alias} (${m.route})`,
+            }));
+        }
+        return (bundle.scheduled_jobs || []).map(c => ({
+            key: c.alias || c.method_name,
+            label: c.alias || c.method_name,
+        }));
+    }, [kind, bundle]);
+
+    const [selectedKey, setSelectedKey] = useState<string>(resources[0]?.key || '');
+    const [saving, setSaving] = useState(false);
+    const [flash, setFlash] = useState<string | null>(null);
+    const [error, setError] = useState<string | null>(null);
+
+    // Reset selection when bundle changes and current key is no longer valid.
+    useEffect(() => {
+        if (!resources.find(r => r.key === selectedKey)) {
+            setSelectedKey(resources[0]?.key || '');
+        }
+    }, [resources, selectedKey]);
+
+    // Resolve the currently selected spec (typed loosely — kind-specific access below).
+    const selectedSpec: any = useMemo(() => {
+        if (!selectedKey) return null;
+        if (kind === 'api') {
+            const [alias, method] = selectedKey.split('|');
+            return (bundle.apis || []).find(ep => ep.alias === alias && ep.http_method === method) || null;
+        }
+        if (kind === 'widget') {
+            return (bundle.widgets || []).find(w => w.alias === selectedKey) || null;
+        }
+        if (kind === 'mcp') {
+            return (bundle.mcp_endpoints || []).find(m => m.alias === selectedKey) || null;
+        }
+        return (bundle.scheduled_jobs || []).find(c => (c.alias || c.method_name) === selectedKey) || null;
+    }, [kind, bundle, selectedKey]);
+
+    // Read current effective enabled value for this resource from editorProps.
+    const enabledEffective = useMemo(() => {
+        if (!selectedSpec) return true;
+        const enabledRoot = (editorProps as any)?.enabled || {};
+        let raw: any;
+        if (kind === 'api') {
+            raw = enabledRoot?.api?.[`${selectedSpec.alias}.${selectedSpec.http_method}`];
+        } else {
+            raw = enabledRoot?.[kind]?.[selectedSpec.alias];
+        }
+        if (raw === undefined) return true;
+        if (raw === false || raw === 0) return false;
+        if (typeof raw === 'string' && ['false', 'disable', 'disabled', 'off', '0'].includes(raw.trim().toLowerCase())) return false;
+        return Boolean(raw);
+    }, [kind, selectedSpec, editorProps]);
+
+    // Form state (reset to current effective values when selection changes).
+    const [formEnabled, setFormEnabled] = useState<boolean>(true);
+    const [formUserTypes, setFormUserTypes] = useState<string[]>([]);
+    const [formRoles, setFormRoles] = useState<string>('');
+    const [formTransport, setFormTransport] = useState<string>('streamable-http');
+    const [formCron, setFormCron] = useState<string>('');
+    const [formTimezone, setFormTimezone] = useState<string>('');
+
+    useEffect(() => {
+        setFlash(null);
+        setError(null);
+        if (!selectedSpec) return;
+        setFormEnabled(enabledEffective);
+        if (kind === 'api' || kind === 'widget') {
+            setFormUserTypes(Array.isArray(selectedSpec.user_types) ? [...selectedSpec.user_types] : []);
+            setFormRoles(Array.isArray(selectedSpec.roles) ? selectedSpec.roles.join(', ') : '');
+        }
+        if (kind === 'mcp') {
+            setFormTransport(selectedSpec.transport || 'streamable-http');
+        }
+        if (kind === 'cron') {
+            // Cron uses the platform contract: when expr_config is set and the
+            // path is missing/null, the job is "not scheduled" (effective is
+            // None). Mirror what's actually written at the override path so
+            // explicit values like "disable" or empty strings are visible to
+            // the operator; fall back to the decorator default when the key
+            // is absent so the form is not blank by default.
+            const rawCron = readDotPath(editorProps, selectedSpec.expr_config);
+            const cronInitial = typeof rawCron === 'string'
+                ? rawCron
+                : (selectedSpec.cron_expression_default || '');
+            setFormCron(cronInitial);
+            const rawTz = readDotPath(editorProps, selectedSpec.tz_config);
+            const tzInitial = typeof rawTz === 'string'
+                ? rawTz
+                : (selectedSpec.timezone_default || '');
+            setFormTimezone(tzInitial);
+        }
+    }, [kind, selectedSpec, enabledEffective, editorProps]);
+
+    const title = ({
+        api: 'Edit API endpoint',
+        widget: 'Edit widget',
+        mcp: 'Edit MCP endpoint',
+        cron: 'Edit cron job',
+    } as Record<EditableKind, string>)[kind];
+
+    const handleSave = async () => {
+        if (!selectedSpec) return;
+        setError(null);
+        setFlash(null);
+        try {
+            setSaving(true);
+            // Build composite patch from changed fields.
+            let patch: Record<string, any> = {};
+            // enabled toggle
+            if (kind === 'api') {
+                patch = deepMergeMaps(patch, buildEnabledApiPatch(selectedSpec.alias, selectedSpec.http_method, formEnabled));
+            } else {
+                patch = deepMergeMaps(patch, buildEnabledKindPatch(kind, selectedSpec.alias, formEnabled));
+            }
+            // kind-specific overrides via *_config (only if path declared)
+            if (kind === 'api' || kind === 'widget') {
+                if (selectedSpec.user_types_config) {
+                    patch = deepMergeMaps(patch, nestedDotPathPatch(selectedSpec.user_types_config, formUserTypes));
+                }
+                if (selectedSpec.roles_config) {
+                    patch = deepMergeMaps(patch, nestedDotPathPatch(selectedSpec.roles_config, parseChips(formRoles)));
+                }
+            }
+            if (kind === 'mcp' && selectedSpec.transport_config) {
+                patch = deepMergeMaps(patch, nestedDotPathPatch(selectedSpec.transport_config, formTransport));
+            }
+            if (kind === 'cron') {
+                if (selectedSpec.expr_config) {
+                    patch = deepMergeMaps(patch, nestedDotPathPatch(selectedSpec.expr_config, formCron));
+                }
+                if (selectedSpec.tz_config) {
+                    patch = deepMergeMaps(patch, nestedDotPathPatch(selectedSpec.tz_config, formTimezone));
+                }
+            }
+            await onSave(patch);
+            setFlash('Saved ✓');
+            window.setTimeout(() => setFlash(null), 1800);
+        } catch (e: any) {
+            setError(e?.message || 'Save failed');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const resetField = async (configPath: string | null | undefined, value: unknown = null) => {
+        if (!configPath) return;
+        setError(null);
+        try {
+            setSaving(true);
+            await onSave(nestedDotPathPatch(configPath, value));
+            setFlash('Reset ✓');
+            window.setTimeout(() => setFlash(null), 1800);
+        } catch (e: any) {
+            setError(e?.message || 'Reset failed');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    if (resources.length === 0) {
+        return null;
+    }
+
+    return (
+        <Card>
+            <CardHeader
+                title={title}
+                subtitle="Resource overrides are written to bundle props (op: merge). Changes apply immediately at request time."
+                action={
+                    <div className="flex items-center gap-3">
+                        {flash && <span className="text-xs text-emerald-700 font-semibold">{flash}</span>}
+                        {error && <span className="text-xs text-red-700">{error}</span>}
+                        <Button variant="primary" disabled={saving || !selectedSpec || editorPropsLoading} onClick={handleSave}>
+                            {saving ? 'Saving…' : 'Save'}
+                        </Button>
+                    </div>
+                }
+            />
+            <CardBody className="space-y-5">
+                <div>
+                    <label className="block text-sm font-medium text-gray-800 mb-2">Resource</label>
+                    <select
+                        className="w-full px-4 py-2.5 border border-gray-200/80 rounded-xl bg-white text-sm"
+                        value={selectedKey}
+                        onChange={e => setSelectedKey(e.target.value)}
+                    >
+                        {resources.map(r => (
+                            <option key={r.key} value={r.key}>{r.label}</option>
+                        ))}
+                    </select>
+                </div>
+
+                {selectedSpec && (
+                    <div className="space-y-5">
+                        <FieldRow label="Enabled" overridden={false} configurable>
+                            <label className="inline-flex items-center gap-2 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={formEnabled}
+                                    onChange={e => setFormEnabled(e.target.checked)}
+                                />
+                                <span className={formEnabled ? 'text-emerald-700 font-semibold text-sm' : 'text-gray-500 font-semibold text-sm'}>
+                                    {formEnabled ? 'enabled' : 'disabled'}
+                                </span>
+                            </label>
+                            <FieldHint>
+                                Maps to <code>{selectedSpec.enabled_path}</code>.
+                            </FieldHint>
+                        </FieldRow>
+
+                        {(kind === 'api' || kind === 'widget') && (
+                            <>
+                                <FieldRow
+                                    label="User types"
+                                    overridden={selectedSpec.user_types_overridden}
+                                    configurable={Boolean(selectedSpec.user_types_config)}
+                                    onResetToDefault={selectedSpec.user_types_config && selectedSpec.user_types_overridden ? () => resetField(selectedSpec.user_types_config, null) : undefined}
+                                >
+                                    <select
+                                        multiple
+                                        size={4}
+                                        value={formUserTypes}
+                                        onChange={e => setFormUserTypes(Array.from(e.target.selectedOptions).map(o => o.value))}
+                                        disabled={!selectedSpec.user_types_config}
+                                        className="w-full px-3 py-2 border border-gray-200/80 rounded-xl bg-white text-sm disabled:bg-gray-50 disabled:text-gray-400"
+                                    >
+                                        {KNOWN_USER_TYPES.map(ut => (
+                                            <option key={ut} value={ut}>{ut}</option>
+                                        ))}
+                                    </select>
+                                    <FieldHint>
+                                        {selectedSpec.user_types_config
+                                            ? <>Override path: <code>{selectedSpec.user_types_config}</code>. Hold ⌘/Ctrl to multi-select. Empty selection saves an explicit empty list.</>
+                                            : <>No <code>user_types_config</code> declared in the decorator — value is hard-coded.</>}
+                                    </FieldHint>
+                                </FieldRow>
+
+                                <FieldRow
+                                    label="Roles"
+                                    overridden={selectedSpec.roles_overridden}
+                                    configurable={Boolean(selectedSpec.roles_config)}
+                                    onResetToDefault={selectedSpec.roles_config && selectedSpec.roles_overridden ? () => resetField(selectedSpec.roles_config, null) : undefined}
+                                >
+                                    <input
+                                        value={formRoles}
+                                        onChange={e => setFormRoles(e.target.value)}
+                                        disabled={!selectedSpec.roles_config}
+                                        placeholder="kdcube:role:editor, kdcube:role:viewer"
+                                        className="w-full px-3 py-2 border border-gray-200/80 rounded-xl bg-white text-sm font-mono disabled:bg-gray-50 disabled:text-gray-400"
+                                    />
+                                    <FieldHint>
+                                        {selectedSpec.roles_config
+                                            ? <>Override path: <code>{selectedSpec.roles_config}</code>. Comma-separated. Empty saves an explicit empty list.</>
+                                            : <>No <code>roles_config</code> declared in the decorator — value is hard-coded.</>}
+                                    </FieldHint>
+                                </FieldRow>
+                            </>
+                        )}
+
+                        {kind === 'mcp' && (
+                            <FieldRow
+                                label="Transport"
+                                overridden={selectedSpec.transport_overridden}
+                                configurable={Boolean(selectedSpec.transport_config)}
+                                onResetToDefault={selectedSpec.transport_config && selectedSpec.transport_overridden ? () => resetField(selectedSpec.transport_config, null) : undefined}
+                            >
+                                <select
+                                    value={formTransport}
+                                    onChange={e => setFormTransport(e.target.value)}
+                                    disabled={!selectedSpec.transport_config}
+                                    className="w-full px-3 py-2 border border-gray-200/80 rounded-xl bg-white text-sm disabled:bg-gray-50 disabled:text-gray-400"
+                                >
+                                    {KNOWN_TRANSPORTS.map(t => <option key={t} value={t}>{t}</option>)}
+                                </select>
+                                <FieldHint>
+                                    {selectedSpec.transport_config
+                                        ? <>Override path: <code>{selectedSpec.transport_config}</code>.</>
+                                        : <>No <code>transport_config</code> declared in the decorator — value is hard-coded.</>}
+                                </FieldHint>
+                            </FieldRow>
+                        )}
+
+                        {kind === 'cron' && (
+                            <>
+                                <FieldRow
+                                    label="Cron expression"
+                                    overridden={selectedSpec.cron_expression_overridden}
+                                    configurable={Boolean(selectedSpec.expr_config)}
+                                    onResetToDefault={
+                                        selectedSpec.expr_config && selectedSpec.cron_expression_overridden
+                                            ? () => resetField(selectedSpec.expr_config, selectedSpec.cron_expression_default ?? null)
+                                            : undefined
+                                    }
+                                >
+                                    <input
+                                        value={formCron}
+                                        onChange={e => setFormCron(e.target.value)}
+                                        disabled={!selectedSpec.expr_config}
+                                        placeholder={selectedSpec.cron_expression_default || '*/15 * * * *'}
+                                        className="w-full px-3 py-2 border border-gray-200/80 rounded-xl bg-white text-sm font-mono disabled:bg-gray-50 disabled:text-gray-400"
+                                    />
+                                    <FieldHint>
+                                        {selectedSpec.expr_config ? (
+                                            <>
+                                                Override path: <code>{selectedSpec.expr_config}</code>.
+                                                {' '}Decorator default: <code>{selectedSpec.cron_expression_default || '—'}</code>.
+                                                <br />
+                                                <span className="text-gray-400">
+                                                    Setting the value to <code>disable</code> (or an empty string) suppresses scheduling
+                                                    without flipping <code>enabled.cron.{selectedSpec.alias}</code>.
+                                                    Removing the value entirely also stops the job. "Reset to default" therefore writes
+                                                    the decorator default back to the override path instead of clearing it.
+                                                </span>
+                                            </>
+                                        ) : (
+                                            <>No <code>expr_config</code> declared in the decorator — schedule is hard-coded.</>
+                                        )}
+                                    </FieldHint>
+                                </FieldRow>
+
+                                <FieldRow
+                                    label="Timezone"
+                                    overridden={selectedSpec.timezone_overridden}
+                                    configurable={Boolean(selectedSpec.tz_config)}
+                                    onResetToDefault={
+                                        selectedSpec.tz_config && selectedSpec.timezone_overridden
+                                            ? () => resetField(selectedSpec.tz_config, selectedSpec.timezone_default ?? null)
+                                            : undefined
+                                    }
+                                >
+                                    <input
+                                        value={formTimezone}
+                                        onChange={e => setFormTimezone(e.target.value)}
+                                        disabled={!selectedSpec.tz_config}
+                                        placeholder={selectedSpec.timezone_default || 'Europe/Berlin'}
+                                        className="w-full px-3 py-2 border border-gray-200/80 rounded-xl bg-white text-sm font-mono disabled:bg-gray-50 disabled:text-gray-400"
+                                    />
+                                    <FieldHint>
+                                        {selectedSpec.tz_config ? (
+                                            <>
+                                                Override path: <code>{selectedSpec.tz_config}</code>.
+                                                {' '}Decorator default: <code>{selectedSpec.timezone_default || 'UTC'}</code>.
+                                                <br />
+                                                <span className="text-gray-400">
+                                                    Empty / missing falls back to the decorator default. "Reset to default" writes the
+                                                    decorator default back to the override path.
+                                                </span>
+                                            </>
+                                        ) : (
+                                            <>No <code>tz_config</code> declared in the decorator — timezone is hard-coded.</>
+                                        )}
+                                    </FieldHint>
+                                </FieldRow>
+                            </>
+                        )}
+                    </div>
+                )}
+            </CardBody>
+        </Card>
+    );
+};
+
+// =============================================================================
 // Main Component
 // =============================================================================
 
@@ -680,6 +1266,9 @@ const AIBundleDashboard: React.FC = () => {
     const [secretsLoading, setSecretsLoading] = useState<boolean>(false);
     const [secretsKeyPath, setSecretsKeyPath] = useState<string>('');
     const [secretsValue, setSecretsValue] = useState<string>('');
+    const [interfaceBundleId, setInterfaceBundleId] = useState<string>('');
+    const [editorProps, setEditorProps] = useState<Record<string, any>>({});
+    const [editorPropsLoading, setEditorPropsLoading] = useState<boolean>(false);
     const registryScope = useMemo(() => normalizeScope(scopeTenant, scopeProject), [scopeTenant, scopeProject]);
     const propsScope = useMemo(() => normalizeScope(scopeTenant, scopeProject), [scopeTenant, scopeProject]);
     const draftScope = useMemo(() => parseScopeValue(scopeInput), [scopeInput]);
@@ -784,9 +1373,10 @@ const AIBundleDashboard: React.FC = () => {
         return subdir ? `${base}/${subdir}` : base;
     }, [form.repo, form.ref, form.subdir, form.id]);
 
-    const loadBundles = async (scopeOverride?: Scope) => {
+    const loadBundles = async (scopeOverride?: Scope, opts?: { quiet?: boolean }) => {
+        const quiet = opts?.quiet === true;
         try {
-            setLoading(true);
+            if (!quiet) setLoading(true);
             const data = await api.listBundles(scopeOverride ?? registryScope);
             setBundles(data.available_bundles || {});
             setDefaultBundleId(data.default_bundle_id || '');
@@ -797,12 +1387,18 @@ const AIBundleDashboard: React.FC = () => {
             if (!secretsBundleId || !(secretsBundleId in (data.available_bundles || {}))) {
                 setSecretsBundleId(data.default_bundle_id || '');
             }
-            setError(null);
+            if (!interfaceBundleId || !(interfaceBundleId in (data.available_bundles || {}))) {
+                setInterfaceBundleId(data.default_bundle_id || '');
+            }
+            if (!quiet) setError(null);
         } catch (e: any) {
-            setError(e.message || 'Failed to load bundles');
-            setBundleAuthority(null);
+            if (!quiet) {
+                setError(e.message || 'Failed to load bundles');
+                setBundleAuthority(null);
+            }
+            throw e;
         } finally {
-            setLoading(false);
+            if (!quiet) setLoading(false);
         }
     };
 
@@ -987,6 +1583,38 @@ const AIBundleDashboard: React.FC = () => {
         if (!secretsBundleId) return;
         loadSecrets();
     }, [secretsBundleId, scopeTenant, scopeProject]);
+
+    const loadEditorProps = async (bundleId: string) => {
+        if (!bundleId) {
+            setEditorProps({});
+            return;
+        }
+        try {
+            setEditorPropsLoading(true);
+            const data = await api.getBundleProps(bundleId, registryScope);
+            setEditorProps((data?.props as Record<string, any>) || {});
+        } catch {
+            setEditorProps({});
+        } finally {
+            setEditorPropsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        loadEditorProps(interfaceBundleId);
+    }, [interfaceBundleId, scopeTenant, scopeProject]);
+
+    // Apply a merge-patch to the current bundle's props, then quietly refresh
+    // both the bundles snapshot (for descriptors / pills) and editorProps
+    // (for the editor cards' form values). Avoids the global loading spinner.
+    const saveOverrideAndRefresh = async (patch: Record<string, any>) => {
+        if (!interfaceBundleId) return;
+        await api.setBundleProps(interfaceBundleId, { op: 'merge', props: patch }, registryScope);
+        await Promise.all([
+            loadBundles(registryScope, { quiet: true }).catch(() => undefined),
+            loadEditorProps(interfaceBundleId),
+        ]);
+    };
 
     const resetForm = () => {
         setEditingId(null);
@@ -1568,6 +2196,338 @@ const AIBundleDashboard: React.FC = () => {
                         </div>
                     </CardBody>
                 </Card>
+
+                <Card>
+                    <CardHeader
+                        title="Bundle interface"
+                        subtitle="Declared APIs, MCP endpoints, widgets, and scheduled jobs (cron) for the selected bundle."
+                        action={<Button variant="secondary" onClick={() => loadBundles()}>Refresh</Button>}
+                    />
+                    <CardBody className="space-y-5">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-800 mb-2">Bundle ID</label>
+                            <select
+                                className="w-full px-4 py-2.5 border border-gray-200/80 rounded-xl bg-white text-sm"
+                                value={interfaceBundleId}
+                                onChange={e => setInterfaceBundleId(e.target.value)}
+                            >
+                                <option value="">—</option>
+                                {bundleList.map(b => (
+                                    <option key={b.id} value={b.id}>{b.id}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {(() => {
+                            const b = interfaceBundleId ? bundles[interfaceBundleId] : null;
+                            if (!b) return (
+                                <div className="text-sm text-gray-500">Select a bundle to view its interface.</div>
+                            );
+
+                            const apis = b.apis || [];
+                            const mcp = b.mcp_endpoints || [];
+                            const widgets = b.widgets || [];
+                            const jobs = b.scheduled_jobs || [];
+                            const allowedRoles = b.allowed_roles || [];
+                            const hasAny = apis.length > 0 || mcp.length > 0 || widgets.length > 0 || jobs.length > 0 || b.on_message || b.on_job;
+
+                            if (!hasAny && allowedRoles.length === 0) return (
+                                <div className="text-sm text-gray-500">No interface declared for this bundle.</div>
+                            );
+
+                            const bundleEnabledRaw = (editorProps as any)?.enabled?.bundle;
+                            const bundleEnabledEffective = bundleEnabledRaw === undefined
+                                ? true
+                                : !(bundleEnabledRaw === false || bundleEnabledRaw === 0 || (typeof bundleEnabledRaw === 'string' && ['false','disable','disabled','off','0'].includes(bundleEnabledRaw.trim().toLowerCase())));
+                            return (
+                                <div className="space-y-5">
+                                    <div className="flex flex-wrap items-center gap-3 text-xs">
+                                        <span className="font-semibold text-gray-700">Bundle visibility:</span>
+                                        {allowedRoles.length === 0 ? (
+                                            <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800">
+                                                Visible to all authenticated users
+                                            </span>
+                                        ) : (
+                                            allowedRoles.map((r, i) => (
+                                                <span key={i} className="inline-flex items-center px-2.5 py-1 rounded-full bg-indigo-50 border border-indigo-200 font-mono text-indigo-800">
+                                                    {r}
+                                                </span>
+                                            ))
+                                        )}
+                                        <span className="ml-auto inline-flex items-center gap-2">
+                                            <span className="text-gray-700 font-semibold">enabled.bundle:</span>
+                                            <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={bundleEnabledEffective}
+                                                    onChange={async e => {
+                                                        try {
+                                                            await saveOverrideAndRefresh(buildEnabledKindPatch('bundle', null, e.target.checked));
+                                                        } catch (err: any) {
+                                                            setError(err?.message || 'Failed to update enabled.bundle');
+                                                        }
+                                                    }}
+                                                />
+                                                <span className={bundleEnabledEffective ? 'text-emerald-700 font-semibold' : 'text-gray-500 font-semibold'}>
+                                                    {bundleEnabledEffective ? 'enabled' : 'disabled'}
+                                                </span>
+                                            </label>
+                                        </span>
+                                    </div>
+
+                                    {(b.on_message || b.on_job) && (
+                                        <div className="flex flex-wrap gap-3 text-xs text-gray-600">
+                                            {b.on_message && (
+                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-100 border border-gray-200">
+                                                    <span className="font-semibold text-gray-800">on_message</span>
+                                                    <code>{b.on_message}</code>
+                                                </span>
+                                            )}
+                                            {b.on_job && (
+                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gray-100 border border-gray-200">
+                                                    <span className="font-semibold text-gray-800">on_job</span>
+                                                    <code>{b.on_job}</code>
+                                                </span>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {apis.length > 0 && (
+                                        <div>
+                                            <div className="text-sm font-semibold text-gray-800 mb-2">
+                                                API Endpoints
+                                                <span className="ml-2 text-xs font-normal text-gray-500">({apis.length})</span>
+                                            </div>
+                                            <div className="overflow-x-auto rounded-xl border border-gray-200">
+                                                <table className="w-full text-xs">
+                                                    <thead className="bg-gray-50 border-b border-gray-200">
+                                                        <tr className="text-gray-600">
+                                                            <th className="px-3 py-2 text-left font-semibold">Alias</th>
+                                                            <th className="px-3 py-2 text-left font-semibold">Method</th>
+                                                            <th className="px-3 py-2 text-left font-semibold">Route</th>
+                                                            <th className="px-3 py-2 text-left font-semibold">User types</th>
+                                                            <th className="px-3 py-2 text-left font-semibold">User types config</th>
+                                                            <th className="px-3 py-2 text-left font-semibold">Roles</th>
+                                                            <th className="px-3 py-2 text-left font-semibold">Roles config</th>
+                                                            <th className="px-3 py-2 text-left font-semibold">Enabled path</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-gray-100">
+                                                        {apis.map((ep, i) => (
+                                                            <tr key={i} className="hover:bg-gray-50/70">
+                                                                <td className="px-3 py-2 font-mono font-semibold text-gray-900">{ep.alias}</td>
+                                                                <td className="px-3 py-2 font-mono uppercase text-blue-700">{ep.http_method}</td>
+                                                                <td className="px-3 py-2 font-mono text-gray-700">{ep.route}</td>
+                                                                <td className="px-3 py-2 text-gray-600">
+                                                                    <OverridableValue
+                                                                        value={ep.user_types}
+                                                                        defaultValue={ep.user_types_default}
+                                                                        overridden={ep.user_types_overridden}
+                                                                    />
+                                                                </td>
+                                                                <td className="px-3 py-2 font-mono text-gray-500">{ep.user_types_config || '—'}</td>
+                                                                <td className="px-3 py-2 text-gray-600">
+                                                                    <OverridableValue
+                                                                        value={ep.roles}
+                                                                        defaultValue={ep.roles_default}
+                                                                        overridden={ep.roles_overridden}
+                                                                    />
+                                                                </td>
+                                                                <td className="px-3 py-2 font-mono text-gray-500">{ep.roles_config || '—'}</td>
+                                                                <td className="px-3 py-2 font-mono text-gray-500">{ep.enabled_path || '—'}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {widgets.length > 0 && (
+                                        <div>
+                                            <div className="text-sm font-semibold text-gray-800 mb-2">
+                                                Widgets
+                                                <span className="ml-2 text-xs font-normal text-gray-500">({widgets.length})</span>
+                                            </div>
+                                            <div className="overflow-x-auto rounded-xl border border-gray-200">
+                                                <table className="w-full text-xs">
+                                                    <thead className="bg-gray-50 border-b border-gray-200">
+                                                        <tr className="text-gray-600">
+                                                            <th className="px-3 py-2 text-left font-semibold">Alias</th>
+                                                            <th className="px-3 py-2 text-left font-semibold">Icon</th>
+                                                            <th className="px-3 py-2 text-left font-semibold">User types</th>
+                                                            <th className="px-3 py-2 text-left font-semibold">User types config</th>
+                                                            <th className="px-3 py-2 text-left font-semibold">Roles</th>
+                                                            <th className="px-3 py-2 text-left font-semibold">Roles config</th>
+                                                            <th className="px-3 py-2 text-left font-semibold">Enabled path</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-gray-100">
+                                                        {widgets.map((w, i) => {
+                                                            const iconLabel = w.icon
+                                                                ? Object.entries(w.icon).map(([k, v]) => `${k}:${v}`).join(', ')
+                                                                : '';
+                                                            return (
+                                                                <tr key={i} className="hover:bg-gray-50/70">
+                                                                    <td className="px-3 py-2 font-mono font-semibold text-gray-900">{w.alias}</td>
+                                                                    <td className="px-3 py-2 font-mono text-gray-500">{iconLabel || '—'}</td>
+                                                                    <td className="px-3 py-2 text-gray-600">
+                                                                        <OverridableValue
+                                                                            value={w.user_types}
+                                                                            defaultValue={w.user_types_default}
+                                                                            overridden={w.user_types_overridden}
+                                                                        />
+                                                                    </td>
+                                                                    <td className="px-3 py-2 font-mono text-gray-500">{w.user_types_config || '—'}</td>
+                                                                    <td className="px-3 py-2 text-gray-600">
+                                                                        <OverridableValue
+                                                                            value={w.roles}
+                                                                            defaultValue={w.roles_default}
+                                                                            overridden={w.roles_overridden}
+                                                                        />
+                                                                    </td>
+                                                                    <td className="px-3 py-2 font-mono text-gray-500">{w.roles_config || '—'}</td>
+                                                                    <td className="px-3 py-2 font-mono text-gray-500">{w.enabled_path || '—'}</td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {mcp.length > 0 && (
+                                        <div>
+                                            <div className="text-sm font-semibold text-gray-800 mb-2">
+                                                MCP Endpoints
+                                                <span className="ml-2 text-xs font-normal text-gray-500">({mcp.length})</span>
+                                            </div>
+                                            <div className="overflow-x-auto rounded-xl border border-gray-200">
+                                                <table className="w-full text-xs">
+                                                    <thead className="bg-gray-50 border-b border-gray-200">
+                                                        <tr className="text-gray-600">
+                                                            <th className="px-3 py-2 text-left font-semibold">Alias</th>
+                                                            <th className="px-3 py-2 text-left font-semibold">Route</th>
+                                                            <th className="px-3 py-2 text-left font-semibold">Transport</th>
+                                                            <th className="px-3 py-2 text-left font-semibold">Transport config</th>
+                                                            <th className="px-3 py-2 text-left font-semibold">Enabled path</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-gray-100">
+                                                        {mcp.map((ep, i) => (
+                                                            <tr key={i} className="hover:bg-gray-50/70">
+                                                                <td className="px-3 py-2 font-mono font-semibold text-gray-900">{ep.alias}</td>
+                                                                <td className="px-3 py-2 font-mono text-gray-700">{ep.route}</td>
+                                                                <td className="px-3 py-2 text-gray-600">
+                                                                    <OverridableValue
+                                                                        value={ep.transport}
+                                                                        defaultValue={ep.transport_default}
+                                                                        overridden={ep.transport_overridden}
+                                                                    />
+                                                                </td>
+                                                                <td className="px-3 py-2 font-mono text-gray-500">{ep.transport_config || '—'}</td>
+                                                                <td className="px-3 py-2 font-mono text-gray-500">{ep.enabled_path || '—'}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {jobs.length > 0 && (
+                                        <div>
+                                            <div className="text-sm font-semibold text-gray-800 mb-2">
+                                                Scheduled Jobs (Cron)
+                                                <span className="ml-2 text-xs font-normal text-gray-500">({jobs.length})</span>
+                                            </div>
+                                            <div className="overflow-x-auto rounded-xl border border-gray-200">
+                                                <table className="w-full text-xs">
+                                                    <thead className="bg-gray-50 border-b border-gray-200">
+                                                        <tr className="text-gray-600">
+                                                            <th className="px-3 py-2 text-left font-semibold">Alias</th>
+                                                            <th className="px-3 py-2 text-left font-semibold">Method</th>
+                                                            <th className="px-3 py-2 text-left font-semibold">Cron</th>
+                                                            <th className="px-3 py-2 text-left font-semibold">Expr config</th>
+                                                            <th className="px-3 py-2 text-left font-semibold">Timezone</th>
+                                                            <th className="px-3 py-2 text-left font-semibold">Tz config</th>
+                                                            <th className="px-3 py-2 text-left font-semibold">Span</th>
+                                                            <th className="px-3 py-2 text-left font-semibold">Enabled path</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-gray-100">
+                                                        {jobs.map((job, i) => (
+                                                            <tr key={i} className="hover:bg-gray-50/70">
+                                                                <td className="px-3 py-2 font-mono font-semibold text-gray-900">{job.alias || '—'}</td>
+                                                                <td className="px-3 py-2 font-mono text-gray-700">{job.method_name}</td>
+                                                                <td className="px-3 py-2 font-mono text-gray-700 whitespace-nowrap">
+                                                                    <OverridableValue
+                                                                        value={job.cron_expression}
+                                                                        defaultValue={job.cron_expression_default}
+                                                                        overridden={job.cron_expression_overridden}
+                                                                    />
+                                                                </td>
+                                                                <td className="px-3 py-2 font-mono text-gray-500">{job.expr_config || '—'}</td>
+                                                                <td className="px-3 py-2 text-gray-600">
+                                                                    <OverridableValue
+                                                                        value={job.timezone}
+                                                                        defaultValue={job.timezone_default}
+                                                                        overridden={job.timezone_overridden}
+                                                                    />
+                                                                </td>
+                                                                <td className="px-3 py-2 font-mono text-gray-500">{job.tz_config || '—'}</td>
+                                                                <td className="px-3 py-2 text-gray-600">{job.span || '—'}</td>
+                                                                <td className="px-3 py-2 font-mono text-gray-500">{job.enabled_path || '—'}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })()}
+                    </CardBody>
+                </Card>
+
+                {interfaceBundleId && bundles[interfaceBundleId] && (
+                    <ResourceEditorCard
+                        kind="api"
+                        bundle={bundles[interfaceBundleId]}
+                        editorProps={editorProps}
+                        editorPropsLoading={editorPropsLoading}
+                        onSave={saveOverrideAndRefresh}
+                    />
+                )}
+                {interfaceBundleId && bundles[interfaceBundleId] && (
+                    <ResourceEditorCard
+                        kind="widget"
+                        bundle={bundles[interfaceBundleId]}
+                        editorProps={editorProps}
+                        editorPropsLoading={editorPropsLoading}
+                        onSave={saveOverrideAndRefresh}
+                    />
+                )}
+                {interfaceBundleId && bundles[interfaceBundleId] && (
+                    <ResourceEditorCard
+                        kind="mcp"
+                        bundle={bundles[interfaceBundleId]}
+                        editorProps={editorProps}
+                        editorPropsLoading={editorPropsLoading}
+                        onSave={saveOverrideAndRefresh}
+                    />
+                )}
+                {interfaceBundleId && bundles[interfaceBundleId] && (
+                    <ResourceEditorCard
+                        kind="cron"
+                        bundle={bundles[interfaceBundleId]}
+                        editorProps={editorProps}
+                        editorPropsLoading={editorPropsLoading}
+                        onSave={saveOverrideAndRefresh}
+                    />
+                )}
 
                 <Card>
                     <CardHeader
