@@ -689,6 +689,67 @@ const FieldRow: React.FC<{
     </div>
 );
 
+const UserTypesEditor: React.FC<{
+    value: string[];
+    disabled?: boolean;
+    onChange: (value: string[]) => void;
+}> = ({ value, disabled, onChange }) => {
+    const selected = new Set(value);
+    const setChecked = (userType: string, checked: boolean) => {
+        if (disabled) return;
+        const next = new Set(selected);
+        if (checked) {
+            next.add(userType);
+        } else {
+            next.delete(userType);
+        }
+        onChange(KNOWN_USER_TYPES.filter(ut => next.has(ut)));
+    };
+
+    return (
+        <div className={`rounded-xl border border-gray-200/80 bg-white p-3 ${disabled ? 'bg-gray-50 text-gray-400' : ''}`}>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {KNOWN_USER_TYPES.map(ut => (
+                    <label
+                        key={ut}
+                        className={`inline-flex items-center gap-2 text-sm rounded-lg px-2.5 py-2 border ${
+                            selected.has(ut)
+                                ? 'border-blue-200 bg-blue-50 text-blue-800'
+                                : 'border-gray-200 bg-white text-gray-700'
+                        } ${disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-blue-200 hover:bg-blue-50/70'}`}
+                    >
+                        <input
+                            type="checkbox"
+                            checked={selected.has(ut)}
+                            disabled={disabled}
+                            onChange={e => setChecked(ut, e.target.checked)}
+                        />
+                        <span>{ut}</span>
+                    </label>
+                ))}
+            </div>
+            <div className="mt-2 flex items-center gap-3 text-[11px]">
+                <button
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => onChange([...KNOWN_USER_TYPES])}
+                    className="text-blue-700 hover:text-blue-900 disabled:text-gray-400 disabled:cursor-not-allowed"
+                >
+                    Select all
+                </button>
+                <button
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => onChange([])}
+                    className="text-gray-600 hover:text-gray-900 disabled:text-gray-400 disabled:cursor-not-allowed"
+                >
+                    Clear
+                </button>
+            </div>
+        </div>
+    );
+};
+
 const CardHeader: React.FC<{ title: string; subtitle?: string; action?: React.ReactNode }> = ({ title, subtitle, action }) => (
     <div className="px-6 py-5 border-b border-gray-200/70">
         <div className="flex items-start justify-between gap-4">
@@ -1098,21 +1159,14 @@ const ResourceEditorCard: React.FC<ResourceEditorCardProps> = ({
                                     configurable={Boolean(selectedSpec.user_types_config)}
                                     onResetToDefault={selectedSpec.user_types_config && selectedSpec.user_types_overridden ? () => resetField(selectedSpec.user_types_config, null) : undefined}
                                 >
-                                    <select
-                                        multiple
-                                        size={4}
+                                    <UserTypesEditor
                                         value={formUserTypes}
-                                        onChange={e => setFormUserTypes(Array.from(e.target.selectedOptions).map(o => o.value))}
+                                        onChange={setFormUserTypes}
                                         disabled={!selectedSpec.user_types_config}
-                                        className="w-full px-3 py-2 border border-gray-200/80 rounded-xl bg-white text-sm disabled:bg-gray-50 disabled:text-gray-400"
-                                    >
-                                        {KNOWN_USER_TYPES.map(ut => (
-                                            <option key={ut} value={ut}>{ut}</option>
-                                        ))}
-                                    </select>
+                                    />
                                     <FieldHint>
                                         {selectedSpec.user_types_config
-                                            ? <>Override path: <code>{selectedSpec.user_types_config}</code>. Hold ⌘/Ctrl to multi-select. Empty selection saves an explicit empty list.</>
+                                            ? <>Override path: <code>{selectedSpec.user_types_config}</code>. Check selected user types to restrict access. No selection means all user types are allowed.</>
                                             : <>No <code>user_types_config</code> declared in the decorator — value is hard-coded.</>}
                                     </FieldHint>
                                 </FieldRow>
