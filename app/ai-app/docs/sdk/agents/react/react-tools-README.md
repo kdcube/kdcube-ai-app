@@ -275,16 +275,16 @@ Use it to shrink still-visible bulky material that is no longer needed in the ac
 
 ### `react.rg`
 
-Searches safely under `outdir` or `workdir` without shell execution.
+Searches safely over files already materialized under OUT_DIR without shell execution.
 
 - input: file name regex and/or content regex
-- scope: rooted search only, under runtime-managed directories
-- OUT_DIR hits: include logical paths suitable for `react.read`
+- scope: rooted search only, under runtime-managed directories already present in OUT_DIR
+- not a search over hidden/pruned timeline, unpulled historical snapshots, or `ks:`; locate older refs first, then `react.pull` or `react.checkout` them before local search
+- hits: include logical paths suitable for `react.read`
 - content matches: include line-numbered previews and `read_item` ranges
 - `context_lines` controls how many surrounding lines are included in the
   suggested `read_item` range around each match
 - next step: pass `read_items` to `react.read({"items":[...]})` for exact visible regions
-- workdir hits: filesystem hits only; they do not automatically become logical artifacts
 
 ### `react.plan`
 

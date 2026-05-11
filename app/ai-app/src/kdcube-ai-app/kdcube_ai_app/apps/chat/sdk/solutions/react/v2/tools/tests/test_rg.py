@@ -67,7 +67,7 @@ async def test_rg_finds_file_under_outdir_root(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_rg_supports_workdir_subdir_root(tmp_path):
+async def test_rg_rejects_workdir_root(tmp_path):
     outdir = tmp_path / "out"
     workdir = tmp_path / "work"
     runtime = RuntimeCtx(turn_id="turn_search", outdir=str(outdir), workdir=str(workdir))
@@ -93,14 +93,8 @@ async def test_rg_supports_workdir_subdir_root(tmp_path):
 
     await handle_react_rg(ctx_browser=ctx, state=state, tool_call_id="rg2")
 
-    payload = _latest_payload(ctx)
-    assert payload["root"] == "workdir/runtime"
-    assert payload["hits"] == [{
-        "path": "logs/docker.err.log",
-        "size_bytes": 4,
-        "text_symbols": 4,
-        "line_count": 1,
-    }]
+    assert state["last_tool_result"] == []
+    assert any(b.get("type") == "react.notice" for b in ctx.timeline.blocks)
 
 
 @pytest.mark.asyncio
