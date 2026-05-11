@@ -815,16 +815,40 @@ This is intended for **local development** only.
 
 ## 9) Operational commands
 
-Inspect global CLI state (defaults + running deployment):
+Inspect global CLI state (defaults, running deployment, and runtime info from defaults):
 
 ```bash
 kdcube info
 ```
 
-Inspect a specific workdir deployment:
+Show only the stored CLI defaults:
+
+```bash
+kdcube info --show-defaults
+```
+
+Show only the currently running deployment:
+
+```bash
+kdcube info --show-current-running-runtime
+```
+
+Inspect a specific initialized workdir:
 
 ```bash
 kdcube info --workdir ~/.kdcube/kdcube-runtime/<tenant_id>__<project_id>
+```
+
+Disambiguate when multiple runtimes exist under the base workdir:
+
+```bash
+kdcube info --workdir ~/.kdcube/kdcube-runtime --tenant <tenant_id> --project <project_id>
+```
+
+Show runtime info for a tenant/project using the default runtime base (no `--workdir` needed):
+
+```bash
+kdcube info --tenant <tenant_id> --project <project_id>
 ```
 
 Initialize a workdir without starting Docker (clones platform repo automatically):
@@ -935,8 +959,8 @@ kdcube defaults \
 | Field | Flag | Purpose |
 |---|---|---|
 | `default_workdir` | `--default-workdir` | Fallback workdir when `--workdir` is omitted from a subcommand |
-| `default_tenant` | `--default-tenant` | Displayed by `kdcube info`; used by `kdcube export` as fallback tenant |
-| `default_project` | `--default-project` | Displayed by `kdcube info`; used by `kdcube export` as fallback project |
+| `default_tenant` | `--default-tenant` | Used by `kdcube info` for workdir resolution and display; used by `kdcube export` as fallback tenant |
+| `default_project` | `--default-project` | Used by `kdcube info` for workdir resolution and display; used by `kdcube export` as fallback project |
 
 `kdcube start`, `kdcube stop`, `kdcube reload`, and `kdcube export` resolve the
 target workdir with the following precedence:
@@ -951,8 +975,19 @@ target workdir with the following precedence:
      kdcube defaults --default-workdir <path>
    ```
 
-`kdcube info` reads `cli-defaults.json` and displays the
-configured values, or reports that no defaults are set.
+`kdcube info` (no arguments) shows three things in sequence:
+
+1. Stored CLI defaults (`default_workdir`, `default_tenant`, `default_project`).
+2. Currently running deployment from the lock file.
+3. Runtime info for the workdir resolved from defaults — if any of `default_workdir`,
+   `default_tenant`, or `default_project` are set, the CLI resolves the namespaced
+   workdir (using `~/.kdcube/kdcube-runtime` as base when `default_workdir` is not
+   set) and prints full descriptor/mount info for that runtime, if it is initialized.
+
+`--tenant` and `--project` flags on `kdcube info` also serve as workdir disambiguation:
+when `--workdir` points to a base directory containing multiple runtimes, they identify
+which one to show. When `--workdir` is omitted, they construct the target path from
+the default runtime base.
 
 ---
 

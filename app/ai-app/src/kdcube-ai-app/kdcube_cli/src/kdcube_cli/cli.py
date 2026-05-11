@@ -15,6 +15,7 @@ from rich.control import Control
 from rich.live import Live
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
+from rich.table import Table
 from rich.text import Text
 
 from kdcube_cli.banner import print_cli_banner
@@ -65,6 +66,13 @@ KDCUBE_REPOS = {
     "proxylogin",
     "py-code-exec",
 }
+
+
+class _AmbiguousWorkdirError(Exception):
+    def __init__(self, base_workdir: Path, candidates: list[Path]) -> None:
+        self.base_workdir = base_workdir
+        self.candidates = candidates
+        super().__init__(str(base_workdir))
 
 
 def run(cmd: list[str], cwd: Path | None = None) -> None:
@@ -386,10 +394,16 @@ def _resolve_cli_workdir(
     *,
     descriptors_location: Path | None = None,
     assembly_path: Path | None = None,
+    tenant: str | None = None,
+    project: str | None = None,
 ) -> Path:
     workdir = workdir.expanduser().resolve()
     if _runtime_env_exists(workdir) or (workdir / "config").exists():
         return workdir
+
+    # Explicit tenant/project take priority over descriptor hints
+    if tenant or project:
+        return installer_mod.workspace_runtime_dir(workdir, tenant, project).resolve()
 
     tenant_hint, project_hint = _descriptor_context_hint(
         descriptors_location=descriptors_location,
@@ -406,10 +420,7 @@ def _resolve_cli_workdir(
     if len(candidates) == 1:
         return candidates[0]
     if len(candidates) > 1:
-        raise SystemExit(
-            f"Multiple runtime workdirs found under {workdir}. "
-            "Pass the namespaced runtime directory explicitly with --workdir."
-        )
+        raise _AmbiguousWorkdirError(workdir, candidates)
     return installer_mod.workspace_runtime_dir(workdir, tenant_hint, project_hint).resolve()
 
 
@@ -451,7 +462,10 @@ def _repo_path_from_install_meta(workdir: Path) -> Path | None:
 
 
 def _canonical_descriptor_dir_from_initialized_workdir(workdir: Path) -> Path | None:
-    concrete_workdir = _resolve_cli_workdir(workdir)
+    try:
+        concrete_workdir = _resolve_cli_workdir(workdir)
+    except _AmbiguousWorkdirError:
+        return None
     config_dir = (concrete_workdir / "config").resolve()
     if not config_dir.exists():
         return None
@@ -705,9 +719,7 @@ def print_runtime_info(console: Console, *, repo_root: Path, workdir: Path) -> N
         )
 
 
-def print_global_info(console: Console, cli_defaults: dict) -> None:
-    console.print("[bold]KDCube Global Info[/bold]")
-
+def print_cli_defaults(console: Console, cli_defaults: dict) -> None:
     has_defaults = bool(cli_defaults)
     if not has_defaults:
         console.print("[dim]No defaults configured.[/dim]")
@@ -720,12 +732,12 @@ def print_global_info(console: Console, cli_defaults: dict) -> None:
         console.print(f"[dim]Default tenant:[/dim]   {cli_defaults.get('default_tenant') or '[not set]'}")
         console.print(f"[dim]Default project:[/dim]  {cli_defaults.get('default_project') or '[not set]'}")
 
-    console.print()
+
+def print_running_deployment_info(console: Console) -> None:
     lock = _read_cli_lock()
     if lock is None:
         console.print("[dim]No running deployment recorded.[/dim]")
         return
-
     running = _lock_running_services(lock)
     if running:
         console.print("[bold]Currently Running Deployment[/bold]")
@@ -738,6 +750,13 @@ def print_global_info(console: Console, cli_defaults: dict) -> None:
         console.print(f"  Workdir: {lock.get('workdir') or '?'}")
         _clear_cli_lock()
         console.print("[dim]Stale lock cleared.[/dim]")
+
+
+def print_global_info(console: Console, cli_defaults: dict) -> None:
+    console.print("[bold]KDCube Global Info[/bold]")
+    print_cli_defaults(console, cli_defaults)
+    console.print()
+    print_running_deployment_info(console)
 
 
 def _load_bundle_ids_from_descriptor(path: Path) -> set[str]:
@@ -1797,12 +1816,6 @@ def main() -> None:
         default="",
         help=argparse.SUPPRESS,
     )
-    parser.add_argument(
-        "--info",
-        action="store_true",
-        help=argparse.SUPPRESS,
-    )
-
     subparsers = parser.add_subparsers(dest="command")
 
     _sp = subparsers.add_parser("stop", help="Stop the local Docker Compose stack")
@@ -1922,6 +1935,14 @@ def main() -> None:
     _sp = subparsers.add_parser("info", help="Show CLI defaults and runtime info")
     _sp.add_argument("--workdir", default="", help="Initialized runtime workdir to inspect")
     _sp.add_argument("--path", default=str(DEFAULT_DIR), help="Platform repo path")
+    _sp.add_argument("--tenant", default="", help="Tenant for workdir resolution or disambiguation")
+    _sp.add_argument("--project", default="", help="Project for workdir resolution or disambiguation")
+    _sp.add_argument("--show-defaults", action="store_true", help="Show stored CLI defaults")
+    _sp.add_argument(
+        "--show-current-running-runtime",
+        action="store_true",
+        help="Show the currently running deployment",
+    )
 
     _sp = subparsers.add_parser("clean", help="Clean local Docker image/cache artifacts")
 
@@ -2035,16 +2056,53 @@ def main() -> None:
             clean_docker_images(console)
             return
         if args.command == "info":
-            if str(args.workdir or "").strip():
+            _eff_tenant = str(args.tenant or cli_defaults.get("default_tenant", "") or "").strip() or None
+            _eff_project = str(args.project or cli_defaults.get("default_project", "") or "").strip() or None
+            if args.show_defaults:
+                console.print("[bold]KDCube CLI Defaults[/bold]")
+                print_cli_defaults(console, cli_defaults)
+                return
+            if args.show_current_running_runtime:
+                print_running_deployment_info(console)
+                return
+            _workdir_str = str(args.workdir or "").strip()
+            if _workdir_str:
                 _workdir = Path(os.path.expanduser(args.workdir)).resolve()
+                _resolved = _resolve_cli_workdir(_workdir, tenant=_eff_tenant, project=_eff_project)
+                if not _runtime_env_exists(_resolved) and not (_resolved / "config").exists():
+                    raise SystemExit(
+                        f"Runtime workdir not found or not initialized: {_resolved}\n"
+                        "Run `kdcube init` to initialize it first."
+                    )
+                _repo = _resolve_subcommand_repo(args.path, workdir=_resolved)
+                print_runtime_info(console, repo_root=_repo, workdir=_resolved)
+            elif _arg_provided("--tenant") or _arg_provided("--project"):
+                _def_base_raw = str(cli_defaults.get("default_workdir", "") or "").strip()
+                _base = Path(_def_base_raw).expanduser().resolve() if _def_base_raw else DEFAULT_WORKDIR
+                _workdir = installer_mod.workspace_runtime_dir(_base, _eff_tenant, _eff_project).resolve()
+                if not _runtime_env_exists(_workdir) and not (_workdir / "config").exists():
+                    raise SystemExit(
+                        f"Runtime workdir not found or not initialized: {_workdir}\n"
+                        "Run `kdcube init` to initialize it first."
+                    )
                 _repo = _resolve_subcommand_repo(args.path, workdir=_workdir)
-                print_runtime_info(
-                    console,
-                    repo_root=_repo,
-                    workdir=_resolve_cli_workdir(_workdir),
-                )
+                print_runtime_info(console, repo_root=_repo, workdir=_workdir)
             else:
                 print_global_info(console, cli_defaults)
+                _def_base_raw = str(cli_defaults.get("default_workdir", "") or "").strip()
+                _def_tenant = str(cli_defaults.get("default_tenant", "") or "").strip() or None
+                _def_project = str(cli_defaults.get("default_project", "") or "").strip() or None
+                if _def_base_raw or _def_tenant or _def_project:
+                    _def_base = Path(_def_base_raw).expanduser().resolve() if _def_base_raw else DEFAULT_WORKDIR
+                    try:
+                        _def_resolved = _resolve_cli_workdir(_def_base, tenant=_def_tenant, project=_def_project)
+                    except SystemExit:
+                        pass
+                    else:
+                        if _runtime_env_exists(_def_resolved) or (_def_resolved / "config").exists():
+                            _def_repo = _resolve_subcommand_repo(args.path, workdir=_def_resolved)
+                            console.print()
+                            print_runtime_info(console, repo_root=_def_repo, workdir=_def_resolved)
             return
         if args.command == "stop":
             _workdir = _resolve_subcommand_workdir(args.workdir, cli_defaults)
@@ -2055,20 +2113,6 @@ def main() -> None:
                 workdir=_resolve_cli_workdir(_workdir),
                 remove_volumes=args.remove_volumes,
             )
-            return
-        if args.info:
-            if _arg_provided("--workdir"):
-                _workdir = Path(os.path.expanduser(args.workdir)).resolve()
-                _repo = _resolve_subcommand_repo(
-                    getattr(args, "path", str(DEFAULT_DIR)), workdir=_workdir
-                )
-                print_runtime_info(
-                    console,
-                    repo_root=_repo,
-                    workdir=_resolve_cli_workdir(_workdir),
-                )
-            else:
-                print_global_info(console, cli_defaults)
             return
         if args.command == "reload":
             _workdir = _resolve_subcommand_workdir(args.workdir, cli_defaults)
@@ -2980,6 +3024,17 @@ def main() -> None:
                 )
             except Exception:
                 pass
+    except _AmbiguousWorkdirError as exc:
+        tbl = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
+        tbl.add_column("Tenant")
+        tbl.add_column("Project")
+        for candidate in exc.candidates:
+            parts = candidate.name.split("__", 1)
+            tbl.add_row(parts[0], parts[1] if len(parts) > 1 else "")
+        console.print(f"[red]Multiple runtime workdirs found under {exc.base_workdir}:[/red]")
+        console.print(tbl)
+        console.print("Disambiguate with [bold]--tenant[/bold] / [bold]--project[/bold].")
+        raise SystemExit(1)
     except FileNotFoundError as exc:
         detail = str(exc).strip()
         if detail:

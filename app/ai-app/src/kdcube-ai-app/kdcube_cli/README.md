@@ -221,7 +221,11 @@ kdcube defaults \
 | Command | What it does |
 |---|---|
 | `kdcube defaults` | Save persistent `--workdir`, `--tenant`, `--project` defaults |
-| `kdcube info` | Show global CLI state; `--workdir` shows resolved runtime info |
+| `kdcube info` | Show global CLI state (defaults + running deployment) |
+| `kdcube info --show-defaults` | Show only the stored CLI defaults |
+| `kdcube info --show-current-running-runtime` | Show only the currently running deployment |
+| `kdcube info --workdir <path>` | Show resolved runtime info for a specific workdir |
+| `kdcube info --tenant <t> --project <p>` | Show runtime info for tenant/project under the default runtime base |
 | `kdcube init --reset-config` | Re-prompt for config values without deleting files |
 | `kdcube clean` | Clean local Docker cache and unused KDCube images |
 

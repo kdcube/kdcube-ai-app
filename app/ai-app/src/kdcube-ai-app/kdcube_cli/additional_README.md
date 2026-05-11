@@ -327,7 +327,7 @@ what is incomplete.
 | `kdcube stop [--workdir <path>] [--remove-volumes]` | Stop the local Docker Compose stack. |
 | `kdcube reload <bundle_id> [--workdir <path>]` | Reapply `bundles.yaml` from the active runtime and clear proc bundle caches. |
 | `kdcube export [--workdir <path>] [--tenant <id>] [--project <id>] [--out-dir <dir>] [--aws-region <region>]` | Export effective live `bundles.yaml` and `bundles.secrets.yaml`. |
-| `kdcube info [--workdir <path>]` | Print global CLI state, or resolved runtime info for a workdir: descriptor paths, install metadata, and host/container bundle mount mappings. |
+| `kdcube info [--workdir <path>] [--tenant <t>] [--project <p>] [--show-defaults] [--show-current-running-runtime]` | Show CLI defaults, currently running deployment, and runtime info from defaults when called with no arguments. `--workdir` shows runtime info for a specific workdir; `--tenant`/`--project` disambiguate when multiple runtimes exist under `--workdir`, or construct the target runtime from the default runtime base when `--workdir` is omitted. `--show-defaults` prints only the stored CLI defaults. `--show-current-running-runtime` prints only the currently running deployment. |
 | `kdcube clean` | Clean local Docker cache and unused KDCube images. |
 | `kdcube defaults [--default-workdir <path>] [--default-tenant <t>] [--default-project <p>]` | Save persistent operator defaults to `~/.kdcube/cli-defaults.json`. |
 
@@ -338,8 +338,8 @@ what is incomplete.
 | Field | Flag | Purpose |
 |---|---|---|
 | `default_workdir` | `--default-workdir` | Fallback workdir when `--workdir` is omitted from a subcommand |
-| `default_tenant` | `--default-tenant` | Displayed by `kdcube info`; used by `kdcube export` as fallback tenant |
-| `default_project` | `--default-project` | Displayed by `kdcube info`; used by `kdcube export` as fallback project |
+| `default_tenant` | `--default-tenant` | Used by `kdcube info` for workdir resolution and display; used by `kdcube export` as fallback tenant |
+| `default_project` | `--default-project` | Used by `kdcube info` for workdir resolution and display; used by `kdcube export` as fallback project |
 
 `kdcube start`, `kdcube stop`, `kdcube reload`, and `kdcube export` resolve the
 target workdir with the following precedence:
@@ -348,8 +348,14 @@ target workdir with the following precedence:
 2. `--workdir` omitted, `default_workdir` present in `cli-defaults.json` → use that.
 3. Neither provided → error with a hint to run `kdcube defaults --default-workdir <path>`.
 
-`kdcube info` reads `cli-defaults.json` and displays the
-configured values, or reports that no defaults are set.
+`kdcube info` (no arguments) shows three things in sequence:
+
+1. Stored CLI defaults (`default_workdir`, `default_tenant`, `default_project`).
+2. Currently running deployment from the lock file.
+3. Runtime info for the workdir resolved from defaults — if any of `default_workdir`,
+   `default_tenant`, or `default_project` are set, the CLI resolves the namespaced
+   workdir (using `DEFAULT_WORKDIR` as base when `default_workdir` is not set) and
+   prints full descriptor/mount info for that runtime, if it is initialized.
 
 ### Single-deployment guard (`cli-lock.json`)
 
@@ -436,22 +442,42 @@ Stop and remove volumes:
 kdcube stop --workdir ~/.kdcube/kdcube-runtime --remove-volumes
 ```
 
-Inspect global CLI state (defaults + running deployment):
+Inspect global CLI state (defaults, running deployment, and runtime info from defaults):
 
 ```bash
 kdcube info
 ```
 
-Inspect the resolved runtime, including how local non-git bundles are mounted:
+Show only the stored CLI defaults:
+
+```bash
+kdcube info --show-defaults
+```
+
+Show only the currently running deployment:
+
+```bash
+kdcube info --show-current-running-runtime
+```
+
+Inspect a specific initialized workdir:
 
 ```bash
 kdcube info --workdir ~/.kdcube/kdcube-runtime/acme__prod_demo
 ```
 
-When `--workdir` points at the base workspace root, `kdcube stop` resolves the
-single matching runtime namespace automatically. If there are multiple runtime
-namespaces under that base workspace, pass the concrete namespaced runtime path
-explicitly.
+Disambiguate when multiple runtimes exist under the base workdir:
+
+```bash
+kdcube info --workdir ~/.kdcube/kdcube-runtime --tenant acme --project prod
+```
+
+Show runtime info for a tenant/project using the default runtime base (no `--workdir` needed):
+
+```bash
+kdcube info --tenant acme --project prod
+```
+
 
 Tip: if `kdcube` is not on your PATH, run `python -m pipx ensurepath`
 or re-open your shell after installation.
