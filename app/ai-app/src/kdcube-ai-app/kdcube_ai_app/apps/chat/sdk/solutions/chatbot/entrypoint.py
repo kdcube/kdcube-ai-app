@@ -1129,9 +1129,11 @@ class BaseEntrypoint:
 
     def _bundle_root(self) -> Optional[str]:
         spec = getattr(self.config, "ai_bundle_spec", None)
-        if spec and spec.module and spec.path:
+        module = getattr(spec, "module", None)
+        path = getattr(spec, "path", None)
+        if spec and module and path:
             from kdcube_ai_app.infra.plugin.bundle_registry import resolve_bundle_root
-            return str(resolve_bundle_root(spec.path, spec.module))
+            return str(resolve_bundle_root(path, module))
         return None
 
     def _ensure_privileged(self, *, user_id: Optional[str], feature: str) -> Optional[str]:
