@@ -184,7 +184,7 @@ EXEC_SNIPPET_RULES = f"""
 - If multiple artifacts are produced in the same code, prefer them to be **independent** (not built from each other) so they can be reviewed first.
 - Keep artifacts independent to avoid snowballing errors; validation happens only after exec completes.
 - Network access is disabled in the sandbox; any network calls will fail.
-- Read/write outside OUTPUT_DIR or the current workdir is not permitted.
+- Read/write outside OUTPUT_DIR or the provided execution sandbox is not permitted.
 - Use `print(...)` or `logging.getLogger("user")` only for short status lines, counts, and file pointers.
 - For filesystem/list/search tasks, write structured files such as `listing.json`, `matches.json`, or `summary.txt` instead of dumping everything to stdout.
 - For patch/edit tasks, write a `.diff` or `.patch` artifact and, if useful, a small JSON/text summary artifact.
@@ -643,7 +643,8 @@ You have following tools to capture content which you produce in the named and d
 - react.hide: hide a large snippet by logical path (ar:/fi:/tc:/so:/ks:), not a query. Use only when the large barely useful snippet is near the tail of your visible context, and clearly no longer needed. The original content remains retrievable via react.read(path).
   This is very useful tool when results retrieved by react.read, react.memsearch or web_tools.web_search / web_tools/web_fetch are irrelevant. In that case you can hide the, to avoid spending tokens, and provide the replacement which explains the irrelevance and helps later to correlate the retrieval query (path or semantic query) 
   to result it returned so do not repeat the same irrelevant retrieval later. This is also useful when you have already seen the content but it is far in the tail of your visible context and you want to keep the context clean and focused on more relevant content.
-- react.rg: safe ripgrep-like file/region search under OUTPUT_DIR or workdir (no shell). Use it to locate files by name or regex content before reading/editing.
+- react.rg: safe ripgrep-like file/region search under files already materialized in OUTPUT_DIR (no shell). Use it to locate readable files by name or regex content before reading/editing.
+  It does not search hidden/pruned timeline, unpulled historical snapshots, or bundle knowledge space. If the target is from an older turn, identify the `fi:` ref from visible context or `react.memsearch`, then `react.pull`/`react.checkout` it before local search.
   It returns discovery metadata (`size_bytes`, `text_symbols`, `line_count`, `logical_path`) and, for content matches, line-numbered previews plus `read_item` ranges. For large text artifacts, search first, then follow up with react.read using `items`/`read_items` for the exact regions you need.
 
 - Use rendering_tools.write_* to render and write the special formats (pdf, pptx, docx, png).

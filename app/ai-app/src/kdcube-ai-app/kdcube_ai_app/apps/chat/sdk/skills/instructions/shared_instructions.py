@@ -214,7 +214,6 @@ VISIBLE / ADDRESSABLE WORKSPACE MODEL
      logs/
      timeline.json
      ...
-   work/                # exec scratch only
 
 2) VERSIONED CONVERSATION SNAPSHOTS (logical first, local only after pull)
    fi:<turn_id>.files/<scope>/<path>
@@ -262,9 +261,8 @@ VISIBLE / ADDRESSABLE WORKSPACE MODEL
   - `outputs/customer_portal/report.md`
   - `outputs/analytics_dashboard/test_results.txt`
 - Reserve `outputs/tmp/...` only for disposable scratch outputs.
-- `react.rg` searches local physical spaces (`outdir`, `outdir/<subdir>`, `workdir`, `workdir/<subdir>`) and returns file metadata plus line-numbered regex matches. It does not browse logical snapshot memory directly.
+- `react.rg` searches readable local OUT_DIR spaces (`outdir`, `outdir/<subdir>`) and returns file metadata plus line-numbered regex matches. It searches only files already materialized locally; it does not browse the continuous conversation timeline, unpulled snapshot memory, or `ks:` directly. Locate older content from visible refs or `react.memsearch`, then `react.pull`/`react.checkout` it before local search/edit/test work.
 - `ks:` remains read-only and separate from OUT_DIR. Use `react.read` or bundle-specific tools for it.
-- `workdir` is scratch, not durable collaboration state.
 """
 
 WORKSPACE_IMPLEMENTATION_GUIDE_GIT = """
@@ -283,7 +281,6 @@ VISIBLE / ADDRESSABLE WORKSPACE MODEL
      logs/
      timeline.json
      ...
-   work/                # exec scratch only
 
 2) VERSIONED CONVERSATION SNAPSHOTS (logical first, local only after pull)
    fi:<turn_id>.files/<scope>/<path>
@@ -355,9 +352,8 @@ VISIBLE / ADDRESSABLE WORKSPACE MODEL
   - `outputs/customer_portal/report.md`
   - `outputs/analytics_dashboard/test_results.txt`
 - Reserve `outputs/tmp/...` only for disposable scratch outputs.
-- `react.rg` searches local physical spaces (`outdir`, `outdir/<subdir>`, `workdir`, `workdir/<subdir>`) and returns file metadata plus line-numbered regex matches. It does not browse logical snapshot memory directly.
+- `react.rg` searches readable local OUT_DIR spaces (`outdir`, `outdir/<subdir>`) and returns file metadata plus line-numbered regex matches. It searches only files already materialized locally; it does not browse the continuous conversation timeline, unpulled snapshot memory, or `ks:` directly. Locate older content from visible refs or `react.memsearch`, then `react.pull`/`react.checkout` it before local search/edit/test work.
 - `ks:` remains read-only and separate from OUT_DIR. Use `react.read` or bundle-specific tools for it.
-- `workdir` is scratch, not durable collaboration state.
 """
 
 def get_workspace_implementation_guide(implementation: str | None = None) -> str:
@@ -462,7 +458,7 @@ HARD:
 - If you have a physical path, derive logical as above before calling react.read.
 - react.rg returns `root` plus hits with `path`, `size_bytes`, optional `text_symbols`/`line_count`/`logical_path`, and content `matches` with `read_item` ranges.
 - `path` is relative to the searched root and does not include that root prefix.
-- OUT_DIR hits include `logical_path` and are readable with react.read.
+- Hits include `logical_path` when readable and are readable with react.read.
 - Using a physical path with `react.read` is a protocol violation and results in an error.
 - Using unsupported logical namespaces with `fetch_ctx` returns an error rather than guessing.
 - If you pass a logical path to a physical-path tool (or vice versa), the engineering layer may rewrite it and log a protocol notice, but you must not rely on that recovery path.
@@ -535,16 +531,16 @@ Using unsupported logical namespaces with fetch_ctx returns an error rather than
 
 #### react.rg results
 - `react.rg` does not load full file contents into context.
+- `react.rg` searches only files already materialized under OUT_DIR. It is not a search over the whole conversation timeline, hidden/pruned blocks, unpulled historical snapshots, or `ks:`. Materialize needed older files first with `react.pull` or `react.checkout`.
 - Each hit returns:
   - `path`: relative to the searched root
   - `size_bytes`
   - `text_symbols` for recognizable text files
   - `line_count` for recognizable text files
-  - `logical_path`: for OUT_DIR hits, suitable for `react.read`
+  - `logical_path`: suitable for `react.read`
 - Content matches include line-numbered previews and `read_item` ranges. Pass `read_items` back to `react.read({"items":[...]})` to inspect exact regions.
-- OUT_DIR hits are readable via `react.read({"paths":[logical_path]})` or exact ranges via `react.read({"items":[read_item,...]})`.
+- Hits are readable via `react.read({"paths":[logical_path]})` or exact ranges via `react.read({"items":[read_item,...]})`.
 - If the text file is large, use `react.rg` to locate regions and `react.read({"items":[...]})` to inspect exact ranges. If you need all bytes, process it with exec using the physical OUTPUT_DIR path or a supported logical `ctx_tools.fetch_ctx` path.
-- workdir hits remain discovery-only with the current toolset.
 - For exec diagnostics, prefer the exec tool result first because it already extracts the relevant exec-specific log segment. Read raw log files directly only when you specifically need that file itself.
 
 #### Large/capped data operating procedure

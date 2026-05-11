@@ -3,7 +3,7 @@ id: ks:docs/sdk/agents/react/agent-workspace-collboration-README.md
 title: "Agent Workspace Collaboration"
 summary: "How react.read, react.write, react.patch, and react.rg cooperate across current-turn OUT_DIR, conversation artifacts, and read-only bundle knowledge space."
 tags: ["sdk", "agents", "react", "workspace", "artifacts", "files"]
-keywords: ["outdir", "workdir", "react.read", "react.rg", "react.patch", "versioned workspace"]
+keywords: ["outdir", "react.read", "react.rg", "react.patch", "versioned workspace"]
 see_also:
   - ks:docs/sdk/agents/react/react-turn-workspace-README.md
   - ks:docs/sdk/agents/react/artifact-discovery-README.md
@@ -67,9 +67,9 @@ The logical workspace view is:
   - example: `ks:<bundle-defined-path>`
 
 `react.rg`
-- searches filenames and/or text under `outdir` or `workdir`
+- searches filenames and/or text for files already materialized under OUT_DIR
 - returns discovery metadata and line-oriented match ranges
-- does not browse `ks:` or conversation artifact memory
+- does not browse `ks:`, hidden/pruned timeline, unpulled snapshots, or conversation artifact memory
 - result shape:
   - `root`
   - `hits[]`
@@ -77,7 +77,7 @@ The logical workspace view is:
   - `path`: relative to the searched root
   - `size_bytes`
   - `text_symbols` and `line_count` for text files when available
-  - `logical_path` for OUT_DIR hits
+  - `logical_path` for readable hits
   - `matches[]` for text searches, each with a line number and a ready-to-pass `read_item`
 
 `react.write`
@@ -110,11 +110,12 @@ If no resolver exists, `ks:` is still readable by exact path, but not browseable
 ## Safe collaboration rules
 
 The intended cooperation pattern is:
-1. Use `react.rg` to discover candidate files or exact text regions.
-2. If the hit is under OUT_DIR, take its `logical_path`.
-3. Use `react.read` on that `logical_path`, or pass `read_item` ranges as `items`, to load the needed content into context.
-4. If editing is needed, write or patch into `<current_turn>/files/...`.
-5. If producing a report/export/result that should not become workspace state, write it into `<current_turn>/outputs/...`.
+1. If the needed file is from older conversation state and is not local yet, identify its `fi:` ref from visible context or `react.memsearch`, then `react.pull` or `react.checkout` it.
+2. Use `react.rg` to discover candidate local files or exact text regions.
+3. Take the returned `logical_path`, or the returned `read_item` for exact ranges.
+4. Use `react.read` on that `logical_path`, or pass `read_item` ranges as `items`, to load the needed content into context.
+5. If editing is needed, write or patch into `<current_turn>/files/...`.
+6. If producing a report/export/result that should not become workspace state, write it into `<current_turn>/outputs/...`.
 
 This keeps:
 - discovery separate from loading
@@ -123,8 +124,7 @@ This keeps:
 
 ## Current limitations
 
-- `react.read` is OUT_DIR-aware, not general workdir-aware.
-- workdir hits from `react.rg` are still discovery-only with the current toolset.
+- `react.rg` searches readable, already materialized OUT_DIR files, not internal execution scratch or the whole conversation timeline.
 - `react.patch` is for assistant file artifacts, not arbitrary runtime-owned files like `logs/...`.
 
 ## Examples

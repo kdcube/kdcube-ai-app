@@ -29,8 +29,10 @@ MAX_SCANNED_FILES = 2000
 TOOL_SPEC = {
     "id": "react.rg",
     "purpose": (
-        "Ripgrep-like safe search under OUT_DIR (default) or workdir. "
+        "Ripgrep-like safe search over files already materialized under OUT_DIR (default). "
         "Use it to discover files by name and/or locate text regions by regex before reading exact ranges. "
+        "It does not search unmaterialized conversation history, hidden timeline memory, or knowledge space; "
+        "pull/check out older files first when local search is needed. "
         "It does not load full file content into visible context. "
         "Results include file metadata, line counts for text files, line-numbered matches, and ready-to-pass "
         "`read_item` ranges for react.read."
@@ -38,8 +40,7 @@ TOOL_SPEC = {
     "args": {
         "root": (
             "optional root selector. Omit or use 'outdir' to search the full OUT_DIR. "
-            "Use 'outdir/<subdir>' to search a subtree under OUT_DIR. "
-            "Use 'workdir' to search the full workdir, or 'workdir/<subdir>' to narrow it."
+            "Use 'outdir/<subdir>' to search a subtree under OUT_DIR."
         ),
         "name_regex": "optional Python regex matched against the basename only, not the full path",
         "pattern": (
@@ -53,9 +54,9 @@ TOOL_SPEC = {
     },
     "returns": (
         "JSON object {root, hits}. Each hit has path (relative to searched root), size_bytes, optional "
-        "text_symbols/line_count for text files, and optional logical_path. Content hits include matches "
-        "with line, preview, read_item, and scan_truncated metadata. OUT_DIR hits include logical_path/read_item "
-        "paths for react.read; workdir hits do not."
+        "text_symbols/line_count for text files, and logical_path when the hit is readable by react.read. "
+        "Content hits include matches with line, preview, read_item, and scan_truncated metadata. "
+        "Returned logical_path/read_item values are directly usable with react.read."
     ),
 }
 
@@ -176,26 +177,9 @@ def _resolve_root(
             message = "invalid outdir root selector."
         else:
             return artifact_outdir / rel, root_kind, f"outdir/{rel}", rel
-    elif root_sel_lc == "workdir":
-        workdir_raw = getattr(getattr(ctx_browser, "runtime_ctx", None), "workdir", "") or ""
-        if workdir_raw:
-            return pathlib.Path(workdir_raw), "workdir", "workdir", ""
-        code = "rg_no_workdir"
-        message = "workdir is not configured."
-    elif root_sel_lc.startswith("workdir/"):
-        workdir_raw = getattr(getattr(ctx_browser, "runtime_ctx", None), "workdir", "") or ""
-        rel = root_sel[len("workdir/"):].lstrip("/")
-        if not workdir_raw:
-            code = "rg_no_workdir"
-            message = "workdir is not configured."
-        elif not rel or not _safe_relpath(rel):
-            code = "rg_invalid_root"
-            message = "invalid workdir root selector."
-        else:
-            return pathlib.Path(workdir_raw) / rel, "workdir", f"workdir/{rel}", rel
     else:
         code = "rg_invalid_root"
-        message = "invalid root selector. Use outdir, outdir/<subdir>, workdir, or workdir/<subdir>."
+        message = "invalid root selector. Use outdir or outdir/<subdir>."
 
     notice_block(
         ctx_browser=ctx_browser,
