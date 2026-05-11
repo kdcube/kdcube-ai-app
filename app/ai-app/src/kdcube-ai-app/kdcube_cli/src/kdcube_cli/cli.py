@@ -2476,7 +2476,11 @@ def main() -> None:
                 os.environ["KDCUBE_PRESET_TENANT"] = _init_preset_tenant
                 os.environ["KDCUBE_PRESET_PROJECT"] = _init_preset_project
 
-            os.environ["KDCUBE_DESCRIPTORS_LOCATION"] = str(_init_descriptors_location)
+            # From this point on, the canonical descriptor set for this init run is
+            # the staged workdir/config copy. CLI overrides such as --set-secret are
+            # applied there; pointing the installer back at the original descriptor
+            # directory would restage the pristine files and erase those overrides.
+            os.environ["KDCUBE_DESCRIPTORS_LOCATION"] = str((_init_resolved / "config").resolve())
             os.environ["KDCUBE_ASSEMBLY_DESCRIPTOR_PATH"] = str(_descriptor_bootstrap["assembly_path"])
             os.environ["KDCUBE_ASSEMBLY_USER_SUPPLIED"] = (
                 "0"

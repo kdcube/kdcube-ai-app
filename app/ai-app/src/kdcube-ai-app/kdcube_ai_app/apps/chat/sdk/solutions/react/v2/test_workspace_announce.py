@@ -69,16 +69,18 @@ def test_build_announce_text_includes_git_workspace_summary(tmp_path):
     assert "implementation: git" in announce_text
     assert "current_turn_root: turn_123/" in announce_text
     assert "materialized_turn_roots: turn_122, turn_123 (current)" in announce_text
-    assert "current_turn_scopes:" in announce_text
-    assert "- projectA/ (1 file)" in announce_text
+    assert "current editable workspace:" in announce_text
+    assert "- files/projectA/ (1 file)" in announce_text
     assert "checkout_mode: replace" in announce_text
     assert "checked_out_from:" in announce_text
     assert "- fi:turn_122.files/projectA" in announce_text
     assert "repo_mode: sparse git repo" in announce_text
     assert "repo_status: clean" in announce_text
-    assert "ls workspace:" in announce_text
-    assert "- projectA/ (1 file)" in announce_text
-    assert "continue_one_by_checkout: react.checkout(mode=\"replace\", paths=[\"fi:<turn>.files/<that_scope>\"])" in announce_text
+    assert "previous saved workspace paths (pull to bring local; checkout to edit):" in announce_text
+    assert "- files/projectA/ (1 git-tracked file)" in announce_text
+    assert "to focus on one path, use its fi: form, for example:" in announce_text
+    assert "react.pull(paths=[\"fi:turn_122.files/projectA\"])" in announce_text
+    assert "react.checkout(mode=\"replace\", paths=[\"fi:turn_122.files/projectA\"])" in announce_text
     assert "current_turn_publish: pending" in announce_text
     assert "last_published_turn: turn_122 (succeeded)" in announce_text
 
@@ -148,9 +150,9 @@ def test_build_announce_text_includes_lineage_scopes_even_when_current_turn_is_s
         mode="full",
     )
 
-    assert "current_turn_scopes: none" in announce_text
-    assert "ls workspace:" in announce_text
-    assert "- customer_portal/ (1 file)" in announce_text
+    assert "current editable workspace: none" in announce_text
+    assert "previous saved workspace paths (pull to bring local; checkout to edit):" in announce_text
+    assert "- files/customer_portal/ (1 git-tracked file)" in announce_text
 
 
 def test_build_announce_text_includes_current_turn_live_events(tmp_path):

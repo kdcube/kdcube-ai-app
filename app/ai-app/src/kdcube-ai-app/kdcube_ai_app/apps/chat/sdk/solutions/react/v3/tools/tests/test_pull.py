@@ -75,12 +75,22 @@ async def test_pull_materializes_turn_file_subtree_from_fi_paths(tmp_path):
     await handle_react_pull(ctx_browser=ctx, state=state, tool_call_id="pull_files")
 
     payload = _latest_payload(ctx)
-    pulled = payload["pulled"]
-    assert {"logical_path": "fi:turn_prev.files/projectA/settings.json", "physical_path": "turn_prev/files/projectA/settings.json", "kind": "files"} in pulled
-    assert {"logical_path": "fi:turn_prev.files/projectA/src/app.py", "physical_path": "turn_prev/files/projectA/src/app.py", "kind": "files"} in pulled
-    assert payload["invalid"] == []
-    assert (outdir / "turn_prev" / "files" / "projectA" / "settings.json").read_text(encoding="utf-8") == '{"theme": "dark"}'
-    assert (outdir / "turn_prev" / "files" / "projectA" / "src" / "app.py").read_text(encoding="utf-8") == 'print("ok")\n'
+    assert payload["pulled"][0]["logical_root"] == "fi:turn_prev.files/projectA"
+    assert payload["pulled"][0]["physical_root"] == "turn_prev/files/projectA"
+    assert payload["pulled"][0]["file_count"] == 2
+    assert "settings.json" in payload["pulled"][0]["tree"]
+    assert "src/" in payload["pulled"][0]["tree"]
+    assert "app.py" in payload["pulled"][0]["tree"]
+    assert payload["pulled"][0]["path_rule"] == {
+        "logical": "fi:turn_prev.files/projectA/<path shown in tree>",
+        "physical": "turn_prev/files/projectA/<path shown in tree>",
+    }
+    assert "invalid" not in payload
+    assert "missing" not in payload
+    assert "errors" not in payload
+    artifact_root = outdir / "workdir"
+    assert (artifact_root / "turn_prev" / "files" / "projectA" / "settings.json").read_text(encoding="utf-8") == '{"theme": "dark"}'
+    assert (artifact_root / "turn_prev" / "files" / "projectA" / "src" / "app.py").read_text(encoding="utf-8") == 'print("ok")\n'
 
 
 @pytest.mark.asyncio
@@ -125,14 +135,15 @@ async def test_pull_materializes_exact_attachment_ref(tmp_path):
     await handle_react_pull(ctx_browser=ctx, state=state, tool_call_id="pull_attachment")
 
     payload = _latest_payload(ctx)
-    assert payload["invalid"] == []
-    assert payload["missing"] == []
     assert payload["pulled"] == [{
         "logical_path": "fi:turn_prev.user.attachments/template.xlsx",
         "physical_path": "turn_prev/attachments/template.xlsx",
-        "kind": "attachment",
+        "file_count": 1,
     }]
-    assert (outdir / "turn_prev" / "attachments" / "template.xlsx").read_bytes() == b"XLSXDATA"
+    assert "invalid" not in payload
+    assert "missing" not in payload
+    assert "errors" not in payload
+    assert (outdir / "workdir" / "turn_prev" / "attachments" / "template.xlsx").read_bytes() == b"XLSXDATA"
 
 
 @pytest.mark.asyncio
@@ -162,9 +173,9 @@ async def test_pull_rejects_attachment_prefix_pull(tmp_path):
 
     payload = _latest_payload(ctx)
     assert payload["pulled"] == []
-    assert payload["missing"] == []
-    assert payload["errors"] == []
     assert payload["invalid"] == [{
         "path": "fi:turn_prev.user.attachments/binaries",
         "reason": "attachment_pulls_require_exact_file_ref",
     }]
+    assert "missing" not in payload
+    assert "errors" not in payload

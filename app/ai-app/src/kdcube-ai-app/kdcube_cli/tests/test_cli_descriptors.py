@@ -1243,7 +1243,20 @@ def test_gather_configuration_supports_explicit_proxy_host_ports(monkeypatch, tm
             "platform": {"ref": "2026.4.19.100"},
             "secrets": {"provider": "secrets-file"},
             "paths": {"host_bundles_path": str(tmp_path / "bundles")},
-            "auth": {"type": "delegated"},
+            "auth": {
+                "type": "delegated",
+                "proxy_login": {
+                    "redis_key_prefix": "proxylogin:<TENANT>:<PROJECT>:",
+                    "token_masquerade": True,
+                    "password_reset": {
+                        "company": "KDCube",
+                        "sender": "info@example.com",
+                        "template_name": "KDCubeNewUserWelcomeTemplate",
+                        "redirect_url": "http://YOUR_DOMAIN/platform/reset-password?user=%[1]s",
+                    },
+                    "http_urlbase": "http://YOUR_DOMAIN/auth",
+                },
+            },
             "proxy": {"ssl": True, "route_prefix": "/chatbot"},
             "ports": {
                 "ui": "5174",
@@ -1263,6 +1276,15 @@ def test_gather_configuration_supports_explicit_proxy_host_ports(monkeypatch, tm
     assert "KDCUBE_UI_SSL_PORT=443" in env_main
     assert "KDCUBE_PROXY_HTTP_PORT=80" in env_main
     assert "KDCUBE_PROXY_HTTPS_PORT=443" in env_main
+    env_proxy = (config_dir / ".env.proxylogin").read_text()
+    assert "REDIS_KEYPREFIX=proxylogin:demo-tenant:demo-project:" in env_proxy
+    assert "PASSWORD_RESET_REDIRECTURL=http://ai.example.com/platform/reset-password?user=%[1]s" in env_proxy
+    assert "HTTP_URLBASE=http://ai.example.com/auth" in env_proxy
+    assembly_data = yaml.safe_load(assembly_path.read_text())
+    proxy_login = assembly_data["auth"]["proxy_login"]
+    assert proxy_login["redis_key_prefix"] == "proxylogin:demo-tenant:demo-project:"
+    assert proxy_login["password_reset"]["redirect_url"] == "http://ai.example.com/platform/reset-password?user=%[1]s"
+    assert proxy_login["http_urlbase"] == "http://ai.example.com/auth"
 
 
 def test_gather_configuration_keeps_proc_and_ingress_env_minimal_for_user_descriptors(monkeypatch, tmp_path: Path):

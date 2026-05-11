@@ -423,26 +423,29 @@ async def test_publish_git_workspace_if_needed_raises_turn_phase_error_on_publis
     assert payload["error"] == "RuntimeError"
 
 
-def test_stage_current_turn_text_workspace_skips_when_repo_has_no_tracked_files(monkeypatch, tmp_path):
+def test_stage_current_turn_text_workspace_stages_new_files_without_existing_tracked_files(monkeypatch, tmp_path):
     turn_root = tmp_path / "turn"
-    turn_root.mkdir(parents=True, exist_ok=True)
+    files_root = turn_root / "files"
+    files_root.mkdir(parents=True, exist_ok=True)
+    (files_root / "README.md").write_text("# Demo\n", encoding="utf-8")
 
     calls = []
 
     monkeypatch.setattr(
-        "kdcube_ai_app.apps.chat.sdk.solutions.react.v2.git_workspace._git_has_tracked_files",
-        lambda *, repo_root: False,
-    )
-    monkeypatch.setattr(
         "kdcube_ai_app.apps.chat.sdk.solutions.react.v2.git_workspace._run_git_checked",
         lambda repo_root, args, op, env=None: calls.append((repo_root, list(args), op, env)),
+    )
+    monkeypatch.setattr(
+        "kdcube_ai_app.apps.chat.sdk.solutions.react.v2.git_workspace._git_path_is_ignored",
+        lambda *, repo_root, rel_path: False,
     )
 
     from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.git_workspace import _stage_current_turn_text_workspace
 
     _stage_current_turn_text_workspace(turn_root=turn_root)
 
-    assert calls == []
+    assert calls[0][1] == ["add", "--sparse", "-u", "--", "."]
+    assert calls[1][1] == ["add", "--sparse", "--", "files/README.md"]
 
 
 @pytest.mark.asyncio

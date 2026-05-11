@@ -111,18 +111,19 @@ Artifacts are reconstructed from **timeline blocks**, not from the turn log dire
    - Timeline renderers replace hidden groups with a single replacement block.
    - Discovery still resolves to the latest version, hidden or not.
 
-## Path Normalization & Rewrite
+## Path Normalization & Current-Turn Paths
 
-If a tool is given a path in another turn’s namespace, it is rewritten to current turn:
+Writer-like tools normalize current-turn paths into the active turn namespace. Use `files/...` for durable workspace/project state and `outputs/...` for produced artifacts. Unqualified `react.write` and exec contract paths default to `outputs/...`.
 
 Example:
 ```
-input path: turn_123/files/output.csv
+input path: outputs/report.csv
 current turn: turn_999
-rewrite -> output.csv (physical), fi:turn_999.files/output.csv (logical)
+rewrite -> turn_999/outputs/report.csv (physical), fi:turn_999.outputs/report.csv (logical)
 ```
 
 The rewrite is recorded as a **protocol notice** in the timeline so the agent can learn.
+`react.patch` is stricter: it accepts only existing current-turn `files/...` or `outputs/...` physical paths. It does not rewrite logical `fi:` paths or historical `turn_old/...` paths.
 
 ## Tool Behaviors (Summary)
 
@@ -138,8 +139,9 @@ The rewrite is recorded as a **protocol notice** in the timeline so the agent ca
   Example: `fi:logs/docker.err.log`
 
 **react.patch**
-- Accepts physical path (OUT_DIR‑relative).
-- If path is historical (`turn_X/files/...`), a copy is created in current turn before patching.
+- Accepts current-turn physical path (OUT_DIR-relative), usually `files/<scope>/...` or `outputs/<scope>/...`.
+- Patches any existing current-turn materialized text file, including files produced by exec; it is not limited to files created by `react.write`.
+- Historical (`turn_X/files/...`) files are never patched directly. Pull first if needed, then checkout/copy the pulled file into the current turn and patch the current-turn path.
 
 **rendering_tools.write_*** / **react.write**
 - Use physical path; timeline stores logical path in `meta`.
@@ -149,7 +151,7 @@ The rewrite is recorded as a **protocol notice** in the timeline so the agent ca
 
 **react.rg**
 - Searches files already materialized under OUT_DIR and returns discovery metadata plus optional line-numbered content matches.
-- It does not search hidden/pruned timeline, unpulled historical snapshots, or `ks:`. Use visible refs or `react.memsearch` to identify older `fi:` refs, then `react.pull` or `react.checkout` them before local search.
+- It does not search hidden/pruned timeline, unpulled historical snapshots, or `ks:`. Use visible refs or `react.memsearch` to identify older `fi:` refs, then `react.pull` them before local search. Checkout only when you need an editable current-turn copy.
 - Result shape is `{root, hits}`.
 - Each hit contains:
   - `path`: relative to the searched root

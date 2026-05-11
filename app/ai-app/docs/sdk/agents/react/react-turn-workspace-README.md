@@ -73,15 +73,15 @@ Current behavior:
 
 Workspace implementation (`RuntimeCtx.workspace_implementation`):
 - `custom`
-  - the agent is taught to use `fi:` plus `react.pull(paths=[...])` for historical materialization and `react.checkout(paths=[...])` for active workspace seeding
+  - the agent is taught to use `fi:` plus `react.pull(paths=[...])` for historical materialization and `react.checkout(paths=[...])` for copying pulled `files/...` refs into the active current-turn workspace
   - `.files/...` pulls hydrate from artifact/timeline/hosting-backed snapshot state
   - the agent is not instructed to treat the activated workspace as git
 - `git`
-  - the agent is taught to use `fi:` plus `react.pull(paths=[...])` for historical materialization and `react.checkout(paths=[...])` for active workspace seeding
+  - the agent is taught to use `fi:` plus `react.pull(paths=[...])` for historical materialization and `react.checkout(paths=[...])` for copying pulled `files/...` refs into the active current-turn workspace
   - `.files/...` pulls hydrate from git-backed lineage snapshots
   - the current turn root `out/<current_turn>/` is bootstrapped as a local git repo
   - that current-turn repo keeps lineage history available but does not eagerly populate the worktree
-  - ANNOUNCE may show `ls workspace` so React can see the existing top-level project folders already established in the conversation workspace
+  - ANNOUNCE may show `previous saved workspace paths (pull to bring local; checkout to edit)` so React can see prior saved workspace paths without mistaking them for the current editable workspace
   - the agent may use local git inspection/history/edit commands inside that current-turn repo, except pull/push/fetch
 - in both modes:
   - `fi:<turn_id>.files/<scope-or-subtree>` may be pulled as a subtree
@@ -141,7 +141,7 @@ Runtime bindings set immediately:
 
 When `workspace_implementation=git`:
 - runtime also bootstraps `out/turn_<current_turn>/` as a local git repo
-- if the lineage branch already exists, that repo is seeded from the latest lineage head
+- if the lineage branch already exists, that repo starts from the latest lineage head
 - runtime keeps the repo history/refs available but leaves the worktree empty until the agent explicitly materializes files
 - if the lineage branch does not exist yet, runtime creates an empty orphan repo for the turn
 - engineering, not exec, is responsible for later remote synchronization
@@ -208,9 +208,10 @@ Workspace/read-write summary:
 - `react.write`, `react.patch`, rendering tools, and exec outputs may write to either:
   - `turn_<id>/files/...` for durable workspace state
   - `turn_<id>/outputs/...` for non-workspace produced artifacts
+- unqualified `react.write` and exec contract paths default to `outputs/...`; use `files/...` explicitly for durable workspace/project state
 - `react.read` can load any readable OUT_DIR file through `fi:...`.
 - `react.pull` materializes selected `fi:` snapshot refs locally under OUT_DIR as historical/reference material.
-- `react.checkout` defines what is materialized into the active current-turn `files/` workspace.
+- `react.checkout` copies selected historical `files/...` refs into the active current-turn `files/` workspace so they can be modified there.
 - `.files/...` pulls come from:
   - artifact/timeline/hosting-backed snapshot state in `custom`
   - git-backed lineage snapshots in `git`
@@ -218,14 +219,15 @@ Workspace/read-write summary:
 - exact attachment pulls still come from hosted artifact storage in both modes
 - exact non-text `.files/...` refs also stay on the hosted/artifact path when timeline metadata says the file is a hosted binary artifact
 - `react.pull` supports subtree pulls only for `fi:<turn_id>.files/...`; `fi:<turn_id>.outputs/...` and attachment/binary pulls must be exact file refs
-- `react.checkout(mode="replace")` accepts ordered `fi:<turn_id>.files/...` refs and replaces `turn_<current>/files/` before applying them
-- `react.checkout(mode="overlay")` accepts ordered `fi:<turn_id>.files/...` refs and applies them into the existing current workspace without deleting unspecified files
-- exec/code and historical cross-turn patching no longer auto-materialize historical workspace files; if the file is not already local, React must `react.pull(...)` it first
+- `react.checkout(mode="replace")` accepts ordered `fi:<turn_id>.files/...` refs after pull and replaces `turn_<current>/files/` before applying them
+- `react.checkout(mode="overlay")` accepts ordered `fi:<turn_id>.files/...` refs after pull and applies them into the existing current workspace without deleting unspecified files
+- exec/code no longer auto-materialize historical workspace files, and `react.patch` never edits historical paths directly; if the file is not already local, React must `react.pull(...)` it first, then `react.checkout(...)` historical `files/...` refs before editing
 - when continuing the same project, React is expected to reuse the existing top-level `files/<scope>/...` folder rather than inventing a sibling scope
 - if the old scope name is clearly weak or misleading, React may intentionally rename/migrate the project tree to a better canonical scope
 - a rename is different from sibling drift: the project should continue under the new scope instead of leaving the old scope active and starting a second one
-- `react.rg` can search readable files already materialized under OUT_DIR and returns `logical_path` so the agent can immediately call `react.read`. For content matches it also returns `read_item` ranges for exact `react.read({"items":[...]})` inspection.
-- `react.rg` is not a search over the endless/pruned conversation timeline or unpulled historical snapshots. If the needed file is older state, React must identify the `fi:` ref, then `react.pull` or `react.checkout` it before local search.
+- `react.rg` can search readable files already materialized in the local artifact workspace and returns `logical_path` so the agent can immediately call `react.read`. For content matches it also returns `read_item` ranges for exact `react.read({"items":[...]})` inspection.
+- Preferred `react.rg` roots are visible path forms: `files/...`, `outputs/...`, `attachments/...`, `turn_<id>/files/...`, `turn_<id>/outputs/...`, `turn_<id>/attachments/...`, or matching `fi:` artifact paths such as `fi:<turn_id>.files/...`, `fi:<turn_id>.outputs/...`, and `fi:<turn_id>.user.attachments/...`. Legacy `outdir/...` roots are accepted only for compatibility.
+- `react.rg` is not a search over the endless/pruned conversation timeline or unpulled historical snapshots. If the needed file is older state, React must identify the `fi:` ref, then `react.pull` it before local search. Checkout is only for making an editable current-turn copy.
 - `work/` is internal execution scratch and is not part of the normal React search/read contract.
 
 ## Phase 3: Optional turn snapshot persistence (`react.persist_workspace()`)

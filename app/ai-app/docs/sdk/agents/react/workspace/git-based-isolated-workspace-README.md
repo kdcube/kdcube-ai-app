@@ -55,7 +55,7 @@ Current implementation status:
 - exact non-text `.files/...` refs are treated as hosted/custom artifacts, not as git blobs
 - folder pulls remain text-only
 - ANNOUNCE exposes a compact `[WORKSPACE]` operational summary
-- in `git` mode that summary may expose `ls workspace` so React can see the existing top-level project folders before it decides what to check out or where to write
+- in `git` mode that summary may expose `previous saved workspace paths (pull to bring local; checkout to edit)` so React can see prior saved top-level workspace paths without mistaking them for local editable files
 - detailed publish metadata is persisted as an internal `react.workspace.publish` block
 - hosted artifacts and execution snapshots remain available through ConversationStore/RN flows
 - exec-visible git metadata is lineage-only by construction: the turn repo has no configured remote and no other-user refs are fetched into it
@@ -487,8 +487,8 @@ Current content includes:
 - `implementation`
 - `current_turn_root`
 - `materialized_turn_roots`
-- `current_turn_scopes`
-- `ls workspace`
+- `current editable workspace`
+- `previous saved workspace paths`
 - in `git` mode:
   - `repo_mode`
   - `repo_status`

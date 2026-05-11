@@ -67,7 +67,8 @@ The logical workspace view is:
   - example: `ks:<bundle-defined-path>`
 
 `react.rg`
-- searches filenames and/or text for files already materialized under OUT_DIR
+- searches filenames and/or text for files already materialized in the local artifact workspace
+- accepts visible path roots such as `files/...`, `outputs/...`, `attachments/...`, `turn_<id>/files/...`, `turn_<id>/outputs/...`, `turn_<id>/attachments/...`, or matching `fi:` artifact paths
 - returns discovery metadata and line-oriented match ranges
 - does not browse `ks:`, hidden/pruned timeline, unpulled snapshots, or conversation artifact memory
 - result shape:
@@ -84,10 +85,12 @@ The logical workspace view is:
 - creates or replaces files in the current turn namespaces
 - `files/...` means durable workspace/project state
 - `outputs/...` means artifacts that should be kept/shared but should not become durable workspace state
+- unqualified paths default to `outputs/...`; use `files/...` explicitly for durable workspace/project state
 
 `react.patch`
-- updates an existing file in the current turn file namespace
-- historical `turn_X/files/...` references are treated as source material and patched into the current turn output
+- updates an existing current-turn materialized text file under `files/...` or `outputs/...`
+- does not require the file to have been created by `react.write`; current-turn files produced by exec are patchable once present locally
+- historical `turn_X/files/...` references are source material. Pull them first if needed; if editing is intended, checkout/copy them into the current turn and patch the current-turn file.
 
 ## Knowledge space browsing
 
@@ -110,11 +113,11 @@ If no resolver exists, `ks:` is still readable by exact path, but not browseable
 ## Safe collaboration rules
 
 The intended cooperation pattern is:
-1. If the needed file is from older conversation state and is not local yet, identify its `fi:` ref from visible context or `react.memsearch`, then `react.pull` or `react.checkout` it.
+1. If the needed file is from older conversation state and is not local yet, identify its `fi:` ref from visible context or `react.memsearch`, then `react.pull` it.
 2. Use `react.rg` to discover candidate local files or exact text regions.
 3. Take the returned `logical_path`, or the returned `read_item` for exact ranges.
 4. Use `react.read` on that `logical_path`, or pass `read_item` ranges as `items`, to load the needed content into context.
-5. If editing is needed, write or patch into `<current_turn>/files/...`.
+5. If editing older state is needed, checkout the pulled `fi:<turn>.files/...` ref into `<current_turn>/files/...`, then write or patch the current-turn copy.
 6. If producing a report/export/result that should not become workspace state, write it into `<current_turn>/outputs/...`.
 
 This keeps:
@@ -124,20 +127,20 @@ This keeps:
 
 ## Current limitations
 
-- `react.rg` searches readable, already materialized OUT_DIR files, not internal execution scratch or the whole conversation timeline.
-- `react.patch` is for assistant file artifacts, not arbitrary runtime-owned files like `logs/...`.
+- `react.rg` searches readable, already materialized artifact files, not internal execution scratch or the whole conversation timeline.
+- `react.patch` is for existing current-turn materialized text files. Prefer current-turn `files/<scope>/...` for durable project edits and `outputs/<scope>/...` for edited artifacts that should not enter workspace history.
 
 ## Examples
 
-Search logs and read one:
+Search current-turn output files and read one:
 ```json
 {
-  "root": "outdir/logs",
+  "root": "outputs/logs",
   "hits": [
     {
       "path": "docker.err.log",
       "size_bytes": 18342,
-      "logical_path": "fi:logs/docker.err.log"
+      "logical_path": "fi:<current_turn>.outputs/logs/docker.err.log"
     }
   ]
 }
@@ -146,10 +149,10 @@ Search logs and read one:
 Search turn files and read one:
 ```json
 {
-  "root": "outdir",
+  "root": "turn_1773261747483_vfm2tt/files",
   "hits": [
     {
-      "path": "turn_1773261747483_vfm2tt/files/kdcube-market-comparison.md",
+      "path": "kdcube-market-comparison.md",
       "size_bytes": 9123,
       "logical_path": "fi:turn_1773261747483_vfm2tt.files/kdcube-market-comparison.md"
     }

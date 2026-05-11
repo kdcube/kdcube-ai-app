@@ -16,6 +16,7 @@ import json
 import pathlib
 
 from kdcube_ai_app.apps.chat.sdk.util import count_text_lines, count_text_symbols, guess_mime_type
+from kdcube_ai_app.apps.chat.sdk.runtime.workspace import resolve_artifact_path
 from kdcube_ai_app.tools.content_type import is_text_mime_type
 
 _LOG = logging.getLogger("kdcube.react.artifacts")
@@ -162,7 +163,7 @@ def enrich_artifact_file_metadata(
     abs_path: Optional[pathlib.Path] = None
     if isinstance(candidate, str) and candidate.strip():
         p = pathlib.Path(candidate.strip())
-        abs_path = p if p.is_absolute() else outdir / p
+        abs_path = p if p.is_absolute() else resolve_artifact_path(outdir, candidate.strip())
 
     text_value = value.get("text") if isinstance(value.get("text"), str) else value.get("content")
     if value.get("size_bytes") is None:

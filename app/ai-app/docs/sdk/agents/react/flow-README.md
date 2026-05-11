@@ -163,8 +163,8 @@ Current `[WORKSPACE]` content is compact and may include:
 - `implementation`
 - `current_turn_root`
 - `materialized_turn_roots`
-- `current_turn_scopes`
-- in `git` mode, `ls workspace`
+- `current editable workspace`
+- in `git` mode, `previous saved workspace paths (pull to bring local; checkout to edit)`
 - in `git` mode:
   - `repo_mode`
   - `repo_status`
