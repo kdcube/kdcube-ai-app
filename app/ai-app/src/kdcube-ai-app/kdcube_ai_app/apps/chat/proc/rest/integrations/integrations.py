@@ -2305,19 +2305,32 @@ async def _fetch_bundle_widget_payload(
             widget_alias: result,
         }
 
-    fn = getattr(workflow, widget_spec.method_name)
-    extra = _with_implicit_bundle_kwargs(
-        _get_query_kwargs(request),
-        user_id=session.user_id or session.fingerprint,
-        fingerprint=session.fingerprint,
-    )
-    cleaned_widget_path = str(widget_path or "").lstrip("/")
-    if cleaned_widget_path:
-        extra.setdefault("widget_path", cleaned_widget_path)
-        extra.setdefault("path", cleaned_widget_path)
-    runtime_comm = _resolve_bound_runtime_comm(workflow=workflow, comm_context=comm_context)
-    with bind_current_request_context(comm_context, comm=runtime_comm):
-        result = await _invoke_bundle_callable(fn, **extra)
+    try:
+        fn = getattr(workflow, widget_spec.method_name)
+        extra = _with_implicit_bundle_kwargs(
+            _get_query_kwargs(request),
+            user_id=session.user_id or session.fingerprint,
+            fingerprint=session.fingerprint,
+        )
+        cleaned_widget_path = str(widget_path or "").lstrip("/")
+        if cleaned_widget_path:
+            extra.setdefault("widget_path", cleaned_widget_path)
+            extra.setdefault("path", cleaned_widget_path)
+        runtime_comm = _resolve_bound_runtime_comm(workflow=workflow, comm_context=comm_context)
+        with bind_current_request_context(comm_context, comm=runtime_comm):
+            result = await _invoke_bundle_callable(fn, **extra)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(
+            "Bundle widget failed tenant=%s project=%s bundle=%s widget=%s method=%s",
+            tenant_id,
+            project_id,
+            spec_resolved.id,
+            widget_alias,
+            widget_spec.method_name,
+        )
+        raise HTTPException(status_code=500, detail=f"{widget_alias}() failed: {e}")
     return {
         "status": "ok",
         "tenant": tenant_id,

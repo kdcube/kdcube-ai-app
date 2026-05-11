@@ -900,6 +900,13 @@ async def gateway_middleware(request: Request, call_next):
         response.headers["X-User-Type"] = session.user_type.value
         response.headers["X-Session-ID"] = session.session_id
         return response
+    except RuntimeError as e:
+        if str(e) == "No response returned." and await request.is_disconnected():
+            return JSONResponse(
+                status_code=499,
+                content={"detail": "Client disconnected before response was returned"},
+            )
+        raise
     except HTTPException as e:
         headers = getattr(e, "headers", {})
         return JSONResponse(
