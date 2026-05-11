@@ -23,6 +23,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.solution_workspace import (
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.tools.checkout import handle_react_checkout
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.tools.tests.helpers import FakeBrowser
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.workspace import hydrate_workspace_paths
+from kdcube_ai_app.apps.chat.sdk.runtime.workspace import artifact_outdir_for
 
 
 @pytest.mark.asyncio
@@ -52,7 +53,8 @@ async def test_rehost_files_from_timeline_base64(tmp_path):
     cfg.get_settings = lambda: _Settings()
     res = await rehost_files_from_timeline(ctx_browser=ctx, paths=["turn_prev/files/old.txt"], outdir=tmp_path)
     assert "turn_prev/files/old.txt" in res.get("rehosted", [])
-    assert (tmp_path / "turn_prev" / "files" / "old.txt").exists()
+    artifact_outdir = artifact_outdir_for(tmp_path)
+    assert (artifact_outdir / "turn_prev" / "files" / "old.txt").exists()
 
 
 @pytest.mark.asyncio
@@ -90,7 +92,8 @@ async def test_rehost_outputs_from_timeline_exact_file(tmp_path):
     )
 
     assert "turn_prev/outputs/test_results.txt" in res.get("rehosted", [])
-    assert (tmp_path / "turn_prev" / "outputs" / "test_results.txt").read_text(encoding="utf-8") == "ok\n"
+    artifact_outdir = artifact_outdir_for(tmp_path)
+    assert (artifact_outdir / "turn_prev" / "outputs" / "test_results.txt").read_text(encoding="utf-8") == "ok\n"
 
 
 @pytest.mark.asyncio
@@ -163,8 +166,9 @@ async def test_rehost_files_from_timeline_expands_directory_prefix(tmp_path):
     assert "turn_prev/files/user-prefs@2026-03-30/settings.json" in res.get("rehosted", [])
     assert "turn_prev/files/user-prefs@2026-03-30/theme/colors.json" in res.get("rehosted", [])
     assert "turn_prev/files/user-prefs@2026-03-30" not in res.get("missing", [])
-    assert (tmp_path / "turn_prev" / "files" / "user-prefs@2026-03-30" / "settings.json").read_text(encoding="utf-8") == "{\"theme\": \"dark\"}"
-    assert (tmp_path / "turn_prev" / "files" / "user-prefs@2026-03-30" / "theme" / "colors.json").read_text(encoding="utf-8") == '{"primary": "#000"}'
+    artifact_outdir = artifact_outdir_for(tmp_path)
+    assert (artifact_outdir / "turn_prev" / "files" / "user-prefs@2026-03-30" / "settings.json").read_text(encoding="utf-8") == "{\"theme\": \"dark\"}"
+    assert (artifact_outdir / "turn_prev" / "files" / "user-prefs@2026-03-30" / "theme" / "colors.json").read_text(encoding="utf-8") == '{"primary": "#000"}'
 
 
 def test_build_exec_snapshot_workspace_copies_referenced_directory_tree(tmp_path):
@@ -264,7 +268,7 @@ def test_build_exec_snapshot_workspace_copies_git_turn_root_when_repo_file_is_re
     outdir.mkdir(parents=True, exist_ok=True)
     (workdir / "main.py").write_text("print('ok')\n", encoding="utf-8")
 
-    turn_root = outdir / "turn_ctx"
+    turn_root = artifact_outdir_for(outdir) / "turn_ctx"
     (turn_root / "files" / "projectA" / "src").mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "init", str(turn_root)], check=True, capture_output=True)
     subprocess.run(["git", "-C", str(turn_root), "config", "user.name", "Test User"], check=True, capture_output=True)
@@ -666,7 +670,42 @@ async def test_react_checkout_rejects_nonempty_current_workspace(tmp_path, monke
 
 
 @pytest.mark.asyncio
-async def test_react_checkout_materializes_requested_paths_into_current_turn_custom(tmp_path):
+async def test_react_checkout_requires_pull_for_unmaterialized_source(tmp_path):
+    runtime = RuntimeCtx(turn_id="turn_ctx", outdir=str(tmp_path), workdir=str(tmp_path))
+    ctx = FakeBrowser(runtime)
+    state = {
+        "last_decision": {
+            "tool_call": {
+                "params": {
+                    "mode": "replace",
+                    "paths": ["fi:turn_prev.files/projectA"],
+                }
+            }
+        },
+        "outdir": str(tmp_path),
+    }
+
+    await handle_react_checkout(ctx_browser=ctx, state=state, tool_call_id="checkout_requires_pull")
+
+    assert state.get("retry_decision") is True
+    notices = [b for b in ctx.timeline.blocks if b.get("type") == "react.notice"]
+    assert notices
+    assert any("react.checkout.failed" in (b.get("text") or "") for b in notices)
+    assert any("checkout_requires_pull" in str(b.get("meta") or "") for b in notices)
+    json_blocks = [
+        b for b in ctx.timeline.blocks
+        if b.get("type") == "react.tool.result" and b.get("mime") == "application/json"
+    ]
+    assert json_blocks
+    payload = json.loads(json_blocks[-1]["text"])
+    assert payload["ok"] is False
+    assert payload["error"] == "react.checkout.failed"
+    assert payload["errors"] == ["checkout_requires_pull"]
+    assert "react.pull" in payload["missing"][0]["pull_hint"]
+
+
+@pytest.mark.asyncio
+async def test_react_checkout_copies_pulled_paths_into_current_turn_custom(tmp_path):
     runtime = RuntimeCtx(turn_id="turn_ctx", outdir=str(tmp_path), workdir=str(tmp_path))
     ctx = FakeBrowser(runtime)
     ctx._turn_logs["turn_prev"] = {
@@ -706,6 +745,12 @@ async def test_react_checkout_materializes_requested_paths_into_current_turn_cus
     import kdcube_ai_app.apps.chat.sdk.config as cfg
 
     cfg.get_settings = lambda: _Settings()
+    artifact_outdir = artifact_outdir_for(tmp_path)
+    pulled_root = artifact_outdir / "turn_prev" / "files" / "projectA"
+    (pulled_root / "src").mkdir(parents=True, exist_ok=True)
+    (pulled_root / "docs").mkdir(parents=True, exist_ok=True)
+    (pulled_root / "src" / "app.py").write_text('print("old")\n', encoding="utf-8")
+    (pulled_root / "docs" / "readme.md").write_text("# readme\n", encoding="utf-8")
 
     state = {
         "last_decision": {
@@ -721,14 +766,14 @@ async def test_react_checkout_materializes_requested_paths_into_current_turn_cus
 
     await handle_react_checkout(ctx_browser=ctx, state=state, tool_call_id="checkout_custom")
 
-    assert (tmp_path / "turn_ctx" / "files" / "projectA" / "src" / "app.py").read_text(encoding="utf-8") == 'print("old")\n'
-    assert (tmp_path / "turn_ctx" / "files" / "projectA" / "docs" / "readme.md").read_text(encoding="utf-8") == "# readme\n"
+    assert (artifact_outdir / "turn_ctx" / "files" / "projectA" / "src" / "app.py").read_text(encoding="utf-8") == 'print("old")\n'
+    assert (artifact_outdir / "turn_ctx" / "files" / "projectA" / "docs" / "readme.md").read_text(encoding="utf-8") == "# readme\n"
     checkout_events = [b for b in ctx.timeline.blocks if b.get("type") == "react.workspace.checkout"]
     assert checkout_events
 
 
 @pytest.mark.asyncio
-async def test_react_checkout_materializes_requested_paths_into_current_turn_git(tmp_path, monkeypatch):
+async def test_react_checkout_copies_pulled_paths_into_current_turn_git(tmp_path, monkeypatch):
     monkeypatch.setenv("GIT_HTTP_TOKEN", "test-token")
     monkeypatch.setenv("GIT_HTTP_USER", "x-access-token")
     outdir = tmp_path / "out"
@@ -745,6 +790,12 @@ async def test_react_checkout_materializes_requested_paths_into_current_turn_git
         workspace_git_repo=str(_init_git_workspace_repo(tmp_path)),
     )
     ctx = FakeBrowser(runtime)
+    pull_result = await hydrate_workspace_paths(
+        ctx_browser=ctx,
+        paths=["turn_prev/files/projectA"],
+        outdir=outdir,
+    )
+    assert "turn_prev/files/projectA/src/app.py" in pull_result.get("rehosted", [])
 
     state = {
         "last_decision": {
@@ -760,8 +811,9 @@ async def test_react_checkout_materializes_requested_paths_into_current_turn_git
 
     await handle_react_checkout(ctx_browser=ctx, state=state, tool_call_id="checkout_git")
 
-    assert (outdir / "turn_ctx" / "files" / "projectA" / "src" / "app.py").read_text(encoding="utf-8") == "print('git')\n"
-    assert (outdir / "turn_ctx" / "files" / "projectA" / "docs" / "readme.md").read_text(encoding="utf-8") == "# readme\n"
+    artifact_outdir = artifact_outdir_for(outdir)
+    assert (artifact_outdir / "turn_ctx" / "files" / "projectA" / "src" / "app.py").read_text(encoding="utf-8") == "print('git')\n"
+    assert (artifact_outdir / "turn_ctx" / "files" / "projectA" / "docs" / "readme.md").read_text(encoding="utf-8") == "# readme\n"
     payload = next(
         json.loads(b["text"])
         for b in ctx.timeline.blocks
@@ -799,8 +851,12 @@ async def test_react_checkout_overlay_overwrites_selected_file_without_clearing_
     import kdcube_ai_app.apps.chat.sdk.config as cfg
 
     cfg.get_settings = lambda: _Settings()
+    artifact_outdir = artifact_outdir_for(tmp_path)
+    pulled_root = artifact_outdir / "turn_prev" / "files" / "projectA" / "src"
+    pulled_root.mkdir(parents=True, exist_ok=True)
+    (pulled_root / "app.py").write_text('print("old")\n', encoding="utf-8")
 
-    current_root = tmp_path / "turn_ctx" / "files" / "projectA" / "src"
+    current_root = artifact_outdir / "turn_ctx" / "files" / "projectA" / "src"
     current_root.mkdir(parents=True, exist_ok=True)
     (current_root / "app.py").write_text('print("new")\n', encoding="utf-8")
     (current_root / "extra.py").write_text('print("keep")\n', encoding="utf-8")
@@ -857,8 +913,9 @@ async def test_hydrate_workspace_paths_git_folder_pull_materializes_text_only(tm
     assert "turn_prev/files/projectA/src/app.py" in result["rehosted"]
     assert "turn_prev/files/projectA/docs/readme.md" in result["rehosted"]
     assert "turn_prev/files/projectA" not in result["missing"]
-    assert not (outdir / "turn_prev" / "files" / "projectA" / "assets" / "logo.bin").exists()
-    assert (outdir / "turn_prev" / "files" / "projectA" / "src" / "app.py").read_text(encoding="utf-8") == "print('git')\n"
+    artifact_outdir = artifact_outdir_for(outdir)
+    assert not (artifact_outdir / "turn_prev" / "files" / "projectA" / "assets" / "logo.bin").exists()
+    assert (artifact_outdir / "turn_prev" / "files" / "projectA" / "src" / "app.py").read_text(encoding="utf-8") == "print('git')\n"
 
 
 @pytest.mark.asyncio
@@ -901,8 +958,9 @@ async def test_hydrate_workspace_paths_git_dedupes_version_fetch_per_turn(tmp_pa
 
     assert result["errors"] == []
     assert calls == ["turn_prev"]
-    assert (outdir / "turn_prev" / "files" / "projectA" / "src" / "app.py").read_text(encoding="utf-8") == "print('git')\n"
-    assert (outdir / "turn_prev" / "files" / "projectA" / "docs" / "readme.md").read_text(encoding="utf-8") == "# readme\n"
+    artifact_outdir = artifact_outdir_for(outdir)
+    assert (artifact_outdir / "turn_prev" / "files" / "projectA" / "src" / "app.py").read_text(encoding="utf-8") == "print('git')\n"
+    assert (artifact_outdir / "turn_prev" / "files" / "projectA" / "docs" / "readme.md").read_text(encoding="utf-8") == "# readme\n"
 
 
 def test_ensure_local_version_ref_skips_refetch_when_local_ref_exists(tmp_path, monkeypatch):
@@ -969,7 +1027,7 @@ async def test_hydrate_workspace_paths_git_exact_binary_pull_requires_hosting_ar
     assert result["missing"] == ["turn_prev/files/projectA/assets/logo.bin"]
     assert result["errors"] == []
     assert result["rehosted"] == []
-    assert not (outdir / "turn_prev" / "files" / "projectA" / "assets" / "logo.bin").exists()
+    assert not (artifact_outdir_for(outdir) / "turn_prev" / "files" / "projectA" / "assets" / "logo.bin").exists()
 
 
 @pytest.mark.asyncio
@@ -1025,4 +1083,4 @@ async def test_hydrate_workspace_paths_git_exact_binary_pull_falls_back_to_hosti
     assert result["errors"] == []
     assert result["missing"] == []
     assert result["rehosted"] == ["turn_prev/files/dev-lifecycle.png"]
-    assert (outdir / "turn_prev" / "files" / "dev-lifecycle.png").read_bytes() == b"\x89PNG\r\n"
+    assert (artifact_outdir_for(outdir) / "turn_prev" / "files" / "dev-lifecycle.png").read_bytes() == b"\x89PNG\r\n"

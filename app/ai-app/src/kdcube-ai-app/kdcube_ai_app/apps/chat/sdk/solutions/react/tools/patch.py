@@ -9,11 +9,14 @@ import json
 import pathlib
 
 from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+    ARTIFACT_NAMESPACE_FILES,
+    ARTIFACT_NAMESPACE_OUTPUTS,
+    build_physical_artifact_path,
     build_artifact_meta_block,
     build_artifact_view,
-    infer_artifact_namespace,
-    normalize_physical_path,
     physical_path_to_logical_path,
+    split_logical_artifact_path,
+    split_physical_artifact_path,
     detect_edit,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.common import (
@@ -29,16 +32,19 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.common import (
     infer_format_from_path,
     enrich_artifact_file_metadata,
 )
+from kdcube_ai_app.apps.chat.sdk.runtime.workspace import resolve_artifact_path
 
 TOOL_SPEC = {
     "id": "react.patch",
     "purpose": (
-        "Apply a text patch to an existing file and stream the patch to the user. "
+        "Apply a text patch to an existing current-turn materialized text file under files/... or outputs/... and stream the patch to the user. "
         "If patch starts with ---/+++/@@ it is treated as unified diff, otherwise replaces the whole file. "
+        "The target does not have to be created by react.write; current-turn files produced by exec, checkout, "
+        "or prior patch/write calls are patchable once they exist locally. "
         "If kind='file' the updated file is shared; if kind='display' it is streamed only."
     ),
     "args": {
-        "path": "str (FIRST FIELD). Filepath of the artifact to patch (relative under turn_<id>/files/).",
+        "path": "str (FIRST FIELD). Current-turn physical OUT_DIR-relative file path to patch, e.g. files/<scope>/x.py or outputs/<scope>/x.html.",
         "channel": "str (SECOND FIELD). 'canvas' (default) or 'timeline_text'.",
         "patch": "str (THIRD FIELD). Unified diff if starts with ---/+++/@@; otherwise full replacement.",
         "kind": "str (FOURTH FIELD). 'display' or 'file'.",
@@ -68,6 +74,74 @@ def _mime_for_format(fmt: str) -> str:
     if fmt_norm == "mermaid":
         return "text/plain"
     return "text/markdown"
+
+
+def _normalize_patch_target(path_value: str, *, turn_id: str) -> tuple[str, str, str, Dict[str, Any] | None]:
+    raw = (path_value or "").strip().lstrip("/")
+    if not raw:
+        return "", "", "", {"code": "missing_artifact_name", "message": "react.patch requires params.path."}
+    if raw.startswith("fi:"):
+        old_turn, namespace, rel = split_logical_artifact_path(raw)
+        extra: Dict[str, Any] = {"path": path_value}
+        if old_turn and namespace and rel:
+            extra.update({
+                "logical_path": raw,
+                "turn_id": old_turn,
+                "namespace": namespace,
+                "relpath": rel,
+            })
+        return "", "", "", {
+            "code": "patch_requires_current_turn_path",
+            "message": (
+                "react.patch expects a current-turn physical path, not a logical fi: path. "
+                "Use react.pull to materialize historical refs; for historical files use react.checkout "
+                "to copy them into current files/... before patching."
+            ),
+            "extra": extra,
+        }
+
+    physical_turn, namespace, rel = split_physical_artifact_path(raw)
+    if physical_turn:
+        if physical_turn != turn_id:
+            return "", "", "", {
+                "code": "patch_requires_current_turn_path",
+                "message": (
+                    "react.patch only patches current-turn files/... or outputs/... paths. For a historical files/... path, "
+                    "use react.pull first if needed, then react.checkout to copy it into current files/...; "
+                    "patch the resulting current-turn path."
+                ),
+                "extra": {
+                    "path": path_value,
+                    "turn_id": physical_turn,
+                    "current_turn_id": turn_id,
+                    "namespace": namespace,
+                    "relpath": rel,
+                },
+            }
+        if namespace not in {ARTIFACT_NAMESPACE_FILES, ARTIFACT_NAMESPACE_OUTPUTS}:
+            return "", "", "", {
+                "code": "patch_unsupported_namespace",
+                "message": "react.patch supports only current-turn files/... and outputs/... text paths.",
+                "extra": {"path": path_value, "namespace": namespace},
+            }
+        return raw, rel, namespace, None
+
+    for candidate_namespace in (ARTIFACT_NAMESPACE_FILES, ARTIFACT_NAMESPACE_OUTPUTS):
+        prefix = f"{candidate_namespace}/"
+        if raw.startswith(prefix):
+            rel = raw[len(prefix):].strip("/")
+            physical = build_physical_artifact_path(
+                turn_id=turn_id,
+                namespace=candidate_namespace,
+                relpath=rel,
+            )
+            return physical, rel, candidate_namespace, None
+
+    return "", "", "", {
+        "code": "patch_requires_namespaced_path",
+        "message": "react.patch path must be current-turn files/... or outputs/...; unqualified paths are ambiguous.",
+        "extra": {"path": path_value},
+    }
 
 
 async def handle_react_patch(*, react: Any, ctx_browser: Any, state: Dict[str, Any], tool_call_id: str) -> Dict[str, Any]:
@@ -123,62 +197,25 @@ async def handle_react_patch(*, react: Any, ctx_browser: Any, state: Dict[str, A
         state.pop("error", None)
         return state
 
-    if not artifact_name:
-        return _fail("missing_artifact_name", "react.patch requires params.path.")
-    original_path = artifact_name
-    phys_path, rel_path, rewritten = normalize_physical_path(
-        artifact_name, turn_id=ctx_browser.runtime_ctx.turn_id or "", allow_generic_fi=True
+    phys_path, rel_path, artifact_namespace, path_error = _normalize_patch_target(
+        artifact_name,
+        turn_id=turn_id,
     )
-    if rewritten:
-        notice_block(
-            ctx_browser=ctx_browser,
-            tool_call_id=tool_call_id,
-            code="protocol_violation.path_rewritten",
-            message="Path contained a turn/files prefix; rewritten to current-turn relative path.",
-            extra={"original": params.get("path"), "normalized": phys_path},
-            rel="call",
+    if path_error:
+        return _fail(
+            path_error["code"],
+            path_error["message"],
+            extra=path_error.get("extra"),
         )
     if not phys_path or not is_safe_relpath(rel_path):
         return _fail("unsafe_path", "react.patch path is unsafe or invalid.", extra={"path": params.get("path")})
     artifact_name = phys_path
-    artifact_namespace = infer_artifact_namespace(artifact_name)
     if not isinstance(patch_text, str) or not patch_text.strip():
         return _fail("missing_patch", "react.patch requires non-empty params.patch.")
 
     outdir = pathlib.Path(state["outdir"])
-    abs_path = outdir / artifact_name
+    abs_path = resolve_artifact_path(outdir, artifact_name)
     source_abs = abs_path
-    target_preexisting = abs_path.exists()
-    # If patch referenced an older turn artifact, copy it into current turn namespace
-    if original_path.startswith("turn_") and any(marker in original_path for marker in ("/files/", "/outputs/")):
-        try:
-            marker = "/outputs/" if "/outputs/" in original_path else "/files/"
-            old_turn, old_rel = original_path.split(marker, 1)
-        except Exception:
-            old_turn, old_rel = "", ""
-        if old_turn and old_turn != turn_id:
-            historical_namespace = "outputs" if marker == "/outputs/" else "files"
-            old_abs = outdir / old_turn / historical_namespace / old_rel
-            if not old_abs.exists():
-                logical_old = physical_path_to_logical_path(original_path) or original_path
-                return _fail(
-                    "patch_requires_pull",
-                    "react.patch cannot patch a historical file until it is materialized locally. Use react.pull(paths=[...]) first.",
-                    extra={
-                        "path": artifact_name,
-                        "logical_path": logical_old,
-                        "pull_hint": f"react.pull(paths={json.dumps([logical_old], ensure_ascii=False)})",
-                    },
-                )
-            if old_abs.exists() and not abs_path.exists():
-                abs_path.parent.mkdir(parents=True, exist_ok=True)
-                try:
-                    abs_path.write_text(old_abs.read_text(encoding="utf-8"), encoding="utf-8")
-                    source_abs = old_abs
-                except Exception:
-                    pass
-            elif old_abs.exists() and not target_preexisting:
-                source_abs = old_abs
     if not abs_path.exists():
         return _fail("patch_target_missing", "react.patch target file does not exist.", extra={"path": artifact_name})
 

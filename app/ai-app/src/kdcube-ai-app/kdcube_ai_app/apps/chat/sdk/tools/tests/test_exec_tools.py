@@ -430,6 +430,28 @@ def test_normalize_exec_contract_rewrites_outputs_for_telegram_turn_id():
     assert normalized[0]["filename"] == "telegram_turn_13083631/outputs/tech_news_emails.xlsx"
 
 
+def test_normalize_exec_contract_rewrites_unqualified_filename_to_outputs():
+    normalized, rewrites, err = normalize_exec_contract_for_turn(
+        [
+            {
+                "filename": "reports/summary.md",
+                "description": "Generated report.",
+            }
+        ],
+        turn_id="turn_1",
+    )
+
+    assert err is None
+    assert rewrites == [
+        {
+            "original": "reports/summary.md",
+            "rewritten": "turn_1/outputs/reports/summary.md",
+        }
+    ]
+    assert normalized is not None
+    assert normalized[0]["filename"] == "turn_1/outputs/reports/summary.md"
+
+
 def test_normalize_exec_contract_preserves_current_telegram_turn_id():
     normalized, rewrites, err = normalize_exec_contract_for_turn(
         [

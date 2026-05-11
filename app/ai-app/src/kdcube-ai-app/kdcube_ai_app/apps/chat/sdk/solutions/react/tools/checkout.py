@@ -25,10 +25,11 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.workspace import (
 TOOL_SPEC = {
     "id": "react.checkout",
     "purpose": (
-        "Define the active current-turn workspace by materializing selected fi:<turn_id>.files refs "
+        "Define the active current-turn workspace by copying selected materialized fi:<turn_id>.files refs "
         "into turn_<current_turn>/files in order. "
         "Use this when the current workspace itself must contain a runnable/searchable project snapshot, "
-        "rather than only materializing historical side views with react.pull."
+        "rather than only materializing historical side views with react.pull. "
+        "For older refs that may not be local on this worker, call react.pull(paths=[...]) first."
     ),
     "args": {
         "mode": (
@@ -43,7 +44,8 @@ TOOL_SPEC = {
         ),
     },
     "returns": (
-        "JSON object {mode, checked_out_from, materialized, missing, errors}. "
+        "JSON object {mode, checked_out_from, checked_out, materialized, missing, errors}. "
+        "materialized is a compact tree summary under the current-turn files/ root, not a per-file manifest. "
         "replace clears current-turn files/ before applying refs. "
         "overlay keeps current-turn files/ and applies refs on top. "
         "Historical refs remain available separately via react.pull."
@@ -60,17 +62,6 @@ async def handle_react_checkout(*, ctx_browser: Any, state: Dict[str, Any], tool
     if raw_paths is None and isinstance(params, list):
         raw_paths = params
     raw_mode = str(params.get("mode") or "").strip().lower()
-    if raw_mode and raw_mode not in {"replace", "overlay"}:
-        notice_block(
-            ctx_browser=ctx_browser,
-            tool_call_id=tool_call_id,
-            code="protocol_violation.checkout_invalid_mode",
-            message='react.checkout params.mode must be "replace" or "overlay".',
-            extra={"tool_id": tool_id, "mode": raw_mode},
-        )
-        state["retry_decision"] = True
-        return state
-    mode = normalize_checkout_mode(raw_mode)
     turn_id = str(getattr(getattr(ctx_browser, "runtime_ctx", None), "turn_id", "") or "").strip()
 
     tool_call_block(
@@ -84,32 +75,62 @@ async def handle_react_checkout(*, ctx_browser: Any, state: Dict[str, Any], tool
         },
     )
 
+    def _fail(error_code: str, message: str, *, extra: Dict[str, Any] | None = None, retry: bool = True) -> Dict[str, Any]:
+        payload = {
+            "ok": False,
+            "error": error_code,
+            "message": message,
+            **(extra or {}),
+        }
+        notice_block(
+            ctx_browser=ctx_browser,
+            tool_call_id=tool_call_id,
+            code=error_code,
+            message=message,
+            extra={"tool_id": tool_id, **(extra or {})},
+        )
+        add_block(ctx_browser, {
+            "turn": turn_id,
+            "type": "react.tool.result",
+            "call_id": tool_call_id,
+            "mime": "application/json",
+            "path": tc_result_path(turn_id=turn_id, call_id=tool_call_id),
+            "text": json.dumps(payload, ensure_ascii=False, indent=2),
+            "meta": {
+                "tool_call_id": tool_call_id,
+                "tool_id": tool_id,
+            },
+        })
+        state["last_tool_result"] = payload
+        if retry:
+            state["retry_decision"] = True
+        return state
+
+    if raw_mode and raw_mode not in {"replace", "overlay"}:
+        return _fail(
+            "protocol_violation.checkout_invalid_mode",
+            'react.checkout params.mode must be "replace" or "overlay".',
+            extra={"mode": raw_mode},
+        )
+    mode = normalize_checkout_mode(raw_mode)
+
     requests, invalid = normalize_checkout_requests(
         raw_paths=raw_paths,
         legacy_version=str(params.get("version") or "").strip(),
         current_turn_id=turn_id,
     )
     if invalid:
-        notice_block(
-            ctx_browser=ctx_browser,
-            tool_call_id=tool_call_id,
-            code="protocol_violation.checkout_invalid_paths",
-            message="react.checkout requires fi:<turn_id>.files refs in params.paths (or legacy params.version).",
-            extra={"tool_id": tool_id, "invalid": invalid},
+        return _fail(
+            "protocol_violation.checkout_invalid_paths",
+            "react.checkout requires fi:<turn_id>.files refs in params.paths (or legacy params.version).",
+            extra={"invalid": invalid},
         )
-        state["retry_decision"] = True
-        return state
 
     if not requests:
-        notice_block(
-            ctx_browser=ctx_browser,
-            tool_call_id=tool_call_id,
-            code="protocol_violation.checkout_missing_paths",
-            message="react.checkout requires params.paths with fi:<turn_id>.files refs (or legacy params.version).",
-            extra={"tool_id": tool_id},
+        return _fail(
+            "protocol_violation.checkout_missing_paths",
+            "react.checkout requires params.paths with fi:<turn_id>.files refs (or legacy params.version).",
         )
-        state["retry_decision"] = True
-        return state
 
     result = await checkout_workspace_paths(
         ctx_browser=ctx_browser,
@@ -119,26 +140,20 @@ async def handle_react_checkout(*, ctx_browser: Any, state: Dict[str, Any], tool
     )
 
     if "workspace_checkout_nonempty" in set(result.get("errors") or []):
-        notice_block(
-            ctx_browser=ctx_browser,
-            tool_call_id=tool_call_id,
-            code="react.checkout.nonempty",
-            message=(
+        return _fail(
+            "react.checkout.nonempty",
+            (
                 "Current turn workspace already contains files. "
-                "Use react.checkout(mode=\"replace\") before current-turn edits/writes when you want to seed the active workspace, "
+                "Use react.checkout(mode=\"replace\") before current-turn edits/writes when you want to make an older ref the active editable workspace, "
                 "or react.checkout(mode=\"overlay\") to import selected historical files into the existing workspace."
             ),
             extra={"checked_out_from": result.get("checked_out_from") or [], "mode": mode},
         )
-        state["retry_decision"] = True
-        return state
 
     if result.get("missing") or result.get("errors"):
-        notice_block(
-            ctx_browser=ctx_browser,
-            tool_call_id=tool_call_id,
-            code="react.checkout.failed",
-            message="Failed to fully materialize the requested workspace checkout.",
+        return _fail(
+            "react.checkout.failed",
+            "Failed to copy the requested workspace checkout. Historical refs must be materialized locally first with react.pull.",
             extra={
                 "mode": mode,
                 "checked_out_from": result.get("checked_out_from") or [],
@@ -146,8 +161,6 @@ async def handle_react_checkout(*, ctx_browser: Any, state: Dict[str, Any], tool
                 "errors": result.get("errors") or [],
             },
         )
-        state["retry_decision"] = True
-        return state
 
     add_block(ctx_browser, {
         "turn": turn_id,
