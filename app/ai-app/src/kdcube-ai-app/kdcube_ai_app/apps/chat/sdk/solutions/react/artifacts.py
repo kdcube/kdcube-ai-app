@@ -207,10 +207,11 @@ def normalize_physical_path(
     *,
     turn_id: str,
     allow_generic_fi: bool = False,
+    default_namespace: str = ARTIFACT_NAMESPACE_FILES,
 ) -> tuple[str, str, bool]:
     """
     Normalize a user-supplied path to a physical OUT_DIR-relative path.
-    For writer-like callers, paths are normalized to "turn_<id>/files/...".
+    For writer-like callers, paths are normalized to "turn_<id>/<namespace>/...".
     When allow_generic_fi=True, generic fi:<outdir-relative-path> inputs are preserved
     as OUT_DIR-relative physical paths instead of being rewritten to current turn files.
     Returns (physical_path, relpath, rewritten_flag).
@@ -235,7 +236,7 @@ def normalize_physical_path(
         return raw, raw, False
     rel = raw
     rewritten = False
-    namespace = infer_artifact_namespace(raw, default=ARTIFACT_NAMESPACE_FILES)
+    namespace = infer_artifact_namespace(raw, default=default_namespace or ARTIFACT_NAMESPACE_FILES)
     if raw.startswith(f"{ARTIFACT_NAMESPACE_FILES}/"):
         rel = raw[len(f"{ARTIFACT_NAMESPACE_FILES}/"):]
         rewritten = True

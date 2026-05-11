@@ -54,10 +54,11 @@ It can include:
 - `implementation: custom|git`
 - `current_turn_root`
 - `materialized_turn_roots`
-- `current_turn_scopes`
+- `current editable workspace`
 - in `git` mode only:
   - `repo_mode`
   - `repo_status`
+  - `previous saved workspace paths (pull to bring local; checkout to edit)`
 - publish state:
   - `current_turn_publish`
   - `last_published_turn`
@@ -133,9 +134,9 @@ ANNOUNCE only shows current-turn live events. Historical preserved event blocks 
   implementation: git
   current_turn_root: turn_1775153963506_m1wj6f/
   materialized_turn_roots: turn_1775153855448_qryil1, turn_1775153963506_m1wj6f (current)
-  current_turn_scopes:
-    - docs/ (2 files)
-    - src/ (5 files)
+  current editable workspace:
+    - files/docs/ (2 files)
+    - files/src/ (5 files)
   repo_mode: sparse git repo
   repo_status: dirty
   current_turn_publish: pending

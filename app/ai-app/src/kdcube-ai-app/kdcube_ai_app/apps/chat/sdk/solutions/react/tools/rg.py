@@ -18,7 +18,14 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.common import (
     tool_call_block,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.solution_workspace import _safe_relpath
-from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import physical_path_to_logical_path
+from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+    ARTIFACT_NAMESPACE_ATTACHMENTS,
+    ARTIFACT_NAMESPACE_FILES,
+    ARTIFACT_NAMESPACE_OUTPUTS,
+    build_physical_artifact_path,
+    physical_path_to_logical_path,
+    split_logical_artifact_path,
+)
 from kdcube_ai_app.apps.chat.sdk.runtime.workspace import artifact_outdir_for
 from kdcube_ai_app.tools.content_type import is_text_mime_type
 
@@ -29,17 +36,21 @@ MAX_SCANNED_FILES = 2000
 TOOL_SPEC = {
     "id": "react.rg",
     "purpose": (
-        "Ripgrep-like safe search under OUT_DIR (default) or workdir. "
+        "Ripgrep-like safe search over files already materialized in the visible artifact workspace. "
         "Use it to discover files by name and/or locate text regions by regex before reading exact ranges. "
+        "It does not search unmaterialized conversation history, hidden timeline memory, or knowledge space; "
+        "pull/check out older files first when local search is needed. "
         "It does not load full file content into visible context. "
         "Results include file metadata, line counts for text files, line-numbered matches, and ready-to-pass "
         "`read_item` ranges for react.read."
     ),
     "args": {
         "root": (
-            "optional root selector. Omit or use 'outdir' to search the full OUT_DIR. "
-            "Use 'outdir/<subdir>' to search a subtree under OUT_DIR. "
-            "Use 'workdir' to search the full workdir, or 'workdir/<subdir>' to narrow it."
+            "optional root selector. Omit to search the full materialized artifact workspace. "
+            "Use files/<path>, outputs/<path>, attachments/<path>, turn_<id>/files/<path>, "
+            "turn_<id>/outputs/<path>, turn_<id>/attachments/<path>, or fi:<turn_id>.* artifact paths "
+            "to search a file or subtree. "
+            "Legacy outdir/<path> is accepted but should not be used in new calls."
         ),
         "name_regex": "optional Python regex matched against the basename only, not the full path",
         "pattern": (
@@ -53,9 +64,9 @@ TOOL_SPEC = {
     },
     "returns": (
         "JSON object {root, hits}. Each hit has path (relative to searched root), size_bytes, optional "
-        "text_symbols/line_count for text files, and optional logical_path. Content hits include matches "
-        "with line, preview, read_item, and scan_truncated metadata. OUT_DIR hits include logical_path/read_item "
-        "paths for react.read; workdir hits do not."
+        "text_symbols/line_count for text files, and logical_path when the hit is readable by react.read. "
+        "Content hits include matches with line, preview, read_item, and scan_truncated metadata. "
+        "Returned logical_path/read_item values are directly usable with react.read."
     ),
 }
 
@@ -75,6 +86,9 @@ def _compile_regex(pattern: Any) -> Optional[re.Pattern[str]]:
 
 
 def _iter_files(root: pathlib.Path) -> Iterable[pathlib.Path]:
+    if root.is_file():
+        yield root
+        return
     count = 0
     for dirpath, dirnames, filenames in os.walk(str(root), followlinks=False):
         dirnames[:] = [d for d in dirnames if not d.startswith(".")]
@@ -156,9 +170,8 @@ def _resolve_root(
     root_sel: str,
 ) -> Optional[tuple[pathlib.Path, str, str, str]]:
     outdir = pathlib.Path(state["outdir"])
-    root_dir = outdir
     root_kind = "outdir"
-    normalized_root = "outdir"
+    normalized_root = "artifact_workspace"
     root_virtual_prefix = ""
     artifact_outdir = artifact_outdir_for(outdir, create=False)
     if not artifact_outdir.exists():
@@ -166,36 +179,65 @@ def _resolve_root(
     if not root_sel:
         return artifact_outdir, root_kind, normalized_root, root_virtual_prefix
 
+    turn_id = str(getattr(getattr(ctx_browser, "runtime_ctx", None), "turn_id", "") or "").strip()
     root_sel_lc = root_sel.lower()
+    rel = ""
     if root_sel_lc == "outdir":
-        return artifact_outdir, root_kind, normalized_root, root_virtual_prefix
+        return artifact_outdir, root_kind, "outdir", root_virtual_prefix
     if root_sel_lc.startswith("outdir/"):
+        # Backwards compatibility only. Prefer files/..., outputs/..., turn_...,
+        # or fi:... so the root matches the visible timeline path model.
         rel = root_sel[len("outdir/"):].lstrip("/")
-        if not rel or not _safe_relpath(rel):
-            code = "rg_invalid_root"
-            message = "invalid outdir root selector."
+    elif root_sel.startswith("fi:"):
+        logical_turn, namespace, logical_rel = split_logical_artifact_path(root_sel)
+        if logical_turn and namespace in {
+            ARTIFACT_NAMESPACE_FILES,
+            ARTIFACT_NAMESPACE_OUTPUTS,
+            ARTIFACT_NAMESPACE_ATTACHMENTS,
+        } and logical_rel:
+            rel = build_physical_artifact_path(
+                turn_id=logical_turn,
+                namespace=namespace,
+                relpath=logical_rel,
+            )
         else:
-            return artifact_outdir / rel, root_kind, f"outdir/{rel}", rel
-    elif root_sel_lc == "workdir":
-        workdir_raw = getattr(getattr(ctx_browser, "runtime_ctx", None), "workdir", "") or ""
-        if workdir_raw:
-            return pathlib.Path(workdir_raw), "workdir", "workdir", ""
-        code = "rg_no_workdir"
-        message = "workdir is not configured."
-    elif root_sel_lc.startswith("workdir/"):
-        workdir_raw = getattr(getattr(ctx_browser, "runtime_ctx", None), "workdir", "") or ""
-        rel = root_sel[len("workdir/"):].lstrip("/")
-        if not workdir_raw:
-            code = "rg_no_workdir"
-            message = "workdir is not configured."
-        elif not rel or not _safe_relpath(rel):
             code = "rg_invalid_root"
-            message = "invalid workdir root selector."
+            message = (
+                "invalid fi: root selector. Use fi:<turn_id>.files/<path>, "
+                "fi:<turn_id>.outputs/<path>, or fi:<turn_id>.user.attachments/<path>."
+            )
+            rel = ""
+    elif root_sel.startswith("turn_"):
+        rel = root_sel.lstrip("/")
+    elif (
+        root_sel.startswith(f"{ARTIFACT_NAMESPACE_FILES}/")
+        or root_sel.startswith(f"{ARTIFACT_NAMESPACE_OUTPUTS}/")
+        or root_sel.startswith(f"{ARTIFACT_NAMESPACE_ATTACHMENTS}/")
+    ):
+        if not turn_id:
+            code = "rg_invalid_root"
+            message = "current-turn root selector requires a turn id."
+            rel = ""
         else:
-            return pathlib.Path(workdir_raw) / rel, "workdir", f"workdir/{rel}", rel
+            namespace, namespace_rel = root_sel.split("/", 1)
+            rel = build_physical_artifact_path(
+                turn_id=turn_id,
+                namespace=namespace,
+                relpath=namespace_rel,
+            )
     else:
         code = "rg_invalid_root"
-        message = "invalid root selector. Use outdir, outdir/<subdir>, workdir, or workdir/<subdir>."
+        message = (
+            "invalid root selector. Omit root, or use files/<path>, outputs/<path>, attachments/<path>, "
+            "turn_<id>/files/<path>, turn_<id>/outputs/<path>, turn_<id>/attachments/<path>, or fi:<turn_id>.* artifact paths."
+        )
+
+    if rel:
+        if not _safe_relpath(rel):
+            code = "rg_invalid_root"
+            message = "invalid root selector."
+        else:
+            return artifact_outdir / rel, root_kind, root_sel, rel
 
     notice_block(
         ctx_browser=ctx_browser,
@@ -268,7 +310,7 @@ async def handle_react_rg(*, ctx_browser: Any, state: Dict[str, Any], tool_call_
     for abs_path in _iter_files(root_dir):
         scanned_files += 1
         try:
-            rel_path = abs_path.relative_to(root_dir).as_posix()
+            rel_path = abs_path.name if root_dir.is_file() else abs_path.relative_to(root_dir).as_posix()
             size_bytes = int(abs_path.stat().st_size)
         except Exception:
             continue
@@ -278,7 +320,9 @@ async def handle_react_rg(*, ctx_browser: Any, state: Dict[str, Any], tool_call_
         is_text = is_text_mime_type(mime)
 
         full_path = rel_path
-        if root_virtual_prefix:
+        if root_virtual_prefix and root_dir.is_file():
+            full_path = root_virtual_prefix
+        elif root_virtual_prefix:
             full_path = pathlib.PurePosixPath(root_virtual_prefix, rel_path).as_posix()
         logical_path = physical_path_to_logical_path(full_path) if root_kind == "outdir" else ""
 

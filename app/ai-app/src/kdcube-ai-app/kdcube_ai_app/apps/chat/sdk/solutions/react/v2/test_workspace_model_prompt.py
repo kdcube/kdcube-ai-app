@@ -30,7 +30,8 @@ def test_get_workspace_implementation_guide_git_mentions_git_backed_mode():
     assert "runnable/searchable/testable project snapshot" in guide
     assert "mode=\"overlay\"" in guide
     assert "<current_turn_id>/files/..." in guide
-    assert "ls workspace" in guide
+    assert "previous saved workspace paths" in guide
+    assert "current editable workspace" in guide
     assert "existing top-level scope" in guide
 
 
@@ -51,7 +52,8 @@ def test_build_decision_system_text_uses_selected_workspace_implementation():
     assert "mode=\"overlay\"" in text
     assert "<current_turn_id>/files/..." in text
     assert "existing top-level scope" in text
-    assert "ls workspace" in text
+    assert "previous saved workspace paths" in text
+    assert "current editable workspace" in text
 
 
 def test_build_decision_system_text_appends_agent_admin_customization():

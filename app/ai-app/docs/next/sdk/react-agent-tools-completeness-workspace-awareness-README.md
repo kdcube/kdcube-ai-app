@@ -511,7 +511,7 @@ That preserves token economy and keeps navigation deliberate.
 
 | Surface | Keep doing | Improve later |
 | --- | --- | --- |
-| `react.rg` | turn-local discovery in `outdir` and `workdir`; filename/text search with ready-to-read line ranges | no change in scope |
+| `react.rg` | turn-local discovery in already materialized readable OUT_DIR files; filename/text search with ready-to-read line ranges; older conversation state must be pulled/checked out first | no change in scope |
 | `react.read` | read logical artifacts and exact `ks:` paths | later add more precise guidance for non-text and logs |
 | `react.write` / `react.patch` | mutate current-turn `files/` outputs only | no change in safety boundary |
 | `react.search_knowledge` | metadata search over indexed docs/deploy | consider `src` discovery improvements later; keep tests out of search index |
