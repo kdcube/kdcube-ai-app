@@ -145,16 +145,11 @@ One KDCube bundle can combine:
 
 ## Read order
 
-**The plugin ships without docs — they are NOT on disk.** Always fetch from GitHub with
-`WebFetch`. Do not try to `Read` these paths locally, do not try to `ls` a docs directory,
-do not ask the user to point you at one. The only exception is the opt-in local fast path
-at the bottom of this section, which requires `CLAUDE_PLUGIN_OPTION_KDCUBE_REPO_ROOT` to
-already be set — if it is not set, go straight to `WebFetch`.
-
-Docs below are written as `repo:kdcube-ai-app/<path>` references. To resolve a reference,
-`WebFetch` `https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/<path>`. For
-directory listings, `WebFetch`
-`https://api.github.com/repos/kdcube/kdcube-ai-app/contents/<path>`.
+**The plugin ships without docs — they are NOT on disk.** Resolve the
+`repo:kdcube-ai-app/<path>` references below. Do not try to `Read` these paths locally,
+do not try to `ls` a docs directory, do not ask the user to point you at one. The only
+exception is the opt-in local fast path at the bottom of this section, which requires
+`CLAUDE_PLUGIN_OPTION_KDCUBE_REPO_ROOT` to already be set.
 
 ### Tier 1 — always read (operational canon)
 
@@ -334,10 +329,9 @@ then fetch individual files. Base:
 
 If — **and only if** — `CLAUDE_PLUGIN_OPTION_KDCUBE_REPO_ROOT` is already set in the
 environment, read the same paths from
-`$CLAUDE_PLUGIN_OPTION_KDCUBE_REPO_ROOT/<repo-relative-path>` with `Read` instead of
-`WebFetch`. Derive the repo-relative path by stripping the
-`repo:kdcube-ai-app/` prefix from any reference above.
-If the env var is not set, do not suggest setting it — just use `WebFetch`.
+`$CLAUDE_PLUGIN_OPTION_KDCUBE_REPO_ROOT/<repo-relative-path>` with `Read`. Derive the
+repo-relative path by stripping the `repo:kdcube-ai-app/` prefix from any reference above.
+If the env var is not set, do not suggest setting it — just resolve the `repo:` reference.
 
 ## Primary example
 
