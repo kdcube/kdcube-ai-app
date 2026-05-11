@@ -47,7 +47,9 @@ Used for reading, hiding, or reopening existing artifacts:
 Used for writing or patching new current-turn files:
 
 - OUT_DIR-relative paths under the current turn
-- for example `reports/summary.md` or `files/project/src/app.py` after normalization
+- `files/<scope>/...` for durable workspace/project state
+- `outputs/<scope>/...` for reports, exports, test results, demos, and other produced artifacts
+- unqualified `react.write` and exec contract paths default to `outputs/...`; use `files/...` explicitly for durable workspace/project state
 
 Do not pass logical `fi:` paths to `react.write` or `react.patch`.
 
@@ -57,6 +59,9 @@ Do not pass logical `fi:` paths to `react.write` or `react.patch`.
 
 Reads existing logical artifacts back into the visible timeline.
 
+- Text artifact previews shown on the timeline are line-numbered. The numbers
+  are model-facing viewing prefixes, not file bytes; use them for `react.read`
+  ranges and patch locations, but omit them from patch/full-file content.
 - input: `paths: list[str]`
 - optional input: `items: list[object]` — exact read specs with `path` plus
   optional `line_start`/`line_count` or `offset_text_symbols`/`max_text_symbols`.
@@ -152,16 +157,17 @@ Use it for historical/reference material, not for defining what the current edit
 
 ### `react.checkout`
 
-Builds the active current-turn workspace from ordered historical `fi:<turn>.files/...` refs.
+Copies materialized historical `fi:<turn>.files/...` refs into the active current-turn workspace.
 
 - input: `paths: list[str]`, `mode: replace|overlay`
 - accepted paths: workspace `fi:<turn>.files/...` refs
-- output: current-turn workspace files plus a checkout result block
+- output: current-turn workspace files plus a compact checkout result block
+- checkout result: includes `checked_out_from`, per-source file counts, and a tree-like `materialized` summary under `turn_<current>/files`; it is not a per-file manifest
 - `mode=replace`: clears and rebuilds the current-turn workspace
 - `mode=overlay`: applies refs on top of the existing current-turn workspace
 - conflict rule: later refs override earlier refs if they overlap
 
-Use it when React needs a runnable/searchable/testable project tree in the current turn.
+Use it when React needs an editable runnable/searchable/testable project tree in the current turn. For older refs that may not be local on the worker, call `react.pull(paths=[...])` first, then `react.checkout(...)`. Use `react.pull` alone when the older version is only reference material.
 
 ### `react.write`
 
@@ -169,6 +175,7 @@ Creates a new text artifact.
 
 - input: `path`, `content`, optional `channel`, optional `kind`
 - accepted paths: current-turn relative paths, not logical `fi:` paths
+- namespace behavior: use `files/...` for durable workspace/project state and `outputs/...` for produced artifacts; unqualified paths default to `outputs/...`
 - channels: `canvas`, `timeline_text`, `internal`
 - kinds: `display`, `file`
 - output: local text artifact plus timeline/result blocks
@@ -179,14 +186,18 @@ Use it for text artifacts only. For PDFs, PPTX, DOCX, PNG, and other binary deli
 
 ### `react.patch`
 
-Updates an existing current-turn file.
+Updates an existing current-turn materialized text file under `files/...` or `outputs/...`.
 
 - input: `path`, `patch`
-- accepted paths: current-turn relative paths, not logical `fi:` paths
+- accepted paths: current-turn physical OUT_DIR-relative paths; prefer concise paths such as `files/<scope>/file.py` or `outputs/<scope>/page.html`, not logical `fi:` paths
 - patch format: unified diff or full replacement text
+- generated unified-diff hunk counts are normalized before apply; a wrong `@@ -a,b +c,d @@` count should not force a full-file rewrite when the hunk content is otherwise correct
+- rendered-preview line-number prefixes are rejected; remove the viewing prefixes and retry
 - output: updated local file plus normal tool call/result blocks
+- file origin does not matter: current-turn files produced by exec, `react.write`, `react.patch`, or `react.checkout` are patchable once they exist locally
+- older files are never patched in place; materialize with `react.pull` if needed, then use `react.checkout` for historical `files/...` refs you need to edit and patch the resulting current-turn path
 
-Use it when the file already exists in the current-turn workspace and React wants an edit instead of a full rewrite.
+Use it when the file already exists and React wants a targeted edit instead of a full rewrite. Prefer unified diff for targeted changes; use full replacement only for intentional whole-file rewrites or when a targeted diff still cannot match the file. Do not use `react.write` just to register an existing file for patching.
 
 ### `react.memsearch`
 
@@ -275,16 +286,18 @@ Use it to shrink still-visible bulky material that is no longer needed in the ac
 
 ### `react.rg`
 
-Searches safely under `outdir` or `workdir` without shell execution.
+Searches safely over files already materialized in the local artifact workspace without shell execution.
 
 - input: file name regex and/or content regex
-- scope: rooted search only, under runtime-managed directories
-- OUT_DIR hits: include logical paths suitable for `react.read`
+- scope: rooted search only, under runtime-managed artifact files already present on this worker; root can be a file or a subtree
+- preferred roots: omit `root`, or use `files/...`, `outputs/...`, `attachments/...`, `turn_<id>/files/...`, `turn_<id>/outputs/...`, `turn_<id>/attachments/...`, or matching `fi:` artifact paths such as `fi:<turn_id>.files/...`, `fi:<turn_id>.outputs/...`, and `fi:<turn_id>.user.attachments/...`
+- legacy roots: `outdir` and `outdir/<path>` are still accepted for older callers, but new calls should use visible path forms
+- not a search over hidden/pruned timeline, unpulled historical snapshots, or `ks:`; locate older refs first, then `react.pull` them before local search; checkout only when you need an editable current-turn copy
+- hits: include logical paths suitable for `react.read`
 - content matches: include line-numbered previews and `read_item` ranges
 - `context_lines` controls how many surrounding lines are included in the
   suggested `read_item` range around each match
 - next step: pass `read_items` to `react.read({"items":[...]})` for exact visible regions
-- workdir hits: filesystem hits only; they do not automatically become logical artifacts
 
 ### `react.plan`
 

@@ -535,7 +535,7 @@ def normalize_exec_contract_for_turn(
             rel = safe_filename[len("outputs/") :]
             rewritten = f"{turn_id}/outputs/{rel}"
         else:
-            rewritten = f"{turn_id}/files/{safe_filename}"
+            rewritten = f"{turn_id}/outputs/{safe_filename}"
         if rewritten:
             rewrites.append({"original": filename, "rewritten": rewritten})
             filename = rewritten
@@ -725,6 +725,7 @@ class ExecTools:
             "- When called from React decision, the code is provided in <channel:code> (not in params).\n"
             "1) `contract` (list or JSON string, REQUIRED): list of output files specs with fields:\n"
             "   - filename (OUTPUT_DIR-relative; MUST start with the current turn_<id>/files/ or turn_<id>/outputs/, or use concise files/... / outputs/...)\n"
+            "     If filename is unqualified for compatibility, it is treated as outputs/<filename>; use files/... explicitly for durable workspace/project state.\n"
             "   - description (what this file contains / why it was produced)\n"
             "   - visibility (optional: `external` or `internal`; default `external`)\n"
             "   These are outputs of this program that it promises to produce.\n"
@@ -761,6 +762,7 @@ class ExecTools:
             "- User attachments are available under OUTPUT_DIR/turn_<id>/attachments/.\n"
             "- Write durable project/workspace state to OUTPUT_DIR/turn_<id>/files/.\n"
             "- Write reports, test results, and other non-workspace deliverables to OUTPUT_DIR/turn_<id>/outputs/.\n"
+            "- Unqualified contracted filenames are treated as outputs/<filename>; choose files/... or outputs/... explicitly when semantics matter.\n"
             "- Build paths like:\n"
             "  `Path(OUTPUT_DIR) / \"turn_<id>/files/my_file.ext\"` or `Path(OUTPUT_DIR) / \"turn_<id>/outputs/report.txt\"`.\n"
             "- Do not invent or rename the current turn id. It starts with `turn_`; use the exact current id or the concise `files/...` / `outputs/...` form.\n"

@@ -158,3 +158,28 @@ async def test_write_outputs_path_materializes_outside_workspace_namespace(tmp_p
     assert (tmp_path / "turn_cur" / "outputs" / "demo_proj" / "test_results.txt").read_text() == "all tests passed\n"
     assert not (tmp_path / "turn_cur" / "files" / "demo_proj" / "test_results.txt").exists()
     assert any(b.get("path") == "fi:turn_cur.outputs/demo_proj/test_results.txt" for b in ctx.timeline.blocks)
+
+
+@pytest.mark.asyncio
+async def test_write_unqualified_path_defaults_to_outputs_namespace(tmp_path):
+    runtime = RuntimeCtx(turn_id="turn_cur", outdir=str(tmp_path), workdir=str(tmp_path))
+    ctx = FakeBrowser(runtime)
+    state = {
+        "last_decision": {
+            "tool_call": {
+                "params": {
+                    "path": "demo_proj/report.md",
+                    "channel": "canvas",
+                    "content": "# Report\n",
+                    "kind": "file",
+                }
+            }
+        },
+        "outdir": str(tmp_path),
+    }
+
+    await handle_react_write(react=FakeReact(), ctx_browser=ctx, state=state, tool_call_id="c7")
+
+    assert (tmp_path / "turn_cur" / "outputs" / "demo_proj" / "report.md").read_text() == "# Report\n"
+    assert not (tmp_path / "turn_cur" / "files" / "demo_proj" / "report.md").exists()
+    assert any(b.get("path") == "fi:turn_cur.outputs/demo_proj/report.md" for b in ctx.timeline.blocks)

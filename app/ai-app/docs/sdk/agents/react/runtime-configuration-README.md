@@ -125,6 +125,8 @@ This is the only React workspace paradigm switch:
 
 Exact attachment/binary pulls remain point-wise and hosting-backed in both modes.
 
+`react.rg` searches only files already materialized in the local artifact workspace on the worker handling the turn. It does not search unpulled lineage snapshots, hidden/pruned timeline blocks, or `ks:`. If a task needs local search over older state, first identify the `fi:` ref from visible context or `react.memsearch`, then materialize it with `react.pull`; use `react.checkout` only when the pulled `files/...` ref must become an editable current-turn copy. Preferred `react.rg` roots are visible path forms: `files/...`, `outputs/...`, `attachments/...`, `turn_<id>/files/...`, `turn_<id>/outputs/...`, `turn_<id>/attachments/...`, or matching `fi:` artifact paths.
+
 ## Visible read limits
 
 `react.read` has three different limits because the payloads have different

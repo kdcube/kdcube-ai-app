@@ -7,6 +7,7 @@ import pytest
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.tools.rg import handle_react_rg
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.tools.tests.helpers import FakeBrowser
+from kdcube_ai_app.apps.chat.sdk.runtime.workspace import artifact_outdir_for
 
 
 def _latest_hits(ctx: FakeBrowser) -> list[dict]:
@@ -67,7 +68,7 @@ async def test_rg_finds_file_under_outdir_root(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_rg_supports_workdir_subdir_root(tmp_path):
+async def test_rg_rejects_workdir_root(tmp_path):
     outdir = tmp_path / "out"
     workdir = tmp_path / "work"
     runtime = RuntimeCtx(turn_id="turn_search", outdir=str(outdir), workdir=str(workdir))
@@ -93,14 +94,8 @@ async def test_rg_supports_workdir_subdir_root(tmp_path):
 
     await handle_react_rg(ctx_browser=ctx, state=state, tool_call_id="rg2")
 
-    payload = _latest_payload(ctx)
-    assert payload["root"] == "workdir/runtime"
-    assert payload["hits"] == [{
-        "path": "logs/docker.err.log",
-        "size_bytes": 4,
-        "text_symbols": 4,
-        "line_count": 1,
-    }]
+    assert state["last_tool_result"] == []
+    assert any(b.get("type") == "react.notice" for b in ctx.timeline.blocks)
 
 
 @pytest.mark.asyncio
@@ -139,18 +134,22 @@ async def test_rg_includes_logical_path_for_turn_files(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_rg_rejects_removed_fi_root_syntax(tmp_path):
+async def test_rg_accepts_fi_root_syntax(tmp_path):
     outdir = tmp_path / "out"
     workdir = tmp_path / "work"
     runtime = RuntimeCtx(turn_id="turn_search", outdir=str(outdir), workdir=str(workdir))
     ctx = FakeBrowser(runtime)
 
+    target = artifact_outdir_for(outdir) / "turn_search" / "files" / "demo" / "app.py"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("TODO = True\n", encoding="utf-8")
+
     state = {
         "last_decision": {
             "tool_call": {
                 "params": {
-                    "root": "fi:logs",
-                    "name_regex": r"docker\.err\.log$",
+                    "root": "fi:turn_search.files/demo",
+                    "name_regex": r"app\.py$",
                 }
             }
         },
@@ -159,8 +158,109 @@ async def test_rg_rejects_removed_fi_root_syntax(tmp_path):
 
     await handle_react_rg(ctx_browser=ctx, state=state, tool_call_id="rg3")
 
-    assert state["last_tool_result"] == []
-    assert any(b.get("type") == "react.notice" for b in ctx.timeline.blocks)
+    payload = _latest_payload(ctx)
+    assert payload["root"] == "fi:turn_search.files/demo"
+    assert payload["hits"][0]["logical_path"] == "fi:turn_search.files/demo/app.py"
+
+
+@pytest.mark.asyncio
+async def test_rg_accepts_fi_attachment_root_syntax(tmp_path):
+    outdir = tmp_path / "out"
+    workdir = tmp_path / "work"
+    runtime = RuntimeCtx(turn_id="turn_search", outdir=str(outdir), workdir=str(workdir))
+    ctx = FakeBrowser(runtime)
+
+    target = artifact_outdir_for(outdir) / "turn_search" / "attachments" / "note.txt"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("attachment TODO\n", encoding="utf-8")
+
+    state = {
+        "last_decision": {
+            "tool_call": {
+                "params": {
+                    "root": "fi:turn_search.user.attachments/note.txt",
+                    "pattern": "TODO",
+                    "context_lines": 0,
+                }
+            }
+        },
+        "outdir": str(outdir),
+    }
+
+    await handle_react_rg(ctx_browser=ctx, state=state, tool_call_id="rg_attachment")
+
+    payload = _latest_payload(ctx)
+    assert payload["root"] == "fi:turn_search.user.attachments/note.txt"
+    assert payload["hits"][0]["logical_path"] == "fi:turn_search.user.attachments/note.txt"
+    assert payload["read_items"] == [
+        {"path": "fi:turn_search.user.attachments/note.txt", "line_start": 1, "line_count": 1}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_rg_accepts_current_turn_files_root(tmp_path):
+    outdir = tmp_path / "out"
+    workdir = tmp_path / "work"
+    runtime = RuntimeCtx(turn_id="turn_search", outdir=str(outdir), workdir=str(workdir))
+    ctx = FakeBrowser(runtime)
+
+    target = artifact_outdir_for(outdir) / "turn_search" / "files" / "demo" / "app.py"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("TODO = True\n", encoding="utf-8")
+
+    state = {
+        "last_decision": {
+            "tool_call": {
+                "params": {
+                    "root": "files/demo",
+                    "pattern": "TODO",
+                    "context_lines": 0,
+                }
+            }
+        },
+        "outdir": str(outdir),
+    }
+
+    await handle_react_rg(ctx_browser=ctx, state=state, tool_call_id="rg_current_files")
+
+    payload = _latest_payload(ctx)
+    assert payload["root"] == "files/demo"
+    assert payload["read_items"] == [
+        {"path": "fi:turn_search.files/demo/app.py", "line_start": 1, "line_count": 1}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_rg_accepts_current_turn_file_root(tmp_path):
+    outdir = tmp_path / "out"
+    workdir = tmp_path / "work"
+    runtime = RuntimeCtx(turn_id="turn_search", outdir=str(outdir), workdir=str(workdir))
+    ctx = FakeBrowser(runtime)
+
+    target = artifact_outdir_for(outdir) / "turn_search" / "files" / "demo" / "app.py"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("TODO = True\n", encoding="utf-8")
+
+    state = {
+        "last_decision": {
+            "tool_call": {
+                "params": {
+                    "root": "files/demo/app.py",
+                    "pattern": "TODO",
+                    "context_lines": 0,
+                }
+            }
+        },
+        "outdir": str(outdir),
+    }
+
+    await handle_react_rg(ctx_browser=ctx, state=state, tool_call_id="rg_current_file")
+
+    payload = _latest_payload(ctx)
+    assert payload["hits"][0]["path"] == "app.py"
+    assert payload["read_items"] == [
+        {"path": "fi:turn_search.files/demo/app.py", "line_start": 1, "line_count": 1}
+    ]
 
 
 @pytest.mark.asyncio

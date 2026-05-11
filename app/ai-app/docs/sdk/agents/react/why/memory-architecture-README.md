@@ -505,10 +505,11 @@ So memsearch is:
 
 Use to search the current local filesystem surface:
 
-- OUT_DIR
-- optionally workdir
+- files already materialized under OUT_DIR
 
-It returns `logical_path` for OUT_DIR hits, and content matches include `read_item` ranges so the agent can immediately reopen exact regions with `react.read({"items":[...]})`.
+It does not search hidden/pruned timeline, unpulled historical snapshots, or `ks:`. Use visible refs or `react.memsearch` to identify older `fi:` refs, then `react.pull` or `react.checkout` them before local search.
+
+It returns `logical_path` for hits, and content matches include `read_item` ranges so the agent can immediately reopen exact regions with `react.read({"items":[...]})`.
 
 ### `react.pull`
 

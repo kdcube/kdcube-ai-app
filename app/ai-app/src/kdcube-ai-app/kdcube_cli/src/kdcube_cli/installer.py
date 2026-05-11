@@ -2407,12 +2407,13 @@ def gather_configuration(
             def _apply_domain(value: str) -> str:
                 if not value:
                     return value
-                return value.replace("YOUR_DOMAIN", proxy_domain).replace("<YOUR_DOMAIN>", proxy_domain)
+                return value.replace("<YOUR_DOMAIN>", proxy_domain).replace("YOUR_DOMAIN", proxy_domain)
 
             keyprefix = _proxy_pick("redis_key_prefix") or env_proxy.entries.get("REDIS_KEYPREFIX", (None, None))[1] or "proxylogin:<TENANT>:<PROJECT>:"
             if "<TENANT>" in keyprefix or "<PROJECT>" in keyprefix:
                 keyprefix = keyprefix.replace("<TENANT>", tenant).replace("<PROJECT>", project)
             update_env_value(env_proxy, "REDIS_KEYPREFIX", keyprefix)
+            _set_nested(assembly_data, ["auth", "proxy_login", "redis_key_prefix"], keyprefix)
 
             if has_explicit_domain:
                 # Keep the sample localhost line only as a commented example when a real DNS name is configured.
@@ -2423,6 +2424,7 @@ def gather_configuration(
                 token_masq = proxy_login_cfg.get("token_mascarade")
             if token_masq is not None:
                 update_env_value(env_proxy, "TOKEN_MASQUERADE", str(token_masq).lower())
+                _set_nested(assembly_data, ["auth", "proxy_login", "token_masquerade"], token_masq)
 
             reset_cfg = proxy_login_cfg.get("password_reset") if isinstance(proxy_login_cfg.get("password_reset"), dict) else {}
             reset_company = str(reset_cfg.get("company") or env_proxy.entries.get("PASSWORD_RESET_COMPANY", (None, None))[1] or "")
@@ -2438,6 +2440,15 @@ def gather_configuration(
                 update_env_value(env_proxy, "PASSWORD_RESET_TEMPLATENAME", reset_template)
             if reset_redirect:
                 update_env_value(env_proxy, "PASSWORD_RESET_REDIRECTURL", reset_redirect)
+            if any((reset_company, reset_sender, reset_template, reset_redirect)):
+                if reset_company:
+                    _set_nested(assembly_data, ["auth", "proxy_login", "password_reset", "company"], reset_company)
+                if reset_sender:
+                    _set_nested(assembly_data, ["auth", "proxy_login", "password_reset", "sender"], reset_sender)
+                if reset_template:
+                    _set_nested(assembly_data, ["auth", "proxy_login", "password_reset", "template_name"], reset_template)
+                if reset_redirect:
+                    _set_nested(assembly_data, ["auth", "proxy_login", "password_reset", "redirect_url"], reset_redirect)
 
             http_urlbase = _proxy_pick("http_urlbase") or env_proxy.entries.get("HTTP_URLBASE", (None, None))[1] or ""
             http_urlbase = _apply_domain(http_urlbase)
@@ -2445,6 +2456,7 @@ def gather_configuration(
                 scheme = "https" if proxy_ssl_enabled else "http"
                 http_urlbase = f"{scheme}://{proxy_domain}/auth"
             update_env_value(env_proxy, "HTTP_URLBASE", http_urlbase)
+            _set_nested(assembly_data, ["auth", "proxy_login", "http_urlbase"], http_urlbase)
 
     _autosave()
 

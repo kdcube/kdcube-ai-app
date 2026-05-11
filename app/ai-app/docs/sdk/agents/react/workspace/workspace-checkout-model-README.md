@@ -314,11 +314,11 @@ Example:
   checked_out_from:
     - fi:turn_1774.files/projectA
     - fi:turn_1775.files/projectA/config/settings.yaml
-  current_turn_scopes:
-    - projectA/ (12 files)
-  ls workspace:
-    - projectA/ (latest turn_1775..., 12 files)
-    - old_experiment/ (latest turn_1768..., 3 files)
+  current editable workspace:
+    - files/projectA/ (12 files)
+  previous saved workspace paths (pull to bring local; checkout to edit):
+    - files/projectA/ (12 git-tracked files)
+    - files/old_experiment/ (3 git-tracked files)
 ```
 
 If nothing has been checked out yet:
@@ -328,15 +328,15 @@ If nothing has been checked out yet:
   implementation: custom
   current_turn_root: turn_1776.../
   checked_out_from: none
-  current_turn_scopes: none
-  ls workspace:
-    - projectA/ (latest turn_1775..., 12 files)
-    - old_experiment/ (latest turn_1768..., 3 files)
+  current editable workspace: none
+  previous saved workspace paths (pull to bring local; checkout to edit):
+    - files/projectA/ (12 git-tracked files)
+    - files/old_experiment/ (3 git-tracked files)
 ```
 
 This makes the agent's next step obvious:
 
-- use `checkout` if it wants to continue a project
+- use `pull` then `checkout` if it wants to continue a previous saved workspace path
 - use `pull` if it only wants historical material
 
 ---
@@ -354,9 +354,9 @@ That contributes to scope drift such as:
 
 With checkout, the normal continuation sequence becomes:
 
-1. inspect `ls workspace`
+1. inspect `previous saved workspace paths`
 2. choose the project scope to continue
-3. checkout that scope into the current workspace
+3. pull that scope, then checkout it into the current workspace
 4. keep editing `files/<scope>/...`
 
 This does not solve naming discipline by itself, but it removes a major source
@@ -468,8 +468,8 @@ an almost-never-correct whole-workspace checkout.
 
 - expose:
   - `checked_out_from`
-  - `current_turn_scopes`
-  - `ls workspace`
+  - `current editable workspace`
+  - `previous saved workspace paths`
 
 ### Slice 4: Prompt/docs
 

@@ -10,6 +10,7 @@ import pathlib
 
 from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
     ARTIFACT_NAMESPACE_FILES,
+    ARTIFACT_NAMESPACE_OUTPUTS,
     build_logical_artifact_path,
     build_artifact_meta_block,
     materialize_inline_artifact_to_file,
@@ -41,6 +42,9 @@ TOOL_SPEC = {
         "use channel='canvas' for LARGE content (even markdown) or any non‑markdown. "
         "Use channel='internal' to write user-invisible internal file artifacts. "
         "Set scratchpad=true only for short inline notes that should appear as react.note. "
+        "Use paths under files/... only for durable project/workspace state. "
+        "Use paths under outputs/... for reports, exports, demos, and other produced artifacts. "
+        "Unqualified paths are treated as outputs/... for compatibility. "
         "The file extension MUST match the content format (e.g., HTML -> .html, Markdown -> .md). "
         "When channel='canvas', the file extension MUST match a supported canvas format: "
         ".md/.markdown, .html/.htm, .mermaid/.mmd, .json, .yaml/.yml, .txt, .xml. "
@@ -53,7 +57,7 @@ TOOL_SPEC = {
         "Note if you use this tool to generate the content for rendering tools.write_* tools, you must read the relevant skill(s) to produce the proper content. Ensure you see the proper skills in the journal or load them first via react.read."
     ),
     "args": {
-        "path": "str (FIRST FIELD). Filepath of this artifact.",
+        "path": "str (FIRST FIELD). Filepath of this artifact. Prefer outputs/<scope>/<name> unless writing durable project/workspace state under files/<scope>/<path>.",
         "channel": "str (SECOND FIELD). 'canvas' (default) or 'timeline_text' or 'internal'.",
         "content": "str|object (THIRD FIELD). Content to record.",
         "kind": "str (FOURTH FIELD). 'display' or 'file'.",
@@ -133,7 +137,9 @@ async def handle_react_write(*, react: Any, ctx_browser: Any, state: Dict[str, A
                 "extra": {"path": artifact_name, "ext": ext},
             }
     phys_path, rel_path, rewritten = normalize_physical_path(
-        artifact_name, turn_id=ctx_browser.runtime_ctx.turn_id or ""
+        artifact_name,
+        turn_id=ctx_browser.runtime_ctx.turn_id or "",
+        default_namespace=ARTIFACT_NAMESPACE_OUTPUTS,
     )
     original_path = (params.get("path") or "").strip()
     if rewritten and original_path and original_path != phys_path:
@@ -147,7 +153,7 @@ async def handle_react_write(*, react: Any, ctx_browser: Any, state: Dict[str, A
         state["error"] = {"where": "tool_execution", "error": "unsafe_path", "managed": True}
         return state
     artifact_name = phys_path
-    artifact_namespace = infer_artifact_namespace(artifact_name, default=ARTIFACT_NAMESPACE_FILES)
+    artifact_namespace = infer_artifact_namespace(artifact_name, default=ARTIFACT_NAMESPACE_OUTPUTS)
     artifact_display_path = f"{artifact_namespace}/{rel_path}" if rel_path else artifact_name
 
     text = None

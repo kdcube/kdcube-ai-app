@@ -545,6 +545,37 @@ def normalize_checkout_mode(value: Any) -> str:
     return "replace"
 
 
+def _tree_summary_for_relpaths(paths: List[str], *, max_files: int = 80) -> Dict[str, Any]:
+    clean_paths = sorted({str(p or "").strip().strip("/") for p in paths if str(p or "").strip().strip("/")})
+    shown_paths = clean_paths[:max_files]
+    tree: Dict[str, Any] = {}
+    for rel in shown_paths:
+        cursor = tree
+        for part in [p for p in rel.split("/") if p]:
+            cursor = cursor.setdefault(part, {})
+
+    lines: List[str] = []
+
+    def _emit(node: Dict[str, Any], depth: int = 0) -> None:
+        for name in sorted(node):
+            children = node.get(name)
+            suffix = "/" if isinstance(children, dict) and children else ""
+            lines.append(f"{'  ' * depth}{name}{suffix}")
+            if isinstance(children, dict) and children:
+                _emit(children, depth + 1)
+
+    _emit(tree)
+    omitted = max(0, len(clean_paths) - len(shown_paths))
+    if omitted:
+        lines.append(f"... (+{omitted} more files)")
+    return {
+        "file_count": len(clean_paths),
+        "tree": "\n".join(lines),
+        "tree_truncated": bool(omitted),
+        "omitted_files": omitted,
+    }
+
+
 async def checkout_workspace_paths(
     *,
     ctx_browser: Any,
@@ -591,23 +622,26 @@ async def checkout_workspace_paths(
         rel = str(req.get("rel") or "").strip().strip("/")
         if not source_physical or not logical_path:
             continue
-        payload = await hydrate_workspace_paths(
-            ctx_browser=ctx_browser,
-            paths=[source_physical],
-            outdir=artifact_outdir,
-        )
-        errors.extend(list(payload.get("errors") or []))
         source_prefix = source_physical.rstrip("/")
-        matched = []
-        for item in payload.get("rehosted") or []:
-            cleaned = str(item or "").strip().rstrip("/")
-            if cleaned == source_prefix or cleaned.startswith(source_prefix + "/"):
-                matched.append(cleaned)
+        source_path = resolve_artifact_path(outdir, source_prefix)
+        matched: List[str] = []
+        if source_path.is_file():
+            matched.append(source_prefix)
+        elif source_path.is_dir():
+            try:
+                for child in source_path.rglob("*"):
+                    if not child.is_file():
+                        continue
+                    matched.append(str(child.relative_to(artifact_outdir)).replace("\\", "/"))
+            except Exception as exc:
+                errors.append(f"checkout_scan_failed:{source_prefix}:{exc}")
         if not matched:
             missing.append({
                 "logical_path": logical_path,
                 "physical_path": source_physical,
                 "kind": "files",
+                "reason": "source_not_materialized",
+                "pull_hint": f"react.pull(paths={json.dumps([logical_path], ensure_ascii=False)})",
             })
             continue
         for matched_physical in matched:
@@ -619,6 +653,8 @@ async def checkout_workspace_paths(
             })
 
     if missing or errors:
+        if missing:
+            errors.append("checkout_requires_pull")
         return {
             "mode": mode,
             "checked_out_from": [str(item.get("logical_path") or "").strip() for item in requests],
@@ -631,7 +667,8 @@ async def checkout_workspace_paths(
         shutil.rmtree(files_root)
     files_root.mkdir(parents=True, exist_ok=True)
 
-    materialized: List[Dict[str, str]] = []
+    materialized_targets: List[str] = []
+    checkout_counts: Dict[str, int] = {}
     for item in staged_sources:
         source_physical = item["source_physical"]
         target_physical = item["target_physical"]
@@ -639,17 +676,38 @@ async def checkout_workspace_paths(
         dst = resolve_artifact_path(outdir, target_physical, prefer_existing=False)
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
-        materialized.append({
-            "logical_path": physical_to_logical_artifact_path(target_physical),
-            "physical_path": target_physical,
-            "source_logical_path": item["logical_path"],
-            "source_physical_path": source_physical,
-            "kind": "files",
-        })
+        materialized_targets.append(target_physical)
+        source_logical = str(item.get("logical_path") or "").strip()
+        if source_logical:
+            checkout_counts[source_logical] = checkout_counts.get(source_logical, 0) + 1
+
+    current_files_prefix = f"{turn_id}/files/"
+    target_rels = [
+        p[len(current_files_prefix):]
+        for p in materialized_targets
+        if p.startswith(current_files_prefix)
+    ]
+    materialized = _tree_summary_for_relpaths(target_rels)
+    materialized.update({
+        "target_root": f"{turn_id}/files",
+        "target_logical_root": f"fi:{turn_id}.files/",
+        "path_rule": {
+            "physical": f"{turn_id}/files/<path shown in tree>",
+            "logical": f"fi:{turn_id}.files/<path shown in tree>",
+        },
+    })
+    checked_out = [
+        {
+            "source": source,
+            "files": count,
+        }
+        for source, count in sorted(checkout_counts.items())
+    ]
 
     return {
         "mode": mode,
         "checked_out_from": [str(item.get("logical_path") or "").strip() for item in requests],
+        "checked_out": checked_out,
         "materialized": materialized,
         "missing": [],
         "errors": [],

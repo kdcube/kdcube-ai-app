@@ -568,13 +568,13 @@ def build_announce_workspace_lines(
     except Exception:
         scopes = []
     if scopes:
-        lines.append("  current_turn_scopes:")
+        lines.append("  current editable workspace:")
         for item in scopes[:6]:
             scope = str(item.get("scope") or "").strip()
             files = int(item.get("files") or 0)
-            lines.append(f"    - {scope} ({files} file{'s' if files != 1 else ''})")
+            lines.append(f"    - files/{scope} ({files} file{'s' if files != 1 else ''})")
     else:
-        lines.append("  current_turn_scopes: none")
+        lines.append("  current editable workspace: none")
 
     current_checkout = latest_workspace_checkout_event(timeline_blocks, turn_id=turn_id) if turn_id else None
     if current_checkout:
@@ -594,6 +594,14 @@ def build_announce_workspace_lines(
             lines.append("  checked_out_from: current-turn only")
     else:
         lines.append("  checked_out_from: none")
+
+    current_publish = latest_workspace_publish_event(timeline_blocks, turn_id=turn_id) if turn_id else None
+    any_publish = latest_workspace_publish_event(timeline_blocks)
+    last_published_turn = ""
+    last_publish_status = ""
+    if any_publish:
+        last_published_turn = str(any_publish.get("turn_id") or "").strip()
+        last_publish_status = str(any_publish.get("status") or "").strip() or "unknown"
 
     if impl == "git":
         try:
@@ -618,17 +626,20 @@ def build_announce_workspace_lines(
         if repo_status:
             lines.append(f"  repo_status: {repo_status}")
         if lineage_scopes:
-            lines.append("  ls workspace:")
+            lines.append("  previous saved workspace paths (pull to bring local; checkout to edit):")
             for item in lineage_scopes[:6]:
                 scope = str(item.get("scope") or "").strip()
                 files = int(item.get("files") or 0)
-                lines.append(f"    - {scope} ({files} file{'s' if files != 1 else ''})")
-            lines.append("  continue_one_by_checkout: react.checkout(mode=\"replace\", paths=[\"fi:<turn>.files/<that_scope>\"])")
+                lines.append(f"    - files/{scope} ({files} git-tracked file{'s' if files != 1 else ''})")
+            source_turn = last_published_turn or "<published_turn>"
+            first_path = str((lineage_scopes[0] or {}).get("scope") or "<path_under_files>").strip().strip("/")
+            source_ref = f"fi:{source_turn}.files/{first_path}"
+            lines.append("  to focus on one path, use its fi: form, for example:")
+            lines.append(f"    react.pull(paths=[\"{source_ref}\"])")
+            lines.append(f"    react.checkout(mode=\"replace\", paths=[\"{source_ref}\"])")
         else:
-            lines.append("  ls workspace: none")
+            lines.append("  previous saved workspace paths: none")
 
-    current_publish = latest_workspace_publish_event(timeline_blocks, turn_id=turn_id) if turn_id else None
-    any_publish = latest_workspace_publish_event(timeline_blocks)
     if current_publish:
         status = str(current_publish.get("status") or "").strip() or "unknown"
         lines.append(f"  current_turn_publish: {status}")
@@ -638,11 +649,8 @@ def build_announce_workspace_lines(
                 lines.append(f"  publish_error: {_shorten(msg, 120)}")
     else:
         lines.append("  current_turn_publish: pending")
-        if any_publish:
-            last_turn = str(any_publish.get("turn_id") or "").strip()
-            last_status = str(any_publish.get("status") or "").strip() or "unknown"
-            if last_turn and last_turn != turn_id:
-                lines.append(f"  last_published_turn: {last_turn} ({last_status})")
+        if last_published_turn and last_published_turn != turn_id:
+            lines.append(f"  last_published_turn: {last_published_turn} ({last_publish_status})")
 
     return lines
 

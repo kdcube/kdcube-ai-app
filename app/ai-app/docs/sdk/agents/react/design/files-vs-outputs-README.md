@@ -120,6 +120,7 @@ React should be taught:
 - `turn_<current_turn>/outputs/...` is an artifact area, not the project tree
 - if it wants durable project state, write to `files/...`
 - if it wants a result/report/export/test-output that should not become project state, write to `outputs/...`
+- unqualified generated-artifact paths default to `outputs/...`; `files/...` must be explicit
 
 Examples:
 
