@@ -81,6 +81,7 @@ Read **Tier 1 only** by default. Pull Tier 2 on demand.
 1. **Tier 1 — always read, every bundle task (read in this order):**
    - `how-to-navigate-kdcube-docs-README.md` — routing entry point; read **first**
    - `how-to-test-bundle-README.md` — testing / QA expectations
+   - `how-to-assemble-bundle-with-sdk-building-blocks-README.md` — **SDK/platform building-block map; read before implementing any subsystem so reusable blocks (Tasks, Email, Telegram, Delivery, web/browser/rendering/exec tools, storage, widgets, jobs, MCP, Claude Code) are used instead of hand-rolled mechanics**
    - `how-to-write-bundle-README.md` — authoring / implementation design
    - `bundle-runtime-configuration-and-secrets-README.md` — configuration ownership model (props, secrets, runtime config)
    - `how-to-configure-and-run-bundle-README.md` — **REQUIRED any time the bundle lives
@@ -128,6 +129,7 @@ Fetch in this order:
 
 - `repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md` — routing entry point; read first
 - `repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-test-bundle-README.md` — testing / QA expectations
+- `repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md` — SDK/platform building-block map (Tasks, Email, Telegram, Delivery, web/browser/rendering/exec tools, storage, widgets, jobs, MCP, Claude Code); routes to integration docs before any custom implementation
 - `repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-write-bundle-README.md` — authoring / implementation design
 - `repo:kdcube-ai-app/app/ai-app/docs/configuration/bundle-runtime-configuration-and-secrets-README.md` — configuration ownership model
 - `repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md` — deployment wiring, descriptor paths, reload
@@ -135,6 +137,24 @@ Fetch in this order:
 - `repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_cli/README.md` — KDCube CLI quickstart & full command table
 - `repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_cli/additional_README.md` — `kdcube bundle` reference (source, identity, config/secrets patch, delete)
 - `repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-agent-integration-README.md` — **fetch when the task involves React agents with local tools, file-producing tools, MCP endpoints or client config, or Claude Code subprocess agents;** covers agent runtime comparison (React vs Claude Code), tool descriptors, skill descriptors, `@mcp(...)` endpoints, `ClaudeCodeAgentConfig`, SDK-managed skill materialization
+
+### SDK integrations — Telegram, Email, ngrok, callbacks
+
+Before writing any custom transport, webhook, Mini App auth, OAuth callback, or local
+public-HTTPS workaround, route through the SDK building-block map
+(`how-to-assemble-bundle-with-sdk-building-blocks-README.md`). For Telegram / webhook /
+Mini App / ngrok tasks, fetch the canonical docs **from the assemble map**:
+
+- `repo:kdcube-ai-app/app/ai-app/docs/sdk/integrations/telegram/telegram-README.md` — Telegram SDK surface (webhook validation, Bot API rendering, progress streaming, Mini App `initData`, user registry, signed downloads)
+- `repo:kdcube-ai-app/app/ai-app/docs/sdk/integrations/telegram/telegram-external-prereq-README.md` — BotFather, webhook URL, Mini App, bot token (outside-KDCube work)
+- `repo:kdcube-ai-app/app/ai-app/docs/service/cicd/ngrok-README.md` — local public-HTTPS recipe through **one** ngrok origin and the local reverse proxy
+
+Guardrails:
+
+- Use the Telegram SDK; do not hand-roll the webhook registry, duplicate-update suppression, Mini App `initData` verification, or send-rendering.
+- For local public callbacks: one ngrok HTTPS origin through the local reverse proxy. **Never expose proc as a separate public ngrok URL.**
+- Provider URLs and webhook/callback settings: descriptor-backed (`bundles.yaml` config or `assembly.yaml`).
+- Bot tokens, webhook secrets, signing keys, OAuth client secrets: in the configured secret store (`bundles.secrets.yaml` or runtime secrets provider) — never in `.env`, code, or seed descriptors.
 
 Reference bundle `versatile@2026-03-31-13-36` — directories aren't web-fetchable; fetch
 these individually:

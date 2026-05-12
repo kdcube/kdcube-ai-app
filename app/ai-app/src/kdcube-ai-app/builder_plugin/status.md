@@ -187,6 +187,54 @@ Early work happened on `feat/claude-kdcube-cli-plugin` (now deleted); later work
   `config/bundles.secrets.template.yaml`). Every bundle task is not considered done until
   `journal.md` exists and has a session entry recording what changed and why.
 
+**2026-05-09** — `9d0858ca` — align how-to URLs, fix config template names, trim codex token footprint
+- Aligned how-to URLs across `bundle-builder/SKILL.md`, `codex_plugin/AGENTS.md`, and
+  `kdcube-bundle-builder.md` to current paths
+- Fixed config template filenames (`bundles.template.yaml`, `bundles.secrets.template.yaml`)
+- Trimmed `codex_plugin` AGENTS.md (-49 lines) and `kdcube-bundle-builder.md` (-87 lines)
+  to reduce always-in-context token footprint
+
+**2026-05-11** — `0aced3b6` — switch GitHub raw/contents URLs to `repo:` references
+- Replaced `https://raw.githubusercontent.com/kdcube/kdcube-ai-app/main/<path>` and
+  `https://api.github.com/repos/kdcube/kdcube-ai-app/contents/<path>` with
+  `repo:kdcube-ai-app/<path>` across builder_plugin SKILLs and codex_plugin
+  prompts/AGENTS (8 files)
+- Updated surrounding prose in `bundle-builder`, `kdcube-dev`, `use-descriptors`
+  SKILLs to explain how `repo:` refs resolve (WebFetch raw URL, contents API for
+  directories, local Read under `CLAUDE_PLUGIN_OPTION_KDCUBE_REPO_ROOT`)
+
+**2026-05-11** — `414bf606` — drop WebFetch, trim kdcube-cli SKILL
+- Removed `WebFetch` from `allowed-tools` and prose across all builder_plugin SKILLs
+  (`bundle-builder`, `kdcube-cli`, `kdcube-dev`, `use-descriptors`); references now
+  resolve via `repo:` only — no raw URLs / contents API in prose
+- Reduced `kdcube-cli/SKILL.md` from full intent map + flow sections to: one-time
+  `kdcube defaults` setup, 4 basic commands, bundle configure flow; everything else
+  deferred to `kdcube_cli/README.md` + `additional_README.md` (-216 lines)
+
+**2026-05-12** — kdcube-cli sequence-after-writing-a-bundle + drop `--workdir` everywhere
+- Removed `--workdir` from all `kdcube-cli/SKILL.md` examples; document that
+  workdir resolves from `kdcube defaults --default-workdir` (one-time setup)
+  and the command errors if neither flag nor default present
+- Added "When to use" lines for `init` / `start` / `stop` / `reload`
+- Verified all commands against `origin/main` (`kdcube_cli/README.md` + `additional_README.md`)
+
+**2026-05-12** — Tier 1 sync with OSS: add `how-to-assemble`, Telegram/Email/ngrok routing (builder + codex)
+- Per `sync-tier1-bundle-docs-to-build-with-kdcube-plugins-README.md` contract, added
+  `how-to-assemble-bundle-with-sdk-building-blocks-README.md` to Tier 1 in both
+  `bundle-builder/SKILL.md` and codex `kdcube-bundle-builder.md` (and as a routing
+  hint in `kdcube-dev/SKILL.md`); reading order: navigate → test → **assemble** →
+  write → config/secrets → configure-and-run
+- New **SDK integrations — Telegram, Email, ngrok, callbacks** section in both
+  plugins routing to canonical docs (no inlined procedures):
+  - `integrations/telegram/telegram-README.md` — webhook validation, Bot API rendering, progress streaming, Mini App `initData`, user registry, signed downloads
+  - `integrations/telegram/telegram-external-prereq-README.md` — BotFather / webhook / Mini App / bot token (outside-KDCube work)
+  - `service/cicd/ngrok-README.md` — one ngrok HTTPS origin through local reverse proxy
+- Guardrails added in both plugins: SDK first; don't hand-roll Telegram webhook
+  registry / duplicate suppression / Mini App `initData` / send-rendering; one
+  ngrok origin; **never expose proc as separate public ngrok URL**; provider
+  URLs and webhook settings descriptor-backed; bot tokens / webhook secrets /
+  OAuth secrets in configured secret store, not `.env`/code/seed descriptors
+
 ---
 
 ## Cross-tool notes

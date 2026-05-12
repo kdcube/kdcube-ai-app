@@ -103,6 +103,7 @@ local repo.
 
 1. Fetch the Tier 1 pack in order (navigate first, then the rest):
    - `repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md` — routing entry point
+   - `repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md` — SDK/platform building-block map; route here **before implementing any subsystem** (Telegram, Email, Delivery, Tasks, web/browser/rendering/exec tools, widgets, jobs, MCP, Claude Code). For Telegram / webhooks / Mini App / OAuth callbacks → use the Telegram SDK (`repo:kdcube-ai-app/app/ai-app/docs/sdk/integrations/telegram/telegram-README.md` + `telegram-external-prereq-README.md`) and `repo:kdcube-ai-app/app/ai-app/docs/service/cicd/ngrok-README.md` for the local public-HTTPS recipe — do not hand-roll
    - `repo:kdcube-ai-app/app/ai-app/docs/configuration/bundle-runtime-configuration-and-secrets-README.md` — configuration ownership model
    - `repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md` — deployment wiring
 2. Fetch the matching descriptor doc. **Header-first gate:** read
