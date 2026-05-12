@@ -511,7 +511,7 @@ async def run_react_turn(entrypoint: Any, *, summary: Dict[str, Any]) -> Dict[st
             "telegram_identity": telegram_identity,
             "answer": (
                 "Your Telegram user has been recorded. "
-                "An admin must allow it in the Task And Memo Telegram Admin panel before this bot can process requests."
+                "An admin must allow it in the Telegram Admin panel before this bot can process requests."
             ),
             "followups": [],
             "timeline": {
@@ -521,7 +521,7 @@ async def run_react_turn(entrypoint: Any, *, summary: Dict[str, Any]) -> Dict[st
                         "type": "answer",
                         "text": (
                             "Your Telegram user has been recorded. "
-                            "An admin must allow it in the Task And Memo Telegram Admin panel before this bot can process requests."
+                            "An admin must allow it in the Telegram Admin panel before this bot can process requests."
                         ),
                     }
                 ],

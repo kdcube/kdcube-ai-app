@@ -80,6 +80,7 @@ or solution package and update this page.
 | `skills_descriptor.py` | Built-in SDK skill ids and bundle-local product skill roots. |
 | `config/bundles.template.yaml` | Deployment-scoped non-secret props that enable/configure the block. |
 | `config/bundles.secrets.template.yaml` | Deployment-scoped secrets such as bot tokens, OAuth client secrets, signing keys. |
+| `interface/README.md` | Bundle-facing contract for widget aliases, API/MCP/cron/job routes, public-auth rules, payload shapes, and controlling config keys. |
 | user settings UI | User-owned credentials and choices, such as personal email accounts. |
 | `docs/integrations/*` in a bundle | Operator homework outside KDCube, such as BotFather or Google Cloud setup. |
 | `docs/design/*` in a bundle | Current product boundary: which SDK blocks are used and what policy remains in the bundle. |
@@ -115,27 +116,60 @@ Tasks SDK Solution
 Bundle code owns product-specific task wording, user identity resolution,
 widget composition, and route exposure.
 
-### Telegram App With Mini App Controls
+### Telegram Bot Transport And Optional Mini App Controls
 
 ```text
 Telegram Integration
-  -> webhook validation and update normalization
+  -> public telegram_webhook route with Telegram header-secret auth
+  -> webhook validation, idempotency, and update normalization
   -> mapped user/conversation scope
-  -> progress streaming and final send
-  -> Mini App initData auth
-  -> widget operation helpers
-  -> signed file downloads
+  -> shared chat ingress submission or direct workflow fallback
+  -> normal bundle workflow / ReAct agent
+  -> progress streaming and final Bot API send of text/files
+  -> optional Mini App initData auth, widget operation helpers, signed downloads
 ```
 
 Bundle code owns role policy, which conversations can be selected, which
 operations are public, and what workflow handles a message.
 
+When the request is "add Telegram integration", read that as a transport
+adapter unless the user specifically asks only for a Mini App. The expected
+flow is:
+
+```text
+Telegram user message / attachment
+  -> Telegram Bot API webhook call
+  -> bundle public API: telegram_webhook
+  -> SDK user_admin.handle_webhook(...)
+  -> Telegram update -> KDCube ChatTaskPayload / RawAttachment
+  -> shared chat ingress + bundle workflow
+  -> SDK run_with_queued_telegram_delivery(...)
+  -> Telegram Bot API text/file delivery
+```
+
+The reference implementation for this bot transport path is the versatile
+bundle:
+`src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36`.
+Task-specific Mini App screens can layer on top of the same Telegram SDK
+modules, but they are not required for the bot transport itself.
+
+The versatile reference bundle also demonstrates a Telegram Mini App style
+source-folder widget with memory canvas, chat channel selection, and Telegram
+admin routes:
+`src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/widgets/versatile_webapp`.
+
 Before implementing, read the Telegram SDK bundle wiring checklist:
 [Telegram SDK Integration](../../integrations/telegram/telegram-README.md).
-The expected shape is SDK-first: configure `user_admin`, `widget_auth`,
-`widget_ops`, and `webapp`; expose a thin `telegram_webhook` handler; keep
-Mini App public APIs behind Telegram `initData` validation; and keep registry
-admin operations on KDCube-authenticated operations routes.
+The expected shape is SDK-first: configure `user_admin`; expose a thin
+`telegram_webhook` handler; wrap queued turns with
+`run_with_queued_telegram_delivery`; and keep registry admin operations on
+KDCube-authenticated operations routes. If the product also includes a
+Telegram Mini App, additionally configure `widget_auth`, `widget_ops`, and
+`webapp`, and keep those public APIs behind Telegram `initData` validation.
+Do not put generic KDCube `roles_config`/`user_types_config` gates on Telegram
+Mini App public aliases; those requests are public at the platform route and
+the bundle verifies the signed Telegram identity before applying Telegram
+registry roles.
 
 When local Telegram webhook or Mini App testing must be reachable from
 Telegram, use
@@ -164,6 +198,8 @@ the SDK internals:
 
 - routes call the configured SDK module with the right user scope;
 - public paths validate their external auth, for example Telegram `initData`;
+- `enabled.*` descriptor config is treated as overrides over code defaults, so
+  tests should not require every enabled surface to be written as `true`;
 - deployment props/secrets are read from the documented paths;
 - user-owned credentials are stored as user-scoped runtime state/secrets;
 - generated files are exposed only through the supported artifact/download

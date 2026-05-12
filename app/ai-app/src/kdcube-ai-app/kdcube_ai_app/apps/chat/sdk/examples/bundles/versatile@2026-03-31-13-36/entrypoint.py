@@ -14,6 +14,11 @@ from langgraph.graph import END, START, StateGraph
 
 from kdcube_ai_app.apps.chat.sdk.context.vector.conv_ticket_store import ConvTicketStore
 from kdcube_ai_app.apps.chat.sdk.config import get_secret
+from kdcube_ai_app.apps.chat.sdk.integrations.telegram import TelegramUserAdminStorage
+from kdcube_ai_app.apps.chat.sdk.integrations.telegram import user_admin as telegram_user_admin
+from kdcube_ai_app.apps.chat.sdk.integrations.telegram import webapp as telegram_webapp
+from kdcube_ai_app.apps.chat.sdk.integrations.telegram import widget_auth as telegram_widget_auth
+from kdcube_ai_app.apps.chat.sdk.integrations.telegram import widget_ops as telegram_widget_ops
 from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
 from kdcube_ai_app.apps.chat.sdk.runtime.exec_runtime_config import normalize_exec_runtime_config
 from kdcube_ai_app.apps.chat.sdk.runtime.tool_subsystem import create_tool_subsystem_with_mcp
@@ -44,10 +49,220 @@ from .preferences_store import (
     save_preferences_canvas_document,
 )
 
-BUNDLE_ID = "versatile"
+BUNDLE_ID = "versatile@2026-03-31-13-36"
+WORKFLOW_NAME = "versatile"
+TELEGRAM_ADMIN_ROLE = "kdcube:role:super-admin"
+TELEGRAM_WEBHOOK_SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token"
+TELEGRAM_WEBHOOK_PUBLIC_AUTH = {
+    "mode": "header_secret",
+    "header": TELEGRAM_WEBHOOK_SECRET_HEADER,
+    "secret_key": "integrations.telegram.webhook_secret",
+}
+TELEGRAM_WEBAPP_PUBLIC_AUTH = "none"
+TELEGRAM_PUBLIC_API_METHODS = (
+    ("telegram_profile", "GET"),
+    ("telegram_conversations_list", "GET"),
+    ("telegram_conversations_create", "POST"),
+    ("telegram_conversations_switch", "POST"),
+    ("telegram_conversations_delete", "POST"),
+    ("telegram_versatile_webapp_data", "POST"),
+    ("telegram_memory_canvas_data", "POST"),
+    ("telegram_memory_canvas_save", "POST"),
+    ("telegram_memory_canvas_export_excel", "POST"),
+    ("telegram_memory_canvas_import_excel", "POST"),
+    ("telegram_webapp_user_admin_data", "POST"),
+    ("telegram_webapp_user_admin_upsert", "POST"),
+    ("telegram_webapp_user_admin_delete", "POST"),
+    ("telegram_webhook", "POST"),
+)
+TELEGRAM_PUBLIC_API_ENABLED_DEFAULTS = {
+    f"{alias}.{method}": False
+    for alias, method in TELEGRAM_PUBLIC_API_METHODS
+}
+OPERATION_API_VISIBILITY_ALIASES = (
+    "versatile_webapp_widget",
+    "versatile_webapp_data",
+    "conversations_list",
+    "conversations_create",
+    "conversations_switch",
+    "conversations_delete",
+    "preferences_canvas_data",
+    "preferences_canvas_save",
+    "preferences_canvas_export_excel",
+    "preferences_canvas_import_excel",
+)
+TELEGRAM_OPERATION_API_ALIASES = (
+    "telegram_user_admin_data",
+    "telegram_user_admin_upsert",
+    "telegram_user_admin_delete",
+)
+WIDGET_VISIBILITY_ALIASES = (
+    "versatile_webapp",
+)
 
 
-@agentic_workflow(name=BUNDLE_ID, version="1.0.0", priority=100)
+def _visibility_defaults(
+    aliases: tuple[str, ...],
+    *,
+    user_types: tuple[str, ...] = (),
+    roles: tuple[str, ...] = (),
+) -> Dict[str, Dict[str, list[str]]]:
+    return {
+        alias: {
+            "user_types": list(user_types),
+            "roles": list(roles),
+        }
+        for alias in aliases
+    }
+
+
+def _api_visibility(
+    alias: str,
+    *,
+    user_types: tuple[str, ...] = (),
+    roles: tuple[str, ...] = (),
+) -> Dict[str, Any]:
+    return {
+        "user_types": user_types,
+        "user_types_config": f"visibility.api.{alias}.user_types",
+        "roles": roles,
+        "roles_config": f"visibility.api.{alias}.roles",
+    }
+
+
+def _widget_visibility(
+    alias: str,
+    *,
+    user_types: tuple[str, ...] = (),
+    roles: tuple[str, ...] = (),
+) -> Dict[str, Any]:
+    return {
+        "user_types": user_types,
+        "user_types_config": f"visibility.widget.{alias}.user_types",
+        "roles": roles,
+        "roles_config": f"visibility.widget.{alias}.roles",
+    }
+
+
+def _storage_root_or_error(entrypoint: Any) -> Path:
+    storage_root = entrypoint.bundle_storage_root()
+    if not storage_root:
+        raise RuntimeError("Bundle storage backend is not configured for this bundle.")
+    return storage_root
+
+
+def _telegram_user_admin_storage(entrypoint: Any) -> TelegramUserAdminStorage:
+    return TelegramUserAdminStorage(_storage_root_or_error(entrypoint))
+
+
+class _VersatileTaskWidgets:
+    @staticmethod
+    async def payload(entrypoint: Any, **kwargs) -> Dict[str, Any]:
+        del entrypoint, kwargs
+        return {
+            "user_id": "",
+            "tasks": [],
+            "count": 0,
+            "supported_now": {
+                "tasks": False,
+                "reason": "versatile reference webapp demonstrates memory, conversations, and Telegram admin.",
+            },
+        }
+
+
+class _VersatileMemoryWidgets:
+    @staticmethod
+    def payload(
+        entrypoint: Any,
+        *,
+        user_id: Optional[str] = None,
+        fingerprint: Optional[str] = None,
+        mark_seen: bool = False,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        del mark_seen, kwargs
+        storage = entrypoint._preferences_storage()
+        target_user = user_id or fingerprint or getattr(entrypoint.comm, "user_id", None) or "anonymous"
+        if not storage:
+            return {
+                "ok": False,
+                "error": "Bundle storage backend is not configured for this bundle.",
+                "user_id": target_user,
+                "items": [],
+                "entries": [],
+                "count": 0,
+                "document_text": "{}\n",
+            }
+        payload = build_preferences_canvas_document(storage=storage, user_id=target_user)
+        entries = payload.get("entries") or []
+        payload.update(
+            {
+                "ok": True,
+                "user_id": target_user,
+                "items": entries,
+                "memories": entries,
+                "memos": entries,
+                "count": len(entries),
+            }
+        )
+        return payload
+
+
+class _VersatileSettingsWidgets:
+    @staticmethod
+    def payload(
+        entrypoint: Any,
+        *,
+        user_id: Optional[str] = None,
+        fingerprint: Optional[str] = None,
+        telegram_identity: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        del kwargs
+        return {
+            "user_id": user_id or fingerprint or getattr(entrypoint.comm, "user_id", None) or "anonymous",
+            "telegram_identity": telegram_identity,
+        }
+
+
+class _VersatileTaskOperations:
+    @staticmethod
+    async def list_tasks(*args, **kwargs) -> Dict[str, Any]:
+        del args, kwargs
+        return {"ok": True, "tasks": [], "count": 0}
+
+
+telegram_user_admin.configure_telegram_user_admin(
+    storage_factory=_telegram_user_admin_storage,
+    storage_root_or_error=_storage_root_or_error,
+    bundle_id=BUNDLE_ID,
+)
+telegram_widget_auth.configure_telegram_widget_auth(
+    storage_for=telegram_user_admin.storage,
+    bot_token=lambda: telegram_user_admin.bot_token(),
+)
+telegram_webapp.configure_telegram_webapp(
+    memory_widgets_module=_VersatileMemoryWidgets,
+    settings_widgets_module=_VersatileSettingsWidgets,
+    task_widgets_module=_VersatileTaskWidgets,
+    telegram_user_admin_module=telegram_user_admin,
+    bundle_id=BUNDLE_ID,
+)
+telegram_widget_ops.configure_telegram_widget_ops(
+    task_operations_module=_VersatileTaskOperations,
+    telegram_user_admin_module=telegram_user_admin,
+    telegram_widget_auth_module=telegram_widget_auth,
+    webapp_module=telegram_webapp,
+    bundle_id=BUNDLE_ID,
+)
+
+
+@agentic_workflow(
+    name=WORKFLOW_NAME,
+    version="1.0.0",
+    priority=100,
+    allowed_roles_config="visibility.bundle.allowed_roles",
+)
 class VersatileEntrypoint(BaseEntrypointWithEconomics):
     """All-features reference bundle for bundle builders."""
 
@@ -107,24 +322,34 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
                     redis=self.redis,
                     bundle_props=self.bundle_props,
                 )
-                res = await orch.process(
-                    {
-                        "request_id": state["request_id"],
-                        "tenant": state["tenant"],
-                        "project": state["project"],
-                        "user": state["user"],
-                        "user_type": state["user_type"] or "anonymous",
-                        "session_id": state["session_id"],
-                        "conversation_id": state["conversation_id"],
-                        "turn_id": state["turn_id"],
-                        "text": state["text"],
-                        "attachments": state.get("attachments") or [],
-                    }
+                payload = {
+                    "request_id": state["request_id"],
+                    "tenant": state["tenant"],
+                    "project": state["project"],
+                    "user": state["user"],
+                    "user_type": state["user_type"] or "anonymous",
+                    "session_id": state["session_id"],
+                    "conversation_id": state["conversation_id"],
+                    "turn_id": state["turn_id"],
+                    "text": state["text"],
+                    "attachments": state.get("attachments") or [],
+                }
+
+                async def _run_versatile_turn() -> Dict[str, Any]:
+                    return await orch.process(payload)
+
+                res = await telegram_user_admin.run_with_queued_telegram_delivery(
+                    self,
+                    runner=_run_versatile_turn,
                 )
                 if not isinstance(res, dict):
                     res = {}
                 state["final_answer"] = res.get("answer") or ""
                 state["followups"] = res.get("followups") or []
+                if isinstance(res.get("turn_log"), dict):
+                    state["turn_log"] = res["turn_log"]
+                if isinstance(res.get("timeline"), dict):
+                    state["timeline"] = res["timeline"]
             except Exception as exc:
                 await self.report_turn_error(state=state, exc=exc, title="Turn Error")
 
@@ -240,7 +465,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
         self._require_preferences_mcp_auth(request)
         if self._preferences_mcp_app is None:
             self._preferences_mcp_app = preference_tools_mod.build_preferences_mcp_app(
-                name=f"{BUNDLE_ID}.preferences_tools",
+                name=f"{WORKFLOW_NAME}.preferences_tools",
                 scope_provider=lambda user_id=None: self._preferences_mcp_scope(user_id=user_id),
             )
         return self._preferences_mcp_app
@@ -338,8 +563,502 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
                 "operations_get": "preferences_summary",
                 "operations_post": "preferences_widget_data",
                 "public_get": "preferences_public_info",
+                "telegram_webhook": "telegram_webhook",
+                "telegram_admin": "telegram_user_admin_*",
             },
         }
+
+    @api(
+        alias="versatile_webapp_widget",
+        route="operations",
+        **_api_visibility("versatile_webapp_widget"),
+    )
+    @ui_widget(
+        icon={
+            "tailwind": "heroicons-outline:rectangle-group",
+            "lucide": "PanelTop",
+        },
+        alias="versatile_webapp",
+        **_widget_visibility("versatile_webapp"),
+    )
+    def versatile_webapp_widget(
+        self,
+        user_id: Optional[str] = None,
+        fingerprint: Optional[str] = None,
+        widget_path: str = "",
+        path: str = "",
+        **kwargs,
+    ):
+        del user_id, fingerprint, widget_path, path, kwargs
+        return [
+            "<div style=\"font-family:system-ui,sans-serif;padding:16px\">"
+            "Versatile webapp is served from the built widget source folder."
+            "</div>"
+        ]
+
+    @api(
+        method="POST",
+        alias="versatile_webapp_data",
+        route="operations",
+        **_api_visibility("versatile_webapp_data"),
+    )
+    async def versatile_webapp_data(
+        self,
+        user_id: Optional[str] = None,
+        fingerprint: Optional[str] = None,
+        mark_memory_seen: bool = False,
+        widget_path: str = "",
+        path: str = "",
+        **kwargs,
+    ) -> Dict[str, Any]:
+        del kwargs
+        return await telegram_webapp.payload(
+            self,
+            user_id=user_id,
+            fingerprint=fingerprint,
+            mark_memory_seen=mark_memory_seen,
+            widget_path=widget_path or path,
+        )
+
+    @api(method="GET", alias="conversations_list", route="operations", **_api_visibility("conversations_list"))
+    async def conversations_list(
+        self,
+        user_id: Optional[str] = None,
+        fingerprint: Optional[str] = None,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        del kwargs
+        return await telegram_webapp.list_conversations(
+            self,
+            user_id=user_id,
+            fingerprint=fingerprint,
+        )
+
+    @api(method="POST", alias="conversations_create", route="operations", **_api_visibility("conversations_create"))
+    async def conversations_create(
+        self,
+        user_id: Optional[str] = None,
+        fingerprint: Optional[str] = None,
+        title: str = "",
+        **kwargs,
+    ) -> Dict[str, Any]:
+        del kwargs
+        return await telegram_webapp.create_conversation(
+            self,
+            user_id=user_id,
+            fingerprint=fingerprint,
+            title=title,
+        )
+
+    @api(method="POST", alias="conversations_switch", route="operations", **_api_visibility("conversations_switch"))
+    async def conversations_switch(
+        self,
+        conversation_id: str,
+        user_id: Optional[str] = None,
+        fingerprint: Optional[str] = None,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        del kwargs
+        return await telegram_webapp.switch_conversation(
+            self,
+            conversation_id=conversation_id,
+            user_id=user_id,
+            fingerprint=fingerprint,
+        )
+
+    @api(method="POST", alias="conversations_delete", route="operations", **_api_visibility("conversations_delete"))
+    async def conversations_delete(
+        self,
+        conversation_id: str,
+        user_id: Optional[str] = None,
+        fingerprint: Optional[str] = None,
+        delete_history: bool = True,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        del kwargs
+        return await telegram_webapp.delete_conversation(
+            self,
+            conversation_id=conversation_id,
+            user_id=user_id,
+            fingerprint=fingerprint,
+            delete_history=delete_history,
+        )
+
+    @api(
+        method="POST",
+        alias="telegram_user_admin_data",
+        route="operations",
+        **_api_visibility("telegram_user_admin_data", roles=(TELEGRAM_ADMIN_ROLE,)),
+    )
+    async def telegram_user_admin_data(self, **kwargs) -> Dict[str, Any]:
+        del kwargs
+        return telegram_user_admin.payload(self)
+
+    @api(
+        method="POST",
+        alias="telegram_user_admin_upsert",
+        route="operations",
+        **_api_visibility("telegram_user_admin_upsert", roles=(TELEGRAM_ADMIN_ROLE,)),
+    )
+    async def telegram_user_admin_upsert(
+        self,
+        *,
+        telegram_user_id: str,
+        telegram_chat_id: str = "",
+        telegram_username: str = "",
+        kdcube_user_id: str = "",
+        role: str = "anonymous",
+        conversation_id: str = "",
+        notes: str = "",
+        **kwargs,
+    ) -> Dict[str, Any]:
+        del kwargs
+        return telegram_user_admin.upsert(
+            self,
+            telegram_user_id=telegram_user_id,
+            telegram_chat_id=telegram_chat_id,
+            telegram_username=telegram_username,
+            kdcube_user_id=kdcube_user_id,
+            role=role,
+            conversation_id=conversation_id,
+            notes=notes,
+        )
+
+    @api(
+        method="POST",
+        alias="telegram_user_admin_delete",
+        route="operations",
+        **_api_visibility("telegram_user_admin_delete", roles=(TELEGRAM_ADMIN_ROLE,)),
+    )
+    async def telegram_user_admin_delete(
+        self,
+        *,
+        telegram_user_id: str,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        del kwargs
+        return telegram_user_admin.delete(self, telegram_user_id=telegram_user_id)
+
+    @api(
+        method="POST",
+        alias="telegram_webhook",
+        route="public",
+        public_auth=TELEGRAM_WEBHOOK_PUBLIC_AUTH,
+    )
+    async def telegram_webhook(self, **update) -> Dict[str, Any]:
+        return await telegram_user_admin.handle_webhook(self, **update)
+
+    @api(method="GET", alias="telegram_profile", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
+    async def telegram_profile(
+        self,
+        request: Any = None,
+        telegram_init_data: str = "",
+        **kwargs,
+    ) -> Dict[str, Any]:
+        del kwargs
+        return await telegram_widget_ops.profile(
+            self,
+            request=request,
+            telegram_init_data=telegram_init_data,
+        )
+
+    @api(method="GET", alias="telegram_conversations_list", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
+    async def telegram_conversations_list(
+        self,
+        request: Any = None,
+        telegram_init_data: str = "",
+        **kwargs,
+    ) -> Dict[str, Any]:
+        del kwargs
+        return await telegram_widget_ops.list_conversations(
+            self,
+            request=request,
+            telegram_init_data=telegram_init_data,
+        )
+
+    @api(method="POST", alias="telegram_conversations_create", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
+    async def telegram_conversations_create(
+        self,
+        request: Any = None,
+        telegram_init_data: str = "",
+        title: str = "",
+        **kwargs,
+    ) -> Dict[str, Any]:
+        del kwargs
+        return await telegram_widget_ops.create_conversation(
+            self,
+            request=request,
+            telegram_init_data=telegram_init_data,
+            title=title,
+        )
+
+    @api(method="POST", alias="telegram_conversations_switch", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
+    async def telegram_conversations_switch(
+        self,
+        conversation_id: str,
+        request: Any = None,
+        telegram_init_data: str = "",
+        **kwargs,
+    ) -> Dict[str, Any]:
+        del kwargs
+        return await telegram_widget_ops.switch_conversation(
+            self,
+            conversation_id=conversation_id,
+            request=request,
+            telegram_init_data=telegram_init_data,
+        )
+
+    @api(method="POST", alias="telegram_conversations_delete", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
+    async def telegram_conversations_delete(
+        self,
+        conversation_id: str,
+        request: Any = None,
+        telegram_init_data: str = "",
+        delete_history: bool = True,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        del kwargs
+        return await telegram_widget_ops.delete_conversation(
+            self,
+            conversation_id=conversation_id,
+            request=request,
+            telegram_init_data=telegram_init_data,
+            delete_history=delete_history,
+        )
+
+    @api(method="POST", alias="telegram_versatile_webapp_data", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
+    async def telegram_versatile_webapp_data(
+        self,
+        request: Any = None,
+        telegram_init_data: str = "",
+        mark_memory_seen: bool = False,
+        widget_path: str = "",
+        path: str = "",
+        **kwargs,
+    ) -> Dict[str, Any]:
+        del kwargs
+        return await telegram_widget_ops.webapp_data(
+            self,
+            request=request,
+            telegram_init_data=telegram_init_data,
+            mark_memory_seen=mark_memory_seen,
+            widget_path=widget_path,
+            path=path,
+        )
+
+    @api(method="POST", alias="telegram_webapp_user_admin_data", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
+    async def telegram_user_admin_data_public(
+        self,
+        request: Any = None,
+        telegram_init_data: str = "",
+        **kwargs,
+    ) -> Dict[str, Any]:
+        del kwargs
+        return await telegram_widget_ops.admin_payload(
+            self,
+            request=request,
+            telegram_init_data=telegram_init_data,
+        )
+
+    @api(method="POST", alias="telegram_webapp_user_admin_upsert", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
+    async def telegram_user_admin_upsert_public(
+        self,
+        telegram_user_id: str,
+        request: Any = None,
+        telegram_init_data: str = "",
+        telegram_chat_id: str = "",
+        telegram_username: str = "",
+        kdcube_user_id: str = "",
+        role: str = "anonymous",
+        conversation_id: str = "",
+        notes: str = "",
+        **kwargs,
+    ) -> Dict[str, Any]:
+        del kwargs
+        return await telegram_widget_ops.admin_upsert(
+            self,
+            telegram_user_id=telegram_user_id,
+            request=request,
+            telegram_init_data=telegram_init_data,
+            telegram_chat_id=telegram_chat_id,
+            telegram_username=telegram_username,
+            kdcube_user_id=kdcube_user_id,
+            role=role,
+            conversation_id=conversation_id,
+            notes=notes,
+        )
+
+    @api(method="POST", alias="telegram_webapp_user_admin_delete", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
+    async def telegram_user_admin_delete_public(
+        self,
+        telegram_user_id: str,
+        request: Any = None,
+        telegram_init_data: str = "",
+        **kwargs,
+    ) -> Dict[str, Any]:
+        del kwargs
+        return await telegram_widget_ops.admin_delete(
+            self,
+            telegram_user_id=telegram_user_id,
+            request=request,
+            telegram_init_data=telegram_init_data,
+        )
+
+    @api(method="POST", alias="telegram_memory_canvas_data", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
+    async def telegram_memory_canvas_data(
+        self,
+        request: Any = None,
+        telegram_init_data: str = "",
+        **kwargs,
+    ) -> Dict[str, Any]:
+        del kwargs
+        identity = telegram_widget_auth.resolve_identity(
+            self,
+            request=request,
+            telegram_init_data=telegram_init_data,
+            allowed_roles=("registered", "admin"),
+        )
+        storage = self._preferences_storage()
+        if not storage:
+            return {
+                "ok": False,
+                "error": "Bundle storage backend is not configured for this bundle.",
+                "user_id": identity.user_id,
+                "entries": [],
+                "document_text": "{}\n",
+            }
+        payload = build_preferences_canvas_document(storage=storage, user_id=identity.user_id)
+        payload["ok"] = True
+        payload["auth_surface"] = "telegram_webapp"
+        payload["telegram_user_id"] = identity.telegram_user_id
+        return payload
+
+    @api(method="POST", alias="telegram_memory_canvas_save", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
+    async def telegram_memory_canvas_save(
+        self,
+        request: Any = None,
+        telegram_init_data: str = "",
+        document_text: Optional[str] = None,
+        entries: Optional[list[dict[str, Any]]] = None,
+        content: Optional[str] = None,
+        text: Optional[str] = None,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        identity = telegram_widget_auth.resolve_identity(
+            self,
+            request=request,
+            telegram_init_data=telegram_init_data,
+            allowed_roles=("registered", "admin"),
+        )
+        storage = self._preferences_storage()
+        if not storage:
+            return {
+                "ok": False,
+                "error": "Bundle storage backend is not configured for this bundle.",
+                "user_id": identity.user_id,
+            }
+        try:
+            if entries is not None:
+                payload = save_preferences_canvas_entries(
+                    storage=storage,
+                    user_id=identity.user_id,
+                    entries=entries,
+                )
+            else:
+                raw_document = document_text or content or text or kwargs.get("document")
+                if raw_document is None:
+                    return {
+                        "ok": False,
+                        "error": "entries or document_text is required.",
+                        "user_id": identity.user_id,
+                    }
+                payload = save_preferences_canvas_document(
+                    storage=storage,
+                    user_id=identity.user_id,
+                    document_text=str(raw_document),
+                )
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc), "user_id": identity.user_id}
+        payload["ok"] = True
+        payload["auth_surface"] = "telegram_webapp"
+        payload["telegram_user_id"] = identity.telegram_user_id
+        return payload
+
+    @api(method="POST", alias="telegram_memory_canvas_export_excel", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
+    async def telegram_memory_canvas_export_excel(
+        self,
+        request: Any = None,
+        telegram_init_data: str = "",
+        filename: Optional[str] = None,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        del kwargs
+        identity = telegram_widget_auth.resolve_identity(
+            self,
+            request=request,
+            telegram_init_data=telegram_init_data,
+            allowed_roles=("registered", "admin"),
+        )
+        storage = self._preferences_storage()
+        if not storage:
+            return {
+                "ok": False,
+                "error": "Bundle storage backend is not configured for this bundle.",
+                "user_id": identity.user_id,
+            }
+        try:
+            raw = export_preferences_canvas_xlsx(storage=storage, user_id=identity.user_id)
+        except RuntimeError as exc:
+            return {"ok": False, "error": str(exc), "user_id": identity.user_id}
+        safe_name = Path(filename or f"{identity.user_id}-preferences.xlsx").name or "preferences.xlsx"
+        return {
+            "ok": True,
+            "auth_surface": "telegram_webapp",
+            "telegram_user_id": identity.telegram_user_id,
+            "user_id": identity.user_id,
+            "filename": safe_name,
+            "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "content_b64": base64.b64encode(raw).decode("ascii"),
+        }
+
+    @api(method="POST", alias="telegram_memory_canvas_import_excel", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
+    async def telegram_memory_canvas_import_excel(
+        self,
+        request: Any = None,
+        telegram_init_data: str = "",
+        content_b64: Optional[str] = None,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        identity = telegram_widget_auth.resolve_identity(
+            self,
+            request=request,
+            telegram_init_data=telegram_init_data,
+            allowed_roles=("registered", "admin"),
+        )
+        storage = self._preferences_storage()
+        if not storage:
+            return {
+                "ok": False,
+                "error": "Bundle storage backend is not configured for this bundle.",
+                "user_id": identity.user_id,
+            }
+        raw_content = content_b64 or kwargs.get("file_b64") or kwargs.get("content")
+        if not raw_content:
+            return {"ok": False, "error": "content_b64 is required.", "user_id": identity.user_id}
+        try:
+            binary = base64.b64decode(str(raw_content), validate=True)
+            entries = import_preferences_canvas_xlsx(binary)
+            payload = save_preferences_canvas_entries(
+                storage=storage,
+                user_id=identity.user_id,
+                entries=entries,
+            )
+        except (ValueError, RuntimeError) as exc:
+            return {"ok": False, "error": str(exc), "user_id": identity.user_id}
+        payload["ok"] = True
+        payload["auth_surface"] = "telegram_webapp"
+        payload["telegram_user_id"] = identity.telegram_user_id
+        return payload
 
     @api(alias="preferences_widget_data")
     def preferences_widget_data(
@@ -677,6 +1396,64 @@ print(f"wrote {{report_path}}")
             "report_mime": "text/markdown",
             "report_content_b64": report_content_b64,
         }
+
+    def configuration_defaults(self) -> Dict[str, Any]:
+        versatile_defaults = {
+            "enabled": {
+                "api": {
+                    "versatile_webapp_widget.POST": True,
+                    "versatile_webapp_data.POST": True,
+                    "conversations_list.GET": True,
+                    "conversations_create.POST": True,
+                    "conversations_switch.POST": True,
+                    "conversations_delete.POST": True,
+                    "telegram_user_admin_data.POST": True,
+                    "telegram_user_admin_upsert.POST": True,
+                    "telegram_user_admin_delete.POST": True,
+                    **TELEGRAM_PUBLIC_API_ENABLED_DEFAULTS,
+                },
+                "widget": {
+                    "versatile_webapp": True,
+                },
+            },
+            "visibility": {
+                "bundle": {
+                    "allowed_roles": [],
+                },
+                "api": {
+                    **_visibility_defaults(OPERATION_API_VISIBILITY_ALIASES),
+                    **_visibility_defaults(
+                        TELEGRAM_OPERATION_API_ALIASES,
+                        roles=(TELEGRAM_ADMIN_ROLE,),
+                    ),
+                },
+                "widget": _visibility_defaults(WIDGET_VISIBILITY_ALIASES),
+            },
+            "integrations": {
+                "telegram": {
+                    "enabled": False,
+                    "webhook_url": "",
+                    "send_responses": True,
+                    "stream_activity": True,
+                    "web_app_auth_max_age_seconds": 86400,
+                },
+            },
+            "ui": {
+                "web_app_widgets": {
+                    "versatile_webapp": {
+                        "enabled": True,
+                        "src_folder": "widgets/versatile_webapp",
+                        "build_command": "npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build",
+                    },
+                },
+                "telegram_webapp": {
+                    "enabled_path_pattern": "enabled.api.<alias>.<METHOD>",
+                    "auth": "Telegram WebApp initData HMAC on each request",
+                    "aliases": [alias for alias, _method in TELEGRAM_PUBLIC_API_METHODS],
+                },
+            },
+        }
+        return self._deep_merge_props(super().configuration_defaults(), versatile_defaults)
 
     @property
     def configuration(self) -> Dict[str, Any]:

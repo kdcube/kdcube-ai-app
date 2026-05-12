@@ -162,7 +162,7 @@ ANNOUNCE now includes a compact `[WORKSPACE]` section. It is the operational wor
 Current `[WORKSPACE]` content is compact and may include:
 - `implementation`
 - `current_turn_root`
-- `materialized_turn_roots`
+- `local turn roots`
 - `current editable workspace`
 - in `git` mode, `previous saved workspace paths (pull to bring local; checkout to edit)`
 - in `git` mode:

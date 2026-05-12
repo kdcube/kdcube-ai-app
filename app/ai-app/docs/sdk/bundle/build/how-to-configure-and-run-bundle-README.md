@@ -1142,6 +1142,12 @@ metadata:
 | `@ui_widget(alias=A, ...)` | `enabled.widget.A` |
 | `@cron(alias=A, ...)` | `enabled.cron.A` |
 
+Treat this section as deployment overrides over code defaults. Bundle code,
+decorators, and bundle `configuration_defaults()` define the default enabled
+state. Descriptor config is needed only when a deployment intentionally
+overrides that default, most commonly `false` for a rare disable. Do not mirror
+every enabled API/widget/cron as `true`.
+
 Example bundle code and props pair:
 
 ```python
@@ -1164,8 +1170,10 @@ config:
 
 Operational behavior:
 
-- missing key means enabled
+- missing key means the code default applies
 - `false`, `0`, `disable`, `disabled`, and `off` disable the surface
+- resetting an explicit enabled override should remove/null the key, not write
+  a permanent `true`
 
 After changing the prop, apply it with:
 

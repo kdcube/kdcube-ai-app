@@ -558,10 +558,10 @@ def build_announce_workspace_lines(
             if root == turn_id:
                 labels.append(f"{root} (current)")
             else:
-                labels.append(root)
-        lines.append(f"  materialized_turn_roots: {', '.join(labels)}")
+                labels.append(f"{root} (read-only)")
+        lines.append(f"  local turn roots: {', '.join(labels)}")
     else:
-        lines.append("  materialized_turn_roots: none")
+        lines.append("  local turn roots: none")
 
     try:
         scopes = summarize_current_turn_scopes(runtime_ctx=runtime_ctx)

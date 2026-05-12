@@ -486,7 +486,7 @@ Implemented rule:
 Current content includes:
 - `implementation`
 - `current_turn_root`
-- `materialized_turn_roots`
+- `local turn roots`
 - `current editable workspace`
 - `previous saved workspace paths`
 - in `git` mode:

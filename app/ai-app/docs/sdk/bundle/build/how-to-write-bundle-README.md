@@ -277,6 +277,8 @@ Recommended first-pass shape:
   config/
     bundles.template.yaml
     bundles.secrets.template.yaml
+  interface/
+    README.md
   docs/
     design/
       <bundle-design>.md
@@ -308,6 +310,9 @@ Skeleton file rules:
 - `config/bundles.template.yaml` documents non-secret deployment props
 - `config/bundles.secrets.template.yaml` documents deployment-scoped bundle
   secrets only
+- `interface/README.md` documents the bundle-visible contract: widget aliases,
+  API/MCP/cron/job route aliases, public-auth rules, payload shapes, and the
+  config keys that control them
 - user-owned credentials and user state do not belong in descriptor templates
 - `docs/design/` should contain the structured design that implementation will
   follow, not only raw notes
@@ -1097,9 +1102,14 @@ a normal nested map key.
 
 Resolution rules:
 
-- missing section, missing sub-section, or missing key → enabled
+- bundle code, decorators, and `configuration_defaults()` define defaults
+- missing section, missing sub-section, or missing key → use the code default
 - bundle-level `enabled.bundle = false` overrides every resource-level value
 - resource-level value is checked only when `enabled.bundle` is enabled
+- descriptors should contain only deployment overrides, usually `false` for
+  rare disables, rather than mirroring enabled resources as `true`
+- when an operator re-enables a previously disabled resource, reset/remove the
+  explicit override instead of persisting `true`
 
 Disabled values:
 
@@ -1859,6 +1869,13 @@ overrides. Do not pass removed `enabled_config` arguments to `@api` or `@mcp`;
 resource enabled state is controlled through bundle props/Admin resource
 overrides. `@mcp` does not use `user_types_config` or `roles_config`; the
 bundle-served MCP app owns request authentication and authorization.
+
+For public routes whose authentication is owned by the external integration,
+for example Telegram Mini App APIs that verify signed Telegram `initData`,
+keep generic KDCube `user_types`/`roles` empty on the public alias. Platform
+visibility is evaluated before the bundle verifies external identity, so the
+request may intentionally be anonymous at that layer. Enforce the external role
+inside the bundle integration handler.
 
 In entrypoints derived from `BaseEntrypoint`, prefer:
 

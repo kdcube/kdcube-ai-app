@@ -68,7 +68,7 @@ def test_build_announce_text_includes_git_workspace_summary(tmp_path):
     assert "[WORKSPACE]" in announce_text
     assert "implementation: git" in announce_text
     assert "current_turn_root: turn_123/" in announce_text
-    assert "materialized_turn_roots: turn_122, turn_123 (current)" in announce_text
+    assert "local turn roots: turn_122 (read-only), turn_123 (current)" in announce_text
     assert "current editable workspace:" in announce_text
     assert "- files/projectA/ (1 file)" in announce_text
     assert "checkout_mode: replace" in announce_text

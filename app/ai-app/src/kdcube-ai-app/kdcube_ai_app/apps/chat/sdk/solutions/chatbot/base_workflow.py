@@ -20,7 +20,7 @@ from kdcube_ai_app.apps.chat.emitters import (
 )
 from kdcube_ai_app.apps.chat.external_events import build_conversation_external_event_source
 from kdcube_ai_app.apps.chat.sdk.continuations import get_current_conversation_continuation_source
-from kdcube_ai_app.apps.chat.sdk.context.memory.conv_memories import ConvMemoriesStore
+# from kdcube_ai_app.apps.chat.sdk.context.memory.conv_memories import ConvMemoriesStore
 from kdcube_ai_app.apps.chat.sdk.context.retrieval.ctx_rag import ContextRAGClient
 
 from kdcube_ai_app.apps.chat.sdk.context.vector.conv_index import ConvIndex
@@ -251,9 +251,9 @@ class BaseWorkflow():
             logger=self.logger,
         )
 
-        self.conv_memories = ConvMemoriesStore(self.graph)
-        if self.ctx_client:
-            self.conv_memories.bind_ctx_client(self.ctx_client)
+        # self.conv_memories = ConvMemoriesStore(self.graph)
+        # if self.ctx_client:
+        #     self.conv_memories.bind_ctx_client(self.ctx_client)
         self.turn_status = ConversationTurnWorkStatus(
             emit_delta=self.comm.delta,
             agent="orchestrator",
@@ -1428,7 +1428,7 @@ class BaseWorkflow():
                 query=query, embedding=vec, top_n=top_n,
                 include_expired=False, providers=(providers or None)
             )
-        self.conv_memories.bind_ctx_client(self.ctx_client)
+        # self.conv_memories.bind_ctx_client(self.ctx_client)
         if not custom_skills_root:
             candidate = bundle_root / "skills"
             if candidate.exists():
