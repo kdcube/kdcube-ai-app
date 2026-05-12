@@ -59,6 +59,9 @@ TELEGRAM_WEBHOOK_PUBLIC_AUTH = {
     "secret_key": "integrations.telegram.webhook_secret",
 }
 TELEGRAM_WEBAPP_PUBLIC_AUTH = "none"
+# Public Telegram-facing API methods are ordinary @api(route="public")
+# endpoints declared below. This list only keeps their default enabled flags in
+# one place; the runtime does not consume a separate "telegram webapp manifest".
 TELEGRAM_PUBLIC_API_METHODS = (
     ("telegram_profile", "GET"),
     ("telegram_conversations_list", "GET"),
@@ -1445,11 +1448,6 @@ print(f"wrote {{report_path}}")
                         "src_folder": "ui/widgets/versatile_webapp",
                         "build_command": "npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build",
                     },
-                },
-                "telegram_webapp": {
-                    "enabled_path_pattern": "enabled.api.<alias>.<METHOD>",
-                    "auth": "Telegram WebApp initData HMAC on each request",
-                    "aliases": [alias for alias, _method in TELEGRAM_PUBLIC_API_METHODS],
                 },
             },
         }
