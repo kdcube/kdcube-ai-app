@@ -1121,6 +1121,7 @@ def test_gather_configuration_applies_platform_service_env_from_assembly(monkeyp
                     "proc": {
                         "service": {
                             "cb_relay_identity": "relay.proc",
+                            "gateway_config_force_env_on_startup": True,
                             "chat_scheduler_backend": "legacy_lists",
                             "chat_task_timeout_sec": 600,
                             "chat_task_idle_timeout_sec": 900,
@@ -1152,6 +1153,7 @@ def test_gather_configuration_applies_platform_service_env_from_assembly(monkeyp
     assert "UVICORN_RELOAD=1" in env_ingress
     assert "CB_RELAY_IDENTITY=relay.ingress" in env_ingress
     assert "CB_RELAY_IDENTITY=relay.proc" in env_proc
+    assert "GATEWAY_CONFIG_FORCE_ENV_ON_STARTUP=1" in env_proc
     assert "CHAT_SCHEDULER_BACKEND=legacy_lists" in env_proc
     assert "CHAT_TASK_TIMEOUT_SEC=600" in env_proc
     assert "CHAT_TASK_IDLE_TIMEOUT_SEC=900" in env_proc

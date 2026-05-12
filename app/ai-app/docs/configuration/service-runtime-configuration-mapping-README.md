@@ -89,6 +89,12 @@ Notes:
 | `GLOBAL_SECRETS_YAML` | n/a | `secrets.yaml` | direct local run, CLI local compose in `secrets-file` mode |
 | `BUNDLE_SECRETS_YAML` | n/a | `bundles.secrets.yaml` | direct local run, CLI local compose in `secrets-file` mode |
 
+### Gateway config source
+
+| Env var | Descriptor path | Descriptor file | Modes |
+|---|---|---|---|
+| `GATEWAY_CONFIG_FORCE_ENV_ON_STARTUP` | `platform.services.<component>.service.gateway_config_force_env_on_startup` | `assembly.yaml` | ingress/proc/metrics startup; useful when `gateway.yaml` should override stale Redis gateway cache |
+
 ### Bundle registry and bundle authority
 
 | Env var | Descriptor path | Descriptor file | Modes |
