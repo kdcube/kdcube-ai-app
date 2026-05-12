@@ -40,7 +40,7 @@ The gateway subsystem loads this file into `GatewayConfiguration` in
 | explicit YAML file path | `GATEWAY_YAML_PATH` | runtime reads this file directly |
 | descriptor directory fallback | `PLATFORM_DESCRIPTORS_DIR/gateway.yaml` | used when `GATEWAY_YAML_PATH` is unset |
 | component selection for component-scoped sections | `GATEWAY_COMPONENT` | selects `ingress` or `proc` payload |
-| force env/descriptor config on startup over cached Redis config | `GATEWAY_CONFIG_FORCE_ENV_ON_STARTUP` | gateway bootstrap/admin flow |
+| force env/descriptor config on startup over cached Redis config | `GATEWAY_CONFIG_FORCE_ENV_ON_STARTUP`; assembly path `platform.services.<component>.service.gateway_config_force_env_on_startup` | gateway bootstrap/admin flow |
 
 There is no supported `get_plain(...)`, `get_settings()`, or `get_secret(...)`
 surface for individual `gateway.yaml` fields.
@@ -60,6 +60,15 @@ The YAML file may be either:
 - or a file with a top-level `gateway:` key
 
 Both are accepted by `_load_gateway_yaml()`.
+
+Operational note: a running environment may already have an effective gateway
+config cached in Redis. Editing `gateway.yaml` alone does not replace that
+cached value. For local/debug descriptor-driven runs, set
+`platform.services.<component>.service.gateway_config_force_env_on_startup:
+true` in `assembly.yaml` and restart the component so startup reloads
+`gateway.yaml` instead of the Redis cache. This is the expected path for local
+gateway policy changes such as raising the proc anonymous burst limit for public
+MCP documentation clients.
 
 ## YAML shape
 
