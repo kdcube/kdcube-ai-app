@@ -124,11 +124,11 @@ def is_bundle_enabled(props: Optional[Dict[str, Any]]) -> bool:
 
 
 def is_api_enabled(props: Optional[Dict[str, Any]], spec: APIEndpointSpec) -> bool:
-    """Resolve ``enabled.api["<alias>.<METHOD>"]`` (flat key with literal dot)."""
+    """Resolve ``enabled.api["<route>.<alias>.<METHOD>"]`` (flat key with literal dots)."""
     sub = _enabled_section(props, "api")
     if sub is None:
         return True
-    return _is_truthy_enabled(sub.get(f"{spec.alias}.{spec.http_method}"))
+    return _is_truthy_enabled(sub.get(f"{spec.route}.{spec.alias}.{spec.http_method}"))
 
 
 def is_widget_enabled(props: Optional[Dict[str, Any]], spec: UIWidgetSpec) -> bool:
@@ -946,7 +946,7 @@ def _api_spec_descriptor(spec: APIEndpointSpec, props: Optional[Dict[str, Any]])
         "roles_default": list(spec.roles),
         "roles_config": spec.roles_config,
         "roles_overridden": tuple(effective.roles) != tuple(spec.roles),
-        "enabled_path": canonical_enabled_path("api", alias=spec.alias, http_method=spec.http_method),
+        "enabled_path": canonical_enabled_path("api", alias=spec.alias, http_method=spec.http_method, route=spec.route),
     }
 
 

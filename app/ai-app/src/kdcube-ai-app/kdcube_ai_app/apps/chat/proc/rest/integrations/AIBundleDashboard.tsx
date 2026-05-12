@@ -612,9 +612,9 @@ function readDotPath(obj: any, path: string | null | undefined): any {
     return cursor;
 }
 
-// enabled.api uses a flat key for "<alias>.<METHOD>" (literal dot in key).
-function buildEnabledApiPatch(alias: string, method: string, value: unknown): Record<string, any> {
-    return { enabled: { api: { [`${alias}.${method}`]: value } } };
+// enabled.api uses a flat key for "<route>.<alias>.<METHOD>" (literal dots in key).
+function buildEnabledApiPatch(alias: string, method: string, route: string, value: unknown): Record<string, any> {
+    return { enabled: { api: { [`${route}.${alias}.${method}`]: value } } };
 }
 
 // enabled.<kind>.<alias> for non-api kinds — alias is a single map key.
@@ -931,7 +931,7 @@ const ResourceEditorCard: React.FC<ResourceEditorCardProps> = ({
     const resources: Array<{ key: string; label: string }> = useMemo(() => {
         if (kind === 'api') {
             return (bundle.apis || []).map(ep => ({
-                key: `${ep.alias}|${ep.http_method}`,
+                key: `${ep.alias}|${ep.http_method}|${ep.route}`,
                 label: `${ep.alias} [${ep.http_method}] ${ep.route}`,
             }));
         }
@@ -966,8 +966,8 @@ const ResourceEditorCard: React.FC<ResourceEditorCardProps> = ({
     const selectedSpec: any = useMemo(() => {
         if (!selectedKey) return null;
         if (kind === 'api') {
-            const [alias, method] = selectedKey.split('|');
-            return (bundle.apis || []).find(ep => ep.alias === alias && ep.http_method === method) || null;
+            const [alias, method, route] = selectedKey.split('|');
+            return (bundle.apis || []).find(ep => ep.alias === alias && ep.http_method === method && ep.route === route) || null;
         }
         if (kind === 'widget') {
             return (bundle.widgets || []).find(w => w.alias === selectedKey) || null;
@@ -984,7 +984,7 @@ const ResourceEditorCard: React.FC<ResourceEditorCardProps> = ({
         if (!selectedSpec) return undefined;
         const enabledRoot = (editorProps as any)?.enabled || {};
         if (kind === 'api') {
-            return enabledRoot?.api?.[`${selectedSpec.alias}.${selectedSpec.http_method}`];
+            return enabledRoot?.api?.[`${selectedSpec.route}.${selectedSpec.alias}.${selectedSpec.http_method}`];
         }
         return enabledRoot?.[kind]?.[selectedSpec.alias];
     }, [kind, selectedSpec, editorProps]);
@@ -1058,7 +1058,7 @@ const ResourceEditorCard: React.FC<ResourceEditorCardProps> = ({
             if (formEnabled !== enabledEffective || enabledIsExplicitTruthy) {
                 const enabledValue = formEnabled ? null : false;
                 if (kind === 'api') {
-                    patch = deepMergeMaps(patch, buildEnabledApiPatch(selectedSpec.alias, selectedSpec.http_method, enabledValue));
+                    patch = deepMergeMaps(patch, buildEnabledApiPatch(selectedSpec.alias, selectedSpec.http_method, selectedSpec.route, enabledValue));
                 } else {
                     patch = deepMergeMaps(patch, buildEnabledKindPatch(kind, selectedSpec.alias, enabledValue));
                 }
@@ -1114,7 +1114,7 @@ const ResourceEditorCard: React.FC<ResourceEditorCardProps> = ({
         try {
             setSaving(true);
             const patch = kind === 'api'
-                ? buildEnabledApiPatch(selectedSpec.alias, selectedSpec.http_method, null)
+                ? buildEnabledApiPatch(selectedSpec.alias, selectedSpec.http_method, selectedSpec.route, null)
                 : buildEnabledKindPatch(kind, selectedSpec.alias, null);
             await onSave(patch);
             setFlash('Reset ✓');

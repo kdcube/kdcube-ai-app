@@ -192,7 +192,7 @@ Canonical bundle-props shape:
 enabled:
   bundle: true|false
   api:
-    "<api-alias>.<METHOD>": true|false   # flat key with literal dot
+    "<route>.<api-alias>.<METHOD>": true|false   # flat key with literal dots
   mcp:
     <mcp-alias>: true|false
   widget:
@@ -213,14 +213,16 @@ Mapping per decorator:
 | Decorator | Canonical path |
 | --- | --- |
 | `@agentic_workflow(...)` | `enabled.bundle` |
-| `@api(alias=A, method=M, ...)` | `enabled.api["A.M"]` (flat key) |
+| `@api(alias=A, method=M, route=R, ...)` | `enabled.api["R.A.M"]` (flat key) |
 | `@mcp(alias=A, ...)` | `enabled.mcp.A` |
 | `@ui_widget(alias=A, ...)` | `enabled.widget.A` |
 | `@cron(alias=A, ...)` | `enabled.cron.A` |
 
 Aliases must not contain `.`; the validator rejects them at decoration time.
-The flat `<alias>.<METHOD>` key under `enabled.api` is the only place a
-literal dot appears inside a section key.
+The flat `<route>.<alias>.<METHOD>` key under `enabled.api` includes the route
+so that two endpoints with the same alias and method on different routes
+(`operations` vs `public`) get independent enabled flags.
+Examples: `operations.echo.POST`, `public.echo.POST`.
 
 Example:
 
@@ -238,10 +240,8 @@ bundles:
       config:
         enabled:
           bundle: true
-          widget:
-            news-admin: true
           cron:
-            news-sync: false
+            news-sync: false   # only real overrides (disable) belong here
 ```
 
 Resolution/enforcement rules:
@@ -267,10 +267,21 @@ Enabled values:
 - boolean `True`
 - non-zero integers
 - any string not in the disabled set
+- `null` / absent key — treated as enabled (code default)
+
+For resource-level flags (`api`, `widget`, `mcp`, `cron`), writing an explicit
+`true` is normally unnecessary — absent means enabled. Only write `false` to
+disable. To re-enable, remove the key or set it to `null`; do not persist
+`true`.
+
+`enabled.bundle` is different: explicitly writing `bundle: true` is reasonable
+as a deployment declaration that the bundle is intentionally active in this config.
 
 Operational rule:
 
 - keep the switches in bundle props under `bundles.yaml -> bundles.items[].config -> enabled: ...`
+- do not enumerate every resource as `true` — only list real overrides (disables)
+- to re-enable a resource: remove the key or set it to `null`, not `true`
 - do not use these flags as a secrets mechanism
 - do not hardcode separate enable/disable logic inside the route method when platform gating is enough
 
@@ -340,8 +351,10 @@ Current fields:
     - `"bundle"`: proc forwards the request into the bundle method and the
       bundle authenticates it itself
   - default: required for `route="public"`, invalid for `route="operations"`
-- canonical feature gate: `enabled.api["<alias>.<METHOD>"]` (flat key)
+- canonical feature gate: `enabled.api["<route>.<alias>.<METHOD>"]` (flat key)
   - boolean (or string equivalent) under `enabled.api` in bundle props
+  - route prefix disambiguates same-alias endpoints on different routes,
+    e.g. `operations.echo.POST` and `public.echo.POST` are independent flags
   - if the resolved value is falsy, this endpoint returns 404
   - absent key means always enabled
   - checked after the bundle-level `enabled.bundle` — if the bundle is disabled,
