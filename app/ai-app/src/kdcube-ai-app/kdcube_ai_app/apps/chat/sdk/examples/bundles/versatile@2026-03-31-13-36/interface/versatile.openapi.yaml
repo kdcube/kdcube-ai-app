@@ -1,0 +1,752 @@
+openapi: 3.1.0
+info:
+  title: Versatile Reference Bundle API
+  version: 1.0.0
+  description: |
+    REST contract for the versatile@2026-03-31-13-36 reference-bundle frontend.
+
+    Every POST body is wrapped as `{ "data": { ... } }`.
+    KDCube `/operations/...` endpoints use the method declared in this
+    contract; read operations are GET with query parameters.
+    Every KDCube response is wrapped by the platform; unwrap the property named
+    by the operation alias.
+
+    Telegram Mini App public aliases must receive the exact raw
+    `window.Telegram.WebApp.initData` string in `X-Telegram-Init-Data`.
+    Do not pass `initDataUnsafe` or caller-supplied user identity.
+servers:
+  - url: /api/integrations/bundles/{tenant}/{project}/{bundle_id}
+    variables:
+      tenant:
+        default: demo-tenant
+      project:
+        default: demo-project
+      bundle_id:
+        default: versatile@2026-03-31-13-36
+tags:
+  - name: Widget
+  - name: Memory
+  - name: Conversations
+  - name: Telegram Admin
+  - name: Public Callbacks
+security:
+  - PlatformAuth: []
+paths:
+  /widgets/versatile_webapp:
+    get:
+      tags: [Widget]
+      summary: Serve the authenticated KDCube React widget app.
+      responses:
+        "200":
+          description: HTML widget app.
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /widgets/versatile_webapp/{widget_path}:
+    get:
+      tags: [Widget]
+      summary: Serve an authenticated KDCube React widget app subpath.
+      parameters:
+        - $ref: "#/components/parameters/WidgetPath"
+      responses:
+        "200":
+          description: HTML widget app subpath.
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /public/widgets/versatile_webapp:
+    get:
+      tags: [Widget]
+      summary: Serve the public Telegram React widget app.
+      security: []
+      responses:
+        "200":
+          description: HTML/JS/CSS asset response.
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /public/widgets/versatile_webapp/{widget_path}:
+    get:
+      tags: [Widget]
+      summary: Serve the Telegram React widget app subpath.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/WidgetPath"
+      responses:
+        "200":
+          description: HTML widget app subpath.
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /operations/versatile_webapp_data:
+    post:
+      tags: [Widget]
+      summary: Bootstrap or refresh the KDCube widget payload.
+      operationId: versatile_webapp_data
+      x-kdcube-result-alias: versatile_webapp_data
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebappDataRequestEnvelope"
+      responses:
+        "200":
+          $ref: "#/components/responses/WebappDataWrapped"
+
+  /public/telegram_versatile_webapp_data:
+    post:
+      tags: [Widget]
+      summary: Bootstrap or refresh the Telegram Mini App payload.
+      operationId: telegram_versatile_webapp_data
+      x-kdcube-result-alias: telegram_versatile_webapp_data
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/TelegramInitData"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebappDataRequestEnvelope"
+      responses:
+        "200":
+          $ref: "#/components/responses/WebappDataWrapped"
+
+  /operations/conversations_list:
+    get:
+      tags: [Conversations]
+      summary: List chat conversations for the linked Telegram user.
+      operationId: conversations_list
+      x-kdcube-result-alias: conversations_list
+      responses:
+        "200":
+          $ref: "#/components/responses/ConversationsWrapped"
+
+  /operations/conversations_create:
+    post:
+      tags: [Conversations]
+      summary: Create and activate a fresh chat conversation.
+      operationId: conversations_create
+      x-kdcube-result-alias: conversations_create
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConversationCreateRequestEnvelope"
+      responses:
+        "200":
+          $ref: "#/components/responses/ConversationsWrapped"
+
+  /operations/conversations_switch:
+    post:
+      tags: [Conversations]
+      summary: Select which conversation future bot messages use.
+      operationId: conversations_switch
+      x-kdcube-result-alias: conversations_switch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConversationIdRequestEnvelope"
+      responses:
+        "200":
+          $ref: "#/components/responses/ConversationsWrapped"
+
+  /operations/conversations_delete:
+    post:
+      tags: [Conversations]
+      summary: Delete a chat conversation.
+      operationId: conversations_delete
+      x-kdcube-result-alias: conversations_delete
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConversationDeleteRequestEnvelope"
+      responses:
+        "200":
+          $ref: "#/components/responses/ConversationsWrapped"
+
+  /public/telegram_conversations_list:
+    get:
+      tags: [Conversations]
+      summary: List Telegram-authenticated chat conversations.
+      operationId: telegram_conversations_list
+      x-kdcube-result-alias: telegram_conversations_list
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/TelegramInitData"
+      responses:
+        "200":
+          $ref: "#/components/responses/ConversationsWrapped"
+
+  /public/telegram_conversations_create:
+    post:
+      tags: [Conversations]
+      summary: Create a Telegram-authenticated chat conversation.
+      operationId: telegram_conversations_create
+      x-kdcube-result-alias: telegram_conversations_create
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/TelegramInitData"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConversationCreateRequestEnvelope"
+      responses:
+        "200":
+          $ref: "#/components/responses/ConversationsWrapped"
+
+  /public/telegram_conversations_switch:
+    post:
+      tags: [Conversations]
+      summary: Switch a Telegram-authenticated chat conversation.
+      operationId: telegram_conversations_switch
+      x-kdcube-result-alias: telegram_conversations_switch
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/TelegramInitData"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConversationIdRequestEnvelope"
+      responses:
+        "200":
+          $ref: "#/components/responses/ConversationsWrapped"
+
+  /public/telegram_conversations_delete:
+    post:
+      tags: [Conversations]
+      summary: Delete a Telegram-authenticated chat conversation.
+      operationId: telegram_conversations_delete
+      x-kdcube-result-alias: telegram_conversations_delete
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/TelegramInitData"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConversationDeleteRequestEnvelope"
+      responses:
+        "200":
+          $ref: "#/components/responses/ConversationsWrapped"
+
+  /operations/preferences_canvas_data:
+    post:
+      tags: [Memory]
+      summary: Load the current memory/preferences canvas.
+      operationId: preferences_canvas_data
+      x-kdcube-result-alias: preferences_canvas_data
+      responses:
+        "200":
+          $ref: "#/components/responses/MemoryCanvasWrapped"
+
+  /operations/preferences_canvas_save:
+    post:
+      tags: [Memory]
+      summary: Save the current memory/preferences canvas.
+      operationId: preferences_canvas_save
+      x-kdcube-result-alias: preferences_canvas_save
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemoryCanvasSaveRequestEnvelope"
+      responses:
+        "200":
+          $ref: "#/components/responses/MemoryCanvasWrapped"
+
+  /operations/preferences_canvas_export_excel:
+    post:
+      tags: [Memory]
+      summary: Export the memory/preferences canvas as Excel.
+      operationId: preferences_canvas_export_excel
+      x-kdcube-result-alias: preferences_canvas_export_excel
+      responses:
+        "200":
+          $ref: "#/components/responses/ExportWrapped"
+
+  /operations/preferences_canvas_import_excel:
+    post:
+      tags: [Memory]
+      summary: Import the memory/preferences canvas from Excel.
+      operationId: preferences_canvas_import_excel
+      x-kdcube-result-alias: preferences_canvas_import_excel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportExcelRequestEnvelope"
+      responses:
+        "200":
+          $ref: "#/components/responses/MemoryCanvasWrapped"
+
+  /public/telegram_memory_canvas_data:
+    post:
+      tags: [Memory]
+      summary: Load the Telegram-authenticated memory/preferences canvas.
+      operationId: telegram_memory_canvas_data
+      x-kdcube-result-alias: telegram_memory_canvas_data
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/TelegramInitData"
+      responses:
+        "200":
+          $ref: "#/components/responses/MemoryCanvasWrapped"
+
+  /public/telegram_memory_canvas_save:
+    post:
+      tags: [Memory]
+      summary: Save the Telegram-authenticated memory/preferences canvas.
+      operationId: telegram_memory_canvas_save
+      x-kdcube-result-alias: telegram_memory_canvas_save
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/TelegramInitData"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemoryCanvasSaveRequestEnvelope"
+      responses:
+        "200":
+          $ref: "#/components/responses/MemoryCanvasWrapped"
+
+  /public/telegram_memory_canvas_export_excel:
+    post:
+      tags: [Memory]
+      summary: Export Telegram-authenticated memory/preferences as Excel.
+      operationId: telegram_memory_canvas_export_excel
+      x-kdcube-result-alias: telegram_memory_canvas_export_excel
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/TelegramInitData"
+      responses:
+        "200":
+          $ref: "#/components/responses/ExportWrapped"
+
+  /public/telegram_memory_canvas_import_excel:
+    post:
+      tags: [Memory]
+      summary: Import Telegram-authenticated memory/preferences from Excel.
+      operationId: telegram_memory_canvas_import_excel
+      x-kdcube-result-alias: telegram_memory_canvas_import_excel
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/TelegramInitData"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportExcelRequestEnvelope"
+      responses:
+        "200":
+          $ref: "#/components/responses/MemoryCanvasWrapped"
+
+  /operations/telegram_user_admin_data:
+    post:
+      tags: [Telegram Admin]
+      summary: Load Telegram user registry for KDCube admins.
+      operationId: telegram_user_admin_data
+      x-kdcube-result-alias: telegram_user_admin_data
+      responses:
+        "200":
+          $ref: "#/components/responses/TelegramAdminWrapped"
+
+  /operations/telegram_user_admin_upsert:
+    post:
+      tags: [Telegram Admin]
+      summary: Upsert Telegram user registry row from KDCube admin UI.
+      operationId: telegram_user_admin_upsert
+      x-kdcube-result-alias: telegram_user_admin_upsert
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TelegramUserUpsertEnvelope"
+      responses:
+        "200":
+          $ref: "#/components/responses/TelegramAdminWrapped"
+
+  /operations/telegram_user_admin_delete:
+    post:
+      tags: [Telegram Admin]
+      summary: Delete Telegram user registry row from KDCube admin UI.
+      operationId: telegram_user_admin_delete
+      x-kdcube-result-alias: telegram_user_admin_delete
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TelegramUserDeleteEnvelope"
+      responses:
+        "200":
+          $ref: "#/components/responses/TelegramAdminWrapped"
+
+  /public/telegram_webapp_user_admin_data:
+    post:
+      tags: [Telegram Admin]
+      summary: Load Telegram user registry for Telegram admins.
+      operationId: telegram_webapp_user_admin_data
+      x-kdcube-result-alias: telegram_webapp_user_admin_data
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/TelegramInitData"
+      responses:
+        "200":
+          $ref: "#/components/responses/TelegramAdminWrapped"
+
+  /public/telegram_webapp_user_admin_upsert:
+    post:
+      tags: [Telegram Admin]
+      summary: Upsert Telegram user registry row from Telegram admin UI.
+      operationId: telegram_webapp_user_admin_upsert
+      x-kdcube-result-alias: telegram_webapp_user_admin_upsert
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/TelegramInitData"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TelegramUserUpsertEnvelope"
+      responses:
+        "200":
+          $ref: "#/components/responses/TelegramAdminWrapped"
+
+  /public/telegram_webapp_user_admin_delete:
+    post:
+      tags: [Telegram Admin]
+      summary: Delete Telegram user registry row from Telegram admin UI.
+      operationId: telegram_webapp_user_admin_delete
+      x-kdcube-result-alias: telegram_webapp_user_admin_delete
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/TelegramInitData"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TelegramUserDeleteEnvelope"
+      responses:
+        "200":
+          $ref: "#/components/responses/TelegramAdminWrapped"
+
+  /public/telegram_profile:
+    get:
+      tags: [Telegram Admin]
+      summary: Resolve current Telegram Mini App identity.
+      operationId: telegram_profile
+      x-kdcube-result-alias: telegram_profile
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/TelegramInitData"
+      responses:
+        "200":
+          description: Wrapped response; unwrap `telegram_profile`.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/KdcubeResponseEnvelope"
+                  - type: object
+                    properties:
+                      telegram_profile:
+                        type: object
+                        additionalProperties: true
+
+  /public/telegram_webhook:
+    post:
+      tags: [Public Callbacks]
+      summary: Telegram Bot API webhook.
+      description: Called by Telegram Bot API and guarded by Telegram webhook secret header.
+      operationId: telegram_webhook
+      x-kdcube-result-alias: telegram_webhook
+      security: []
+      responses:
+        "200":
+          description: Wrapped acknowledgement.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+components:
+  securitySchemes:
+    PlatformAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    WidgetPath:
+      name: widget_path
+      in: path
+      required: true
+      schema:
+        type: string
+        default: memory
+      description: Optional SPA subpath. Use `memory`, `chats`, or `telegram-admin`.
+    TelegramInitData:
+      name: X-Telegram-Init-Data
+      in: header
+      required: true
+      schema:
+        type: string
+      description: Exact raw `window.Telegram.WebApp.initData` string.
+  responses:
+    WebappDataWrapped:
+      description: Wrapped response; unwrap the alias-specific property.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/KdcubeResponseEnvelope"
+              - type: object
+                additionalProperties: true
+    ConversationsWrapped:
+      description: Wrapped conversation response.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/KdcubeResponseEnvelope"
+              - type: object
+                additionalProperties:
+                  $ref: "#/components/schemas/TelegramConversationsResult"
+    MemoryCanvasWrapped:
+      description: Wrapped memory/preferences canvas response.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/KdcubeResponseEnvelope"
+              - type: object
+                additionalProperties:
+                  $ref: "#/components/schemas/MemoryCanvasResult"
+    ExportWrapped:
+      description: Wrapped Excel export response.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/KdcubeResponseEnvelope"
+              - type: object
+                additionalProperties:
+                  $ref: "#/components/schemas/ExcelExportResult"
+    TelegramAdminWrapped:
+      description: Wrapped Telegram admin response.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/KdcubeResponseEnvelope"
+              - type: object
+                additionalProperties:
+                  $ref: "#/components/schemas/TelegramAdminResult"
+  schemas:
+    KdcubeResponseEnvelope:
+      type: object
+      properties:
+        status:
+          type: string
+        tenant:
+          type: string
+        project:
+          type: string
+        bundle_id:
+          type: string
+    WebappDataRequestEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            widget_path:
+              type: string
+              enum: [memory, chats, telegram-admin]
+            mark_memory_seen:
+              type: boolean
+    ConversationCreateRequestEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            title:
+              type: string
+    ConversationIdRequestEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          required: [conversation_id]
+          properties:
+            conversation_id:
+              type: string
+    ConversationDeleteRequestEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          required: [conversation_id]
+          properties:
+            conversation_id:
+              type: string
+            delete_history:
+              type: boolean
+              default: true
+    TelegramConversationsResult:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        active_conversation_id:
+          type: string
+        conversations:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConversationItem"
+        count:
+          type: integer
+        telegram_user_id:
+          type: string
+        kdcube_user_id:
+          type: string
+        error:
+          type: object
+          additionalProperties: true
+    ConversationItem:
+      type: object
+      properties:
+        conversation_id:
+          type: string
+        title:
+          type: string
+        source:
+          type: string
+        created_at:
+          type: string
+        updated_at:
+          type: string
+    MemoryCanvasSaveRequestEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            document_text:
+              type: string
+            entries:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+    ImportExcelRequestEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          required: [content_b64]
+          properties:
+            content_b64:
+              type: string
+    MemoryCanvasResult:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        user_id:
+          type: string
+        document_text:
+          type: string
+        entries:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        changed_keys:
+          type: array
+          items:
+            type: string
+        removed_keys:
+          type: array
+          items:
+            type: string
+    ExcelExportResult:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        filename:
+          type: string
+        mime:
+          type: string
+        content_b64:
+          type: string
+    TelegramUserUpsertEnvelope:
+      type: object
+      properties:
+        data:
+          $ref: "#/components/schemas/TelegramUser"
+    TelegramUserDeleteEnvelope:
+      type: object
+      properties:
+        data:
+          type: object
+          required: [telegram_user_id]
+          properties:
+            telegram_user_id:
+              type: string
+    TelegramAdminResult:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        roles:
+          type: array
+          items:
+            type: string
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/TelegramUser"
+    TelegramUser:
+      type: object
+      properties:
+        telegram_user_id:
+          type: string
+        telegram_chat_id:
+          type: string
+        telegram_username:
+          type: string
+        kdcube_user_id:
+          type: string
+        role:
+          type: string
+          enum: [anonymous, registered, admin]
+        conversation_id:
+          type: string
+        notes:
+          type: string

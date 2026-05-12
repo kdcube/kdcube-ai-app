@@ -53,7 +53,7 @@ Its purpose is operational guidance, not full git/debug observability.
 It can include:
 - `implementation: custom|git`
 - `current_turn_root`
-- `materialized_turn_roots`
+- `local turn roots`
 - `current editable workspace`
 - in `git` mode only:
   - `repo_mode`
@@ -133,7 +133,7 @@ ANNOUNCE only shows current-turn live events. Historical preserved event blocks 
 [WORKSPACE]
   implementation: git
   current_turn_root: turn_1775153963506_m1wj6f/
-  materialized_turn_roots: turn_1775153855448_qryil1, turn_1775153963506_m1wj6f (current)
+  local turn roots: turn_1775153855448_qryil1 (read-only), turn_1775153963506_m1wj6f (current)
   current editable workspace:
     - files/docs/ (2 files)
     - files/src/ (5 files)

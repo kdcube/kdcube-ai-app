@@ -37,6 +37,17 @@ def _load_entrypoint_module():
     return module
 
 
+def _discover_bundle_interface_manifest(workflow, *, bundle_id: str):
+    agentic_loader = pytest.importorskip(
+        "kdcube_ai_app.infra.plugin.agentic_loader",
+        reason=(
+            "KDCube platform source is not importable. Run with "
+            "PYTHONPATH=<kdcube-ai-app>/app/ai-app/src/kdcube-ai-app or export it before pytest."
+        ),
+    )
+    return agentic_loader.discover_bundle_interface_manifest(workflow, bundle_id=bundle_id)
+
+
 def _make_storage(tmp_path: Path) -> AIBundleStorage:
     return AIBundleStorage(
         tenant="demo-tenant",
@@ -92,6 +103,67 @@ def _bind_tool_subsystem(tools_mod, *, user_id: str | None = None, service_user:
             )()
         }
     )
+
+
+def test_telegram_bot_transport_manifest_and_defaults():
+    module = _load_entrypoint_module()
+    workflow = module.VersatileEntrypoint.__new__(module.VersatileEntrypoint)
+    agentic_loader = pytest.importorskip(
+        "kdcube_ai_app.infra.plugin.agentic_loader",
+        reason=(
+            "KDCube platform source is not importable. Run with "
+            "PYTHONPATH=<kdcube-ai-app>/app/ai-app/src/kdcube-ai-app or export it before pytest."
+        ),
+    )
+
+    manifest = _discover_bundle_interface_manifest(workflow, bundle_id="versatile@2026-03-31-13-36")
+    assert manifest.allowed_roles_config == "visibility.bundle.allowed_roles"
+
+    webhook = next(item for item in manifest.api_endpoints if item.alias == "telegram_webhook")
+    assert webhook.http_method == "POST"
+    assert webhook.route == "public"
+    assert agentic_loader.canonical_enabled_path(
+        "api",
+        alias=webhook.alias,
+        http_method=webhook.http_method,
+    ) == "enabled.api.telegram_webhook.POST"
+    assert webhook.public_auth is not None
+    assert webhook.public_auth.mode == "header_secret"
+    assert webhook.public_auth.header == "X-Telegram-Bot-Api-Secret-Token"
+    assert webhook.public_auth.secret_key == "integrations.telegram.webhook_secret"
+
+    admin_data = next(
+        item
+        for item in manifest.api_endpoints
+        if item.alias == "telegram_user_admin_data" and item.route == "operations"
+    )
+    assert admin_data.roles == ("kdcube:role:super-admin",)
+    assert admin_data.roles_config == "visibility.api.telegram_user_admin_data.roles"
+    assert admin_data.user_types_config == "visibility.api.telegram_user_admin_data.user_types"
+
+    defaults = module.VersatileEntrypoint.configuration_defaults(workflow)
+    assert defaults["enabled"]["api"]["telegram_webhook.POST"] is False
+    assert defaults["enabled"]["api"]["telegram_versatile_webapp_data.POST"] is False
+    assert defaults["enabled"]["api"]["telegram_webapp_user_admin_data.POST"] is False
+    assert defaults["enabled"]["api"]["telegram_user_admin_data.POST"] is True
+    assert defaults["enabled"]["widget"]["versatile_webapp"] is True
+    assert defaults["visibility"]["bundle"] == {"allowed_roles": []}
+    assert defaults["visibility"]["api"]["telegram_user_admin_data"] == {
+        "user_types": [],
+        "roles": ["kdcube:role:super-admin"],
+    }
+    assert defaults["visibility"]["widget"]["versatile_webapp"] == {
+        "user_types": [],
+        "roles": [],
+    }
+    assert defaults["integrations"]["telegram"] == {
+        "enabled": False,
+        "webhook_url": "",
+        "send_responses": True,
+        "stream_activity": True,
+        "web_app_auth_max_age_seconds": 86400,
+    }
+    assert defaults["ui"]["web_app_widgets"]["versatile_webapp"]["src_folder"] == "widgets/versatile_webapp"
 
 
 def test_preferences_canvas_save_normalizes_document_and_appends_events(tmp_path):

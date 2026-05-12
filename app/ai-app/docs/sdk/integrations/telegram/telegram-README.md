@@ -54,16 +54,23 @@ Keep business behavior in the main workflow/tools. Telegram routes should
 authorize, normalize, submit, and deliver; they should not duplicate task,
 memory, or product logic.
 
+If the user asks for "Telegram integration" without mentioning a Mini App,
+start with the bot transport path: `telegram_webhook` plus
+`user_admin.handle_webhook(...)` and
+`user_admin.run_with_queued_telegram_delivery(...)`. The versatile reference
+bundle demonstrates that bot transport and also includes a compact Mini App
+reference (`widgets/versatile_webapp`) for memory canvas, chat channel
+selection, and Telegram admin. Add Mini App APIs only when the product also
+needs Telegram-hosted controls.
+
 ### 2. Configure The Reusable SDK Subsystems In `entrypoint.py`
 
-The bundle imports and configures the SDK modules once at module load:
+For bot transport only, the bundle imports and configures `user_admin` once at
+module load:
 
 ```python
 from kdcube_ai_app.apps.chat.sdk.integrations.telegram import TelegramUserAdminStorage
 from kdcube_ai_app.apps.chat.sdk.integrations.telegram import user_admin as telegram_user_admin
-from kdcube_ai_app.apps.chat.sdk.integrations.telegram import webapp
-from kdcube_ai_app.apps.chat.sdk.integrations.telegram import widget_auth as telegram_widget_auth
-from kdcube_ai_app.apps.chat.sdk.integrations.telegram import widget_ops as telegram_widget_ops
 
 BUNDLE_ID = "my.bundle@1-0"
 TELEGRAM_WEBHOOK_SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token"
@@ -84,6 +91,16 @@ telegram_user_admin.configure_telegram_user_admin(
     migrate_telegram_user_to_kdcube_scope=migrate_telegram_user_to_kdcube_scope,
     bundle_id=BUNDLE_ID,
 )
+```
+
+If the bundle also exposes Telegram Mini App controls, configure the Mini App
+helpers after `user_admin`:
+
+```python
+from kdcube_ai_app.apps.chat.sdk.integrations.telegram import webapp
+from kdcube_ai_app.apps.chat.sdk.integrations.telegram import widget_auth as telegram_widget_auth
+from kdcube_ai_app.apps.chat.sdk.integrations.telegram import widget_ops as telegram_widget_ops
+
 telegram_widget_auth.configure_telegram_widget_auth(
     storage_for=telegram_user_admin.storage,
     bot_token=lambda: telegram_user_admin.bot_token(),
@@ -186,7 +203,14 @@ KDCube operations APIs that manage the Telegram registry should be separate
 from Telegram public APIs:
 
 ```python
-@api(method="GET", alias="telegram_user_admin_data", route="operations", roles=("kdcube:role:super-admin",))
+@api(
+    method="POST",
+    alias="telegram_user_admin_data",
+    route="operations",
+    roles=("kdcube:role:super-admin",),
+    roles_config="visibility.api.telegram_user_admin_data.roles",
+    user_types_config="visibility.api.telegram_user_admin_data.user_types",
+)
 async def telegram_user_admin_data(self, **kwargs):
     return telegram_user_admin.payload(self)
 ```

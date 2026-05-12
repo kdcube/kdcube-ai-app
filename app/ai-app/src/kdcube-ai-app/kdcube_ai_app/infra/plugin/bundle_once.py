@@ -10,6 +10,7 @@ import logging
 import os
 import pathlib
 import shutil
+import socket
 import time
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Literal, Optional
@@ -20,6 +21,7 @@ OnceStatus = Literal[
     "already_current",
     "ran",
     "became_current",
+    "lock_existing",
     "lock_timeout_existing",
 ]
 
@@ -97,6 +99,32 @@ def _remove_stale_lock(lock_path: pathlib.Path, *, lock_ttl_seconds: float) -> b
     return True
 
 
+def _lock_age_seconds(lock_path: pathlib.Path) -> Optional[float]:
+    try:
+        return max(0.0, time.time() - lock_path.stat().st_mtime)
+    except OSError:
+        return None
+
+
+def _read_lock_owner(lock_path: pathlib.Path) -> dict[str, Any]:
+    try:
+        return json.loads((lock_path / "owner.json").read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _lock_owner_summary(lock_path: pathlib.Path) -> str:
+    owner = _read_lock_owner(lock_path)
+    if not owner:
+        return "owner=unknown"
+    pieces = []
+    for key in ("host", "pid", "operation", "bundle_id", "kind"):
+        value = owner.get(key)
+        if value is not None and value != "":
+            pieces.append(f"{key}={value}")
+    return "owner=" + ",".join(pieces) if pieces else "owner=unknown"
+
+
 async def run_once_for_shared_bundle_storage(
     *,
     storage_root: str | os.PathLike[str],
@@ -110,6 +138,7 @@ async def run_once_for_shared_bundle_storage(
     lock_wait_seconds: float = 600.0,
     lock_ttl_seconds: float = 900.0,
     poll_interval_seconds: float = 0.25,
+    allow_existing_while_locked: bool = False,
     allow_existing_on_timeout: bool = True,
     log_prefix: str = "[bundle.once]",
 ) -> SharedStorageOnceResult:
@@ -151,6 +180,7 @@ async def run_once_for_shared_bundle_storage(
             owner.update(
                 {
                     "pid": os.getpid(),
+                    "host": socket.gethostname(),
                     "created_at": time.time(),
                     "operation": op,
                     "signature": signature,
@@ -160,15 +190,31 @@ async def run_once_for_shared_bundle_storage(
                 (lock_path / "owner.json").write_text(json.dumps(owner, sort_keys=True), encoding="utf-8")
             except Exception:
                 pass
+            _logger_log(logger, f"{log_prefix} lock acquired op={op} storage={root}", "INFO")
             break
         except FileExistsError:
+            owner_summary = _lock_owner_summary(lock_path)
             if _remove_stale_lock(lock_path, lock_ttl_seconds=float(lock_ttl_seconds)):
+                _logger_log(
+                    logger,
+                    f"{log_prefix} removed stale lock op={op} storage={root} {owner_summary}",
+                    "WARNING",
+                )
                 continue
+            if allow_existing_while_locked and bool(ready()):
+                age = _lock_age_seconds(lock_path)
+                age_part = f" lock_age_sec={age:.1f}" if age is not None else ""
+                _logger_log(
+                    logger,
+                    f"{log_prefix} lock held; using existing output op={op} storage={root}{age_part} {owner_summary}",
+                    "WARNING",
+                )
+                return SharedStorageOnceResult("lock_existing", root, op, lock_path, sig_path, ran=False)
             if time.time() >= deadline:
                 if allow_existing_on_timeout and bool(ready()):
                     _logger_log(
                         logger,
-                        f"{log_prefix} lock wait timed out; using existing output op={op} storage={root}",
+                        f"{log_prefix} lock wait timed out; using existing output op={op} storage={root} {owner_summary}",
                         "WARNING",
                     )
                     return SharedStorageOnceResult("lock_timeout_existing", root, op, lock_path, sig_path, ran=False)

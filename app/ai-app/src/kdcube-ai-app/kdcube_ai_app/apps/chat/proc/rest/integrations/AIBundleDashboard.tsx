@@ -978,21 +978,25 @@ const ResourceEditorCard: React.FC<ResourceEditorCardProps> = ({
         return (bundle.scheduled_jobs || []).find(c => (c.alias || c.method_name) === selectedKey) || null;
     }, [kind, bundle, selectedKey]);
 
-    // Read current effective enabled value for this resource from editorProps.
-    const enabledEffective = useMemo(() => {
-        if (!selectedSpec) return true;
+    // Read current enabled override. Missing/null means the platform default:
+    // enabled. Keep the persisted config sparse by writing only false.
+    const enabledRaw = useMemo(() => {
+        if (!selectedSpec) return undefined;
         const enabledRoot = (editorProps as any)?.enabled || {};
-        let raw: any;
         if (kind === 'api') {
-            raw = enabledRoot?.api?.[`${selectedSpec.alias}.${selectedSpec.http_method}`];
-        } else {
-            raw = enabledRoot?.[kind]?.[selectedSpec.alias];
+            return enabledRoot?.api?.[`${selectedSpec.alias}.${selectedSpec.http_method}`];
         }
+        return enabledRoot?.[kind]?.[selectedSpec.alias];
+    }, [kind, selectedSpec, editorProps]);
+
+    const enabledEffective = useMemo(() => {
+        const raw = enabledRaw;
         if (raw === undefined) return true;
+        if (raw === null) return true;
         if (raw === false || raw === 0) return false;
         if (typeof raw === 'string' && ['false', 'disable', 'disabled', 'off', '0'].includes(raw.trim().toLowerCase())) return false;
         return Boolean(raw);
-    }, [kind, selectedSpec, editorProps]);
+    }, [enabledRaw]);
 
     // Form state (reset to current effective values when selection changes).
     const [formEnabled, setFormEnabled] = useState<boolean>(true);
@@ -1049,11 +1053,15 @@ const ResourceEditorCard: React.FC<ResourceEditorCardProps> = ({
             setSaving(true);
             // Build composite patch from changed fields.
             let patch: Record<string, any> = {};
-            // enabled toggle
-            if (kind === 'api') {
-                patch = deepMergeMaps(patch, buildEnabledApiPatch(selectedSpec.alias, selectedSpec.http_method, formEnabled));
-            } else {
-                patch = deepMergeMaps(patch, buildEnabledKindPatch(kind, selectedSpec.alias, formEnabled));
+            // enabled toggle: default is enabled, so only persist false.
+            const enabledIsExplicitTruthy = enabledRaw !== undefined && enabledRaw !== null && enabledEffective;
+            if (formEnabled !== enabledEffective || enabledIsExplicitTruthy) {
+                const enabledValue = formEnabled ? null : false;
+                if (kind === 'api') {
+                    patch = deepMergeMaps(patch, buildEnabledApiPatch(selectedSpec.alias, selectedSpec.http_method, enabledValue));
+                } else {
+                    patch = deepMergeMaps(patch, buildEnabledKindPatch(kind, selectedSpec.alias, enabledValue));
+                }
             }
             // kind-specific overrides via *_config (only if path declared)
             if (kind === 'api' || kind === 'widget') {
@@ -1100,6 +1108,24 @@ const ResourceEditorCard: React.FC<ResourceEditorCardProps> = ({
         }
     };
 
+    const resetEnabled = async () => {
+        if (!selectedSpec) return;
+        setError(null);
+        try {
+            setSaving(true);
+            const patch = kind === 'api'
+                ? buildEnabledApiPatch(selectedSpec.alias, selectedSpec.http_method, null)
+                : buildEnabledKindPatch(kind, selectedSpec.alias, null);
+            await onSave(patch);
+            setFlash('Reset ✓');
+            window.setTimeout(() => setFlash(null), 1800);
+        } catch (e: any) {
+            setError(e?.message || 'Reset failed');
+        } finally {
+            setSaving(false);
+        }
+    };
+
     if (resources.length === 0) {
         return null;
     }
@@ -1135,7 +1161,16 @@ const ResourceEditorCard: React.FC<ResourceEditorCardProps> = ({
 
                 {selectedSpec && (
                     <div className="space-y-5">
-                        <FieldRow label="Enabled" overridden={false} configurable>
+                        <FieldRow
+                            label="Enabled"
+                            overridden={enabledRaw !== undefined && enabledRaw !== null}
+                            configurable
+                            onResetToDefault={
+                                enabledRaw !== undefined && enabledRaw !== null
+                                    ? resetEnabled
+                                    : undefined
+                            }
+                        >
                             <label className="inline-flex items-center gap-2 cursor-pointer">
                                 <input
                                     type="checkbox"
@@ -1147,7 +1182,7 @@ const ResourceEditorCard: React.FC<ResourceEditorCardProps> = ({
                                 </span>
                             </label>
                             <FieldHint>
-                                Maps to <code>{selectedSpec.enabled_path}</code>.
+                                Maps to <code>{selectedSpec.enabled_path}</code>. Missing value means enabled; disabling writes <code>false</code>.
                             </FieldHint>
                         </FieldRow>
 
@@ -1167,7 +1202,9 @@ const ResourceEditorCard: React.FC<ResourceEditorCardProps> = ({
                                     <FieldHint>
                                         {selectedSpec.user_types_config
                                             ? <>Override path: <code>{selectedSpec.user_types_config}</code>. Check selected user types to restrict access. No selection means all user types are allowed.</>
-                                            : <>No <code>user_types_config</code> declared in the decorator — value is hard-coded.</>}
+                                            : formUserTypes.length === 0
+                                                ? <>No <code>user_types_config</code> declared in the decorator — hard-coded empty list, so all user types are allowed.</>
+                                                : <>No <code>user_types_config</code> declared in the decorator — value is hard-coded.</>}
                                     </FieldHint>
                                 </FieldRow>
 
@@ -1181,13 +1218,15 @@ const ResourceEditorCard: React.FC<ResourceEditorCardProps> = ({
                                         value={formRoles}
                                         onChange={e => setFormRoles(e.target.value)}
                                         disabled={!selectedSpec.roles_config}
-                                        placeholder="kdcube:role:editor, kdcube:role:viewer"
+                                        placeholder={!selectedSpec.roles_config && !formRoles ? 'all roles allowed' : 'kdcube:role:editor, kdcube:role:viewer'}
                                         className="w-full px-3 py-2 border border-gray-200/80 rounded-xl bg-white text-sm font-mono disabled:bg-gray-50 disabled:text-gray-400"
                                     />
                                     <FieldHint>
                                         {selectedSpec.roles_config
-                                            ? <>Override path: <code>{selectedSpec.roles_config}</code>. Comma-separated. Empty saves an explicit empty list.</>
-                                            : <>No <code>roles_config</code> declared in the decorator — value is hard-coded.</>}
+                                            ? <>Override path: <code>{selectedSpec.roles_config}</code>. Comma-separated. Empty saves an explicit empty list (all roles allowed).</>
+                                            : parseChips(formRoles).length === 0
+                                                ? <>No <code>roles_config</code> declared in the decorator — hard-coded empty list, so all roles are allowed.</>
+                                                : <>No <code>roles_config</code> declared in the decorator — value is hard-coded.</>}
                                     </FieldHint>
                                 </FieldRow>
                             </>

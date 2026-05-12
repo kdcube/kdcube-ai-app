@@ -69,6 +69,27 @@ For the operational local workflow for reusing a runtime, changing bundle roots,
 Most values under `bundles.items[].config` belong only to the bundle. A small
 set is platform-reserved and interpreted by the runtime.
 
+`config.enabled` is the platform-owned feature gate override section for bundle
+surfaces. Bundle code, decorators, and bundle `configuration_defaults()` define
+the default state. Descriptor config only overrides those defaults. If a key is
+absent here, the runtime uses the code default; if a key is present, that value
+overrides the default. Most descriptors should contain only intentional
+overrides, usually `false` for a rare disable.
+
+Canonical keys:
+
+| Surface | Key |
+|---|---|
+| bundle | `enabled.bundle` |
+| API | `enabled.api["<alias>.<METHOD>"]` |
+| MCP | `enabled.mcp.<alias>` |
+| widget | `enabled.widget.<alias>` |
+| cron | `enabled.cron.<alias>` |
+
+Do not mirror every enabled API/widget/cron as `true` in deployment descriptors.
+That makes descriptors noisy and can leave stale explicit overrides after code
+defaults change.
+
 `config.execution.runtime` controls per-bundle execution runtime routing and
 per-run ISO runtime limits. `config.exec_runtime` is the legacy alias.
 

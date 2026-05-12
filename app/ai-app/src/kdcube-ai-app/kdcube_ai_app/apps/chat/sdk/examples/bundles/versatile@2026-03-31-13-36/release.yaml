@@ -1,0 +1,26 @@
+bundle:
+  repo: "https://github.com/kdcube/kdcube-ai-app.git"
+  ref: "main"
+  description: |
+    Reference-bundle update for versatile@2026-03-31-13-36.
+
+    Highlights
+
+    - Adds Telegram bot transport wiring to the versatile reference bundle:
+      public webhook, bundle-owned Telegram user registry, and queued Telegram
+      delivery around the normal workflow result.
+    - Adds a source-folder `versatile_webapp` widget that can run as a KDCube
+      control-plane widget or as a Telegram Mini App.
+    - Exposes the current preferences canvas as the temporary memory panel,
+      plus Telegram-linked chat/channel selection and Telegram admin surfaces.
+    - Adds bundle-maintainer artifacts: config templates, interface contract,
+      design note, journal, and this release metadata.
+    - Updates Tier 1 bundle-builder docs so `interface/` is part of the
+      expected bundle skeleton and SDK-block wiring map.
+
+    Known follow-ups
+
+    - Replace the temporary preferences-backed memory panel with the new
+      cross-conversation memories subsystem.
+    - Validate the Telegram Mini App against a real BotFather webapp button and
+      public ngrok/deployed origin.

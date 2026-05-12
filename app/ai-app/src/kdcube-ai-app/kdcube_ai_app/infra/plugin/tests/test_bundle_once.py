@@ -155,6 +155,40 @@ def test_run_once_for_shared_bundle_storage_raises_when_lock_times_out_without_o
         )
 
 
+def test_run_once_for_shared_bundle_storage_uses_existing_output_while_locked_when_allowed(tmp_path):
+    storage_root = tmp_path / "storage"
+    lock_path = storage_root / ".kdcube.once" / "demo.lock"
+    lock_path.mkdir(parents=True)
+    signature_path = storage_root / ".demo.signature"
+    signature_path.write_text("old-sig\n", encoding="utf-8")
+    output_path = storage_root / "output.txt"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text("ok", encoding="utf-8")
+    calls = []
+
+    async def _action():
+        calls.append("run")
+
+    result = asyncio.run(
+        run_once_for_shared_bundle_storage(
+            storage_root=storage_root,
+            operation="demo",
+            signature_path=signature_path,
+            signature="new-sig",
+            ready=output_path.exists,
+            action=_action,
+            lock_wait_seconds=60,
+            lock_ttl_seconds=3600,
+            allow_existing_while_locked=True,
+        )
+    )
+
+    assert result.status == "lock_existing"
+    assert result.ran is False
+    assert calls == []
+    assert signature_path.read_text(encoding="utf-8").strip() == "old-sig"
+
+
 def test_run_once_for_shared_bundle_storage_removes_stale_lock(tmp_path):
     storage_root = tmp_path / "storage"
     lock_path = storage_root / ".kdcube.once" / "demo.lock"

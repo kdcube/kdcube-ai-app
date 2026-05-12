@@ -1,3 +1,10 @@
+---
+title: Versatile Reference Bundle
+kind: reference-bundle
+bundle_id: versatile@2026-03-31-13-36
+updated_at: 2026-05-12
+---
+
 # versatile bundle
 
 `versatile@2026-03-31-13-36` is the full-feature reference bundle for bundle builders.
@@ -20,9 +27,15 @@ It intentionally demonstrates the main SDK bundle surfaces together in one place
 | Bundle-authenticated MCP endpoint      | `entrypoint.py:preferences_tools_mcp`, `tools/preference_tools.py:build_preferences_mcp_app` |
 | Direct isolated exec from bundle code  | `entrypoint.py:preferences_exec_report`                                                    |
 | Custom TSX widget                      | `ui/PreferencesBrowser.tsx`, `entrypoint.py:preferences_widget`                            |
+| Source-folder webapp widget            | `widgets/versatile_webapp`, `entrypoint.py:versatile_webapp_widget`                        |
 | Custom iframe main view                | `ui-src/src/App.tsx`, `ui-src/src/settings.ts`, `entrypoint.py`                            |
+| Bundle interface contract              | `interface/README.md`                                                                       |
+| Bundle config templates                | `config/bundles.template.yaml`, `config/bundles.secrets.template.yaml`                     |
+| Bundle release metadata                | `release.yaml`                                                                              |
 | Authenticated `GET` bundle API         | `entrypoint.py:preferences_summary`                                                         |
 | Anonymous public bundle API            | `entrypoint.py:preferences_public_info`                                                     |
+| Telegram bot transport                 | `entrypoint.py:telegram_webhook`, `entrypoint.py:telegram_user_admin_*`                      |
+| Telegram WebApp / Mini App             | `widgets/versatile_webapp`, `entrypoint.py:telegram_versatile_webapp_data`                 |
 
 ## Bundle behavior
 
@@ -42,6 +55,21 @@ It intentionally demonstrates the main SDK bundle surfaces together in one place
   - route family: `/api/integrations/bundles/{tenant}/{project}/{bundle_id}/mcp/preferences_tools`
   - implemented in `entrypoint.py:preferences_tools_mcp`
   - backed by `tools/preference_tools.py:build_preferences_mcp_app`
+- The bundle demonstrates the reusable Telegram bot transport:
+  - `telegram_webhook` receives Bot API updates through a public route guarded
+    by Telegram's webhook secret header
+  - `telegram_user_admin_*` operations manage the bundle-owned Telegram user
+    registry from KDCube-authenticated operations routes
+  - queued Telegram turns are wrapped with
+    `telegram_user_admin.run_with_queued_telegram_delivery(...)`, so the normal
+    workflow result is rendered back to Telegram as text and files
+- The bundle demonstrates a source-folder Telegram WebApp:
+  - `versatile_webapp` is served as a normal KDCube widget and can also be
+    opened by Telegram as a Mini App
+  - the widget shows the current preferences canvas, Telegram-linked chat
+    channels, and Telegram user administration
+  - public `telegram_*` WebApp APIs are disabled by default and verify Telegram
+    `initData` inside the bundle before reading or mutating data
 
 ## Preference storage layout
 
@@ -112,6 +140,11 @@ bundles:
         execution:
           runtime:
             mode: docker
+        integrations:
+          telegram:
+            enabled: false
+            webhook_url: ""
+            send_responses: true
         mcp:
           preferences:
             auth:
@@ -154,6 +187,10 @@ bundles:
               shared_token: null
         preferences:
           snapshot_hmac_key: null
+        integrations:
+          telegram:
+            bot_token: null
+            webhook_secret: null
 ```
 
 The CLI injects that into the configured secrets provider under the bundle's
@@ -304,6 +341,10 @@ Concrete routes:
 - `GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/preferences_summary`
 - `POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/preferences_widget_data`
 - `GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/preferences_public_info`
+- `POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/telegram_webhook`
+- `POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/telegram_user_admin_data`
+- `POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/telegram_user_admin_upsert`
+- `POST /api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/telegram_user_admin_delete`
 
 This bundle also exposes widget and notebook operations:
 

@@ -201,6 +201,13 @@ enabled:
     <cron-alias>: true|false
 ```
 
+Treat this section as deployment overrides, not as the declaration of every
+bundle resource. Bundle code and decorator metadata define the default enabled
+state. If config does not provide an `enabled.*` value for a resource, the
+runtime uses that code default. Add config only when the deployment needs to
+override the default, usually `false` for a rare disable. Remove or null the
+override to return to the code default.
+
 Mapping per decorator:
 
 | Decorator | Canonical path |
