@@ -165,6 +165,46 @@ cognito` emits `authType: cognito`, and `auth.type: delegated` emits
 for `simple`; new descriptors should use `simple`. `oauth` is not a deployment
 auth mode; use `cognito` for the OSS browser Cognito/OIDC flow.
 
+### `proxy.frame_embedding`
+
+`proxy.frame_embedding` controls whether the KDCube control-plane frontend may
+be loaded inside another page. The setting is consumed by deployment/proxy
+rendering, not by bundle code.
+
+Example for the normal standalone deployment:
+
+```yaml
+proxy:
+  ssl: false
+  route_prefix: "/platform"
+  frame_embedding:
+    mode: "standalone"
+    allowed_origins: []
+```
+
+Supported modes:
+
+| Mode | Control-plane shell | Bundle/widget document routes |
+|---|---|---|
+| `standalone` | `X-Frame-Options: DENY` | `X-Frame-Options: SAMEORIGIN` so the control plane can load its own nested widgets |
+| `same_origin` | `X-Frame-Options: SAMEORIGIN` | `X-Frame-Options: SAMEORIGIN` |
+| `allowlist` | CSP `frame-ancestors 'self' ...` and no `X-Frame-Options` | same CSP policy, so nested widgets still work inside the embedded control plane |
+
+For cross-origin embedding, list exact browser origins:
+
+```yaml
+proxy:
+  frame_embedding:
+    mode: "allowlist"
+    allowed_origins:
+      - "https://host-app.example.com"
+```
+
+Do not put paths in `allowed_origins`; use origins only. In `standalone`, the
+platform can still use iframes internally because bundle/widget documents are
+same-origin frameable. External embedding requires `allowlist`, otherwise nested
+widget iframes may still be blocked by the browser's ancestor checks.
+
 ### `ai.react`
 
 `ai.react` controls React-agent runtime behavior that is safe to keep in the

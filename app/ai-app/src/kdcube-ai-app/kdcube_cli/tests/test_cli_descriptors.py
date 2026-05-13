@@ -31,6 +31,7 @@ from kdcube_cli.installer import (
     build_ui_url,
     ensure_local_dirs,
     gather_configuration,
+    render_nginx_frame_embedding_config,
     resolve_frontend_routes_prefix,
     stage_descriptor_directory,
     update_nginx_routes_prefix,
@@ -168,6 +169,63 @@ def test_update_nginx_routes_prefix_adds_prefix_root_redirect(tmp_path: Path):
     updated = nginx.read_text()
     assert "return 301 /chatbot/demo/chat;" in updated
     assert "location = /chatbot/demo {" in updated
+
+
+def test_render_nginx_frame_embedding_defaults_to_standalone_shell_and_same_origin_frames():
+    template = (
+        "server {\n"
+        "        # KDCUBE_FRAME_EMBEDDING:SHELL\n"
+        "        more_set_headers \"X-Frame-Options: DENY\";\n"
+        "        # /KDCUBE_FRAME_EMBEDDING:SHELL\n"
+        "        location /api/integrations/bundles/ {\n"
+        "            # KDCUBE_FRAME_EMBEDDING:FRAMEABLE\n"
+        "            more_set_headers \"X-Frame-Options: SAMEORIGIN\";\n"
+        "            # /KDCUBE_FRAME_EMBEDDING:FRAMEABLE\n"
+        "        }\n"
+        "}\n"
+    )
+
+    rendered = render_nginx_frame_embedding_config(
+        template,
+        {"proxy": {"frame_embedding": {"mode": "standalone"}}},
+    )
+
+    assert rendered.count('more_clear_headers "X-Frame-Options";') == 2
+    assert "X-Frame-Options: DENY" in rendered
+    assert "X-Frame-Options: SAMEORIGIN" in rendered
+    assert "frame-ancestors" not in rendered
+
+
+def test_render_nginx_frame_embedding_allowlist_uses_csp_for_shell_and_nested_frames():
+    template = (
+        "server {\n"
+        "        # KDCUBE_FRAME_EMBEDDING:SHELL\n"
+        "        more_set_headers \"X-Frame-Options: DENY\";\n"
+        "        # /KDCUBE_FRAME_EMBEDDING:SHELL\n"
+        "        location /api/integrations/static/ {\n"
+        "            # KDCUBE_FRAME_EMBEDDING:FRAMEABLE\n"
+        "            more_set_headers \"X-Frame-Options: SAMEORIGIN\";\n"
+        "            # /KDCUBE_FRAME_EMBEDDING:FRAMEABLE\n"
+        "        }\n"
+        "}\n"
+    )
+
+    rendered = render_nginx_frame_embedding_config(
+        template,
+        {
+            "proxy": {
+                "frame_embedding": {
+                    "mode": "allowlist",
+                    "allowed_origins": ["https://host.example.com/path", "host2.example.com"],
+                }
+            }
+        },
+    )
+
+    assert rendered.count('more_clear_headers "X-Frame-Options";') == 2
+    assert "Content-Security-Policy: frame-ancestors 'self' https://host.example.com https://host2.example.com" in rendered
+    assert "X-Frame-Options: DENY" not in rendered
+    assert "X-Frame-Options: SAMEORIGIN" not in rendered
 
 
 def test_resolve_cli_workdir_uses_descriptor_context_namespace(tmp_path: Path):

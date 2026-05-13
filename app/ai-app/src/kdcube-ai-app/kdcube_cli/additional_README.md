@@ -298,6 +298,9 @@ domain: ""
 proxy:
   ssl: false
   route_prefix: "/platform"
+  frame_embedding:
+    mode: "standalone"
+    allowed_origins: []
 ```
 
 Ngrok terminates public HTTPS and forwards plain HTTP to the local KDCube web

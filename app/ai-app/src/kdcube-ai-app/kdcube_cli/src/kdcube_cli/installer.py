@@ -16,7 +16,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, urlparse, urlsplit, urlunsplit
 
 from rich.console import Console
 from rich.control import Control
@@ -754,7 +754,131 @@ def normalize_domain_host(value: Optional[str], *, keep_port: bool = False) -> s
     return host
 
 
-def sync_nginx_proxy_config(target_path: Path, ai_app_root: Path, template_rel: str) -> None:
+_FRAME_EMBEDDING_BLOCK_RE = re.compile(
+    r"(?P<indent>[ \t]*)# KDCUBE_FRAME_EMBEDDING:(?P<kind>SHELL|FRAMEABLE)\n"
+    r"(?P<body>.*?)\n"
+    r"(?P=indent)# /KDCUBE_FRAME_EMBEDDING:(?P=kind)",
+    re.DOTALL,
+)
+
+
+def _normalize_frame_origin(value: object) -> str:
+    raw = str(value or "").strip().rstrip("/")
+    if not raw:
+        return ""
+    if raw == "'self'":
+        return raw
+    if "://" not in raw:
+        raw = f"https://{raw}"
+    parsed = urlsplit(raw)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return ""
+    return urlunsplit((parsed.scheme, parsed.netloc, "", "", ""))
+
+
+def _frame_embedding_policy(assembly: Optional[Dict[str, object]]) -> dict[str, object]:
+    proxy = assembly.get("proxy") if isinstance(assembly, dict) else {}
+    raw = proxy.get("frame_embedding") if isinstance(proxy, dict) else {}
+    cfg = raw if isinstance(raw, dict) else {}
+
+    raw_origins = cfg.get("allowed_origins", cfg.get("allow_origins", []))
+    if isinstance(raw_origins, str):
+        origin_values = [part.strip() for part in raw_origins.split(",")]
+    elif isinstance(raw_origins, list):
+        origin_values = raw_origins
+    else:
+        origin_values = []
+    origins: list[str] = []
+    seen: set[str] = set()
+    for item in origin_values:
+        origin = _normalize_frame_origin(item)
+        if origin and origin != "'self'" and origin not in seen:
+            origins.append(origin)
+            seen.add(origin)
+
+    mode = str(cfg.get("mode") or "").strip().lower().replace("-", "_")
+    enabled = cfg.get("enabled")
+    if not mode:
+        enabled_bool = parse_bool(str(enabled)) if enabled is not None else False
+        if enabled_bool:
+            mode = "allowlist" if origins else "same_origin"
+        else:
+            mode = "standalone"
+    if mode in {"deny", "disabled", "off", "none"}:
+        mode = "standalone"
+    if mode in {"sameorigin", "same_origin_only", "self"}:
+        mode = "same_origin"
+    if mode in {"external", "external_allowlist", "cross_origin"}:
+        mode = "allowlist"
+    if mode not in {"standalone", "same_origin", "allowlist"}:
+        mode = "standalone"
+    if mode == "allowlist" and not origins:
+        mode = "same_origin"
+
+    return {"mode": mode, "allowed_origins": origins}
+
+
+def _frame_embedding_headers(policy: dict[str, object], kind: str) -> list[str]:
+    mode = str(policy.get("mode") or "standalone")
+    origins = [str(origin) for origin in policy.get("allowed_origins", []) if str(origin).strip()]
+    if mode == "allowlist":
+        ancestors = " ".join(["'self'", *origins])
+        return [
+            'more_clear_headers "X-Frame-Options";',
+            f'more_set_headers "Content-Security-Policy: frame-ancestors {ancestors}";',
+        ]
+    if mode == "same_origin":
+        return [
+            'more_clear_headers "X-Frame-Options";',
+            'more_set_headers "X-Frame-Options: SAMEORIGIN";',
+        ]
+    if kind == "FRAMEABLE":
+        return [
+            'more_clear_headers "X-Frame-Options";',
+            'more_set_headers "X-Frame-Options: SAMEORIGIN";',
+        ]
+    return [
+        'more_clear_headers "X-Frame-Options";',
+        'more_set_headers "X-Frame-Options: DENY";',
+    ]
+
+
+def render_nginx_frame_embedding_config(text: str, assembly: Optional[Dict[str, object]]) -> str:
+    policy = _frame_embedding_policy(assembly)
+
+    def _replace(match: re.Match[str]) -> str:
+        indent = match.group("indent")
+        kind = match.group("kind")
+        lines = _frame_embedding_headers(policy, kind)
+        body = "\n".join(f"{indent}{line}" for line in lines)
+        return (
+            f"{indent}# KDCUBE_FRAME_EMBEDDING:{kind}\n"
+            f"{body}\n"
+            f"{indent}# /KDCUBE_FRAME_EMBEDDING:{kind}"
+        )
+
+    return _FRAME_EMBEDDING_BLOCK_RE.sub(_replace, text)
+
+
+def apply_nginx_frame_embedding_config(path: Path, assembly: Optional[Dict[str, object]]) -> None:
+    if not path.exists():
+        return
+    try:
+        current = path.read_text()
+    except Exception:
+        return
+    updated = render_nginx_frame_embedding_config(current, assembly)
+    if updated != current:
+        path.write_text(updated)
+
+
+def sync_nginx_proxy_config(
+    target_path: Path,
+    ai_app_root: Path,
+    template_rel: str,
+    *,
+    assembly: Optional[Dict[str, object]] = None,
+) -> None:
     repo_root = ai_app_root.parent.parent
     src = repo_root / template_rel
     if not src.exists():
@@ -762,6 +886,7 @@ def sync_nginx_proxy_config(target_path: Path, ai_app_root: Path, template_rel: 
     try:
         target_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(src, target_path)
+        apply_nginx_frame_embedding_config(target_path, assembly)
     except Exception:
         return
 
@@ -3572,8 +3697,9 @@ def gather_configuration(
             runtime_proxy_path = desired_runtime_path
             update_env_value(env_main, "NGINX_PROXY_RUNTIME_CONFIG_PATH", runtime_proxy_path)
     runtime_proxy = Path(runtime_proxy_path).expanduser()
-    sync_nginx_proxy_config(runtime_proxy, ctx.ai_app_root, defaults["nginx_proxy_config"])
+    sync_nginx_proxy_config(runtime_proxy, ctx.ai_app_root, defaults["nginx_proxy_config"], assembly=assembly_data)
     update_nginx_routes_prefix(runtime_proxy, routes_prefix)
+    apply_nginx_frame_embedding_config(runtime_proxy, assembly_data)
     if proxy_ssl_enabled:
         ssl_domain = normalize_domain_host(_as_str(_get_nested(assembly_data, "domain")))
         if ssl_domain:
