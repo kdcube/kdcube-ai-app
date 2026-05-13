@@ -235,6 +235,35 @@ Early work happened on `feat/claude-kdcube-cli-plugin` (now deleted); later work
   URLs and webhook settings descriptor-backed; bot tokens / webhook secrets /
   OAuth secrets in configured secret store, not `.env`/code/seed descriptors
 
+**2026-05-13** — Rules #2–#5 + versatile-as-Telegram-reference (builder + codex)
+- Expanded Rule #1 maintenance-artifact gate beyond the 5-file list: now also requires
+  `AGENTS.md`, `interface/README.md`, `docs/design/`, `tests/`; conditional
+  `interface/*.openapi.yaml` (when `@api` routes exist) and
+  `docs/integrations/admin-integrational-homework.md` (when an integration needs
+  external operator work)
+- **Rule #2 (new) — Bundle source layout.** Current contract: `ui/main/` for `@ui_main`,
+  `ui/widgets/<alias>/` for `@ui_widget`. Forbid scaffolding `ui-src/` (retired) or
+  top-level `widgets/<alias>/`. Runtime URL `/widgets/<alias>` is the served URL
+  contract, not the source layout
+- **Rule #3 (new) — Sparse config overrides.** Config is override-first; missing config
+  means code default applies. Don't enumerate `enabled: true` across every resource —
+  only intentional overrides belong in templates/props
+- **Rule #4 (new) — Access control configurable.** Bundle `allowed_roles`, API/widget
+  `user_types`/`roles`, `user_types_config`/`roles_config`, `enabled.*` shape. **Removed
+  `enabled_config` decorator arg must not be used** — replace with `enabled.*` feature
+  gate when found in legacy code
+- **Rule #5 (new) — Secrets discipline.** No secrets in descriptors, docs, Redis keys,
+  or git history; templates document shape only
+- Promoted `versatile@2026-03-31-13-36` as the **public reference for Telegram /
+  Mini App / widget / attachment / external-operator-prereq integration**, with explicit
+  bullet list of what it demonstrates (webhook + public routes, Mini App `initData`,
+  admin/user mapping, `@ui_widget` + `@api(route="operations")` split, attachments,
+  ReAct→Telegram message conversion, operator prereq doc, `ui/main` + `ui/widgets/<alias>`
+  layout)
+- Reiterated ngrok prerequisite + external operator work (BotFather, bot token, command
+  /menu config, webhook + Mini App URL registration) for local Telegram testing; routes
+  to `docs/service/cicd/ngrok-README.md` (CLI-started runtime path is the normal flow)
+
 ---
 
 ## Cross-tool notes

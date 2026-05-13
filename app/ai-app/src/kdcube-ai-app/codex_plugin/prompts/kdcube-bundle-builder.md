@@ -22,22 +22,103 @@ immediately and use the CLI tooling instead. There are no exceptions to this rul
 
 ---
 
-## Rule #1 — Every bundle must contain exactly these 5 files (HARD GATE — NO EXCEPTIONS)
+## Rule #1 — Every bundle must contain these maintenance artifacts (HARD GATE — NO EXCEPTIONS)
 
 Before considering any bundle done — whether created from scratch, modified, or wrapped —
-verify that all five files exist and are non-empty:
+verify that all mandatory files exist and are non-empty, and that any conditional files
+that apply to the bundle's surfaces are also present and current:
+
+**Mandatory (every bundle, every change):**
 
 | File | Purpose |
 |------|---------|
 | `README.md` | Explains runtime behavior, config props, secrets, and operational notes |
+| `AGENTS.md` (or equivalent maintainer note) | Short maintainer-facing note: what the bundle is, where the live edges are |
 | `release.yaml` | Carries `bundle.ref` (release version) and human-readable release notes |
 | `config/bundles.template.yaml` | Documents the non-secret descriptor shape (no real values) |
 | `config/bundles.secrets.template.yaml` | Documents bundle-scoped secrets shape; if none exist, keep `secrets: {}` |
-| `journal.md` | **MANDATORY** — session log; append one entry per work session recording what changed and why |
+| `interface/README.md` | Bundle-visible contract: widget aliases, API/MCP/cron/job route aliases, public-auth rules, payload shapes, config keys |
+| `docs/design/` | Structured design behind the implementation (not raw notes) |
+| `docs/journal/journal.md` | **MANDATORY** — session log; append one entry per work session recording what changed and why |
+| `tests/` | Bundle-local tests (at minimum a smoke test for each surface) |
+
+**Conditional (only when the bundle exposes that surface):**
+
+- `interface/*.openapi.yaml` — required when the bundle ships `@api(...)` routes
+- `docs/integrations/admin-integrational-homework.md` — required when an integration needs
+  external operator work (BotFather, OAuth provider config, webhook registration, etc.)
 
 **This applies to every bundle task without exception:** new bundles, modified bundles,
-bundles wrapped from existing apps. Do not mark a bundle task complete until all five files
-exist and reflect the current state of the bundle.
+bundles wrapped from existing apps. Do not mark a bundle task complete until the mandatory
+files exist, reflect the current state of the bundle, and the journal entry for this
+session has been appended. When runtime behavior, tool/skill contracts, storage semantics,
+user-scope mapping, release shape, or Tier 1 builder guidance changes, update the journal
+in the same change.
+
+---
+
+## Rule #2 — Bundle source layout (current contract — do not regress)
+
+The bundle source layout for UI surfaces is:
+
+```text
+my_bundle/
+  ui/
+    main/                     # @ui_main source (replaces the old ui-src/ folder)
+    widgets/<widget-alias>/   # @ui_widget source (replaces top-level widgets/<alias>/)
+```
+
+Rules:
+
+- **Do not scaffold new `ui-src/` folders.** That layout is retired.
+- **Do not scaffold top-level `widgets/<alias>/` source folders.** Widget source lives
+  under `ui/widgets/<alias>/`.
+- Runtime URLs may still contain `/widgets/<alias>` — that is the **served URL contract**,
+  not the source layout. Do not let the URL shape drive where you put source files.
+- Older example bundles in the repo may still have `ui-src/` or top-level `widgets/` on
+  disk; treat those as legacy, not as a layout to copy when authoring new bundles.
+- For the full source-folder widget build contract (`OUTDIR`, `<VI_BUILD_DEST_ABSOLUTE_PATH>`,
+  Vite/npm build command), use `bundle-widget-integration-README.md` (Tier 2).
+
+---
+
+## Rule #3 — Sparse config overrides (no enabled-flag enumeration)
+
+Bundle config (`bundles.template.yaml`, `bundles.yaml`, runtime overrides) is **override-first**:
+
+- Missing config means the code default applies.
+- Config and bundle props should contain **intentional overrides**, especially rare disables
+  or non-default values for a specific deployment.
+- **Do not** generate large config sections that enumerate `enabled: true` on every resource.
+  That is noise; it does not change behavior and rots when defaults move.
+- When a resource needs to be disabled in a specific deployment, that disable is an
+  intentional override and belongs in config — explain it in the bundle README.
+
+---
+
+## Rule #4 — Access control and visibility are configurable
+
+Current decorator/config behavior for access control and visibility:
+
+- Bundle-wide `allowed_roles` is configurable via bundle props.
+- API and widget `user_types` and `roles` are decorator args and may be overridden via
+  `user_types_config` / `roles_config` in bundle props.
+- Resource `enabled` state is configurable through bundle props and Admin overrides.
+- **The removed `enabled_config` decorator argument must not be used.** If you find it in
+  legacy code, replace it with the current `enabled.*` feature-gate config shape (see
+  `how-to-configure-and-run-bundle-README.md` and `bundle-runtime-configuration-and-secrets-README.md`).
+- Keep `bundles.template.yaml` examples sparse — show the override shape, not every flag.
+
+---
+
+## Rule #5 — Secrets discipline (no secrets in descriptors, docs, Redis, or git)
+
+- Bot tokens, webhook secrets, signing keys, OAuth client secrets, API keys, and user
+  credentials live in the configured secret store (`bundles.secrets.yaml` or the runtime
+  secrets provider).
+- Never put real values in `bundles.template.yaml`, `bundles.secrets.template.yaml`,
+  README/design docs, journal entries, Redis cache keys, or git history.
+- Templates document the **shape** (key names and brief descriptions), never live values.
 
 ---
 
@@ -156,8 +237,27 @@ Guardrails:
 - Provider URLs and webhook/callback settings: descriptor-backed (`bundles.yaml` config or `assembly.yaml`).
 - Bot tokens, webhook secrets, signing keys, OAuth client secrets: in the configured secret store (`bundles.secrets.yaml` or runtime secrets provider) — never in `.env`, code, or seed descriptors.
 
-Reference bundle `versatile@2026-03-31-13-36` — directories aren't web-fetchable; fetch
-these individually:
+Reference bundle `versatile@2026-03-31-13-36` is the **public reference for Telegram /
+Mini App / widget / attachment / external-operator-prereq integration.** Inspect it
+before implementing any of these by hand. It demonstrates:
+
+- Telegram webhook + public route wiring (no hand-rolled webhook registry)
+- Telegram Mini App / webapp support (`initData` validation handled by the SDK)
+- Telegram admin/user mapping patterns
+- widget operations (`@ui_widget` + `@api(route="operations")` split)
+- attachment handling (signed downloads, materialized files)
+- converting ReAct/agent stream output into Telegram-facing messages/artifacts
+- documenting external operator prerequisites (BotFather, webhook URL, Mini App
+  registration, bot token) in `docs/integrations/admin-integrational-homework.md`
+- the current `ui/main/` + `ui/widgets/<alias>/` source layout
+
+For local Telegram testing you need a public HTTPS origin — use the ngrok recipe from
+`docs/service/cicd/ngrok-README.md` (one ngrok origin through the local reverse proxy;
+the CLI-started runtime path is the normal flow). External operator work (BotFather, bot
+token, command/menu config, webhook + Mini App URL registration) is required before code
+will work end-to-end.
+
+Directories aren't web-fetchable; fetch these individually:
 
 - `repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/README.md`
 - `repo:kdcube-ai-app/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/entrypoint.py`
