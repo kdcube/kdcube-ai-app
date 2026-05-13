@@ -122,21 +122,8 @@ The OpenResty/nginx headers are the enforcement point. Frontend runtime config
 is only advisory for UI behavior, for example hiding standalone navigation or
 choosing a compact embedded layout.
 
-If `proxy.frame_embedding.expose_to_frontend_config` is enabled, the generated
-frontend config can expose a public, non-secret section such as:
-
-```json
-{
-  "embedding": {
-    "enabled": true,
-    "mode": "allowlist",
-    "allowedAncestors": ["https://app.example.com"]
-  }
-}
-```
-
-Do not rely on this frontend config for security. A browser only enforces the
-response headers.
+Do not rely on frontend config for security. A browser only enforces the
+response headers emitted by the proxy.
 
 ## Deployment Modes
 
@@ -298,17 +285,13 @@ proxy:
 
     # Used only when mode: allowlist.
     # These are public browser origins, not URL paths.
-    allowed_ancestors: []
-
-    # Optional: expose embedding mode in generated frontend runtime config.
-    expose_to_frontend_config: true
+    allowed_origins: []
 ```
 
 Defaults:
 
 - `mode: standalone`
-- `allowed_ancestors: []`
-- `expose_to_frontend_config: true`
+- `allowed_origins: []`
 
 For same-origin embedding:
 
@@ -316,7 +299,7 @@ For same-origin embedding:
 proxy:
   frame_embedding:
     mode: same_origin
-    allowed_ancestors: []
+    allowed_origins: []
 ```
 
 For embedding from another origin, whether it is another subdomain or another
@@ -326,7 +309,7 @@ domain entirely:
 proxy:
   frame_embedding:
     mode: allowlist
-    allowed_ancestors:
+    allowed_origins:
       - https://host-app.example.net
 ```
 
@@ -351,9 +334,9 @@ more_clear_headers "X-Frame-Options";
 more_set_headers "Content-Security-Policy: frame-ancestors 'self' https://host-app.example.com";
 ```
 
-If the deployment already emits a CSP header, the renderer must merge
-`frame-ancestors` into one CSP header instead of emitting conflicting CSP
-headers.
+The current proxy templates do not emit another CSP header on these routes. If
+another CSP is added later, `frame-ancestors` must be merged into one CSP header
+instead of emitting conflicting CSP headers.
 
 Renderer requirements:
 
@@ -361,18 +344,19 @@ Renderer requirements:
   used by `kdcube start`.
 - ECS/Terraform deployment must render the same selected policy into the nginx
   config shipped with the ECS service.
-- The generated frontend runtime config must be derived from the same
-  `assembly.yaml` values when embedding metadata is exposed.
+- The public proxy must clear inherited `X-Frame-Options` before applying the
+  selected policy, because upstream UI/static containers may keep conservative
+  standalone defaults.
 - Descriptor examples and release procedures must not require manual nginx
   edits after generation.
 - The renderer must apply one frame policy consistently to every frameable
   KDCube document route that participates in the control-plane experience.
 
-The renderer must treat `allowed_ancestors` as origins, not URL paths. These
+The renderer must treat `allowed_origins` as origins, not URL paths. These
 are valid:
 
 ```yaml
-allowed_ancestors:
+allowed_origins:
   - https://app.example.com
   - https://host-app.example.net
 ```
@@ -380,7 +364,7 @@ allowed_ancestors:
 These are not valid frame ancestors:
 
 ```yaml
-allowed_ancestors:
+allowed_origins:
   - https://app.example.com/some/path
   - "*.example.com"
 ```

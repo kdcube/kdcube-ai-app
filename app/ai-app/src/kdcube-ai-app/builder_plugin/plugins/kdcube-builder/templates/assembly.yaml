@@ -25,6 +25,9 @@ auth:
 proxy:
   ssl: false
   route_prefix: "/chatbot"
+  frame_embedding:
+    mode: "standalone"
+    allowed_origins: []
 
 ports:
   ingress: "8010"

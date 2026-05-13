@@ -46,6 +46,9 @@ auth:
 proxy:
   ssl: false
   route_prefix: "/platform"
+  frame_embedding:
+    mode: "standalone"
+    allowed_origins: []
 
 # ---------------------------------------------------------------------------
 # Service ports
