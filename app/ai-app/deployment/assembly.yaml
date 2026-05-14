@@ -367,6 +367,9 @@ platform:
           web_search_segmenter: "fast"             # WEB_SEARCH_SEGMENTER
           web_favicon_enrich_enabled: true          # WEB_FAVICON_ENRICH_ENABLED; set false to skip favicon enrichment
           web_favicon_enrich_timeout_s: 3           # WEB_FAVICON_ENRICH_TIMEOUT_S; favicon enrichment budget, partial successes are kept
+          web_favicon_failure_cache_ttl_s: 300      # WEB_FAVICON_FAILURE_CACHE_TTL_S; short domain-level negative cache TTL
+          web_favicon_browser_fallback_enabled: true # WEB_FAVICON_BROWSER_FALLBACK_ENABLED; bounded browser fallback after HTTP/icon probes fail
+          web_favicon_browser_fallback_timeout_s: 2  # WEB_FAVICON_BROWSER_FALLBACK_TIMEOUT_S; total browser fallback budget
         web_fetch:
           web_fetch_resources_medium: ""  # WEB_FETCH_RESOURCES_MEDIUM; JSON: {"cookies": {"uid": "...", "sid": "..."}}
         mcp_cache_ttl_seconds: 36000      # MCP_CACHE_TTL_SECONDS

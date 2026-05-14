@@ -645,7 +645,7 @@ Local bundle root contract:
 - `assembly.paths.host_exec_workspace_path` becomes `HOST_EXEC_WORKSPACE_PATH`; if it is `null` or omitted, init uses `<workdir>/data/exec-workspace`
 - `assembly.paths.host_react_debug_path` becomes `HOST_REACT_DEBUG_PATH`; if it is `null` or omitted, init uses `<workdir>/data/react-debug`; proc mounts it as `/react-debug` and keeps only the latest `REACT_DEBUG_KEEP_FILES` timeline render dumps
 - `assembly.ai.react.debug_timeline: false` mutes rendered ReAct prompt snapshots for normal runs; set it to `true` only while diagnosing prompt rendering
-- `assembly.platform.services.proc.tools.web_search.web_favicon_enrich_enabled: false` disables favicon enrichment for web search/fetch results; `web_favicon_enrich_timeout_s` caps favicon lookup time and keeps partial successes
+- `assembly.platform.services.proc.tools.web_search.web_favicon_enrich_enabled: false` disables favicon enrichment for web search/fetch results; favicon cache keys are domain-scoped, `web_favicon_enrich_timeout_s` caps lookup time, and `web_favicon_failure_cache_ttl_s` controls the short negative-cache TTL for failed domains
 - if `assembly.storage.kdcube` is `null` or omitted, init uses the CLI-managed tenant/project local storage root and rewrites the staged runtime descriptor to `file:///kdcube-storage`
 - if `assembly.storage.bundles` is `null` or omitted, init uses the CLI-managed tenant/project local bundle storage root and rewrites the staged runtime descriptor to `file:///bundle-storage`
 - if `assembly.storage.kdcube` is a local host `file://...` URI, init uses that host path as `HOST_KDCUBE_STORAGE_PATH` and rewrites the staged runtime descriptor to `file:///kdcube-storage`
