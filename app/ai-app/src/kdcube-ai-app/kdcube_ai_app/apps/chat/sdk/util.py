@@ -842,28 +842,36 @@ MAX_TOKENS = 8191
 
 def truncate_text_by_tokens(text, max_tokens=MAX_TOKENS):
 
-    import tiktoken
+    try:
+        import tiktoken
 
-    # Get the tokenizer for text-embedding-3-small (uses cl100k_base encoding)
-    encoding = tiktoken.get_encoding("cl100k_base")
-    """Truncate text to fit within token limit"""
-    tokens = encoding.encode(text)
-    if len(tokens) > max_tokens:
-        tokens = tokens[:max_tokens]
-        text = encoding.decode(tokens)
+        # Get the tokenizer for text-embedding-3-small (uses cl100k_base encoding)
+        encoding = tiktoken.get_encoding("cl100k_base")
+        """Truncate text to fit within token limit"""
+        tokens = encoding.encode(text)
+        if len(tokens) > max_tokens:
+            tokens = tokens[:max_tokens]
+            text = encoding.decode(tokens)
+    except Exception:
+        # tiktoken can lazily fetch encodings in fresh/offline environments.
+        # Fall back to a conservative word-based trim rather than failing
+        # persistence or recovery tooling.
+        words = (text or "").split()
+        if len(words) > max_tokens:
+            text = " ".join(words[:max_tokens])
     return text
 
 
 def token_count(text: str) -> int:
 
-    import tiktoken
-
-    # Get the tokenizer for text-embedding-3-small (uses cl100k_base encoding)
-    encoding = tiktoken.get_encoding("cl100k_base")
     """Return token count using cl100k_base encoding."""
     if not text:
         return 0
     try:
+        import tiktoken
+
+        # Get the tokenizer for text-embedding-3-small (uses cl100k_base encoding)
+        encoding = tiktoken.get_encoding("cl100k_base")
         return len(encoding.encode(text))
     except Exception:
         return len((text or "").split())

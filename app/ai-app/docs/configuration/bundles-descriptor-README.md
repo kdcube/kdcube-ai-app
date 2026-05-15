@@ -121,6 +121,51 @@ the supervisor is platform trusted. Set
 transport. Platform descriptors (`assembly.yaml`, `gateway.yaml`, global
 `secrets.yaml`) remain full.
 
+`config.memory` is the reserved User Memory subsystem config for bundles that
+derive from the memory entrypoint mixin. It is deployment-scoped config, not the
+user memory records themselves.
+
+Example:
+
+```yaml
+bundles:
+  items:
+    - id: "my.bundle@1-0"
+      config:
+        memory:
+          enabled: true
+          announce:
+            enabled: true
+            limit: 6
+            scope_filter: current_bundle # current_bundle | all_user_memories
+          tools:
+            enabled: true
+            allow_write: false # keep read-only until durable writes are policy-approved
+            default_scope_filter: current_bundle
+            embedding_enabled: true
+          widget:
+            enabled: true
+            allow_write: true
+            default_scope_filter: current_bundle
+            allow_all_user_memories: true
+            ensure_schema: true
+          reconciliation:
+            enabled: true
+          snapshots:
+            enabled: true
+        ui:
+          web_app_widgets:
+            memories:
+              enabled: true
+```
+
+`memory.enabled` gates the subsystem. `memory.announce` projects a read-only
+hotset into ReAct announce context. `memory.tools` controls search/read/write
+tools. `memory.widget` enables user-owned CRUD in the Memory widget.
+`memory.reconciliation` and `memory.snapshots` control maintenance jobs and
+restore points. `ui.web_app_widgets.memories.enabled` exposes the built widget
+route; the memory mixin supplies the default source folder/build command.
+
 ## Two supported bundle styles
 
 ### 1. Git bundles

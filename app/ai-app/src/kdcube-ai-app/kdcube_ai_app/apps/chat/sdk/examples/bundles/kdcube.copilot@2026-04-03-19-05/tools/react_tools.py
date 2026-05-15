@@ -11,8 +11,9 @@
 #
 # The bundle package is loaded under a real dynamic package root, so normal
 # same-bundle relative imports work here. Proc-side tool binding seeds
-# KNOWLEDGE_ROOT from bundle storage when needed; isolated exec falls back to
-# BUNDLE_STORAGE_DIR.
+# KNOWLEDGE_ROOT from the dedicated materialized knowledge root under bundle
+# storage; isolated exec falls back to BUNDLE_STORAGE_DIR and resolves the same
+# sub-root.
 
 from __future__ import annotations
 
@@ -50,7 +51,7 @@ def _seed_knowledge_root_from_tool_context() -> None:
         ensure=True,
     )
     if root is not None:
-        knowledge_resolver.KNOWLEDGE_ROOT = root
+        knowledge_resolver.KNOWLEDGE_ROOT = pathlib.Path(root).resolve() / "knowledge"
 
 
 def bind_integrations(integrations):

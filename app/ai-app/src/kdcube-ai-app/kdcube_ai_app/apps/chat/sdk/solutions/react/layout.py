@@ -739,6 +739,82 @@ def build_announce_live_turn_event_lines(
     return lines
 
 
+def build_announce_memory_lines(*, runtime_ctx: Optional[RuntimeCtx]) -> List[str]:
+    if runtime_ctx is None:
+        return []
+    if not bool(getattr(runtime_ctx, "memory_announce_enabled", False)):
+        return []
+
+    scope_filter = str(getattr(runtime_ctx, "memory_scope_filter", "") or "current_bundle").strip()
+    rows = getattr(runtime_ctx, "memory_hotset", None)
+    rows = rows if isinstance(rows, list) else []
+    limit = getattr(runtime_ctx, "memory_hotset_limit", 8)
+    try:
+        limit = max(1, int(limit or 8))
+    except Exception:
+        limit = 8
+    error = str(getattr(runtime_ctx, "memory_hotset_error", "") or "").strip()
+
+    lines: List[str] = ["[USER MEMORY HOTSET]"]
+    lines.append(
+        "  policy: read-only durable user memory; current user message and visible turn context override memory if they conflict."
+    )
+    lines.append(
+        "  use: consult these only when relevant; do not restate them unless they affect the answer."
+    )
+    lines.append(
+        "  format: memory text carries the trigger+rule; context is why/provenance/examples only."
+    )
+    lines.append(f"  scope_filter: {scope_filter}")
+    if error:
+        lines.append(f"  status: unavailable ({_shorten(error, 160)})")
+        return lines
+    if not rows:
+        lines.append("  memories: none")
+        return lines
+
+    shown = rows[:limit]
+    lines.append(f"  memories: showing {len(shown)} of {len(rows)}")
+    for row in shown:
+        if not isinstance(row, dict):
+            continue
+        memory_id = str(row.get("id") or "").strip() or "unknown"
+        bundle_id = str(row.get("bundle_id") or "").strip()
+        bundle_label = bundle_id or "global"
+        tier = row.get("tier")
+        confidence = row.get("confidence_score")
+        salience = row.get("salience_score")
+        updated = str(row.get("updated_at") or "").strip()
+        labels = row.get("labels")
+        label_text = ""
+        if isinstance(labels, list) and labels:
+            label_text = " labels=[" + ", ".join(str(item) for item in labels[:5]) + "]"
+        metrics = []
+        if tier is not None:
+            metrics.append(f"tier={tier}")
+        if bool(row.get("pinned")):
+            metrics.append("pinned=true")
+        try:
+            metrics.append(f"confidence={float(confidence):.2f}")
+        except Exception:
+            pass
+        try:
+            metrics.append(f"salience={float(salience):.2f}")
+        except Exception:
+            pass
+        if updated:
+            metrics.append(f"updated={updated[:19]}")
+        metric_text = (" " + " ".join(metrics)) if metrics else ""
+        lines.append(f"  - me:{memory_id} bundle={bundle_label}{metric_text}{label_text}")
+        text = str(row.get("memory") or "").strip()
+        if text:
+            lines.append(f"    {_shorten(' '.join(text.split()), 220)}")
+        context = str(row.get("context") or "").strip()
+        if context:
+            lines.append(f"    context={_shorten(' '.join(context.split()), 160)}")
+    return lines
+
+
 def build_announce_context_cap_lines(*, runtime_ctx: Optional[RuntimeCtx]) -> List[str]:
     if runtime_ctx is None:
         return []
@@ -911,6 +987,11 @@ def build_announce_text(
     if live_turn_event_lines:
         lines.append("")
         lines.extend(live_turn_event_lines)
+
+    memory_lines = build_announce_memory_lines(runtime_ctx=runtime_ctx)
+    if memory_lines:
+        lines.append("")
+        lines.extend(memory_lines)
 
     workspace_lines = build_announce_workspace_lines(
         runtime_ctx=runtime_ctx,

@@ -2857,7 +2857,10 @@ async def search_context(
 
             search_tags = None
             [qvec] = [embedding] if embedding else await model_service.embed_texts([query])
-            if where in ("assistant_artifact", "artifact", "project_log"):
+            if where in ("notes", "react_note", "react.notes"):
+                where = "artifact"
+                search_tags = ["kind:react.note"]
+            elif where in ("assistant_artifact", "artifact", "project_log"):
                 where = "artifact"
                 # search_tags = ["artifact:project.log"]
                 search_tags = ["artifact:react.log.presentation", "artifact:solver.failure"]

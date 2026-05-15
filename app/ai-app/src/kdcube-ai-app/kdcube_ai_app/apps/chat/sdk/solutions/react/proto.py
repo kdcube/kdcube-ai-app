@@ -152,6 +152,15 @@ class RuntimeCtx:
     on_after_completion_contribution: Optional[Callable[[], Any]] = None
     # Experimental react multi-action mode, currently used by v3.
     multi_action_mode: Optional[str] = "off"
+    # Optional durable user-memory context. These fields are read-only inputs for
+    # the announce prompt unless explicit memory tools are enabled separately.
+    memory_enabled: bool = False
+    memory_announce_enabled: bool = False
+    memory_scope_filter: str = "current_bundle"
+    memory_hotset_limit: int = 8
+    memory_announce_timeout_seconds: float = 1.5
+    memory_hotset: List[Dict[str, Any]] = field(default_factory=list)
+    memory_hotset_error: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -205,6 +214,13 @@ class RuntimeCtx:
             "cache_truncation_keep_recent_images": self.cache_truncation_keep_recent_images,
             "cache_truncation_max_image_pdf_b64_sum": self.cache_truncation_max_image_pdf_b64_sum,
             "multi_action_mode": self.multi_action_mode,
+            "memory_enabled": bool(self.memory_enabled),
+            "memory_announce_enabled": bool(self.memory_announce_enabled),
+            "memory_scope_filter": self.memory_scope_filter,
+            "memory_hotset_limit": int(self.memory_hotset_limit or 8),
+            "memory_announce_timeout_seconds": float(self.memory_announce_timeout_seconds or 1.5),
+            "memory_hotset": copy.deepcopy(self.memory_hotset or []),
+            "memory_hotset_error": self.memory_hotset_error,
         }
 
 

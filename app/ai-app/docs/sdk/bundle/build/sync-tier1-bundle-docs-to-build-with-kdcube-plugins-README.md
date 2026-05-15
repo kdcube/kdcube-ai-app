@@ -203,10 +203,30 @@ The plugin should steer agents away from these recurring mistakes:
   `ai.react.debug_timeline` / `AI_REACT_DEBUG_TIMELINE`, with per-bundle
   override through `config.react.debug_timeline` or `react.debug_timeline`;
   keep it off unless diagnosing the exact rendered model context
+- User Memory subsystem config is reserved under `config.memory` for bundles
+  that derive from the memory entrypoint mixin; the widget route also needs
+  `config.ui.web_app_widgets.memories.enabled: true`
 - bundle finalizers such as `on_turn_completed(...)` are for fast cleanup after
   success, error, or cancellation, not for expensive user-facing work
 - do not commit, tag, push, or update descriptor refs unless the user has
   explicitly agreed to the content release values
+
+Memory config example to keep in the Tier 1 docs:
+
+```yaml
+config:
+  memory:
+    enabled: true
+    announce: {enabled: true, limit: 6, scope_filter: current_bundle}
+    tools: {enabled: true, allow_write: false, default_scope_filter: current_bundle}
+    widget: {enabled: true, allow_write: true, default_scope_filter: current_bundle}
+    reconciliation: {enabled: true}
+    snapshots: {enabled: true}
+  ui:
+    web_app_widgets:
+      memories:
+        enabled: true
+```
 
 ## Done When
 

@@ -15,7 +15,7 @@
 #      when runtime bundle props change or load-time preparation did not happen
 #   5. Defines role_models mapping logical roles → concrete LLM models
 #
-# Key base class: BaseEntrypoint
+# Key base class: BaseEntrypointWithMemory
 #   Your bundle overrides:
 #     - configuration       → role_models + knowledge repo/root config
 #     - on_bundle_load()     → build knowledge space for this tenant/project bundle instance
@@ -65,8 +65,8 @@ from kdcube_ai_app.apps.chat.sdk.storage.ai_bundle_storage import AIBundleStorag
 from kdcube_ai_app.apps.chat.sdk.viz.patch_platform_dashboard import patch_dashboard
 from kdcube_ai_app.apps.chat.emitters import ChatCommunicator
 from kdcube_ai_app.infra.service_hub.inventory import Config, BundleState
-from kdcube_ai_app.infra.plugin.agentic_loader import agentic_workflow, api, mcp, ui_widget
-from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import BaseEntrypoint
+from kdcube_ai_app.infra.plugin.agentic_loader import agentic_workflow, api, mcp, on_job, ui_widget
+from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint_with_memory import BaseEntrypointWithMemory
 from kdcube_ai_app.storage.observed_file_locks import observed_file_lock, lock_owner_summary
 
 from .orchestrator.workflow import WithReactWorkflow
@@ -105,6 +105,25 @@ def _knowledge_lock_path(storage_root: pathlib.Path) -> pathlib.Path:
 
 def _knowledge_signature_path(storage_root: pathlib.Path) -> pathlib.Path:
     return storage_root / ".knowledge.signature"
+
+
+def _knowledge_root_for_storage(storage_root: pathlib.Path) -> pathlib.Path:
+    return storage_root / "knowledge"
+
+
+def _cleanup_legacy_top_level_knowledge_symlinks(storage_root: pathlib.Path) -> None:
+    """
+    Older copilot builds materialized ks: directly under bundle storage, including
+    a top-level ui symlink. Platform UI builds reserve <bundle_storage>/ui, so only
+    remove legacy symlinks and leave real built UI directories untouched.
+    """
+    for name in ("docs", "deployment", "src", "ui"):
+        path = storage_root / name
+        try:
+            if path.is_symlink():
+                path.unlink()
+        except Exception:
+            pass
 
 
 def _knowledge_lock_wait_seconds() -> int:
@@ -190,7 +209,7 @@ def _knowledge_outputs_ready(
 # scans all bundles and auto-loads classes decorated with this.
 # priority=100 — selection order when multiple bundles match (higher = preferred)
 @agentic_workflow(name=BUNDLE_ID, version="1.0.0", priority=100)
-class ReactWorkflow(BaseEntrypoint):
+class ReactWorkflow(BaseEntrypointWithMemory):
     """KDCube Copilot bundle — gate + ReAct solver with a single-root ks: knowledge space."""
 
     def __init__(
@@ -212,6 +231,13 @@ class ReactWorkflow(BaseEntrypoint):
         self._knowledge_signature: str | None = None
         # Graph is built once at init and reused across invocations
         self.graph = self._build_graph()
+
+    @on_job
+    async def on_job(self, **kwargs) -> Dict[str, Any]:
+        handled = await super().handle_job(**kwargs)
+        if handled.get("handled"):
+            return handled
+        return handled
 
     def _build_graph(self) -> StateGraph:
         """Build a single-node LangGraph that runs the full workflow."""
@@ -298,9 +324,26 @@ class ReactWorkflow(BaseEntrypoint):
         g.add_edge("orchestrate", END)
         return g.compile()
 
+    async def _ensure_ui_build(self) -> None:
+        storage_root = self.bundle_storage_root()
+        if storage_root is not None:
+            _cleanup_legacy_top_level_knowledge_symlinks(storage_root)
+        await super()._ensure_ui_build()
+
     async def on_bundle_load(self, **kwargs) -> None:
-        """Build bundle knowledge space once when this tenant/project bundle instance is loaded."""
+        """Build bundle UI assets and the dedicated ks: knowledge root for this tenant/project instance."""
+        state = {
+            "tenant": getattr(getattr(self.comm_context, "actor", None), "tenant_id", None),
+            "project": getattr(getattr(self.comm_context, "actor", None), "project_id", None),
+        }
+        if state["tenant"] and state["project"]:
+            await self.refresh_bundle_props(
+                state=state,
+                notify=False,
+                reason="bundle.on_load",
+            )
         await asyncio.to_thread(self._ensure_knowledge_space, reason="on_bundle_load")
+        await self._ensure_ui_build()
         return None
 
     async def pre_run_hook(self, *, state: Dict[str, Any]) -> None:
@@ -311,9 +354,10 @@ class ReactWorkflow(BaseEntrypoint):
 
     def _doc_reader_storage_root(self) -> pathlib.Path | None:
         storage_root = self.bundle_storage_root()
-        if storage_root is not None:
-            doc_reader_tools.ensure_knowledge_root(storage_root=storage_root)
-        return storage_root
+        knowledge_root = _knowledge_root_for_storage(storage_root) if storage_root is not None else None
+        if knowledge_root is not None:
+            doc_reader_tools.ensure_knowledge_root(storage_root=knowledge_root)
+        return knowledge_root
 
     def _build_doc_reader_mcp_app(self, *, name_suffix: str) -> Any:
         return doc_reader_tools.build_doc_reader_mcp_app(
@@ -545,7 +589,7 @@ class ReactWorkflow(BaseEntrypoint):
         str | None,
         str | None,
     ]:
-        ws_root = self.bundle_storage_root()
+        storage_root = self.bundle_storage_root()
         bundle_root = None
         try:
             spec = getattr(self.config, "ai_bundle_spec", None)
@@ -556,7 +600,7 @@ class ReactWorkflow(BaseEntrypoint):
         if not bundle_root:
             bundle_root = pathlib.Path(__file__).resolve().parent
 
-        if not ws_root:
+        if not storage_root:
             return (
                 None,
                 bundle_root,
@@ -569,8 +613,9 @@ class ReactWorkflow(BaseEntrypoint):
 
         source_root, validate_refs, repo, ref = self._resolve_knowledge_paths(
             bundle_root=bundle_root,
-            storage_root=ws_root,
+            storage_root=storage_root,
         )
+        ws_root = _knowledge_root_for_storage(storage_root)
         signature = f"{repo}|{ref}|{source_root}|{validate_refs}"
         return (
             ws_root,
@@ -593,7 +638,7 @@ class ReactWorkflow(BaseEntrypoint):
         str | None,
         str | None,
     ]:
-        ws_root = self.bundle_storage_root()
+        storage_root = self.bundle_storage_root()
         bundle_root = None
         try:
             spec = getattr(self.config, "ai_bundle_spec", None)
@@ -604,7 +649,7 @@ class ReactWorkflow(BaseEntrypoint):
         if not bundle_root:
             bundle_root = pathlib.Path(__file__).resolve().parent
 
-        if not ws_root:
+        if not storage_root:
             return (
                 None,
                 bundle_root,
@@ -617,8 +662,9 @@ class ReactWorkflow(BaseEntrypoint):
 
         source_root, validate_refs, repo, ref = self._expected_knowledge_paths(
             bundle_root=bundle_root,
-            storage_root=ws_root,
+            storage_root=storage_root,
         )
+        ws_root = _knowledge_root_for_storage(storage_root)
         signature = f"{repo}|{ref}|{source_root}|{validate_refs}"
         return (
             ws_root,

@@ -616,6 +616,9 @@ What to validate:
 - cron logic does not assume a real end-user actor
 - cron logic does not depend on session/socket/request-header state
 - cron code works with bundle props, storage, DB/Redis, and explicit scope only
+- if the bundle has background jobs, there is exactly one decorated `@on_job`
+  method and it calls `await super().handle_job(**kwargs)` before local
+  `work_kind` dispatch
 
 If a bundle has `@cron(...)`, you should test at least one run path that invokes the scheduled logic directly.
 
@@ -1241,6 +1244,9 @@ Before calling the bundle complete, verify all of these:
 - bundle reload works through the local descriptor-driven flow
 - bundle appears with correct APIs/widgets in integrations listing
 - expected operations are callable through real routes
+- memory-enabled bundles are tested with an explicit descriptor block:
+  `memory.enabled: true`, `memory.widget.enabled: true`, and
+  `ui.web_app_widgets.memories.enabled: true`
 - widget networking uses the correct runtime URL shape
 - custom main-view UI uses the runtime config bridge and selected runtime bundle id
 - generated custom main-view UI is refreshed by the loader, not by manual runtime-storage builds
@@ -1258,6 +1264,23 @@ Before calling the bundle complete, verify all of these:
 - exclusivity behavior is validated separately from singleton behavior
 - cron/system path does not assume request-bound comm context
 - isolated-exec path does not assume host-process globals
+
+Memory smoke config:
+
+```yaml
+config:
+  memory:
+    enabled: true
+    announce: {enabled: true, limit: 6, scope_filter: current_bundle}
+    tools: {enabled: true, allow_write: false, default_scope_filter: current_bundle}
+    widget: {enabled: true, allow_write: true, default_scope_filter: current_bundle}
+    reconciliation: {enabled: true}
+    snapshots: {enabled: true}
+  ui:
+    web_app_widgets:
+      memories:
+        enabled: true
+```
 
 ## 14. Minimum Acceptance Standard
 

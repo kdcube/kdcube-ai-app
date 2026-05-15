@@ -60,7 +60,8 @@ Build command contract:
 - the widget build system must treat it as an output directory, not as a Vite
   positional build argument
 - for Vite, configure `build.outDir` from `process.env.OUTDIR`
-- use relative assets, for example `base: './'`
+- for Vite, `base: './'` is required so built assets are relative to the
+  widget route
 
 Minimal Vite config:
 
@@ -73,6 +74,24 @@ export default defineConfig({
   },
 })
 ```
+
+Check the built `index.html`. It must reference assets with relative paths:
+
+```html
+<script type="module" src="./assets/index-....js"></script>
+<link rel="stylesheet" href="./assets/index-....css">
+```
+
+If Vite emits root-relative assets such as `/assets/index-....js`, the widget
+iframe can appear blank because the browser requests assets from the KDCube app
+root instead of:
+
+```text
+/api/integrations/bundles/{tenant}/{project}/{bundle_id}/widgets/{widget_alias}/assets/...
+```
+
+Fix this in the widget's Vite config with `base: './'`; do not work around it
+by copying assets or hardcoding bundle routes.
 
 Do not put the destination path after `vite build`.
 
@@ -482,6 +501,11 @@ window.parent.postMessage(
 - For platform widgets and embedded browser clients, the preferred `POST /operations/{alias}` body shape is `{ "data": { ... } }`.
 - The integrations layer also accepts a raw JSON object body and treats it as `data`, so webhook-style service integrations do not need a platform-specific wrapper.
 - The integrations layer returns an envelope shaped like `{ status, tenant, project, bundle_id, [alias]: result }`; widgets should unwrap the `[alias]` field.
+- Widget operations that start long-running work should submit a background job
+  and return a durable job id/status immediately. The bundle's single `@on_job`
+  handler should call `await super().handle_job(**kwargs)` first so SDK mixins
+  can consume their own `work_kind` values, then the widget can refresh a status
+  operation until the shared job record reaches a terminal state.
 
 ## Reference Examples
 

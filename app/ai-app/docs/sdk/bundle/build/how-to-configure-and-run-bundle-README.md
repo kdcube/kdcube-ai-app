@@ -553,6 +553,31 @@ Built-in example bundles are governed by the deployment switch in `assembly.yaml
 - an item in `bundles.yaml` for a packaged example may carry config/props, but it is not the enable switch
 - if examples are disabled, mentioning an example id in `bundles.yaml` must not make that example available
 
+Memory-enabled bundles use `config.memory` plus the Memory widget flag:
+
+```yaml
+bundles:
+  items:
+    - id: "my.bundle@1-0"
+      config:
+        memory:
+          enabled: true
+          announce: {enabled: true, limit: 6, scope_filter: current_bundle}
+          tools: {enabled: true, allow_write: false, default_scope_filter: current_bundle}
+          widget: {enabled: true, allow_write: true, default_scope_filter: current_bundle}
+          reconciliation: {enabled: true}
+          snapshots: {enabled: true}
+        ui:
+          web_app_widgets:
+            memories:
+              enabled: true
+```
+
+`memory.enabled` gates the subsystem. `announce` is read-only context for ReAct,
+`tools` controls memory search/read/write tools, `widget` controls user CRUD,
+and reconciliation/snapshots control maintenance and restore flows. The bundle
+must derive from the memory entrypoint mixin for this config to have effect.
+
 ### `bundles.secrets.yaml`
 
 `bundles.secrets.yaml` controls deployment-scoped bundle secrets:

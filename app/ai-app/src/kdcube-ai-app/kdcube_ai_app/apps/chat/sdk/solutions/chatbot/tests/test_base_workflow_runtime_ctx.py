@@ -779,6 +779,14 @@ async def test_persist_turn_entries_store_multiple_user_and_assistant_rows():
                         "assistant_completion_attempt_index": 2,
                     },
                 },
+                {
+                    "type": "react.note",
+                    "turn_id": "turn-1",
+                    "ts": "2026-04-26T10:00:06Z",
+                    "path": "fi:turn-1.outputs/internal_notes/beacons.md",
+                    "text": "[K] fi:turn-1.outputs/report.html - source report\n[D] Keep notes indexed as authored.",
+                    "meta": {"channel": "internal"},
+                },
             ]
         )
     )
@@ -800,30 +808,37 @@ async def test_persist_turn_entries_store_multiple_user_and_assistant_rows():
     await wf.persist_assistant(scratchpad)
 
     assert prompt_count == 2
-    assert [m["role"] for m in saved_messages] == ["user", "user", "assistant", "assistant", "assistant"]
+    assert [m["role"] for m in saved_messages] == ["user", "user", "assistant", "assistant", "assistant", "artifact"]
     assert [m["text"] for m in saved_messages] == [
         "Original prompt",
         "Additional requirement",
         "First visible completion",
         "Final completion",
         "Goal: finish the task\nOutcome: final completion persisted",
+        "[K] fi:turn-1.outputs/report.html - source report\n[D] Keep notes indexed as authored.",
     ]
     assert saved_messages[1]["tags"][-1] == "continuation:followup"
     assert "chat:summary" in saved_messages[4]["tags"]
     assert "kind:working.summary" in saved_messages[4]["tags"]
     assert "summary_scope:completion_attempt" in saved_messages[4]["tags"]
     assert "summary_attempt:2" in saved_messages[4]["tags"]
+    assert "kind:react.note" in saved_messages[5]["tags"]
+    assert "note_tag:K" in saved_messages[5]["tags"]
+    assert "note_tag:D" in saved_messages[5]["tags"]
+    assert "visibility:internal" in saved_messages[5]["tags"]
     assert {
         "ar:turn-1.user.prompt",
         "ar:turn-1.user.followup.1",
         "ar:turn-1.assistant.completion.1",
         "ar:turn-1.assistant.completion",
         "ws:turn-1.conv.working.summary.attempt.2",
+        "fi:turn-1.outputs/internal_notes/beacons.md",
     }.issubset(scratchpad.persisted_turn_entry_paths)
     assert any(
-        payload.get("data", {}).get("count") == 3
+        payload.get("data", {}).get("count") == 4
         and payload.get("data", {}).get("assistant_completion_count") == 2
         and payload.get("data", {}).get("working_summary_count") == 1
+        and payload.get("data", {}).get("internal_note_count") == 1
         for payload in emitted
         if isinstance(payload, dict) and payload.get("step") == "conversation.persist.assistant_message"
     )

@@ -210,6 +210,52 @@ def test_build_announce_text_includes_current_turn_live_events(tmp_path):
     assert "old turn event should stay out of announce" not in announce_text
 
 
+def test_build_announce_text_includes_read_only_memory_hotset(tmp_path):
+    runtime = RuntimeCtx(
+        turn_id="turn_123",
+        outdir=str(tmp_path / "out"),
+        workspace_implementation="custom",
+        memory_enabled=True,
+        memory_announce_enabled=True,
+        memory_scope_filter="current_bundle",
+        memory_hotset=[
+            {
+                "id": "mem_1",
+                "bundle_id": "demo@marketing",
+                "memory": "The user prefers concise engineering explanations with concrete failure modes.",
+                "context": "Observed across React protocol debugging turns.",
+                "tier": 1,
+                "confidence_score": 0.91,
+                "salience_score": 0.84,
+                "labels": ["preference", "engineering"],
+                "updated_at": "2026-05-14T12:00:00+00:00",
+            }
+        ],
+    )
+
+    announce_text = build_announce_text(
+        iteration=1,
+        max_iterations=6,
+        started_at="2026-04-11T10:00:00Z",
+        timezone="UTC",
+        runtime_ctx=runtime,
+        timeline_blocks=[],
+        constraints=None,
+        feedback_updates=None,
+        feedback_incorporated=False,
+        mode="full",
+    )
+
+    assert "[USER MEMORY HOTSET]" in announce_text
+    assert "policy: read-only durable user memory" in announce_text
+    assert "format: memory text carries the trigger+rule; context is why/provenance/examples only." in announce_text
+    assert "scope_filter: current_bundle" in announce_text
+    assert "me:mem_1" in announce_text
+    assert "bundle=demo@marketing" in announce_text
+    assert "The user prefers concise engineering explanations" in announce_text
+    assert "context=Observed across React protocol debugging turns." in announce_text
+
+
 def test_build_announce_text_explains_reactive_iteration_bonus(tmp_path):
     runtime = RuntimeCtx(
         turn_id="turn_123",

@@ -128,6 +128,11 @@ Tasks SDK Solution
 Bundle code owns product-specific task wording, user identity resolution,
 widget composition, and route exposure.
 
+If multiple SDK blocks can receive background jobs, do not add multiple
+decorated `@on_job` methods. The final bundle entrypoint keeps one `@on_job`,
+calls `await super().handle_job(**kwargs)` first, and only dispatches local
+`work_kind` values when the superclass returns `handled=false`.
+
 ### Telegram Bot Transport And Optional Mini App Controls
 
 ```text
@@ -202,6 +207,33 @@ Email Integration
 
 Bundle code owns the product instruction, account selection policy, delivery
 choice, and UI affordances for connecting accounts.
+
+### User Memory Block
+
+Use the memory entrypoint mixin when a bundle needs user-owned durable memories,
+the Memory widget, optional ReAct announce hotsets, and snapshot-backed
+reconciliation.
+
+Descriptor config example:
+
+```yaml
+config:
+  memory:
+    enabled: true
+    announce: {enabled: true, limit: 6, scope_filter: current_bundle}
+    tools: {enabled: true, allow_write: false, default_scope_filter: current_bundle}
+    widget: {enabled: true, allow_write: true, default_scope_filter: current_bundle}
+    reconciliation: {enabled: true}
+    snapshots: {enabled: true}
+  ui:
+    web_app_widgets:
+      memories:
+        enabled: true
+```
+
+Only bundles deriving from the memory mixin interpret this block. Keep
+`tools.allow_write: false` until the bundle has an explicit policy for
+agent-authored durable memory changes.
 
 ## Test The Assembly Boundary
 

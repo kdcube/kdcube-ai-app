@@ -263,6 +263,9 @@ Scope resolution:
 - background jobs restore the same request/runtime context snapshot before
   calling bundle code, so job tools can read user-scoped secrets without
   inventing ids in the LLM prompt
+- if a bundle entrypoint derives from mixins with background jobs, the final
+  `@on_job` method should call `await super().handle_job(**kwargs)` first; mixins
+  dispatch by `work_kind` and return `handled=true` when they consumed the job
 
 Compatibility:
 

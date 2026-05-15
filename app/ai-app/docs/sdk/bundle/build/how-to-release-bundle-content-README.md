@@ -246,6 +246,18 @@ bundles:
       ref: "2026.5.2.1643"
       subdir: "src"
       module: "my.bundle@1-0.entrypoint"
+      config:
+        memory:
+          enabled: true
+          announce: {enabled: true, limit: 6, scope_filter: current_bundle}
+          tools: {enabled: true, allow_write: false, default_scope_filter: current_bundle}
+          widget: {enabled: true, allow_write: true, default_scope_filter: current_bundle}
+          reconciliation: {enabled: true}
+          snapshots: {enabled: true}
+        ui:
+          web_app_widgets:
+            memories:
+              enabled: true
 ```
 
 Descriptor ownership matters:
@@ -259,6 +271,11 @@ Descriptor ownership matters:
 Use [how-to-configure-and-run-bundle-README.md](how-to-configure-and-run-bundle-README.md)
 to decide which descriptor copy should be edited and whether reload or restart
 is needed.
+
+For User Memory, release the bundle code and descriptor config together. The
+`memory` block is deployment config; user memory records, snapshots, and
+reconciliation job outputs are runtime data and are not committed with the
+bundle release.
 
 ## 7. Done Criteria
 

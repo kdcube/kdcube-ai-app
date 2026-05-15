@@ -22,8 +22,8 @@ from kdcube_ai_app.apps.chat.sdk.integrations.telegram import widget_ops as tele
 from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
 from kdcube_ai_app.apps.chat.sdk.runtime.exec_runtime_config import normalize_exec_runtime_config
 from kdcube_ai_app.apps.chat.sdk.runtime.tool_subsystem import create_tool_subsystem_with_mcp
-from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint_with_economic import (
-    BaseEntrypointWithEconomics,
+from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint_with_memory import (
+    BaseEntrypointWithEconomicsAndMemory,
 )
 from kdcube_ai_app.apps.chat.sdk.tools.exec_tools import (
     build_exec_output_contract,
@@ -31,7 +31,7 @@ from kdcube_ai_app.apps.chat.sdk.tools.exec_tools import (
 )
 from kdcube_ai_app.apps.chat.sdk.viz.patch_platform_dashboard import patch_dashboard
 from kdcube_ai_app.apps.chat.sdk.storage.ai_bundle_storage import AIBundleStorage
-from kdcube_ai_app.infra.plugin.agentic_loader import agentic_workflow, api, mcp, ui_widget
+from kdcube_ai_app.infra.plugin.agentic_loader import agentic_workflow, api, mcp, on_job, ui_widget
 from kdcube_ai_app.infra.service_hub.inventory import BundleState, Config
 
 from . import tools_descriptor
@@ -243,7 +243,7 @@ telegram_widget_ops.configure_telegram_widget_ops(
     priority=100,
     allowed_roles_config="visibility.bundle.allowed_roles",
 )
-class VersatileEntrypoint(BaseEntrypointWithEconomics):
+class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
     """All-features reference bundle for bundle builders."""
 
     def __init__(
@@ -262,6 +262,13 @@ class VersatileEntrypoint(BaseEntrypointWithEconomics):
         )
         self._preferences_mcp_app: Any = None
         self.graph = self._build_graph()
+
+    @on_job
+    async def on_job(self, **kwargs) -> Dict[str, Any]:
+        handled = await super().handle_job(**kwargs)
+        if handled.get("handled"):
+            return handled
+        return handled
 
     def _build_graph(self) -> StateGraph:
         g = StateGraph(BundleState)

@@ -2546,6 +2546,29 @@ async def _serve_static_widget_app(
     ui_root = storage_root / "ui" / "widgets" / widget_spec.alias if storage_root else None
     cleaned_path = str(widget_path or "index.html").strip().lstrip("/") or "index.html"
 
+    async def _ensure_widget_ui_build_from_workflow() -> None:
+        ensure_ui_build = getattr(workflow, "_ensure_ui_build", None)
+        if not callable(ensure_ui_build):
+            return
+        try:
+            maybe_result = ensure_ui_build()
+            if inspect.isawaitable(maybe_result):
+                await maybe_result
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.exception(
+                "Bundle widget UI build failed tenant=%s project=%s bundle=%s widget=%s",
+                tenant_id,
+                project_id,
+                spec_resolved.id,
+                widget_spec.alias,
+            )
+            raise HTTPException(
+                status_code=500,
+                detail=f"Bundle widget '{widget_alias}' UI build failed: {exc}",
+            ) from exc
+
     should_refresh_entrypoint = is_static_bundle_entrypoint_path(cleaned_path)
     load_key = static_bundle_entrypoint_load_key(
         tenant=tenant_id,
@@ -2564,6 +2587,11 @@ async def _serve_static_widget_app(
                 session=session,
             ),
         )
+        storage_root = storage_for_spec(spec=spec, tenant=tenant_id, project=project_id, ensure=False)
+        ui_root = storage_root / "ui" / "widgets" / widget_spec.alias if storage_root else None
+
+    if not ui_root or not ui_root.exists():
+        await _ensure_widget_ui_build_from_workflow()
         storage_root = storage_for_spec(spec=spec, tenant=tenant_id, project=project_id, ensure=False)
         ui_root = storage_root / "ui" / "widgets" / widget_spec.alias if storage_root else None
 
