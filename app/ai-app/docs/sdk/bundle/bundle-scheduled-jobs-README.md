@@ -367,12 +367,21 @@ class MyBundle(BaseEntrypoint):
 
     @on_job
     async def on_job(self, job: dict, **kwargs):
-        del kwargs
+        handled = await super().handle_job(job=job, **kwargs)
+        if handled.get("handled"):
+            return handled
+
         if job.get("work_kind") == "task.execution.due":
             return await self.tasks.run_execution(job["payload"]["execution_id"])
-        return {"ok": False, "error": {"code": "unsupported_job"}}
+        return {"ok": False, "handled": False, "error": {"code": "unsupported_job"}}
 ```
 
 The queued execution or equivalent bundle-owned record should be created before
 enqueue. The stream is the transport; the bundle-owned record is the durable
 source of truth.
+
+If the bundle derives from reusable SDK mixins, keep exactly one decorated
+`@on_job` method on the final bundle entrypoint. Call
+`await super().handle_job(**kwargs)` first so mixins can consume their own
+`work_kind` values, then dispatch bundle-specific jobs only when the superclass
+returns `handled=false`.

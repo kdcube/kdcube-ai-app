@@ -57,6 +57,7 @@ from kdcube_ai_app.apps.chat.sdk.context.graph.graph_ctx import GraphCtx
 from kdcube_ai_app.apps.chat.sdk.runtime.user_inputs import (
     attachment_summary_index_text,
 )
+from kdcube_ai_app.apps.chat.sdk.solutions.react.compaction_memory import extract_note_tags
 
 # ---------- small utilities ----------
 
@@ -455,6 +456,108 @@ class BaseWorkflow():
             runtime_ctx.debug_timeline_keep_files = _react_debug_timeline_keep_files(settings)
         except Exception:
             pass
+        memory_cfg = self.get_prop_path(self.bundle_props or {}, "memory", default={}) or {}
+        if not isinstance(memory_cfg, dict):
+            memory_cfg = {}
+        memory_enabled_raw = _bool_or_none(memory_cfg.get("enabled"))
+        memory_enabled = bool(memory_enabled_raw) if memory_enabled_raw is not None else False
+        announce_cfg = memory_cfg.get("announce") if isinstance(memory_cfg.get("announce"), dict) else {}
+        announce_enabled_raw = _bool_or_none(announce_cfg.get("enabled"))
+        announce_enabled = bool(announce_enabled_raw) if announce_enabled_raw is not None else False
+        runtime_ctx.memory_enabled = memory_enabled
+        runtime_ctx.memory_announce_enabled = bool(memory_enabled and announce_enabled)
+        runtime_ctx.memory_scope_filter = str(announce_cfg.get("scope_filter") or "current_bundle").strip() or "current_bundle"
+        runtime_ctx.memory_hotset_limit = _positive_int(announce_cfg.get("limit")) or 8
+        try:
+            timeout = float(announce_cfg.get("timeout_seconds") or 1.5)
+        except Exception:
+            timeout = 1.5
+        runtime_ctx.memory_announce_timeout_seconds = max(0.1, min(timeout, 10.0))
+        if not runtime_ctx.memory_announce_enabled:
+            runtime_ctx.memory_hotset = []
+            runtime_ctx.memory_hotset_error = None
+
+    async def _refresh_user_memory_hotset_for_announce(self) -> None:
+        runtime_ctx = getattr(self, "runtime_ctx", None)
+        if runtime_ctx is None or not bool(getattr(runtime_ctx, "memory_announce_enabled", False)):
+            return
+        runtime_ctx.memory_hotset = []
+        runtime_ctx.memory_hotset_error = None
+        if getattr(self, "pg_pool", None) is None:
+            runtime_ctx.memory_hotset_error = "pg_pool unavailable"
+            return
+
+        try:
+            from kdcube_ai_app.apps.chat.sdk.context.memory import (
+                MemoryScope,
+                MemorySearchRequest,
+                UserMemoryStore,
+                normalize_scope_filter,
+            )
+
+            scope = MemoryScope(
+                tenant=str(getattr(runtime_ctx, "tenant", "") or "").strip(),
+                project=str(getattr(runtime_ctx, "project", "") or "").strip(),
+                user_id=str(getattr(runtime_ctx, "user_id", "") or "").strip(),
+                bundle_id=str(getattr(runtime_ctx, "bundle_id", "") or "").strip(),
+            ).normalized()
+            scope_filter = normalize_scope_filter(str(getattr(runtime_ctx, "memory_scope_filter", "") or "current_bundle"))
+            runtime_ctx.memory_scope_filter = scope_filter
+            limit = _positive_int(getattr(runtime_ctx, "memory_hotset_limit", None)) or 8
+            store = UserMemoryStore(
+                pg_pool=self.pg_pool,
+                tenant=scope.tenant,
+                project=scope.project,
+            )
+            timeout = float(getattr(runtime_ctx, "memory_announce_timeout_seconds", 1.5) or 1.5)
+            rows = await asyncio.wait_for(
+                store.search(
+                    MemorySearchRequest(
+                        scope=scope,
+                        mode="hotset",
+                        status="active",
+                        visible_to_user=True,
+                        include_private=False,
+                        scope_filter=scope_filter,
+                        limit=limit,
+                    )
+                ),
+                timeout=max(0.1, timeout),
+            )
+
+            compact: List[Dict[str, Any]] = []
+            for row in rows or []:
+                memory = getattr(row, "memory", row)
+                mem_scope = getattr(memory, "scope", scope)
+                updated_at = getattr(memory, "updated_at", None)
+                last_event_at = getattr(memory, "last_event_at", None)
+                compact.append({
+                    "id": str(getattr(memory, "id", "") or ""),
+                    "bundle_id": str(getattr(mem_scope, "bundle_id", "") or ""),
+                    "memory": str(getattr(memory, "memory", "") or ""),
+                    "context": str(getattr(memory, "context", "") or ""),
+                    "kind": str(getattr(memory, "kind", "") or ""),
+                    "labels": list(getattr(memory, "labels", []) or []),
+                    "keywords": list(getattr(memory, "keywords", []) or []),
+                    "tier": getattr(memory, "tier", None),
+                    "pinned": bool(getattr(memory, "pinned", False)),
+                    "confidence_score": getattr(memory, "confidence_score", None),
+                    "importance_score": getattr(memory, "importance_score", None),
+                    "freshness_score": getattr(memory, "freshness_score", None),
+                    "salience_score": getattr(memory, "salience_score", None),
+                    "evidence_count": getattr(memory, "evidence_count", None),
+                    "updated_at": updated_at.isoformat() if hasattr(updated_at, "isoformat") else str(updated_at or ""),
+                    "last_event_at": last_event_at.isoformat() if hasattr(last_event_at, "isoformat") else str(last_event_at or ""),
+                    "score": getattr(row, "score", None),
+                })
+            runtime_ctx.memory_hotset = compact
+        except Exception as e:
+            runtime_ctx.memory_hotset = []
+            runtime_ctx.memory_hotset_error = f"{type(e).__name__}: {e}"
+            try:
+                self.logger.log(f"[memory.announce] hotset unavailable: {traceback.format_exc()}", "WARNING")
+            except Exception:
+                pass
 
     def _resolve_runtime_ctx_bundle_storage(self) -> Optional[str]:
         try:
@@ -995,6 +1098,28 @@ class BaseWorkflow():
             })
         return entries
 
+    def _iter_turn_internal_note_entries(self, *, turn_id: str) -> List[Dict[str, Any]]:
+        entries: List[Dict[str, Any]] = []
+        for blk in self._current_turn_blocks(turn_id=turn_id):
+            btype = str(blk.get("type") or "").strip()
+            if btype not in {"react.note", "react.note.preserved"}:
+                continue
+            text = str(blk.get("text") or "").strip()
+            path = str(blk.get("path") or "").strip()
+            ts = str(blk.get("ts") or "").strip()
+            if not text or not path:
+                continue
+            meta = blk.get("meta") if isinstance(blk.get("meta"), dict) else {}
+            entries.append({
+                "text": text,
+                "ts": ts,
+                "path": path,
+                "meta": meta,
+                "preserved": btype == "react.note.preserved",
+                "note_tags": extract_note_tags(text),
+            })
+        return entries
+
     async def _persist_user_conversation_entry(
         self,
         *,
@@ -1082,6 +1207,7 @@ class BaseWorkflow():
         persisted = 0
         persisted_completions = 0
         persisted_summaries = 0
+        persisted_notes = 0
         t14, ms14 = _tstart()
         for entry in entries:
             path = str(entry.get("path") or "").strip()
@@ -1156,6 +1282,49 @@ class BaseWorkflow():
             scratchpad.persisted_turn_entry_paths.add(path)
             persisted += 1
             persisted_summaries += 1
+        note_entries = self._iter_turn_internal_note_entries(turn_id=turn_id)
+        for entry in note_entries:
+            path = str(entry.get("path") or "").strip()
+            if not path or path in scratchpad.persisted_turn_entry_paths:
+                continue
+            text = str(entry.get("text") or "").strip()
+            if not text:
+                continue
+            [avec] = await self.model_service.embed_texts([text])
+            scratchpad.avec = avec
+            msg_ts = time.strftime("%Y-%m-%dT%H-%M-%S", time.gmtime())
+            safe_path = re.sub(r"[^a-zA-Z0-9._-]+", "_", path).strip("_") or "react_note"
+            msgid_a = f"{_mid('artifact', msg_ts)}-{safe_path}"
+            tags = [
+                "chat:internal_note",
+                "kind:react.note",
+                "visibility:internal",
+                f"turn:{turn_id}",
+            ] + [f"topic:{t}" for t in scratchpad.turn_topics_plain or []]
+            if entry.get("preserved"):
+                tags.append("kind:react.note.preserved")
+            for tag in entry.get("note_tags") or []:
+                tag_text = str(tag or "").strip().upper()
+                if tag_text:
+                    tags.append(f"note_tag:{tag_text}")
+            await self.conv_idx.add_message(
+                user_id=user,
+                conversation_id=conversation_id,
+                bundle_id=self.config.ai_bundle_spec.id,
+                turn_id=turn_id,
+                role="artifact",
+                text=text,
+                hosted_uri="index_only",
+                ts=str(entry.get("ts") or datetime.datetime.utcnow().isoformat() + "Z"),
+                tags=tags,
+                ttl_days=_ttl_for(user_type, 365),
+                user_type=user_type,
+                embedding=avec,
+                message_id=msgid_a,
+            )
+            scratchpad.persisted_turn_entry_paths.add(path)
+            persisted += 1
+            persisted_notes += 1
         if persisted <= 0:
             return
         timing_assist_persist = _tend(t14, ms14)
@@ -1166,6 +1335,7 @@ class BaseWorkflow():
                               "count": persisted,
                               "assistant_completion_count": persisted_completions,
                               "working_summary_count": persisted_summaries,
+                              "internal_note_count": persisted_notes,
                           },
                           "timing": timing_assist_persist})
         scratchpad.timings.append({
@@ -1524,7 +1694,14 @@ class BaseWorkflow():
             logger=self.logger,
             bundle_spec=self.config.ai_bundle_spec,
             context_rag_client=self.ctx_client,
-            registry={"kb_client": self.kb},
+            registry={
+                "kb_client": self.kb,
+                "pg_pool": self.pg_pool,
+                "redis": self.redis,
+                "bundle_props": self.bundle_props,
+                "comm_context": self.comm_context,
+                "config": self.config,
+            },
             raw_tool_specs=mod_tools_spec,
             tool_runtime=tools_runtime,
             mcp_tool_specs=mcp_tools_spec or [],
@@ -1540,7 +1717,12 @@ class BaseWorkflow():
             logger=self.logger,
             context_rag_client=self.ctx_client,
             registry={
-                "kb_client": self.kb
+                "kb_client": self.kb,
+                "pg_pool": self.pg_pool,
+                "redis": self.redis,
+                "bundle_props": self.bundle_props,
+                "comm_context": self.comm_context,
+                "config": self.config,
             },
             mcp_subsystem=mcp_subsystem,
             tool_runtime=tools_runtime,
@@ -1854,6 +2036,10 @@ class BaseWorkflow():
                 await self.ctx_browser.load_timeline(
                     days=365,
                 )
+            except Exception:
+                pass
+            try:
+                await self._refresh_user_memory_hotset_for_announce()
             except Exception:
                 pass
             # Set new-conversation flag and seed title from timeline

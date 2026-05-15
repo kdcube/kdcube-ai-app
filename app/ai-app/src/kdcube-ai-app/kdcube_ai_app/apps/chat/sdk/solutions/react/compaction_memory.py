@@ -21,12 +21,15 @@ def _clone_preserved_internal_note_block(
     block: Dict[str, Any],
     preserved_path: str,
     source_path: str,
+    tags: List[str] | None = None,
 ) -> Dict[str, Any]:
     cloned = dict(block or {})
     meta = dict(cloned.get("meta") or {})
     meta.pop("replacement_text", None)
     meta["source_path"] = source_path
     meta["preserved_by_compaction"] = True
+    if tags:
+        meta["note_tags"] = tags
     cloned["type"] = "react.note.preserved"
     cloned["path"] = preserved_path
     cloned["hidden"] = False
@@ -44,6 +47,80 @@ def _strip_note_tag(text: str) -> str:
     return _NOTE_TAG_RE.sub("", text or "", count=1).strip()
 
 
+def _split_note_beacons(text: str) -> List[Dict[str, Any]]:
+    """Split a react.note body into tagged beacon entries.
+
+    A single react.write(content=...) can contain several beacon lines. This
+    split is used only for tag and digest extraction; note preservation remains
+    block-level, with the authored text kept together. Lines beginning with
+    [P]/[D]/[S]/[A]/[K] start a tagged segment; following untagged lines are
+    treated as continuation text for that segment. If the text has no tagged
+    lines, keep the whole body as one untagged entry.
+    """
+    raw = (text or "").strip()
+    if not raw:
+        return []
+    entries: List[Dict[str, Any]] = []
+    current: List[str] = []
+    current_line_index = 1
+    saw_tag = False
+    for idx, line in enumerate(raw.splitlines(), start=1):
+        stripped = line.strip()
+        if not stripped:
+            if current:
+                current.append(line)
+            continue
+        if _parse_note_tag(stripped):
+            saw_tag = True
+            if current:
+                body = "\n".join(current).strip()
+                if body:
+                    entries.append({"text": body, "line_index": current_line_index})
+            current = [stripped]
+            current_line_index = idx
+        elif current:
+            current.append(line)
+    if current:
+        body = "\n".join(current).strip()
+        if body:
+            entries.append({"text": body, "line_index": current_line_index})
+    if saw_tag:
+        return entries
+    return [{"text": raw, "line_index": 1}]
+
+
+def _extract_note_tags(text: str) -> List[str]:
+    tags: List[str] = []
+    seen: set[str] = set()
+    for segment in _split_note_beacons(text):
+        tag = _parse_note_tag(str(segment.get("text") or "").strip())
+        if not tag or tag in seen:
+            continue
+        seen.add(tag)
+        tags.append(tag)
+    return tags
+
+
+def extract_note_tags(text: str) -> List[str]:
+    """Return ordered unique bracket tags used by an internal note body."""
+    return _extract_note_tags(text)
+
+
+def _preference_bodies_from_note(text: str) -> List[str]:
+    out: List[str] = []
+    seen: set[str] = set()
+    for segment in _split_note_beacons(text):
+        segment_text = str(segment.get("text") or "").strip()
+        if _parse_note_tag(segment_text) != "P":
+            continue
+        body = _strip_note_tag(segment_text)
+        if not body or body in seen:
+            continue
+        seen.add(body)
+        out.append(body)
+    return out
+
+
 def _normalize_digest_text(text: str) -> str:
     compact = " ".join((text or "").split()).strip()
     if len(compact) <= 220:
@@ -57,11 +134,14 @@ def _build_preference_digest_block(entries: List[Dict[str, Any]]) -> str:
     lines: List[str] = []
     seen: set[str] = set()
     for entry in reversed(entries):
-        body = _normalize_digest_text(str(entry.get("body") or ""))
-        if not body or body in seen:
-            continue
-        seen.add(body)
-        lines.append(f"- {body}")
+        for raw_body in reversed(entry.get("preference_bodies") or []):
+            body = _normalize_digest_text(str(raw_body or ""))
+            if not body or body in seen:
+                continue
+            seen.add(body)
+            lines.append(f"- {body}")
+            if len(lines) >= MAX_PREFERENCE_DIGEST_LINES:
+                break
         if len(lines) >= MAX_PREFERENCE_DIGEST_LINES:
             break
     if not lines:
@@ -111,8 +191,8 @@ def build_internal_note_compaction_result(
             "order": order,
             "block": blk,
             "source_path": source_path,
-            "tag": _parse_note_tag(text),
-            "body": _strip_note_tag(text),
+            "tags": _extract_note_tags(text),
+            "preference_bodies": _preference_bodies_from_note(text),
         }
 
     if not entries:
@@ -135,10 +215,11 @@ def build_internal_note_compaction_result(
                 block=blk,
                 preserved_path=preserved_path,
                 source_path=str(entry.get("source_path") or "").strip(),
+                tags=[str(t) for t in (entry.get("tags") or []) if str(t or "").strip()],
             )
         )
 
-    preference_entries = [entry for entry in ordered if entry.get("tag") == "P" and entry.get("body")]
+    preference_entries = [entry for entry in capped if entry.get("preference_bodies")]
     digest_block = _build_preference_digest_block(preference_entries)
     merged_summary = _merge_summary_with_preference_digest(summary_text, digest_block)
     return InternalNoteCompactionResult(

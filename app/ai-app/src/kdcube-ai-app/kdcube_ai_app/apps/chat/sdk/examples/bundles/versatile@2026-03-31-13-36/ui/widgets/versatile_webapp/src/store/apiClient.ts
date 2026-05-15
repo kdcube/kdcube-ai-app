@@ -15,10 +15,6 @@ const TELEGRAM_OPERATION_ALIASES: Record<string, string> = {
   conversations_create: 'telegram_conversations_create',
   conversations_switch: 'telegram_conversations_switch',
   conversations_delete: 'telegram_conversations_delete',
-  preferences_canvas_data: 'telegram_memory_canvas_data',
-  preferences_canvas_save: 'telegram_memory_canvas_save',
-  preferences_canvas_export_excel: 'telegram_memory_canvas_export_excel',
-  preferences_canvas_import_excel: 'telegram_memory_canvas_import_excel',
   telegram_user_admin_data: 'telegram_webapp_user_admin_data',
   telegram_user_admin_upsert: 'telegram_webapp_user_admin_upsert',
   telegram_user_admin_delete: 'telegram_webapp_user_admin_delete',
@@ -103,7 +99,7 @@ export function assertOk(result: unknown, fallback: string): void {
 }
 
 export function memoryEntries(memory?: MemoryPayload): MemoryEntry[] {
-  return memory?.entries || memory?.items || memory?.memories || [];
+  return memory?.memories || [];
 }
 
 export function conversationItems(conversations?: ConversationsPayload): ConversationItem[] {
@@ -119,7 +115,7 @@ export function downloadBase64(payload: ExportPayload): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = payload.filename || 'preferences.xlsx';
+  a.download = payload.filename || 'download.bin';
   a.click();
   URL.revokeObjectURL(url);
 }

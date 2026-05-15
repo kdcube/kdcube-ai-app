@@ -49,6 +49,13 @@ ui:
       enabled: true
       src_folder: ui/widgets/task_memo_webapp
       build_command: npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build
+      # Optional: copy SDK/platform UI source into the temporary build workspace.
+      # This works for external-git bundles because the bundle imports the
+      # materialized `_shared/...` path, not a developer-machine monorepo path.
+      shared_sources:
+        memory_widget:
+          src_folder: sdk://context/memory/ui/widget/memories
+          target: _shared/memory-widget
 ```
 
 Build command contract:
@@ -60,7 +67,8 @@ Build command contract:
 - the widget build system must treat it as an output directory, not as a Vite
   positional build argument
 - for Vite, configure `build.outDir` from `process.env.OUTDIR`
-- use relative assets, for example `base: './'`
+- for Vite, `base: './'` is required so built assets are relative to the
+  widget route
 
 Minimal Vite config:
 
@@ -73,6 +81,24 @@ export default defineConfig({
   },
 })
 ```
+
+Check the built `index.html`. It must reference assets with relative paths:
+
+```html
+<script type="module" src="./assets/index-....js"></script>
+<link rel="stylesheet" href="./assets/index-....css">
+```
+
+If Vite emits root-relative assets such as `/assets/index-....js`, the widget
+iframe can appear blank because the browser requests assets from the KDCube app
+root instead of:
+
+```text
+/api/integrations/bundles/{tenant}/{project}/{bundle_id}/widgets/{widget_alias}/assets/...
+```
+
+Fix this in the widget's Vite config with `base: './'`; do not work around it
+by copying assets or hardcoding bundle routes.
 
 Do not put the destination path after `vite build`.
 
@@ -235,6 +261,145 @@ Use:
 - `ui.web_app_widgets.<alias>.src_folder: ui/widgets/<alias>` for widget apps
 
 Both use the same loader/build/storage paradigm. They are different surfaces.
+
+## Shared UI Source Materialization
+
+Some bundle widgets need to reuse platform UI code without packaging that code
+inside the bundle repository. Configure `shared_sources` on the widget or main
+view build. The builder copies each source into the temporary build source tree
+before running `npm install` / `npm run build`.
+
+```yaml
+ui:
+  web_app_widgets:
+    versatile_webapp:
+      src_folder: ui/widgets/versatile_webapp
+      build_command: npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build
+      shared_sources:
+        memory_widget:
+          src_folder: sdk://context/memory/ui/widget/memories
+          target: _shared/memory-widget
+```
+
+The widget can then import from its materialized local path, for example through
+a Vite alias that points to `_shared/memory-widget/src/embed.tsx`.
+
+Supported source path forms:
+
+- `sdk://...` resolves under the installed KDCube SDK package.
+- `bundle://...` resolves under the bundle root.
+- relative paths resolve under the bundle root.
+- absolute paths are allowed for local development, but should not be used in
+  reusable descriptors.
+
+The build signature includes both the bundle source tree and all shared source
+trees, so updating the shared component triggers a rebuild.
+
+## Advanced: Hybrid Widget Composition
+
+The `shared_sources` pattern is a hybrid between two simpler options:
+
+- **iframe composition:** serve an existing platform widget as its own widget
+  route and embed it in another app with `<iframe>`.
+- **bundle-local composition:** copy all shared UI code into the bundle repo and
+  import it like ordinary local source.
+
+Hybrid composition keeps the bundle repo small while still producing a single
+React tree at build time. The platform materializes the selected SDK source into
+the temporary build workspace, and the bundle web app imports that materialized
+source as if it were local.
+
+Use this pattern when:
+
+- the user experience should be one app surface, not nested frames
+- the reusable UI is platform-owned SDK code
+- the bundle may live in an external git repository
+- the bundle should not know the developer-machine path to the KDCube monorepo
+
+Do not use this pattern when:
+
+- a standalone iframe widget is good enough
+- the shared code is bundle-specific and should live in the bundle repo
+- the shared source has a large dependency surface that the host widget should
+  not own
+
+Example host widget config:
+
+```yaml
+ui:
+  web_app_widgets:
+    versatile_webapp:
+      enabled: true
+      src_folder: ui/widgets/versatile_webapp
+      build_command: npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build
+      shared_sources:
+        memory_widget:
+          src_folder: sdk://context/memory/ui/widget/memories
+          target: _shared/memory-widget
+```
+
+Example Vite alias in the host widget:
+
+```ts
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const materializedMemoryWidget = path.resolve(__dirname, '_shared/memory-widget/src/embed.tsx');
+const sdkMemoryWidget = path.resolve(
+  __dirname,
+  '../../../../../../context/memory/ui/widget/memories/src/embed.tsx',
+);
+const memoryWidgetEntry = fs.existsSync(materializedMemoryWidget)
+  ? materializedMemoryWidget
+  : sdkMemoryWidget;
+
+export default defineConfig({
+  plugins: [react()],
+  base: './',
+  resolve: {
+    alias: {
+      '@kdcube/memory-widget': memoryWidgetEntry,
+    },
+  },
+  build: {
+    outDir: process.env.OUTDIR || 'dist',
+    emptyOutDir: true,
+  },
+});
+```
+
+The fallback path is only for SDK-local development, where the developer builds
+the host widget directly from the monorepo before the platform materializes
+`_shared/...`. Reusable descriptors should rely on `sdk://...`, not on that
+fallback path.
+
+Example host component:
+
+```tsx
+import { MemoriesWidgetEmbed } from '@kdcube/memory-widget';
+
+export function MemoryPage() {
+  return <MemoriesWidgetEmbed />;
+}
+```
+
+Operational rules:
+
+- the shared source is copied only into the temporary build workspace; it is not
+  committed into the external bundle repo
+- the host widget `package.json` must include the runtime dependencies required
+  by the shared component
+- the copied source is included in the UI build signature, so changes to SDK
+  shared source trigger a rebuild
+- the shared component still calls bundle APIs through the normal runtime config
+  or public bridge; it must not hardcode tenant, project, bundle id, or host
+  routes
+- use a wrapper/export component in the shared source, such as `src/embed.tsx`,
+  when the shared widget needs style isolation or its own provider tree
 
 ## Required Runtime Config
 
@@ -482,6 +647,11 @@ window.parent.postMessage(
 - For platform widgets and embedded browser clients, the preferred `POST /operations/{alias}` body shape is `{ "data": { ... } }`.
 - The integrations layer also accepts a raw JSON object body and treats it as `data`, so webhook-style service integrations do not need a platform-specific wrapper.
 - The integrations layer returns an envelope shaped like `{ status, tenant, project, bundle_id, [alias]: result }`; widgets should unwrap the `[alias]` field.
+- Widget operations that start long-running work should submit a background job
+  and return a durable job id/status immediately. The bundle's single `@on_job`
+  handler should call `await super().handle_job(**kwargs)` first so SDK mixins
+  can consume their own `work_kind` values, then the widget can refresh a status
+  operation until the shared job record reaches a terminal state.
 
 ## Reference Examples
 

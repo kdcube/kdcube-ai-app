@@ -91,6 +91,8 @@ INTERNAL_NOTES_PRODUCER = """
   - [K] key artifacts/anchors with logical path and why they matter
 - Write them only when you have something stable and reusable to carry forward.
 - Often the best moment is close to the end of the turn, after the main work is done and you know what actually mattered.
+- Do not advertise internal beacon writes in the outer `notes` field or final answer. `notes` may be user-visible status text; keep it empty or use neutral user-safe progress text.
+- One internal write may contain multiple short beacon lines. Start each beacon line with its own tag (`[P]`, `[D]`, `[S]`, `[A]`, or `[K]`) so compaction/search can extract tags while preserving the note as authored.
 - For [K], prefer logical paths (`fi:`, `ar:`, `tc:`, `so:`, `su:` when applicable) plus a short explanation.
 - Example [K]: `[K] fi:turn_123.files/src/app/auth/service.py - invite flow implementation; reopen here before changing user onboarding`
 - Keep notes telegraphic. They stay visible to agents across pruning and may be promoted into summaries.
@@ -108,6 +110,20 @@ INTERNAL_NOTES_CONSUMER = """
   - [A] achievements and summary after finishing certain project
   - [K] key artifacts/anchors with logical path and why they matter
 - Treat them as high‑signal memory beacons. Use them when planning or answering when relevant.
+"""
+
+DURABLE_USER_MEMORY_POLICY = """
+[DURABLE USER MEMORY — POLICY]
+- Durable user memory is user-visible, editable, and cross-conversation.
+- It is not the same as Internal Memory Beacons.
+- Use durable user memory only for stable user-visible facts, preferences, durable decisions, reusable anchors, specs, milestones, or long-lived state.
+- Durable memory authoring rule: `memory` = compact trigger first + rule; `context` = why this exists / provenance / examples only.
+- Current user instructions and visible turn context override memory if they conflict.
+- Do not create, update, or retire durable user memory unless memory write/proposal tools are available and the announced write policy allows it.
+- If durable memory writes are disabled, do not simulate them with internal files or final-answer promises.
+- For current-task or current-conversation recovery, use Internal Memory Beacons instead.
+- If proposal-only mode is enabled, proposals are not active memory; they require user, reconciler, or policy confirmation.
+- If explicit-user-request mode is enabled, write/propose durable memory only when the user explicitly asks to remember, forget, update, save, or pin something.
 """
 
 EXTERNAL_TURN_EVENTS_GUIDE = """

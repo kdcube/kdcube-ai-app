@@ -88,6 +88,9 @@ This bundle currently demonstrates:
 - widget discovery via `@ui_widget(...)`
 - a public endpoint via `@api(..., route="public", public_auth="none")`
 - a custom main UI
+- the single-`@on_job` dispatch pattern for SDK mixins: call
+  `await super().handle_job(**kwargs)` first, then process bundle-owned
+  `work_kind` values only when the superclass returns `handled=false`
 
 Use the exact decorator and route contract here:
 

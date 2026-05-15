@@ -1054,6 +1054,27 @@ async def sync_external(self):
 Reference:
 - [bundle-runtime-configuration-and-secrets-README.md](../../../configuration/bundle-runtime-configuration-and-secrets-README.md)
 
+User Memory subsystem config belongs in bundle props when the entrypoint derives
+from the memory mixin:
+
+```yaml
+config:
+  memory:
+    enabled: true
+    announce: {enabled: true, limit: 6, scope_filter: current_bundle}
+    tools: {enabled: true, allow_write: false, default_scope_filter: current_bundle}
+    widget: {enabled: true, allow_write: true, default_scope_filter: current_bundle}
+    reconciliation: {enabled: true}
+    snapshots: {enabled: true}
+  ui:
+    web_app_widgets:
+      memories:
+        enabled: true
+```
+
+Keep `tools.allow_write: false` unless the bundle has an explicit policy for
+agent-authored durable memory changes. The widget remains user-owned CRUD.
+
 ### Bundle local storage
 
 ```python
@@ -1293,6 +1314,8 @@ Rules:
 
 - define at most one `@on_job` method in the bundle entrypoint
 - make it `async def`
+- if the bundle derives from SDK mixins, call `await super().handle_job(**kwargs)`
+  first and return when it says `handled=true`
 - validate `job["work_kind"]`
 - read durable domain ids from `job["payload"]`
 - use `job["metadata"]` only for transport/runtime hints such as
@@ -1314,10 +1337,13 @@ class MyBundle(BaseEntrypoint):
 
     @on_job
     async def on_job(self, job: dict, **kwargs) -> dict:
-        del kwargs
+        handled = await super().handle_job(job=job, **kwargs)
+        if handled.get("handled"):
+            return handled
+
         if job.get("work_kind") == "task.execution.due":
             return await self.tasks.run_execution(job["payload"]["execution_id"])
-        return {"ok": False, "error": {"code": "unsupported_job"}}
+        return {"ok": False, "handled": False, "error": {"code": "unsupported_job"}}
 ```
 
 ### Tool execution in normal in-process runtime
@@ -1911,6 +1937,8 @@ Rules:
 - use `@cron(span=...)` as the primary exclusivity control for scheduled jobs
 - use `@on_job` for the actual ready-work execution when the work is per-user,
   long-running, retryable, or should be claimed fairly across processors
+- keep one decorated `@on_job`; reusable SDK mixins should be reached through
+  `super().handle_job(**kwargs)`, not by adding another decorated handler
 - assume schedules are reconciled on startup, bundle registry updates, and effective bundle-props changes
 - scheduled logic should read current props through the normal runtime path, not cached startup-only values
 

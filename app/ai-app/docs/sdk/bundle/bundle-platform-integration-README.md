@@ -587,9 +587,29 @@ Current behavior:
   `metadata`, and `payload`
 - the bundle owns job semantics: validate `work_kind`, load bundle-owned records,
   execute the work, and update bundle-owned status/results
+- reusable SDK mixins must not add their own decorated `@on_job` method; expose a
+  normal `handle_job(...)` dispatcher instead
 
 Use `@cron(...)` to detect scheduled due work. Use `@on_job` to execute ready
 work that has been enqueued for fair processor claiming.
+
+Recommended dispatch pattern:
+
+```python
+from kdcube_ai_app.infra.plugin.agentic_loader import on_job
+
+@on_job
+async def on_job(self, **kwargs) -> dict:
+    handled = await super().handle_job(**kwargs)
+    if handled.get("handled"):
+        return handled
+
+    job = kwargs.get("job") or {}
+    work_kind = kwargs.get("work_kind") or job.get("work_kind")
+    if work_kind == "my.bundle.job":
+        return await self.my_subsystem.run(job.get("payload") or {})
+    return {"ok": False, "handled": False, "error": {"code": "unsupported_job"}}
+```
 
 See:
 
@@ -1100,6 +1120,9 @@ Use these rules for new bundles:
    do this on `run()`.
 8. Use `@on_job` when the bundle receives ready background jobs from the
    processor job stream. Keep the method async and define at most one per bundle.
+   If the entrypoint derives from mixins with background work, call
+   `await super().handle_job(**kwargs)` first and only handle the job locally
+   when it returns `handled=false`.
 9. Use `@cron(...)` for recurring background work. Prefer `span="system"` (the
    default) unless process-local or instance-local semantics are required.
    See [docs/sdk/bundle/bundle-scheduled-jobs-README.md](bundle-scheduled-jobs-README.md)

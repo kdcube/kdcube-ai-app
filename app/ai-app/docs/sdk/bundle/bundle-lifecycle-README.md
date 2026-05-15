@@ -226,6 +226,9 @@ Lifecycle implications:
 - cron should decide what is due; `@on_job` should execute the ready job
 - long-running per-user work should be queued as jobs instead of executed inside
   the scheduler tick
+- reusable SDK mixins should expose `handle_job(...)`; the final bundle
+  entrypoint keeps one decorated `@on_job` and calls
+  `await super().handle_job(**kwargs)` before local job dispatch
 
 See:
 

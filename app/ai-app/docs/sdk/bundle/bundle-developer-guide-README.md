@@ -173,6 +173,9 @@ Background job rule:
 - define at most one `@on_job` method per bundle
 - make `@on_job` async
 - keep bundle-specific job semantics in the job `work_kind`, `metadata`, and `payload`
+- when deriving from SDK mixins, call `await super().handle_job(**kwargs)` first
+  and return immediately if it reports `handled=true`; this lets mixins consume
+  their own `work_kind` values without adding another `@on_job`
 - use [jobs-stream-README.md](../../service/jobs/jobs-stream-README.md) for the platform queue contract
 
 Visibility rule:

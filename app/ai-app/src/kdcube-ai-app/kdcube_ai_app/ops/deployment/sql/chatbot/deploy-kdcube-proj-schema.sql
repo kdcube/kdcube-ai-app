@@ -174,6 +174,7 @@ CREATE TABLE IF NOT EXISTS <SCHEMA>.user_memory_entries (
     visible_to_user     BOOLEAN NOT NULL DEFAULT TRUE,
     labels              TEXT[] NOT NULL DEFAULT '{}',
     keywords            TEXT[] NOT NULL DEFAULT '{}',
+    pinned              BOOLEAN NOT NULL DEFAULT FALSE,
     search_text         TEXT NOT NULL DEFAULT '',
     search_tsv          TSVECTOR GENERATED ALWAYS AS (to_tsvector('simple', coalesce(search_text, ''))) STORED,
     embedding           VECTOR(1536),
@@ -219,8 +220,15 @@ CREATE TABLE IF NOT EXISTS <SCHEMA>.user_memory_events (
     keywords        TEXT[] NOT NULL DEFAULT '{}',
     source          JSONB NOT NULL DEFAULT '{}'::jsonb,
     metadata        JSONB NOT NULL DEFAULT '{}'::jsonb,
+    idempotency_key TEXT NOT NULL DEFAULT '',
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE <SCHEMA>.user_memory_events
+  ADD COLUMN IF NOT EXISTS idempotency_key TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE <SCHEMA>.user_memory_entries
+  ADD COLUMN IF NOT EXISTS pinned BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE TABLE IF NOT EXISTS <SCHEMA>.user_memory_aliases (
     memory_id  TEXT NOT NULL REFERENCES <SCHEMA>.user_memory_entries(id) ON DELETE CASCADE,
@@ -236,6 +244,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_<SCHEMA>_user_memory_entries_canonical
   WHERE merged_into_id IS NULL;
 CREATE INDEX IF NOT EXISTS idx_<SCHEMA>_user_memory_entries_scope
   ON <SCHEMA>.user_memory_entries (tenant, project, user_id, status, tier, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_<SCHEMA>_user_memory_entries_hotset
+  ON <SCHEMA>.user_memory_entries (tenant, project, user_id, status, tier, pinned DESC, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_<SCHEMA>_user_memory_entries_visible
   ON <SCHEMA>.user_memory_entries (tenant, project, user_id, visible_to_user, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_<SCHEMA>_user_memory_entries_labels
@@ -250,6 +260,9 @@ CREATE INDEX IF NOT EXISTS idx_<SCHEMA>_user_memory_events_scope
   ON <SCHEMA>.user_memory_events (tenant, project, user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_<SCHEMA>_user_memory_events_memory
   ON <SCHEMA>.user_memory_events (memory_id, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_<SCHEMA>_user_memory_events_idempotency
+  ON <SCHEMA>.user_memory_events (tenant, project, user_id, idempotency_key)
+  WHERE idempotency_key <> '';
 CREATE INDEX IF NOT EXISTS idx_<SCHEMA>_user_memory_aliases_value
   ON <SCHEMA>.user_memory_aliases (alias_type, value);
 

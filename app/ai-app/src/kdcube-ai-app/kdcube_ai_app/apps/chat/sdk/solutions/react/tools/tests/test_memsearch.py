@@ -221,6 +221,78 @@ async def test_memsearch_summary_target_includes_working_summary_blocks(tmp_path
 
 
 @pytest.mark.asyncio
+async def test_memsearch_notes_target_includes_internal_note_blocks(tmp_path):
+    runtime = RuntimeCtx(
+        turn_id="turn_current",
+        outdir=str(tmp_path / "out"),
+        workdir=str(tmp_path / "work"),
+        conversation_id="conv_1",
+        user_id="user_1",
+    )
+    ctx = FakeBrowser(runtime)
+    captured_search = {}
+
+    async def _search(**kwargs):
+        captured_search.update(kwargs)
+        return "turn_prev", [{
+            "turn_id": "turn_prev",
+            "score": 0.9,
+            "sim": 0.89,
+            "rec": 0.92,
+            "matched_via_role": "artifact",
+            "source_query": "renderer refs",
+            "ts": "2026-05-05T19:37:00Z",
+        }]
+
+    ctx.search = _search
+    ctx._turn_logs["turn_prev"] = {
+        "blocks": [
+            {
+                "type": "react.note",
+                "author": "react",
+                "turn_id": "turn_prev",
+                "ts": "2026-05-05T19:37:00Z",
+                "path": "fi:turn_prev.outputs/internal_notes/rendering.md",
+                "text": "[K] fi:turn_prev.outputs/report.html - source for rendered PDF\n[D] Renderer refs point at text source artifacts.",
+                "meta": {"channel": "internal", "note_tags": ["K", "D"]},
+            }
+        ],
+        "sources_pool": [],
+    }
+
+    state = {
+        "last_decision": {
+            "tool_call": {
+                "params": {
+                    "query": "renderer refs",
+                    "targets": ["notes"],
+                    "top_k": 3,
+                }
+            }
+        }
+    }
+
+    out = await handle_react_memsearch(ctx_browser=ctx, state=state, tool_call_id="ms_notes")
+
+    assert captured_search["targets"] == [{"where": "notes", "query": "renderer refs"}]
+    hits = out["last_tool_result"]
+    assert len(hits) == 1
+    snippets = hits[0]["snippets"]
+    assert len(snippets) == 1
+    assert snippets[0]["role"] == "notes"
+    assert snippets[0]["path"] == "fi:turn_prev.outputs/internal_notes/rendering.md"
+    assert "[K]" in snippets[0]["text"]
+    assert "[D]" in snippets[0]["text"]
+
+    summary = _latest_summary_payload(ctx)
+    assert summary["hits"][0]["snippets"] == [{
+        "path": "fi:turn_prev.outputs/internal_notes/rendering.md",
+        "role": "notes",
+        "ts": "2026-05-05T19:37:00Z",
+    }]
+
+
+@pytest.mark.asyncio
 async def test_memsearch_ordinal_mode_uses_turn_catalog_without_query(tmp_path):
     runtime = RuntimeCtx(
         turn_id="turn_current",

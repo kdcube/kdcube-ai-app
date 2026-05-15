@@ -69,6 +69,15 @@ def _safe_knowledge_relpath(rel: str) -> bool:
     return all(part not in {"..", ""} for part in p.parts)
 
 
+def _knowledge_root_from_bundle_storage(storage_root: pathlib.Path) -> pathlib.Path:
+    scoped = storage_root / "knowledge"
+    if scoped.exists():
+        return scoped
+    # Backward-compatible fallback for old local bundle-storage layouts where
+    # ks: was materialized directly in the bundle storage root.
+    return storage_root
+
+
 def _ensure_knowledge_root() -> Optional[pathlib.Path]:
     global KNOWLEDGE_ROOT
     if KNOWLEDGE_ROOT:
@@ -79,7 +88,7 @@ def _ensure_knowledge_root() -> Optional[pathlib.Path]:
     candidate = pathlib.Path(raw).expanduser().resolve()
     if not candidate.exists():
         return None
-    KNOWLEDGE_ROOT = candidate
+    KNOWLEDGE_ROOT = _knowledge_root_from_bundle_storage(candidate)
     return KNOWLEDGE_ROOT
 
 
@@ -141,7 +150,8 @@ def resolve_exec_namespace(*, logical_ref: str, **kwargs: Any) -> Dict[str, Any]
     """
     Resolve a kdcube.copilot knowledge-space selector or path to an exec-visible physical path.
 
-    This bundle currently exposes ks: against KNOWLEDGE_ROOT / BUNDLE_STORAGE_DIR.
+    This bundle exposes ks: against KNOWLEDGE_ROOT, normally the materialized
+    knowledge sub-root under BUNDLE_STORAGE_DIR.
     The returned physical_path is valid only inside isolated exec.
     If generated code browses descendants under that path, it should use the
     input logical_ref as the logical base when emitting follow-up refs for later

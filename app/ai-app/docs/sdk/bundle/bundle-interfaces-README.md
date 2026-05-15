@@ -182,6 +182,9 @@ Rules:
 - define it as `async def`
 - receive a job envelope with platform routing fields plus bundle-owned
   `work_kind`, `source`, `metadata`, and `payload`
+- if the bundle derives from SDK mixins that can handle their own background
+  work, call `await super().handle_job(**kwargs)` first and return when it says
+  `handled=true`
 - use the reserved `bundle_call_context` for metadata that nested tools or
   external runtimes must inherit, such as task id, execution id, or a compact
   task definition
@@ -198,6 +201,10 @@ from kdcube_ai_app.infra.plugin.agentic_loader import on_job
 class MyBundle(BaseEntrypoint):
     @on_job
     async def on_job(self, job: dict, **kwargs) -> dict:
+        handled = await super().handle_job(job=job, **kwargs)
+        if handled.get("handled"):
+            return handled
+
         work_kind = job.get("work_kind")
         payload = job.get("payload") or {}
         if work_kind == "task.execution.due":
@@ -207,6 +214,13 @@ class MyBundle(BaseEntrypoint):
 
 Use `@cron(...)` only to discover due work. Use `@on_job` to run the ready work
 after it has been enqueued and claimed by the processor.
+
+Mixin rule:
+
+- mixins must expose normal dispatch helpers such as `handle_job(...)`
+- mixins must not add their own decorated `@on_job` method
+- the bundle owns the single decorated `@on_job` method and dispatches by
+  `work_kind`
 
 See:
 

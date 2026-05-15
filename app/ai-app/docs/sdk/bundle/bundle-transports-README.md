@@ -78,6 +78,10 @@ Proc claims it fairly, constructs a normal bundle runtime context, and calls the
 bundle's async `@on_job` handler. Use [jobs-stream-README.md](../../service/jobs/jobs-stream-README.md)
 for the queue/envelope contract.
 
+A bundle still has only one decorated `@on_job` method. If the entrypoint derives
+from SDK mixins, call `await super().handle_job(**kwargs)` first and only handle
+bundle-owned `work_kind` values when that returns `handled=false`.
+
 ## 3. REST Operations
 
 ### 3.1 Authenticated operations

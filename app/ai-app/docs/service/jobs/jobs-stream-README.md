@@ -46,6 +46,70 @@ Top-level fields are platform-visible:
 
 `@on_job` handlers must be async. There is no sync fallback for job handlers.
 
+## Chat Ingress Submit Helper
+
+Some proc-hosted integrations need to accept a webhook/API request and submit a
+normal chat turn without keeping the webhook open until the turn completes.
+Those surfaces use `ChatIngressSubmitter.submit(...)`, not the background job
+stream.
+
+Example caller:
+
+```python
+result = await submit(
+    session=session,
+    request_context=request_context,
+    message_data=message_data,
+    message_text=processed_text,
+    ingress=ingress,
+    raw_attachments=raw_attachments,
+)
+result_payload = asdict(result)
+```
+
+That helper is a proc-local adapter around the canonical chat ingestion path:
+
+```text
+webhook / bundle API
+  |
+  v
+ChatIngressSubmitter.submit(...)
+  |
+  v
+process_chat_message(...)
+  |
+  v
+normal chat queue / relay / conversation persistence
+```
+
+Use it when the work is a chat turn and should appear as normal assistant
+conversation activity. Use `RedisBackgroundJobStream` when the work is a
+bundle-owned background job handled by `@on_job`.
+
+## Bundle Job Dispatch
+
+A bundle has one `@on_job` handler. The handler receives the background job
+envelope and should dispatch by inspecting `work_kind` and `payload`.
+
+Mixin-provided job handlers should be exposed as normal methods, not as
+additional `@on_job` methods. A bundle that derives from such a mixin should call
+the superclass dispatcher first:
+
+```python
+@on_job
+async def on_job(self, **kwargs):
+    handled = await super().handle_job(**kwargs)
+    if handled.get("handled"):
+        return handled
+
+    job = kwargs.get("job") or {}
+    work_kind = kwargs.get("work_kind") or job.get("work_kind")
+    ...
+```
+
+This keeps the platform rule simple: there is exactly one decorated job entry
+point per bundle, and the bundle owns dispatch for concrete job kinds.
+
 ## Task And Memo Pattern
 
 The task-and-memo bundle uses this pattern:
