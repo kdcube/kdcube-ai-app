@@ -1,96 +1,65 @@
 platform:
   repo: "kdcube-ai-app"
-  ref: "2026.5.16.407"
+  ref: "2026.5.16.1704"
   description: |
-    This release finalizes the durable User Memory, Telegram WebApp, ReAct V3,
-    economics, and reference-bundle work for the 2026.5.16 platform line.
+    This release fixes ECS/widget readiness and frame embedding issues found
+    after the 2026.5.16.407 platform release, and cleans up public KDCube
+    overview documentation.
 
     Highlights
 
-    - Adds the durable User Memory subsystem with user-owned memory records,
-      memory widget APIs, hybrid search/read support, snapshots, restore
-      scaffolding, reconciliation job flow, and ReAct announce integration.
-    - Adds the reusable memory widget app and shared embeddable React component
-      so bundles can expose the same memory management experience in platform
-      widgets, Telegram webapps, and bundle-owned web surfaces.
-    - Wires memory and economics building blocks into the built-in Copilot,
-      versatile reference bundle, and related example entrypoints while keeping
-      memory behavior configuration-driven.
-    - Hardens ReAct V3 streaming and scheduling for repeated structured
-      decisions, canvas artifact streaming, exec-code binding, renderer ref
-      normalization, and clearer protocol-violation feedback.
-    - Restores bundle-scoped runtime context propagation for subprocess and
-      isolated tool runtimes so bundle-level service keys can resolve through
-      the standard helpers.
-    - Stabilizes web favicon enrichment with bounded browser fallback,
-      domain-scoped failure caching, and timeout behavior that does not block
-      web search/fetch tool completion.
-    - Aligns local, CLI, and deployment descriptor documentation for default
-      storage paths, memory configuration, widget packaging, Telegram bundle
-      integrations, and greenfield demo environments.
-    - Adds shared Telegram WebApp UI components for admin approval and
-      conversation/channel switching so reference bundles can reuse one SDK
-      implementation in KDCube widgets and Telegram Mini Apps.
-    - Fixes Telegram chat submission to use the mounted runtime bundle id from
-      comm/request context, preventing `unknown_bundle` errors when descriptor
-      ids differ from short module ids.
-    - Keeps economics hooks compatible with older `pre_run_hook(state=...)`
-      overrides while still passing `econ_ctx` to hooks that accept it.
+    - Fixes bundle preload behavior for multi-proc deployments. Every proc now
+      performs local bundle preload even when another proc holds the Redis
+      preload lock; shared UI build locks and signatures remain responsible for
+      deduplicating the actual npm/build work.
+    - Prevents cold non-leader procs from marking themselves ready before
+      bundle `on_bundle_load()` has warmed local runtime state and current UI
+      build outputs.
+    - Updates frameable nginx routes to clear inherited `X-Frame-Options:
+      DENY` before setting `SAMEORIGIN`, so bundle widgets and static
+      integration UIs can be embedded by the same-origin control-plane shell.
+    - Adds an explicit `/api/integrations/static/` frameable route to the ECS
+      custom UI nginx template and extends integration static route timeouts for
+      first-load build/readiness paths.
+    - Documents the control-plane embedding contract: frame policies belong in
+      proxy headers, frameable document routes must clear inherited deny
+      headers, and `bundles_preload_on_start` should make iframe requests find
+      fresh current UI builds rather than serving stale output.
+    - Cleans up `what-you-can-do-with-kdcube` so it remains public product
+      documentation and no longer contains internal demo-assistant planning
+      notes.
 
-    Runtime and SDK work in this release line:
+    Runtime and deployment notes:
 
-    - Memory configuration is now a first-class bundle concern: announce
-      hotsets, memory tools, write policy, widget access, scope filters, and
-      user-visible management can be enabled independently.
-    - ReAct memory documentation now distinguishes conversation memory,
-      internal anchors, summaries, `react.memsearch`, and durable User Memory,
-      including pruning/compaction behavior and retrieval semantics.
-    - Rendering and artifact tooling now accepts friendlier `ref:` paths where
-      possible and reports actionable feedback when source refs are not usable.
-    - Telegram integration configuration is resolved per bundle at runtime
-      instead of relying on import-time globals, allowing multiple bundles to
-      expose independent Telegram/webapp surfaces.
-    - Telegram Mini App mode now depends on signed Telegram `initData`, so the
-      same WebApp can run cleanly in a normal KDCube iframe without being
-      mistaken for Telegram.
-    - Bundle widget documentation covers hybrid reuse of platform-owned shared
-      React components from external bundle webapps.
+    - The Redis preload lock no longer means "only the leader preloads
+      bundles." It now only coordinates the cluster while each proc still warms
+      its own process-local bundle/module state.
+    - Existing storage-scoped UI build locks remain strict:
+      `allow_existing_on_timeout=false` and `allow_existing_while_locked=false`,
+      so stale UI is not used as a fallback for current entrypoint requests.
+    - The embedding documentation now calls out that if runtime iframe requests
+      still trigger `npm install`, that is a preload/readiness problem to fix,
+      not a reason to serve stale UI.
 
     Validation and regression coverage:
 
-    - Re-ran Python compile checks for Copilot and Telegram helper modules.
-    - Re-ran typecheck/build for the memory widget, Copilot Telegram webapp,
-      and versatile webapp integrations.
-    - Re-ran focused checks for ReAct protocol handling, renderer refs, memory
-      APIs, and descriptor parsing where local tooling was available.
-    - Verified release metadata and documentation changes with `git diff
-      --check`.
+    - Re-ran Python compile checks for the processor web app and integrations
+      route module.
+    - Re-ran focused preload/static/widget tests:
+      `test_proc_bundle_preload_lock.py`, `test_integrations_stream_id.py`,
+      and `test_bundle_interfaces.py`.
+    - Re-ran `git diff --check` for the platform nginx templates, Kubernetes
+      nginx templates, docs, preload code, and focused tests.
 
     Changelog
 
-    - Added User Memory store/search/widget/reconciliation documentation and
-      platform integration points.
-    - Added memory-enabled bundle entrypoint mixins and widget operations.
-    - Added shared memory widget embedding for bundle-owned React apps.
-    - Added shared Telegram widget embedding for bundle-owned React apps.
-    - Added Copilot Telegram webapp with Memory, Telegram Admin, and
-      conversation management tabs.
-    - Added memory-aware versatile reference bundle docs, config, and release
-      metadata.
-    - Fixed Telegram approval flow to preserve chat ids and notify newly
-      approved users when possible.
-    - Fixed Telegram bundle id resolution to use comm/request runtime context.
-    - Fixed economics pre-run hook compatibility for Copilot and other
-      economics-enabled bundles.
-    - Hardened ReAct repeated-decision parsing, artifact streaming, exec
-      binding, renderer refs, and protocol feedback.
-    - Fixed subprocess runtime bundle context propagation for bundle-scoped
-      service secrets.
-    - Fixed memory tool registration portability so isolated subprocess tools
-      can import the memory alias without breaking unrelated tool calls.
-    - Fixed favicon enrichment to use bounded fallback and expiring
-      domain-level failure cache entries.
-    - Updated platform release procedure to include the demo environment and
-      to preserve greenfield envs without built-in/example bundles.
+    - Fixed bundle preload skipping on non-leader procs.
+    - Fixed frameable route headers for bundle widgets/static integration UI.
+    - Added `/api/integrations/static/` frameable handling to the ECS nginx
+      template.
+    - Increased static integration route timeouts used by nginx templates.
+    - Updated embedding-control-plane frontend documentation for current
+      iframe/header/preload behavior.
+    - Removed internal demo-planning wording from the public KDCube overview.
 config:
-    version: "2026.5.16.407"
+    version: "2026.5.16.1704"

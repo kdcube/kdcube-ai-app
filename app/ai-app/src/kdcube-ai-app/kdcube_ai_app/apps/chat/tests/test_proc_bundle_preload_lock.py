@@ -108,7 +108,7 @@ async def test_preload_bundles_loop_acquires_and_releases_leader_lock(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_preload_bundles_loop_skips_when_another_instance_holds_lock(monkeypatch):
+async def test_preload_bundles_loop_still_preloads_when_another_instance_holds_lock(monkeypatch):
     redis = _FakeRedis(acquire=False)
     app = _app(redis)
     preload_calls: list[str] = []
@@ -128,7 +128,7 @@ async def test_preload_bundles_loop_skips_when_another_instance_holds_lock(monke
     await web_app._preload_bundles_loop(app)
 
     key = web_app.CONFIG.BUNDLES.PRELOAD_LOCK_FMT.format(tenant="tenant-a", project="project-a")
-    assert preload_calls == []
+    assert preload_calls == ["called"]
     assert app.state.bundles_preload_ready is True
     assert app.state.bundles_preload_errors == {}
     assert redis.calls == [("set", key, redis.calls[0][2], 45, True)]

@@ -270,6 +270,17 @@ Do not apply the relaxed frame policy blindly to unrelated APIs. JSON APIs,
 SSE, upload endpoints, and internal service endpoints do not need to be
 frameable.
 
+When `bundles_preload_on_start` is enabled, bundle UI builds should happen
+during processor startup. Runtime iframe requests should normally find the
+fresh current build already present. If an entrypoint request still triggers
+`npm install`, treat that as a preload/build readiness problem, not as a reason
+to serve stale UI.
+
+In multi-proc deployments, every proc should still run local bundle preload.
+Shared storage build signatures and locks are responsible for making the UI
+build itself run once. A cluster-level preload lock must not allow non-leader
+procs to skip preload and then accept iframe traffic cold.
+
 ## Proposed Assembly Descriptor Surface
 
 Embedding must be descriptor-driven. The proxy template should not contain a
@@ -324,6 +335,7 @@ more_set_headers "X-Frame-Options: DENY";
 For `same_origin`:
 
 ```nginx
+more_clear_headers "X-Frame-Options";
 more_set_headers "X-Frame-Options: SAMEORIGIN";
 ```
 

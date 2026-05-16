@@ -303,6 +303,8 @@ async def _preload_bundles_loop(app) -> None:
     Runs after git prefetch (modules must exist on disk before import).
     Sets app.state.bundles_preload_ready=True when done regardless of
     individual bundle failures, so a broken bundle does not block startup.
+    Every proc still performs local bundle preload; storage-scoped once locks
+    inside bundle UI/index builders prevent duplicate shared build work.
     """
     from kdcube_ai_app.infra.plugin.agentic_loader import preload_bundle_async
     from kdcube_ai_app.infra.plugin.bundle_registry import ADMIN_BUNDLE_ID
@@ -338,10 +340,10 @@ async def _preload_bundles_loop(app) -> None:
             logger.exception("[Bundles] Failed to acquire preload lock %s", lock_key)
             lock_acquired = False
         if not lock_acquired:
-            logger.info("[Bundles] Preload lock held by another instance: %s", lock_key)
-            app.state.bundles_preload_ready = True
-            app.state.bundles_preload_errors = {}
-            return
+            logger.info(
+                "[Bundles] Preload lock held by another instance; continuing local preload: %s",
+                lock_key,
+            )
     else:
         logger.info("[Bundles] Redis not configured; running preload without lock")
 

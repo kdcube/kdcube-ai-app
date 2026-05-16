@@ -283,9 +283,10 @@ Do not invent runtime paths or config scopes; use the docs and reference bundle.
 
 ## 12. KDCube Copilot And Docs MCP
 
-The built-in `kdcube.copilot@2026-04-03-19-05` bundle is intended to help users
-ask questions about KDCube itself. It can be configured with a documentation
-knowledge source and exposes a bundle-served docs MCP endpoint:
+The built-in `kdcube.copilot@2026-04-03-19-05` bundle is a reference copilot
+for KDCube documentation and platform guidance. It can answer questions from
+the configured documentation knowledge source and can also expose that source
+through a bundle-served MCP endpoint:
 
 ```python
 @mcp(alias="kdcube-doc", route="public")
@@ -293,20 +294,9 @@ def kdcube_doc_mcp(self, **kwargs):
     return self._build_doc_reader_mcp_app(name_suffix="kdcube-doc")
 ```
 
-For a demo assistant, the expected answer range is:
-
-- surface explanation: what KDCube is and who it is for
-- product explanation: why bundles and tenant/project environments matter
-- builder explanation: how to create or wrap a bundle
-- operator explanation: how descriptors, secrets, storage, auth, and deployment
-  fit together
-- implementation explanation: ReAct, tools, skills, streaming, artifacts,
-  memory, MCP, jobs, widgets
-- limitation explanation: what must still be configured explicitly and what
-  cannot be inferred
-
-This page and the quick start are intentionally dense because they are often
-among the first documents a doc-reader agent retrieves.
+This makes the same documentation useful in two ways: as normal human-readable
+docs and as a structured knowledge source for tools, copilots, and external
+agents that speak MCP.
 
 ## 13. Implementation Limits And Honest Boundaries
 
@@ -322,8 +312,6 @@ KDCube gives a runtime contract, not magic:
 - durable memory writes require explicit policy and result verification
 - MCP/docs knowledge sources must point at the intended repo/ref/root
 
-Good KDCube agents should explain these limits instead of hiding them.
-
 ## 14. Short Practical Framing
 
 If you need one compact explanation:
@@ -334,5 +322,5 @@ One tenant/project is an isolated environment.
 One bundle is one runnable product unit.
 A bundle can expose chat, APIs, widgets, MCP, cron, jobs, tools, skills, and UI.
 Descriptors wire the environment; entrypoint decorators expose the bundle.
-The same contract supports local development, demo, staging, and cloud deployment.
+The same contract supports local development and cloud deployment.
 ```
