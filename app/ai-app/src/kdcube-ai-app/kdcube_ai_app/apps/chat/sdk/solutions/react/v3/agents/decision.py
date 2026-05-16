@@ -42,6 +42,7 @@ from kdcube_ai_app.apps.chat.sdk.skills.instructions.shared_instructions import 
     MEMORY_RECOVERY_GUIDE,
     INTERNAL_NOTES_PRODUCER,
     INTERNAL_NOTES_CONSUMER,
+    DURABLE_USER_MEMORY_POLICY,
     EXTERNAL_TURN_EVENTS_GUIDE,
     ANNOUNCE_INTERPRETATION_GUIDE,
     SUGGESTED_FOLLOWUPS_GUIDE,
@@ -235,7 +236,7 @@ def build_decision_system_text(
     json_hint = (
         "{\n"
         "  \"action\": \"call_tool | complete | exit\",\n"
-        "  \"notes\": \"Short plan/rationale\",\n"
+        "  \"notes\": \"Short user-visible progress note for tool rounds; empty for complete/exit\",\n"
         "  \"tool_call\": {\n"
         "    \"tool_id\": \"web_tools.web_search\",\n"
         "    \"params\": {<tool params according to tool documentation. to bind artifact content, set the param value to 'ref:<artifact_path_or_visible_file_path>'>},\n"
@@ -292,6 +293,7 @@ def build_decision_system_text(
             "Good multi-action fanout: render PDF, PPTX, and DOCX from already visible source artifacts with separate rendering_tools.write_* actions.\n"
             "Bad multi-action chain: search/fetch first, then render a document from the unseen search result in the same round.\n"
             "Do NOT mix complete/exit with tool calls in the same multi-action response.\n"
+            "For complete/exit JSON, set notes=\"\" and tool_call=null. Put the user response only in final_answer; the only extra final-only channel is summary.\n"
             "Final answer shape only when action is complete or exit:\n"
             "<channel:thinking>...short final status...</channel:thinking>\n"
             "<channel:ReactDecisionOutV2>```json {{ ...one complete/exit ReactDecisionOutV2 object... }} ```</channel:ReactDecisionOutV2>\n"
@@ -331,6 +333,7 @@ def build_decision_system_text(
             "<channel:ReactDecisionOutV2>```json { ...one ReactDecisionOutV2 object... } ```</channel:ReactDecisionOutV2>\n"
             "<channel:code></channel:code>\n\n"
             "Final answer shape only when action is complete or exit:\n"
+            "For complete/exit JSON, set notes=\"\" and tool_call=null. Put the user response only in final_answer; the only extra final-only channel is summary.\n"
             "<channel:thinking>...short final status...</channel:thinking>\n"
             "<channel:ReactDecisionOutV2>```json { ...one complete/exit ReactDecisionOutV2 object... } ```</channel:ReactDecisionOutV2>\n"
             "<channel:code></channel:code>\n"
@@ -351,6 +354,7 @@ You are the Decision module inside a ReAct loop.
 {INTERNAL_AGENT_JOURNAL_GUARD}
 {INTERNAL_NOTES_PRODUCER}
 {INTERNAL_NOTES_CONSUMER}
+{DURABLE_USER_MEMORY_POLICY}
 {EXTERNAL_TURN_EVENTS_GUIDE}
 {ANNOUNCE_INTERPRETATION_GUIDE}
 {ATTACHMENT_AWARENESS_IMPLEMENTER}

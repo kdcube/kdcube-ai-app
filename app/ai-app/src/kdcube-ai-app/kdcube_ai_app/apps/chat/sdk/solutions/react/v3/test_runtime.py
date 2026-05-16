@@ -51,6 +51,57 @@ async def _noop_async(*args, **kwargs):
     return None
 
 
+def test_validate_decision_rejects_tool_call_with_final_answer():
+    solver = _solver_stub()
+    decision = {
+        "action": "call_tool",
+        "tool_call": {"tool_id": "memory.record_memory", "params": {}},
+        "final_answer": "Saved.",
+        "notes": "",
+    }
+
+    assert solver._validate_decision(decision) == "final_answer_with_tool_call"
+    message = solver._protocol_violation_message(
+        code="final_answer_with_tool_call",
+        state={},
+        decision=decision,
+    )
+    assert "No tool was run" in message
+    assert "after the tool result is visible" in message
+
+
+def test_validate_decision_rejects_final_answer_with_notes():
+    solver = _solver_stub()
+    decision = {
+        "action": "complete",
+        "tool_call": None,
+        "final_answer": "Done.",
+        "notes": "Memory saved. Acknowledging.",
+    }
+
+    assert solver._validate_decision(decision) == "final_answer_with_notes"
+    message = solver._protocol_violation_message(
+        code="final_answer_with_notes",
+        state={},
+        decision=decision,
+    )
+    assert "notes empty" in message
+
+
+def test_memory_write_multi_action_violation_message_requires_isolated_round():
+    solver = _solver_stub()
+
+    message = solver._protocol_violation_message(
+        code="multi_action_bundle_unsafe_tool",
+        state={},
+        decision={},
+        extra={"tool_id": "memory.record_memory"},
+    )
+
+    assert "must run alone" in message
+    assert "after the result is visible" in message
+
+
 @pytest.mark.asyncio
 async def test_decision_node_feeds_exec_contract_when_decision_channel_closes(monkeypatch):
     solver = _solver_stub()
@@ -1343,7 +1394,7 @@ async def test_decision_node_always_enables_final_answer_timeline_stream(monkeyp
 
 
 @pytest.mark.asyncio
-async def test_decision_node_uses_delta_cache_started_at_for_answer_and_notes(monkeypatch):
+async def test_decision_node_uses_delta_cache_started_at_for_answer(monkeypatch):
     solver = _solver_stub()
     note_calls = []
     answer_dt = datetime.datetime(2026, 4, 27, 1, 7, 45, 645211, tzinfo=datetime.timezone.utc)
@@ -1424,7 +1475,7 @@ async def test_decision_node_uses_delta_cache_started_at_for_answer_and_notes(mo
                 "action": "complete",
                 "final_answer": "Done.",
                 "tool_call": None,
-                "notes": "Short streamed note.",
+                "notes": "",
                 "suggested_followups": [],
             }
         }
@@ -1489,11 +1540,11 @@ async def test_decision_node_uses_delta_cache_started_at_for_answer_and_notes(mo
     attempt_block = next(b for b in solver.ctx_browser.contributed if b.get("type") == "assistant.completion.attempt")
     assert attempt_block["text"] == "Done."
     assert attempt_block["meta"]["completion_attempt_index"] == 1
-    assert note_calls[0]["ts"] == "2026-04-27T01:07:37.849000Z"
+    assert note_calls == []
 
 
 @pytest.mark.asyncio
-async def test_decision_node_prefers_per_iteration_stream_started_at(monkeypatch):
+async def test_decision_node_prefers_per_iteration_answer_started_at(monkeypatch):
     solver = _solver_stub()
     note_calls = []
 
@@ -1552,7 +1603,7 @@ async def test_decision_node_prefers_per_iteration_stream_started_at(monkeypatch
                 "action": "complete",
                 "final_answer": "Done.",
                 "tool_call": None,
-                "notes": "Short streamed note.",
+                "notes": "",
                 "suggested_followups": [],
             }
         }
@@ -1616,4 +1667,4 @@ async def test_decision_node_prefers_per_iteration_stream_started_at(monkeypatch
     await solver._decision_node_impl(state, 0)
 
     assert solver.scratchpad.assistant_completion_attempts[0]["ts"] == "2026-04-27T01:44:59.250000Z"
-    assert note_calls[0]["ts"] == "2026-04-27T01:44:58.900000Z"
+    assert note_calls == []

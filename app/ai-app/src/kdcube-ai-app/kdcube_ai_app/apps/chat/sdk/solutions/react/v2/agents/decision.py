@@ -40,6 +40,7 @@ from kdcube_ai_app.apps.chat.sdk.skills.instructions.shared_instructions import 
     MEMORY_RECOVERY_GUIDE,
     INTERNAL_NOTES_PRODUCER,
     INTERNAL_NOTES_CONSUMER,
+    DURABLE_USER_MEMORY_POLICY,
     EXTERNAL_TURN_EVENTS_GUIDE,
     ANNOUNCE_INTERPRETATION_GUIDE,
     SUGGESTED_FOLLOWUPS_GUIDE,
@@ -97,7 +98,7 @@ def build_decision_system_text(
     json_hint = (
         "{\n"
         "  \"action\": \"call_tool | complete | exit\",\n"
-        "  \"notes\": \"Short plan/rationale\",\n"
+        "  \"notes\": \"Short user-visible progress note for tool rounds; empty for complete/exit\",\n"
         "  \"tool_call\": {\n"
         "    \"tool_id\": \"web_tools.web_search\",\n"
         "    \"params\": {<tool params according to tool documentation. to bind artifact content, set the param value to 'ref:<artifact_path_or_visible_file_path>'>},\n"
@@ -193,6 +194,7 @@ def build_decision_system_text(
         "Exec binding: an exec_tools.execute_code_python decision must be followed immediately by <channel:code> containing its raw Python. That code binds only to the immediately preceding exec decision; if another decision appears before code, the exec action is incomplete and will not run.\n"
         "Exec in multi-action: you may include exactly one exec_tools.execute_code_python action together with other actions only when that exec decision has params.contract and is immediately followed by complete Python in <channel:code>. Otherwise exec must be the only action in the round.\n"
         "Do NOT mix complete/exit with tool calls in the same multi-action response.\n"
+        "For complete/exit JSON, set notes=\"\" and tool_call=null. Put the user response only in final_answer; the only extra final-only channel is summary.\n"
         "Final answer shape only when action is complete or exit:\n"
         "<channel:thinking>...short final status...</channel:thinking>\n"
         "<channel:ReactDecisionOutV2>```json {{ ...one complete/exit ReactDecisionOutV2 object... }} ```</channel:ReactDecisionOutV2>\n"
@@ -213,6 +215,7 @@ You are the Decision module inside a ReAct loop.
 {INTERNAL_AGENT_JOURNAL_GUARD}
 {INTERNAL_NOTES_PRODUCER}
 {INTERNAL_NOTES_CONSUMER}
+{DURABLE_USER_MEMORY_POLICY}
 {EXTERNAL_TURN_EVENTS_GUIDE}
 {ANNOUNCE_INTERPRETATION_GUIDE}
 {ATTACHMENT_AWARENESS_IMPLEMENTER}

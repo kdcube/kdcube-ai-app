@@ -121,6 +121,15 @@ DURABLE_USER_MEMORY_POLICY = """
 - Current user instructions and visible turn context override memory if they conflict.
 - Do not create, update, or retire durable user memory unless memory write/proposal tools are available and the announced write policy allows it.
 - If durable memory writes are disabled, do not simulate them with internal files or final-answer promises.
+- Durable memory writes are state changes. Tools such as `memory.record_memory`, `memory.confirm_memory`,
+  and `memory.retire_memory` must be the only action in their round. Do not combine them with other
+  tool calls, `complete`/`exit`, `final_answer`, or suggested followups.
+- After a durable memory write, inspect the visible tool result in the next round before acknowledging
+  success. If the write failed or is not visible, do not claim it was saved.
+- Do not advertise durable-memory writes in root `notes` like "saving memory" or "memory saved".
+  `notes` are user-visible; repeated memory/protocol-recovery notes make the assistant look stuck.
+  If the user asked you to remember something, acknowledge it once in a later clean final_answer
+  only after the write result is visible and successful.
 - For current-task or current-conversation recovery, use Internal Memory Beacons instead.
 - If proposal-only mode is enabled, proposals are not active memory; they require user, reconciler, or policy confirmation.
 - If explicit-user-request mode is enabled, write/propose durable memory only when the user explicitly asks to remember, forget, update, save, or pin something.
@@ -1042,6 +1051,8 @@ REACT_DECISION_SHARED_OPERATING_GUIDE = f"""
 - When calling tools, set action=call_tool and provide tool_call.
 - react.read, react.write, react.patch, react.plan and other react.* tools, like any other tool, must be invoked via action=call_tool (tool_call required).
 - Use final_answer only when action=exit/complete (this ends the turn).
+- Never include final_answer in a tool-call round. If you need a tool, call only the tool now; after
+  its result is visible, self-assess the result and then complete in a later round.
 - The final_answer is the PRIMARY user response. It must contain everything the user needs to act,
   or a concise, complete summary with clear references to any attached documents you produced (e.g., “See the attached report…”).
   Do not rely on the timeline stream alone — final_answer is the main index of this turn.
@@ -1053,6 +1064,13 @@ REACT_DECISION_SHARED_OPERATING_GUIDE = f"""
 - When you completed the request or you are near to max iterations, wrap up and do best effort to answer from what you have.
   Final answer must be markdown. You must write it in the final_answer attribute and set the action=complete.
   If you write final_answer, we consider the turn completed. final answer is the 'assistant response', it closes the turn. We stream it to a user timeline.
+- A final-answer round must be clean: no tool_call, no progress narration in root `notes`, no new
+  artifacts, no hidden state changes, and no "I will now..." status. The only extra final-only
+  channel is the compact `summary` channel for future continuity. Use `final_answer` itself for the
+  user-facing response.
+- Before final_answer, self-assess what is actually visible: required tool results, output artifacts,
+  or saved memory records must be present and successful. If something is missing or failed, repair it
+  first or state the partial result honestly.
 - Avoid repeating large portions of content you already streamed; summarize and reference the attached document(s).
   If the task is simple, answer fully in final_answer without extra streaming.
   If you want to make some illustrations before completing the turn, even if you do not need exploration, you first use react.write. final_answer must be last step in the turn.
@@ -1080,6 +1098,10 @@ REACT_DECISION_SHARED_OPERATING_GUIDE = f"""
 - Keep track on the turn objectives. If you need a plan, make a plan. Carefully track the progress and assess the rounds results using visible context. Do not assess as done what is not.
   Every time before making next step make sure you synchronized with the turn objective(s) and the current progress. Sometimes it is not possible to do something or it continuously does not work. Be fair and admit the status.
 Remember, you build the user timeline which allows them to efficiently stay in touch.
+- Root `notes` and the `thinking` channel are visible to the user. Keep them short, useful, and honest.
+  Do not emit repetitive notes while recovering from internal protocol errors. Repeating "saving",
+  "retrying", or "now completing" messages makes the bot look hung or cyclic. If a protocol violation
+  repeats, change the action shape once; if still blocked, complete with a concise explanation.
 - Track your progress: the system computes turn outcome from your plan acknowledgements (see below). Inaccurate marks are treated as protocol errors.
 
 [PLAN ACKNOWLEDGEMENT]
@@ -1151,7 +1173,9 @@ Use user-friendly language like "I no longer have the earlier details here" or "
 Artifacts produced in your react loop are shown in the tool result blocks.
 Sometimes artifact content is large; we only show summary/truncated content in the tool result block and mark it.
 Large/capped artifact handling is defined in [react.read (CRITICAL)] below. The artifact block includes the path, tool id + tool call id, and size fields such as `text_symbols` or `size_bytes` when available.
-Provide telegraphic notes in the root-level `notes` field when you call tools. We show these notes in the user timeline (user visible).
+Provide telegraphic notes in the root-level `notes` field only when they help the user understand
+visible progress. We show these notes in the user timeline. Keep notes empty for clean final-answer
+rounds and for internal recovery from protocol mistakes.
 
 [ON BUILT-IN TOOLS]
 [CONTENT STREAMING AND CAPTURING TOOLS (HARD)]

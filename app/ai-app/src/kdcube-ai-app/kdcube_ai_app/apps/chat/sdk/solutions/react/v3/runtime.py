@@ -1138,6 +1138,25 @@ class ReactSolverV2:
             return f"Action '{action}' is not allowed. Allowed: call_tool | complete | exit."
         if code == "final_answer_required":
             return "final_answer is required for action=complete/exit."
+        if code == "final_answer_with_tool_call":
+            return (
+                "You emitted action=call_tool with final_answer text. No tool was run and no final "
+                "answer was accepted. Next: if a tool is needed, emit only action=call_tool with "
+                "final_answer empty and minimal notes; after the tool result is visible, self-assess "
+                "it and then emit a clean complete/exit final-answer round with notes empty."
+            )
+        if code == "tool_call_with_final_answer":
+            return (
+                "You emitted a final-answer action with a tool_call attached. No action was executed. "
+                "Next: either call the tool alone now, or complete with final_answer only, notes empty, "
+                "and tool_call=null."
+            )
+        if code == "final_answer_with_notes":
+            return (
+                "You emitted a final-answer action with root notes. No final answer was accepted. "
+                "Final-answer rounds must be clean: put the user response in final_answer, keep notes empty, "
+                "and include only the final summary channel for continuity."
+            )
         if code == "missing_tool_id":
             return "tool_call.tool_id is missing for action=call_tool."
         if code == "missing_contract":
@@ -1169,6 +1188,16 @@ class ReactSolverV2:
             )
         if code == "multi_action_bundle_unsafe_tool":
             unsafe_tool = str((extra or {}).get("tool_id") or tool_id or "that tool").strip()
+            if (
+                unsafe_tool in {"memory.record_memory", "memory.confirm_memory", "memory.retire_memory"}
+                or unsafe_tool.endswith((".record_memory", ".confirm_memory", ".retire_memory"))
+            ):
+                return (
+                    f"You emitted {unsafe_tool} together with other actions. Durable memory writes "
+                    "are state changes and must run alone. That memory action was not run. Next: emit "
+                    f"only {unsafe_tool} with final_answer empty and minimal notes; after the result is "
+                    "visible and successful, complete in a later clean final-answer round."
+                )
             if tools_insights.is_exec_tool(unsafe_tool):
                 return (
                     f"You emitted a {unsafe_tool} action that was not complete enough to run in this multi-action round. "
@@ -1475,8 +1504,15 @@ class ReactSolverV2:
         action = (decision.get("action") or "").strip()
         if action not in {"call_tool", "complete", "exit"}:
             return f"invalid_action:{action}"
-        if action in {"complete", "exit"} and not (decision.get("final_answer") or "").strip():
+        final_answer = (decision.get("final_answer") or "").strip()
+        if action == "call_tool" and final_answer:
+            return "final_answer_with_tool_call"
+        if action in {"complete", "exit"} and (decision.get("tool_call") or {}):
+            return "tool_call_with_final_answer"
+        if action in {"complete", "exit"} and not final_answer:
             return "final_answer_required"
+        if action in {"complete", "exit"} and (decision.get("notes") or "").strip():
+            return "final_answer_with_notes"
         if action != "call_tool":
             return None
         tool_call = decision.get("tool_call") or {}
@@ -2633,33 +2669,6 @@ class ReactSolverV2:
                 decision = decision_packet.get("agent_response") or {}
                 if not isinstance(decision, dict):
                     decision = {}
-
-                original_action = (decision.get("action") or "").strip()
-                has_final_answer = bool((decision.get("final_answer") or "").strip())
-                if original_action == "call_tool" and has_final_answer:
-                    try:
-                        if self.ctx_browser:
-                            self.ctx_browser.contribute_notice(
-                                code="protocol_violation.final_answer_with_tool_call",
-                                message=self._protocol_violation_message(
-                                    code="final_answer_with_tool_call",
-                                    decision={**decision, "action": "call_tool"},
-                                    state=state,
-                                ),
-                                extra={"action": "call_tool"},
-                                call_id=pending_tool_call_id,
-                            )
-                    except Exception:
-                        pass
-                    try:
-                        self.log.log(
-                            f"[react.v3] final_answer present with call_tool; coercing to complete",
-                            level="ERROR",
-                        )
-                    except Exception:
-                        pass
-                    decision["action"] = "complete"
-                    decision["tool_call"] = None
 
                 validation_error = self._validate_decision(decision)
                 if validation_error:
