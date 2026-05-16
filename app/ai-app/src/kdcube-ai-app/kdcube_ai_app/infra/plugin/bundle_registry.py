@@ -538,6 +538,38 @@ async def load_persisted_registry_from_runtime_ctx(
         )
         return None
 
+    component = (os.getenv("GATEWAY_COMPONENT") or "proc").strip().lower()
+    if component != "proc":
+        try:
+            from kdcube_ai_app.infra.plugin.bundle_store import BundlesRegistry, redis_key
+
+            raw = await redis_client.get(redis_key(tenant, project))
+            if raw:
+                if isinstance(raw, bytes):
+                    raw = raw.decode("utf-8")
+                reg = BundlesRegistry.model_validate_json(raw)
+                if reg and reg.bundles:
+                    return reg
+        except Exception as e:
+            logger.warning(
+                "Failed to read cached bundle registry snapshot "
+                "(tenant=%s project=%s component=%s): %s",
+                tenant,
+                project,
+                component,
+                e,
+            )
+            return None
+
+        logger.error(
+            "Active bundle registry cache missing/empty "
+            "(tenant=%s project=%s component=%s). Non-proc components do not load bundle descriptors.",
+            tenant,
+            project,
+            component,
+        )
+        return None
+
     try:
         reg = await _load_store_registry(redis_client, tenant, project)
     except Exception as e:

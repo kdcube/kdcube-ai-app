@@ -348,11 +348,18 @@ async def _preload_bundles_loop(app) -> None:
         logger.info("[Bundles] Redis not configured; running preload without lock")
 
     reg = await load_bundle_runtime_registry(redis, settings.TENANT, settings.PROJECT) if redis is not None else None
+    registry_bundles = (reg.bundles if reg is not None else {}) or {}
+    logger.info(
+        "[Bundles] Preload registry snapshot: total=%s default=%s ids=%s",
+        len(registry_bundles),
+        getattr(reg, "default_bundle_id", None),
+        sorted(registry_bundles.keys()),
+    )
     total = 0
     ok = 0
     errors: dict[str, str] = {}
     try:
-        for bid, entry in ((reg.bundles if reg is not None else {}) or {}).items():
+        for bid, entry in registry_bundles.items():
             if bid == ADMIN_BUNDLE_ID:
                 continue
             path = (entry.path or "").strip()

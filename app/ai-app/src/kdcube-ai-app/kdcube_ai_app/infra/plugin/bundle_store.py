@@ -5,6 +5,7 @@
 from __future__ import annotations
 import ast
 import asyncio
+import hashlib
 import json, os, time, uuid, threading
 import logging
 import shutil
@@ -1059,7 +1060,18 @@ class _FileBundleDescriptorStore:
             return None
         if not path.is_absolute():
             return None
-        return path.with_name(f".{path.name}.lock")
+        parent = path.parent
+        try:
+            parent.mkdir(parents=True, exist_ok=True)
+            if os.access(parent, os.W_OK):
+                return path.with_name(f".{path.name}.lock")
+        except OSError:
+            pass
+
+        digest = hashlib.sha256(str(path).encode("utf-8")).hexdigest()[:16]
+        lock_root = Path(os.getenv("BUNDLE_DESCRIPTOR_LOCK_DIR") or "/tmp/kdcube-bundle-descriptor-locks")
+        safe_name = "".join(ch if ch.isalnum() or ch in ("-", "_", ".") else "-" for ch in path.name)
+        return lock_root / f"{safe_name}.{digest}.lock"
 
     def _acquire_file_lock(self):
         class _LockCtx:
