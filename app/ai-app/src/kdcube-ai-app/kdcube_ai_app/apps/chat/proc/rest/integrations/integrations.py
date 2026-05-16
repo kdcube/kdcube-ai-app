@@ -2329,6 +2329,14 @@ async def _fetch_bundle_widget_payload(
     )
     widget_spec = resolve_bundle_widget(workflow, alias=widget_alias, bundle_id=spec_resolved.id)
     if widget_spec is None:
+        _log_bundle_widget_lookup_mismatch(
+            tenant_id=tenant_id,
+            project_id=project_id,
+            requested_bundle_id=bundle_id,
+            spec_resolved=spec_resolved,
+            widget_alias=widget_alias,
+            workflow=workflow,
+        )
         raise HTTPException(status_code=404, detail=f"Bundle does not define widget {widget_alias}")
 
     manifest = discover_bundle_interface_manifest(workflow, bundle_id=spec_resolved.id)
@@ -2419,6 +2427,41 @@ def _truthy_config_value(value: Any) -> bool:
     if isinstance(value, int):
         return value != 0
     return str(value).strip().lower() not in {"false", "disable", "disabled", "off", "0"}
+
+
+def _log_bundle_widget_lookup_mismatch(
+        *,
+        tenant_id: str,
+        project_id: str,
+        requested_bundle_id: str | None,
+        spec_resolved: Any,
+        widget_alias: str,
+        workflow: Any,
+) -> None:
+    spec = AgenticBundleSpec(
+        path=spec_resolved.path,
+        module=spec_resolved.module,
+        singleton=bool(spec_resolved.singleton),
+    )
+    cached_manifest = get_cached_manifest(spec)
+    manifest = discover_bundle_interface_manifest(workflow, bundle_id=spec_resolved.id)
+    logger.error(
+        "Bundle widget lookup mismatch: tenant=%s project=%s requested_bundle=%s "
+        "resolved_bundle=%s widget=%s path=%s module=%s singleton=%s "
+        "workflow_class=%s workflow_module=%s manifest_widgets=%s cached_manifest_widgets=%s",
+        tenant_id,
+        project_id,
+        requested_bundle_id,
+        spec_resolved.id,
+        widget_alias,
+        spec_resolved.path,
+        spec_resolved.module,
+        bool(spec_resolved.singleton),
+        workflow.__class__.__name__,
+        workflow.__class__.__module__,
+        [spec.alias for spec in manifest.ui_widgets],
+        [spec.alias for spec in cached_manifest.ui_widgets] if cached_manifest is not None else None,
+    )
 
 
 def _raw_static_widget_config(props: Dict[str, Any], *, widget_alias: str) -> Dict[str, Any] | None:
@@ -2517,6 +2560,14 @@ async def _serve_static_widget_app(
     )
     widget_spec = resolve_bundle_widget(workflow, alias=widget_alias, bundle_id=spec_resolved.id)
     if widget_spec is None:
+        _log_bundle_widget_lookup_mismatch(
+            tenant_id=tenant_id,
+            project_id=project_id,
+            requested_bundle_id=bundle_id,
+            spec_resolved=spec_resolved,
+            widget_alias=widget_alias,
+            workflow=workflow,
+        )
         raise HTTPException(status_code=404, detail=f"Bundle does not define widget {widget_alias}")
 
     manifest = discover_bundle_interface_manifest(workflow, bundle_id=spec_resolved.id)
@@ -3246,28 +3297,14 @@ async def _load_bundle_workflow(
             spec, wf_config, comm_context=comm_context, redis=redis, pg_pool=pg_pool,
         )
     except Exception as e:
-        logger.exception(f"[call_bundle_op.{tenant}.{project}] Failed to load bundle {asdict(spec)}")
-        try:
-            admin_spec = await _resolve_bundle_spec_from_runtime(
-                request=request,
-                tenant=tenant_id,
-                project=project_id,
-                bundle_id="kdcube.admin",
-            )
-            if not admin_spec:
-                raise e
-            wf_config.ai_bundle_spec = admin_spec
-            admin = AgenticBundleSpec(
-                path=admin_spec.path,
-                module=admin_spec.module,
-                singleton=bool(admin_spec.singleton),
-            )
-            workflow, _mod = await get_workflow_instance_async(
-                admin, wf_config, comm_context=comm_context, redis=redis, pg_pool=pg_pool,
-            )
-            spec_resolved = admin_spec
-        except Exception:
-            raise HTTPException(status_code=500, detail=f"Failed to load bundle: {e}")
+        logger.exception(
+            "[call_bundle_op.%s.%s] Failed to load requested bundle id=%s spec=%s",
+            tenant,
+            project,
+            spec_resolved.id,
+            asdict(spec),
+        )
+        raise HTTPException(status_code=500, detail=f"Failed to load bundle {spec_resolved.id}: {e}") from e
 
     _bind_proc_runtime_services_to_workflow(workflow=workflow, request=request)
     return workflow, spec_resolved, tenant_id, project_id, comm_context

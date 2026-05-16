@@ -34,6 +34,14 @@ class GitBundlePaths:
     bundle_root: pathlib.Path
 
 
+def _missing_host_path_log_level() -> str:
+    # In ECS the host-side path documents the EFS mount on the container host.
+    # It is not expected to exist inside the application container.
+    if os.getenv("ECS_CONTAINER_METADATA_URI_V4") or os.getenv("ECS_CONTAINER_METADATA_URI"):
+        return "DEBUG"
+    return "WARNING"
+
+
 class GitBundleCooldown(Exception):
     """Raised when a git bundle is in cooldown after failures."""
 
@@ -110,12 +118,12 @@ def resolve_bundles_root() -> pathlib.Path:
             log.log(
                 f"HOST_BUNDLES_PATH points to missing path {host_path}; "
                 f"using BUNDLES_ROOT={bundles_root}",
-                level="WARNING",
+                level=_missing_host_path_log_level(),
             )
         else:
             log.log(
                 f"HOST_BUNDLES_PATH points to missing path {host_path}; falling back to /bundles",
-                level="WARNING",
+                level=_missing_host_path_log_level(),
             )
     root = bundles_root or "/bundles"
     return pathlib.Path(root).expanduser().resolve()
@@ -148,13 +156,13 @@ def resolve_managed_bundles_root() -> pathlib.Path:
             log.log(
                 f"HOST_MANAGED_BUNDLES_PATH points to missing path {host_path}; "
                 f"using MANAGED_BUNDLES_ROOT={agentic_root}",
-                level="WARNING",
+                level=_missing_host_path_log_level(),
             )
         else:
             log.log(
                 f"HOST_MANAGED_BUNDLES_PATH points to missing path {host_path}; "
                 "falling back to /managed-bundles",
-                level="WARNING",
+                level=_missing_host_path_log_level(),
             )
     if agentic_root:
         return pathlib.Path(agentic_root).expanduser().resolve()

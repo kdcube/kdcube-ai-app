@@ -7,7 +7,11 @@ from kdcube_ai_app.infra.plugin.bundle_store import BundleEntry, BundlesRegistry
 
 
 class _FakeRedis:
-    pass
+    def __init__(self, data=None):
+        self.data = data or {}
+
+    async def get(self, key):
+        return self.data.get(key)
 
 
 @pytest.mark.asyncio
@@ -97,6 +101,58 @@ async def test_resolve_default_bundle_id_from_runtime_ctx_rejects_missing_defaul
     )
 
     assert resolved is None
+
+
+@pytest.mark.asyncio
+async def test_ingress_loads_registry_from_redis_cache_only(monkeypatch):
+    from kdcube_ai_app.infra.plugin.bundle_store import redis_key
+
+    monkeypatch.setenv("GATEWAY_COMPONENT", "ingress")
+    raw = BundlesRegistry(
+        default_bundle_id="bundle.demo",
+        bundles={
+            "bundle.demo": BundleEntry(
+                id="bundle.demo",
+                path="/bundles/bundle.demo",
+                module="entrypoint",
+            )
+        },
+    ).model_dump_json()
+    redis = _FakeRedis({redis_key("tenant-a", "project-a"): raw})
+    runtime_ctx = SimpleNamespace(redis_async=redis)
+
+    async def _load_store_registry(redis_client, tenant, project):
+        raise AssertionError("ingress must not load descriptor-backed bundle store")
+
+    monkeypatch.setattr(bundle_registry, "_load_store_registry", _load_store_registry, raising=False)
+
+    reg = await bundle_registry.load_persisted_registry_from_runtime_ctx(
+        runtime_ctx,
+        "tenant-a",
+        "project-a",
+    )
+
+    assert reg is not None
+    assert reg.default_bundle_id == "bundle.demo"
+
+
+@pytest.mark.asyncio
+async def test_ingress_rejects_missing_registry_cache_without_descriptor_load(monkeypatch):
+    monkeypatch.setenv("GATEWAY_COMPONENT", "ingress")
+    runtime_ctx = SimpleNamespace(redis_async=_FakeRedis())
+
+    async def _load_store_registry(redis_client, tenant, project):
+        raise AssertionError("ingress must not load descriptor-backed bundle store")
+
+    monkeypatch.setattr(bundle_registry, "_load_store_registry", _load_store_registry, raising=False)
+
+    reg = await bundle_registry.load_persisted_registry_from_runtime_ctx(
+        runtime_ctx,
+        "tenant-a",
+        "project-a",
+    )
+
+    assert reg is None
 
 
 def test_apply_git_resolution_warns_once_for_missing_local_path_bundle(monkeypatch, caplog, tmp_path):
