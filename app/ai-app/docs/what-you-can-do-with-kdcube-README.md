@@ -2,8 +2,8 @@
 id: ks:docs/what-you-can-do-with-kdcube-README.md
 title: "What You Can Do With KDCube"
 summary: "Dense product and builder overview of KDCube: what it is, who it is for, why bundles matter, what surfaces and runtimes it supports, and how engineers or coding agents turn code into runnable AI products."
-tags: ["docs", "product", "overview", "sdk", "platform", "bundle", "agent"]
-keywords: ["what is kdcube", "what can kdcube do", "ai product platform", "bundle runtime", "kdcube bundle", "build ai app", "wrap existing app", "coding agent build bundle", "claude code build bundle", "local to cloud workflow", "mcp endpoint", "react agent", "user memory", "streaming widgets", "artifact provenance"]
+tags: ["docs", "product", "overview", "sdk", "platform", "bundle", "agent", "react", "exec"]
+keywords: ["what is kdcube", "what can kdcube do", "ai product platform", "bundle runtime", "hot reload bundle", "kdcube bundle", "build ai app", "wrap existing app", "coding agent build bundle", "claude code build bundle", "local to cloud workflow", "mcp endpoint", "react agent", "announce", "steer followup", "user memory", "iso runtime", "distributed exec", "streaming widgets", "artifact provenance"]
 updated_at: 2026-05-16
 see_also:
   - ks:docs/quick-start-README.md
@@ -15,9 +15,14 @@ see_also:
   - ks:docs/sdk/bundle/bundle-agent-integration-README.md
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
   - ks:docs/sdk/bundle/bundle-widget-integration-README.md
+  - ks:docs/sdk/agents/react/react-announce-README.md
+  - ks:docs/sdk/agents/react/shared-timeline-event-bus-steer-followup-README.md
+  - ks:docs/sdk/agents/react/why/why-not-simply-tool-calling-README.md
   - ks:docs/sdk/tools/sdk-tools-README.md
   - ks:docs/sdk/skills/skills-README.md
   - ks:docs/sdk/streaming/llm-streaming-README.md
+  - ks:docs/exec/README-iso-runtime.md
+  - ks:docs/exec/distributed-exec-README.md
   - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
 ---
 # What You Can Do With KDCube
@@ -97,6 +102,12 @@ A bundle gives one product a stable runtime identity:
 This lets an AI product be deployed, configured, reloaded, tested, and reasoned
 about as a unit.
 
+Bundles can also be hot-reloaded during development and operations. `kdcube
+reload <bundle_id>` reapplies the descriptor-authoritative bundle registry,
+evicts process-local bundle caches, refreshes bundle code/config for subsequent
+requests, and broadcasts the change to running components. Platform image
+changes still require the normal image rebuild/restart path.
+
 ## 5. Runtime Surfaces
 
 KDCube bundles can expose:
@@ -138,7 +149,21 @@ protocol. That is why it can carry rich events and artifacts:
 - streamed code channel for exec
 - final summary channel for compact continuity
 - tool-call and tool-result timeline artifacts
+- live `followup` and `steer` events accepted through the shared timeline event
+  bus while a turn is running
+- an uncached ANNOUNCE block that re-renders operational state each decision
+  round: budget, temporal context, open plans, live turn events, workspace
+  state, memory hotsets, and other current signals
 - protocol violation feedback visible to the next decision round
+
+`followup` lets a running turn accept additional same-turn user input and can
+grant bounded extra iteration credit. `steer` is a control event: it is recorded
+on the current turn, interrupts active generation or cancellable tool phases
+when possible, and gives ReAct a short finalize/reorient window.
+
+ANNOUNCE is not decoration and not a cached transcript. It is the runtime's way
+to put between-turn or between-round state directly in the model's attention
+without rewriting old timeline blocks.
 
 Tools are SDK/bundle capabilities, not just LLM function calls:
 
@@ -149,12 +174,45 @@ Tools are SDK/bundle capabilities, not just LLM function calls:
   runtime reads
 - `react.*` tools for workspace/artifact recovery, reading, patching, planning,
   and writing
+- MCP tools exposed by configured MCP servers or bundle-served MCP endpoints
 - bundle-local tools through `tools_descriptor.py`
 
-Skills are also first-class. They provide workflow instructions and domain
-guidance that the agent can load before using tools.
+Skills are also first-class. Platform/shared skills and custom bundle skills
+provide workflow instructions and domain guidance that the agent can load before
+using tools.
 
-## 7. Streaming And Artifacts
+## 7. Execution Runtime
+
+KDCube includes an execution subsystem for generated code, heavy tools, and
+tool runtimes that should not run inside the main server process.
+
+Runtime modes include:
+
+- in-process execution for safe lightweight tools
+- isolated local subprocess execution for tools that need crash containment
+- Docker ISO runtime with a trusted supervisor and restricted executor
+- split Docker mode, where the supervisor and executor run in sibling
+  containers with different mounts and privileges
+- distributed/Fargate exec, where workspaces and bundle snapshots are
+  transported to a remote ECS task
+
+The ISO runtime is not tied to ReAct. It is reusable platform execution
+infrastructure: a bundle can use it directly, expose it as a tool to another
+agent, or serve a tool surface backed by it. It also acts as an execution
+boundary:
+
+- generated Python can run without network access or secret material
+- approved tools can still be proxied through the supervisor
+- artifacts, logs, executed programs, and tool outputs are merged back into the
+  same KDCube artifact/timeline model
+- bundle code roots, bundle readonly data, descriptor payloads, and execution
+  workspaces are kept as separate surfaces
+
+This lets bundles use generated-code execution, rendering tools, web/search
+tools, and custom isolated helpers while preserving an auditable result
+contract.
+
+## 8. Streaming And Artifacts
 
 KDCube is designed for observable long-running work.
 
@@ -180,7 +238,7 @@ Artifacts keep provenance:
 - source-pool citation tokens and replacement
 - hosted-file metadata
 
-## 8. Memory And Continuity
+## 9. Memory And Continuity
 
 KDCube has several memory layers with different owners and lifetimes:
 
@@ -200,7 +258,7 @@ Durable user memory is a standalone subsystem. ReAct can use it by:
 User memory does not replace conversation memory. It extends the agent with
 curated, cross-conversation user facts/preferences/state.
 
-## 9. How Configuration Is Organized
+## 10. How Configuration Is Organized
 
 Use this split:
 
@@ -216,7 +274,7 @@ Use this split:
 Do not put secrets in non-secret props. Do not put per-user runtime state into
 deployment descriptors.
 
-## 10. Turning Code Into A Bundle
+## 11. Turning Code Into A Bundle
 
 When wrapping existing code, keep the boundary clean:
 
@@ -250,7 +308,7 @@ Start with the Tier 1 bundle docs:
 5. [configuration/bundle-runtime-configuration-and-secrets-README.md](configuration/bundle-runtime-configuration-and-secrets-README.md)
 6. [sdk/bundle/build/how-to-configure-and-run-bundle-README.md](sdk/bundle/build/how-to-configure-and-run-bundle-README.md)
 
-## 11. Coding-Agent Instruction Seed
+## 12. Coding-Agent Instruction Seed
 
 Use this when asking Claude Code, Codex, or another coding agent to build a
 bundle:
@@ -281,7 +339,7 @@ Run locally with kdcube init/start/reload using the active descriptor set.
 Do not invent runtime paths or config scopes; use the docs and reference bundle.
 ```
 
-## 12. KDCube Copilot And Docs MCP
+## 13. KDCube Copilot And Docs MCP
 
 The built-in `kdcube.copilot@2026-04-03-19-05` bundle is a reference copilot
 for KDCube documentation and platform guidance. It can answer questions from
@@ -298,13 +356,14 @@ This makes the same documentation useful in two ways: as normal human-readable
 docs and as a structured knowledge source for tools, copilots, and external
 agents that speak MCP.
 
-## 13. Implementation Limits And Honest Boundaries
+## 14. Implementation Limits And Honest Boundaries
 
 KDCube gives a runtime contract, not magic:
 
 - descriptor sets must still be correct for the target environment
 - public callbacks need reachable HTTPS origins
 - local platform-code changes require image rebuilds
+- bundle reload updates bundle code/config, not platform code baked into images
 - bundle secrets must be supplied through secret channels
 - widgets must use the KDCube frame/runtime origin for API calls
 - agent quality depends on visible docs, loaded skills, available tools, and
@@ -312,7 +371,7 @@ KDCube gives a runtime contract, not magic:
 - durable memory writes require explicit policy and result verification
 - MCP/docs knowledge sources must point at the intended repo/ref/root
 
-## 14. Short Practical Framing
+## 15. Short Practical Framing
 
 If you need one compact explanation:
 
@@ -322,5 +381,6 @@ One tenant/project is an isolated environment.
 One bundle is one runnable product unit.
 A bundle can expose chat, APIs, widgets, MCP, cron, jobs, tools, skills, and UI.
 Descriptors wire the environment; entrypoint decorators expose the bundle.
+Bundle reload updates bundle code/config without rebuilding the platform image.
 The same contract supports local development and cloud deployment.
 ```
