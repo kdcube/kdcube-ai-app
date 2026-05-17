@@ -768,7 +768,7 @@ For new React widgets, prefer a source folder declared in bundle config:
 
 ```yaml
 ui:
-  web_app_widgets:
+  widgets:
     task_memo_webapp:
       enabled: true
       src_folder: ui/widgets/task_memo_webapp
@@ -915,7 +915,7 @@ For generated HTML repair, prefer a precise ReAct loop:
 
 ### 5.2B Source-folder widget build contract
 
-For React/Vite widgets declared under `ui.web_app_widgets.<alias>`, test the
+For React/Vite widgets declared under `ui.widgets.<alias>`, test the
 loader build contract as well as the browser behavior.
 
 Descriptor shape:
@@ -981,7 +981,7 @@ Could not load /context/memory/ui/widget/memories/src/embed.tsx
 ```
 
 then the widget imported a shared SDK component, but the effective
-`ui.web_app_widgets.<alias>.shared_sources` did not materialize that SDK source
+`ui.widgets.<alias>.shared_sources` did not materialize that SDK source
 under the `_shared/...` target used by the Vite alias. Fix bundle defaults or
 descriptor props; do not patch the temporary build directory.
 
@@ -1277,7 +1277,7 @@ Before calling the bundle complete, verify all of these:
 - expected operations are callable through real routes
 - memory-enabled bundles are tested with an explicit descriptor block:
   `memory.enabled: true`, `memory.widget.enabled: true`, and
-  `ui.web_app_widgets.memories.enabled: true`
+  `ui.widgets.memories.enabled: true`
 - widget networking uses the correct runtime URL shape
 - custom main-view UI uses the runtime config bridge and selected runtime bundle id
 - generated custom main-view UI is refreshed by the loader, not by manual runtime-storage builds
@@ -1308,7 +1308,7 @@ config:
     reconciliation: {enabled: true}
     snapshots: {enabled: true}
   ui:
-    web_app_widgets:
+    widgets:
       memories:
         enabled: true
 ```

@@ -3,10 +3,11 @@ id: ks:docs/sdk/bundle/bundle-widget-integration-README.md
 title: "Bundle Widget Integration"
 summary: "Bundle widget UI contract: source-folder widget apps, runtime config handshake, operation URL construction, auth propagation, and the recommended pattern when a capability is both widget and operation."
 tags: ["sdk", "bundle", "widget", "iframe", "frontend", "integrations", "telegram", "memory"]
-keywords: ["bundle widget contract", "iframe widget contract", "widget source folder", "web app widget build", "runtime config handshake", "operation url construction", "auth propagation to widget", "widget and operation dual pattern", "shared sdk widget source", "telegram widget components", "memory widget component", "bundle widget integration"]
-updated_at: 2026-05-16
+keywords: ["bundle widget contract", "iframe widget contract", "widget source folder", "static widget build", "runtime config handshake", "operation url construction", "auth propagation to widget", "widget and operation dual pattern", "shared sdk widget source", "telegram widget components", "memory widget component", "bundle widget integration"]
+updated_at: 2026-05-17
 see_also:
   - ks:docs/sdk/bundle/bundle-interfaces-README.md
+  - ks:docs/sdk/bundle/ui-components-lifecycle-README.md
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
   - ks:docs/sdk/bundle/bundle-client-ui-README.md
   - ks:docs/sdk/bundle/bundle-client-communication-README.md
@@ -18,12 +19,68 @@ call bundle operations correctly.
 
 This is the rule:
 
+- a widget must be declared as a bundle surface with `@ui_widget(...)`
+- `ui.widgets.<alias>` config does not create a widget by itself; it
+  tells the platform how to build and serve the already-declared widget alias
 - new widget apps should be source folders, not Python-rendered TSX snippets
 - KDCube serves the widget UI; the control plane/prototyping frontend may show
   it in an iframe, but that is a display choice
 - the widget must request runtime config from the display environment
 - the widget must build bundle operation URLs from that runtime config
 - the widget must not hardcode tenant, project, or bundle id from the source tree
+
+For the full lifecycle of discovery, preload, build, request-time fallback,
+shared-storage locks, signatures, and concurrent workers, see
+[UI Components Lifecycle](./ui-components-lifecycle-README.md).
+
+## Two Contracts: Surface And Build Config
+
+Bundle widgets have two separate contracts that must align by alias.
+
+1. **Surface contract**
+
+   The bundle class exposes a method decorated with `@ui_widget(...)`.
+   Discovery reads this decorator and places the alias in the bundle interface
+   manifest. The control plane widget toolbar, widget visibility checks, and
+   widget route resolution all start from this manifest.
+
+   ```python
+   @api(alias="versatile_webapp_widget", route="operations")
+   @ui_widget(
+       alias="versatile_webapp",
+       icon={"lucide": "PanelTop", "tailwind": "heroicons-outline:rectangle-group"},
+   )
+   def versatile_webapp_widget(self, **kwargs):
+       ...
+   ```
+
+2. **Build/serve contract**
+
+   Bundle defaults or deployment descriptor props define
+   `ui.widgets.<same_alias>`. This tells the platform that the alias is
+   served as a built static app from a source folder.
+
+   ```yaml
+   ui:
+     widgets:
+       versatile_webapp:
+         enabled: true
+         src_folder: ui/widgets/versatile_webapp
+         build_command: npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build
+   ```
+
+If the decorator exists but `ui.widgets.<alias>` is absent, the widget
+is a method-rendered widget: the route invokes the decorated Python method and
+returns its payload.
+
+If `ui.widgets.<alias>` exists but the `@ui_widget(alias="<alias>")`
+surface is missing, the static config is ignored for widget routing. A direct
+widget request should fail with a missing-widget response because the platform
+does not treat config-only entries as user-visible widget surfaces.
+
+Use `enabled.widget.<alias>: false` to hide or disable a decorated widget alias.
+This is separate from `ui.widgets.<alias>.enabled`, which controls
+whether a static build config is active for that alias.
 
 ## Reusing SDK Widget Components
 
@@ -41,7 +98,7 @@ admin/channels panels, these three places must agree:
 
    ```yaml
    ui:
-     web_app_widgets:
+     widgets:
        copilot_webapp:
          enabled: true
          src_folder: ui/widgets/copilot_webapp
@@ -119,7 +176,7 @@ Declare the widget source in bundle configuration:
 
 ```yaml
 ui:
-  web_app_widgets:
+  widgets:
     task_memo_webapp:
       enabled: true
       src_folder: ui/widgets/task_memo_webapp
@@ -287,7 +344,7 @@ For multiple buildable widgets, repeat the same contract per alias:
 
 ```yaml
 ui:
-  web_app_widgets:
+  widgets:
     first_widget:
       enabled: true
       src_folder: ui/widgets/first_widget
@@ -314,19 +371,19 @@ This config affects only `task_memo_webapp`:
 
 ```yaml
 ui:
-  web_app_widgets:
+  widgets:
     task_memo_webapp:
       enabled: true
       src_folder: ui/widgets/task_memo_webapp
       build_command: npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build
 ```
 
-It does not change inherited or legacy widgets such as `ai_bundles`, `opex`, or
-other `@ui_widget` methods on a base class. Those aliases continue to invoke
-their Python method and return method-rendered HTML unless their own alias also
-has `src_folder` and `build_command`.
+It does not change inherited method-rendered widgets such as `ai_bundles`,
+`opex`, or other `@ui_widget` methods on a base class. Those aliases continue
+to invoke their Python method and return method-rendered HTML unless their own
+alias also has `src_folder` and `build_command`.
 
-Do not add `ui.web_app_widgets.<alias>.src_folder/build_command` for an alias
+Do not add `ui.widgets.<alias>.src_folder/build_command` for an alias
 unless that alias is intentionally migrating to the folder-built widget model.
 
 ## Main View Is Separate
@@ -336,7 +393,7 @@ Do not confuse widget app source with main-view source.
 Use:
 
 - `ui.main_view.src_folder: ui/main` for the bundle main view
-- `ui.web_app_widgets.<alias>.src_folder: ui/widgets/<alias>` for widget apps
+- `ui.widgets.<alias>.src_folder: ui/widgets/<alias>` for widget apps
 
 Both use the same loader/build/storage paradigm. They are different surfaces.
 
@@ -361,7 +418,7 @@ Runtime flow:
 
 ```text
 bundle defaults / descriptor props
-  -> ui.web_app_widgets.<alias>.shared_sources
+  -> ui.widgets.<alias>.shared_sources
   -> loader copies sdk://... into widget temp source under _shared/...
   -> Vite alias resolves @kdcube/<capability>-widget to _shared/...
   -> one built widget app is served from bundle storage
@@ -369,7 +426,7 @@ bundle defaults / descriptor props
 
 ```yaml
 ui:
-  web_app_widgets:
+  widgets:
     versatile_webapp:
       src_folder: ui/widgets/versatile_webapp
       build_command: npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build
@@ -436,7 +493,7 @@ Example host widget config:
 
 ```yaml
 ui:
-  web_app_widgets:
+  widgets:
     versatile_webapp:
       enabled: true
       src_folder: ui/widgets/versatile_webapp
@@ -662,7 +719,7 @@ That means:
 
 For a source-folder widget, the method may return only a small compatibility
 fallback because the platform serves the built widget app from bundle storage
-when `ui.web_app_widgets.<alias>.src_folder/build_command` is configured.
+when `ui.widgets.<alias>.src_folder/build_command` is configured.
 
 If the widget UI itself needs a structured backend API, expose a separate alias such as:
 

@@ -138,8 +138,11 @@ export const UrlFramePanel = ({visible, className, src}: UrlFramePanelProps) => 
     const hardReload = useCallback(() => setReloadKey((value) => value + 1), []);
 
     const content = useMemo(() => {
+        if (!visible) {
+            return null;
+        }
         if (!src) {
-            return visible ? <PanelLoadingError/> : null;
+            return <PanelLoadingError/>;
         }
         return <IFrameUrlPanel src={src} reloadKey={reloadKey}/>;
     }, [reloadKey, src, visible]);

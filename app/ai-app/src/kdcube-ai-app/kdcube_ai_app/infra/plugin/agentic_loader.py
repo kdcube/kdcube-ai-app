@@ -1340,6 +1340,43 @@ _bundle_static_entrypoint_load_done: set[str] = set()
 _bundle_static_entrypoint_load_tasks: dict[str, asyncio.Task] = {}
 _bundle_static_entrypoint_load_lock = asyncio.Lock()
 
+
+async def _cleanup_static_entrypoint_load_task(load_key: str, task: asyncio.Task) -> None:
+    """
+    Remove a completed process-local static entrypoint load task.
+
+    The identity check is important: invalidation or a retry may have already
+    removed/replaced the task for this key. In that case this callback must not
+    touch the newer state.
+    """
+    succeeded = False
+    try:
+        exc = task.exception()
+    except BaseException:
+        exc = None
+    else:
+        succeeded = exc is None
+
+    async with _bundle_static_entrypoint_load_lock:
+        if _bundle_static_entrypoint_load_tasks.get(load_key) is not task:
+            return
+        _bundle_static_entrypoint_load_tasks.pop(load_key, None)
+        if succeeded:
+            _bundle_static_entrypoint_load_done.add(load_key)
+
+
+def _schedule_static_entrypoint_load_cleanup(load_key: str, task: asyncio.Task) -> None:
+    loop = asyncio.get_running_loop()
+
+    def _on_done(done_task: asyncio.Task) -> None:
+        try:
+            loop.create_task(_cleanup_static_entrypoint_load_task(load_key, done_task))
+        except RuntimeError:
+            pass
+
+    task.add_done_callback(_on_done)
+
+
 def _cancel_task_if_pending(task: asyncio.Task | None) -> None:
     if task is None or task.done():
         return
@@ -1403,19 +1440,17 @@ async def run_static_bundle_entrypoint_load_once(
         if task is None:
             task = asyncio.create_task(load_coro_factory())
             _bundle_static_entrypoint_load_tasks[load_key] = task
+            _schedule_static_entrypoint_load_cleanup(load_key, task)
 
+    # Static UI entrypoint loads can be triggered by iframe/document
+    # requests. A browser navigation or panel switch may cancel that
+    # request, but the storage-scoped build must continue so the next
+    # request sees a completed artifact instead of restarting the build.
     try:
-        await task
-    except Exception:
-        async with _bundle_static_entrypoint_load_lock:
-            if _bundle_static_entrypoint_load_tasks.get(load_key) is task:
-                _bundle_static_entrypoint_load_tasks.pop(load_key, None)
-        raise
-
-    async with _bundle_static_entrypoint_load_lock:
-        if _bundle_static_entrypoint_load_tasks.get(load_key) is task:
-            _bundle_static_entrypoint_load_tasks.pop(load_key, None)
-        _bundle_static_entrypoint_load_done.add(load_key)
+        await asyncio.shield(task)
+    finally:
+        if task.done():
+            await _cleanup_static_entrypoint_load_task(load_key, task)
 
 def invalidate_static_bundle_entrypoint_loads(
     *,

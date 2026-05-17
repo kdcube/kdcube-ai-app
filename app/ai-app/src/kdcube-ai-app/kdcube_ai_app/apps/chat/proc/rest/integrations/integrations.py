@@ -2634,18 +2634,11 @@ def _raw_static_widget_config(props: Dict[str, Any], *, widget_alias: str) -> Di
     ui_cfg = props.get("ui") if isinstance(props, dict) else {}
     if not isinstance(ui_cfg, dict):
         return None
-    widget_sets = [
-        ui_cfg.get("web_app_widgets"),
-        ui_cfg.get("widgets"),
-    ]
-    for raw_widgets in widget_sets:
-        if not isinstance(raw_widgets, dict):
-            continue
-        cfg = raw_widgets.get(widget_alias)
-        if not isinstance(cfg, dict):
-            continue
-        return cfg
-    return None
+    raw_widgets = ui_cfg.get("widgets")
+    if not isinstance(raw_widgets, dict):
+        return None
+    cfg = raw_widgets.get(widget_alias)
+    return cfg if isinstance(cfg, dict) else None
 
 
 def _static_widget_explicitly_disabled(props: Dict[str, Any], *, widget_alias: str) -> bool:

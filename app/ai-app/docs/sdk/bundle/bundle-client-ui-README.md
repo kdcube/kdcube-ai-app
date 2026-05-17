@@ -53,7 +53,7 @@ Use a widget-specific folder for widgets:
 
 ```yaml
 ui:
-  web_app_widgets:
+  widgets:
     task_memo_webapp:
       enabled: true
       src_folder: ui/widgets/task_memo_webapp
@@ -76,10 +76,10 @@ bundle storage. Bundle code and operators should edit source, not the built
 runtime storage directory.
 
 Widget source-folder config is per alias. A bundle can define
-`ui.web_app_widgets.task_memo_webapp.src_folder/build_command` and still inherit
-legacy widgets such as `ai_bundles` from `BaseEntrypoint`; those inherited
-widgets keep using their method-rendered HTML unless their own alias is also
-configured as a source-folder widget.
+`ui.widgets.task_memo_webapp.src_folder/build_command` and still inherit
+method-rendered widgets such as `ai_bundles` from `BaseEntrypoint`; those
+inherited widgets keep using their Python-rendered HTML unless their own alias
+is also configured as a source-folder widget.
 
 Source-folder widgets also have a public static route for launch surfaces such
 as Telegram Mini Apps:

@@ -85,7 +85,7 @@ In `aws-sm`, the grouped bundle descriptor docs are:
 | `role_models` | bundle `configuration` / base configuration | `BaseEntrypoint` | Merged into `Config.role_models` and used by SDK model-role resolution |
 | `embedding` | bundle `configuration` / base configuration | `BaseEntrypoint` | Applied via `Config.set_embedding(...)` |
 | `memory` | disabled in memory mixin defaults | `MemoryEntrypointMixin`, memory tools/widget, ReAct announce integration | User Memory hotset, tools, widget, reconciliation, and snapshots for memory-enabled bundles |
-| `ui.web_app_widgets.memories` | disabled in memory mixin defaults | `MemoryEntrypointMixin`, widget builder/loader | Enables and optionally overrides the built Memory widget UI |
+| `ui.widgets.memories` | disabled in memory mixin defaults | `MemoryEntrypointMixin`, widget builder/loader | Enables and optionally overrides the built Memory widget UI |
 | `economics.reservation_amount_dollars` | `2.0` in `BaseEntrypointWithEconomics.configuration` | `BaseEntrypointWithEconomics` | Per-bundle reservation floor for pre-run economics admission |
 | `execution.runtime` | no default | `BaseEntrypoint`, `RuntimeCtx`, exec runtime | Per-bundle exec runtime selection/overrides |
 | `exec_runtime` | no default | same as `execution.runtime` | Legacy compatibility alias for `execution.runtime` |
@@ -100,7 +100,7 @@ All reserved paths below are still non-secret bundle props.
 | `role_models` | `self.bundle_prop("role_models")` or resolved `Config.role_models` | `<prefix>/bundles/<bundle_id>/descriptor` `config.role_models` | `bundles.yaml -> items[].config.role_models` | cache | platform-owned model-role routing |
 | `embedding` | `self.bundle_prop("embedding")` or resolved `Config.embedding` | `<prefix>/bundles/<bundle_id>/descriptor` `config.embedding` | `bundles.yaml -> items[].config.embedding` | cache | platform-owned embedding override |
 | `memory` | `self.bundle_prop("memory")` through memory-enabled entrypoints | `<prefix>/bundles/<bundle_id>/descriptor` `config.memory` | `bundles.yaml -> items[].config.memory` | cache | User Memory subsystem config; interpreted only by bundles that use the memory mixin |
-| `ui.web_app_widgets.memories` | `self.bundle_prop("ui.web_app_widgets.memories")` through widget loader | `<prefix>/bundles/<bundle_id>/descriptor` `config.ui.web_app_widgets.memories` | `bundles.yaml -> items[].config.ui.web_app_widgets.memories` | cache | Memory widget enable/build overrides |
+| `ui.widgets.memories` | `self.bundle_prop("ui.widgets.memories")` through widget loader | `<prefix>/bundles/<bundle_id>/descriptor` `config.ui.widgets.memories` | `bundles.yaml -> items[].config.ui.widgets.memories` | cache | Memory widget enable/build overrides |
 | `economics.reservation_amount_dollars` | `self.bundle_prop("economics.reservation_amount_dollars")` | `<prefix>/bundles/<bundle_id>/descriptor` `config.economics.reservation_amount_dollars` | `bundles.yaml -> items[].config.economics.reservation_amount_dollars` | cache | used only by economics entrypoints |
 | `execution.runtime` | `self.bundle_prop("execution.runtime")` or `resolve_exec_runtime(...)` | `<prefix>/bundles/<bundle_id>/descriptor` `config.execution.runtime` | `bundles.yaml -> items[].config.execution.runtime` | cache | canonical execution runtime path |
 | `exec_runtime` | `self.bundle_prop("exec_runtime")` | `<prefix>/bundles/<bundle_id>/descriptor` `config.exec_runtime` | `bundles.yaml -> items[].config.exec_runtime` | cache | legacy alias, prefer `execution.runtime` |
@@ -115,7 +115,7 @@ Not every important prop is platform-reserved.
 | `role_models` | yes | platform entrypoint/runtime | bundle props authority + Redis cache |
 | `embedding` | yes | platform entrypoint/runtime | bundle props authority + Redis cache |
 | `memory` | yes for memory-enabled entrypoints | memory mixin, memory widget/tools, optional ReAct integration | bundle props authority + Redis cache |
-| `ui.web_app_widgets.memories` | yes for memory-enabled entrypoints | memory widget loader/build flow | bundle props authority + Redis cache |
+| `ui.widgets.memories` | yes for memory-enabled entrypoints | memory widget loader/build flow | bundle props authority + Redis cache |
 | `mcp.services` | yes | platform runtime | bundle props authority + Redis cache |
 | `react.additional_instructions` | no, this is a bundle convention | only bundles/workflows that pass it into `build_react(...)` | same bundle props storage as any other non-secret prop |
 
@@ -266,7 +266,7 @@ config:
       max_snapshots: 30
       storage_prefix: memory/snapshots
   ui:
-    web_app_widgets:
+    widgets:
       memories:
         enabled: true
       versatile_webapp:
@@ -288,11 +288,11 @@ Behavior:
   limits.
 - `memory.reconciliation` and `memory.snapshots` control maintenance jobs,
   preview/apply flows, exports, and restores.
-- `ui.web_app_widgets.memories.enabled` exposes the widget route; the default
+- `ui.widgets.memories.enabled` exposes the widget route; the default
   source folder and build command come from the memory mixin unless explicitly
   overridden.
-- `ui.web_app_widgets.<alias>.shared_sources` can materialize reusable SDK UI
-  source into a bundle widget build workspace. This is how a bundle web app can
+- `ui.widgets.<alias>.shared_sources` can materialize reusable SDK UI
+  source into a bundle widget build workspace. This is how a bundle widget can
   mount the built-in memory widget as a direct React component without an
   iframe and without depending on local monorepo paths.
 
@@ -300,7 +300,7 @@ Storage summary:
 
 | Question | Answer |
 |---|---|
-| Where do I set it? | `config.memory` and `config.ui.web_app_widgets.memories` in bundle props |
+| Where do I set it? | `config.memory` and `config.ui.widgets.memories` in bundle props |
 | Is it in secrets? | no |
 | Is it user-scoped memory data? | no, it is deployment-scoped subsystem config |
 | Where is user memory data stored? | the project PostgreSQL memory tables, scoped by tenant/project/user and optionally bundle |

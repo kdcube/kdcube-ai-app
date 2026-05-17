@@ -2171,7 +2171,7 @@ class ReactWorkflow(BaseEntrypointWithEconomicsAndMemory):
                 },
             },
             "ui": {
-                "web_app_widgets": {
+                "widgets": {
                     COPILOT_WEBAPP_ALIAS: {
                         "enabled": False,
                         "src_folder": "ui/widgets/copilot_webapp",

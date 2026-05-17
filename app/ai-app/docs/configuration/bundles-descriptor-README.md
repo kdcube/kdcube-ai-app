@@ -154,7 +154,7 @@ bundles:
           snapshots:
             enabled: true
         ui:
-          web_app_widgets:
+          widgets:
             memories:
               enabled: true
             versatile_webapp:
@@ -168,9 +168,9 @@ bundles:
 hotset into ReAct announce context. `memory.tools` controls search/read/write
 tools. `memory.widget` enables user-owned CRUD in the Memory widget.
 `memory.reconciliation` and `memory.snapshots` control maintenance jobs and
-restore points. `ui.web_app_widgets.memories.enabled` exposes the built widget
+restore points. `ui.widgets.memories.enabled` exposes the built widget
 route; the memory mixin supplies the default source folder/build command.
-`ui.web_app_widgets.<alias>.shared_sources` is optional and materializes reusable
+`ui.widgets.<alias>.shared_sources` is optional and materializes reusable
 SDK UI source into that widget build workspace; this is useful for external-git
 bundles that want to mount platform widgets as direct React components.
 

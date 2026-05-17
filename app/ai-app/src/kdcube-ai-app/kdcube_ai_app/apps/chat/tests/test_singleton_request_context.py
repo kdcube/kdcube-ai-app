@@ -245,10 +245,10 @@ async def test_base_entrypoint_reconciles_ui_builds_on_ui_props_changed(monkeypa
     ep._ensure_ui_build = AsyncMock()
 
     await ep.on_props_changed(
-        previous_props={"ui": {"web_app_widgets": {}}},
+        previous_props={"ui": {"widgets": {}}},
         current_props={
             "ui": {
-                "web_app_widgets": {
+                "widgets": {
                     "task_webapp": {
                         "enabled": True,
                         "src_folder": "ui/widgets/task_webapp",

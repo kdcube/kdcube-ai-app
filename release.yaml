@@ -1,78 +1,64 @@
 platform:
   repo: "kdcube-ai-app"
-  ref: "2026.5.17.452"
+  ref: "2026.5.17.1535"
   description: |
-    This release tightens bundle widget serving and diagnostics for ECS
-    descriptor-backed deployments, keeps proc readiness resilient when one
-    bundle has a bad surface, and adds the first React system-instruction
-    composition hooks for lighter/custom agents.
+    This release completes the bundle widget lifecycle cleanup after the ECS
+    widget-routing investigation. It removes the old `ui.web_app_widgets`
+    contract, documents the source-folder UI lifecycle, and makes static widget
+    build/load behavior more robust when browser iframe requests are canceled.
 
     Highlights
 
-    - Keeps `@ui_widget` as the only widget declaration source. Descriptor
-      `ui.web_app_widgets` remains configuration for static widget builds and
-      no longer acts as a semantic widget fallback.
-    - Adds widget miss recovery for proc: when a decorated widget is missing
-      from the local manifest, the worker evicts that bundle's local
-      module/manifest cache once and retries before returning 404.
-    - Adds high-signal ECS diagnostics for widget lookup mismatches, including
-      the loaded entrypoint class file, discovered manifest widgets, cached
-      manifest widgets, raw decorated class members, and process id.
-    - Makes bundle preload validation non-fatal for proc readiness. A bad
-      bundle surface is recorded in health diagnostics but does not make the
-      whole service unhealthy.
-    - Fixes non-proc registry reads against read-only descriptor mounts:
-      ingress reads descriptor authority in read-only mode and falls back to
-      the published Redis snapshot without trying to create `/config` lock
-      files.
-    - Downgrades managed-bundle host-path warnings inside containers because
-      host-side EFS paths are not expected to exist inside the app container.
-    - Opens bundle widgets directly as iframe URLs in the chat side panel,
-      avoiding the previous JSON/srcDoc/nested-iframe path for static widget
-      surfaces.
-    - Hides the standalone inherited memory widget from the copilot widget bar;
-      copilot keeps memory inside the unified web app.
-    - Adds configurable React decision instruction composition for v2/v3:
-      full custom instruction body, named/literal instruction blocks, optional
-      tool catalog, and optional skill gallery.
-    - Adds lite React instruction blocks and documentation for auditing which
-      runtime signals are covered by extended/default and lite instruction
-      bodies.
+    - Renames source-folder widget configuration from `ui.web_app_widgets` to
+      `ui.widgets` across platform docs, SDK defaults, reference bundles, and
+      tests. The old key is no longer treated as an alias.
+    - Keeps `@ui_widget` as the only widget surface declaration. `ui.widgets`
+      configures build/serve behavior for an already-declared widget alias; it
+      does not create toolbar-visible widget surfaces by itself.
+    - Adds `docs/sdk/bundle/ui-components-lifecycle-README.md`, covering
+      discovery, preload, request-time fallback, shared-storage locks,
+      signatures, concurrent workers, cancellation behavior, and diagnostics.
+    - Keeps static bundle entrypoint loading alive after a browser/client
+      disconnect. A canceled iframe request no longer cancels the underlying
+      process-local load task; cleanup is identity-guarded and failed loads can
+      be retried.
+    - Preserves direct widget iframe loading and improved proc diagnostics from
+      the previous unreleased fixes.
+    - Aligns Copilot, Versatile, memory docs, and bundle-build docs with the
+      current widget config contract.
 
     Runtime and deployment notes:
 
     - Direct widget serving still requires a decorated `@ui_widget` method.
-      Missing decorated widgets now produce diagnostics that distinguish stale
-      manifest cache, wrong loaded source, and decorator metadata mismatch.
-    - Proc attempts every configured bundle during preload and records
-      per-bundle failures, but readiness remains available for the rest of the
-      platform.
-    - Ingress must not import bundles or mutate descriptor/cache state. Proc
-      remains responsible for descriptor refresh, built-in/git bundle
-      materialization, bundle preload, and `on_bundle_load()` hooks.
-    - Browser/client disconnects during long widget builds are returned as 499
-      instead of noisy ASGI `No response returned` stack traces.
+    - `ui.widgets.<alias>.enabled` controls the static build config for that
+      alias. Use `enabled.widget.<alias>` for widget surface visibility.
+    - Static UI builds still run in proc workers, use shared bundle storage, and
+      are coordinated by storage-scoped locks/signatures. ISO runtime is not
+      involved.
+    - If a browser navigates away during a long request-triggered build, that
+      request may fail with a client-disconnect response, but the shielded
+      static load/build task can finish for the next request.
+    - No customer/private content is part of this release.
 
     Validation and regression coverage:
 
-    - Re-ran Python compile checks for proc startup, integrations routes,
-      bundle registry/store, git bundle path resolution, React decision prompt
-      helpers, and lite instruction blocks.
-    - Re-ran preload lock tests: 6 passed.
-    - Re-ran bundle store env reset and bundle registry runtime-context tests:
-      41 passed.
-    - Re-ran bundle interface tests: 47 passed.
+    - Python compile checks passed for integrations routes, proc startup,
+      agentic loader, chatbot entrypoints, and Copilot/Versatile entrypoints.
+    - Focused platform/widget tests passed: 56 passed.
+    - `git diff --check` passed.
+    - A broader Versatile preference-canvas test run still has existing
+      unrelated failures around visibility defaults and monkeypatch targets; it
+      was not used as the release gate.
 
     Changelog
 
-    - Added strict decorated-widget resolution with one-shot cache eviction on
-      widget miss.
-    - Added read-only descriptor registry access for non-proc components.
-    - Added non-fatal preload manifest validation and health diagnostics.
-    - Reduced container-only managed-bundle host-path warning noise.
-    - Switched chat side-panel bundle widgets to direct iframe URL loading.
-    - Added React decision prompt composition helpers and lite instruction
-      blocks.
-    - Added React system-instruction documentation.
+    - Replaced `ui.web_app_widgets` with `ui.widgets` in code, examples, docs,
+      and tests.
+    - Added UI component lifecycle documentation for source-folder widgets and
+      main views.
+    - Added request-cancellation-safe static entrypoint load cleanup.
+    - Added regression tests for static entrypoint load cleanup after waiter
+      cancellation and failure.
+    - Updated Copilot and Versatile widget defaults to the new config key.
 config:
-    version: "2026.5.17.452"
+    version: "2026.5.17.1535"

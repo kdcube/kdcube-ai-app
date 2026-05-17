@@ -210,7 +210,7 @@ The plugin should steer agents away from these recurring mistakes:
   keep it off unless diagnosing the exact rendered model context
 - User Memory subsystem config is reserved under `config.memory` for bundles
   that derive from the memory entrypoint mixin; the widget route also needs
-  `config.ui.web_app_widgets.memories.enabled: true`
+  `config.ui.widgets.memories.enabled: true`
 - bundle finalizers such as `on_turn_completed(...)` are for fast cleanup after
   success, error, or cancellation, not for expensive user-facing work
 - do not commit, tag, push, or update descriptor refs unless the user has
@@ -228,7 +228,7 @@ config:
     reconciliation: {enabled: true}
     snapshots: {enabled: true}
   ui:
-    web_app_widgets:
+    widgets:
       memories:
         enabled: true
 ```

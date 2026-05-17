@@ -253,13 +253,13 @@ def _is_explicitly_disabled(value) -> bool:
     return False
 
 
-def _enabled_web_app_widget_aliases_from_props(props: dict | None) -> list[str]:
+def _enabled_configured_widget_aliases_from_props(props: dict | None) -> list[str]:
     if not isinstance(props, dict):
         return []
     ui = props.get("ui")
     if not isinstance(ui, dict):
         return []
-    widgets = ui.get("web_app_widgets")
+    widgets = ui.get("widgets")
     if not isinstance(widgets, dict):
         return []
 
@@ -303,7 +303,7 @@ def _validate_preloaded_bundle_manifest(
     Verify that the local worker can discover the bundle surfaces it must serve.
 
     `@ui_widget`, `@api`, and `@mcp` decorators remain the source of truth.
-    Descriptor `ui.web_app_widgets` only configures static build/serve behavior
+    Descriptor `ui.widgets` only configures static build/serve behavior
     for a widget alias that the bundle actually declares.
     """
     from kdcube_ai_app.infra.plugin.agentic_loader import (
@@ -316,7 +316,7 @@ def _validate_preloaded_bundle_manifest(
         project=project,
         bundle_id=bundle_id,
     )
-    expected_static_widgets = _enabled_web_app_widget_aliases_from_props(props)
+    expected_static_widgets = _enabled_configured_widget_aliases_from_props(props)
     manifest = load_bundle_manifest(spec, bundle_id=bundle_id)
     discovered_widgets = sorted({item.alias for item in manifest.ui_widgets})
     missing_widgets = sorted(set(expected_static_widgets) - set(discovered_widgets))
@@ -967,6 +967,15 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+def _proc_debug_headers() -> dict[str, str]:
+    return {
+        "X-KDCube-Proc-Instance": str(INSTANCE_ID),
+        "X-KDCube-Worker-Pid": str(os.getpid()),
+        "X-KDCube-Bundles-Preload-Ready": str(getattr(app.state, "bundles_preload_ready", True)).lower(),
+    }
+
+
 allowed_origins = configure_cors(app)
 
 
@@ -1018,16 +1027,27 @@ async def gateway_middleware(request: Request, call_next):
         response = await call_next(request)
         response.headers["X-User-Type"] = session.user_type.value
         response.headers["X-Session-ID"] = session.session_id
+        for key, value in _proc_debug_headers().items():
+            response.headers[key] = value
         return response
     except RuntimeError as e:
         if str(e) == "No response returned.":
+            logger.warning(
+                "Request ended without response: method=%s path=%s pid=%s instance=%s preload_ready=%s",
+                request.method,
+                request.url.path,
+                os.getpid(),
+                INSTANCE_ID,
+                getattr(app.state, "bundles_preload_ready", True),
+            )
             return JSONResponse(
                 status_code=499,
                 content={"detail": "Client disconnected before response was returned"},
+                headers=_proc_debug_headers(),
             )
         raise
     except HTTPException as e:
-        headers = getattr(e, "headers", {})
+        headers = {**_proc_debug_headers(), **(getattr(e, "headers", {}) or {})}
         return JSONResponse(
             status_code=e.status_code,
             content=e.detail if isinstance(e.detail, dict) else {"detail": e.detail},

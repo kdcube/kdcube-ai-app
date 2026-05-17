@@ -81,7 +81,7 @@ config:
       search_min_relevance_score: 0.58
 
   ui:
-    web_app_widgets:
+    widgets:
       memories:
         enabled: true
 ```

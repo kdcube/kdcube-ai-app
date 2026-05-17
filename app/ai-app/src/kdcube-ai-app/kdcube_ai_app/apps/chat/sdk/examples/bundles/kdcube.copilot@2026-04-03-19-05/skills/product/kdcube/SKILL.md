@@ -265,7 +265,7 @@ When reasoning about a bundle, keep these common anchors in mind:
 - `ui/main/`
   - optional Vite/React source tree for a built custom main-view SPA when the bundle configures `ui.main_view`
 - `ui/widgets/<alias>/`
-  - optional Vite/React source tree for a built widget app when the bundle configures `ui.web_app_widgets.<alias>`
+  - optional Vite/React source tree for a built widget app when the bundle configures `ui.widgets.<alias>`
 
 These are common bundle structure anchors, not proof of exact implementation details.
 For exact base classes, imports, decorators, and runtime symbols, confirm them from current docs/examples/source before coding.

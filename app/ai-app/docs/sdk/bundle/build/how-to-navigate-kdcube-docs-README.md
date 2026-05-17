@@ -305,7 +305,7 @@ Then jump only to the row that matches your question.
 | My bundle main UI is stale or sends the wrong bundle id. | [how-to-test-bundle-README.md#52c-custom-main-view-ui-contract](how-to-test-bundle-README.md#52c-custom-main-view-ui-contract) | It covers the runtime config bridge, runtime bundle id, SSE conversation-id rule, and UI-loader freshness check. |
 | My buildable widget fails with `.ui.build.tmp` or Vite `UNRESOLVED_ENTRY`. | [../bundle-widget-integration-README.md#source-folder-widget-apps](../bundle-widget-integration-README.md#source-folder-widget-apps) and [how-to-test-bundle-README.md#52b-source-folder-widget-build-contract](how-to-test-bundle-README.md#52b-source-folder-widget-build-contract) | The widget must treat `<VI_BUILD_DEST_ABSOLUTE_PATH>` as an output env value through `OUTDIR`, not as a positional `vite build` argument. |
 | How do built-in example bundles become available? | [how-to-configure-and-run-bundle-README.md#bundlesyaml](how-to-configure-and-run-bundle-README.md#bundlesyaml) | It explains `bundles_include_examples` versus per-bundle config entries in `bundles.yaml`. |
-| How do I enable User Memory for a bundle? | [../bundle-reserved-platform-properties-README.md#memory](../bundle-reserved-platform-properties-README.md#memory), [../../../configuration/bundles-descriptor-README.md#reserved-runtime-config-under-config](../../../configuration/bundles-descriptor-README.md#reserved-runtime-config-under-config), and [how-to-configure-and-run-bundle-README.md#bundlesyaml](how-to-configure-and-run-bundle-README.md#bundlesyaml) | Use `config.memory` with `announce/tools/widget/reconciliation/snapshots`, plus `ui.web_app_widgets.memories.enabled: true`; the bundle must derive from the memory entrypoint mixin. |
+| How do I enable User Memory for a bundle? | [../bundle-reserved-platform-properties-README.md#memory](../bundle-reserved-platform-properties-README.md#memory), [../../../configuration/bundles-descriptor-README.md#reserved-runtime-config-under-config](../../../configuration/bundles-descriptor-README.md#reserved-runtime-config-under-config), and [how-to-configure-and-run-bundle-README.md#bundlesyaml](how-to-configure-and-run-bundle-README.md#bundlesyaml) | Use `config.memory` with `announce/tools/widget/reconciliation/snapshots`, plus `ui.widgets.memories.enabled: true`; the bundle must derive from the memory entrypoint mixin. |
 | How do I study a known-good bundle? | [../versatile-reference-bundle-README.md](../versatile-reference-bundle-README.md) | It points to the working reference bundle and what to mine from it. |
 | How do I reload or ship a changed bundle? | [../bundle-delivery-and-update-README.md](../bundle-delivery-and-update-README.md) | It explains reload, delivery mode, and deployment-side update flow. |
 
@@ -345,7 +345,7 @@ config:
     reconciliation: {enabled: true}
     snapshots: {enabled: true}
   ui:
-    web_app_widgets:
+    widgets:
       memories:
         enabled: true
 ```

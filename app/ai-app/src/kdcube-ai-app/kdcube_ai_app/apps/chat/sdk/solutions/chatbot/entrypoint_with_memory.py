@@ -109,7 +109,7 @@ class MemoryEntrypointMixin:
                 },
             },
             "ui": {
-                "web_app_widgets": {
+                "widgets": {
                     "memories": {
                         "enabled": False,
                         "src_folder": str(
