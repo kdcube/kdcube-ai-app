@@ -209,4 +209,5 @@ articles/
 
 # Coding-Core (credentials in config)
 integration/coding-core/config.json
+integration/advanced_search/
 .claude/settings.local.json
