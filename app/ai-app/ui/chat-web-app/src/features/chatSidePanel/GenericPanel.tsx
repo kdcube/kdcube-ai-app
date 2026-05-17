@@ -21,6 +21,23 @@ const IFrameSrcDocPanel = ({srcDoc}: IFrameSrcDocPanelProps) => {
     }, [srcDoc])
 }
 
+interface IFrameUrlPanelProps {
+    src: string;
+    reloadKey?: number;
+}
+
+const IFrameUrlPanel = ({src, reloadKey = 0}: IFrameUrlPanelProps) => {
+    return useMemo(() => {
+        return <div className={"w-full h-full flex flex-col"}>
+            <iframe
+                key={`${src}:${reloadKey}`}
+                src={src}
+                className={"w-full h-full border-0"}
+            />
+        </div>
+    }, [reloadKey, src])
+}
+
 const PanelLoading = () => {
     return useMemo(() => {
         return <div className={"w-full h-full flex text-gray-200"}>
@@ -108,6 +125,30 @@ const PanelContainer = ({children, className, reload, visible = true}: PanelCont
             </div>
         </motion.div>
     }, [children, className, close, fullScreen, reload, visible])
+}
+
+interface UrlFramePanelProps {
+    visible: boolean;
+    className?: string;
+    src: string | null;
+}
+
+export const UrlFramePanel = ({visible, className, src}: UrlFramePanelProps) => {
+    const [reloadKey, setReloadKey] = useState(0);
+    const hardReload = useCallback(() => setReloadKey((value) => value + 1), []);
+
+    const content = useMemo(() => {
+        if (!src) {
+            return visible ? <PanelLoadingError/> : null;
+        }
+        return <IFrameUrlPanel src={src} reloadKey={reloadKey}/>;
+    }, [reloadKey, src, visible]);
+
+    return useMemo(() => {
+        return <PanelContainer visible={visible} className={className} reload={hardReload}>
+            {content}
+        </PanelContainer>
+    }, [className, content, hardReload, visible]);
 }
 
 interface GenericWidgetPanelProps {

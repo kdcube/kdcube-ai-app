@@ -1671,7 +1671,11 @@ class BaseWorkflow():
                     tools_runtime: Optional[Dict[str, str]] = None,
                     custom_skills_root: Optional[str] = None,
                     skills_visibility_agents_config: Optional[Dict[str, Dict[str, Any]]] = None,
-                    additional_instructions: Optional[str] = None) -> Any:
+                    additional_instructions: Optional[str] = None,
+                    instruction_body: Optional[str] = None,
+                    instruction_blocks: Optional[List[str]] = None,
+                    include_tool_catalog: Optional[bool] = None,
+                    include_skill_gallery: Optional[bool] = None) -> Any:
 
         bundle_root = self.bundle_root()
         react_version = _react_agent_version()
@@ -1735,7 +1739,69 @@ class BaseWorkflow():
             },
             bundle_root=bundle_root,
         )
+        def _first_prop(*paths: str, default: Any = None) -> Any:
+            for path in paths:
+                value = _get_prop_path(self.bundle_props or {}, path)
+                if value is not None:
+                    return value
+            return default
+
+        def _str_list(value: Any) -> List[str]:
+            if value is None:
+                return []
+            if isinstance(value, str):
+                return [value] if value.strip() else []
+            if isinstance(value, (list, tuple)):
+                return [str(item) for item in value if str(item or "").strip()]
+            return [str(value)]
+
+        if additional_instructions is None:
+            additional_instructions = _first_prop(
+                "react.additional_instructions",
+                "config.react.additional_instructions",
+            )
+        raw_instructions = _first_prop(
+            "react.instructions",
+            "config.react.instructions",
+        )
+        if instruction_body is None:
+            if isinstance(raw_instructions, str):
+                instruction_body = raw_instructions
+            else:
+                instruction_body = _first_prop(
+                    "react.instructions.body",
+                    "config.react.instructions.body",
+                    "react.instruction_body",
+                    "config.react.instruction_body",
+                )
+        if instruction_blocks is None:
+            if isinstance(raw_instructions, (list, tuple)):
+                instruction_blocks = _str_list(raw_instructions)
+            else:
+                instruction_blocks = _str_list(_first_prop(
+                    "react.instructions.blocks",
+                    "config.react.instructions.blocks",
+                    "react.instruction_blocks",
+                    "config.react.instruction_blocks",
+                ))
+        if include_tool_catalog is None:
+            include_tool_catalog = _bool_or_none(_first_prop(
+                "react.instructions.include_tool_catalog",
+                "config.react.instructions.include_tool_catalog",
+            ))
+        if include_skill_gallery is None:
+            include_skill_gallery = _bool_or_none(_first_prop(
+                "react.instructions.include_skill_gallery",
+                "config.react.instructions.include_skill_gallery",
+            ))
+        if include_tool_catalog is None:
+            include_tool_catalog = True
+        if include_skill_gallery is None:
+            include_skill_gallery = True
+
         extra_instructions = str(additional_instructions or "").strip()
+        custom_instruction_body = str(instruction_body or "").strip()
+        custom_instruction_blocks = _str_list(instruction_blocks)
         try:
             if extra_instructions:
                 compact = re.sub(r"\s+", " ", extra_instructions)
@@ -1749,6 +1815,15 @@ class BaseWorkflow():
             else:
                 self.logger.log(
                     f"[react.{react_version}] agent admin customization not provided",
+                    level="INFO",
+                )
+            if custom_instruction_body or custom_instruction_blocks:
+                self.logger.log(
+                    f"[react.{react_version}] custom instruction composition "
+                    f"body={'yes' if custom_instruction_body else 'no'} "
+                    f"blocks={len(custom_instruction_blocks)} "
+                    f"include_tool_catalog={bool(include_tool_catalog)} "
+                    f"include_skill_gallery={bool(include_skill_gallery)}",
                     level="INFO",
                 )
         except Exception:
@@ -1765,6 +1840,10 @@ class BaseWorkflow():
             ctx_browser=self.ctx_browser,
             scratchpad=scratchpad,
             additional_instructions=extra_instructions or None,
+            instruction_body=custom_instruction_body or None,
+            instruction_blocks=custom_instruction_blocks or None,
+            include_tool_catalog=bool(include_tool_catalog),
+            include_skill_gallery=bool(include_skill_gallery),
         )
         try:
             self.logger.log(

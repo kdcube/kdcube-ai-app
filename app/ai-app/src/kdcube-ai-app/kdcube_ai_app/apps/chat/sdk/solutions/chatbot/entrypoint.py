@@ -263,8 +263,16 @@ class BaseEntrypoint:
         previous_ui = previous_props.get("ui") if isinstance(previous_props, dict) else None
         current_ui = current_props.get("ui") if isinstance(current_props, dict) else None
         if previous_ui != current_ui:
+            bundle_id = getattr(getattr(self.config, "ai_bundle_spec", None), "id", None)
+            current_widgets = []
+            if isinstance(current_ui, dict):
+                widgets = current_ui.get("web_app_widgets")
+                if isinstance(widgets, dict):
+                    current_widgets = sorted(str(alias) for alias in widgets.keys())
             self.logger.log(
-                f"[bundle.ui] props changed; reconciling UI builds reason={reason} tenant={tenant} project={project}",
+                "[bundle.ui] props changed; reconciling UI builds "
+                f"bundle={bundle_id} reason={reason} tenant={tenant} project={project} "
+                f"ui_widgets={current_widgets}",
                 "INFO",
             )
             await self._ensure_ui_build()

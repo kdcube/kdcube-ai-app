@@ -108,6 +108,10 @@ class ReactSolverV2:
         hosting_service: Optional[ApplicationHostingService] = None,
         ctx_browser: Optional[ContextBrowser] = None,
         additional_instructions: Optional[str] = None,
+        instruction_body: Optional[str] = None,
+        instruction_blocks: Optional[List[str]] = None,
+        include_tool_catalog: bool = True,
+        include_skill_gallery: bool = True,
     ) -> None:
         self.svc = service
         if isinstance(logger, AgentLogger):
@@ -130,6 +134,13 @@ class ReactSolverV2:
         self.hosting_service = hosting_service
         self.ctx_browser = ctx_browser
         self.additional_instructions = str(additional_instructions or "").strip()
+        self.instruction_body = str(instruction_body or "").strip()
+        if isinstance(instruction_blocks, str):
+            self.instruction_blocks = [instruction_blocks] if instruction_blocks.strip() else []
+        else:
+            self.instruction_blocks = [str(item) for item in (instruction_blocks or []) if str(item or "").strip()]
+        self.include_tool_catalog = bool(include_tool_catalog)
+        self.include_skill_gallery = bool(include_skill_gallery)
         if self.ctx_browser is not None:
             try:
                 self.ctx_browser.add_timeline_event_hook(self.on_timeline_event)
@@ -1833,6 +1844,11 @@ class ReactSolverV2:
                 adapters=announced_adapters,
                 infra_adapters=extra_adapters_for_decision,
                 workspace_implementation=getattr(runtime_ctx, "workspace_implementation", "custom") if runtime_ctx else "custom",
+                additional_instructions=self.additional_instructions,
+                instruction_body=self.instruction_body or None,
+                instruction_blocks=self.instruction_blocks or None,
+                include_tool_catalog=self.include_tool_catalog,
+                include_skill_gallery=self.include_skill_gallery,
                 on_progress_delta=mainstream,
                 on_raw_delta=self._capture_active_generation_raw,
                 subscribers=subs,
@@ -1875,6 +1891,10 @@ class ReactSolverV2:
                         infra_adapters=extra_adapters_for_decision,
                         workspace_implementation=getattr(getattr(self.ctx_browser, "runtime_ctx", None), "workspace_implementation", "custom"),
                         additional_instructions=self.additional_instructions,
+                        instruction_body=self.instruction_body or None,
+                        instruction_blocks=self.instruction_blocks or None,
+                        include_tool_catalog=self.include_tool_catalog,
+                        include_skill_gallery=self.include_skill_gallery,
                     ),
                     render_params=render_params,
                     agent_fn=_decision_agent,

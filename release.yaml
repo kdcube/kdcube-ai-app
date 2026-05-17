@@ -1,63 +1,78 @@
 platform:
   repo: "kdcube-ai-app"
-  ref: "2026.5.17.126"
+  ref: "2026.5.17.452"
   description: |
-    This release fixes an ECS ingress regression in descriptor-backed
-    deployments and tightens bundle/widget diagnostics after the
-    2026.5.16.1704 platform release.
+    This release tightens bundle widget serving and diagnostics for ECS
+    descriptor-backed deployments, keeps proc readiness resilient when one
+    bundle has a bad surface, and adds the first React system-instruction
+    composition hooks for lighter/custom agents.
 
     Highlights
 
-    - Fixes chat ingress failures where descriptor-backed deployments tried to
-      create `/config/.bundles.yaml.lock` while reading the active bundle
-      registry from a read-only ECS config mount.
-    - Separates ingress and proc responsibilities for bundle registry access:
-      ingress now reads only the Redis-published registry metadata snapshot,
-      while proc remains responsible for descriptor refresh, git/built-in
-      bundle materialization, bundle preload, and `on_bundle_load()` hooks.
-    - Adds a writable fallback lock location for file-backed bundle descriptors
-      so legitimate proc/admin descriptor operations still work when the
-      descriptor itself is mounted read-only.
-    - Downgrades ECS host-path warnings for managed bundle directories to DEBUG
-      because host-side EFS paths are not expected to exist inside application
-      containers.
-    - Improves widget load diagnostics and removes the silent admin-bundle
-      fallback when a requested bundle fails to load, so widget lookup errors
-      report the actual requested bundle/workflow state.
-    - Adds preload registry snapshot logging to make built-in and git-backed
-      bundle startup behavior easier to verify in ECS logs.
-    - Expands the public KDCube capabilities overview with clearer coverage of
-      hot reload, ReAct followups/steer, ANNOUNCE, MCP tools, custom skills,
-      multimodality, and ISO runtime usage beyond ReAct.
+    - Keeps `@ui_widget` as the only widget declaration source. Descriptor
+      `ui.web_app_widgets` remains configuration for static widget builds and
+      no longer acts as a semantic widget fallback.
+    - Adds widget miss recovery for proc: when a decorated widget is missing
+      from the local manifest, the worker evicts that bundle's local
+      module/manifest cache once and retries before returning 404.
+    - Adds high-signal ECS diagnostics for widget lookup mismatches, including
+      the loaded entrypoint class file, discovered manifest widgets, cached
+      manifest widgets, raw decorated class members, and process id.
+    - Makes bundle preload validation non-fatal for proc readiness. A bad
+      bundle surface is recorded in health diagnostics but does not make the
+      whole service unhealthy.
+    - Fixes non-proc registry reads against read-only descriptor mounts:
+      ingress reads descriptor authority in read-only mode and falls back to
+      the published Redis snapshot without trying to create `/config` lock
+      files.
+    - Downgrades managed-bundle host-path warnings inside containers because
+      host-side EFS paths are not expected to exist inside the app container.
+    - Opens bundle widgets directly as iframe URLs in the chat side panel,
+      avoiding the previous JSON/srcDoc/nested-iframe path for static widget
+      surfaces.
+    - Hides the standalone inherited memory widget from the copilot widget bar;
+      copilot keeps memory inside the unified web app.
+    - Adds configurable React decision instruction composition for v2/v3:
+      full custom instruction body, named/literal instruction blocks, optional
+      tool catalog, and optional skill gallery.
+    - Adds lite React instruction blocks and documentation for auditing which
+      runtime signals are covered by extended/default and lite instruction
+      bodies.
 
     Runtime and deployment notes:
 
-    - Ingress does not import bundles, run bundle hooks, resolve git bundles,
-      or reread descriptor files. It only validates bundle ids/defaults from
-      the cached registry snapshot and enqueues work for proc.
-    - Proc remains the owner of active descriptor refresh and must publish the
-      Redis registry snapshot before ingress can accept chat requests.
-    - The previous noisy
-      `HOST_MANAGED_BUNDLES_PATH points to missing path ...` ECS message is no
-      longer emitted at WARNING level.
+    - Direct widget serving still requires a decorated `@ui_widget` method.
+      Missing decorated widgets now produce diagnostics that distinguish stale
+      manifest cache, wrong loaded source, and decorator metadata mismatch.
+    - Proc attempts every configured bundle during preload and records
+      per-bundle failures, but readiness remains available for the rest of the
+      platform.
+    - Ingress must not import bundles or mutate descriptor/cache state. Proc
+      remains responsible for descriptor refresh, built-in/git bundle
+      materialization, bundle preload, and `on_bundle_load()` hooks.
+    - Browser/client disconnects during long widget builds are returned as 499
+      instead of noisy ASGI `No response returned` stack traces.
 
     Validation and regression coverage:
 
-    - Re-ran Python compile checks for bundle registry/store, git bundle path
-      resolution, proc startup, and integrations routes.
-    - Re-ran the focused bundle registry runtime-context test module with
-      explicit `PYTHONPATH`; all 7 tests passed.
-    - Re-ran `git diff --check` for the committed hotfix files.
+    - Re-ran Python compile checks for proc startup, integrations routes,
+      bundle registry/store, git bundle path resolution, React decision prompt
+      helpers, and lite instruction blocks.
+    - Re-ran preload lock tests: 6 passed.
+    - Re-ran bundle store env reset and bundle registry runtime-context tests:
+      41 passed.
+    - Re-ran bundle interface tests: 47 passed.
 
     Changelog
 
-    - Fixed ingress registry reads to use Redis metadata only on non-proc
-      components.
-    - Added read-only descriptor lock fallback for file-backed bundle
-      descriptors.
-    - Reduced ECS managed-bundle host-path warning noise.
-    - Added bundle preload and widget mismatch diagnostics.
-    - Removed silent admin fallback from requested bundle load failures.
-    - Updated KDCube public capabilities documentation.
+    - Added strict decorated-widget resolution with one-shot cache eviction on
+      widget miss.
+    - Added read-only descriptor registry access for non-proc components.
+    - Added non-fatal preload manifest validation and health diagnostics.
+    - Reduced container-only managed-bundle host-path warning noise.
+    - Switched chat side-panel bundle widgets to direct iframe URL loading.
+    - Added React decision prompt composition helpers and lite instruction
+      blocks.
+    - Added React system-instruction documentation.
 config:
-    version: "2026.5.17.126"
+    version: "2026.5.17.452"

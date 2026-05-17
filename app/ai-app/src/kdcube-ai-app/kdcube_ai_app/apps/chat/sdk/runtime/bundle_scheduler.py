@@ -16,6 +16,7 @@ Responsibilities:
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import uuid
 from dataclasses import dataclass
@@ -458,10 +459,25 @@ async def _invoke_job(
         refresh_fn = getattr(instance, "refresh_bundle_props", None)
         if callable(refresh_fn):
             try:
-                await refresh_fn(state={
-                    "tenant": getattr(bundle_config, "tenant", None),
-                    "project": getattr(bundle_config, "project", None),
-                })
+                refresh_kwargs = {
+                    "state": {
+                        "tenant": getattr(bundle_config, "tenant", None),
+                        "project": getattr(bundle_config, "project", None),
+                    },
+                }
+                try:
+                    refresh_params = inspect.signature(refresh_fn).parameters
+                except (TypeError, ValueError):
+                    refresh_params = {}
+                accepts_kwargs = any(
+                    param.kind == inspect.Parameter.VAR_KEYWORD
+                    for param in refresh_params.values()
+                )
+                if accepts_kwargs or "notify" in refresh_params:
+                    refresh_kwargs["notify"] = False
+                if accepts_kwargs or "reason" in refresh_params:
+                    refresh_kwargs["reason"] = "scheduled_job"
+                await refresh_fn(**refresh_kwargs)
             except Exception:
                 _log.warning(
                     "[scheduler] refresh_bundle_props failed for bundle=%s; "

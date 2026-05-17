@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 
 from kdcube_ai_app.apps.chat.sdk.skills.instructions.shared_instructions import get_workspace_implementation_guide
+from kdcube_ai_app.apps.chat.sdk.skills.instructions.shared_instructions_lite import default_lite_system_instruction
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.agents.decision import build_decision_system_text
 
 
@@ -165,3 +166,104 @@ def test_build_decision_system_text_prefers_direct_document_renderers():
     assert "Use HTML source for PDF" not in text
     assert "Do not use exec to call `rendering_tools.write_pdf`, `write_pptx`, or `write_docx`" in text
     assert "Do not load a product/domain skill merely because the topic is adjacent" in text
+
+
+def test_build_decision_system_text_accepts_custom_instruction_body_without_replacing_protocol():
+    text = build_decision_system_text(
+        adapters=[],
+        infra_adapters=[],
+        workspace_implementation="custom",
+        instruction_body="[CUSTOM DEMO BODY]\nAnswer from the visible KDCube docs only.",
+        include_tool_catalog=False,
+        include_skill_gallery=False,
+    )
+    assert text.lstrip().startswith("CRITICAL: you are the agent which must")
+    assert "[CUSTOM DEMO BODY]" in text
+    assert "Answer from the visible KDCube docs only." in text
+    assert "[ReAct Decision Module v3]" not in text
+    assert "Prefer generating source content with `react.write`." not in text
+    assert "[AVAILABLE REACT TOOLS]" not in text
+    assert "[SKILL CATALOG]" not in text
+
+
+def test_build_decision_system_text_composes_lite_blocks_without_optional_exec_guidance():
+    text = build_decision_system_text(
+        adapters=[],
+        infra_adapters=[],
+        workspace_implementation="custom",
+        instruction_blocks=[
+            "REACT_LITE_IDENTITY",
+            "REACT_LITE_TOOL_USE_BASE",
+            "REACT_LITE_FINALIZATION",
+        ],
+        include_tool_catalog=False,
+        include_skill_gallery=False,
+    )
+    assert "[REACT IDENTITY]" in text
+    assert "[TOOLS - BASE RULES]" in text
+    assert "[FINALIZATION]" in text
+    assert "[EXEC TOOL]" not in text
+    assert "Write contracted files under `OUTPUT_DIR`" not in text
+    assert "[RENDERING TOOLS]" not in text
+
+
+def test_build_decision_system_text_includes_exec_guidance_only_when_lite_exec_block_selected():
+    text = build_decision_system_text(
+        adapters=[],
+        infra_adapters=[],
+        workspace_implementation="custom",
+        instruction_blocks=[
+            "REACT_LITE_IDENTITY",
+            "REACT_LITE_EXEC_TOOL",
+        ],
+        include_tool_catalog=False,
+        include_skill_gallery=False,
+    )
+    assert "[EXEC TOOL]" in text
+    assert "include this block only" not in text.lower()
+    assert "Write every contracted artifact to `Path(OUTPUT_DIR) / filename`" in text
+
+
+def test_build_decision_system_text_can_hide_tool_catalog_but_keep_skill_gallery():
+    text = build_decision_system_text(
+        adapters=[],
+        infra_adapters=[],
+        workspace_implementation="custom",
+        instruction_blocks=["REACT_LITE_IDENTITY"],
+        include_tool_catalog=False,
+        include_skill_gallery=True,
+    )
+    assert "[REACT IDENTITY]" in text
+    assert "[AVAILABLE REACT TOOLS]" not in text
+    assert "[AVAILABLE COMMON TOOLS]" not in text
+    assert "[SKILL CATALOG]" in text
+
+
+def test_default_lite_system_instruction_workspace_profile_is_usable_as_body():
+    body = default_lite_system_instruction("workspace")
+    assert "[VISIBLE TIMELINE CONTEXT]" in body
+    assert "[VIRTUAL WORKSPACE MODEL]" in body
+    assert "[WORKSPACE MATERIALIZATION - PULL/CHECKOUT]" in body
+    assert "[PATCHING]" in body
+    assert "[EXEC TOOL]" not in body
+    assert "include this block only" not in body.lower()
+
+    text = build_decision_system_text(
+        adapters=[],
+        infra_adapters=[],
+        workspace_implementation="custom",
+        instruction_body=body,
+        include_tool_catalog=False,
+        include_skill_gallery=False,
+    )
+    assert text.lstrip().startswith("CRITICAL: you are the agent which must")
+    assert "[VISIBLE TIMELINE CONTEXT]" in text
+    assert "[VIRTUAL WORKSPACE MODEL]" in text
+    assert "[ReAct Decision Module v3]" not in text
+
+
+def test_default_lite_system_instruction_workspace_exec_profile_adds_exec_guidance():
+    body = default_lite_system_instruction("workspace_exec")
+    assert "[EXEC TOOL]" in body
+    assert "OUTPUT_DIR/" in body
+    assert "Write every contracted artifact to `Path(OUTPUT_DIR) / filename`" in body

@@ -1,6 +1,5 @@
 import {
     useLazyGetAIBundlesWidgetQuery,
-    useLazyGetBundleWidgetQuery,
     useLazyGetConversationBrowserWidgetQuery,
     useLazyGetEconomicsWidgetQuery,
     useLazyGetEconomicUsageWidgetQuery,
@@ -9,8 +8,10 @@ import {
     useLazyGetVersatilePreferencesWidgetQuery
 } from "../widgetPanels/widgetPanels.ts";
 import {useMemo} from "react";
-import {GenericPanel} from "./GenericPanel.tsx";
+import {GenericPanel, UrlFramePanel} from "./GenericPanel.tsx";
 import {WidgetPanelProps} from "./ChatSidePanel.tsx";
+import {useAppSelector} from "../../app/store.ts";
+import {selectProject, selectTenant} from "../chat/chatSettingsSlice.ts";
 
 export const EconomicsPanel = ({visible, className}: WidgetPanelProps) => {
     const [trigger, lastArg] = useLazyGetEconomicsWidgetQuery();
@@ -69,10 +70,13 @@ interface BundleWidgetPanelProps extends WidgetPanelProps {
 }
 
 export const BundleWidgetPanel = ({visible, className, bundleId, widgetAlias}: BundleWidgetPanelProps) => {
-    const [trigger, lastArg] = useLazyGetBundleWidgetQuery();
+    const tenant = useAppSelector(selectTenant);
+    const project = useAppSelector(selectProject);
 
     return useMemo(() => {
-        const params = bundleId && widgetAlias ? {bundleId, widgetAlias} : undefined;
-        return <GenericPanel trigger={trigger} lastArg={lastArg} visible={visible && !!params} className={className} params={params}/>
-    }, [trigger, lastArg, visible, className, bundleId, widgetAlias]);
+        const src = bundleId && widgetAlias
+            ? `/api/integrations/bundles/${encodeURIComponent(tenant)}/${encodeURIComponent(project)}/${encodeURIComponent(bundleId)}/widgets/${encodeURIComponent(widgetAlias)}`
+            : null;
+        return <UrlFramePanel visible={visible && !!src} className={className} src={src}/>
+    }, [bundleId, className, project, tenant, visible, widgetAlias]);
 }

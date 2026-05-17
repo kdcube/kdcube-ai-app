@@ -35,9 +35,13 @@ class GitBundlePaths:
 
 
 def _missing_host_path_log_level() -> str:
-    # In ECS the host-side path documents the EFS mount on the container host.
-    # It is not expected to exist inside the application container.
-    if os.getenv("ECS_CONTAINER_METADATA_URI_V4") or os.getenv("ECS_CONTAINER_METADATA_URI"):
+    # Host-side paths document the host mount point for external runtimes.
+    # They are not expected to exist inside the application container.
+    if (
+        pathlib.Path("/.dockerenv").exists()
+        or os.getenv("ECS_CONTAINER_METADATA_URI_V4")
+        or os.getenv("ECS_CONTAINER_METADATA_URI")
+    ):
         return "DEBUG"
     return "WARNING"
 

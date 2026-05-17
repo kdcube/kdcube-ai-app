@@ -91,6 +91,7 @@ from kdcube_ai_app.apps.chat.sdk.runtime.local_sidecars import shutdown_all_loca
 from kdcube_ai_app.apps.chat.proc.rest.integrations import mount_integrations_routers
 from kdcube_ai_app.infra.namespaces import CONFIG
 from kdcube_ai_app.infra.plugin.bundle_store import (
+    _get_bundle_props_from_authority,
     bundle_entry_to_spec,
     load_registry as load_bundle_runtime_registry,
     resolve_bundle_spec_from_store,
@@ -244,6 +245,123 @@ def _bundle_preload_lock_ttl_seconds() -> int:
     return int(get_settings().PLATFORM.APPLICATIONS.BUNDLES_PRELOAD_LOCK_TTL_SECONDS)
 
 
+def _is_explicitly_disabled(value) -> bool:
+    if isinstance(value, bool):
+        return not value
+    if isinstance(value, str):
+        return value.strip().lower() in {"0", "false", "no", "off", "disabled"}
+    return False
+
+
+def _enabled_web_app_widget_aliases_from_props(props: dict | None) -> list[str]:
+    if not isinstance(props, dict):
+        return []
+    ui = props.get("ui")
+    if not isinstance(ui, dict):
+        return []
+    widgets = ui.get("web_app_widgets")
+    if not isinstance(widgets, dict):
+        return []
+
+    aliases: set[str] = set()
+    for alias, cfg in widgets.items():
+        alias_s = str(alias or "").strip()
+        if not alias_s:
+            continue
+        if isinstance(cfg, dict):
+            if _is_explicitly_disabled(cfg.get("enabled", True)):
+                continue
+        elif _is_explicitly_disabled(cfg):
+            continue
+        aliases.add(alias_s)
+    return sorted(aliases)
+
+
+def _load_authoritative_bundle_props_for_preload(*, tenant: str, project: str, bundle_id: str) -> dict:
+    try:
+        props = _get_bundle_props_from_authority(
+            tenant=tenant,
+            project=project,
+            bundle_id=bundle_id,
+        )
+        return dict(props or {})
+    except Exception as e:
+        raise RuntimeError(
+            "Failed to load authoritative bundle props during preload: "
+            f"tenant={tenant} project={project} bundle={bundle_id}"
+        ) from e
+
+
+def _validate_preloaded_bundle_manifest(
+    *,
+    bundle_id: str,
+    spec: AgenticBundleSpec,
+    tenant: str,
+    project: str,
+) -> None:
+    """
+    Verify that the local worker can discover the bundle surfaces it must serve.
+
+    `@ui_widget`, `@api`, and `@mcp` decorators remain the source of truth.
+    Descriptor `ui.web_app_widgets` only configures static build/serve behavior
+    for a widget alias that the bundle actually declares.
+    """
+    from kdcube_ai_app.infra.plugin.agentic_loader import (
+        evict_bundle_scope,
+        load_bundle_manifest,
+    )
+
+    props = _load_authoritative_bundle_props_for_preload(
+        tenant=tenant,
+        project=project,
+        bundle_id=bundle_id,
+    )
+    expected_static_widgets = _enabled_web_app_widget_aliases_from_props(props)
+    manifest = load_bundle_manifest(spec, bundle_id=bundle_id)
+    discovered_widgets = sorted({item.alias for item in manifest.ui_widgets})
+    missing_widgets = sorted(set(expected_static_widgets) - set(discovered_widgets))
+
+    if missing_widgets:
+        evicted = evict_bundle_scope(spec, drop_sys_modules=True)
+        logger.warning(
+            "[Bundles] Manifest/widget mismatch during preload; evicted local "
+            "bundle caches and retrying discovery: id=%s path=%s expected_static_widgets=%s "
+            "discovered_widgets=%s evicted=%s",
+            bundle_id,
+            spec.path,
+            expected_static_widgets,
+            discovered_widgets,
+            evicted,
+        )
+        manifest = load_bundle_manifest(spec, bundle_id=bundle_id)
+        discovered_widgets = sorted({item.alias for item in manifest.ui_widgets})
+        missing_widgets = sorted(set(expected_static_widgets) - set(discovered_widgets))
+
+    if missing_widgets:
+        raise RuntimeError(
+            "Configured static widget aliases are not declared with @ui_widget: "
+            f"bundle={bundle_id} missing={missing_widgets} "
+            f"configured={expected_static_widgets} discovered={discovered_widgets} "
+            f"path={spec.path}"
+        )
+
+    logger.info(
+        "[Bundles] Manifest validated: id=%s path=%s widgets=%s "
+        "configured_static_widgets=%s api=%s mcp=%s ui_main=%s on_message=%s "
+        "on_job=%s cron=%s",
+        bundle_id,
+        spec.path,
+        discovered_widgets,
+        expected_static_widgets,
+        [item.alias for item in manifest.api_endpoints],
+        [item.alias for item in manifest.mcp_endpoints],
+        bool(manifest.ui_main),
+        bool(manifest.on_message),
+        bool(manifest.on_job),
+        [item.alias for item in manifest.scheduled_jobs],
+    )
+
+
 async def _prefetch_git_bundles_loop(app, registry=None) -> None:
     """
     Prefetch git bundles once on startup to gate readiness.
@@ -301,8 +419,8 @@ async def _preload_bundles_loop(app) -> None:
     """
     Eagerly load all configured bundle modules and run on_bundle_load hooks.
     Runs after git prefetch (modules must exist on disk before import).
-    Sets app.state.bundles_preload_ready=True when done regardless of
-    individual bundle failures, so a broken bundle does not block startup.
+    Attempts every loadable configured bundle and records per-bundle failures.
+    A broken bundle must not make the whole proc unhealthy.
     Every proc still performs local bundle preload; storage-scoped once locks
     inside bundle UI/index builders prevent duplicate shared build work.
     """
@@ -381,6 +499,12 @@ async def _preload_bundles_loop(app) -> None:
                     project=settings.PROJECT,
                     pg_pool=app.state.pg_pool,
                     redis=app.state.redis_async,
+                )
+                _validate_preloaded_bundle_manifest(
+                    bundle_id=bid,
+                    spec=spec,
+                    tenant=settings.TENANT,
+                    project=settings.PROJECT,
                 )
                 ok += 1
                 logger.info("[Bundles] Preloaded: id=%s path=%s", bid, path)
@@ -896,7 +1020,7 @@ async def gateway_middleware(request: Request, call_next):
         response.headers["X-Session-ID"] = session.session_id
         return response
     except RuntimeError as e:
-        if str(e) == "No response returned." and await request.is_disconnected():
+        if str(e) == "No response returned.":
             return JSONResponse(
                 status_code=499,
                 content={"detail": "Client disconnected before response was returned"},

@@ -1075,6 +1075,29 @@ bundles:
     assert props_map == {"demo.bundle": {"feature": {"enabled": True}}}
 
 
+def test_file_bundle_descriptor_store_readonly_load_does_not_create_sibling_lock(tmp_path: Path):
+    descriptor_path = tmp_path / "bundles.yaml"
+    descriptor_path.write_text(
+        """
+bundles:
+  version: "1"
+  items:
+    - id: demo.bundle
+      path: /bundles/demo.bundle
+      module: entrypoint
+  default_bundle_id: demo.bundle
+""".strip()
+    )
+
+    store = bundle_store._FileBundleDescriptorStore(bundles_yaml_uri=descriptor_path.resolve().as_uri())
+    loaded = store.load_registry_readonly()
+
+    assert loaded is not None
+    reg, _props_map = loaded
+    assert reg.default_bundle_id == "demo.bundle"
+    assert not (tmp_path / ".bundles.yaml.lock").exists()
+
+
 def test_authoritative_bundle_store_defaults_to_file_when_provider_is_not_explicit(monkeypatch, tmp_path: Path):
     descriptor_path = tmp_path / "bundles.yaml"
     descriptor_path.write_text("bundles:\n  version: '1'\n  items: []\n")

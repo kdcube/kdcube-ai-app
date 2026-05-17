@@ -1125,34 +1125,44 @@ class _FileBundleDescriptorStore:
         payload.pop("props", None)
         return payload
 
+    def _registry_from_payload(self, payload: Dict[str, Any]) -> tuple["BundlesRegistry", Dict[str, Dict[str, Any]]] | None:
+        items = self._bundle_items(payload)
+        bundles: Dict[str, BundleEntry] = {}
+        props_map: Dict[str, Dict[str, Any]] = {}
+        for item in items:
+            bundle_id = str(item.get("id") or "").strip()
+            if not bundle_id:
+                continue
+            if not _examples_enabled() and _is_example_bundle_id(bundle_id):
+                continue
+            try:
+                entry, props = self._bundle_item_entry_and_props(bundle_id, item)
+            except Exception:
+                _log.warning("Failed to parse file-backed bundle descriptor for %s", bundle_id, exc_info=True)
+                continue
+            bundles[bundle_id] = entry
+            if props:
+                props_map[bundle_id] = props
+        bundles_root = payload.get("bundles") or {}
+        default_bundle_id = None
+        if isinstance(bundles_root, dict):
+            default_bundle_id = str(bundles_root.get("default_bundle_id") or "").strip() or None
+        if not bundles and not default_bundle_id:
+            return None
+        reg = BundlesRegistry(default_bundle_id=default_bundle_id, bundles=bundles)
+        return reg, props_map
+
     def load_registry(self) -> tuple["BundlesRegistry", Dict[str, Dict[str, Any]]] | None:
         with self._lock, self._acquire_file_lock():
-            payload = self._load_mapping()
-            items = self._bundle_items(payload)
-            bundles: Dict[str, BundleEntry] = {}
-            props_map: Dict[str, Dict[str, Any]] = {}
-            for item in items:
-                bundle_id = str(item.get("id") or "").strip()
-                if not bundle_id:
-                    continue
-                if not _examples_enabled() and _is_example_bundle_id(bundle_id):
-                    continue
-                try:
-                    entry, props = self._bundle_item_entry_and_props(bundle_id, item)
-                except Exception:
-                    _log.warning("Failed to parse file-backed bundle descriptor for %s", bundle_id, exc_info=True)
-                    continue
-                bundles[bundle_id] = entry
-                if props:
-                    props_map[bundle_id] = props
-            bundles_root = payload.get("bundles") or {}
-            default_bundle_id = None
-            if isinstance(bundles_root, dict):
-                default_bundle_id = str(bundles_root.get("default_bundle_id") or "").strip() or None
-            if not bundles and not default_bundle_id:
-                return None
-            reg = BundlesRegistry(default_bundle_id=default_bundle_id, bundles=bundles)
-            return reg, props_map
+            return self._registry_from_payload(self._load_mapping())
+
+    def load_registry_readonly(self) -> tuple["BundlesRegistry", Dict[str, Dict[str, Any]]] | None:
+        # Read-only components such as ingress can read the descriptor file
+        # without creating a sibling lock file under /config. Writers replace
+        # local descriptor files atomically, so readers see either the old or
+        # the new complete YAML document.
+        with self._lock:
+            return self._registry_from_payload(self._load_mapping())
 
     def save_registry(
         self,
@@ -1654,6 +1664,37 @@ async def load_registry(redis, tenant: Optional[str] = None, project: Optional[s
     reg = _ensure_admin_bundle(reg)
     if updated:
         await save_registry(redis, reg, tenant, project)
+    return reg
+
+async def load_registry_from_authority_readonly(
+    tenant: Optional[str] = None,
+    project: Optional[str] = None,
+) -> Optional[BundlesRegistry]:
+    """
+    Read the active registry directly from descriptor authority without
+    mutating that authority and without refreshing Redis.
+
+    This is for non-proc components that need routing metadata but must not
+    acquire descriptor write locks or publish descriptor-derived state.
+    """
+    t, p = tenant, project
+    if not t or not p:
+        t, p = _tp_from_env()
+    store = _get_authoritative_bundle_store(t, p)
+    if store is None:
+        return None
+
+    loader = getattr(store, "load_registry_readonly", None)
+    if callable(loader):
+        loaded = loader()
+    else:
+        loaded = store.load_registry()
+    if loaded is None:
+        return None
+
+    reg, _props_map = loaded
+    reg, _ = _merge_example_bundles(reg)
+    reg = _ensure_admin_bundle(reg)
     return reg
 
 async def save_registry(
