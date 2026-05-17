@@ -1405,7 +1405,11 @@ async def run_static_bundle_entrypoint_load_once(
             _bundle_static_entrypoint_load_tasks[load_key] = task
 
     try:
-        await task
+        # Static UI entrypoint loads can be triggered by iframe/document
+        # requests. A browser navigation or panel switch may cancel that
+        # request, but the storage-scoped build must continue so the next
+        # request sees a completed artifact instead of restarting the build.
+        await asyncio.shield(task)
     except Exception:
         async with _bundle_static_entrypoint_load_lock:
             if _bundle_static_entrypoint_load_tasks.get(load_key) is task:
