@@ -109,7 +109,7 @@ Shared widget rule:
 
 - do not copy SDK-owned UI panels into every bundle
 - if a bundle needs the User Memory widget or Telegram admin/channels panels
-  inside its own webapp, configure `ui.web_app_widgets.<alias>.shared_sources`
+  inside its own webapp, configure `ui.widgets.<alias>.shared_sources`
   and import `@kdcube/memory-widget` or `@kdcube/telegram-widget`
 - keep that source wiring in `configuration_defaults()` for built-in/reference
   bundles so descriptors can usually say only `enabled: true`
@@ -700,7 +700,7 @@ If the bundle ships a full main UI app:
 If the bundle ships a React widget/web app:
 
 - put the widget app source under a stable widget folder such as `ui/widgets/<widget-alias>`
-- declare `ui.web_app_widgets.<alias>.src_folder` and `build_command`
+- declare `ui.widgets.<alias>.src_folder` and `build_command`
 - use the standard build command shape:
   `npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build`
 - make Vite write to `process.env.OUTDIR`; do not pass the output directory as
@@ -1079,7 +1079,7 @@ config:
     reconciliation: {enabled: true}
     snapshots: {enabled: true}
   ui:
-    web_app_widgets:
+    widgets:
       memories:
         enabled: true
 ```
@@ -1714,7 +1714,7 @@ The usual bundle config shape is:
 
 ```yaml
 ui:
-  web_app_widgets:
+  widgets:
     task_memo_webapp:
       enabled: true
       src_folder: ui/widgets/task_memo_webapp
@@ -1733,7 +1733,7 @@ mutating the source folder during loader builds.
 Source-folder behavior is per widget alias. If a subclass inherits other
 `@ui_widget` methods from `BaseEntrypoint`, those widgets continue to use the
 legacy method-rendered HTML path unless their own alias also has
-`ui.web_app_widgets.<alias>.src_folder/build_command`.
+`ui.widgets.<alias>.src_folder/build_command`.
 
 ### Required contract
 

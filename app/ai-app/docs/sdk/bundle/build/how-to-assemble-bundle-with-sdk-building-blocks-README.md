@@ -79,7 +79,7 @@ Critical widget/browser rule:
 | Bundle-served MCP endpoint | `@mcp(...)` | [Bundle Platform Integration](../bundle-platform-integration-README.md), [MCP Tools](../../tools/mcp-README.md) |
 | Claude Code subagent with scoped MCP/tools | `ClaudeCodeAgent`, `ClaudeCodeWorkspaceConfig` | [Bundle Agent Integration](../bundle-agent-integration-README.md) |
 | Browser widget or Mini App | `@ui_widget(...)`, source-folder widget build, operations/public APIs | [Bundle Widget Integration](../bundle-widget-integration-README.md) |
-| Shared widget UI pieces such as User Memory and Telegram admin/channels panels | `ui.web_app_widgets.<alias>.shared_sources` with `sdk://context/memory/ui/widget/memories` or `sdk://integrations/telegram/ui/widget.telegram` | [Shared UI Source Materialization](../bundle-widget-integration-README.md#shared-ui-source-materialization) |
+| Shared widget UI pieces such as User Memory and Telegram admin/channels panels | `ui.widgets.<alias>.shared_sources` with `sdk://context/memory/ui/widget/memories` or `sdk://integrations/telegram/ui/widget.telegram` | [Shared UI Source Materialization](../bundle-widget-integration-README.md#shared-ui-source-materialization) |
 | Scheduled scan and background execution | `@cron(...)`, `@on_job`, jobs stream; use Tasks Solution for saved task execution | [Scheduled Jobs](../bundle-scheduled-jobs-README.md), [Tasks SDK Solution](../../solutions/tasks-README.md) |
 | Local mutable files, generated indexes, git working copies, runtime caches | bundle storage helpers, `AIBundleStorage`, KV cache, git helpers | [Bundle Storage And Cache](../bundle-storage-and-cache-README.md) |
 | Node/TypeScript backend inside a bundle | Python bundle shell + Node sidecar bridge | [Bundle Node Backend Bridge](../bundle-node-backend-bridge-README.md) |
@@ -235,7 +235,7 @@ config:
     reconciliation: {enabled: true}
     snapshots: {enabled: true}
   ui:
-    web_app_widgets:
+    widgets:
       memories:
         enabled: true
 ```

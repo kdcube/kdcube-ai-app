@@ -261,7 +261,7 @@ bundles:
           reconciliation: {enabled: true}
           snapshots: {enabled: true}
         ui:
-          web_app_widgets:
+          widgets:
             memories:
               enabled: true
 ```

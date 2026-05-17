@@ -32,7 +32,7 @@ bundles:
           bundle:
             allowed_roles: []
         ui:
-          web_app_widgets:
+          widgets:
             versatile_webapp:
               src_folder: ui/widgets/versatile_webapp
               build_command: npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build

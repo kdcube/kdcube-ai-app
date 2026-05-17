@@ -266,7 +266,7 @@ class BaseEntrypoint:
             bundle_id = getattr(getattr(self.config, "ai_bundle_spec", None), "id", None)
             current_widgets = []
             if isinstance(current_ui, dict):
-                widgets = current_ui.get("web_app_widgets")
+                widgets = current_ui.get("widgets")
                 if isinstance(widgets, dict):
                     current_widgets = sorted(str(alias) for alias in widgets.keys())
             self.logger.log(
@@ -721,7 +721,7 @@ class BaseEntrypoint:
 
         Supported config:
         - `ui.main_view.src_folder/build_command` -> <bundle_storage_root>/ui
-        - `ui.web_app_widgets.<alias>.src_folder/build_command`
+        - `ui.widgets.<alias>.src_folder/build_command`
           -> <bundle_storage_root>/ui/widgets/<alias>
         - optional `shared_sources` on any UI app copies extra source folders
           into the temporary build workspace, for example:
@@ -733,7 +733,7 @@ class BaseEntrypoint:
         """
         ui_cfg = (self.bundle_props or {}).get("ui") or {}
         main_view = ui_cfg.get("main_view") or {}
-        widget_cfgs = ui_cfg.get("web_app_widgets") or ui_cfg.get("widgets") or {}
+        widget_cfgs = ui_cfg.get("widgets") or {}
 
         if not main_view and not widget_cfgs:
             return

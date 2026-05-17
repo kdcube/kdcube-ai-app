@@ -650,7 +650,7 @@ async def test_static_widget_payload_points_to_widget_app(monkeypatch):
     class _Workflow(_DecoratedWorkflow):
         bundle_props = {
             "ui": {
-                "web_app_widgets": {
+                "widgets": {
                     "preferences": {
                         "enabled": True,
                         "src_folder": "ui/widgets/preferences",
@@ -691,7 +691,7 @@ async def test_static_widget_config_without_decorator_is_not_a_widget_surface(mo
     class _Workflow:
         bundle_props = {
             "ui": {
-                "web_app_widgets": {
+                "widgets": {
                     "copilot_webapp": {
                         "enabled": True,
                         "src_folder": "ui/widgets/copilot_webapp",
@@ -805,11 +805,11 @@ async def test_admin_bundle_props_survives_code_defaults_load_failure(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_static_widget_config_is_per_alias_and_keeps_legacy_widgets(monkeypatch):
+async def test_static_widget_config_is_per_alias_and_keeps_method_rendered_widgets(monkeypatch):
     class _Workflow(_DecoratedWorkflow):
         bundle_props = {
             "ui": {
-                "web_app_widgets": {
+                "widgets": {
                     "other_widget": {
                         "enabled": True,
                         "src_folder": "ui/widgets/other_widget",
@@ -847,7 +847,7 @@ async def test_static_widget_subpaths_fall_back_to_index_html(monkeypatch, tmp_p
     class _Workflow(_DecoratedWorkflow):
         bundle_props = {
             "ui": {
-                "web_app_widgets": {
+                "widgets": {
                     "preferences": {
                         "enabled": True,
                         "src_folder": "ui/widgets/preferences",

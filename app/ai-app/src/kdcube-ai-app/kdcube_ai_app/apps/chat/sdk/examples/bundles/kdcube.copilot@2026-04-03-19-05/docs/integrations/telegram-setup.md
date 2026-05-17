@@ -134,7 +134,7 @@ copilot_webapp imports shared SDK UI:
 - @kdcube/telegram-widget  -> sdk://integrations/telegram/ui/widget.telegram
 ```
 
-These sources must be present in `ui.web_app_widgets.copilot_webapp.shared_sources`
+These sources must be present in `ui.widgets.copilot_webapp.shared_sources`
 or in the bundle's configuration defaults. If the Mini App fails with
 `Could not load /integrations/telegram/ui/widget.telegram/src/index.tsx`, the
 Telegram shared widget source was not materialized into `_shared/telegram-widget`

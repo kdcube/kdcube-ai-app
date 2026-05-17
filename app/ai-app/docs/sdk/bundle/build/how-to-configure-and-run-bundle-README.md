@@ -478,7 +478,7 @@ A bundle may include:
 So a bundle is not only one backend handler and not only one frontend widget.
 
 Widget React apps are configured like main UI apps: the descriptor/effective
-bundle config can enable `ui.web_app_widgets.<alias>` and the bundle code should
+bundle config can enable `ui.widgets.<alias>` and the bundle code should
 provide `src_folder` plus `build_command` defaults when the widget has source.
 The processor/bundle-loader infra builds the source folder into shared bundle
 storage and serves widget subpaths from the built app. Do not configure widgets
@@ -497,9 +497,9 @@ show `vite build /.../.ui.build.tmp...`, the widget build contract is wrong or
 an older platform runner is active.
 
 This is per widget alias. Configuring
-`ui.web_app_widgets.task_memo_webapp.src_folder/build_command` only changes the
+`ui.widgets.task_memo_webapp.src_folder/build_command` only changes the
 `task_memo_webapp` route. Inherited legacy widgets such as `ai_bundles` keep
-calling their decorated Python method unless `ui.web_app_widgets.ai_bundles`
+calling their decorated Python method unless `ui.widgets.ai_bundles`
 also defines `src_folder` and `build_command`.
 
 Reusable SDK widget UI uses build-time materialization. It is not an npm
@@ -515,7 +515,7 @@ The required shape is:
 
 ```yaml
 ui:
-  web_app_widgets:
+  widgets:
     versatile_webapp:
       enabled: true
       src_folder: ui/widgets/versatile_webapp
@@ -610,7 +610,7 @@ bundles:
           reconciliation: {enabled: true}
           snapshots: {enabled: true}
         ui:
-          web_app_widgets:
+          widgets:
             memories:
               enabled: true
 ```

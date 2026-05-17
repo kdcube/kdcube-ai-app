@@ -170,7 +170,7 @@ async def test_preload_bundles_loop_reports_static_widget_without_decorator(monk
 
     def _props(**kwargs):
         del kwargs
-        return {"ui": {"web_app_widgets": {"copilot_webapp": {"enabled": True}}}}
+        return {"ui": {"widgets": {"copilot_webapp": {"enabled": True}}}}
 
     def _evict(spec, **kwargs):
         del kwargs
@@ -207,7 +207,7 @@ async def test_preload_bundles_loop_accepts_static_widget_backed_by_decorator(mo
 
     def _props(**kwargs):
         del kwargs
-        return {"ui": {"web_app_widgets": {"copilot_webapp": {"enabled": True}}}}
+        return {"ui": {"widgets": {"copilot_webapp": {"enabled": True}}}}
 
     monkeypatch.setattr(web_app, "get_settings", _settings)
     monkeypatch.setattr(web_app, "load_bundle_runtime_registry", _load_runtime_registry)
