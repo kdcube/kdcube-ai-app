@@ -102,6 +102,11 @@ def _request(
     )
 
 
+@pytest.fixture(autouse=True)
+def _default_authoritative_bundle_props(monkeypatch):
+    monkeypatch.setattr(integrations, "_authoritative_bundle_props", lambda **kwargs: {})
+
+
 def test_direct_bundle_loader_removes_failed_partial_module(tmp_path):
     entrypoint = tmp_path / "entrypoint.py"
     entrypoint.write_text("raise RuntimeError('boom before workflow class')\n", encoding="utf-8")
@@ -659,12 +664,12 @@ async def test_static_widget_payload_points_to_widget_app(monkeypatch):
         del kwargs
         return _Workflow(), SimpleNamespace(id="bundle.demo"), "tenant-a", "project-a"
 
-    async def _store_get_bundle_props(*args, **kwargs):
+    def _store_get_bundle_props(*args, **kwargs):
         del args, kwargs
         return {}
 
     monkeypatch.setattr(integrations, "_load_bundle_workflow", _load_bundle_workflow)
-    monkeypatch.setattr(integrations, "store_get_bundle_props", _store_get_bundle_props)
+    monkeypatch.setattr(integrations, "_authoritative_bundle_props", _store_get_bundle_props)
 
     widget_payload = await integrations.fetch_bundle_widget(
         tenant="tenant-a",
@@ -679,6 +684,86 @@ async def test_static_widget_payload_points_to_widget_app(monkeypatch):
     assert "<iframe" in html
     assert "CONFIG_REQUEST" in html
     assert "/api/integrations/bundles/tenant-a/project-a/bundle.demo/widgets/preferences/index.html" in html
+
+
+@pytest.mark.asyncio
+async def test_static_widget_config_without_decorator_is_not_a_widget_surface(monkeypatch):
+    class _Workflow:
+        bundle_props = {
+            "ui": {
+                "web_app_widgets": {
+                    "copilot_webapp": {
+                        "enabled": True,
+                        "src_folder": "ui/widgets/copilot_webapp",
+                        "build_command": "true",
+                        "icon": {"lucide": "PanelsTopLeft"},
+                    },
+                },
+            },
+        }
+
+    async def _load_bundle_workflow(**kwargs):
+        del kwargs
+        return (
+            _Workflow(),
+            SimpleNamespace(id="bundle.demo", path="/tmp/bundle.demo", module="entrypoint", singleton=False),
+            "tenant-a",
+            "project-a",
+        )
+
+    def _store_get_bundle_props(*args, **kwargs):
+        del args, kwargs
+        return {}
+
+    monkeypatch.setattr(integrations, "_load_bundle_workflow", _load_bundle_workflow)
+    monkeypatch.setattr(integrations, "_authoritative_bundle_props", _store_get_bundle_props)
+
+    widgets = await integrations.list_bundle_widgets(
+        tenant="tenant-a",
+        project="project-a",
+        bundle_id="bundle.demo",
+        request=_request(),
+        session=_session(),
+    )
+    assert widgets["ui_widgets"] == []
+
+    with pytest.raises(integrations.HTTPException) as exc:
+        await integrations.fetch_bundle_widget(
+            tenant="tenant-a",
+            project="project-a",
+            bundle_id="bundle.demo",
+            widget_alias="copilot_webapp",
+            request=_request(),
+            session=_session(),
+        )
+    assert exc.value.status_code == 404
+    assert exc.value.detail == "Bundle does not define widget copilot_webapp"
+
+
+@pytest.mark.asyncio
+async def test_disabled_widgets_are_not_listed(monkeypatch):
+    class _Workflow(_DecoratedWorkflow):
+        pass
+
+    async def _load_bundle_workflow(**kwargs):
+        del kwargs
+        return _Workflow(), SimpleNamespace(id="bundle.demo"), "tenant-a", "project-a"
+
+    def _store_get_bundle_props(*args, **kwargs):
+        del args, kwargs
+        return {"enabled": {"widget": {"preferences": False}}}
+
+    monkeypatch.setattr(integrations, "_load_bundle_workflow", _load_bundle_workflow)
+    monkeypatch.setattr(integrations, "_authoritative_bundle_props", _store_get_bundle_props)
+
+    widgets = await integrations.list_bundle_widgets(
+        tenant="tenant-a",
+        project="project-a",
+        bundle_id="bundle.demo",
+        request=_request(),
+        session=_session(),
+    )
+    assert widgets["ui_widgets"] == []
 
 
 @pytest.mark.asyncio
@@ -738,12 +823,12 @@ async def test_static_widget_config_is_per_alias_and_keeps_legacy_widgets(monkey
         del kwargs
         return _Workflow(), SimpleNamespace(id="bundle.demo"), "tenant-a", "project-a"
 
-    async def _store_get_bundle_props(*args, **kwargs):
+    def _store_get_bundle_props(*args, **kwargs):
         del args, kwargs
         return {}
 
     monkeypatch.setattr(integrations, "_load_bundle_workflow", _load_bundle_workflow)
-    monkeypatch.setattr(integrations, "store_get_bundle_props", _store_get_bundle_props)
+    monkeypatch.setattr(integrations, "_authoritative_bundle_props", _store_get_bundle_props)
 
     widget_payload = await integrations.fetch_bundle_widget(
         tenant="tenant-a",
@@ -776,7 +861,7 @@ async def test_static_widget_subpaths_fall_back_to_index_html(monkeypatch, tmp_p
         del kwargs
         return _Workflow(), SimpleNamespace(id="bundle.demo"), "tenant-a", "project-a"
 
-    async def _store_get_bundle_props(*args, **kwargs):
+    def _store_get_bundle_props(*args, **kwargs):
         del args, kwargs
         return {}
 
@@ -799,7 +884,7 @@ async def test_static_widget_subpaths_fall_back_to_index_html(monkeypatch, tmp_p
     from kdcube_ai_app.infra.plugin import bundle_storage
 
     monkeypatch.setattr(integrations, "_load_bundle_workflow", _load_bundle_workflow)
-    monkeypatch.setattr(integrations, "store_get_bundle_props", _store_get_bundle_props)
+    monkeypatch.setattr(integrations, "_authoritative_bundle_props", _store_get_bundle_props)
     monkeypatch.setattr(integrations, "_resolve_bundle_spec_from_runtime", _resolve_bundle_async)
     monkeypatch.setattr(integrations, "run_static_bundle_entrypoint_load_once", _run_static_bundle_entrypoint_load_once)
     monkeypatch.setattr(bundle_storage, "storage_for_spec", lambda **kwargs: storage_root)
@@ -889,7 +974,7 @@ async def test_call_bundle_op_inner_applies_persisted_bundle_props_before_invoki
         del kwargs
         return _Workflow(), SimpleNamespace(id="bundle.demo"), "tenant-a", "project-a"
 
-    async def _store_get_bundle_props(*args, **kwargs):
+    def _store_get_bundle_props(*args, **kwargs):
         del args, kwargs
         return {
             "integrations": {
@@ -901,7 +986,7 @@ async def test_call_bundle_op_inner_applies_persisted_bundle_props_before_invoki
         }
 
     monkeypatch.setattr(integrations, "_load_bundle_workflow", _load_bundle_workflow)
-    monkeypatch.setattr(integrations, "store_get_bundle_props", _store_get_bundle_props)
+    monkeypatch.setattr(integrations, "_authoritative_bundle_props", _store_get_bundle_props)
 
     result = await integrations._call_bundle_op_inner(
         tenant="tenant-a",

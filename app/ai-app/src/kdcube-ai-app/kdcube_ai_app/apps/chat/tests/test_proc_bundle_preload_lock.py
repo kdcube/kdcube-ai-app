@@ -78,6 +78,23 @@ def _registry(items: dict) -> bundle_store.BundlesRegistry:
     )
 
 
+def _manifest(*, widgets: tuple[str, ...] = ()) -> SimpleNamespace:
+    return SimpleNamespace(
+        ui_widgets=tuple(SimpleNamespace(alias=alias) for alias in widgets),
+        api_endpoints=(),
+        mcp_endpoints=(),
+        ui_main=None,
+        on_message=None,
+        on_job=None,
+        scheduled_jobs=(),
+    )
+
+
+@pytest.fixture(autouse=True)
+def _no_authoritative_props(monkeypatch):
+    monkeypatch.setattr(web_app, "_get_bundle_props_from_authority", lambda **kwargs: {})
+
+
 @pytest.mark.asyncio
 async def test_preload_bundles_loop_acquires_and_releases_leader_lock(monkeypatch):
     redis = _FakeRedis(acquire=True)
@@ -96,6 +113,7 @@ async def test_preload_bundles_loop_acquires_and_releases_leader_lock(monkeypatc
 
     monkeypatch.setattr(web_app, "load_bundle_runtime_registry", _load_runtime_registry)
     monkeypatch.setattr(agentic_loader, "preload_bundle_async", _fake_preload)
+    monkeypatch.setattr(agentic_loader, "load_bundle_manifest", lambda *args, **kwargs: _manifest())
 
     await web_app._preload_bundles_loop(app)
 
@@ -124,6 +142,7 @@ async def test_preload_bundles_loop_still_preloads_when_another_instance_holds_l
 
     monkeypatch.setattr(web_app, "load_bundle_runtime_registry", _load_runtime_registry)
     monkeypatch.setattr(agentic_loader, "preload_bundle_async", _fake_preload)
+    monkeypatch.setattr(agentic_loader, "load_bundle_manifest", lambda *args, **kwargs: _manifest())
 
     await web_app._preload_bundles_loop(app)
 
@@ -132,6 +151,78 @@ async def test_preload_bundles_loop_still_preloads_when_another_instance_holds_l
     assert app.state.bundles_preload_ready is True
     assert app.state.bundles_preload_errors == {}
     assert redis.calls == [("set", key, redis.calls[0][2], 45, True)]
+
+
+@pytest.mark.asyncio
+async def test_preload_bundles_loop_reports_static_widget_without_decorator(monkeypatch):
+    redis = _FakeRedis(acquire=True)
+    app = _app(redis)
+    preload_calls: list[str] = []
+    evict_calls: list[str] = []
+
+    async def _fake_preload(spec, bundle_spec, **kwargs):
+        del spec, kwargs
+        preload_calls.append(bundle_spec.id)
+
+    async def _load_runtime_registry(redis_arg, tenant, project):
+        del redis_arg, tenant, project
+        return _registry({"bundle.demo": {"path": "/tmp/demo", "module": "entrypoint", "singleton": False}})
+
+    def _props(**kwargs):
+        del kwargs
+        return {"ui": {"web_app_widgets": {"copilot_webapp": {"enabled": True}}}}
+
+    def _evict(spec, **kwargs):
+        del kwargs
+        evict_calls.append(spec.path)
+        return {"evicted_modules": 0, "evicted_singletons": 0, "evicted_manifests": 0, "sys_modules_deleted": 0}
+
+    monkeypatch.setattr(web_app, "get_settings", _settings)
+    monkeypatch.setattr(web_app, "load_bundle_runtime_registry", _load_runtime_registry)
+    monkeypatch.setattr(web_app, "_get_bundle_props_from_authority", _props)
+    monkeypatch.setattr(agentic_loader, "preload_bundle_async", _fake_preload)
+    monkeypatch.setattr(agentic_loader, "load_bundle_manifest", lambda *args, **kwargs: _manifest())
+    monkeypatch.setattr(agentic_loader, "evict_bundle_scope", _evict)
+
+    await web_app._preload_bundles_loop(app)
+
+    assert preload_calls == ["bundle.demo"]
+    assert evict_calls == ["/tmp/demo"]
+    assert app.state.bundles_preload_ready is True
+    assert "bundle.demo" in app.state.bundles_preload_errors
+    assert "copilot_webapp" in app.state.bundles_preload_errors["bundle.demo"]
+
+
+@pytest.mark.asyncio
+async def test_preload_bundles_loop_accepts_static_widget_backed_by_decorator(monkeypatch):
+    redis = _FakeRedis(acquire=True)
+    app = _app(redis)
+
+    async def _fake_preload(spec, bundle_spec, **kwargs):
+        del spec, bundle_spec, kwargs
+
+    async def _load_runtime_registry(redis_arg, tenant, project):
+        del redis_arg, tenant, project
+        return _registry({"bundle.demo": {"path": "/tmp/demo", "module": "entrypoint", "singleton": False}})
+
+    def _props(**kwargs):
+        del kwargs
+        return {"ui": {"web_app_widgets": {"copilot_webapp": {"enabled": True}}}}
+
+    monkeypatch.setattr(web_app, "get_settings", _settings)
+    monkeypatch.setattr(web_app, "load_bundle_runtime_registry", _load_runtime_registry)
+    monkeypatch.setattr(web_app, "_get_bundle_props_from_authority", _props)
+    monkeypatch.setattr(agentic_loader, "preload_bundle_async", _fake_preload)
+    monkeypatch.setattr(
+        agentic_loader,
+        "load_bundle_manifest",
+        lambda *args, **kwargs: _manifest(widgets=("copilot_webapp",)),
+    )
+
+    await web_app._preload_bundles_loop(app)
+
+    assert app.state.bundles_preload_ready is True
+    assert app.state.bundles_preload_errors == {}
 
 
 @pytest.mark.asyncio

@@ -2149,6 +2149,13 @@ class ReactWorkflow(BaseEntrypointWithEconomicsAndMemory):
 
     def configuration_defaults(self) -> Dict[str, Any]:
         copilot_defaults = {
+            "enabled": {
+                "widget": {
+                    # Copilot exposes user memory inside the unified web app; keep
+                    # the inherited standalone memory widget out of the widget bar.
+                    "memories": False,
+                },
+            },
             "visibility": {
                 "bundle": {
                     "allowed_roles": [],

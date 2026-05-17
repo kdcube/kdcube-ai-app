@@ -25,6 +25,13 @@ async def _load_store_registry(runtime_redis, tenant: str, project: str):
 
     return await _load_store_registry_impl(runtime_redis, tenant, project)
 
+async def _load_store_registry_readonly(tenant: str, project: str):
+    from kdcube_ai_app.infra.plugin.bundle_store import (
+        load_registry_from_authority_readonly as _load_store_registry_readonly_impl,
+    )
+
+    return await _load_store_registry_readonly_impl(tenant, project)
+
 @dataclass
 class BundleSpec:
     id: str
@@ -524,22 +531,39 @@ async def load_persisted_registry_from_runtime_ctx(
     Read the active bundle registry for the given tenant/project from the
     configured runtime registry store without touching process-local _REGISTRY.
 
-    For file-backed descriptors, bundle_store.load_registry rereads the
-    descriptor authority and refreshes Redis as a runtime cache. Redis is not
-    treated as the authority in that mode.
+    Proc owns descriptor-authority refresh and cache publication. Non-proc
+    components read descriptor authority in read-only mode first and fall back
+    to the published Redis snapshot; they must not acquire descriptor write
+    locks or mutate descriptor/cache state.
     """
-    redis_client = get_registry_redis_client(runtime_ctx)
-    if not redis_client:
-        logger.error(
-            "Bundle registry unavailable: no Redis client on runtime context "
-            "(tenant=%s project=%s)",
-            tenant,
-            project,
-        )
-        return None
-
     component = (os.getenv("GATEWAY_COMPONENT") or "proc").strip().lower()
     if component != "proc":
+        try:
+            reg = await _load_store_registry_readonly(tenant, project)
+            if reg and getattr(reg, "bundles", None):
+                return reg
+        except Exception as e:
+            logger.warning(
+                "Failed to read active bundle registry from read-only authority "
+                "(tenant=%s project=%s component=%s): %s",
+                tenant,
+                project,
+                component,
+                e,
+            )
+
+        redis_client = get_registry_redis_client(runtime_ctx)
+        if not redis_client:
+            logger.error(
+                "Bundle registry unavailable: no Redis client on runtime context "
+                "and read-only authority did not return a registry "
+                "(tenant=%s project=%s component=%s)",
+                tenant,
+                project,
+                component,
+            )
+            return None
+
         try:
             from kdcube_ai_app.infra.plugin.bundle_store import BundlesRegistry, redis_key
 
@@ -564,6 +588,17 @@ async def load_persisted_registry_from_runtime_ctx(
         logger.error(
             "Active bundle registry cache missing/empty "
             "(tenant=%s project=%s component=%s). Non-proc components do not load bundle descriptors.",
+            tenant,
+            project,
+            component,
+        )
+        return None
+
+    redis_client = get_registry_redis_client(runtime_ctx)
+    if not redis_client:
+        logger.error(
+            "Bundle registry unavailable: no Redis client on runtime context "
+            "(tenant=%s project=%s component=%s)",
             tenant,
             project,
             component,

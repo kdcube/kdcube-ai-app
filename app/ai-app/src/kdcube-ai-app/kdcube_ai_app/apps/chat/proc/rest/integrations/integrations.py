@@ -11,6 +11,7 @@ import inspect
 import json
 import logging
 import os
+import traceback
 import uuid
 from dataclasses import asdict
 from datetime import datetime
@@ -52,6 +53,7 @@ from kdcube_ai_app.infra.plugin.bundle_store import (
     describe_authoritative_bundle_store,
     resolve_bundle_spec_from_store,
     get_bundle_props as store_get_bundle_props,
+    _get_bundle_props_from_authority as store_get_bundle_props_from_authority,
     patch_bundle_props as store_patch_bundle_props,
     put_bundle_props as store_put_bundle_props,
 )
@@ -75,7 +77,6 @@ from kdcube_ai_app.infra.plugin.agentic_loader import (
     load_bundle_manifest,
     resolve_bundle_api_endpoint,
     resolve_bundle_mcp_endpoint,
-    resolve_bundle_widget,
     run_static_bundle_entrypoint_load_once,
     static_bundle_entrypoint_load_key,
 )
@@ -264,6 +265,27 @@ def _apply_rest_bundle_props_to_workflow(
     return getattr(workflow, "bundle_props", None) or merged
 
 
+def _authoritative_bundle_props(
+        *,
+        tenant: str,
+        project: str,
+        bundle_id: str,
+) -> Dict[str, Any]:
+    """Read bundle props from descriptor authority, never from Redis.
+
+    Request-time bundle interface, widget, API, and MCP serving must reflect the
+    descriptor-backed bundle configuration that resolved the bundle, not a
+    possibly stale Redis props cache. When no descriptor authority exists,
+    callers fall back to code defaults by merging an empty props dict.
+    """
+    props = store_get_bundle_props_from_authority(
+        tenant=tenant,
+        project=project,
+        bundle_id=bundle_id,
+    )
+    return dict(props or {})
+
+
 def _clean_scope_value(value: Optional[str]) -> Optional[str]:
     if value is None:
         return None
@@ -401,9 +423,87 @@ def _visible_widget_specs(
     out: list[UIWidgetSpec] = []
     for spec in manifest.ui_widgets:
         effective = apply_widget_overrides(spec, props or {})
-        if _endpoint_visible(effective.user_types, effective.roles, session):
+        if is_widget_enabled(props, effective) and _endpoint_visible(effective.user_types, effective.roles, session):
             out.append(effective)
     return out
+
+
+def _resolve_widget_spec(
+        manifest: BundleInterfaceManifest,
+        *,
+        alias: str,
+) -> UIWidgetSpec | None:
+    for spec in manifest.ui_widgets:
+        if spec.alias == alias:
+            return spec
+    return None
+
+
+async def _reload_widget_manifest_after_miss(
+        *,
+        tenant: str,
+        project: str,
+        bundle_id: str,
+        widget_alias: str,
+        request: Request,
+        session: UserSession,
+        spec_resolved: Any,
+        manifest: BundleInterfaceManifest,
+):
+    """Recover once from stale in-process bundle code/manifest state."""
+    try:
+        spec = AgenticBundleSpec(
+            path=spec_resolved.path,
+            module=spec_resolved.module,
+            singleton=bool(spec_resolved.singleton),
+        )
+        eviction = evict_bundle_scope(spec, drop_sys_modules=True)
+        logger.warning(
+            "Bundle widget lookup miss; evicted local bundle cache and retrying: "
+            "tenant=%s project=%s bundle=%s widget=%s path=%s module=%s singleton=%s "
+            "manifest_widgets_before=%s eviction=%s pid=%s",
+            tenant,
+            project,
+            bundle_id,
+            widget_alias,
+            spec_resolved.path,
+            spec_resolved.module,
+            bool(spec_resolved.singleton),
+            [spec.alias for spec in manifest.ui_widgets],
+            eviction,
+            os.getpid(),
+        )
+        payload = BundleSuggestionsRequest()
+        workflow, retry_spec, tenant_id, project_id, comm_context = _unpack_loaded_bundle_workflow(
+            await _load_bundle_workflow(
+                tenant=tenant,
+                project=project,
+                bundle_id=bundle_id,
+                payload=payload,
+                request=request,
+                session=session,
+            )
+        )
+        retry_manifest = discover_bundle_interface_manifest(workflow, bundle_id=retry_spec.id)
+        props = _authoritative_bundle_props(
+            tenant=tenant_id,
+            project=project_id,
+            bundle_id=retry_spec.id,
+        )
+        workflow_props = _apply_rest_bundle_props_to_workflow(workflow=workflow, props=props)
+        widget_spec = _resolve_widget_spec(retry_manifest, alias=widget_alias)
+        return workflow, retry_spec, tenant_id, project_id, comm_context, retry_manifest, props, workflow_props, widget_spec
+    except Exception:
+        logger.warning(
+            "Bundle widget lookup retry failed: tenant=%s project=%s bundle=%s widget=%s pid=%s",
+            tenant,
+            project,
+            bundle_id,
+            widget_alias,
+            os.getpid(),
+            exc_info=True,
+        )
+        return None
 
 
 def _visible_api_specs(
@@ -415,7 +515,7 @@ def _visible_api_specs(
     out: list[APIEndpointSpec] = []
     for spec in manifest.api_endpoints:
         effective = apply_api_overrides(spec, props or {})
-        if _endpoint_visible(effective.user_types, effective.roles, session):
+        if is_api_enabled(props, effective) and _endpoint_visible(effective.user_types, effective.roles, session):
             out.append(effective)
     return out
 
@@ -427,7 +527,12 @@ def _visible_mcp_specs(
 ) -> list[MCPEndpointSpec]:
     """Return MCP specs with bundle-props overrides applied (no visibility filtering)."""
     del session
-    return [apply_mcp_overrides(spec, props or {}) for spec in manifest.mcp_endpoints]
+    out: list[MCPEndpointSpec] = []
+    for spec in manifest.mcp_endpoints:
+        effective = apply_mcp_overrides(spec, props or {})
+        if is_mcp_enabled(props, effective):
+            out.append(effective)
+    return out
 
 
 def _user_raw_roles(session: UserSession) -> set[str]:
@@ -1074,21 +1179,27 @@ def _manifest_to_descriptor_filtered(
         "apis": [
             _api_spec_descriptor(s, props)
             for s in manifest.api_endpoints
-            if _endpoint_visible(
-                apply_api_overrides(s, props or {}).user_types,
-                apply_api_overrides(s, props or {}).roles,
-                session,
-            )
+            if is_api_enabled(props, apply_api_overrides(s, props or {}))
+            and _endpoint_visible(
+                    apply_api_overrides(s, props or {}).user_types,
+                    apply_api_overrides(s, props or {}).roles,
+                    session,
+                )
         ],
-        "mcp_endpoints": [_mcp_spec_descriptor(s, props) for s in manifest.mcp_endpoints],
+        "mcp_endpoints": [
+            _mcp_spec_descriptor(s, props)
+            for s in manifest.mcp_endpoints
+            if is_mcp_enabled(props, apply_mcp_overrides(s, props or {}))
+        ],
         "widgets": [
             _widget_spec_descriptor(s, props)
             for s in manifest.ui_widgets
-            if _endpoint_visible(
-                apply_widget_overrides(s, props or {}).user_types,
-                apply_widget_overrides(s, props or {}).roles,
-                session,
-            )
+            if is_widget_enabled(props, apply_widget_overrides(s, props or {}))
+            and _endpoint_visible(
+                    apply_widget_overrides(s, props or {}).user_types,
+                    apply_widget_overrides(s, props or {}).roles,
+                    session,
+                )
         ],
         "on_message": manifest.on_message.method_name if manifest.on_message else None,
         "on_job": manifest.on_job.method_name if manifest.on_job else None,
@@ -1113,7 +1224,6 @@ async def get_available_bundles(
     except Exception:
         raise HTTPException(status_code=503, detail="Failed to load bundles registry for tenant/project")
 
-    redis = _get_app_redis(request)
     bundles_out = {}
     for bid, entry in reg.bundles.items():
         manifest = await _get_bundle_manifest(
@@ -1137,7 +1247,7 @@ async def get_available_bundles(
             "git_commit": getattr(entry, "git_commit", None),
         }
         if manifest is not None:
-            props = await store_get_bundle_props(redis, tenant=tenant_id, project=project_id, bundle_id=bid)
+            props = _authoritative_bundle_props(tenant=tenant_id, project=project_id, bundle_id=bid)
             descriptor.update(_manifest_to_descriptor(manifest, props=props))
         bundles_out[bid] = descriptor
 
@@ -1172,7 +1282,6 @@ async def get_bundles(
     except Exception:
         raise HTTPException(status_code=503, detail="Failed to load bundles registry for tenant/project")
 
-    redis = _get_app_redis(request)
     bundles_out = {}
     for bid, entry in reg.bundles.items():
         manifest = await _get_bundle_manifest(
@@ -1184,7 +1293,7 @@ async def get_bundles(
         )
         props: Optional[Dict[str, Any]] = None
         if manifest is not None:
-            props = await store_get_bundle_props(redis, tenant=tenant_id, project=project_id, bundle_id=bid)
+            props = _authoritative_bundle_props(tenant=tenant_id, project=project_id, bundle_id=bid)
             if not is_bundle_enabled(props):
                 continue
         if not _bundle_allowed_for_session(manifest, session, props=props):
@@ -2211,12 +2320,15 @@ async def get_bundle_interface(
         )
     )
     manifest = discover_bundle_interface_manifest(workflow, bundle_id=spec_resolved.id)
-    _props = await store_get_bundle_props(
-        _get_app_redis(request), tenant=tenant_id, project=project_id, bundle_id=spec_resolved.id,
+    props = _authoritative_bundle_props(
+        tenant=tenant_id,
+        project=project_id,
+        bundle_id=spec_resolved.id,
     )
-    visible_widgets = _visible_widget_specs(manifest, session, props=_props)
-    visible_apis = _visible_api_specs(manifest, session, props=_props)
-    visible_mcp_endpoints = _visible_mcp_specs(manifest, session, props=_props)
+    workflow_props = _apply_rest_bundle_props_to_workflow(workflow=workflow, props=props)
+    visible_widgets = _visible_widget_specs(manifest, session, props=workflow_props)
+    visible_apis = _visible_api_specs(manifest, session, props=workflow_props)
+    visible_mcp_endpoints = _visible_mcp_specs(manifest, session, props=workflow_props)
     return {
         "status": "ok",
         "tenant": tenant_id,
@@ -2265,7 +2377,7 @@ async def get_bundle_interface(
             if manifest.on_job
             else None
         ),
-        "scheduled_jobs": [_cron_spec_descriptor(s, props=_props) for s in manifest.scheduled_jobs],
+        "scheduled_jobs": [_cron_spec_descriptor(s, props=workflow_props) for s in manifest.scheduled_jobs],
     }
 
 
@@ -2289,6 +2401,12 @@ async def list_bundle_widgets(
         )
     )
     manifest = discover_bundle_interface_manifest(workflow, bundle_id=spec_resolved.id)
+    props = _authoritative_bundle_props(
+        tenant=tenant_id,
+        project=project_id,
+        bundle_id=spec_resolved.id,
+    )
+    workflow_props = _apply_rest_bundle_props_to_workflow(workflow=workflow, props=props)
     return {
         "status": "ok",
         "tenant": tenant_id,
@@ -2301,7 +2419,7 @@ async def list_bundle_widgets(
                 "user_types": list(spec.user_types),
                 "roles": list(spec.roles),
             }
-            for spec in _visible_widget_specs(manifest, session)
+            for spec in _visible_widget_specs(manifest, session, props=workflow_props)
         ],
     }
 
@@ -2327,7 +2445,40 @@ async def _fetch_bundle_widget_payload(
             session=session,
         )
     )
-    widget_spec = resolve_bundle_widget(workflow, alias=widget_alias, bundle_id=spec_resolved.id)
+    manifest = discover_bundle_interface_manifest(workflow, bundle_id=spec_resolved.id)
+    props = _authoritative_bundle_props(
+        tenant=tenant_id,
+        project=project_id,
+        bundle_id=spec_resolved.id,
+    )
+    workflow_props = _apply_rest_bundle_props_to_workflow(workflow=workflow, props=props)
+    widget_spec = _resolve_widget_spec(
+        manifest,
+        alias=widget_alias,
+    )
+    if widget_spec is None:
+        retry = await _reload_widget_manifest_after_miss(
+            tenant=tenant,
+            project=project,
+            bundle_id=bundle_id,
+            widget_alias=widget_alias,
+            request=request,
+            session=session,
+            spec_resolved=spec_resolved,
+            manifest=manifest,
+        )
+        if retry is not None:
+            (
+                workflow,
+                spec_resolved,
+                tenant_id,
+                project_id,
+                comm_context,
+                manifest,
+                props,
+                workflow_props,
+                widget_spec,
+            ) = retry
     if widget_spec is None:
         _log_bundle_widget_lookup_mismatch(
             tenant_id=tenant_id,
@@ -2339,25 +2490,17 @@ async def _fetch_bundle_widget_payload(
         )
         raise HTTPException(status_code=404, detail=f"Bundle does not define widget {widget_alias}")
 
-    manifest = discover_bundle_interface_manifest(workflow, bundle_id=spec_resolved.id)
-    _props = await store_get_bundle_props(
-        _get_app_redis(request), tenant=tenant_id, project=project_id, bundle_id=spec_resolved.id,
-    )
-    widget_spec = apply_widget_overrides(widget_spec, _props)
+    widget_spec = apply_widget_overrides(widget_spec, workflow_props)
     if not _endpoint_visible(widget_spec.user_types, widget_spec.roles, session):
         raise HTTPException(status_code=403, detail=f"Bundle widget {widget_alias} is not visible to this user")
-    workflow_props = _apply_rest_bundle_props_to_workflow(workflow=workflow, props=_props)
-    if not is_bundle_enabled(_props):
+    if not is_bundle_enabled(workflow_props):
         raise HTTPException(status_code=404, detail=f"Bundle {spec_resolved.id} is disabled")
-    if not is_widget_enabled(_props, widget_spec):
+    if not is_widget_enabled(workflow_props, widget_spec):
         raise HTTPException(status_code=404, detail=f"Bundle widget {widget_alias} is not available")
 
     widget_static_cfg = None
-    if not _static_widget_explicitly_disabled(_props or {}, widget_alias=widget_spec.alias):
-        widget_static_cfg = (
-            _static_widget_config(_props or {}, widget_alias=widget_spec.alias)
-            or _static_widget_config(workflow_props, widget_alias=widget_spec.alias)
-        )
+    if not _static_widget_explicitly_disabled(workflow_props, widget_alias=widget_spec.alias):
+        widget_static_cfg = _static_widget_config(workflow_props, widget_alias=widget_spec.alias)
     if widget_static_cfg:
         result = [_static_widget_iframe_html(
             tenant=tenant_id,
@@ -2445,10 +2588,30 @@ def _log_bundle_widget_lookup_mismatch(
     )
     cached_manifest = get_cached_manifest(spec)
     manifest = discover_bundle_interface_manifest(workflow, bundle_id=spec_resolved.id)
+    raw_widget_members: list[dict[str, Any]] = []
+    try:
+        from kdcube_ai_app.infra.plugin.agentic_loader import UI_WIDGET_ATTR
+
+        for name, member in inspect.getmembers(workflow.__class__, predicate=callable):
+            attr = getattr(member, UI_WIDGET_ATTR, None)
+            if attr is None:
+                continue
+            raw_widget_members.append(
+                {
+                    "method": name,
+                    "alias": getattr(attr, "alias", None),
+                    "attr_type": type(attr).__name__,
+                    "attr_module": type(attr).__module__,
+                    "attr_is_current_ui_widget_spec": isinstance(attr, UIWidgetSpec),
+                }
+            )
+    except Exception:
+        raw_widget_members = [{"error": traceback.format_exc(limit=2)}]
     logger.error(
         "Bundle widget lookup mismatch: tenant=%s project=%s requested_bundle=%s "
         "resolved_bundle=%s widget=%s path=%s module=%s singleton=%s "
-        "workflow_class=%s workflow_module=%s manifest_widgets=%s cached_manifest_widgets=%s",
+        "workflow_class=%s workflow_module=%s workflow_file=%s "
+        "manifest_widgets=%s cached_manifest_widgets=%s raw_widget_members=%s pid=%s",
         tenant_id,
         project_id,
         requested_bundle_id,
@@ -2459,8 +2622,11 @@ def _log_bundle_widget_lookup_mismatch(
         bool(spec_resolved.singleton),
         workflow.__class__.__name__,
         workflow.__class__.__module__,
+        inspect.getsourcefile(workflow.__class__),
         [spec.alias for spec in manifest.ui_widgets],
         [spec.alias for spec in cached_manifest.ui_widgets] if cached_manifest is not None else None,
+        raw_widget_members,
+        os.getpid(),
     )
 
 
@@ -2558,7 +2724,40 @@ async def _serve_static_widget_app(
             session=session,
         )
     )
-    widget_spec = resolve_bundle_widget(workflow, alias=widget_alias, bundle_id=spec_resolved.id)
+    manifest = discover_bundle_interface_manifest(workflow, bundle_id=spec_resolved.id)
+    props = _authoritative_bundle_props(
+        tenant=tenant_id,
+        project=project_id,
+        bundle_id=spec_resolved.id,
+    )
+    workflow_props = _apply_rest_bundle_props_to_workflow(workflow=workflow, props=props)
+    widget_spec = _resolve_widget_spec(
+        manifest,
+        alias=widget_alias,
+    )
+    if widget_spec is None:
+        retry = await _reload_widget_manifest_after_miss(
+            tenant=tenant,
+            project=project,
+            bundle_id=bundle_id,
+            widget_alias=widget_alias,
+            request=request,
+            session=session,
+            spec_resolved=spec_resolved,
+            manifest=manifest,
+        )
+        if retry is not None:
+            (
+                workflow,
+                spec_resolved,
+                tenant_id,
+                project_id,
+                _comm_context,
+                manifest,
+                props,
+                workflow_props,
+                widget_spec,
+            ) = retry
     if widget_spec is None:
         _log_bundle_widget_lookup_mismatch(
             tenant_id=tenant_id,
@@ -2570,24 +2769,16 @@ async def _serve_static_widget_app(
         )
         raise HTTPException(status_code=404, detail=f"Bundle does not define widget {widget_alias}")
 
-    manifest = discover_bundle_interface_manifest(workflow, bundle_id=spec_resolved.id)
-    _props = await store_get_bundle_props(
-        _get_app_redis(request), tenant=tenant_id, project=project_id, bundle_id=spec_resolved.id,
-    )
-    widget_spec = apply_widget_overrides(widget_spec, _props)
+    widget_spec = apply_widget_overrides(widget_spec, workflow_props)
     if not _endpoint_visible(widget_spec.user_types, widget_spec.roles, session):
         raise HTTPException(status_code=403, detail=f"Bundle widget {widget_alias} is not visible to this user")
-    workflow_props = _apply_rest_bundle_props_to_workflow(workflow=workflow, props=_props)
-    if not is_bundle_enabled(_props):
+    if not is_bundle_enabled(workflow_props):
         raise HTTPException(status_code=404, detail=f"Bundle {spec_resolved.id} is disabled")
-    if not is_widget_enabled(_props, widget_spec):
+    if not is_widget_enabled(workflow_props, widget_spec):
         raise HTTPException(status_code=404, detail=f"Bundle widget {widget_alias} is not available")
     widget_static_cfg = None
-    if not _static_widget_explicitly_disabled(_props or {}, widget_alias=widget_spec.alias):
-        widget_static_cfg = (
-            _static_widget_config(_props or {}, widget_alias=widget_spec.alias)
-            or _static_widget_config(workflow_props, widget_alias=widget_spec.alias)
-        )
+    if not _static_widget_explicitly_disabled(workflow_props, widget_alias=widget_spec.alias):
+        widget_static_cfg = _static_widget_config(workflow_props, widget_alias=widget_spec.alias)
     if not widget_static_cfg:
         return None
 
@@ -2956,9 +3147,10 @@ async def _call_bundle_mcp_inner(
     if endpoint_spec is None:
         raise HTTPException(status_code=404, detail=f"Bundle does not support MCP endpoint {endpoint_alias}")
 
-    manifest = discover_bundle_interface_manifest(workflow, bundle_id=spec_resolved.id)
-    _props = await store_get_bundle_props(
-        _get_app_redis(request), tenant=tenant_id, project=project_id, bundle_id=spec_resolved.id,
+    _props = _authoritative_bundle_props(
+        tenant=tenant_id,
+        project=project_id,
+        bundle_id=spec_resolved.id,
     )
     endpoint_spec = apply_mcp_overrides(endpoint_spec, _props)
     _apply_rest_bundle_props_to_workflow(workflow=workflow, props=_props)
@@ -3356,9 +3548,10 @@ async def _call_bundle_op_inner(
         request=request,
     )
 
-    manifest = discover_bundle_interface_manifest(workflow, bundle_id=spec_resolved.id)
-    _props = await store_get_bundle_props(
-        _get_app_redis(request), tenant=tenant_id, project=project_id, bundle_id=spec_resolved.id,
+    _props = _authoritative_bundle_props(
+        tenant=tenant_id,
+        project=project_id,
+        bundle_id=spec_resolved.id,
     )
     endpoint_spec = apply_api_overrides(endpoint_spec, _props)
     if not _endpoint_visible(endpoint_spec.user_types, endpoint_spec.roles, session):
