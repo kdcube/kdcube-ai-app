@@ -844,6 +844,43 @@ React version:
 - do not hardcode the version in bundle code
 - write the bundle against `BaseWorkflow.build_react(...)`
 
+Model routing:
+
+- every bundle-owned LLM call should have a stable role id such as
+  `report.writer`, `memory.reconciler`, or
+  `solver.react.v2.decision.v2.regular`
+- set normal defaults in `configuration` / `configuration_defaults()` under
+  `role_models`
+- let deployments override those defaults in `bundles.yaml -> items[].config.role_models`
+  or live bundle props
+- when a current API/MCP/cron/chat/job call chooses a temporary model strength,
+  bind `bundle_call_context.role_models` around the downstream agent call
+- the temporary override follows nested SDK agents, React, in-process tools,
+  and isolated tool runtimes while the context is bound
+
+Minimal ad hoc pattern:
+
+```python
+from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import (
+    bind_current_bundle_call_context_patch,
+    get_current_bundle_call_context,
+)
+
+current = get_current_bundle_call_context()
+role_models = dict(current.get("role_models") or {})
+role_models["report.writer"] = {
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5",
+}
+
+with bind_current_bundle_call_context_patch({"role_models": role_models}):
+    await self._run_report_agent(...)
+```
+
+For the full code examples across `@api`, `@mcp`, `@cron`, `@on_message`, and
+`@on_job`, read
+[bundle-agent-integration-README.md#model-selection-for-agent-roles](../bundle-agent-integration-README.md#model-selection-for-agent-roles).
+
 Channel rule:
 
 - React writes to the communicator and timeline

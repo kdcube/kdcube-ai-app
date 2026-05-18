@@ -192,43 +192,79 @@ Storage summary:
 
 This property is interpreted by `BaseEntrypoint`, not by bundle code directly.
 
-### Request-scoped override through `bundle_call_context`
+### Three scopes for role model selection
 
-Deployment-scoped `role_models` is still the durable source of model routing.
-For one invocation, bundle code may overlay role routing through
-`bundle_call_context.role_models`.
+Use the smallest scope that matches the desired lifetime.
 
-Use this when a bundle API or widget lets the user choose a temporary agent
-strength, for example:
+```text
+bundle source default
+configuration / configuration_defaults()
+        |
+        v
+deployment override
+bundles.yaml -> items[].config.role_models
+or live bundle props
+        |
+        v
+one-call overlay
+bundle_call_context.role_models
+        |
+        v
+SDK ModelRouter(role)
+```
 
-- `lite` -> Haiku
-- `regular` -> Sonnet
-- `strong` -> Opus
-
-Example:
+Bundle-level code default:
 
 ```python
-from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import bind_current_bundle_call_context_patch
+@property
+def configuration(self) -> Dict[str, Any]:
+    config = dict(super().configuration)
+    role_models = dict(config.get("role_models") or {})
+    role_models.setdefault(
+        "my.named.agent",
+        {"provider": "anthropic", "model": "claude-sonnet-4-6"},
+    )
+    config["role_models"] = role_models
+    return config
+```
 
-strength_to_model = {
-    "lite": "claude-haiku-4-5-20251001",
-    "regular": "claude-sonnet-4-6",
-    "strong": "claude-opus-4-1",
+External bundle props override:
+
+```yaml
+items:
+  - id: my.bundle@1-0
+    config:
+      role_models:
+        my.named.agent:
+          provider: anthropic
+          model: claude-sonnet-4-6
+        solver.react.v2.decision.v2.regular:
+          provider: anthropic
+          model: claude-haiku-4-5
+```
+
+Request-scoped overlay through `bundle_call_context`:
+
+```python
+from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import (
+    bind_current_bundle_call_context_patch,
+    get_current_bundle_call_context,
+)
+
+current = get_current_bundle_call_context()
+role_models = dict(current.get("role_models") or {})
+role_models["my.named.agent"] = {
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5",
 }
 
-model = strength_to_model.get(strength, strength_to_model["regular"])
-
-with bind_current_bundle_call_context_patch({
-    "role_models": {
-        "my.named.agent": {
-            "provider": "anthropic",
-            "model": model,
-        },
-    },
-    "my_bundle": {"selected_strength": strength},
-}):
+with bind_current_bundle_call_context_patch({"role_models": role_models}):
     await run_named_agent(...)
 ```
+
+The request overlay is appropriate inside `@api`, `@mcp`, `@cron`,
+`@on_message`, and `@on_job` handlers when the current request or job payload
+chooses a temporary agent strength.
 
 Precedence:
 
@@ -236,12 +272,15 @@ Precedence:
 2. effective bundle props `role_models`
 3. platform defaults
 
-The request-scoped override is portable into nested tools and isolated
-runtimes because `bundle_call_context` is snapshotted through
-`RUNTIME_GLOBALS_JSON`. It is not persisted back to `bundles.yaml`, Redis, or
-admin props. If a bundle wants the same override to apply to a later background
-job or request, it must store the selected mode in its own durable state or job
-payload and re-apply it in that later invocation.
+The request-scoped override is portable into nested SDK agents, React,
+in-process tools, and isolated runtimes because `bundle_call_context` is
+snapshotted through `RUNTIME_GLOBALS_JSON`. It is not persisted back to
+`bundles.yaml`, Redis, or admin props. If a bundle wants the same override to
+apply to a later background job or request, it must store the selected mode in
+its own durable state or job payload and re-apply it in that later invocation.
+
+For full examples across API, MCP, cron, chat, and background-job surfaces, see
+[Bundle Agent Integration](bundle-agent-integration-README.md#model-selection-for-agent-roles).
 
 ## `embedding`
 

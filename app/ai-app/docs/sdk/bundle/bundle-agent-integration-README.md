@@ -83,6 +83,257 @@ The model should not be asked to invent runtime ids or paths. Those must come
 from runtime context, job payload, bundle props, secret lookups, or prior tool
 results.
 
+## 2A. Model Selection For Agent Roles
+
+Every SDK model call should use a logical role such as
+`report.writer`, `memory.reconciler`, or
+`solver.react.v2.decision.v2.regular`. The platform model router maps that role
+to `{provider, model}`.
+
+There are three supported places to set the mapping.
+
+```text
+bundle code default
+entrypoint.configuration / configuration_defaults()
+        |
+        v
+deployment or admin override
+bundles.yaml -> items[].config.role_models
+or live bundle props
+        |
+        v
+current invocation overlay
+bundle_call_context.role_models
+        |
+        v
+ModelRouter(role) -> provider/model for SDK agent calls,
+React decisions, SDK tools, and isolated tool runtimes
+```
+
+Router precedence:
+
+1. `bundle_call_context.role_models` for the currently bound invocation
+2. effective bundle props `config.role_models`
+3. platform defaults
+
+The request overlay is inherited by nested SDK agent calls, React decision
+calls, in-process tools, and isolated Docker/Fargate tool runtimes because the
+processor snapshots `bundle_call_context` into `RUNTIME_GLOBALS_JSON` and child
+runtimes restore it. It is not persisted. If the same choice must affect a later
+background job, store the selected strength/model in the job payload and bind it
+again inside `@on_job`.
+
+### Bundle-Level Defaults In Code
+
+Use code defaults when the bundle owns the normal model policy. Merge with
+`super()` so platform roles are not dropped.
+
+```python
+from typing import Any, Dict
+
+class MyEntrypoint(BaseEntrypoint):
+    @property
+    def configuration(self) -> Dict[str, Any]:
+        config = dict(super().configuration)
+        role_models = dict(config.get("role_models") or {})
+        for role, spec in {
+            "report.writer": {
+                "provider": "anthropic",
+                "model": "claude-sonnet-4-6",
+            },
+            "report.writer.lite": {
+                "provider": "anthropic",
+                "model": "claude-haiku-4-5",
+            },
+            "report.writer.strong": {
+                "provider": "anthropic",
+                "model": "claude-opus-4-6",
+            },
+            "solver.react.v2.decision.v2.regular": {
+                "provider": "anthropic",
+                "model": "claude-sonnet-4-6",
+            },
+            "solver.react.v2.decision.v2.strong": {
+                "provider": "anthropic",
+                "model": "claude-opus-4-6",
+            },
+        }.items():
+            role_models.setdefault(role, spec)
+        config["role_models"] = role_models
+        return config
+```
+
+### External Bundle Props Override
+
+Use descriptor/admin props when the deployment operator should choose the model
+without editing bundle source.
+
+```yaml
+items:
+  - id: my.bundle@1-0
+    path: /bundles/my.bundle@1-0
+    config:
+      role_models:
+        report.writer:
+          provider: anthropic
+          model: claude-sonnet-4-6
+        report.writer.lite:
+          provider: anthropic
+          model: claude-haiku-4-5
+        report.writer.strong:
+          provider: anthropic
+          model: claude-opus-4-6
+        solver.react.v2.decision.v2.regular:
+          provider: anthropic
+          model: claude-sonnet-4-6
+        solver.react.v2.decision.v2.strong:
+          provider: anthropic
+          model: claude-opus-4-6
+```
+
+This is durable deployment state. It survives reloads and is exported with
+bundle props when the active descriptor provider supports export.
+
+### Ad Hoc Override For One Call
+
+Use `bundle_call_context.role_models` when a widget, API body, MCP call, cron
+decision, chat request, or background job chooses a temporary model strength.
+
+`bind_current_bundle_call_context_patch(...)` is a shallow patch. If several
+components may set role overrides, merge the existing `role_models` first:
+
+```python
+from contextlib import contextmanager
+from typing import Iterator
+
+from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import (
+    bind_current_bundle_call_context_patch,
+    get_current_bundle_call_context,
+)
+
+STRENGTH_MODELS = {
+    "lite": "claude-haiku-4-5",
+    "regular": "claude-sonnet-4-6",
+    "strong": "claude-opus-4-6",
+}
+
+
+@contextmanager
+def use_agent_model(
+    role: str,
+    *,
+    strength: str = "regular",
+    provider: str = "anthropic",
+) -> Iterator[None]:
+    model = STRENGTH_MODELS.get(strength, STRENGTH_MODELS["regular"])
+    current = get_current_bundle_call_context()
+    role_models = dict(current.get("role_models") or {})
+    role_models[role] = {"provider": provider, "model": model}
+    with bind_current_bundle_call_context_patch({
+        "role_models": role_models,
+        "my_bundle": {"agent_strength": strength},
+    }):
+        yield
+```
+
+The helper above can be used from any bundle surface.
+
+`@api(...)`:
+
+```python
+@api(method="POST", alias="report_run", route="operations")
+async def report_run(self, strength: str = "regular", **kwargs):
+    del kwargs
+    with use_agent_model("report.writer", strength=strength):
+        return await self._run_report_agent()
+```
+
+`@mcp(...)`:
+
+```python
+@mcp(alias="report_tools", route="operations")
+async def report_tools(self, strength: str = "regular", **kwargs):
+    del kwargs
+    with use_agent_model("report.writer", strength=strength):
+        return await self._build_report_mcp_app()
+```
+
+For MCP servers, bind the context around the code that actually performs the
+model call. If the decorated method only constructs a long-lived MCP app, bind
+again inside the MCP operation handler that runs later.
+
+`@cron(...)`:
+
+```python
+@cron(alias="nightly-report", cron_expression="0 2 * * *", span="system")
+async def nightly_report(self):
+    with use_agent_model("report.writer", strength="lite"):
+        await self._enqueue_or_run_nightly_report()
+```
+
+`@on_message`:
+
+```python
+@on_message
+async def run(self, **params):
+    strength = str(params.get("agent_strength") or "regular")
+    with use_agent_model("solver.react.v2.decision.v2.regular", strength=strength):
+        return await super().run(**params)
+```
+
+`@on_job`:
+
+```python
+@on_job
+async def on_job(self, **kwargs):
+    payload = kwargs.get("payload") or {}
+    strength = str(payload.get("agent_strength") or "regular")
+    with use_agent_model("report.writer", strength=strength):
+        return await self._run_report_job(**kwargs)
+```
+
+If the selection arrives through Socket.IO/SSE ingress instead of inside bundle
+code, place the same JSON object in `ChatTaskPayload.bundle_call_context` before
+the task is queued:
+
+```json
+{
+  "role_models": {
+    "solver.react.v2.decision.v2.regular": {
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5"
+    }
+  },
+  "my_bundle": {
+    "agent_strength": "lite"
+  }
+}
+```
+
+### React Role Ids
+
+For React, override the actual role ids used by the runtime:
+
+```python
+with bind_current_bundle_call_context_patch({
+    "role_models": {
+        "solver.react.v2.decision.v2.regular": {
+            "provider": "anthropic",
+            "model": "claude-haiku-4-5",
+        },
+        "solver.react.v2.decision.v2.strong": {
+            "provider": "anthropic",
+            "model": "claude-opus-4-6",
+        },
+    },
+}):
+    result = await react.run(allowed_plugins=allowed_plugins)
+```
+
+This affects SDK model calls routed through `ModelServiceBase` /
+`ModelRouter`. Direct provider clients that bypass the SDK router will not see
+the override.
+
 ### React Agent Inputs
 
 A React bundle agent is configured through `BaseWorkflow.build_react(...)`.

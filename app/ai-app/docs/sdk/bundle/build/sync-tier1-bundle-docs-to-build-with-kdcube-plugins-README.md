@@ -112,7 +112,9 @@ Recommended:
   materialization via `shared_sources`
 - keep [bundle-agent-integration-README.md](../bundle-agent-integration-README.md)
   reachable for React descriptors, file-producing tool contracts, MCP
-  connector/server wiring, and Claude Code subprocess agents
+  connector/server wiring, Claude Code subprocess agents, and the common
+  model-selection recipe that uses `config.role_models` for defaults and
+  `bundle_call_context.role_models` for one API/MCP/cron/chat/job invocation
 - keep [browser-tools-README.md](../../integrations/browser/browser-tools-README.md)
   reachable for ReAct-side browser verification of generated HTML and widgets
 - keep [ngrok-README.md](../../../service/cicd/ngrok-README.md) reachable for
@@ -165,6 +167,10 @@ The plugin should steer agents away from these recurring mistakes:
 - do not expose model-facing tool parameters for runtime ids the model cannot
   know; use runtime context, `bundle_call_context`, job payload, or opaque refs
   returned by prior tools
+- do not mutate durable `role_models` when the user requested a one-off
+  lite/regular/strong agent run; bind `bundle_call_context.role_models` around
+  the downstream SDK agent/React/tool call and re-bind inside later `@on_job`
+  handlers from the job payload when needed
 - file-producing tools use the strict `ret.artifact_type == "files"` protocol
   with `ret.files[]`, or trusted tool-side `host_files(...)`
 - `host_files(...)` documentation states that it requires prepared tool context

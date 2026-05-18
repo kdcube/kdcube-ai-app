@@ -435,6 +435,36 @@ Two hard rules:
   `get_secret_async(...)`, `get_user_secret_async(...)`,
   `set_user_secret_async(...)`, and `delete_user_secret_async(...)`.
 
+### Agent Role Model Configuration
+
+Model selection for SDK agents is ordinary bundle config when it should be
+durable for the deployment:
+
+```yaml
+items:
+  - id: my.bundle@1-0
+    config:
+      role_models:
+        report.writer:
+          provider: anthropic
+          model: claude-sonnet-4-6
+        report.writer.lite:
+          provider: anthropic
+          model: claude-haiku-4-5
+        solver.react.v2.decision.v2.regular:
+          provider: anthropic
+          model: claude-sonnet-4-6
+```
+
+Use this for environment-level policy. It is read from effective bundle props,
+can be changed by descriptor/admin overrides, and survives reload.
+
+Do not use descriptor props for a one-off user choice such as "run this API call
+with lite/regular/strong". For that, the bundle should put
+`role_models` in `bundle_call_context` around the current `@api`, `@mcp`,
+`@cron`, `@on_message`, or `@on_job` execution. See
+[bundle-agent-integration-README.md#model-selection-for-agent-roles](../bundle-agent-integration-README.md#model-selection-for-agent-roles).
+
 ## One Environment Can Host Many Bundles
 
 One `tenant/project` runtime is one environment.

@@ -76,6 +76,7 @@ Critical widget/browser rule:
 | Isolated code execution and generated-code work | `exec_tools`, isolated runtime, tool bridge | [Bundle Agent Integration](../bundle-agent-integration-README.md), [SDK Tools](../../tools/sdk-tools-README.md) |
 | Context, attachments, hosted files, and conversation-scoped reads | `ctx_tools`, `io_tools`, hosting/runtime APIs | [Bundle Runtime](../bundle-runtime-README.md), [SDK Tools](../../tools/sdk-tools-README.md) |
 | ReAct agent with bundle tools and skills | `BaseWorkflow.build_react(...)`, `tools_descriptor.py`, `skills_descriptor.py` | [Bundle Agent Integration](../bundle-agent-integration-README.md) |
+| Per-role model routing and temporary model strength selection | `config.role_models` for defaults/descriptor overrides; `bundle_call_context.role_models` for one API/MCP/cron/chat/job call | [Bundle Agent Integration](../bundle-agent-integration-README.md#model-selection-for-agent-roles), [Bundle Runtime](../bundle-runtime-README.md#request-scoped-role-model-override) |
 | Bundle-served MCP endpoint | `@mcp(...)` | [Bundle Platform Integration](../bundle-platform-integration-README.md), [MCP Tools](../../tools/mcp-README.md) |
 | Claude Code subagent with scoped MCP/tools | `ClaudeCodeAgent`, `ClaudeCodeWorkspaceConfig` | [Bundle Agent Integration](../bundle-agent-integration-README.md) |
 | Browser widget or Mini App | `@ui_widget(...)`, source-folder widget build, operations/public APIs | [Bundle Widget Integration](../bundle-widget-integration-README.md) |

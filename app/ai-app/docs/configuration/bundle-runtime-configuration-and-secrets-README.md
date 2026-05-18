@@ -159,6 +159,58 @@ Reserved platform-interpreted key:
 |---|---|
 | `role_models` | request-scoped overlay over effective bundle `role_models`; used by the model router for model-role selection during the bound invocation |
 
+Role model scope diagram:
+
+```text
+bundle source default
+configuration / configuration_defaults()
+        |
+deployment override
+bundles.yaml -> items[].config.role_models
+or live bundle props
+        |
+current invocation overlay
+bundle_call_context.role_models
+        |
+SDK ModelRouter(role)
+```
+
+Deployment-level model selection is a bundle prop:
+
+```yaml
+items:
+  - id: my.bundle@1-0
+    config:
+      role_models:
+        report.writer:
+          provider: anthropic
+          model: claude-sonnet-4-6
+```
+
+One API/MCP/cron/chat/job call can temporarily override the same role without
+mutating bundle props:
+
+```python
+from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import (
+    bind_current_bundle_call_context_patch,
+    get_current_bundle_call_context,
+)
+
+ctx = get_current_bundle_call_context()
+role_models = dict(ctx.get("role_models") or {})
+role_models["report.writer"] = {
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5",
+}
+
+with bind_current_bundle_call_context_patch({"role_models": role_models}):
+    await run_report_agent()
+```
+
+The overlay follows nested SDK agents, React, in-process tools, and isolated
+tool runtimes while the context is bound. For surface-specific examples, see
+[Bundle Agent Integration](../sdk/bundle/bundle-agent-integration-README.md#model-selection-for-agent-roles).
+
 ## Decide the scope before you write code
 
 | If the value belongs to... | Use | Do not use |

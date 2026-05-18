@@ -221,7 +221,7 @@ with bind_current_bundle_call_context_patch({
     "role_models": {
         "my.named.agent": {
             "provider": "anthropic",
-            "model": "claude-opus-4-1",
+            "model": "claude-opus-4-6",
         },
     },
 }):
@@ -243,30 +243,73 @@ Rules:
 
 ### Request-scoped role model override
 
-Static model routing belongs in bundle props:
+Static model routing belongs in bundle props. One-call routing belongs in
+`bundle_call_context.role_models`.
+
+```text
+bundle default -> bundle props override -> bundle_call_context overlay
+                                      \
+                                       -> ModelRouter(role)
+```
+
+Bundle default in code:
+
+```python
+@property
+def configuration(self):
+    config = dict(super().configuration)
+    role_models = dict(config.get("role_models") or {})
+    role_models.setdefault(
+        "my.named.agent",
+        {"provider": "anthropic", "model": "claude-sonnet-4-6"},
+    )
+    config["role_models"] = role_models
+    return config
+```
+
+External bundle props override:
 
 ```yaml
-config:
-  role_models:
-    my.named.agent:
-      provider: anthropic
-      model: claude-sonnet-4-6
+items:
+  - id: my.bundle@1-0
+    config:
+      role_models:
+        my.named.agent:
+          provider: anthropic
+          model: claude-sonnet-4-6
+        solver.react.v2.decision.v2.regular:
+          provider: anthropic
+          model: claude-haiku-4-5
 ```
 
 For one request, a bundle may overlay the same role through
 `bundle_call_context.role_models`:
 
 ```python
+from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import (
+    bind_current_bundle_call_context_patch,
+    get_current_bundle_call_context,
+)
+
+current = get_current_bundle_call_context()
+role_models = dict(current.get("role_models") or {})
+role_models["my.named.agent"] = {
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5-20251001",
+}
+
 with bind_current_bundle_call_context_patch({
-    "role_models": {
-        "my.named.agent": {
-            "provider": "anthropic",
-            "model": "claude-haiku-4-5-20251001",
-        }
-    }
+    "role_models": role_models,
+    "my_bundle": {"agent_strength": "lite"},
 }):
     await my_agent_run(...)
 ```
+
+Use the same call-context patch inside `@api`, `@mcp`, `@cron`,
+`@on_message`, or `@on_job` when the current request/job chooses a temporary
+agent model. For MCP servers, bind around the actual operation that performs
+the model call; if the decorated method only builds an MCP app, bind inside the
+app's later request handler.
 
 The router precedence is:
 
@@ -310,6 +353,11 @@ current request uses Haiku;
 next request falls back to configured Sonnet
 unless override is re-applied
 ```
+
+The overlay follows nested SDK agents, React, in-process tools, and isolated
+Docker/Fargate runtimes while the context is bound. It affects SDK model calls
+through `ModelServiceBase` / `ModelRouter`, not direct provider clients that
+bypass the SDK router.
 
 Communicator behavior in this path:
 - if request routing carries an exact socket/stream target, direct peer delivery

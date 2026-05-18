@@ -457,6 +457,27 @@ Important current rule:
   follow the current API/widget invocation into tools, nested agents, or
   isolated runtimes; for request-scoped model routing, set
   `bundle_call_context.role_models`
+- the same pattern applies in `@mcp`, `@cron`, `@on_message`, and `@on_job`:
+  bind the `bundle_call_context.role_models` override around the downstream
+  SDK agent/React/tool call, not around unrelated setup code
+
+Model-selection sketch:
+
+```text
+@api / @mcp / @cron / @on_message / @on_job
+        |
+        | bind_current_bundle_call_context_patch({
+        |   "role_models": {"my.agent": {"provider": "...", "model": "..."}}
+        | })
+        v
+downstream SDK agent / React / tool call
+        |
+        v
+ModelRouter("my.agent") uses the temporary model for this invocation
+```
+
+For complete code examples, read
+[bundle-agent-integration-README.md#model-selection-for-agent-roles](bundle-agent-integration-README.md#model-selection-for-agent-roles).
 
 Route mapping:
 

@@ -95,6 +95,9 @@ Rules:
 - `config/bundles.template.yaml` documents non-secret deployment props
 - `config/bundles.secrets.template.yaml` documents deployment-scoped bundle
   secrets, but never real secret values
+- if the release changes `role_models`, document which agent roles changed and
+  whether the change is a bundle default or a deployment descriptor override;
+  do not encode one-off per-request model choices in release descriptors
 - if the bundle has public/external users, docs explain the bundle user-scope
   model and do not imply every user must have a KDCube control-plane account
 - personal OAuth tokens or user credentials are described as user-scoped runtime

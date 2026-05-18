@@ -236,11 +236,24 @@ For a React-backed bundle, prove the agent surface before manual testing:
   leave the state untouched
 - public webhooks or operations APIs stay thin and do not duplicate React tool
   business logic
+- bundle code defines normal model routing under `role_models`, and descriptor
+  overrides can replace those roles without editing source
+- temporary model-strength choices from APIs, MCP operations, cron, chat turns,
+  or jobs bind `bundle_call_context.role_models` around the downstream agent
+  call instead of mutating durable bundle props
 
 Good React smoke tests:
 
 - descriptor aliases match expected domain names, for example `tasks` and
   `user_memory`
+- model-routing tests prove:
+  - code defaults expose at least the roles the bundle uses
+  - `bundles.yaml -> config.role_models` overrides a default role
+  - `bundle_call_context.role_models` overrides only the current invocation and
+    then falls back to the configured role
+  - React role ids use the real runtime names
+    `solver.react.v2.decision.v2.regular` and
+    `solver.react.v2.decision.v2.strong`
 - bundle-local storage tests prove each domain writes to its own storage area
 - durable asset tests prove each task/memory is stored as one source-of-truth
   file and any SQLite index is rebuildable

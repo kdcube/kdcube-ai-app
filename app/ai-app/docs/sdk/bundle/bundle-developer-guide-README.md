@@ -64,6 +64,88 @@ supervisor/runtime tool execution after the SDK has prepared the tool context
 with hosting service, tenant/project/user/conversation/turn scope, conversation
 storage, and output directory.
 
+## Common Recipe: Choose A Model For One Agent Call
+
+Use this when an API, widget, chat request, or job lets the caller choose a
+temporary agent strength such as `lite`, `regular`, or `strong`.
+
+```text
+bundle code default
+  -> config.role_models
+deployment/admin override
+  -> bundles.yaml items[].config.role_models
+one invocation only
+  -> bundle_call_context.role_models
+```
+
+The model router resolves the current call in that order:
+
+1. `bundle_call_context.role_models`
+2. effective bundle props `config.role_models`
+3. platform defaults
+
+The one-call override is visible to nested SDK agents, React, in-process tools,
+and isolated Docker/Fargate tool runtimes while the context is bound. It is not
+saved to bundle props; re-apply it for later jobs or requests from the job
+payload or durable state.
+
+Bundle-level default in code:
+
+```python
+class MyEntrypoint(BaseEntrypoint):
+    @property
+    def configuration(self):
+        config = dict(super().configuration)
+        role_models = dict(config.get("role_models") or {})
+        role_models.setdefault(
+            "report.writer",
+            {"provider": "anthropic", "model": "claude-sonnet-4-6"},
+        )
+        config["role_models"] = role_models
+        return config
+```
+
+External deployment override:
+
+```yaml
+items:
+  - id: my.bundle@1-0
+    config:
+      role_models:
+        report.writer:
+          provider: anthropic
+          model: claude-sonnet-4-6
+        solver.react.v2.decision.v2.regular:
+          provider: anthropic
+          model: claude-haiku-4-5
+```
+
+Ad hoc override in `@api`, `@mcp`, `@cron`, `@on_message`, or `@on_job` code:
+
+```python
+from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import (
+    bind_current_bundle_call_context_patch,
+    get_current_bundle_call_context,
+)
+
+def role_context(role: str, model: str):
+    current = get_current_bundle_call_context()
+    role_models = dict(current.get("role_models") or {})
+    role_models[role] = {"provider": "anthropic", "model": model}
+    return {"role_models": role_models}
+
+with bind_current_bundle_call_context_patch(
+    role_context("report.writer", "claude-haiku-4-5")
+):
+    await self.run_my_agent_or_react(...)
+```
+
+When the selection comes from ingress rather than bundle code, put the same JSON
+object into `ChatTaskPayload.bundle_call_context` before enqueueing the task.
+The processor binds that payload field into runtime context before bundle code
+runs. See [bundle-agent-integration-README.md](bundle-agent-integration-README.md#model-selection-for-agent-roles)
+and [bundle-runtime-README.md](bundle-runtime-README.md#request-scoped-role-model-override).
+
 ## Environment Boundary
 
 For bundle authors, `tenant/project` means one isolated environment.
