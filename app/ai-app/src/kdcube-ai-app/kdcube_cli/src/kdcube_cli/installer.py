@@ -3622,6 +3622,32 @@ def gather_configuration(
                 ui_dockerfile_final = fallback_ui_dockerfile
         except Exception:
             pass
+    if not ui_image_final and ui_build_context_final:
+        try:
+            ui_context_path = Path(ui_build_context_final).expanduser().resolve()
+            source_path_value = env_main.entries.get("UI_SOURCE_PATH", (None, None))[1]
+            source_path = Path(str(source_path_value or "").strip().strip("'\""))
+            source_candidate = (
+                source_path.expanduser().resolve()
+                if source_path.is_absolute()
+                else (ui_context_path / source_path).resolve()
+            )
+            fallback_ui_source = defaults.get("ui_source_path", "")
+            fallback_source_candidate = (
+                ui_context_path / fallback_ui_source
+            ).resolve() if fallback_ui_source else None
+            if (
+                fallback_source_candidate is not None
+                and not source_candidate.exists()
+                and fallback_source_candidate.exists()
+            ):
+                console.print(
+                    "[yellow]UI source path did not exist in the UI build context; "
+                    f"using {fallback_ui_source}.[/yellow]"
+                )
+                update_env_value(env_main, "UI_SOURCE_PATH", fallback_ui_source)
+        except Exception:
+            pass
 
     ui_env_build_rel_final = env_main.entries.get("UI_ENV_BUILD_RELATIVE", (None, None))[1]
     ui_env_build_rel_final = normalize_env_build_relative(ui_env_build_rel_final)
