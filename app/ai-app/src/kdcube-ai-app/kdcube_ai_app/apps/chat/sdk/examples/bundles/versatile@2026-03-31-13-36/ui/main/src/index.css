@@ -2,15 +2,15 @@
 
 :root {
   color-scheme: light;
-  --bg: #f7fbfa;
+  --bg: #f6f8fa;
   --surface: #ffffff;
-  --surface-2: #eef8f7;
+  --surface-2: #f6f8fa;
   --surface-3: #fff8dc;
-  --ink: #0f1d2a;
-  --muted: #7392aa;
-  --text-2: #35536e;
-  --line: #d9ecea;
-  --line-strong: #b9d8d6;
+  --ink: #24292f;
+  --muted: #57606a;
+  --text-2: #3f4a55;
+  --line: #d0d7de;
+  --line-strong: #8c959f;
   --accent: #009c92;
   --accent-soft: rgba(1, 190, 178, 0.12);
   --teal-pale: #c6f3f1;
@@ -29,9 +29,9 @@
   --danger-soft: #ffe0ef;
   --success: #3a8030;
   --success-soft: #e8f7e5;
-  --paper: rgba(255, 255, 255, 0.97);
+  --paper: #ffffff;
   --paper-strong: #ffffff;
-  --shadow: 0 10px 24px rgba(13, 30, 44, 0.05);
+  --shadow: 0 1px 2px rgba(31, 35, 40, 0.04);
 }
 
 html,
@@ -44,11 +44,7 @@ body {
   margin: 0;
   color: var(--ink);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background:
-    linear-gradient(rgba(216, 236, 235, 0.5) 1px, transparent 1px) 0 0 / 100% 30px,
-    linear-gradient(145deg, rgba(255, 224, 239, 0.18) 0%, transparent 36%),
-    linear-gradient(215deg, rgba(255, 248, 220, 0.34) 0%, transparent 42%),
-    var(--bg);
+  background: var(--bg);
 }
 
 code,
@@ -75,11 +71,23 @@ a {
   background: var(--paper);
   border: 1px solid var(--line);
   box-shadow: var(--shadow);
+  border-radius: 6px;
 }
 
 .markdown-body {
-  color: var(--text-2);
-  line-height: 1.7;
+  color: var(--ink);
+  line-height: 1.62;
+}
+
+.shell-grid .rounded-lg,
+.shell-grid .rounded-md {
+  border-radius: 6px;
+}
+
+.shell-grid input,
+.shell-grid textarea,
+.shell-grid button {
+  box-shadow: none;
 }
 
 .markdown-body p:first-child,

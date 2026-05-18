@@ -1,17 +1,17 @@
 :root {
   color-scheme: light;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: #f6fafa;
-  color: #0d1e2c;
-  --bg: #f6fafa;
+  background: #f6f8fa;
+  color: #24292f;
+  --bg: #f6f8fa;
   --surface: #ffffff;
-  --surface-2: #eef8f7;
+  --surface-2: #f6f8fa;
   --surface-3: #fdf9ee;
-  --ink: #0d1e2c;
-  --text-2: #3a5672;
-  --muted: #7a99b0;
-  --line: #d8eceb;
-  --line-strong: #bcdada;
+  --ink: #24292f;
+  --text-2: #3f4a55;
+  --muted: #57606a;
+  --line: #d0d7de;
+  --line-strong: #8c959f;
   --teal: #01beb2;
   --teal-dark: #009c92;
   --teal-pale: #c6f3f1;
@@ -43,9 +43,7 @@ body,
 
 body {
   margin: 0;
-  background:
-    linear-gradient(rgba(216, 236, 235, 0.55) 1px, transparent 1px) 0 0 / 100% 30px,
-    var(--bg);
+  background: var(--bg);
 }
 
 button,
@@ -71,7 +69,7 @@ select,
 textarea {
   width: 100%;
   border: 1px solid var(--line-strong);
-  border-radius: 8px;
+  border-radius: 6px;
   background: #ffffff;
   color: var(--ink);
   outline: none;
@@ -85,8 +83,8 @@ textarea {
 input:focus,
 select:focus,
 textarea:focus {
-  border-color: var(--teal);
-  box-shadow: 0 0 0 3px rgba(1, 190, 178, 0.13);
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(67, 114, 195, 0.12);
 }
 
 .app-shell {
@@ -128,14 +126,14 @@ textarea:focus {
   align-items: center;
   gap: 4px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.92);
+  border-radius: 6px;
+  background: #ffffff;
   padding: 3px;
 }
 
 .page-tabs button {
   min-height: 31px;
-  border-radius: 7px;
+  border-radius: 5px;
   color: var(--text-2);
   font-size: 13px;
   font-weight: 650;
@@ -144,12 +142,12 @@ textarea:focus {
 
 .page-tabs button:hover:not(:disabled) {
   background: var(--surface-2);
-  color: var(--teal-dark);
+  color: var(--blue-dark);
 }
 
 .page-tabs button.active {
-  background: var(--teal-pale);
-  color: var(--teal-dark);
+  background: var(--blue-pale);
+  color: var(--blue-dark);
 }
 
 .page {
@@ -196,7 +194,7 @@ textarea:focus {
 .ghost-button,
 .primary-button,
 .link-button {
-  border-radius: 8px;
+  border-radius: 6px;
   font-size: 13px;
   font-weight: 650;
   line-height: 1.2;
@@ -213,22 +211,22 @@ textarea:focus {
 
 .ghost-button:hover:not(:disabled) {
   background: var(--surface-2);
-  border-color: rgba(1, 190, 178, 0.32);
-  color: var(--teal-dark);
+  border-color: rgba(67, 114, 195, 0.32);
+  color: var(--blue-dark);
 }
 
 .primary-button {
-  border: 1px solid var(--teal-dark);
-  background: var(--teal-dark);
+  border: 1px solid var(--blue);
+  background: var(--blue);
   color: #ffffff;
 }
 
 .primary-button:hover:not(:disabled) {
-  background: #087d76;
+  background: var(--blue-dark);
 }
 
 .link-button {
-  color: var(--teal-dark);
+  color: var(--blue-dark);
   padding-inline: 8px;
 }
 
@@ -257,8 +255,8 @@ textarea:focus {
 .empty-state,
 .memory-widget-direct {
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.96);
+  border-radius: 6px;
+  background: #ffffff;
 }
 
 .list-card {
@@ -314,10 +312,10 @@ textarea:focus {
 .pill {
   display: inline-flex;
   align-items: center;
-  border: 1px solid rgba(1, 190, 178, 0.22);
+  border: 1px solid rgba(67, 114, 195, 0.18);
   border-radius: 999px;
-  background: var(--teal-pale);
-  color: var(--teal-dark);
+  background: var(--blue-pale);
+  color: var(--blue-dark);
   font-size: 11px;
   font-weight: 700;
   line-height: 1;
@@ -392,9 +390,9 @@ textarea:focus {
   width: min(100%, 640px);
   margin: 22px auto 0;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 6px;
   background: #ffffff;
-  box-shadow: 0 10px 24px rgba(13, 30, 44, 0.05);
+  box-shadow: 0 1px 2px rgba(31, 35, 40, 0.04);
   padding: 24px;
 }
 
@@ -402,10 +400,10 @@ textarea:focus {
   display: inline-flex;
   align-items: center;
   min-height: 24px;
-  border: 1px solid rgba(1, 190, 178, 0.22);
-  border-radius: 7px;
+  border: 1px solid rgba(67, 114, 195, 0.18);
+  border-radius: 6px;
   background: var(--surface-2);
-  color: var(--teal-dark);
+  color: var(--blue-dark);
   font-size: 12px;
   font-weight: 720;
   padding: 4px 8px;

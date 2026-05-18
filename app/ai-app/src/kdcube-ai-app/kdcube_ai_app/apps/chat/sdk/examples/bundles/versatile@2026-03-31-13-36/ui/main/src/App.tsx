@@ -1296,12 +1296,12 @@ function MarkdownBlock({ content, compact = false }: { content: string; compact?
           ol: ({ children }) => <ol className={compact ? 'my-1 list-decimal pl-5' : 'my-3 list-decimal pl-6'}>{children}</ol>,
           li: ({ children }) => <li className="my-1">{children}</li>,
           blockquote: ({ children }) => (
-            <blockquote className="my-3 border-l-2 border-[rgba(244,204,71,0.42)] pl-4 text-[var(--muted)]">
+            <blockquote className="my-3 border-l-2 border-[var(--line-strong)] pl-4 text-[var(--muted)]">
               {children}
             </blockquote>
           ),
           pre: ({ children }) => (
-            <pre className="my-3 overflow-x-auto rounded-lg bg-[#11202b] px-4 py-3 text-sm text-[#edf5f6]">
+            <pre className="my-3 overflow-x-auto rounded-md border border-[var(--line)] bg-[var(--surface-2)] px-4 py-3 text-sm text-[var(--ink)]">
               {children}
             </pre>
           ),
@@ -1309,7 +1309,7 @@ function MarkdownBlock({ content, compact = false }: { content: string; compact?
             className ? (
               <code className={className}>{children}</code>
             ) : (
-              <code className="rounded bg-[rgba(17,32,43,0.08)] px-1.5 py-0.5 text-[0.92em]">
+              <code className="rounded border border-[var(--line)] bg-[var(--surface-2)] px-1.5 py-0.5 text-[0.92em]">
                 {children}
               </code>
             ),
@@ -1384,7 +1384,7 @@ function ConversationsSidebar({
 }) {
   return (
     <aside className="glass-panel flex min-h-[520px] overflow-hidden rounded-lg lg:sticky lg:top-4">
-      <nav className="flex w-12 flex-col items-center gap-2 border-r border-[var(--line)] bg-[rgba(255,255,255,0.54)] py-3">
+      <nav className="flex w-12 flex-col items-center gap-2 border-r border-[var(--line)] bg-[var(--surface-2)] py-3">
         {[
           ['Chats', 'C'],
           ['Artifacts', 'A'],
@@ -1419,7 +1419,7 @@ function ConversationsSidebar({
             type="button"
             onClick={onStartNew}
             disabled={disabled}
-            className="rounded-md border border-[var(--line)] bg-white/70 px-2.5 py-1.5 text-sm font-medium transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-md border border-[var(--line)] bg-white px-2.5 py-1.5 text-sm font-medium transition hover:bg-[var(--surface-2)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             New
           </button>
@@ -1431,12 +1431,12 @@ function ConversationsSidebar({
             onChange={(event) => onQueryChange(event.target.value)}
             placeholder="Search chats"
             disabled={disabled}
-            className="min-w-0 flex-1 rounded-md border border-[var(--line)] bg-white/75 px-3 py-2 text-sm outline-none transition placeholder:text-[var(--muted)] focus:border-[var(--action)]"
+            className="min-w-0 flex-1 rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none transition placeholder:text-[var(--muted)] focus:border-[var(--action)]"
           />
           <button
             type="button"
             onClick={onRefresh}
-            className="rounded-md border border-[var(--line)] bg-white/70 px-2.5 py-2 text-sm font-medium transition hover:bg-white"
+            className="rounded-md border border-[var(--line)] bg-white px-2.5 py-2 text-sm font-medium transition hover:bg-[var(--surface-2)]"
           >
             R
           </button>
@@ -1474,7 +1474,7 @@ function ConversationsSidebar({
                   className={`block w-full rounded-lg border px-3 py-3 text-left transition ${
                     isActive
                       ? 'border-[rgba(67,114,195,0.26)] bg-[var(--action-soft)]'
-                      : 'border-[var(--line)] bg-white/65 hover:border-[rgba(67,114,195,0.22)] hover:bg-white'
+                      : 'border-[var(--line)] bg-white hover:border-[rgba(67,114,195,0.22)] hover:bg-[var(--surface-2)]'
                   } disabled:cursor-wait disabled:opacity-70`}
                 >
                   <div className="flex items-start gap-2">
@@ -1540,7 +1540,7 @@ function StepList({ steps }: { steps: TurnStep[] }) {
   return (
     <div className="space-y-2 pt-3">
       {steps.map((step) => (
-        <div key={step.step} className="rounded-lg border border-[var(--line)] bg-white/55 px-3 py-3">
+        <div key={step.step} className="rounded-lg border border-[var(--line)] bg-white px-3 py-3">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">{step.title || step.step}</span>
             <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] ${stepTone(step.status)}`}>
@@ -1651,7 +1651,7 @@ function LinksPanel({ links }: { links: TurnLink[] }) {
           href={link.url}
           target="_blank"
           rel="noreferrer"
-          className="block rounded-lg border border-[var(--line)] bg-white/65 px-4 py-3 transition hover:border-[rgba(67,114,195,0.28)] hover:bg-white"
+          className="block rounded-lg border border-[var(--line)] bg-white px-4 py-3 transition hover:border-[rgba(67,114,195,0.28)] hover:bg-[var(--surface-2)]"
         >
           <div className="flex flex-wrap items-center gap-2">
             <span className={`rounded-full px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] ${toneClassForLink(link.kind)}`}>
@@ -1688,7 +1688,7 @@ function ThinkingBlock({
       </div>
       <div className="max-h-[260px] space-y-3 overflow-auto pr-1">
         {sortedEntries.map((entry) => (
-          <div key={entry.id} className="rounded-lg border border-[rgba(240,188,46,0.2)] bg-white/65 px-3 py-3">
+          <div key={entry.id} className="rounded-lg border border-[rgba(240,188,46,0.2)] bg-white px-3 py-3">
             <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
               <span className="font-semibold text-[var(--ink)]">{entry.agent || entry.title}</span>
               {entry.status ? <span>{entry.status}</span> : null}
@@ -1735,7 +1735,7 @@ function TimelineFeed({ entries }: { entries: TimelineEntry[] }) {
   return (
     <div className="space-y-3 pt-3">
       {sortedEntries.map((entry) => (
-        <div key={entry.id} className="rounded-lg border border-[var(--line)] bg-white/60 px-4 py-4">
+        <div key={entry.id} className="rounded-lg border border-[var(--line)] bg-white px-4 py-4">
           <div className="flex flex-wrap items-center gap-2 pb-2">
             <span className={`rounded-full px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] ${badgeClass(entry.kind)}`}>
               {entry.kind}
@@ -1751,7 +1751,7 @@ function TimelineFeed({ entries }: { entries: TimelineEntry[] }) {
                 <MarkdownBlock content={entry.body} compact />
               </div>
             ) : entry.format === 'json' || entry.format === 'code' ? (
-              <pre className="max-h-[360px] overflow-auto rounded-lg bg-[#11202b] px-4 py-3 text-sm text-[#edf5f6]">
+              <pre className="max-h-[360px] overflow-auto rounded-md border border-[var(--line)] bg-[var(--surface-2)] px-4 py-3 text-sm text-[var(--ink)]">
                 {entry.body}
               </pre>
             ) : (
@@ -1828,7 +1828,7 @@ function DownloadsPanel({
                 key={attachment.id}
                 type="button"
                 onClick={() => void handleAttachmentDownload(attachment, index)}
-                className="flex w-full items-center justify-between rounded-lg border border-[var(--line)] bg-white/60 px-4 py-3 text-left transition hover:bg-white"
+                className="flex w-full items-center justify-between rounded-lg border border-[var(--line)] bg-white px-4 py-3 text-left transition hover:bg-[var(--surface-2)]"
               >
                 <div>
                   <div className="font-medium">{attachment.name}</div>
@@ -1856,7 +1856,7 @@ function DownloadsPanel({
                 key={file.rn}
                 type="button"
                 onClick={() => void handleFileDownload(file)}
-                className="flex w-full items-center justify-between rounded-lg border border-[var(--line)] bg-white/60 px-4 py-3 text-left transition hover:bg-white"
+                className="flex w-full items-center justify-between rounded-lg border border-[var(--line)] bg-white px-4 py-3 text-left transition hover:bg-[var(--surface-2)]"
               >
                 <div>
                   <div className="font-medium">{file.filename}</div>
@@ -1901,7 +1901,7 @@ function ArtifactFeed({ artifacts }: { artifacts: Artifact[] }) {
 
         if (artifact.kind === 'canvas') {
           return (
-            <details key={`${artifact.kind}-${artifact.name}`} className="rounded-lg border border-[var(--line)] bg-white/60 px-4 py-4">
+            <details key={`${artifact.kind}-${artifact.name}`} className="rounded-lg border border-[var(--line)] bg-white px-4 py-4">
               <summary className="cursor-pointer list-none font-medium">
                 {artifact.title || artifact.name}
                 <span className="pl-2 text-xs uppercase tracking-[0.12em] text-[var(--muted)]">
@@ -1914,7 +1914,7 @@ function ArtifactFeed({ artifacts }: { artifacts: Artifact[] }) {
                     <MarkdownBlock content={artifact.content} />
                   </div>
                 ) : (
-                  <pre className="max-h-[360px] overflow-auto rounded-lg bg-[#11202b] px-4 py-3 text-sm text-[#edf5f6]">
+                  <pre className="max-h-[360px] overflow-auto rounded-md border border-[var(--line)] bg-[var(--surface-2)] px-4 py-3 text-sm text-[var(--ink)]">
                     {artifact.content}
                   </pre>
                 )}
@@ -1930,7 +1930,7 @@ function ArtifactFeed({ artifacts }: { artifacts: Artifact[] }) {
               href={artifact.url}
               target="_blank"
               rel="noreferrer"
-              className="block rounded-lg border border-[var(--line)] bg-white/65 px-4 py-4 transition hover:-translate-y-0.5 hover:border-[rgba(67,114,195,0.26)]"
+              className="block rounded-lg border border-[var(--line)] bg-white px-4 py-4 transition hover:border-[rgba(67,114,195,0.26)] hover:bg-[var(--surface-2)]"
             >
               <div className="pb-1 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">
                 Link
@@ -1943,7 +1943,7 @@ function ArtifactFeed({ artifacts }: { artifacts: Artifact[] }) {
 
         if (artifact.kind === 'file') {
           return (
-            <div key={`${artifact.kind}-${artifact.rn}`} className="rounded-lg border border-[var(--line)] bg-white/65 px-4 py-4">
+            <div key={`${artifact.kind}-${artifact.rn}`} className="rounded-lg border border-[var(--line)] bg-white px-4 py-4">
               <div className="pb-1 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">
                 File
               </div>
@@ -1981,7 +1981,7 @@ function ArtifactFeed({ artifacts }: { artifacts: Artifact[] }) {
                     href={item.url}
                     target="_blank"
                     rel="noreferrer"
-                    className="block rounded-lg border border-[var(--line)] bg-[rgba(255,255,255,0.7)] px-3 py-3 transition hover:border-[rgba(67,114,195,0.26)]"
+                    className="block rounded-lg border border-[var(--line)] bg-white px-3 py-3 transition hover:border-[rgba(67,114,195,0.26)] hover:bg-[var(--surface-2)]"
                   >
                     <div className="font-medium">{item.title || item.url}</div>
                     {item.body ? <p className="pt-1 text-sm text-[var(--muted)]">{item.body}</p> : null}
@@ -2017,7 +2017,7 @@ function ArtifactFeed({ artifacts }: { artifacts: Artifact[] }) {
               </div>
               <div className="space-y-2">
                 {artifact.items.slice(0, 4).map((item) => (
-                  <div key={item.url} className="rounded-lg border border-[var(--line)] bg-[rgba(255,255,255,0.7)] px-3 py-3">
+                  <div key={item.url} className="rounded-lg border border-[var(--line)] bg-white px-3 py-3">
                     <a href={item.url} target="_blank" rel="noreferrer" className="font-medium underline underline-offset-2">
                       {item.url}
                     </a>
@@ -2046,7 +2046,7 @@ function ArtifactFeed({ artifacts }: { artifacts: Artifact[] }) {
                     : 'Ready'
 
           return (
-            <article key={`${artifact.kind}-${artifact.executionId}`} className="rounded-lg border border-[rgba(24,42,58,0.14)] bg-white/70 px-4 py-4">
+            <article key={`${artifact.kind}-${artifact.executionId}`} className="rounded-lg border border-[var(--line)] bg-white px-4 py-4">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="rounded-full bg-[rgba(22,35,47,0.08)] px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink)]">
                   Exec
@@ -2062,7 +2062,7 @@ function ArtifactFeed({ artifacts }: { artifacts: Artifact[] }) {
               {artifact.contract && artifact.contract.length > 0 ? (
                 <div className="space-y-1 pt-3 text-sm">
                   {artifact.contract.map((item) => (
-                    <div key={item.filename} className="rounded-lg bg-[rgba(17,32,43,0.05)] px-3 py-2">
+                    <div key={item.filename} className="rounded-lg border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2">
                       <span className="font-medium">{item.filename}</span>
                       {item.description ? <span className="text-[var(--muted)]"> • {item.description}</span> : null}
                     </div>
@@ -2071,7 +2071,7 @@ function ArtifactFeed({ artifacts }: { artifacts: Artifact[] }) {
               ) : null}
               {artifact.program ? (
                 <div className="pt-3">
-                  <pre className="max-h-[360px] overflow-auto rounded-lg bg-[#11202b] px-4 py-3 text-sm text-[#edf5f6]">
+                  <pre className="max-h-[360px] overflow-auto rounded-md border border-[var(--line)] bg-[var(--surface-2)] px-4 py-3 text-sm text-[var(--ink)]">
                     {artifact.program}
                   </pre>
                 </div>
@@ -2126,7 +2126,7 @@ function TurnView({
   )
 
   return (
-    <article className="glass-panel rounded-lg px-5 py-5">
+    <article className="glass-panel rounded-lg px-4 py-4">
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">
@@ -2151,7 +2151,7 @@ function TurnView({
               {turn.additionalUserMessages.map((message) => (
                 <div
                   key={message.id}
-                  className="rounded-lg border border-[rgba(217,229,99,0.32)] bg-[var(--accent-soft)] px-3 py-3"
+                  className="rounded-lg border border-[rgba(1,190,178,0.24)] bg-[var(--accent-soft)] px-3 py-3"
                 >
                   <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
                     <span className="rounded-full bg-white/75 px-2 py-0.5 font-semibold uppercase tracking-[0.08em] text-[var(--accent)]">
@@ -2167,7 +2167,7 @@ function TurnView({
                       {message.attachments.map((attachment) => (
                         <span
                           key={attachment.id}
-                          className="rounded-full border border-[rgba(24,42,58,0.12)] bg-white/65 px-3 py-1 text-xs text-[var(--muted)]"
+                          className="rounded-full border border-[rgba(24,42,58,0.12)] bg-white px-3 py-1 text-xs text-[var(--muted)]"
                         >
                           {attachment.name}
                           {typeof attachment.size === 'number' ? ` • ${formatBytes(attachment.size)}` : ''}
@@ -2193,7 +2193,7 @@ function TurnView({
         </span>
       </div>
 
-      <div className="mt-5 rounded-lg border border-[var(--line)] bg-[var(--paper-strong)] px-4 py-4">
+      <div className="mt-4 rounded-lg border border-[var(--line)] bg-[var(--paper-strong)] px-4 py-4">
         <div className="pb-4 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">
           Assistant
         </div>
@@ -2212,8 +2212,8 @@ function TurnView({
               onClick={() => setActiveTab(tab)}
               className={`rounded-md px-3 py-1.5 text-sm transition ${
                 activeTab === tab
-                  ? 'bg-[var(--action)] text-white'
-                  : 'border border-[var(--line)] bg-white/70 text-[var(--ink)] hover:bg-white'
+                  ? 'border border-[var(--blue)] bg-[var(--blue-pale)] text-[var(--blue-dark)]'
+                  : 'border border-[var(--line)] bg-white text-[var(--ink)] hover:bg-[var(--surface-2)]'
               }`}
             >
               {label}
@@ -2271,7 +2271,7 @@ function Composer({
   onStop: () => void
 }) {
   return (
-    <div className="rounded-lg border border-[var(--line)] bg-white/70 px-3 py-3">
+    <div className="rounded-lg border border-[var(--line)] bg-white px-3 py-3">
       {lockedMessage ? (
         <div className="mb-3 rounded-lg border border-[rgba(240,188,46,0.34)] bg-[var(--gold-soft)] px-3 py-2 text-sm text-[var(--warning)]">
           {lockedMessage}
@@ -2283,7 +2283,7 @@ function Composer({
           {files.map((file, index) => (
             <span
               key={`${file.name}-${file.size}-${index}`}
-              className="inline-flex items-center gap-2 rounded-full border border-[rgba(24,42,58,0.12)] bg-white/65 px-3 py-1 text-xs"
+              className="inline-flex items-center gap-2 rounded-full border border-[rgba(24,42,58,0.12)] bg-white px-3 py-1 text-xs"
             >
               <span>{file.name}</span>
               <span className="text-[var(--muted)]">{formatBytes(file.size)}</span>
@@ -2296,7 +2296,7 @@ function Composer({
       ) : null}
 
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <label className="inline-flex cursor-pointer items-center rounded-md border border-[rgba(24,42,58,0.12)] bg-white/70 px-3 py-1.5 text-sm font-medium text-[var(--ink)] transition hover:bg-white">
+        <label className="inline-flex cursor-pointer items-center rounded-md border border-[var(--line)] bg-white px-3 py-1.5 text-sm font-medium text-[var(--ink)] transition hover:bg-[var(--surface-2)]">
           Attach files
           <input type="file" multiple className="hidden" disabled={disabled} onChange={(event) => onFilesAdd(event.target.files)} />
         </label>
@@ -2322,14 +2322,14 @@ function Composer({
               ? 'Send a follow-up while the current turn is still running.'
               : 'Ask anything. This view supports attachments, streaming responses, followups, and tool outputs.'
           }
-          rows={4}
-          className="min-h-[96px] rounded-md border border-[var(--line)] bg-white/80 px-3 py-2.5 text-[15px] leading-7 shadow-[inset_0_1px_1px_rgba(0,0,0,0.02)] outline-none transition placeholder:text-[var(--muted)] focus:border-[var(--action)] disabled:cursor-not-allowed disabled:opacity-60"
+          rows={3}
+          className="min-h-[76px] rounded-md border border-[var(--line)] bg-white px-3 py-2.5 text-sm leading-6 outline-none transition placeholder:text-[var(--muted)] focus:border-[var(--action)] disabled:cursor-not-allowed disabled:opacity-60"
         />
         <button
           type="button"
           disabled={disabled || (!text.trim() && files.length === 0)}
           onClick={onSubmit}
-          className="h-fit rounded-md bg-[var(--action)] px-4 py-2.5 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:bg-[var(--action-dark)] disabled:cursor-not-allowed disabled:opacity-50"
+          className="h-fit rounded-md border border-[var(--action)] bg-[var(--action)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--action-dark)] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {inProgress ? 'Follow up' : 'Send'}
         </button>
@@ -2873,14 +2873,14 @@ export default function App() {
                 type="button"
                 onClick={startNewChat}
                 disabled={hasPendingTurn}
-                className="rounded-md border border-[var(--line)] bg-white/70 px-3 py-1.5 text-sm font-medium transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-md border border-[var(--line)] bg-white px-3 py-1.5 text-sm font-medium transition hover:bg-[var(--surface-2)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 New chat
               </button>
               <button
                 type="button"
                 onClick={handleReconnect}
-                className="rounded-md border border-[var(--line)] bg-white/70 px-3 py-1.5 text-sm font-medium transition hover:bg-white"
+                className="rounded-md border border-[var(--line)] bg-white px-3 py-1.5 text-sm font-medium transition hover:bg-[var(--surface-2)]"
               >
                 Reconnect
               </button>
@@ -2942,7 +2942,7 @@ export default function App() {
 
               <div className="px-4 py-4">
                 {state.turns.length === 0 ? (
-                  <section className="rounded-lg border border-dashed border-[var(--line-strong)] bg-white/55 px-3 py-3">
+                  <section className="rounded-lg border border-dashed border-[var(--line-strong)] bg-white px-3 py-3">
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                       <div className="min-w-0">
                         <div className="text-xs font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
@@ -2991,7 +2991,7 @@ export default function App() {
                 <div ref={bottomRef} />
               </div>
 
-              <div className="border-t border-[var(--line)] bg-[rgba(255,255,255,0.52)] px-4 py-4">
+              <div className="border-t border-[var(--line)] bg-[var(--surface-2)] px-4 py-4">
                 <Composer
                   text={state.composerText}
                   files={state.composerFiles}
