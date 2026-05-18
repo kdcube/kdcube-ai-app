@@ -1962,7 +1962,9 @@ def compute_paths(ai_app_root: Path, lib_root: Path, workdir: Path, compose_mode
         "frontend_config_json": str((workdir / "config/frontend.config.hardcoded.json").resolve()),
     }
     if compose_mode == "custom-ui-managed-infra":
-        defaults["ui_dockerfile_path"] = "deployment/docker/custom-ui-managed-infra/Dockerfile_UI"
+        # custom-ui-managed-infra changes the service topology, not the OSS UI
+        # build recipe. The UI Dockerfile lives with the platform UI assets.
+        defaults["ui_dockerfile_path"] = "deployment/docker/all_in_one_kdcube/Dockerfile_UI"
         defaults["ui_source_path"] = "ui/chat-web-app"
         defaults["ui_env_build_relative"] = "ui/chat-web-app/.env.sample"
         defaults["nginx_ui_config"] = "deployment/docker/custom-ui-managed-infra/nginx/conf/nginx_ui.conf"
@@ -3592,7 +3594,35 @@ def gather_configuration(
             descriptor_dir=descriptor_dir,
         )
 
+    ui_image_final = env_main.entries.get("KDCUBE_UI_IMAGE", (None, None))[1]
     ui_build_context_final = env_main.entries.get("UI_BUILD_CONTEXT", (None, None))[1]
+    ui_dockerfile_final = env_main.entries.get("UI_DOCKERFILE_PATH", (None, None))[1]
+    if not ui_image_final and ui_build_context_final and ui_dockerfile_final:
+        try:
+            ui_context_path = Path(ui_build_context_final).expanduser().resolve()
+            dockerfile_path = Path(str(ui_dockerfile_final).strip().strip("'\""))
+            dockerfile_candidate = (
+                dockerfile_path.expanduser().resolve()
+                if dockerfile_path.is_absolute()
+                else (ui_context_path / dockerfile_path).resolve()
+            )
+            platform_ui_context = ctx.ai_app_root.expanduser().resolve()
+            fallback_ui_dockerfile = "deployment/docker/all_in_one_kdcube/Dockerfile_UI"
+            fallback_candidate = (platform_ui_context / fallback_ui_dockerfile).resolve()
+            if (
+                ui_context_path == platform_ui_context
+                and not dockerfile_candidate.exists()
+                and fallback_candidate.exists()
+            ):
+                console.print(
+                    "[yellow]UI Dockerfile path did not exist in the platform UI build context; "
+                    f"using {fallback_ui_dockerfile}.[/yellow]"
+                )
+                update_env_value(env_main, "UI_DOCKERFILE_PATH", fallback_ui_dockerfile)
+                ui_dockerfile_final = fallback_ui_dockerfile
+        except Exception:
+            pass
+
     ui_env_build_rel_final = env_main.entries.get("UI_ENV_BUILD_RELATIVE", (None, None))[1]
     ui_env_build_rel_final = normalize_env_build_relative(ui_env_build_rel_final)
     if ui_env_build_rel_final:
