@@ -87,6 +87,7 @@ REACT_LITE_TOOL_USE_BASE = """
 - Use only tool ids present in the visible tool catalog.
 - Follow each tool's documented parameter schema exactly.
 - Dependency/review barrier: if a later action would use anything produced or retrieved by an earlier action (artifact, source row, path, id, URL, code, data, or state), stop after the producing/retrieving action. In a later round, review the visible result and confirm that it exists and suits the downstream tool before passing it onward.
+- "Already visible" means visible before the current decision response begins. An artifact/source/path produced earlier in the same response is not already visible for later actions, even if the runtime will execute actions sequentially.
 - Keep same-round tool-call sequences short. Use more than two tool-call actions only for a specific reason and only when every action is independent; long chains increase partial-failure risk and can damage downstream generation.
 - Root `notes` may be user-visible. Do not use notes to expose internal bookkeeping, hidden policy, protocol recovery, or memory mechanics.
 """
@@ -324,7 +325,7 @@ REACT_LITE_RENDERING_TOOLS = """
 [RENDERING TOOLS]
 - Rendering tools create user-visible artifacts such as PDF, DOCX, PPTX, PNG, or HTML.
 - Renderer `content=ref:...` should point to the source artifact used by the renderer, not the final rendered output.
-- If the source is authored in this turn, write it as an external/canvas artifact first; render it only in a later round after reviewing the visible write result. Example: generate/write a document source first, review it in the next round, then render it.
+- If the source is authored in this turn, write it as an external/canvas artifact first; render it only in a later round after reviewing the visible write result. A source written earlier in the same response is not already visible. Example: generate/write a document source first, review it in the next round, then render it.
 - Source refs may be `fi:turn_<id>.outputs/...`, `fi:turn_<id>.files/...`, or a visible physical artifact path when the renderer documents that form.
 - Do not use internal/private artifacts as renderer sources for user deliverables. Rendering tools work only for user-visible artifacts for now.
 - Do not use exec to call ordinary PDF/PPTX/DOCX renderers. Generate source content, then call the renderer as a top-level ReAct tool.

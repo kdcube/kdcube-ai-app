@@ -52,12 +52,12 @@ _CHANNEL_BLOCK_RE = re.compile(
     r"<channel:ReactDecisionOutV2>(.*?)</channel:ReactDecisionOutV2>",
     re.I | re.S,
 )
-_FENCED_JSON_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.I | re.S)
+_FENCE_LINE_RE = re.compile(r"^\s*```(?:json)?\s*$", re.I)
 
 
-def _is_valid_channel_block_start(text: str, idx: int) -> bool:
+def _is_valid_channel_block_start(text: str, idx: int, *, start: int = 0) -> bool:
     try:
-        return (text[:idx].count("`") % 2) == 0
+        return (text[max(0, int(start or 0)):idx].count("`") % 2) == 0
     except Exception:
         return True
 
@@ -83,11 +83,34 @@ def _iter_json_texts(text: str) -> List[str]:
     return out
 
 
+def _iter_fenced_json_blocks(text: str) -> List[str]:
+    lines = (text or "").strip().splitlines()
+    out: List[str] = []
+    idx = 0
+    while idx < len(lines):
+        if not _FENCE_LINE_RE.match(lines[idx] or ""):
+            idx += 1
+            continue
+        idx += 1
+        block: List[str] = []
+        while idx < len(lines):
+            if (lines[idx] or "").strip() == "```":
+                out.append("\n".join(block).strip())
+                idx += 1
+                break
+            block.append(lines[idx])
+            idx += 1
+    return [chunk for chunk in out if chunk]
+
+
 def _extract_json_candidates(text: str) -> List[str]:
     body = (text or "").strip()
     if not body:
         return []
-    fenced = [m.strip() for m in _FENCED_JSON_RE.findall(body) if isinstance(m, str) and m.strip()]
+    direct = _iter_json_texts(body)
+    if direct:
+        return direct
+    fenced = _iter_fenced_json_blocks(body)
     if fenced:
         out: List[str] = []
         for chunk in fenced:
@@ -104,8 +127,9 @@ def parse_react_decision_bundle_from_raw(
     candidates: List[str] = []
     seen: set[str] = set()
     if isinstance(full_raw, str) and full_raw.strip():
+        validation_start = 0
         for match in _CHANNEL_BLOCK_RE.finditer(full_raw):
-            if not _is_valid_channel_block_start(full_raw, match.start()):
+            if not _is_valid_channel_block_start(full_raw, match.start(), start=validation_start):
                 continue
             body = match.group(1)
             for candidate in _extract_json_candidates(body):
@@ -113,6 +137,7 @@ def parse_react_decision_bundle_from_raw(
                 if norm and norm not in seen:
                     candidates.append(norm)
                     seen.add(norm)
+            validation_start = match.end()
     if not candidates and isinstance(json_raw, str) and json_raw.strip():
         for candidate in _extract_json_candidates(json_raw):
             norm = candidate.strip()
@@ -240,9 +265,15 @@ def build_decision_system_text(
             "DO NOT DO THIS: Your second typical error is that you include a sequence of tool calls inside a single <channel:ReactDecisionOutV2> instance, like <channel:ReactDecisionOutV2>```json...```\n```json...```</channel:ReactDecisionOutV2>. This does not work. For each tool call, emit a separate <channel:ReactDecisionOutV2>...</channel:ReactDecisionOutV2> instance.\n"
             "If you emit multiple tool-call actions, each action must be in its own separate <channel:ReactDecisionOutV2>...</channel:ReactDecisionOutV2> instance.\n"
             "Use multi-action only when every action can be planned fully from the context already visible before the round starts.\n"
-            "The runtime executes the actions sequentially and you do NOT review intermediate results in the middle, so action B must not depend on action A's result.\n"
+            "\"Already visible\" means visible before this decision response begins. An artifact/source/path produced earlier in the same response is NOT already visible for later actions, even if the runtime will execute actions sequentially.\n"
+            "The runtime executes the actions sequentially, but you do NOT review intermediate results in the middle, so action B must not depend on action A's result.\n"
+            "If you need to inspect or assess the first result before deciding the next action, split the work into separate rounds.\n"
+            "If action B needs an artifact, source path, search result, or output created by action A, split them into separate rounds.\n"
+            "Do NOT schedule search/fetch first and then a later action in the same round that depends on what that retrieval will return.\n"
             "Dependency/review barrier: if a later action would use anything produced or retrieved by an earlier action (artifact, source row, path, id, URL, code, data, or state), stop after the producing/retrieving action. In a later round, review the visible result and acknowledge both its existence and suitability before passing it to any downstream tool.\n"
             "Example: generate/write a document source first; after the write result is visible in the next round, review it, then render it. Do not generate and render that new source in the same response.\n"
+            "Good multi-action fanout: render PDF, PPTX, and DOCX from already visible source artifacts that were visible before this response began.\n"
+            "Bad multi-action chain: write/generate/retrieve a source artifact first, then render or consume that newly created source in the same response.\n"
             "Keep same-round tool-call sequences short. Use more than two tool-call actions only for a specific reason and only when every action is independent; long chains increase partial-failure risk and can damage downstream generation.\n"
             "Visibility rule: if generated content is meant for the user to see, download, approve, or use as a renderer source, make it external: react.write channel=canvas or exec visibility=external. Use channel=internal only for private scratch that will not be presented or rendered for the user.\n"
             "Default write rule: reports, briefs, HTML, Markdown, slide source, DOCX/PDF/PPTX source, and anything under outputs/ that may become a deliverable must be written with react.write channel=canvas. Do not write these as channel=internal.\n"

@@ -23,6 +23,10 @@ def test_physical_path_to_logical_path_supports_generic_outdir_paths():
     assert physical_path_to_logical_path("logs/docker.err.log") == "fi:logs/docker.err.log"
     assert physical_path_to_logical_path("turn_prev/files/report.md") == "fi:turn_prev.files/report.md"
     assert physical_path_to_logical_path("turn_prev/outputs/report.md") == "fi:turn_prev.outputs/report.md"
+    assert (
+        physical_path_to_logical_path("turn_2026-05-19-01-01-49-177/outputs/report.md")
+        == "fi:turn_2026-05-19-01-01-49-177.outputs/report.md"
+    )
     assert physical_path_to_logical_path("turn_prev.files/report.md") == "fi:turn_prev.files/report.md"
     assert physical_path_to_logical_path("turn_prev.outputs/report.md") == "fi:turn_prev.outputs/report.md"
     assert (
