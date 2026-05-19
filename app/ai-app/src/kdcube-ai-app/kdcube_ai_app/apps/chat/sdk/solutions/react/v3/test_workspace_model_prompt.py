@@ -116,7 +116,9 @@ def test_build_decision_system_text_safe_fanout_explains_no_intermediate_review_
     assert "For call_tool-only rounds, omit <channel:summary> entirely" in text
     assert "For complete/exit rounds, include exactly one <channel:summary>" in text
     assert "Never put > 1 actions into one ReactDecisionOutV2 channel instance." in text
-    assert "The runtime executes the actions sequentially and you do NOT review intermediate results in the middle" in text
+    assert "The runtime executes the actions sequentially, but you do NOT review intermediate results in the middle" in text
+    assert "\"Already visible\" means visible before this decision response begins." in text
+    assert "produced earlier in the same response is NOT already visible" in text
     assert "action B must not depend on action A's result." in text
     assert "If you need to inspect or assess the first result before deciding the next action, split the work into separate rounds." in text
     assert "If action B needs an artifact, source path, search result, or output created by action A, split them into separate rounds." in text

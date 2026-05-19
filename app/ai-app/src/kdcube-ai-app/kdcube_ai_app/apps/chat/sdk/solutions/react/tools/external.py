@@ -682,18 +682,8 @@ async def handle_external_tool(*,
             if missing_local:
                 logical_missing = [physical_path_to_logical_path(p) or p for p in missing_local]
                 pull_hint = f"react.pull(paths={json.dumps(logical_missing, ensure_ascii=False)})"
-                notice_block(
-                    ctx_browser=ctx_browser,
-                    tool_call_id=tool_call_id,
-                    code="protocol_violation.exec_requires_pull",
-                    message="Exec code referenced historical files that are not materialized locally. Use react.pull(paths=[...]) first.",
-                    extra={
-                        "missing": missing_local,
-                        "logical_missing": logical_missing,
-                        "pull_hint": pull_hint,
-                        "tool_id": tool_id,
-                    },
-                )
+                # Use a single visible recovery surface for this preflight error.
+                # The tool-result block already carries the pull hint and retry reason.
                 add_block(ctx_browser, build_tool_result_error_block(
                     turn_id=ctx_browser.runtime_ctx.turn_id,
                     tool_call_id=tool_call_id,

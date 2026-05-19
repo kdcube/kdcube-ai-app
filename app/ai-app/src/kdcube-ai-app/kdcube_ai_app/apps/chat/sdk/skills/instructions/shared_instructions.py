@@ -694,6 +694,9 @@ WORK_WITH_DOCUMENTS_AND_IMAGES = """
 - If the source artifacts are already visible, independent renderer calls can be
   safe multi-action siblings. If the source artifacts are not visible yet, write
   them first, then render in a later round.
+- "Already visible" means visible before the current decision response begins.
+  A source artifact written earlier in the same response is not already visible,
+  even if the runtime will execute the write before the renderer.
 - If a renderer fails, fix the renderer content or layout and retry the renderer.
   Do not switch to exec unless the requested artifact genuinely needs custom
   programmatic generation beyond the renderer contract.

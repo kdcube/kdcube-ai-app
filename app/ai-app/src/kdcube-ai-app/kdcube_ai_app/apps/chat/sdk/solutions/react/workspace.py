@@ -35,7 +35,10 @@ _TEXT_MIMES = {
     "application/sql", "text/x-sql",
 }
 
-_TURN_ID_PATTERN = r"(?:turn_[A-Za-z0-9_]+|telegram_turn_[A-Za-z0-9_]+|\d{4}-\d{2}-\d{2}-\d{2}-\d{2}(?:-\d{2})?(?:-\d{3,6})?)"
+_TURN_ID_PATTERN = (
+    r"(?:turn_[A-Za-z0-9_.:-]+|telegram_turn_[A-Za-z0-9_.:-]+|"
+    r"\d{4}-\d{2}-\d{2}-\d{2}-\d{2}(?:-\d{2})?(?:-\d{3,6})?)"
+)
 _CODE_PATH_RE = re.compile(rf"({_TURN_ID_PATTERN}/(files|outputs|attachments)/[^\s'\"\)\];,]+)")
 _PATH_TOKEN_RE = re.compile(r"[^\s'\"\)\];,]+")
 _UNQUALIFIED_ARTIFACT_PREFIXES = ("files/", "outputs/", "attachments/")

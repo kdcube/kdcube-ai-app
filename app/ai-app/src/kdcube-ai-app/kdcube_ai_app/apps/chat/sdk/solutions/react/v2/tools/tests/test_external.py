@@ -765,13 +765,14 @@ async def test_external_exec_requires_pull_for_unmaterialized_historical_file(mo
     assert called["execute"] is False
     assert out.get("retry_decision") is True
     notices = [b for b in ctx.timeline.blocks if b.get("type") == "react.notice"]
-    assert any("exec_requires_pull" in (b.get("text") or "") for b in notices)
+    assert not any("exec_requires_pull" in (b.get("text") or "") for b in notices)
     result_blocks = [
         b for b in ctx.timeline.blocks
         if b.get("type") == "react.tool.result" and b.get("mime") == "application/json"
     ]
     assert result_blocks
     assert "pre_exec_pull_required" in (result_blocks[-1].get("text") or "")
+    assert "fi:turn_old.files/a.txt" in (result_blocks[-1].get("text") or "")
 
 
 @pytest.mark.asyncio

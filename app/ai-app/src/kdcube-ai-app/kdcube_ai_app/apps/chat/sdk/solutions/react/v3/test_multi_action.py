@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -129,6 +130,94 @@ def test_parse_react_decision_bundle_from_repeated_full_round_sequences():
         "web_tools.web_search",
         "web_tools.web_fetch",
     ]
+
+
+def test_parse_react_decision_json_with_embedded_fence_text():
+    raw = """
+<channel:ReactDecisionOutV2>```json
+{"action":"call_tool","notes":"write","tool_call":{"tool_id":"react.write","params":{"path":"outputs/report.html","channel":"canvas","content":"<pre>```html\\n<div>ok</div>\\n```</pre>"}}}
+```
+</channel:ReactDecisionOutV2>
+"""
+    parsed = parse_react_decision_bundle_from_raw(full_raw=raw, json_raw=None)
+
+    assert parsed["errors"] == []
+    assert parsed["candidate_count"] == 1
+    assert parsed["decisions"][0]["tool_call"]["tool_id"] == "react.write"
+
+
+def test_parse_react_decision_bundle_not_poisoned_by_prior_fenced_content():
+    raw = """
+<channel:ReactDecisionOutV2>```json
+{"action":"call_tool","notes":"write","tool_call":{"tool_id":"react.write","params":{"path":"outputs/a.md","content":"```html\\n<div>one</div>\\n```"}}}
+```</channel:ReactDecisionOutV2>
+<channel:ReactDecisionOutV2>```json
+{"action":"call_tool","notes":"search","tool_call":{"tool_id":"web_tools.web_search","params":{"q":"two"}}}
+```</channel:ReactDecisionOutV2>
+"""
+    parsed = parse_react_decision_bundle_from_raw(full_raw=raw, json_raw=None)
+
+    assert parsed["errors"] == []
+    assert parsed["candidate_count"] == 2
+    assert [d["tool_call"]["tool_id"] for d in parsed["decisions"]] == [
+        "react.write",
+        "web_tools.web_search",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_decision_stream_parses_html_content_inside_structured_channel():
+    html = """<!DOCTYPE html>
+<html>
+<head>
+<style>
+@page { size: A4 portrait; margin: 20mm; }
+:root { --primary: #1e3a8a; --accent: #3b82f6; }
+.card { border: 1px solid #e2e8f0; }
+</style>
+</head>
+<body>
+<pre>```html
+<div class="card">embedded fenced sample</div>
+```</pre>
+<p>Report body</p>
+</body>
+</html>"""
+    decision = {
+        "action": "call_tool",
+        "notes": "Writing HTML source",
+        "tool_call": {
+            "tool_id": "react.write",
+            "params": {
+                "path": "turn_2026-05-19-01-01-49-177/outputs/science_news/report.html",
+                "channel": "canvas",
+                "content": html,
+                "kind": "file",
+            },
+        },
+    }
+    raw = (
+        "<channel:thinking>Preparing report artifacts.</channel:thinking>\n"
+        "I have the data. Now I will write the HTML source.\n"
+        "<channel:ReactDecisionOutV2>```json\n"
+        f"{json.dumps(decision, ensure_ascii=False, indent=2)}\n"
+        "```\n</channel:ReactDecisionOutV2>\n"
+        "<channel:code></channel:code>\n"
+    )
+
+    packet = await react_decision_stream_v2(
+        svc=_FakeDecisionService(raw, chunk_size=23),
+        agent_name="solver.react.v2.decision.v2.strong",
+        adapters=[],
+        multi_action_mode="safe_fanout",
+        user_blocks=[{"type": "text", "text": "write report"}],
+    )
+
+    assert (packet["log"] or {}).get("error") is None
+    assert (packet["log"] or {}).get("bundle_errors") == []
+    tool_call = packet["agent_response"]["tool_call"]
+    assert tool_call["tool_id"] == "react.write"
+    assert tool_call["params"]["content"] == html
 
 
 def test_parse_react_decision_bundle_ignores_literal_channel_mentions_in_thinking():
