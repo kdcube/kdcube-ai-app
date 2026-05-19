@@ -462,7 +462,7 @@ class SocketIOChatHandler:
                         )
                     )
 
-            turn_id = message_data.get("turn_id") or new_turn_id()
+            turn_id = new_turn_id()
             message_data["turn_id"] = turn_id
             try:
                 conversation_id, conversation_created = await resolve_ingress_conversation_id(
