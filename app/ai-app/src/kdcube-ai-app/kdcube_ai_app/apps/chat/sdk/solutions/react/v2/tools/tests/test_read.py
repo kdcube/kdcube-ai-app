@@ -483,6 +483,110 @@ async def test_read_skill_is_not_read_capped(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_read_skill_is_materialized_once_by_logical_path(monkeypatch, tmp_path):
+    import kdcube_ai_app.apps.chat.sdk.skills.skills_registry as registry
+
+    runtime = RuntimeCtx(
+        turn_id="turn_read",
+        outdir=str(tmp_path),
+        workdir=str(tmp_path),
+        max_tokens=100,
+    )
+    spec = SimpleNamespace(
+        name="PDF Press",
+        namespace="public",
+        id="pdf-press",
+        instruction_text="PDF generation guidance.",
+        instruction_compact_text="",
+        instruction_paths=None,
+        sources=[],
+    )
+    monkeypatch.setattr(registry, "build_skill_short_id_map", lambda consumer: {})
+    monkeypatch.setattr(registry, "import_skillset", lambda items, short_id_map=None: ["public.pdf-press"])
+    monkeypatch.setattr(registry, "get_skill", lambda sid: spec if sid == "public.pdf-press" else None)
+
+    ctx = FakeBrowser(runtime)
+    state = {"last_decision": {"tool_call": {"params": {"paths": ["sk:public.pdf-press"]}}}}
+
+    await handle_react_read(ctx_browser=ctx, state=state, tool_call_id="r_skill_1")
+    await handle_react_read(ctx_browser=ctx, state=state, tool_call_id="r_skill_2")
+
+    skill_blocks = [
+        b for b in ctx.timeline.blocks
+        if b.get("type") == "react.tool.result"
+        and b.get("path") == "sk:public.pdf-press"
+        and "ACTIVE" in (b.get("text") or "")
+    ]
+    assert len(skill_blocks) == 1
+
+    summaries = []
+    for block in ctx.timeline.blocks:
+        if (
+            block.get("type") == "react.tool.result"
+            and block.get("path") == "tc:turn_read.r_skill_2.result"
+            and block.get("mime") == "application/json"
+        ):
+            summaries.append(json.loads(block.get("text") or "{}"))
+    assert summaries
+    assert summaries[-1]["exists_in_visible_context"] == ["sk:public.pdf-press"]
+
+
+@pytest.mark.asyncio
+async def test_read_skill_hidden_by_pruning_is_not_treated_as_visible(monkeypatch, tmp_path):
+    import kdcube_ai_app.apps.chat.sdk.skills.skills_registry as registry
+
+    runtime = RuntimeCtx(
+        turn_id="turn_read",
+        outdir=str(tmp_path),
+        workdir=str(tmp_path),
+        max_tokens=100,
+    )
+    spec = SimpleNamespace(
+        name="PDF Press",
+        namespace="public",
+        id="pdf-press",
+        instruction_text="PDF generation guidance after restore.",
+        instruction_compact_text="",
+        instruction_paths=None,
+        sources=[],
+    )
+    monkeypatch.setattr(registry, "build_skill_short_id_map", lambda consumer: {})
+    monkeypatch.setattr(registry, "import_skillset", lambda items, short_id_map=None: ["public.pdf-press"])
+    monkeypatch.setattr(registry, "get_skill", lambda sid: spec if sid == "public.pdf-press" else None)
+
+    ctx = FakeBrowser(runtime)
+    ctx.timeline.blocks.append({
+        "type": "react.tool.result",
+        "call_id": "r_old",
+        "path": "sk:public.pdf-press",
+        "mime": "text/markdown",
+        "text": "ACTIVE old hidden skill text",
+        "hidden": True,
+        "meta": {
+            "tool_call_id": "r_old",
+            "hidden": True,
+            "hidden_prune_scope": "cold_recent",
+        },
+    })
+    state = {
+        "loaded_skills": {"public.pdf-press"},
+        "last_decision": {"tool_call": {"params": {"paths": ["sk:public.pdf-press"]}}},
+    }
+
+    await handle_react_read(ctx_browser=ctx, state=state, tool_call_id="r_skill_restore")
+
+    visible_skill_blocks = [
+        b for b in ctx.timeline.blocks
+        if b.get("type") == "react.tool.result"
+        and b.get("path") == "sk:public.pdf-press"
+        and not b.get("hidden")
+        and "ACTIVE" in (b.get("text") or "")
+    ]
+    assert visible_skill_blocks
+    assert "PDF generation guidance after restore." in visible_skill_blocks[-1]["text"]
+
+
+@pytest.mark.asyncio
 async def test_read_range_materializes_even_when_full_path_visible(tmp_path):
     runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path), max_tokens=80_000)
     ctx = FakeBrowser(runtime)

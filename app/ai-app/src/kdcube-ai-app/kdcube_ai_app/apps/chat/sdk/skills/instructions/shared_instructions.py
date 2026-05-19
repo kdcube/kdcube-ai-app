@@ -694,9 +694,12 @@ WORK_WITH_DOCUMENTS_AND_IMAGES = """
 - If the source artifacts are already visible, independent renderer calls can be
   safe multi-action siblings. If the source artifacts are not visible yet, write
   them first, then render in a later round.
-- "Already visible" means visible before the current decision response begins.
+- "Already visible" means visible before the current response begins.
   A source artifact written earlier in the same response is not already visible,
   even if the runtime will execute the write before the renderer.
+- Do not conduct `web_tools.web_search` or `web_tools.web_fetch` twice in a row
+  without first reviewing the visible retrieval result/source pool and stating
+  what was learned or why another retrieval is still needed.
 - If a renderer fails, fix the renderer content or layout and retry the renderer.
   Do not switch to exec unless the requested artifact genuinely needs custom
   programmatic generation beyond the renderer contract.
@@ -704,7 +707,7 @@ WORK_WITH_DOCUMENTS_AND_IMAGES = """
 
 CODEGEN_BEST_PRACTICES_V2 = """
 [CODEGEN BEST PRACTICES (HARD)]:
-- You use <channel:code> to write the code. You never put the code in the json inside <channel:ReactDecisionOutV2>. Putting code in channel other than <channel:code> is a protocol violation.
+- You use <channel:code> to write the code. You never put the code in the json inside <channel:action>. Putting code in channel other than <channel:code> is a protocol violation.
 - Exec code must be input-driven: never reprint or regenerate source artifacts inside the program if they can be read programmatically.
   However, if the source artifacts have complex structure and reusing them programmatically is error prone,
   make sure the needed, for code generation, artifacts are visible in the context so you can properly write the needed content in code.
@@ -737,7 +740,7 @@ CODEGEN_BEST_PRACTICES_V2 = """
 
 During an exec_tools.execute_code_python round, structure your output exactly as schematically shown below:
 <channel:thinking>...</channel:thinking>
-<channel:ReactDecisionOutV2>ReactDecisionOutV2 compatible output></channel:ReactDecisionOutV2>
+<channel:action>Action JSON output</channel:action>
 <channel:code>code snippet</channel:code>
 Do NOT emit <channel:summary> in code execution rounds. Code execution is a call_tool round, not a final answer round.
 The <channel:summary> channel is allowed ONLY when action is complete or exit.
@@ -745,7 +748,7 @@ The <channel:summary> channel is allowed ONLY when action is complete or exit.
 - You MAY execute code ONLY by calling `exec_tools.execute_code_python`.
 - Do NOT call any other tool to execute code (Python/SQL/shell/etc.) and do not invent tools.
 - Inside code executed by `exec_tools.execute_code_python`, you MAY use Python stdlib facilities such as `subprocess.run(...)` to invoke local non-interactive commands available inside the isolated runtime. This is still part of isolated Python execution, not a separate shell tool.
-- Writing code does NOT execute it. The code only runs ONLY when you say you want to call `exec_tools.execute_code_python` in <channel:ReactDecisionOutV2> and generate the code in <channel:code> channel.
+- Writing code does NOT execute it. The code only runs ONLY when you say you want to call `exec_tools.execute_code_python` in <channel:action> and generate the code in <channel:code> channel.
 - The code you will provide in <channel:code> will be mounted to exec tool's execution environment and executed there.
   You do not put the code in tool params. it does not accept code. Code must be provided separately in <channel:code>.
 - react.read, react.write and other react.* tools do NOT exist inside the exec environment; call them only as tools via action=call_tool.
@@ -1032,6 +1035,10 @@ REACT_SKILL_SELECTION_GUIDE = """
 - If a listed skill clearly matches the current sub-goal, first call
   `react.read` for that skill unless it is already visible with the 💡 marker.
   Then follow the loaded skill before calling domain tools.
+- After calling `react.read` for a skill, wait for the next round before using
+  that skill's detailed instructions. The catalog entry is only a summary; the
+  detailed skill text is not actionable until the ACTIVE skill block is visible
+  in the timeline and reviewed.
 - This is especially important for product/domain workflows, mailbox or
   attachment workflows, deliverable-file generation, user-memory/state changes,
   scheduled jobs, and any tool sequence where order or preconditions matter.
@@ -1083,6 +1090,16 @@ REACT_DECISION_SHARED_OPERATING_GUIDE = f"""
 - Ensure needed data/knowledge visible in context when needed: if generation depends on external evidence (search/fetch/attachments) which you do not see now in your visible context loaded (or maybe they are truncated), first load those sources via react.read so they appear in your visible context. Use sources_pool slices (e.g., so:sources_pool[sid,..]) for sources,  sk: for skills or ar: or fi: artifact paths with react.read.
 - If you see in catalog the skills that relate to the work you are going to do, make sure these skills are read in your visible context. Otherwise read with react.read(paths=[sk:..]). The skill which is 'read' is visible in the context in full and is marked as 💡.
   Example: as one of the steps, you must generate the pptx and pdf. Learn best practices/advice by reading sk:public.pdf-press and sk:public.pptx-press if these skills are not visible as 'read' (💡) in context yet. Learning earlier helps plan better steps so to decide what is the best shape of the data / sequence of data transformation is optimal for the final result.
+- Turn lifecycle and action causality: a turn is a sequence of rounds until you complete/exit or the announced/configured round budget is exhausted.
+- Each round starts when you are called with the currently visible timeline, ANNOUNCE, tool catalog, and skill catalog. A round is your continuous generation into the provided channels.
+- While generating a round, you can plan ahead, but you cannot see results of actions you are currently writing. When you stop generating, the runtime/engineering layer executes the requested actions sequentially, appends their results to the timeline, and calls you again with those results visible in the next round.
+- There is no requirement to minimize rounds. The success criterion is correct causality: do not emit cross-dependent actions in one round, and do not formulate a dependent next action until its prerequisite result has become visible in a later round.
+- A prerequisite result is acknowledged only after you can see it in the timeline and judge that it exists, succeeded, and suits the downstream action. Acknowledgement can be brief, but the next action must be based on the actual visible result, not on an assumption about what the previous action would return.
+- "Already visible" means visible before the current response begins. Anything produced, retrieved, loaded, validated, or changed earlier in the same response is not already visible for later actions, even if the runtime will execute it first.
+- If action B would use anything from action A (artifact, source row, path, id, URL, code, data, state, validation result, or skill text), stop after action A. In a later round, review the visible result and acknowledge both its existence and suitability before passing it downstream.
+- Use multiple actions in one round only for independent sibling actions whose inputs, params, and correctness are fully known from context visible before this response begins.
+- The visible timeline should normally progress as action -> result, then next action -> result. This is how you confirm causality and avoid guessing at missing results.
+- Good multi-action in one round: produce several documents from already visible inputs. Bad chains: read a skill then use it, search/fetch then synthesize from results, write source then render it, run exec then consume its output.
 - Workspace activation is explicit. Do NOT assume historical files are locally present at turn start.
   Read `[WORKSPACE]` in ANNOUNCE first.
   If current local files are not enough, use `react.pull(paths=[...])` to materialize historical refs on this worker. Use `react.checkout(mode="replace", paths=[...])` after pull when the active current-turn workspace itself must receive an editable copy of that historical `files/...` tree, and `react.checkout(mode="overlay", paths=[...])` after pull when you want to import or overwrite selected historical files into the existing workspace.

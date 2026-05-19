@@ -158,6 +158,12 @@ def _items_stats_for_output(output: Any) -> Dict[str, Any]:
             data = json.loads(data)
         except Exception:
             return {}
+    if isinstance(data, dict) and "ret" in data:
+        data = data.get("ret")
+    if isinstance(data, dict):
+        dict_rows = [row for row in data.values() if isinstance(row, dict)]
+        if dict_rows and all((row.get("sid") is not None or row.get("url") or row.get("content") is not None) for row in dict_rows):
+            return build_sources_pool_items_stats(dict_rows)
     if not isinstance(data, list):
         return {}
     source_like = [
@@ -404,8 +410,8 @@ def _exec_code_contamination(code: str) -> Dict[str, Any] | None:
         "</thinking>",
         "<channel:thinking>",
         "</channel:thinking>",
-        "<channel:ReactDecisionOutV2>",
-        "</channel:ReactDecisionOutV2>",
+        "<channel:action>",
+        "</channel:action>",
     ]
     lower = text.lower()
     marker = next((m for m in markers if m.lower() in lower), "")

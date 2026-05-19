@@ -57,7 +57,7 @@ class BudgetStateV2:
             [
                 "Budget v2 (turn-level)",
                 *strat_lines,
-                f"- decision rounds: {int(self.decision_rounds_used)}/{int(self.max_iterations)} used "
+                f"- rounds: {int(self.decision_rounds_used)}/{int(self.max_iterations)} used "
                 f"(remaining {self.remaining_rounds()})",
             ]
         )

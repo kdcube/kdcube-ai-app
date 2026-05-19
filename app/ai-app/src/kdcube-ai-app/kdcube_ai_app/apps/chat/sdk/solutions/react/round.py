@@ -155,9 +155,9 @@ class ReactRound:
             return
         if not reason:
             channels = decision.get("channels") if isinstance(decision.get("channels"), dict) else {}
-            json_chan = channels.get("ReactDecisionOutV2") if isinstance(channels.get("ReactDecisionOutV2"), dict) else {}
+            json_chan = channels.get("action") if isinstance(channels.get("action"), dict) else {}
             if not isinstance(json_chan, dict) or not (json_chan.get("text") or "").strip():
-                reason = "missing_channel.ReactDecisionOutV2"
+                reason = "missing_channel.action"
         turn_id = (ctx_browser.runtime_ctx.turn_id or "")
         ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         meta: Dict[str, Any] = {

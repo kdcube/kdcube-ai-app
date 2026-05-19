@@ -56,6 +56,7 @@ TOOL_SPEC = {
         "Batch multiple known paths in one read call. "
         "react.rg read_items are directly readable here via params.items. "
         "Each path you read becomes visible in the timeline; skills are shown with ACTIVE 💡 banner and are never read-capped. "
+        "A read result is visible only after the current response is rendered; do not emit a downstream action in the same response when it depends on newly read content. "
         "Use ks:<relpath> to read files from the knowledge space (read-only reference files prepared by the system). "
         "Knowledge-space text is uncapped by default; operators can set ai.react.knowledge_read_visible_* caps if a deployment needs them. "
         "For fi: files, normal readable content is text, plus multimodal PDF/image payloads. "
@@ -484,19 +485,60 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
         except Exception:
             return ""
 
-    def _find_existing_block(block: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        path = (block.get("path") or "").strip()
+    def _block_is_hidden(block: Dict[str, Any]) -> bool:
+        meta = block.get("meta") if isinstance(block.get("meta"), dict) else {}
+        return bool(block.get("hidden") or meta.get("hidden"))
+
+    def _find_existing_path(path: str, *, visible_only: bool = True) -> Optional[Dict[str, Any]]:
+        path = (path or "").strip()
         if not path:
             return None
-        target_hash = _block_hash(block)
-        if not target_hash:
-            return None
+        for existing in reversed(pending_blocks):
+            if not isinstance(existing, dict):
+                continue
+            if visible_only and _block_is_hidden(existing):
+                continue
+            if (existing.get("path") or "").strip() == path:
+                return existing
         try:
             blocks = ctx_browser.timeline._collect_blocks()  # type: ignore[attr-defined]
         except Exception:
             blocks = []
         for existing in reversed(blocks):
             if not isinstance(existing, dict):
+                continue
+            if visible_only and _block_is_hidden(existing):
+                continue
+            if (existing.get("path") or "").strip() == path:
+                return existing
+        return None
+
+    def _find_existing_block(block: Dict[str, Any], *, path_only: bool = False) -> Optional[Dict[str, Any]]:
+        path = (block.get("path") or "").strip()
+        if not path:
+            return None
+        if path_only:
+            return _find_existing_path(path)
+        target_hash = _block_hash(block)
+        if not target_hash:
+            return None
+        for existing in reversed(pending_blocks):
+            if not isinstance(existing, dict):
+                continue
+            if _block_is_hidden(existing):
+                continue
+            if (existing.get("path") or "").strip() != path:
+                continue
+            if _block_hash(existing) == target_hash:
+                return existing
+        try:
+            blocks = ctx_browser.timeline._collect_blocks()  # type: ignore[attr-defined]
+        except Exception:
+            blocks = []
+        for existing in reversed(blocks):
+            if not isinstance(existing, dict):
+                continue
+            if _block_is_hidden(existing):
                 continue
             if (existing.get("path") or "").strip() != path:
                 continue
@@ -565,7 +607,11 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
         path = (block.get("path") or "").strip()
         meta = block.get("meta") if isinstance(block.get("meta"), dict) else {}
         is_ranged_read = bool(meta.get("read_range"))
-        existing = _find_existing_block(block) if path.startswith(READ_DEDUP_PREFIXES) and not is_ranged_read else None
+        existing = (
+            _find_existing_block(block, path_only=path.startswith("sk:"))
+            if path.startswith(READ_DEDUP_PREFIXES) and not is_ranged_read
+            else None
+        )
         if existing:
             _remember_visible_ref(path, existing)
             return False
@@ -667,6 +713,23 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
             for sid in skill_ids:
                 if not sid:
                     continue
+                skill_path = f"sk:{sid}"
+                existing_skill = _find_existing_path(skill_path)
+                if sid in loaded and not existing_skill:
+                    try:
+                        ctx_browser.unhide_paths(paths=[skill_path])
+                    except TypeError:
+                        try:
+                            ctx_browser.unhide_paths([skill_path])
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+                    existing_skill = _find_existing_path(skill_path)
+                if sid in loaded and existing_skill:
+                    _remember_visible_ref(skill_path, existing_skill)
+                    exists_paths.append(skill_path)
+                    continue
                 loaded.add(sid)
                 block_ids = import_skillset([sid], short_id_map=short_map)
                 blocks: List[str] = []
@@ -701,14 +764,14 @@ async def handle_react_read(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
                     "type": "react.tool.result",
                     "call_id": tool_call_id,
                     "mime": "text/markdown",
-                    "path": f"sk:{sid}",
+                    "path": skill_path,
                     "text": f"ACTIVE 💡{skill_text}",
                     "meta": {
                         "tool_call_id": tool_call_id,
                     },
                 }
                 if not _maybe_add_block(skill_block):
-                    exists_paths.append(f"sk:{sid}")
+                    exists_paths.append(skill_path)
         except Exception:
             pass
 
