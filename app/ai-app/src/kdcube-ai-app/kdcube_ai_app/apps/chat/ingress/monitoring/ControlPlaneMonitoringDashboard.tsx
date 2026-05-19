@@ -1291,13 +1291,11 @@ const MonitoringDashboard: React.FC = () => {
             for (let i = 0; i < perUser; i++) {
                 tasks.push(async () => {
                     const convId = `burst-${s.streamId}-${i}`;
-                    const turnId = `turn_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
                     const payload = {
                         ...payloadBase,
                         message: {
                             ...(payloadBase.message || {}),
                             conversation_id: convId,
-                            turn_id: turnId,
                         },
                     };
                     const res = await fetch(`${baseUrl}/sse/chat?stream_id=${encodeURIComponent(s.streamId)}`, {

@@ -2,3 +2,4 @@ tools:
   - id: rendering_tools.write_docx
     role: document rendering
     why: Renders Markdown into a DOCX document.
+    required: true

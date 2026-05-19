@@ -29,6 +29,10 @@ Scope:
     - optional bundle-local custom skills root from the descriptor
   - Provides runtime helpers (gallery text, short ids, instruction blocks)
   - Loads per-skill metadata from `tools.yaml` and `sources.yaml`
+  - Applies `tools.yaml` `required: true` gates against the active tool catalog
+    when a runtime context supplies tool availability
+  - Applies `agent_disclosure: hidden` for skills that are loadable but must
+    not appear in user-facing skill catalogs or self-descriptions
   - Exports a portable descriptor for isolated runtimes
 
 Discovery order is core SDK skills, SDK solution skills, then bundle-local
@@ -54,6 +58,19 @@ If omitted and the bundle has `skills/` under its root, the bundle can pass that
 SDK solution skill roots are not configured by the bundle descriptor; they are
 part of the SDK registry wiring and are filtered with the same `agents_config`
 rules as other skills.
+
+Use `agents_config` to make skills unavailable to a consumer. Use
+`agent_disclosure: hidden` in a skill's front matter only when the skill should
+remain loadable by exact id/import but must be omitted from visible catalogs.
+Hidden-disclosure skills are excluded from `SK1`, `SK2`, ... short-id mapping;
+if explicitly loaded, their active instruction block uses a redacted heading and
+a non-disclosure guard.
+
+Use `tools.yaml` `required: true` when the skill depends on tools that may be
+omitted for a specific bundle, agent, user policy, or `allowed_plugins` set. In
+ReAct, the decision prompt builds the active tool catalog and passes it to the
+skill registry; skills missing required tools are skipped from catalogs,
+imports, short ids, and skill reads for that runtime context.
 
 ## How it is wired
 
@@ -97,6 +114,11 @@ rules as other skills.
 
 - Skills are injected into generators; they do not modify tool behavior.
 - Filtering by `agents_config` is applied per consumer (e.g. `solver.react.v2.decision.v2.strong`).
+- Required-tool filtering is runtime-context-sensitive and only applies when a
+  caller supplies the active tool catalog. Without a tool catalog, skills remain
+  backward-compatible and are not filtered by tool refs.
+- `agent_disclosure: hidden` is prompt-disclosure control only, not an
+  authorization boundary.
 - SDK solution skills behave like built-in skills for discovery and short-id
   mapping, but bundles must still enable the corresponding tools if the skill
   instructs the agent to call them.

@@ -365,7 +365,7 @@ A React bundle agent is configured through `BaseWorkflow.build_react(...)`.
 | MCP tools | `tools_descriptor.py` / `MCP_TOOL_SPECS` | selects which configured MCP server tools enter the catalog |
 | MCP server connection config | bundle props `config.mcp.services` | controls server URLs, transports, and auth |
 | skills | `skills_descriptor.py`, `CUSTOM_SKILLS_ROOT`, `AGENTS_CONFIG` | exposes bundle skill prompts and visibility rules |
-| skill-tool mapping | skill `tools.yaml` | tells the agent which tool ids belong to a skill |
+| skill-tool mapping | skill `tools.yaml` | tells the agent which tool ids belong to a skill; `required: true` gates the skill on active tool availability |
 | custom instructions | `additional_instructions` argument | should combine product defaults with bundle-configured instructions |
 | model/runtime version | platform/bundle config | React version is selected by platform config; bundle code should call `build_react(...)` |
 | allowed tool groups | `react.run(allowed_plugins=...)` | keeps the active turn limited to the aliases intended for that surface |
@@ -387,6 +387,50 @@ react = self.build_react(
 
 result = await react.run(allowed_plugins=allowed_plugins)
 ```
+
+Skill discovery is intentionally wider than bundle-local files:
+
+```text
+core SDK skills
+  + SDK solution skills, for example task.* from the Tasks solution
+  + bundle CUSTOM_SKILLS_ROOT
+  -> AGENTS_CONFIG filter for the exact consumer id
+  -> tools.yaml required-tool filter against active React tool catalog
+  -> visible skill catalog / SK short ids
+```
+
+Bundle authors can narrow this explicitly, but subsystem skills that declare
+required tools are also filtered by the active tool catalog. For example, Tasks
+solution skills are omitted automatically when `tasks.*` / `task_job.*` tools
+are not exposed. Use `AGENTS_CONFIG` when the bundle needs an explicit
+allow-list or hard deny:
+
+```python
+AGENTS_CONFIG = {
+    "solver.react.v2.decision.v2.strong": {"disabled": ["task.*"]},
+    "solver.react.v2.decision.v2.regular": {"disabled": ["task.*"]},
+}
+```
+
+Use `agent_disclosure: hidden` in `SKILL.md` only for operational guidance that
+may still be loaded by exact id or import but must not be advertised in the
+skill catalog or in user-facing self-descriptions. This is prompt-disclosure
+control, not authorization. Use `AGENTS_CONFIG` when a consumer must not be able
+to load a skill at all.
+
+If a skill is coupled to a subsystem that may be disabled per bundle or per
+runtime surface, mark its hard tool dependencies in `tools.yaml`:
+
+```yaml
+tools:
+  - id: memory.search_memory
+    role: durable memory read
+    required: true
+```
+
+When the active React tool catalog does not contain a required tool id, that
+skill is removed from the visible catalog, short-id mapping, imported skill set,
+and `react.read(sk:...)` path for the current runtime context.
 
 #### React Tool Results That Produce Files
 
@@ -639,11 +683,25 @@ AGENTS_CONFIG = {
 }
 ```
 
+The skill registry loads core SDK skills, SDK solution skills, and the bundle
+`CUSTOM_SKILLS_ROOT`. Solution skills such as `task.tasks` and `task.job` are
+present in discovery even if the bundle does not use the Tasks solution, but
+their required tool gates remove them from the active catalog when task tools
+are absent. Use explicit `enabled` lists or `disabled: ["task.*"]` only when
+the bundle wants policy stricter than tool availability.
+
 The keys are the React decision agent ids used by the runtime. Use both
 `solver.react.v2.decision.v2.strong` and
 `solver.react.v2.decision.v2.regular` when both model tiers should see the same
 bundle skills. Do not key visibility by the skill id itself. If a bundle has a
 different decision agent name, use the name emitted in runtime/accounting logs.
+
+Skill front matter may include `agent_disclosure: hidden`. Hidden-disclosure
+skills are excluded from the visible catalog and `SK1` short-id map. If loaded
+by exact id or import, their active instruction block is rendered with a
+redacted heading and a non-disclosure rule instead of the skill id/name. This
+does not disable the skill; combine it with `AGENTS_CONFIG` if the skill must be
+unavailable to a consumer.
 
 Each skill's `tools.yaml` should reference real tool ids from the descriptor.
 For example, with alias `domain`, a Python function `search_assets` becomes:

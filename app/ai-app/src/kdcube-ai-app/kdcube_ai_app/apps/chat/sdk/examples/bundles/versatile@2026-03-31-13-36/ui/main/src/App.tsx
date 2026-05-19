@@ -30,7 +30,7 @@ import type {
   RateLimitPayload,
   StepStatus,
 } from './service'
-import { BUILT_BUNDLE_ID, createLocalId, createTurnId, settings } from './settings'
+import { BUILT_BUNDLE_ID, createLocalId, settings } from './settings'
 
 type ConnectionState = 'booting' | 'connecting' | 'connected' | 'disconnected'
 type TurnState = 'pending' | 'running' | 'completed' | 'error'
@@ -3294,67 +3294,13 @@ export default function App() {
     const draftFiles = isSteer || textOverride !== undefined ? [] : snapshot.composerFiles
     if (!draftText && draftFiles.length === 0 && !isSteer) return
 
-    const turnId = createTurnId()
     const sentAt = Date.now()
     const existingConversationId = snapshot.conversationId
-    const draftAttachments = draftFiles.map((file, index) =>
-      normalizeTurnAttachment(
-        {
-          filename: file.name,
-          size: file.size,
-          mime: file.type,
-        },
-        `live:${turnId}:${index}`,
-        file,
-      ),
-    )
-
-    if (isContinuation && targetTurnId) {
-      setState((previous) => ({
-        ...previous,
-        composerText: '',
-        composerFiles: [],
-        turns: previous.turns.map((turn) => {
-          if (turn.id !== targetTurnId) return turn
-          return {
-            ...turn,
-            additionalUserMessages: [
-              ...turn.additionalUserMessages,
-              {
-                id: `continuation:${turnId}`,
-                text: draftText,
-                timestamp: sentAt,
-                attachments: draftAttachments,
-                continuationKind: continuationMessageKind,
-              },
-            ],
-          }
-        }),
-      }))
-    } else {
-      setState((previous) => ({
-        ...previous,
-        composerText: '',
-        composerFiles: [],
-        turns: [
-          ...previous.turns,
-          {
-            id: turnId,
-            state: 'pending',
-            createdAt: sentAt,
-            userMessage: draftText,
-            userAttachments: draftAttachments,
-            additionalUserMessages: [],
-            answer: '',
-            error: null,
-            steps: {},
-            artifacts: [],
-            timeline: [],
-            followups: [],
-          },
-        ],
-      }))
-    }
+    setState((previous) => ({
+      ...previous,
+      composerText: '',
+      composerFiles: [],
+    }))
 
     try {
       await connectStream()
@@ -3366,7 +3312,6 @@ export default function App() {
         streamId,
         bundleId,
         conversationId: existingConversationId,
-        turnId,
         text: draftText,
         files: draftFiles,
         chatHistory: isContinuation ? [] : buildChatHistory(snapshot.turns),
@@ -3381,10 +3326,25 @@ export default function App() {
             }
           : {}),
       })
+      if (!response.turnId) {
+        throw new Error('sse/chat response did not include a turn_id')
+      }
+      const turnId = response.turnId
+      const draftAttachments = draftFiles.map((file, index) =>
+        normalizeTurnAttachment(
+          {
+            filename: file.name,
+            size: file.size,
+            mime: file.type,
+          },
+          `live:${turnId}:${index}`,
+          file,
+        ),
+      )
       setState((previous) => {
         const stillOwnsTurn = isContinuation
           ? previous.turns.some((turn) => turn.id === targetTurnId)
-          : previous.turns.some((turn) => turn.id === turnId)
+          : true
         const canBindConversation =
           !previous.conversationId ||
           previous.conversationId === existingConversationId ||
@@ -3397,6 +3357,28 @@ export default function App() {
         const ackStatus = typeof response.status === 'string' ? response.status : null
         const continuationAccepted = ackStatus === 'followup_accepted' || ackStatus === 'steer_accepted'
         const continuationStartedNewTurn = isContinuation && !!ackStatus && !continuationAccepted
+        if (isContinuation && targetTurnId && continuationAccepted && !isSteer) {
+          next = {
+            ...next,
+            turns: next.turns.map((turn) => {
+              if (turn.id !== targetTurnId) return turn
+              if (turn.additionalUserMessages.some((message) => message.id === `continuation:${turnId}`)) return turn
+              return {
+                ...turn,
+                additionalUserMessages: [
+                  ...turn.additionalUserMessages,
+                  {
+                    id: `continuation:${turnId}`,
+                    text: draftText,
+                    timestamp: sentAt,
+                    attachments: draftAttachments,
+                    continuationKind: continuationMessageKind,
+                  },
+                ],
+              }
+            }),
+          }
+        }
         if (continuationStartedNewTurn && !next.turns.some((turn) => turn.id === turnId)) {
           next = {
             ...next,
@@ -3418,13 +3400,48 @@ export default function App() {
               },
             ],
           }
+        } else if (!isContinuation) {
+          const existingIndex = next.turns.findIndex((turn) => turn.id === turnId)
+          if (existingIndex >= 0) {
+            const turns = [...next.turns]
+            turns[existingIndex] = {
+              ...turns[existingIndex],
+              state: turns[existingIndex].state === 'idle' ? 'pending' : turns[existingIndex].state,
+              userMessage: turns[existingIndex].userMessage || draftText,
+              userAttachments: turns[existingIndex].userAttachments.length
+                ? turns[existingIndex].userAttachments
+                : draftAttachments,
+            }
+            next = { ...next, turns }
+          } else {
+            next = {
+              ...next,
+              turns: [
+                ...next.turns,
+                {
+                  id: turnId,
+                  state: 'pending',
+                  createdAt: sentAt,
+                  userMessage: draftText,
+                  userAttachments: draftAttachments,
+                  additionalUserMessages: [],
+                  answer: '',
+                  error: null,
+                  steps: {},
+                  artifacts: [],
+                  timeline: [],
+                  followups: [],
+                },
+              ],
+            }
+          }
         }
         return next
       })
       void refreshConversationList()
     } catch (error) {
       const text = messageForError(error)
-      const errorTurnId = isContinuation && targetTurnId ? targetTurnId : turnId
+      const errorTurnId = isContinuation && targetTurnId ? targetTurnId : createLocalId('client_submit_error')
       setState((previous) => applyChatError(previous, {
         type: 'chat.error',
         timestamp: new Date().toISOString(),

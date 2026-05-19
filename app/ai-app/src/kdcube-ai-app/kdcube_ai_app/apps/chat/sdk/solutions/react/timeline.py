@@ -65,6 +65,7 @@ TIMELINE_FILENAME = "timeline.json"
 DEFAULT_TOOL_RESULT_PREVIEW_MAX_TEXT_SYMBOLS = 12_000
 TOOL_RESULT_PREVIEW_SHAPE_DEPTH = 4
 TOOL_RESULT_PREVIEW_SHAPE_MAX_ITEMS = 10
+WEB_SOURCE_RESULT_TOOL_IDS = {"web_tools.web_search", "web_tools.web_fetch"}
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +74,14 @@ def _maybe_parse_json(val: str) -> Optional[Any]:
         return json.loads(val)
     except Exception:
         return None
+
+def _should_render_items_stats(*, tool_id: str, path: str, meta: Dict[str, Any]) -> bool:
+    resolved_tool_id = (tool_id or "").strip()
+    if not resolved_tool_id and isinstance(meta, dict):
+        resolved_tool_id = str(meta.get("tool_id") or "").strip()
+    if resolved_tool_id in WEB_SOURCE_RESULT_TOOL_IDS:
+        return False
+    return True
 
 class TimelineView:
     def __init__(self, payload: Dict[str, Any]):
@@ -2161,6 +2170,7 @@ class Timeline:
         base64_data = block.get("base64") or block.get("data")
         media_type = block.get("mime") or block.get("media_type")
         meta = block.get("meta") if isinstance(block.get("meta"), dict) else {}
+        btype = (block.get("type") or "").strip()
         if block.get("hidden") or meta.get("hidden"):
             base64_data = None
             try:
@@ -2169,6 +2179,16 @@ class Timeline:
                 replacement = block.get("replacement_text") or meta.get("replacement_text")
                 if isinstance(replacement, str) and replacement.strip():
                     text = replacement
+        mime_norm = str(media_type or "").strip().lower()
+        tool_id = str(meta.get("tool_id") or "").strip()
+        if (
+            base64_data
+            and btype == "react.tool.result"
+            and mime_norm in MODALITY_DOC_MIME
+            and tool_id != "react.read"
+            and not bool(meta.get("attach_to_model") or meta.get("model_visible_binary"))
+        ):
+            base64_data = None
         total = 0
         if isinstance(text, str) and text.strip():
             try:
@@ -3639,7 +3659,6 @@ class Timeline:
             payload = _maybe_parse_json(block.get("text") or "") if isinstance(block.get("text"), str) else None
             if isinstance(payload, dict):
                 tool_id = (payload.get("tool_id") or "").strip()
-
         if btype == "user.prompt":
             kind = "user"
         elif btype in {"assistant.completion", "assistant.completion.attempt"}:
@@ -3690,6 +3709,41 @@ class Timeline:
         if hint:
             parts.append(f"hint={json.dumps(hint, ensure_ascii=False)}")
         return " ".join(parts)
+
+    def _hidden_structured_replacement_text(self, block: Dict[str, Any], replacement_text: str) -> str:
+        path = (block.get("path") or "").strip()
+        btype = (block.get("type") or "").strip() or "block"
+        meta = block.get("meta") if isinstance(block.get("meta"), dict) else {}
+        call_id = (block.get("call_id") or meta.get("tool_call_id") or "").strip()
+        if not call_id and path:
+            call_id = self._call_id_from_path_for_stub(path)
+        tool_id = (block.get("tool_id") or meta.get("tool_id") or "").strip()
+        if not tool_id and btype in {"react.tool.call", "react.tool.result"}:
+            payload = _maybe_parse_json(block.get("text") or "") if isinstance(block.get("text"), str) else None
+            if isinstance(payload, dict):
+                tool_id = (payload.get("tool_id") or "").strip()
+        if not tool_id and isinstance(replacement_text, str):
+            replacement_payload = _maybe_parse_json(replacement_text)
+            if isinstance(replacement_payload, dict):
+                tool_id = (replacement_payload.get("tool_id") or "").strip()
+
+        if btype == "react.tool.result":
+            header = f"[TOOL RESULT {call_id or 'tc_????'}].pruned"
+        elif btype == "react.tool.call":
+            header = f"[TOOL CALL {call_id or 'tc_????'}].pruned"
+        else:
+            header = f"[PRUNED {btype.replace('.', '_') or 'block'}]"
+        if tool_id:
+            header += f" {tool_id}"
+
+        lines = [header]
+        if path:
+            key = "result_hidden" if btype == "react.tool.result" else "path_hidden"
+            lines.append(f"{key}: {path}")
+        repl = str(replacement_text or "").strip()
+        if repl:
+            lines.append(repl)
+        return "\n".join(lines).strip()
 
     @staticmethod
     def _call_id_from_path_for_stub(path: str) -> str:
@@ -3899,9 +3953,9 @@ class Timeline:
         hidden_seen: set[str] = set()
         emitted_working_summary_paths: set[str] = set()
         emitted_turn_status: set[str] = set()
-        emitted_pruned_turn_data: set[str] = set()
         explicit_current_turn_compacted_paths: set[str] = set()
         latest_mid_turn_checkpoint_by_turn: Dict[str, str] = {}
+
         for blk in blocks:
             if not isinstance(blk, dict):
                 continue
@@ -3926,6 +3980,8 @@ class Timeline:
             if btype == "conv.working.summary" and blk_path in emitted_working_summary_paths:
                 continue
             meta = blk.get("meta") if isinstance(blk.get("meta"), dict) else {}
+            hidden_prune_scope = str(meta.get("hidden_prune_scope") or "").strip()
+            is_cold_recent_hidden = hidden_prune_scope == "cold_recent"
             if (
                 btype == "react.current_turn.compaction_checkpoint"
                 and turn_id
@@ -3963,7 +4019,7 @@ class Timeline:
                         })
                         emitted_turn_status.add(turn_id)
                 continue
-            if turn_id and turn_id in working_summaries_by_turn:
+            if turn_id and turn_id in working_summaries_by_turn and not is_cold_recent_hidden:
                 if turn_id in visible_working_summary_turns:
                     hidden_seen.add(path)
                     continue
@@ -4005,7 +4061,7 @@ class Timeline:
             repl = (blk.get("replacement_text") or meta.get("replacement_text") or "").strip()
             if not repl:
                 continue
-            if meta.get("kind") == "cache_ttl_pruned":
+            if meta.get("kind") == "cache_ttl_pruned" and not is_cold_recent_hidden:
                 hidden_seen.add(path)
                 continue
             current_turn_compacted = bool(
@@ -4016,50 +4072,27 @@ class Timeline:
             hidden_seen.add(path)
             if current_turn_compacted and path in explicit_current_turn_compacted_paths:
                 continue
-            if turn_id and turn_id not in emitted_pruned_turn_data:
-                if current_turn_compacted:
-                    data_type = "react.current_turn.compaction_checkpoint"
-                    data_path = f"ar:{turn_id}.react.mid_turn.compaction.fallback"
-                    data_text = (
-                        "[MID-TURN COMPACTION]\n"
-                        f"turn_id: {turn_id}\n"
-                        "position: current-turn prefix compacted here; newer timeline blocks below are normal\n"
-                        "semantic_progress:\n"
-                        "- Semantic summary unavailable for this fallback marker.\n"
-                        "engineering_ledger:"
-                    )
-                    data_meta = {"current_turn_compaction_checkpoint": True}
-                else:
-                    data_type = "react.pruned.turn_data"
-                    data_path = f"ar:{turn_id}.react.pruned.turn_data"
-                    data_text = (
-                        "[PRUNED TURN DATA]\n"
-                        f"turn_id: {turn_id}\n"
-                        "retrieval_rows: logical paths and hints for hidden historical blocks"
-                    )
-                    data_meta = {"pruned_turn_data": True}
-                out.append({
-                    "type": data_type,
-                    "author": "react",
-                    "turn_id": turn_id,
-                    "path": data_path,
-                    "text": data_text,
-                    "hidden": False,
-                    "ts": "",
-                    "meta": data_meta,
-                })
-                emitted_pruned_turn_data.add(turn_id)
             repl_blk = dict(blk)
             repl_blk.pop("base64", None)
             repl_meta = dict(meta)
             if current_turn_compacted:
                 repl_meta["current_turn_compacted_ref"] = True
+            elif is_cold_recent_hidden:
+                repl_meta["pruned_structured_replacement"] = True
             else:
                 repl_meta["pruned_retrieval_stub"] = True
             repl_blk["meta"] = repl_meta
-            repl_blk["text"] = self._hidden_retrieval_stub(blk, include_path=True)
+            if is_cold_recent_hidden:
+                repl_blk["text"] = self._hidden_structured_replacement_text(blk, repl)
+            else:
+                repl_blk["text"] = self._hidden_retrieval_stub(blk, include_path=True)
             repl_blk["hidden"] = False
-            repl_blk["type"] = "react.current_turn.compacted_ref" if current_turn_compacted else "react.pruned.ref"
+            if current_turn_compacted:
+                repl_blk["type"] = "react.current_turn.compacted_ref"
+            elif is_cold_recent_hidden and btype == "react.tool.result":
+                repl_blk["type"] = "react.pruned.tool_result"
+            else:
+                repl_blk["type"] = "react.pruned.ref"
             repl_blk["ts"] = ""
             out.append(repl_blk)
         return out
@@ -4087,7 +4120,14 @@ class Timeline:
         return list(blocks or []) + tail
 
 
-    def hide_paths(self, paths: List[str], replacement_text: str) -> Dict[str, Any]:
+    def hide_paths(
+        self,
+        paths: List[str],
+        replacement_text: str,
+        *,
+        hidden_prune_scope: str = "",
+        hidden_reason: str = "",
+    ) -> Dict[str, Any]:
         if not paths:
             return {"status": "not_found", "blocks_hidden": 0, "tokens_hidden": 0}
         path_set = {p.strip() for p in paths if isinstance(p, str) and p.strip()}
@@ -4103,6 +4143,14 @@ class Timeline:
             if not path or path not in path_set:
                 continue
             blk["hidden"] = True
+            if hidden_prune_scope or hidden_reason:
+                meta = blk.get("meta") if isinstance(blk.get("meta"), dict) else {}
+                meta = dict(meta)
+                if hidden_prune_scope:
+                    meta["hidden_prune_scope"] = hidden_prune_scope
+                if hidden_reason:
+                    meta["hidden_reason"] = hidden_reason
+                blk["meta"] = meta
             original_text = blk.get("text") if isinstance(blk.get("text"), str) else ""
             replacement_for_block = replacement_text if not replacement_assigned else ""
             if not replacement_assigned:
@@ -5028,6 +5076,7 @@ class Timeline:
         visible_blocks = self._slice_after_compaction_summary(blocks)
         visible_blocks = self._restore_missing_turn_headers_for_render(visible_blocks)
         visible_blocks = self._apply_hidden_replacements(visible_blocks)
+        visible_blocks = self._apply_render_directives_before_cache(visible_blocks)
         self._apply_cache_markers(visible_blocks, cache_last=cache_last)
         if debug_cache_trace:
             self._emit_cache_trace(
@@ -5047,6 +5096,7 @@ class Timeline:
             try:
                 self._write_render_debug(
                     msg_blocks,
+                    system_text=system_text,
                     include_sources=include_sources,
                     include_announce=include_announce,
                 )
@@ -5068,22 +5118,60 @@ class Timeline:
         self,
         msg_blocks: List[Dict[str, Any]],
         *,
+        system_text: str = "",
         include_sources: bool,
         include_announce: bool,
     ) -> None:
         root = self._render_debug_root()
         if root is None:
             return
-        turn_id = self._render_debug_name_part((self.runtime.turn_id or "turn").strip() or "turn")
+        user_id = self._render_debug_name_part(
+            (getattr(self.runtime, "user_id", "") or "user").strip() or "user",
+            limit=64,
+        )
+        conversation_id = self._render_debug_name_part(
+            (getattr(self.runtime, "conversation_id", "") or "conv").strip() or "conv",
+            limit=64,
+        )
+        turn_id = self._render_debug_name_part((self.runtime.turn_id or "turn").strip() or "turn", limit=96)
         ts = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
         unique = time.time_ns()
         flags = []
         flags.append("src" if include_sources else "nosrc")
         flags.append("ann" if include_announce else "noann")
-        name = f"rendered-{ts}-{unique}-{turn_id}-{'-'.join(flags)}.txt"
+        name = f"rendered-{user_id}-{conversation_id}-{turn_id}-{ts}-{unique}-{'-'.join(flags)}.txt"
         root.mkdir(parents=True, exist_ok=True)
         path = root / name
         text = self._format_message_blocks_disk(msg_blocks)
+        sys_text = str(system_text or "")
+        msg_tokens = self._estimate_model_message_tokens(msg_blocks)
+        cache_markers = sum(1 for b in (msg_blocks or []) if isinstance(b, dict) and b.get("cache"))
+        if sys_text:
+            sys_tokens = token_count(sys_text)
+            system_debug = "\n".join([
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                "SYSTEM PROMPT (separate model input)",
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                f"chars: {len(sys_text)}",
+                f"tokens_estimate: {sys_tokens}",
+                sys_text,
+                "",
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                "USER MESSAGE BLOCKS",
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                f"model_visible_tokens_estimate: {msg_tokens}",
+                f"message_blocks: {len(msg_blocks or [])}",
+                f"cache_markers: {cache_markers}",
+            ])
+            text = system_debug + "\n" + text
+        else:
+            text = "\n".join([
+                f"model_visible_tokens_estimate: {msg_tokens}",
+                f"message_blocks: {len(msg_blocks or [])}",
+                f"cache_markers: {cache_markers}",
+                "",
+                text,
+            ]).rstrip()
         path.write_text(text, encoding="utf-8")
         self._prune_render_debug(root)
 
@@ -5110,10 +5198,21 @@ class Timeline:
         return keep if keep > 0 else 100
 
     @staticmethod
-    def _render_debug_name_part(value: str) -> str:
+    def _render_debug_name_part(value: str, *, limit: int = 120) -> str:
         text = str(value or "").strip() or "value"
         safe = "".join(ch if ch.isalnum() or ch in {"-", "_", "."} else "_" for ch in text)
-        return safe[:120] or "value"
+        return safe[: max(1, int(limit or 120))] or "value"
+
+    @staticmethod
+    def _message_block_base64_and_media(block: Dict[str, Any]) -> Tuple[Any, Any]:
+        data = block.get("base64") or block.get("data")
+        media = block.get("mime") or block.get("media_type")
+        source = block.get("source") if isinstance(block.get("source"), dict) else {}
+        if not data and source.get("type") == "base64":
+            data = source.get("data")
+        if not media and source.get("type") == "base64":
+            media = source.get("media_type")
+        return data, media
 
     def _prune_render_debug(self, root: pathlib.Path) -> None:
         keep = self._render_debug_keep_files()
@@ -5147,8 +5246,12 @@ class Timeline:
             if btype == "text":
                 lines.append(prefix + (b.get("text") or ""))
             elif btype in {"image", "document"}:
-                media = b.get("media_type") or ("image/png" if btype == "image" else "application/pdf")
-                lines.append(prefix + f"<{btype} media_type={media}> ...BASE64")
+                data, media = self._message_block_base64_and_media(b)
+                media = media or ("image/png" if btype == "image" else "application/pdf")
+                data_len = len(data) if isinstance(data, str) else 0
+                estimated_tokens = self._estimate_base64_model_tokens(data, media)
+                estimate_tail = f" provider_tokens_estimate={estimated_tokens}" if estimated_tokens else ""
+                lines.append(prefix + f"<{btype} media_type={media} b64_len={data_len}{estimate_tail}> ...BASE64")
             else:
                 lines.append(prefix + f"<{btype}>")
         return "\n".join(lines).rstrip()
@@ -5156,6 +5259,7 @@ class Timeline:
     def render_base(self, *, cache_last: bool = False) -> List[Dict[str, Any]]:
         blocks = self._collect_blocks()
         blocks = self._apply_hidden_replacements(blocks)
+        blocks = self._apply_render_directives_before_cache(blocks)
         self._apply_cache_markers(blocks, cache_last=cache_last)
         return blocks
 
@@ -5233,6 +5337,27 @@ class Timeline:
                 blocks[idx]["cache"] = True
         if cache_last and blocks and not indices:
             blocks[-1]["cache"] = True
+
+    def _apply_render_directives_before_cache(self, blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Normalize model-visible blocks before choosing cache points. Otherwise a
+        block that is skipped at render time can steal a cache marker, and a block
+        rewritten at render time can be selected using a different pre-render text.
+        """
+        out: List[Dict[str, Any]] = []
+        for blk in blocks or []:
+            if not isinstance(blk, dict):
+                continue
+            directive = build_timeline_render_directive(block=blk)
+            if directive.get("skip"):
+                continue
+            if isinstance(directive.get("text"), str):
+                normalized = dict(blk)
+                normalized["text"] = directive.get("text") or ""
+                out.append(normalized)
+                continue
+            out.append(blk)
+        return out
 
     def _block_trace_sig(self, blk: Dict[str, Any]) -> Dict[str, Any]:
         def _short_hash(val: str) -> str:
@@ -5471,10 +5596,31 @@ class Timeline:
             mime: Optional[str],
             path: str,
             source_style: bool = False,
+            include_provider_payload: bool = True,
+            omitted_reason: str = "",
         ) -> None:
             if not base64_data:
                 return
             mime_norm = (mime or "").strip().lower()
+            estimated_tokens = self._estimate_base64_model_tokens(base64_data, mime_norm)
+            if not include_provider_payload:
+                lines = [
+                    "[BINARY FILE NOT ATTACHED DIRECTLY TO MODEL]",
+                    f"media_type: {mime_norm or 'unknown'}",
+                ]
+                if path:
+                    lines.append(f"path: {path}")
+                if estimated_tokens:
+                    lines.append(f"provider_tokens_estimate_if_attached: {estimated_tokens}")
+                lines.append(
+                    "reason: "
+                    + (
+                        omitted_reason
+                        or "binary artifact is available by path; use react.read when exact content is needed"
+                    )
+                )
+                emitted.append({"type": "text", "text": "\n".join(lines)})
+                return
             if mime_norm in MODALITY_IMAGE_MIME:
                 if source_style:
                     emitted.append({
@@ -5500,6 +5646,8 @@ class Timeline:
             ]
             if path:
                 lines.append(f"path: {path}")
+            if estimated_tokens:
+                lines.append(f"provider_tokens_estimate_if_attached: {estimated_tokens}")
             lines.append("reason: direct model attachments support images and PDFs only")
             emitted.append({"type": "text", "text": "\n".join(lines)})
 
@@ -6301,7 +6449,15 @@ class Timeline:
                         if mime_val:
                             lines.append(f"mime: {mime_val}")
                         items_stats = meta.get("items_stats") if isinstance(meta, dict) else None
-                        if isinstance(items_stats, dict) and items_stats:
+                        if (
+                            isinstance(items_stats, dict)
+                            and items_stats
+                            and _should_render_items_stats(
+                                tool_id=tool_id,
+                                path=range_path or path,
+                                meta=meta,
+                            )
+                        ):
                             lines.append("items_stats:")
                             lines.append(json.dumps(items_stats, ensure_ascii=False, indent=2))
                         lines.append("payload:")
@@ -6328,7 +6484,11 @@ class Timeline:
                         if mime_val:
                             lines.append(f"mime: {mime_val}")
                         items_stats = meta.get("items_stats") if isinstance(meta, dict) else None
-                        if isinstance(items_stats, dict) and items_stats:
+                        if (
+                            isinstance(items_stats, dict)
+                            and items_stats
+                            and _should_render_items_stats(tool_id=tool_id, path=path, meta=meta)
+                        ):
                             lines.append("items_stats:")
                             lines.append(json.dumps(items_stats, ensure_ascii=False, indent=2))
                         lines.append("payload:")
@@ -6419,7 +6579,33 @@ class Timeline:
                         extra_text = _indent_text_block(str(extra_text))
                     emitted.append({"type": "text", "text": str(extra_text)})
 
-            _append_base64_model_block(emitted, base64_data=base64, mime=mime, path=path)
+            mime_norm = (mime or "").strip().lower()
+            attach_binary = True
+            omitted_reason = ""
+            current_tool_call_id = (b.get("call_id") or meta.get("tool_call_id") or "").strip()
+            if not current_tool_call_id:
+                current_tool_call_id = _call_id_from_path(path)
+            current_tool_id = (call_id_to_tool_id.get(current_tool_call_id, "") or meta.get("tool_id") or "").strip()
+            if (
+                base64
+                and btype == "react.tool.result"
+                and mime_norm in MODALITY_DOC_MIME
+                and current_tool_id != "react.read"
+                and not bool(meta.get("attach_to_model") or meta.get("model_visible_binary"))
+            ):
+                attach_binary = False
+                omitted_reason = (
+                    "generated PDF/tool artifact; the file is already addressable by logical path, "
+                    "so attach it with react.read only when the PDF bytes are needed"
+                )
+            _append_base64_model_block(
+                emitted,
+                base64_data=base64,
+                mime=mime,
+                path=path,
+                include_provider_payload=attach_binary,
+                omitted_reason=omitted_reason,
+            )
 
             if not emitted:
                 continue
@@ -6457,13 +6643,19 @@ class Timeline:
                 text = b.get("text") or ""
                 lines.append(prefix + _clip(text))
             elif btype == "image":
-                media = b.get("media_type") or "image/png"
-                data_len = len((b.get("data") or ""))
-                lines.append(prefix + f"<image media_type={media} b64_len={data_len}>")
+                data, media = self._message_block_base64_and_media(b)
+                media = media or "image/png"
+                data_len = len(data) if isinstance(data, str) else 0
+                estimated_tokens = self._estimate_base64_model_tokens(data, media)
+                estimate_tail = f" provider_tokens_estimate={estimated_tokens}" if estimated_tokens else ""
+                lines.append(prefix + f"<image media_type={media} b64_len={data_len}{estimate_tail}>")
             elif btype == "document":
-                media = b.get("media_type") or "application/pdf"
-                data_len = len((b.get("data") or ""))
-                lines.append(prefix + f"<document media_type={media} b64_len={data_len}>")
+                data, media = self._message_block_base64_and_media(b)
+                media = media or "application/pdf"
+                data_len = len(data) if isinstance(data, str) else 0
+                estimated_tokens = self._estimate_base64_model_tokens(data, media)
+                estimate_tail = f" provider_tokens_estimate={estimated_tokens}" if estimated_tokens else ""
+                lines.append(prefix + f"<document media_type={media} b64_len={data_len}{estimate_tail}>")
             else:
                 lines.append(prefix + f"<{btype}>")
         return "\n".join(lines).rstrip()

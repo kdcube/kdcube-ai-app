@@ -35,9 +35,11 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.live_events import (
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.layout import (
     build_assistant_completion_attempt_blocks,
+    build_tool_catalog,
     build_working_summary_attempt_blocks,
     record_assistant_completion_attempt,
 )
+from kdcube_ai_app.apps.chat.sdk.solutions.react.call import get_react_tools_catalog
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import ReactResult
 from kdcube_ai_app.apps.chat.sdk.solutions.react.runtime_state import ReactRuntimeState as ReactStateV2
 from kdcube_ai_app.apps.chat.sdk.solutions.react.solution_workspace import ApplicationHostingService
@@ -1235,20 +1237,20 @@ class ReactSolverV2:
             )
         if code == "multi_action_bundle_invalid_item":
             return (
-                "One of the repeated action channel instances was not a valid ReactDecisionOutV2 JSON object. "
+                "One of the repeated actions was not a valid action JSON object. "
                 "That action was not run. Next: emit each action as its own valid "
-                "<channel:ReactDecisionOutV2> JSON object, with exactly one tool_call per action."
+                "<channel:action> JSON object, with exactly one tool_call per action."
             )
         if code == "multi_action_bundle_too_small":
             return (
                 "Only one valid tool action was available after parsing, but the round was treated as multiple-action recovery. "
                 "No tools were run. Next: emit one valid action for this round, or emit each independent action "
-                "in its own separate <channel:ReactDecisionOutV2> instance."
+                "in its own separate <channel:action> instance."
             )
-        if code == "ReactDecisionOutV2_schema_error":
+        if code == "action_schema_error":
             summary, _diagnostic = self._schema_error_diagnostics(error)
             return (
-                "Malformed action JSON. <channel:ReactDecisionOutV2> could not be parsed, "
+                "Malformed action JSON. <channel:action> could not be parsed, "
                 f"so no action was executed for this round. Parser reported: {summary}"
             )
         if final_answer and action == "call_tool":
@@ -1266,9 +1268,9 @@ class ReactSolverV2:
         code: str,
         tool_id: str = "",
     ) -> str:
-        if code == "ReactDecisionOutV2_schema_error":
+        if code == "action_schema_error":
             return (
-                "Wrong round. The action channel was malformed JSON, so this round executed no action. "
+                "Wrong round. The action was malformed JSON, so this round executed no action. "
                 "The protocol violation notice contains the parser error and diagnostic excerpt."
             )
         if code == "tool_call_invalid":
@@ -1319,7 +1321,7 @@ class ReactSolverV2:
     def _schema_error_diagnostics(error: Optional[str]) -> tuple[str, str]:
         raw = str(error or "").strip()
         if not raw:
-            return "ReactDecisionOutV2 parser did not provide details.", ""
+            return "action parser did not provide details.", ""
         lines = [line.strip() for line in raw.splitlines() if line.strip()]
         summary = next((line for line in lines if line.startswith("JSON parse error:")), lines[0])
         detail_lines: List[str] = []
@@ -1462,8 +1464,8 @@ class ReactSolverV2:
             error_text = str(item.get("error") or "malformed_action_json").strip()
             raw_preview = str(item.get("raw_preview") or "").strip()
             message = (
-                f"Action #{idx + 1} was not run. One repeated action channel instance was malformed: "
-                f"{error_text}. Next: emit that action as one valid <channel:ReactDecisionOutV2> JSON object, "
+                f"Action #{idx + 1} was not run. One repeated action was malformed: "
+                f"{error_text}. Next: emit that action as one valid <channel:action> JSON object, "
                 "with exactly one tool_call per action."
             )
             try:
@@ -2284,7 +2286,7 @@ class ReactSolverV2:
                         and not code_stream_state["code_started"]
                         and code_stream_state.get("bound_exec_instance") is None
                     ):
-                        # Positional binding: an exec decision consumes only the
+                        # Positional binding: an exec action consumes only the
                         # immediately following code channel. Another decision
                         # before code means the exec/code pair is incomplete.
                         code_stream_state["pending_exec_instance"] = None
@@ -2368,11 +2370,18 @@ class ReactSolverV2:
         t0 = time.perf_counter()
         from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.agent_retry import retry_with_compaction
         from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.agents.decision import build_decision_system_text
+        try:
+            state["skill_tool_catalog"] = (
+                build_tool_catalog(announced_adapters + extra_adapters_for_decision, exclude_tool_ids=[])
+                + get_react_tools_catalog()
+            )
+        except Exception:
+            state["skill_tool_catalog"] = []
 
         async def _decision_agent(*, blocks: List[Dict[str, Any]]) -> Dict[str, Any]:
             self._begin_active_generation_capture(iteration=iteration)
             from kdcube_ai_app.apps.chat.sdk.streaming.versatile_streamer_v3 import ChannelSubscribers
-            subs = ChannelSubscribers().subscribe_factory("ReactDecisionOutV2", _react_decision_subscriber_factory)
+            subs = ChannelSubscribers().subscribe_factory("action", _react_decision_subscriber_factory)
             subs = subs.subscribe("code", _hub_on_code)
             runtime_ctx = getattr(self.ctx_browser, "runtime_ctx", None)
             decision_max_tokens = 20000
@@ -2534,7 +2543,7 @@ class ReactSolverV2:
         if error:
             error_summary, error_diagnostic = self._schema_error_diagnostics(error)
             notice_message = self._protocol_violation_message(
-                code="ReactDecisionOutV2_schema_error",
+                code="action_schema_error",
                 error=error,
                 state=state,
                 decision={},
@@ -2543,8 +2552,8 @@ class ReactSolverV2:
                 self._record_failed_decision_attempt(
                     iteration=iteration,
                     tool_call_id=pending_tool_call_id,
-                    code="ReactDecisionOutV2_schema_error",
-                    notice_code="protocol_violation.ReactDecisionOutV2_schema_error",
+                    code="action_schema_error",
+                    notice_code="protocol_violation.action_schema_error",
                     notice_message=notice_message,
                     decision_packet=decision,
                     reason="schema_error",
@@ -2560,7 +2569,7 @@ class ReactSolverV2:
             if retries < int(state.get("max_iterations") or 0):
                 state["decision_retries"] = retries + 1
                 state["retry_decision"] = True
-                decision["notes"] = "ReactDecisionOutV2_schema_error; retry decision"
+                decision["notes"] = "action_schema_error; retry action"
                 try:
                     self.log.log(
                         f"[react.v3] retry decision after schema error (retries={state['decision_retries']})",
@@ -2571,8 +2580,8 @@ class ReactSolverV2:
             else:
                 decision = {
                     "action": "exit",
-                    "final_answer": "ReactDecisionOutV2_schema_error validation failed.",
-                    "notes": "ReactDecisionOutV2_schema_error",
+                    "final_answer": "action_schema_error validation failed.",
+                    "notes": "action_schema_error",
                 }
                 action = "exit"
                 tool_call = {}
@@ -3300,36 +3309,40 @@ class ReactSolverV2:
             }, ensure_ascii=False, indent=2),
         }
 
-        # persist final turn stats to contrib log (after completion), then clear announce
+        # Persist the compact model-visible finalize marker. Keep only stable
+        # budget/open-plan state, not the full announce with memory/workspace
+        # sections.
         try:
             runtime_ctx = getattr(self.ctx_browser, "runtime_ctx", None) if self.ctx_browser else None
+            turn_id = self.scratchpad.turn_id or getattr(runtime_ctx, "turn_id", "") or ""
             final_text = ""
-            try:
-                from kdcube_ai_app.apps.chat.sdk.solutions.react.layout import build_announce_text
-                final_text = build_announce_text(
-                    iteration=int(state.get("iteration") or 0),
-                    max_iterations=int(state.get("max_iterations") or 0),
-                    base_max_iterations=int(state.get("base_max_iterations") or 0),
-                    reactive_iteration_credit=int(state.get("reactive_iteration_credit") or 0),
-                    started_at=getattr(self.scratchpad, "started_at", "") or "",
-                    timezone=getattr(runtime_ctx, "timezone", None) if runtime_ctx else None,
-                    runtime_ctx=runtime_ctx,
-                    timeline_blocks=self.ctx_browser.timeline.blocks if self.ctx_browser else [],
-                    constraints=None,
-                    mode="turn_finalize",
-                ).strip()
-            except Exception:
-                final_text = ""
-            if final_text:
-                turn_id = self.scratchpad.turn_id or getattr(runtime_ctx, "turn_id", "") or ""
+            if turn_id:
+                try:
+                    from kdcube_ai_app.apps.chat.sdk.solutions.react.layout import build_announce_text
+                    final_text = build_announce_text(
+                        iteration=int(state.get("iteration") or 0),
+                        max_iterations=int(state.get("max_iterations") or 0),
+                        base_max_iterations=int(state.get("base_max_iterations") or 0),
+                        reactive_iteration_credit=int(state.get("reactive_iteration_credit") or 0),
+                        started_at=getattr(self.scratchpad, "started_at", "") or "",
+                        timezone=getattr(runtime_ctx, "timezone", None) if runtime_ctx else None,
+                        runtime_ctx=runtime_ctx,
+                        timeline_blocks=self.ctx_browser.timeline.blocks if self.ctx_browser else [],
+                        constraints=None,
+                        mode="turn_finalize_budget",
+                    ).strip()
+                except Exception:
+                    self.log.log(traceback.format_exc())
+            if turn_id and final_text:
                 post_blocks.append({
                     "type": "react.turn.finalize",
                     "author": "react",
                     "turn_id": turn_id,
                     "ts": time.time(),
                     "mime": "text/plain",
-                    "path": f"ar:{turn_id}.react.turn.finalize" if turn_id else "",
+                    "path": f"ar:{turn_id}.react.turn.finalize",
                     "text": final_text,
+                    "meta": {"model_visible": True, "sections": ["BUDGET", "OPEN PLANS"]},
                 })
             if self.ctx_browser:
                 self.ctx_browser.announce(blocks=None)

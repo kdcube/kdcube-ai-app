@@ -4,7 +4,7 @@ title: "UI Components Lifecycle"
 summary: "How KDCube discovers, builds, caches, serves, and reloads bundle UI components in single-process and concurrent proc deployments."
 tags: ["sdk", "bundle", "ui", "widget", "main-view", "lifecycle", "preload", "concurrency", "efs", "iframe"]
 keywords: ["bundle ui lifecycle", "bundle widget lifecycle", "ui.widgets", "ui.main_view", "ui_widget decorator", "shared storage ui build", "bundle ui preload", "request triggered widget build", "bundle ui locks", "bundle ui signatures", "static widget route", "concurrent proc workers"]
-updated_at: 2026-05-17
+updated_at: 2026-05-19
 see_also:
   - ks:docs/sdk/bundle/bundle-widget-integration-README.md
   - ks:docs/sdk/bundle/bundle-interfaces-README.md
@@ -106,6 +106,28 @@ the route invokes the decorated Python method.
 If `ui.widgets.x` exists and `@ui_widget(alias="x")` does not exist,
 the config does not create a widget. The widget route has no surface to resolve
 and should fail as an undefined widget.
+
+If both exist, static serving wins for that alias. The decorated method remains
+the authoritative manifest surface; the browser receives the built files from
+`<bundle_storage_root>/ui/widgets/x` when `ui.widgets.x.src_folder` and
+`build_command` are active.
+
+Inherited widgets follow the same rule. A child entrypoint that inherits
+`@ui_widget(alias="x")` from a parent has already declared widget `x`. It can:
+
+- suppress the surface with `enabled.widget.x: false`
+- replace the served UI with `ui.widgets.x.src_folder/build_command`
+- override the same Python method name if it must change decorator metadata
+
+It must not add a different decorated method with the same alias. Duplicate
+aliases are rejected during manifest discovery.
+
+Do not confuse these flags:
+
+| Config | Meaning |
+| --- | --- |
+| `enabled.widget.x: false` | disables the widget surface; route/listing treats it as unavailable |
+| `ui.widgets.x.enabled: false` | disables only the static source-folder app for `x`; an existing decorated method may still be served |
 
 Main views are separate:
 

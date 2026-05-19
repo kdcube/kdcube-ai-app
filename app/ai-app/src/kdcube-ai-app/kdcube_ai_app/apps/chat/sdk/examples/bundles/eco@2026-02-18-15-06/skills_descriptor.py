@@ -36,7 +36,4 @@ CUSTOM_SKILLS_ROOT: Optional[pathlib.Path] = BUNDLE_ROOT / "skills"
 # Per-agent skill visibility filters.
 # Keys are agent role strings. Empty dict = show all available skills.
 # Use fully qualified ids: "<namespace>.<skill_id>".
-AGENTS_CONFIG: Dict[str, Dict[str, Any]] = {
-    "solver.react.decision.v2": {
-    }
-}
+AGENTS_CONFIG: Dict[str, Dict[str, Any]] = {}

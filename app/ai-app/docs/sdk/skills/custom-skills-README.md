@@ -44,9 +44,10 @@ Files:
 Inside a skill folder you can include:
 - `SKILL.md` (required) with front‑matter fields:
   - `name`, `id`, `description`, `version`, `namespace`, `tags`, `when_to_use`, `imports`
+  - `agent_disclosure` (optional): set to `hidden` for operational guidance that can be loaded by exact id but must not be advertised in the skill catalog
 - `compact.md` (optional): compact instruction variant
 - `sources.yaml` (optional): sources injected into `sources_pool` when the skill is loaded
-- `tools.yaml` (optional): recommended tools for the skill
+- `tools.yaml` (optional): recommended or required tools for the skill
 
 Both `SKILL.md` and `skill.yml` are supported.
 
@@ -127,6 +128,29 @@ matching tool module. For the tasks solution, that means registering
 `kdcube_ai_app.apps.chat.sdk.solutions.tasks.job_tools` in the bundle tool
 descriptor.
 
+If a skill is meaningless or misleading without specific tools, mark those
+tool refs as required in the skill's `tools.yaml`:
+
+```yaml
+tools:
+  - id: memory.search_memory
+    role: durable memory read
+    required: true
+  - id: memory.record_memory
+    role: durable memory write
+    required: true
+```
+
+Required tool refs are evaluated against the active tool catalog for the current
+agent/turn. If any required tool is unavailable, the skill is skipped from the
+catalog, `SKx` short ids, imports, and `react.read(sk:...)`. Optional tool refs
+remain documentation only.
+
+When a parent skill imports a required-tool skill, keep the optional subsystem
+instructions inside the imported skill. Do not duplicate those tool-specific
+steps in the parent body, because the registry can skip an ineligible import
+but it cannot rewrite arbitrary text inside a different skill.
+
 ### Important: `CUSTOM_SKILLS_ROOT = None` does not currently disable bundle-local skills
 
 Today, the runtime auto-detects `<bundle_root>/skills` when `custom_skills_root` is
@@ -138,13 +162,43 @@ Practical options today:
 - Set `CUSTOM_SKILLS_ROOT` to a truthy non-existent path (prevents auto-discovery fallback).
 - Use `AGENTS_CONFIG` to hide skills from specific agents (visibility filter, not registry disable).
 
+### Hiding a loadable skill from skill self-description
+
+`AGENTS_CONFIG` controls whether a skill is available to a consumer at all.
+Sometimes a bundle also needs operational guidance that is available to the
+agent but must not be listed when the user asks "what skills do you have?".
+
+Use `agent_disclosure: hidden` in the skill front matter:
+
+```yaml
+---
+name: user-memory-journal
+description: Operational guidance for durable memory tools.
+namespace: product
+agent_disclosure: hidden
+---
+```
+
+Runtime behavior:
+- The skill remains loadable by exact id, for example `sk:product.user-memory-journal`.
+- The skill is omitted from the visible skill catalog and from `SK1`, `SK2`, ...
+  short-id mapping.
+- If the skill is explicitly loaded, the active skill block uses a redacted
+  heading plus a non-disclosure rule. It does not print the skill id/name in the
+  prompt-visible skill header.
+
+This is prompt-disclosure control, not authorization. Use `AGENTS_CONFIG` to
+disable a skill for an agent that should not be able to load it at all.
+
 ---
 
 ## Sources + tools metadata
 
 Skills can include:
 - `sources.yaml` — sources added to the **sources_pool** when the skill is loaded (via `react.read`).
-- `tools.yaml` — tools recommended for this skill (used by planners/UX).
+- `tools.yaml` — tools recommended for this skill (used by planners/UX), plus
+  optional `required: true` gates for tools that must exist before the skill is
+  safe to expose.
 
 When a skill is loaded with `react.read("sk:<skill>")`, its sources are merged into
 `sources_pool` and can be referenced as `so:sources_pool[...]`. Citation tokens inside
@@ -170,6 +224,8 @@ Rules:
 Quick disable patterns:
 - One skill: `disabled: ["product.kdcube"]`
 - Namespace: `disabled: ["public.*"]`
+- Task solution skills when the bundle does not expose task tools:
+  `disabled: ["task.*"]`
 - All for one consumer: `disabled: ["*"]`
 
 Resolution example:

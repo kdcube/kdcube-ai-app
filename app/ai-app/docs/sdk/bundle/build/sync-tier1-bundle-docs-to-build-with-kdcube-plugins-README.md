@@ -4,7 +4,7 @@ title: "Tier 1 Bundle Pack For Build-With-KDCube Plugins"
 summary: "Short handoff note for Claude Code and Codex plugin engineers describing the Tier 1 bundle-doc pack, the agent task facets it must support, and the minimal integration contract."
 tags: ["sdk", "bundle", "plugins", "claude-code", "codex", "handoff", "tier-1"]
 keywords: ["tier 1 bundle pack", "build with kdcube plugin", "claude code plugin", "codex plugin", "bundle docs pack", "bundle agent facets", "shared sdk widget source", "plugin doc links update"]
-updated_at: 2026-05-16
+updated_at: 2026-05-19
 see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
@@ -217,6 +217,9 @@ The plugin should steer agents away from these recurring mistakes:
 - User Memory subsystem config is reserved under `config.memory` for bundles
   that derive from the memory entrypoint mixin; the widget route also needs
   `config.ui.widgets.memories.enabled: true`
+- inherited widgets are real surfaces; use `enabled.widget.<alias>: false` to
+  suppress one, and use `ui.widgets.<alias>.src_folder/build_command` to replace
+  the served static UI for the same inherited alias
 - bundle finalizers such as `on_turn_completed(...)` are for fast cleanup after
   success, error, or cancellation, not for expensive user-facing work
 - do not commit, tag, push, or update descriptor refs unless the user has

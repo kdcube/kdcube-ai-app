@@ -1,59 +1,57 @@
 platform:
   repo: "kdcube-ai-app"
-  ref: "2026.5.19.350"
+  ref: "2026.5.19.2320"
   description: |
-    This release stabilizes React artifact handling, CLI local initialization,
-    and memory maintenance flows after the UI refresh. It also documents model
-    override patterns for bundle agents and tightens the dependency barrier used
-    by React multi-action planning.
+    This release stabilizes React turn identity, artifact lifecycle handling,
+    skill discovery, and timeline compaction after the 2026.5.19.350 runtime
+    release. It focuses on preventing expensive invalid action chains, keeping
+    artifact paths consistent, and making tool-dependent guidance discoverable
+    only when the matching tools are active.
 
     Highlights
 
-    - Hardens React structured channel parsing so HTML, CSS, escaped content,
-      and large code-fenced payloads inside ReactDecisionOutV2 are parsed as
-      structured actions instead of being rejected as malformed output.
-    - Fixes artifact path recovery for timestamp-style turn ids and current-turn
-      output paths, preventing false react.pull requirements for files created
-      in the active turn.
-    - Removes duplicate protocol-violation rendering for pre-exec pull checks
-      and keeps the tool result as the authoritative failure signal.
-    - Clarifies React v2/v3 dependency-review instructions: an artifact is
-      "already visible" only if it existed before the current decision response
-      began, so same-response write-and-render chains are not allowed.
-    - Normalizes client-generated turn ids across the web clients and example
-      bundle UIs.
-    - Repairs CLI local initialization for managed-infra and custom UI compose
-      modes so platform UI and descriptor-defined UI source paths build from the
-      expected Docker context.
-    - Improves memory reconciliation and memory widget behavior, including
-      stale delete handling and clearer maintenance controls.
-    - Documents bundle agent role-model overrides at bundle, descriptor, and
-      ad-hoc execution scope, and adds bundle-configurable PDF footer support.
+    - Enforces server-owned chat turn ids while returning the accepted turn id
+      in submit acknowledgements, so clients and bundle UIs can align on the
+      runtime identity without inventing incompatible ids.
+    - Repairs artifact output-root handling and filters local artifact links
+      from presentation source lists, reducing bad references in generated
+      documents.
+    - Clarifies the React action lifecycle and strengthens dependency/review
+      barriers so later actions do not consume files, ids, URLs, code, or data
+      produced earlier in the same unreviewed decision response.
+    - Adds skill registry support for required tool gates and hidden disclosure,
+      with bundle-author documentation for how skills are discovered, filtered,
+      and rendered.
+    - Updates built-in bundle skill descriptors to use the current role names
+      and rely on registry-level tool gating instead of stale per-agent filters.
+    - Improves React timeline rendering, compaction, source payload handling,
+      path derivation hints, and finalization blocks to reduce prompt churn and
+      preserve cacheable context.
+    - Expands v2/v3 regression coverage for timeline compaction, rendering,
+      multi-action planning, path reads, and skill discovery.
 
     Runtime and deployment notes:
 
-    - Deployments must point the platform ref at 2026.5.19.350 to receive these
-      runtime, CLI, and documentation updates.
+    - Deployments must point the platform ref at 2026.5.19.2320 to receive
+      these runtime, React, skill-registry, and documentation updates.
     - No descriptor shape migration is required for existing deployments.
-    - Local CLI runs that build web-ui from source should use this release to
-      get the repaired UI source-path defaults.
     - No organization-specific content is part of this OSS release.
 
     Validation and regression coverage:
 
-    - React v2/v3 prompt and multi-action regression tests passed.
-    - React artifact path and workspace path tests passed.
-    - React external pre-exec pull guard tests passed for v2 and v3.
-    - CLI release metadata was updated on a dedicated release branch.
+    - Python syntax validation passed for changed Python files.
+    - Focused React and skills regression suite passed: 161 tests.
     - Staged OSS private-name scan passed.
 
     Changelog
 
-    - Fixed React structured output parsing for complex embedded content.
-    - Fixed current-turn artifact path normalization and pull hints.
-    - Tightened React dependency-review prompts for v2, v3, and lite variants.
-    - Fixed CLI local web-ui source path resolution.
-    - Updated memory maintenance behavior and related SDK documentation.
-    - Added agent role-model override documentation and PDF footer config.
+    - Added server-owned turn id behavior and submit acknowledgement turn ids.
+    - Fixed artifact output-root handling and local source-link filtering.
+    - Tightened React action lifecycle and dependency-review instructions.
+    - Added tool-gated skill discovery and hidden skill disclosure support.
+    - Updated bundle authoring docs for widgets, frontend awareness, platform
+      integration, agent integration, and skill discovery.
+    - Improved React timeline compaction, source payload rendering, path reads,
+      and test coverage.
 config:
-    version: "2026.5.19.350"
+    version: "2026.5.19.2320"

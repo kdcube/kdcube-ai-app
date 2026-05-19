@@ -854,9 +854,56 @@ def _build_search_result_replacement_compact(
     call_id: str,
     payload: Any,
     cfg: TruncationConfig,
+    items_stats: Optional[Dict[str, Any]] = None,
 ) -> str:
     cfg = _tool_result_cfg(cfg)
     truncated = False
+
+    def _compact_items_meta(stats: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        if not isinstance(stats, dict) or not stats:
+            return {}
+        meta: Dict[str, Any] = {}
+        for key in (
+            "kind",
+            "items_count",
+            "sids",
+            "content_rows",
+            "total_content_symbols",
+            "total_text_symbols",
+            "total_size_bytes",
+        ):
+            if key in stats:
+                meta[key] = stats.get(key)
+        compact_items: List[Dict[str, Any]] = []
+        for row in (stats.get("items") or [])[: cfg.max_list_items]:
+            if not isinstance(row, dict):
+                continue
+            item: Dict[str, Any] = {}
+            for key in (
+                "sid",
+                "title",
+                "url",
+                "mime",
+                "source_type",
+                "has_content",
+                "content_symbols",
+                "text_symbols",
+                "content_length",
+                "size_bytes",
+                "text_preview",
+                "content_preview",
+            ):
+                val = row.get(key)
+                if val not in (None, ""):
+                    item[key] = val
+            if item:
+                compact_items.append(item)
+        if compact_items:
+            meta["items"] = compact_items
+        stats_items = stats.get("items")
+        if isinstance(stats_items, list) and len(stats_items) > cfg.max_list_items:
+            meta["truncated_items"] = len(stats_items) - cfg.max_list_items
+        return meta
 
     def _compact_item(item: Dict[str, Any]) -> Dict[str, Any]:
         nonlocal truncated
@@ -879,6 +926,15 @@ def _build_search_result_replacement_compact(
             text_val, did = _truncate_str(text_val, cfg.max_text_chars)
             truncated = truncated or did
             entry["text"] = text_val
+        content_val = item.get("content")
+        if isinstance(content_val, str) and content_val.strip():
+            entry["content_symbols"] = len(content_val)
+            content_preview, did = _truncate_str(content_val, min(cfg.max_text_chars, 320))
+            truncated = truncated or did
+            entry["content_preview"] = content_preview
+        content_length = item.get("content_length")
+        if isinstance(content_length, (int, float)):
+            entry["content_length"] = int(content_length)
         return entry
 
     trimmed: List[Dict[str, Any]] = []
@@ -903,6 +959,7 @@ def _build_search_result_replacement_compact(
     out = {
         "tool_id": tool_id,
         "tool_call_id": call_id,
+        "items_meta": _compact_items_meta(items_stats),
         "result": trimmed,
     }
     return _format_json(out, truncated)
@@ -1103,6 +1160,7 @@ def apply_cache_ttl_pruning(
                     call_id=call_id,
                     payload=payload or {},
                     cfg=cfg,
+                    items_stats=meta.get("items_stats") if isinstance(meta.get("items_stats"), dict) else None,
                 )
             else:
                 view = _get_view(tool_id)
@@ -1132,7 +1190,12 @@ def apply_cache_ttl_pruning(
         for path, (src_blk, rep) in path_replacements.items():
             try:
                 rep = _bound_ttl_replacement(block=src_blk, replacement=rep, cfg=cfg, call_meta=call_meta)
-                timeline.hide_paths([path], rep)
+                timeline.hide_paths(
+                    [path],
+                    rep,
+                    hidden_prune_scope="old_turn",
+                    hidden_reason="cache_ttl",
+                )
                 hidden_paths.append(path)
             except Exception:
                 pass
@@ -1170,7 +1233,12 @@ def apply_cache_ttl_pruning(
             try:
                 rep = _build_skill_prune_message(path)
                 rep = _bound_ttl_replacement(block=blk, replacement=rep, cfg=cfg, call_meta=call_meta)
-                timeline.hide_paths([path], rep)
+                timeline.hide_paths(
+                    [path],
+                    rep,
+                    hidden_prune_scope="cold_recent",
+                    hidden_reason="cache_ttl_light",
+                )
                 hidden_recent_paths.add(path)
             except Exception:
                 pass
@@ -1184,11 +1252,24 @@ def apply_cache_ttl_pruning(
             try:
                 if tool_id in {"react.memsearch", "react.search_knowledge"} and not path.startswith(("tc:", "so:")):
                     rep = _build_skill_prune_message(path)
+                elif tools_insights.is_search_tool(tool_id) or tools_insights.is_fetch_uri_content_tool(tool_id):
+                    rep = _build_search_result_replacement_compact(
+                        tool_id=tool_id,
+                        call_id=call_id,
+                        payload=payload or {},
+                        cfg=cfg,
+                        items_stats=meta.get("items_stats") if isinstance(meta.get("items_stats"), dict) else None,
+                    )
                 else:
                     view = _get_view(tool_id)
                     rep = view.build_result_replacement(tool_result_block=blk, payload=payload or {}, cfg=cfg)
                 rep = _bound_ttl_replacement(block=blk, replacement=rep, cfg=cfg, call_meta=call_meta)
-                timeline.hide_paths([path], rep)
+                timeline.hide_paths(
+                    [path],
+                    rep,
+                    hidden_prune_scope="cold_recent",
+                    hidden_reason="cache_ttl_light",
+                )
                 hidden_recent_paths.add(path)
             except Exception:
                 pass
@@ -1220,7 +1301,12 @@ def apply_cache_ttl_pruning(
                 rep = _build_file_replacement(blk)
                 try:
                     rep = _bound_ttl_replacement(block=blk, replacement=rep, cfg=cfg, call_meta=call_meta)
-                    timeline.hide_paths([path], rep)
+                    timeline.hide_paths(
+                        [path],
+                        rep,
+                        hidden_prune_scope="cold_recent",
+                        hidden_reason="cache_ttl_light",
+                    )
                     hidden_recent_paths.add(path)
                 except Exception:
                     pass
@@ -1229,7 +1315,12 @@ def apply_cache_ttl_pruning(
             rep = _build_file_replacement(blk)
             try:
                 rep = _bound_ttl_replacement(block=blk, replacement=rep, cfg=cfg, call_meta=call_meta)
-                timeline.hide_paths([path], rep)
+                timeline.hide_paths(
+                    [path],
+                    rep,
+                    hidden_prune_scope="cold_recent",
+                    hidden_reason="cache_ttl_light",
+                )
                 hidden_recent_paths.add(path)
             except Exception:
                 pass

@@ -432,9 +432,9 @@ def test_record_failed_decision_attempt_emits_round_scoped_blocks():
     solver._record_failed_decision_attempt(
         iteration=0,
         tool_call_id="tc_fail_1",
-        code="ReactDecisionOutV2_schema_error",
-        notice_code="protocol_violation.ReactDecisionOutV2_schema_error",
-        notice_message="Malformed action JSON. <channel:ReactDecisionOutV2> could not be parsed, so no action was executed for this round. Parser reported: JSON parse error",
+        code="action_schema_error",
+        notice_code="protocol_violation.action_schema_error",
+        notice_message="Malformed action JSON. <channel:action> could not be parsed, so no action was executed for this round. Parser reported: JSON parse error",
         decision_packet={"raw": "```json\n{\"action\":\"call_tool\"}\n```"},
         reason="schema_error",
         notice_extra={"parser_error": "JSON parse error"},

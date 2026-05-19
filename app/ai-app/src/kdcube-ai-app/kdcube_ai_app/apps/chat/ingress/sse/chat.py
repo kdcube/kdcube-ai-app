@@ -764,7 +764,7 @@ def create_sse_router(
 
         base_text = str(base_text).strip()
 
-        turn_id = message_data.get("turn_id") or new_turn_id()
+        turn_id = new_turn_id()
         message_data["turn_id"] = turn_id
         conversation_id, conversation_created = await resolve_ingress_conversation_id(
             app=app,
@@ -877,6 +877,7 @@ def create_sse_router(
             "task_id": result.task_id,
             "session_id": result.session_id,
             "conversation_id": result.conversation_id,
+            "turn_id": result.turn_id,
             "conversation_created": conversation_created,
             "user_type": result.user_type,
             "message_kind": result.continuation_kind,

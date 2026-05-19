@@ -5,9 +5,8 @@ description: |
   without errors across all supported diagram types. Covers quoting rules,
   common syntax pitfalls, diagram-type-specific syntax (flowchart, sequence,
   class, ER, Gantt, state, pie, mindmap), subgraphs, styling with classDef
-  and theme variables, KDCube brand color integration, write_png / write_pdf
-  tool parameters for Mermaid rendering, readability tuning, and complexity
-  limits.
+  and theme variables, KDCube brand color integration, renderer usage
+  patterns, readability tuning, and complexity limits.
 version: 2.0.0
 category: visualization
 tags:
@@ -44,14 +43,15 @@ styling, tool integration, and common error patterns that break rendering.
 
 The KDCube rendering pipeline uses **Mermaid.js v11.3.0** via Playwright.
 
-## Tools
+## Renderer Contract
 
-| Tool | Use |
-|------|-----|
-| `write_png(path, content, format="mermaid")` | Render a Mermaid diagram to PNG. Supply raw Mermaid text — no ``` fences. |
-| `write_pdf(path, content, format="mermaid")` | Render a Mermaid diagram to a full-page PDF. Same input rules as PNG. |
+This skill is authoring guidance for Mermaid text and diagram readability. The
+canonical callable contracts live on the rendering tool definitions; do not
+treat this skill as a parameter reference.
 
-Both tools accept **raw Mermaid text** as `content` — never wrap in code fences.
+When rendering Mermaid directly, pass **raw Mermaid text** to the renderer. Do
+not wrap the diagram in Markdown code fences unless the surrounding document
+format specifically expects a Markdown code block.
 
 ---
 
@@ -336,7 +336,7 @@ Syntax notes:
 
 ```
 erDiagram
-  CUSTOMER ||--o{ ORDER : places
+  ACCOUNT ||--o{ ORDER : places
   ORDER ||--|{ LINE_ITEM : contains
   PRODUCT ||--o{ LINE_ITEM : "is in"
 ```
@@ -497,7 +497,7 @@ classDef kdGold fill:#FFF8DC,stroke:#F0BC2E,color:#0D1E2C
 classDef kdAccent fill:#4372C3,stroke:#2B4B8A,color:#FFFFFF,stroke-width:2px
 ```
 
-**Via `write_png` / `write_pdf` parameters (all diagram types):**
+**Via renderer theme variables (all diagram types):**
 
 ```
 write_png(
@@ -521,30 +521,11 @@ not just flowcharts.
 
 ---
 
-## Rendering with write_png
+## Rendering Patterns
 
-### Key Mermaid-Specific Parameters
-
-| Parameter | Default | Use |
-|-----------|---------|-----|
-| `format` | `"mermaid"` | Must be `"mermaid"` for raw Mermaid text |
-| `mermaid_theme` | `"default"` | Theme: `default`, `neutral`, `dark`, `forest`, `base` |
-| `mermaid_font_size_px` | None | Force font size in px (16–22 recommended for readability) |
-| `mermaid_font_family` | None | Force font family (CSS font-family string) |
-| `mermaid_scale` | None | Scale the SVG (1.1–1.6 improves readability) |
-| `mermaid_config` | None | Full Mermaid initialize config (dict or JSON) |
-| `mermaid_theme_variables` | None | Theme variable overrides (dict or JSON) |
-
-### General Parameters That Matter for Mermaid
-
-| Parameter | Default | Use |
-|-----------|---------|-----|
-| `width` | 3000 | Viewport width. Use 1600–2400 for diagrams |
-| `device_scale_factor` | 2.0 | Pixel ratio. Use 2 for standard, 3 for high-res |
-| `fit` | `"content"` | `"content"` = tight crop around the diagram |
-| `content_selector` | None | Not needed for Mermaid (auto-selects `.mermaid svg`) |
-| `padding_px` | 32 | Padding around the cropped diagram |
-| `background` | `"white"` | Set `"transparent"` for alpha PNGs |
+Use PNG output when the diagram must be embedded in DOCX/PPTX or visually
+inspected. Use PDF output when the diagram itself is the deliverable. For exact
+rendering arguments, rely on the rendering tool definitions.
 
 ### Recipe: Readable PNG with KDCube Colors
 

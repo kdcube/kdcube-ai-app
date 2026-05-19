@@ -92,12 +92,12 @@ class _FakeDecisionService:
 def test_parse_react_decision_bundle_from_repeated_channels():
     raw = """
 <channel:thinking>searching</channel:thinking>
-<channel:ReactDecisionOutV2>```json
+<channel:action>```json
 {"action":"call_tool","notes":"search","tool_call":{"tool_id":"web_tools.web_search","params":{"q":"one"}}}
-```</channel:ReactDecisionOutV2>
-<channel:ReactDecisionOutV2>```json
+```</channel:action>
+<channel:action>```json
 {"action":"call_tool","notes":"read","tool_call":{"tool_id":"react.read","params":{"paths":["so:sources_pool[1]"]}}}
-```</channel:ReactDecisionOutV2>
+```</channel:action>
 """
     parsed = parse_react_decision_bundle_from_raw(full_raw=raw, json_raw=None)
 
@@ -112,14 +112,14 @@ def test_parse_react_decision_bundle_from_repeated_channels():
 def test_parse_react_decision_bundle_from_repeated_full_round_sequences():
     raw = """
 <channel:thinking>search one</channel:thinking>
-<channel:ReactDecisionOutV2>```json
+<channel:action>```json
 {"action":"call_tool","notes":"search one","tool_call":{"tool_id":"web_tools.web_search","params":{"q":"one"}}}
-```</channel:ReactDecisionOutV2>
+```</channel:action>
 <channel:code></channel:code>
 <channel:thinking>search two</channel:thinking>
-<channel:ReactDecisionOutV2>```json
+<channel:action>```json
 {"action":"call_tool","notes":"search two","tool_call":{"tool_id":"web_tools.web_fetch","params":{"url":"https://example.com"}}}
-```</channel:ReactDecisionOutV2>
+```</channel:action>
 <channel:code></channel:code>
 """
     parsed = parse_react_decision_bundle_from_raw(full_raw=raw, json_raw=None)
@@ -134,10 +134,10 @@ def test_parse_react_decision_bundle_from_repeated_full_round_sequences():
 
 def test_parse_react_decision_json_with_embedded_fence_text():
     raw = """
-<channel:ReactDecisionOutV2>```json
+<channel:action>```json
 {"action":"call_tool","notes":"write","tool_call":{"tool_id":"react.write","params":{"path":"outputs/report.html","channel":"canvas","content":"<pre>```html\\n<div>ok</div>\\n```</pre>"}}}
 ```
-</channel:ReactDecisionOutV2>
+</channel:action>
 """
     parsed = parse_react_decision_bundle_from_raw(full_raw=raw, json_raw=None)
 
@@ -148,12 +148,12 @@ def test_parse_react_decision_json_with_embedded_fence_text():
 
 def test_parse_react_decision_bundle_not_poisoned_by_prior_fenced_content():
     raw = """
-<channel:ReactDecisionOutV2>```json
+<channel:action>```json
 {"action":"call_tool","notes":"write","tool_call":{"tool_id":"react.write","params":{"path":"outputs/a.md","content":"```html\\n<div>one</div>\\n```"}}}
-```</channel:ReactDecisionOutV2>
-<channel:ReactDecisionOutV2>```json
+```</channel:action>
+<channel:action>```json
 {"action":"call_tool","notes":"search","tool_call":{"tool_id":"web_tools.web_search","params":{"q":"two"}}}
-```</channel:ReactDecisionOutV2>
+```</channel:action>
 """
     parsed = parse_react_decision_bundle_from_raw(full_raw=raw, json_raw=None)
 
@@ -199,9 +199,9 @@ async def test_decision_stream_parses_html_content_inside_structured_channel():
     raw = (
         "<channel:thinking>Preparing report artifacts.</channel:thinking>\n"
         "I have the data. Now I will write the HTML source.\n"
-        "<channel:ReactDecisionOutV2>```json\n"
+        "<channel:action>```json\n"
         f"{json.dumps(decision, ensure_ascii=False, indent=2)}\n"
-        "```\n</channel:ReactDecisionOutV2>\n"
+        "```\n</channel:action>\n"
         "<channel:code></channel:code>\n"
     )
 
@@ -223,11 +223,11 @@ async def test_decision_stream_parses_html_content_inside_structured_channel():
 def test_parse_react_decision_bundle_ignores_literal_channel_mentions_in_thinking():
     raw = """
 <channel:thinking>
-Explain the literal syntax `<channel:ReactDecisionOutV2>...</channel:ReactDecisionOutV2>` to the user.
+Explain the literal syntax `<channel:action>...</channel:action>` to the user.
 </channel:thinking>
-<channel:ReactDecisionOutV2>```json
+<channel:action>```json
 {"action":"call_tool","notes":"search one","tool_call":{"tool_id":"web_tools.web_search","params":{"q":"one"}}}
-```</channel:ReactDecisionOutV2>
+```</channel:action>
 """
     parsed = parse_react_decision_bundle_from_raw(full_raw=raw, json_raw=None)
 
@@ -262,14 +262,14 @@ async def test_decision_stream_recovers_repeated_action_channels_as_bundle():
     raw = """
 <thinking>legacy hidden thought must not poison channel parsing</thinking>
 <channel:thinking>writing two files</channel:thinking>
-<channel:ReactDecisionOutV2>```json
+<channel:action>```json
 {"action":"call_tool","notes":"write alpha","tool_call":{"tool_id":"react.write","params":{"path":"outputs/a.md","channel":"canvas","content":"alpha"}}}
-```</channel:ReactDecisionOutV2>
+```</channel:action>
 <channel:code></channel:code>
 <channel:thinking>second accidental thinking block</channel:thinking>
-<channel:ReactDecisionOutV2>```json
+<channel:action>```json
 {"action":"call_tool","notes":"write beta","tool_call":{"tool_id":"react.write","params":{"path":"outputs/b.md","channel":"canvas","content":"beta"}}}
-```</channel:ReactDecisionOutV2>
+```</channel:action>
 <channel:code></channel:code>
 """
     packet = await react_decision_stream_v2(
@@ -292,12 +292,12 @@ async def test_decision_stream_recovers_repeated_action_channels_as_bundle():
 async def test_decision_stream_keeps_valid_repeated_action_and_reports_malformed_sibling():
     raw = """
 <channel:thinking>writing files</channel:thinking>
-<channel:ReactDecisionOutV2>```json
+<channel:action>```json
 {"action":"call_tool","notes":"write alpha","tool_call":{"tool_id":"react.write","params":{"path":"outputs/a.md","channel":"canvas","content":"alpha"}}}
-```</channel:ReactDecisionOutV2>
-<channel:ReactDecisionOutV2>```json
+```</channel:action>
+<channel:action>```json
 {"action":"call_tool","notes":
-```</channel:ReactDecisionOutV2>
+```</channel:action>
 <channel:code></channel:code>
 """
     packet = await react_decision_stream_v2(
@@ -364,6 +364,43 @@ async def test_prepare_safe_multi_action_bundle_accepts_safe_tools():
         "react.read",
         "react.write",
     ]
+
+
+@pytest.mark.asyncio
+async def test_prepare_safe_multi_action_bundle_allows_skill_read_with_independent_action():
+    solver = _solver_stub()
+    bundle = [
+        {
+            "action": "call_tool",
+            "notes": "load skill",
+            "tool_call": {
+                "tool_id": "react.read",
+                "params": {"paths": ["sk:public.pdf-press"]},
+            },
+        },
+        {
+            "action": "call_tool",
+            "notes": "write report",
+            "tool_call": {
+                "tool_id": "react.write",
+                "params": {
+                    "path": "outputs/report.html",
+                    "channel": "canvas",
+                    "content": "<html></html>",
+                    "kind": "display",
+                },
+            },
+        },
+    ]
+    accepted, error, extra = await solver._prepare_safe_multi_action_bundle(
+        bundle=bundle,
+        adapters_by_id={},
+    )
+
+    assert error is None
+    assert error is None
+    assert [d["tool_call"]["tool_id"] for d in accepted] == ["react.read", "react.write"]
+    assert extra is None
 
 
 @pytest.mark.asyncio

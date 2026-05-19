@@ -42,16 +42,11 @@ elements into native PowerPoint slides with text boxes, tables, images, and
 two-column layouts. It is NOT a browser/Chromium render; only the subset of HTML
 and CSS documented here is supported.
 
-## Tool
+## Renderer Contract
 
-```
-write_pptx(path, content, title?, include_sources_slide?, base_dir?)
-```
-
-- `content`: HTML string. One `<section>` per slide.
-- `path`: Relative `.pptx` path under OUT_DIR.
-- `include_sources_slide`: Append auto-generated Sources slide (default False).
-- `base_dir`: Base directory for resolving relative image paths (defaults to OUT_DIR).
+This skill is authoring guidance for slide-structured HTML. The canonical
+callable contract lives on the `rendering_tools.write_pptx` tool definition;
+do not treat this skill as a parameter reference.
 
 ---
 
@@ -113,6 +108,9 @@ If content exceeds budget → split into multiple slides rather than cramming.
 
 Citations are concise inline `[n]` markers. Full details go in an auto-generated
 Sources slide. They should not disrupt reading flow.
+The Sources slide is for external evidence only: `http://` and `https://`
+source URLs. Generated local artifacts such as charts/images are embedded by
+relative `turn_...` paths and must not be listed as clickable `file://` sources.
 
 ---
 
@@ -230,15 +228,15 @@ These classes render as paragraph elements:
 ### Images
 
 ```html
-<!-- Relative from OUT_DIR -->
-<img src="turn_id/files/revenue_chart.png" width="640" alt="Revenue Chart">
+<!-- Relative from the artifact root / OUTPUT_DIR -->
+<img src="turn_<id>/files/revenue_chart.png" width="640" alt="Revenue Chart">
 
 <!-- With explicit dimensions -->
 <img src="images/architecture.png" style="width:5in; height:3in;" alt="Architecture">
 ```
 
 **Rules:**
-- MUST use relative file paths from OUT_DIR — **never base64 data URIs**
+- MUST use relative `turn_...` file paths from the artifact root — **never base64 data URIs**
 - Sizing: `width="640"` (pixels, converts to ~6.7in at 96dpi) or `style="width:5in; height:3in;"`
 - Supported units: px, pt, in
 - Images auto-fit to slide width if too large
@@ -465,9 +463,11 @@ SVGs must be converted to PNG before embedding.
 
 ### Sources Slide
 
-When sources are provided and `include_sources_slide=True`, a final "Sources" slide
+When external sources are provided, a final "Sources" slide
 is auto-generated showing `[n] Title (domain)` with clickable hyperlinks. Do NOT
 create a sources slide manually — it duplicates.
+Only external `http(s)` URLs belong here; generated artifact paths are not
+references.
 
 ### When to Use Citations vs Reference Links
 
@@ -504,9 +504,9 @@ A well-structured deck tells a story. Use these patterns to guide slide ordering
 7. **Risks / mitigations** — two-column or callout-based
 8. **Recommendation + timeline**
 
-### Sales / Customer Deck (5–8 slides)
+### Sales / Client Deck (5–8 slides)
 
-1. **Title slide** with customer name
+1. **Title slide** with client name
 2. **Understanding your challenge** — shows you listened
 3. **Our approach** — architecture/diagram slide
 4. **Key capabilities** (1–2 slides) — two-column feature comparisons
@@ -543,7 +543,7 @@ A well-structured deck tells a story. Use these patterns to guide slide ordering
   <h2>Key Achievements</h2>
   <ul>
     <li><strong>Revenue:</strong> $3.2M (+28% YoY)</li>
-    <li><strong>Growth:</strong> 450 new customers</li>
+    <li><strong>Growth:</strong> 450 new accounts</li>
     <li><strong>Efficiency:</strong> 35% cost reduction</li>
   </ul>
 
@@ -593,7 +593,7 @@ A well-structured deck tells a story. Use these patterns to guide slide ordering
     </thead>
     <tbody>
       <tr><td>Revenue</td><td>$2.5M</td><td>$3.2M</td><td>+28%</td></tr>
-      <tr><td>Customers</td><td>1,200</td><td>1,650</td><td>+38%</td></tr>
+      <tr><td>Accounts</td><td>1,200</td><td>1,650</td><td>+38%</td></tr>
       <tr><td>NPS</td><td>62</td><td>71</td><td>+9</td></tr>
     </tbody>
   </table>
@@ -756,7 +756,7 @@ wraps to 3 lines. Keep to 8 words max. Use subtitle for details.
 
 ### 8. Manual Sources Slide
 
-The renderer auto-generates a Sources slide when `include_sources_slide=True`.
+The renderer auto-generates a Sources slide when external sources are provided.
 Don't create one manually — you'll get duplicates.
 
 ### 9. SVG Directly in Slides
@@ -780,7 +780,7 @@ After generating the deck:
 4. **Common fixes:**
    - Blank slide → content was outside `<section>` or section was empty
    - Tiny text → too much content; split the slide
-   - Missing image → wrong path; verify file exists at OUT_DIR/path
+   - Missing image → wrong path; verify file exists at `OUTPUT_DIR/path`
    - No colors → CSS variable not defined or unsupported color syntax
    - Missing diagram → SVG was embedded directly; render to PNG first
 

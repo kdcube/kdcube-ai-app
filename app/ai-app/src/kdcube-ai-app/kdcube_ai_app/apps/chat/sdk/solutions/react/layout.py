@@ -26,7 +26,10 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.workspace import (
     latest_workspace_publish_event,
 )
 
-from kdcube_ai_app.apps.chat.sdk.skills.skills_registry import skills_gallery_text
+from kdcube_ai_app.apps.chat.sdk.skills.skills_registry import (
+    set_active_skill_tool_catalog,
+    skills_gallery_text,
+)
 from kdcube_ai_app.apps.chat.sdk.util import (
     LINE_NUMBERS_LINES,
     _shorten,
@@ -557,11 +560,27 @@ def build_timeline_render_directive(
     formatting or should stay internal.
     """
     btype = (block.get("type") or "").strip()
-    if btype in {"react.plan", "react.plan.ack", "react.workspace.publish", "react.workspace.checkout"}:
+    text = block.get("text")
+    if btype == "stage.suggested_followups":
+        return {"skip": True}
+    if btype == "react.turn.finalize" or (
+        isinstance(text, str)
+        and "Turn completed with these stats" in text
+        and "[BUDGET]" in text
+    ):
+        compact = compact_turn_finalize_budget_text(text if isinstance(text, str) else "")
+        return {"skip": not bool(compact), "text": compact}
+    if btype in {
+        "react.plan",
+        "react.plan.ack",
+        "react.state",
+        "react.exit",
+        "react.workspace.publish",
+        "react.workspace.checkout",
+    }:
         return {"skip": True}
 
     if btype == "react.notice":
-        text = block.get("text")
         payload = None
         if isinstance(text, str) and text.strip():
             try:
@@ -573,6 +592,69 @@ def build_timeline_render_directive(
         return {"skip": False}
 
     return {"skip": False}
+
+
+def compact_turn_finalize_budget_text(text: str) -> str:
+    """
+    Keep only the stable finalize header plus budget and open-plan lines. The
+    full announce contains volatile memory/workspace/live-event sections and
+    must not be carried into later prompt renders.
+    """
+    raw_lines = str(text or "").splitlines()
+    if not raw_lines:
+        return ""
+
+    out: List[str] = []
+    title_idx = next(
+        (idx for idx, line in enumerate(raw_lines) if "Turn completed with these stats" in line),
+        None,
+    )
+    if title_idx is not None:
+        start = title_idx
+        if title_idx - 1 >= 0 and raw_lines[title_idx - 1].lstrip().startswith("╔"):
+            start = title_idx - 1
+        end = title_idx
+        if title_idx + 1 < len(raw_lines) and raw_lines[title_idx + 1].lstrip().startswith("╚"):
+            end = title_idx + 1
+        out.extend(line.rstrip() for line in raw_lines[start : end + 1])
+
+    def _append_section(section: str) -> None:
+        section_idx = next(
+            (idx for idx, line in enumerate(raw_lines) if line.strip() == f"[{section}]"),
+            None,
+        )
+        if section_idx is None:
+            return
+        section_lines: List[str] = []
+        for line in raw_lines[section_idx + 1 :]:
+            stripped = line.strip()
+            if not stripped:
+                if section_lines and section_lines[-1] != "":
+                    section_lines.append("")
+                continue
+            if stripped.startswith("[") or stripped.startswith("╔"):
+                break
+            section_lines.append(line.rstrip())
+        while section_lines and section_lines[-1] == "":
+            section_lines.pop()
+        if section == "OPEN PLANS":
+            meaningful = [
+                item.strip()
+                for item in section_lines
+                if item.strip() and "plans: none" not in item.strip().lower()
+            ]
+            if not meaningful:
+                return
+        if out:
+            out.append("")
+        out.append(f"[{section}]")
+        out.extend(section_lines)
+
+    _append_section("BUDGET")
+    _append_section("OPEN PLANS")
+    while out and out[-1] == "":
+        out.pop()
+    return "\n".join(out).strip()
 
 
 def build_announce_workspace_lines(
@@ -932,12 +1014,13 @@ def build_announce_text(
     mode = (mode or "full").strip().lower()
     show_title = mode != "budget"
     show_temporal = mode == "full"
-    show_plan = mode in {"full", "turn_finalize"}
+    show_plan = mode in {"full", "turn_finalize", "turn_finalize_budget"}
     show_constraints = mode == "full"
+    show_status_sections = mode not in {"budget", "turn_finalize_budget"}
 
     lines: List[str] = []
     if show_title:
-        if mode == "turn_finalize":
+        if mode in {"turn_finalize", "turn_finalize_budget"}:
             title = "Turn completed with these stats"
         else:
             title = f"ANNOUNCE — Iteration {iter_display}/{iter_total}"
@@ -968,7 +1051,7 @@ def build_announce_text(
             pass
 
     cap_lines = build_announce_context_cap_lines(runtime_ctx=runtime_ctx)
-    if cap_lines:
+    if show_status_sections and cap_lines:
         lines.append("")
         lines.extend(cap_lines)
 
@@ -987,31 +1070,41 @@ def build_announce_text(
             pass
 
     if show_plan:
-        lines.append("")
-        lines.extend(build_announce_plan_lines(timeline_blocks=timeline_blocks))
+        plan_lines = build_announce_plan_lines(timeline_blocks=timeline_blocks)
+        if not (
+            mode == "turn_finalize_budget"
+            and not [
+                item
+                for item in plan_lines
+                if item.strip() and "plans: none" not in item.strip().lower() and item.strip() != "[OPEN PLANS]"
+            ]
+        ):
+            lines.append("")
+            lines.extend(plan_lines)
 
-    live_turn_event_lines = build_announce_live_turn_event_lines(
-        runtime_ctx=runtime_ctx,
-        timeline_blocks=timeline_blocks,
-    )
-    if live_turn_event_lines:
-        lines.append("")
-        lines.extend(live_turn_event_lines)
+    if show_status_sections:
+        live_turn_event_lines = build_announce_live_turn_event_lines(
+            runtime_ctx=runtime_ctx,
+            timeline_blocks=timeline_blocks,
+        )
+        if live_turn_event_lines:
+            lines.append("")
+            lines.extend(live_turn_event_lines)
 
-    memory_lines = build_announce_memory_lines(runtime_ctx=runtime_ctx)
-    if memory_lines:
-        lines.append("")
-        lines.extend(memory_lines)
+        memory_lines = build_announce_memory_lines(runtime_ctx=runtime_ctx)
+        if memory_lines:
+            lines.append("")
+            lines.extend(memory_lines)
 
-    workspace_lines = build_announce_workspace_lines(
-        runtime_ctx=runtime_ctx,
-        timeline_blocks=timeline_blocks,
-    )
-    if workspace_lines:
-        lines.append("")
-        lines.extend(workspace_lines)
+        workspace_lines = build_announce_workspace_lines(
+            runtime_ctx=runtime_ctx,
+            timeline_blocks=timeline_blocks,
+        )
+        if workspace_lines:
+            lines.append("")
+            lines.extend(workspace_lines)
 
-    if feedback_updates and mode != "turn_finalize":
+    if show_status_sections and feedback_updates and mode != "turn_finalize":
         updates = [u for u in (feedback_updates or []) if isinstance(u, dict)]
         if updates:
             lines.append("")
@@ -1470,6 +1563,7 @@ def build_instruction_catalog_block(
         tool_catalog_json: Optional[str] = None,
         react_tools: Optional[List[Dict[str, Any]]] = None,
         include_skill_gallery: bool = True,
+        skill_tool_catalog: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     from kdcube_ai_app.apps.chat.sdk.tools import tools_insights
     tools_list: List[Dict[str, Any]] = []
@@ -1525,6 +1619,9 @@ def build_instruction_catalog_block(
     for it in react_tools:
         if it.get("id") not in ids:
             tools_list.append(it)
+    skill_tools_list = list(skill_tool_catalog) if skill_tool_catalog is not None else list(tools_list)
+    if include_skill_gallery:
+        set_active_skill_tool_catalog(skill_tools_list)
 
     tool_block = ""
     if tools_list:
@@ -1575,7 +1672,7 @@ def build_instruction_catalog_block(
     if include_skill_gallery:
         skill_block = skills_gallery_text(
             consumer=consumer,
-            tool_catalog=tools_list,
+            tool_catalog=skill_tools_list,
         )
     active_block = ""
 

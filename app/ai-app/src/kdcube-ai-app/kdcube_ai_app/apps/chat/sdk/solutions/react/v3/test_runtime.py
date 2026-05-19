@@ -39,6 +39,11 @@ def _solver_stub() -> ReactSolverV2:
     solver._reactive_iteration_credit_total = 0
     solver._reactive_iteration_credit_cap = 0
     solver._credited_external_event_ids = set()
+    solver.additional_instructions = None
+    solver.instruction_body = None
+    solver.instruction_blocks = None
+    solver.include_tool_catalog = True
+    solver.include_skill_gallery = True
     solver.multi_action_mode = "safe_fanout"
     solver.scratchpad = SimpleNamespace(turn_id="turn-1")
     solver.comm = SimpleNamespace(service_event=_noop_async)
@@ -246,9 +251,9 @@ async def test_decision_node_feeds_exec_contract_when_decision_channel_closes(mo
         }
         payload = json.dumps(decision)
         if subs is not None:
-            for fn in subs.get("ReactDecisionOutV2", channel_instance=0):
-                await fn(text=payload, completed=False, channel="ReactDecisionOutV2", channel_instance=0)
-                await fn(text="", completed=True, channel="ReactDecisionOutV2", channel_instance=0)
+            for fn in subs.get("action", channel_instance=0):
+                await fn(text=payload, completed=False, channel="action", channel_instance=0)
+                await fn(text="", completed=True, channel="action", channel_instance=0)
             json_attached_before_code.append(any(event[0] == "json" for event in exec_events))
             for fn in subs.get("code"):
                 await fn(text="print('ok')\n", completed=False, channel="code")
@@ -258,7 +263,7 @@ async def test_decision_node_feeds_exec_contract_when_decision_channel_closes(mo
             "agent_response_bundle": [decision],
             "log": {"error": None},
             "channels": {
-                "ReactDecisionOutV2": {"text": payload},
+                "action": {"text": payload},
                 "code": {"text": "print('ok')\n"},
             },
         }
@@ -454,23 +459,23 @@ async def test_decision_node_binds_code_to_immediately_preceding_exec_decision(m
     async def _fake_react_decision_stream_v2(**kwargs):
         subs = kwargs.get("subscribers")
         if subs is not None:
-            for fn in subs.get("ReactDecisionOutV2", channel_instance=0):
-                await fn(text=payloads[0], completed=False, channel="ReactDecisionOutV2", channel_instance=0)
-                await fn(text="", completed=True, channel="ReactDecisionOutV2", channel_instance=0)
-            for fn in subs.get("ReactDecisionOutV2", channel_instance=1):
-                await fn(text=payloads[1], completed=False, channel="ReactDecisionOutV2", channel_instance=1)
-                await fn(text="", completed=True, channel="ReactDecisionOutV2", channel_instance=1)
+            for fn in subs.get("action", channel_instance=0):
+                await fn(text=payloads[0], completed=False, channel="action", channel_instance=0)
+                await fn(text="", completed=True, channel="action", channel_instance=0)
+            for fn in subs.get("action", channel_instance=1):
+                await fn(text=payloads[1], completed=False, channel="action", channel_instance=1)
+                await fn(text="", completed=True, channel="action", channel_instance=1)
             for fn in subs.get("code"):
                 await fn(text=code_text, completed=True, channel="code")
-            for fn in subs.get("ReactDecisionOutV2", channel_instance=2):
-                await fn(text=payloads[2], completed=False, channel="ReactDecisionOutV2", channel_instance=2)
-                await fn(text="", completed=True, channel="ReactDecisionOutV2", channel_instance=2)
+            for fn in subs.get("action", channel_instance=2):
+                await fn(text=payloads[2], completed=False, channel="action", channel_instance=2)
+                await fn(text="", completed=True, channel="action", channel_instance=2)
         return {
             "agent_response": write_decision,
             "agent_response_bundle": decisions,
             "log": {"error": None},
             "channels": {
-                "ReactDecisionOutV2": {"text": "".join(payloads)},
+                "action": {"text": "".join(payloads)},
                 "code": {"text": code_text},
             },
         }
@@ -1009,17 +1014,17 @@ async def test_decision_complete_waits_for_exit_grace_and_retries_on_new_externa
             "notes": "",
         }
         if subs is not None:
-            for fn in subs.get("ReactDecisionOutV2", channel_instance=0):
+            for fn in subs.get("action", channel_instance=0):
                 await fn(
                     text=payload,
                     completed=False,
-                    channel="ReactDecisionOutV2",
+                    channel="action",
                     channel_instance=0,
                 )
                 await fn(
                     text="",
                     completed=True,
-                    channel="ReactDecisionOutV2",
+                    channel="action",
                     channel_instance=0,
                 )
         return {
@@ -1027,7 +1032,7 @@ async def test_decision_complete_waits_for_exit_grace_and_retries_on_new_externa
             "agent_response_bundle": [decision],
             "log": {"error": None},
             "channels": {
-                "ReactDecisionOutV2": {"text": payload},
+                "action": {"text": payload},
                 "code": {"text": ""},
             },
         }
@@ -1158,17 +1163,17 @@ async def test_steer_finalize_enables_agent_final_answer_stream_and_marks_it_emi
             "suggested_followups": [],
         }
         if subs is not None:
-            for fn in subs.get("ReactDecisionOutV2", channel_instance=0):
+            for fn in subs.get("action", channel_instance=0):
                 await fn(
                     text=payload,
                     completed=False,
-                    channel="ReactDecisionOutV2",
+                    channel="action",
                     channel_instance=0,
                 )
                 await fn(
                     text="",
                     completed=True,
-                    channel="ReactDecisionOutV2",
+                    channel="action",
                     channel_instance=0,
                 )
         return {
@@ -1176,7 +1181,7 @@ async def test_steer_finalize_enables_agent_final_answer_stream_and_marks_it_emi
             "agent_response_bundle": [decision],
             "log": {"error": None},
             "channels": {
-                "ReactDecisionOutV2": {"text": payload},
+                "action": {"text": payload},
                 "code": {"text": ""},
             },
         }
@@ -1317,17 +1322,17 @@ async def test_decision_node_always_enables_final_answer_timeline_stream(monkeyp
             "suggested_followups": [],
         }
         if subs is not None:
-            for fn in subs.get("ReactDecisionOutV2", channel_instance=0):
+            for fn in subs.get("action", channel_instance=0):
                 await fn(
                     text=payload,
                     completed=False,
-                    channel="ReactDecisionOutV2",
+                    channel="action",
                     channel_instance=0,
                 )
                 await fn(
                     text="",
                     completed=True,
-                    channel="ReactDecisionOutV2",
+                    channel="action",
                     channel_instance=0,
                 )
         return {
@@ -1335,7 +1340,7 @@ async def test_decision_node_always_enables_final_answer_timeline_stream(monkeyp
             "agent_response_bundle": [decision],
             "log": {"error": None},
             "channels": {
-                "ReactDecisionOutV2": {"text": payload},
+                "action": {"text": payload},
                 "code": {"text": ""},
             },
         }

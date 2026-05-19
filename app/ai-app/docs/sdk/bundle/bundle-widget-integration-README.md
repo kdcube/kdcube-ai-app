@@ -4,7 +4,7 @@ title: "Bundle Widget Integration"
 summary: "Bundle widget UI contract: source-folder widget apps, runtime config handshake, operation URL construction, auth propagation, and the recommended pattern when a capability is both widget and operation."
 tags: ["sdk", "bundle", "widget", "iframe", "frontend", "integrations", "telegram", "memory"]
 keywords: ["bundle widget contract", "iframe widget contract", "widget source folder", "static widget build", "runtime config handshake", "operation url construction", "auth propagation to widget", "widget and operation dual pattern", "shared sdk widget source", "telegram widget components", "memory widget component", "bundle widget integration"]
-updated_at: 2026-05-17
+updated_at: 2026-05-19
 see_also:
   - ks:docs/sdk/bundle/bundle-interfaces-README.md
   - ks:docs/sdk/bundle/ui-components-lifecycle-README.md
@@ -81,6 +81,12 @@ If the decorator exists but `ui.widgets.<alias>` is absent, the widget
 is a method-rendered widget: the route invokes the decorated Python method and
 returns its payload.
 
+If the decorator exists and `ui.widgets.<alias>` has an active `src_folder` and
+`build_command`, the static widget app takes precedence. In that case the
+decorated Python method is still required for discovery, visibility, and route
+resolution, but it is not the UI that the browser receives. The method body may
+be a small placeholder for legacy/fallback cases.
+
 If `ui.widgets.<alias>` exists but the `@ui_widget(alias="<alias>")`
 surface is missing, the static config is ignored for widget routing. A direct
 widget request should fail with a missing-widget response because the platform
@@ -89,6 +95,66 @@ does not treat config-only entries as user-visible widget surfaces.
 Use `enabled.widget.<alias>: false` to hide or disable a decorated widget alias.
 This is separate from `ui.widgets.<alias>.enabled`, which controls
 whether a static build config is active for that alias.
+
+## Inherited Widget Aliases
+
+Entrypoint classes commonly inherit widgets from SDK or platform base classes.
+Those inherited `@ui_widget(...)` methods are normal bundle surfaces: they are
+discovered through the class MRO, listed in the manifest, and can be served
+unless disabled by effective bundle props.
+
+To suppress an inherited widget without changing code, disable the surface:
+
+```yaml
+config:
+  enabled:
+    widget:
+      memories: false
+```
+
+Do not use this as the suppression mechanism:
+
+```yaml
+config:
+  ui:
+    widgets:
+      memories:
+        enabled: false
+```
+
+That only disables the static app config for alias `memories`. If an inherited
+decorated method still exists, the route may fall back to method-rendered HTML
+instead of hiding the widget.
+
+To replace an inherited widget UI while keeping the inherited surface, configure
+the same alias as a source-folder widget:
+
+```yaml
+config:
+  ui:
+    widgets:
+      memories:
+        enabled: true
+        src_folder: ui/widgets/my-memory-widget
+        build_command: npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build
+```
+
+The inherited `@ui_widget(alias="memories")` still declares the surface, while
+the static app at `ui/widgets/my-memory-widget` becomes the served UI.
+
+If code must override the decorator metadata itself, override the same Python
+method name in the child class:
+
+```python
+class MyEntrypoint(BaseEntrypointWithWidgets):
+    @ui_widget(alias="memories", icon={"lucide": "NotebookText"})
+    async def memories_widget(self, **kwargs):
+        ...
+```
+
+Do not add a second method with the same alias while inheriting the parent
+method. Duplicate widget aliases are invalid and manifest discovery raises a
+duplicate-alias error.
 
 ## Reusing SDK Widget Components
 

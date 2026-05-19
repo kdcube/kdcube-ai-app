@@ -34,14 +34,14 @@ class ToolCallDecisionV2(BaseModel):
     params: Dict[str, Any] = Field(default_factory=dict)
 
 
-class ReactDecisionOutV2(BaseModel):
+class Action(BaseModel):
     action: Literal["call_tool", "complete", "exit"]
 
     notes: str = ""
 
-    # One action object, one tool call:
-    # ReactDecisionOutV2 currently supports exactly one tool call object per decision.
-    # Remove/update this when multi-tool decisions are introduced.
+    # One action JSON object supports exactly one tool call object.
+    # Multi-action output is represented by multiple <channel:action>
+    # instances, not by arrays in this field.
     tool_call: Optional[ToolCallDecisionV2] = None
 
     final_answer: Optional[str] = None
@@ -49,7 +49,7 @@ class ReactDecisionOutV2(BaseModel):
 
 
 _CHANNEL_BLOCK_RE = re.compile(
-    r"<channel:ReactDecisionOutV2>(.*?)</channel:ReactDecisionOutV2>",
+    r"<channel:action>(.*?)</channel:action>",
     re.I | re.S,
 )
 _FENCE_LINE_RE = re.compile(r"^\s*```(?:json)?\s*$", re.I)
@@ -161,7 +161,7 @@ def parse_react_decision_bundle_from_raw(
             })
             continue
         try:
-            decisions.append(ReactDecisionOutV2.model_validate(parsed).model_dump())
+            decisions.append(Action.model_validate(parsed).model_dump())
         except Exception as exc:
             error_text = f"decision_validate_error:{type(exc).__name__}:{exc}"
             errors.append(error_text)
@@ -192,7 +192,7 @@ def parse_single_react_decision_from_channel_text(
     except Exception as exc:
         return None, f"json_decode_error:{type(exc).__name__}:{exc}"
     try:
-        return ReactDecisionOutV2.model_validate(parsed).model_dump(), None
+        return Action.model_validate(parsed).model_dump(), None
     except Exception as exc:
         return None, f"decision_validate_error:{type(exc).__name__}:{exc}"
 
@@ -230,8 +230,8 @@ def build_decision_system_text(
         "}\n"
         "\n"
         "Each JSON object may contain at most ONE tool_call object.\n"
-        "Do NOT emit a sequence/array/list of tool calls inside one ReactDecisionOutV2 object.\n"
-        "When multi-action is enabled, emit each action in its own separate <channel:ReactDecisionOutV2> instance.\n"
+        "Do NOT emit a sequence/array/list of tool calls inside one action JSON object.\n"
+        "When multi-action is enabled, emit each action in its own separate <channel:action> instance.\n"
     )
 
     if _multi_action_enabled(multi_action_mode):
@@ -241,54 +241,63 @@ def build_decision_system_text(
             "CRITICAL: you have 4 channel types. Three are required every round; summary is allowed ONLY on complete/exit final-answer rounds.\n"
             "Output protocol (strict): you must produce content which represents one round and consists of these required channel types. Do not include summary unless action is complete or exit:\n"
             "<channel:thinking> ... </channel:thinking>\n"
-            "<channel:ReactDecisionOutV2> ... </channel:ReactDecisionOutV2>\n"
+            "<channel:action> ... </channel:action>\n"
             "<channel:code> code generated </channel:code>\n\n"
-            "In a single round, include exactly one <channel:thinking>, one or more <channel:ReactDecisionOutV2> channel instances, and <channel:code> only when an exec action needs Python.\n"
+            "In a single round, include exactly one <channel:thinking>, one or more <channel:action> instances, and <channel:code> only when an exec action needs Python.\n"
             "The optional <channel:summary> may appear exactly once, and only when the response contains a single complete/exit action and no tool-call actions.\n"
             "In <channel:thinking>, write a brief user-facing status in markdown.\n"
             "The thinking <channel:thinking> channel is shown to the user.\n"
             "Keep it very short (1–2 sentences, no lists).\n\n"
-            "<channel:ReactDecisionOutV2> is the action channel. One <channel:ReactDecisionOutV2> ... </channel:ReactDecisionOutV2> channel instance means exactly one action.\n"
-            "If you need multiple actions in one round, repeat <channel:ReactDecisionOutV2>; if one action is exec_tools.execute_code_python, put its <channel:code> immediately after that exec decision. Do NOT generate a second <channel:thinking> in the same response.\n"
-            "Inside each <channel:ReactDecisionOutV2> channel instance, output exactly one ```json fenced block with one ReactDecisionOutV2 object matching the shape hint below (no extra text):\n"
+            "<channel:action> carries an action. One <channel:action> ... </channel:action> instance means exactly one action.\n"
+            "If you need multiple actions in one round, repeat <channel:action>; if one action is exec_tools.execute_code_python, put its <channel:code> immediately after that exec action. Do NOT generate a second <channel:thinking> in the same response.\n"
+            "Inside each <channel:action> instance, output exactly one ```json fenced block with one action JSON object matching the shape hint below (no extra text):\n"
             "```json\n"
             f"{json_hint}\n"
             "```\n\n"
             "If you need multiple actions in one round, use this shape:\n"
             "<channel:thinking>...short status for the whole round...</channel:thinking>\n"
-            "<channel:ReactDecisionOutV2>```json {{ ...first ReactDecisionOutV2 object... }} ```</channel:ReactDecisionOutV2>\n"
-            "<channel:ReactDecisionOutV2>```json {{ ...exec_tools.execute_code_python action with params.contract... }} ```</channel:ReactDecisionOutV2>\n"
+            "<channel:action>```json {{ ...first action JSON object... }} ```</channel:action>\n"
+            "<channel:action>```json {{ ...exec_tools.execute_code_python action with params.contract... }} ```</channel:action>\n"
             "<channel:code>raw Python for the immediately preceding exec action</channel:code>\n"
-            "<channel:ReactDecisionOutV2>```json {{ ...another independent non-exec action... }} ```</channel:ReactDecisionOutV2>\n\n"
-            "Never put > 1 actions into one ReactDecisionOutV2 channel instance.\n"
-            "Never put > 1 JSON objects, > 1 fenced JSON blocks, or prose after the JSON inside one <channel:ReactDecisionOutV2> instance.\n"
-            "DO NOT DO THIS: Your second typical error is that you include a sequence of tool calls inside a single <channel:ReactDecisionOutV2> instance, like <channel:ReactDecisionOutV2>```json...```\n```json...```</channel:ReactDecisionOutV2>. This does not work. For each tool call, emit a separate <channel:ReactDecisionOutV2>...</channel:ReactDecisionOutV2> instance.\n"
-            "If you emit multiple tool-call actions, each action must be in its own separate <channel:ReactDecisionOutV2>...</channel:ReactDecisionOutV2> instance.\n"
-            "Use multi-action only when every action can be planned fully from the context already visible before the round starts.\n"
-            "\"Already visible\" means visible before this decision response begins. An artifact/source/path produced earlier in the same response is NOT already visible for later actions, even if the runtime will execute actions sequentially.\n"
-            "The runtime executes the actions sequentially, but you do NOT review intermediate results in the middle, so action B must not depend on action A's result.\n"
-            "If you need to inspect or assess the first result before deciding the next action, split the work into separate rounds.\n"
-            "If action B needs an artifact, source path, search result, or output created by action A, split them into separate rounds.\n"
-            "Do NOT schedule search/fetch first and then a later action in the same round that depends on what that retrieval will return.\n"
-            "Dependency/review barrier: if a later action would use anything produced or retrieved by an earlier action (artifact, source row, path, id, URL, code, data, or state), stop after the producing/retrieving action. In a later round, review the visible result and acknowledge both its existence and suitability before passing it to any downstream tool.\n"
-            "Example: generate/write a document source first; after the write result is visible in the next round, review it, then render it. Do not generate and render that new source in the same response.\n"
-            "Good multi-action fanout: render PDF, PPTX, and DOCX from already visible source artifacts that were visible before this response began.\n"
+            "<channel:action>```json {{ ...another independent non-exec action... }} ```</channel:action>\n\n"
+            "Never put > 1 actions into one <channel:action> instance.\n"
+            "Never put > 1 JSON objects, > 1 fenced JSON blocks, or prose after the JSON inside one <channel:action> instance.\n"
+            "DO NOT DO THIS: Your second typical error is that you include a sequence of tool calls inside a single <channel:action> instance, like <channel:action>```json...```\n```json...```</channel:action>. This does not work. For each tool call, emit a separate <channel:action>...</channel:action> instance.\n"
+            "If you emit multiple tool-call actions, each action must be in its own separate <channel:action>...</channel:action> instance.\n"
+            "Turn lifecycle and action causality: a turn is a sequence of rounds until you complete/exit or the announced/configured round budget is exhausted.\n"
+            "Each round starts when you are called with the currently visible timeline, ANNOUNCE, tool catalog, and skill catalog. A round is your continuous generation into the provided channels: channel:thinking, one or more channel:action blocks, optional channel:code, and final-only channel:summary.\n"
+            "While generating a round, you can plan ahead, but you cannot see results of actions you are currently writing. When you stop generating, the runtime/engineering layer executes the requested actions sequentially, appends their results to the timeline, and calls you again with those results visible in the next round.\n"
+            "There is no requirement to minimize rounds. The success criterion is correct causality: do not emit cross-dependent actions in one round, and do not formulate a dependent next action until its prerequisite result has become visible in a later round.\n"
+            "A prerequisite result is acknowledged only after you can see it in the timeline and judge that it exists, succeeded, and suits the downstream action. Acknowledgement can be brief, but the next action must be based on the actual visible result, not on an assumption about what the previous action would return.\n"
+            "Use multiple actions in one round only for independent sibling actions whose inputs, params, and correctness are fully known from context visible before this response begins.\n"
+            "\"Already visible\" means visible before the current response begins. Anything produced, retrieved, loaded, validated, or changed earlier in the same response is NOT already visible for later actions, even if the runtime will execute it first.\n"
+            "The runtime may execute actions sequentially, but you do NOT review intermediate results in the same response, so action B must not depend on action A's result.\n"
+            "If action B would use anything from action A (artifact, source row, path, id, URL, code, data, state, validation result, or skill text), stop after action A. Continue in a later round after seeing and acknowledging A's result.\n"
+            "User-visible stream rule: content you yield in channel:thinking, channel:code, public artifacts, and final_answer can be shown to the user immediately. The critical boundary is a pending action, not only code. After you yield any action that must execute, retrieve, validate, write, render, store, or change state, you may continue only with text/actions that depend solely on context visible before this response began. Do not claim the pending action succeeded, do not say its output exists, and do not emit a downstream action/final answer that relies on it. Stop after the pending action; a later round that sees the successful result/artifact may acknowledge it and build on it.\n"
+            "Bad chain: round N emits action/code to create report.xlsx, then the same response says \"report.xlsx is ready\"; runtime executes after generation and may fail. Correct chain: round N says \"Creating the Excel file\", emits exec action + code, then stops; runtime executes and appends result; round N+1 sees success + fi:...xlsx, then answers that the file is ready.\n"
+            "Skill causality rule: a skill catalog entry is only a summary. You may read a skill in the same round as independent actions such as web search when those actions are fully determined from already visible context. Do not use the unread skill's detailed text to formulate another same-round action. Actions that apply the skill (for example write/render/code/domain workflow shaped by that skill) must wait until the ACTIVE skill block is visible and reviewed in a later round.\n"
+            "Visible timeline shape should normally be action -> result, then next action -> result. This is how you confirm causality and avoid guessing at missing results.\n"
+            "Do NOT schedule search/fetch first and then a later action in the same response that depends on what that retrieval will return.\n"
+            "Do NOT conduct web_tools.web_search or web_tools.web_fetch twice in a row without first reviewing the visible retrieval result/source pool and stating what was learned or why another retrieval is still needed.\n"
+            "Examples of invalid same-response chains: read a skill then use it; search/fetch then synthesize from results; write source then render it; run exec then consume its output.\n"
+            "Example of correct sequencing: generate/write a document source first; after the write result is visible in the next round, review it, then render it.\n"
+            "Good multi-action in one round: render PDF, PPTX, and DOCX from already visible source artifacts that were visible before this response began.\n"
             "Bad multi-action chain: write/generate/retrieve a source artifact first, then render or consume that newly created source in the same response.\n"
-            "Keep same-round tool-call sequences short. Use more than two tool-call actions only for a specific reason and only when every action is independent; long chains increase partial-failure risk and can damage downstream generation.\n"
+            "Keep multi-action rounds short. Use more than two tool-call actions only for a specific reason and only when every action is independent; long chains increase partial-failure risk and can damage downstream generation.\n"
             "Visibility rule: if generated content is meant for the user to see, download, approve, or use as a renderer source, make it external: react.write channel=canvas or exec visibility=external. Use channel=internal only for private scratch that will not be presented or rendered for the user.\n"
             "Default write rule: reports, briefs, HTML, Markdown, slide source, DOCX/PDF/PPTX source, and anything under outputs/ that may become a deliverable must be written with react.write channel=canvas. Do not write these as channel=internal.\n"
-            "Renderer source rule: rendering_tools.write_* produces user-visible artifacts, so content='ref:...' must point to an external artifact that has passed the dependency/review barrier. Do not use channel=internal refs as PDF/PPTX/DOCX/PNG sources. For source documents that will be rendered for the user, write them first with react.write channel=canvas, or produce them from exec with visibility=external; then review before rendering. Use the input type documented by the target rendering tool.\n"
-            "Exec binding: an exec_tools.execute_code_python decision must be followed immediately by <channel:code> containing its raw Python. That code binds only to the immediately preceding exec decision; if another decision appears before code, the exec action is incomplete and will not run.\n"
-            "Exec in multi-action: you may include exactly one exec_tools.execute_code_python action together with other actions only when that exec decision has params.contract and is immediately followed by complete Python in <channel:code>. Otherwise exec must be the only action in the round.\n"
+            "Renderer source rule: rendering_tools.write_* produces user-visible artifacts, so content='ref:...' must point to an external artifact that is already visible and reviewed. Do not use channel=internal refs as PDF/PPTX/DOCX/PNG sources. For source documents that will be rendered for the user, write them first with react.write channel=canvas, or produce them from exec with visibility=external; then review before rendering. Use the input type documented by the target rendering tool.\n"
+            "Exec binding: an exec_tools.execute_code_python action must be followed immediately by <channel:code> containing its raw Python. That code binds only to the immediately preceding exec action; if another action appears before code, the exec action is incomplete and will not run.\n"
+            "Exec in multi-action: you may include exactly one exec_tools.execute_code_python action together with other actions only when that exec action has params.contract and is immediately followed by complete Python in <channel:code>. Otherwise exec must be the only action in the round.\n"
             "Do NOT mix complete/exit with tool calls in the same multi-action response.\n"
             "For complete/exit JSON, set notes=\"\" and tool_call=null. Put the user response only in final_answer; the only extra final-only channel is summary.\n"
             "Final answer shape only when action is complete or exit:\n"
             "<channel:thinking>...short final status...</channel:thinking>\n"
-            "<channel:ReactDecisionOutV2>```json {{ ...one complete/exit ReactDecisionOutV2 object... }} ```</channel:ReactDecisionOutV2>\n"
+            "<channel:action>```json {{ ...one complete/exit action JSON object... }} ```</channel:action>\n"
             "<channel:code></channel:code>\n"
             "<channel:summary>Goal: ...\nOutcome: ...\nKey facts: ...\nRefs: ...</channel:summary>\n\n"
             "In <channel:code>, output ONLY the raw Python code snippet (no fencing, no any auxiliary text).\n"
-            "Use non-empty <channel:code> only immediately after an exec_tools.execute_code_python decision. If there is no exec action, omit <channel:code> or emit an empty <channel:code></channel:code> block.\n"
+            "Use non-empty <channel:code> only immediately after an exec_tools.execute_code_python action. If there is no exec action, omit <channel:code> or emit an empty <channel:code></channel:code> block.\n"
             "CRITICAL: Exec tool DOES NOT HAVE code parameter! Putting code in the tool call params is WRONG. Code goes only in <channel:code>!\n"
             "For call_tool-only rounds, omit <channel:summary> entirely. For complete/exit rounds, include exactly one <channel:summary> with a compact durable working summary using this shape: Goal, Outcome, Key facts, Refs. Scale the summary to the turn: for trivial exchanges (greeting, acknowledgment, tiny answer), make it super short, often one line or a few words per field; do not make it look like heavy reasoning happened. Refs should be logical paths for the user prompt, decisive tool calls/results, produced artifacts, and the assistant completion when known. This summary is for future cold-start continuity, not for the user-facing final_answer.\n"
             "CRITICAL: if you want to cite the channel name, i.e. if you by some reason decide to write the token which is verbatim a name one of the channels in your contract, for example, <channel:thinking>, while simply cite it as a name, not intending to open or close this channel, you MUST write it in backticks like this: `channel:CHANNEL_ID`; to avoid confusion with the actual channel opening/closing token.\n"
@@ -300,34 +309,41 @@ def build_decision_system_text(
             "CRITICAL: you have 4 channel types. Three are required every round; summary is allowed ONLY on complete/exit final-answer rounds.\n"
             "Output protocol (strict): you must produce content which represents one round and consists of these required channels. Do not include summary unless action is complete or exit:\n"
             "<channel:thinking> ... </channel:thinking>\n"
-            "<channel:ReactDecisionOutV2> ... </channel:ReactDecisionOutV2>\n"
+            "<channel:action> ... </channel:action>\n"
             "<channel:code> code generated </channel:code>\n\n"
-            "In a single round, exactly one occurrence of <channel:thinking>, <channel:ReactDecisionOutV2>, and <channel:code> can be included in your response.\n"
-            "The optional <channel:summary> may appear exactly once, and only when the ReactDecisionOutV2 action is complete or exit.\n"
+            "In a single round, exactly one occurrence of <channel:thinking>, <channel:action>, and <channel:code> can be included in your response.\n"
+            "The optional <channel:summary> may appear exactly once, and only when the action is complete or exit.\n"
             "In <channel:thinking>, write a brief user-facing status in markdown\n"
             "The thinking <channel:thinking> channel is shown to the user.\n"
             "Keep it very short (1–2 sentences, no lists).\n\n"
-            "<channel:ReactDecisionOutV2> is the action channel. One <channel:ReactDecisionOutV2> ... </channel:ReactDecisionOutV2> channel instance means exactly one action.\n"
-            "Inside that single <channel:ReactDecisionOutV2> channel instance, output exactly one ```json fenced block with a ReactDecisionOutV2 object matching the shape hint below (no extra text):\n"
+            "<channel:action> carries an action. One <channel:action> ... </channel:action> instance means exactly one action.\n"
+            "Inside that single <channel:action> instance, output exactly one ```json fenced block with an action JSON object matching the shape hint below (no extra text):\n"
             "```json\n"
             f"{json_hint}\n"
             "```\n\n"
-            "CRITICAL: The runtime which read your response will attempt to convert it to one round, so to one sequence of <channel:thinking>, <channel:ReactDecisionOutV2>, <channel:code>, and final-only optional <channel:summary>.\n"
-            "DO NOT DO THIS: Your typical error is that you make sequence of channel groups <channel:thinking></channel:thinking><channel:ReactDecisionOutV2></channel:ReactDecisionOutV2><channel:code></channel:code> and then again <channel:thinking></channel:thinking><channel:ReactDecisionOutV2></channel:ReactDecisionOutV2><channel:code></channel:code> in the same response.\n"
-            "DO NOT DO THIS: Your second typical error is that you include multiple JSON objects or fenced JSON blocks inside the single <channel:ReactDecisionOutV2> instance, like <channel:ReactDecisionOutV2>```json...```\n```json...```</channel:ReactDecisionOutV2>. This does not work in single-action mode. Emit exactly one tool call now and continue in a later round if more tools are needed.\n"
+            "CRITICAL: The runtime which read your response will attempt to convert it to one round, so to one sequence of <channel:thinking>, <channel:action>, <channel:code>, and final-only optional <channel:summary>.\n"
+            "DO NOT DO THIS: Your typical error is that you make sequence of channel groups <channel:thinking></channel:thinking><channel:action></channel:action><channel:code></channel:code> and then again <channel:thinking></channel:thinking><channel:action></channel:action><channel:code></channel:code> in the same response.\n"
+            "DO NOT DO THIS: Your second typical error is that you include multiple JSON objects or fenced JSON blocks inside the single <channel:action> instance, like <channel:action>```json...```\n```json...```</channel:action>. This does not work in single-action mode. Emit exactly one tool call now and continue in a later round if more tools are needed.\n"
             "If you need plan, plan with the plan tool or include it in notes but you are disallowed to call more than one tool. Generating the second instance of any channel in the same response means you do not understand the contract and violate it.\n\n"
+            "Turn lifecycle and action causality: a turn is a sequence of rounds until you complete/exit or the announced/configured round budget is exhausted.\n"
+            "Each round starts when you are called with the currently visible timeline, ANNOUNCE, tool catalog, and skill catalog. A round is your continuous generation into the provided channels.\n"
+            "While generating a round, you can plan ahead, but you cannot see results of the action you are currently writing. When you stop generating, the runtime/engineering layer executes the requested action, appends its result to the timeline, and calls you again with that result visible in the next round.\n"
+            "There is no requirement to minimize rounds. The success criterion is correct causality: do not guess dependent next actions before the prerequisite result is visible.\n"
+            "A prerequisite result is acknowledged only after you can see it in the timeline and judge that it exists, succeeded, and suits the downstream action. Acknowledgement can be brief, but the next action must be based on the actual visible result, not on an assumption about what the previous action would return.\n\n"
+            "User-visible stream rule: content you yield in channel:thinking, channel:code, public artifacts, and final_answer can be shown to the user immediately. The critical boundary is a pending action, not only code. After you yield any action that must execute, retrieve, validate, write, render, store, or change state, you may continue only with text/actions that depend solely on context visible before this response began. Do not claim the pending action succeeded, do not say its output exists, and do not emit a downstream action/final answer that relies on it. Stop after the pending action; a later round that sees the successful result/artifact may acknowledge it and build on it.\n"
+            "Bad chain: round N emits action/code to create report.xlsx, then the same response says \"report.xlsx is ready\"; runtime executes after generation and may fail. Correct chain: round N says \"Creating the Excel file\", emits exec action + code, then stops; runtime executes and appends result; round N+1 sees success + fi:...xlsx, then answers that the file is ready.\n\n"
             "Minimal valid shape:\n"
             "<channel:thinking>...short status...</channel:thinking>\n"
-            "<channel:ReactDecisionOutV2>```json { ...one ReactDecisionOutV2 object... } ```</channel:ReactDecisionOutV2>\n"
+            "<channel:action>```json { ...one action JSON object... } ```</channel:action>\n"
             "<channel:code></channel:code>\n\n"
             "Final answer shape only when action is complete or exit:\n"
             "For complete/exit JSON, set notes=\"\" and tool_call=null. Put the user response only in final_answer; the only extra final-only channel is summary.\n"
             "<channel:thinking>...short final status...</channel:thinking>\n"
-            "<channel:ReactDecisionOutV2>```json { ...one complete/exit ReactDecisionOutV2 object... } ```</channel:ReactDecisionOutV2>\n"
+            "<channel:action>```json { ...one complete/exit action JSON object... } ```</channel:action>\n"
             "<channel:code></channel:code>\n"
             "<channel:summary>Goal: ...\nOutcome: ...\nKey facts: ...\nRefs: ...</channel:summary>\n\n"
             "In <channel:code>, output ONLY the raw Python code snippet (no fencing, no any auxiliary text).\n"
-            "Use non-empty <channel:code> only immediately after an exec_tools.execute_code_python decision; otherwise emit an empty <channel:code></channel:code> block.\n"
+            "Use non-empty <channel:code> only immediately after an exec_tools.execute_code_python action; otherwise emit an empty <channel:code></channel:code> block.\n"
             "CRITICAL: Exec tool DOES NOT HAVE code parameter! Putting code in the tool call params is WRONG. Code goes only in <channel:code>!\n"
             "For call_tool actions, omit <channel:summary> entirely. For complete/exit actions, include exactly one <channel:summary> with a compact durable working summary using this shape: Goal, Outcome, Key facts, Refs. Scale the summary to the turn: for trivial exchanges (greeting, acknowledgment, tiny answer), make it super short, often one line or a few words per field; do not make it look like heavy reasoning happened. Refs should be logical paths for the user prompt, decisive tool calls/results, produced artifacts, and the assistant completion when known. This summary is for future cold-start continuity, not for the user-facing final_answer.\n"
             "CRITICAL: if you want to cite the channel name, i.e. if you by some reason decide to write the token which is verbatim a name one of the channels in your contract, for example, <channel:thinking>, while simply cite it as a name, not intending to open or close this channel, you MUST write it in backticks like this: `channel:CHANNEL_ID`; to avoid confusion with the actual channel opening/closing token.\n"
@@ -335,7 +351,7 @@ def build_decision_system_text(
 
     sys_msg = compose_decision_system_text(
         protocol=protocol,
-        module_label="ReAct Decision Module v3",
+        module_label="ReAct Action Module v3",
         adapters=adapters or [],
         infra_adapters=infra_adapters or [],
         workspace_implementation=workspace_implementation,
@@ -397,14 +413,14 @@ async def react_decision_stream_v2(
     user_msg = create_cached_human_message(user_blocks)
     channels = [
         ChannelSpec(name="thinking", format="markdown", replace_citations=False, emit_marker="thinking"),
-        ChannelSpec(name="ReactDecisionOutV2", format="json", model=ReactDecisionOutV2, replace_citations=False, emit_marker="answer"),
+        ChannelSpec(name="action", format="json", model=Action, replace_citations=False, emit_marker="answer"),
         ChannelSpec(name="code", format="text", replace_citations=False, emit_marker="subsystem"),
         ChannelSpec(name="summary", format="markdown", replace_citations=False, emit_marker="subsystem"),
     ]
 
     async def _emit_delta(**kwargs):
         # Never stream structured JSON channel to the main stream; it is handled via subscribers only.
-        if (kwargs.get("channel") or "") in {"ReactDecisionOutV2", "code", "summary"}:
+        if (kwargs.get("channel") or "") in {"action", "code", "summary"}:
             if kwargs.get("channel") == "code":
                 pass
             return
@@ -455,7 +471,7 @@ async def react_decision_stream_v2(
         ))
 
     res_thinking = results.get("thinking")
-    res_json = results.get("ReactDecisionOutV2")
+    res_json = results.get("action")
     res_code = results.get("code")
     res_summary = results.get("summary")
     thinking_raw = res_thinking.raw if res_thinking else ""
@@ -530,7 +546,7 @@ async def react_decision_stream_v2(
                 "started_at": res_thinking.started_at if res_thinking else None,
                 "finished_at": res_thinking.finished_at if res_thinking else None,
             },
-            "ReactDecisionOutV2": {
+            "action": {
                 "text": json_raw,
                 "started_at": res_json.started_at if res_json else None,
                 "finished_at": res_json.finished_at if res_json else None,

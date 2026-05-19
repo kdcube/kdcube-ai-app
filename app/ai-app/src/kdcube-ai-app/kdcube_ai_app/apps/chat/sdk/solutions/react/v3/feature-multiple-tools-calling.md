@@ -6,14 +6,14 @@ This note describes the `v3` implementation path for multi-action rounds and the
 
 | Area | Status in `v3` | Notes |
 |---|---|---|
-| Repeated `ReactDecisionOutV2` channel instances | Implemented | Parsed and routed as distinct channel instances |
-| Repeated non-decision channels | Implemented | Repeated `thinking` and other declared channels are tolerated and emitted again |
+| Repeated `action` instances | Implemented | Parsed and routed as distinct action instances |
+| Repeated non-action protocol channels | Implemented | Repeated `thinking` and other declared channels are tolerated and emitted again |
 | Per-instance subscriber factory | Implemented | Done in `versatile_streamer_v3.py` |
-| Per-instance record/timeline streamers | Implemented | Spawned on `ReactDecisionOutV2` channel-open |
+| Per-instance record/timeline streamers | Implemented | Spawned on `action` channel-open |
 | Safe multi-action bundle execution | Implemented | Sequential only |
 | Multi-action read/search tools | Implemented | `react.read`, `react.memsearch`, `react.rg`, `web_tools.*` |
 | Multi-action `react.write` / `react.patch` / rendering tools | Not enabled yet | Router supports per-instance streamers, policy still blocks these bundles |
-| Exec + code | Implemented only for single-action round | Exactly one `ReactDecisionOutV2` plus one `code` channel |
+| Exec + code | Implemented only for single-action round | Exactly one `action` plus one `code` channel |
 | Multiple actions plus `code` | Explicitly rejected | Not supported |
 | Parallel/interleaved tool execution | Not implemented | Sequential only by design |
 
@@ -21,19 +21,19 @@ This note describes the `v3` implementation path for multi-action rounds and the
 
 The old implementation was single-action by construction in several places:
 
-- `v2/agents/decision.py` assumed one `ReactDecisionOutV2`
+- `v2/agents/decision.py` assumed one `action`
 - `versatile_streamer.py` keyed streaming state by channel name only
 - `v2/runtime.py` wired one JSON subscriber set, one decision streamer set, one pending tool call
 - widget streamers were effectively single-instance per decision round
 
-`v3` isolates the changes needed to make repeated decision-channel instances first-class without destabilizing `v2`.
+`v3` isolates the changes needed to make repeated action instances first-class without destabilizing `v2`.
 
 ## Core Design
 
 The new live routing model is:
 
-1. The model emits repeated `<channel:ReactDecisionOutV2>...</channel:ReactDecisionOutV2>` sections.
-2. `versatile_streamer_v3.py` detects each new channel instance and assigns `channel_instance = 0, 1, 2, ...`.
+1. The model emits repeated `<channel:action>...</channel:action>` sections.
+2. `versatile_streamer_v3.py` detects each new protocol channel occurrence and assigns `channel_instance = 0, 1, 2, ...`.
 3. A subscriber factory is invoked on channel-open.
 4. `v3/runtime.py` uses that factory to create per-instance streamers:
    - record/canvas streamers
@@ -54,7 +54,7 @@ This is valid:
 
 ```xml
 <channel:thinking>...</channel:thinking>
-<channel:ReactDecisionOutV2>...</channel:ReactDecisionOutV2>
+<channel:action>...</channel:action>
 <channel:code>...</channel:code>
 ```
 
@@ -64,8 +64,8 @@ This is invalid:
 
 ```xml
 <channel:thinking>...</channel:thinking>
-<channel:ReactDecisionOutV2>...</channel:ReactDecisionOutV2>
-<channel:ReactDecisionOutV2>...</channel:ReactDecisionOutV2>
+<channel:action>...</channel:action>
+<channel:action>...</channel:action>
 <channel:code>...</channel:code>
 ```
 
@@ -93,12 +93,12 @@ sequenceDiagram
 
     rect rgb(245,245,245)
     note over M,TL: Round 1: multi-action search/fetch (supported now)
-    M->>VS: <channel:ReactDecisionOutV2>#0 web_tools.web_search
-    VS->>RF: new instance callback(channel=ReactDecisionOutV2, instance=0)
+    M->>VS: <channel:action>#0 web_tools.web_search
+    VS->>RF: new instance callback(channel=action, instance=0)
     RF->>CV: create record/timeline streamers for instance 0
     VS->>CV: JSON deltas for instance 0
-    M->>VS: <channel:ReactDecisionOutV2>#1 web_tools.web_fetch
-    VS->>RF: new instance callback(channel=ReactDecisionOutV2, instance=1)
+    M->>VS: <channel:action>#1 web_tools.web_fetch
+    VS->>RF: new instance callback(channel=action, instance=1)
     RF->>CV: create record/timeline streamers for instance 1
     VS->>CV: JSON deltas for instance 1
     RT->>TL: execute tc_r1_a search
@@ -107,13 +107,13 @@ sequenceDiagram
 
     rect rgb(245,245,245)
     note over M,CV: Round 2: multi-action write/write/read (target next)
-    M->>VS: <channel:ReactDecisionOutV2>#0 react.write files/report.md channel=canvas
+    M->>VS: <channel:action>#0 react.write files/report.md channel=canvas
     VS->>RF: create instance 0 streamers
     VS->>CV: JSON deltas -> canvas artifact files/report.md
-    M->>VS: <channel:ReactDecisionOutV2>#1 react.write files/brief.md channel=canvas
+    M->>VS: <channel:action>#1 react.write files/brief.md channel=canvas
     VS->>RF: create instance 1 streamers
     VS->>CV: JSON deltas -> canvas artifact files/brief.md
-    M->>VS: <channel:ReactDecisionOutV2>#2 react.read files/report.md
+    M->>VS: <channel:action>#2 react.read files/report.md
     VS->>RF: create instance 2 streamers
     RT->>TL: execute tc_r2_a write
     RT->>TL: execute tc_r2_b write
@@ -122,7 +122,7 @@ sequenceDiagram
 
     rect rgb(245,245,245)
     note over M,EX: Round 3: single exec (supported now)
-    M->>VS: <channel:ReactDecisionOutV2>#0 exec_tools.execute_code_python
+    M->>VS: <channel:action>#0 exec_tools.execute_code_python
     VS->>RF: create instance 0 streamers
     VS->>CV: JSON deltas for exec decision
     M->>VS: <channel:code>python snippet</channel:code>
@@ -132,7 +132,7 @@ sequenceDiagram
 
     rect rgb(245,245,245)
     note over M,TL: Round 4: completion
-    M->>VS: <channel:ReactDecisionOutV2>#0 action=complete
+    M->>VS: <channel:action>#0 action=complete
     VS->>RF: create instance 0 streamers
     VS->>CV: final_answer timeline streaming
     RT->>TL: persist completion
@@ -145,8 +145,8 @@ sequenceDiagram
 ROUND 1  supported now
 -------
 Model output:
-  <ReactDecisionOutV2 #0> web_tools.web_search
-  <ReactDecisionOutV2 #1> web_tools.web_fetch
+  <action #0> web_tools.web_search
+  <action #1> web_tools.web_fetch
 
 Channel-open callbacks:
   instance 0 -> create:
@@ -173,9 +173,9 @@ Timeline shape:
 ROUND 2  target next, not enabled by current safe_fanout policy
 -------
 Model output:
-  <ReactDecisionOutV2 #0> react.write path=files/report.md channel=canvas
-  <ReactDecisionOutV2 #1> react.write path=files/brief.md channel=canvas
-  <ReactDecisionOutV2 #2> react.read  paths=[files/report.md]
+  <action #0> react.write path=files/report.md channel=canvas
+  <action #1> react.write path=files/brief.md channel=canvas
+  <action #2> react.read  paths=[files/report.md]
 
 Channel-open callbacks:
   instance 0 -> create streamers for report.md
@@ -198,7 +198,7 @@ Execution order stays sequential:
 ROUND 3  supported now
 -------
 Model output:
-  <ReactDecisionOutV2 #0> exec_tools.execute_code_python
+  <action #0> exec_tools.execute_code_python
   <code> ...python snippet... </code>
 
 Rules:
@@ -216,7 +216,7 @@ Artifacts created:
 ROUND 4  supported now
 -------
 Model output:
-  <ReactDecisionOutV2 #0> action=complete
+  <action #0> action=complete
 
 Artifacts/streaming:
   timeline_text.react.decision.3.0
@@ -229,13 +229,13 @@ Artifacts/streaming:
 `versatile_streamer_v3.py` adds two important capabilities:
 
 1. `channel_instance`
-   - every repeated channel instance is identified as `(channel_name, instance_idx)`
+   - every repeated protocol channel occurrence is identified as `(channel_name, instance_idx)`
 
 2. `subscribe_factory(channel, instance_idx)`
    - runtime can provide a factory instead of one static subscriber
-   - when a new `ReactDecisionOutV2` instance opens, the streamer asks runtime for the subscribers to pin to that instance
+   - when a new `action` instance opens, the streamer asks runtime for the subscribers to pin to that instance
 
-This is the key mechanism that keeps the live path correct for repeated decision channels.
+This is the key mechanism that keeps the live path correct for repeated actions.
 
 ## Why Timeline Management Stays Safe
 
@@ -295,8 +295,8 @@ That is the current `v3` design.
 
 The multiple-tools work changed:
 
-- decision-channel parsing
-- decision-channel live subscriber routing
+- action parsing
+- action live subscriber routing
 - decision packet normalization
 
 It did **not** redesign the external-event flow itself.
