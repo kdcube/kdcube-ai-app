@@ -168,7 +168,7 @@ export interface SubmitChatMessageParams {
   streamId: string
   bundleId: string
   conversationId?: string | null
-  turnId: string
+  turnId?: string
   text: string
   files: File[]
   chatHistory: ChatHistoryItem[]
@@ -185,6 +185,7 @@ interface SubmitChatMessageApiResponse {
   task_id?: string
   session_id?: string
   conversation_id?: string
+  turn_id?: string
   conversation_created?: boolean
   user_type?: string
   message_kind?: string | null
@@ -196,6 +197,7 @@ export interface SubmitChatMessageResponse {
   taskId?: string
   sessionId?: string
   conversationId: string
+  turnId?: string
   conversationCreated: boolean
   userType?: string
   messageKind?: string | null
@@ -407,6 +409,7 @@ async function parseSubmitChatMessageResponse(
     taskId: raw?.task_id,
     sessionId: raw?.session_id,
     conversationId,
+    turnId: raw?.turn_id,
     conversationCreated: Boolean(raw?.conversation_created),
     userType: raw?.user_type,
     messageKind: raw?.message_kind,
@@ -422,8 +425,10 @@ export async function submitChatMessage(params: SubmitChatMessageParams): Promis
     chat_history: params.chatHistory,
     project,
     tenant,
-    turn_id: params.turnId,
     bundle_id: params.bundleId,
+  }
+  if (params.turnId) {
+    message.turn_id = params.turnId
   }
   if (params.conversationId) {
     message.conversation_id = params.conversationId
