@@ -4,6 +4,7 @@ title: "Bundle Client UI"
 summary: "Entry page for bundle-facing frontend integration: source layout for main UI vs widgets, browser transport, auth, chat stream lifecycle, multi-tab behavior, and widget or operation interoperability."
 tags: ["sdk", "bundle", "frontend", "transport", "auth", "sse", "socketio", "rest", "ui"]
 keywords: ["frontend integration entrypoint", "bundle ui contract", "main view ui/main", "widget source folder", "widget and operation interoperability", "browser auth and transport", "chat stream lifecycle guidance", "multi tab coordination", "client side bundle behavior"]
+updated_at: 2026-05-19
 see_also:
   - ks:docs/sdk/bundle/bundle-widget-integration-README.md
   - ks:docs/sdk/bundle/bundle-client-communication-README.md
@@ -81,6 +82,14 @@ Widget source-folder config is per alias. A bundle can define
 method-rendered widgets such as `ai_bundles` from `BaseEntrypoint`; those
 inherited widgets keep using their Python-rendered HTML unless their own alias
 is also configured as a source-folder widget.
+
+For inherited widgets, remember that `ui.widgets.<alias>` does not create or
+hide the widget surface. The surface comes from `@ui_widget(alias="<alias>")`.
+Use `enabled.widget.<alias>: false` to suppress an inherited widget. Use
+`ui.widgets.<alias>.src_folder/build_command` to replace the inherited
+method-rendered UI with a built app for the same alias. If code overrides the
+decorator, override the same Python method name; do not add a second method with
+the same alias.
 
 Source-folder widgets also have a public static route for launch surfaces such
 as Telegram Mini Apps:

@@ -4,7 +4,7 @@ title: "How To Write A Bundle"
 summary: "Authoring guide for bundle creators and integrators: bundle shape, lifecycle, decorators, runtime surfaces, configuration and storage decisions, and how to turn a product idea or existing app into a deployable bundle."
 tags: ["sdk", "bundle", "authoring", "workflow", "widget", "api", "testing"]
 keywords: ["bundle authoring guide", "bundle creator path", "bundle integrator path", "end to end bundle design", "decorator selection", "runtime surface selection", "widget api mcp cron on_job choices", "shared sdk widget components", "configuration and storage decisions", "bundle lifecycle design", "reference authoring patterns"]
-updated_at: 2026-05-16
+updated_at: 2026-05-19
 see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
@@ -115,6 +115,9 @@ Shared widget rule:
   bundles so descriptors can usually say only `enabled: true`
 - keep product policy and authorization in bundle APIs; shared components are
   presentation code with injected operation callers
+- when inheriting an SDK/base widget, use `enabled.widget.<alias>: false` to
+  suppress the inherited surface, or configure `ui.widgets.<alias>` to serve
+  your own built app for that inherited alias
 
 Tier 1 role of this page:
 
@@ -160,7 +163,7 @@ Operational rule:
 Environment rule:
 
 - one `tenant/project` runtime is one isolated environment
-- use a different `tenant/project` when you need separate customer data or
+- use a different `tenant/project` when you need separate tenant data or
   separate stages such as `dev`, `staging`, and `prod`
 - keep multiple bundles inside one `tenant/project` when they belong to the
   same environment
@@ -708,6 +711,10 @@ If the bundle ships a React widget/web app:
 - keep the decorated `@ui_widget(alias="<alias>")` method as the manifest/entrypoint surface only
 - expose structured data/mutation APIs separately through `@api(route="operations")`
 - let the loader build the widget into bundle storage; do not render a TSX source file from Python for new widgets
+- if you derive from a base class with widgets, disable unwanted inherited
+  widgets through `enabled.widget.<alias>: false`; disabling
+  `ui.widgets.<alias>` only disables the static source-folder app and may leave
+  a method-rendered inherited widget visible
 - for the full source-folder widget contract, use
   [bundle-widget-integration-README.md](../bundle-widget-integration-README.md)
 
@@ -816,6 +823,16 @@ Descriptor rules:
 
 - expose bundle-local tools through `tools_descriptor.py`
 - expose skill prompts through `skills_descriptor.py`
+- remember that skill discovery is registry-wide: core SDK skills, SDK solution
+  skills, and bundle `CUSTOM_SKILLS_ROOT` are all loaded before
+  `AGENTS_CONFIG` filtering
+- skills that declare required tools disappear automatically when those tools
+  are not present in the active tool catalog; use `AGENTS_CONFIG` only for
+  policy-level allow-lists or hard denies
+- if a skill is valid only when specific tools are present, mark those entries
+  with `required: true` in the skill's `tools.yaml`; ReAct removes the skill
+  from the catalog/import/read path when required tools are missing from the
+  active tool catalog
 - make skill `when_to_use` rules operational, not vague
 - for stateful skills, distinguish read/retrieval use from write/reconcile use
 - use separate tool aliases for separate domains
@@ -827,6 +844,9 @@ Descriptor rules:
   `solver.react.v2.decision.v2.regular`
 - avoid stale/legacy consumer ids in bundle descriptors; the ids should match
   runtime logs, accounting metadata, and model routing
+- use `agent_disclosure: hidden` only for guidance that may be loaded by exact
+  id/import but must not be advertised; use `AGENTS_CONFIG` to disable a skill
+  for a consumer
 
 Example split:
 
@@ -1771,6 +1791,12 @@ Source-folder behavior is per widget alias. If a subclass inherits other
 `@ui_widget` methods from `BaseEntrypoint`, those widgets continue to use the
 legacy method-rendered HTML path unless their own alias also has
 `ui.widgets.<alias>.src_folder/build_command`.
+
+To hide an inherited widget, set `enabled.widget.<alias>: false`. To replace an
+inherited widget UI, keep or inherit the `@ui_widget(alias="<alias>")` surface
+and configure the same alias under `ui.widgets.<alias>`. If code must replace
+the decorator metadata, override the same Python method name. Do not add a
+second decorated method with the same alias.
 
 ### Required contract
 

@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: MIT
 
+import json
+
 import pytest
 
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.plan import (
@@ -12,7 +14,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.timeline import (
     resolve_artifact_from_timeline,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
-from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.session import apply_cache_ttl_pruning
+from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.session import TruncationConfig, apply_cache_ttl_pruning
 
 
 def _blk(*, btype: str, text: str, turn_id: str) -> dict:
@@ -22,6 +24,93 @@ def _blk(*, btype: str, text: str, turn_id: str) -> dict:
         "turn_id": turn_id,
         "ts": "2026-02-09T00:00:00Z",
     }
+
+
+@pytest.mark.asyncio
+async def test_cache_ttl_light_pruning_renders_structured_recent_web_result():
+    runtime = RuntimeCtx(turn_id="turn_current")
+    tl = Timeline(runtime=runtime, svc=None)
+    content = "Full fetched article body. " * 200
+    rows = [
+        {
+            "sid": 1,
+            "title": "Alpha discovery",
+            "url": "https://example.test/alpha",
+            "text": "Short alpha snippet",
+            "content": content,
+            "content_length": len(content),
+            "mime": "text/html",
+        }
+    ]
+    path = "so:sources_pool[1]"
+    tl.blocks = [
+        {"type": "turn.header", "turn_id": "turn_prev", "path": "ar:turn_prev.header", "text": "[TURN turn_prev]"},
+        {
+            "type": "react.tool.call",
+            "turn_id": "turn_prev",
+            "path": "tc:turn_prev.tc_search.call",
+            "call_id": "tc_search",
+            "text": json.dumps({
+                "tool_id": "web_tools.web_search",
+                "tool_call_id": "tc_search",
+                "params": {"queries": ["science"]},
+            }),
+        },
+        {
+            "type": "react.tool.result",
+            "turn_id": "turn_prev",
+            "path": path,
+            "call_id": "tc_search",
+            "text": json.dumps(rows),
+            "meta": {
+                "tool_call_id": "tc_search",
+                "items_stats": {
+                    "kind": "sources_pool",
+                    "items_count": 1,
+                    "sids": [1],
+                    "content_rows": 1,
+                    "total_content_symbols": len(content),
+                    "items": [{
+                        "sid": 1,
+                        "title": "Alpha discovery",
+                        "url": "https://example.test/alpha",
+                        "has_content": True,
+                        "content_symbols": len(content),
+                        "text_preview": "Short alpha snippet",
+                        "content_preview": "Full fetched article body.",
+                    }],
+                },
+            },
+        },
+        {
+            "type": "conv.working.summary",
+            "turn_id": "turn_prev",
+            "path": "ws:turn_prev.conv.working.summary",
+            "text": "Goal: search science.\nOutcome: source row found.",
+            "meta": {"kind": "working_summary"},
+        },
+        {"type": "turn.header", "turn_id": "turn_current", "path": "ar:turn_current.header", "text": "[TURN turn_current]"},
+    ]
+    tl.cache_last_touch_at = 1
+
+    res = apply_cache_ttl_pruning(
+        timeline=tl,
+        ttl_seconds=1,
+        keep_recent_turns=2,
+        keep_recent_intact_turns=1,
+        cfg=TruncationConfig(max_tool_text_chars=220, max_list_items=4),
+    )
+    rendered = await tl.render(cache_last=False, include_sources=False, include_announce=False)
+    text = "\n".join(str(b.get("text") or "") for b in rendered if isinstance(b, dict))
+
+    assert res["status"] == "pruned_light"
+    assert "[TOOL RESULT tc_search].pruned web_tools.web_search" in text
+    assert f"result_hidden: {path}" in text
+    assert '"items_meta"' in text
+    assert "Alpha discovery" in text
+    assert "content_symbols" in text
+    assert content not in text
+    assert "recover:" not in text
 
 
 @pytest.mark.asyncio
@@ -62,12 +151,13 @@ async def test_compaction_inserts_summary_and_keeps_cut_block(monkeypatch):
 
     runtime = RuntimeCtx(turn_id="turn_1", max_tokens=200)
     tl = Timeline(runtime=runtime, svc=object())
+    monkeypatch.setattr(tl, "_find_compaction_cut_point", lambda *args, **kwargs: (4, -1, False))
 
     blocks = [
         _blk(btype="turn.header", text="[TURN turn_0]", turn_id="turn_0"),
-        _blk(btype="user.prompt", text="user asks", turn_id="turn_0"),
-        _blk(btype="assistant.completion", text="assistant replies", turn_id="turn_0"),
-        _blk(btype="react.tool.result", text="tool-result", turn_id="turn_0"),
+        _blk(btype="user.prompt", text="user asks " * 120, turn_id="turn_0"),
+        _blk(btype="assistant.completion", text="assistant replies " * 120, turn_id="turn_0"),
+        _blk(btype="react.tool.result", text="tool result " * 80, turn_id="turn_0"),
         _blk(btype="turn.header", text="[TURN turn_1]", turn_id="turn_1"),
         _blk(btype="user.prompt", text="new ask", turn_id="turn_1"),
         _blk(btype="assistant.completion", text="new reply", turn_id="turn_1"),
@@ -109,12 +199,13 @@ async def test_current_turn_split_does_not_create_prior_summary(monkeypatch):
 
     runtime = RuntimeCtx(turn_id="turn_2", max_tokens=120)
     tl = Timeline(runtime=runtime, svc=object())
+    monkeypatch.setattr(tl, "_find_compaction_cut_point", lambda *args, **kwargs: (2, 0, True))
 
     # Single turn with multiple blocks so cut falls inside the current turn.
     blocks = [
         _blk(btype="turn.header", text="[TURN turn_2]", turn_id="turn_2"),
-        _blk(btype="user.prompt", text="user asks" * 30, turn_id="turn_2"),
-        _blk(btype="assistant.completion", text="assistant replies" * 30, turn_id="turn_2"),
+        _blk(btype="user.prompt", text="user asks " * 220, turn_id="turn_2"),
+        _blk(btype="assistant.completion", text="assistant replies " * 220, turn_id="turn_2"),
         _blk(btype="react.tool.call", text="{...}", turn_id="turn_2"),
         _blk(btype="react.tool.result", text="tool-result", turn_id="turn_2"),
     ]
@@ -181,12 +272,13 @@ async def test_compaction_after_existing_summary(monkeypatch):
 
     runtime = RuntimeCtx(turn_id="turn_5", max_tokens=120)
     tl = Timeline(runtime=runtime, svc=object())
+    monkeypatch.setattr(tl, "_find_compaction_cut_point", lambda *args, **kwargs: (5, -1, False))
     blocks = [
         _blk(btype="turn.header", text="[TURN turn_0]", turn_id="turn_0"),
         {"type": "conv.range.summary", "turn_id": "turn_1", "text": "OLD_SUMMARY"},
         _blk(btype="turn.header", text="[TURN turn_2]", turn_id="turn_2"),
-        _blk(btype="user.prompt", text="ask" * 50, turn_id="turn_2"),
-        _blk(btype="assistant.completion", text="reply" * 50, turn_id="turn_2"),
+        _blk(btype="user.prompt", text="ask " * 240, turn_id="turn_2"),
+        _blk(btype="assistant.completion", text="reply " * 240, turn_id="turn_2"),
         _blk(btype="turn.header", text="[TURN turn_5]", turn_id="turn_5"),
     ]
     updated = await tl.sanitize_context_blocks(
@@ -230,13 +322,14 @@ async def test_compaction_preserves_tool_call_boundary(monkeypatch):
 
     runtime = RuntimeCtx(turn_id="turn_tool", max_tokens=60)
     tl = Timeline(runtime=runtime, svc=object())
+    monkeypatch.setattr(tl, "_find_compaction_cut_point", lambda *args, **kwargs: (4, -1, False))
 
     blocks = [
         _blk(btype="turn.header", text="[TURN turn_tool]", turn_id="turn_tool"),
-        _blk(btype="user.prompt", text="ask" * 10, turn_id="turn_tool"),
+        _blk(btype="user.prompt", text="ask " * 180, turn_id="turn_tool"),
         _blk(btype="react.tool.call", text="call", turn_id="turn_tool"),
-        _blk(btype="react.tool.result", text="result", turn_id="turn_tool"),
-        _blk(btype="assistant.completion", text="reply" * 10, turn_id="turn_tool"),
+        _blk(btype="react.tool.result", text="result " * 180, turn_id="turn_tool"),
+        _blk(btype="assistant.completion", text="reply", turn_id="turn_tool"),
     ]
 
     updated = await tl.sanitize_context_blocks(
@@ -742,7 +835,6 @@ def test_cache_ttl_pruning_keeps_working_summary_visible():
     assert all(not b.get("hidden") for b in summary_blocks)
     assert "ws:turn_old.conv.working.summary.attempt.1" not in (res.get("hidden_paths") or [])
     assert "ws:turn_old.conv.working.summary" not in (res.get("hidden_paths") or [])
-
 
 def test_cache_ttl_pruning_keeps_external_turn_events_visible():
     runtime = RuntimeCtx(turn_id="turn_cur")

@@ -4,7 +4,7 @@ title: "How To Assemble A Bundle With SDK Building Blocks"
 summary: "Tier 1 bundle-builder map for choosing reusable KDCube SDK and platform blocks before writing custom bundle services: tools, agents, storage, widgets, jobs, integrations, and solutions."
 tags: ["sdk", "bundle", "tier-1", "building-blocks", "integrations", "solutions", "tools"]
 keywords: ["bundle building blocks", "sdk integrations", "sdk solutions", "bundle assembly map", "reuse sdk components", "telegram integration", "email integration", "tasks solution", "delivery integration", "shared sdk widget components", "built in tools", "react tools"]
-updated_at: 2026-05-16
+updated_at: 2026-05-19
 see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/sdk/bundle/build/how-to-write-bundle-README.md
@@ -75,7 +75,7 @@ Critical widget/browser rule:
 | PDF, DOCX, PPTX, PNG, HTML generation | `rendering_tools` plus public rendering skills | [SDK Tools](../../tools/sdk-tools-README.md) |
 | Isolated code execution and generated-code work | `exec_tools`, isolated runtime, tool bridge | [Bundle Agent Integration](../bundle-agent-integration-README.md), [SDK Tools](../../tools/sdk-tools-README.md) |
 | Context, attachments, hosted files, and conversation-scoped reads | `ctx_tools`, `io_tools`, hosting/runtime APIs | [Bundle Runtime](../bundle-runtime-README.md), [SDK Tools](../../tools/sdk-tools-README.md) |
-| ReAct agent with bundle tools and skills | `BaseWorkflow.build_react(...)`, `tools_descriptor.py`, `skills_descriptor.py` | [Bundle Agent Integration](../bundle-agent-integration-README.md) |
+| ReAct agent with bundle tools and skills | `BaseWorkflow.build_react(...)`, `tools_descriptor.py`, `skills_descriptor.py`; skills are discovered from core SDK, SDK solution roots, and bundle `CUSTOM_SKILLS_ROOT`, then filtered by exact consumer id | [Bundle Agent Integration](../bundle-agent-integration-README.md) |
 | Per-role model routing and temporary model strength selection | `config.role_models` for defaults/descriptor overrides; `bundle_call_context.role_models` for one API/MCP/cron/chat/job call | [Bundle Agent Integration](../bundle-agent-integration-README.md#model-selection-for-agent-roles), [Bundle Runtime](../bundle-runtime-README.md#request-scoped-role-model-override) |
 | Bundle-served MCP endpoint | `@mcp(...)` | [Bundle Platform Integration](../bundle-platform-integration-README.md), [MCP Tools](../../tools/mcp-README.md) |
 | Claude Code subagent with scoped MCP/tools | `ClaudeCodeAgent`, `ClaudeCodeWorkspaceConfig` | [Bundle Agent Integration](../bundle-agent-integration-README.md) |
@@ -92,7 +92,8 @@ Critical widget/browser rule:
 | --- | --- |
 | `entrypoint.py` | Decorators, route aliases, SDK module configuration, storage-root and user-scope hooks, product role policy. |
 | `tools_descriptor.py` | Tool aliases for SDK tool modules and bundle-local tool modules used by the agent. |
-| `skills_descriptor.py` | Built-in SDK skill ids and bundle-local product skill roots. |
+| `skills_descriptor.py` | Bundle-local skill root plus `AGENTS_CONFIG` filters for core SDK skills, SDK solution skills such as `task.*`, and bundle-local product skills. |
+| skill `tools.yaml` | Tool metadata for a skill; add `required: true` for tool ids that must exist before that skill is shown or loaded. |
 | `config/bundles.template.yaml` | Deployment-scoped non-secret props that enable/configure the block. |
 | `config/bundles.secrets.template.yaml` | Deployment-scoped secrets such as bot tokens, OAuth client secrets, signing keys. |
 | `interface/README.md` | Bundle-facing contract for widget aliases, API/MCP/cron/job routes, public-auth rules, payload shapes, and controlling config keys. |
@@ -130,6 +131,12 @@ Tasks SDK Solution
 
 Bundle code owns product-specific task wording, user identity resolution,
 widget composition, and route exposure.
+
+Tasks skills are discovered from the SDK solution root even without a
+bundle-local `skills/` folder. They declare required task tools, so they are
+normally omitted automatically when those tools are not in the active React tool
+catalog. Use `AGENTS_CONFIG` only when the bundle needs an explicit policy
+override such as an allow-list or a hard deny.
 
 If multiple SDK blocks can receive background jobs, do not add multiple
 decorated `@on_job` methods. The final bundle entrypoint keeps one `@on_job`,
@@ -244,6 +251,12 @@ config:
 Only bundles deriving from the memory mixin interpret this block. Keep
 `tools.allow_write: false` until the bundle has an explicit policy for
 agent-authored durable memory changes.
+
+If the memory mixin or another parent class already declares
+`@ui_widget(alias="memories")`, `ui.widgets.memories` only selects the built UI
+for that existing surface. It does not create the widget by itself. Hide the
+inherited memory widget with `enabled.widget.memories: false`; replace its UI by
+configuring `ui.widgets.memories.src_folder/build_command`.
 
 ## Test The Assembly Boundary
 

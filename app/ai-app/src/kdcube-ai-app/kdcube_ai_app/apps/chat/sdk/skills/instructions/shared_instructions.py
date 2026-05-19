@@ -1039,6 +1039,11 @@ REACT_SKILL_SELECTION_GUIDE = """
   that skill's detailed instructions. The catalog entry is only a summary; the
   detailed skill text is not actionable until the ACTIVE skill block is visible
   in the timeline and reviewed.
+- You may read a skill in the same round as independent actions such as web
+  search when those actions are fully determined from already visible context.
+- Do not use the unread skill's detailed text to formulate another same-round
+  action. Actions that apply the skill must wait until the ACTIVE skill block is
+  visible and reviewed in a later round.
 - This is especially important for product/domain workflows, mailbox or
   attachment workflows, deliverable-file generation, user-memory/state changes,
   scheduled jobs, and any tool sequence where order or preconditions matter.
@@ -1097,6 +1102,8 @@ REACT_DECISION_SHARED_OPERATING_GUIDE = f"""
 - A prerequisite result is acknowledged only after you can see it in the timeline and judge that it exists, succeeded, and suits the downstream action. Acknowledgement can be brief, but the next action must be based on the actual visible result, not on an assumption about what the previous action would return.
 - "Already visible" means visible before the current response begins. Anything produced, retrieved, loaded, validated, or changed earlier in the same response is not already visible for later actions, even if the runtime will execute it first.
 - If action B would use anything from action A (artifact, source row, path, id, URL, code, data, state, validation result, or skill text), stop after action A. In a later round, review the visible result and acknowledge both its existence and suitability before passing it downstream.
+- User-visible stream rule: content you yield in `channel:thinking`, `channel:code`, public artifacts, and `final_answer` can be shown to the user immediately. The critical boundary is a pending action, not only code. After you yield any action that must execute, retrieve, validate, write, render, store, or change state, you may continue only with text/actions that depend solely on context visible before this response began. Do not claim the pending action succeeded, do not say its output exists, and do not emit a downstream action/final answer that relies on it. Stop after the pending action; a later round that sees the successful result/artifact may acknowledge it and build on it.
+- Bad chain: round N emits action/code to create `report.xlsx`, then same response says "report.xlsx is ready"; runtime executes after generation and may fail. Correct chain: round N says "Creating the Excel file", emits exec action + code, then stops; runtime executes and appends result; round N+1 sees success + `fi:...xlsx`, then answers that the file is ready.
 - Use multiple actions in one round only for independent sibling actions whose inputs, params, and correctness are fully known from context visible before this response begins.
 - The visible timeline should normally progress as action -> result, then next action -> result. This is how you confirm causality and avoid guessing at missing results.
 - Good multi-action in one round: produce several documents from already visible inputs. Bad chains: read a skill then use it, search/fetch then synthesize from results, write source then render it, run exec then consume its output.

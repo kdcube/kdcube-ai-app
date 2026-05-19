@@ -49,12 +49,12 @@ control, compact spacing, brand and domain-adaptive color schemes,
 multi-column layouts for scientific papers, magazine-style editorial documents,
 and SVG diagram embedding.
 
-## Tools
+## Renderer Contract
 
-| Tool | Use |
-|------|-----|
-| `write_pdf(path, content, format, title, landscape)` | Render to PDF. `format` is `'markdown'` (default), `'html'`, or `'mermaid'`. |
-| `write_png(path, content, format)` | Render pages or SVGs to PNG for visual inspection. |
+This skill is authoring guidance for PDF content and render-review workflow.
+The canonical callable contracts live on the `rendering_tools.write_pdf` and
+`rendering_tools.write_png` tool definitions; do not treat this skill as a
+parameter reference.
 
 ## Choosing a Format
 
@@ -68,7 +68,8 @@ Pick the right format for the job:
 
 ### Format: Markdown
 
-Use `write_pdf(path, content, format='markdown')` — this is the **default**.
+Markdown mode is the fastest path for text-heavy reports, memos, and
+documentation where a standard single-column layout is sufficient.
 
 The renderer applies a clean professional stylesheet automatically (Arial,
 10pt body, proper heading hierarchy, table borders, code blocks). You write
@@ -80,7 +81,7 @@ standard GitHub-Flavored Markdown.
 - Use `![alt](relative/path.png)` for images (relative to OUT_DIR)
 - Do NOT embed base64 data URIs — use file paths
 - Citations: `[[S:1,3]]` tokens are resolved automatically when sources exist
-- Set `include_sources_section=True` (default) to append a references section
+- Use the renderer's references option when a sources section is required
 - Set `landscape=True` for wide tables or landscape documents
 - The auto-applied CSS handles page margins (25mm top, 20mm sides, 30mm bottom),
   header sizes, table styling, and code formatting
@@ -123,7 +124,7 @@ Enterprise segment contributed 72% of net new ARR...
 
 ### Format: HTML
 
-Use `write_pdf(path, content, format='html')` for full layout control.
+Use HTML mode for full layout control.
 
 You provide a complete HTML document (or fragment — it will be wrapped). The
 renderer executes JavaScript, so Chart.js, D3, etc. work. You must handle all
@@ -133,7 +134,7 @@ See the rest of this skill for comprehensive HTML authoring guidance.
 
 ### Format: Mermaid
 
-Use `write_pdf(path, content, format='mermaid')` for standalone diagrams.
+Use Mermaid mode for standalone diagrams.
 
 Pass raw Mermaid text (no ``` fences). The renderer wraps it in an HTML page
 with Mermaid.js and renders to PDF.
@@ -237,7 +238,7 @@ Build SVGs using the `svg-press` skill. Keep diagram + its explanation table in 
 
 ### 6. Images — Use File Paths, NEVER Base64
 
-- HTML mode: `<img src="turn_id/files/chart.png" alt="Chart">`
+- HTML mode: `<img src="turn_<id>/files/chart.png" alt="Chart">`
 - Paths are relative to OUT_DIR (the tool's output directory)
 - Base64 data URIs crash headless Chromium on multi-page PDFs
 - Wrap images in figures with `break-inside: avoid`:
@@ -432,7 +433,7 @@ th, td { padding: 4px 6px; border: 1px solid var(--border); text-align: left; ve
         <thead><tr><th>Metric</th><th>Value</th><th>Change</th></tr></thead>
         <tbody>
           <tr><td>Revenue</td><td>$3.2M</td><td>+18%</td></tr>
-          <tr><td>Customers</td><td>142</td><td>+23</td></tr>
+          <tr><td>Accounts</td><td>142</td><td>+23</td></tr>
         </tbody>
       </table>
     </div>
@@ -532,7 +533,7 @@ tr:nth-child(even) td { background: var(--surface-2); }
   <p class="metadata">Prepared for Acme Corp · April 2026</p>
 
   <div class="callout callout-blue">
-    <strong>Key Principle:</strong> All data remains customer-owned...
+    <strong>Key Principle:</strong> All data remains tenant-owned...
   </div>
 
   <div class="table-wrapper">
@@ -541,7 +542,7 @@ tr:nth-child(even) td { background: var(--surface-2); }
       <thead><tr><th>Entity</th><th>Role</th><th>Ownership</th></tr></thead>
       <tbody>
         <tr><td>KDCube</td><td>Platform</td><td><span class="badge badge-primary">Platform</span></td></tr>
-        <tr><td>Customer</td><td>Tenant</td><td><span class="badge badge-secondary">Data Owner</span></td></tr>
+        <tr><td>Client</td><td>Tenant</td><td><span class="badge badge-secondary">Data Owner</span></td></tr>
       </tbody>
     </table>
   </div>
@@ -960,9 +961,9 @@ h3 { font-size: 11pt; }
 ## Wording and Tone Guidance
 
 - Do not advertise. Support choices by explaining what they enable.
-- Every entity must be explained on first use: "processor" alone is unclear — write "processor (generic workers that dynamically load and run customer bundles)."
+- Every entity must be explained on first use: "processor" alone is unclear — write "processor (generic workers that dynamically load and run tenant bundles)."
 - Ownership statements must be scoped: "Acme owns the specific bundles written in its codebase" — not "Acme owns all bundles."
-- If the same term names both a technology and data it produces, disambiguate: "Accounting" = platform service; "Accounting data" = customer-owned output.
+- If the same term names both a technology and data it produces, disambiguate: "Accounting" = platform service; "Accounting data" = tenant-owned output.
 
 ---
 

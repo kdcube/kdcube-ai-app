@@ -42,16 +42,11 @@ elements into native PowerPoint slides with text boxes, tables, images, and
 two-column layouts. It is NOT a browser/Chromium render; only the subset of HTML
 and CSS documented here is supported.
 
-## Tool
+## Renderer Contract
 
-```
-write_pptx(path, content, title?, include_sources_slide?, base_dir?)
-```
-
-- `content`: HTML string. One `<section>` per slide.
-- `path`: Relative `.pptx` path under the artifact root (`OUTPUT_DIR`).
-- `include_sources_slide`: Legacy parameter. A Sources slide is generated when external sources are provided.
-- `base_dir`: Base directory for resolving relative image paths (defaults to the artifact root).
+This skill is authoring guidance for slide-structured HTML. The canonical
+callable contract lives on the `rendering_tools.write_pptx` tool definition;
+do not treat this skill as a parameter reference.
 
 ---
 
@@ -234,7 +229,7 @@ These classes render as paragraph elements:
 
 ```html
 <!-- Relative from the artifact root / OUTPUT_DIR -->
-<img src="turn_id/files/revenue_chart.png" width="640" alt="Revenue Chart">
+<img src="turn_<id>/files/revenue_chart.png" width="640" alt="Revenue Chart">
 
 <!-- With explicit dimensions -->
 <img src="images/architecture.png" style="width:5in; height:3in;" alt="Architecture">
@@ -509,9 +504,9 @@ A well-structured deck tells a story. Use these patterns to guide slide ordering
 7. **Risks / mitigations** — two-column or callout-based
 8. **Recommendation + timeline**
 
-### Sales / Customer Deck (5–8 slides)
+### Sales / Client Deck (5–8 slides)
 
-1. **Title slide** with customer name
+1. **Title slide** with client name
 2. **Understanding your challenge** — shows you listened
 3. **Our approach** — architecture/diagram slide
 4. **Key capabilities** (1–2 slides) — two-column feature comparisons
@@ -548,7 +543,7 @@ A well-structured deck tells a story. Use these patterns to guide slide ordering
   <h2>Key Achievements</h2>
   <ul>
     <li><strong>Revenue:</strong> $3.2M (+28% YoY)</li>
-    <li><strong>Growth:</strong> 450 new customers</li>
+    <li><strong>Growth:</strong> 450 new accounts</li>
     <li><strong>Efficiency:</strong> 35% cost reduction</li>
   </ul>
 
@@ -598,7 +593,7 @@ A well-structured deck tells a story. Use these patterns to guide slide ordering
     </thead>
     <tbody>
       <tr><td>Revenue</td><td>$2.5M</td><td>$3.2M</td><td>+28%</td></tr>
-      <tr><td>Customers</td><td>1,200</td><td>1,650</td><td>+38%</td></tr>
+      <tr><td>Accounts</td><td>1,200</td><td>1,650</td><td>+38%</td></tr>
       <tr><td>NPS</td><td>62</td><td>71</td><td>+9</td></tr>
     </tbody>
   </table>

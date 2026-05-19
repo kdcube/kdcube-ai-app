@@ -4,7 +4,7 @@ title: "Bundle Frontend Awareness"
 summary: "Frontend operating guidance for bundle UIs against scaled ingress and proc backends: retries, drain behavior, rate limiting, backpressure, shared widget source, and multi-tab or session coordination."
 tags: ["sdk", "bundle", "frontend", "sse", "retries", "rate-limits", "backpressure", "scaling", "widget"]
 keywords: ["scaled frontend behavior", "sse retry strategy", "drain and shutdown behavior", "rate limit handling", "backpressure handling", "multi tab coordination", "ingress and proc awareness", "shared sdk widget source", "bundle ui resilience"]
-updated_at: 2026-05-16
+updated_at: 2026-05-19
 see_also:
   - ks:docs/sdk/bundle/bundle-client-ui-README.md
   - ks:docs/sdk/bundle/bundle-client-communication-README.md
@@ -151,6 +151,10 @@ SDK-owned shared UI, such as the User Memory widget or Telegram admin/channels
 panels, is frontend code compiled into the host widget through
 `shared_sources`. It does not change the runtime safety rules:
 
+- shared source or `ui.widgets.<alias>` config does not declare a widget
+  surface; an inherited or local `@ui_widget(alias="<alias>")` must exist
+- suppress inherited widgets with `enabled.widget.<alias>: false`, not by
+  disabling only `ui.widgets.<alias>`
 - the host widget still owns config handshake and operation URL construction
 - the host widget should keep one API client and inject it into shared panels
 - backend APIs still enforce KDCube roles, Telegram `initData`, and registry

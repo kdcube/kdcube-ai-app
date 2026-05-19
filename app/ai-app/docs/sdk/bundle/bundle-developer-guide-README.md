@@ -152,7 +152,7 @@ For bundle authors, `tenant/project` means one isolated environment.
 
 Use a separate `tenant/project` when you need:
 
-- customer isolation
+- tenant isolation
 - a separate lifecycle stage such as `dev`, `staging`, or `prod`
 
 Keep multiple bundles inside the same `tenant/project` when they belong to the
@@ -194,6 +194,25 @@ Usually present in real bundles:
 - `orchestrator/workflow.py`
 - `tools_descriptor.py`
 - `skills_descriptor.py`
+
+Skills are discovered from more than the bundle folder. The active registry
+loads core SDK skills, SDK solution skills, and then bundle-local
+`CUSTOM_SKILLS_ROOT`. Use `skills_descriptor.py` `AGENTS_CONFIG` to narrow the
+catalog for exact consumer ids such as `solver.react.v2.decision.v2.strong` and
+`solver.react.v2.decision.v2.regular`. Skills that declare required tools are
+also filtered against the active tool catalog, so solution skills disappear
+automatically when their tools are not exposed. Use `AGENTS_CONFIG` when policy
+needs an explicit allow-list or hard deny.
+
+For skills that should exist only when their tools are available, add
+`required: true` to those tool entries in the skill's `tools.yaml`. ReAct checks
+these requirements against the active tool catalog, so the skill disappears
+from catalog/import/read paths when the corresponding tools are not exposed.
+
+Use `agent_disclosure: hidden` in a skill front matter only when the skill is
+operational guidance that may be loaded by exact id/import but must not be
+listed by the agent. It is not an authorization boundary; use `AGENTS_CONFIG`
+to make a skill unavailable.
 
 ## Minimal Entry Pattern
 

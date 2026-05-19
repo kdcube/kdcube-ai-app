@@ -191,20 +191,19 @@ def compose_decision_system_text(
     if include_tool_catalog or include_skill_gallery:
         infra_adapters = infra_adapters or []
         adapters = adapters or []
-        tool_catalog = (
-            build_tool_catalog(
-                adapters + infra_adapters,
-                exclude_tool_ids=[],
-            )
-            if include_tool_catalog
-            else []
+        availability_tool_catalog = build_tool_catalog(
+            adapters + infra_adapters,
+            exclude_tool_ids=[],
         )
+        react_tool_catalog = get_react_tools_catalog()
+        tool_catalog = availability_tool_catalog if include_tool_catalog else []
         parts.append(
             build_instruction_catalog_block(
                 consumer=skill_consumer,
                 tool_catalog=tool_catalog,
-                react_tools=get_react_tools_catalog() if include_tool_catalog else [],
+                react_tools=react_tool_catalog if include_tool_catalog else [],
                 include_skill_gallery=include_skill_gallery,
+                skill_tool_catalog=availability_tool_catalog + react_tool_catalog,
             ).strip()
         )
 

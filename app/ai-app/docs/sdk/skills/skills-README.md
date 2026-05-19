@@ -117,6 +117,10 @@ Notes:
 - namespace defaults to "public" if omitted.
 - import/imports can include other skills (public/internal/custom).
 - when_to_use is used in the skill catalog display.
+- agent_disclosure defaults to "normal"; set `agent_disclosure: hidden` for
+  operational guidance that may be loaded by exact id but must not appear in
+  skill catalogs or user-facing self-descriptions.
+- Tool eligibility is declared in `tools.yaml`, not in `SKILL.md`.
 
 
 ## tools.yaml
@@ -132,6 +136,17 @@ tools:
   - id: llm_tools.generate_content_llm
     role: content generation
     why: Produces HTML/Markdown with correct layout and citations.
+  - id: memory.search_memory
+    role: durable memory read
+    why: Read durable user memory for this guidance.
+    required: true
+
+`required: true` means the skill is eligible only when that tool id is present
+in the active tool catalog for the current agent/turn. Without `required: true`,
+the tool entry is advisory metadata for planners and UX only. This keeps old
+skills backward-compatible while allowing stateful or subsystem-specific skills
+to disappear automatically when their tools are not wired, disabled, or excluded
+from `allowed_plugins` / `allowed_ids`.
 
 
 ## sources.yaml
@@ -215,10 +230,19 @@ Filtering logic:
 - If a consumer is not present in AGENTS_CONFIG:
   - all skills are visible (no include_for enforcement).
 - Matching is by exact consumer id.
+- After descriptor filtering, runtime tool eligibility is applied for skills
+  whose `tools.yaml` contains `required: true` entries. If any required tool is
+  missing from the active tool catalog, the skill is omitted from the visible
+  catalog, short-id mapping, imports, and `react.read(sk:...)` load path for
+  that runtime context.
 - `"default"` key is not interpreted specially by the current runtime.
 - To disable all skills for one consumer, set `disabled: ["*"]`.
 - `enabled: []` does not disable all; it behaves like no enabled filter.
 - Filtering is applied only when skill APIs are called with `consumer=<agent id>` and that id matches exactly.
+- Solution skills can use `tools.yaml` `required: true` gates. The Tasks
+  solution does this, so `task.*` skills are omitted automatically when task
+  tools are absent. Use `disabled: ["task.*"]` only when policy should deny
+  those skills even though the tools are available.
 
 Resolution example:
 
@@ -242,6 +266,17 @@ What this configuration achieves:
 - Per-agent planning control: decide which skills appear in each agent catalog.
 - Per-agent resolution control: SK short ids are built from each consumer's visible set.
 - Per-agent instruction injection control: hidden skills for a consumer are not injected into that consumer's generator prompt.
+
+`agent_disclosure: hidden` is separate from `AGENTS_CONFIG`:
+- `AGENTS_CONFIG` says whether a consumer may see/load a skill at all.
+- `agent_disclosure: hidden` says an otherwise available skill must not be
+  advertised. Hidden-disclosure skills are omitted from the catalog and short-id
+  map, but can still be loaded by exact id or by imports.
+- When a hidden-disclosure skill is loaded, the active instruction block uses a
+  redacted heading and a non-disclosure rule instead of printing the skill name
+  and fully qualified id.
+- This is not an authorization boundary. Disable the skill in `AGENTS_CONFIG`
+  when the agent must not be able to use it.
 
 SDK mechanisms using this:
 - ReAct decision catalog: `consumer="solver.react.v2.decision.v2.strong"` (planning catalog visibility).

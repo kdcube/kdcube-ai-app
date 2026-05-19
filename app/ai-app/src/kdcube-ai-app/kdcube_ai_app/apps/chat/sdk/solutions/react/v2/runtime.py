@@ -31,9 +31,11 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.live_events import (
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.layout import (
     build_assistant_completion_attempt_blocks,
+    build_tool_catalog,
     build_working_summary_attempt_blocks,
     record_assistant_completion_attempt,
 )
+from kdcube_ai_app.apps.chat.sdk.solutions.react.call import get_react_tools_catalog
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import ReactResult
 from kdcube_ai_app.apps.chat.sdk.solutions.react.runtime_state import ReactRuntimeState as ReactStateV2
 from kdcube_ai_app.apps.chat.sdk.solutions.react.solution_workspace import ApplicationHostingService
@@ -1827,6 +1829,13 @@ class ReactSolverV2:
         t0 = time.perf_counter()
         from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.agent_retry import retry_with_compaction
         from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.agents.decision import build_decision_system_text
+        try:
+            state["skill_tool_catalog"] = (
+                build_tool_catalog(announced_adapters + extra_adapters_for_decision, exclude_tool_ids=[])
+                + get_react_tools_catalog()
+            )
+        except Exception:
+            state["skill_tool_catalog"] = []
 
         async def _decision_agent(*, blocks: List[Dict[str, Any]]) -> Dict[str, Any]:
             self._begin_active_generation_capture(iteration=iteration)

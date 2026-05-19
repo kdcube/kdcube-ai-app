@@ -31,6 +31,17 @@ For how these decorators fit into React agents, tools/skills descriptors, MCP
 connectors, and Claude Code subagents, read
 [Bundle Agent Integration](bundle-agent-integration-README.md).
 
+Skills are not declared by decorators. React skills are discovered through the
+skills subsystem: core SDK skills, SDK solution skills, and the bundle
+`CUSTOM_SKILLS_ROOT`, then filtered by `skills_descriptor.py` `AGENTS_CONFIG`.
+Skills can also mark tool refs in `tools.yaml` with `required: true`; ReAct
+then omits that skill from catalog/import/read paths whenever the active tool
+catalog lacks those tool ids. Use `AGENTS_CONFIG` for explicit allow-lists or
+hard denies that are stricter than tool availability. Use
+`agent_disclosure: hidden` in `SKILL.md` only to suppress catalog/self-description
+disclosure for guidance that remains loadable by exact id or import. See
+[Bundle Agent Integration](bundle-agent-integration-README.md#react-bundle-agent-integration).
+
 For the higher-level inbound/outbound transport map, use
 [bundle-transports-README.md](bundle-transports-README.md).
 

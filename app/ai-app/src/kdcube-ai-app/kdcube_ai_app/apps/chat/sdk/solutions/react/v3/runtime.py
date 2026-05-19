@@ -35,9 +35,11 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.live_events import (
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.layout import (
     build_assistant_completion_attempt_blocks,
+    build_tool_catalog,
     build_working_summary_attempt_blocks,
     record_assistant_completion_attempt,
 )
+from kdcube_ai_app.apps.chat.sdk.solutions.react.call import get_react_tools_catalog
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import ReactResult
 from kdcube_ai_app.apps.chat.sdk.solutions.react.runtime_state import ReactRuntimeState as ReactStateV2
 from kdcube_ai_app.apps.chat.sdk.solutions.react.solution_workspace import ApplicationHostingService
@@ -1577,27 +1579,6 @@ class ReactSolverV2:
             return True
         return any(tool_id.startswith(prefix) for prefix in self.SAFE_MULTI_ACTION_TOOL_PREFIXES)
 
-    @staticmethod
-    def _read_params_contains_skill_path(params: Any) -> bool:
-        if not isinstance(params, dict):
-            return False
-
-        def is_skill_path(value: Any) -> bool:
-            path = str(value or "").strip()
-            return path.startswith(("sk:", "SK", "skill:", "skills."))
-
-        paths = params.get("paths")
-        if isinstance(paths, list) and any(is_skill_path(path) for path in paths):
-            return True
-        items = params.get("items")
-        if isinstance(items, list):
-            for item in items:
-                if isinstance(item, str) and is_skill_path(item):
-                    return True
-                if isinstance(item, dict) and is_skill_path(item.get("path")):
-                    return True
-        return False
-
     def _multi_action_enabled(self) -> bool:
         return (self.multi_action_mode or "").strip().lower() in {"on", "true", "1", "yes", "safe_fanout", "fanout"}
 
@@ -1743,22 +1724,6 @@ class ReactSolverV2:
                 tool_call["params"] = filtered_params
                 decision["tool_call"] = tool_call
             accepted.append(decision)
-        skill_read_in_bundle = any(
-            ((decision.get("tool_call") or {}).get("tool_id") or "").strip() == "react.read"
-            and self._read_params_contains_skill_path((decision.get("tool_call") or {}).get("params") or {})
-            for decision in accepted
-            if isinstance(decision, dict)
-        )
-        if skill_read_in_bundle and len(accepted) > 1:
-            read_only: List[Dict[str, Any]] = []
-            for idx, decision in enumerate(accepted):
-                tool_call = decision.get("tool_call") or {}
-                tool_id = (tool_call.get("tool_id") or "").strip()
-                if tool_id == "react.read":
-                    read_only.append(decision)
-                else:
-                    _reject(idx, "multi_action_bundle_skill_dependency_barrier", {"tool_id": tool_id}, decision)
-            accepted = read_only
         if accepted:
             return accepted, None, ({"rejected": rejected} if rejected else None)
         first = rejected[0] if rejected else {}
@@ -2405,6 +2370,13 @@ class ReactSolverV2:
         t0 = time.perf_counter()
         from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.agent_retry import retry_with_compaction
         from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.agents.decision import build_decision_system_text
+        try:
+            state["skill_tool_catalog"] = (
+                build_tool_catalog(announced_adapters + extra_adapters_for_decision, exclude_tool_ids=[])
+                + get_react_tools_catalog()
+            )
+        except Exception:
+            state["skill_tool_catalog"] = []
 
         async def _decision_agent(*, blocks: List[Dict[str, Any]]) -> Dict[str, Any]:
             self._begin_active_generation_capture(iteration=iteration)

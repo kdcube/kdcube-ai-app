@@ -2,3 +2,4 @@ tools:
   - id: rendering_tools.write_pdf
     role: document rendering
     why: Renders text content, either html or markdown format, into PDF document
+    required: true

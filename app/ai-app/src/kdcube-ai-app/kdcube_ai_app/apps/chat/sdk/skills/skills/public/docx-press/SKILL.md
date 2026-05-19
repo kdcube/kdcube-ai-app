@@ -44,21 +44,16 @@ native Word elements (paragraphs, headings, tables, code blocks, blockquotes,
 images, hyperlinks, and citations). You write standard Markdown — the renderer
 handles all styling with a fixed professional palette.
 
-## Tool
+## Renderer Contract
 
-```
-write_docx(path, content, title?, include_sources_section?)
-```
+This skill is authoring guidance for the DOCX renderer. The canonical callable
+contract lives on the `rendering_tools.write_docx` tool definition; do not treat
+this skill as a parameter reference.
 
-- `content`: Markdown string. The renderer processes headings, lists, tables,
-  code fences, blockquotes, images, links, and citation tokens.
-- `path`: Relative `.docx` path under OUT_DIR.
-- `title`: Optional document title (overrides the first `# Heading`).
-- `include_sources_section`: Append a "References" section (default True).
-
-**Important:** This is a Markdown-only tool. Unlike `write_pdf` (which supports
-HTML and Mermaid) or `write_pptx` (which uses HTML sections), `write_docx` takes
-only Markdown input.
+**Important:** DOCX rendering is Markdown-only. Unlike PDF rendering, which can
+use HTML or Mermaid when appropriate, the DOCX renderer expects standard
+Markdown primitives: headings, lists, tables, code fences, blockquotes, images,
+links, and citation tokens.
 
 ---
 
@@ -166,7 +161,7 @@ Pipe tables with a header row and separator:
 | Metric | Q3 2025 | Q4 2025 | Change |
 | --- | --- | --- | --- |
 | Revenue | $2.5M | $3.2M | +28% |
-| Customers | 1,200 | 1,650 | +38% |
+| Accounts | 1,200 | 1,650 | +38% |
 | NPS | 62 | 71 | +9 |
 ```
 
@@ -238,7 +233,7 @@ DOCX does not support SVG directly. Render SVGs to PNG first using `write_png`
 
 ```markdown
 ![System Architecture: Three-Layer Boundary](diagrams/diagram-1-layers.png)
-![Data Flow: Customer-Side Processing](diagrams/diagram-2-data-flow.png)
+![Data Flow: Tenant-Side Processing](diagrams/diagram-2-data-flow.png)
 ```
 
 **Rendering SVG to PNG for DOCX:**

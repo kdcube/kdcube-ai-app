@@ -50,13 +50,13 @@ TOOL_SPEC = {
         "react.write only writes text-based files. For PDFs/PPTX/DOCX/PNG, use rendering_tools.write_* "
         "or exec tools to generate the artifact. "
         "Include citations with SIDs from sources_pool when using sources. "
-        "If you build your content based on prior artifacts or sources, ensure those are visible in the journal. Otherwise read them first via react.read. "
+        "If you build your content based on prior artifacts or sources, ensure those are visible in the journal. Otherwise read them first via react.read and wait for the next round to review the result. "
         "For recorder to work properly, fill the function params in the order they are stated below. "
         "This tool creates external artifacts by default. HARD: For any report, brief, slide source, document source, "
         "HTML/Markdown intended for rendering_tools.write_*, or content the user should see/download/approve, set "
         "channel='canvas'. Do NOT set channel='internal' for PDF/PPTX/DOCX source files or user deliverables. "
         "Use channel='internal' only for private scratch/notes that will not be shown to the user and will not be rendered. "
-        "Note if you use this tool to generate the content for rendering tools.write_* tools, you must read the relevant skill(s) to produce the proper content. Ensure you see the proper skills in the journal or load them first via react.read."
+        "Note if you use this tool to generate the content for rendering tools.write_* tools, you must read the relevant skill(s) to produce the proper content. Ensure you see the proper skills in the journal. If you need to load them with react.read, do that in an earlier round and wait until the ACTIVE skill block is visible before writing."
     ),
     "args": {
         "path": "str (FIRST FIELD). Canonical current-turn physical filepath: turn_<current>/outputs/<scope>/<name>, or turn_<current>/files/<scope>/<path> for durable workspace state.",

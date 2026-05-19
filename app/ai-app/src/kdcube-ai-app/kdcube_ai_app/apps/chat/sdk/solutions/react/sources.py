@@ -42,10 +42,10 @@ def _brief(value: Any, *, limit: int = 180) -> str:
 
 def build_sources_pool_items_stats(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
-    Compact, structured stats for source-row lists.
+    Compact, structured item metadata for source-row lists.
 
-    This is intentionally metadata only: it helps the model decide whether it
-    has full source content without replacing the source rows themselves.
+    This is intentionally bounded: it helps the renderer show item-bearing
+    search/fetch results without carrying full page bodies in cold recent turns.
     """
     pool = [r for r in (rows or []) if isinstance(r, dict)]
     items: List[Dict[str, Any]] = []
@@ -77,6 +77,12 @@ def build_sources_pool_items_stats(rows: List[Dict[str, Any]]) -> Dict[str, Any]
             "text_symbols": text_symbols,
             "fields": sorted([str(k) for k in row.keys()]),
         }
+        text_preview = row.get("text") or row.get("snippet") or row.get("summary") or row.get("preview")
+        if isinstance(text_preview, str) and text_preview.strip():
+            item["text_preview"] = _brief(text_preview, limit=260)
+        content_preview = row.get("content")
+        if isinstance(content_preview, str) and content_preview.strip():
+            item["content_preview"] = _brief(content_preview, limit=260)
         content_length = row.get("content_length")
         if isinstance(content_length, (int, float)):
             item["content_length"] = int(content_length)

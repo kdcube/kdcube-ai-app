@@ -39,8 +39,13 @@ def test_timeline_render_debug_writes_to_configured_root_and_prunes(tmp_path):
 
     files = sorted(tmp_path.glob("rendered-*.txt"))
     assert len(files) == 3
+    assert all("user-conv-turn_debug-" in file.name for file in files)
     assert all("turn_debug" in file.name for file in files)
-    assert files[-1].read_text(encoding="utf-8") == "hello 4"
+    latest = files[-1].read_text(encoding="utf-8")
+    assert "model_visible_tokens_estimate:" in latest
+    assert "message_blocks: 1" in latest
+    assert "cache_markers: 0" in latest
+    assert "hello 4" in latest
 
 
 def test_timeline_render_debug_without_configured_root_is_noop(tmp_path, monkeypatch):
@@ -119,6 +124,73 @@ def test_multimodal_token_estimate_counts_visible_timeline_blocks_only():
 
     assert visible >= 4100
     assert hidden < visible
+
+
+def test_generated_pdf_tool_result_is_not_attached_as_model_document():
+    ctx = RuntimeCtx(turn_id="turn_pdf", started_at="2026-02-09T00:00:00Z")
+    tl = Timeline(runtime=ctx)
+    pdf_b64 = base64.b64encode(
+        b"%PDF-1.4\n1 0 obj << /Type /Page >> endobj\n%%EOF"
+    ).decode("ascii")
+
+    tl.blocks.extend([
+        tl._block(type="turn.header", author="system", turn_id=ctx.turn_id, ts=ctx.started_at, text=""),
+        tl._block(
+            type="react.tool.result",
+            author="agent",
+            turn_id=ctx.turn_id,
+            ts=ctx.started_at,
+            mime="application/pdf",
+            path="fi:turn_pdf.outputs/report.pdf",
+            text="[FILE] report.pdf",
+            base64=pdf_b64,
+        ),
+    ])
+
+    rendered = _run(tl.render(cache_last=True))
+    text = "\n".join(b.get("text", "") for b in rendered if b.get("type") == "text")
+
+    assert tl._estimate_blocks_tokens(tl.blocks) < 4100
+    assert not any(b.get("type") == "document" for b in rendered)
+    assert "[BINARY FILE NOT ATTACHED DIRECTLY TO MODEL]" in text
+    assert "generated PDF/tool artifact" in text
+    assert "provider_tokens_estimate_if_attached:" in text
+
+
+def test_react_read_pdf_result_is_attached_as_model_document():
+    ctx = RuntimeCtx(turn_id="turn_pdf_read", started_at="2026-02-09T00:00:00Z")
+    tl = Timeline(runtime=ctx)
+    pdf_b64 = base64.b64encode(
+        b"%PDF-1.4\n1 0 obj << /Type /Page >> endobj\n%%EOF"
+    ).decode("ascii")
+
+    tl.blocks.extend([
+        tl._block(type="turn.header", author="system", turn_id=ctx.turn_id, ts=ctx.started_at, text=""),
+        tl._block(
+            type="react.tool.call",
+            author="agent",
+            turn_id=ctx.turn_id,
+            ts=ctx.started_at,
+            mime="application/json",
+            path="tc:turn_pdf_read.read1.call",
+            text=json.dumps({"tool_id": "react.read", "tool_call_id": "read1", "params": {"paths": ["fi:turn_pdf_read.outputs/report.pdf"]}}),
+        ),
+        tl._block(
+            type="react.tool.result",
+            author="agent",
+            turn_id=ctx.turn_id,
+            ts=ctx.started_at,
+            mime="application/pdf",
+            path="fi:turn_pdf_read.outputs/report.pdf",
+            base64=pdf_b64,
+            meta={"tool_call_id": "read1", "tool_id": "react.read"},
+        ),
+    ])
+
+    rendered = _run(tl.render(cache_last=True))
+
+    assert tl._estimate_blocks_tokens(tl.blocks) >= 4100
+    assert any(b.get("type") == "document" for b in rendered)
 
 
 def test_timeline_rendering_with_attachment_and_tool_blocks():
@@ -464,7 +536,7 @@ def test_large_internal_note_and_code_are_rendered_as_bounded_previews():
     assert len(joined) < len(html_text) + len(code_text)
 
 
-def test_source_result_render_includes_items_stats():
+def test_web_source_result_render_omits_items_stats_but_keeps_payload():
     ctx = RuntimeCtx(
         turn_id="turn_sources",
         started_at="2026-05-08T00:00:00Z",
@@ -519,11 +591,63 @@ def test_source_result_render_includes_items_stats():
     rendered = _run(tl.render(cache_last=True))
     joined = "\n".join(b.get("text", "") for b in rendered if b.get("type") == "text")
 
-    assert "items_stats:" in joined
-    assert '"items_count": 1' in joined
-    assert '"content_rows": 1' in joined
+    assert "items_stats:" not in joined
+    assert '"items_count": 1' not in joined
+    assert '"content_rows": 1' not in joined
     assert "[TOOL RESULT PREVIEW TRUNCATED]" not in joined
     assert "full source content full source content" in joined
+
+
+def test_non_web_list_result_render_includes_items_stats():
+    ctx = RuntimeCtx(
+        turn_id="turn_items",
+        started_at="2026-05-08T00:00:00Z",
+        tool_result_preview_max_text_symbols=200,
+    )
+    tl = Timeline(runtime=ctx)
+    payload = [{"name": "alpha", "score": 1}, {"name": "beta", "score": 2}]
+
+    tl.blocks.extend([
+        tl._block(type="turn.header", author="system", turn_id=ctx.turn_id, ts=ctx.started_at, text=""),
+        tl._block(
+            type="react.tool.call",
+            author="agent",
+            turn_id=ctx.turn_id,
+            ts=ctx.started_at,
+            mime="application/json",
+            path="tc:turn_items.tc_items.call",
+            text=json.dumps({
+                "tool_id": "custom_tools.list_items",
+                "tool_call_id": "tc_items",
+                "params": {},
+            }),
+        ),
+        tl._block(
+            type="react.tool.result",
+            author="agent",
+            turn_id=ctx.turn_id,
+            ts=ctx.started_at,
+            mime="application/json",
+            path="tc:turn_items.tc_items.result",
+            text=json.dumps(payload, ensure_ascii=False),
+            meta={
+                "tool_call_id": "tc_items",
+                "items_stats": {
+                    "kind": "items",
+                    "items_count": 2,
+                    "item_keys": ["name", "score"],
+                },
+            },
+        ),
+    ])
+
+    rendered = _run(tl.render(cache_last=True))
+    joined = "\n".join(b.get("text", "") for b in rendered if b.get("type") == "text")
+
+    assert "items_stats:" in joined
+    assert '"items_count": 2' in joined
+    assert '"item_keys": [' in joined
+    assert "payload:" in joined
 
 
 def test_react_read_output_is_not_capped_again_by_tool_result_preview():
@@ -734,7 +858,7 @@ def test_timeline_renders_failed_protocol_attempt_as_a_round():
             ts=ctx.started_at,
             path="ar:turn_fail.react.notes.tc_fail_1",
             text=(
-                "Wrong round. The action channel was malformed JSON, so this round executed no action. "
+                "Wrong round. The action was malformed JSON, so this round executed no action. "
                 "The protocol violation notice contains the parser error and diagnostic excerpt."
             ),
             meta={
@@ -766,8 +890,8 @@ def test_timeline_renders_failed_protocol_attempt_as_a_round():
             path="tc:turn_fail.tc_fail_1.notice",
             text=json.dumps(
                 {
-                    "code": "protocol_violation.ReactDecisionOutV2_schema_error",
-                    "message": "Malformed action JSON. <channel:ReactDecisionOutV2> could not be parsed, so no action was executed for this round. Parser reported: JSON parse error: Expecting ',' delimiter",
+                    "code": "protocol_violation.action_schema_error",
+                    "message": "Malformed action JSON. <channel:action> could not be parsed, so no action was executed for this round. Parser reported: JSON parse error: Expecting ',' delimiter",
                     "parser_error": "JSON parse error: Expecting ',' delimiter",
                     "diagnostic_excerpt": "Characters 50-85:\n'inline generated content'",
                 },
@@ -813,8 +937,8 @@ def test_timeline_renders_failed_protocol_attempt_as_a_round():
     assert "┌──────── ROUND 1 ────────┐" in text_dump
     assert "┌──────── ROUND 2 ────────┐" in text_dump
     assert "[PROTOCOL VIOLATION]" in text_dump
-    assert "protocol_violation.ReactDecisionOutV2_schema_error" in text_dump
-    assert "Wrong round. The action channel was malformed JSON" in text_dump
+    assert "protocol_violation.action_schema_error" in text_dump
+    assert "Wrong round. The action was malformed JSON" in text_dump
     assert "diagnostic_excerpt" in text_dump
     assert "[TOOL CALL tc_ok_2].call web_tools.web_search" in text_dump
 
@@ -873,7 +997,7 @@ def test_timeline_renders_mid_round_followup_inside_active_round():
             ts="2026-04-16T18:04:37Z",
             path="ar:turn_follow.react.notes.tc_fail_1",
             text=(
-                "Wrong round. The action channel was malformed JSON, so this round executed no action. "
+                "Wrong round. The action was malformed JSON, so this round executed no action. "
                 "The protocol violation notice contains the parser error and diagnostic excerpt."
             ),
             meta={
@@ -892,8 +1016,8 @@ def test_timeline_renders_mid_round_followup_inside_active_round():
             path="tc:turn_follow.tc_fail_1.notice",
             text=json.dumps(
                 {
-                    "code": "protocol_violation.ReactDecisionOutV2_schema_error",
-                    "message": "Malformed action JSON. <channel:ReactDecisionOutV2> could not be parsed, so no action was executed for this round. Parser reported: JSON parse error: Expecting ',' delimiter",
+                    "code": "protocol_violation.action_schema_error",
+                    "message": "Malformed action JSON. <channel:action> could not be parsed, so no action was executed for this round. Parser reported: JSON parse error: Expecting ',' delimiter",
                     "parser_error": "JSON parse error: Expecting ',' delimiter",
                     "diagnostic_excerpt": "Characters 50-85:\n'inline generated content'",
                 },

@@ -270,6 +270,11 @@ REACT_RENDER_REF_NOTE = (
     "channel=internal refs are private and are rejected for rendering_tools.write_*.\n\n"
 )
 
+TOOL_CONTRACT_NOTE = (
+    "CANONICAL TOOL CONTRACT: This tool definition and its parameter annotations are the API reference; "
+    "skills provide authoring patterns, not a duplicate parameter reference.\n\n"
+)
+
 
 class RenderingTools:
     def __init__(self):
@@ -285,6 +290,7 @@ class RenderingTools:
         description=(
             "Render HTML into a PPTX deck using python-pptx. "
             "Returns an envelope: {ok, error}.\n\n"
+            f"{TOOL_CONTRACT_NOTE}"
             f"{REACT_RENDER_REF_NOTE}"
             "For professional slide authoring (layouts, color schemes, content budgets, citations):\n"
             "→ Use skill 'pptx-press' (skills.public.pptx-press)\n\n"
@@ -387,6 +393,7 @@ class RenderingTools:
             "Render Markdown, HTML, or Mermaid diagrams to PNG using Playwright + Chromium. "
             "Supports three formats: 'markdown', 'html', or 'mermaid'. "
             "Returns an envelope: {ok, error}.\n\n"
+            f"{TOOL_CONTRACT_NOTE}"
             f"{REACT_RENDER_REF_NOTE}"
             "For PNG authoring best practices (layout sizing, scale, cropping, mermaid tips):\n"
             "→ Use skill 'png-press' (skills.public.png-press)\n\n"
@@ -855,6 +862,7 @@ class RenderingTools:
         description=(
             "Render Markdown, HTML, or Mermaid diagrams to PDF **using Playwright + headless Chromium** "
             "(JavaScript is executed; Chart.js/D3/etc. render). Returns an envelope: {ok, error}.\n\n"
+            f"{TOOL_CONTRACT_NOTE}"
             f"{REACT_RENDER_REF_NOTE}"
             "REACT PDF SOURCE: For normal user PDF deliverables, use external HTML source and set "
             "format='html'. Markdown mode exists for simple/legacy PDFs, but do not choose Markdown as "
@@ -1216,6 +1224,7 @@ class RenderingTools:
         name="write_docx",
         description=(
             "Render Markdown into a modern, well-styled DOCX. Returns an envelope: {ok, error}.\n\n"
+            f"{TOOL_CONTRACT_NOTE}"
             f"{REACT_RENDER_REF_NOTE}"
             "AUTHORING GUIDANCE\n"
             "- Use skills.public.docx-press for Markdown structure, tables, and citation handling.\n"

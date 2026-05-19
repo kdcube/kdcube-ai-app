@@ -367,7 +367,7 @@ async def test_prepare_safe_multi_action_bundle_accepts_safe_tools():
 
 
 @pytest.mark.asyncio
-async def test_prepare_safe_multi_action_bundle_enforces_skill_read_barrier():
+async def test_prepare_safe_multi_action_bundle_allows_skill_read_with_independent_action():
     solver = _solver_stub()
     bundle = [
         {
@@ -398,10 +398,9 @@ async def test_prepare_safe_multi_action_bundle_enforces_skill_read_barrier():
     )
 
     assert error is None
-    assert [d["tool_call"]["tool_id"] for d in accepted] == ["react.read"]
-    assert extra
-    assert extra["rejected"][0]["code"] == "multi_action_bundle_skill_dependency_barrier"
-    assert extra["rejected"][0]["tool_id"] == "react.write"
+    assert error is None
+    assert [d["tool_call"]["tool_id"] for d in accepted] == ["react.read", "react.write"]
+    assert extra is None
 
 
 @pytest.mark.asyncio

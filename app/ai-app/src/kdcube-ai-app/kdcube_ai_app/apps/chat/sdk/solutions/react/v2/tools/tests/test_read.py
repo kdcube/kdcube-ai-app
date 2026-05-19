@@ -462,8 +462,8 @@ async def test_read_skill_is_not_read_capped(monkeypatch, tmp_path):
         instruction_paths=None,
         sources=[],
     )
-    monkeypatch.setattr(registry, "build_skill_short_id_map", lambda consumer: {})
-    monkeypatch.setattr(registry, "import_skillset", lambda items, short_id_map=None: ["public.big"])
+    monkeypatch.setattr(registry, "build_skill_short_id_map", lambda consumer, **kwargs: {})
+    monkeypatch.setattr(registry, "import_skillset", lambda items, short_id_map=None, **kwargs: ["public.big"])
     monkeypatch.setattr(registry, "get_skill", lambda sid: spec if sid == "public.big" else None)
 
     ctx = FakeBrowser(runtime)
@@ -501,8 +501,8 @@ async def test_read_skill_is_materialized_once_by_logical_path(monkeypatch, tmp_
         instruction_paths=None,
         sources=[],
     )
-    monkeypatch.setattr(registry, "build_skill_short_id_map", lambda consumer: {})
-    monkeypatch.setattr(registry, "import_skillset", lambda items, short_id_map=None: ["public.pdf-press"])
+    monkeypatch.setattr(registry, "build_skill_short_id_map", lambda consumer, **kwargs: {})
+    monkeypatch.setattr(registry, "import_skillset", lambda items, short_id_map=None, **kwargs: ["public.pdf-press"])
     monkeypatch.setattr(registry, "get_skill", lambda sid: spec if sid == "public.pdf-press" else None)
 
     ctx = FakeBrowser(runtime)
@@ -550,8 +550,8 @@ async def test_read_skill_hidden_by_pruning_is_not_treated_as_visible(monkeypatc
         instruction_paths=None,
         sources=[],
     )
-    monkeypatch.setattr(registry, "build_skill_short_id_map", lambda consumer: {})
-    monkeypatch.setattr(registry, "import_skillset", lambda items, short_id_map=None: ["public.pdf-press"])
+    monkeypatch.setattr(registry, "build_skill_short_id_map", lambda consumer, **kwargs: {})
+    monkeypatch.setattr(registry, "import_skillset", lambda items, short_id_map=None, **kwargs: ["public.pdf-press"])
     monkeypatch.setattr(registry, "get_skill", lambda sid: spec if sid == "public.pdf-press" else None)
 
     ctx = FakeBrowser(runtime)
