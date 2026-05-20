@@ -109,6 +109,18 @@ Example valid choices:
 The important rule is determinism: the bundle must consistently point Claude at
 the same logical local root for the same continuity boundary.
 
+For cron/background pipelines this root should be tied to the service-owned
+identity and logical conversation, for example:
+
+```text
+<bundle-storage-root>/_news/claude-code-session
+```
+
+The same service-owned identity should also be used in
+`ClaudeCodeBinding.user_id` and `ClaudeCodeSessionStoreConfig.user_id`. This is
+what keeps a scheduled pipeline from accidentally sharing Claude session state
+with an interactive user conversation.
+
 ## Branch identity
 
 The git-backed session store uses one branch per:

@@ -112,6 +112,92 @@ Important distinction:
 
 So browser session expiry or multi-device login changes do not break Claude Code session continuity. Continuity is anchored to `user_id + conversation_id + agent_name`, not to the transient KDCube session id.
 
+### Background, cron, and service-owned bindings
+
+`ClaudeCodeAgent.from_current_context(...)` is the right default inside a live
+chat/API request. Cron jobs, background jobs, and service-owned pipelines often
+do not have a meaningful end-user request context. Those callers should build
+the binding explicitly and keep the same continuity boundary every run.
+
+Minimal pattern:
+
+```python
+import uuid
+from pathlib import Path
+
+from kdcube_ai_app.apps.chat.sdk.solutions.claude_code import (
+    ClaudeCodeAgent,
+    ClaudeCodeAgentConfig,
+    ClaudeCodeBinding,
+    ClaudeCodeSessionStoreConfig,
+    run_claude_code_turn,
+)
+
+conversation_id = "tenant/project/bundle/news/claude-code-session"
+agent_name = "marketing-news-pipeline"
+claude_session_id = str(
+    uuid.uuid5(
+        uuid.NAMESPACE_URL,
+        f"kdcube/claude-code/news-pipeline/{conversation_id}/{agent_name}",
+    )
+)
+
+agent = ClaudeCodeAgent(
+    config=ClaudeCodeAgentConfig(
+        agent_name=agent_name,
+        workspace_path=Path("/srv/work/news-workspace"),
+        command="claude",
+        model="claude-sonnet-4-6",
+        allowed_tools=("Read", "Grep", "Bash", "WebFetch", "WebSearch"),
+        additional_directories=(Path("/srv/work/news-pipeline"),),
+        env={"ANTHROPIC_API_KEY": "..."},
+        permission_mode="acceptEdits",
+        timeout_seconds=900,
+        structured_output_prefixes=("NEWS_PIPELINE_RESULT",),
+    ),
+    binding=ClaudeCodeBinding(
+        user_id="news-pipeline",
+        conversation_id=conversation_id,
+        session_id=conversation_id,
+        claude_session_id=claude_session_id,
+    ),
+    comm=bound_comm_or_none,
+)
+
+session_store = ClaudeCodeSessionStoreConfig(
+    implementation="local",  # or "git"
+    local_root=Path("/srv/work/news-workspace/.claude"),
+    tenant="tenant",
+    project="project",
+    user_id="news-pipeline",
+    conversation_id=conversation_id,
+    agent_name=agent_name,
+    git_repo=None,
+)
+
+result = await run_claude_code_turn(
+    agent=agent,
+    prompt=prompt,
+    kind="regular",
+    resume_existing=previous_run_initialized,
+    session_store=session_store,
+)
+```
+
+For these service-owned flows, make the following choices explicit:
+
+- `ClaudeCodeBinding.user_id`: use a stable service identity, not an arbitrary request user.
+- `conversation_id`: use a durable pipeline/conversation id that represents the logical job stream.
+- `claude_session_id`: derive it deterministically from that service identity, conversation, and agent.
+- `ClaudeCodeAgentConfig.command`: pass the configured Claude binary when it is not simply `claude`.
+- `structured_output_prefixes`: set every line-framed result prefix the pipeline expects to consume.
+- `session_store.local_root`: use a deterministic local root for the same continuity boundary.
+
+Do not rely on final prose parsing for machine contracts when a structured
+prefix is available. The runner only populates
+`ClaudeCodeRunResult.structured_events` for prefixes listed in
+`structured_output_prefixes`.
+
 ## Public API
 
 Typical usage:
