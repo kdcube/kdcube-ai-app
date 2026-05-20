@@ -1,40 +1,45 @@
 platform:
   repo: "kdcube-ai-app"
-  ref: "2026.5.20.212"
+  ref: "2026.5.21.145"
   description: |
-    This patch release hardens isolated Python execution in split Docker
-    runtime deployments. It builds on the 2026.5.20.126 executor log/artifact
-    permission fix by preparing the actual Docker bind-source directories when
-    translated host paths are opaque from inside chat-proc.
+    This patch release tightens CLI startup behavior, split Docker execution
+    logging, and ReAct timeline/runtime behavior after the 2026.5.20.x
+    isolated-runtime updates.
 
     Highlights
 
-    - Prepares split executor bind-source directories from the Docker daemon
-      side when translated host paths are not directly visible inside chat-proc.
-    - Creates and normalizes per-execution work, artifact, executor log, and
-      supervisor log directories before launching split runtime containers.
-    - Keeps the executor container networkless and isolated; the preparation
-      helper has no network access and only mounts per-execution workspace
-      paths.
-    - Preserves existing local/proc-visible permission normalization for
-      deployments where the translated paths are directly visible.
+    - Prepares Docker Compose log bind directories during CLI start, using the
+      generated Compose transport values, so clean installs do not let Docker
+      create root-owned log directories.
+    - Improves split isolated-runtime log feedback while preserving the
+      executor isolation boundary.
+    - Orders generated file timeline entries by emission time and shows them
+      before final answers.
+    - Separates streamed answer content from raw final_answer completion events.
+    - Adds per-action step streaming keys and stronger ReAct causality guards
+      for multi-action planning.
+    - Documents stream families, long-running lifecycle behavior, ECS layout,
+      and Claude Code integration notes.
 
     Runtime and deployment notes:
 
-    - Deployments must point the platform ref at 2026.5.20.212 to receive the
-      split runtime bind-source preparation fix.
-    - No descriptor shape migration is required for existing deployments.
+    - Deployments must point the platform ref at 2026.5.21.145 to receive the
+      CLI start-time Compose log preparation and runtime/timeline fixes.
+    - No descriptor shape migration is required.
     - No private deployment content is part of this OSS release.
 
     Validation and regression coverage:
 
-    - Python syntax validation passed for the changed runtime file.
-    - Focused split runtime regression tests passed.
+    - Focused CLI descriptor tests passed for generated Compose log directory
+      handling.
+    - Python syntax validation passed for changed CLI files.
     - Staged OSS private-name scan passed before commit.
 
     Changelog
 
-    - Fixed split Docker isolated runtime permission preparation for
-      per-execution bind mounts, including executor log directories.
+    - Fixed CLI Compose log bind preparation during start.
+    - Improved isolated execution logging feedback and timeline stream
+      rendering behavior.
+    - Tightened ReAct causality guidance and protocol guards.
 config:
-    version: "2026.5.20.212"
+    version: "2026.5.21.145"
