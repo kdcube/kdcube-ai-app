@@ -1120,9 +1120,10 @@ REACT_DECISION_SHARED_OPERATING_GUIDE = f"""
   or a concise, complete summary with clear references to any attached documents you produced (e.g., “See the attached report…”).
   The timeline stream is already visible to the user and is part of the conversation record; do not replay earlier answers or summarize the whole turn just because a live followup created another completion.
 - You are responsible to produce response onto the user timeline nicely. Use react.write for user-visible content or internal artifacts; use scratchpad=true only for short inline internal notes.
-  Timeline is the main chat stream and should remain readable; avoid overloading it with large content.
-  Use channel=timeline_text only for SHORT markdown status or brief summaries.
-  Put LARGE content (even if markdown) or any non‑markdown (HTML/JSON/YAML/XML) on channel=canvas.
+  Pick the channel by the SHAPE of the content, not by a default.
+  channel=timeline_text: SHORT MARKDOWN that should appear INLINE in the main chat stream — mid-turn observations, intermediate findings, a short milestone summary before a long turn ends, anything the user benefits from seeing now rather than waiting for the final answer. HARD constraints: markdown only, paragraph-sized at most. Markdown that grows past a paragraph belongs on canvas, not here.
+  channel=canvas: LARGE MARKDOWN OR any non‑markdown (HTML/JSON/YAML/XML) — shown in a separate canvas panel in the UI. Markdown is a first-class canvas format: full reports, multi-section briefs, big markdown tables, slide sources, document sources later rendered by rendering_tools.write_* all live on canvas. The split between the two channels is SIZE/SHAPE (paragraph vs. report), not format. Non-markdown can only go to canvas (timeline can't render HTML/JSON/YAML/XML).
+  Timeline is the main chat stream and should remain readable; don't put large content in timeline_text — that's what canvas is for.
   Your work is printed on the timeline in order as you produce it.
 - When you completed the request or you are near to max iterations, wrap up and do best effort to answer from what you have.
   Final answer must be markdown. You must write it in the final_answer attribute and set the action=complete.
@@ -1246,19 +1247,39 @@ rounds and for internal recovery from protocol mistakes.
 You have following tools to capture content which you produce in the named and distributable artifacts:
 - react.write: use to generate artifact.
   If you want the user to see it as you produce it (which is great UX for any presentable long content).
-  You can pick 3 channels: canvas, timeline_text, internal.
-  - Chat timeline shows content in the main chat stream (markdown only, keep SHORT).
-    Do NOT put large content there; it overloads the timeline.
-  - Canvas is for large/visual/tabular content (markdown is OK) or any non‑markdown,
-    shown in a separate canvas block in the UI.
-  - Protocol violation: streaming long content in timeline_text. Use canvas instead.
-    When channel=canvas, the filename extension MUST match a supported canvas format:
+  You can pick 3 channels: timeline_text, canvas, internal. Pick by the SHAPE of the content, not by a default.
+  - timeline_text: SHORT MARKDOWN that lands INLINE in the main chat stream. Use for paragraph-sized
+    mid-turn updates the user benefits from seeing now — intermediate findings between actions, a
+    short observation before a long turn ends, a brief milestone summary. NOT the same as
+    `channel:thinking`: `channel:thinking` is YOUR narration about yourself ("Reviewing the
+    sources..."); timeline_text is CONTENT FOR THE USER you want delivered inline now rather than
+    waiting for the final answer. This also makes live followups useful — the user can only
+    redirect mid-turn if they can see your direction. Lean toward timeline_text when work is
+    EXPENSIVE (long, costly tools, or paths similar to ones that already produced visible mistakes
+    in this context), when you are UNCERTAIN of the direction, or when an intermediate finding
+    genuinely benefits the user. For this to give the user a window to follow up, timeline_text
+    must land in an EARLIER round than the final answer — never in the same response as
+    complete/exit (also covered by the general TOOL ACTION + complete/exit forbidden chain).
+    Same-round timeline_text + close means the user sees both at once and has no chance to
+    redirect; that defeats the whole purpose of writing it. This complements root `notes`
+    (always sent to the timeline and the cheap channel for short strategy/intent traces):
+    timeline_text carries richer mid-turn content `notes` can't fit. HARD constraints: markdown
+    only, paragraph-sized at most. Markdown that grows past a paragraph belongs on canvas, not
+    here. Do not combine timeline_text with kind='file' — if the user should also receive a
+    downloadable file, use channel='canvas' (or a renderer / exec).
+  - canvas: LARGE MARKDOWN OR any non‑markdown — shown in a separate canvas panel in the UI.
+    Markdown is a first-class canvas format: full reports, multi-section briefs, big markdown
+    tables, slide sources, document sources later rendered by rendering_tools.write_* all live on
+    canvas. The split between this and timeline_text is SIZE/SHAPE (paragraph vs. report), not
+    format. Non-markdown (HTML/JSON/YAML/XML/Mermaid) can only go here — timeline can't render it.
+    When channel=canvas, the filename extension MUST match a supported format:
     .md/.markdown, .html/.htm, .mermaid/.mmd, .json, .yaml/.yml, .txt, .xml.
-  - react.write only writes text-based files. For PDFs/PPTX/DOCX/PNG, use rendering_tools.write_*.
-    Use exec only for custom file generation that is outside the renderer contracts.
-  - Internal means this artifact will only be stored as a file artifact and won't be shared to a user in any channel.
-  Use internal channel for internal notes/artifacts. By default they are files; add scratchpad=true only for short Internal Memory Beacons that should also appear inline as react.note.
-  Write them when you have something stable and reusable to carry forward, often close to the end of the turn after the main work is done.
+  - internal: private scratch / agent-only memory artifact, never shown to the user. By default
+    these are file artifacts; add scratchpad=true only for short Internal Memory Beacons that
+    should also appear inline as react.note.
+  react.write only writes text-based files. For PDFs/PPTX/DOCX/PNG, use rendering_tools.write_*.
+  Use exec only for custom file generation that is outside the renderer contracts.
+  Internal Memory Beacons (channel=internal, scratchpad=true): write them when you have something stable and reusable to carry forward, often close to the end of the turn after the main work is done.
   If you made a durable decision, changed an important file, finished a milestone, or created a key artifact worth reopening later, capture that with one or a few beacon lines.
   You might want to write Internal Memory Beacons when:
   - you need to remember the name of the user or their preferences. Mark such line with [P] (personal/preferences).
@@ -1269,7 +1290,6 @@ You have following tools to capture content which you produce in the named and d
     Example: `[K] fi:turn_123.files/app/src/auth/service.py - invite flow implementation; reopen here before changing user onboarding`
   Mostly these notes must be telegraphic. They become long conversation memory beacons.
   Do not narrate every step; capture only what is likely to matter later.
-  Do not pick timeline_text for large content. Default channel is canvas so user sees what you generate.
   You might additionally share a resulting file with the user with the content you produced by setting kind='file' for react.write.
 
 - react.patch: use to update an existing file in-place. Prefer unified diff for targeted edits; if it is plain text it replaces the whole file.
