@@ -1,40 +1,40 @@
 platform:
   repo: "kdcube-ai-app"
-  ref: "2026.5.20.126"
+  ref: "2026.5.20.212"
   description: |
-    This patch release completes the split Docker isolated execution permission
-    fix by covering executor artifact and log mounts in addition to workdir and
-    outdir preparation.
+    This patch release hardens isolated Python execution in split Docker
+    runtime deployments. It builds on the 2026.5.20.126 executor log/artifact
+    permission fix by preparing the actual Docker bind-source directories when
+    translated host paths are opaque from inside chat-proc.
 
     Highlights
 
-    - Normalizes executor-visible artifact output and executor log directories
-      before launching sibling py-code-exec containers in split Docker mode.
-    - Prevents executor containers with dropped capabilities from failing to
-      open /workspace/logs/executor/executor.log with Permission denied.
-    - Keeps the fix scoped to executor-visible split surfaces only: workdir,
-      artifact output, and logs/executor.
-    - Documents the distinction between Docker host path hints and executor
-      filesystem isolation in the ISO runtime guide.
+    - Prepares split executor bind-source directories from the Docker daemon
+      side when translated host paths are not directly visible inside chat-proc.
+    - Creates and normalizes per-execution work, artifact, executor log, and
+      supervisor log directories before launching split runtime containers.
+    - Keeps the executor container networkless and isolated; the preparation
+      helper has no network access and only mounts per-execution workspace
+      paths.
+    - Preserves existing local/proc-visible permission normalization for
+      deployments where the translated paths are directly visible.
 
     Runtime and deployment notes:
 
-    - Deployments must point the platform ref at 2026.5.20.126 to receive the
-      complete split runtime permission fix.
+    - Deployments must point the platform ref at 2026.5.20.212 to receive the
+      split runtime bind-source preparation fix.
     - No descriptor shape migration is required for existing deployments.
     - No private deployment content is part of this OSS release.
 
     Validation and regression coverage:
 
     - Python syntax validation passed for the changed runtime file.
-    - Split runtime isolation tests passed.
+    - Focused split runtime regression tests passed.
     - Staged OSS private-name scan passed before commit.
 
     Changelog
 
-    - Fixed split Docker isolated runtime permission normalization for artifact
-      and executor log directories.
-    - Added ISO runtime documentation for host path translation versus executor
-      mount isolation.
+    - Fixed split Docker isolated runtime permission preparation for
+      per-execution bind mounts, including executor log directories.
 config:
-    version: "2026.5.20.126"
+    version: "2026.5.20.212"

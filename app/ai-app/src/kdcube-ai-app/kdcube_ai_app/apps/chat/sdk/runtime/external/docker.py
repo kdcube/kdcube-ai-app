@@ -232,6 +232,54 @@ def _prepare_split_executor_tree(path: pathlib.Path) -> None:
             pass
 
 
+def _build_split_bind_source_prepare_argv(*, image: str, host_paths: list[pathlib.Path]) -> list[str]:
+    argv: list[str] = [
+        "docker", "run", "--rm",
+        "--network", "none",
+        "--cap-drop=ALL",
+        "--cap-add=CHOWN",
+        "--cap-add=FOWNER",
+        "--security-opt", "no-new-privileges",
+        "--read-only",
+        "--tmpfs", "/tmp:rw,noexec,nosuid,size=16m",
+        "--entrypoint", "/bin/sh",
+    ]
+    target_paths: list[str] = []
+    seen: set[str] = set()
+    for idx, host_path in enumerate(host_paths):
+        marker = _path(host_path)
+        if marker in seen:
+            continue
+        seen.add(marker)
+        target = f"/kdcube-bind-src-{idx}"
+        target_paths.append(target)
+        argv += ["-v", f"{marker}:{target}:rw"]
+    script = (
+        "set -eu; "
+        "for d in \"$@\"; do "
+        "test -d \"$d\"; "
+        "chmod -R a+rwX \"$d\"; "
+        "done"
+    )
+    argv += [image, "-c", script, "kdcube-bind-source-prep", *target_paths]
+    return argv
+
+
+async def _prepare_split_host_bind_sources_with_docker(
+        *,
+        image: str,
+        host_paths: list[pathlib.Path],
+        log: AgentLogger,
+) -> tuple[bool, str]:
+    argv = _build_split_bind_source_prepare_argv(image=image, host_paths=host_paths)
+    log.log(f"[docker.exec.split] Prepare host bind sources: {' '.join(_sanitize_docker_argv(argv))}", level="INFO")
+    rc, out, err = await _docker_control(argv, timeout_s=30)
+    if rc == 0:
+        return True, ""
+    summary = (err or out or "docker bind source preparation failed").strip()
+    return False, summary[-4000:]
+
+
 async def _docker_control(args: list[str], *, timeout_s: int = 10) -> tuple[int, str, str]:
     proc = await asyncio.create_subprocess_exec(
         *args,
@@ -686,6 +734,13 @@ async def _run_py_in_split_docker_prepared(
     host_executor_logdir = host_runtime_outdir / "logs" / "executor"
     host_supervisor_logdir = host_runtime_outdir / "logs" / "supervisor"
 
+    split_bind_source_paths = [
+        host_workdir,
+        host_outdir,
+        host_artifact_outdir,
+        host_executor_logdir,
+        host_supervisor_logdir,
+    ]
     if _can_preflight_translated_host_path(host_workdir):
         _prepare_split_executor_tree(host_workdir)
     else:
@@ -703,6 +758,24 @@ async def _run_py_in_split_docker_prepared(
             _prepare_split_executor_tree(path)
         else:
             log.log(f"[docker.exec.split] host {label} is not locally visible; skipping chmod: {path}", level="INFO")
+    if _is_running_in_docker() and not all(
+            _can_preflight_translated_host_path(path)
+            for path in split_bind_source_paths
+    ):
+        ok, summary = await _prepare_split_host_bind_sources_with_docker(
+            image=img,
+            host_paths=split_bind_source_paths,
+            log=log,
+        )
+        if not ok:
+            log.log(f"[docker.exec.split] host bind source preparation failed: {summary}", level="ERROR")
+            return {
+                "ok": False,
+                "returncode": 127,
+                "error": "docker_bind_source_prepare_failed",
+                "stderr_tail": summary,
+                "error_summary": summary.splitlines()[0] if summary else "docker bind source preparation failed",
+            }
 
     volume_rc, volume_out, volume_err = await _docker_control(["docker", "volume", "create", socket_volume])
     if volume_rc != 0:
