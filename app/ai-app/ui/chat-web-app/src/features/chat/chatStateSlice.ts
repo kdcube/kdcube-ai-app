@@ -84,6 +84,21 @@ export const getUserAttachmentFile = (key: string) => {
     return userAttachmentMapping.get(key)
 }
 
+const timestampValue = (value: unknown, fallback: number): number => {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim()) {
+        const parsed = Date.parse(value);
+        if (Number.isFinite(parsed)) return parsed;
+    }
+    return fallback;
+}
+
+const itemTimestamp = (item: unknown, fallback: number): number => {
+    if (!item || typeof item !== "object") return fallback;
+    const record = item as Record<string, unknown>;
+    return timestampValue(record.timestamp ?? record.ts ?? record.timestamp_iso, fallback);
+}
+
 const reduceThinkingEvents = (events: ThinkingEvent[], prev?: ThinkingArtifact | null): ThinkingArtifact | null => {
     if (!events || !events.length)
         return null;
@@ -487,6 +502,7 @@ const chatStateSlice = createSlice({
         },
         chatCompleted(state, action: PayloadAction<ChatCompleteEnvelope>) {
             const turnId = action.payload.conversation.turn_id;
+            const timestamp = Date.parse(action.payload.timestamp) || new Date().getTime();
 
             if (Object.hasOwn(state.turns, turnId)) {
                 if (action.payload.data.error_message) {
@@ -501,6 +517,12 @@ const chatStateSlice = createSlice({
 
             if (action.payload.data.final_answer) {
                 state.turns[turnId].answer = action.payload.data.final_answer;
+                if (!state.turns[turnId].assistantMessages || state.turns[turnId].assistantMessages.length === 0) {
+                    state.turns[turnId].assistantMessages = [{
+                        text: action.payload.data.final_answer,
+                        timestamp,
+                    }];
+                }
             }
         },
         setUserMessage(state, action: PayloadAction<string>) {
@@ -639,7 +661,8 @@ const chatStateSlice = createSlice({
 
             const existing = Object.hasOwn(state.turns[turnId].steps, stepId) ? state.turns[turnId].steps[stepId] : null;
 
-            const ts = existing ? existing.timestamp : (Date.parse(env.timestamp) || new Date().getTime())
+            const eventTimestamp = Date.parse(env.timestamp) || new Date().getTime()
+            const ts = existing ? existing.timestamp : eventTimestamp
 
             turn.steps[stepId] = {
                 step: stepId,
@@ -659,10 +682,11 @@ const chatStateSlice = createSlice({
                         if (filesEnv.data?.items && filesEnv.data?.items?.length > 0) {
                             filesEnv.data.items.forEach(item => {
                                 const i = turn.artifacts.findIndex(f => f.artifactType === "file" && (f as FileArtifact).content.rn === item.rn)
+                                const timestamp = itemTimestamp(item, eventTimestamp)
                                 if (i > -1) {
-                                    turn.artifacts.splice(i, 1, {content: item, artifactType: "file", timestamp: ts})
+                                    turn.artifacts.splice(i, 1, {content: item, artifactType: "file", timestamp})
                                 } else {
-                                    turn.artifacts.push({content: item, artifactType: "file", timestamp: ts})
+                                    turn.artifacts.push({content: item, artifactType: "file", timestamp})
                                 }
                             })
 
@@ -674,14 +698,15 @@ const chatStateSlice = createSlice({
                         if (citationsEnv.data?.items && citationsEnv.data?.items?.length > 0) {
                             citationsEnv.data.items.forEach(item => {
                                 const i = turn.artifacts.findIndex(c => c.artifactType === "citation" && (c as CitationArtifact).content.url === item.url)
+                                const timestamp = itemTimestamp(item, eventTimestamp)
                                 if (i > -1) {
                                     turn.artifacts.splice(i, 1, {
                                         content: item,
                                         artifactType: "citation",
-                                        timestamp: ts
+                                        timestamp
                                     })
                                 } else {
-                                    turn.artifacts.push({content: item, artifactType: "citation", timestamp: ts})
+                                    turn.artifacts.push({content: item, artifactType: "citation", timestamp})
                                 }
                             })
                         }

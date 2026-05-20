@@ -207,9 +207,25 @@ const ChatLog = () => {
                 const assistantMessages = (turn.assistantMessages && turn.assistantMessages.length > 0)
                     ? turn.assistantMessages
                     : (turn.answer ? [{text: turn.answer, timestamp: turn.events.find((event) => event.eventType === "answer")?.timestamp ?? turn.userMessage.timestamp + 1}] : []);
-                const activityCarrierArtifacts = assistantMessages.length > 0
-                    ? sharedActivityArtifacts
-                    : [...sharedActivityArtifacts, ...assistantScopedArtifacts];
+                const assistantArtifactBuckets: UnknownArtifact[][] = assistantMessages.map(() => []);
+                const activityCarrierArtifacts = sharedActivityArtifacts.slice();
+                if (assistantMessages.length > 0) {
+                    assistantScopedArtifacts.forEach((artifact) => {
+                        let targetIndex = -1;
+                        assistantMessages.forEach((message, messageIndex) => {
+                            if (message.timestamp <= artifact.timestamp) {
+                                targetIndex = messageIndex;
+                            }
+                        });
+                        if (targetIndex >= 0) {
+                            assistantArtifactBuckets[targetIndex].push(artifact);
+                        } else {
+                            activityCarrierArtifacts.push(artifact);
+                        }
+                    });
+                } else {
+                    activityCarrierArtifacts.push(...assistantScopedArtifacts);
+                }
 
                 if (turn.userMessage.text || turn.userMessage.attachments?.length) {
                     orderedItems.push({
@@ -245,7 +261,7 @@ const ChatLog = () => {
                     orderedItems.push({
                         kind: "assistant",
                         item: message,
-                        artifacts: assistantIndex === assistantMessages.length - 1 ? assistantScopedArtifacts : [],
+                        artifacts: assistantArtifactBuckets[assistantIndex] ?? [],
                         timestamp: message.timestamp,
                         index: index++,
                     });

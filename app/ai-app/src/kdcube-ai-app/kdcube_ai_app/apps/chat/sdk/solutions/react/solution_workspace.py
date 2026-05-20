@@ -7,6 +7,7 @@ import json
 # kdcube_ai_app/apps/chat/sdk/runtime/solution/solution_workspace.py
 
 import traceback, pathlib, logging
+from datetime import datetime, timezone
 from typing import Any, Optional, List, Dict, Union
 
 from kdcube_ai_app.apps.chat.sdk.util import (
@@ -1305,11 +1306,17 @@ class ApplicationHostingService:
         if not self.comm:
             return
         from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import normalize_file_payload
+        event_dt = datetime.now(timezone.utc)
+        event_ts_ms = int(event_dt.timestamp() * 1000)
+        event_ts_iso = event_dt.isoformat().replace("+00:00", "Z")
         cleaned_files: List[Dict[str, Any]] = []
         for item in files or []:
             if not isinstance(item, dict):
                 continue
             payload = dict(item)
+            payload.setdefault("timestamp", event_ts_ms)
+            payload.setdefault("timestamp_iso", event_ts_iso)
+            payload.setdefault("ts", event_ts_ms)
             data = payload.get("data")
             if isinstance(data, dict):
                 meta = data.get("meta")
@@ -1319,21 +1326,30 @@ class ApplicationHostingService:
                     data["meta"] = meta
                     payload["data"] = data
             cleaned_files.append(payload)
-        if files:
+        cleaned_citations: List[Dict[str, Any]] = []
+        for item in citations or []:
+            if not isinstance(item, dict):
+                continue
+            payload = dict(item)
+            payload.setdefault("timestamp", event_ts_ms)
+            payload.setdefault("timestamp_iso", event_ts_iso)
+            payload.setdefault("ts", event_ts_ms)
+            cleaned_citations.append(payload)
+        if cleaned_files:
             await self.comm.event(
                 agent="tooling",
                 type="chat.files",
-                title=f"Files Ready ({len(files)})",
+                title=f"Files Ready ({len(cleaned_files)})",
                 step="files",
                 status="completed",
                 data={"count": len(cleaned_files), "items": cleaned_files},
             )
-        if citations:
+        if cleaned_citations:
             await self.comm.event(
                 agent="tooling",
                 type="chat.citations",
-                title=f"Citations ({len(citations)})",
+                title=f"Citations ({len(cleaned_citations)})",
                 step="citations",
                 status="completed",
-                data={"count": len(citations), "items": citations},
+                data={"count": len(cleaned_citations), "items": cleaned_citations},
             )
