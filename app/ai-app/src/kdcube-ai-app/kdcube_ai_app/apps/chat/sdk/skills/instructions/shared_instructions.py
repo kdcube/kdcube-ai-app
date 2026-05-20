@@ -727,13 +727,13 @@ CODEGEN_BEST_PRACTICES_V2 = """
   otherwise you must react.read it if you see its path in context.
 - If planning helps, outline the steps very briefly in comments, then implement.
 - For complex code, start with a very brief plan comment to avoid dead/irrelevant code.
-- When generating platform-integrated code, do not invent SDK/framework/runtime symbols, import paths, or helper APIs.
+ - When generating code that integrates with an SDK, framework, or runtime, do not invent symbols, import paths, or helper APIs.
   Confirm exact names from current docs, tests, examples, or source files before you use them.
-- Skills are orientation, not proof of exact API names. If a needed platform symbol is not explicitly confirmed in the evidence currently visible to you, search/read first and only then code.
-- For implementation tasks that must satisfy an existing framework, test suite, or platform contract, gather enough current evidence before coding to understand the expected shape.
+- Skills are orientation, not proof of exact API names. If a needed SDK/runtime symbol is not explicitly confirmed in the evidence currently visible to you, search/read first and only then code.
+- For implementation tasks that must satisfy an existing framework, test suite, or SDK/runtime contract, gather enough current evidence before coding to understand the expected shape.
 - Be economical when gathering evidence: read the smallest relevant set of exact docs/tests/source/example files that can confirm the needed contract.
 - If candidate source paths are mentioned in docs or tests, read those exact files before browsing wider trees.
-- For bundle code generation or modification against the current SDK/platform contract, do not start with react.write/react.patch after reading only skills.
+- For bundle code generation or modification against the current SDK/runtime contract, do not start with react.write/react.patch after reading only skills.
   Before the first code/file write, read the actual current tests that define the contract and at least one current doc/source/example file that proves the requested integration pattern.
 - If the exact test/source file is not yet known, first do a small evidence-gathering step to discover exact paths, then read those exact files before coding.
 - Prefer the smallest implementation that can satisfy the currently confirmed contract; validate early, then extend.
@@ -1061,6 +1061,44 @@ REACT_SKILL_SELECTION_GUIDE = """
   only the output-format skills needed to package the result.
 """
 
+ACTION_CAUSALITY_AND_STRATEGY = """
+[ROUND / ACTION CAUSALITY — CRITICAL STRATEGY RULE (HARD)]
+This block is about WHEN actions may share a round, not about how to format them. It is the strategic foundation; the rest of your protocol is the technique.
+
+A turn is a sequence of rounds. Each round is ONE continuous response you generate. An ACTION is one operation you request inside that response.
+The runtime executes your actions ONLY AFTER you stop generating. Their results become visible to you in the NEXT round.
+Therefore: you cannot see, depend on, or assert the result of any action you are still emitting. Before you say the work is done, you must first see the action's result in your timeline.
+There is no requirement to minimize rounds. The success criterion is CORRECT CAUSALITY: never guess at a result you have not yet seen. Saying "the file is created", "the result is X", or "I will now wait" inside the SAME response is a guess, not knowledge — even though the runtime will run the action a moment later.
+
+["ALREADY VISIBLE" — DEFINITION]
+"Already visible" means visible in the timeline BEFORE your current response begins. Anything you produce, retrieve, load, validate, render, or change in this same response is NOT already visible to you in this same response — only in the next round.
+
+[USER-VISIBLE STREAMING]
+Everything you generate streams LIVE to the user as you produce it, except writes you explicitly mark as private/internal. Public output — your thinking/status, notes, any content you author into a public channel, renderer output, externally-visible execution artifacts, and your final answer — becomes visible to the user the moment you type it.
+Implication: every action you emit makes something the user sees immediately. If you chain many actions and a downstream one fails or contradicts an upstream one, the user has already watched the broken upstream work and you must redo most of it. Errors are inevitable; they must be DETECTABLE EARLY. Emit a small atomic step, see its result, judge it, continue. When in doubt, ONE action per round is always correct.
+
+[HARD: FORBIDDEN SAME-ROUND CHAINS]
+General rule: if action B's success or content depends on action A's result, A and B cannot share a round. The runtime rejects same-round bundles that violate this. Canonical violation families:
+  - RETRIEVE + CONSUME the retrieval (search/fetch/read/memory-search + synthesize, cite, or read the returned content; read a skill + act on it).
+  - AUTHOR + TRANSFORM the same content (write a source + render it; write a draft + patch the same file — never write a placeholder to patch later, write the final content once; execute code + consume or report on its output).
+  - STATE CHANGE + anything else (durable memory writes such as record_memory / confirm_memory / retire_memory must run alone).
+  - TOOL ACTION + complete/exit (any final_answer accompanying a tool call asserts the work is done before that tool's result exists).
+Bad chain example: round N emits an exec to create report.xlsx, then the same response says "report.xlsx is ready". Correct chain: round N says "Creating the Excel file", emits the exec action, stops; round N+1 sees success and the file ref, then says the file is ready.
+"""
+
+
+MULTI_ACTION_INDEPENDENCE_AND_GOOD_SHAPES = """
+[INDEPENDENCE GATE — WHEN MULTI-ACTION IS ALLOWED]
+Multi-action (more than one action in the same round) is allowed ONLY when every action in the round is fully determined by data already visible before this response began AND every pair of actions passes this test: "could B succeed and be correct even if A failed completely?" If any pair fails the test, split them across rounds.
+Once you emit any action that must execute, retrieve, write, render, store, or change state, the response can no longer assert anything that depends on its outcome — that result is not visible until the next round.
+
+[GOOD MULTI-ACTION SHAPES]
+  - Independent renders/writes (e.g. PDF + PPTX + DOCX) all consuming a source whose path/ref was visible at the START of this round (i.e. produced in an EARLIER round).
+  - One retrieval call against multiple known logical paths.
+Visible timeline should normally read as action -> result, then next action -> result. That shape is what confirms causality.
+"""
+
+
 REACT_DECISION_SHARED_OPERATING_GUIDE = f"""
 [CORE RESPONSIBILITIES]
 - Choose action:
@@ -1096,18 +1134,7 @@ REACT_DECISION_SHARED_OPERATING_GUIDE = f"""
 - Ensure needed data/knowledge visible in context when needed: if generation depends on external evidence (search/fetch/attachments) which you do not see now in your visible context loaded (or maybe they are truncated), first load those sources via react.read so they appear in your visible context. Use sources_pool slices (e.g., so:sources_pool[sid,..]) for sources,  sk: for skills or ar: or fi: artifact paths with react.read.
 - If you see in catalog the skills that relate to the work you are going to do, make sure these skills are read in your visible context. Otherwise read with react.read(paths=[sk:..]). The skill which is 'read' is visible in the context in full and is marked as 💡.
   Example: as one of the steps, you must generate the pptx and pdf. Learn best practices/advice by reading sk:public.pdf-press and sk:public.pptx-press if these skills are not visible as 'read' (💡) in context yet. Learning earlier helps plan better steps so to decide what is the best shape of the data / sequence of data transformation is optimal for the final result.
-- Turn lifecycle and action causality: a turn is a sequence of rounds until you complete/exit or the announced/configured round budget is exhausted.
-- Each round starts when you are called with the currently visible timeline, ANNOUNCE, tool catalog, and skill catalog. A round is your continuous generation into the provided channels.
-- While generating a round, you can plan ahead, but you cannot see results of actions you are currently writing. When you stop generating, the runtime/engineering layer executes the requested actions sequentially, appends their results to the timeline, and calls you again with those results visible in the next round.
-- There is no requirement to minimize rounds. The success criterion is correct causality: do not emit cross-dependent actions in one round, and do not formulate a dependent next action until its prerequisite result has become visible in a later round.
-- A prerequisite result is acknowledged only after you can see it in the timeline and judge that it exists, succeeded, and suits the downstream action. Acknowledgement can be brief, but the next action must be based on the actual visible result, not on an assumption about what the previous action would return.
-- "Already visible" means visible before the current response begins. Anything produced, retrieved, loaded, validated, or changed earlier in the same response is not already visible for later actions, even if the runtime will execute it first.
-- If action B would use anything from action A (artifact, source row, path, id, URL, code, data, state, validation result, or skill text), stop after action A. In a later round, review the visible result and acknowledge both its existence and suitability before passing it downstream.
-- User-visible stream rule: content you yield in `channel:thinking`, `channel:code`, public artifacts, and `final_answer` can be shown to the user immediately. The critical boundary is a pending action, not only code. After you yield any action that must execute, retrieve, validate, write, render, store, or change state, you may continue only with text/actions that depend solely on context visible before this response began. Do not claim the pending action succeeded, do not say its output exists, and do not emit a downstream action/final answer that relies on it. Stop after the pending action; a later round that sees the successful result/artifact may acknowledge it and build on it.
-- Bad chain: round N emits action/code to create `report.xlsx`, then same response says "report.xlsx is ready"; runtime executes after generation and may fail. Correct chain: round N says "Creating the Excel file", emits exec action + code, then stops; runtime executes and appends result; round N+1 sees success + `fi:...xlsx`, then answers that the file is ready.
-- Use multiple actions in one round only for independent sibling actions whose inputs, params, and correctness are fully known from context visible before this response begins.
-- The visible timeline should normally progress as action -> result, then next action -> result. This is how you confirm causality and avoid guessing at missing results.
-- Good multi-action in one round: produce several documents from already visible inputs. Bad chains: read a skill then use it, search/fetch then synthesize from results, write source then render it, run exec then consume its output.
+- For the strategic rules on which actions may share a round (causality, "already visible", live streaming, forbidden same-round chains), the canonical source is the [ROUND / ACTION CAUSALITY] block at the head of the protocol. Treat it as the controlling rule.
 - Workspace activation is explicit. Do NOT assume historical files are locally present at turn start.
   Read `[WORKSPACE]` in ANNOUNCE first.
   If current local files are not enough, use `react.pull(paths=[...])` to materialize historical refs on this worker. Use `react.checkout(mode="replace", paths=[...])` after pull when the active current-turn workspace itself must receive an editable copy of that historical `files/...` tree, and `react.checkout(mode="overlay", paths=[...])` after pull when you want to import or overwrite selected historical files into the existing workspace.

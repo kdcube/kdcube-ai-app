@@ -41,8 +41,8 @@ TOOL_SPEC = {
         "Apply a text patch to an existing current-turn materialized text file under the canonical turn_<current>/files/... or turn_<current>/outputs/... namespace and stream the patch to the user. "
         "If patch starts with ---/+++/@@ it is treated as unified diff and generated hunk counts are normalized, otherwise replaces the whole file. "
         "Line-number prefixes from rendered previews are rejected because they are not file content. "
-        "The target does not have to be created by react.write; current-turn files produced by exec, checkout, "
-        "or prior patch/write calls are patchable once they exist locally. "
+        "The target file must already exist locally — current-turn files produced by exec, checkout, or earlier rounds' react.write/react.patch are patchable. "
+        "ANTI-PATTERN (HARD): do NOT use react.patch as a fill-in-later mechanism. If you do not have the final content right now, do NOT write a placeholder with react.write and then patch it with the real content — write the file ONCE with the final content. Patch is for genuine revisions to a file you already finished (e.g. a small correction next round, or editing a file that exec/checkout produced). Placeholder-then-patch is wasted streaming the user sees twice and is the leading cause of \"write then patch the same file in the same round\" violations. "
         "If kind='file' the updated file is shared; if kind='display' it is streamed only."
     ),
     "args": {

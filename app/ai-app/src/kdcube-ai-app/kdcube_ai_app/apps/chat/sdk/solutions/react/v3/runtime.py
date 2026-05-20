@@ -14,7 +14,7 @@ import traceback
 
 import time
 import uuid
-from typing import Any, Dict, List, Optional, Callable, Awaitable, Type
+from typing import Any, Dict, List, Optional, Callable, Awaitable, Type, Set
 
 from langgraph.graph import StateGraph, END
 
@@ -1153,22 +1153,18 @@ class ReactSolverV2:
             return "final_answer is required for action=complete/exit."
         if code == "final_answer_with_tool_call":
             return (
-                "You emitted action=call_tool with final_answer text. No tool was run and no final "
-                "answer was accepted. Next: if a tool is needed, emit only action=call_tool with "
-                "final_answer empty and minimal notes; after the tool result is visible, self-assess "
-                "it and then emit a clean complete/exit final-answer round with notes empty."
+                "You used `action=call_tool` and also attached `final_answer` text. `final_answer` closes the turn — but the tool has not run yet, so the answer would be a guess. "
+                "No tool was run. Next: emit the tool alone with `final_answer` empty; complete after the tool result is visible."
             )
         if code == "tool_call_with_final_answer":
             return (
-                "You emitted a final-answer action with a tool_call attached. No action was executed. "
-                "Next: either call the tool alone now, or complete with final_answer only, notes empty, "
-                "and tool_call=null."
+                "You emitted complete/exit with a `tool_call` still attached. Closing the turn and running a tool whose result you have not seen contradict each other. "
+                "No action ran. Next: either emit the tool alone now, or drop `tool_call` and set `notes=\"\"`, `tool_call=null`."
             )
         if code == "final_answer_with_notes":
             return (
-                "You emitted a final-answer action with root notes. No final answer was accepted. "
-                "Final-answer rounds must be clean: put the user response in final_answer, keep notes empty, "
-                "and include only the final summary channel for continuity."
+                "You emitted complete/exit with root `notes` populated. `notes` are progress strings for tool rounds; on the final round the user-facing message belongs in `final_answer`. "
+                "Re-emit with notes empty."
             )
         if code == "missing_tool_id":
             return "tool_call.tool_id is missing for action=call_tool."
@@ -1180,24 +1176,18 @@ class ReactSolverV2:
             return f"tool params failed signature validation for tool_id={tool_id or 'unknown'}. No action was executed for this round."
         if code == "code_channel_with_multi_action":
             return (
-                "You emitted multiple tool actions and also emitted non-empty `channel:code`, "
-                "but the round did not contain exactly one exec_tools.execute_code_python action for that code. "
-                "No tools were run. Next: either emit the tool actions again with an empty `channel:code`, "
-                "or include exactly one exec_tools.execute_code_python action for the Python in `channel:code`."
+                "You emitted non-empty `channel:code` with no `exec_tools.execute_code_python` action to bind it. Code only runs when paired with a single exec action. "
+                "No tools were run. Next: add one complete exec action, or emit the round again with `channel:code` empty."
             )
         if code == "code_channel_exec_incomplete_with_multi_action":
             return (
-                "You emitted multiple tool actions and one exec_tools.execute_code_python action, "
-                "but the exec action was not complete: it needs both params.contract and Python in `channel:code`. "
-                "No tools were run. Next: either emit a complete exec action with contract and code, "
-                "or split exec into its own round."
+                "You included an exec action in a multi-action round but it is incomplete — it needs both `params.contract` and Python in `channel:code`. "
+                "No tools were run. Next: complete the exec, or run exec alone in its own round."
             )
         if code == "code_channel_without_single_exec":
             return (
-                f"You emitted code, but the action is {tool_id or action or 'not an exec action'}. "
-                "Code is only allowed with exactly one exec_tools.execute_code_python action. "
-                "No tools were run. Next: remove the code channel content for this tool call, "
-                "or change the single action to exec_tools.execute_code_python and put Python only in `channel:code`."
+                f"You emitted Python in `channel:code` but the action is `{tool_id or action or 'not an exec action'}`. `channel:code` only binds to one `exec_tools.execute_code_python` action. "
+                "No action ran. Next: clear `channel:code`, or switch the action to exec with `params.contract`."
             )
         if code == "multi_action_bundle_unsafe_tool":
             unsafe_tool = str((extra or {}).get("tool_id") or tool_id or "that tool").strip()
@@ -1206,46 +1196,50 @@ class ReactSolverV2:
                 or unsafe_tool.endswith((".record_memory", ".confirm_memory", ".retire_memory"))
             ):
                 return (
-                    f"You emitted {unsafe_tool} together with other actions. Durable memory writes "
-                    "are state changes and must run alone. That memory action was not run. Next: emit "
-                    f"only {unsafe_tool} with final_answer empty and minimal notes; after the result is "
-                    "visible and successful, complete in a later clean final-answer round."
+                    f"You bundled `{unsafe_tool}` with other actions. Memory writes are state changes and must run alone — anything depending on the write needs to see its real outcome first. "
+                    f"That action was not run. Next: emit `{unsafe_tool}` alone; complete after the result is visible."
                 )
             if tools_insights.is_exec_tool(unsafe_tool):
                 return (
-                    f"You emitted a {unsafe_tool} action that was not complete enough to run in this multi-action round. "
-                    "That exec action was not run. Next: include exactly one exec_tools.execute_code_python action "
-                    "with params.contract and Python in `channel:code`, or run exec in its own round."
+                    f"You bundled an incomplete `{unsafe_tool}` action with others (missing `params.contract` or `channel:code`). A partial exec cannot be paired safely. "
+                    "That action was not run. Next: complete the exec with both, or run it alone."
                 )
             return (
-                f"You emitted multiple tool actions, but {unsafe_tool} cannot be combined with other actions. "
-                "That action was not run. Next: emit only that tool action, or split the actions across later rounds."
+                f"You bundled `{unsafe_tool}` with other actions. Its result is not visible until the next round, so any sibling that depends on it would be guessing. "
+                f"That action was not run. Next: emit `{unsafe_tool}` alone; depend on it next round."
             )
         if code == "multi_action_bundle_mixed_actions":
             rejected_action = str((extra or {}).get("action") or "").strip() or "a non-tool action"
             return (
-                f"You emitted multiple actions, but one action was {rejected_action}. "
-                "A final answer must be the only action in its round; it cannot be emitted together with tool calls. "
-                "That action was not run. Next: if work is complete, emit exactly one complete/exit action; "
-                "otherwise emit only tool-call actions and complete in a later round."
+                f"You bundled tool calls with a `{rejected_action}` action (final answer / turn close). Closing the turn before the tools' results exist is a guess — you have not seen them yet. "
+                f"The `{rejected_action}` action was dropped. Next: keep the tool actions; complete in a later round after their results are visible."
             )
         if code == "multi_action_bundle_final_answer_not_allowed":
             return (
-                "You emitted multiple tool actions and also included final_answer text. "
-                "Tool-call rounds must not include final_answer. That action was not run. "
-                "Next: emit the tool actions without final_answer, then complete in a later round after the tools finish."
+                "You attached `final_answer` text to a tool-call round. `final_answer` closes the turn — it needs the tools' results, which appear only next round. "
+                "The final answer was dropped. Next: emit the tools with `final_answer` empty; complete next round."
             )
         if code == "multi_action_bundle_invalid_item":
             return (
-                "One of the repeated actions was not a valid action JSON object. "
-                "That action was not run. Next: emit each action as its own valid "
-                "<channel:action> JSON object, with exactly one tool_call per action."
+                "You emitted an action with malformed JSON. Without a parseable schema the runtime cannot route it. "
+                "That action was dropped. Next: emit each action as its own valid `<channel:action>` block with one `tool_call`."
             )
         if code == "multi_action_bundle_too_small":
             return (
-                "Only one valid tool action was available after parsing, but the round was treated as multiple-action recovery. "
-                "No tools were run. Next: emit one valid action for this round, or emit each independent action "
-                "in its own separate <channel:action> instance."
+                "You emitted in multi-action shape but only one valid action parsed. The runtime cannot tell if the rest were malformed or dropped, so it skipped the bundle. "
+                "No tools were run. Next: emit one valid action, or emit each independent action in its own `<channel:action>` block."
+            )
+        if code == "multi_action_bundle_same_file_collision":
+            path = str((extra or {}).get("path") or "").strip() or "the same target file"
+            return (
+                f"You bundled two actions that target the same file (`{path}`) in this round. The runtime cannot guarantee ordering between them, and the second would be guessing at the state the first leaves behind. "
+                "That action was dropped. Next: do the write/patch this round; emit any follow-up edit next round after seeing the result."
+            )
+        if code == "multi_action_bundle_render_consumes_same_round_source":
+            ref = str((extra or {}).get("ref") or "").strip() or "a source produced in this same round"
+            return (
+                f"You bundled a renderer whose `ref:` points at `{ref}` — a file being written by another action in this same round. The render's input is not visible until the next round, so the renderer would consume an uncertain/incomplete file. "
+                "The render was dropped. Next: write the source this round; render it next round after the `fi:` ref is visible."
             )
         if code == "action_schema_error":
             summary, _diagnostic = self._schema_error_diagnostics(error)
@@ -1579,6 +1573,74 @@ class ReactSolverV2:
             return True
         return any(tool_id.startswith(prefix) for prefix in self.SAFE_MULTI_ACTION_TOOL_PREFIXES)
 
+    @staticmethod
+    def _bundle_collision_key(raw: str) -> str:
+        """Canonicalize a path or ref: value for cross-action collision/dependency detection.
+
+        Accepts:
+          - physical path: 'turn_<id>/files/foo.md', 'turn_<id>/outputs/foo.md'
+          - logical ref:   'fi:turn_<id>.files/foo.md', 'fi:turn_<id>.outputs/foo.md'
+          - param ref:     'ref:<either form>'
+        Returns lowercase canonical 'turn_<id>/<namespace>/<rel>' string, or '' if not recognizable.
+        """
+        s = str(raw or "").strip()
+        if not s:
+            return ""
+        if s.startswith("ref:"):
+            s = s[4:].strip()
+        if s.startswith("fi:"):
+            body = s[3:]
+            for marker, replacement in (
+                (".files/", "/files/"),
+                (".outputs/", "/outputs/"),
+                (".user.attachments/", "/attachments/"),
+            ):
+                if marker in body:
+                    body = body.replace(marker, replacement, 1)
+                    break
+            s = body
+        return s.lstrip("/").lower()
+
+    @classmethod
+    def _action_output_paths(cls, decision: Dict[str, Any]) -> Set[str]:
+        """Set of normalized output paths a single action will produce/edit, for collision checks."""
+        if not isinstance(decision, dict):
+            return set()
+        tc = decision.get("tool_call") if isinstance(decision.get("tool_call"), dict) else {}
+        tool_id = str(tc.get("tool_id") or "").strip()
+        params = tc.get("params") if isinstance(tc.get("params"), dict) else {}
+        out: Set[str] = set()
+        if tool_id in {"react.write", "react.patch"} or tool_id.startswith("rendering_tools.write_"):
+            key = cls._bundle_collision_key(params.get("path") or "")
+            if key:
+                out.add(key)
+        elif tools_insights.is_exec_tool(tool_id):
+            contract = params.get("contract") if isinstance(params.get("contract"), list) else []
+            for entry in contract:
+                if isinstance(entry, dict):
+                    key = cls._bundle_collision_key(entry.get("filename") or "")
+                    if key:
+                        out.add(key)
+        return out
+
+    @classmethod
+    def _action_render_refs(cls, decision: Dict[str, Any]) -> Set[str]:
+        """Set of normalized ref: paths a renderer action consumes (empty for non-renderers)."""
+        if not isinstance(decision, dict):
+            return set()
+        tc = decision.get("tool_call") if isinstance(decision.get("tool_call"), dict) else {}
+        tool_id = str(tc.get("tool_id") or "").strip()
+        if not tool_id.startswith("rendering_tools.write_"):
+            return set()
+        params = tc.get("params") if isinstance(tc.get("params"), dict) else {}
+        out: Set[str] = set()
+        content = params.get("content")
+        if isinstance(content, str) and content.startswith("ref:"):
+            key = cls._bundle_collision_key(content)
+            if key:
+                out.add(key)
+        return out
+
     def _multi_action_enabled(self) -> bool:
         return (self.multi_action_mode or "").strip().lower() in {"on", "true", "1", "yes", "safe_fanout", "fanout"}
 
@@ -1654,6 +1716,7 @@ class ReactSolverV2:
         if len(bundle) < 2:
             return [], "multi_action_bundle_too_small", {"count": len(bundle)}
         accepted: List[Dict[str, Any]] = []
+        accepted_idxs: List[int] = []
         rejected: List[Dict[str, Any]] = []
         exec_indices = self._exec_indices_in_bundle(bundle)
 
@@ -1724,6 +1787,77 @@ class ReactSolverV2:
                 tool_call["params"] = filtered_params
                 decision["tool_call"] = tool_call
             accepted.append(decision)
+            accepted_idxs.append(idx)
+
+        # --- Cross-action causality checks ---
+        # Catch (a) two accepted actions targeting the same file (collision), and
+        # (b) a renderer whose `ref:` points at a path produced by another action in the same round.
+        if len(accepted) > 1:
+            output_paths_by_idx: Dict[int, Set[str]] = {}
+            render_refs_by_idx: Dict[int, Set[str]] = {}
+            decisions_by_idx: Dict[int, Dict[str, Any]] = {}
+            for a_idx, a_decision in zip(accepted_idxs, accepted):
+                decisions_by_idx[a_idx] = a_decision
+                outputs = self._action_output_paths(a_decision)
+                if outputs:
+                    output_paths_by_idx[a_idx] = outputs
+                refs = self._action_render_refs(a_decision)
+                if refs:
+                    render_refs_by_idx[a_idx] = refs
+
+            drop_idxs: Set[int] = set()
+
+            # (a) Same-file collisions: any two accepted actions producing/editing the same canonical path.
+            path_owner: Dict[str, int] = {}
+            for a_idx in accepted_idxs:
+                if a_idx in drop_idxs:
+                    continue
+                for p in output_paths_by_idx.get(a_idx, ()):
+                    if p in path_owner:
+                        drop_idxs.add(a_idx)
+                        _reject(
+                            a_idx,
+                            "multi_action_bundle_same_file_collision",
+                            {"path": p, "first_index": path_owner[p]},
+                            decisions_by_idx.get(a_idx),
+                        )
+                        break
+                    path_owner[p] = a_idx
+
+            # (b) Render-consumes-same-round-source: any renderer whose ref ∈ another action's outputs.
+            for a_idx, refs in render_refs_by_idx.items():
+                if a_idx in drop_idxs:
+                    continue
+                matched: Optional[tuple[str, int]] = None
+                for ref in refs:
+                    for other_idx, outputs in output_paths_by_idx.items():
+                        if other_idx == a_idx:
+                            continue
+                        if ref in outputs:
+                            matched = (ref, other_idx)
+                            break
+                    if matched is not None:
+                        break
+                if matched is not None:
+                    drop_idxs.add(a_idx)
+                    _reject(
+                        a_idx,
+                        "multi_action_bundle_render_consumes_same_round_source",
+                        {"ref": matched[0], "source_index": matched[1]},
+                        decisions_by_idx.get(a_idx),
+                    )
+
+            if drop_idxs:
+                new_accepted: List[Dict[str, Any]] = []
+                new_accepted_idxs: List[int] = []
+                for a_idx, a_decision in zip(accepted_idxs, accepted):
+                    if a_idx in drop_idxs:
+                        continue
+                    new_accepted.append(a_decision)
+                    new_accepted_idxs.append(a_idx)
+                accepted = new_accepted
+                accepted_idxs = new_accepted_idxs
+
         if accepted:
             return accepted, None, ({"rejected": rejected} if rejected else None)
         first = rejected[0] if rejected else {}
