@@ -2334,7 +2334,16 @@ class EnhancedChatRequestProcessor:
                 result = result or {}
                 success = True
                 finalization_reason = "task_completed"
-                await tracked_comm.complete(data=result)
+                # The streaming layer already delivered the assistant answer with
+                # citation tokens live-replaced as resolved links. Echoing the raw
+                # answer text here would arrive after the stream completes and the
+                # client would overwrite the already-rendered text with the raw
+                # [[S:n]] form. Scrub answer/final_answer from the completion
+                # envelope; bundles' return values are unchanged for other consumers.
+                client_data = result
+                if isinstance(result, dict) and any(k in result for k in ("answer", "final_answer")):
+                    client_data = {k: v for k, v in result.items() if k not in ("answer", "final_answer")}
+                await tracked_comm.complete(data=client_data)
 
         except asyncio.CancelledError:
             task_cancelled = True
