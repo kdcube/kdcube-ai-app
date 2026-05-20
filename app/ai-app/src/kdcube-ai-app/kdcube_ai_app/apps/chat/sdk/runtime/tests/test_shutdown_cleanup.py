@@ -8,6 +8,7 @@ import pytest
 from kdcube_ai_app.apps.chat.sdk.runtime.external import docker as docker_runtime
 from kdcube_ai_app.apps.chat.sdk.runtime import iso_runtime
 from kdcube_ai_app.apps.chat.sdk.runtime.diagnose import merge_infra_logs
+from kdcube_ai_app.apps.utils import logging_config
 from kdcube_ai_app.infra.rendering import shared_browser
 
 
@@ -34,6 +35,19 @@ def test_drop_executor_identity_clears_root_supplementary_group(monkeypatch):
         ("setgid", 1000),
         ("setuid", 1001),
     ]
+
+
+def test_sandbox_log_file_is_shared_writable(tmp_path, monkeypatch):
+    monkeypatch.setenv("EXECUTION_SANDBOX", "docker-split-executor")
+    log_path = tmp_path / "executor.log"
+
+    handler = logging_config.SafeRotatingFileHandler(log_path, maxBytes=1024, backupCount=1)
+    try:
+        handler.close()
+    finally:
+        monkeypatch.delenv("EXECUTION_SANDBOX", raising=False)
+
+    assert log_path.stat().st_mode & 0o777 == 0o666
 
 
 def test_workspace_limit_violation_detects_new_large_file(tmp_path):

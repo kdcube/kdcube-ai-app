@@ -109,6 +109,15 @@ class BundleContextFilter(logging.Filter):
 class SafeRotatingFileHandler(RotatingFileHandler):
     """RotatingFileHandler variant that tolerates concurrent rollover races."""
 
+    def _open(self):
+        stream = super()._open()
+        if os.getenv("EXECUTION_SANDBOX"):
+            try:
+                os.chmod(self.baseFilename, 0o666)
+            except Exception:
+                pass
+        return stream
+
     def doRollover(self):
         try:
             super().doRollover()

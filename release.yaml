@@ -1,40 +1,37 @@
 platform:
   repo: "kdcube-ai-app"
-  ref: "2026.5.20.212"
+  ref: "2026.5.20.227"
   description: |
-    This patch release hardens isolated Python execution in split Docker
-    runtime deployments. It builds on the 2026.5.20.126 executor log/artifact
-    permission fix by preparing the actual Docker bind-source directories when
-    translated host paths are opaque from inside chat-proc.
+    This patch release fixes shared executor log file permissions in isolated
+    Python execution. It builds on the split Docker bind-source preparation in
+    2026.5.20.212 by ensuring sandbox log files created during root bootstrap
+    remain writable after the executor process drops to its unprivileged user.
 
     Highlights
 
-    - Prepares split executor bind-source directories from the Docker daemon
-      side when translated host paths are not directly visible inside chat-proc.
-    - Creates and normalizes per-execution work, artifact, executor log, and
-      supervisor log directories before launching split runtime containers.
-    - Keeps the executor container networkless and isolated; the preparation
-      helper has no network access and only mounts per-execution workspace
-      paths.
-    - Preserves existing local/proc-visible permission normalization for
-      deployments where the translated paths are directly visible.
+    - Marks sandbox log files shared-writable when `EXECUTION_SANDBOX` is set.
+    - Prevents root-created executor log files from blocking the dropped
+      executor user from opening `/workspace/logs/executor/executor.log`.
+    - Keeps the behavior scoped to sandbox runtimes; normal service logs are
+      not changed.
+    - Adds regression coverage for sandbox log file mode.
 
     Runtime and deployment notes:
 
-    - Deployments must point the platform ref at 2026.5.20.212 to receive the
-      split runtime bind-source preparation fix.
+    - Deployments must point the platform ref at 2026.5.20.227 to receive the
+      executor log file permission fix.
     - No descriptor shape migration is required for existing deployments.
     - No private deployment content is part of this OSS release.
 
     Validation and regression coverage:
 
-    - Python syntax validation passed for the changed runtime file.
+    - Python syntax validation passed for changed runtime files.
     - Focused split runtime regression tests passed.
     - Staged OSS private-name scan passed before commit.
 
     Changelog
 
-    - Fixed split Docker isolated runtime permission preparation for
-      per-execution bind mounts, including executor log directories.
+    - Fixed sandbox log file mode so root bootstrap logging and the
+      unprivileged executor can share the same executor log file.
 config:
-    version: "2026.5.20.212"
+    version: "2026.5.20.227"
