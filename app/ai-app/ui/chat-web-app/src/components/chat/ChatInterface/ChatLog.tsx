@@ -204,6 +204,12 @@ const ChatLog = () => {
                 const assistantScopedArtifacts = assistantArtifacts(turn.artifacts);
                 const renderableArtifacts = turn.artifacts.filter(isRenderableArtifact);
                 const turnSteps = Object.values(turn.steps);
+                const assistantMessages = (turn.assistantMessages && turn.assistantMessages.length > 0)
+                    ? turn.assistantMessages
+                    : (turn.answer ? [{text: turn.answer, timestamp: turn.events.find((event) => event.eventType === "answer")?.timestamp ?? turn.userMessage.timestamp + 1}] : []);
+                const activityCarrierArtifacts = assistantMessages.length > 0
+                    ? sharedActivityArtifacts
+                    : [...sharedActivityArtifacts, ...assistantScopedArtifacts];
 
                 if (turn.userMessage.text || turn.userMessage.attachments?.length) {
                     orderedItems.push({
@@ -223,21 +229,17 @@ const ChatLog = () => {
                     });
                 });
 
-                if (sharedActivityArtifacts.length > 0 || turnSteps.length > 0 || turn.state === "inProgress") {
+                if (activityCarrierArtifacts.length > 0 || turnSteps.length > 0 || turn.state === "inProgress") {
                     orderedItems.push({
                         kind: "activity",
                         timestamp: getActivityTimestamp(
-                            sharedActivityArtifacts,
+                            activityCarrierArtifacts,
                             turnSteps,
                             turn.userMessage.timestamp + 1,
                         ),
                         index: index++,
                     });
                 }
-
-                const assistantMessages = (turn.assistantMessages && turn.assistantMessages.length > 0)
-                    ? turn.assistantMessages
-                    : (turn.answer ? [{text: turn.answer, timestamp: turn.events.find((event) => event.eventType === "answer")?.timestamp ?? turn.userMessage.timestamp + 1}] : []);
 
                 assistantMessages.forEach((message, assistantIndex) => {
                     orderedItems.push({
@@ -273,7 +275,7 @@ const ChatLog = () => {
                             key={key}
                             message={null}
                             isGreeting={false}
-                            artifacts={showActivity ? sharedActivityArtifacts : []}
+                            artifacts={showActivity ? activityCarrierArtifacts : []}
                             steps={showActivity ? turnSteps : []}
                             isError={turn.state === 'error'}
                             isHistorical={turn.historical}
