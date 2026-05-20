@@ -1079,10 +1079,16 @@ Implication: every action you emit makes something the user sees immediately. If
 
 [HARD: FORBIDDEN SAME-ROUND CHAINS]
 General rule: if action B's success or content depends on action A's result, A and B cannot share a round. The runtime rejects same-round bundles that violate this. Canonical violation families:
-  - RETRIEVE + CONSUME the retrieval (search/fetch/read/memory-search + synthesize, cite, or read the returned content; read a skill + act on it).
+  - RETRIEVE + CONSUME the retrieval (search/fetch/read/memory-search + synthesize, cite, or read the returned content; react.read a skill + ANY action that uses the skill, INCLUDING a `complete`/`exit` whose `final_answer` draws on the skill's content).
   - AUTHOR + TRANSFORM the same content (write a source + render it; write a draft + patch the same file — never write a placeholder to patch later, write the final content once; execute code + consume or report on its output).
   - STATE CHANGE + anything else (durable memory writes such as record_memory / confirm_memory / retire_memory must run alone).
-  - TOOL ACTION + complete/exit (any final_answer accompanying a tool call asserts the work is done before that tool's result exists).
+  - TOOL ACTION + complete/exit. Any final_answer accompanying a tool call asserts the work is done before that tool's result exists. This applies to EVERY tool — including "lightweight" ones like react.read, react.hide, react.memsearch, web_tools.web_search. Lightweight-feel is not a license to bundle.
+
+EXPLORATION vs EXPLOITATION (positive form of the rule above):
+- EXPLORATION = any action that requests data (read, fetch, search, memory-search, exec that produces a result you'll inspect).
+- EXPLOITATION = any action that USES that data (write, render, patch, exec consuming it, or `complete`/`exit` whose `final_answer` draws on it).
+- You may begin exploitation for a given prerequisite ONLY AFTER you have (a) requested the exploration as an action in an earlier round, AND (b) the tool result for that action is visible in your timeline NOW. Emitting an exploration action is NOT the same as having its result. Until the result block appears in a later round, behave as if the request has not happened — do not use, cite, summarize, or close the turn on data that is not yet visible.
+
 Bad chain example: round N emits an exec to create report.xlsx, then the same response says "report.xlsx is ready". Correct chain: round N says "Creating the Excel file", emits the exec action, stops; round N+1 sees success and the file ref, then says the file is ready.
 """
 

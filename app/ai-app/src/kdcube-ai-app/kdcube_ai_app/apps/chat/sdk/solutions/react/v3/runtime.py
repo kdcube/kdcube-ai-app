@@ -1135,6 +1135,55 @@ class ReactSolverV2:
         except Exception:
             return None
 
+    async def _emit_react_action_step(
+        self,
+        *,
+        iteration: int,
+        action_index: int,
+        bundle_size: int,
+        decision: Dict[str, Any],
+        tool_call_id: str = "",
+        status: str = "completed",
+    ) -> None:
+        """Emit one frontend step per executed action so multi-action rounds surface every step.
+
+        Step id is keyed on (iteration, action_index) so each action in a bundle is a distinct
+        entity in the UI rather than overwriting a single round-level step. Fires AFTER the
+        action's tool execution returns, so `status` reflects the real outcome.
+        """
+        try:
+            iteration_i = int(iteration or 0)
+            action_index_i = int(action_index or 0)
+            bundle_size_i = max(1, int(bundle_size or 1))
+            decision_payload: Dict[str, Any] = dict(decision) if isinstance(decision, dict) else {}
+            tool_call = decision_payload.get("tool_call") if isinstance(decision_payload.get("tool_call"), dict) else {}
+            tool_id = (tool_call.get("tool_id") or "").strip() if isinstance(tool_call, dict) else ""
+            action_label = (decision_payload.get("action") or "").strip()
+            label = tool_id or action_label or "action"
+            if bundle_size_i > 1:
+                title = f"ReAct Round ({iteration_i}). Action {action_index_i + 1}/{bundle_size_i}: {label}"
+            else:
+                title = f"ReAct Round ({iteration_i}). Action: {label}"
+            if tool_call_id:
+                decision_payload.setdefault("tool_call_id", tool_call_id)
+            decision_payload.setdefault("action_index", action_index_i)
+            decision_payload.setdefault("bundle_size", bundle_size_i)
+            await emit_event(
+                comm=self.comm,
+                etype="solver.react.action",
+                title=title,
+                step=f"react({iteration_i}).action({action_index_i})",
+                data=decision_payload,
+                agent=f"solver.react({iteration_i}).action({action_index_i})",
+                status=status or "completed",
+            )
+        except Exception:
+            # Frontend emission must never break execution.
+            try:
+                self.log.log(traceback.format_exc(), level="ERROR")
+            except Exception:
+                pass
+
     def _protocol_violation_message(
         self,
         *,
@@ -3288,12 +3337,24 @@ class ReactSolverV2:
                 )
         except Exception:
             pass
+        decision_event_title = f"ReAct Round ({iteration}). Decision Node"
+        decision_event_data: Dict[str, Any]
+        if bundle_mode:
+            bundle_items = state.get("last_decision_bundle") if isinstance(state.get("last_decision_bundle"), list) else []
+            bsize = len(bundle_items)
+            decision_event_data = dict(decision) if isinstance(decision, dict) else {}
+            decision_event_data["bundle"] = [it for it in bundle_items if isinstance(it, dict)]
+            decision_event_data["bundle_size"] = bsize
+            if bsize > 1:
+                decision_event_title = f"ReAct Round ({iteration}). Decision Node (bundle of {bsize} actions)"
+        else:
+            decision_event_data = decision if decision else {"error": "no_decision"}
         await emit_event(
             comm=self.comm,
             etype="solver.react.decision",
-            title=f"ReAct Round ({iteration}). Decision Node",
+            title=decision_event_title,
             step=f"react({iteration}).decision",
-            data=decision if decision else {"error": "no_decision"},
+            data=decision_event_data,
             agent=f"solver.react({iteration}).decision",
         )
         try:
@@ -3345,7 +3406,8 @@ class ReactSolverV2:
 
         pending_bundle = state.pop("pending_tool_bundle", None)
         if isinstance(pending_bundle, list) and pending_bundle:
-            for item in pending_bundle:
+            bundle_size = len(pending_bundle)
+            for action_index, item in enumerate(pending_bundle):
                 if await self._apply_steer_interrupt_if_requested(state, checkpoint="tool.before_execute"):
                     return state
                 decision = item.get("decision") if isinstance(item, dict) else None
@@ -3390,6 +3452,14 @@ class ReactSolverV2:
                 if await self._apply_steer_interrupt_if_requested(state, checkpoint="tool.after_execute"):
                     return state
                 await _merge_pending_sources(state)
+                await self._emit_react_action_step(
+                    iteration=int(origin_iteration),
+                    action_index=int(action_index),
+                    bundle_size=int(bundle_size),
+                    decision=decision,
+                    tool_call_id=tool_call_id,
+                    status=("failed" if state.get("exit_reason") == "error" else "completed"),
+                )
                 if state.get("exit_reason"):
                     return state
             state["pending_tool_call_id"] = None
@@ -3402,6 +3472,7 @@ class ReactSolverV2:
             state.setdefault("pending_tool_origin_iteration", max(0, int(state.get("iteration") or 0) - 1))
         except Exception:
             state.setdefault("pending_tool_origin_iteration", 0)
+        single_action_tool_call_id = (state.get("pending_tool_call_id") or "").strip() if isinstance(state.get("pending_tool_call_id"), str) else ""
         interrupted, result = await self._run_cancellable_phase(
             phase="tool_execution",
             coro=ReactRound.execute(react=self, state=state),
@@ -3418,6 +3489,19 @@ class ReactSolverV2:
         if await self._apply_steer_interrupt_if_requested(state, checkpoint="tool.after_execute"):
             return state
         await _merge_pending_sources(state)
+        try:
+            origin_iteration_single = int(state.get("pending_tool_origin_iteration") or 0)
+        except Exception:
+            origin_iteration_single = 0
+        single_decision = state.get("last_decision") if isinstance(state.get("last_decision"), dict) else {}
+        await self._emit_react_action_step(
+            iteration=origin_iteration_single,
+            action_index=0,
+            bundle_size=1,
+            decision=single_decision,
+            tool_call_id=single_action_tool_call_id,
+            status=("failed" if state.get("exit_reason") == "error" else "completed"),
+        )
         state.pop("pending_tool_origin_iteration", None)
         return state
 
