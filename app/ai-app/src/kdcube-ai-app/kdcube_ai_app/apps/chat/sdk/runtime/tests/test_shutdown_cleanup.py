@@ -179,6 +179,60 @@ def test_split_executor_argv_is_networkless_and_does_not_mount_supervisor_data(t
     assert all("KDCUBE_RUNTIME_SECRETS_YAML_B64=" not in item for item in argv)
 
 
+def test_split_bind_source_prepare_argv_is_networkless_and_scoped(tmp_path):
+    workdir = tmp_path / "work"
+    outdir = tmp_path / "out"
+    artifact_outdir = outdir / "workdir"
+    executor_logdir = outdir / "logs" / "executor"
+
+    argv = docker_runtime._build_split_bind_source_prepare_argv(
+        image="py-code-exec:latest",
+        host_paths=[workdir, outdir, artifact_outdir, executor_logdir],
+    )
+
+    assert "--network" in argv
+    assert "none" in argv
+    assert "--cap-drop=ALL" in argv
+    assert "--cap-add=CHOWN" in argv
+    assert "--cap-add=FOWNER" in argv
+    assert "--cap-add=SYS_ADMIN" not in argv
+    assert "--cap-add=NET_ADMIN" not in argv
+    assert "--read-only" in argv
+    assert "no-new-privileges" in argv
+    assert "--entrypoint" in argv
+    assert "/bin/sh" in argv
+    assert any(item == f"{workdir}:/kdcube-bind-src-0:rw" for item in argv)
+    assert any(item == f"{outdir}:/kdcube-bind-src-1:rw" for item in argv)
+    assert any(item == f"{artifact_outdir}:/kdcube-bind-src-2:rw" for item in argv)
+    assert any(item == f"{executor_logdir}:/kdcube-bind-src-3:rw" for item in argv)
+    assert any("chmod -R a+rwX" in item for item in argv)
+
+
+@pytest.mark.asyncio
+async def test_prepare_split_host_bind_sources_uses_docker_control(tmp_path, monkeypatch):
+    calls = []
+
+    async def _fake_docker_control(args, *, timeout_s=10):
+        calls.append((args, timeout_s))
+        return 0, "", ""
+
+    monkeypatch.setattr(docker_runtime, "_docker_control", _fake_docker_control)
+
+    ok, summary = await docker_runtime._prepare_split_host_bind_sources_with_docker(
+        image="py-code-exec:latest",
+        host_paths=[tmp_path / "work", tmp_path / "out" / "logs" / "executor"],
+        log=SimpleNamespace(log=lambda *_args, **_kwargs: None),
+    )
+
+    assert ok is True
+    assert summary == ""
+    assert calls
+    argv, timeout_s = calls[0]
+    assert timeout_s == 30
+    assert argv[:3] == ["docker", "run", "--rm"]
+    assert any(item.endswith(":/kdcube-bind-src-1:rw") for item in argv)
+
+
 def test_split_supervisor_argv_uses_writable_home_and_playwright_path(tmp_path):
     workdir = tmp_path / "work"
     outdir = tmp_path / "out"
