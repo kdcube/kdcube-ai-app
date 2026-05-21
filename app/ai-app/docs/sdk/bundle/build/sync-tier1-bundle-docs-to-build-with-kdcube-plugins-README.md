@@ -72,6 +72,15 @@ It is used for Telegram webhooks, OAuth/Cognito callbacks, and other
 callback/remote-control flows that need public HTTPS while the runtime is still
 on localhost.
 
+Python import rule that plugins must surface early:
+
+- bundle-local code must use package-relative imports such as
+  `from .services.storage import ...`
+- do not import bundle-local folders as top-level packages such as `services`,
+  `apps`, `tools`, or `resources`
+- route agents to [bundle-runtime-README.md#critical-bundle-local-import-rule](../bundle-runtime-README.md#critical-bundle-local-import-rule)
+  before they change bundle-local Python imports
+
 Widget/API origin rule that plugins must surface early:
 
 - browser-facing bundle code must call KDCube APIs through the KDCube

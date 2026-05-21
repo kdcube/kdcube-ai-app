@@ -38,6 +38,14 @@ Tier 1 rule:
 The goal is not “run something once”.
 The goal is to prove that the bundle works in the supported KDCube runtime contract.
 
+Critical Python import rule:
+
+- bundle-local code must use package-relative imports such as
+  `from .services.storage import ...`
+- do not import bundle-local folders as top-level packages such as `services`,
+  `apps`, `tools`, or `resources`
+- see [bundle-runtime-README.md#critical-bundle-local-import-rule](../bundle-runtime-README.md#critical-bundle-local-import-rule)
+
 Critical widget/browser test:
 
 - verify widget network requests call the KDCube hosted origin, not the
@@ -184,7 +192,8 @@ For a brand-new bundle skeleton, prove the contract before adding product logic:
 
 - the bundle has the skeleton files from
   [how-to-write-bundle-README.md#1b1-new-bundle-skeleton-checklist](how-to-write-bundle-README.md#1b1-new-bundle-skeleton-checklist)
-- `entrypoint.py` parses/imports in the project venv
+- `entrypoint.py` parses and loads through the KDCube loader or shared bundle
+  suite in the project venv
 - `config/bundles.template.yaml` makes clear whether `path:` is a seed/source
   descriptor host path or a staged runtime/container path
 - seed/source descriptors used by local CLI setup or IntelliJ/proc host runs
@@ -197,6 +206,12 @@ For a brand-new bundle skeleton, prove the contract before adding product logic:
 
 Do this before building UI, tools, or scheduler logic. A clean skeleton makes
 later failures narrower.
+
+Do not validate bundle-local imports only with
+`sys.path.insert(bundle_root); import entrypoint`. That direct top-level import
+can mask the KDCube loader contract and can also create the same process-global
+package collisions the runtime rule prevents. Use the shared bundle suite or a
+real KDCube loader/runtime check for import validation.
 
 ## 1B.1 Reusable SDK Block Checks
 

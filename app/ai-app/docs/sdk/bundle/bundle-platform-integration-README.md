@@ -4,6 +4,7 @@ title: "Bundle Platform Integration"
 summary: "Declarative platform contract for exposing bundle capabilities through decorators, manifest metadata, REST operations, widgets, MCP routes, static UI, public routes, scheduled jobs, and background job handlers."
 tags: ["sdk", "bundle", "integration", "decorators", "widgets", "operations", "mcp", "ui", "manifest", "cron", "scheduled-jobs", "background-jobs"]
 keywords: ["decorator based integration", "bundle manifest contract", "rest operations exposure", "widget exposure", "mcp route exposure", "static ui exposure", "public route exposure", "scheduled job exposure", "on_job background job handler"]
+updated_at: 2026-05-21
 see_also:
   - ks:docs/sdk/bundle/bundle-agent-integration-README.md
   - ks:docs/sdk/bundle/bundle-transports-README.md
@@ -50,6 +51,15 @@ All of this is implemented in:
 
 - `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/agentic_loader.py`
 - `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/integrations.py`
+
+Critical import rule:
+
+- bundle-local Python imports must be package-relative, for example
+  `from .services.news import build_news_service`
+- do not import bundle-local folders as process-global top-level packages such
+  as `services`, `apps`, `tools`, or `resources`
+- see [Bundle Runtime](bundle-runtime-README.md#critical-bundle-local-import-rule)
+  for the import-isolation contract
 
 ## 1) Supported decorators
 

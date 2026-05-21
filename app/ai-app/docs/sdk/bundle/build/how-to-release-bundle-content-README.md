@@ -4,7 +4,7 @@ title: "How To Release Bundle Content"
 summary: "Optional but recommended Tier 1 lifecycle procedure for releasing bundle/content repositories: align bundle docs, config templates, release.yaml, validation, git commit/tag/push, and descriptor ref updates from a self-contained public bundle-builder workflow."
 tags: ["sdk", "bundle", "release", "content", "lifecycle", "tier-1"]
 keywords: ["bundle content release", "bundle release procedure", "release yaml", "bundle config templates", "bundle tag", "bundle descriptor ref", "shared widget source validation", "agent release workflow", "optional release procedure", "bundle lifecycle maintenance"]
-updated_at: 2026-05-16
+updated_at: 2026-05-21
 see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/sdk/bundle/build/how-to-write-bundle-README.md
@@ -38,6 +38,14 @@ It is also the recommended way to work when building a bundle from scratch:
 
 Do not rely on another release procedure when using this page.
 This page is the self-contained public bundle-builder procedure.
+
+Critical Python import rule:
+
+- release validation must prove bundle-local code uses package-relative imports
+  such as `from .services.storage import ...`
+- do not bless top-level bundle-local imports such as `from services...`,
+  `from apps...`, or `import tools`
+- see [bundle-runtime-README.md#critical-bundle-local-import-rule](../bundle-runtime-README.md#critical-bundle-local-import-rule)
 
 Critical release check for browser surfaces:
 

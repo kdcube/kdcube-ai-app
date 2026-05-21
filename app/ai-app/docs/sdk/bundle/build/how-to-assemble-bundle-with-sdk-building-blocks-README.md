@@ -50,6 +50,14 @@ or the bundle needs domain-specific storage and prompts.
 When a feature becomes reusable across bundles, move it into an SDK integration
 or solution package and update this page.
 
+Critical Python import rule:
+
+- bundle-local code must use package-relative imports such as
+  `from .services.storage import ...`
+- do not import bundle-local folders as top-level packages such as `services`,
+  `apps`, `tools`, or `resources`
+- see [Bundle Runtime](../bundle-runtime-README.md#critical-bundle-local-import-rule)
+
 Critical widget/browser rule:
 
 - widgets and generated static HTML must call KDCube through the KDCube

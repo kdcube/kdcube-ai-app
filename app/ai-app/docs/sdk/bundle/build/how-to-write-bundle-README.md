@@ -4,7 +4,7 @@ title: "How To Write A Bundle"
 summary: "Authoring guide for bundle creators and integrators: bundle shape, lifecycle, decorators, runtime surfaces, configuration and storage decisions, and how to turn a product idea or existing app into a deployable bundle."
 tags: ["sdk", "bundle", "authoring", "workflow", "widget", "api", "testing"]
 keywords: ["bundle authoring guide", "bundle creator path", "bundle integrator path", "end to end bundle design", "decorator selection", "runtime surface selection", "widget api mcp cron on_job choices", "shared sdk widget components", "configuration and storage decisions", "bundle lifecycle design", "reference authoring patterns"]
-updated_at: 2026-05-19
+updated_at: 2026-05-21
 see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
@@ -92,6 +92,14 @@ Configuration/runtime rule:
 
 - use this page for how to structure the bundle code
 - use [how-to-configure-and-run-bundle-README.md](how-to-configure-and-run-bundle-README.md) for `assembly.yaml`, `bundles.yaml`, `bundles.secrets.yaml`, `kdcube --build --upstream`, and `kdcube --info`
+
+Critical Python import rule:
+
+- bundle-local code must use package-relative imports such as
+  `from .services.storage import ...`
+- do not import bundle-local folders as top-level packages such as `services`,
+  `apps`, `tools`, or `resources`
+- see [bundle-runtime-README.md#critical-bundle-local-import-rule](../bundle-runtime-README.md#critical-bundle-local-import-rule)
 
 Critical widget/browser rule:
 
@@ -411,36 +419,35 @@ literal characters in a directory name. If the bundle directory name contains a
 dot, prefer the bundle-root descriptor shape unless the filesystem layout
 intentionally mirrors the dotted package path.
 
-So bundle-local imports must not assume that only the bundle root is on
-`sys.path`.
+So bundle-local imports must be package-relative and must not depend on the
+bundle root being the first `sys.path` entry.
 
-In `entrypoint.py`, use package-relative imports for bundle-local modules and
-import reusable SDK components from their SDK package:
+In `entrypoint.py`, import bundle-local modules through the bundle package:
+
+```python
+from .subsystems.common import storage_root_or_error
+from .services.storage import UserMemoryStorage
+```
+
+In nested bundle modules, use the matching relative form:
+
+```python
+from ..services.storage import UserMemoryStorage
+from .helpers import normalize_payload
+```
+
+Import reusable SDK components by their real SDK package:
 
 ```python
 from kdcube_ai_app.apps.chat.sdk.solutions.tasks import AsyncTaskStorage
-
-try:
-    from .subsystems.common import storage_root_or_error
-except ImportError:
-    from subsystems.common import storage_root_or_error
 ```
 
-In a nested bundle module, use the matching relative form for bundle-local code
-and SDK imports for shared pieces:
+Do not add fallback top-level imports such as `from services...`,
+`from apps...`, or `import tools` for bundle-local code. They can collide with
+other bundles in the same processor process.
 
-```python
-from kdcube_ai_app.apps.chat.sdk.solutions.tasks import TaskStorage
-
-try:
-    from ..services.storage import UserMemoryStorage
-except ImportError:
-    from services.storage import UserMemoryStorage
-```
-
-Do not write imports that only work from the processor cwd or only work when the
-bundle root itself is on `sys.path`, such as unconditional
-`from services.storage import UserMemoryStorage`.
+For the canonical runtime rationale and testing rule, see
+[bundle-runtime-README.md#critical-bundle-local-import-rule](../bundle-runtime-README.md#critical-bundle-local-import-rule).
 
 ## 1C. Bundle Design Decision Matrix
 

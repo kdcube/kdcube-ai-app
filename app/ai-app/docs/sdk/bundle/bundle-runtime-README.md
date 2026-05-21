@@ -4,6 +4,7 @@ title: "Bundle Runtime"
 summary: "Runtime objects and capabilities available inside bundle entrypoints and tools: communicator, integrations, props and secrets, caches, artifacts, and isolated-execution surfaces."
 tags: ["sdk", "bundle", "runtime", "tools", "integrations", "communicator", "isolation"]
 keywords: ["bundle runtime objects", "communicator access", "integrations access", "props and secrets access", "cache access", "artifact handling", "isolated execution surface", "entrypoint runtime context"]
+updated_at: 2026-05-21
 see_also:
   - ks:docs/sdk/bundle/bundle-developer-guide-README.md
   - ks:docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
@@ -55,6 +56,56 @@ There are two different runtime surfaces:
    - `REGISTRY`
 
 They are related, but they are not identical.
+
+## Critical Bundle-Local Import Rule
+
+Bundle-local Python code must use package-relative imports for other code in
+the same bundle.
+
+Use:
+
+```python
+from .services.news import build_news_service
+from .apps.news.news_pipeline import build_news_pipeline_service
+from .orchestrator.workflow import WithReactWorkflow
+```
+
+From nested bundle packages, use the corresponding relative form:
+
+```python
+from ..tools import react_tools
+from .service import NewsPipelineService
+```
+
+Do not use top-level imports for bundle-local folders:
+
+```python
+# Do not do this for bundle-local code.
+from services.news import build_news_service
+from apps.news.news_pipeline import build_news_pipeline_service
+import tools
+```
+
+Reason: multiple bundles are loaded in the same processor process, and Python
+`sys.modules` is process-global. Top-level names such as `services`, `apps`,
+`tools`, `orchestrator`, or `resources` can collide across bundles. A later
+bundle may then import another bundle's package or fail with
+`ModuleNotFoundError` even though the files exist in its own bundle directory.
+
+The bundle loader provides an isolated virtual package for directory bundles.
+Package-relative imports are what keep bundle-local code inside that virtual
+package.
+
+Authoring requirements:
+
+- keep `__init__.py` in bundle-local package directories that are imported
+- use relative imports from `entrypoint.py` and from nested bundle modules
+- reserve absolute imports for installed libraries and globally unique packages
+- when wrapping existing code, either place it under the bundle package and
+  convert internal imports to relative imports, or move it into a real
+  installable package with a globally unique name
+- tests should include a KDCube-loader or shared bundle-suite import check, not
+  only a direct `sys.path.insert(bundle_root); import entrypoint` check
 
 ## Runtime entry paths
 

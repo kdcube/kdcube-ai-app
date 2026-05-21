@@ -4,7 +4,7 @@ title: "Bundle Developer Guide"
 summary: "High-level entrypoint for bundle authors: what a bundle is, how tenant/project environments work, which runtime surfaces exist, and which docs to follow for authoring, config, testing, and delivery."
 tags: ["sdk", "bundle", "development", "entrypoint", "workflow", "tools", "skills", "configuration", "background-jobs"]
 keywords: ["bundle authoring entrypoint", "what a bundle is", "tenant project environment", "runtime surfaces overview", "configuration model overview", "reference bundle path", "shared sdk widget components", "local authoring loop", "bundle documentation map", "on_job background jobs"]
-updated_at: 2026-05-16
+updated_at: 2026-05-21
 see_also:
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
@@ -53,6 +53,14 @@ Read in this order:
 The assembly map is the fastest way to find reusable Tasks, Email, Telegram,
 Delivery, web/rendering/exec tools, storage, widgets, jobs, MCP, and Claude
 Code blocks before writing a bundle-local service.
+
+Critical Python import rule:
+
+- bundle-local code must use package-relative imports such as
+  `from .services.storage import ...`
+- do not import bundle-local folders as top-level packages such as `services`,
+  `apps`, `tools`, or `resources`
+- see [bundle-runtime-README.md#critical-bundle-local-import-rule](bundle-runtime-README.md#critical-bundle-local-import-rule)
 
 If a bundle tool produces user-visible files, read
 [bundle-agent-integration-README.md](bundle-agent-integration-README.md) and

@@ -48,6 +48,14 @@ It does not replace:
 - [email-external-prereq-README.md](../../integrations/email/email-external-prereq-README.md)
   for Google Cloud and Gmail OAuth provider setup
 
+Critical Python import rule:
+
+- when this setup exposes bundle import failures, check that bundle-local code
+  uses package-relative imports such as `from .services.storage import ...`
+- do not patch around import failures by adding top-level `services`, `apps`,
+  `tools`, or `resources` imports for bundle-local modules
+- see [bundle-runtime-README.md#critical-bundle-local-import-rule](../bundle-runtime-README.md#critical-bundle-local-import-rule)
+
 ## Agent Contract
 
 The agent should first infer values from the shell, repository layout, existing

@@ -67,6 +67,14 @@ Start with these six Tier 1 baseline pages in this order:
 
 Read those six together as one bundle-authoring baseline.
 
+Critical Python import rule:
+
+- bundle-local code must use package-relative imports such as
+  `from .services.storage import ...`
+- do not import bundle-local folders as top-level packages such as `services`,
+  `apps`, `tools`, or `resources`
+- see [bundle-runtime-README.md#critical-bundle-local-import-rule](../bundle-runtime-README.md#critical-bundle-local-import-rule)
+
 Critical widget/browser rule:
 
 - any widget, generated HTML app, or bundle UI that calls KDCube APIs must use

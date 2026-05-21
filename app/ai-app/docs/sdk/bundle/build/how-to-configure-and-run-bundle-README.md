@@ -58,6 +58,14 @@ This page is not the primary source for bundle design or test strategy.
 It documents the supported local CLI/runtime workflow for descriptor-backed
 bundle development.
 
+Critical Python import rule:
+
+- bundle-local code must use package-relative imports such as
+  `from .services.storage import ...`
+- do not import bundle-local folders as top-level packages such as `services`,
+  `apps`, `tools`, or `resources`
+- see [bundle-runtime-README.md#critical-bundle-local-import-rule](../bundle-runtime-README.md#critical-bundle-local-import-rule)
+
 Critical widget/browser runtime rule:
 
 - opening KDCube inside another app does not make widget APIs call the outer
@@ -1005,8 +1013,11 @@ bundles:
 
 The parent-subdir shape is useful when a repo contains multiple bundles under
 one source parent. Bundle code must use package-relative bundle-local imports
-with a bundle-root fallback so both shapes load. The authoring rule is in
-[how-to-write-bundle-README.md#1b2-bundle-local-import-rule](how-to-write-bundle-README.md#1b2-bundle-local-import-rule).
+and must not use top-level package fallbacks for bundle-local folders. The
+authoring rule is in
+[how-to-write-bundle-README.md#1b2-bundle-local-import-rule](how-to-write-bundle-README.md#1b2-bundle-local-import-rule),
+and the runtime rationale is in
+[bundle-runtime-README.md#critical-bundle-local-import-rule](../bundle-runtime-README.md#critical-bundle-local-import-rule).
 
 When cutting a new git-backed bundle ref, use the optional public release
 procedure in
@@ -1426,9 +1437,9 @@ But for normal bundle development, prefer a descriptor-driven initialized runtim
 - Treating `bundles.yaml` example config as the switch that enables built-in examples.
 - Manually building a custom bundle UI into runtime storage instead of letting the bundle UI loader refresh it.
 - Mixing `path` with `repo`/`ref`/`subdir` in the same bundle entry.
-- Using bundle-local imports that only work for one descriptor shape, such as
-  unconditional `from services...` imports when git delivery uses
-  `subdir: "src"` plus `module: "my_bundle.entrypoint"`.
+- Importing bundle-local folders as process-global top-level packages, such as
+  `from services...`, `from apps...`, or `import tools`. Those names can
+  collide across bundles in one processor process.
 - Expecting `--upstream` to rebuild images. It only selects the upstream source/ref; add `init --build` to prebuild images.
 - Assuming the base `--workdir` is the concrete runtime when the CLI has resolved a namespaced runtime under it.
 - Using `kdcube reload` before the stack is running.

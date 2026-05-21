@@ -4,6 +4,7 @@ title: "Bundle Lifecycle"
 summary: "Lifecycle model for bundles: discovery, load, initialization, invocation, hooks, background jobs, singleton state, UI build behavior, and which storage or config surfaces exist at each phase."
 tags: ["sdk", "bundle", "lifecycle", "storage", "configuration", "entrypoint", "background-jobs"]
 keywords: ["bundle discovery and load", "initialization hooks", "invocation phases", "on_job lifecycle", "background job lifecycle", "singleton bundle state", "ui build lifecycle", "storage availability by phase", "configuration availability by phase", "bundle lifecycle model"]
+updated_at: 2026-05-21
 see_also:
   - ks:docs/sdk/bundle/bundle-developer-guide-README.md
   - ks:docs/sdk/bundle/bundle-runtime-README.md
@@ -41,6 +42,14 @@ Even if a deployment enables singleton reuse, durable bundle state should live i
 - cached per-bundle venvs for decorated external Python callables
 
 Do **not** rely on Python instance fields as durable cross-request state.
+
+Critical discovery rule:
+
+- the first lifecycle phase is module import
+- bundle-local Python imports must be package-relative before decorators,
+  hooks, or runtime methods can be discovered
+- see [Bundle Runtime](bundle-runtime-README.md#critical-bundle-local-import-rule)
+  for the full import-isolation contract
 
 ## Lifecycle at a glance
 
