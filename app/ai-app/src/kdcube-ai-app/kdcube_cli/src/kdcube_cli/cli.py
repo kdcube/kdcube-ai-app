@@ -110,6 +110,12 @@ def _cli_explicit_quiet_requested(argv: list[str]) -> bool:
     return False
 
 
+def _print_json(payload: object) -> None:
+    sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+    sys.stdout.write("\n")
+    sys.stdout.flush()
+
+
 def run(cmd: list[str], cwd: Path | None = None) -> None:
     subprocess.run(cmd, cwd=cwd, check=True)
 
@@ -1416,7 +1422,7 @@ def reload_bundle_from_descriptor(
         _bundle_reload_summary_lines(result, descriptor_path=descriptor_path, bundle_id=bundle_id),
     )
     if json_output:
-        console.print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+        _print_json(result)
     elif not quiet:
         _print_bundle_reload_summary(
             console,
@@ -2707,21 +2713,14 @@ def main() -> None:
             _eff_project = str(args.project or cli_defaults.get("default_project", "") or "").strip() or None
             if args.show_defaults:
                 if args.json_output:
-                    console.print(json.dumps({"defaults": cli_defaults}, ensure_ascii=False, indent=2, sort_keys=True))
+                    _print_json({"defaults": cli_defaults})
                     return
                 console.print("[bold]KDCube CLI Defaults[/bold]")
                 print_cli_defaults(console, cli_defaults)
                 return
             if args.show_current_running_runtime:
                 if args.json_output:
-                    console.print(
-                        json.dumps(
-                            {"running_deployment": _collect_running_deployment_info()},
-                            ensure_ascii=False,
-                            indent=2,
-                            sort_keys=True,
-                        )
-                    )
+                    _print_json({"running_deployment": _collect_running_deployment_info()})
                     return
                 print_running_deployment_info(console)
                 return
@@ -2736,14 +2735,7 @@ def main() -> None:
                     )
                 _repo = _resolve_subcommand_repo(args.path, workdir=_resolved)
                 if args.json_output:
-                    console.print(
-                        json.dumps(
-                            _collect_runtime_info(repo_root=_repo, workdir=_resolved),
-                            ensure_ascii=False,
-                            indent=2,
-                            sort_keys=True,
-                        )
-                    )
+                    _print_json(_collect_runtime_info(repo_root=_repo, workdir=_resolved))
                     return
                 print_runtime_info(console, repo_root=_repo, workdir=_resolved)
             elif _arg_provided("--tenant") or _arg_provided("--project"):
@@ -2757,14 +2749,7 @@ def main() -> None:
                     )
                 _repo = _resolve_subcommand_repo(args.path, workdir=_workdir)
                 if args.json_output:
-                    console.print(
-                        json.dumps(
-                            _collect_runtime_info(repo_root=_repo, workdir=_workdir),
-                            ensure_ascii=False,
-                            indent=2,
-                            sort_keys=True,
-                        )
-                    )
+                    _print_json(_collect_runtime_info(repo_root=_repo, workdir=_workdir))
                     return
                 print_runtime_info(console, repo_root=_repo, workdir=_workdir)
             else:
@@ -2786,7 +2771,7 @@ def main() -> None:
                             if _runtime_env_exists(_def_resolved) or (_def_resolved / "config").exists():
                                 _def_repo = _resolve_subcommand_repo(args.path, workdir=_def_resolved)
                                 payload["default_runtime"] = _collect_runtime_info(repo_root=_def_repo, workdir=_def_resolved)
-                    console.print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+                    _print_json(payload)
                     return
                 print_global_info(console, cli_defaults)
                 _def_base_raw = str(cli_defaults.get("default_workdir", "") or "").strip()
@@ -2861,7 +2846,7 @@ def main() -> None:
                     include_live_manifest=bool(args.live_status),
                 )
                 if args.json_output:
-                    console.print(json.dumps(_status, indent=2, sort_keys=True))
+                    _print_json(_status)
                 else:
                     print_bundle_status(console, _status)
                 return

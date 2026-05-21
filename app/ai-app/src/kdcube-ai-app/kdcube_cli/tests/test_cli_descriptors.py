@@ -21,6 +21,7 @@ from kdcube_cli.cli import (
     _load_cli_defaults,
     _parse_init_secret_pairs,
     _copy_dirty_local_source,
+    _print_json,
     _repo_path_from_install_meta,
     _bundle_apply_command,
     _resolve_cli_repo_path,
@@ -252,6 +253,16 @@ def test_cli_quiet_requested_for_json_quiet_env_and_non_tty(monkeypatch):
     assert _cli_quiet_requested(["info"], stdout_is_tty=True) is True
     monkeypatch.setenv("KDCUBE_CLI_QUIET", "0")
     assert _cli_quiet_requested(["info"], stdout_is_tty=True) is False
+
+
+def test_print_json_emits_machine_readable_unwrapped_stdout(capsys):
+    long_path = "/Users/elenaviter/.kdcube/kdcube-runtime/demo-tenant__demo-project/config/assembly.yaml"
+
+    _print_json({"path": long_path, "status": "ok"})
+
+    out = capsys.readouterr().out
+    assert json.loads(out) == {"path": long_path, "status": "ok"}
+    assert "\n" not in json.loads(out)["path"]
 
 
 def test_bundle_reload_summary_hides_inner_compose_command(tmp_path: Path):
