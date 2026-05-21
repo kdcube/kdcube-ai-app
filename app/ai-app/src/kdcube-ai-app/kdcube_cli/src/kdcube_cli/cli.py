@@ -4,6 +4,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import posixpath
+import shlex
 import shutil
 import subprocess
 import sys
@@ -588,6 +590,19 @@ def _strip_env_value(raw: str | None) -> str:
     return value.strip()
 
 
+def _runtime_env_value(workdir: Path, name: str) -> str | None:
+    env_path = workdir / "config" / ".env"
+    if not env_path.exists():
+        return None
+    try:
+        env_main = installer_mod.load_env_file(env_path)
+    except Exception:
+        return None
+    raw = env_main.entries.get(name, (None, None))[1]
+    value = _strip_env_value(raw)
+    return value or None
+
+
 def _runtime_config_dir(env_main: installer_mod.EnvFile) -> Path:
     return env_main.path.parent.resolve()
 
@@ -655,6 +670,7 @@ def _collect_runtime_info(*, repo_root: Path, workdir: Path) -> dict[str, object
         "workdir": str(ctx.workdir),
         "config_dir": str(ctx.config_dir),
         "data_dir": str(ctx.data_dir),
+        "logs_dir": _env_value("KDCUBE_LOGS_DIR") or str(ctx.workdir / "logs"),
         "docker_dir": str(ctx.docker_dir),
         "repo_root": str(repo_root),
         "install_meta": install_meta,
@@ -669,6 +685,7 @@ def _collect_runtime_info(*, repo_root: Path, workdir: Path) -> dict[str, object
         "host_bundle_storage_path": _env_value("HOST_BUNDLE_STORAGE_PATH"),
         "container_bundle_storage_root": _env_value("BUNDLE_STORAGE_ROOT"),
         "host_exec_workspace_path": _env_value("HOST_EXEC_WORKSPACE_PATH"),
+        "container_exec_workspace_root": _env_value("EXEC_WORKSPACE_ROOT"),
         "host_react_debug_path": _env_value("HOST_REACT_DEBUG_PATH"),
         "container_react_debug_root": _env_value("REACT_DEBUG_ROOT"),
         "compose_mode": _env_value("KDCUBE_COMPOSE_MODE"),
@@ -684,6 +701,7 @@ def print_runtime_info(console: Console, *, repo_root: Path, workdir: Path) -> N
     console.print(f"[dim]Workdir:[/dim] {info['workdir']}")
     console.print(f"[dim]Config dir:[/dim] {info['config_dir']}")
     console.print(f"[dim]Data dir:[/dim] {info['data_dir']}")
+    console.print(f"[dim]Logs dir:[/dim] {info['logs_dir']}")
     console.print(f"[dim]Docker dir:[/dim] {info['docker_dir']}")
     console.print(f"[dim]Repo root:[/dim] {info['repo_root']}")
 
@@ -702,6 +720,8 @@ def print_runtime_info(console: Console, *, repo_root: Path, workdir: Path) -> N
     )
 
     console.print("\n[bold]Bundle Mounts[/bold]")
+    console.print(f"[dim]Host config:[/dim] {info['config_dir']}")
+    console.print("[dim]Container config root:[/dim] /config")
     console.print(f"[dim]Host non-managed bundles:[/dim] {info['host_bundles_path'] or 'unset'}")
     console.print(f"[dim]Container non-managed bundles root:[/dim] {info['container_bundles_root'] or 'unset'}")
     console.print(f"[dim]Host managed bundles:[/dim] {info['host_managed_bundles_path'] or 'unset'}")
@@ -709,8 +729,11 @@ def print_runtime_info(console: Console, *, repo_root: Path, workdir: Path) -> N
     console.print(f"[dim]Host bundle storage:[/dim] {info['host_bundle_storage_path'] or 'unset'}")
     console.print(f"[dim]Container bundle storage root:[/dim] {info['container_bundle_storage_root'] or 'unset'}")
     console.print(f"[dim]Host exec workspace:[/dim] {info['host_exec_workspace_path'] or 'unset'}")
+    console.print(f"[dim]Container exec workspace root:[/dim] {info['container_exec_workspace_root'] or 'unset'}")
     console.print(f"[dim]Host React debug:[/dim] {info['host_react_debug_path'] or 'unset'}")
     console.print(f"[dim]Container React debug root:[/dim] {info['container_react_debug_root'] or 'unset'}")
+    console.print(f"[dim]Host logs:[/dim] {info['logs_dir'] or 'unset'}")
+    console.print("[dim]Container logs root:[/dim] /logs")
 
     host_bundles_path = str(info["host_bundles_path"] or "").strip()
     container_bundles_root = str(info["container_bundles_root"] or "").strip()
@@ -813,6 +836,353 @@ def _load_bundle_ids_from_descriptor(path: Path) -> set[str]:
             return bundle_ids
 
     raise SystemExit(f"Descriptor {path} does not contain supported bundle declarations")
+
+
+def _bundle_runtime_roots(workdir: Path) -> tuple[Path | None, str]:
+    config_dir = workdir / "config"
+    assembly_path = config_dir / "assembly.yaml"
+    assembly = installer_mod.load_release_descriptor_soft(assembly_path)
+
+    host_root_raw = _get_nested(assembly, "paths", "host_bundles_path")
+    if not isinstance(host_root_raw, str) or not host_root_raw.strip():
+        host_root_raw = _runtime_env_value(workdir, "HOST_BUNDLES_PATH")
+    host_root: Path | None = None
+    if isinstance(host_root_raw, str) and host_root_raw.strip():
+        host_root = Path(host_root_raw).expanduser().resolve()
+
+    container_root_raw = _get_nested(
+        assembly,
+        "platform",
+        "services",
+        "proc",
+        "bundles",
+        "bundles_root",
+    )
+    if not isinstance(container_root_raw, str) or not container_root_raw.strip():
+        container_root_raw = _runtime_env_value(workdir, "BUNDLES_ROOT")
+    container_root = str(container_root_raw or "/bundles").strip() or "/bundles"
+    if not container_root.startswith("/"):
+        container_root = "/" + container_root
+    return host_root, container_root.rstrip("/") or "/"
+
+
+def _is_container_visible_path(raw_path: str, container_root: str) -> bool:
+    normalized = posixpath.normpath(raw_path.strip().replace("\\", "/"))
+    root = posixpath.normpath(container_root.rstrip("/") or "/")
+    return normalized == root or normalized.startswith(root + "/")
+
+
+def _resolve_bundle_local_path_for_runtime(raw_path: str, workdir: Path) -> tuple[str, str]:
+    value = str(raw_path or "").strip()
+    if not value:
+        raise SystemExit("--local-path cannot be empty.")
+
+    host_root, container_root = _bundle_runtime_roots(workdir)
+    if _is_container_visible_path(value, container_root):
+        return posixpath.normpath(value.replace("\\", "/")), "container"
+
+    candidate = Path(value).expanduser().resolve()
+    if not candidate.exists():
+        raise SystemExit(f"Bundle local path does not exist on the host: {candidate}")
+    if not candidate.is_dir():
+        raise SystemExit(f"Bundle local path must be a directory: {candidate}")
+    if host_root is None:
+        raise SystemExit(
+            "Cannot translate host bundle path because the initialized runtime does not define "
+            "paths.host_bundles_path or HOST_BUNDLES_PATH."
+        )
+    try:
+        rel = candidate.relative_to(host_root)
+    except ValueError as exc:
+        raise SystemExit(
+            "Bundle local path is not visible inside chat-proc.\n"
+            f"  host path: {candidate}\n"
+            f"  allowed host bundle root: {host_root}\n"
+            f"  runtime bundle root: {container_root}\n"
+            "Move or symlink the bundle under the host bundle root, pass the already "
+            f"container-visible path under {container_root}, or use --git-repo."
+        ) from exc
+
+    return posixpath.join(container_root, rel.as_posix()), "translated"
+
+
+def _bundle_apply_command(bundle_id: str, workdir: Path) -> str:
+    return f"kdcube reload {shlex.quote(bundle_id)} --workdir {shlex.quote(str(workdir))}"
+
+
+def _print_bundle_apply_hint(console: Console, bundle_id: str, workdir: Path) -> None:
+    console.print("[dim]Apply with:[/dim]")
+    console.print(f"  {_bundle_apply_command(bundle_id, workdir)}")
+
+
+def _bundle_items_from_descriptor(data: object) -> tuple[list[dict[str, object]], str | None]:
+    if not isinstance(data, dict):
+        return [], None
+    raw_bundles = data.get("bundles")
+    if isinstance(raw_bundles, dict):
+        default_id = raw_bundles.get("default_bundle_id")
+        raw_items = raw_bundles.get("items")
+        if isinstance(raw_items, list):
+            return [item for item in raw_items if isinstance(item, dict)], str(default_id or "").strip() or None
+        items = []
+        for key, value in raw_bundles.items():
+            if key in {"items", "version", "default_bundle_id"} or not isinstance(value, dict):
+                continue
+            entry = dict(value)
+            entry.setdefault("id", key)
+            items.append(entry)
+        return items, str(default_id or "").strip() or None
+    if isinstance(raw_bundles, list):
+        return [item for item in raw_bundles if isinstance(item, dict)], None
+    return [], None
+
+
+def _find_bundle_item(data: object, bundle_id: str) -> tuple[dict[str, object] | None, str | None]:
+    items, default_id = _bundle_items_from_descriptor(data)
+    for item in items:
+        if str(item.get("id") or "").strip() == bundle_id:
+            return item, default_id
+    return None, default_id
+
+
+def _host_path_for_runtime_bundle_path(runtime_path: str, workdir: Path) -> str | None:
+    value = str(runtime_path or "").strip()
+    if not value:
+        return None
+    host_root, container_root = _bundle_runtime_roots(workdir)
+    if host_root is None or not _is_container_visible_path(value, container_root):
+        return None
+    normalized = posixpath.normpath(value.replace("\\", "/"))
+    root = posixpath.normpath(container_root.rstrip("/") or "/")
+    if normalized == root:
+        return str(host_root)
+    rel = normalized[len(root):].lstrip("/")
+    if not rel:
+        return str(host_root)
+    return str(host_root.joinpath(*rel.split("/")))
+
+
+def _source_summary(entry: dict[str, object] | None) -> dict[str, object]:
+    if not entry:
+        return {"mode": "missing"}
+    if entry.get("repo"):
+        return {
+            "mode": "git",
+            "repo": entry.get("repo"),
+            "ref": entry.get("ref"),
+            "subdir": entry.get("subdir"),
+            "path": entry.get("path"),
+        }
+    return {
+        "mode": "local-path",
+        "path": entry.get("path"),
+    }
+
+
+def _runtime_proc_status(ctx: installer_mod.PathsContext, env_main_path: Path) -> dict[str, object]:
+    running = _compose_running_services(ctx.docker_dir, env_main_path)
+    return {
+        "chat_proc_running": "chat-proc" in running,
+        "running_services": sorted(running),
+    }
+
+
+def _live_bundle_status(ctx: installer_mod.PathsContext, env_main_path: Path, *, bundle_id: str) -> dict[str, object]:
+    runtime = _runtime_proc_status(ctx, env_main_path)
+    if not runtime.get("chat_proc_running"):
+        return {
+            "available": False,
+            "chat_proc_running": False,
+            "reason": "chat-proc is not running",
+        }
+
+    payload = json.dumps({"bundle_id": bundle_id})
+    script = "\n".join(
+        [
+            "import json,sys,urllib.request,urllib.error",
+            f"data={payload!r}.encode('utf-8')",
+            "req=urllib.request.Request(",
+            "    'http://127.0.0.1:8020/internal/bundles/status',",
+            "    data=data,",
+            "    headers={'content-type':'application/json'},",
+            "    method='POST',",
+            ")",
+            "try:",
+            "    resp=urllib.request.urlopen(req, timeout=15)",
+            "    sys.stdout.write(resp.read().decode('utf-8'))",
+            "except urllib.error.HTTPError as e:",
+            "    sys.stdout.write(e.read().decode('utf-8'))",
+            "    sys.exit(2)",
+        ]
+    )
+    cmd = [
+        "docker",
+        "compose",
+        "--env-file",
+        str(env_main_path),
+        "exec",
+        "-T",
+        "chat-proc",
+        "python",
+        "-c",
+        script,
+    ]
+    try:
+        raw = _docker_output(cmd, env=_compose_env_from_cmd(cmd), cwd=ctx.docker_dir)
+    except SystemExit as exc:
+        return {
+            "available": False,
+            "chat_proc_running": True,
+            "reason": str(exc),
+        }
+    try:
+        payload_obj = json.loads(raw)
+    except Exception:
+        return {
+            "available": False,
+            "chat_proc_running": True,
+            "reason": "status endpoint returned non-JSON output",
+            "raw": raw,
+        }
+    if isinstance(payload_obj, dict):
+        payload_obj.setdefault("available", True)
+        payload_obj.setdefault("chat_proc_running", True)
+        return payload_obj
+    return {
+        "available": False,
+        "chat_proc_running": True,
+        "reason": "status endpoint returned an unexpected JSON shape",
+        "raw": payload_obj,
+    }
+
+
+def _collect_bundle_status(
+    *,
+    repo_root: Path,
+    workdir: Path,
+    bundle_id: str,
+    include_live: bool = True,
+    include_live_manifest: bool = False,
+) -> dict[str, object]:
+    ctx = _build_paths_for_repo(repo_root, workdir)
+    env_main_path = ctx.config_dir / ".env"
+    bundles_path = ctx.config_dir / "bundles.yaml"
+    if not bundles_path.exists():
+        raise SystemExit(
+            f"bundles.yaml not found at {bundles_path}.\n"
+            "Initialize the workdir first."
+        )
+
+    bundles_data = installer_mod.load_release_descriptor(bundles_path)
+    entry, _default_id = _find_bundle_item(bundles_data, bundle_id)
+    source = _source_summary(entry)
+    runtime_path = str((entry or {}).get("path") or "").strip()
+    host_path = _host_path_for_runtime_bundle_path(runtime_path, workdir) if runtime_path else None
+    host_path_exists = None
+    if host_path:
+        host_path_exists = Path(host_path).exists()
+
+    secrets_entry = None
+    bundles_secrets_path = ctx.config_dir / "bundles.secrets.yaml"
+    if bundles_secrets_path.exists():
+        try:
+            secrets_data = installer_mod.load_release_descriptor(bundles_secrets_path)
+            secrets_entry, _ = _find_bundle_item(secrets_data, bundle_id)
+        except Exception:
+            secrets_entry = None
+
+    result: dict[str, object] = {
+        "bundle_id": bundle_id,
+        "workdir": str(workdir),
+        "descriptor": str(bundles_path),
+        "declared": entry is not None,
+        "entry": entry or None,
+        "source": source,
+        "runtime_path": runtime_path or None,
+        "host_path": host_path,
+        "host_path_exists": host_path_exists,
+        "secrets_declared": secrets_entry is not None,
+    }
+
+    if include_live:
+        if not env_main_path.exists():
+            result["runtime"] = {
+                "chat_proc_running": False,
+                "reason": f"runtime env file not found: {env_main_path}",
+            }
+        else:
+            result["runtime"] = _runtime_proc_status(ctx, env_main_path)
+            if include_live_manifest:
+                result["live"] = _live_bundle_status(ctx, env_main_path, bundle_id=bundle_id)
+    return result
+
+
+def _format_bool(value: object) -> str:
+    if value is True:
+        return "yes"
+    if value is False:
+        return "no"
+    return "unknown"
+
+
+def print_bundle_status(console: Console, status: dict[str, object]) -> None:
+    console.print("[bold]Bundle Status[/bold]")
+    console.print(f"[dim]Bundle:[/dim] {status.get('bundle_id')}")
+    console.print(f"[dim]Declared in staged descriptor:[/dim] {_format_bool(status.get('declared'))}")
+    console.print(f"[dim]Descriptor:[/dim] {status.get('descriptor')}")
+
+    source = status.get("source") if isinstance(status.get("source"), dict) else {}
+    console.print(f"[dim]Source mode:[/dim] {source.get('mode') if isinstance(source, dict) else 'unknown'}")
+    if status.get("runtime_path"):
+        console.print(f"[dim]Runtime path:[/dim] {status.get('runtime_path')}")
+    if status.get("host_path"):
+        console.print(f"[dim]Host path:[/dim] {status.get('host_path')}")
+        console.print(f"[dim]Host path exists:[/dim] {_format_bool(status.get('host_path_exists'))}")
+    if isinstance(source, dict) and source.get("repo"):
+        console.print(f"[dim]Git repo:[/dim] {source.get('repo')}")
+        console.print(f"[dim]Git ref:[/dim] {source.get('ref') or 'unset'}")
+        if source.get("subdir"):
+            console.print(f"[dim]Git subdir:[/dim] {source.get('subdir')}")
+    console.print(f"[dim]Secrets entry:[/dim] {_format_bool(status.get('secrets_declared'))}")
+
+    runtime = status.get("runtime") if isinstance(status.get("runtime"), dict) else None
+    if runtime is None:
+        return
+    console.print("\n[bold]Runtime[/bold]")
+    console.print(f"[dim]chat-proc running:[/dim] {_format_bool(runtime.get('chat_proc_running'))}")
+    if runtime.get("reason"):
+        console.print(f"[yellow]Runtime check limited:[/yellow] {runtime.get('reason')}")
+
+    live = status.get("live") if isinstance(status.get("live"), dict) else None
+    if live is None:
+        return
+    console.print("\n[bold]Live Bundle Load[/bold]")
+    if not live.get("available"):
+        console.print(f"[yellow]Live status unavailable:[/yellow] {live.get('reason') or 'unknown'}")
+        return
+    console.print(f"[dim]Declared in live registry:[/dim] {_format_bool(live.get('declared'))}")
+    console.print(f"[dim]Manifest load:[/dim] {'ok' if live.get('loaded') else 'failed'}")
+    console.print(f"[dim]Path exists in proc:[/dim] {_format_bool(live.get('path_exists'))}")
+    if live.get("authority"):
+        console.print(f"[dim]Authority:[/dim] {live.get('authority')}")
+    if live.get("last_error"):
+        err = live.get("last_error")
+        if isinstance(err, dict):
+            console.print(f"[red]Last error:[/red] {err.get('type')}: {err.get('message')}")
+            if err.get("where"):
+                console.print(f"[dim]Where:[/dim] {err.get('where')}")
+        else:
+            console.print(f"[red]Last error:[/red] {err}")
+    interface = live.get("interface")
+    if isinstance(interface, dict):
+        widgets = interface.get("widgets") if isinstance(interface.get("widgets"), list) else []
+        apis = interface.get("apis") if isinstance(interface.get("apis"), list) else []
+        mcps = interface.get("mcp_endpoints") if isinstance(interface.get("mcp_endpoints"), list) else []
+        scheduled = interface.get("scheduled_jobs") if isinstance(interface.get("scheduled_jobs"), list) else []
+        console.print(f"[dim]Widgets:[/dim] {', '.join(str(w.get('alias')) for w in widgets if isinstance(w, dict)) or '<none>'}")
+        console.print(f"[dim]APIs:[/dim] {', '.join(str(a.get('alias')) for a in apis if isinstance(a, dict)) or '<none>'}")
+        console.print(f"[dim]MCP endpoints:[/dim] {', '.join(str(m.get('alias')) for m in mcps if isinstance(m, dict)) or '<none>'}")
+        console.print(f"[dim]Scheduled jobs:[/dim] {', '.join(str(j.get('alias')) for j in scheduled if isinstance(j, dict)) or '<none>'}")
 
 
 def reload_bundle_from_descriptor(
@@ -1880,9 +2250,18 @@ def main() -> None:
     _sp.add_argument("--workdir", default=None, help="Namespaced runtime workdir")
     _sp.add_argument("--path", default=str(DEFAULT_DIR), help="Platform repo path")
 
-    _sp = subparsers.add_parser("bundle", help="Create, update, or delete a staged bundle entry")
-    _sp.add_argument("bundle_id", help="Bundle ID to patch")
+    _sp = subparsers.add_parser("bundle", help="Create, update, delete, or inspect a staged bundle entry")
+    _sp.add_argument("bundle_id", nargs="?", help="Bundle ID to patch, or 'status'")
+    _sp.add_argument("status_bundle_id", nargs="?", help=argparse.SUPPRESS)
     _sp.add_argument("--workdir", default=None, help="Namespaced runtime workdir")
+    _sp.add_argument("--path", default=str(DEFAULT_DIR), help="Platform repo path")
+    _sp.add_argument("--json", action="store_true", dest="json_output", help="With `bundle status`, print JSON")
+    _sp.add_argument(
+        "--live",
+        action="store_true",
+        dest="live_status",
+        help="With `bundle status`, ask local chat-proc to validate the explicit bundle id",
+    )
     # Source mode (mutually exclusive)
     _src_grp = _sp.add_mutually_exclusive_group()
     _src_grp.add_argument(
@@ -2186,6 +2565,55 @@ def main() -> None:
         if args.command == "bundle":
             _workdir = _resolve_subcommand_workdir(args.workdir, cli_defaults)
             _resolved = _resolve_cli_workdir(_workdir)
+            _bundle_arg = str(args.bundle_id or "").strip()
+            _status_bundle_arg = str(args.status_bundle_id or "").strip()
+            if _bundle_arg == "status":
+                if not _status_bundle_arg:
+                    raise SystemExit("Usage: kdcube bundle status <bundle_id> --workdir <workdir>")
+                if any(
+                    [
+                        args.local_path is not None,
+                        args.git_repo is not None,
+                        args.git_ref is not None,
+                        args.git_subdir is not None,
+                        args.name is not None,
+                        args.module is not None,
+                        args.singleton is not None,
+                        bool(args.set_config or []),
+                        bool(args.set_secret or []),
+                        bool(args.del_config or []),
+                        bool(args.del_secret or []),
+                        bool(args.delete),
+                    ]
+                ):
+                    raise SystemExit("`kdcube bundle status` cannot be combined with mutation flags.")
+                _repo = _resolve_subcommand_repo(args.path, workdir=_resolved)
+                _status = _collect_bundle_status(
+                    repo_root=_repo,
+                    workdir=_resolved,
+                    bundle_id=_status_bundle_arg,
+                    include_live=True,
+                    include_live_manifest=bool(args.live_status),
+                )
+                if args.json_output:
+                    console.print(json.dumps(_status, indent=2, sort_keys=True))
+                else:
+                    print_bundle_status(console, _status)
+                return
+            if _status_bundle_arg:
+                raise SystemExit(
+                    f"Unexpected extra argument {_status_bundle_arg!r}. "
+                    "Use `kdcube bundle status <bundle_id>` for status checks."
+                )
+            if args.json_output:
+                raise SystemExit("--json is only supported with `kdcube bundle status <bundle_id>`.")
+            if args.live_status:
+                raise SystemExit("--live is only supported with `kdcube bundle status <bundle_id>`.")
+            if not _bundle_arg:
+                raise SystemExit(
+                    "Bundle ID is required. Use `kdcube bundle <bundle_id> --...` or "
+                    "`kdcube bundle status <bundle_id>`."
+                )
             _config_dir = _resolved / "config"
             _bundles_path = _config_dir / "bundles.yaml"
             _bundles_secrets_path = _config_dir / "bundles.secrets.yaml"
@@ -2196,7 +2624,7 @@ def main() -> None:
                     "Initialize the workdir first."
                 )
 
-            _bundle_id = str(args.bundle_id).strip()
+            _bundle_id = _bundle_arg
             _local_path: str | None = args.local_path
             _git_repo: str | None = args.git_repo
             _git_ref: str | None = args.git_ref
@@ -2243,6 +2671,9 @@ def main() -> None:
                 del _b_items[_b_idx]
                 installer_mod.save_release_descriptor(_bundles_path, _bundles_data)
                 console.print(f"[green]Removed from bundles.yaml:[/green] {_bundle_id!r}")
+                _bs_idx = None
+                _bs_items = []
+                _bs_data = None
                 if _bundles_secrets_path.exists():
                     _bs_data = installer_mod.load_release_descriptor(_bundles_secrets_path)
                     _bs_block = _bs_data.get("bundles") if isinstance(_bs_data, dict) else None
@@ -2251,10 +2682,12 @@ def main() -> None:
                         (i for i, it in enumerate(_bs_items) if isinstance(it, dict) and str(it.get("id", "")) == _bundle_id),
                         None,
                     )
-                    if _bs_idx is not None:
-                        del _bs_items[_bs_idx]
+                if _bs_idx is not None:
+                    del _bs_items[_bs_idx]
+                    if _bs_data is not None:
                         installer_mod.save_release_descriptor(_bundles_secrets_path, _bs_data)
-                        console.print(f"[green]Removed from bundles.secrets.yaml:[/green] {_bundle_id!r}")
+                    console.print(f"[green]Removed from bundles.secrets.yaml:[/green] {_bundle_id!r}")
+                _print_bundle_apply_hint(console, _bundle_id, _resolved)
                 return
 
             # --- bundles.yaml operations (source mode + identity + config) ---
@@ -2278,10 +2711,20 @@ def main() -> None:
                     console.print(f"[dim]creating new bundle entry[/dim] {_bundle_id!r}")
 
                 if _local_path is not None:
-                    _b_item["path"] = _local_path
+                    _runtime_path, _path_mode = _resolve_bundle_local_path_for_runtime(_local_path, _resolved)
+                    _b_item["path"] = _runtime_path
                     for _stale in ("repo", "ref", "subdir"):
                         _b_item.pop(_stale, None)
-                    console.print(f"[dim]set source[/dim] local-path = {_local_path!r}")
+                    if _path_mode == "translated":
+                        console.print(
+                            f"[dim]set source[/dim] local-path = {_runtime_path!r} "
+                            f"[dim](translated from host path {_local_path!r})[/dim]"
+                        )
+                    else:
+                        console.print(
+                            f"[dim]set source[/dim] local-path = {_runtime_path!r} "
+                            "[dim](already runtime-visible)[/dim]"
+                        )
 
                 if _git_repo is not None:
                     _b_item["repo"] = _git_repo
@@ -2368,6 +2811,7 @@ def main() -> None:
                 installer_mod.save_release_descriptor(_bundles_secrets_path, _bs_data)
                 console.print(f"[green]Updated:[/green] {_bundles_secrets_path}")
 
+            _print_bundle_apply_hint(console, _bundle_id, _resolved)
             return
         if args.command == "export":
             _workdir = _resolve_subcommand_workdir(args.workdir, cli_defaults)

@@ -311,6 +311,53 @@ Start or restart:
 Use `stop/start` when runtime descriptors changed. Use `init --build` again
 after platform source changes that must be baked into local Docker images.
 
+### Re-Running Init
+
+Before re-running `kdcube init` against an existing workdir, decide whether the
+staged runtime descriptors under `<WORKDIR>/config` should be preserved or
+reseeded.
+
+To keep local staged patches made by `kdcube bundle --set-config`,
+`kdcube bundle --set-secret`, admin UI edits, or manual runtime descriptor
+edits, do not point init back at the original seed descriptor directory. Use the
+staged runtime config itself as the descriptor source:
+
+```bash
+"$KDCUBE" init \
+  --path "$KDCUBE_REPO" \
+  --descriptors-location "$WORKDIR/config" \
+  --workdir "$WORKDIR" \
+  --build
+```
+
+Use this form when the runtime needs regenerated env files, refreshed compose
+files, rebuilt images, or an added CORS origin, but the current staged bundle
+props/secrets should remain the authority.
+
+To intentionally discard staged local patches and return to seed descriptors,
+run init with the seed descriptor directory:
+
+```bash
+"$KDCUBE" init \
+  --path "$KDCUBE_REPO" \
+  --descriptors-location "$DESCRIPTORS" \
+  --workdir "$WORKDIR" \
+  --build
+```
+
+This restages descriptor files from `$DESCRIPTORS` into `<WORKDIR>/config`.
+Any staged-only changes not copied back to the seed descriptors can be
+overwritten. Use this only when reseeding is the intended outcome.
+
+Agent rule:
+
+- if the user says "keep my current runtime config", use
+  `--descriptors-location "$WORKDIR/config"` or avoid init and use
+  `kdcube bundle`, `kdcube reload`, `kdcube stop`, and `kdcube start`
+- if the user says "start from descriptors", use the seed descriptor directory
+- if unsure, inspect `git diff` or compare `<WORKDIR>/config` with the seed
+  descriptors and ask before reseeding
+
 ## Configure The Bundle
 
 Prefer `kdcube bundle` over hand-editing YAML.
@@ -701,6 +748,8 @@ meaningful.
   descriptors
 - editing seed descriptors and expecting a running runtime to see them without
   `kdcube init`
+- re-running `kdcube init --descriptors-location <seed>` when the intent was to
+  preserve staged runtime config under `<WORKDIR>/config`
 - patching staged descriptors and forgetting `kdcube reload`
 - hardcoding `/Users/...` host paths into Docker-runtime descriptors by hand
 - registering a Telegram webhook before ngrok and the bundle public route are

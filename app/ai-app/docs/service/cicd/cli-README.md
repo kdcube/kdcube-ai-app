@@ -485,13 +485,18 @@ For all other operations (identity, config, secrets) the bundle must already exi
 Switch where proc loads the bundle from.
 
 **Local path** — proc reads from a host-mounted directory.
-The path must be the **container-visible** path (under `/bundles/`, not the host path):
+Pass a host path under `assembly.yaml -> paths.host_bundles_path`; the CLI
+validates it and writes the matching container-visible path under `/bundles/`
+into `bundles.yaml`:
 
 ```bash
 kdcube bundle <bundle_id> \
-  --local-path /bundles/my.bundle \
+  --local-path /Users/you/src/my.bundle \
   --workdir ~/.kdcube/kdcube-runtime/<tenant_id>__<project_id>
 ```
+
+If you already know the runtime-visible path, passing `/bundles/my.bundle` is
+also accepted and preserved as-is.
 
 Setting `--local-path` clears any `repo`/`ref`/`subdir` fields.
 
@@ -611,6 +616,32 @@ kdcube bundle <bundle_id> \
 `--delete` cannot be combined with any other flag. Exits with an error if the
 bundle is not found.
 
+#### Status
+
+Inspect one explicit staged bundle entry:
+
+```bash
+kdcube bundle status <bundle_id> \
+  --workdir ~/.kdcube/kdcube-runtime/<tenant_id>__<project_id>
+```
+
+By default the command reports descriptor/source/path diagnostics and whether
+`chat-proc` is running. It does not list other bundles.
+
+For local operator diagnostics, add `--live` to ask localhost `chat-proc` to
+load/discover that same explicit bundle id and return the load result:
+
+```bash
+kdcube bundle status <bundle_id> \
+  --live \
+  --json \
+  --workdir ~/.kdcube/kdcube-runtime/<tenant_id>__<project_id>
+```
+
+The live status path is not a user-facing discovery API. It is intended for
+operators who already have access to the local runtime workdir and Docker
+runtime. It does not emulate an end-user session or frontend visibility rules.
+
 #### Apply changes
 
 After patching, apply the change with:
@@ -621,6 +652,8 @@ kdcube reload <bundle_id> --workdir ~/.kdcube/kdcube-runtime/<tenant_id>__<proje
 
 `kdcube bundle` only patches the staged files under `workdir/config/`.
 It does not push the change live on its own — `kdcube reload` is still required.
+The CLI prints the exact reload command after bundle source, config, or secret
+mutations.
 
 ### 2.4 Bundles descriptor (optional)
 
@@ -654,7 +687,7 @@ Local bundle root contract:
 - compose mounts `HOST_KDCUBE_STORAGE_PATH` into proc/ingress/metrics as `/kdcube-storage`
 - `assembly.paths.host_bundles_path` is installer-facing config for non-managed local path bundles and is written to `HOST_BUNDLES_PATH`
 - compose mounts `HOST_BUNDLES_PATH` into proc as `BUNDLES_ROOT` (normally `/bundles`)
-- non-managed local bundle entries in `bundles.yaml` must therefore use the container-visible path, for example:
+- non-managed local bundle entries in `bundles.yaml` use the container-visible path; `kdcube bundle --local-path <host-path>` performs this translation for host paths under `HOST_BUNDLES_PATH`, for example:
   - host folder: `/Users/you/dev/bundles/my.bundle`
   - descriptor path: `/bundles/my.bundle`
 

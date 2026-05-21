@@ -211,6 +211,9 @@ Important reused-runtime rule:
 - if `bundles.yaml` already contains local path entries under `/bundles/...`, those are treated as container paths and preserved
 - the matching host root is taken from `assembly.yaml -> paths.host_bundles_path`
 - the CLI does not reinterpret `/bundles/...` as a host filesystem path
+- `kdcube bundle <id> --local-path <host-path>` accepts host paths under
+  `assembly.yaml -> paths.host_bundles_path` and writes the matching
+  container-visible `/bundles/...` path into `bundles.yaml`
 
 So for an initialized runtime, change bundle topology by editing:
 
@@ -239,6 +242,11 @@ bundles:
 
 `host_bundles_path` is the host parent root.
 `path` in `bundles.yaml` is the container-visible bundle root.
+For runtime patching, prefer `kdcube bundle --local-path <host-path>` over
+manual YAML edits; the CLI validates the host path and performs this translation.
+Use `kdcube bundle status <bundle_id> --workdir <workdir>` to inspect one
+explicit staged bundle entry. Add `--live` only for local operator diagnostics
+when you want localhost `chat-proc` to validate that same explicit bundle id.
 
 `--latest` is different: it resolves the latest release ref for release-image
 installs. It does not mean “latest source templates from GitHub main”.
@@ -829,7 +837,7 @@ Local bundle root contract:
 
 - `assembly.paths.host_bundles_path` is installer-facing config for non-managed local path bundles and becomes `HOST_BUNDLES_PATH`
 - compose mounts `HOST_BUNDLES_PATH` into proc as `BUNDLES_ROOT` (normally `/bundles`)
-- non-managed local bundle entries in `bundles.yaml` must use the container-visible path, for example:
+- non-managed local bundle entries in `bundles.yaml` use the container-visible path; `kdcube bundle --local-path <host-path>` performs this translation for host paths under `HOST_BUNDLES_PATH`, for example:
   - host folder: `/Users/you/dev/bundles/my.bundle`
   - descriptor path: `/bundles/my.bundle`
 

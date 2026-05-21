@@ -11,6 +11,7 @@ from kdcube_cli.cli import (
     _canonical_descriptor_dir_from_initialized_workdir,
     _check_before_start,
     _collect_runtime_info,
+    _collect_bundle_status,
     _compose_running_services,
     _descriptor_fast_path_reasons,
     _compose_logs_dir_from_env,
@@ -19,7 +20,9 @@ from kdcube_cli.cli import (
     _parse_init_secret_pairs,
     _copy_dirty_local_source,
     _repo_path_from_install_meta,
+    _bundle_apply_command,
     _resolve_cli_repo_path,
+    _resolve_bundle_local_path_for_runtime,
     _resolve_subcommand_repo,
     _resolve_subcommand_workdir,
     _resolve_cli_workdir,
@@ -117,6 +120,196 @@ def test_compose_logs_dir_from_env_uses_generated_compose_transport(tmp_path: Pa
     env_file.write_text(f"KDCUBE_LOGS_DIR={logs_dir}\n", encoding="utf-8")
 
     assert _compose_logs_dir_from_env(env_file, fallback) == logs_dir.resolve()
+
+
+def test_resolve_bundle_local_path_translates_host_path_under_runtime_root(tmp_path: Path):
+    workdir = tmp_path / "runtime"
+    host_root = tmp_path / "src"
+    bundle_root = host_root / "apps" / "my-bundle"
+    bundle_root.mkdir(parents=True)
+    config_dir = workdir / "config"
+    config_dir.mkdir(parents=True)
+    (config_dir / "assembly.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "paths": {"host_bundles_path": str(host_root)},
+                "platform": {
+                    "services": {
+                        "proc": {
+                            "bundles": {
+                                "bundles_root": "/bundles",
+                            }
+                        }
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    resolved, mode = _resolve_bundle_local_path_for_runtime(str(bundle_root), workdir)
+
+    assert resolved == "/bundles/apps/my-bundle"
+    assert mode == "translated"
+
+
+def test_resolve_bundle_local_path_preserves_container_visible_path(tmp_path: Path):
+    workdir = tmp_path / "runtime"
+    config_dir = workdir / "config"
+    config_dir.mkdir(parents=True)
+    (config_dir / "assembly.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "paths": {"host_bundles_path": str(tmp_path / "src")},
+                "platform": {"services": {"proc": {"bundles": {"bundles_root": "/bundles"}}}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    resolved, mode = _resolve_bundle_local_path_for_runtime("/bundles/apps/my-bundle", workdir)
+
+    assert resolved == "/bundles/apps/my-bundle"
+    assert mode == "container"
+
+
+def test_resolve_bundle_local_path_rejects_escaped_container_path(tmp_path: Path):
+    workdir = tmp_path / "runtime"
+    config_dir = workdir / "config"
+    config_dir.mkdir(parents=True)
+    (config_dir / "assembly.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "paths": {"host_bundles_path": str(tmp_path / "src")},
+                "platform": {"services": {"proc": {"bundles": {"bundles_root": "/bundles"}}}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        _resolve_bundle_local_path_for_runtime("/bundles/../outside", workdir)
+    except SystemExit as exc:
+        assert "does not exist" in str(exc)
+    else:
+        raise AssertionError("escaped container path should not be accepted as runtime-visible")
+
+
+def test_resolve_bundle_local_path_rejects_missing_host_path(tmp_path: Path):
+    workdir = tmp_path / "runtime"
+    config_dir = workdir / "config"
+    config_dir.mkdir(parents=True)
+    (config_dir / "assembly.yaml").write_text(
+        yaml.safe_dump({"paths": {"host_bundles_path": str(tmp_path / "src")}}),
+        encoding="utf-8",
+    )
+
+    try:
+        _resolve_bundle_local_path_for_runtime(str(tmp_path / "src" / "missing"), workdir)
+    except SystemExit as exc:
+        assert "does not exist" in str(exc)
+    else:
+        raise AssertionError("missing host path should fail")
+
+
+def test_resolve_bundle_local_path_rejects_host_path_outside_runtime_root(tmp_path: Path):
+    workdir = tmp_path / "runtime"
+    host_root = tmp_path / "src"
+    outside = tmp_path / "other" / "my-bundle"
+    outside.mkdir(parents=True)
+    config_dir = workdir / "config"
+    config_dir.mkdir(parents=True)
+    (config_dir / "assembly.yaml").write_text(
+        yaml.safe_dump({"paths": {"host_bundles_path": str(host_root)}}),
+        encoding="utf-8",
+    )
+
+    try:
+        _resolve_bundle_local_path_for_runtime(str(outside), workdir)
+    except SystemExit as exc:
+        message = str(exc)
+        assert "not visible inside chat-proc" in message
+        assert str(host_root.resolve()) in message
+        assert "/bundles" in message
+    else:
+        raise AssertionError("host path outside runtime root should fail")
+
+
+def test_bundle_apply_command_quotes_values_with_spaces(tmp_path: Path):
+    assert _bundle_apply_command("bundle with space", tmp_path / "runtime dir") == (
+        f"kdcube reload 'bundle with space' --workdir '{tmp_path / 'runtime dir'}'"
+    )
+
+
+def test_collect_bundle_status_reports_one_explicit_bundle_without_listing_others(tmp_path: Path):
+    workdir = tmp_path / "runtime"
+    config_dir = workdir / "config"
+    host_root = tmp_path / "src"
+    bundle_root = host_root / "apps" / "my-bundle"
+    bundle_root.mkdir(parents=True)
+    config_dir.mkdir(parents=True)
+    (config_dir / ".env").write_text(
+        f"HOST_BUNDLES_PATH={host_root}\n"
+        "BUNDLES_ROOT=/bundles\n"
+        "KDCUBE_COMPOSE_MODE=all-in-one\n",
+        encoding="utf-8",
+    )
+    (config_dir / "assembly.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "paths": {"host_bundles_path": str(host_root)},
+                "platform": {"services": {"proc": {"bundles": {"bundles_root": "/bundles"}}}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (config_dir / "bundles.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "bundles": {
+                    "default_bundle_id": "hidden.bundle",
+                    "items": [
+                        {
+                            "id": "hidden.bundle",
+                            "path": "/bundles/apps/hidden-bundle",
+                            "module": "entrypoint",
+                        },
+                        {
+                            "id": "my.bundle",
+                            "path": "/bundles/apps/my-bundle",
+                            "module": "entrypoint",
+                            "singleton": False,
+                        },
+                    ],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (config_dir / "bundles.secrets.yaml").write_text(
+        yaml.safe_dump({"bundles": {"items": [{"id": "my.bundle", "secrets": {"token": "x"}}]}}),
+        encoding="utf-8",
+    )
+    repo_root = tmp_path / "repo"
+    ai_app_root = repo_root / "app" / "ai-app"
+    (ai_app_root / "deployment" / "docker" / "all_in_one_kdcube").mkdir(parents=True)
+    (ai_app_root / "deployment" / "docker" / "all_in_one_kdcube" / "docker-compose.yaml").write_text("")
+    (ai_app_root / "src" / "kdcube-ai-app" / "kdcube_ai_app").mkdir(parents=True)
+
+    status = _collect_bundle_status(
+        repo_root=repo_root,
+        workdir=workdir,
+        bundle_id="my.bundle",
+        include_live=False,
+    )
+
+    assert status["declared"] is True
+    assert status["runtime_path"] == "/bundles/apps/my-bundle"
+    assert status["host_path"] == str(bundle_root)
+    assert status["host_path_exists"] is True
+    assert status["secrets_declared"] is True
+    assert "known_bundle_ids" not in status
+    assert "hidden.bundle" not in json.dumps(status)
 
 
 def test_resolve_frontend_routes_prefix_reads_generated_config(tmp_path: Path):
@@ -501,8 +694,10 @@ def test_collect_runtime_info_reports_bundle_mount_mapping(tmp_path: Path):
                 "HOST_BUNDLE_STORAGE_PATH=/host/bundle-storage",
                 "BUNDLE_STORAGE_ROOT=/bundle-storage",
                 "HOST_EXEC_WORKSPACE_PATH=/host/exec-workspace",
+                "EXEC_WORKSPACE_ROOT=/exec-workspace",
                 "HOST_REACT_DEBUG_PATH=/host/react-debug",
                 "REACT_DEBUG_ROOT=/react-debug",
+                "KDCUBE_LOGS_DIR=/host/logs",
                 "KDCUBE_COMPOSE_MODE=all-in-one",
             ]
         )
@@ -524,8 +719,11 @@ def test_collect_runtime_info_reports_bundle_mount_mapping(tmp_path: Path):
     assert info["container_bundles_root"] == "/bundles"
     assert info["host_managed_bundles_path"] == "/host/managed-bundles"
     assert info["container_managed_bundles_root"] == "/managed-bundles"
+    assert info["host_exec_workspace_path"] == "/host/exec-workspace"
+    assert info["container_exec_workspace_root"] == "/exec-workspace"
     assert info["host_react_debug_path"] == "/host/react-debug"
     assert info["container_react_debug_root"] == "/react-debug"
+    assert info["logs_dir"] == "/host/logs"
     assert info["default_bundle_id"] == "demo.bundle"
     assert info["bundle_count"] == 0
     assert info["tenant"] == "demo"

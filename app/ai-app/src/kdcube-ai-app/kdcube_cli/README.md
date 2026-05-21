@@ -251,7 +251,10 @@ hand. Changes are staged and take effect after `kdcube reload`.
 **Source mode** — point the bundle at a local path or a git repo:
 
 ```bash
-# Local path (container-visible path under /bundles/)
+# Local host path under paths.host_bundles_path; CLI stores the /bundles/... path
+kdcube bundle <bundle_id> --local-path /Users/you/src/my.bundle
+
+# Already runtime-visible path is also accepted
 kdcube bundle <bundle_id> --local-path /bundles/my.bundle
 
 # Git repo (platform clones to /managed-bundles/ on reload)
@@ -287,6 +290,23 @@ kdcube reload <bundle_id>
 # Delete a bundle entry (also removes its secrets entry)
 kdcube bundle <bundle_id> --delete
 ```
+
+**Status** — inspect one explicit bundle entry:
+
+```bash
+kdcube bundle status <bundle_id> --workdir ~/.kdcube/kdcube-runtime/<tenant>__<project>
+```
+
+By default this reports staged descriptor/path/runtime-service diagnostics only
+and does not list other bundles. For local operator diagnostics, add `--live`
+to ask localhost `chat-proc` to validate that same explicit bundle id:
+
+```bash
+kdcube bundle status <bundle_id> --live --json --workdir ~/.kdcube/kdcube-runtime/<tenant>__<project>
+```
+
+`--live` is an operator-level check for someone with local workdir and Docker
+access. It does not emulate an end-user session or frontend visibility rules.
 
 When `--local-path` or `--git-repo` is given and the bundle doesn't exist yet,
 the command creates a new entry (upsert). All other flags require an existing

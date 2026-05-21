@@ -16,6 +16,7 @@ import traceback
 import uuid
 from dataclasses import asdict
 from datetime import datetime
+from pathlib import Path
 from typing import Optional, Dict, Any, Set, List, Tuple
 
 import httpx
@@ -938,6 +939,12 @@ class BundleReloadAuthorityRequest(BaseModel):
     bundle_id: Optional[str] = None
 
 
+class BundleStatusRequest(BaseModel):
+    tenant: Optional[str] = None
+    project: Optional[str] = None
+    bundle_id: str
+
+
 def _bundles_channel(fmt: str, *, tenant: str, project: str) -> str:
     return fmt.format(tenant=tenant, project=project)
 
@@ -1848,6 +1855,109 @@ async def internal_set_bundles(payload: AdminBundlesUpdateRequest, request: Requ
         permissions=[],
     )
     return await _do_set_bundles(payload, request, automation_session)
+
+
+@internal_router.post("/internal/bundles/status", status_code=200)
+async def internal_bundle_status(payload: BundleStatusRequest, request: Request):
+    """
+    Localhost-only bundle status endpoint for CLI diagnostics.
+
+    This is intentionally not a user-facing discovery API. It accepts one
+    explicit bundle id, never lists other bundles, and is guarded by the same
+    localhost-only check as the internal reload endpoint.
+    """
+    client_ip = request.client.host if request.client else ""
+    if client_ip not in _LOCALHOST:
+        raise HTTPException(status_code=403, detail="Internal endpoint: localhost only")
+
+    settings = get_settings()
+    tenant_id = payload.tenant or settings.TENANT
+    project_id = payload.project or settings.PROJECT
+    bundle_id = str(payload.bundle_id or "").strip()
+    if not bundle_id:
+        raise HTTPException(status_code=400, detail="bundle_id is required")
+
+    redis = _get_app_redis(request)
+    try:
+        reg = await load_registry(redis, tenant_id, project_id)
+    except Exception as exc:
+        return {
+            "status": "error",
+            "tenant": tenant_id,
+            "project": project_id,
+            "bundle_id": bundle_id,
+            "declared": False,
+            "loaded": False,
+            "last_error": {
+                "type": type(exc).__name__,
+                "message": str(exc),
+                "where": "load_registry",
+            },
+            "authority": describe_authoritative_bundle_store(tenant_id, project_id),
+        }
+
+    entry = reg.bundles.get(bundle_id)
+    if entry is None:
+        return {
+            "status": "ok",
+            "tenant": tenant_id,
+            "project": project_id,
+            "bundle_id": bundle_id,
+            "declared": False,
+            "loaded": False,
+            "authority": describe_authoritative_bundle_store(tenant_id, project_id),
+        }
+
+    entry_dict = entry.model_dump()
+    spec = AgenticBundleSpec(
+        path=entry.path,
+        module=entry.module,
+        singleton=bool(entry.singleton),
+    )
+    try:
+        path_exists = bool(entry.path and Path(entry.path).exists())
+    except Exception:
+        path_exists = False
+
+    cached_before = get_cached_manifest(spec) is not None
+    try:
+        manifest = load_bundle_manifest(spec, bundle_id=bundle_id)
+        props = _authoritative_bundle_props(tenant=tenant_id, project=project_id, bundle_id=bundle_id)
+        descriptor = _manifest_to_descriptor(manifest, props=props)
+        return {
+            "status": "ok",
+            "tenant": tenant_id,
+            "project": project_id,
+            "bundle_id": bundle_id,
+            "declared": True,
+            "loaded": True,
+            "cached_before": cached_before,
+            "cached_after": get_cached_manifest(spec) is not None,
+            "entry": entry_dict,
+            "path_exists": path_exists,
+            "interface": descriptor,
+            "authority": describe_authoritative_bundle_store(tenant_id, project_id),
+        }
+    except Exception as exc:
+        return {
+            "status": "ok",
+            "tenant": tenant_id,
+            "project": project_id,
+            "bundle_id": bundle_id,
+            "declared": True,
+            "loaded": False,
+            "cached_before": cached_before,
+            "cached_after": get_cached_manifest(spec) is not None,
+            "entry": entry_dict,
+            "path_exists": path_exists,
+            "last_error": {
+                "type": type(exc).__name__,
+                "message": str(exc),
+                "where": "load_bundle_manifest",
+                "traceback_tail": traceback.format_exc(limit=8),
+            },
+            "authority": describe_authoritative_bundle_store(tenant_id, project_id),
+        }
 
 
 async def _do_set_bundles(
