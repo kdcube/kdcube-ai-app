@@ -168,9 +168,14 @@ Operationally, this distinction matters:
   root-owned bind source, which can later make the UID-dropped executor fail when
   opening `/workspace/work/main.py` or `/workspace/logs/executor/executor.log`.
 
-The runtime should defensively pre-create and chmod only executor-visible split
-surfaces (`work`, artifact output, and `logs/executor`) before launching the
-executor. It must not make supervisor-only paths visible to the executor.
+The runtime should defensively pre-create and chmod split bind-source surfaces
+through the proc-visible `/exec-workspace` tree before launching sibling
+containers. This includes the executor-visible surfaces (`work`, artifact
+output, and `logs/executor`) plus supervisor-owned runtime/log paths needed by
+the supervisor container. Pre-creating a supervisor-owned path is not a grant to
+the executor: the executor argv must still exclude `/workspace/runtime-out`,
+`logs/supervisor`, `infra.log`, bundle roots, bundle storage, platform storage,
+descriptor files, and provider secrets.
 
 ```
 Host, combined strategy
