@@ -434,22 +434,20 @@ export default function App() {
     void refreshConversationList()
   }, [ready, bundleId])
 
-  if (!ready) {
-    return (
-      <div className="shell-grid flex min-h-screen items-center justify-center px-6">
-        <div className="glass-panel px-6 py-5 text-center">
-          <div className="k-status k-live justify-center">Connecting application config…</div>
-        </div>
-      </div>
-    )
-  }
-
-  /* Stable per-render handlers — `useStableCallback` returns a function
-   * reference that never changes across renders but always invokes the
-   * latest closure. This is what lets `memo(TurnView)` /
-   * `memo(Composer)` / `memo(ConversationsSidebar)` actually skip work
-   * during streaming, since otherwise every inline `onX={() => …}`
-   * would allocate a fresh function each render and bust memoization. */
+  /* Stable per-render handlers — must be declared BEFORE any early
+   * return so hook call order is identical on every render (the
+   * `if (!ready) return …` guard below would otherwise skip these on
+   * the boot render and add them on the ready render, tripping React
+   * #310). `useStableCallback` returns a function reference that never
+   * changes across renders but always invokes the latest closure;
+   * that's what lets `memo(TurnView)` / `memo(Composer)` /
+   * `memo(ConversationsSidebar)` actually skip work during streaming.
+   *
+   * The closures reference helpers (`loadConversation`,
+   * `deleteConversation`, `refreshConversationList`, `startNewChat`,
+   * `sendMessage`) defined later in this function body. JS closure
+   * semantics make that safe — the lookup happens at invocation time,
+   * not at the useStableCallback call. */
   const handleBannerDismiss = useStableCallback((id: string) => {
     if (id === 'boot-error') {
       setBootError(null)
@@ -502,6 +500,16 @@ export default function App() {
     if (snapshot.inputLocked || snapshot.connection === 'booting') return
     void sendMessage('', 'steer')
   })
+
+  if (!ready) {
+    return (
+      <div className="shell-grid flex min-h-screen items-center justify-center px-6">
+        <div className="glass-panel px-6 py-5 text-center">
+          <div className="k-status k-live justify-center">Connecting application config…</div>
+        </div>
+      </div>
+    )
+  }
 
   const connectionDotClass =
     state.connection === 'connected'
