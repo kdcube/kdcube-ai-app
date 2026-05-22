@@ -167,6 +167,111 @@ For bundle shape, surface choice, and wrapper design, return to:
 
 - [how-to-write-bundle-README.md](how-to-write-bundle-README.md)
 
+## Canonical CLI Flow Schemas
+
+This is the Tier 1 source of truth for the local CLI runtime flow. Other Tier 1
+bundle-builder docs should point here instead of duplicating these diagrams.
+
+### Init Once
+
+Use `init` for first-time runtime creation or intentional reseeding.
+
+```text
+seed descriptors                         platform source
+assembly.yaml / bundles.yaml / ...       --path / --upstream / --latest / --release
+              |                                |
+              +---------------+----------------+
+                              v
+              kdcube init --descriptors-location <dir> --build
+                              |
+                              v
+       ~/.kdcube/kdcube-runtime/<tenant>__<project>/
+       config/*.yaml + repo/ + compose/env files + data/
+                              |
+                              v
+                         kdcube start
+                              |
+                              v
+                  http://localhost:<port>/platform/chat
+```
+
+`init` creates the workdir, stages descriptors into `workdir/config`, prepares
+env/compose files, and optionally builds images. It refuses to silently reuse an
+already initialized workdir.
+
+### Refresh Platform Runtime
+
+Use `refresh` for an already initialized runtime. It preserves staged
+descriptors.
+
+```text
+existing runtime workdir
+config/*.yaml  ----------------------------- preserved
+      |
+      | optional platform source selector
+      | none / --path / --upstream / --latest / --release
+      v
+kdcube refresh [selector] --build
+      |
+      +-- with --path: copy that local checkout into workdir/repo first
+      +-- with --upstream/--latest/--release: update workdir/repo to that ref
+      +-- with no selector: rebuild the already staged/recorded source
+      +-- with --build: rebuild images
+      +-- unless --no-restart: restart the stack
+```
+
+`kdcube refresh --build` does not copy the current shell checkout by itself.
+Pass `--path /path/to/kdcube-ai-app` when the runtime should rebuild from that
+local checkout. Use exactly one of `--path`, `--upstream`, `--latest`, or
+`--release <ref>` when the platform source should change.
+
+### Apply Bundle Config And Reload
+
+Use `bundle config apply` when the user intentionally wants seed
+`bundles.yaml` / `bundles.secrets.yaml` to replace the active runtime bundle
+descriptor copy. Use `bundle reload` when the active runtime descriptor or
+bundle source already changed and proc only needs to reload it.
+
+```text
+seed content descriptors
+bundles.yaml + bundles.secrets.yaml
+              |
+              v
+kdcube bundle config apply --descriptors-location <dir> [--dry-run]
+              |
+              v
+active runtime bundle descriptors
+workdir/config/bundles.yaml + bundles.secrets.yaml
+              |
+              v
+kdcube bundle reload <bundle_id>
+              |
+              v
+proc clears bundle cache and reloads code/config on the next request
+```
+
+`bundle config apply` does not rebuild platform images, restart Docker, or
+touch `assembly.yaml`, `gateway.yaml`, or `secrets.yaml`. With `--reload`, it
+also reloads the changed bundle ids after staging descriptor changes.
+
+### Export Before Replacing Live Bundle State
+
+```text
+live runtime bundle authority
+workdir/config/bundles.yaml + bundles.secrets.yaml
+              |
+              v
+kdcube export --out-dir <dir>
+              |
+              v
+portable bundle descriptors for review
+bundles.yaml + bundles.secrets.yaml
+```
+
+Export writes bundle descriptors only. Local non-git bundle paths are normalized
+back to host paths; git-backed entries keep repo/ref/subdir and drop incidental
+materialized runtime paths.
+
 ## If Your Role Is Configurator Or Deployer
 
 Use this page differently depending on the job.

@@ -43,6 +43,12 @@ Tier 1 rule:
 The goal is not “run something once”.
 The goal is to prove that the bundle works in the supported KDCube runtime contract.
 
+For the command lifecycle behind runtime tests, use
+[how-to-configure-and-run-bundle-README.md#canonical-cli-flow-schemas](how-to-configure-and-run-bundle-README.md#canonical-cli-flow-schemas).
+The testing loop normally uses `kdcube bundle reload <bundle_id>` after bundle
+source/config changes and `kdcube refresh ... --build` only after platform
+source/image changes.
+
 Critical Python import rule:
 
 - bundle-local code must use package-relative imports such as
@@ -365,7 +371,7 @@ other inherited SDK behavior.
 
 This pattern is for local unit scope only. It does not prove that chat-proc can
 load the bundle. The loadability check is the shared bundle suite plus a real
-`kdcube reload <bundle_id>` / route probe in a running runtime.
+`kdcube bundle reload <bundle_id>` / route probe in a running runtime.
 
 ## 1D. Runtime Log And Timeline Checks
 
@@ -709,7 +715,7 @@ What to validate:
 
 ### E. Bundle Smoke Probes
 
-After local tests and `kdcube reload <bundle_id>`, run a small route-level
+After local tests and `kdcube bundle reload <bundle_id>`, run a small route-level
 smoke table. The goal is to prove that the staged descriptor, proc loader,
 manifest discovery, operation routing, and static widget serving agree.
 
@@ -1237,13 +1243,14 @@ kdcube start --tenant <t> --project <p>
 Then after code/descriptor changes:
 
 ```bash
-kdcube reload <bundle_id> --tenant <t> --project <p>
+kdcube bundle reload <bundle_id> --tenant <t> --project <p>
 ```
 
 After platform-source changes that need rebuilt images:
 
 ```bash
 kdcube refresh --tenant <t> --project <p> --build
+kdcube refresh --tenant <t> --project <p> --path /path/to/kdcube-ai-app --build
 ```
 
 To test the same staged runtime against another platform source without

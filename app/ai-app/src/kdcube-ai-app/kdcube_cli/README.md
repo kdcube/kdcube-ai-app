@@ -210,6 +210,75 @@ kdcube stop --tenant acme --project staging
 If you've set `kdcube defaults --default-tenant acme --default-project staging`,
 you can drop `--tenant`/`--project` from these commands entirely.
 
+### Runtime flow map
+
+Use these three flows as the mental model for local KDCube operation.
+
+Init is first-time setup for a runtime workdir:
+
+```text
+seed descriptors                         platform source
+assembly.yaml / bundles.yaml / ...       --path / --upstream / --latest / --release
+              |                                |
+              +---------------+----------------+
+                              v
+              kdcube init --descriptors-location <dir> --build
+                              |
+                              v
+       ~/.kdcube/kdcube-runtime/<tenant>__<project>/
+       config/*.yaml + repo/ + compose/env files + data/
+                              |
+                              v
+                         kdcube start
+                              |
+                              v
+                  http://localhost:<port>/platform/chat
+```
+
+Refresh is for an already initialized runtime. It preserves staged descriptors:
+
+```text
+existing runtime workdir
+config/*.yaml  ----------------------------- preserved
+      |
+      | optional platform source selector
+      | none / --path / --upstream / --latest / --release
+      v
+kdcube refresh [selector] --build
+      |
+      +-- with --path: copy that local checkout into workdir/repo first
+      +-- with --upstream/--latest/--release: update workdir/repo to that ref
+      +-- with no selector: rebuild the already staged/recorded source
+      +-- with --build: rebuild images
+      +-- unless --no-restart: restart the stack
+```
+
+Bundle descriptor apply and reload are bundle-only operations. They do not
+rebuild platform images or restart Docker:
+
+```text
+seed content descriptors
+bundles.yaml + bundles.secrets.yaml
+              |
+              v
+kdcube bundle config apply --descriptors-location <dir> [--dry-run]
+              |
+              v
+active runtime bundle descriptors
+workdir/config/bundles.yaml + bundles.secrets.yaml
+              |
+              v
+kdcube bundle reload <bundle_id>
+              |
+              v
+proc clears bundle cache and reloads code/config on the next request
+```
+
+Use `kdcube export` before replacing live runtime bundle descriptors with an
+older seed copy. Export writes `bundles.yaml` and `bundles.secrets.yaml`;
+local non-git bundle paths are normalized back to host paths, while git-backed
+entries keep repo/ref/subdir and drop materialized runtime paths.
+
 ### Advanced workdir placement
 
 When the runtime must live outside the default base (`~/.kdcube/kdcube-runtime`),

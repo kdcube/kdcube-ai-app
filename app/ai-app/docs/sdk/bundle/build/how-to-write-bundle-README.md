@@ -41,6 +41,12 @@ It is the working instruction set for doing the job correctly.
 If you are not yet sure where this page fits in the full reading order, start
 with [how-to-navigate-kdcube-docs-README.md](how-to-navigate-kdcube-docs-README.md).
 
+For the local runtime command lifecycle, use
+[how-to-configure-and-run-bundle-README.md#canonical-cli-flow-schemas](how-to-configure-and-run-bundle-README.md#canonical-cli-flow-schemas).
+Bundle authors should know this split early: `init` creates the runtime,
+`refresh` changes platform source/images, and `bundle reload` applies bundle
+code/config changes.
+
 Tier 1 rule:
 
 - this page is one part of the Tier 1 pack
@@ -511,7 +517,7 @@ name as the human-visible source of truth. `entrypoint.py` may still define a
 constant for decorators, but it must match the release/config/interface value.
 
 If a bundle is renamed, update identity-bearing files in one change and run the
-shared bundle suite plus a real `kdcube reload <bundle_id>` check. A mismatch
+shared bundle suite plus a real `kdcube bundle reload <bundle_id>` check. A mismatch
 can look like a manifest miss, widget miss, or wrong bundle operation path.
 
 ## 1C. Bundle Design Decision Matrix

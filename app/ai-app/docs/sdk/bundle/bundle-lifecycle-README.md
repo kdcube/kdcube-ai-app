@@ -270,12 +270,12 @@ Three classes of changes matter during bundle development:
 
 2. **Descriptor-backed bundle config**
    - comes from `bundles.yaml`
-   - affects new requests after proc reapplies the descriptor (`reset-env` / `kdcube reload`)
+   - affects new requests after proc reapplies the descriptor (`reset-env` / `kdcube bundle reload`)
 
 3. **Bundle code changes**
    - require proc cache eviction before the next request should load the updated module
    - for local development, the intended path is:
-     - `kdcube reload <bundle_id> --workdir <runtime-workdir>`
+     - `kdcube bundle reload <bundle_id> --workdir <runtime-workdir>`
 
 4. **`@venv` requirements changes**
    - if only `requirements.txt` changed, the next call to the decorated function will rebuild the cached venv automatically

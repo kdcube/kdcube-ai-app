@@ -44,6 +44,12 @@ This page is the SDK/platform block map, not the whole bundle-building route.
 The `ks:docs/...` ids in front matter are KDCube knowledge-space doc ids; in a
 local checkout they resolve under `repo:kdcube-ai-app/app/ai-app/docs/...`.
 
+For the local runtime command flow, use the canonical schemas in
+[how-to-configure-and-run-bundle-README.md#canonical-cli-flow-schemas](how-to-configure-and-run-bundle-README.md#canonical-cli-flow-schemas):
+`init` once, `refresh` for platform source/image changes, and
+`bundle config apply` / `bundle reload` for bundle descriptor and source
+changes.
+
 ## Assembly Rule
 
 For each feature, choose the closest existing block first:

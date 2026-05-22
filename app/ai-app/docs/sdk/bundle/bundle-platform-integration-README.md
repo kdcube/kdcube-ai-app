@@ -9,6 +9,7 @@ see_also:
   - ks:docs/sdk/bundle/bundle-agent-integration-README.md
   - ks:docs/sdk/bundle/bundle-entrypoint-classes-README.md
   - ks:docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
+  - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
   - ks:docs/sdk/bundle/bundle-transports-README.md
   - ks:docs/sdk/bundle/bundle-interfaces-README.md
   - ks:docs/sdk/bundle/bundle-scheduled-jobs-README.md
@@ -48,6 +49,13 @@ disclosure for guidance that remains loadable by exact id or import. See
 
 For the higher-level inbound/outbound transport map, use
 [bundle-transports-README.md](bundle-transports-README.md).
+
+For the CLI lifecycle that makes these integration changes visible in a local
+runtime, use
+[how-to-configure-and-run-bundle-README.md#canonical-cli-flow-schemas](build/how-to-configure-and-run-bundle-README.md#canonical-cli-flow-schemas).
+In short: `init` creates the runtime, `refresh` changes platform source/images,
+`bundle config apply` reapplies seed bundle descriptors, and
+`bundle reload` clears bundle caches for code/config changes.
 
 All of this is implemented in:
 

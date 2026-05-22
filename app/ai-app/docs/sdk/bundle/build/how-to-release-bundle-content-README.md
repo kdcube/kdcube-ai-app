@@ -40,6 +40,12 @@ It is also the recommended way to work when building a bundle from scratch:
 - validate before release
 - only then commit, tag, push, and update runtime descriptors
 
+For runtime command choice during release validation or descriptor ref updates,
+use
+[how-to-configure-and-run-bundle-README.md#canonical-cli-flow-schemas](how-to-configure-and-run-bundle-README.md#canonical-cli-flow-schemas).
+Do not re-run `init` to validate an existing local runtime; use `refresh` for
+platform source/image changes and `bundle reload` for bundle changes.
+
 Do not rely on another release procedure when using this page.
 This page is the self-contained public bundle-builder procedure.
 

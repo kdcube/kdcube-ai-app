@@ -69,6 +69,11 @@ Important:
 - the same agent should be able to plan across those roles without resetting
   context
 
+If the immediate question is "which KDCube CLI command should I run now?", use
+[how-to-configure-and-run-bundle-README.md#canonical-cli-flow-schemas](how-to-configure-and-run-bundle-README.md#canonical-cli-flow-schemas).
+That section is the single Tier 1 map for `init`, `refresh`,
+`bundle config apply`, `bundle reload`, and `export`.
+
 ## 1. The Short Answer
 
 Do not start by reading every bundle doc.

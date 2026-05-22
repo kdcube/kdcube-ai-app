@@ -32,6 +32,12 @@ Use this note as the handoff contract for the Build-with-KDCube plugins.
 The current plugin code in the repo may be outdated.
 This doc is the contract, not the old tree.
 
+The plugin should treat
+[how-to-configure-and-run-bundle-README.md#canonical-cli-flow-schemas](how-to-configure-and-run-bundle-README.md#canonical-cli-flow-schemas)
+as the canonical CLI command map. Do not duplicate that map across plugin
+prompts; point agents there and let task-specific docs explain only what is
+different for the current role.
+
 ## Link Conventions For Plugins
 
 The plugin should preserve logical links instead of baking in one developer's

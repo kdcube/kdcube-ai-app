@@ -13,6 +13,7 @@ see_also:
   - ks:docs/sdk/bundle/bundle-reserved-platform-properties-README.md
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
   - ks:docs/sdk/bundle/bundle-entrypoint-classes-README.md
+  - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
 ---
 # Bundle Properties And Secrets Lifecycle
 
@@ -135,6 +136,33 @@ await get_service_secret_async("openai.api_key")
       +-- first: current bundle secret services.openai.api_key
       +-- then: platform/global secret services.openai.api_key
 ```
+
+Descriptor apply/export path:
+
+```text
+seed descriptor directory
+bundles.yaml + bundles.secrets.yaml
+          |
+          | kdcube bundle config apply --descriptors-location <dir>
+          v
+active runtime bundle authority
+workdir/config/bundles.yaml + bundles.secrets.yaml
+          |
+          | Bundle Admin / set_bundle_prop / set_bundle_secret
+          v
+new live deployment-scoped bundle state
+          |
+          | kdcube export --out-dir <dir>
+          v
+reviewable descriptor output
+bundles.yaml + bundles.secrets.yaml
+```
+
+`bundle config apply` is a user/operator action for reapplying seed bundle
+descriptors to an existing runtime. It does not touch `assembly.yaml`,
+`gateway.yaml`, or `secrets.yaml`. Export is the reverse safety valve: use it
+before replacing runtime bundle descriptors when Bundle Admin or runtime writes
+may have made the live state newer than the seed files.
 
 ## What Is Merged
 
@@ -290,6 +318,8 @@ bundle code.
 | `await set_bundle_prop(path, value)` | Persists deployment-scoped non-secret bundle prop through the configured bundle descriptor authority, updates Redis cache, and publishes `bundles.props.update`. |
 | Bundle Admin props merge | Same authority/cache/update path, with admin actor metadata. |
 | `kdcube bundle --set-config ...` | Patches the staged runtime descriptor for the active workdir and should be followed by reload when runtime behavior must change. |
+| `kdcube bundle config apply --descriptors-location ...` | Reapplies seed `bundles.yaml` and optional `bundles.secrets.yaml` into an existing runtime. This is a user/operator descriptor-authority action, not a platform refresh. |
+| `kdcube export --out-dir ...` | Exports deployment-scoped live bundle descriptors back to `bundles.yaml` and `bundles.secrets.yaml` for review or seed descriptor updates. |
 | `await set_bundle_secret(path, value)` | Persists deployment-scoped bundle secret through the configured secrets provider. |
 | Bundle Admin secrets write | Writes bundle secrets through the configured secrets provider and tracks key metadata for admin/export flows. |
 

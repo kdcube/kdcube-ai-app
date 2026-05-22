@@ -6,6 +6,7 @@ tags: ["sdk", "bundle", "configuration", "runtime", "economics", "exec", "memory
 keywords: ["platform interpreted bundle props", "model selection props", "embedding configuration props", "user memory configuration props", "economics reservation props", "execution runtime props", "mcp service props", "reserved bundle property paths", "platform owned bundle config", "pdf footer", "pdf_footer", "write_pdf footer"]
 see_also:
   - ks:docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
+  - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
   - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
   - ks:docs/configuration/bundles-descriptor-README.md
   - ks:docs/sdk/bundle/bundle-developer-guide-README.md
@@ -22,6 +23,11 @@ Start with:
 
 Use this page after those when you specifically need the reserved bundle prop
 paths interpreted by the platform.
+
+For the operational CLI flow around those props, use
+[how-to-configure-and-run-bundle-README.md#canonical-cli-flow-schemas](build/how-to-configure-and-run-bundle-README.md#canonical-cli-flow-schemas).
+Reserved props are still ordinary deployment-scoped bundle props for
+`bundle config apply`, `bundle reload`, and `export`.
 
 Most bundle props are bundle-defined and opaque to the platform.  
 Some property paths are **reserved** and interpreted by the platform entrypoints or runtimes.

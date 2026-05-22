@@ -52,6 +52,12 @@ It does not replace:
 - [email-external-prereq-README.md](../../integrations/email/email-external-prereq-README.md)
   for Google Cloud and Gmail OAuth provider setup
 
+Before running or changing CLI commands, use the canonical schemas in
+[how-to-configure-and-run-bundle-README.md#canonical-cli-flow-schemas](how-to-configure-and-run-bundle-README.md#canonical-cli-flow-schemas).
+They define the distinction between `init`, `refresh`, `bundle config apply`,
+`bundle reload`, and `export`. This page is the agent runbook that applies
+those flows.
+
 Critical Python import rule:
 
 - when this setup exposes bundle import failures, check that bundle-local code
@@ -414,6 +420,8 @@ Agent rule:
 
 - if the user wants to **rebuild platform images** or **restart** after editing
   platform source: `kdcube refresh --tenant T --project P --build`.
+- if the user wants refresh to **copy a specific local platform checkout first**:
+  add `--path /path/to/kdcube-ai-app` to the refresh command.
 - if the user wants to **move an existing runtime to a different platform
   source** while preserving descriptors: add exactly one of `--latest`,
   `--upstream`, or `--release <ref>` to `kdcube refresh`.
