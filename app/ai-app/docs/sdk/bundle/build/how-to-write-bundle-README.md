@@ -4,7 +4,7 @@ title: "How To Write A Bundle"
 summary: "Authoring guide for bundle creators and integrators: bundle shape, lifecycle, decorators, runtime surfaces, configuration and storage decisions, and how to turn a product idea or existing app into a deployable bundle."
 tags: ["sdk", "bundle", "authoring", "workflow", "widget", "api", "testing"]
 keywords: ["bundle authoring guide", "bundle creator path", "bundle integrator path", "end to end bundle design", "decorator selection", "runtime surface selection", "widget api mcp cron on_job choices", "shared sdk widget components", "configuration and storage decisions", "bundle lifecycle design", "reference authoring patterns"]
-updated_at: 2026-05-21
+updated_at: 2026-05-22
 see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
@@ -12,8 +12,10 @@ see_also:
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-release-bundle-content-README.md
   - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
+  - ks:docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
   - ks:docs/sdk/bundle/bundle-developer-guide-README.md
   - ks:docs/sdk/bundle/versatile-reference-bundle-README.md
+  - ks:docs/sdk/bundle/bundle-entrypoint-classes-README.md
   - ks:docs/sdk/bundle/bundle-agent-integration-README.md
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
   - ks:docs/sdk/bundle/bundle-widget-integration-README.md
@@ -62,6 +64,7 @@ Use this document together with:
 - [versatile-reference-bundle-README.md](../versatile-reference-bundle-README.md)
 - [bundle-platform-integration-README.md](../bundle-platform-integration-README.md)
 - [bundle-widget-integration-README.md](../bundle-widget-integration-README.md)
+- [bundle-properties-and-secrets-lifecycle-README.md](../bundle-properties-and-secrets-lifecycle-README.md)
 - [bundle-runtime-README.md](../bundle-runtime-README.md)
 - [../../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../../configuration/bundle-runtime-configuration-and-secrets-README.md)
 
@@ -126,7 +129,7 @@ Shared widget rule:
   inside its own webapp, configure `ui.widgets.<alias>.shared_sources`
   and import `@kdcube/memory-widget` or `@kdcube/telegram-widget`
 - keep that source wiring in `configuration_defaults()` for built-in/reference
-  bundles so descriptors can usually say only `enabled: true`
+  bundles so descriptors can usually carry only deployment overrides
 - keep product policy and authorization in bundle APIs; shared components are
   presentation code with injected operation callers
 - when inheriting an SDK/base widget, use `enabled.widget.<alias>: false` to
@@ -259,7 +262,7 @@ When a bundle exists in a real environment, its lifecycle is:
    - typed platform settings via `get_settings()`
 7. Mutable state goes to the right tier:
    - bundle local storage for instance-local filesystem state
-   - `AIBundleStorage` for bundle artifacts
+   - `BundleArtifactStorage` for bundle artifacts
    - DB/Redis/external systems for runtime/business state
 8. Config changes are applied by reload/reconcile:
    - `bundles.yaml` / `bundles.secrets.yaml` changes
@@ -363,6 +366,12 @@ Skeleton file rules:
 - update `docs/journal/journal.md` in the same change that alters runtime
   behavior, tool/skill contracts, storage semantics, user-scope mapping,
   release shape, or Tier 1 builder guidance
+- if the bundle has source-folder main UI or widgets, the entrypoint class
+  should inherit a concrete `BaseEntrypoint` family class unless it explicitly
+  implements the same UI build contract; otherwise `ui.main_view` /
+  `ui.widgets.<alias>.src_folder` can be present while no static artifacts are
+  built or served. The family includes the bare base plus economics and memory
+  variants; see [Bundle Entrypoint Classes](../bundle-entrypoint-classes-README.md)
 
 If the bundle needs external human setup before an integration can work, add an
 operator-facing integration homework doc such as:
@@ -482,6 +491,29 @@ For tool-specific details, see
 [custom-tools-README.md#bundle-local-imports-from-ref-tools](../../tools/custom-tools-README.md#bundle-local-imports-from-ref-tools)
 and [tool-subsystem-README.md#relative-imports-inside-ref-tools](../../tools/tool-subsystem-README.md#relative-imports-inside-ref-tools).
 
+## 1B.3 Bundle Identity Rule
+
+Treat bundle identity as a release contract, not as a casual string.
+
+The same bundle id normally appears in:
+
+- the bundle directory name
+- `release.yaml`
+- `entrypoint.py` / `@bundle_id(...)`
+- `config/bundles.template.yaml`
+- `config/bundles.secrets.template.yaml`
+- interface files such as OpenAPI descriptions
+- staged or deployment `bundles.yaml`
+
+Choose one canonical value before implementation and keep the others aligned.
+For content/application bundles, prefer `release.yaml` plus the bundle folder
+name as the human-visible source of truth. `entrypoint.py` may still define a
+constant for decorators, but it must match the release/config/interface value.
+
+If a bundle is renamed, update identity-bearing files in one change and run the
+shared bundle suite plus a real `kdcube reload <bundle_id>` check. A mismatch
+can look like a manifest miss, widget miss, or wrong bundle operation path.
+
 ## 1C. Bundle Design Decision Matrix
 
 Before writing code, classify the product surface and state model.
@@ -501,7 +533,7 @@ State-placement rule:
   deployment-scoped configuration
 - bundle local storage:
   instance-local mutable files/workspaces/caches
-- `AIBundleStorage`:
+- `BundleArtifactStorage`:
   persisted bundle artifacts
 - DB/Redis/external APIs:
   runtime or business state
@@ -589,14 +621,14 @@ Use this compact map while writing bundle code:
 | --- | --- | --- |
 | local mutable files on this instance | `self.bundle_storage_root()` | workspaces, cloned repos, local indexes, generated files |
 | same local root outside entrypoint code | `bundle_storage_dir(...)` | helper code that has no `self` |
-| persisted bundle artifacts | `AIBundleStorage` | artifact read/write/list/delete through the storage backend |
+| persisted bundle artifacts | `BundleArtifactStorage` | artifact read/write/list/delete through the storage backend |
 | lightweight Redis cache | `create_kv_cache()` or namespaced cache helpers | small runtime cache, flags, lightweight transient state |
 | git subprocess auth/transport | `build_git_env(...)`, `normalize_git_remote_url(...)` | PAT/SSH-safe git commands without mutating process-global env |
 
 Hard rule:
 
 - local mutable filesystem state -> bundle storage helper
-- persisted bundle artifacts -> `AIBundleStorage`
+- persisted bundle artifacts -> `BundleArtifactStorage`
 - lightweight transient cache -> KV cache
 - git auth/transport -> shared git helper, not custom `os.environ` mutation
 
@@ -744,6 +776,10 @@ If the bundle ships a React widget/web app:
 
 - put the widget app source under a stable widget folder such as `ui/widgets/<widget-alias>`
 - declare `ui.widgets.<alias>.src_folder` and `build_command`
+- inherit from the `BaseEntrypoint` family, for example
+  `BaseEntrypointWithMemory` or `BaseEntrypointWithEconomicsAndMemory`, or
+  implement the same `_ensure_ui_build(...)` contract so source-folder widget
+  artifacts are built and refreshed
 - use the standard build command shape:
   `npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build`
 - make Vite write to `process.env.OUTDIR`; do not pass the output directory as
@@ -1786,12 +1822,12 @@ Use local bundle storage for:
 - cron workspaces
 - temporary generated files that belong to this instance
 
-This is separate from `AIBundleStorage`.
+This is separate from `BundleArtifactStorage`.
 
 Mental model:
 
 - local bundle storage = instance-visible filesystem
-- `AIBundleStorage` = backend storage API for bundle artifacts
+- `BundleArtifactStorage` = backend storage API for bundle artifacts
 - hosted conversation files = current-turn user-visible artifacts; use
   `ret.artifact_type == "files"` with `ret.files[]` or `host_files(...)`
   instead of treating bundle storage paths as deliverable links

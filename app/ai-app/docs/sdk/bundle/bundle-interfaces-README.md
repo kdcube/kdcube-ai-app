@@ -7,6 +7,7 @@ keywords: ["communicator interface", "background job interface", "on_job interfa
 see_also:
   - ks:docs/sdk/bundle/bundle-developer-guide-README.md
   - ks:docs/sdk/bundle/bundle-runtime-README.md
+  - ks:docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
   - ks:docs/sdk/bundle/bundle-delivery-and-update-README.md
   - ks:docs/sdk/bundle/bundle-venv-README.md
   - ks:docs/sdk/bundle/bundle-index-README.md
@@ -501,9 +502,16 @@ Concrete example:
 - bundle-operation backend:
   `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/integrations.py`
 
-## 6) Reading bundle props from cache
+## 6) Reading effective bundle props
 
-Bundles can store UI config or parameters in bundle props. The admin UI writes props to Redis (KV cache), and the bundle reads them at runtime. Define defaults in `entrypoint.configuration` and read effective values from `bundle_props` (defaults + overrides).
+Bundles can store UI config or parameters in bundle props. Define defaults in
+`entrypoint.configuration` / `configuration_defaults()` and read effective
+values from `self.bundle_props` or `self.bundle_prop(...)`.
+
+Effective bundle props are code defaults deep-merged with descriptor/admin
+props. Descriptor/admin writes persist through the configured bundle descriptor
+authority and update Redis as the runtime cache. For the full lifecycle, see
+[Bundle Properties And Secrets Lifecycle](bundle-properties-and-secrets-lifecycle-README.md).
 
 See: `kdcube_ai_app/apps/chat/sdk/solutions/chatbot/entrypoint.py`.
 

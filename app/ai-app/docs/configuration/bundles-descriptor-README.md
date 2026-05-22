@@ -10,6 +10,7 @@ see_also:
   - ks:docs/configuration/bundles-secrets-descriptor-README.md
   - ks:docs/configuration/service-runtime-configuration-mapping-README.md
   - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
+  - ks:docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
 ---
 # Bundles Descriptor

@@ -5,6 +5,7 @@ summary: "Canonical author-facing configuration model for bundle code: how platf
 tags: ["sdk", "configuration", "bundle", "props", "secrets"]
 keywords: ["programmatic configuration access", "platform settings and secrets", "bundle scoped props and secrets", "user scoped props and secrets", "helper api selection", "ownership boundary", "live authority and export rules", "get_settings and get_secret", "bundle_prop and set_bundle_prop", "user prop and user secret CRUD", "get_service_secret", "service key override", "per-bundle provider key"]
 see_also:
+  - ks:docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
   - ks:docs/sdk/bundle/bundle-developer-guide-README.md
   - ks:docs/sdk/bundle/bundle-reserved-platform-properties-README.md
   - ks:docs/configuration/runtime-configuration-and-secrets-store-README.md
@@ -47,6 +48,11 @@ Tier 1 role of this page:
 If you need the detailed storage and authority model after that, use:
 
 - [runtime-configuration-and-secrets-store-README.md](runtime-configuration-and-secrets-store-README.md)
+
+If you need the concise bundle-author lifecycle for code defaults,
+descriptor/admin props, effective bundle props, and bundle secrets, use:
+
+- [bundle-properties-and-secrets-lifecycle-README.md](../sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md)
 
 If you need the list of reserved bundle prop paths interpreted by the platform,
 use:

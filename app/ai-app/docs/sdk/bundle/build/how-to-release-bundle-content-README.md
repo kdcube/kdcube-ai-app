@@ -4,13 +4,14 @@ title: "How To Release Bundle Content"
 summary: "Optional but recommended Tier 1 lifecycle procedure for releasing bundle/content repositories: align bundle docs, config templates, release.yaml, validation, git commit/tag/push, and descriptor ref updates from a self-contained public bundle-builder workflow."
 tags: ["sdk", "bundle", "release", "content", "lifecycle", "tier-1"]
 keywords: ["bundle content release", "bundle release procedure", "release yaml", "bundle config templates", "bundle tag", "bundle descriptor ref", "shared widget source validation", "agent release workflow", "optional release procedure", "bundle lifecycle maintenance"]
-updated_at: 2026-05-21
+updated_at: 2026-05-22
 see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/sdk/bundle/build/how-to-write-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
   - ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
+  - ks:docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
   - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
   - ks:docs/configuration/bundles-descriptor-README.md
   - ks:docs/configuration/bundles-secrets-descriptor-README.md
@@ -78,6 +79,11 @@ Before doing release actions, conclude these values with the user:
 | validation | which local and runtime checks are expected |
 | git actions | whether to commit, tag, and push |
 | descriptor update | which `bundles.yaml` should point at the new ref, if any |
+
+Before tagging, check bundle identity consistency across the folder name,
+`release.yaml`, `entrypoint.py`, config templates, interface docs, and the
+descriptor entry being updated. See
+[how-to-write-bundle-README.md#1b3-bundle-identity-rule](how-to-write-bundle-README.md#1b3-bundle-identity-rule).
 
 If the user explicitly says to release, commit, tag, push, and update a named
 descriptor, that is enough. Otherwise ask for the missing value before touching

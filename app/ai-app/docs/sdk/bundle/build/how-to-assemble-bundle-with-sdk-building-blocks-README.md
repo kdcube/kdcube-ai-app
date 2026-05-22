@@ -4,7 +4,7 @@ title: "How To Assemble A Bundle With SDK Building Blocks"
 summary: "Tier 1 bundle-builder map for choosing reusable KDCube SDK and platform blocks before writing custom bundle services: tools, agents, storage, widgets, jobs, integrations, and solutions."
 tags: ["sdk", "bundle", "tier-1", "building-blocks", "integrations", "solutions", "tools"]
 keywords: ["bundle building blocks", "sdk integrations", "sdk solutions", "bundle assembly map", "reuse sdk components", "telegram integration", "email integration", "tasks solution", "delivery integration", "shared sdk widget components", "built in tools", "react tools"]
-updated_at: 2026-05-21
+updated_at: 2026-05-22
 see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/sdk/bundle/build/how-to-write-bundle-README.md
@@ -23,6 +23,8 @@ see_also:
   - ks:docs/sdk/tools/custom-tools-README.md
   - ks:docs/sdk/tools/tool-subsystem-README.md
   - ks:docs/sdk/bundle/bundle-agent-integration-README.md
+  - ks:docs/sdk/bundle/bundle-entrypoint-classes-README.md
+  - ks:docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
   - ks:docs/sdk/bundle/bundle-runtime-README.md
   - ks:docs/sdk/bundle/build/design/bundle-loader-import-isolation-README.md
@@ -98,7 +100,7 @@ Critical widget/browser rule:
 | Browser widget or Mini App | `@ui_widget(...)`, source-folder widget build, operations/public APIs | [Bundle Widget Integration](../bundle-widget-integration-README.md) |
 | Shared widget UI pieces such as User Memory and Telegram admin/channels panels | `ui.widgets.<alias>.shared_sources` with `sdk://context/memory/ui/widget/memories` or `sdk://integrations/telegram/ui/widget.telegram` | [Shared UI Source Materialization](../bundle-widget-integration-README.md#shared-ui-source-materialization) |
 | Scheduled scan and background execution | `@cron(...)`, `@on_job`, jobs stream; use Tasks Solution for saved task execution | [Scheduled Jobs](../bundle-scheduled-jobs-README.md), [Tasks SDK Solution](../../solutions/tasks-README.md) |
-| Local mutable files, generated indexes, git working copies, runtime caches | bundle storage helpers, `AIBundleStorage`, KV cache, git helpers | [Bundle Storage And Cache](../bundle-storage-and-cache-README.md) |
+| Local mutable files, generated indexes, git working copies, runtime caches | bundle storage helpers, `BundleArtifactStorage`, KV cache, git helpers | [Bundle Storage And Cache](../bundle-storage-and-cache-README.md) |
 | Node/TypeScript backend inside a bundle | Python bundle shell + Node sidecar bridge | [Bundle Node Backend Bridge](../bundle-node-backend-bridge-README.md) |
 | Bundle-specific Python dependencies | `@venv(...)` | [Bundle Venv](../bundle-venv-README.md) |
 
@@ -116,6 +118,13 @@ Critical widget/browser rule:
 | user settings UI | User-owned credentials and choices, such as personal email accounts. |
 | `docs/integrations/*` in a bundle | Operator homework outside KDCube, such as BotFather or Google Cloud setup. |
 | `docs/design/*` in a bundle | Current product boundary: which SDK blocks are used and what policy remains in the bundle. |
+
+For bundles with buildable main UI or source-folder widgets, the entrypoint
+should inherit a concrete `BaseEntrypoint` family class unless it deliberately
+implements the same UI build contract. The `@ui_widget(...)` decorator declares
+the surface, but the `BaseEntrypoint` family provides the default static
+UI/widget build and refresh path. See
+[Bundle Entrypoint Classes](../bundle-entrypoint-classes-README.md).
 
 ## Common Product Recipes
 

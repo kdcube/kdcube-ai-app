@@ -9,6 +9,7 @@ see_also:
   - ks:docs/configuration/bundles-descriptor-README.md
   - ks:docs/configuration/secrets-descriptor-README.md
   - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
+  - ks:docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
   - ks:docs/configuration/runtime-configuration-and-secrets-store-README.md
 ---
 # Bundles Secrets Descriptor

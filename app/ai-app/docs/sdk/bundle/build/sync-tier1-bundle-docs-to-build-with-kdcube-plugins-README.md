@@ -4,12 +4,13 @@ title: "Tier 1 Bundle Pack For Build-With-KDCube Plugins"
 summary: "Short handoff note for Claude Code and Codex plugin engineers describing the Tier 1 bundle-doc pack, the agent task facets it must support, and the minimal integration contract."
 tags: ["sdk", "bundle", "plugins", "claude-code", "codex", "handoff", "tier-1"]
 keywords: ["tier 1 bundle pack", "build with kdcube plugin", "claude code plugin", "codex plugin", "bundle docs pack", "bundle agent facets", "shared sdk widget source", "plugin doc links update"]
-updated_at: 2026-05-21
+updated_at: 2026-05-22
 see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
   - ks:docs/sdk/bundle/build/how-to-write-bundle-README.md
+  - ks:docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
   - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-bootstrap-local-bundle-runtime-as-coding-agent-README.md
@@ -33,18 +34,19 @@ This doc is the contract, not the old tree.
 
 ## Tier 1 Pack
 
-These 6 docs form the compact Tier 1 build baseline and should be available together:
+These 7 docs form the compact Tier 1 build baseline and should be available together:
 
 1. [how-to-navigate-kdcube-docs-README.md](how-to-navigate-kdcube-docs-README.md)
 2. [how-to-test-bundle-README.md](how-to-test-bundle-README.md)
 3. [how-to-assemble-bundle-with-sdk-building-blocks-README.md](how-to-assemble-bundle-with-sdk-building-blocks-README.md)
 4. [how-to-write-bundle-README.md](how-to-write-bundle-README.md)
-5. [../../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../../configuration/bundle-runtime-configuration-and-secrets-README.md)
-6. [how-to-configure-and-run-bundle-README.md](how-to-configure-and-run-bundle-README.md)
+5. [../bundle-properties-and-secrets-lifecycle-README.md](../bundle-properties-and-secrets-lifecycle-README.md)
+6. [../../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../../configuration/bundle-runtime-configuration-and-secrets-README.md)
+7. [how-to-configure-and-run-bundle-README.md](how-to-configure-and-run-bundle-README.md)
 
 This optional lifecycle doc should also be available:
 
-7. [how-to-release-bundle-content-README.md](how-to-release-bundle-content-README.md)
+8. [how-to-release-bundle-content-README.md](how-to-release-bundle-content-README.md)
 
 It is used only after the user agrees to release, commit, tag, push, or update
 a git-backed descriptor ref.
@@ -52,13 +54,13 @@ a git-backed descriptor ref.
 This conditional agent-integration doc should be available whenever the bundle
 uses React tools/skills, file-producing tools, MCP, or Claude Code:
 
-8. [../bundle-agent-integration-README.md](../bundle-agent-integration-README.md)
+9. [../bundle-agent-integration-README.md](../bundle-agent-integration-README.md)
 
 This conditional local-runtime agent doc should be available whenever the user
 expects the plugin agent to configure and run the local deployment, not only
 describe how it works:
 
-9. [how-to-bootstrap-local-bundle-runtime-as-coding-agent-README.md](how-to-bootstrap-local-bundle-runtime-as-coding-agent-README.md)
+10. [how-to-bootstrap-local-bundle-runtime-as-coding-agent-README.md](how-to-bootstrap-local-bundle-runtime-as-coding-agent-README.md)
 
 It is used when the plugin should let an agent configure and run the local
 runtime end to end: discover paths, initialize the workdir, wire a bundle into
@@ -69,7 +71,7 @@ external provider steps it cannot complete.
 This lower-level local-public-runtime doc should remain reachable from that
 coding-agent runbook:
 
-10. [../../../service/cicd/ngrok-README.md](../../../service/cicd/ngrok-README.md)
+11. [../../../service/cicd/ngrok-README.md](../../../service/cicd/ngrok-README.md)
 
 It is used for Telegram webhooks, OAuth/Cognito callbacks, and other
 callback/remote-control flows that need public HTTPS while the runtime is still

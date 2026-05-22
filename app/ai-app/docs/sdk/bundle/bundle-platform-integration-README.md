@@ -4,9 +4,11 @@ title: "Bundle Platform Integration"
 summary: "Declarative platform contract for exposing bundle capabilities through decorators, manifest metadata, REST operations, widgets, MCP routes, static UI, public routes, scheduled jobs, and background job handlers."
 tags: ["sdk", "bundle", "integration", "decorators", "widgets", "operations", "mcp", "ui", "manifest", "cron", "scheduled-jobs", "background-jobs"]
 keywords: ["decorator based integration", "bundle manifest contract", "rest operations exposure", "widget exposure", "mcp route exposure", "static ui exposure", "public route exposure", "scheduled job exposure", "on_job background job handler"]
-updated_at: 2026-05-21
+updated_at: 2026-05-22
 see_also:
   - ks:docs/sdk/bundle/bundle-agent-integration-README.md
+  - ks:docs/sdk/bundle/bundle-entrypoint-classes-README.md
+  - ks:docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
   - ks:docs/sdk/bundle/bundle-transports-README.md
   - ks:docs/sdk/bundle/bundle-interfaces-README.md
   - ks:docs/sdk/bundle/bundle-scheduled-jobs-README.md

@@ -4,12 +4,14 @@ title: "Bundle Developer Guide"
 summary: "High-level entrypoint for bundle authors: what a bundle is, how tenant/project environments work, which runtime surfaces exist, and which docs to follow for authoring, config, testing, and delivery."
 tags: ["sdk", "bundle", "development", "entrypoint", "workflow", "tools", "skills", "configuration", "background-jobs"]
 keywords: ["bundle authoring entrypoint", "what a bundle is", "tenant project environment", "runtime surfaces overview", "configuration model overview", "reference bundle path", "shared sdk widget components", "local authoring loop", "bundle documentation map", "on_job background jobs"]
-updated_at: 2026-05-21
+updated_at: 2026-05-22
 see_also:
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
   - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
   - ks:docs/sdk/bundle/versatile-reference-bundle-README.md
+  - ks:docs/sdk/bundle/bundle-entrypoint-classes-README.md
+  - ks:docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
   - ks:docs/sdk/bundle/bundle-agent-integration-README.md
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
   - ks:docs/sdk/bundle/bundle-transports-README.md
@@ -27,6 +29,8 @@ Use it together with:
 - [build/how-to-configure-and-run-bundle-README.md](build/how-to-configure-and-run-bundle-README.md)
 - [build/how-to-assemble-bundle-with-sdk-building-blocks-README.md](build/how-to-assemble-bundle-with-sdk-building-blocks-README.md)
 - [versatile-reference-bundle-README.md](versatile-reference-bundle-README.md)
+- [bundle-entrypoint-classes-README.md](bundle-entrypoint-classes-README.md)
+- [bundle-properties-and-secrets-lifecycle-README.md](bundle-properties-and-secrets-lifecycle-README.md)
 - [bundle-agent-integration-README.md](bundle-agent-integration-README.md)
 - [bundle-platform-integration-README.md](bundle-platform-integration-README.md)
 - [bundle-transports-README.md](bundle-transports-README.md)
@@ -44,11 +48,13 @@ Read in this order:
 1. this guide
 2. [build/how-to-assemble-bundle-with-sdk-building-blocks-README.md](build/how-to-assemble-bundle-with-sdk-building-blocks-README.md)
 3. the versatile reference doc
-4. `entrypoint.py`
-5. `orchestrator/workflow.py`
-6. `tools_descriptor.py`
-7. `skills_descriptor.py`
-8. [bundle-agent-integration-README.md](bundle-agent-integration-README.md) when the bundle has React tools/skills, MCP, or Claude Code subagents
+4. [bundle-entrypoint-classes-README.md](bundle-entrypoint-classes-README.md)
+5. [bundle-properties-and-secrets-lifecycle-README.md](bundle-properties-and-secrets-lifecycle-README.md)
+6. `entrypoint.py`
+7. `orchestrator/workflow.py`
+8. `tools_descriptor.py`
+9. `skills_descriptor.py`
+10. [bundle-agent-integration-README.md](bundle-agent-integration-README.md) when the bundle has React tools/skills, MCP, or Claude Code subagents
 
 The assembly map is the fastest way to find reusable Tasks, Email, Telegram,
 Delivery, web/rendering/exec tools, storage, widgets, jobs, MCP, and Claude
@@ -512,7 +518,7 @@ Use this for:
 - working state that should survive across requests on the same instance
 
 This is separate from:
-- `AIBundleStorage`
+- `BundleArtifactStorage`
 - descriptor-backed props/secrets
 
 ## Guarded Shared Build Rule
@@ -536,8 +542,9 @@ Use:
   bundle owns the signature and readiness checks
 - `observed_file_lock_async(...)` in async code that must not block while
   waiting
-- the platform UI build configuration for main UI and widgets; `BaseEntrypoint`
-  already uses the higher-level `bundle_once.py` helper for UI outputs
+- the platform UI build configuration for main UI and widgets; the
+  `BaseEntrypoint` family already uses the higher-level `bundle_once.py`
+  helper for UI outputs
 
 Pattern:
 

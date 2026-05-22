@@ -4,10 +4,11 @@ title: "Bundle Runtime"
 summary: "Runtime objects and capabilities available inside bundle entrypoints and tools: communicator, integrations, props and secrets, caches, artifacts, and isolated-execution surfaces."
 tags: ["sdk", "bundle", "runtime", "tools", "integrations", "communicator", "isolation"]
 keywords: ["bundle runtime objects", "communicator access", "integrations access", "props and secrets access", "cache access", "artifact handling", "isolated execution surface", "entrypoint runtime context"]
-updated_at: 2026-05-21
+updated_at: 2026-05-22
 see_also:
   - ks:docs/sdk/bundle/bundle-developer-guide-README.md
   - ks:docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
+  - ks:docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
   - ks:docs/sdk/bundle/build/design/bundle-loader-import-isolation-README.md
   - ks:docs/sdk/bundle/bundle-lifecycle-README.md
   - ks:docs/sdk/bundle/bundle-agent-integration-README.md
@@ -29,6 +30,7 @@ This page explains the actual runtime surfaces available to:
 
 Use this together with:
 - [How To Assemble A Bundle With SDK Building Blocks](build/how-to-assemble-bundle-with-sdk-building-blocks-README.md) for the reusable SDK/platform blocks to prefer before writing a custom subsystem
+- [Bundle Properties And Secrets Lifecycle](bundle-properties-and-secrets-lifecycle-README.md) for how `self.bundle_props`, descriptor/admin props, and bundle secrets flow
 - [Bundle Lifecycle](bundle-lifecycle-README.md) for phase ordering
 - [Bundle Agent Integration](bundle-agent-integration-README.md) for React, tools/skills, MCP, and Claude Code wiring
 - [Bundle Platform Integration](bundle-platform-integration-README.md) for public entrypoint design
@@ -496,9 +498,9 @@ Use cases for the local helper root:
 - cron job state
 - daily pipeline workspace/cache
 
-Do not confuse this with `AIBundleStorage`:
+Do not confuse this with `BundleArtifactStorage`:
 - local helper root = shared instance-local filesystem
-- `AIBundleStorage` = backend storage API for bundle artifacts
+- `BundleArtifactStorage` = backend storage API for bundle artifacts
 
 ## Guarded shared filesystem objects
 
@@ -647,10 +649,10 @@ Why this matters:
 - a later bundle-specific session does not re-scope clients already created by
   another bundle or by the platform
 
-`AIBundleStorage` is platform storage. It uses its explicit `storage_uri` or
+`BundleArtifactStorage` is platform storage. It uses its explicit `storage_uri` or
 the platform `KDCUBE_STORAGE_PATH` / `settings.STORAGE_PATH`. Bundle-specific
 props such as `my_feature.aws_profile` do not automatically apply to
-`AIBundleStorage`. If a bundle needs artifact storage under a non-default AWS
+`BundleArtifactStorage`. If a bundle needs artifact storage under a non-default AWS
 identity, pass storage configuration explicitly through the storage API or add a
 bundle-owned storage wrapper that constructs the backend with an explicit
 profile/region.

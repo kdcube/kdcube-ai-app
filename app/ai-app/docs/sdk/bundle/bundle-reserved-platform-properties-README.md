@@ -5,6 +5,7 @@ summary: "Reserved bundle config keys interpreted by the platform: model selecti
 tags: ["sdk", "bundle", "configuration", "runtime", "economics", "exec", "memory", "pdf"]
 keywords: ["platform interpreted bundle props", "model selection props", "embedding configuration props", "user memory configuration props", "economics reservation props", "execution runtime props", "mcp service props", "reserved bundle property paths", "platform owned bundle config", "pdf footer", "pdf_footer", "write_pdf footer"]
 see_also:
+  - ks:docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
   - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
   - ks:docs/configuration/bundles-descriptor-README.md
   - ks:docs/sdk/bundle/bundle-developer-guide-README.md
@@ -16,9 +17,10 @@ see_also:
 
 Start with:
 
+- [bundle-properties-and-secrets-lifecycle-README.md](bundle-properties-and-secrets-lifecycle-README.md)
 - [bundle-runtime-configuration-and-secrets-README.md](../../configuration/bundle-runtime-configuration-and-secrets-README.md)
 
-Use this page after that when you specifically need the reserved bundle prop
+Use this page after those when you specifically need the reserved bundle prop
 paths interpreted by the platform.
 
 Most bundle props are bundle-defined and opaque to the platform.  
@@ -196,7 +198,7 @@ Storage summary:
 | Where do I set it for a deployment? | `bundles.yaml -> items[].config.role_models` or the live admin props API |
 | Where does it live on AWS `aws-sm`? | `<prefix>/bundles/<bundle_id>/descriptor` |
 | Where should it live in recommended ECS deployments? | mounted writable `bundles.yaml` on EFS |
-| Where does proc read it from at runtime? | Redis effective bundle props cache, with fallback to the authoritative store |
+| Where does proc read it from at runtime? | Descriptor/admin bundle props from Redis cache or authoritative store, then merged with code defaults by the entrypoint/runtime path |
 
 This property is interpreted by `BaseEntrypoint`, not by bundle code directly.
 
@@ -321,7 +323,7 @@ Storage summary:
 
 `memory` config enables the User Memory subsystem for bundles that derive from
 the memory entrypoint mixin, for example `BaseEntrypointWithMemory` or
-`BaseEntrypointWithMemoryAndEconomics`.
+`BaseEntrypointWithEconomicsAndMemory`.
 
 This is not ordinary bundle-owned config. The memory mixin interprets it and
 wires the user-facing memory widget, optional ReAct announce hotset, optional
