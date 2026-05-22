@@ -29,8 +29,9 @@ import { inferLanguage } from '../../components/highlight.ts'
 import { MarkdownBlock } from '../../components/MarkdownBlock.tsx'
 import { CaretIcon } from '../../components/CaretIcon.tsx'
 import { CopyButton } from '../../components/CopyButton.tsx'
+import { DownloadButton } from '../../components/DownloadButton.tsx'
 import { Snippet } from '../../components/Snippet.tsx'
-import { CanvasRender } from '../../components/CanvasRender.tsx'
+import { CanvasRender, canvasFilename, canvasMime } from '../../components/CanvasRender.tsx'
 import type {
   AdditionalUserMessage,
   Artifact,

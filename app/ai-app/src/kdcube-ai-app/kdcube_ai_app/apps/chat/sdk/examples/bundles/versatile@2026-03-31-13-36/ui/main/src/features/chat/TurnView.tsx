@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { formatBytes, formatTime } from '../../components/utils.ts'
 import { CopyButton } from '../../components/CopyButton.tsx'
 import { MarkdownBlock } from '../../components/MarkdownBlock.tsx'
+import { SuggestedQuestions } from '../../components/SuggestedQuestions.tsx'
 import type {
   CanvasArtifact,
   ChatTurn,

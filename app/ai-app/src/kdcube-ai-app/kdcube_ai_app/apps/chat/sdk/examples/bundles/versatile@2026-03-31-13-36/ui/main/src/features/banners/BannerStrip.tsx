@@ -11,13 +11,15 @@ export function BannerStrip({
 }) {
   if (banners.length === 0) return null
   const noticeClass = (tone: BannerTone) => {
+    /* BannerTone is currently 'info' | 'warning' | 'error'. The dead
+     * 'success' case from the pre-refactor App.tsx was removed because TS
+     * flags it as unreachable. If the API ever starts emitting a success
+     * tone, widen the union in service.ts and re-add the branch. */
     switch (tone) {
       case 'error':
         return 'k-notice k-error'
       case 'warning':
         return 'k-notice k-warning'
-      case 'success':
-        return 'k-notice k-success'
       default:
         return 'k-notice k-info'
     }
