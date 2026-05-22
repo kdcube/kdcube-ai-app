@@ -1191,3 +1191,27 @@ a { color: inherit; }
 .k-chat-file:disabled .k-chat-file-action {
   color: var(--muted);
 }
+
+/* ---------------------------------------------------------------------- */
+/*  Web-fetch row status tokens — colour the status keyword so success /  */
+/*  paywall / timeout / error read at a glance. The rest of the           */
+/*  `k-result-host` line (mime, size) stays muted. All values use         */
+/*  existing §4 design tokens; no new palette entries.                    */
+/* ---------------------------------------------------------------------- */
+.k-fetch-status {
+  font-weight: 600;
+  color: var(--muted);
+}
+.k-fetch-status--ok {
+  color: var(--green);
+}
+.k-fetch-status--paywall {
+  /* Paywall is treated as an error/blocked state, not a soft warning. */
+  color: var(--red);
+}
+.k-fetch-status--warn {
+  color: var(--gold);
+}
+.k-fetch-status--error {
+  color: var(--red);
+}

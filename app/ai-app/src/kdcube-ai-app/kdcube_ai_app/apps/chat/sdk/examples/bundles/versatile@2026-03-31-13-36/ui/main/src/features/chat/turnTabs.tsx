@@ -32,6 +32,8 @@ import { CopyButton } from '../../components/CopyButton.tsx'
 import { DownloadButton } from '../../components/DownloadButton.tsx'
 import { Snippet } from '../../components/Snippet.tsx'
 import { CanvasRender, canvasFilename, canvasMime } from '../../components/CanvasRender.tsx'
+import { FaviconImg } from '../../components/Favicon.tsx'
+import { FileExtIcon, fileExtension, fileKind } from '../../components/FileExtIcon.tsx'
 import type {
   AdditionalUserMessage,
   Artifact,
@@ -95,12 +97,25 @@ export function StepList({ steps }: { steps: TurnStep[] }) {
     </div>
   )
 }
+/** Map a fetch item's `status` to a tone class so success / paywall /
+ *  timeout / error read at a glance. Unknown statuses fall through to a
+ *  neutral muted token. See `.k-fetch-status--*` in index.css. */
+export function fetchStatusToneClass(status: string | undefined | null): string {
+  const v = (status || '').toLowerCase()
+  if (v === 'success' || v === 'ok' || v === '200') return 'k-fetch-status k-fetch-status--ok'
+  if (v === 'paywall') return 'k-fetch-status k-fetch-status--paywall'
+  if (v === 'timeout') return 'k-fetch-status k-fetch-status--warn'
+  if (v === 'error' || v === 'failed') return 'k-fetch-status k-fetch-status--error'
+  return 'k-fetch-status'
+}
+
 export interface TurnLink {
   id: string
   kind: 'citation' | 'web_search' | 'web_fetch'
   title: string
   url: string
   body?: string | null
+  favicon?: string | null
 }
 
 /* shortUrl is now imported from ./components/utils.ts */
@@ -123,6 +138,7 @@ export function collectTurnLinks(artifacts: Artifact[]): TurnLink[] {
         title: artifact.title || artifact.url,
         url: artifact.url,
         body: artifact.body,
+        favicon: artifact.favicon,
       })
     }
     if (artifact.kind === 'web_search') {
@@ -133,6 +149,7 @@ export function collectTurnLinks(artifacts: Artifact[]): TurnLink[] {
           title: item.title || item.url,
           url: item.url,
           body: item.body,
+          favicon: item.favicon,
         })
       })
     }
@@ -148,6 +165,7 @@ export function collectTurnLinks(artifacts: Artifact[]): TurnLink[] {
             item.mime,
             typeof item.content_length === 'number' ? formatBytes(item.content_length) : null,
           ].filter(Boolean).join(' • '),
+          favicon: item.favicon,
         })
       })
     }
@@ -182,7 +200,7 @@ export function LinksPanel({ links }: { links: TurnLink[] }) {
           rel="noreferrer"
           className="k-result-row"
         >
-          <span className="k-result-favicon" aria-hidden="true" />
+          <FaviconImg url={link.url} favicon={link.favicon} />
           <div className="k-result-main">
             <span className="k-result-title">{link.title}</span>
             <span className="k-result-host">{shortUrl(link.url)}</span>
@@ -401,68 +419,82 @@ export function DownloadsPanel({
     }
   }
 
+  /** Inner attachment / file row — same shape as the Chat-tab `ChatFileBlock`
+   *  so the Files tab visually matches the Chat tab. The icon comes from
+   *  `FileExtIcon`; the ext chip mirrors the Chat tab layout. */
+  const renderRow = (
+    key: string,
+    label: string,
+    subtitle: string,
+    filename: string,
+    onClick: () => void,
+    actionLabel: string,
+  ) => {
+    const ext = fileExtension(filename)
+    const kind = fileKind(ext)
+    return (
+      <button
+        key={key}
+        type="button"
+        onClick={onClick}
+        className="k-chat-file"
+        title={`Download ${label}`}
+      >
+        <span className="k-chat-file-icon" aria-hidden="true">
+          <FileExtIcon kind={kind.icon} />
+        </span>
+        <span className="k-chat-file-main">
+          <span className="k-chat-file-name">{label}</span>
+          {subtitle ? <span className="k-chat-file-sub">{subtitle}</span> : null}
+        </span>
+        <span className="k-chat-file-ext">{kind.label}</span>
+        <span className="k-chat-file-action">
+          {actionLabel === 'Download' || actionLabel === 'Preparing…' || actionLabel === 'Downloading…' ? (
+            <>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+              </svg>
+              <span>{actionLabel}</span>
+            </>
+          ) : actionLabel}
+        </span>
+      </button>
+    )
+  }
+
   return (
     <div className="flex flex-col gap-3 pt-1">
       {attachments.length > 0 ? (
-        <div>
-          <div className="k-micro pb-1">Sent attachments</div>
-          <div className="k-result-list">
-            {attachments.map((attachment, index) => (
-              <button
-                key={attachment.id}
-                type="button"
-                onClick={() => void handleAttachmentDownload(attachment, index)}
-                className="k-result-row"
-                style={{ background: 'transparent', border: 0, font: 'inherit' }}
-              >
-                <span className="k-workitem-icon" style={{ width: 18, height: 18 }}>
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M21.4 11.05 12.5 19.95a5 5 0 1 1-7-7l9-9a3.5 3.5 0 1 1 5 5l-9 9a2 2 0 1 1-3-3l8.5-8.5" />
-                  </svg>
-                </span>
-                <div className="k-result-main">
-                  <span className="k-result-title">{attachment.name}</span>
-                  <span className="k-result-host">
-                    {typeof attachment.size === 'number' ? formatBytes(attachment.size) : attachment.mime || attachment.rn || 'Stored attachment'}
-                  </span>
-                </div>
-                <span className="text-[12px] text-[var(--blue-dark)]">
-                  {downloadingId === `attachment:${index}` ? 'Preparing…' : 'Download'}
-                </span>
-              </button>
-            ))}
-          </div>
+        <div className="flex flex-col gap-1.5">
+          <div className="k-micro">Sent attachments</div>
+          {attachments.map((attachment, index) =>
+            renderRow(
+              `attachment:${attachment.id}`,
+              attachment.name,
+              typeof attachment.size === 'number'
+                ? formatBytes(attachment.size)
+                : attachment.mime || attachment.rn || 'Stored attachment',
+              attachment.name,
+              () => void handleAttachmentDownload(attachment, index),
+              downloadingId === `attachment:${index}` ? 'Preparing…' : 'Download',
+            ),
+          )}
         </div>
       ) : null}
 
       {files.length > 0 ? (
-        <div>
-          <div className="k-micro pb-1">Assistant files</div>
-          <div className="k-result-list">
-            {files.map((file) => (
-              <button
-                key={file.rn}
-                type="button"
-                onClick={() => void handleFileDownload(file)}
-                className="k-result-row"
-                style={{ background: 'transparent', border: 0, font: 'inherit' }}
-              >
-                <span className="k-workitem-icon" style={{ width: 18, height: 18 }}>
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                    <path d="M14 2v6h6" />
-                  </svg>
-                </span>
-                <div className="k-result-main">
-                  <span className="k-result-title">{file.filename}</span>
-                  <span className="k-result-host">{file.description || file.mime || file.rn}</span>
-                </div>
-                <span className="text-[12px] text-[var(--blue-dark)]">
-                  {downloadingId === `file:${file.rn}` ? 'Downloading…' : 'Download'}
-                </span>
-              </button>
-            ))}
-          </div>
+        <div className="flex flex-col gap-1.5">
+          <div className="k-micro">Assistant files</div>
+          {files.map((file) =>
+            renderRow(
+              `file:${file.rn}`,
+              file.filename,
+              file.description || file.mime || file.rn || '',
+              file.filename,
+              () => void handleFileDownload(file),
+              downloadingId === `file:${file.rn}` ? 'Downloading…' : 'Download',
+            ),
+          )}
         </div>
       ) : null}
     </div>
@@ -619,7 +651,7 @@ export function ArtifactFeed({ artifacts }: { artifacts: Artifact[] }) {
                         rel="noreferrer"
                         className="k-result-row"
                       >
-                        <span className="k-result-favicon" aria-hidden="true" />
+                        <FaviconImg url={item.url} favicon={item.favicon} />
                         <div className="k-result-main">
                           <span className="k-result-title">{item.title || shortUrl(item.url)}</span>
                           <span className="k-result-host">{shortUrl(item.url)}</span>
@@ -674,11 +706,13 @@ export function ArtifactFeed({ artifacts }: { artifacts: Artifact[] }) {
                       rel="noreferrer"
                       className="k-result-row"
                     >
-                      <span className="k-result-favicon" aria-hidden="true" />
+                      <FaviconImg url={item.url} favicon={item.favicon} />
                       <div className="k-result-main">
                         <span className="k-result-title">{shortUrl(item.url)}</span>
                         <span className="k-result-host">
-                          {(item.status || 'unknown').toUpperCase()}
+                          <span className={fetchStatusToneClass(item.status)}>
+                            {(item.status || 'unknown').toUpperCase()}
+                          </span>
                           {item.mime ? ` · ${item.mime}` : ''}
                           {typeof item.content_length === 'number' ? ` · ${formatBytes(item.content_length)}` : ''}
                         </span>
