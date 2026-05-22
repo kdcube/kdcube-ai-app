@@ -635,6 +635,61 @@ async def sink(batch: list[dict], *, comm, filter=None) -> dict:
 comm.set_event_sink(sink)
 ```
 
+### Use the SDK stats telemetry sink
+
+The SDK includes a reusable sink adapter for stats-style collectors:
+
+```yaml
+telemetry_sink:
+  endpoint_url: "https://stats.example.internal/telemetry/events"
+  auth:
+    type: "bearer"
+    token_ref: "secret:stats-telemetry-token"
+```
+
+```python
+from kdcube_ai_app.apps.chat.sdk.comm.sink import (
+    STATS_COMM_EVENT_SELECTOR,
+    StatsTelemetrySink,
+    StatsTelemetryTarget,
+    configure_stats_event_recording,
+)
+
+sink = StatsTelemetrySink(
+    StatsTelemetryTarget(
+        endpoint_url=telemetry_sink_config["endpoint_url"],
+        token=resolved_telemetry_token,
+    ),
+    source_bundle="my.bundle@1",
+)
+
+configure_stats_event_recording(
+    comm,
+    sink,
+    selector=STATS_COMM_EVENT_SELECTOR,
+    scope={"owner": "workflow", "bundle": "my.bundle@1"},
+)
+
+...
+
+await comm.send_recorded_events(STATS_COMM_EVENT_SELECTOR)
+```
+
+The adapter maps known comm event types into `kdcube.telemetry.v1` names before
+posting a bounded batch to the configured endpoint. The endpoint is a plain
+POST URL; auth is supplied as a bearer token or explicit headers in
+`StatsTelemetryTarget`. The target must include a token or an `Authorization`
+header; unauthenticated sends fail before the HTTP request.
+
+| Comm type | Telemetry name |
+| --- | --- |
+| `react.tool.call` | `tool.invoke` |
+| `react.skill.read` | `skill.read` |
+| `kdcube.copilot.mcp.call` | `mcp.call` |
+| `accounting.usage` | `accounting.usage` |
+
+Unknown selected comm records become `comm.event`.
+
 ## Tests
 
 Focused coverage lives in
@@ -648,3 +703,6 @@ Focused coverage lives in
 - send-time filtering
 - export, dump, merge, and dedupe
 - runtime comm spec propagation for portable selectors
+
+The stats adapter coverage lives in
+`kdcube_ai_app/apps/chat/sdk/tests/comm/test_stats_telemetry_sink.py`.

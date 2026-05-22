@@ -500,6 +500,68 @@ Rules:
 If the sink is absent, `send_recorded_events(...)` returns a disabled result and
 leaves the buffer intact.
 
+## Stats Telemetry Sink
+
+For bundles that need to forward recorded comm metadata into a stats collector,
+use the SDK adapter under `kdcube_ai_app.apps.chat.sdk.comm.sink`:
+
+```yaml
+telemetry_sink:
+  endpoint_url: "https://stats.example.internal/telemetry/events"
+  auth:
+    type: "bearer"
+    token_ref: "secret:stats-telemetry-token"
+```
+
+```python
+from kdcube_ai_app.apps.chat.sdk.comm.sink import (
+    STATS_COMM_EVENT_SELECTOR,
+    StatsTelemetrySink,
+    StatsTelemetryTarget,
+    configure_stats_event_recording,
+)
+
+stats_sink = StatsTelemetrySink(
+    StatsTelemetryTarget(
+        endpoint_url=telemetry_sink_config["endpoint_url"],
+        token=resolved_telemetry_token,
+    ),
+    source_bundle=bundle_id,
+)
+
+configure_stats_event_recording(
+    self.comm,
+    stats_sink,
+    selector=STATS_COMM_EVENT_SELECTOR,
+    scope={"owner": "workflow", "bundle": bundle_id},
+    max_events=500,
+)
+```
+
+Then send from the outer boundary:
+
+```python
+await self.comm.send_recorded_events(STATS_COMM_EVENT_SELECTOR)
+```
+
+The adapter converts recorded comm records to `kdcube.telemetry.v1` and posts
+one REST batch to the configured endpoint. The adapter does not construct
+KDCube bundle URLs; the endpoint and token come from bundle or platform
+configuration. A target must provide either `token=...` or an explicit
+`Authorization` header; unauthenticated telemetry posting is rejected before
+the POST. Current built-in mappings include:
+
+| Recorded comm type | Telemetry event name |
+| --- | --- |
+| `react.tool.call` | `tool.invoke` |
+| `react.skill.read` | `skill.read` |
+| `kdcube.copilot.mcp.call` | `mcp.call` |
+| `accounting.usage` | `accounting.usage` |
+| selected workflow/turn completion events | `workflow.step` |
+
+The selector includes only bounded metadata keys. It does not copy raw prompts,
+answers, tool arguments, or delta text.
+
 ## Selector Practice
 
 Prefer selectors that name semantic event types, not transport routes alone:

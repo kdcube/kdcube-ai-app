@@ -54,6 +54,12 @@ from kdcube_ai_app.apps.chat.sdk.config import (
     get_user_secret,
     set_user_secret,
 )
+from kdcube_ai_app.apps.chat.sdk.comm.sink import (
+    STATS_COMM_EVENT_SELECTOR,
+    StatsTelemetrySink,
+    StatsTelemetryTarget,
+    configure_stats_event_recording,
+)
 from kdcube_ai_app.apps.chat.sdk.integrations.telegram import TelegramUserAdminStorage
 from kdcube_ai_app.apps.chat.sdk.integrations.telegram import user_admin as telegram_user_admin
 from kdcube_ai_app.apps.chat.sdk.integrations.telegram import webapp as telegram_webapp
@@ -79,7 +85,6 @@ from kdcube_ai_app.storage.observed_file_locks import observed_file_lock, lock_o
 
 from .orchestrator.workflow import WithReactWorkflow
 from .event_filter import BundleEventFilter
-from . import evidence as copilot_evidence
 from .tools import react_tools as doc_reader_tools
 from .knowledge_base_admin import (
     AGENT_NAME as KB_ADMIN_AGENT_NAME,
@@ -115,24 +120,12 @@ TELEGRAM_WEBHOOK_PUBLIC_AUTH = {
 }
 TELEGRAM_WEBAPP_PUBLIC_AUTH = "none"
 COPILOT_WEBAPP_ALIAS = "copilot_webapp"
-EVENT_RECORD_SELECTOR = {
-    "include": {
-        "types": [
-            "kdcube.copilot.workflow.turn.started",
-            "kdcube.copilot.workflow.turn.completed",
-            "kdcube.copilot.workflow.turn.failed",
-            "kdcube.copilot.mcp.call",
-            "react.tool.call",
-            "react.skill.read",
-            "accounting.usage",
-            "chat.conversation.turn.completed",
-            "chat.complete",
-            "chat.error",
-        ],
-    }
+TELEMETRY_SINK_TOKEN_SECRET = "b:telemetry_sink.auth.token"
+MCP_EVENT_RECORD_SELECTOR = {
+    "include": {"types": ["kdcube.copilot.mcp.call"]},
+    "privacy": STATS_COMM_EVENT_SELECTOR.get("privacy", {}),
 }
 EVENT_RECORD_MAX = 200
-COPILOT_EVENT_RETENTION = 500
 
 
 def _storage_root_or_error(entrypoint: Any) -> pathlib.Path:
@@ -531,50 +524,50 @@ class ReactWorkflow(BaseEntrypointWithEconomicsAndMemory):
         )
         await self._send_recorded_events()
 
-    def _event_context(self) -> Dict[str, Any]:
-        actor = getattr(self.comm_context, "actor", None)
-        user = getattr(self.comm_context, "user", None)
-        routing = getattr(self.comm_context, "routing", None)
-        request = getattr(self.comm_context, "request", None)
-        return {
-            "tenant": getattr(actor, "tenant_id", None),
-            "project": getattr(actor, "project_id", None),
-            "user": getattr(user, "user_id", None) or getattr(user, "fingerprint", None),
-            "request_id": getattr(request, "request_id", None),
-            "session_id": getattr(routing, "session_id", None),
-            "conversation_id": getattr(routing, "conversation_id", None),
-            "turn_id": getattr(routing, "turn_id", None),
-        }
-
     def _bundle_id(self) -> str:
         return str(getattr(getattr(self.config, "ai_bundle_spec", None), "id", None) or BUNDLE_ID)
+
+    def _make_event_sink(self) -> StatsTelemetrySink | None:
+        endpoint_url = str(self.bundle_prop("telemetry_sink.endpoint_url", "") or "").strip()
+        if not endpoint_url:
+            return None
+        token = str(get_secret(TELEMETRY_SINK_TOKEN_SECRET) or "").strip()
+        if not token:
+            try:
+                self.logger.log(
+                    f"[{BUNDLE_ID}] telemetry sink endpoint is configured but secret "
+                    f"{TELEMETRY_SINK_TOKEN_SECRET} is missing; event sending disabled.",
+                    "WARNING",
+                )
+            except Exception:
+                pass
+            return None
+        return StatsTelemetrySink(
+            StatsTelemetryTarget(
+                endpoint_url=endpoint_url,
+                token=token,
+            ),
+            source_bundle=self._bundle_id(),
+        )
 
     def _configure_event_recording(self) -> None:
         try:
             comm = self.comm
-            comm.record(
-                EVENT_RECORD_SELECTOR,
-                scope={"owner": "workflow", "bundle": self._bundle_id()},
-                mode="replace",
+            sink = self._make_event_sink()
+            if sink is None:
+                comm.stop_recording()
+                comm.set_event_sink(None)
+                comm.clear_recorded_events(STATS_COMM_EVENT_SELECTOR)
+                return
+            configure_stats_event_recording(
+                comm,
+                sink,
+                selector=STATS_COMM_EVENT_SELECTOR,
+                scope={"owner": "react", "bundle": self._bundle_id(), "runtime": "on_message"},
                 max_events=EVENT_RECORD_MAX,
             )
-            comm.set_event_sink(self._event_sink)
         except Exception:
             self.logger.log(traceback.format_exc(), "WARNING")
-
-    async def _event_sink(self, batch: list[dict], **kwargs) -> Dict[str, Any]:
-        del kwargs
-        storage_root = self.bundle_storage_root()
-        if storage_root is None:
-            return {"accepted": 0, "error": "Bundle storage backend is not configured."}
-        accepted = await asyncio.to_thread(
-            copilot_evidence.append_comm_records,
-            storage_root=storage_root,
-            bundle_id=self._bundle_id(),
-            records=batch,
-            retention=COPILOT_EVENT_RETENTION,
-        )
-        return {"accepted": len(batch), "stored": accepted}
 
     async def _emit_copilot_workflow_event(self, *, status: str, title: str, data: Dict[str, Any]) -> None:
         try:
@@ -597,48 +590,64 @@ class ReactWorkflow(BaseEntrypointWithEconomicsAndMemory):
 
     async def _send_recorded_events(self) -> Dict[str, Any]:
         try:
-            return await self.comm.send_recorded_events(EVENT_RECORD_SELECTOR)
+            return await self.comm.send_recorded_events(STATS_COMM_EVENT_SELECTOR)
         except Exception:
             self.logger.log(traceback.format_exc(), "WARNING")
             return {"ok": False, "error": "Unable to flush recorded copilot events."}
 
     async def _record_doc_reader_mcp_call(self, payload: Dict[str, Any]) -> None:
-        storage_root = self.bundle_storage_root()
-        if storage_root is None:
+        sink = self._make_event_sink()
+        if sink is None:
             return
-        event = copilot_evidence.direct_event(
-            bundle_id=self._bundle_id(),
-            source="mcp.doc_reader",
-            event_type="kdcube.copilot.mcp.call",
-            status=str(payload.get("status") or "completed"),
-            title="Copilot MCP Tool Call",
-            data={
-                "mcp_name": payload.get("mcp_name"),
-                "tool": payload.get("tool"),
-                "duration_ms": payload.get("duration_ms"),
-                "result_count": payload.get("result_count"),
-                "missing": payload.get("missing"),
-                "root": payload.get("root"),
-                "top_k": payload.get("top_k"),
-                "query_len": payload.get("query_len"),
-                "path": payload.get("path"),
-                "error": payload.get("error"),
-            },
-            context=self._event_context(),
-        )
-        await asyncio.to_thread(
-            copilot_evidence.append_events,
-            storage_root=storage_root,
-            events=[event],
-            retention=COPILOT_EVENT_RETENTION,
-        )
+        try:
+            async with self.comm.recording(
+                MCP_EVENT_RECORD_SELECTOR,
+                scope={"owner": "mcp", "bundle": self._bundle_id(), "runtime": "mcp.doc_reader"},
+                mode="append",
+                max_events=EVENT_RECORD_MAX,
+                sink=sink,
+                send_on_exit=True,
+                send_filter=MCP_EVENT_RECORD_SELECTOR,
+            ):
+                await self.comm.service_event(
+                    type="kdcube.copilot.mcp.call",
+                    step="mcp.doc_reader",
+                    status=str(payload.get("status") or "completed"),
+                    title="Copilot MCP Tool Call",
+                    agent="kdcube.copilot.mcp",
+                    auto_markdown=False,
+                    data={
+                        "mcp_name": payload.get("mcp_name"),
+                        "tool": payload.get("tool"),
+                        "duration_ms": payload.get("duration_ms"),
+                        "result_count": payload.get("result_count"),
+                        "missing": payload.get("missing"),
+                        "top_k": payload.get("top_k"),
+                        "query_len": payload.get("query_len"),
+                        "error": payload.get("error"),
+                    },
+                )
+        except Exception:
+            self.logger.log(traceback.format_exc(), "WARNING")
 
     def _events_payload(self, *, limit: int = 100) -> Dict[str, Any]:
-        return copilot_evidence.build_widget_payload(
-            storage_root=self.bundle_storage_root(),
-            bundle_id=self._bundle_id(),
-            limit=limit,
-        )
+        del limit
+        endpoint_configured = bool(str(self.bundle_prop("telemetry_sink.endpoint_url", "") or "").strip())
+        token_configured = bool(str(get_secret(TELEMETRY_SINK_TOKEN_SECRET) or "").strip())
+        return {
+            "ok": True,
+            "bundle_id": self._bundle_id(),
+            "events": [],
+            "count": 0,
+            "limit": 0,
+            "by_type": {},
+            "by_source": {},
+            "external_sink": {
+                "configured": bool(endpoint_configured and token_configured),
+                "endpoint_configured": endpoint_configured,
+                "auth_configured": token_configured,
+            },
+        }
 
     def _doc_reader_storage_root(self) -> pathlib.Path | None:
         storage_root = self.bundle_storage_root()
@@ -747,7 +756,7 @@ class ReactWorkflow(BaseEntrypointWithEconomicsAndMemory):
             include_admin=telegram_webapp.user_has_role(self, TELEGRAM_ADMIN_ROLE),
         )
         requested_path = str(widget_path or path or "").strip("/").lower()
-        if requested_path in {"events", "event", "evidence"}:
+        if requested_path in {"events", "event"}:
             payload["active_tab"] = "events"
         payload["events"] = self._events_payload(limit=100)
         return payload
@@ -2343,6 +2352,9 @@ class ReactWorkflow(BaseEntrypointWithEconomicsAndMemory):
                     "stream_activity": True,
                     "web_app_auth_max_age_seconds": 86400,
                 },
+            },
+            "telemetry_sink": {
+                "endpoint_url": "",
             },
             "ui": {
                 "widgets": {
