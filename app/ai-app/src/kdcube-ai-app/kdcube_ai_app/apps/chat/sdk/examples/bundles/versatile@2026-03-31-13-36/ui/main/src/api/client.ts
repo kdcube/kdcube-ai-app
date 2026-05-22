@@ -111,6 +111,25 @@ export async function requestConversationStatus(conversationId: string, streamId
   })
 }
 
+/** Hard-delete a conversation (and related artifacts) for the authenticated
+ *  user. Maps to `DELETE /api/cb/conversations/{tenant}/{project}/{id}`.
+ *  Irreversible — callers should confirm with the user before invoking. */
+export async function deleteConversationById(conversationId: string): Promise<void> {
+  const { tenant, project } = requireScope()
+  const response = await fetch(
+    `${settings.getBaseUrl()}/api/cb/conversations/${tenant}/${project}/${conversationId}`,
+    {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: buildRequestHeaders({ 'Content-Type': 'application/json' }),
+    },
+  )
+  if (!response.ok) {
+    const detail = await response.text().catch(() => response.statusText)
+    throw new Error(`Failed to delete conversation (${response.status}): ${detail}`)
+  }
+}
+
 async function parseSubmitChatMessageResponse(
   response: Response,
   fallbackConversationId?: string | null,

@@ -750,6 +750,53 @@ a { color: inherit; }
   white-space: nowrap;
 }
 
+/* Row + delete-affordance shell.
+   The shell positions the trash button at the row's right edge without
+   nesting <button> inside the row <button> (invalid HTML). The trash
+   only reveals on hover/focus to keep the resting state calm. */
+.k-row-shell {
+  position: relative;
+  display: block;
+}
+.k-row-shell .k-row {
+  padding-right: 36px;
+}
+.k-row-delete {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+.k-row-shell:hover .k-row-delete,
+.k-row-shell:focus-within .k-row-delete {
+  opacity: 1;
+}
+.k-row-delete:hover:not(:disabled) {
+  color: var(--red);
+  background: var(--surface-2);
+}
+.k-row-delete:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+  opacity: 1;
+}
+.k-row-delete:disabled {
+  cursor: wait;
+  opacity: 0.4;
+}
+
 /* Micro labels */
 .k-micro {
   color: var(--muted);

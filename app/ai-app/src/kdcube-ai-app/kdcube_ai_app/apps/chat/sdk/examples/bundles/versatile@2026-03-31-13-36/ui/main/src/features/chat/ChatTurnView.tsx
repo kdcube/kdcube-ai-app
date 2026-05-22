@@ -18,8 +18,9 @@ import { MarkdownBlock } from '../../components/MarkdownBlock.tsx'
 import { CaretIcon } from '../../components/CaretIcon.tsx'
 import { SuggestedQuestions } from '../../components/SuggestedQuestions.tsx'
 import { CopyButton } from '../../components/CopyButton.tsx'
+import { DownloadButton } from '../../components/DownloadButton.tsx'
 import { Snippet } from '../../components/Snippet.tsx'
-import { CanvasRender } from '../../components/CanvasRender.tsx'
+import { CanvasRender, canvasFilename, canvasMime } from '../../components/CanvasRender.tsx'
 import type {
   Artifact,
   CanvasArtifact,
@@ -334,7 +335,9 @@ export function ChatCodeExecBlock({ artifact }: { artifact: CodeExecArtifact }) 
   )
 }
 
-/** Canvas artifact in Chat view — open, identical body to Overview. */
+/** Canvas artifact in Chat view — open, with copy + download tools on
+ *  the header bar so the user can grab the content without expanding
+ *  Overview. Mirrors `CanvasPanel`'s tool layout from the Canvas tab. */
 export function ChatCanvasBlock({ artifact }: { artifact: CanvasArtifact }) {
   return (
     <details className="k-workitem k-tint-green" open>
@@ -348,6 +351,17 @@ export function ChatCanvasBlock({ artifact }: { artifact: CanvasArtifact }) {
         <span className="k-workitem-title">
           <span className="k-text">{artifact.title || artifact.name}</span>
           <span className="k-micro">{artifact.format || 'text'}</span>
+        </span>
+        {/* Stop propagation so clicking copy/download doesn't toggle the
+            <details> open/closed state. */}
+        <span className="k-snippet-tools" onClick={(e) => e.stopPropagation()}>
+          <CopyButton value={artifact.content} title="Copy canvas" />
+          <DownloadButton
+            data={artifact.content}
+            filename={canvasFilename(artifact)}
+            mime={canvasMime(artifact)}
+            title="Download canvas"
+          />
         </span>
         <CaretIcon />
       </summary>

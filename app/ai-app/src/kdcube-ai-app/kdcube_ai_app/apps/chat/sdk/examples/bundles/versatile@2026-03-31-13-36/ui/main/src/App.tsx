@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  deleteConversationById,
   fetchConversationById,
   listBundleConversations,
   openChatStream,
@@ -10,6 +11,7 @@ import type {
   BannerTone,
   ChatServiceEnvelope,
   ContinuationKind,
+  ConversationSummary,
   RateLimitPayload,
 } from './service.ts'
 import { BUILT_BUNDLE_ID, createLocalId, settings } from './settings.ts'
@@ -147,6 +149,28 @@ export default function App() {
     dispatch(chatActions.clearComposer())
     dispatch(chatActions.unlockInput())
     dispatch(chatActions.setConversationLoadingId(null))
+  }
+
+  const deleteConversation = async (conversation: ConversationSummary) => {
+    /* Irreversible — confirm with the user first. The backend handler in
+     * `conversations.py:delete_conversation` removes index rows for
+     * {user_id, conversation_id} and best-effort deletes message JSONs,
+     * attachments, and execution artifacts. */
+    const label = conversation.title || conversation.id
+    const ok = window.confirm(`Delete "${label}"? This cannot be undone.`)
+    if (!ok) return
+    dispatch(chatActions.setConversationDeletingId(conversation.id))
+    try {
+      await deleteConversationById(conversation.id)
+      dispatch(chatActions.removeConversation(conversation.id))
+    } catch (error) {
+      dispatch(chatActions.pushBanner({
+        tone: 'error',
+        text: `Failed to delete conversation: ${messageForError(error)}`,
+      }))
+    } finally {
+      dispatch(chatActions.setConversationDeletingId(null))
+    }
   }
 
   const resetTransport = () => {
@@ -499,10 +523,12 @@ export default function App() {
               loading={state.conversationsLoading}
               error={state.conversationsError}
               loadingConversationId={state.conversationLoadingId}
+              deletingConversationId={state.conversationDeletingId}
               onQueryChange={setConversationQuery}
               onRefresh={() => void refreshConversationList()}
               onSelect={(conversationId) => void loadConversation(conversationId)}
               onStartNew={startNewChat}
+              onDelete={(conversation) => void deleteConversation(conversation)}
             />
 
             <div className="glass-panel min-w-0 overflow-hidden flex flex-col">

@@ -211,6 +211,7 @@ export interface ChatState {
   conversationsLoading: boolean
   conversationsError: string | null
   conversationLoadingId: string | null
+  conversationDeletingId: string | null
 }
 
 export const initialState: ChatState = {
@@ -228,4 +229,5 @@ export const initialState: ChatState = {
   conversationsLoading: false,
   conversationsError: null,
   conversationLoadingId: null,
+  conversationDeletingId: null,
 }

@@ -136,6 +136,20 @@ const slice = createSlice({
     setConversationLoadingId(state, action: PayloadAction<string | null>) {
       state.conversationLoadingId = action.payload
     },
+    setConversationDeletingId(state, action: PayloadAction<string | null>) {
+      state.conversationDeletingId = action.payload
+    },
+    removeConversation(state, action: PayloadAction<string>) {
+      state.conversations = state.conversations.filter((c) => c.id !== action.payload)
+      /* If the deleted conversation was the open one, clear the active
+       * pointer so the right pane resets to "New chat". The caller is
+       * responsible for any further composer/lock reset. */
+      if (state.conversationId === action.payload) {
+        state.conversationId = null
+        state.conversationTitle = null
+        state.turns = []
+      }
+    },
 
     // --- Turn helpers (user send / new conversation / hydrate) ---
     startNewConversation(state) {

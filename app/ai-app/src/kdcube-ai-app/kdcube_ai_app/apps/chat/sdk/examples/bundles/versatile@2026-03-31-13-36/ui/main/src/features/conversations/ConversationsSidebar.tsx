@@ -1,4 +1,12 @@
-/** Left-hand chat list. Moved verbatim from App.tsx (Wave 2). */
+/** Left-hand chat list.
+ *
+ *  Each row is the conversation summary as a `<button>` (load on click). On
+ *  hover or focus the row reveals a trash icon that calls `onDelete` —
+ *  parents are responsible for confirming with the user before invoking
+ *  the irreversible backend delete. Search and refresh live in the header
+ *  bar.
+ */
+
 import type { ConversationSummary } from '../../service.ts'
 import { formatConversationTime } from '../../components/utils.ts'
 
@@ -10,10 +18,12 @@ export function ConversationsSidebar({
   loading,
   error,
   loadingConversationId,
+  deletingConversationId,
   onQueryChange,
   onRefresh,
   onSelect,
   onStartNew,
+  onDelete,
 }: {
   conversations: ConversationSummary[]
   query: string
@@ -22,10 +32,12 @@ export function ConversationsSidebar({
   loading: boolean
   error: string | null
   loadingConversationId: string | null
+  deletingConversationId: string | null
   onQueryChange: (value: string) => void
   onRefresh: () => void
   onSelect: (conversationId: string) => void
   onStartNew: () => void
+  onDelete: (conversation: ConversationSummary) => void
 }) {
   return (
     <aside className="glass-panel flex min-h-[520px] flex-col overflow-hidden lg:sticky lg:top-4">
@@ -95,25 +107,49 @@ export function ConversationsSidebar({
           {conversations.map((conversation) => {
             const isActive = conversation.id === activeConversationId
             const isLoading = loadingConversationId === conversation.id
+            const isDeleting = deletingConversationId === conversation.id
+            /* The row uses position:relative; the delete affordance is
+               absolutely positioned at the right edge so the underlying
+               <button> stays the click target for the whole row.
+               We render a sibling button rather than nesting one inside
+               the row <button> (invalid HTML). */
             return (
-              <button
-                key={conversation.id}
-                type="button"
-                onClick={() => onSelect(conversation.id)}
-                disabled={disabled || isLoading}
-                className={`k-row ${isActive ? 'k-active' : ''}`}
-              >
-                <div className="k-row-main">
-                  <div className="k-row-title">
-                    {conversation.title || 'Untitled conversation'}
+              <div key={conversation.id} className="k-row-shell">
+                <button
+                  type="button"
+                  onClick={() => onSelect(conversation.id)}
+                  disabled={disabled || isLoading || isDeleting}
+                  className={`k-row ${isActive ? 'k-active' : ''}`}
+                >
+                  <div className="k-row-main">
+                    <div className="k-row-title">
+                      {conversation.title || 'Untitled conversation'}
+                    </div>
+                    <div className="k-row-sub">
+                      {formatConversationTime(conversation.lastActivityAt || conversation.startedAt)}
+                      {isLoading ? ' · loading…' : ''}
+                      {isDeleting ? ' · deleting…' : ''}
+                    </div>
                   </div>
-                  <div className="k-row-sub">
-                    {formatConversationTime(conversation.lastActivityAt || conversation.startedAt)}
-                    {isLoading ? ' · loading…' : ''}
-                  </div>
-                </div>
-                {isActive ? <span className="k-chip k-teal">open</span> : null}
-              </button>
+                  {isActive ? <span className="k-chip k-teal">open</span> : null}
+                </button>
+                <button
+                  type="button"
+                  className="k-row-delete"
+                  aria-label="Delete conversation"
+                  title="Delete conversation"
+                  disabled={disabled || isLoading || isDeleting}
+                  onClick={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    onDelete(conversation)
+                  }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6" />
+                  </svg>
+                </button>
+              </div>
             )
           })}
         </div>

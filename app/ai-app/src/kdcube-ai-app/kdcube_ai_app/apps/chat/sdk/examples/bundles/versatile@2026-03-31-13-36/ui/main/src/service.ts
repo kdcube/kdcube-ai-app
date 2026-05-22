@@ -46,6 +46,7 @@ export type {
 export { downloadBlobAsFile } from './api/transport.ts'
 export { openChatStream } from './api/sseTransport.ts'
 export {
+  deleteConversationById,
   downloadHostedFile,
   downloadResourceByRN,
   fetchConversationById,
