@@ -358,7 +358,8 @@ Important local settings:
 Important runtime rule:
 
 - an initialized runtime reuses its existing `workdir/config/*.yaml`
-- running `kdcube --workdir <runtime> --build --upstream` does not reseed default descriptors
+- running `kdcube refresh --tenant <t> --project <p> --upstream --build` does
+  not reseed default descriptors
 - if you want different bundle roots or bundle entries in that runtime, edit `workdir/config/assembly.yaml` and `workdir/config/bundles.yaml` directly
 
 For the step-by-step workflow, use:

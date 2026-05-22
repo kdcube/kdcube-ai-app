@@ -198,6 +198,7 @@ kdcube start --tenant acme --project staging
 
 # Pick up platform code changes (rebuild images + restart)
 kdcube refresh --tenant acme --project staging --build
+kdcube refresh --tenant acme --project staging --release 2026.5.22.001 --build
 
 # After editing a bundle's config or code — reload without a full restart
 kdcube reload <bundle_id> --tenant acme --project staging
@@ -245,6 +246,14 @@ descriptors (`bundles.yaml`, `bundles.secrets.yaml`, `assembly.yaml`,
 kdcube refresh --workdir ~/.kdcube/kdcube-runtime/<tenant>__<project> --build
 ```
 
+Refresh also accepts the same platform source selectors as `init`:
+`--latest`, `--upstream`, and `--release <ref>`. When you pass
+`--path /path/to/kdcube-ai-app` without one of those selectors, refresh
+restages that local platform source into `<workdir>/repo` before rebuilding.
+When you do pass a selector, refresh checks out that selected ref and then
+uses the staged `<workdir>/repo` copy. This keeps all compose build contexts
+aligned with the same source tree while preserving staged descriptors.
+
 `refresh` refuses if the workdir is not initialized; pair with
 `kdcube init` for the first run, then use `refresh` for every subsequent
 re-init.
@@ -271,7 +280,7 @@ kdcube defaults \
 | Command | What it does |
 |---|---|
 | `kdcube init` | First-time setup of a fresh runtime workdir: stage descriptors, generate env files, optionally stage local secrets, optionally build images. Refuses if the target workdir is already initialized. |
-| `kdcube refresh` | Re-init an existing workdir: stop the stack, rebuild images with `--build`, restart. Never touches staged descriptors. |
+| `kdcube refresh` | Re-init an existing workdir: optionally select platform source with `--latest`, `--upstream`, or `--release <ref>`, stop the stack, rebuild images with `--build`, restart. Never touches staged descriptors. |
 | `kdcube start` | Start the platform stack for an initialized workdir |
 | `kdcube stop` | Stop the stack; `--remove-volumes` also wipes local volumes |
 

@@ -42,7 +42,7 @@ Older `docs/sdk/example-bundle` sample docs are no longer part of the bundle pat
 3. [build/how-to-configure-and-run-bundle-README.md](build/how-to-configure-and-run-bundle-README.md)
    - exact local runtime contract
    - `assembly.yaml`, `bundles.yaml`, `bundles.secrets.yaml`
-   - `kdcube --build --upstream` and `kdcube --info`
+   - `kdcube refresh --upstream --build` and `kdcube info`
    - sharp `path` / `module` rules
 4. [build/how-to-write-bundle-README.md](build/how-to-write-bundle-README.md)
    - builder playbook for designing and structuring a bundle

@@ -397,12 +397,28 @@ touching any staged descriptors. Primary form:
 kdcube refresh --tenant <t> --project <p> --build
 ```
 
+Choose at most one source selector when the existing runtime should move to a
+different platform source:
+
+```bash
+kdcube refresh --tenant <t> --project <p> --latest --build
+kdcube refresh --tenant <t> --project <p> --upstream --build
+kdcube refresh --tenant <t> --project <p> --release <ref> --build
+```
+
+Explicit `--path /path/to/kdcube-ai-app` without a selector means "restage this
+local dirty source tree into `<workdir>/repo` before rebuilding". With a
+selector, refresh checks out that selected ref and then uses the staged
+`<workdir>/repo` copy so every compose build context points at the same source.
+
 If a deployment is currently recorded as running (`~/.kdcube/cli-lock.json`),
 `kdcube refresh --build` with no flags targets it automatically.
 
 Behaviour:
 
 - refuses if the workdir is not initialized (no `install-meta.json`);
+- accepts `--latest`, `--upstream`, or `--release <ref>` as platform-source
+  selectors;
 - stops the stack if it is running;
 - rebuilds platform Docker images when `--build` is given;
 - restarts the stack (unless `--no-restart` is passed);
@@ -971,6 +987,12 @@ Refresh after editing platform source (rebuilds images, restarts):
 
 ```bash
 kdcube refresh --tenant acme --project prod --build
+```
+
+Refresh to a selected platform ref while preserving staged descriptors:
+
+```bash
+kdcube refresh --tenant acme --project prod --release 2026.5.22.001 --build
 ```
 
 If a deployment is currently recorded as running, `kdcube refresh --build`

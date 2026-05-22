@@ -867,6 +867,13 @@ descriptors. Normal operator flow is:
 3. `start` starts containers
 4. `refresh --build` re-runs the build/restart cycle on later platform updates
 
+`refresh` accepts the same platform source selectors as `init`. Use
+`kdcube refresh --tenant <t> --project <p> --latest --build`,
+`--upstream --build`, or `--release <ref> --build` when an already-initialized
+runtime should move to another platform ref without restaging descriptors.
+Explicit `--path` without one of those selectors restages dirty local platform
+source into `<workdir>/repo` before rebuilding.
+
 ### Initialize from `assembly.platform.ref`
 
 ```bash
@@ -941,7 +948,9 @@ Important:
 - explicit `--path` without `--upstream`, `--latest`, or `--release` is the dirty-local-source flow
 - to rebuild images on an *already-initialized* runtime later, run
   `kdcube refresh --tenant <t> --project <p> --build` (descriptors are
-  preserved)
+  preserved). Add `--latest`, `--upstream`, or `--release <ref>` to refresh the
+  existing runtime to another platform source while still preserving staged
+  descriptors.
 
 Use this when you are validating current platform source, not when you only need to update bundle descriptors.
 

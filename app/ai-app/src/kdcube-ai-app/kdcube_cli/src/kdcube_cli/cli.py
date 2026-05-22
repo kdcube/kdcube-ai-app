@@ -2028,11 +2028,58 @@ def _stage_descriptor_set(
     )
 
 
+def _ensure_runtime_repo_build_support_files(console: Console, *, repo_root: Path, workdir: Path) -> None:
+    env_file = workdir / "config" / ".env"
+    if not env_file.exists():
+        return
+    try:
+        env_main = installer_mod.load_env_file(env_file)
+    except Exception:
+        return
+
+    ui_context_raw = str(env_main.entries.get("UI_BUILD_CONTEXT", (None, None))[1] or "").strip()
+    nginx_rel_raw = str(env_main.entries.get("NGINX_UI_CONFIG_FILE_PATH", (None, None))[1] or "").strip()
+    if not ui_context_raw or not nginx_rel_raw:
+        return
+    nginx_rel = Path(nginx_rel_raw)
+    if nginx_rel.is_absolute():
+        return
+
+    ui_context = Path(ui_context_raw).expanduser()
+    if not ui_context.is_absolute():
+        ui_context = repo_root / "app" / "ai-app" / ui_context
+    ui_context = ui_context.resolve()
+    target = (ui_context / nginx_rel).resolve()
+    try:
+        target.relative_to(ui_context)
+    except ValueError:
+        return
+    if target.exists():
+        return
+
+    compose_mode = str(env_main.entries.get("KDCUBE_COMPOSE_MODE", (None, None))[1] or "").strip()
+    if compose_mode == "custom-ui-managed-infra":
+        source_rel = "deployment/docker/custom-ui-managed-infra/nginx/conf/nginx_ui.conf"
+    else:
+        source_rel = "deployment/docker/all_in_one_kdcube/nginx/conf/nginx_ui.conf"
+    source = (repo_root / "app" / "ai-app" / source_rel).resolve()
+    if not source.exists():
+        console.print(f"[yellow]UI nginx config source missing after source restage: {source}[/yellow]")
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, target)
+    console.print(f"[dim]Restored runtime UI nginx build config:[/dim] {target}")
+
+
 def _copy_dirty_local_source(console: Console, *, source_repo: Path, workdir: Path) -> Path:
     if not _is_git_repo(source_repo):
         raise SystemExit(f"init --path requires a local git repo: {source_repo}")
 
     target = _default_repo_path_for_workdir(workdir)
+    if source_repo.resolve() == target.resolve():
+        console.print(f"[dim]Local platform source already staged:[/dim] {target}")
+        return target
+
     console.print(f"[dim]Copying local platform source:[/dim] {source_repo} -> {target}")
 
     try:
@@ -2051,7 +2098,15 @@ def _copy_dirty_local_source(console: Console, *, source_repo: Path, workdir: Pa
     if not files:
         raise SystemExit(f"No source files found to copy from {source_repo}")
 
+    preserve_root = workdir / f".{DEFAULT_REPO_DIRNAME}.preserve-{os.getpid()}"
+    shutil.rmtree(preserve_root, ignore_errors=True)
     if target.exists():
+        for rel in (".kdcube", "app/ai-app/.kdcube"):
+            src_preserve = target / rel
+            if src_preserve.exists():
+                dst_preserve = preserve_root / rel
+                dst_preserve.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(src_preserve, dst_preserve, dirs_exist_ok=True)
         shutil.rmtree(target)
     target.mkdir(parents=True, exist_ok=True)
 
@@ -2073,6 +2128,18 @@ def _copy_dirty_local_source(console: Console, *, source_repo: Path, workdir: Pa
             shutil.copy2(src, dst)
         copied += 1
 
+    if preserve_root.exists():
+        for preserved in preserve_root.rglob("*"):
+            rel = preserved.relative_to(preserve_root)
+            dst = target / rel
+            if preserved.is_dir():
+                dst.mkdir(parents=True, exist_ok=True)
+            elif preserved.is_file() and not dst.exists():
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(preserved, dst)
+        shutil.rmtree(preserve_root, ignore_errors=True)
+
+    _ensure_runtime_repo_build_support_files(console, repo_root=target, workdir=workdir)
     console.print(f"[dim]Copied local platform source files:[/dim] {copied}")
     return target
 
@@ -2409,7 +2476,9 @@ def _resolve_subcommand_workdir(
     )
 
 
-def _resolve_subcommand_repo(path_arg: str, *, workdir: Path) -> Path:
+def _resolve_subcommand_repo(path_arg: str, *, workdir: Path, path_provided: bool = False) -> Path:
+    if path_provided:
+        return Path(os.path.expanduser(path_arg)).resolve()
     meta_repo = _repo_path_from_install_meta(_resolve_cli_workdir(workdir))
     if meta_repo is not None:
         return meta_repo
@@ -2936,6 +3005,9 @@ def main() -> None:
         default=str(DEFAULT_DIR),
         help="Local platform repo path (used for rebuilding images). Defaults to install-meta.json's repo_root when omitted.",
     )
+    _sp.add_argument("--latest", action="store_true", help="Refresh against the latest platform release advertised by the selected repo.")
+    _sp.add_argument("--upstream", action="store_true", help="Refresh against origin/main of the selected platform repo.")
+    _sp.add_argument("--release", default="", help="Refresh against a specific platform git ref/tag before rebuilding.")
     _sp.add_argument("--build", action="store_true", help="Rebuild platform Docker images before restarting.")
     _sp.add_argument(
         "--no-restart",
@@ -3026,7 +3098,7 @@ def main() -> None:
                         f"Runtime workdir not found or not initialized: {_resolved}\n"
                         "Run `kdcube init` to initialize it first."
                     )
-                _repo = _resolve_subcommand_repo(args.path, workdir=_resolved)
+                _repo = _resolve_subcommand_repo(args.path, workdir=_resolved, path_provided=_arg_provided("--path"))
                 if args.json_output:
                     _print_json(_collect_runtime_info(repo_root=_repo, workdir=_resolved))
                     return
@@ -3040,7 +3112,7 @@ def main() -> None:
                         f"Runtime workdir not found or not initialized: {_workdir}\n"
                         "Run `kdcube init` to initialize it first."
                     )
-                _repo = _resolve_subcommand_repo(args.path, workdir=_workdir)
+                _repo = _resolve_subcommand_repo(args.path, workdir=_workdir, path_provided=_arg_provided("--path"))
                 if args.json_output:
                     _print_json(_collect_runtime_info(repo_root=_repo, workdir=_workdir))
                     return
@@ -3062,7 +3134,7 @@ def main() -> None:
                             payload["default_runtime"] = None
                         else:
                             if _runtime_env_exists(_def_resolved) or (_def_resolved / "config").exists():
-                                _def_repo = _resolve_subcommand_repo(args.path, workdir=_def_resolved)
+                                _def_repo = _resolve_subcommand_repo(args.path, workdir=_def_resolved, path_provided=_arg_provided("--path"))
                                 payload["default_runtime"] = _collect_runtime_info(repo_root=_def_repo, workdir=_def_resolved)
                     _print_json(payload)
                     return
@@ -3078,7 +3150,7 @@ def main() -> None:
                         pass
                     else:
                         if _runtime_env_exists(_def_resolved) or (_def_resolved / "config").exists():
-                            _def_repo = _resolve_subcommand_repo(args.path, workdir=_def_resolved)
+                            _def_repo = _resolve_subcommand_repo(args.path, workdir=_def_resolved, path_provided=_arg_provided("--path"))
                             console.print()
                             print_runtime_info(console, repo_root=_def_repo, workdir=_def_resolved)
             return
@@ -3114,7 +3186,7 @@ def main() -> None:
                 tenant_arg=_stop_tenant_arg,
                 project_arg=_stop_project_arg,
             )
-            _repo = _resolve_subcommand_repo(args.path, workdir=_workdir)
+            _repo = _resolve_subcommand_repo(args.path, workdir=_workdir, path_provided=_arg_provided("--path"))
             stop_compose_stack(
                 console,
                 repo_root=_repo,
@@ -3128,7 +3200,7 @@ def main() -> None:
                 tenant_arg=getattr(args, "tenant", "") or "",
                 project_arg=getattr(args, "project", "") or "",
             )
-            _repo = _resolve_subcommand_repo(args.path, workdir=_workdir)
+            _repo = _resolve_subcommand_repo(args.path, workdir=_workdir, path_provided=_arg_provided("--path"))
             reload_bundle_from_descriptor(
                 console,
                 repo_root=_repo,
@@ -3168,7 +3240,7 @@ def main() -> None:
                     ]
                 ):
                     raise SystemExit("`kdcube bundle status` cannot be combined with mutation flags.")
-                _repo = _resolve_subcommand_repo(args.path, workdir=_resolved)
+                _repo = _resolve_subcommand_repo(args.path, workdir=_resolved, path_provided=_arg_provided("--path"))
                 _status = _collect_bundle_status(
                     repo_root=_repo,
                     workdir=_resolved,
@@ -3400,7 +3472,7 @@ def main() -> None:
                 tenant_arg=getattr(args, "tenant", "") or "",
                 project_arg=getattr(args, "project", "") or "",
             )
-            _repo = _resolve_subcommand_repo(args.path, workdir=_workdir)
+            _repo = _resolve_subcommand_repo(args.path, workdir=_workdir, path_provided=_arg_provided("--path"))
             _resolved = _resolve_cli_workdir(_workdir)
             _out_dir = Path(os.path.expanduser(args.out_dir or os.getcwd())).resolve()
             _bundles_path: Path | None = None
@@ -3439,7 +3511,7 @@ def main() -> None:
                 project_arg=getattr(args, "project", "") or "",
             )
             _resolved = _resolve_cli_workdir(_workdir)
-            _repo = _resolve_subcommand_repo(args.path, workdir=_resolved)
+            _repo = _resolve_subcommand_repo(args.path, workdir=_resolved, path_provided=_arg_provided("--path"))
             _t, _p = _parse_workdir_namespace(_resolved)
             _check_before_start(console, tenant=_t, project=_p)
             start_compose_stack(console, repo_root=_repo, workdir=_resolved, build=args.build)
@@ -3509,14 +3581,56 @@ def main() -> None:
                     "  - run `kdcube init --tenant T --project P` to set this workdir up, or\n"
                     "  - target a different existing initialized runtime."
                 )
-            _repo = _resolve_subcommand_repo(args.path, workdir=_resolved)
+            _refresh_path_provided = _arg_provided("--path")
+            _refresh_release = str(getattr(args, "release", "") or "").strip()
+            _refresh_version_selector = bool(args.latest or args.upstream or _refresh_release)
+            if sum([bool(args.latest), bool(args.upstream), bool(_refresh_release)]) > 1:
+                raise SystemExit("Choose only one of --latest, --upstream, or --release.")
+
+            _repo = _resolve_subcommand_repo(args.path, workdir=_resolved, path_provided=_refresh_path_provided)
+            if _refresh_version_selector:
+                if not _is_git_repo(_repo):
+                    raise SystemExit(
+                        f"Cannot use --latest/--upstream/--release with a non-git platform source tree: {_repo}"
+                    )
+                if args.upstream:
+                    _checkout_repo_upstream(console, _repo)
+                elif args.latest:
+                    _latest_ref = _read_remote_ref(_repo) or _read_local_ref(_repo)
+                    if not _latest_ref:
+                        raise SystemExit(
+                            "Could not resolve the latest platform release. "
+                            "Check platform.repo or pass --release <ref>."
+                        )
+                    _checkout_repo_ref(console, _repo, _latest_ref)
+                else:
+                    _checkout_repo_ref(console, _repo, _refresh_release)
+                if _repo.resolve() != _default_repo_path_for_workdir(_resolved).resolve():
+                    _repo = _copy_dirty_local_source(
+                        console,
+                        source_repo=_repo,
+                        workdir=_resolved,
+                    )
+            elif _refresh_path_provided:
+                _repo = _copy_dirty_local_source(
+                    console,
+                    source_repo=_repo,
+                    workdir=_resolved,
+                )
             _t, _p = _parse_workdir_namespace(_resolved)
             # Stop if running (no-op if already stopped).
             try:
                 stop_compose_stack(console, repo_root=_repo, workdir=_resolved)
-            except SystemExit:
-                # stop_compose_stack already prints; re-raise so the user sees it.
-                raise
+            except SystemExit as _stop_exit:
+                _stop_msg = str(_stop_exit)
+                if "Deployment is not running" in _stop_msg:
+                    _clear_cli_lock()
+                    console.print(
+                        f"[dim]Refresh: deployment was already stopped; continuing. Workdir: {_resolved}[/dim]"
+                    )
+                else:
+                    # stop_compose_stack already prints; re-raise so the user sees it.
+                    raise
             except Exception as _stop_exc:
                 console.print(
                     f"[yellow]Refresh: stop_compose_stack reported {_stop_exc}; "

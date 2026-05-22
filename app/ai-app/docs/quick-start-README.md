@@ -146,6 +146,9 @@ If you changed only bundle descriptors or bundle source references, reload the
 bundle. If you changed platform code that is baked into images, run
 `kdcube refresh --tenant "$TENANT" --project "$PROJECT" --build` — it
 rebuilds images and restarts without touching staged descriptors.
+`refresh` accepts the same platform source selectors as `init`: add
+`--latest`, `--upstream`, or `--release <ref>` when the existing runtime should
+move to another platform ref while preserving staged descriptors.
 
 ## 5. Bundle Development Loop
 

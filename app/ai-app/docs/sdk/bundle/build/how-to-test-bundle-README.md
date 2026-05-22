@@ -1246,6 +1246,15 @@ After platform-source changes that need rebuilt images:
 kdcube refresh --tenant <t> --project <p> --build
 ```
 
+To test the same staged runtime against another platform source without
+restaging descriptors, add one selector:
+
+```bash
+kdcube refresh --tenant <t> --project <p> --latest --build
+kdcube refresh --tenant <t> --project <p> --upstream --build
+kdcube refresh --tenant <t> --project <p> --release <ref> --build
+```
+
 This is important because a bundle may pass tests but still fail during descriptor-driven runtime resolution.
 
 Use reload testing after changing:

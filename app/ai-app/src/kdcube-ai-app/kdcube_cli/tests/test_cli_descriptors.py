@@ -562,6 +562,21 @@ def test_subcommand_repo_uses_install_meta_after_base_workdir_resolves_to_runtim
     assert resolved_repo == staged_repo.resolve()
 
 
+def test_subcommand_repo_explicit_path_overrides_install_meta(tmp_path: Path):
+    runtime_dir = tmp_path / "workspace" / "demo__project"
+    config_dir = runtime_dir / "config"
+    config_dir.mkdir(parents=True)
+    staged_repo = runtime_dir / "repo"
+    explicit_repo = tmp_path / "source"
+    (staged_repo / "app" / "ai-app" / "deployment").mkdir(parents=True)
+    (explicit_repo / "app" / "ai-app" / "deployment").mkdir(parents=True)
+    (config_dir / "install-meta.json").write_text(json.dumps({"repo_root": str(staged_repo.resolve())}))
+
+    resolved_repo = _resolve_subcommand_repo(str(explicit_repo), workdir=runtime_dir, path_provided=True)
+
+    assert resolved_repo == explicit_repo.resolve()
+
+
 def test_copy_dirty_local_source_copies_tracked_and_untracked_nonignored_files(tmp_path: Path):
     source_repo = tmp_path / "source"
     _init_git_repo(source_repo)
@@ -585,6 +600,53 @@ def test_copy_dirty_local_source_copies_tracked_and_untracked_nonignored_files(t
     assert not (copied_repo / ".git").exists()
     assert not (copied_repo / "ignored.txt").exists()
     assert not (copied_repo / "ignored-dir" / "data.txt").exists()
+
+
+def test_copy_dirty_local_source_noops_when_source_is_runtime_repo(tmp_path: Path):
+    workdir = tmp_path / "runtime"
+    source_repo = workdir / "repo"
+    _init_git_repo(source_repo)
+    tracked = source_repo / "app" / "ai-app" / "deployment" / "assembly.yaml"
+    tracked.parent.mkdir(parents=True)
+    tracked.write_text("context: {}\n", encoding="utf-8")
+    subprocess.run(["git", "add", str(tracked.relative_to(source_repo))], cwd=source_repo, check=True)
+
+    copied_repo = _copy_dirty_local_source(Console(file=None), source_repo=source_repo, workdir=workdir)
+
+    assert copied_repo == source_repo.resolve()
+    assert tracked.exists()
+
+
+def test_copy_dirty_local_source_restores_ui_nginx_build_config(tmp_path: Path):
+    source_repo = tmp_path / "source"
+    _init_git_repo(source_repo)
+    nginx_source = source_repo / "app" / "ai-app" / "deployment" / "docker" / "custom-ui-managed-infra" / "nginx" / "conf" / "nginx_ui.conf"
+    nginx_source.parent.mkdir(parents=True)
+    nginx_source.write_text("events {}\n", encoding="utf-8")
+    tracked = source_repo / "app" / "ai-app" / "deployment" / "assembly.yaml"
+    tracked.write_text("context: {}\n", encoding="utf-8")
+    subprocess.run(["git", "add", str(tracked.relative_to(source_repo)), str(nginx_source.relative_to(source_repo))], cwd=source_repo, check=True)
+
+    workdir = tmp_path / "runtime"
+    config_dir = workdir / "config"
+    config_dir.mkdir(parents=True)
+    (config_dir / ".env").write_text(
+        "\n".join(
+            [
+                "KDCUBE_COMPOSE_MODE=custom-ui-managed-infra",
+                f"UI_BUILD_CONTEXT={workdir / 'repo' / 'app' / 'ai-app'}",
+                "NGINX_UI_CONFIG_FILE_PATH=.kdcube/nginx_ui.conf",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    copied_repo = _copy_dirty_local_source(Console(file=None), source_repo=source_repo, workdir=workdir)
+
+    assert (
+        copied_repo / "app" / "ai-app" / ".kdcube" / "nginx_ui.conf"
+    ).read_text(encoding="utf-8") == "events {}\n"
 
 
 def test_copy_dirty_local_source_accepts_git_worktree_with_git_file(tmp_path: Path):

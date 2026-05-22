@@ -215,12 +215,17 @@ subcommand:
 
 ```bash
 kdcube refresh --workdir /path/to/workspace/<tenant>__<project> --build
+kdcube refresh --workdir /path/to/workspace/<tenant>__<project> --release 2026.5.22.001 --build
 ```
 
 `refresh` is the safe way to apply platform-side changes (new images, updated
 SDK code) on an existing workdir. It:
 
 - refuses if the workdir is not initialized (no `install-meta.json`);
+- accepts exactly one platform source selector: `--latest`, `--upstream`, or
+  `--release <ref>`;
+- restages explicit local `--path <repo>` into `<workdir>/repo` before
+  rebuilding when no source selector is provided;
 - stops the stack if it is running;
 - rebuilds platform Docker images when `--build` is given;
 - restarts the stack (unless `--no-restart` is passed);
@@ -432,6 +437,7 @@ descriptor changes), use [`kdcube refresh`](#kdcube-refresh) instead:
 
 ```bash
 kdcube refresh --workdir <runtime> --build
+kdcube refresh --workdir <runtime> --latest --build
 ```
 
 `kdcube init` refuses on an already-initialized workdir; it prints the
@@ -451,7 +457,7 @@ what is incomplete.
 | Subcommand | Purpose |
 |---|---|
 | `kdcube init [--workdir <full-path> \| --workdir-base <base> --tenant T --project P] [--path <repo>] [--descriptors-location <dir>] [--latest\|--upstream\|--release <ref>] [--build] [-i] [--reset-config] [--prompt-secrets] [--set-secret KEY VALUE]... [--cors-origin ORIGIN]...` | **First-time setup only.** Initialize a fresh runtime workdir (stage descriptors, generate env files). Pick one of `--workdir <full-path>` (the trailing segment must be `<tenant>__<project>`) or `--workdir-base <base> --tenant T --project P` (the CLI composes the namespaced path). Refuses if the resolved workdir is already initialized — use `kdcube refresh` for that case. Explicit `--path` stages that local source tree unless a version selector is used. With `--build`, also build images **without** starting containers. `--cors-origin` appends an allowed origin to staged `config/assembly.yaml`. |
-| `kdcube refresh [--workdir <full-path>] [--path <repo>] [--build] [--no-restart]` | Re-init an already-initialized runtime: stop the stack, rebuild platform Docker images when `--build` is given, restart the stack (unless `--no-restart`). **Never** modifies staged descriptors (`assembly.yaml`, `secrets.yaml`, `bundles.yaml`, `bundles.secrets.yaml`, `gateway.yaml`). Refuses if the workdir is not initialized. |
+| `kdcube refresh [--workdir <full-path>] [--path <repo>] [--latest\|--upstream\|--release <ref>] [--build] [--no-restart]` | Re-init an already-initialized runtime: stop the stack, optionally select a platform ref, restage explicit local `--path` into `<workdir>/repo`, rebuild platform Docker images when `--build` is given, restart the stack (unless `--no-restart`). **Never** modifies staged descriptors (`assembly.yaml`, `secrets.yaml`, `bundles.yaml`, `bundles.secrets.yaml`, `gateway.yaml`). Refuses if the workdir is not initialized. |
 | `kdcube start [--workdir <path>] [--build]` | Start the Docker Compose stack for an already-initialized workdir. `--build` is a convenience rebuild before start, not required if `init --build` was already run; for a structured re-init after platform changes, prefer `kdcube refresh --build`. |
 | `kdcube stop [--workdir <path>] [--remove-volumes]` | Stop the local Docker Compose stack. |
 | `kdcube reload <bundle_id> [--workdir <path>] [--json] [--quiet] [--verbose]` | Reapply `bundles.yaml` from the active runtime and clear proc bundle caches. Normal output is concise; `--json` is scriptable; `--verbose` shows the raw Docker Compose command and proc response. |
@@ -551,7 +557,9 @@ builds from the staged copy.
 
 To rebuild images on a runtime that has already been initialised this way,
 use `kdcube refresh --workdir <fully-qualified> --build` rather than re-running
-`kdcube init` (which now refuses on existing workdirs).
+`kdcube init` (which now refuses on existing workdirs). Add `--latest`,
+`--upstream`, or `--release <ref>` to refresh the same staged runtime to
+another platform source.
 
 Re-run prompts (edit existing values):
 

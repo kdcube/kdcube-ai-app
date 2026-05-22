@@ -184,12 +184,17 @@ Target shape:
 ```bash
 kdcube refresh \
   {--tenant <t> --project <p>} | {--workdir <full>} \
-  [--build] [--no-restart]
+  [--latest | --upstream | --release <ref>] \
+  [--path <repo>] [--build] [--no-restart]
 ```
 
 `refresh` never modifies `assembly.yaml`, `secrets.yaml`, `bundles.yaml`,
 `bundles.secrets.yaml`, or `gateway.yaml`. When no targeting flags are given
 and no defaults are set, refresh targets the currently-recorded running
+deployment. `--latest`, `--upstream`, and `--release <ref>` reuse the existing
+runtime descriptors but select a new platform source before rebuild/restart.
+Explicit `--path` without one of those selectors restages a dirty local source
+tree into the runtime repo cache before rebuild.
 deployment from `~/.kdcube/cli-lock.json`.
 
 ## 2. `kdcube defaults`
@@ -209,14 +214,14 @@ kdcube defaults \
 
 These defaults let normal commands omit repeated targeting flags.
 
-## 3. `kdcube --info`
+## 3. `kdcube info`
 
 Two intended levels:
 
 ### Global info
 
 ```bash
-kdcube --info
+kdcube info
 ```
 
 Shows:
@@ -232,7 +237,7 @@ guessing.
 ### Deployment info
 
 ```bash
-kdcube --info --workdir <deployment-workdir>
+kdcube info --workdir <deployment-workdir>
 ```
 
 Shows:

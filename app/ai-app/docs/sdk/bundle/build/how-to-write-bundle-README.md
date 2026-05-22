@@ -97,7 +97,7 @@ Practical rule:
 Configuration/runtime rule:
 
 - use this page for how to structure the bundle code
-- use [how-to-configure-and-run-bundle-README.md](how-to-configure-and-run-bundle-README.md) for `assembly.yaml`, `bundles.yaml`, `bundles.secrets.yaml`, `kdcube --build --upstream`, and `kdcube --info`
+- use [how-to-configure-and-run-bundle-README.md](how-to-configure-and-run-bundle-README.md) for `assembly.yaml`, `bundles.yaml`, `bundles.secrets.yaml`, `kdcube refresh --upstream --build`, and `kdcube info`
 
 Critical Python import rule:
 

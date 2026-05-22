@@ -350,6 +350,20 @@ platform source, regenerate env files, restart):
 "$KDCUBE" refresh --tenant "$TENANT" --project "$PROJECT" --build
 ```
 
+Use the same source selectors as `init` when the already-initialized runtime
+should move to another platform ref while preserving staged descriptors:
+
+```bash
+"$KDCUBE" refresh --tenant "$TENANT" --project "$PROJECT" --latest --build
+"$KDCUBE" refresh --tenant "$TENANT" --project "$PROJECT" --upstream --build
+"$KDCUBE" refresh --tenant "$TENANT" --project "$PROJECT" --release <ref> --build
+```
+
+Explicit `--path "$KDCUBE_REPO"` without one of those selectors means "restage
+this dirty local platform source into `<WORKDIR>/repo` before rebuilding".
+With a selector, refresh checks out that selected ref and uses the staged
+runtime repo copy so all compose build contexts agree.
+
 If a deployment is currently recorded as running (`~/.kdcube/cli-lock.json`),
 `kdcube refresh --build` with no flags targets it automatically.
 
@@ -363,6 +377,9 @@ Agent rule:
 
 - if the user wants to **rebuild platform images** or **restart** after editing
   platform source: `kdcube refresh --tenant T --project P --build`.
+- if the user wants to **move an existing runtime to a different platform
+  source** while preserving descriptors: add exactly one of `--latest`,
+  `--upstream`, or `--release <ref>` to `kdcube refresh`.
 - if the user wants to **reseed descriptors** from a fresh seed directory: the
   current workdir must first be deleted (`rm -rf <WORKDIR>`), then re-run
   `kdcube init --tenant T --project P --descriptors-location <seed> ...`.
@@ -772,7 +789,8 @@ meaningful.
   first re-creating the workdir (delete + `kdcube init` again) — staged
   descriptors under `<WORKDIR>/config/` are authoritative once init has run
 - re-running `kdcube init` on an existing workdir to "refresh" — it now
-  refuses; use `kdcube refresh --tenant T --project P --build` instead
+  refuses; use `kdcube refresh --tenant T --project P --build` instead, with
+  `--latest`, `--upstream`, or `--release <ref>` when changing platform source
 - patching staged descriptors and forgetting `kdcube reload`
 - hardcoding `/Users/...` host paths into Docker-runtime descriptors by hand
 - registering a Telegram webhook before ngrok and the bundle public route are

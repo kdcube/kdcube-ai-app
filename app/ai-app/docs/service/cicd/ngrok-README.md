@@ -291,6 +291,10 @@ https://<stable-ngrok-domain>
 kdcube refresh --tenant <t> --project <p>
 ```
 
+If the restart should also move the existing runtime to another platform ref,
+add one selector: `--latest`, `--upstream`, or `--release <ref>`. Add `--build`
+when images must be rebuilt.
+
 7. Reload after bundle descriptor/config changes:
 
 ```bash
