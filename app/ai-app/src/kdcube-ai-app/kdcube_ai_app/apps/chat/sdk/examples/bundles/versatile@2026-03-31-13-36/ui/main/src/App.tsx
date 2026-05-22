@@ -479,13 +479,24 @@ export default function App() {
   const handleTurnDownloadError = useStableCallback((text: string) => {
     dispatch(chatActions.pushBanner({ tone: 'error', text: `Download failed: ${text}` }))
   })
+  /* Clicking a suggested followup chip populates the composer with
+   * the suggested text and focuses it — the user reviews / edits and
+   * presses Send (or Cmd/Ctrl+Enter) themselves. Sending immediately
+   * was surprising; users want a beat to revise the question. */
   const handleTurnFollowup = useStableCallback((text: string) => {
     const snapshot = stateRef.current
     if (snapshot.inputLocked || snapshot.connection === 'booting') return
-    const hasPending = snapshot.turns.some(
-      (turn) => turn.state === 'pending' || turn.state === 'running',
-    )
-    void sendMessage(text, hasPending ? 'followup' : 'regular')
+    dispatch(chatActions.setComposerText(text))
+    /* Best-effort focus on the composer textarea so the cursor is
+     * already there for editing. */
+    window.requestAnimationFrame(() => {
+      const textarea = document.querySelector('.k-composer textarea') as HTMLTextAreaElement | null
+      if (textarea) {
+        textarea.focus()
+        const end = textarea.value.length
+        textarea.setSelectionRange(end, end)
+      }
+    })
   })
   const handleComposerTextChange = useStableCallback((value: string) => {
     dispatch(chatActions.setComposerText(value))

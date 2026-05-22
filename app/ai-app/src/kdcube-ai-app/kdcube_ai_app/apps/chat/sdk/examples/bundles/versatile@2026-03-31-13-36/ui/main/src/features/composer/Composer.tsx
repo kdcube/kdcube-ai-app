@@ -53,6 +53,18 @@ function ComposerImpl({
           value={text}
           disabled={disabled}
           onChange={(event) => onTextChange(event.target.value)}
+          onKeyDown={(event) => {
+            /* Cmd+Enter (macOS) and Ctrl+Enter (Windows/Linux) submit
+             * — matches the "⌘↵ to send" hint shown next to the send
+             * button. Plain Enter inserts a newline, which is the
+             * default textarea behaviour. */
+            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+              event.preventDefault()
+              if (!disabled && (text.trim() || files.length > 0)) {
+                onSubmit()
+              }
+            }
+          }}
           placeholder={
             inProgress
               ? 'Send a follow-up while the current turn is still running.'
