@@ -1,45 +1,61 @@
 platform:
   repo: "kdcube-ai-app"
-  ref: "2026.5.21.145"
+  ref: "2026.5.22.442"
   description: |
-    This patch release tightens CLI startup behavior, split Docker execution
-    logging, and ReAct timeline/runtime behavior after the 2026.5.20.x
-    isolated-runtime updates.
+    This patch release tightens local runtime refresh behavior, shared managed
+    example-bundle materialization, and bundle-builder documentation after the
+    2026.5.21.145 release.
 
     Highlights
 
-    - Prepares Docker Compose log bind directories during CLI start, using the
-      generated Compose transport values, so clean installs do not let Docker
-      create root-owned log directories.
-    - Improves split isolated-runtime log feedback while preserving the
-      executor isolation boundary.
-    - Orders generated file timeline entries by emission time and shows them
-      before final answers.
-    - Separates streamed answer content from raw final_answer completion events.
-    - Adds per-action step streaming keys and stronger ReAct causality guards
-      for multi-action planning.
-    - Documents stream families, long-running lifecycle behavior, ECS layout,
-      and Claude Code integration notes.
+    - Adds source selectors to `kdcube refresh`: `--latest`, `--upstream`, and
+      `--release <ref>`, so existing runtimes can move to a selected platform
+      source without reseeding staged descriptors.
+    - Fixes explicit local-source refresh: `kdcube refresh --path <repo>
+      --build` now restages the requested platform checkout into the runtime
+      repo instead of falling back to stale install metadata.
+    - Preserves and restores runtime UI nginx build support files during local
+      refresh so Docker web-ui builds can run from a freshly restaged runtime
+      repo.
+    - Hardens bundle UI builds against generated JS shadow files, preventing
+      stale generated `App.js` siblings from shadowing TS/TSX widget source
+      during Vite import analysis.
+    - Makes shared managed example-bundle directories timestamped and metadata
+      backed, making it clear which materialized copy is newest and improving
+      cleanup ordering.
+    - Protects shared example-bundle materialization with the canonical
+      observed file lock, so concurrent proc workers on a shared filesystem do
+      not create duplicate timestamped copies for the same content hash.
+    - Documents refresh source selectors and local runtime bootstrap behavior
+      across Tier 1 bundle docs, CLI docs, website docs, and reusable
+      Build-with-KDCube agent guidance.
 
     Runtime and deployment notes:
 
-    - Deployments must point the platform ref at 2026.5.21.145 to receive the
-      CLI start-time Compose log preparation and runtime/timeline fixes.
+    - Deployments must point the platform ref at 2026.5.22.442 to receive the
+      refresh/source-selection fixes, bundle UI shadow-file handling, and
+      timestamped managed example-bundle materialization.
     - No descriptor shape migration is required.
     - No private deployment content is part of this OSS release.
 
     Validation and regression coverage:
 
-    - Focused CLI descriptor tests passed for generated Compose log directory
-      handling.
-    - Python syntax validation passed for changed CLI files.
+    - Focused managed-bundle and UI source-copy tests passed.
+    - Focused CLI descriptor/source-copy tests passed.
+    - Python syntax validation passed for changed platform files.
+    - Local Docker runtime was refreshed from the patched source, rebuilt, and
+      restarted successfully.
+    - Versatile main UI and `versatile_webapp` widget built successfully after
+      refresh.
     - Staged OSS private-name scan passed before commit.
 
     Changelog
 
-    - Fixed CLI Compose log bind preparation during start.
-    - Improved isolated execution logging feedback and timeline stream
-      rendering behavior.
-    - Tightened ReAct causality guidance and protocol guards.
+    - Fixed `kdcube refresh` source selection and local restaging behavior.
+    - Fixed stale generated JS shadowing during bundle UI builds.
+    - Added timestamped managed example-bundle directories and observable
+      shared-filesystem locking.
+    - Updated runtime/bootstrap documentation for bundle builders and coding
+      agents.
 config:
-    version: "2026.5.21.145"
+    version: "2026.5.22.442"
