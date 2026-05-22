@@ -1,4 +1,4 @@
-import { createLocalId, getClientTimezone, makeAuthHeaders, settings } from './settings'
+import { createLocalId, getClientTimezone, makeAuthHeaders, settings } from './settings.ts'
 
 export type BannerTone = 'info' | 'warning' | 'error'
 export type StepStatus = 'started' | 'running' | 'completed' | 'error' | 'skipped'

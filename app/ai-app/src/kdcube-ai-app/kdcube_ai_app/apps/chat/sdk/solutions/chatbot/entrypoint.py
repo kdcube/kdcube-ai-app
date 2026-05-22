@@ -291,6 +291,8 @@ class BaseEntrypoint:
                 continue
             if path.suffix in ignored_suffixes:
                 continue
+            if BaseEntrypoint._is_ui_generated_shadow_file(path):
+                continue
             try:
                 stat = path.stat()
             except OSError:
@@ -304,10 +306,28 @@ class BaseEntrypoint:
         return sha.hexdigest()
 
     @staticmethod
+    def _is_ui_generated_shadow_file(path: pathlib.Path) -> bool:
+        """Return true for generated JS siblings that shadow TS/TSX source."""
+        name = path.name
+        parent = path.parent
+
+        suffix = path.suffix
+        if suffix in {".js", ".jsx"}:
+            stem = path.stem
+        elif name.endswith(".js.map"):
+            stem = name[: -len(".js.map")]
+        elif name.endswith(".jsx.map"):
+            stem = name[: -len(".jsx.map")]
+        else:
+            return False
+
+        return (parent / f"{stem}.ts").exists() or (parent / f"{stem}.tsx").exists()
+
+    @staticmethod
     def _ui_copy_ignore_patterns():
         import shutil
 
-        return shutil.ignore_patterns(
+        base_ignore = shutil.ignore_patterns(
             "node_modules",
             "dist",
             "build",
@@ -318,6 +338,16 @@ class BaseEntrypoint:
             "__pycache__",
             "*.tsbuildinfo",
         )
+
+        def ignore_generated_shadow_files(directory: str, names: list[str]) -> set[str]:
+            ignored = set(base_ignore(directory, names))
+            parent = pathlib.Path(directory)
+            for name in names:
+                if BaseEntrypoint._is_ui_generated_shadow_file(parent / name):
+                    ignored.add(name)
+            return ignored
+
+        return ignore_generated_shadow_files
 
     @staticmethod
     def _ui_config_enabled(cfg: Dict[str, Any]) -> bool:

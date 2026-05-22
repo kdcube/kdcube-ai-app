@@ -11,7 +11,7 @@ import {
   openChatStream,
   requestConversationStatus,
   submitChatMessage,
-} from './service'
+} from './service.ts'
 import type {
   BaseEnvelope,
   BannerTone,
@@ -29,8 +29,8 @@ import type {
   ConvStatusEnvelope,
   RateLimitPayload,
   StepStatus,
-} from './service'
-import { BUILT_BUNDLE_ID, createLocalId, settings } from './settings'
+} from './service.ts'
+import { BUILT_BUNDLE_ID, createLocalId, settings } from './settings.ts'
 
 type ConnectionState = 'booting' | 'connecting' | 'connected' | 'disconnected'
 type TurnState = 'pending' | 'running' | 'completed' | 'error'
