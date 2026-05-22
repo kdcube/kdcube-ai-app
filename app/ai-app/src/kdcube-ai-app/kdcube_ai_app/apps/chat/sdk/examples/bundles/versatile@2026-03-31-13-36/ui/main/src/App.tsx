@@ -34,7 +34,7 @@ import { BUILT_BUNDLE_ID, createLocalId, settings } from './settings.ts'
 
 type ConnectionState = 'booting' | 'connecting' | 'connected' | 'disconnected'
 type TurnState = 'pending' | 'running' | 'completed' | 'error'
-type TurnTab = 'overview' | 'timeline' | 'steps' | 'links' | 'files' | 'canvases'
+type TurnTab = 'chat' | 'overview' | 'timeline' | 'steps' | 'links' | 'files' | 'canvases'
 
 interface Banner {
   id: string
@@ -860,30 +860,38 @@ function applyChatStart(state: ChatState, env: ChatStartEnvelope): ChatState {
 function applyChatComplete(state: ChatState, env: ChatCompleteEnvelope): ChatState {
   const ensuredState = ensureTurn(state, env.conversation.turn_id, timestampValue(env.timestamp))
   const syncedState = syncConversationFromEnvelope(ensuredState, env)
-  return updateTurn(syncedState, env.conversation.turn_id, (turn) => ({
-    ...turn,
-    state: env.data?.error_message ? 'error' : 'completed',
-    // The visible answer comes from streamed `marker="answer"` deltas, where citation tokens
-    // [[S:n]] are replaced into resolved links live. The chat.complete envelope may still
-    // carry `data.final_answer` in raw token form; reading it here would arrive after the
-    // stream completes and clobber the rendered text. Keep `turn.answer` (streamed text).
-    answer: turn.answer,
-    error: (env.data?.error_message as string | undefined) || turn.error,
-    followups: Array.isArray(env.data?.followups) ? (env.data?.followups as string[]) : turn.followups,
-    timeline: [
-      ...turn.timeline,
-      {
-        id: `lifecycle:complete:${env.service.request_id}:${env.conversation.turn_id}`,
-        timestamp: timestampValue(env.timestamp),
-        kind: 'lifecycle',
-        title: env.data?.error_message ? 'Turn completed with error' : 'Turn completed',
-        body: typeof env.data?.selected_model === 'string' ? `Model: ${env.data.selected_model}` : undefined,
-        format: 'text',
-        status: env.data?.error_message ? 'error' : 'completed',
-        agent: env.event.agent,
-      },
-    ],
-  }))
+  return updateTurn(syncedState, env.conversation.turn_id, (turn) => {
+    const completeFollowups = Array.isArray(env.data?.followups)
+      ? (env.data.followups as unknown[]).filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      : []
+    return {
+      ...turn,
+      state: env.data?.error_message ? 'error' : 'completed',
+      // The visible answer comes from streamed `marker="answer"` deltas, where citation tokens
+      // [[S:n]] are replaced into resolved links live. The chat.complete envelope may still
+      // carry `data.final_answer` in raw token form; reading it here would arrive after the
+      // stream completes and clobber the rendered text. Keep `turn.answer` (streamed text).
+      answer: turn.answer,
+      error: (env.data?.error_message as string | undefined) || turn.error,
+      // `chat.followups` usually arrives as a completed step before `chat.complete`.
+      // Some completion envelopes still carry an empty followups array, so only use
+      // completion followups when they are actually populated.
+      followups: completeFollowups.length ? completeFollowups : turn.followups,
+      timeline: [
+        ...turn.timeline,
+        {
+          id: `lifecycle:complete:${env.service.request_id}:${env.conversation.turn_id}`,
+          timestamp: timestampValue(env.timestamp),
+          kind: 'lifecycle',
+          title: env.data?.error_message ? 'Turn completed with error' : 'Turn completed',
+          body: typeof env.data?.selected_model === 'string' ? `Model: ${env.data.selected_model}` : undefined,
+          format: 'text',
+          status: env.data?.error_message ? 'error' : 'completed',
+          agent: env.event.agent,
+        },
+      ],
+    }
+  })
 }
 
 function applyChatError(state: ChatState, env: ChatErrorEnvelope): ChatState {
@@ -989,6 +997,25 @@ function applyChatStep(state: ChatState, env: ChatStepEnvelope): ChatState {
             mime: typeof item.mime === 'string' ? item.mime : null,
             description: typeof item.description === 'string' ? item.description : null,
           })
+        }
+      }
+
+      if (env.event.step === 'followups' && Array.isArray(env.data?.items)) {
+        // chat.followups arrives via the `chat.step` route (status === "completed"),
+        // so this is the canonical place to populate turn.followups during a live
+        // stream. The reload path populates them directly from the stored
+        // `artifact:conv.user_shortcuts`.
+        const followups = (env.data.items as unknown[]).filter(
+          (item): item is string => typeof item === 'string' && item.trim().length > 0,
+        )
+        return {
+          ...turn,
+          steps: {
+            ...turn.steps,
+            [env.event.step]: nextStep,
+          },
+          artifacts,
+          followups: followups.length ? followups : turn.followups,
         }
       }
     }
@@ -1263,9 +1290,8 @@ function applyChatDelta(state: ChatState, env: ChatDeltaEnvelope): ChatState {
         break
     }
 
-    if (env.event?.step === 'followups' && env.event?.status === 'completed' && Array.isArray(env.data?.items)) {
-      nextTurn.followups = env.data.items.filter((item): item is string => typeof item === 'string')
-    }
+    // followups handling moved to applyChatStep (chat.followups is dispatched as
+    // a `chat.step` event with step === "followups", not a delta).
 
     return {
       ...nextTurn,
@@ -2751,6 +2777,461 @@ function MergedOverviewFeed({
   )
 }
 
+/* ---------------------------------------------------------------------- */
+/*  Chat view                                                             */
+/*                                                                        */
+/*  A "light" rendering of the same turn data Overview uses. The Chat     */
+/*  view trims agent-name noise from thinking, surfaces favicons on web   */
+/*  search/fetch results, and auto-collapses code-exec while keeping      */
+/*  canvas + search expanded. All §3 primitives, no new colours.          */
+/*                                                                        */
+/*  Data sources are intentionally the same as Overview                   */
+/*  (mergeOverviewEvents + turn.timeline.kind === 'thinking') — there is  */
+/*  no parallel state and no new event handler.                           */
+/* ---------------------------------------------------------------------- */
+
+/** Resolve a usable favicon URL for a search/fetch result.
+ *  Prefers the artifact-provided favicon. Falls back to Google's S2 service
+ *  using the hostname so the row always has a recognisable mark. */
+function resolveFavicon(item: { favicon?: string | null; url?: string }): string | null {
+  const explicit = (item.favicon || '').trim()
+  if (explicit) return explicit
+  const url = (item.url || '').trim()
+  if (!url) return null
+  try {
+    const host = new URL(url).hostname
+    if (!host) return null
+    return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=32`
+  } catch {
+    return null
+  }
+}
+
+function ChatFaviconImg({ url, favicon }: { url?: string; favicon?: string | null }) {
+  const src = resolveFavicon({ url, favicon })
+  if (!src) return <span className="k-result-favicon" aria-hidden="true" />
+  return (
+    <img
+      className="k-result-favicon"
+      src={src}
+      alt=""
+      width={16}
+      height={16}
+      loading="lazy"
+      decoding="async"
+      referrerPolicy="no-referrer"
+      onError={(event) => {
+        /* Hide broken favicon images so the row still looks intentional. */
+        (event.currentTarget as HTMLImageElement).style.visibility = 'hidden'
+      }}
+    />
+  )
+}
+
+/** Compact thinking timeline for the Chat view.
+ *
+ *  Rendered as a thin vertical guide with a steel-blue dot per entry and
+ *  faded body text. No agent pill, no status chip — chat view stays calm. */
+function ChatThinkingTimeline({ entries }: { entries: TimelineEntry[] }) {
+  if (entries.length === 0) return null
+  const sorted = entries.slice().sort((left, right) => left.timestamp - right.timestamp)
+  return (
+    <div className="k-chat-think">
+      <div className="k-chat-think-head">
+        <span className="k-status k-warn" aria-hidden="true" />
+        <span className="k-chat-think-title">Thinking</span>
+        <span className="k-chat-think-count">{sorted.length} step{sorted.length === 1 ? '' : 's'}</span>
+      </div>
+      <ol className="k-chat-think-list">
+        {sorted.map((entry) => (
+          <li key={entry.id} className="k-chat-think-item">
+            <span className="k-chat-think-dot" aria-hidden="true" />
+            <div className="k-chat-think-body">
+              {entry.body ? (
+                <MarkdownBlock content={entry.body} compact />
+              ) : (
+                <p className="k-chat-think-empty">Reasoning step.</p>
+              )}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </div>
+  )
+}
+
+/** Web search artifact rendered for the Chat view.
+ *  Same shape as ArtifactFeed's web_search render but with real favicons
+ *  and "queries · objective" demoted to a single muted line. Open by default. */
+function ChatWebSearchBlock({ artifact }: { artifact: WebSearchArtifact }) {
+  return (
+    <details className="k-workitem k-tint-sky" open>
+      <summary className="k-workitem-head">
+        <span className="k-workitem-icon" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="11" cy="11" r="7" />
+            <path d="M21 21l-4.3-4.3" />
+          </svg>
+        </span>
+        <span className="k-workitem-title">
+          <span className="k-text">{artifact.title || artifact.name || 'Web search'}</span>
+          <span className="k-micro">web search · {artifact.items.length}</span>
+        </span>
+        <span className="k-workitem-meta">{formatTime(artifact.timestamp)}</span>
+        <CaretIcon />
+      </summary>
+      <div className="k-workitem-body">
+        {artifact.objective ? (
+          <p className="text-[12px] text-[var(--muted)]">{artifact.objective}</p>
+        ) : null}
+        {artifact.queries.length > 0 ? (
+          <div className="k-query-row">
+            <span className="k-micro">queries</span>
+            {artifact.queries.map((query) => (
+              <span key={query} className="k-query-chip">{query}</span>
+            ))}
+          </div>
+        ) : null}
+        {artifact.items.length > 0 ? (
+          <div className="k-result-list">
+            {artifact.items.slice(0, 6).map((item, idx) => (
+              <a
+                key={item.url}
+                href={item.url}
+                target="_blank"
+                rel="noreferrer"
+                className="k-result-row"
+              >
+                <ChatFaviconImg url={item.url} favicon={item.favicon} />
+                <div className="k-result-main">
+                  <span className="k-result-title">{item.title || shortUrl(item.url)}</span>
+                  <span className="k-result-host">{shortUrl(item.url)}</span>
+                  {item.body ? <span className="k-result-body">{item.body}</span> : null}
+                </div>
+                <span className="k-result-tag">[{idx + 1}]</span>
+              </a>
+            ))}
+          </div>
+        ) : null}
+        {artifact.reportContent ? (
+          <details>
+            <summary className="cursor-pointer text-[12px] font-medium text-[var(--blue-dark)]">
+              Show report
+            </summary>
+            <div className="mt-1 max-h-[360px] overflow-auto pr-1">
+              <MarkdownBlock content={artifact.reportContent} compact />
+            </div>
+          </details>
+        ) : null}
+      </div>
+    </details>
+  )
+}
+
+/** Web fetch artifact rendered for the Chat view (favicons + status). Open. */
+function ChatWebFetchBlock({ artifact }: { artifact: WebFetchArtifact }) {
+  return (
+    <details className="k-workitem k-tint-gold" open>
+      <summary className="k-workitem-head">
+        <span className="k-workitem-icon" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M21 12a9 9 0 1 1-9-9" />
+            <path d="M21 3v6h-6" />
+          </svg>
+        </span>
+        <span className="k-workitem-title">
+          <span className="k-text">{artifact.title || artifact.name || 'Web fetch'}</span>
+          <span className="k-micro">web fetch · {artifact.items.length}</span>
+        </span>
+        <span className="k-workitem-meta">{formatTime(artifact.timestamp)}</span>
+        <CaretIcon />
+      </summary>
+      <div className="k-workitem-body">
+        <div className="k-result-list">
+          {artifact.items.slice(0, 6).map((item) => (
+            <a
+              key={item.url}
+              href={item.url}
+              target="_blank"
+              rel="noreferrer"
+              className="k-result-row"
+            >
+              <ChatFaviconImg url={item.url} favicon={item.favicon} />
+              <div className="k-result-main">
+                <span className="k-result-title">{shortUrl(item.url)}</span>
+                <span className="k-result-host">
+                  {(item.status || 'unknown').toUpperCase()}
+                  {item.mime ? ` · ${item.mime}` : ''}
+                  {typeof item.content_length === 'number' ? ` · ${formatBytes(item.content_length)}` : ''}
+                </span>
+              </div>
+            </a>
+          ))}
+        </div>
+      </div>
+    </details>
+  )
+}
+
+/** Code exec artifact in Chat view — collapsed by default. */
+function ChatCodeExecBlock({ artifact }: { artifact: CodeExecArtifact }) {
+  const statusLabel =
+    artifact.status?.status === 'error'
+      ? 'Error'
+      : artifact.status?.status === 'exec'
+        ? 'Executing'
+        : artifact.status?.status === 'gen'
+          ? 'Generating'
+          : artifact.status?.status === 'done'
+            ? 'Done'
+            : 'Ready'
+  const isError = artifact.status?.status === 'error'
+  const isRunning = artifact.status?.status === 'exec' || artifact.status?.status === 'gen'
+  const lang = inferLanguage(null, artifact.program || '')
+  return (
+    <details
+      className={`k-workitem k-tint-purple ${isError ? 'k-err' : isRunning ? 'k-live' : ''}`}
+      /* Chat view auto-collapses code unless it errored or is mid-run. */
+      open={isError || isRunning}
+    >
+      <summary className="k-workitem-head">
+        <span className="k-workitem-icon" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <polyline points="16 18 22 12 16 6" />
+            <polyline points="8 6 2 12 8 18" />
+          </svg>
+        </span>
+        <span className="k-workitem-title">
+          <span className="k-text">{artifact.title || artifact.name || 'Program'}</span>
+          <span className="k-micro">exec · {statusLabel.toLowerCase()}</span>
+        </span>
+        <span className="k-workitem-meta">{formatTime(artifact.timestamp)}</span>
+        <CaretIcon />
+      </summary>
+      <div className="k-workitem-body">
+        {artifact.objective ? (
+          <p className="text-[12px] text-[var(--muted)]">{artifact.objective}</p>
+        ) : null}
+        {artifact.contract && artifact.contract.length > 0 ? (
+          <div className="k-result-list">
+            {artifact.contract.map((item) => (
+              <div key={item.filename} className="k-result-row" style={{ gridTemplateColumns: 'auto minmax(0,1fr)' }}>
+                <span className="k-workitem-icon" style={{ width: 18, height: 18 }}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <path d="M14 2v6h6" />
+                  </svg>
+                </span>
+                <div className="k-result-main">
+                  <span className="k-result-title">{item.filename}</span>
+                  {item.description ? <span className="k-result-host">{item.description}</span> : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        {artifact.program ? (
+          <Snippet
+            content={artifact.program}
+            format="code"
+            language={lang}
+            label={lang}
+            filename={`program.${lang === 'python' ? 'py' : lang === 'javascript' ? 'js' : lang === 'bash' ? 'sh' : 'txt'}`}
+            downloadMime="text/plain"
+            showDownload
+          />
+        ) : null}
+        {artifact.status?.status === 'error' && artifact.status.error ? (
+          <div className="k-notice k-error">
+            <span>{Object.values(artifact.status.error).join(' ')}</span>
+          </div>
+        ) : null}
+      </div>
+    </details>
+  )
+}
+
+/** Canvas artifact in Chat view — open, identical body to Overview. */
+function ChatCanvasBlock({ artifact }: { artifact: CanvasArtifact }) {
+  return (
+    <details className="k-workitem k-tint-green" open>
+      <summary className="k-workitem-head">
+        <span className="k-workitem-icon" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <path d="M3 9h18M9 21V9" />
+          </svg>
+        </span>
+        <span className="k-workitem-title">
+          <span className="k-text">{artifact.title || artifact.name}</span>
+          <span className="k-micro">{artifact.format || 'text'}</span>
+        </span>
+        <CaretIcon />
+      </summary>
+      <div className="k-workitem-body">
+        <CanvasRender canvas={artifact} />
+      </div>
+    </details>
+  )
+}
+
+/** Timeline-text artifact in Chat view — minimal: one-line collapsed bar. */
+function ChatTimelineBlock({ artifact }: { artifact: TimelineArtifact }) {
+  return (
+    <details className="k-workitem k-tint-teal">
+      <summary className="k-workitem-head">
+        <span className="k-workitem-icon" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 7v6l4 2" />
+          </svg>
+        </span>
+        <span className="k-workitem-title">
+          <span className="k-text">{artifact.name}</span>
+          <span className="k-micro">live update</span>
+        </span>
+        <span className="k-workitem-meta">{formatTime(artifact.timestamp)}</span>
+        <CaretIcon />
+      </summary>
+      <div className="k-workitem-body">
+        <div className="max-h-[260px] overflow-auto pr-1">
+          <MarkdownBlock content={artifact.markdown} compact />
+        </div>
+      </div>
+    </details>
+  )
+}
+
+/** Citation artifact in Chat view — same anchor row as Overview. */
+function ChatCitationBlock({ artifact }: { artifact: LinkArtifact }) {
+  return (
+    <a
+      href={artifact.url}
+      target="_blank"
+      rel="noreferrer"
+      className="k-workitem"
+      style={{ display: 'block', textDecoration: 'none', color: 'inherit' }}
+    >
+      <div className="k-workitem-head">
+        <ChatFaviconImg url={artifact.url} favicon={artifact.favicon} />
+        <span className="k-workitem-title">
+          <span className="k-text">{artifact.title || artifact.url}</span>
+        </span>
+        <span className="k-workitem-meta">{shortUrl(artifact.url)}</span>
+      </div>
+      {artifact.body ? (
+        <div className="k-workitem-body">
+          <div className="line-clamp-2 text-[12px] text-[var(--text-2)]">{artifact.body}</div>
+        </div>
+      ) : null}
+    </a>
+  )
+}
+
+/** File artifact in Chat view — same row as Overview. */
+function ChatFileBlock({ artifact }: { artifact: FileArtifact }) {
+  return (
+    <div className="k-workitem">
+      <div className="k-workitem-head">
+        <span className="k-workitem-icon" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <path d="M14 2v6h6" />
+          </svg>
+        </span>
+        <span className="k-workitem-title">
+          <span className="k-text">{artifact.filename}</span>
+          <span className="k-micro">file</span>
+        </span>
+        <span className="k-workitem-meta">
+          {artifact.description || artifact.mime || (artifact.rn ? artifact.rn.split(':').pop() : '')}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+/** Service error artifact in Chat view — inline error notice. */
+function ChatServiceErrorBlock({ artifact }: { artifact: ServiceErrorArtifact }) {
+  return (
+    <div className="k-notice k-error">
+      <span>{artifact.message}</span>
+    </div>
+  )
+}
+
+function ChatArtifactRow({ artifact }: { artifact: Artifact }) {
+  switch (artifact.kind) {
+    case 'web_search': return <ChatWebSearchBlock artifact={artifact} />
+    case 'web_fetch':  return <ChatWebFetchBlock artifact={artifact} />
+    case 'code_exec':  return <ChatCodeExecBlock artifact={artifact} />
+    case 'canvas':     return <ChatCanvasBlock artifact={artifact} />
+    case 'timeline':   return <ChatTimelineBlock artifact={artifact} />
+    case 'citation':   return <ChatCitationBlock artifact={artifact} />
+    case 'file':       return <ChatFileBlock artifact={artifact} />
+    case 'service_error': return <ChatServiceErrorBlock artifact={artifact} />
+    default:           return null
+  }
+}
+
+function ChatMergedFeed({ events }: { events: OverviewEvent[] }) {
+  if (events.length === 0) return null
+  return (
+    <div className="flex flex-col gap-2 pt-1">
+      {events.map((event) => {
+        if (event.kind === 'followup') {
+          return <FollowupMessageBlock key={event.key} message={event.message} />
+        }
+        return <ChatArtifactRow key={event.key} artifact={event.artifact} />
+      })}
+    </div>
+  )
+}
+
+function ChatTurnView({
+  turn,
+  sendingDisabled,
+  onFollowup,
+}: {
+  turn: ChatTurn
+  sendingDisabled: boolean
+  onFollowup: (text: string) => void
+}) {
+  const thinkingEntries = useMemo(
+    () => turn.timeline.filter((entry) => entry.kind === 'thinking'),
+    [turn.timeline],
+  )
+  const overviewEvents = useMemo(
+    () => mergeOverviewEvents(turn.artifacts, turn.additionalUserMessages),
+    [turn.artifacts, turn.additionalUserMessages],
+  )
+  const isStreaming = turn.state === 'pending' || turn.state === 'running'
+  return (
+    <div className="k-chat-view">
+      <ChatThinkingTimeline entries={thinkingEntries} />
+      <ChatMergedFeed events={overviewEvents} />
+      {turn.answer ? (
+        <div className="k-msg mt-1 rounded-md border border-[var(--line-soft)] bg-[var(--surface)] px-3 py-2">
+          <MarkdownBlock content={turn.answer} />
+          <span className="k-msg-toolbar">
+            <CopyButton value={turn.answer} title="Copy answer" />
+          </span>
+        </div>
+      ) : turn.state === 'error' ? (
+        <div className="k-notice k-error">
+          <span>{turn.error || 'Request failed.'}</span>
+        </div>
+      ) : isStreaming ? (
+        <div className="flex items-center gap-2 text-[12px] text-[var(--muted)]">
+          <span className="k-status k-live" />
+          <span>Streaming response…</span>
+        </div>
+      ) : null}
+      <SuggestedQuestions items={turn.followups} disabled={sendingDisabled} onSelect={onFollowup} />
+    </div>
+  )
+}
+
 function TurnView({
   turn,
   sendingDisabled,
@@ -2762,7 +3243,7 @@ function TurnView({
   onFollowup: (text: string) => void
   onDownloadError: (text: string) => void
 }) {
-  const [activeTab, setActiveTab] = useState<TurnTab>('overview')
+  const [activeTab, setActiveTab] = useState<TurnTab>('chat')
   const steps = useMemo(
     () => Object.values(turn.steps).sort((left, right) => left.timestamp - right.timestamp),
     [turn.steps],
@@ -2834,6 +3315,8 @@ function TurnView({
 
         <div className="k-tabs">
           {([
+            /* Chat is the default visual; sits first per design. */
+            ['chat', 'Chat', null],
             ['overview', 'Overview', null],
             ['timeline', 'Timeline', turn.timeline.length || null],
             ['steps', 'Steps', steps.length || null],
@@ -2854,6 +3337,14 @@ function TurnView({
         </div>
 
         <div className="flex flex-col gap-2 pt-1">
+          {activeTab === 'chat' ? (
+            <ChatTurnView
+              turn={turn}
+              sendingDisabled={sendingDisabled}
+              onFollowup={onFollowup}
+            />
+          ) : null}
+
           {activeTab === 'overview' ? (
             <>
               <ThinkingBlock entries={thinkingEntries} active={turn.state === 'pending' || turn.state === 'running'} />
@@ -3359,20 +3850,24 @@ export default function App() {
           conversationId: response.conversationId,
         }
         const ackStatus = typeof response.status === 'string' ? response.status : null
+        const serverTurnId = response.turnId || turnId
         const continuationAccepted = ackStatus === 'followup_accepted' || ackStatus === 'steer_accepted'
         const continuationStartedNewTurn = isContinuation && !!ackStatus && !continuationAccepted
-        if (isContinuation && targetTurnId && continuationAccepted && !isSteer) {
+        const liveContinuationAccepted = continuationAccepted && response.liveOwnerDetected !== false
+        const visualContinuationTurnId = response.activeTurnId || targetTurnId
+        const continuationMessageId = response.eventId || response.queuedTurnId || serverTurnId
+        if (isContinuation && visualContinuationTurnId && liveContinuationAccepted && !isSteer) {
           next = {
             ...next,
             turns: next.turns.map((turn) => {
-              if (turn.id !== targetTurnId) return turn
-              if (turn.additionalUserMessages.some((message) => message.id === `continuation:${turnId}`)) return turn
+              if (turn.id !== visualContinuationTurnId) return turn
+              if (turn.additionalUserMessages.some((message) => message.id === `continuation:${continuationMessageId}`)) return turn
               return {
                 ...turn,
                 additionalUserMessages: [
                   ...turn.additionalUserMessages,
                   {
-                    id: `continuation:${turnId}`,
+                    id: `continuation:${continuationMessageId}`,
                     text: draftText,
                     timestamp: sentAt,
                     attachments: draftAttachments,
@@ -3383,13 +3878,13 @@ export default function App() {
             }),
           }
         }
-        if (continuationStartedNewTurn && !next.turns.some((turn) => turn.id === turnId)) {
+        if (continuationStartedNewTurn && !next.turns.some((turn) => turn.id === serverTurnId)) {
           next = {
             ...next,
             turns: [
               ...next.turns,
               {
-                id: turnId,
+                id: serverTurnId,
                 state: 'pending',
                 createdAt: sentAt,
                 userMessage: draftText,
@@ -3405,7 +3900,7 @@ export default function App() {
             ],
           }
         } else if (!isContinuation) {
-          const existingIndex = next.turns.findIndex((turn) => turn.id === turnId)
+          const existingIndex = next.turns.findIndex((turn) => turn.id === serverTurnId)
           if (existingIndex >= 0) {
             const turns = [...next.turns]
             turns[existingIndex] = {
@@ -3423,7 +3918,7 @@ export default function App() {
               turns: [
                 ...next.turns,
                 {
-                  id: turnId,
+                  id: serverTurnId,
                   state: 'pending',
                   createdAt: sentAt,
                   userMessage: draftText,

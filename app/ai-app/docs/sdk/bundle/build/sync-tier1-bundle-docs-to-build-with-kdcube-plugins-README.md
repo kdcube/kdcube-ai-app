@@ -32,6 +32,21 @@ Use this note as the handoff contract for the Build-with-KDCube plugins.
 The current plugin code in the repo may be outdated.
 This doc is the contract, not the old tree.
 
+## Link Conventions For Plugins
+
+The plugin should preserve logical links instead of baking in one developer's
+absolute paths:
+
+- `ks:docs/...` is a KDCube knowledge-space doc id. In a local checkout it
+  resolves under `repo:kdcube-ai-app/app/ai-app/docs/...`.
+- `repo:kdcube-ai-app/...` resolves to the local KDCube platform repository.
+- `repo:applications/...` resolves to the local applications/content
+  repository.
+- `repo:website/...` resolves to the local website repository.
+
+If the plugin cannot resolve a repo alias, it should infer the checkout from
+the workspace or ask the user for the repo path before editing files.
+
 ## Tier 1 Pack
 
 These 7 docs form the compact Tier 1 build baseline and should be available together:
@@ -130,7 +145,7 @@ They are routing hints for one planning agent.
 
 Recommended:
 
-- expose the 6 docs as one Tier 1 baseline pack
+- expose the 7 baseline docs as one Tier 1 pack
 - use [how-to-navigate-kdcube-docs-README.md](how-to-navigate-kdcube-docs-README.md) as the first router
 - make [how-to-test-bundle-README.md#1a-working-environment-for-agents](how-to-test-bundle-README.md#1a-working-environment-for-agents) the preflight before code or test changes
 - keep [how-to-assemble-bundle-with-sdk-building-blocks-README.md](how-to-assemble-bundle-with-sdk-building-blocks-README.md)
@@ -283,7 +298,7 @@ config:
 
 The plugin handoff is clean when:
 
-- the 6 Tier 1 docs are exposed as one pack
+- the 7 Tier 1 baseline docs are exposed as one pack
 - the optional release lifecycle doc is available for user-approved releases
 - the working environment preflight is visible before any test command
 - the source-folder widget build contract is discoverable from Tier 1 routing

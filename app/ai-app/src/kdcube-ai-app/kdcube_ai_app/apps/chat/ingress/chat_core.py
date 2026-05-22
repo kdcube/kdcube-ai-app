@@ -181,6 +181,12 @@ class IngressResult:
     queue_stats: Optional[Dict[str, Any]] = None
     reason: Optional[str] = None
     continuation_kind: Optional[str] = None
+    active_turn_id: Optional[str] = None
+    target_turn_id: Optional[str] = None
+    queued_turn_id: Optional[str] = None
+    event_id: Optional[str] = None
+    external_event_sequence: Optional[int] = None
+    live_owner_detected: Optional[bool] = None
 
 
 def _resolve_requested_continuation_kind(
@@ -805,6 +811,7 @@ async def process_chat_message(
                         payload={"message": text},
                         task_payload=payload.model_dump(),
                     )
+                    live_owner_detected = bool(owner_turn_id and active_turn and owner_turn_id == str(active_turn))
                     logger.info(
                         "[ingress.external] published continuation conversation=%s kind=%s event_id=%s seq=%s active_turn=%s owner_turn=%s target_turn=%s live_owner=%s text=%r",
                         conversation_id,
@@ -814,11 +821,11 @@ async def process_chat_message(
                         active_turn,
                         owner_turn_id,
                         target_turn_id,
-                        bool(owner_turn_id and active_turn and owner_turn_id == str(active_turn)),
+                        live_owner_detected,
                         (text or "")[:160],
                     )
                     try:
-                        if owner_turn_id and active_turn and owner_turn_id == str(active_turn):
+                        if live_owner_detected:
                             await comm.service_event(
                                 type="timeline.external.accepted",
                                 step="timeline.external",
@@ -862,10 +869,16 @@ async def process_chat_message(
                         user_type=session.user_type.value,
                         queue_stats={
                             "external_event_sequence": env.sequence,
-                            "live_owner_detected": bool(owner_turn_id and active_turn and owner_turn_id == str(active_turn)),
+                            "live_owner_detected": live_owner_detected,
                         },
                         reason=f"{continuation_kind}_accepted",
                         continuation_kind=continuation_kind,
+                        active_turn_id=str(active_turn or "") or None,
+                        target_turn_id=target_turn_id,
+                        queued_turn_id=payload.routing.turn_id,
+                        event_id=env.message_id,
+                        external_event_sequence=int(env.sequence or 0),
+                        live_owner_detected=live_owner_detected,
                     )
                 continuation_source = RedisConversationContinuationSource(
                     redis=getattr(app.state, "redis_async", None),
@@ -915,6 +928,11 @@ async def process_chat_message(
                     queue_stats={"continuation_queue_size": queue_size},
                     reason=f"{continuation_kind}_accepted",
                     continuation_kind=continuation_kind,
+                    active_turn_id=str(active_turn or "") or None,
+                    target_turn_id=target_turn_id,
+                    queued_turn_id=payload.routing.turn_id,
+                    event_id=env.message_id,
+                    live_owner_detected=False,
                 )
             except Exception:
                 logger.exception("Failed to store continuation message for conversation %s", conversation_id)

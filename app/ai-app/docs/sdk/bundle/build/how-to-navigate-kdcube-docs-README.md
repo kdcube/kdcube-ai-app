@@ -36,6 +36,20 @@ see_also:
 This page is the Tier 1 entrypoint for people who do not want to read the whole
 SDK tree.
 
+## Link Conventions
+
+KDCube docs use two kinds of logical references:
+
+- `ks:docs/...` is a KDCube knowledge-space doc id. In a local checkout it
+  resolves under `repo:kdcube-ai-app/app/ai-app/docs/...`.
+- `repo:kdcube-ai-app/...`, `repo:applications/...`, and `repo:website/...`
+  are cross-repository aliases used by agent onboarding docs outside this doc
+  tree. Resolve them to the corresponding local checkout before opening files.
+
+Inside this KDCube docs tree, ordinary relative Markdown links resolve relative
+to the current file. Prefer these logical links in reusable docs instead of
+machine-specific absolute paths.
+
 Use it when you are:
 
 - creating a new bundle from scratch
@@ -61,7 +75,7 @@ Do not start by reading every bundle doc.
 
 Do treat Tier 1 as one compact pack.
 
-Start with these six Tier 1 baseline pages in this order:
+Start with these seven Tier 1 baseline pages in this order:
 
 1. this page
 2. [how-to-test-bundle-README.md](how-to-test-bundle-README.md)
@@ -71,7 +85,7 @@ Start with these six Tier 1 baseline pages in this order:
 6. [../../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../../configuration/bundle-runtime-configuration-and-secrets-README.md)
 7. [how-to-configure-and-run-bundle-README.md](how-to-configure-and-run-bundle-README.md)
 
-Read those six together as one bundle-authoring baseline.
+Read those seven together as one bundle-authoring baseline.
 
 Critical Python import rule:
 

@@ -38,6 +38,12 @@ The goal is to assemble product behavior from reusable KDCube blocks where the
 platform already owns the mechanics, and keep bundle code focused on product
 policy, route aliases, prompts, UI composition, and user-scope decisions.
 
+If you landed here directly, first read
+[how-to-navigate-kdcube-docs-README.md](how-to-navigate-kdcube-docs-README.md).
+This page is the SDK/platform block map, not the whole bundle-building route.
+The `ks:docs/...` ids in front matter are KDCube knowledge-space doc ids; in a
+local checkout they resolve under `repo:kdcube-ai-app/app/ai-app/docs/...`.
+
 ## Assembly Rule
 
 For each feature, choose the closest existing block first:

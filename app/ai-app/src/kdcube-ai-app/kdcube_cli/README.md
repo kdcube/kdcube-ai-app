@@ -201,7 +201,7 @@ kdcube refresh --tenant acme --project staging --build
 kdcube refresh --tenant acme --project staging --release 2026.5.22.001 --build
 
 # After editing a bundle's config or code — reload without a full restart
-kdcube reload <bundle_id> --tenant acme --project staging
+kdcube bundle reload <bundle_id> --tenant acme --project staging
 
 # Stop the stack
 kdcube stop --tenant acme --project staging
@@ -288,9 +288,10 @@ kdcube defaults \
 
 | Command | What it does |
 |---|---|
-| `kdcube reload <bundle_id> [--json] [--quiet]` | Reapply bundle config and clear proc caches — no full restart needed |
+| `kdcube bundle reload <bundle_id> [--json] [--quiet]` | Reapply bundle config and clear proc caches — no full restart needed |
 | `kdcube bundle <bundle_id>` | Create, update, or delete a staged bundle entry |
-| `kdcube export` | Export live `bundles.yaml` / `bundles.secrets.yaml` |
+| `kdcube bundle config apply --descriptors-location <dir> [--dry-run] [--reload]` | User/operator flow to reapply seed `bundles.yaml` / `bundles.secrets.yaml` to an existing runtime — no platform refresh |
+| `kdcube export` | Export live `bundles.yaml` / `bundles.secrets.yaml`; local paths are normalized back to host descriptor paths |
 
 ### Configuration
 
@@ -310,7 +311,7 @@ kdcube defaults \
 ## `kdcube bundle` — manage bundles at runtime
 
 Create, update, or delete a staged bundle entry without touching YAML files by
-hand. Changes are staged and take effect after `kdcube reload`.
+hand. Changes are staged and take effect after `kdcube bundle reload`.
 
 **Source mode** — point the bundle at a local path or a git repo:
 
@@ -347,7 +348,7 @@ kdcube bundle <bundle_id> \
   --del-config features.legacy_mode
 
 # Apply all staged changes
-kdcube reload <bundle_id>
+kdcube bundle reload <bundle_id>
 ```
 
 Normal reload output is concise and operator-facing. Use `--verbose` only when
@@ -358,6 +359,29 @@ for scriptable output.
 # Delete a bundle entry (also removes its secrets entry)
 kdcube bundle <bundle_id> --delete
 ```
+
+**Descriptor apply** — when a user intentionally edits seed `bundles.yaml` /
+`bundles.secrets.yaml` and wants to reapply that descriptor source of truth to
+an existing runtime:
+
+```bash
+kdcube bundle config apply \
+  --tenant acme \
+  --project staging \
+  --descriptors-location /path/to/descriptors \
+  --dry-run
+
+kdcube bundle config apply \
+  --tenant acme \
+  --project staging \
+  --descriptors-location /path/to/descriptors \
+  --reload
+```
+
+This is not a platform refresh: it touches only `bundles.yaml` and optional
+`bundles.secrets.yaml` in the active runtime config directory. Host local
+bundle paths from seed descriptors are translated to runtime `/bundles/...`
+paths before staging.
 
 **Status** — inspect one explicit bundle entry:
 

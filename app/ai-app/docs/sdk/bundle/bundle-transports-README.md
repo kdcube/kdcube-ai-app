@@ -9,6 +9,7 @@ see_also:
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
   - ks:docs/sdk/bundle/bundle-interfaces-README.md
   - ks:docs/sdk/bundle/bundle-client-communication-README.md
+  - ks:docs/sdk/agents/react/shared-timeline-event-bus-steer-followup-README.md
   - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
   - ks:docs/sdk/bundle/bundle-chat-stream-events-README.md
   - ks:docs/sdk/bundle/bundle-runtime-README.md
@@ -71,6 +72,15 @@ So:
 | main bundle UI | `@ui_main` | static HTTP asset serving | `/api/integrations/static/{tenant}/{project}/{bundle_id}/...` | KDCube | platform UI / browser client |
 | bundle-authenticated MCP | `@mcp(route="operations")` | MCP over `streamable-http` | `/api/integrations/bundles/{tenant}/{project}/{bundle_id}/mcp/{alias}` | bundle MCP app | MCP client |
 | public MCP | `@mcp(route="public")` | MCP over `streamable-http` | `/api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/mcp/{alias}` | nobody by default | MCP client |
+
+Chat clients can also send external events to the currently active conversation
+turn over the same chat transport. A `followup` or `steer` is not a separate
+bundle transport: it is a normal `/sse/chat` or Socket.IO `chat_message` request
+with continuation intent. Ingress stores it in the shared conversation external
+event source. A live React owner consumes it on the current turn, or proc later
+promotes the stored `task_payload` into one normal ready-queue turn. See
+[Bundle Client Communication](bundle-client-communication-README.md) and
+[Bundle Chat Stream Events](bundle-chat-stream-events-README.md).
 
 Background jobs are intentionally not URL-addressable. A producer writes a
 ready job to the Redis Stream with tenant/project/bundle/user routing metadata.

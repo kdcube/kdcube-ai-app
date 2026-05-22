@@ -76,7 +76,8 @@ setup:
 - inspect local files and git status
 - create a local virtual environment for the KDCube CLI if it is missing
 - install the editable local KDCube CLI from the selected KDCube checkout
-- run `kdcube info`, `init`, `start`, `stop`, `bundle`, and `reload`
+- run `kdcube info`, `init`, `start`, `stop`, `bundle`, and
+  `bundle reload`
 - patch staged runtime bundle descriptors with `kdcube bundle`
 - generate local random secrets for webhook or OAuth state when the user has
   not supplied a value
@@ -235,8 +236,10 @@ Important:
   `<WORKDIR>/config`
 - `kdcube bundle ... --set-config/--set-secret` patches staged runtime
   descriptors
-- `kdcube reload <bundle_id>` applies staged bundle descriptor changes
-- editing seed descriptors after init does nothing until init is run again
+- `kdcube bundle reload <bundle_id>` applies staged bundle descriptor changes
+- editing seed descriptors after init does nothing by itself; the user can
+  intentionally reapply bundle descriptors with `kdcube bundle config apply`,
+  but agents should not do this as routine bootstrap
 - if staged descriptor changes should become reusable, export or copy them back
   deliberately; do not assume it happened
 
@@ -368,10 +371,44 @@ If a deployment is currently recorded as running (`~/.kdcube/cli-lock.json`),
 `kdcube refresh --build` with no flags targets it automatically.
 
 `refresh` never modifies `assembly.yaml`, `secrets.yaml`, `bundles.yaml`,
-`bundles.secrets.yaml`, or `gateway.yaml`. To change those, edit them directly
-under `<WORKDIR>/config/` (or use `kdcube bundle --set-config / --set-secret`
-for bundle-scoped patches) and then call `kdcube reload <bundle_id>` — no
-refresh required for bundle reload.
+`bundles.secrets.yaml`, or `gateway.yaml`. To change one value, use
+`kdcube bundle --set-config / --set-secret` and then call
+`kdcube bundle reload <bundle_id>` — no platform refresh is required for bundle
+descriptor changes.
+
+### User Flow: Apply Seed Bundle Descriptors
+
+`kdcube bundle config apply` is a user/operator flow, not an autonomous agent
+bootstrap step. Use it only when the user has intentionally edited a seed
+descriptor directory and wants to reapply only `bundles.yaml` /
+`bundles.secrets.yaml` to an existing runtime.
+
+Agent boundary:
+
+- the agent may explain that this capability exists
+- the agent may prepare or run the `--dry-run` command for inspection
+- the agent may run the write/reload form only when explicitly granted by the
+  user to apply the selected seed descriptors on the user's behalf
+
+```bash
+"$KDCUBE" bundle config apply \
+  --tenant "$TENANT" \
+  --project "$PROJECT" \
+  --descriptors-location "$DESCRIPTORS" \
+  --dry-run
+
+"$KDCUBE" bundle config apply \
+  --tenant "$TENANT" \
+  --project "$PROJECT" \
+  --descriptors-location "$DESCRIPTORS" \
+  --reload
+```
+
+`bundle config apply` stages only `bundles.yaml` and, when present in the seed
+directory, `bundles.secrets.yaml`. It preserves platform descriptors and does
+not rebuild images or restart Docker. Host local bundle paths in the seed
+descriptor are translated to runtime-visible `/bundles/...` paths before the
+runtime copy is written.
 
 Agent rule:
 
@@ -380,12 +417,17 @@ Agent rule:
 - if the user wants to **move an existing runtime to a different platform
   source** while preserving descriptors: add exactly one of `--latest`,
   `--upstream`, or `--release <ref>` to `kdcube refresh`.
-- if the user wants to **reseed descriptors** from a fresh seed directory: the
-  current workdir must first be deleted (`rm -rf <WORKDIR>`), then re-run
-  `kdcube init --tenant T --project P --descriptors-location <seed> ...`.
+- if the user explicitly wants to **reapply bundle descriptors** from a seed
+  directory: offer `kdcube bundle config apply --tenant T --project P
+  --descriptors-location <seed> --dry-run`, then apply with `--reload` only
+  after the user accepts that descriptor source as authority.
+- if the user wants to **reseed platform/runtime descriptors** such as
+  `assembly.yaml`, `gateway.yaml`, or platform `secrets.yaml`: create a new
+  runtime or intentionally replace the runtime descriptor files; do not hide
+  that behind bundle reload.
 - if the user wants to **change a single bundle's config / secrets**:
   `kdcube bundle <id> --tenant T --project P --set-config k v --set-secret k v`,
-  then `kdcube reload <id> --tenant T --project P`.
+  then `kdcube bundle reload <id> --tenant T --project P`.
 - never re-run `kdcube init` on an existing initialized workdir — it refuses
   with a clear error pointing at the right command.
 
@@ -404,7 +446,7 @@ Use this when developing a bundle from a local checkout:
   --module entrypoint \
   --no-singleton
 
-"$KDCUBE" reload "$BUNDLE_ID" --workdir "$WORKDIR"
+"$KDCUBE" bundle reload "$BUNDLE_ID" --workdir "$WORKDIR"
 ```
 
 During init, local host paths are mounted into proc under `/bundles`. The CLI
@@ -423,7 +465,7 @@ Use this when validating a released content ref:
   --module entrypoint \
   --no-singleton
 
-"$KDCUBE" reload "$BUNDLE_ID" --workdir "$WORKDIR"
+"$KDCUBE" bundle reload "$BUNDLE_ID" --workdir "$WORKDIR"
 ```
 
 If the bundle has `config/bundles.template.yaml`, read it and translate the
@@ -440,7 +482,7 @@ Example:
   --set-config enabled.api.<api_alias>.<METHOD> true \
   --set-config <bundle_setting_path> <value>
 
-"$KDCUBE" reload "$BUNDLE_ID" --workdir "$WORKDIR"
+"$KDCUBE" bundle reload "$BUNDLE_ID" --workdir "$WORKDIR"
 ```
 
 The exact keys are bundle-specific. Read the bundle's templates, interface
@@ -544,7 +586,7 @@ export TELEGRAM_WEBHOOK_URL="$PUBLIC_BASE_URL/api/integrations/bundles/$TENANT/$
   --set-secret integrations.telegram.bot_token "$TELEGRAM_BOT_TOKEN" \
   --set-secret integrations.telegram.webhook_secret "$TELEGRAM_WEBHOOK_SECRET"
 
-"$KDCUBE" reload "$BUNDLE_ID" --workdir "$WORKDIR"
+"$KDCUBE" bundle reload "$BUNDLE_ID" --workdir "$WORKDIR"
 ```
 
 If the bundle only has a Telegram Mini App public-read surface and no bot
@@ -617,7 +659,7 @@ export EMAIL_REDIRECT_URI="$PUBLIC_BASE_URL/api/integrations/bundles/$TENANT/$PR
   --set-secret integrations.email.google.client_secret "$GOOGLE_CLIENT_SECRET" \
   --set-secret integrations.email.oauth_state_secret "$EMAIL_OAUTH_STATE_SECRET"
 
-"$KDCUBE" reload "$BUNDLE_ID" --workdir "$WORKDIR"
+"$KDCUBE" bundle reload "$BUNDLE_ID" --workdir "$WORKDIR"
 ```
 
 The redirect URI must also be added in Google Cloud exactly as:
@@ -672,7 +714,7 @@ staged descriptor.
 ### Bundle Reload
 
 ```bash
-"$KDCUBE" reload "$BUNDLE_ID" --workdir "$WORKDIR"
+"$KDCUBE" bundle reload "$BUNDLE_ID" --workdir "$WORKDIR"
 ```
 
 Then check proc logs for bundle discovery/import/build errors:
@@ -785,13 +827,14 @@ meaningful.
 
 - asking the user for paths that are already inferable from cwd, env, or
   descriptors
-- editing seed descriptors and expecting a running runtime to see them without
-  first re-creating the workdir (delete + `kdcube init` again) — staged
-  descriptors under `<WORKDIR>/config/` are authoritative once init has run
+- editing seed descriptors and expecting a running runtime to see them
+  automatically — staged descriptors under `<WORKDIR>/config/` are
+  authoritative once init has run; bundle seed descriptors can be reapplied
+  only through the explicit user/operator `kdcube bundle config apply` flow
 - re-running `kdcube init` on an existing workdir to "refresh" — it now
   refuses; use `kdcube refresh --tenant T --project P --build` instead, with
   `--latest`, `--upstream`, or `--release <ref>` when changing platform source
-- patching staged descriptors and forgetting `kdcube reload`
+- patching staged descriptors and forgetting `kdcube bundle reload`
 - hardcoding `/Users/...` host paths into Docker-runtime descriptors by hand
 - registering a Telegram webhook before ngrok and the bundle public route are
   reachable

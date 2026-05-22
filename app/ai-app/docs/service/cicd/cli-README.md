@@ -464,17 +464,51 @@ Fast-path requirements:
 If any of those are missing, the CLI falls back to the guided setup and prints
 the missing reasons.
 
-### 2.3b Export live effective bundle descriptors
+### 2.3b Apply bundle descriptors to an existing runtime
+
+When a user intentionally edits seed `bundles.yaml` / `bundles.secrets.yaml`
+and wants to reapply those bundle descriptors to an existing runtime, use the
+bundle descriptor apply flow:
+
+```bash
+kdcube bundle config apply \
+  --tenant <tenant> \
+  --project <project> \
+  --descriptors-location /path/to/descriptors \
+  --dry-run
+
+kdcube bundle config apply \
+  --tenant <tenant> \
+  --project <project> \
+  --descriptors-location /path/to/descriptors \
+  --reload
+```
+
+This is a user/operator descriptor-sync workflow, not a platform refresh and
+not routine agent bootstrap. It stages only `bundles.yaml` and optional
+`bundles.secrets.yaml` into the active runtime config directory. It does not
+touch `assembly.yaml`, `gateway.yaml`, or platform `secrets.yaml`, and it does
+not rebuild images or restart Docker.
+
+Host local bundle paths in seed descriptors are translated to runtime-visible
+`/bundles/...` paths before staging. With `--reload`, changed declared bundle
+ids are reloaded after staging.
+
+### 2.3c Export live effective bundle descriptors
 
 For ECS / `aws-sm` deployments, the current effective live deployment-scoped
 bundle state can be exported directly from AWS Secrets Manager:
 
 ```bash
+OUT_DIR=/tmp/kdcube-export
+
 kdcube export \
   --tenant <tenant> \
   --project <project> \
   --aws-region <region> \
-  --out-dir /tmp/kdcube-export
+  --out-dir "$OUT_DIR"
+
+ls -lh "$OUT_DIR"
 ```
 
 Optional:
@@ -499,6 +533,19 @@ This is the correct export path for current live ECS state. It does not read:
 - mounted `/config/bundles.yaml`
 - GitHub secrets blobs
 
+For local descriptor-backed runtimes, `kdcube export` reads the active runtime
+descriptor files. Export normalizes runtime paths back to reusable descriptor
+shape:
+
+- local non-git bundle paths such as `/bundles/...` are translated back to host
+  paths using `assembly.yaml` / `.env` bundle mount mappings
+- git-backed bundle descriptors keep `repo` / `ref` / `subdir`; an incidental
+  materialized `path` is removed from the export
+
+Use the printed output path or a saved `OUT_DIR` variable when inspecting the
+export. Do not recompute a timestamped `$(date ...)` expression in a later
+command; it will point at a different directory.
+
 Operational rule for `aws-sm` deployments:
 
 1. export the current live bundle state before the next provision
@@ -509,7 +556,7 @@ Operational rule for `aws-sm` deployments:
 If you skip that step, a later provision can replay stale `BUNDLES_YAML` or
 `BUNDLES_SECRETS_YAML` and overwrite runtime bundle changes.
 
-### 2.3c Manage staged bundle entries
+### 2.3d Manage staged bundle entries
 
 `kdcube bundle` creates, updates, or deletes entries in the staged descriptor
 files in the active runtime workdir without a full reinstall or manual YAML edit.
@@ -540,7 +587,7 @@ also accepted and preserved as-is.
 
 Setting `--local-path` clears any `repo`/`ref`/`subdir` fields.
 
-**Git repo** — proc clones the repo into `/managed-bundles/` on first `kdcube reload`:
+**Git repo** — proc clones the repo into `/managed-bundles/` on first `kdcube bundle reload`:
 
 ```bash
 kdcube bundle <bundle_id> \
@@ -687,11 +734,11 @@ runtime. It does not emulate an end-user session or frontend visibility rules.
 After patching, apply the change with:
 
 ```bash
-kdcube reload <bundle_id> --workdir ~/.kdcube/kdcube-runtime/<tenant_id>__<project_id>
+kdcube bundle reload <bundle_id> --workdir ~/.kdcube/kdcube-runtime/<tenant_id>__<project_id>
 ```
 
 `kdcube bundle` only patches the staged files under `workdir/config/`.
-It does not push the change live on its own — `kdcube reload` is still required.
+It does not push the change live on its own — `kdcube bundle reload` is still required.
 The CLI prints the exact reload command after bundle source, config, or secret
 mutations.
 
@@ -1026,15 +1073,15 @@ After patching, reload the bundle to apply the change.
 Reload a bundle after descriptor changes:
 
 ```bash
-kdcube reload <bundle_id> --tenant acme --project prod
+kdcube bundle reload <bundle_id> --tenant acme --project prod
 ```
 
 Normal reload output is concise and hides the inner Docker Compose call. Use
 `--verbose` when debugging reload internals, or `--json` for scriptable output:
 
 ```bash
-kdcube reload <bundle_id> --tenant acme --project prod --verbose
-kdcube reload <bundle_id> --tenant acme --project prod --json
+kdcube bundle reload <bundle_id> --tenant acme --project prod --verbose
+kdcube bundle reload <bundle_id> --tenant acme --project prod --json
 ```
 
 Use `--quiet` to suppress the banner and routine success chatter. The banner is
@@ -1044,11 +1091,37 @@ also suppressed automatically when stdout is not a TTY and when a command uses
 `kdcube info --json` emits defaults, the running deployment lock, and runtime
 mount details when a workdir is selected.
 
+Apply seed bundle descriptors to an existing runtime:
+
+```bash
+kdcube bundle config apply \
+  --tenant acme \
+  --project prod \
+  --descriptors-location /path/to/descriptors \
+  --dry-run
+
+kdcube bundle config apply \
+  --tenant acme \
+  --project prod \
+  --descriptors-location /path/to/descriptors \
+  --reload
+```
+
+This is for the user/operator case where the seed `bundles.yaml` /
+`bundles.secrets.yaml` are the chosen descriptor source. It does not refresh the
+platform runtime.
+
 Export live bundle descriptors:
 
 ```bash
-kdcube export --tenant acme --project prod --out-dir /tmp/export
+OUT_DIR=/tmp/export
+kdcube export --tenant acme --project prod --out-dir "$OUT_DIR"
+ls -lh "$OUT_DIR"
 ```
+
+For local descriptor-backed runtimes, exported local bundle paths are normalized
+back to host paths. Git-backed entries keep repo/ref/subdir and do not keep the
+materialized runtime path.
 
 Stop the local workdir stack (no flags ⇒ stop whatever is currently recorded
 as running):
@@ -1085,8 +1158,10 @@ kdcube defaults \
 | `default_tenant` | `--default-tenant` | Used by `kdcube info` for workdir resolution and display; used by `kdcube export` as fallback tenant |
 | `default_project` | `--default-project` | Used by `kdcube info` for workdir resolution and display; used by `kdcube export` as fallback project |
 
-`kdcube start`, `kdcube stop`, `kdcube reload`, and `kdcube export` resolve the
-target workdir with the following precedence:
+`kdcube start`, `kdcube stop`, `kdcube bundle reload`,
+`kdcube bundle config apply`, and `kdcube export` resolve the target workdir
+with the following precedence. The older top-level `kdcube reload` command is a
+compatibility alias for `kdcube bundle reload`.
 
 1. `--workdir` passed explicitly → use it.
 2. `--workdir` omitted, `default_workdir` present in `cli-defaults.json` → use

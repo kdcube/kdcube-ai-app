@@ -49,7 +49,7 @@ Use it when you need to answer questions like:
 - what does `--workdir` really point to
 - where are the active descriptor files after install
 - how do I point a bundle at my local source tree
-- when should I rerun install vs `kdcube reload`
+- when should I rerun install vs `kdcube bundle reload`
 - how do I avoid overwriting live bundle props/secrets with stale descriptor copies
 - how do I make a localhost KDCube reachable through public HTTPS for external
   callbacks such as Telegram webhooks, OAuth callbacks, or remote-control style
@@ -191,7 +191,7 @@ Use this page to answer:
 
 - how to point one deployment at one bundle path or git ref
 - how `--workdir` resolves
-- when to rerun install versus using `kdcube reload`
+- when to rerun install versus using `kdcube bundle reload`
 - how to inspect one runtime and how to avoid changing the wrong deployment
 - how to think about one active local deployment versus many runtime snapshots
 
@@ -226,7 +226,10 @@ That means:
 
 - the source descriptor directory is an input to install/update
 - the staged files under `workdir/config/` are the live local runtime authority
-- editing the source directory later does nothing until you rerun install
+- editing the source directory later does nothing by itself; for bundle
+  descriptors only, the user can intentionally reapply seed
+  `bundles.yaml` / `bundles.secrets.yaml` with
+  `kdcube bundle config apply`
 
 This is the main point that older workflow descriptions often got wrong.
 
@@ -1132,17 +1135,38 @@ supplying deployment-scoped config for that example.
 
 ## Applying Changes Correctly
 
-### If you changed the canonical descriptor source directory
+### User Flow: Apply Seed Bundle Descriptors
 
-If you edited files in the source descriptor directory passed via `--descriptors-location`, rerun install so those changes are restaged into the runtime:
+This is a user/operator flow. It is not an autonomous agent bootstrap step. Use
+it only when the user intentionally edited `bundles.yaml` or
+`bundles.secrets.yaml` in the source descriptor directory passed via
+`--descriptors-location` and wants to reapply only those bundle content
+descriptors to the existing runtime.
+
+Agents may explain this path and prepare or run a dry-run. They should run the
+write/reload form only when the user explicitly grants permission to apply the
+selected seed descriptors on the user's behalf.
 
 ```bash
-kdcube init \
-  --workdir ~/.kdcube/kdcube-runtime \
-  --descriptors-location /abs/path/to/descriptors
+kdcube bundle config apply \
+  --workdir ~/.kdcube/kdcube-runtime/<tenant_id>__<project_id> \
+  --descriptors-location /abs/path/to/descriptors \
+  --dry-run
+
+kdcube bundle config apply \
+  --workdir ~/.kdcube/kdcube-runtime/<tenant_id>__<project_id> \
+  --descriptors-location /abs/path/to/descriptors \
+  --reload
 ```
 
-This is required because `kdcube reload` does not read arbitrary external descriptor directories. It reuses the runtime’s staged descriptor files.
+`bundle config apply` stages only `bundles.yaml` and, when present in the
+source directory, `bundles.secrets.yaml` into the active runtime config
+directory. It does not rebuild images, restart Docker, or modify
+`assembly.yaml`, `secrets.yaml`, or `gateway.yaml`. If the source directory does
+not contain `bundles.secrets.yaml`, the existing runtime secrets descriptor is
+preserved. Host local bundle paths in the source descriptor are translated to
+the runtime-visible `/bundles/...` path before writing the active runtime
+descriptor.
 
 ### If you changed `bundles.yaml` or `bundles.secrets.yaml` inside the active runtime
 
@@ -1173,7 +1197,7 @@ kdcube bundle <bundle_id> \
 Apply either kind of change with:
 
 ```bash
-kdcube reload <bundle_id> --workdir ~/.kdcube/kdcube-runtime/<tenant_id>__<project_id>
+kdcube bundle reload <bundle_id> --workdir ~/.kdcube/kdcube-runtime/<tenant_id>__<project_id>
 ```
 
 `reload`:
@@ -1198,7 +1222,7 @@ It does not reload:
 
 ### If you changed platform/runtime topology
 
-Rerun install, not only `kdcube reload`.
+Rerun install or refresh the runtime topology, not only `kdcube bundle reload`.
 
 Typical cases:
 
@@ -1214,7 +1238,7 @@ Typical cases:
 If the bundle is already mounted as a local path bundle, you often only need a reload:
 
 ```bash
-kdcube reload my.bundle@1-0 --workdir ~/.kdcube/kdcube-runtime/mytenant__myproject
+kdcube bundle reload my.bundle@1-0 --workdir ~/.kdcube/kdcube-runtime/mytenant__myproject
 ```
 
 Use a full reinstall only when code changes depend on wider runtime/platform changes.
@@ -1318,7 +1342,8 @@ kdcube bundle <bundle_id> --del-secret key.path \
 ```
 
 `kdcube bundle` only patches the staged files. It does not edit the original
-source descriptor directory. Run `kdcube reload` afterward to apply the change.
+source descriptor directory. Run `kdcube bundle reload` afterward to apply the
+change.
 
 Feature switches for bundle surfaces live under `enabled.*` in bundle props,
 not in secrets. The platform derives the canonical path from decorator
@@ -1368,7 +1393,7 @@ Operational behavior:
 After changing the prop, apply it with:
 
 ```bash
-kdcube reload my.bundle@1-0 --workdir ~/.kdcube/kdcube-runtime/mytenant__myproject
+kdcube bundle reload my.bundle@1-0 --workdir ~/.kdcube/kdcube-runtime/mytenant__myproject
 ```
 
 ## What Happens When Bundle Admin Changes Props Or Secrets
@@ -1396,12 +1421,25 @@ That is why you should export live bundle state before replacing runtime descrip
 To export the current effective bundle descriptors:
 
 ```bash
+export OUT_DIR=/tmp/live-bundles
+
 kdcube export \
   --workdir ~/.kdcube/kdcube-runtime/mytenant__myproject \
-  --out-dir /tmp/live-bundles
+  --out-dir "$OUT_DIR"
+
+ls -lh "$OUT_DIR"
 ```
 
 In local descriptor-backed mode, this exports from the active runtime workspace descriptor files.
+Export normalizes runtime paths back to seed-descriptor shape:
+
+- local non-git bundle paths such as `/bundles/...` are translated back to host
+  paths using `assembly.yaml` / `.env` bundle mount mappings
+- git-backed bundle descriptors keep `repo` / `ref` / `subdir`; an incidental
+  materialized `path` is removed from the export
+
+This makes the export usable as a reviewed source descriptor update instead of
+leaking container-only paths into reusable host descriptors.
 
 Current export includes:
 
@@ -1487,7 +1525,7 @@ But for normal bundle development, prefer a descriptor-driven initialized runtim
   collide across bundles in one processor process.
 - Expecting `--upstream` to rebuild images. It only selects the upstream source/ref; add `init --build` to prebuild images.
 - Assuming the base `--workdir` is the concrete runtime when the CLI has resolved a namespaced runtime under it.
-- Using `kdcube reload` before the stack is running.
+- Using `kdcube bundle reload` before the stack is running.
 - Overwriting live bundle-admin changes with stale descriptor source files.
 
 ## What To Remember
@@ -1505,9 +1543,13 @@ If you only remember the essentials, remember these:
 - custom main-view UI source is rebuilt by the bundle UI loader, not by manual runtime-storage builds
 - file-producing tools use the React/tool runtime file contract, not a
   `bundles.yaml` switch
-- rerun install when you changed the canonical source descriptor set or runtime topology
+- rerun install or refresh runtime topology when platform descriptors changed
+- use `kdcube bundle config apply --descriptors-location <dir> --dry-run`, then
+  `--reload`, when the user intentionally changed source
+  `bundles.yaml` / `bundles.secrets.yaml` and wants to reapply them to an
+  existing runtime without a platform refresh
 - use `kdcube bundle <bundle_id> --set-config / --set-secret / --del-config / --del-secret` for targeted staged config or secret patches
-- use `kdcube reload <bundle_id>` when you changed active runtime bundle descriptors or need proc cache eviction
+- use `kdcube bundle reload <bundle_id>` when you changed active runtime bundle descriptors or need proc cache eviction
 - use `kdcube info --workdir <path>` to inspect the runtime you are actually using
 - use `kdcube export` before overwriting runtime bundle state with older descriptor copies
 

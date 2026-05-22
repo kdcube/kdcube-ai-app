@@ -9,6 +9,7 @@ see_also:
   - ks:docs/sdk/bundle/bundle-client-ui-README.md
   - ks:docs/sdk/bundle/bundle-chat-stream-events-README.md
   - ks:docs/sdk/bundle/bundle-frontend-awareness-README.md
+  - ks:docs/sdk/agents/react/shared-timeline-event-bus-steer-followup-README.md
   - ks:docs/sdk/bundle/bundle-interfaces-README.md
   - ks:docs/service/auth/auth-README.md
   - ks:docs/service/comm/README-comm.md
@@ -187,6 +188,8 @@ Important:
 
 - `message_kind` / `continuation_kind` are current routing semantics
 - they do **not** yet represent a general authored event model
+- `turn_id` on the request is a client correlation hint; the server allocates or confirms the authoritative task/turn id in the acknowledgement
+- for continuations, `target_turn_id` is the user/client intent and `active_turn_id` is the client's best known active turn; neither field is authoritative without server state
 - attachments are carried alongside this logical message, not inside it
 
 ### Attachments on SSE
@@ -228,6 +231,26 @@ Known `status` values:
 | `processing_started` | A regular turn was admitted to the normal proc ready queue. |
 | `followup_accepted` | The conversation was busy; the message was accepted into the shared external event source as a followup. |
 | `steer_accepted` | The conversation was busy; the message was accepted into the shared external event source as a steer/control event. |
+
+Continuation acknowledgements may include these fields:
+
+| Field | Meaning |
+| --- | --- |
+| `turn_id` | Server-side task/turn id for the submitted request. For accepted continuations this is the fallback queued turn id if the live owner does not consume the event. |
+| `active_turn_id` | Server-observed active turn at ingress time. Prefer this for immediate same-turn UI rendering. |
+| `target_turn_id` | Client/user intended turn. This is advisory metadata and can be stale. |
+| `queued_turn_id` | Explicit alias for the fallback queued turn id carried in `turn_id`. |
+| `event_id` | Durable external event id in the conversation event source. Use it as the best dedupe key for optimistic continuation bubbles. |
+| `external_event_sequence` | Ordered sequence in the per-conversation external event source. |
+| `live_owner_detected` | `true` when ingress saw a live owner lease for `active_turn_id`; `false` means the event was stored but should not be rendered as already consumed by the live turn. |
+
+Client rules:
+
+- send `followup` / `steer` intent and optionally send `target_turn_id`
+- treat `followup_accepted` / `steer_accepted` as admission only
+- do not create a new visible turn on `followup_accepted` / `steer_accepted`
+- for an immediate optimistic followup bubble, require `live_owner_detected !== false`, attach it to `active_turn_id || target_turn_id`, and dedupe with `event_id || queued_turn_id || turn_id`
+- if the live owner closes before consumption, wait for the later `chat_start`; proc will promote the stored event once as a normal turn
 
 Use:
 

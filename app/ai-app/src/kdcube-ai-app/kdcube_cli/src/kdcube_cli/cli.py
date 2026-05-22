@@ -1156,7 +1156,7 @@ def _resolve_bundle_local_path_for_runtime(raw_path: str, workdir: Path) -> tupl
 
 
 def _bundle_apply_command(bundle_id: str, workdir: Path) -> str:
-    return f"kdcube reload {shlex.quote(bundle_id)} --workdir {shlex.quote(str(workdir))}"
+    return f"kdcube bundle reload {shlex.quote(bundle_id)} --workdir {shlex.quote(str(workdir))}"
 
 
 def _print_bundle_apply_hint(console: Console, bundle_id: str, workdir: Path) -> None:
@@ -1184,6 +1184,247 @@ def _bundle_items_from_descriptor(data: object) -> tuple[list[dict[str, object]]
     if isinstance(raw_bundles, list):
         return [item for item in raw_bundles if isinstance(item, dict)], None
     return [], None
+
+
+def _bundle_items_by_id(data: object) -> dict[str, dict[str, object]]:
+    items, _default_id = _bundle_items_from_descriptor(data)
+    result: dict[str, dict[str, object]] = {}
+    for item in items:
+        bundle_id = str(item.get("id", "") or "").strip()
+        if bundle_id:
+            result[bundle_id] = item
+    return result
+
+
+def _bundle_descriptor_default_id(data: object) -> str | None:
+    _items, default_id = _bundle_items_from_descriptor(data)
+    return default_id
+
+
+def _canonical_descriptor_json(value: object) -> str:
+    return json.dumps(value, sort_keys=True, ensure_ascii=False, default=str, separators=(",", ":"))
+
+
+def _changed_bundle_ids_between_descriptors(current: object, incoming: object) -> tuple[list[str], list[str]]:
+    current_items = _bundle_items_by_id(current)
+    incoming_items = _bundle_items_by_id(incoming)
+    changed: set[str] = set()
+    removed: set[str] = set()
+
+    for bundle_id, incoming_item in incoming_items.items():
+        current_item = current_items.get(bundle_id)
+        if current_item is None or _canonical_descriptor_json(current_item) != _canonical_descriptor_json(incoming_item):
+            changed.add(bundle_id)
+
+    for bundle_id in current_items:
+        if bundle_id not in incoming_items:
+            removed.add(bundle_id)
+
+    if _bundle_descriptor_default_id(current) != _bundle_descriptor_default_id(incoming):
+        changed.update(incoming_items.keys())
+
+    return sorted(changed), sorted(removed)
+
+
+def _descriptor_objects_differ(current: object, incoming: object) -> bool:
+    return _canonical_descriptor_json(current) != _canonical_descriptor_json(incoming)
+
+
+def _normalize_bundle_descriptor_paths_for_runtime(data: object, workdir: Path) -> list[dict[str, str]]:
+    translations: list[dict[str, str]] = []
+    if not isinstance(data, dict):
+        return translations
+    items, _default_id = _bundle_items_from_descriptor(data)
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        if item.get("repo"):
+            continue
+        raw_path = str(item.get("path") or "").strip()
+        if not raw_path:
+            continue
+        runtime_path, mode = _resolve_bundle_local_path_for_runtime(raw_path, workdir)
+        if runtime_path != raw_path:
+            item["path"] = runtime_path
+            translations.append(
+                {
+                    "bundle_id": str(item.get("id") or ""),
+                    "source_path": raw_path,
+                    "runtime_path": runtime_path,
+                    "mode": mode,
+                }
+            )
+    return translations
+
+
+def apply_bundle_config_descriptors(
+    console: Console,
+    *,
+    workdir: Path,
+    descriptors_location: Path,
+    dry_run: bool = False,
+    reload_changed: bool = False,
+    repo_root: Path | None = None,
+    verbose: bool = False,
+    quiet: bool = False,
+) -> dict[str, object]:
+    """Stage bundle content descriptors into an initialized runtime.
+
+    This intentionally operates only on bundles.yaml and bundles.secrets.yaml.
+    Platform descriptors remain owned by init/refresh.
+    """
+    config_dir = _canonical_descriptor_dir_from_initialized_workdir(workdir)
+    if config_dir is None:
+        raise SystemExit(
+            f"Workdir is not initialized: {workdir}\n"
+            "`kdcube bundle config apply` only operates on an existing runtime created by `kdcube init`."
+        )
+
+    source_dir = Path(descriptors_location).expanduser().resolve()
+    if not source_dir.exists() or not source_dir.is_dir():
+        raise SystemExit(f"Descriptor directory not found: {source_dir}")
+
+    source_bundles_path = source_dir / "bundles.yaml"
+    source_bundles_secrets_path = source_dir / "bundles.secrets.yaml"
+    target_bundles_path = config_dir / "bundles.yaml"
+    target_bundles_secrets_path = config_dir / "bundles.secrets.yaml"
+
+    if not source_bundles_path.exists():
+        raise SystemExit(f"bundles.yaml not found under {source_dir}")
+
+    incoming_bundles = installer_mod.load_release_descriptor(source_bundles_path)
+    path_translations = _normalize_bundle_descriptor_paths_for_runtime(incoming_bundles, workdir)
+    current_bundles = (
+        installer_mod.load_release_descriptor(target_bundles_path)
+        if target_bundles_path.exists()
+        else {"bundles": {"version": "1", "items": []}}
+    )
+    changed_bundle_ids, removed_bundle_ids = _changed_bundle_ids_between_descriptors(
+        current_bundles,
+        incoming_bundles,
+    )
+
+    files: list[dict[str, object]] = []
+    bundles_changed = _descriptor_objects_differ(current_bundles, incoming_bundles)
+    files.append(
+        {
+            "name": "bundles.yaml",
+            "source": str(source_bundles_path),
+            "target": str(target_bundles_path),
+            "changed": bundles_changed,
+            "path_translations": path_translations,
+        }
+    )
+
+    secrets_changed_bundle_ids: list[str] = []
+    secrets_removed_bundle_ids: list[str] = []
+    secrets_will_apply = source_bundles_secrets_path.exists()
+    if secrets_will_apply:
+        incoming_secrets = installer_mod.load_release_descriptor(source_bundles_secrets_path)
+        current_secrets = (
+            installer_mod.load_release_descriptor(target_bundles_secrets_path)
+            if target_bundles_secrets_path.exists()
+            else {"bundles": {"version": "1", "items": []}}
+        )
+        secrets_changed_bundle_ids, secrets_removed_bundle_ids = _changed_bundle_ids_between_descriptors(
+            current_secrets,
+            incoming_secrets,
+        )
+        secrets_changed = _descriptor_objects_differ(current_secrets, incoming_secrets)
+        files.append(
+            {
+                "name": "bundles.secrets.yaml",
+                "source": str(source_bundles_secrets_path),
+                "target": str(target_bundles_secrets_path),
+                "changed": secrets_changed,
+            }
+        )
+    else:
+        files.append(
+            {
+                "name": "bundles.secrets.yaml",
+                "source": str(source_bundles_secrets_path),
+                "target": str(target_bundles_secrets_path),
+                "changed": False,
+                "skipped": True,
+                "reason": "source file is absent; runtime secrets descriptor is preserved",
+            }
+        )
+
+    declared_bundle_ids = set(_bundle_items_by_id(incoming_bundles).keys())
+    secret_only_changed_ids = sorted(set(secrets_changed_bundle_ids).difference(declared_bundle_ids))
+    reload_bundle_ids = sorted(
+        set(changed_bundle_ids).union(
+            bundle_id for bundle_id in secrets_changed_bundle_ids if bundle_id in declared_bundle_ids
+        )
+    )
+    removed_ids = sorted(set(removed_bundle_ids).union(secrets_removed_bundle_ids))
+
+    if dry_run:
+        if not quiet:
+            console.print("[yellow]Dry run: bundle content descriptors were not modified.[/yellow]")
+    else:
+        installer_mod.save_release_descriptor(target_bundles_path, incoming_bundles)
+        if secrets_will_apply:
+            shutil.copyfile(source_bundles_secrets_path, target_bundles_secrets_path)
+        if not quiet:
+            console.print(f"[green]Applied bundle content descriptors:[/green] {source_dir}")
+
+    if not quiet:
+        for item in files:
+            status = "skipped" if item.get("skipped") else ("changed" if item.get("changed") else "unchanged")
+            console.print(f"[dim]{item['name']}:[/dim] {status}")
+            if item.get("skipped") and item.get("reason"):
+                console.print(f"[dim]  {item['reason']}[/dim]")
+            translations = item.get("path_translations")
+            if isinstance(translations, list):
+                for translation in translations:
+                    if not isinstance(translation, dict):
+                        continue
+                    console.print(
+                        f"[dim]  path[/dim] {translation.get('bundle_id')}: "
+                        f"{translation.get('source_path')} -> {translation.get('runtime_path')}"
+                    )
+        if reload_bundle_ids:
+            verb = "would reload" if dry_run and reload_changed else "reload candidates"
+            console.print(f"[dim]{verb}:[/dim] {', '.join(reload_bundle_ids)}")
+        if removed_ids:
+            console.print(
+                "[yellow]Removed bundle ids are not reloaded because they are no longer declared:[/yellow] "
+                + ", ".join(removed_ids)
+            )
+        if secret_only_changed_ids:
+            console.print(
+                "[yellow]Secret-only bundle ids are not reloaded because they are not declared in bundles.yaml:[/yellow] "
+                + ", ".join(secret_only_changed_ids)
+            )
+
+    reload_results: list[dict[str, object]] = []
+    if reload_changed and reload_bundle_ids and not dry_run:
+        if repo_root is None:
+            raise SystemExit("repo_root is required when reload_changed=True")
+        for bundle_id in reload_bundle_ids:
+            result = reload_bundle_from_descriptor(
+                console,
+                repo_root=repo_root,
+                workdir=workdir,
+                bundle_id=bundle_id,
+                verbose=verbose,
+                json_output=False,
+                quiet=quiet,
+            )
+            reload_results.append({"bundle_id": bundle_id, "result": result})
+
+    return {
+        "status": "dry-run" if dry_run else "ok",
+        "source_dir": str(source_dir),
+        "target_dir": str(config_dir),
+        "files": files,
+        "changed_bundle_ids": reload_bundle_ids,
+        "removed_bundle_ids": removed_ids,
+        "secret_only_changed_bundle_ids": secret_only_changed_ids,
+        "reloaded": reload_results,
+    }
 
 
 def _find_bundle_item(data: object, bundle_id: str) -> tuple[dict[str, object] | None, str | None]:
@@ -2732,7 +2973,12 @@ def main() -> None:
     _sp.add_argument("--project", default="", help="Project of the runtime. Pair with --tenant.")
     _sp.add_argument("--workdir", default=None, help="(Advanced) Fully-qualified namespaced runtime workdir")
     _sp.add_argument("--path", default=str(DEFAULT_DIR), help="Platform repo path")
-    _sp.add_argument("--json", action="store_true", dest="json_output", help="With `bundle status`, print JSON")
+    _sp.add_argument("--json", action="store_true", dest="json_output", help="With `bundle status`, `bundle reload`, or `bundle config apply`, print JSON")
+    _sp.add_argument(
+        "--verbose",
+        action="store_true",
+        help="With `bundle reload` or `bundle config apply --reload`, show the raw docker compose command and proc response",
+    )
     _sp.add_argument(
         "--live",
         action="store_true",
@@ -2828,6 +3074,22 @@ def main() -> None:
         action="store_true",
         default=False,
         help="Remove this bundle entry from bundles.yaml (and its secrets entry if present)",
+    )
+    _sp.add_argument(
+        "--descriptors-location",
+        default="",
+        help="With `bundle config apply`, source directory containing bundles.yaml and optional bundles.secrets.yaml",
+    )
+    _sp.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="With `bundle config apply`, show what would change without staging files",
+    )
+    _sp.add_argument(
+        "--reload",
+        action="store_true",
+        dest="reload_changed",
+        help="With `bundle config apply`, reload changed bundle ids after staging descriptors",
     )
 
     _sp = subparsers.add_parser("export", help="Export live bundle descriptors")
@@ -3220,6 +3482,73 @@ def main() -> None:
             _resolved = _resolve_cli_workdir(_workdir)
             _bundle_arg = str(args.bundle_id or "").strip()
             _status_bundle_arg = str(args.status_bundle_id or "").strip()
+            _has_bundle_patch_flags = any(
+                [
+                    args.local_path is not None,
+                    args.git_repo is not None,
+                    args.git_ref is not None,
+                    args.git_subdir is not None,
+                    args.name is not None,
+                    args.module is not None,
+                    args.singleton is not None,
+                    bool(args.set_config or []),
+                    bool(args.set_secret or []),
+                    bool(args.del_config or []),
+                    bool(args.del_secret or []),
+                    bool(args.delete),
+                ]
+            )
+            if _bundle_arg == "reload":
+                if not _status_bundle_arg:
+                    raise SystemExit("Usage: kdcube bundle reload <bundle_id> --workdir <workdir>")
+                if _has_bundle_patch_flags:
+                    raise SystemExit("`kdcube bundle reload` cannot be combined with bundle mutation flags.")
+                if args.live_status:
+                    raise SystemExit("--live is only supported with `kdcube bundle status <bundle_id>`.")
+                if args.descriptors_location or args.dry_run or args.reload_changed:
+                    raise SystemExit(
+                        "--descriptors-location, --dry-run, and --reload are only supported with "
+                        "`kdcube bundle config apply`."
+                    )
+                _repo = _resolve_subcommand_repo(args.path, workdir=_resolved, path_provided=_arg_provided("--path"))
+                reload_bundle_from_descriptor(
+                    console,
+                    repo_root=_repo,
+                    workdir=_resolved,
+                    bundle_id=_status_bundle_arg,
+                    verbose=bool(args.verbose),
+                    json_output=bool(args.json_output),
+                    quiet=bool(args.quiet),
+                )
+                return
+            if _bundle_arg == "config":
+                if _status_bundle_arg != "apply":
+                    raise SystemExit(
+                        "Usage: kdcube bundle config apply "
+                        "--descriptors-location <dir> --workdir <workdir> [--dry-run] [--reload]"
+                    )
+                if _has_bundle_patch_flags:
+                    raise SystemExit("`kdcube bundle config apply` cannot be combined with bundle mutation flags.")
+                if args.live_status:
+                    raise SystemExit("--live is only supported with `kdcube bundle status <bundle_id>`.")
+                if not str(args.descriptors_location or "").strip():
+                    raise SystemExit("--descriptors-location is required with `kdcube bundle config apply`.")
+                _repo = None
+                if args.reload_changed:
+                    _repo = _resolve_subcommand_repo(args.path, workdir=_resolved, path_provided=_arg_provided("--path"))
+                _result = apply_bundle_config_descriptors(
+                    console,
+                    workdir=_resolved,
+                    descriptors_location=Path(str(args.descriptors_location)),
+                    dry_run=bool(args.dry_run),
+                    reload_changed=bool(args.reload_changed),
+                    repo_root=_repo,
+                    verbose=bool(args.verbose),
+                    quiet=bool(args.quiet or args.json_output),
+                )
+                if args.json_output:
+                    _print_json(_result)
+                return
             if _bundle_arg == "status":
                 if not _status_bundle_arg:
                     raise SystemExit("Usage: kdcube bundle status <bundle_id> --workdir <workdir>")
@@ -3237,6 +3566,9 @@ def main() -> None:
                         bool(args.del_config or []),
                         bool(args.del_secret or []),
                         bool(args.delete),
+                        bool(args.descriptors_location),
+                        bool(args.dry_run),
+                        bool(args.reload_changed),
                     ]
                 ):
                     raise SystemExit("`kdcube bundle status` cannot be combined with mutation flags.")
@@ -3259,9 +3591,14 @@ def main() -> None:
                     "Use `kdcube bundle status <bundle_id>` for status checks."
                 )
             if args.json_output:
-                raise SystemExit("--json is only supported with `kdcube bundle status <bundle_id>`.")
+                raise SystemExit("--json is only supported with `kdcube bundle status`, `kdcube bundle reload`, or `kdcube bundle config apply`.")
             if args.live_status:
                 raise SystemExit("--live is only supported with `kdcube bundle status <bundle_id>`.")
+            if args.descriptors_location or args.dry_run or args.reload_changed:
+                raise SystemExit(
+                    "--descriptors-location, --dry-run, and --reload are only supported with "
+                    "`kdcube bundle config apply`."
+                )
             if not _bundle_arg:
                 raise SystemExit(
                     "Bundle ID is required. Use `kdcube bundle <bundle_id> --...` or "

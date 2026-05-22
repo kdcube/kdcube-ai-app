@@ -189,6 +189,12 @@ interface SubmitChatMessageApiResponse {
   conversation_created?: boolean
   user_type?: string
   message_kind?: string | null
+  active_turn_id?: string | null
+  target_turn_id?: string | null
+  queued_turn_id?: string | null
+  event_id?: string | null
+  external_event_sequence?: number | null
+  live_owner_detected?: boolean | null
   message?: string
 }
 
@@ -201,6 +207,12 @@ export interface SubmitChatMessageResponse {
   conversationCreated: boolean
   userType?: string
   messageKind?: string | null
+  activeTurnId?: string | null
+  targetTurnId?: string | null
+  queuedTurnId?: string | null
+  eventId?: string | null
+  externalEventSequence?: number | null
+  liveOwnerDetected?: boolean | null
   message?: string
 }
 
@@ -413,6 +425,12 @@ async function parseSubmitChatMessageResponse(
     conversationCreated: Boolean(raw?.conversation_created),
     userType: raw?.user_type,
     messageKind: raw?.message_kind,
+    activeTurnId: raw?.active_turn_id,
+    targetTurnId: raw?.target_turn_id,
+    queuedTurnId: raw?.queued_turn_id,
+    eventId: raw?.event_id,
+    externalEventSequence: raw?.external_event_sequence,
+    liveOwnerDetected: raw?.live_owner_detected,
     message: raw?.message,
   }
 }

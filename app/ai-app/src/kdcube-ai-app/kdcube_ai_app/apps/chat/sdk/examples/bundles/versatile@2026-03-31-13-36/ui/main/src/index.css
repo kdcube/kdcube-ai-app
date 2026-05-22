@@ -974,3 +974,86 @@ a { color: inherit; }
   vertical-align: top;
 }
 .markdown-body th { color: var(--text-2); font-weight: 600; }
+
+/* ---------------------------------------------------------------------- */
+/*  Chat view — Phase 1 (additive)                                        */
+/*                                                                        */
+/*  A calmer rendering of the same data Overview consumes. Limited to     */
+/*  layout shells around the existing .k-workitem / .k-msg / .k-notice    */
+/*  primitives — no new colours, no new font-sizes, no card-in-card.      */
+/* ---------------------------------------------------------------------- */
+.k-chat-view {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.k-chat-think {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 2px 2px;
+}
+.k-chat-think-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.k-chat-think-title {
+  font-weight: 600;
+  color: var(--text-2);
+}
+.k-chat-think-count {
+  color: var(--muted);
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.k-chat-think-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 6px;
+  border-left: 1px solid var(--line-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.k-chat-think-item {
+  position: relative;
+  padding: 2px 0 2px 14px;
+  display: flex;
+  align-items: flex-start;
+}
+.k-chat-think-dot {
+  position: absolute;
+  left: -10px;
+  top: 8px;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--blue);
+  opacity: 0.55;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.k-chat-think-body {
+  min-width: 0;
+  flex: 1 1 auto;
+  /* Body text is intentionally faded for chat view — keeps the timeline calm. */
+  color: var(--text-2);
+  opacity: 0.85;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.k-chat-think-body .markdown-body {
+  font-size: 12.5px;
+}
+.k-chat-think-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-style: italic;
+}
