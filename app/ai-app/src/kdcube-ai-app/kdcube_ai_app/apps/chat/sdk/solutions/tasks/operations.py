@@ -49,12 +49,19 @@ def configure_task_operations(
 
 
 def _storage_root(entrypoint: Any) -> str:
+    for method_name in ("task_storage_root", "storage_root_or_error"):
+        resolver = getattr(entrypoint, method_name, None)
+        if callable(resolver):
+            return str(resolver())
     if not callable(_storage_root_or_error):
         raise RuntimeError("task operations are not configured: storage_root_or_error is missing")
     return str(_storage_root_or_error(entrypoint))
 
 
 def _target_user(entrypoint: Any, *, user_id: Optional[str] = None, fingerprint: Optional[str] = None) -> str:
+    resolver = getattr(entrypoint, "target_task_user_id", None)
+    if callable(resolver):
+        return str(resolver(user_id=user_id, fingerprint=fingerprint))
     if callable(_target_user_id):
         return str(_target_user_id(entrypoint, user_id=user_id, fingerprint=fingerprint))
     value = str(user_id or fingerprint or "").strip()
@@ -600,6 +607,119 @@ def _run_prompt(*, task: Dict[str, Any], execution: Dict[str, Any], trigger: str
     ).strip()
 
 
+def _result_answer(result: Any) -> str:
+    if isinstance(result, dict):
+        return str(
+            result.get("final_answer")
+            or result.get("answer")
+            or result.get("summary")
+            or ""
+        ).strip()
+    return str(result or "").strip()
+
+
+def _result_status(result: Any) -> str:
+    if not isinstance(result, dict):
+        return ""
+    status = str(result.get("execution_status") or result.get("status") or "").strip().lower()
+    return status if status in {"success", "failed", "cancelled"} else ""
+
+
+async def _run_default_react_task_job(
+    entrypoint: Any,
+    *,
+    task: Dict[str, Any],
+    execution: Dict[str, Any],
+    trigger: str,
+    target_user: str,
+    run_conversation_id: str,
+    turn_id: str,
+    bundle_call_context: Dict[str, Any],
+) -> Dict[str, Any]:
+    comm_context = getattr(entrypoint, "comm_context", None)
+    if comm_context is None or not hasattr(comm_context, "model_copy"):
+        raise RuntimeError("task execution requires a request context with comm_context")
+
+    scoped_ctx = comm_context.model_copy(deep=True)
+    scoped_ctx.routing.session_id = run_conversation_id
+    scoped_ctx.routing.conversation_id = run_conversation_id
+    scoped_ctx.routing.turn_id = turn_id
+    scoped_ctx.user.user_id = target_user
+    scoped_ctx.bundle_call_context = bundle_call_context
+    entrypoint.rebind_request_context(comm_context=scoped_ctx)
+
+    state = entrypoint.create_initial_state(
+        {
+            "request_id": getattr(scoped_ctx.request, "request_id", "") or str(uuid.uuid4()),
+            "tenant": scoped_ctx.actor.tenant_id,
+            "project": scoped_ctx.actor.project_id,
+            "user": target_user,
+            "user_type": scoped_ctx.user.user_type,
+            "session_id": run_conversation_id,
+            "conversation_id": run_conversation_id,
+            "turn_id": turn_id,
+            "text": _run_prompt(task=task, execution=execution, trigger=trigger),
+            "attachments": [],
+        }
+    )
+    state["turn_id"] = turn_id
+    state["agent_surface"] = "task_job"
+    state["task_execution"] = {
+        "task_id": task.get("id"),
+        "execution_id": execution["id"],
+        "trigger": trigger,
+        "conversation_id": run_conversation_id,
+        "turn_id": turn_id,
+        "task_definition": bundle_call_context["task_definition"],
+    }
+    run_task_job_turn = getattr(entrypoint, "run_task_job_turn", None)
+    if not callable(run_task_job_turn):
+        raise RuntimeError(
+            "Task execution requires entrypoint.execute_task_job(...) or entrypoint.run_task_job_turn(...)."
+        )
+    result = await run_task_job_turn(state=state)
+    return result if isinstance(result, dict) else {"final_answer": str(result or "")}
+
+
+async def _execute_task_job(
+    entrypoint: Any,
+    *,
+    task: Dict[str, Any],
+    execution: Dict[str, Any],
+    storage: AsyncTaskStorage,
+    target_user: str,
+    trigger: str,
+    source: Dict[str, Any],
+    run_conversation_id: str,
+    turn_id: str,
+    bundle_call_context: Dict[str, Any],
+) -> Dict[str, Any]:
+    executor = getattr(entrypoint, "execute_task_job", None)
+    if callable(executor):
+        result = await executor(
+            task=task,
+            execution=execution,
+            storage=storage,
+            user_id=target_user,
+            trigger=trigger,
+            source=source,
+            conversation_id=run_conversation_id,
+            turn_id=turn_id,
+            bundle_call_context=bundle_call_context,
+        )
+        return result if isinstance(result, dict) else {"answer": str(result or "")}
+    return await _run_default_react_task_job(
+        entrypoint,
+        task=task,
+        execution=execution,
+        trigger=trigger,
+        target_user=target_user,
+        run_conversation_id=run_conversation_id,
+        turn_id=turn_id,
+        bundle_call_context=bundle_call_context,
+    )
+
+
 def _telegram_bot_token() -> str:
     bundle_id = BUNDLE_ID or "task-and-memo-app@1-0"
     return (
@@ -822,45 +942,6 @@ async def run_task_execution(
     }
 
     try:
-        comm_context = getattr(entrypoint, "comm_context", None)
-        if comm_context is None or not hasattr(comm_context, "model_copy"):
-            raise RuntimeError("task execution requires a request context with comm_context")
-
-        scoped_ctx = comm_context.model_copy(deep=True)
-        scoped_ctx.routing.session_id = run_conversation_id
-        scoped_ctx.routing.conversation_id = run_conversation_id
-        scoped_ctx.routing.turn_id = turn_id
-        scoped_ctx.user.user_id = target_user
-        scoped_ctx.bundle_call_context = bundle_call_context
-        entrypoint.rebind_request_context(comm_context=scoped_ctx)
-
-        state = entrypoint.create_initial_state(
-            {
-                "request_id": getattr(scoped_ctx.request, "request_id", "") or str(uuid.uuid4()),
-                "tenant": scoped_ctx.actor.tenant_id,
-                "project": scoped_ctx.actor.project_id,
-                "user": target_user,
-                "user_type": scoped_ctx.user.user_type,
-                "session_id": run_conversation_id,
-                "conversation_id": run_conversation_id,
-                "turn_id": turn_id,
-                "text": _run_prompt(task=task, execution=execution, trigger=trigger),
-                "attachments": [],
-            }
-        )
-        state["turn_id"] = turn_id
-        state["agent_surface"] = "task_job"
-        state["task_execution"] = {
-            "task_id": task_id,
-            "execution_id": execution["id"],
-            "trigger": trigger,
-            "conversation_id": run_conversation_id,
-            "turn_id": turn_id,
-            "task_definition": bundle_call_context["task_definition"],
-        }
-        run_task_job_turn = getattr(entrypoint, "run_task_job_turn", None)
-        if not callable(run_task_job_turn):
-            raise RuntimeError("Task execution requires entrypoint.run_task_job_turn(...).")
         try:
             from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import bind_current_bundle_call_context
         except Exception:
@@ -871,11 +952,25 @@ async def run_task_execution(
             else nullcontext()
         )
         with context_binding:
-            result = await run_task_job_turn(state=state)
-        answer = str((result or {}).get("final_answer") or "").strip()
+            result = await _execute_task_job(
+                entrypoint,
+                task=task,
+                execution=execution,
+                storage=storage,
+                target_user=target_user,
+                trigger=trigger,
+                source=source or {},
+                run_conversation_id=run_conversation_id,
+                turn_id=turn_id,
+                bundle_call_context=bundle_call_context,
+            )
+        answer = _result_answer(result)
         current_execution = await storage.get_execution(execution_id=execution["id"], task_id=task_id) or execution
         current_status = str(current_execution.get("status") or "").strip().lower()
-        final_status = current_status if current_status in {"success", "failed", "cancelled"} else "success"
+        requested_status = _result_status(result)
+        final_status = current_status if current_status in {"success", "failed", "cancelled"} else (requested_status or "success")
+        artifacts = result.get("artifacts") if isinstance(result.get("artifacts"), list) else None
+        metadata = result.get("metadata") if isinstance(result.get("metadata"), dict) else None
         execution = await storage.update_execution(
             execution_id=execution["id"],
             task_id=task_id,
@@ -885,6 +980,8 @@ async def run_task_execution(
             summary=answer or str(current_execution.get("summary") or "").strip() or "Task execution completed.",
             result=result or {},
             log_excerpt=answer[:1000],
+            artifacts=artifacts,
+            metadata_patch=metadata,
         )
         delivery = await _deliver_execution_to_telegram(
             entrypoint,
