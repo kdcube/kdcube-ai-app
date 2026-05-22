@@ -90,7 +90,7 @@ be a small placeholder for legacy/fallback cases.
 
 Source-folder builds currently run through the bundle UI build machinery
 provided by the `BaseEntrypoint` class family. If a bundle exposes buildable
-widgets, the workflow class must either inherit a concrete `BaseEntrypoint`
+widgets, the entrypoint class must either inherit a concrete `BaseEntrypoint`
 family class, such as `BaseEntrypoint`, `BaseEntrypointWithEconomics`,
 `BaseEntrypointWithMemory`, or `BaseEntrypointWithEconomicsAndMemory`, or
 implement the equivalent `_ensure_ui_build(...)` contract. A plain workflow

@@ -1456,8 +1456,8 @@ metadata:
 
 | Decorator | Canonical bundle-props path |
 | --- | --- |
-| `@agentic_workflow(...)` | `enabled.bundle` |
-| `@api(alias=A, method=M, ...)` | `enabled.api["A.M"]` (flat key, literal dot) |
+| `@bundle_entrypoint(...)` | `enabled.bundle` |
+| `@api(alias=A, method=M, route=R, ...)` | `enabled.api["R.A.M"]` (flat key) |
 | `@mcp(alias=A, ...)` | `enabled.mcp.A` |
 | `@ui_widget(alias=A, ...)` | `enabled.widget.A` |
 | `@cron(alias=A, ...)` | `enabled.cron.A` |

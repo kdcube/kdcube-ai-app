@@ -282,14 +282,14 @@ On terminal completion:
 
 ### 4.4.1 Tool execution inside proc-owned turns
 
-For ReAct-style and similar bundle workflows, tool execution still belongs to
+For ReAct-style and similar bundle entrypoints, tool execution still belongs to
 the proc-owned turn lifecycle even when the concrete tool call runs outside the
 main proc interpreter.
 
 Current shape:
 - proc owns the chat turn, request context, communicator, accounting scope, and
-  bundle/workflow instance
-- bundle/workflow code may invoke tools through the tool subsystem
+  bundle entrypoint instance
+- bundle entrypoint code may invoke tools through the tool subsystem
 - tool execution can happen:
   - in-memory in the proc runtime
   - in an isolated runtime / supervisor path

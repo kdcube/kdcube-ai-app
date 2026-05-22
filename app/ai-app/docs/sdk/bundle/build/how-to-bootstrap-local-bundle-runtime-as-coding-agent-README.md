@@ -487,7 +487,7 @@ Example:
 "$KDCUBE" bundle "$BUNDLE_ID" \
   --workdir "$WORKDIR" \
   --set-config enabled.widget.<widget_alias> true \
-  --set-config enabled.api.<api_alias>.<METHOD> true \
+  --set-config enabled.api.<route>.<api_alias>.<METHOD> true \
   --set-config <bundle_setting_path> <value>
 
 "$KDCUBE" bundle reload "$BUNDLE_ID" --workdir "$WORKDIR"

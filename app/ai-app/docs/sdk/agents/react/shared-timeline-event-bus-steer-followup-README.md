@@ -79,7 +79,7 @@ Live React owner
 
 Today React owns the timeline correctly for the duration of the turn:
 
-- the bundle workflow creates `ReactSolverV2`
+- the bundle entrypoint creates `ReactSolverV2`
 - the solver creates `ContextBrowser`
 - `ContextBrowser.load_timeline()` materializes an in-memory `Timeline`
 - all further `contribute(...)` calls are local to that in-process owner

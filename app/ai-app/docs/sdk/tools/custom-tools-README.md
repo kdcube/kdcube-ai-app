@@ -277,7 +277,7 @@ Runtime context required:
 - the model should not pass those runtime ids as tool parameters; they must be
   prepared by the SDK runtime before the tool runs.
 
-Normal bundle workflows get this preparation when `BaseWorkflow.build_react(...)`
+Normal ReAct workflows get this preparation when `BaseWorkflow.build_react(...)`
 creates the `ToolSubsystem` with the workflow `ApplicationHostingService`.
 Cached workflows refresh the request-bound communicator through
 `BaseWorkflow.rebind_request_context(...)`.

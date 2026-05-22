@@ -26,8 +26,11 @@ from kdcube_ai_app.infra.plugin.agentic_loader import (
     _bundle_venv_build_env,
     _load_module_from_dir,
     _load_from_sys_with_path_on_syspath,
+    AGENTIC_ROLE_ATTR,
+    BUNDLE_ENTRYPOINT_ROLE_ATTR,
     BUNDLE_VENV_ATTR,
     api,
+    bundle_entrypoint,
     discover_bundle_interface_manifest,
     mcp,
     on_job,
@@ -61,6 +64,7 @@ def _session(*, user_type: str = "registered", roles: list[str] | None = None) -
         user_type=SimpleNamespace(value=user_type),
         user_id="user-1",
         username="elena",
+        email="elena@example.com",
         fingerprint="fp-1",
         roles=roles or [],
         permissions=["chat.use"],
@@ -109,18 +113,18 @@ def _default_authoritative_bundle_props(monkeypatch):
 
 def test_direct_bundle_loader_removes_failed_partial_module(tmp_path):
     entrypoint = tmp_path / "entrypoint.py"
-    entrypoint.write_text("raise RuntimeError('boom before workflow class')\n", encoding="utf-8")
+    entrypoint.write_text("raise RuntimeError('boom before entrypoint class')\n", encoding="utf-8")
     root_name = "kdcube_bundle_" + hashlib.sha256(str(tmp_path.resolve()).encode("utf-8")).hexdigest()[:16]
     module_name = f"{root_name}.entrypoint"
 
-    with pytest.raises(RuntimeError, match="boom before workflow class"):
+    with pytest.raises(RuntimeError, match="boom before entrypoint class"):
         _load_module_from_dir(tmp_path, "entrypoint")
 
     assert module_name not in sys.modules
 
     entrypoint.write_text(
-        "from kdcube_ai_app.infra.plugin.agentic_loader import agentic_workflow\n\n"
-        "@agentic_workflow(name='good')\n"
+        "from kdcube_ai_app.infra.plugin.agentic_loader import bundle_entrypoint\n\n"
+        "@bundle_entrypoint(name='good')\n"
         "class GoodWorkflow:\n"
         "    def __init__(self, config=None):\n"
         "        self.config = config\n",
@@ -129,6 +133,18 @@ def test_direct_bundle_loader_removes_failed_partial_module(tmp_path):
 
     mod = _load_module_from_dir(tmp_path, "entrypoint")
     assert getattr(mod.GoodWorkflow, "__agentic_role__", None) == "workflow_class"
+
+
+def test_bundle_entrypoint_decorator_marks_neutral_entrypoint_and_legacy_alias():
+    @bundle_entrypoint(name="good")
+    class GoodEntrypoint:
+        pass
+
+    assert getattr(GoodEntrypoint, BUNDLE_ENTRYPOINT_ROLE_ATTR) == "entrypoint_class"
+    assert getattr(GoodEntrypoint, AGENTIC_ROLE_ATTR) == "workflow_class"
+
+    manifest = discover_bundle_interface_manifest(GoodEntrypoint, bundle_id="demo.bundle")
+    assert manifest.bundle_id == "demo.bundle"
 
 
 def test_bundle_loader_relative_imports_survive_foreign_sibling_package(tmp_path):
@@ -145,8 +161,8 @@ def test_bundle_loader_relative_imports_survive_foreign_sibling_package(tmp_path
     (target_services / "news.py").write_text("VALUE = 'target'\n", encoding="utf-8")
     (target / "entrypoint.py").write_text(
         "from .services.news import VALUE\n"
-        "from kdcube_ai_app.infra.plugin.agentic_loader import agentic_workflow\n\n"
-        "@agentic_workflow(name='target')\n"
+        "from kdcube_ai_app.infra.plugin.agentic_loader import bundle_entrypoint\n\n"
+        "@bundle_entrypoint(name='target')\n"
         "class TargetWorkflow:\n"
         "    marker = VALUE\n",
         encoding="utf-8",
@@ -412,9 +428,9 @@ def test_venv_decorator_executes_in_cached_bundle_subprocess(monkeypatch, tmp_pa
     (bundle_dir / "entrypoint.py").write_text(
         "\n".join(
             [
-                "from kdcube_ai_app.infra.plugin.agentic_loader import agentic_workflow, bundle_id",
+                "from kdcube_ai_app.infra.plugin.agentic_loader import bundle_entrypoint, bundle_id",
                 "",
-                "@agentic_workflow(name='Demo Bundle')",
+                "@bundle_entrypoint(name='Demo Bundle')",
                 "@bundle_id('bundle.demo')",
                 "class DemoBundle:",
                 "    pass",
@@ -476,9 +492,9 @@ def test_venv_decorator_supports_bundle_local_dataclass_arguments(monkeypatch, t
     (bundle_dir / "entrypoint.py").write_text(
         "\n".join(
             [
-                "from kdcube_ai_app.infra.plugin.agentic_loader import agentic_workflow, bundle_id",
+                "from kdcube_ai_app.infra.plugin.agentic_loader import bundle_entrypoint, bundle_id",
                 "",
-                "@agentic_workflow(name='Dataclass Bundle')",
+                "@bundle_entrypoint(name='Dataclass Bundle')",
                 "@bundle_id('bundle.dataclass')",
                 "class DataclassBundle:",
                 "    pass",
@@ -528,9 +544,9 @@ def test_venv_decorator_supports_bundle_local_dataclass_arguments_when_module_sp
     (bundle_dir / "entrypoint.py").write_text(
         "\n".join(
             [
-                "from kdcube_ai_app.infra.plugin.agentic_loader import agentic_workflow, bundle_id",
+                "from kdcube_ai_app.infra.plugin.agentic_loader import bundle_entrypoint, bundle_id",
                 "",
-                "@agentic_workflow(name='User Mgmt Bundle')",
+                "@bundle_entrypoint(name='User Mgmt Bundle')",
                 "@bundle_id('user-mgmt@1-0')",
                 "class UserMgmtBundle:",
                 "    pass",
@@ -831,7 +847,7 @@ async def test_admin_bundle_props_survives_code_defaults_load_failure(monkeypatc
 
     async def _get_workflow_instance_async(*args, **kwargs):
         del args, kwargs
-        raise AttributeError("No decorated workflow found in module 'bundle.bad.entrypoint'")
+        raise AttributeError("No decorated bundle entrypoint found in module 'bundle.bad.entrypoint'")
 
     monkeypatch.setattr(integrations, "_resolve_bundle_spec_from_runtime", _resolve_bundle_async)
     monkeypatch.setattr(integrations, "store_get_bundle_props", _store_get_bundle_props)
@@ -849,7 +865,7 @@ async def test_admin_bundle_props_survives_code_defaults_load_failure(monkeypatc
     assert result["props"] == {"saved": True}
     assert result["defaults"] == {}
     assert result["defaults_error"]["code"] == "AttributeError"
-    assert "No decorated workflow found" in result["defaults_error"]["message"]
+    assert "No decorated bundle entrypoint found" in result["defaults_error"]["message"]
 
 
 @pytest.mark.asyncio

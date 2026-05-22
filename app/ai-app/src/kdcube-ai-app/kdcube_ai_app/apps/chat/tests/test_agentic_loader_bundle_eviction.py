@@ -91,10 +91,10 @@ def test_singleton_base_workflow_entrypoint_is_rejected(tmp_path):
     bundle_root.mkdir()
     (bundle_root / "entrypoint.py").write_text(
         """
-from kdcube_ai_app.infra.plugin.agentic_loader import agentic_workflow
+from kdcube_ai_app.infra.plugin.agentic_loader import bundle_entrypoint
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.base_workflow import BaseWorkflow
 
-@agentic_workflow(name="Bad Workflow")
+@bundle_entrypoint(name="Bad Workflow")
 class BadWorkflow(BaseWorkflow):
     pass
 """.lstrip()

@@ -82,7 +82,7 @@ Canonical keys:
 | Surface | Key |
 |---|---|
 | bundle | `enabled.bundle` |
-| API | `enabled.api["<alias>.<METHOD>"]` |
+| API | `enabled.api["<route>.<alias>.<METHOD>"]` |
 | MCP | `enabled.mcp.<alias>` |
 | widget | `enabled.widget.<alias>` |
 | cron | `enabled.cron.<alias>` |

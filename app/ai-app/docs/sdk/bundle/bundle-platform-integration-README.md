@@ -77,8 +77,10 @@ Bundles currently support these decorators:
 
 | Decorator | Scope | What it means |
 | --- | --- | --- |
-| `@agentic_workflow(...)` | entrypoint class | Declares the bundle workflow class used by the runtime. |
-| `@agentic_workflow_factory(...)` | factory function | Declares a workflow factory function instead of a workflow class. |
+| `@bundle_entrypoint(...)` | entrypoint class | Declares the bundle entrypoint class used by the runtime. |
+| `@bundle_entrypoint_factory(...)` | factory function | Declares an entrypoint factory function instead of an entrypoint class. |
+| `@agentic_workflow(...)` | entrypoint class | Legacy compatibility alias for `@bundle_entrypoint(...)`. |
+| `@agentic_workflow_factory(...)` | factory function | Legacy compatibility alias for `@bundle_entrypoint_factory(...)`. |
 | `@bundle_id(...)` | entrypoint class | Declares the code-level bundle id used when runtime needs to infer identity from the bundle code itself. |
 | `@api(...)` | entrypoint method | Declares a remotely callable bundle HTTP operation. |
 | `@mcp(...)` | entrypoint method | Declares a remotely callable bundle MCP endpoint. |
@@ -91,54 +93,57 @@ Bundles currently support these decorators:
 
 Important distinction:
 
-- `@agentic_workflow(...)`, `@agentic_workflow_factory(...)`, `@bundle_id(...)`,
+- `@bundle_entrypoint(...)`, `@bundle_entrypoint_factory(...)`, `@bundle_id(...)`,
   `@api(...)`, `@mcp(...)`, `@ui_widget(...)`, `@ui_main`, `@on_message`, `@cron(...)`, and `@on_job`
   participate in bundle manifest and runtime interface discovery
 - `@venv(...)` is an execution decorator, not an HTTP/UI manifest decorator
-- most bundles should use `@agentic_workflow(...)`; `@agentic_workflow_factory(...)`
+- most bundles should use `@bundle_entrypoint(...)`; `@bundle_entrypoint_factory(...)`
   is the exception for custom construction cases
+- `@agentic_workflow(...)` remains supported for existing bundles, but new
+  bundle code should use `@bundle_entrypoint(...)` so non-chat bundles are not
+  mislabeled as workflows
 
 These decorators are runtime metadata. They are not deployment config.
 
-### 1.1 `@agentic_workflow_factory(...)`
+### 1.1 `@bundle_entrypoint_factory(...)`
 
-Declares a workflow factory function rather than a workflow class.
+Declares an entrypoint factory function rather than an entrypoint class.
 
 ```python
-from kdcube_ai_app.infra.plugin.agentic_loader import agentic_workflow_factory
+from kdcube_ai_app.infra.plugin.agentic_loader import bundle_entrypoint_factory
 
-@agentic_workflow_factory(name="My Bundle", version="1.0.0")
+@bundle_entrypoint_factory(name="My Bundle", version="1.0.0")
 def build_bundle(config, **kwargs):
     ...
 ```
 
 Use this only when the bundle must construct its runtime through a factory
-function. Most bundles should use `@agentic_workflow(...)` on a class.
+function. Most bundles should use `@bundle_entrypoint(...)` on a class.
 
 Side-by-side:
 
 ```python
 from kdcube_ai_app.infra.plugin.agentic_loader import (
-    agentic_workflow,
-    agentic_workflow_factory,
+    bundle_entrypoint,
+    bundle_entrypoint_factory,
     bundle_id,
 )
 
-@agentic_workflow(name="My Bundle", version="1.0.0")
+@bundle_entrypoint(name="My Bundle", version="1.0.0")
 @bundle_id("my.bundle@1.0.0")
-class MyWorkflow:
+class MyBundleEntrypoint:
     ...
 
-@agentic_workflow_factory(name="My Bundle", version="1.0.0")
-def build_workflow(config, **kwargs):
-    return MyWorkflow(config=config, **kwargs)
+@bundle_entrypoint_factory(name="My Bundle", version="1.0.0")
+def build_entrypoint(config, **kwargs):
+    return MyBundleEntrypoint(config=config, **kwargs)
 ```
 
 In practice:
 
-- class form means the runtime instantiates the workflow class directly
+- class form means the runtime instantiates the entrypoint class directly
 - factory form means the runtime calls your function and uses the returned
-  workflow instance
+  entrypoint instance
 - prefer the class form unless you specifically need dynamic selection,
   wrapping, or legacy construction adaptation
 
@@ -147,9 +152,9 @@ In practice:
 Declares the canonical bundle ID on the entrypoint class.
 
 ```python
-from kdcube_ai_app.infra.plugin.agentic_loader import agentic_workflow, bundle_id
+from kdcube_ai_app.infra.plugin.agentic_loader import bundle_entrypoint, bundle_id
 
-@agentic_workflow(name="My Bundle", version="1.0.0")
+@bundle_entrypoint(name="My Bundle", version="1.0.0")
 @bundle_id("my.bundle@1.0.0")
 class MyBundle:
     ...
@@ -157,14 +162,14 @@ class MyBundle:
 
 Use it when the code should declare its own stable bundle identity.
 
-### 1.3 `@agentic_workflow(...)` — bundle-level `allowed_roles`
+### 1.3 `@bundle_entrypoint(...)` — bundle-level `allowed_roles`
 
-The `@agentic_workflow` decorator accepts optional `allowed_roles` and
+The `@bundle_entrypoint` decorator accepts optional `allowed_roles` and
 `allowed_roles_config` parameters that restrict which users can see the bundle
 in the bundle listing.
 
 ```python
-@agentic_workflow(
+@bundle_entrypoint(
     name="Finance Copilot",
     version="1.0.0",
     allowed_roles=("kdcube:role:finance-team", "kdcube:role:super-admin"),
@@ -254,7 +259,7 @@ Canonical bundle-props shape:
 enabled:
   bundle: true|false
   api:
-    "<api-alias>.<METHOD>": true|false   # flat key with literal dot
+    "<route>.<api-alias>.<METHOD>": true|false   # flat key under enabled.api
   mcp:
     <mcp-alias>: true|false
   widget:
@@ -274,20 +279,18 @@ Mapping per decorator:
 
 | Decorator | Canonical path |
 | --- | --- |
-| `@agentic_workflow(...)` | `enabled.bundle` |
-| `@api(alias=A, method=M, ...)` | `enabled.api["A.M"]` (flat key) |
+| `@bundle_entrypoint(...)` | `enabled.bundle` |
+| `@api(alias=A, method=M, route=R, ...)` | `enabled.api["R.A.M"]` (flat key) |
 | `@mcp(alias=A, ...)` | `enabled.mcp.A` |
 | `@ui_widget(alias=A, ...)` | `enabled.widget.A` |
 | `@cron(alias=A, ...)` | `enabled.cron.A` |
 
-Aliases must not contain `.`; the validator rejects them at decoration time.
-The flat `<alias>.<METHOD>` key under `enabled.api` is the only place a
-literal dot appears inside a section key.
+For API gates, the route-aware flat key `<route>.<alias>.<METHOD>` lives under `enabled.api`; the legacy `<alias>.<METHOD>` key remains a fallback for persisted descriptors.
 
 Example:
 
 ```python
-@agentic_workflow(
+@bundle_entrypoint(
     name="News Admin",
     version="1.0.0",
 )
@@ -482,7 +485,7 @@ Current fields:
     - `"bundle"`: proc forwards the request into the bundle method and the
       bundle authenticates it itself
   - default: required for `route="public"`, invalid for `route="operations"`
-- canonical feature gate: `enabled.api["<alias>.<METHOD>"]` (flat key)
+- canonical feature gate: `enabled.api["<route>.<alias>.<METHOD>"]` (flat key)
   - boolean (or string equivalent) under `enabled.api` in bundle props
   - if the resolved value is falsy, this endpoint returns 404
   - absent key means always enabled
@@ -1008,10 +1011,10 @@ class BundleInterfaceManifest:
 ```
 
 `allowed_roles` is populated from the `allowed_roles` argument of
-`@agentic_workflow`. Empty tuple means no restriction.
+`@bundle_entrypoint`. Empty tuple means no restriction.
 
 `allowed_roles_config` is the dot-path declared via `allowed_roles_config=` on
-`@agentic_workflow`. When set, `apply_bundle_overrides(manifest, props)` resolves
+`@bundle_entrypoint`. When set, `apply_bundle_overrides(manifest, props)` resolves
 the path against bundle props and returns a new manifest with the effective
 `allowed_roles`. The admin descriptor exposes `allowed_roles_default`,
 `allowed_roles_config`, and `allowed_roles_overridden` alongside the effective
@@ -1239,7 +1242,7 @@ This is the route used for bundle main-view apps embedded in the host UI.
 
 Role visibility is enforced by the platform integration layer at two levels.
 
-### 4.1 Bundle-level filtering (`allowed_roles` on `@agentic_workflow`)
+### 4.1 Bundle-level filtering (`allowed_roles` on `@bundle_entrypoint`)
 
 Applies to the bundle listing endpoint (`GET /api/integrations/bundles`).
 

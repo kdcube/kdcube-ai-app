@@ -529,7 +529,7 @@ Before writing code, classify the product surface and state model.
 
 | Product need | Primary surface | Typical runtime path | Typical state/storage | Notes |
 | --- | --- | --- | --- | --- |
-| Copilot/chat experience | `@agentic_workflow` / `@on_message` | request-bound chat path | conversation stores, retrieval systems, bundle props | start here for assistant-style products |
+| Copilot/chat experience | `@bundle_entrypoint` / `@on_message` | request-bound chat path | conversation stores, retrieval systems, bundle props | start here for assistant-style products |
 | Admin console | `@ui_widget` + `@api(route="operations")` | widget -> operations | descriptor-backed config, bundle local storage, DB/Redis | keep admin separate from public/user surface |
 | External webhook/integration | `@api(route="public")` | public HTTP path | bundle props + secrets, external systems | auth boundary must be explicit |
 | Tool-serving integration | `@mcp(...)` | MCP dispatch path | bundle props + secrets, external systems | bundle owns MCP auth |
@@ -890,7 +890,7 @@ Entrypoint responsibilities:
 
 - register the bundle
 - build the one-node graph that initializes SDK services
-- instantiate the bundle workflow
+- instantiate the bundle entrypoint
 - pass the turn state to `workflow.process(...)`
 - keep public/operations APIs thin
 
@@ -1269,7 +1269,7 @@ Canonical bundle-props shape:
 enabled:
   bundle: true|false
   api:
-    "<api-alias>.<METHOD>": true|false   # flat key with literal dot
+    "<route>.<api-alias>.<METHOD>": true|false   # flat key under enabled.api
   mcp:
     <mcp-alias>: true|false
   widget:
@@ -1282,16 +1282,16 @@ Mapping per decorator:
 
 | Decorator | Canonical path |
 | --- | --- |
-| `@agentic_workflow(...)` | `enabled.bundle` |
-| `@api(alias=A, method=M, ...)` | `enabled.api["A.M"]` (flat key, literal dot) |
+| `@bundle_entrypoint(...)` | `enabled.bundle` |
+| `@api(alias=A, method=M, route=R, ...)` | `enabled.api["R.A.M"]` (flat key) |
 | `@mcp(alias=A, ...)` | `enabled.mcp.A` |
 | `@ui_widget(alias=A, ...)` | `enabled.widget.A` |
 | `@cron(alias=A, ...)` | `enabled.cron.A` |
 
-Aliases must not contain `.`; the validator rejects them at decoration time.
-For `@api` the flat key `<alias>.<METHOD>` is the only place a literal dot
-appears inside a section key. For `@mcp` / `@ui_widget` / `@cron` the alias is
-a normal nested map key.
+For API gates, the route-aware flat key `<route>.<alias>.<METHOD>` lives under
+`enabled.api`; the legacy `<alias>.<METHOD>` key remains a fallback for
+persisted descriptors. For `@mcp` / `@ui_widget` / `@cron`, the alias is a
+normal nested map key.
 
 Resolution rules:
 
@@ -1341,7 +1341,7 @@ Every bundle should make the entrypoint simple and explicit.
 
 Core requirements:
 
-- register the bundle with `@agentic_workflow(...)`
+- register the bundle with `@bundle_entrypoint(...)`
 - declare bundle identity with `@bundle_id(...)` when code-level identity matters
 - compile the graph once in `__init__`
 - keep route methods thin
@@ -1352,12 +1352,12 @@ Minimal pattern:
 ```python
 from langgraph.graph import END, START, StateGraph
 
-from kdcube_ai_app.infra.plugin.agentic_loader import agentic_workflow, bundle_id
+from kdcube_ai_app.infra.plugin.agentic_loader import bundle_entrypoint, bundle_id
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import BaseEntrypoint
 from kdcube_ai_app.infra.service_hub.inventory import BundleState
 
 
-@agentic_workflow(name="my.bundle", version="1.0.0")
+@bundle_entrypoint(name="my.bundle", version="1.0.0")
 @bundle_id("my.bundle@1.0.0")
 class MyEntrypoint(BaseEntrypoint):
     def __init__(self, **kwargs):
@@ -1605,7 +1605,7 @@ A bundle can be configured as `singleton`.
 
 Meaning:
 
-- the workflow instance is cached and reused inside the proc process
+- the entrypoint instance is cached and reused inside the proc process
 - subsequent requests reuse that same entrypoint instance instead of creating a fresh one each time
 
 What singleton is good for:
@@ -2044,7 +2044,7 @@ When Bundle Admin should be able to change the default visibility without a code
 release, declare config paths in the decorators:
 
 ```python
-@agentic_workflow(
+@bundle_entrypoint(
     name="My Bundle",
     version="1.0.0",
     allowed_roles=("kdcube:role:viewer",),

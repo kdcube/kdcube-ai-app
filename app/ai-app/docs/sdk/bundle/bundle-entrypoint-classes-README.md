@@ -37,7 +37,7 @@ bundle entrypoint. The normal pattern is:
 ```text
 loader
   |
-  | @agentic_workflow(...)
+  | @bundle_entrypoint(...)
   v
 BaseEntrypoint-family instance            may be singleton
   |

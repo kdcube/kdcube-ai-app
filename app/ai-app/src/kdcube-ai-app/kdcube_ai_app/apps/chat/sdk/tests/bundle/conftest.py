@@ -174,7 +174,7 @@ def bundle(bundle_dir, bundle_id, redis_client, pg_pool, comm_context):
         chosen = _discover_decorated(mod)
 
         if chosen is None:
-            pytest.skip(f"No @agentic_workflow class found in bundle '{bundle_id}'")
+            pytest.skip(f"No @bundle_entrypoint class found in bundle '{bundle_id}'")
 
         kind, meta, symbol = chosen
         if kind != "class":

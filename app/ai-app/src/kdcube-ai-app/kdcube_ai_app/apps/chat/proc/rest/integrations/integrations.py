@@ -682,7 +682,7 @@ def _bundle_allowed_for_session(
         session: UserSession,
         props: Optional[Dict[str, Any]] = None,
 ) -> bool:
-    """Bundle-level access check based on allowed_roles declared on @agentic_workflow.
+    """Bundle-level access check based on allowed_roles declared on @bundle_entrypoint.
     No allowed_roles (empty) means the bundle is visible to all authenticated users.
     When props are provided, allowed_roles_config overrides are applied first."""
     if manifest is None:

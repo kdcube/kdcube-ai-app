@@ -432,7 +432,7 @@ async def _invoke_job(
     bundle_spec: Any,
     bundle_config: Any,
 ) -> None:
-    """Load the workflow instance and invoke the scheduled method."""
+    """Load the bundle entrypoint instance and invoke the scheduled method."""
     from kdcube_ai_app.infra.plugin.agentic_loader import get_workflow_instance_async
 
     # Resolve pg_pool lazily — same singleton used by the rest of the proc process.

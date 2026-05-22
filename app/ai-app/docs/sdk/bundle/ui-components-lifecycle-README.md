@@ -299,7 +299,7 @@ GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/widgets/{alias}/ind
 
 the route does this:
 
-1. Load the bundle workflow for that request's worker.
+1. Load the bundle entrypoint for that request's worker.
 2. Discover the bundle interface manifest from decorators.
 3. Apply effective bundle props to the workflow.
 4. Resolve `@ui_widget(alias="<alias>")`.
@@ -453,7 +453,7 @@ first. Do not patch the temporary source directory.
 
 ## Logs To Read
 
-UI build logs are emitted by the bundle workflow logger with `[bundle.ui]`.
+UI build logs are emitted by the bundle entrypoint logger with `[bundle.ui]`.
 
 Important lines:
 

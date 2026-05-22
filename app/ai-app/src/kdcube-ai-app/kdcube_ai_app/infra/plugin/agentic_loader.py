@@ -38,9 +38,16 @@ from kdcube_ai_app.infra.service_hub.inventory import AgentLogger
 _log = logging.getLogger("kdcube.plugin.loader")
 
 # --------------------------------------------------------------------------------------
-# Public decorators — the ONLY way to mark workflow factory/class and optional init
+# Public decorators — mark the bundle entrypoint/factory and optional surfaces
 # --------------------------------------------------------------------------------------
 
+# Preferred neutral metadata. A bundle entrypoint may expose chat/message
+# handling, APIs, MCP, UI widgets, cron, jobs, or only lifecycle/storage work.
+BUNDLE_ENTRYPOINT_ROLE_ATTR = "__bundle_entrypoint_role__"
+BUNDLE_ENTRYPOINT_META_ATTR = "__bundle_entrypoint_meta__"
+
+# Backward-compatible metadata used by older bundle code. Keep these stable so
+# existing bundles and tests that introspect the old names continue to work.
 AGENTIC_ROLE_ATTR = "__agentic_role__"
 AGENTIC_META_ATTR = "__agentic_meta__"
 BUNDLE_ID_ATTR = "__bundle_id__"
@@ -152,6 +159,48 @@ class BundleInterfaceManifest:
 
 
 _VALID_ENABLED_KINDS: frozenset = frozenset({"bundle", "api", "mcp", "widget", "cron"})
+
+_BUNDLE_ENTRYPOINT_CLASS_ROLE = "entrypoint_class"
+_BUNDLE_ENTRYPOINT_FACTORY_ROLE = "entrypoint_factory"
+_LEGACY_WORKFLOW_CLASS_ROLE = "workflow_class"
+_LEGACY_WORKFLOW_FACTORY_ROLE = "workflow_factory"
+
+
+def _set_bundle_entrypoint_metadata(target: Any, *, role: str, meta: dict[str, Any]) -> Any:
+    """Attach preferred bundle-entrypoint metadata and legacy aliases."""
+    if role not in {_BUNDLE_ENTRYPOINT_CLASS_ROLE, _BUNDLE_ENTRYPOINT_FACTORY_ROLE}:
+        raise ValueError(f"Unsupported bundle entrypoint role: {role!r}")
+    normalized_meta = dict(meta or {})
+    setattr(target, BUNDLE_ENTRYPOINT_ROLE_ATTR, role)
+    setattr(target, BUNDLE_ENTRYPOINT_META_ATTR, normalized_meta)
+    legacy_role = (
+        _LEGACY_WORKFLOW_FACTORY_ROLE
+        if role == _BUNDLE_ENTRYPOINT_FACTORY_ROLE
+        else _LEGACY_WORKFLOW_CLASS_ROLE
+    )
+    setattr(target, AGENTIC_ROLE_ATTR, legacy_role)
+    setattr(target, AGENTIC_META_ATTR, normalized_meta)
+    return target
+
+
+def _get_bundle_entrypoint_role_and_meta(obj: Any) -> tuple[str | None, dict[str, Any]]:
+    """Read preferred bundle-entrypoint metadata, falling back to legacy names."""
+    role = getattr(obj, BUNDLE_ENTRYPOINT_ROLE_ATTR, None)
+    meta = getattr(obj, BUNDLE_ENTRYPOINT_META_ATTR, None)
+    if role:
+        return str(role), dict(meta or {})
+
+    legacy_role = getattr(obj, AGENTIC_ROLE_ATTR, None)
+    legacy_meta = dict(getattr(obj, AGENTIC_META_ATTR, {}) or {})
+    if legacy_role == _LEGACY_WORKFLOW_CLASS_ROLE:
+        return _BUNDLE_ENTRYPOINT_CLASS_ROLE, legacy_meta
+    if legacy_role == _LEGACY_WORKFLOW_FACTORY_ROLE:
+        return _BUNDLE_ENTRYPOINT_FACTORY_ROLE, legacy_meta
+    return None, {}
+
+
+def _get_bundle_entrypoint_meta(obj: Any) -> dict[str, Any]:
+    return _get_bundle_entrypoint_role_and_meta(obj)[1]
 
 
 def _is_equivalent_decorator_spec(value: Any, cls: type, required_fields: tuple[str, ...]) -> bool:
@@ -468,7 +517,7 @@ def _normalize_icon_spec(value: Any) -> dict[str, str]:
             out[key] = text
     return out
 
-def agentic_workflow_factory(
+def bundle_entrypoint_factory(
         *,
         name: str | None = None,
         version: str | None = None,
@@ -476,21 +525,25 @@ def agentic_workflow_factory(
         singleton: bool | None = None,
 ):
     """
-    Mark a function as the bundle's workflow FACTORY.
+    Mark a function as the bundle's entrypoint FACTORY.
+
+    The returned object is the bundle runtime surface. It may expose
+    @on_message, @api, @mcp, @ui_widget, @cron, @on_job, lifecycle hooks, or any
+    subset of those surfaces. It does not imply that the bundle is an agentic
+    workflow.
+
     Recommended signature (flexible):
-        fn(config, *, communicator=None, step_emitter=None, delta_emitter=None) -> workflow_instance
+        fn(config, *, comm_context=None, pg_pool=None, redis=None) -> entrypoint_instance
     Only the kwargs present in the function signature will be passed.
     """
     def _wrap(fn):
-        setattr(fn, AGENTIC_ROLE_ATTR, "workflow_factory")
-        setattr(fn, AGENTIC_META_ATTR, {
+        return _set_bundle_entrypoint_metadata(fn, role=_BUNDLE_ENTRYPOINT_FACTORY_ROLE, meta={
             "name": name, "version": version, "priority": priority, "singleton": singleton
         })
-        return fn
     return _wrap
 
 
-def agentic_workflow(
+def bundle_entrypoint(
         *,
         name: str | None = None,
         version: str | None = None,
@@ -499,9 +552,16 @@ def agentic_workflow(
         allowed_roles_config: str | None = None,
 ):
     """
-    Mark a CLASS as the bundle's workflow CLASS.
+    Mark a CLASS as the bundle's entrypoint CLASS.
+
+    The entrypoint is the runtime-discoverable bundle surface. It may expose
+    message handling, APIs, MCP, widgets, cron, jobs, lifecycle hooks, storage
+    setup, or any combination of those surfaces. It does not imply that the
+    bundle itself is a workflow; per-message agent orchestration belongs behind
+    @on_message and may use BaseWorkflow internally.
+
     Recommended signature (flexible):
-        class(config, *, communicator=None, step_emitter=None, delta_emitter=None)
+        class(config, *, comm_context=None, pg_pool=None, redis=None)
     Only the kwargs present in the __init__ signature will be passed.
 
     allowed_roles: optional list of non-derived (external) role names such as
@@ -516,14 +576,22 @@ def agentic_workflow(
     reconciled.
     """
     def _wrap(cls):
-        setattr(cls, AGENTIC_ROLE_ATTR, "workflow_class")
-        setattr(cls, AGENTIC_META_ATTR, {
+        return _set_bundle_entrypoint_metadata(cls, role=_BUNDLE_ENTRYPOINT_CLASS_ROLE, meta={
             "name": name, "version": version, "priority": priority,
             "allowed_roles": _tuple_str(allowed_roles),
             "allowed_roles_config": str(allowed_roles_config).strip() if allowed_roles_config else None,
         })
-        return cls
     return _wrap
+
+
+def agentic_workflow_factory(**kwargs):
+    """Backward-compatible alias for :func:`bundle_entrypoint_factory`."""
+    return bundle_entrypoint_factory(**kwargs)
+
+
+def agentic_workflow(**kwargs):
+    """Backward-compatible alias for :func:`bundle_entrypoint`."""
+    return bundle_entrypoint(**kwargs)
 
 
 def bundle_id(id: str):
@@ -532,7 +600,7 @@ def bundle_id(id: str):
 
     Usage::
 
-        @agentic_workflow(name="My Bundle")
+        @bundle_entrypoint(name="My Bundle")
         @bundle_id("my-bundle@1.0.0")
         class MyBundle:
             ...
@@ -1354,7 +1422,7 @@ class AgenticBundleSpec:
     Where/how to load a bundle module:
       - path: file.py | package_dir/ | archive.zip/.whl
       - module: dotted module **inside** path (required for zip/whl; optional otherwise)
-      - singleton: if True, cache & reuse the workflow instance
+      - singleton: if True, cache & reuse the entrypoint instance
     """
     path: str
     module: Optional[str] = None
@@ -1393,7 +1461,7 @@ def _raise_if_singleton_base_workflow(target: Any, *, spec: AgenticBundleSpec) -
     if not _is_base_workflow_subclass(target):
         return
     raise TypeError(
-        "Invalid singleton bundle workflow: BaseWorkflow subclasses are per-message orchestrators, "
+        "Invalid singleton bundle entrypoint: BaseWorkflow subclasses are per-message orchestrators, "
         "not decorated singleton bundle entrypoints. Decorate a BaseEntrypoint-family class "
         "(BaseEntrypoint, BaseEntrypointWithEconomics, BaseEntrypointWithMemory, or "
         "BaseEntrypointWithEconomicsAndMemory) and create the BaseWorkflow subclass inside the "
@@ -1937,13 +2005,12 @@ def _discover_decorated(mod: types.ModuleType):
     classes:   List[Tuple[int, Dict[str, Any], type]] = []
 
     for obj in vars(mod).values():
-        role = getattr(obj, AGENTIC_ROLE_ATTR, None)
-        meta = getattr(obj, AGENTIC_META_ATTR, {}) or {}
+        role, meta = _get_bundle_entrypoint_role_and_meta(obj)
         prio = int(meta.get("priority", 100))
 
-        if role == "workflow_factory" and callable(obj):
+        if role == _BUNDLE_ENTRYPOINT_FACTORY_ROLE and callable(obj):
             factories.append((prio, meta, obj))  # fn(config, step_emitter, delta_emitter)
-        elif role == "workflow_class" and isinstance(obj, type):
+        elif role == _BUNDLE_ENTRYPOINT_CLASS_ROLE and isinstance(obj, type):
             classes.append((prio, meta, obj))    # class(config, step_emitter, delta_emitter)
 
     # sort by priority desc, then by name to stabilize
@@ -2145,7 +2212,7 @@ def discover_bundle_interface_manifest(target: Any, *, bundle_id: str | None = N
                 span=str(getattr(cron_spec, "span", "system") or "system"),
             ))
 
-    meta = getattr(cls, AGENTIC_META_ATTR, {}) or {}
+    meta = _get_bundle_entrypoint_meta(cls)
     allowed_roles: tuple[str, ...] = _tuple_str(meta.get("allowed_roles"))
     allowed_roles_config: str | None = meta.get("allowed_roles_config") or None
 
@@ -2236,14 +2303,15 @@ def get_workflow_instance(
         redis: Optional[Any] = None,               # ← optional DB pools
 ) -> Tuple[Any, types.ModuleType]:
     """
-    Load the bundle at 'spec', discover decorated symbols, instantiate a workflow,
-    and return (workflow_instance, module).
+    Load the bundle at 'spec', discover decorated symbols, instantiate a bundle
+    entrypoint, and return (entrypoint_instance, module).
 
     This synchronous helper does not run lifecycle hooks. Runtime paths must use
     get_workflow_instance_async(), which awaits on_bundle_load().
 
     Notes:
-    - ONLY decorated @agentic_workflow_factory / @agentic_workflow are recognized.
+    - ONLY decorated @bundle_entrypoint_factory / @bundle_entrypoint are recognized.
+      Legacy @agentic_workflow_factory / @agentic_workflow aliases are still supported.
     - If both exist, the higher 'priority' wins (tie → factory wins).
     - Singleton is honored if:
         * spec.singleton is True, OR
@@ -2277,8 +2345,8 @@ def get_workflow_instance(
 
     if not chosen:
         raise AttributeError(
-            f"No decorated workflow found in module '{mod.__name__}'. "
-            f"Use @agentic_workflow_factory or @agentic_workflow."
+            f"No decorated bundle entrypoint found in module '{mod.__name__}'. "
+            f"Use @bundle_entrypoint_factory or @bundle_entrypoint."
         )
 
     chosen_kind, meta, symbol = chosen
@@ -2470,8 +2538,8 @@ def load_bundle_manifest(
         bundle_id: str = "",
 ) -> "BundleInterfaceManifest":
     """
-    Load (or reuse cached) module, discover the entrypoint class via
-    @agentic_workflow, and return its BundleInterfaceManifest.
+    Load (or reuse cached) module, discover the bundle entrypoint class via
+    @bundle_entrypoint, and return its BundleInterfaceManifest.
 
     Deliberately avoids instantiating the workflow so it never needs
     DB connections, LLM keys, or a comm_context.  Safe to call from
@@ -2488,7 +2556,7 @@ def load_bundle_manifest(
     chosen = _discover_decorated(mod)
     if not chosen:
         raise AttributeError(
-            f"No @agentic_workflow class found in module '{mod.__name__}'"
+            f"No @bundle_entrypoint class found in module '{mod.__name__}'"
         )
     _, _, symbol = chosen  # (kind, meta, class_or_factory)
     manifest = discover_bundle_interface_manifest(symbol, bundle_id=bundle_id)

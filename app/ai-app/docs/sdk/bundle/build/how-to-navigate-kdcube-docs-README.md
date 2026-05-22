@@ -282,7 +282,7 @@ Practical rule:
   - MCP server -> `@mcp(...)`
   - background sync -> `@cron(...)`
   - ready background job execution -> `@on_job`
-  - assistant workflow -> `@agentic_workflow` / `@on_message`
+  - assistant workflow -> `@bundle_entrypoint` / `@on_message`
 
 ### C. I am configuring a bundle or translating an existing app config
 

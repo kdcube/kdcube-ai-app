@@ -55,7 +55,7 @@ Critical discovery rule:
 
 ```mermaid
 flowchart TD
-    R[Bundle registry entry] --> D["@agentic_workflow discovery"]
+    R[Bundle registry entry] --> D["@bundle_entrypoint discovery"]
     D --> I[Instantiate entrypoint]
     I --> L[on_bundle_load once per process per tenant/project]
     L --> Q[Incoming turn or REST operation request]
@@ -76,7 +76,7 @@ flowchart TD
 
 | Phase | When | What happens |
 |---|---|---|
-| Discovery | Proc startup / bundle load | Loader imports the bundle module and finds the class decorated with `@agentic_workflow` |
+| Discovery | Proc startup / bundle load | Loader imports the bundle module and finds the class decorated with `@bundle_entrypoint` |
 | Instantiation | Per request by default | Entrypoint instance is created with `config`, `comm_context`, `pg_pool`, `redis` |
 | One-time init | Once per process per tenant/project | `on_bundle_load(...)` may prepare indexes, local caches, repos, or other bundle-local assets |
 | Request prep | Every invocation | Request-bound routing/identity is rebuilt, singleton instances are rebound, bundle props are loaded/merged, hooks can run |

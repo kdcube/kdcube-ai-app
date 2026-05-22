@@ -18,7 +18,7 @@ This is the canonical reference for how tool descriptors are consumed and how to
 
 ## Descriptor wiring
 
-`tools_descriptor.py` is imported by the bundle workflow and passed to `create_tool_subsystem_with_mcp(...)` as data:
+`tools_descriptor.py` is imported by bundle code and passed to `create_tool_subsystem_with_mcp(...)` as data:
 
 ```python
 tool_subsystem, _ = create_tool_subsystem_with_mcp(

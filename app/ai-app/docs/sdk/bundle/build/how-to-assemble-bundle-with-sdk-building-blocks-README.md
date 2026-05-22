@@ -193,7 +193,7 @@ Telegram Integration
   -> webhook validation, idempotency, and update normalization
   -> mapped user/conversation scope
   -> shared chat ingress submission or direct workflow fallback
-  -> normal bundle workflow / ReAct agent
+  -> normal bundle entrypoint / ReAct agent
   -> progress streaming and final Bot API send of text/files
   -> optional Mini App initData auth, widget operation helpers, signed downloads
 ```
@@ -211,7 +211,7 @@ Telegram user message / attachment
   -> bundle public API: telegram_webhook
   -> SDK user_admin.handle_webhook(...)
   -> Telegram update -> KDCube ChatTaskPayload / RawAttachment
-  -> shared chat ingress + bundle workflow
+  -> shared chat ingress + bundle entrypoint
   -> SDK run_with_queued_telegram_delivery(...)
   -> Telegram Bot API text/file delivery
 ```

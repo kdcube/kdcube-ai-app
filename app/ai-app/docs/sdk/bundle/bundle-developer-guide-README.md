@@ -233,12 +233,12 @@ to make a skill unavailable.
 ```python
 from langgraph.graph import END, START, StateGraph
 
-from kdcube_ai_app.infra.plugin.agentic_loader import agentic_workflow, bundle_id
+from kdcube_ai_app.infra.plugin.agentic_loader import bundle_entrypoint, bundle_id
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import BaseEntrypoint
 from kdcube_ai_app.infra.service_hub.inventory import BundleState
 
 
-@agentic_workflow(name="my.bundle", version="1.0.0")
+@bundle_entrypoint(name="my.bundle", version="1.0.0")
 @bundle_id("my.bundle@1.0.0")
 class MyEntrypoint(BaseEntrypoint):
     def __init__(self, **kwargs):
@@ -261,8 +261,10 @@ For the exact decorator contract, route mapping, widget/public endpoints, `@cron
 
 | Decorator | Scope | Use it for |
 | --- | --- | --- |
-| `@agentic_workflow(...)` | entrypoint class | normal bundle registration |
-| `@agentic_workflow_factory(...)` | factory function | custom workflow construction when class registration is not enough |
+| `@bundle_entrypoint(...)` | entrypoint class | normal bundle registration |
+| `@bundle_entrypoint_factory(...)` | factory function | custom entrypoint construction when class registration is not enough |
+| `@agentic_workflow(...)` | entrypoint class | legacy alias for `@bundle_entrypoint(...)` |
+| `@agentic_workflow_factory(...)` | factory function | legacy alias for `@bundle_entrypoint_factory(...)` |
 | `@bundle_id(...)` | entrypoint class | code-level bundle identity |
 | `@api(...)` | entrypoint method | bundle HTTP operations and public endpoints |
 | `@mcp(...)` | entrypoint method | bundle-served MCP endpoints |
@@ -275,7 +277,7 @@ For the exact decorator contract, route mapping, widget/public endpoints, `@cron
 
 Practical rule:
 
-- most bundles need `@agentic_workflow(...)`, `@bundle_id(...)`, and optionally `@api(...)` / `@mcp(...)` / `@ui_widget(...)`
+- most bundles need `@bundle_entrypoint(...)`, `@bundle_id(...)`, and optionally `@api(...)` / `@mcp(...)` / `@ui_widget(...)`
 - use `@cron(...)` only for scheduled work
 - use `@on_job` when work is submitted to the background job stream and must be executed later by proc
 - use `@venv(...)` only for dependency-heavy leaf helpers, not general orchestration
@@ -354,20 +356,18 @@ Mapping per decorator:
 
 | Decorator | Canonical path |
 | --- | --- |
-| `@agentic_workflow(...)` | `enabled.bundle` |
-| `@api(alias=A, method=M, ...)` | `enabled.api["A.M"]` (flat key, literal dot) |
+| `@bundle_entrypoint(...)` | `enabled.bundle` |
+| `@api(alias=A, method=M, route=R, ...)` | `enabled.api["R.A.M"]` (flat key) |
 | `@mcp(alias=A, ...)` | `enabled.mcp.A` |
 | `@ui_widget(alias=A, ...)` | `enabled.widget.A` |
 | `@cron(alias=A, ...)` | `enabled.cron.A` |
 
-Aliases must not contain `.`; the validator rejects them at decoration time.
-The flat `<alias>.<METHOD>` key under `enabled.api` is the only place a
-literal dot appears inside a section key.
+For API gates, the route-aware flat key `<route>.<alias>.<METHOD>` lives under `enabled.api`; the legacy `<alias>.<METHOD>` key remains a fallback for persisted descriptors.
 
 Example:
 
 ```python
-@agentic_workflow(name="ops.dashboard", version="1.0.0")
+@bundle_entrypoint(name="ops.dashboard", version="1.0.0")
 @bundle_id("ops.dashboard@1.0.0")
 class OpsDashboard(BaseEntrypoint):
     @ui_widget(

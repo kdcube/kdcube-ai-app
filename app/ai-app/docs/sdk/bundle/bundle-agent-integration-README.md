@@ -70,7 +70,7 @@ different:
 | Input | What it is | Who provides it | Where it comes from |
 | --- | --- | --- | --- |
 | user/turn context | user id, conversation id, turn id, timezone, request text, attachments | platform runtime | `scratchpad`, `ChatTaskPayload`, request context |
-| bundle context | tenant, project, bundle id, user scope, storage roots, job ids | platform runtime plus bundle workflow | `BaseWorkflow`, `bundle_call_context`, job payload |
+| bundle context | tenant, project, bundle id, user scope, storage roots, job ids | platform runtime plus bundle entrypoint | `BaseWorkflow`, `bundle_call_context`, job payload |
 | config | non-secret behavior switches, model choices, URLs, feature flags | descriptor/admin/bundle code | `self.bundle_prop(...)`, bundle props |
 | secrets | API keys, auth signing keys, OAuth client secrets | deployment/admin/user secret store | `get_secret(...)`, `get_user_secret(...)` |
 | custom instructions | product-specific operating rules | bundle code/config | React `additional_instructions`, Claude `CLAUDE.md` |

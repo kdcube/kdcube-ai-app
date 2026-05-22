@@ -104,7 +104,7 @@ Request-time REST/widget/MCP path:
 incoming operation/widget/MCP request
       |
       v
-load or reuse workflow instance
+load or reuse entrypoint instance
       |
       v
 read descriptor/admin props from authority

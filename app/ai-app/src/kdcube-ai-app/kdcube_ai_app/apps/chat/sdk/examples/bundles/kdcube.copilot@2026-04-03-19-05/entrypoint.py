@@ -3,11 +3,11 @@
 #
 # ── entrypoint.py ──
 # Bundle entry point for the kdcube.copilot knowledge-space copilot.
-# Registers the bundle in the plugin system via @agentic_workflow and
+# Registers the bundle in the plugin system via @bundle_entrypoint and
 # manages the knowledge space lifecycle rooted at a single ai-app tree.
 #
 # What it does:
-#   1. Registers the bundle under the name "kdcube.copilot" (@agentic_workflow)
+#   1. Registers the bundle under the name "kdcube.copilot" (@bundle_entrypoint)
 #   2. Builds a LangGraph StateGraph with a single "orchestrate" node
 #   3. The "orchestrate" node initializes all dependencies (DB, indexes, RAG)
 #      and delegates execution to WithReactWorkflow.process()
@@ -77,7 +77,7 @@ from kdcube_ai_app.apps.chat.sdk.storage.ai_bundle_storage import AIBundleStorag
 from kdcube_ai_app.apps.chat.sdk.viz.patch_platform_dashboard import patch_dashboard
 from kdcube_ai_app.apps.chat.emitters import ChatCommunicator
 from kdcube_ai_app.infra.service_hub.inventory import Config, BundleState
-from kdcube_ai_app.infra.plugin.agentic_loader import agentic_workflow, api, mcp, on_job, ui_widget
+from kdcube_ai_app.infra.plugin.agentic_loader import bundle_entrypoint, api, mcp, on_job, ui_widget
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint_with_memory import (
     BaseEntrypointWithEconomicsAndMemory,
 )
@@ -329,10 +329,10 @@ def _knowledge_outputs_ready(
     return True
 
 
-# @agentic_workflow — registration decorator: on application startup the system
+# @bundle_entrypoint — registration decorator: on application startup the system
 # scans all bundles and auto-loads classes decorated with this.
 # priority=100 — selection order when multiple bundles match (higher = preferred)
-@agentic_workflow(
+@bundle_entrypoint(
     name=BUNDLE_ID,
     version="1.0.0",
     priority=100,
