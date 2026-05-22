@@ -1,7 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import remarkBreaks from 'remark-breaks'
 import {
   downloadBlobAsFile,
   downloadHostedFile,
@@ -32,304 +29,66 @@ import type {
 } from './service.ts'
 import { BUILT_BUNDLE_ID, createLocalId, settings } from './settings.ts'
 
-type ConnectionState = 'booting' | 'connecting' | 'connected' | 'disconnected'
-type TurnState = 'pending' | 'running' | 'completed' | 'error'
-type TurnTab = 'chat' | 'overview' | 'timeline' | 'steps' | 'links' | 'files' | 'canvases'
+// Wave 1 modular extracts — see ./features/chat/chatTypes.ts and ./components/*
+import type {
+  AdditionalUserMessage,
+  Artifact,
+  Banner,
+  CanvasArtifact,
+  ChatState,
+  ChatTurn,
+  CodeExecArtifact,
+  CodeExecContractItem,
+  CodeExecStatus,
+  ConnectionState,
+  FileArtifact,
+  LinkArtifact,
+  ServiceErrorArtifact,
+  TimelineArtifact,
+  TimelineEntry,
+  TimelineEntryFormat,
+  TimelineEntryKind,
+  TurnAttachment,
+  TurnState,
+  TurnStep,
+  TurnTab,
+  WebFetchArtifact,
+  WebFetchItem,
+  WebSearchArtifact,
+  WebSearchItem,
+} from './features/chat/chatTypes.ts'
+import { initialState } from './features/chat/chatTypes.ts'
+import {
+  closeStreamingMarkdown,
+  copyToClipboard,
+  escapeHtml,
+  formatBytes,
+  formatConversationTime,
+  formatTime,
+  markdownPlugins,
+  messageForError,
+  prettyJson,
+  safeJsonParse,
+  shortUrl,
+  stepTone,
+  timestampValue,
+  toneClass,
+} from './components/utils.ts'
+import { HL_BUILTINS, HL_KEYWORDS, highlightCode, inferLanguage } from './components/highlight.ts'
+import { MarkdownBlock } from './components/MarkdownBlock.tsx'
+import { CaretIcon } from './components/CaretIcon.tsx'
+import { CopyButton } from './components/CopyButton.tsx'
+import { DownloadButton } from './components/DownloadButton.tsx'
+import { Snippet } from './components/Snippet.tsx'
+import type { SnippetProps } from './components/Snippet.tsx'
+import { CanvasRender, canvasFilename, canvasMime } from './components/CanvasRender.tsx'
 
-interface Banner {
-  id: string
-  tone: BannerTone
-  text: string
-}
-
-interface TurnStep {
-  step: string
-  title?: string | null
-  status: StepStatus
-  timestamp: number
-  error?: string
-  markdown?: string
-  agent?: string | null
-  data?: Record<string, unknown>
-}
-
-interface LinkArtifact {
-  kind: 'citation'
-  timestamp: number
-  url: string
-  title?: string | null
-  body?: string | null
-  favicon?: string | null
-}
-
-interface FileArtifact {
-  kind: 'file'
-  timestamp: number
-  filename: string
-  rn: string
-  mime?: string | null
-  description?: string | null
-}
-
-interface TimelineArtifact {
-  kind: 'timeline'
-  timestamp: number
-  name: string
-  markdown: string
-}
-
-interface CanvasArtifact {
-  kind: 'canvas'
-  timestamp: number
-  name: string
-  title?: string | null
-  format?: string | null
-  content: string
-}
-
-interface WebSearchItem {
-  url: string
-  title?: string | null
-  body?: string | null
-  favicon?: string | null
-  provider?: string
-  weightedScore?: number
-}
-
-interface WebSearchArtifact {
-  kind: 'web_search'
-  timestamp: number
-  searchId: string
-  name: string
-  title?: string | null
-  objective?: string
-  queries: string[]
-  items: WebSearchItem[]
-  reportContent?: string | null
-}
-
-interface WebFetchItem {
-  url: string
-  status?: 'success' | 'timeout' | 'paywall' | 'error'
-  mime?: string
-  favicon?: string
-  content_length?: number
-  published_time_iso?: string
-  modified_time_iso?: string
-}
-
-interface WebFetchArtifact {
-  kind: 'web_fetch'
-  timestamp: number
-  executionId: string
-  name: string
-  title?: string | null
-  items: WebFetchItem[]
-}
-
-interface CodeExecContractItem {
-  filename: string
-  description?: string | null
-  mime?: string | null
-}
-
-interface CodeExecStatus {
-  status?: 'gen' | 'exec' | 'done' | 'error'
-  error?: Record<string, string>
-}
-
-interface CodeExecArtifact {
-  kind: 'code_exec'
-  timestamp: number
-  executionId: string
-  name?: string
-  title?: string | null
-  objective?: string
-  language?: string
-  program?: string
-  contract?: CodeExecContractItem[]
-  status?: CodeExecStatus
-}
-
-interface ServiceErrorArtifact {
-  kind: 'service_error'
-  timestamp: number
-  message: string
-}
-
-interface TurnAttachment {
-  id: string
-  name: string
-  size?: number | null
-  mime?: string | null
-  rn?: string | null
-  hostedUri?: string | null
-  description?: string | null
-  file?: File
-}
-
-interface AdditionalUserMessage {
-  id: string
-  text: string
-  timestamp: number
-  attachments: TurnAttachment[]
-  continuationKind: Exclude<ContinuationKind, 'regular'>
-}
-
-type TimelineEntryKind = 'lifecycle' | 'answer' | 'thinking' | 'timeline' | 'canvas' | 'subsystem' | 'error'
-type TimelineEntryFormat = 'markdown' | 'text' | 'json' | 'code'
-
-interface TimelineEntry {
-  id: string
-  timestamp: number
-  kind: TimelineEntryKind
-  title: string
-  body?: string
-  format?: TimelineEntryFormat
-  agent?: string | null
-  status?: string | null
-}
-
-type Artifact =
-  | LinkArtifact
-  | FileArtifact
-  | TimelineArtifact
-  | CanvasArtifact
-  | WebSearchArtifact
-  | WebFetchArtifact
-  | CodeExecArtifact
-  | ServiceErrorArtifact
-
-interface ChatTurn {
-  id: string
-  state: TurnState
-  createdAt: number
-  userMessage: string
-  userAttachments: TurnAttachment[]
-  additionalUserMessages: AdditionalUserMessage[]
-  answer: string
-  error?: string | null
-  steps: Record<string, TurnStep>
-  artifacts: Artifact[]
-  timeline: TimelineEntry[]
-  followups: string[]
-}
-
-interface ChatState {
-  connection: ConnectionState
-  sessionId: string | null
-  conversationId: string | null
-  conversationTitle: string | null
-  composerText: string
-  composerFiles: File[]
-  turns: ChatTurn[]
-  banners: Banner[]
-  inputLocked: boolean
-  inputLockMessage: string | null
-  conversations: ConversationSummary[]
-  conversationsLoading: boolean
-  conversationsError: string | null
-  conversationLoadingId: string | null
-}
-
-const initialState: ChatState = {
-  connection: 'booting',
-  sessionId: null,
-  conversationId: null,
-  conversationTitle: null,
-  composerText: '',
-  composerFiles: [],
-  turns: [],
-  banners: [],
-  inputLocked: false,
-  inputLockMessage: null,
-  conversations: [],
-  conversationsLoading: false,
-  conversationsError: null,
-  conversationLoadingId: null,
-}
-
-const markdownPlugins = [remarkGfm, remarkBreaks]
-
-function timestampValue(value?: string): number {
-  const parsed = value ? Date.parse(value) : NaN
-  return Number.isFinite(parsed) ? parsed : Date.now()
-}
-
-function formatTime(value: number): string {
-  return new Date(value).toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-function formatConversationTime(value?: number | null): string {
-  if (!value || !Number.isFinite(value)) return 'No activity yet'
-  return new Date(value).toLocaleString([], {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB']
-  let size = bytes
-  let index = 0
-  while (size >= 1024 && index < units.length - 1) {
-    size /= 1024
-    index += 1
-  }
-  return `${size >= 10 || index === 0 ? size.toFixed(0) : size.toFixed(1)} ${units[index]}`
-}
-
-function toneClass(tone: BannerTone): string {
-  switch (tone) {
-    case 'error':
-      return 'border-[rgba(247,96,154,0.3)] bg-[var(--danger-soft)] text-[var(--danger)]'
-    case 'warning':
-      return 'border-[rgba(240,188,46,0.38)] bg-[var(--gold-soft)] text-[var(--warning)]'
-    default:
-      return 'border-[rgba(217,229,99,0.34)] bg-[var(--accent-soft)] text-[var(--accent)]'
-  }
-}
-
-function stepTone(status: StepStatus): string {
-  switch (status) {
-    case 'completed':
-      return 'bg-[var(--success-soft)] text-[var(--success)]'
-    case 'error':
-      return 'bg-[var(--danger-soft)] text-[var(--danger)]'
-    case 'skipped':
-      return 'bg-[rgba(94,107,120,0.12)] text-[var(--muted)]'
-    default:
-      return 'bg-[var(--accent-soft)] text-[var(--accent)]'
-  }
-}
-
-function closeStreamingMarkdown(text: string): string {
-  const tripleBackticks = text.match(/```/g)?.length || 0
-  const tripleTildes = text.match(/~~~/g)?.length || 0
-  let next = text
-  if (tripleBackticks % 2 === 1) next += '\n```'
-  if (tripleTildes % 2 === 1) next += '\n~~~'
-  return next
-}
-
-function safeJsonParse<T>(raw: string, fallback: T): T {
-  try {
-    return JSON.parse(raw) as T
-  } catch {
-    return fallback
-  }
-}
-
-function messageForError(error: unknown): string {
-  if (error instanceof Error) return error.message
-  return String(error)
-}
+/* Types, initialState, markdownPlugins, pure helpers and the syntax
+ * highlighter were extracted to:
+ *   - ./features/chat/chatTypes.ts
+ *   - ./components/utils.ts
+ *   - ./components/highlight.ts
+ * Imported at the top of this file. */
 
 function addBanner(state: ChatState, tone: BannerTone, text: string): ChatState {
   const trimmed = text.trim()
@@ -403,13 +162,7 @@ function upsertTimelineEntry(
   return copy
 }
 
-function prettyJson(value: unknown): string {
-  try {
-    return JSON.stringify(value, null, 2)
-  } catch {
-    return String(value)
-  }
-}
+/* prettyJson is now imported from ./components/utils.ts */
 
 function buildChatHistory(turns: ChatTurn[]): ChatHistoryItem[] {
   return turns.reduce<ChatHistoryItem[]>((items, turn) => {
@@ -1301,32 +1054,7 @@ function applyChatDelta(state: ChatState, env: ChatDeltaEnvelope): ChatState {
   })
 }
 
-function MarkdownBlock({ content, compact = false }: { content: string; compact?: boolean }) {
-  const normalized = useMemo(() => closeStreamingMarkdown(content), [content])
-
-  return (
-    <div className={`markdown-body ${compact ? 'text-[13px]' : 'text-[14px]'}`}>
-      <ReactMarkdown
-        remarkPlugins={markdownPlugins}
-        components={{
-          a: ({ children, href }) => (
-            <a href={href} target="_blank" rel="noreferrer">
-              {children}
-            </a>
-          ),
-          p: ({ children }) => (
-            <p className={compact ? 'my-1 leading-5' : 'my-2 leading-6'}>{children}</p>
-          ),
-          ul: ({ children }) => <ul className={compact ? 'my-1 list-disc pl-5' : 'my-2 list-disc pl-5'}>{children}</ul>,
-          ol: ({ children }) => <ol className={compact ? 'my-1 list-decimal pl-5' : 'my-2 list-decimal pl-5'}>{children}</ol>,
-          li: ({ children }) => <li className="my-0.5">{children}</li>,
-        }}
-      >
-        {normalized}
-      </ReactMarkdown>
-    </div>
-  )
-}
+/* MarkdownBlock is now imported from ./components/MarkdownBlock.tsx */
 
 function BannerStrip({
   banners,
@@ -1578,14 +1306,7 @@ interface TurnLink {
   body?: string | null
 }
 
-function shortUrl(url: string): string {
-  try {
-    const parsed = new URL(url)
-    return parsed.hostname.replace(/^www\./, '')
-  } catch {
-    return url
-  }
-}
+/* shortUrl is now imported from ./components/utils.ts */
 
 function collectTurnLinks(artifacts: Artifact[]): TurnLink[] {
   const links: TurnLink[] = []
@@ -1677,426 +1398,8 @@ function LinksPanel({ links }: { links: TurnLink[] }) {
   )
 }
 
-/* Minimal token highlighter — Python/JS/TS/Bash/JSON. No external deps.
-   Recognises strings, comments, numbers, decorators, keywords, builtins,
-   function-call names. Anything else stays default colour. */
-const HL_KEYWORDS: Record<string, Set<string>> = {
-  python: new Set([
-    'False', 'None', 'True', 'and', 'as', 'assert', 'async', 'await', 'break',
-    'class', 'continue', 'def', 'del', 'elif', 'else', 'except', 'finally',
-    'for', 'from', 'global', 'if', 'import', 'in', 'is', 'lambda', 'nonlocal',
-    'not', 'or', 'pass', 'raise', 'return', 'try', 'while', 'with', 'yield',
-    'match', 'case',
-  ]),
-  javascript: new Set([
-    'async', 'await', 'break', 'case', 'catch', 'class', 'const', 'continue',
-    'debugger', 'default', 'delete', 'do', 'else', 'export', 'extends',
-    'finally', 'for', 'function', 'if', 'import', 'in', 'instanceof', 'let',
-    'new', 'null', 'of', 'return', 'super', 'switch', 'this', 'throw', 'true',
-    'false', 'try', 'typeof', 'undefined', 'var', 'void', 'while', 'yield',
-  ]),
-  bash: new Set([
-    'if', 'then', 'else', 'elif', 'fi', 'for', 'while', 'do', 'done', 'case',
-    'esac', 'function', 'in', 'select', 'until', 'return', 'export', 'local',
-    'readonly', 'set', 'unset', 'echo', 'cd', 'pwd', 'source',
-  ]),
-  json: new Set(['true', 'false', 'null']),
-}
+/* Highlight tokens, CopyButton, DownloadButton, Snippet, canvas helpers and CanvasRender extracted to ./components/* */
 
-const HL_BUILTINS: Record<string, Set<string>> = {
-  python: new Set([
-    'print', 'len', 'range', 'list', 'dict', 'set', 'tuple', 'str', 'int',
-    'float', 'bool', 'bytes', 'open', 'isinstance', 'type', 'super',
-    'enumerate', 'zip', 'map', 'filter', 'sorted', 'reversed', 'any', 'all',
-    'min', 'max', 'sum', 'abs', 'round', 'hash', 'id', '__init__', 'self',
-    'cls', 'Path',
-  ]),
-  javascript: new Set([
-    'console', 'window', 'document', 'Math', 'JSON', 'Object', 'Array',
-    'String', 'Number', 'Boolean', 'Promise', 'Map', 'Set', 'Date',
-    'Error', 'parseInt', 'parseFloat',
-  ]),
-}
-
-function inferLanguage(hint: string | null | undefined, code: string): keyof typeof HL_KEYWORDS {
-  const h = String(hint || '').toLowerCase()
-  if (h.startsWith('py')) return 'python'
-  if (h === 'js' || h === 'jsx' || h === 'ts' || h === 'tsx' || h === 'javascript' || h === 'typescript') return 'javascript'
-  if (h === 'sh' || h === 'bash' || h === 'shell') return 'bash'
-  if (h === 'json') return 'json'
-  const sample = code.slice(0, 240)
-  if (/^\s*(def |class |import |from |if __name__)/m.test(sample)) return 'python'
-  if (/^\s*(const |let |var |function |export |import )/m.test(sample)) return 'javascript'
-  if (/^\s*(#!\/|echo |cd |export )/m.test(sample)) return 'bash'
-  return 'python'
-}
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
-
-function highlightCode(code: string, lang: keyof typeof HL_KEYWORDS): string {
-  if (!code) return ''
-  const keywords = HL_KEYWORDS[lang] || new Set<string>()
-  const builtins = HL_BUILTINS[lang] || new Set<string>()
-  const tokens: Array<{ kind: string; text: string }> = []
-  let index = 0
-  const length = code.length
-
-  const isPython = lang === 'python'
-  const isBash = lang === 'bash'
-  const isJs = lang === 'javascript'
-
-  while (index < length) {
-    const char = code[index]
-
-    // Comments
-    if (isPython && char === '#') {
-      const end = code.indexOf('\n', index)
-      const stop = end === -1 ? length : end
-      tokens.push({ kind: 'c', text: code.slice(index, stop) })
-      index = stop
-      continue
-    }
-    if (isBash && char === '#') {
-      const end = code.indexOf('\n', index)
-      const stop = end === -1 ? length : end
-      tokens.push({ kind: 'c', text: code.slice(index, stop) })
-      index = stop
-      continue
-    }
-    if (isJs && char === '/' && code[index + 1] === '/') {
-      const end = code.indexOf('\n', index)
-      const stop = end === -1 ? length : end
-      tokens.push({ kind: 'c', text: code.slice(index, stop) })
-      index = stop
-      continue
-    }
-    if (isJs && char === '/' && code[index + 1] === '*') {
-      const end = code.indexOf('*/', index + 2)
-      const stop = end === -1 ? length : end + 2
-      tokens.push({ kind: 'c', text: code.slice(index, stop) })
-      index = stop
-      continue
-    }
-
-    // Strings (single, double, triple-quoted python, template literals)
-    if (isPython && (code.startsWith('"""', index) || code.startsWith("'''", index))) {
-      const quote = code.slice(index, index + 3)
-      const end = code.indexOf(quote, index + 3)
-      const stop = end === -1 ? length : end + 3
-      tokens.push({ kind: 's', text: code.slice(index, stop) })
-      index = stop
-      continue
-    }
-    if (char === '"' || char === "'" || (isJs && char === '`')) {
-      const quote = char
-      let stop = index + 1
-      while (stop < length) {
-        if (code[stop] === '\\') { stop += 2; continue }
-        if (code[stop] === quote) { stop += 1; break }
-        if (code[stop] === '\n' && quote !== '`') { break }
-        stop += 1
-      }
-      tokens.push({ kind: 's', text: code.slice(index, stop) })
-      index = stop
-      continue
-    }
-
-    // Decorators (Python)
-    if (isPython && char === '@' && /[A-Za-z_]/.test(code[index + 1] || '')) {
-      let stop = index + 1
-      while (stop < length && /[A-Za-z0-9_.]/.test(code[stop])) stop += 1
-      tokens.push({ kind: 'd', text: code.slice(index, stop) })
-      index = stop
-      continue
-    }
-
-    // Numbers
-    if (/[0-9]/.test(char)) {
-      let stop = index + 1
-      while (stop < length && /[0-9._eExXa-fA-F]/.test(code[stop])) stop += 1
-      tokens.push({ kind: 'n', text: code.slice(index, stop) })
-      index = stop
-      continue
-    }
-
-    // Identifiers / keywords / builtins / function calls
-    if (/[A-Za-z_$]/.test(char)) {
-      let stop = index + 1
-      while (stop < length && /[A-Za-z0-9_$]/.test(code[stop])) stop += 1
-      const word = code.slice(index, stop)
-      if (keywords.has(word)) {
-        tokens.push({ kind: 'k', text: word })
-      } else if (builtins.has(word)) {
-        tokens.push({ kind: 'b', text: word })
-      } else if (code[stop] === '(') {
-        tokens.push({ kind: 'f', text: word })
-      } else {
-        tokens.push({ kind: 'o', text: word })
-      }
-      index = stop
-      continue
-    }
-
-    // Default — accumulate until next interesting char
-    let stop = index + 1
-    while (
-      stop < length &&
-      !/[A-Za-z_$0-9"'`#]/.test(code[stop]) &&
-      !(isJs && code[stop] === '/' && (code[stop + 1] === '/' || code[stop + 1] === '*')) &&
-      !(isPython && code[stop] === '@')
-    ) {
-      stop += 1
-    }
-    tokens.push({ kind: 'plain', text: code.slice(index, stop) })
-    index = stop
-  }
-
-  return tokens
-    .map((token) => {
-      const safe = escapeHtml(token.text)
-      if (token.kind === 'plain' || token.kind === 'o') return safe
-      return `<span class="tok-${token.kind}">${safe}</span>`
-    })
-    .join('')
-}
-
-function copyToClipboard(text: string): Promise<void> {
-  if (navigator.clipboard?.writeText) {
-    return navigator.clipboard.writeText(text)
-  }
-  // Fallback for non-secure contexts
-  return new Promise((resolve, reject) => {
-    try {
-      const ta = document.createElement('textarea')
-      ta.value = text
-      ta.style.position = 'fixed'
-      ta.style.opacity = '0'
-      document.body.appendChild(ta)
-      ta.select()
-      document.execCommand('copy')
-      document.body.removeChild(ta)
-      resolve()
-    } catch (error) {
-      reject(error)
-    }
-  })
-}
-
-function CopyButton({ value, title = 'Copy' }: { value: string; title?: string }) {
-  const [done, setDone] = useState(false)
-  return (
-    <button
-      type="button"
-      className="k-tinybtn"
-      title={title}
-      data-flash={done ? 'true' : undefined}
-      onClick={(event) => {
-        event.preventDefault()
-        event.stopPropagation()
-        void copyToClipboard(value).then(() => {
-          setDone(true)
-          window.setTimeout(() => setDone(false), 1200)
-        })
-      }}
-    >
-      {done ? (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
-          <path d="M5 12l4 4 10-10" />
-        </svg>
-      ) : (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <rect x="9" y="9" width="13" height="13" rx="2" />
-          <path d="M5 15V5a2 2 0 0 1 2-2h10" />
-        </svg>
-      )}
-    </button>
-  )
-}
-
-function DownloadButton({
-  data,
-  filename,
-  mime = 'text/plain',
-  title = 'Download',
-}: {
-  data: string
-  filename: string
-  mime?: string
-  title?: string
-}) {
-  return (
-    <button
-      type="button"
-      className="k-tinybtn"
-      title={title}
-      onClick={(event) => {
-        event.preventDefault()
-        event.stopPropagation()
-        try {
-          const blob = new Blob([data], { type: mime })
-          const url = URL.createObjectURL(blob)
-          const anchor = document.createElement('a')
-          anchor.href = url
-          anchor.download = filename
-          anchor.style.display = 'none'
-          document.body.appendChild(anchor)
-          anchor.click()
-          window.setTimeout(() => {
-            URL.revokeObjectURL(url)
-            document.body.removeChild(anchor)
-          }, 0)
-        } catch (error) {
-          console.warn('Download failed', error)
-        }
-      }}
-    >
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M12 3v12M7 10l5 5 5-5M5 21h14" />
-      </svg>
-    </button>
-  )
-}
-
-interface SnippetProps {
-  content: string
-  format: 'markdown' | 'code' | 'json' | 'text'
-  language?: keyof typeof HL_KEYWORDS
-  label?: string
-  filename?: string
-  downloadMime?: string
-  showCopy?: boolean
-  showDownload?: boolean
-  maxHeight?: number
-}
-
-function Snippet({
-  content,
-  format,
-  language,
-  label,
-  filename,
-  downloadMime,
-  showCopy = true,
-  showDownload = false,
-  maxHeight,
-}: SnippetProps) {
-  const isCodeFamily = format === 'code' || format === 'json'
-  const lang = language || (format === 'json' ? 'json' : inferLanguage(null, content))
-  const html = isCodeFamily ? highlightCode(content, lang) : null
-  const labelText = label || (isCodeFamily ? lang : format)
-
-  return (
-    <div className={`k-snippet ${isCodeFamily ? 'k-snippet-dark' : ''}`}>
-      <div className="k-snippet-head">
-        <span className={`k-snippet-label ${isCodeFamily ? 'k-mono' : ''}`}>{labelText}</span>
-        <span className="k-snippet-tools">
-          {showCopy ? <CopyButton value={content} /> : null}
-          {showDownload && filename ? (
-            <DownloadButton data={content} filename={filename} mime={downloadMime} />
-          ) : null}
-        </span>
-      </div>
-      {format === 'markdown' ? (
-        <div
-          className="k-snippet-body"
-          style={maxHeight ? { maxHeight: `${maxHeight}px` } : undefined}
-        >
-          <MarkdownBlock content={content} compact />
-        </div>
-      ) : isCodeFamily ? (
-        <pre
-          className="k-snippet-body k-snippet-pre"
-          style={maxHeight ? { maxHeight: `${maxHeight}px` } : undefined}
-          dangerouslySetInnerHTML={{ __html: html || '' }}
-        />
-      ) : (
-        <pre
-          className="k-snippet-body k-snippet-pre k-snippet-wrap"
-          style={maxHeight ? { maxHeight: `${maxHeight}px` } : undefined}
-        >
-          {content}
-        </pre>
-      )}
-    </div>
-  )
-}
-
-function canvasFilename(canvas: CanvasArtifact): string {
-  const base = canvas.name || canvas.title || 'canvas'
-  // strip path-y parts the agent might emit
-  const trimmed = String(base).split('/').pop() || base
-  const format = String(canvas.format || '').toLowerCase()
-  const ext = format === 'markdown' || format === 'md' ? 'md'
-    : format === 'html' || format === 'srcdoc' ? 'html'
-    : format === 'json' ? 'json'
-    : format === 'csv' ? 'csv'
-    : format === 'python' || format === 'py' ? 'py'
-    : format === 'javascript' || format === 'js' ? 'js'
-    : format === 'bash' || format === 'shell' || format === 'sh' ? 'sh'
-    : format === 'text' || !format ? 'txt'
-    : format
-  return trimmed.includes('.') ? trimmed : `${trimmed}.${ext}`
-}
-
-function canvasMime(canvas: CanvasArtifact): string {
-  const format = String(canvas.format || '').toLowerCase()
-  if (format === 'html' || format === 'srcdoc') return 'text/html'
-  if (format === 'markdown' || format === 'md') return 'text/markdown'
-  if (format === 'json') return 'application/json'
-  if (format === 'csv') return 'text/csv'
-  return 'text/plain'
-}
-
-/* Canvas content renderer — picks markdown / html-iframe / code-with-highlight
-   based on the canvas format. Falls back to plain pre-text for unknown types. */
-function CanvasRender({ canvas }: { canvas: CanvasArtifact }) {
-  const format = String(canvas.format || '').toLowerCase()
-  const content = canvas.content || ''
-
-  if (format === 'html' || format === 'srcdoc') {
-    return (
-      <iframe
-        className="k-canvas-frame"
-        srcDoc={content}
-        sandbox="allow-same-origin"
-        title={canvas.title || canvas.name}
-      />
-    )
-  }
-
-  if (format === 'markdown' || format === 'md') {
-    return (
-      <div className="k-canvas-markdown markdown-body">
-        <ReactMarkdown
-          remarkPlugins={markdownPlugins}
-          components={{
-            a: ({ children, href }) => (
-              <a href={href} target="_blank" rel="noreferrer">{children}</a>
-            ),
-          }}
-        >
-          {closeStreamingMarkdown(content)}
-        </ReactMarkdown>
-      </div>
-    )
-  }
-
-  return (
-    <Snippet
-      content={content}
-      format={format === 'json' ? 'json' : 'code'}
-      language={inferLanguage(format, content)}
-      label={format || inferLanguage(format, content)}
-    />
-  )
-}
 
 function CanvasPanel({ canvases }: { canvases: CanvasArtifact[] }) {
   if (canvases.length === 0) {
@@ -2138,13 +1441,7 @@ function CanvasPanel({ canvases }: { canvases: CanvasArtifact[] }) {
   )
 }
 
-function CaretIcon() {
-  return (
-    <svg className="k-workitem-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M9 6l6 6-6 6" />
-    </svg>
-  )
-}
+/* CaretIcon is now imported from ./components/CaretIcon.tsx */
 
 function ThinkingBlock({
   entries,
