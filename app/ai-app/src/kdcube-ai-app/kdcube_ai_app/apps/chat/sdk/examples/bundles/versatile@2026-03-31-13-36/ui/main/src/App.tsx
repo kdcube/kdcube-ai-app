@@ -36,6 +36,7 @@ import { BannerStrip } from './features/banners/BannerStrip.tsx'
 import { ConversationsSidebar } from './features/conversations/ConversationsSidebar.tsx'
 import { Composer } from './features/composer/Composer.tsx'
 import { TurnView } from './features/chat/TurnView.tsx'
+import { FileDropZone } from './components/FileDropZone.tsx'
 
 export default function App() {
   const state = useAppSelector((s) => s.chat)
@@ -484,6 +485,9 @@ export default function App() {
   const handleComposerFilesAdd = useStableCallback((files: FileList | null) => {
     if (files) dispatch(chatActions.addComposerFiles(Array.from(files)))
   })
+  const handleDropFiles = useStableCallback((files: File[]) => {
+    if (files.length > 0) dispatch(chatActions.addComposerFiles(files))
+  })
   const handleComposerFileRemove = useStableCallback((index: number) => {
     dispatch(chatActions.removeComposerFile(index))
   })
@@ -603,7 +607,12 @@ export default function App() {
               onDelete={handleConversationDelete}
             />
 
-            <div className="glass-panel min-w-0 overflow-hidden flex flex-col">
+            <FileDropZone
+              onFiles={handleDropFiles}
+              disabled={sendingDisabled}
+              className="min-w-0 flex"
+            >
+            <div className="glass-panel min-w-0 overflow-hidden flex flex-col flex-1">
               <section className="flex items-center justify-between gap-3 border-b border-[var(--line-soft)] px-4 py-2.5">
                 <div className="min-w-0">
                   <div className="truncate text-[15px] font-semibold text-[var(--ink)]">
@@ -668,6 +677,7 @@ export default function App() {
                 />
               </div>
             </div>
+            </FileDropZone>
           </div>
         </main>
       </div>

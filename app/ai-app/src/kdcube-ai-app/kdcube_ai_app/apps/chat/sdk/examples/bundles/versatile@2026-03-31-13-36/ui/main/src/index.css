@@ -1343,3 +1343,44 @@ a { color: inherit; }
   border: 0;
   border-radius: 0;
 }
+
+/* ---------------------------------------------------------------------- */
+/*  File drop zone — overlay shown when files are being dragged over the  */
+/*  chat area. The wrapper is positioned: relative so the overlay can     */
+/*  cover it absolutely. `pointer-events: none` on the overlay so the     */
+/*  underlying chat surface stays accessible to the drop event itself     */
+/*  (the global drop listener does the actual work).                      */
+/* ---------------------------------------------------------------------- */
+.k-dropzone {
+  position: relative;
+}
+.k-dropzone-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(218, 238, 255, 0.7);
+  border: 2px dashed var(--blue);
+  border-radius: var(--r-lg);
+  pointer-events: none;
+  animation: k-dropzone-fade-in 0.12s ease;
+}
+.k-dropzone-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: 0 4px 14px rgba(15, 24, 42, 0.12);
+  color: var(--blue-dark);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+@keyframes k-dropzone-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
