@@ -34,6 +34,12 @@ Behavior:
 
 Operational rules:
 
+- If the helper exits with "kdcube not found in PATH", run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/kdcube_local.py" install` first, then retry.
 - If no descriptor profile was bootstrapped yet, tell the user to run `/kdcube-builder:bootstrap-local` first.
 - After `reload`, tell the user what was reloaded.
 - After `bundle-tests`, summarize pass/fail clearly.
+- **`.kdcube-runtime` is read-only.** You may `Read` files under `$WORKDIR` to inspect
+  current state, but never use `Edit` or `Write` tools on them. All runtime config changes
+  must go through this helper script or the `kdcube` CLI.
+
+CLI docs: https://pypi.org/project/kdcube-cli/
