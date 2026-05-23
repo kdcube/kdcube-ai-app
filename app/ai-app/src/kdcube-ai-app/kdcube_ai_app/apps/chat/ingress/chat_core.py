@@ -238,6 +238,34 @@ def _resolve_conversation_owner_id(session: UserSession) -> Optional[str]:
     return owner_id or None
 
 
+async def _conversation_state_row_exists(
+        conversation_browser,
+        *,
+        user_id: str,
+        conversation_id: str,
+) -> bool:
+    idx = getattr(conversation_browser, "idx", None)
+    if idx is None:
+        return False
+    get_row = getattr(idx, "get_conversation_state_row", None)
+    if get_row is None:
+        return False
+    try:
+        row = await get_row(
+            user_id=user_id,
+            conversation_id=conversation_id,
+        )
+        return bool(row)
+    except Exception as e:
+        logger.warning(
+            "Conversation state-row fallback failed user=%s conversation_id=%s: %s",
+            user_id,
+            conversation_id,
+            e,
+        )
+        return False
+
+
 async def resolve_ingress_conversation_id(
         *,
         app,
@@ -264,6 +292,16 @@ async def resolve_ingress_conversation_id(
         user_id=owner_id,
         conversation_id=conversation_id,
     )
+    if not exists:
+        # A newly created conversation writes its conversation.state row before
+        # the HTTP ack, while searchable turn artifacts may arrive later in the
+        # processor. Treat that state row as sufficient ownership evidence so a
+        # rapid follow-up does not 404 during the indexing gap.
+        exists = await _conversation_state_row_exists(
+            conversation_browser,
+            user_id=owner_id,
+            conversation_id=conversation_id,
+        )
     if not exists:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
