@@ -39,6 +39,22 @@ def _make_store(tmp_path, user_id="user-1"):
     return li_accounts.LinkedInAccountStore(tmp_path, user_id=user_id, bundle_id="test-bundle@1")
 
 
+@pytest.fixture(autouse=True)
+def _sdk_secret_fakes(monkeypatch):
+    async def _empty_get_secret(*args, **kwargs):
+        return ""
+
+    async def _noop_set_user_secret(*args, **kwargs):
+        return None
+
+    async def _noop_delete_user_secret(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(li_accounts, "get_secret", _empty_get_secret)
+    monkeypatch.setattr(li_accounts, "set_user_secret", _noop_set_user_secret)
+    monkeypatch.setattr(li_accounts, "delete_user_secret", _noop_delete_user_secret)
+
+
 # ── OAuth state: create and consume ───────────────────────────────────────────
 
 def test_oauth_state_roundtrip(tmp_path):
@@ -104,9 +120,10 @@ def test_oauth_state_requires_non_empty_secret(tmp_path):
 
 # ── Account store: upsert + tokens ───────────────────────────────────────────
 
-def test_upsert_creates_account(tmp_path):
+@pytest.mark.asyncio
+async def test_upsert_creates_account(tmp_path):
     store = _make_store(tmp_path)
-    row = store.upsert_account({"person_id": "ABC123", "email": "a@example.com", "display_name": "Alice"})
+    row = await store.upsert_account_async({"person_id": "ABC123", "email": "a@example.com", "display_name": "Alice"})
 
     assert row["person_id"] == "ABC123"
     assert row["provider"] == "linkedin"
@@ -114,20 +131,22 @@ def test_upsert_creates_account(tmp_path):
     assert "token" not in row
 
 
-def test_upsert_idempotent_by_person_id(tmp_path):
+@pytest.mark.asyncio
+async def test_upsert_idempotent_by_person_id(tmp_path):
     store = _make_store(tmp_path)
-    row1 = store.upsert_account({"person_id": "P1", "display_name": "Alice"})
-    row2 = store.upsert_account({"person_id": "P1", "display_name": "Alice Updated"})
+    row1 = await store.upsert_account_async({"person_id": "P1", "display_name": "Alice"})
+    await store.upsert_account_async({"person_id": "P1", "display_name": "Alice Updated"})
 
-    accounts = store.list_accounts()
+    accounts = await store.list_accounts_async()
     assert len(accounts) == 1
     assert accounts[0]["account_id"] == row1["account_id"]
     assert accounts[0]["display_name"] == "Alice Updated"
 
 
-def test_upsert_does_not_leak_tokens_into_metadata(tmp_path):
+@pytest.mark.asyncio
+async def test_upsert_does_not_leak_tokens_into_metadata(tmp_path):
     store = _make_store(tmp_path)
-    row = store.upsert_account({
+    row = await store.upsert_account_async({
         "person_id": "P1",
         "display_name": "Alice",
         "access_token": "should-not-appear",  # caller mistake — must be ignored
@@ -138,51 +157,72 @@ def test_upsert_does_not_leak_tokens_into_metadata(tmp_path):
     assert row.get("access_token") is None
 
 
-def test_tokens_stored_out_of_band_not_in_accounts_file(tmp_path, monkeypatch):
+@pytest.mark.asyncio
+async def test_tokens_stored_out_of_band_not_in_accounts_file(tmp_path, monkeypatch):
     store = _make_store(tmp_path)
-    store.upsert_account({"person_id": "P1", "display_name": "Alice"})
-    account_id = store.list_accounts()[0]["account_id"]
+    account = await store.upsert_account_async({"person_id": "P1", "display_name": "Alice"})
+    account_id = account["account_id"]
 
     token_data = {"access_token": "tok123", "expires_in": 5183944}
     stored: dict = {}
 
-    monkeypatch.setattr(li_accounts, "set_user_secret", lambda key, value, **kw: stored.update({key: value}))
-    monkeypatch.setattr(li_accounts, "get_user_secret", lambda key, **kw: stored.get(key))
+    async def _set_secret(key, value, **kw):
+        stored[key] = value
 
-    store.set_tokens(account_id, token_data)
+    async def _get_secret(key, **kw):
+        normalized = str(key or "")
+        if normalized.startswith("u:"):
+            normalized = normalized[2:]
+        return stored.get(normalized)
+
+    monkeypatch.setattr(li_accounts, "set_user_secret", _set_secret)
+    monkeypatch.setattr(li_accounts, "get_secret", _get_secret)
+
+    await store.set_tokens_async(account_id, token_data)
 
     # Token must NOT appear in the accounts JSON file
     raw = json.loads(store.accounts_path.read_text())
     assert "access_token" not in json.dumps(raw)
 
     # Token must be retrievable from the separate secret store
-    retrieved = store.get_tokens(account_id)
+    retrieved = await store.get_tokens_async(account_id)
     assert retrieved["access_token"] == "tok123"
 
 
-def test_list_accounts_reflects_has_token(tmp_path, monkeypatch):
+@pytest.mark.asyncio
+async def test_list_accounts_reflects_has_token(tmp_path, monkeypatch):
     store = _make_store(tmp_path)
-    store.upsert_account({"person_id": "P1", "display_name": "Alice"})
-    account_id = store.list_accounts()[0]["account_id"]
+    await store.upsert_account_async({"person_id": "P1", "display_name": "Alice"})
 
-    monkeypatch.setattr(li_accounts, "get_user_secret", lambda key, **kw: None)
-    assert store.list_accounts()[0]["has_token"] is False
+    async def _empty_get_secret(key, **kw):
+        return None
 
-    monkeypatch.setattr(li_accounts, "get_user_secret", lambda key, **kw: '{"access_token":"tok"}')
-    assert store.list_accounts()[0]["has_token"] is True
+    monkeypatch.setattr(li_accounts, "get_secret", _empty_get_secret)
+    assert (await store.list_accounts_async())[0]["has_token"] is False
+
+    async def _token_get_secret(key, **kw):
+        return '{"access_token":"tok"}'
+
+    monkeypatch.setattr(li_accounts, "get_secret", _token_get_secret)
+    assert (await store.list_accounts_async())[0]["has_token"] is True
 
 
-def test_delete_account_removes_entry(tmp_path, monkeypatch):
+@pytest.mark.asyncio
+async def test_delete_account_removes_entry(tmp_path, monkeypatch):
     store = _make_store(tmp_path)
-    store.upsert_account({"person_id": "P1", "display_name": "Alice"})
-    account_id = store.list_accounts()[0]["account_id"]
+    account = await store.upsert_account_async({"person_id": "P1", "display_name": "Alice"})
+    account_id = account["account_id"]
 
     deleted_keys: list[str] = []
-    monkeypatch.setattr(li_accounts, "delete_user_secret", lambda key, **kw: deleted_keys.append(key))
 
-    deleted = store.delete_account(account_id)
+    async def _delete_secret(key, **kw):
+        deleted_keys.append(key)
+
+    monkeypatch.setattr(li_accounts, "delete_user_secret", _delete_secret)
+
+    deleted = await store.delete_account_async(account_id)
     assert deleted is True
-    assert store.list_accounts() == []
+    assert await store.list_accounts_async() == []
     assert any(account_id in k for k in deleted_keys)
 
 
@@ -257,7 +297,8 @@ async def test_create_linkedin_post_raises_on_403():
 
 # ── settings.status ───────────────────────────────────────────────────────────
 
-def test_settings_status_reflects_enabled_flag(tmp_path):
+@pytest.mark.asyncio
+async def test_settings_status_reflects_enabled_flag(tmp_path):
     li_settings.configure_linkedin_settings(
         storage_root_or_error=lambda ep: tmp_path,
         target_user_id=lambda ep, **kw: "user-1",
@@ -271,8 +312,8 @@ def test_settings_status_reflects_enabled_flag(tmp_path):
         "integrations.linkedin.enabled": False,
     })
 
-    result_on = li_settings.status(ep_enabled)
-    result_off = li_settings.status(ep_disabled)
+    result_on = await li_settings.status(ep_enabled)
+    result_off = await li_settings.status(ep_disabled)
 
     assert result_on["enabled"] is True
     assert result_off["enabled"] is False
@@ -280,7 +321,8 @@ def test_settings_status_reflects_enabled_flag(tmp_path):
     assert "integrations.linkedin.enabled" in result_off["configuration_missing"]
 
 
-def test_settings_status_missing_client_id(tmp_path):
+@pytest.mark.asyncio
+async def test_settings_status_missing_client_id(tmp_path):
     li_settings.configure_linkedin_settings(
         storage_root_or_error=lambda ep: tmp_path,
         target_user_id=lambda ep, **kw: "user-1",
@@ -289,13 +331,21 @@ def test_settings_status_missing_client_id(tmp_path):
         "integrations.linkedin.enabled": True,
         "integrations.linkedin.client_id": "",
     })
-    result = li_settings.status(ep)
+    result = await li_settings.status(ep)
     assert "integrations.linkedin.client_id" in result["configuration_missing"]
     assert result["linkedin_configured"] is False
 
 
-def test_settings_status_fully_configured(tmp_path, monkeypatch):
-    monkeypatch.setattr(li_accounts, "get_secret", lambda key: "state-secret" if "oauth_state_secret" in key else "")
+@pytest.mark.asyncio
+async def test_settings_status_fully_configured(tmp_path, monkeypatch):
+    async def _get_secret(key, **kw):
+        if "oauth_state_secret" in str(key):
+            return "state-secret"
+        if "client_secret" in str(key):
+            return "client-secret"
+        return ""
+
+    monkeypatch.setattr(li_accounts, "get_secret", _get_secret)
     li_settings.configure_linkedin_settings(
         storage_root_or_error=lambda ep: tmp_path,
         target_user_id=lambda ep, **kw: "user-1",
@@ -304,27 +354,37 @@ def test_settings_status_fully_configured(tmp_path, monkeypatch):
         "integrations.linkedin.enabled": True,
         "integrations.linkedin.client_id": "real_client_id",
     })
-    result = li_settings.status(ep)
+    result = await li_settings.status(ep)
     assert result["ok"] is True
     assert result["linkedin_configured"] is True
     assert result["configuration_missing"] == []
 
 
-def test_settings_status_returns_accounts(tmp_path, monkeypatch):
-    monkeypatch.setattr(li_accounts, "get_secret", lambda key: "state-secret" if "oauth_state_secret" in key else "")
-    monkeypatch.setattr(li_accounts, "get_user_secret", lambda key, **kw: '{"access_token":"tok"}')
+@pytest.mark.asyncio
+async def test_settings_status_returns_accounts(tmp_path, monkeypatch):
+    async def _get_secret(key, **kw):
+        raw_key = str(key)
+        if raw_key.startswith("u:"):
+            return '{"access_token":"tok"}'
+        if "oauth_state_secret" in raw_key:
+            return "state-secret"
+        if "client_secret" in raw_key:
+            return "client-secret"
+        return ""
+
+    monkeypatch.setattr(li_accounts, "get_secret", _get_secret)
     li_settings.configure_linkedin_settings(
         storage_root_or_error=lambda ep: tmp_path,
         target_user_id=lambda ep, **kw: "user-1",
     )
     store = _make_store(tmp_path)
-    store.upsert_account({"person_id": "P1", "display_name": "Alice"})
+    await store.upsert_account_async({"person_id": "P1", "display_name": "Alice"})
 
     ep = _make_entrypoint({
         "integrations.linkedin.enabled": True,
         "integrations.linkedin.client_id": "real_client_id",
     })
-    result = li_settings.status(ep)
+    result = await li_settings.status(ep)
     assert len(result["accounts"]) == 1
     assert result["accounts"][0]["display_name"] == "Alice"
     assert result["accounts"][0]["has_token"] is True

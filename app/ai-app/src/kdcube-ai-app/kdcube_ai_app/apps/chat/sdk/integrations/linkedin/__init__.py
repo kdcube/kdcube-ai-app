@@ -24,7 +24,7 @@ from .accounts import (
     exchange_linkedin_code,
     fetch_linkedin_profile,
     linkedin_client_id,
-    linkedin_client_secret_async,
+    linkedin_client_secret,
     linkedin_scopes,
     oauth_state_secret,
     register_document_upload,
@@ -57,7 +57,7 @@ __all__ = [
     "exchange_linkedin_code",
     "fetch_linkedin_profile",
     "linkedin_client_id",
-    "linkedin_client_secret_async",
+    "linkedin_client_secret",
     "linkedin_scopes",
     "oauth_state_secret",
 ]

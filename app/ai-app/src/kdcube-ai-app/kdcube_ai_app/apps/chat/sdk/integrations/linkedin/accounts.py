@@ -19,23 +19,13 @@ import httpx
 try:
     from kdcube_ai_app.apps.chat.sdk.config import (
         delete_user_secret,
-        delete_user_secret_async,
         get_secret,
-        get_secret_async,
-        get_user_secret,
-        get_user_secret_async,
         set_user_secret,
-        set_user_secret_async,
     )
 except Exception:
     delete_user_secret = None  # type: ignore[assignment]
-    delete_user_secret_async = None  # type: ignore[assignment]
     get_secret = None  # type: ignore[assignment]
-    get_secret_async = None  # type: ignore[assignment]
-    get_user_secret = None  # type: ignore[assignment]
-    get_user_secret_async = None  # type: ignore[assignment]
     set_user_secret = None  # type: ignore[assignment]
-    set_user_secret_async = None  # type: ignore[assignment]
 
 
 DEFAULT_LINKEDIN_BUNDLE_ID = "task-and-memo-app@1-0"
@@ -117,21 +107,11 @@ def _parse_json_object(raw: str) -> Dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
-def _secret_lookup(*keys: str) -> str:
+async def _secret_lookup(*keys: str) -> str:
     if get_secret is None:
         return ""
     for key in keys:
-        value = get_secret(key)
-        if value:
-            return value
-    return ""
-
-
-async def _secret_lookup_async(*keys: str) -> str:
-    if get_secret_async is None:
-        return ""
-    for key in keys:
-        value = await get_secret_async(key)
+        value = await get_secret(key)
         if value:
             return value
     return ""
@@ -149,10 +129,10 @@ def _entrypoint_bundle_id(entrypoint: Any, default: str = BUNDLE_ID) -> str:
     return str(default or BUNDLE_ID).strip() or BUNDLE_ID
 
 
-def oauth_state_secret(entrypoint: Any) -> str:
+async def oauth_state_secret(entrypoint: Any) -> str:
     bundle_id = _entrypoint_bundle_id(entrypoint)
     return (
-        _secret_lookup(
+        await _secret_lookup(
             "b:integrations.linkedin.oauth_state_secret",
             f"bundles.{bundle_id}.secrets.integrations.linkedin.oauth_state_secret",
             "b:integrations.email.oauth_state_secret",
@@ -168,9 +148,9 @@ def linkedin_client_id(entrypoint: Any) -> str:
     return str(entrypoint.bundle_prop("integrations.linkedin.client_id", "") or "").strip()
 
 
-async def linkedin_client_secret_async(bundle_id: str = "") -> str:
+async def linkedin_client_secret(bundle_id: str = "") -> str:
     bundle = str(bundle_id or BUNDLE_ID).strip() or BUNDLE_ID
-    return await _secret_lookup_async(
+    return await _secret_lookup(
         "b:integrations.linkedin.client_secret",
         f"bundles.{bundle}.secrets.integrations.linkedin.client_secret",
     )
@@ -352,6 +332,43 @@ class LinkedInAccountStore:
         self._write_accounts_doc(data)
         return dict(row)
 
+    async def upsert_account_async(self, account: Mapping[str, Any]) -> Dict[str, Any]:
+        now = _utc_now()
+        provider = "linkedin"
+        person_id = str(account.get("person_id") or "").strip()
+        account_id = str(account.get("account_id") or "").strip()
+        if not account_id:
+            account_id = f"linkedin_{_safe_segment(person_id or uuid.uuid4().hex, fallback='account')}"
+        row = {
+            "account_id": account_id,
+            "provider": provider,
+            "person_id": person_id,
+            "email": str(account.get("email") or "").strip(),
+            "display_name": str(account.get("display_name") or person_id or account_id).strip(),
+            "status": str(account.get("status") or "connected").strip().lower() or "connected",
+            "scope": list(account.get("scope") or []),
+            "connected_at": str(account.get("connected_at") or now),
+            "updated_at": now,
+            "last_error": str(account.get("last_error") or "").strip(),
+        }
+        data = await self._read_accounts_doc_async()
+        rows = [item for item in data.get("accounts") or [] if isinstance(item, dict)]
+        existing = next((item for item in rows if str(item.get("account_id") or "") == account_id), None)
+        if existing is None and person_id:
+            existing = next(
+                (item for item in rows if str(item.get("person_id") or "") == person_id),
+                None,
+            )
+        if existing:
+            row["account_id"] = str(existing.get("account_id") or account_id)
+            existing.update({key: value for key, value in row.items() if value not in (None, "") or key in {"last_error"}})
+            row = existing
+        else:
+            rows.append(row)
+        data["accounts"] = rows
+        await self._write_accounts_doc_async(data)
+        return dict(row)
+
     def delete_account(self, account_id: str) -> bool:
         wanted = str(account_id or "").strip()
         data = self._read_accounts_doc()
@@ -364,24 +381,29 @@ class LinkedInAccountStore:
             self.delete_tokens(wanted)
         return deleted
 
+    async def delete_account_async(self, account_id: str) -> bool:
+        wanted = str(account_id or "").strip()
+        data = await self._read_accounts_doc_async()
+        rows = [item for item in data.get("accounts") or [] if isinstance(item, dict)]
+        kept = [item for item in rows if str(item.get("account_id") or "") != wanted]
+        deleted = len(kept) != len(rows)
+        data["accounts"] = kept
+        await self._write_accounts_doc_async(data)
+        if deleted:
+            await self.delete_tokens_async(wanted)
+        return deleted
+
     @staticmethod
     def token_secret_key(account_id: str) -> str:
         return f"linkedin.accounts.{_safe_segment(account_id, fallback='account')}.tokens"
 
     def set_tokens(self, account_id: str, tokens: Mapping[str, Any]) -> None:
-        if set_user_secret is None:
-            raise RuntimeError("user-scoped secret storage is unavailable")
-        set_user_secret(
-            self.token_secret_key(account_id),
-            json.dumps(dict(tokens), sort_keys=True, ensure_ascii=True),
-            user_id=self.user_id,
-            bundle_id=self.bundle_id,
-        )
+        raise RuntimeError("LinkedIn token storage is async-only; use set_tokens_async().")
 
     async def set_tokens_async(self, account_id: str, tokens: Mapping[str, Any]) -> None:
-        if set_user_secret_async is None:
+        if set_user_secret is None:
             raise RuntimeError("async user-scoped secret storage is unavailable")
-        await set_user_secret_async(
+        await set_user_secret(
             self.token_secret_key(account_id),
             json.dumps(dict(tokens), sort_keys=True, ensure_ascii=True),
             user_id=self.user_id,
@@ -389,26 +411,13 @@ class LinkedInAccountStore:
         )
 
     def get_tokens(self, account_id: str) -> Dict[str, Any]:
-        if get_user_secret is None:
-            return {}
-        raw = get_user_secret(
-            self.token_secret_key(account_id),
-            user_id=self.user_id,
-            bundle_id=self.bundle_id,
-        )
-        if not raw:
-            return {}
-        try:
-            parsed = json.loads(raw)
-        except Exception:
-            return {}
-        return parsed if isinstance(parsed, dict) else {}
+        raise RuntimeError("LinkedIn token storage is async-only; use get_tokens_async().")
 
     async def get_tokens_async(self, account_id: str) -> Dict[str, Any]:
-        if get_user_secret_async is None:
+        if get_secret is None:
             return {}
-        raw = await get_user_secret_async(
-            self.token_secret_key(account_id),
+        raw = await get_secret(
+            f"u:{self.token_secret_key(account_id)}",
             user_id=self.user_id,
             bundle_id=self.bundle_id,
         )
@@ -421,18 +430,13 @@ class LinkedInAccountStore:
         return parsed if isinstance(parsed, dict) else {}
 
     def delete_tokens(self, account_id: str) -> None:
+        raise RuntimeError("LinkedIn token storage is async-only; use delete_tokens_async().")
+
+    async def delete_tokens_async(self, account_id: str) -> None:
         if delete_user_secret is None:
             return
         try:
-            delete_user_secret(self.token_secret_key(account_id), user_id=self.user_id, bundle_id=self.bundle_id)
-        except Exception:
-            pass
-
-    async def delete_tokens_async(self, account_id: str) -> None:
-        if delete_user_secret_async is None:
-            return
-        try:
-            await delete_user_secret_async(self.token_secret_key(account_id), user_id=self.user_id, bundle_id=self.bundle_id)
+            await delete_user_secret(self.token_secret_key(account_id), user_id=self.user_id, bundle_id=self.bundle_id)
         except Exception:
             pass
 
@@ -486,7 +490,7 @@ class LinkedInAccountStore:
         return payload
 
 
-def build_linkedin_authorize_url(
+async def build_linkedin_authorize_url(
     *,
     entrypoint: Any,
     store: LinkedInAccountStore,
@@ -498,7 +502,7 @@ def build_linkedin_authorize_url(
     if not client_id:
         raise ValueError("integrations.linkedin.client_id is not configured")
     state = store.create_oauth_state(
-        secret=oauth_state_secret(entrypoint),
+        secret=await oauth_state_secret(entrypoint),
         source=source,
         return_hint=return_hint,
     )

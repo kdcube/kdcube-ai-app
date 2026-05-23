@@ -12,7 +12,7 @@ from kdcube_ai_app.apps.chat.sdk.integrations.linkedin.accounts import (
     exchange_linkedin_code,
     fetch_linkedin_profile,
     linkedin_client_id,
-    linkedin_client_secret_async,
+    linkedin_client_secret,
     linkedin_scopes,
     oauth_state_secret,
 )
@@ -67,7 +67,7 @@ def store_for(entrypoint: Any, *, user_id: Optional[str] = None, fingerprint: Op
     return LinkedInAccountStore(_storage_root(entrypoint), user_id=resolved_user, bundle_id=BUNDLE_ID), resolved_user
 
 
-def status(
+async def status(
     entrypoint: Any,
     *,
     user_id: Optional[str] = None,
@@ -76,26 +76,30 @@ def status(
     store, resolved_user = store_for(entrypoint, user_id=user_id, fingerprint=fingerprint)
     enabled = bool(entrypoint.bundle_prop("integrations.linkedin.enabled", False))
     client_id_configured = _configured(linkedin_client_id(entrypoint))
-    state_secret_configured = _configured(oauth_state_secret(entrypoint))
+    client_secret_configured = _configured(await linkedin_client_secret(BUNDLE_ID))
+    state_secret_configured = _configured(await oauth_state_secret(entrypoint))
     missing = []
     if not enabled:
         missing.append("integrations.linkedin.enabled")
     if not client_id_configured:
         missing.append("integrations.linkedin.client_id")
+    if not client_secret_configured:
+        missing.append("integrations.linkedin.client_secret")
     if not state_secret_configured:
         missing.append("integrations.linkedin.oauth_state_secret")
     return {
         "ok": True,
         "user_id": resolved_user,
         "enabled": enabled,
-        "linkedin_configured": bool(enabled and client_id_configured and state_secret_configured),
+        "linkedin_configured": bool(enabled and client_id_configured and client_secret_configured and state_secret_configured),
         "configuration": {
             "linkedin_enabled": enabled,
             "linkedin_client_id_configured": client_id_configured,
+            "linkedin_client_secret_configured": client_secret_configured,
             "oauth_state_secret_configured": state_secret_configured,
         },
         "configuration_missing": missing,
-        "accounts": store.list_accounts(),
+        "accounts": await store.list_accounts_async(),
         "operations": {
             "start_oauth": "linkedin_oauth_start",
             "status": "linkedin_accounts_status",
@@ -104,7 +108,7 @@ def status(
     }
 
 
-def start_oauth(
+async def start_oauth(
     entrypoint: Any,
     *,
     request: Any = None,
@@ -117,7 +121,7 @@ def start_oauth(
         return {"ok": False, "error": {"code": "linkedin_integration_disabled", "message": "LinkedIn integration is disabled."}}
     store, resolved_user = store_for(entrypoint, user_id=user_id, fingerprint=fingerprint)
     try:
-        payload = build_linkedin_authorize_url(
+        payload = await build_linkedin_authorize_url(
             entrypoint=entrypoint,
             store=store,
             request=request,
@@ -129,7 +133,7 @@ def start_oauth(
     return {"ok": True, "user_id": resolved_user, **payload}
 
 
-def disconnect(
+async def disconnect(
     entrypoint: Any,
     *,
     account_id: str,
@@ -137,8 +141,8 @@ def disconnect(
     fingerprint: Optional[str] = None,
 ) -> Dict[str, Any]:
     store, resolved_user = store_for(entrypoint, user_id=user_id, fingerprint=fingerprint)
-    deleted = store.delete_account(account_id)
-    return {"ok": True, "user_id": resolved_user, "deleted": deleted, "accounts": store.list_accounts()}
+    deleted = await store.delete_account_async(account_id)
+    return {"ok": True, "user_id": resolved_user, "deleted": deleted, "accounts": await store.list_accounts_async()}
 
 
 def _html_done(*, title: str, body: str, link: str = "") -> HTMLResponse:
@@ -163,7 +167,7 @@ async def callback(entrypoint: Any, *, request: Any = None, code: str = "", stat
     if not code or not state:
         raise HTTPException(status_code=400, detail="code and state are required")
 
-    secret = oauth_state_secret(entrypoint)
+    secret = await oauth_state_secret(entrypoint)
     try:
         payload = LinkedInAccountStore(_storage_root(entrypoint), user_id="state-reader").consume_oauth_state(
             state=state,
@@ -184,7 +188,7 @@ async def callback(entrypoint: Any, *, request: Any = None, code: str = "", stat
             code=code,
             redirect_uri=callback_url(entrypoint, request=request),
             client_id=linkedin_client_id(entrypoint),
-            client_secret=await linkedin_client_secret_async(bundle_id),
+            client_secret=await linkedin_client_secret(bundle_id),
         )
         profile = await fetch_linkedin_profile(access_token=str(token.get("access_token") or ""))
         person_id = str(profile.get("sub") or "").strip()
@@ -192,7 +196,7 @@ async def callback(entrypoint: Any, *, request: Any = None, code: str = "", stat
         display_name = str(profile.get("name") or profile.get("given_name") or email or person_id or "LinkedIn account").strip()
         raw_scope = str(token.get("scope") or "")
         scope_str = [s.strip() for s in raw_scope.replace(",", " ").split() if s.strip()]
-        account = store.upsert_account(
+        account = await store.upsert_account_async(
             {
                 "account_id": account_id,
                 "provider": "linkedin",
@@ -222,14 +226,14 @@ async def callback(entrypoint: Any, *, request: Any = None, code: str = "", stat
     )
 
 
-def telegram_status(entrypoint: Any, *, request: Any = None, telegram_init_data: str = "") -> Dict[str, Any]:
+async def telegram_status(entrypoint: Any, *, request: Any = None, telegram_init_data: str = "") -> Dict[str, Any]:
     identity = _telegram_identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
-    payload = status(entrypoint, user_id=identity.user_id, fingerprint=identity.fingerprint)
+    payload = await status(entrypoint, user_id=identity.user_id, fingerprint=identity.fingerprint)
     payload["auth_surface"] = "telegram_webapp"
     return payload
 
 
-def telegram_start_oauth(
+async def telegram_start_oauth(
     entrypoint: Any,
     *,
     request: Any = None,
@@ -237,7 +241,7 @@ def telegram_start_oauth(
     return_hint: str = "",
 ) -> Dict[str, Any]:
     identity = _telegram_identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
-    payload = start_oauth(
+    payload = await start_oauth(
         entrypoint,
         request=request,
         return_hint=return_hint,
@@ -249,7 +253,7 @@ def telegram_start_oauth(
     return payload
 
 
-def telegram_disconnect(
+async def telegram_disconnect(
     entrypoint: Any,
     *,
     account_id: str,
@@ -257,6 +261,6 @@ def telegram_disconnect(
     telegram_init_data: str = "",
 ) -> Dict[str, Any]:
     identity = _telegram_identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
-    payload = disconnect(entrypoint, account_id=account_id, user_id=identity.user_id, fingerprint=identity.fingerprint)
+    payload = await disconnect(entrypoint, account_id=account_id, user_id=identity.user_id, fingerprint=identity.fingerprint)
     payload["auth_surface"] = "telegram_webapp"
     return payload

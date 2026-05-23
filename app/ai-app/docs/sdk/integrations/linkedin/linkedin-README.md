@@ -49,7 +49,7 @@ kdcube_ai_app.apps.chat.sdk.integrations.linkedin
 from kdcube_ai_app.apps.chat.sdk.integrations.linkedin import LinkedInAccountStore
 
 store = LinkedInAccountStore(storage_root, user_id=user_id, bundle_id=bundle_id)
-account = store.upsert_account({
+account = await store.upsert_account_async({
     "provider": "linkedin",
     "person_id": "dE5aOhH-ap",
     "email": "user@example.com",
@@ -181,21 +181,21 @@ linkedin_settings.configure_linkedin_settings(
     bundle_id="my.bundle@1-0",
 )
 
-payload = linkedin_settings.status(entrypoint, user_id="user-a")
-oauth = linkedin_settings.start_oauth(entrypoint, request=request)
+payload = await linkedin_settings.status(entrypoint, user_id="user-a")
+oauth = await linkedin_settings.start_oauth(entrypoint, request=request)
 ```
 
 The operations cover:
 
-- `status(...)` — returns enabled/configured flags, configuration_missing list,
+- `status(...)` — async operation that returns enabled/configured flags, configuration_missing list,
   and the accounts list with `has_token` for each account
-- `start_oauth(...)` — builds the LinkedIn authorization URL with HMAC-signed
+- `start_oauth(...)` — async operation that builds the LinkedIn authorization URL with HMAC-signed
   state, returns `authorize_url` for the browser
 - `callback(...)` — async handler for the OAuth redirect: exchanges code for
   token, fetches profile, upserts account record; returns an HTML done page
-- `disconnect(...)` — removes account record and its token secret
+- `disconnect(...)` — async operation that removes account record and its token secret
 - `telegram_status(...)`, `telegram_start_oauth(...)`, `telegram_disconnect(...)` —
-  Telegram Web App variants that first resolve Telegram `initData`
+  async Telegram Web App variants that first resolve Telegram `initData`
 
 Typical bundle shape:
 
