@@ -38,7 +38,7 @@ from kdcube_ai_app.infra.aws.task_protection import build_task_scale_in_protecti
 from kdcube_ai_app.infra.metrics.rolling_stats import record_metric
 from kdcube_ai_app.infra.namespaces import REDIS
 from kdcube_ai_app.infra.plugin.git_bundle import (
-    ensure_git_bundle_async,
+    ensure_git_bundle,
     GitBundleCooldown,
     compute_git_bundle_paths,
     resolve_managed_bundles_root,
@@ -290,7 +290,7 @@ async def prefetch_git_bundles(registry: Optional[Any] = None) -> dict[str, str]
                 pass
 
         try:
-            await ensure_git_bundle_async(
+            await ensure_git_bundle(
                 bundle_id=bid,
                 git_url=repo,
                 git_ref=entry.get("ref"),

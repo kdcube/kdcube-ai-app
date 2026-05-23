@@ -481,7 +481,7 @@ class ReactWorkflow(BaseEntrypointWithEconomicsAndMemory):
                 notify=False,
                 reason="bundle.on_load",
             )
-        await asyncio.to_thread(self._ensure_knowledge_space, reason="on_bundle_load")
+        await self._ensure_knowledge_space(reason="on_bundle_load")
         await self._ensure_ui_build()
         return None
 
@@ -498,7 +498,7 @@ class ReactWorkflow(BaseEntrypointWithEconomicsAndMemory):
             },
         )
         await super().pre_run_hook(state=state, econ_ctx=econ_ctx or {})
-        await asyncio.to_thread(self._reconcile_knowledge_space, reason="pre_run_hook")
+        await self._reconcile_knowledge_space(reason="pre_run_hook")
         return None
 
     async def post_run_hook(
@@ -1147,7 +1147,7 @@ class ReactWorkflow(BaseEntrypointWithEconomicsAndMemory):
             telegram_init_data=telegram_init_data,
         )
 
-    def _resolve_knowledge_paths(
+    async def _resolve_knowledge_paths(
         self,
         *,
         bundle_root: pathlib.Path,
@@ -1190,8 +1190,7 @@ class ReactWorkflow(BaseEntrypointWithEconomicsAndMemory):
             try:
                 from kdcube_ai_app.infra.plugin.git_bundle import ensure_git_bundle, bundle_dir_for_git
                 repos_root = (storage_root / "repos").resolve()
-                # Git auth is handled by git_bundle (SSH or HTTPS token via GIT_HTTP_TOKEN).
-                paths = ensure_git_bundle(
+                paths = await ensure_git_bundle(
                     bundle_id=f"{BUNDLE_ID}.knowledge",
                     git_url=repo,
                     git_ref=ref or None,
@@ -1252,7 +1251,7 @@ class ReactWorkflow(BaseEntrypointWithEconomicsAndMemory):
             )
         return source_root, validate_refs, repo, ref or None
 
-    def _expected_knowledge_paths(
+    async def _expected_knowledge_paths(
         self,
         *,
         bundle_root: pathlib.Path,
@@ -1285,10 +1284,10 @@ class ReactWorkflow(BaseEntrypointWithEconomicsAndMemory):
         base_root = bundle_root
         if repo:
             try:
-                from kdcube_ai_app.infra.git.auth import ssh_url_to_https_url
+                from kdcube_ai_app.infra.git.auth import normalize_git_remote_url
                 from kdcube_ai_app.infra.plugin.git_bundle import compute_git_bundle_paths
 
-                repo_url = ssh_url_to_https_url(repo) if os.getenv("GIT_HTTP_TOKEN") else str(repo or "").strip()
+                repo_url = await normalize_git_remote_url(repo)
                 paths = compute_git_bundle_paths(
                     bundle_id=f"{BUNDLE_ID}.knowledge",
                     git_url=repo_url,
@@ -1308,7 +1307,7 @@ class ReactWorkflow(BaseEntrypointWithEconomicsAndMemory):
 
         return source_root, validate_refs, repo, ref or None
 
-    def _resolve_knowledge_setup(
+    async def _resolve_knowledge_setup(
         self,
     ) -> tuple[
         pathlib.Path | None,
@@ -1341,7 +1340,7 @@ class ReactWorkflow(BaseEntrypointWithEconomicsAndMemory):
                 None,
             )
 
-        source_root, validate_refs, repo, ref = self._resolve_knowledge_paths(
+        source_root, validate_refs, repo, ref = await self._resolve_knowledge_paths(
             bundle_root=bundle_root,
             storage_root=storage_root,
         )
@@ -1357,7 +1356,7 @@ class ReactWorkflow(BaseEntrypointWithEconomicsAndMemory):
             signature,
         )
 
-    def _expected_knowledge_setup(
+    async def _expected_knowledge_setup(
         self,
     ) -> tuple[
         pathlib.Path | None,
@@ -1390,7 +1389,7 @@ class ReactWorkflow(BaseEntrypointWithEconomicsAndMemory):
                 None,
             )
 
-        source_root, validate_refs, repo, ref = self._expected_knowledge_paths(
+        source_root, validate_refs, repo, ref = await self._expected_knowledge_paths(
             bundle_root=bundle_root,
             storage_root=storage_root,
         )
@@ -1406,7 +1405,7 @@ class ReactWorkflow(BaseEntrypointWithEconomicsAndMemory):
             signature,
         )
 
-    def _ensure_knowledge_space(self, *, reason: str) -> None:
+    async def _ensure_knowledge_space(self, *, reason: str) -> None:
         """
         Build or refresh the knowledge index under bundle storage.
         Uses a signature (repo|ref|root) to skip rebuilding when nothing changed.
@@ -1420,7 +1419,7 @@ class ReactWorkflow(BaseEntrypointWithEconomicsAndMemory):
                 _expected_repo,
                 _expected_ref,
                 expected_signature,
-            ) = self._expected_knowledge_setup()
+            ) = await self._expected_knowledge_setup()
             if (
                 expected_ws_root
                 and _read_shared_knowledge_signature(expected_ws_root) == expected_signature
@@ -1441,7 +1440,7 @@ class ReactWorkflow(BaseEntrypointWithEconomicsAndMemory):
                 repo,
                 ref,
                 signature,
-            ) = self._resolve_knowledge_setup()
+            ) = await self._resolve_knowledge_setup()
             if not ws_root:
                 self.logger.log(
                     f"[kdcube.copilot] knowledge build skipped ({reason}): bundle storage root is unavailable.",
@@ -1485,7 +1484,8 @@ class ReactWorkflow(BaseEntrypointWithEconomicsAndMemory):
                     )
                     return None
                 # Build or refresh the knowledge index under bundle storage.
-                knowledge_resolver.prepare_knowledge_space(
+                await asyncio.to_thread(
+                    knowledge_resolver.prepare_knowledge_space,
                     bundle_root=bundle_root,
                     knowledge_root=ws_root,
                     source_root=source_root,
@@ -1514,7 +1514,7 @@ class ReactWorkflow(BaseEntrypointWithEconomicsAndMemory):
             self.logger.log(traceback.format_exc(), "WARNING")
         return None
 
-    def _reconcile_knowledge_space(self, *, reason: str) -> None:
+    async def _reconcile_knowledge_space(self, *, reason: str) -> None:
         """
         Re-check current bundle props at run time and rebuild only if load-time prep
         never happened or the effective knowledge signature changed.
@@ -1528,7 +1528,7 @@ class ReactWorkflow(BaseEntrypointWithEconomicsAndMemory):
                 repo,
                 ref,
                 signature,
-            ) = self._expected_knowledge_setup()
+            ) = await self._expected_knowledge_setup()
             if not ws_root:
                 self.logger.log(
                     f"[kdcube.copilot] knowledge reconcile skipped ({reason}): bundle storage root is unavailable.",
@@ -1547,7 +1547,7 @@ class ReactWorkflow(BaseEntrypointWithEconomicsAndMemory):
                     f"[kdcube.copilot] knowledge reconcile ({reason}): load-time signature missing, building now.",
                     "INFO",
                 )
-                return self._ensure_knowledge_space(reason=reason)
+                return await self._ensure_knowledge_space(reason=reason)
             if self._knowledge_signature != signature:
                 self.logger.log(
                     (
@@ -1558,7 +1558,7 @@ class ReactWorkflow(BaseEntrypointWithEconomicsAndMemory):
                     ),
                     "INFO",
                 )
-                return self._ensure_knowledge_space(reason=reason)
+                return await self._ensure_knowledge_space(reason=reason)
         except Exception:
             self.logger.log(f"[kdcube.copilot] knowledge reconcile failed ({reason})", "WARNING")
             self.logger.log(traceback.format_exc(), "WARNING")

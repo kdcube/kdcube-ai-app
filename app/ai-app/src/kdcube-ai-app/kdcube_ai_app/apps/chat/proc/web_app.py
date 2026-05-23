@@ -861,7 +861,7 @@ async def lifespan(app: FastAPI):
         try:
             from kdcube_ai_app.infra.plugin.bundle_store import load_registry as _load_store_registry
             from kdcube_ai_app.infra.plugin.bundle_store import force_env_reset_if_requested
-            from kdcube_ai_app.infra.plugin.bundle_registry import set_registry as _set_mem_registry
+            from kdcube_ai_app.infra.plugin.bundle_registry import set_registry_async as _set_mem_registry
             reg = None
             try:
                 reg = await force_env_reset_if_requested(
@@ -876,7 +876,7 @@ async def lifespan(app: FastAPI):
             if not reg:
                 reg = await _load_store_registry(redis_async)
             bundles_dict = {bid: entry.model_dump() for bid, entry in reg.bundles.items()}
-            _set_mem_registry(bundles_dict, reg.default_bundle_id)
+            await _set_mem_registry(bundles_dict, reg.default_bundle_id)
             logger.info(
                 "Bundles registry loaded from active registry: %s items (default=%s)",
                 len(bundles_dict),
