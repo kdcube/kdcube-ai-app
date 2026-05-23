@@ -1440,7 +1440,13 @@ _bundle_load_inflight: set[str] = set()
 _bundle_load_lock = threading.Lock()
 _bundle_load_tasks: dict[str, asyncio.Task] = {}
 _bundle_load_async_lock = asyncio.Lock()
-_bundle_static_entrypoint_load_done: set[str] = set()
+# Static-entrypoint "done" set. The value stores the source signature at the
+# time the build completed (or None for callers that don't supply one). This
+# lets HTML-entrypoint requests detect a source change without waiting for an
+# explicit `kdcube reload` — the route passes a `signature_provider`, and the
+# short-circuit only fires when the provider reports the same signature that
+# was captured at the previous successful build.
+_bundle_static_entrypoint_load_done: dict[str, str | None] = {}
 _bundle_static_entrypoint_load_tasks: dict[str, asyncio.Task] = {}
 _bundle_static_entrypoint_load_lock = asyncio.Lock()
 
@@ -1505,13 +1511,23 @@ def _schedule_bundle_load_cleanup(load_key: str, task: asyncio.Task) -> None:
     task.add_done_callback(_on_done)
 
 
-async def _cleanup_static_entrypoint_load_task(load_key: str, task: asyncio.Task) -> None:
+async def _cleanup_static_entrypoint_load_task(
+    load_key: str,
+    task: asyncio.Task,
+    *,
+    captured_signature: str | None = None,
+) -> None:
     """
     Remove a completed process-local static entrypoint load task.
 
     The identity check is important: invalidation or a retry may have already
     removed/replaced the task for this key. In that case this callback must not
     touch the newer state.
+
+    `captured_signature` is the source signature observed at the moment the
+    task was installed. We store it in `_done` on success so the next request
+    can compare it against the current source signature and rebuild if they
+    differ.
     """
     succeeded = False
     try:
@@ -1526,15 +1542,26 @@ async def _cleanup_static_entrypoint_load_task(load_key: str, task: asyncio.Task
             return
         _bundle_static_entrypoint_load_tasks.pop(load_key, None)
         if succeeded:
-            _bundle_static_entrypoint_load_done.add(load_key)
+            _bundle_static_entrypoint_load_done[load_key] = captured_signature
 
 
-def _schedule_static_entrypoint_load_cleanup(load_key: str, task: asyncio.Task) -> None:
+def _schedule_static_entrypoint_load_cleanup(
+    load_key: str,
+    task: asyncio.Task,
+    *,
+    captured_signature: str | None = None,
+) -> None:
     loop = asyncio.get_running_loop()
 
     def _on_done(done_task: asyncio.Task) -> None:
         try:
-            loop.create_task(_cleanup_static_entrypoint_load_task(load_key, done_task))
+            loop.create_task(
+                _cleanup_static_entrypoint_load_task(
+                    load_key,
+                    done_task,
+                    captured_signature=captured_signature,
+                )
+            )
         except RuntimeError:
             pass
 
@@ -1574,6 +1601,27 @@ def is_static_bundle_entrypoint_path(path: str) -> bool:
     leaf = cleaned.rsplit("/", 1)[-1]
     return leaf == "index.html" or "." not in leaf
 
+def peek_cached_singleton_for_spec(spec: BundleSpec) -> Optional[Any]:
+    """
+    Return the cached singleton bundle instance for `spec`, or `None` if the
+    bundle has not been loaded yet in this process.
+
+    Cheap lookup — does not trigger import, does not run `on_bundle_load`,
+    does not touch the on-disk lock. Used by static-asset routes that want
+    to consult a workflow's signature accessor (e.g. `compute_ui_widget_
+    signature`) without paying the cost of a full bundle load on every
+    HTML-entrypoint request.
+    """
+    try:
+        cached = _singleton_cache.get(_cache_key(spec))
+    except Exception:
+        return None
+    if not cached:
+        return None
+    instance, _mod = cached
+    return instance
+
+
 def static_bundle_entrypoint_load_key(
     *,
     tenant: str,
@@ -1588,23 +1636,65 @@ async def run_static_bundle_entrypoint_load_once(
     *,
     load_key: str,
     load_coro_factory: Callable[[], Any],
+    signature_provider: Optional[Callable[[], Optional[str]]] = None,
 ) -> None:
     """
-    Process-local coalescing for static main-view entrypoint loads.
+    Process-local coalescing for static main-view / widget entrypoint loads.
 
     The route remains a thin caller; bundle-load infra owns the "at most once
     per process" coordination. Cross-process work must still be guarded inside
     the bundle's on-load implementation, for example by storage signatures and
-    storage-root locks.
+    storage-root locks (see `bundle_once.run_once_for_shared_bundle_storage`).
+
+    Signature-aware short-circuit
+    -----------------------------
+    When `signature_provider` is supplied, the caller is asserting that the
+    coalesced work is source-tree-driven and that a deterministic string
+    fingerprint of that source tree is available. We then:
+
+      - compute the current signature outside the lock (so concurrent HTML
+        requests don't serialise on a 10–50 ms EFS walk),
+      - inside the lock, short-circuit only when the stored signature for
+        `load_key` equals the current one,
+      - on a mismatch, drop the stale entry and fall through to install /
+        await the build task,
+      - on success, the cleanup callback writes the *captured-at-entry*
+        signature back into `_done`.
+
+    Callers that don't supply a provider keep the original semantics: any
+    entry in `_done` short-circuits, regardless of value (the cleanup
+    callback stores `None`).
     """
+    current_signature: Optional[str] = None
+    if signature_provider is not None:
+        try:
+            current_signature = signature_provider()
+        except Exception:
+            # A misbehaving provider must not break the request path. Treat
+            # it the same as "no provider" for this call — the legacy
+            # membership-based short-circuit still applies.
+            current_signature = None
+
     async with _bundle_static_entrypoint_load_lock:
         if load_key in _bundle_static_entrypoint_load_done:
-            return
+            cached_signature = _bundle_static_entrypoint_load_done[load_key]
+            if current_signature is None or cached_signature == current_signature:
+                return
+            # Signature drift: source changed since the last successful build.
+            # Drop the stale entry and fall through so a fresh task is
+            # installed (the on-disk lock + signature inside
+            # `run_once_for_shared_bundle_storage` arbitrates across workers).
+            _bundle_static_entrypoint_load_done.pop(load_key, None)
+
         task = _bundle_static_entrypoint_load_tasks.get(load_key)
         if task is None:
             task = asyncio.create_task(load_coro_factory())
             _bundle_static_entrypoint_load_tasks[load_key] = task
-            _schedule_static_entrypoint_load_cleanup(load_key, task)
+            _schedule_static_entrypoint_load_cleanup(
+                load_key,
+                task,
+                captured_signature=current_signature,
+            )
 
     # Static UI entrypoint loads can be triggered by iframe/document
     # requests. A browser navigation or panel switch may cancel that
@@ -1614,7 +1704,11 @@ async def run_static_bundle_entrypoint_load_once(
         await asyncio.shield(task)
     finally:
         if task.done():
-            await _cleanup_static_entrypoint_load_task(load_key, task)
+            await _cleanup_static_entrypoint_load_task(
+                load_key,
+                task,
+                captured_signature=current_signature,
+            )
 
 def invalidate_static_bundle_entrypoint_loads(
     *,
@@ -1639,7 +1733,7 @@ def invalidate_static_bundle_entrypoint_loads(
     for key in tuple(_bundle_static_entrypoint_load_done):
         if not _matches(key):
             continue
-        _bundle_static_entrypoint_load_done.discard(key)
+        _bundle_static_entrypoint_load_done.pop(key, None)
         removed += 1
     for key in tuple(_bundle_static_entrypoint_load_tasks):
         if not _matches(key):

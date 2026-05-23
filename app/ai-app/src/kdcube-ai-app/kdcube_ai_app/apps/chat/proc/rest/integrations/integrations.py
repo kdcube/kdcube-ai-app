@@ -77,6 +77,7 @@ from kdcube_ai_app.infra.plugin.bundle_loader import (
     get_workflow_instance_async,
     is_static_bundle_entrypoint_path,
     load_bundle_manifest,
+    peek_cached_singleton_for_spec,
     resolve_bundle_api_endpoint,
     resolve_bundle_mcp_endpoint,
     run_static_bundle_entrypoint_load_once,
@@ -2363,6 +2364,64 @@ async def serve_static_asset(
         storage_root = storage_for_spec(spec=spec, tenant=tenant_id, project=project_id, ensure=False)
         ui_root = storage_root / "ui" if storage_root else None
 
+        # Signature-aware main-view rebuild on HTML-entrypoint hits.
+        # `_load_bundle_props_defaults` warms the bundle (which runs
+        # `on_bundle_load` → `_ensure_ui_build`) the first time; afterwards
+        # the on-load coalescer would skip the build coro and a source
+        # edit would never trigger a rebuild. The explicit signature-aware
+        # call below sidesteps that: it consults the workflow's
+        # `compute_ui_main_view_signature()` cheaply, and on a mismatch
+        # falls through to the workflow's `_ensure_ui_build()`, which
+        # in turn hits `run_once_for_shared_bundle_storage` for cross-
+        # worker / cross-machine arbitration on EFS.
+        if ui_root is not None:
+            cached_workflow = peek_cached_singleton_for_spec(spec)
+            if cached_workflow is not None and hasattr(cached_workflow, "_ensure_ui_build"):
+                async def _ensure_main_view_ui_build_from_workflow() -> None:
+                    ensure_ui_build = getattr(cached_workflow, "_ensure_ui_build", None)
+                    if not callable(ensure_ui_build):
+                        return
+                    try:
+                        maybe_result = ensure_ui_build()
+                        if inspect.isawaitable(maybe_result):
+                            await maybe_result
+                    except HTTPException:
+                        raise
+                    except Exception as exc:
+                        logger.exception(
+                            "Bundle main-view UI build failed tenant=%s project=%s bundle=%s",
+                            tenant_id,
+                            project_id,
+                            bundle_id,
+                        )
+                        raise HTTPException(
+                            status_code=500,
+                            detail=f"Bundle '{bundle_id}' main-view UI build failed: {exc}",
+                        ) from exc
+
+                def _main_view_source_signature() -> Optional[str]:
+                    compute = getattr(cached_workflow, "compute_ui_main_view_signature", None)
+                    if not callable(compute):
+                        return None
+                    try:
+                        return compute()
+                    except Exception:
+                        return None
+
+                main_view_build_load_key = static_bundle_entrypoint_load_key(
+                    tenant=tenant_id,
+                    project=project_id,
+                    bundle_id=f"{bundle_id}::main-view-build",
+                    storage_root=storage_root,
+                )
+                await run_static_bundle_entrypoint_load_once(
+                    load_key=main_view_build_load_key,
+                    load_coro_factory=_ensure_main_view_ui_build_from_workflow,
+                    signature_provider=_main_view_source_signature,
+                )
+                storage_root = storage_for_spec(spec=spec, tenant=tenant_id, project=project_id, ensure=False)
+                ui_root = storage_root / "ui" if storage_root else None
+
     if not ui_root or not ui_root.exists():
         # Build/refresh on HTML entrypoint requests. This triggers
         # on_bundle_load(), which calls BaseEntrypoint._ensure_ui_build() and
@@ -3102,11 +3161,36 @@ async def _serve_static_widget_app(
                 detail=f"Bundle widget '{widget_alias}' UI build failed: {exc}",
             ) from exc
 
+    def _widget_source_signature() -> Optional[str]:
+        """Source-fingerprint provider for the widget UI build.
+
+        Lets `run_static_bundle_entrypoint_load_once` short-circuit only when
+        the cached signature matches the current source state — so a source
+        edit on disk (e.g. someone touched `styles.css`) causes the next
+        HTML-entrypoint request to rebuild, without requiring a manual
+        `kdcube reload`. Returns `None` if the workflow can't compute the
+        signature, in which case the legacy membership-based short-circuit
+        applies.
+        """
+        compute = getattr(workflow, "compute_ui_widget_signature", None)
+        if not callable(compute):
+            return None
+        try:
+            return compute(widget_spec.alias)
+        except Exception:
+            return None
+
     should_refresh_entrypoint = is_static_bundle_entrypoint_path(cleaned_path)
     load_key = static_bundle_entrypoint_load_key(
         tenant=tenant_id,
         project=project_id,
         bundle_id=bundle_id,
+        storage_root=storage_root,
+    )
+    build_load_key = static_bundle_entrypoint_load_key(
+        tenant=tenant_id,
+        project=project_id,
+        bundle_id=f"{bundle_id}::widget-build::{widget_spec.alias}",
         storage_root=storage_root,
     )
     if should_refresh_entrypoint:
@@ -3124,13 +3208,27 @@ async def _serve_static_widget_app(
         storage_root = storage_for_spec(spec=spec, tenant=tenant_id, project=project_id, ensure=False)
         ui_root = storage_root / "ui" / "widgets" / widget_spec.alias if storage_root else None
 
-    if not ui_root or not ui_root.exists():
-        build_load_key = static_bundle_entrypoint_load_key(
-            tenant=tenant_id,
-            project=project_id,
-            bundle_id=f"{bundle_id}::widget-build::{widget_spec.alias}",
-            storage_root=storage_root,
+        # Always consult the widget build coordinator on HTML-entrypoint
+        # requests, with a signature-aware short-circuit. When the source
+        # tree is unchanged the call is a fast no-op (string equality on
+        # the cached fingerprint). When the source tree changed since the
+        # last successful build, we fall through to the build coro — which
+        # in turn hits `run_once_for_shared_bundle_storage` for cross-
+        # worker / cross-machine arbitration on EFS.
+        await run_static_bundle_entrypoint_load_once(
+            load_key=build_load_key,
+            load_coro_factory=_ensure_widget_ui_build_from_workflow,
+            signature_provider=_widget_source_signature,
         )
+        storage_root = storage_for_spec(spec=spec, tenant=tenant_id, project=project_id, ensure=False)
+        ui_root = storage_root / "ui" / "widgets" / widget_spec.alias if storage_root else None
+
+    if not ui_root or not ui_root.exists():
+        # Cold-asset fallback: a static-asset request arrived before any
+        # HTML-entrypoint request had a chance to build. Trigger the build
+        # without a signature_provider so the legacy membership-based
+        # short-circuit still keeps repeated asset hits cheap once the
+        # build finishes.
         await run_static_bundle_entrypoint_load_once(
             load_key=build_load_key,
             load_coro_factory=_ensure_widget_ui_build_from_workflow,

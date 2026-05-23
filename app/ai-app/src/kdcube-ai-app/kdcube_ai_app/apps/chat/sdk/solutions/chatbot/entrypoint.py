@@ -553,6 +553,83 @@ class BaseEntrypoint:
             })
         return specs
 
+    def _compute_ui_build_signature(
+        self,
+        *,
+        kind: str,
+        cfg: Dict[str, Any],
+    ) -> Optional[str]:
+        """
+        Compute the deterministic source-tree fingerprint used to decide
+        whether a UI app needs rebuilding.
+
+        Returns the same string `_ensure_static_ui_app_build` would compute
+        for the same `(kind, cfg)`, or `None` when the build is disabled or
+        prerequisites are missing — callers (route signature-aware short-
+        circuit, build coordinator) treat `None` as "no opinion" and fall
+        back to membership-based behaviour.
+
+        Extracted from `_ensure_static_ui_app_build` so the route layer can
+        cheaply compare signatures without invoking the build itself.
+        """
+        src_folder = str(cfg.get("src_folder") or cfg.get("source_dir") or "").strip()
+        build_command = str(cfg.get("build_command") or "").strip()
+        if not src_folder or not build_command:
+            return None
+
+        storage_root = self.bundle_storage_root()
+        if not storage_root:
+            return None
+
+        bundle_root = self._bundle_root()
+        if not bundle_root:
+            return None
+
+        src_path = self._resolve_ui_src_path(src_folder=src_folder, bundle_root=bundle_root)
+        if not src_path.exists():
+            return None
+
+        shared_specs = self._ui_shared_source_specs(cfg=cfg, bundle_root=bundle_root)
+        bundle_delivery_id = str(getattr(getattr(self.config, "ai_bundle_spec", None), "id", "") or "")
+        source_signature_parts = [f"src:{src_path}:{self._ui_source_signature(src_path)}"]
+        for spec in shared_specs:
+            source_signature_parts.append(
+                f"shared:{spec['name']}:{spec['src_path']}:{spec['target_path']}:{self._ui_source_signature(spec['src_path'])}"
+            )
+        source_signature = "|".join(source_signature_parts)
+        return f"{kind}|{src_path}|{build_command}|{bundle_delivery_id}|{source_signature}"
+
+    def compute_ui_main_view_signature(self) -> Optional[str]:
+        """Public source-fingerprint accessor for the main-view UI build.
+
+        Returns `None` when main-view is not configured for build. Used by
+        the static-asset route to decide whether the cached build is still
+        current without invoking the build coroutine.
+        """
+        ui_cfg = (self.bundle_props or {}).get("ui") or {}
+        main_view = ui_cfg.get("main_view") or {}
+        if not isinstance(main_view, dict) or not self._ui_config_enabled(main_view):
+            return None
+        return self._compute_ui_build_signature(kind="main-view", cfg=main_view)
+
+    def compute_ui_widget_signature(self, alias: str) -> Optional[str]:
+        """Public source-fingerprint accessor for a widget UI build.
+
+        Returns `None` when the widget is not configured for build, the
+        alias is unknown, or the build is disabled.
+        """
+        safe_alias = str(alias or "").strip().replace("/", "_")
+        if not safe_alias:
+            return None
+        ui_cfg = (self.bundle_props or {}).get("ui") or {}
+        widget_cfgs = ui_cfg.get("widgets") or {}
+        if not isinstance(widget_cfgs, dict):
+            return None
+        cfg = widget_cfgs.get(safe_alias)
+        if not isinstance(cfg, dict) or not self._ui_config_enabled(cfg):
+            return None
+        return self._compute_ui_build_signature(kind=f"widget:{safe_alias}", cfg=cfg)
+
     async def _ensure_static_ui_app_build(
         self,
         *,
@@ -595,13 +672,13 @@ class BaseEntrypoint:
         signature_path.parent.mkdir(parents=True, exist_ok=True)
 
         bundle_delivery_id = str(getattr(getattr(self.config, "ai_bundle_spec", None), "id", "") or "")
-        source_signature_parts = [f"src:{src_path}:{self._ui_source_signature(src_path)}"]
-        for spec in shared_specs:
-            source_signature_parts.append(
-                f"shared:{spec['name']}:{spec['src_path']}:{spec['target_path']}:{self._ui_source_signature(spec['src_path'])}"
-            )
-        source_signature = "|".join(source_signature_parts)
-        signature = f"{kind}|{src_path}|{build_command}|{bundle_delivery_id}|{source_signature}"
+        signature = self._compute_ui_build_signature(kind=kind, cfg=cfg)
+        if signature is None:
+            # Should not happen given the early returns above, but stay defensive
+            # in case prerequisites change between the early-return checks and
+            # signature computation.
+            self.logger.log(f"[bundle.ui] {kind} build skipped: signature unavailable", "WARNING")
+            return
 
         async def _build_ui() -> None:
             tmp_dest = storage_root / f".ui.build.tmp.{os.getpid()}.{_uuid.uuid4().hex}"
