@@ -308,6 +308,13 @@ export function createEmptyTurn(turnId: string, createdAt: number, message = '')
 export function hydrateHistoricalConversation(conversation: ConversationDTO): ChatTurn[] {
   return (conversation.turns || []).map((turnDto, turnIndex) => {
     let turn = createEmptyTurn(turnDto.turn_id, Date.now())
+    /* Which user-message slot owns the next `artifact:user.attachment` we
+     * encounter. Walked positionally: the most recent `chat:user` we saw
+     * (the main message until a continuation user message arrives, then
+     * the latest additional message). Server stores attachments
+     * interleaved with the `chat:user` they were sent with, in
+     * chronological order. */
+    let currentUserSlot: 'main' | 'additional' = 'main'
 
     for (const artifact of turnDto.artifacts || []) {
       const ts = timestampValue(artifact.ts)
@@ -341,6 +348,7 @@ export function hydrateHistoricalConversation(conversation: ConversationDTO): Ch
                 },
               ],
             }
+            currentUserSlot = 'additional'
             break
           }
           turn = {
@@ -348,16 +356,34 @@ export function hydrateHistoricalConversation(conversation: ConversationDTO): Ch
             createdAt: ts,
             userMessage: text,
           }
+          currentUserSlot = 'main'
           break
         }
         case 'artifact:user.attachment': {
-          turn = {
-            ...turn,
-            createdAt: Math.min(turn.createdAt, ts),
-            userAttachments: [
-              ...turn.userAttachments,
-              normalizeTurnAttachment(payload, `stored:${turnDto.turn_id}:${turn.userAttachments.length}`),
-            ],
+          /* Route this attachment to whichever user message it was sent
+           * with — the main message or the latest additional one. */
+          const normalized = normalizeTurnAttachment(
+            payload,
+            `stored:${turnDto.turn_id}:${turn.userAttachments.length}:${turn.additionalUserMessages.length}`,
+          )
+          if (currentUserSlot === 'additional' && turn.additionalUserMessages.length > 0) {
+            const updated = turn.additionalUserMessages.slice()
+            const last = updated[updated.length - 1]
+            updated[updated.length - 1] = {
+              ...last,
+              attachments: [...last.attachments, normalized],
+            }
+            turn = {
+              ...turn,
+              createdAt: Math.min(turn.createdAt, ts),
+              additionalUserMessages: updated,
+            }
+          } else {
+            turn = {
+              ...turn,
+              createdAt: Math.min(turn.createdAt, ts),
+              userAttachments: [...turn.userAttachments, normalized],
+            }
           }
           break
         }

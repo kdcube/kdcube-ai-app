@@ -247,26 +247,61 @@ const slice = createSlice({
       const ackStatus = typeof response.status === 'string' ? response.status : null
       const serverTurnId = response.turnId
       const continuationAccepted = ackStatus === 'followup_accepted' || ackStatus === 'steer_accepted'
-      const continuationStartedNewTurn = isContinuation && !!ackStatus && !continuationAccepted
-      const liveContinuationAccepted = continuationAccepted && response.liveOwnerDetected !== false
       const visualContinuationTurnId = response.activeTurnId || targetTurnId
       const continuationMessageId = response.eventId || response.queuedTurnId || serverTurnId
-      if (isContinuation && visualContinuationTurnId && liveContinuationAccepted && !isSteer) {
-        const target = state.turns.find((turn) => turn.id === visualContinuationTurnId)
-        if (target) {
-          const messageId = `continuation:${continuationMessageId}`
-          if (!target.additionalUserMessages.some((message) => message.id === messageId)) {
-            target.additionalUserMessages.push({
-              id: messageId,
-              text: draftText,
-              timestamp: sentAt,
-              attachments: draftAttachments,
-              continuationKind: continuationMessageKind,
-            })
+
+      if (isContinuation) {
+        /* When the user sent a followup/steer, the local turn we want
+         * to attach the message bubble to is the *active* one
+         * (`visualContinuationTurnId`), regardless of whether the
+         * server reports a live owner or only queued the continuation.
+         * We do NOT speculatively push a new turn for continuations
+         * here — that previously caused a blank panel to appear when
+         * the server treated the request as a queued followup but the
+         * client didn't see the canonical `followup_accepted` status
+         * (race or transport variance). If the server actually did
+         * start a brand-new turn (e.g. because the conversation state
+         * was idle by the time the POST arrived), the subsequent
+         * `chat.start` event will create that turn via
+         * `applyChatStart`'s `ensureTurn`, with the user's text from
+         * the start envelope's `data.message`. */
+        if (
+          !isSteer &&
+          visualContinuationTurnId &&
+          (continuationAccepted || response.liveOwnerDetected === false)
+        ) {
+          const target = state.turns.find((turn) => turn.id === visualContinuationTurnId)
+          if (target) {
+            const messageId = `continuation:${continuationMessageId}`
+            if (!target.additionalUserMessages.some((message) => message.id === messageId)) {
+              target.additionalUserMessages.push({
+                id: messageId,
+                text: draftText,
+                timestamp: sentAt,
+                attachments: draftAttachments,
+                continuationKind: continuationMessageKind,
+              })
+            }
           }
         }
+        return
       }
-      if (continuationStartedNewTurn && !state.turns.some((turn) => turn.id === serverTurnId)) {
+
+      /* Non-continuation send: speculatively create or update the
+       * pending turn entry so the user's bubble appears immediately,
+       * before the first `chat.start` envelope arrives. */
+      const existingIndex = state.turns.findIndex((turn) => turn.id === serverTurnId)
+      if (existingIndex >= 0) {
+        const existing = state.turns[existingIndex]
+        state.turns[existingIndex] = {
+          ...existing,
+          state: existing.state === 'idle' as never ? 'pending' : existing.state,
+          userMessage: existing.userMessage || draftText,
+          userAttachments: existing.userAttachments.length
+            ? existing.userAttachments
+            : draftAttachments,
+        }
+      } else {
         state.turns.push({
           id: serverTurnId,
           state: 'pending',
@@ -281,34 +316,6 @@ const slice = createSlice({
           timeline: [],
           followups: [],
         })
-      } else if (!isContinuation) {
-        const existingIndex = state.turns.findIndex((turn) => turn.id === serverTurnId)
-        if (existingIndex >= 0) {
-          const existing = state.turns[existingIndex]
-          state.turns[existingIndex] = {
-            ...existing,
-            state: existing.state === 'idle' as never ? 'pending' : existing.state,
-            userMessage: existing.userMessage || draftText,
-            userAttachments: existing.userAttachments.length
-              ? existing.userAttachments
-              : draftAttachments,
-          }
-        } else {
-          state.turns.push({
-            id: serverTurnId,
-            state: 'pending',
-            createdAt: sentAt,
-            userMessage: draftText,
-            userAttachments: draftAttachments,
-            additionalUserMessages: [],
-            answer: '',
-            error: null,
-            steps: {},
-            artifacts: [],
-            timeline: [],
-            followups: [],
-          })
-        }
       }
     },
   },
