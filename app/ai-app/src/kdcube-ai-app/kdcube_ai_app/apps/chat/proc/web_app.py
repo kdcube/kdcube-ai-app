@@ -663,13 +663,18 @@ async def lifespan(app: FastAPI):
             get_workflow_instance_async,
         )
         from kdcube_ai_app.infra.jobs.stream import BACKGROUND_JOB_OPERATION
-        from kdcube_ai_app.infra.service_hub.inventory import ConfigRequest, create_workflow_config
+        from kdcube_ai_app.infra.service_hub.inventory import (
+            ConfigRequest,
+            create_workflow_config,
+            resolve_config_request_secrets,
+        )
 
-        cfg_req = ConfigRequest(**(comm_context.config.values or {}))
-        wf_config = create_workflow_config(cfg_req)
         bundle_id = comm_context.routing.bundle_id
         tenant_id = getattr(getattr(comm_context, "actor", None), "tenant_id", None) or get_settings().TENANT
         project_id = getattr(getattr(comm_context, "actor", None), "project_id", None) or get_settings().PROJECT
+        cfg_req = ConfigRequest(**(comm_context.config.values or {}))
+        cfg_req = await resolve_config_request_secrets(cfg_req, bundle_id=bundle_id)
+        wf_config = create_workflow_config(cfg_req)
         spec_resolved = await resolve_bundle_spec_from_store(
             app.state.redis_async,
             tenant=tenant_id,

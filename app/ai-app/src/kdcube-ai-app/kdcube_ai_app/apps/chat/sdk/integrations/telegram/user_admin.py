@@ -395,7 +395,7 @@ async def notify_access_change(entrypoint: Any, *, result: Dict[str, Any]) -> Di
         )
     try:
         delivery = await send_telegram_messages(
-            bot_token=bot_token(entrypoint),
+            bot_token=await bot_token(entrypoint),
             chat_id=chat_id,
             messages=[TelegramMessage(kind="text", text=text)],
         )
@@ -421,11 +421,11 @@ def delete(entrypoint: Any, *, telegram_user_id: str) -> Dict[str, Any]:
     }
 
 
-def bot_token(entrypoint: Any = None) -> str:
+async def bot_token(entrypoint: Any = None) -> str:
     bundle_id = _bundle_id(entrypoint)
     return (
-        get_secret("b:integrations.telegram.bot_token")
-        or get_secret(f"bundles.{bundle_id}.secrets.integrations.telegram.bot_token")
+        await get_secret("b:integrations.telegram.bot_token")
+        or await get_secret(f"bundles.{bundle_id}.secrets.integrations.telegram.bot_token")
         or ""
     )
 
@@ -704,7 +704,7 @@ async def run_react_turn(entrypoint: Any, *, summary: Dict[str, Any]) -> Dict[st
         )
         async with TelegramActivityStreamer(
             comm=getattr(entrypoint, "comm", None),
-            bot_token=bot_token(entrypoint),
+            bot_token=await bot_token(entrypoint),
             chat_id=chat_id,
             turn_id=turn_id,
             enabled=stream_enabled,
@@ -787,7 +787,7 @@ async def run_with_queued_telegram_delivery(entrypoint: Any, *, runner: Any) -> 
     async with _telegram_conversation_lock(lock_key):
         async with TelegramActivityStreamer(
             comm=getattr(entrypoint, "comm", None),
-            bot_token=bot_token(entrypoint),
+            bot_token=await bot_token(entrypoint),
             chat_id=chat_id,
             turn_id=turn_id,
             enabled=stream_enabled,
@@ -797,7 +797,7 @@ async def run_with_queued_telegram_delivery(entrypoint: Any, *, runner: Any) -> 
             result = {}
         delivery = await deliver_react_turn_to_telegram(
             bundle_id=bundle_id,
-            bot_token=bot_token(entrypoint),
+            bot_token=await bot_token(entrypoint),
             chat_id=chat_id,
             update_id=update_id,
             react_turn=result,
@@ -861,7 +861,7 @@ async def handle_webhook(entrypoint: Any, **update) -> Dict[str, Any]:
             )
             summary["attachments"] = await hydrate_telegram_attachments(
                 attachments=list(summary.get("attachments") or []),
-                bot_token=bot_token(entrypoint),
+                bot_token=await bot_token(entrypoint),
                 message_id=summary.get("message_id"),
             )
             log.info(
@@ -901,7 +901,7 @@ async def handle_webhook(entrypoint: Any, **update) -> Dict[str, Any]:
         if react_turn:
             delivery_result = await deliver_react_turn_to_telegram(
                 bundle_id=bundle_id,
-                bot_token=bot_token(entrypoint),
+                bot_token=await bot_token(entrypoint),
                 chat_id=summary.get("chat_id") or "",
                 update_id=update_id,
                 react_turn=react_turn,

@@ -35,7 +35,11 @@ from kdcube_ai_app.apps.middleware.gateway import STATE_STREAM_ID, extract_strea
 from kdcube_ai_app.auth.AuthManager import RequireUser
 from kdcube_ai_app.auth.sessions import RequestContext, UserSession, UserType
 from kdcube_ai_app.apps.chat.sdk.config import get_settings, get_secret
-from kdcube_ai_app.infra.service_hub.inventory import ConfigRequest, create_workflow_config
+from kdcube_ai_app.infra.service_hub.inventory import (
+    ConfigRequest,
+    create_workflow_config,
+    resolve_config_request_secrets,
+)
 from kdcube_ai_app.apps.chat.sdk.protocol import (
     ChatTaskPayload,
     ChatTaskRouting,
@@ -1642,9 +1646,9 @@ async def set_bundle_secrets(
 
     try:
         if mode == "set":
-            await asyncio.to_thread(secrets_manager.set_many, flat)
+            await secrets_manager.set_many(flat)
         else:
-            await asyncio.to_thread(secrets_manager.delete_many, keys)
+            await secrets_manager.delete_many(keys)
     except SecretsManagerWriteError as exc:
         raise HTTPException(status_code=502, detail=f"Failed to store secrets: {exc}") from exc
 
@@ -1664,13 +1668,12 @@ async def set_bundle_secrets(
     metadata_key = f"bundles.{bundle_id}.secrets.__keys"
     try:
         if stored_keys:
-            await asyncio.to_thread(
-                secrets_manager.set_secret,
+            await secrets_manager.set_secret(
                 metadata_key,
                 json.dumps(sorted(stored_keys), ensure_ascii=False),
             )
         else:
-            await asyncio.to_thread(secrets_manager.delete_secret, metadata_key)
+            await secrets_manager.delete_secret(metadata_key)
     except SecretsManagerWriteError as exc:
         raise HTTPException(status_code=502, detail=f"Failed to store secrets metadata: {exc}") from exc
 
@@ -1713,7 +1716,7 @@ async def get_bundle_secrets(
             keys = []
     if not keys:
         # Fallback: keys list stored in the configured secrets provider.
-        raw_keys = get_secret(f"bundles.{bundle_id}.secrets.__keys")
+        raw_keys = await get_secret(f"bundles.{bundle_id}.secrets.__keys")
         if raw_keys:
             try:
                 keys = json.loads(raw_keys) or []
@@ -1777,9 +1780,9 @@ async def set_current_user_bundle_secrets(
 
     try:
         if mode == "set":
-            await asyncio.to_thread(secrets_manager.set_many, flat)
+            await secrets_manager.set_many(flat)
         else:
-            await asyncio.to_thread(secrets_manager.delete_many, keys)
+            await secrets_manager.delete_many(keys)
     except SecretsManagerWriteError as exc:
         raise HTTPException(status_code=502, detail=f"Failed to store user secrets: {exc}") from exc
 
@@ -1804,13 +1807,12 @@ async def set_current_user_bundle_secrets(
     metadata_key = build_user_secret_metadata_key(user_id=user_id, bundle_id=bundle_id)
     try:
         if stored_keys:
-            await asyncio.to_thread(
-                secrets_manager.set_secret,
+            await secrets_manager.set_secret(
                 metadata_key,
                 json.dumps(sorted(stored_keys), ensure_ascii=False),
             )
         else:
-            await asyncio.to_thread(secrets_manager.delete_secret, metadata_key)
+            await secrets_manager.delete_secret(metadata_key)
     except SecretsManagerWriteError as exc:
         raise HTTPException(status_code=502, detail=f"Failed to store user secrets metadata: {exc}") from exc
 
@@ -3765,7 +3767,7 @@ def _resolve_bundle_secret_key(*, bundle_id: str, secret_key: str) -> str:
     return f"bundles.{bundle_id}.secrets.{key}"
 
 
-def _enforce_public_api_auth(
+async def _enforce_public_api_auth(
         *,
         endpoint_spec: APIEndpointSpec,
         bundle_id: str,
@@ -3809,7 +3811,7 @@ def _enforce_public_api_auth(
         bundle_id=bundle_id,
         secret_key=str(public_auth.secret_key or ""),
     )
-    expected_secret = get_secret(resolved_secret_key)
+    expected_secret = await get_secret(resolved_secret_key)
     if not expected_secret:
         logger.warning(
             "Bundle public operation %s requires missing secret %s",
@@ -3848,6 +3850,7 @@ async def _load_bundle_workflow(
         project=project_id,
     )
     cfg_req.agentic_bundle_id = requested_bundle_id
+    cfg_req = await resolve_config_request_secrets(cfg_req, bundle_id=requested_bundle_id)
     request_id = str(uuid.uuid4())
 
     spec_resolved = await _resolve_bundle_spec_from_runtime(
@@ -3951,7 +3954,7 @@ async def _call_bundle_op_inner(
                 detail=f"Bundle operation {operation} does not support {request_method}. Allowed: {', '.join(allowed_methods)}",
             )
         raise HTTPException(status_code=404, detail=f"Bundle does not support operation {operation}")
-    _enforce_public_api_auth(
+    await _enforce_public_api_auth(
         endpoint_spec=endpoint_spec,
         bundle_id=spec_resolved.id,
         operation=operation,

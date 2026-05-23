@@ -115,7 +115,8 @@ def test_resolve_managed_bundles_root_defaults_to_container_root(monkeypatch):
     assert git_bundle.resolve_managed_bundles_root() == git_bundle.pathlib.Path(container_root).resolve()
 
 
-def test_build_git_env_uses_known_hosts_without_explicit_key(monkeypatch):
+@pytest.mark.asyncio
+async def test_build_git_env_uses_known_hosts_without_explicit_key(monkeypatch):
     monkeypatch.delenv("GIT_SSH_COMMAND", raising=False)
     monkeypatch.delenv("GIT_SSH_KEY_PATH", raising=False)
     monkeypatch.setenv("GIT_SSH_KNOWN_HOSTS", "/run/secrets/git_known_hosts")
@@ -140,14 +141,15 @@ def test_build_git_env_uses_known_hosts_without_explicit_key(monkeypatch):
         ),
     )
 
-    env = git_bundle._build_git_env()
+    env = await git_bundle._build_git_env()
 
     assert env["GIT_SSH_COMMAND"] == (
         "ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/run/secrets/git_known_hosts"
     )
 
 
-def test_build_git_env_still_includes_key_when_present(monkeypatch):
+@pytest.mark.asyncio
+async def test_build_git_env_still_includes_key_when_present(monkeypatch):
     monkeypatch.delenv("GIT_SSH_COMMAND", raising=False)
     monkeypatch.setenv("GIT_SSH_KEY_PATH", "/run/secrets/git_ssh_key")
     monkeypatch.setenv("GIT_SSH_KNOWN_HOSTS", "/run/secrets/git_known_hosts")
@@ -172,7 +174,7 @@ def test_build_git_env_still_includes_key_when_present(monkeypatch):
         ),
     )
 
-    env = git_bundle._build_git_env()
+    env = await git_bundle._build_git_env()
 
     assert env["GIT_SSH_COMMAND"] == (
         "ssh -i /run/secrets/git_ssh_key -o IdentitiesOnly=yes "

@@ -44,8 +44,7 @@ There are two different runtime surfaces:
    - `self.comm`
    - `self.comm_context`
    - `self.bundle_props`
-   - `get_secret_async(...)` / `get_user_secret_async(...)`
-   - compatibility sync helpers such as `get_secret(...)` / `get_user_secret(...)`
+   - `await get_secret(...)`
    - bundle storage helpers
    - DB/Redis handles passed into the entrypoint
 
@@ -145,16 +144,14 @@ Current flow:
 What the bundle has in this path:
 - `self.comm`
 - `self.comm_context`
-- `self.bundle_props`
+- effective props via `self.bundle_prop(...)`
 - `self.pg_pool`
 - `self.redis`
 - bundle storage helpers such as `bundle_storage_root()`
 - secret lookup through:
-  - `await get_secret_async("b:...")` for current bundle deployment secrets
-- `await get_secret_async("...")` / `await get_secret_async("a:...")` for platform/global secrets
-- `await get_user_secret_async(...)` for current-user secrets
-- the sync helpers remain available for compatibility, but async entrypoints,
-  APIs, hooks, cron handlers, `@on_job`, and tools should use the async helpers
+  - `await get_secret("b:...")` for current bundle deployment secrets
+- `await get_secret("...")` / `await get_secret("a:...")` for platform/global secrets
+- `await get_secret("u:...")` for current-user secrets
 
 ## Portable bundle call context
 
@@ -573,24 +570,28 @@ Detailed runtime lifecycle:
 
 ## Async props and secrets access
 
-KDCube bundle execution is async. In async bundle code, use the async secret
-helpers as the normal API:
+KDCube bundle execution is async. In bundle code, use the awaited secret helpers
+as the normal API:
 
 ```python
 from kdcube_ai_app.apps.chat.sdk.config import (
-    get_secret_async,
-    get_user_secret_async,
-    set_user_secret_async,
-    delete_user_secret_async,
+    get_secret,
+    set_user_secret,
+    delete_user_secret,
     set_bundle_secret,
 )
 
-deployment_token = await get_secret_async("b:integrations.telegram.bot_token")
-user_token = await get_user_secret_async("email.accounts.google_1.tokens")
-await set_user_secret_async("email.accounts.google_1.tokens", token_json)
-await delete_user_secret_async("email.accounts.google_1.tokens")
+deployment_token = await get_secret("b:integrations.telegram.bot_token")
+user_token = await get_secret("email.accounts.google_1.tokens")
+await set_user_secret("email.accounts.google_1.tokens", token_json)
+await delete_user_secret("email.accounts.google_1.tokens")
 await set_bundle_secret("integrations.telegram.webhook_secret", webhook_secret)
 ```
+
+For non-secret deployment config, use `self.bundle_prop("path", default)`.
+Use `dict(self.bundle_props or {})` only when a whole effective props snapshot
+is required. Do not read secrets from `self.bundle_secrets` or raw descriptor
+helpers.
 
 Scope resolution:
 
@@ -604,12 +605,6 @@ Scope resolution:
   `@on_job` method should call `await super().handle_job(**kwargs)` first; mixins
   dispatch by `work_kind` and return `handled=true` when they consumed the job
 
-Compatibility:
-
-- `get_secret(...)`, `get_user_secret(...)`, `set_user_secret(...)`, and
-  `delete_user_secret(...)` still exist for old sync code
-- do not use sync helpers in new async request paths unless the surrounding
-  code is already sync-only
 - do not call `get_secrets_manager(...).get_secret(...)` directly from bundle
   or feature code
 
@@ -774,8 +769,7 @@ Important:
 | `self.comm` | yes | yes | no | no |
 | `self.comm_context` | yes | yes | no | no |
 | `bundle_props` / `self.bundle_prop(...)` | yes | yes | indirectly through bundle code only | indirectly through bundle code only |
-| `get_secret_async(...)` / `get_secret(...)` | yes | yes | yes, if imported directly | yes, if imported directly |
-| `get_user_secret_async(...)` / `get_user_secret(...)` | yes | yes | yes, if imported directly | yes, if imported directly |
+| `await get_secret(...)` | yes | yes | yes, if imported directly | yes, if imported directly |
 | bundle storage helpers | yes | yes | yes if the tool receives/constructs the needed bundle context | yes if the tool receives/constructs the needed bundle context |
 | `_SERVICE` / `SERVICE` | no | no | yes | yes |
 | `_INTEGRATIONS` / `INTEGRATIONS` | no | no | yes | yes |
@@ -861,8 +855,8 @@ This is the same browser service used by rendering-oriented SDK tools.
 - Entry point code should use `self.comm`, `self.comm_context`, bundle props,
   secrets, and bundle storage helpers.
 - In async entrypoints, APIs, hooks, cron handlers, `@on_job`, and tools, use
-  async secret helpers such as `get_secret_async(...)` and
-  `get_user_secret_async(...)`.
+  `await get_secret(...)`, `await set_user_secret(...)`, and
+  `await delete_user_secret(...)`.
 - Tool modules should use the centrally bound runtime globals rather than trying
   to reconstruct runtime state themselves.
 - Use `get_comm()` or `_COMMUNICATOR` when a tool needs chat-side event

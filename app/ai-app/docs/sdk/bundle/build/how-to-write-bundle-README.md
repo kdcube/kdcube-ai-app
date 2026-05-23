@@ -281,8 +281,8 @@ When a bundle exists in a real environment, its lifecycle is:
    - background job stream / `@on_job`
 6. During execution, the bundle reads:
    - effective bundle props via `bundle_prop(...)`
-   - secrets via async helpers such as `get_secret_async(...)` and
-     `get_user_secret_async(...)`
+   - secrets via async helpers such as `get_secret(...)` and
+     `get_secret("u:...")`
    - typed platform settings via `get_settings()`
 7. Mutable state goes to the right tier:
    - bundle local storage for instance-local filesystem state
@@ -317,9 +317,9 @@ Async rule:
 - lifecycle hooks should be `async def`
 - prefer `async def` for `@api`, `@mcp`, `@ui_widget`, and `@cron` methods
 - `@on_job` must be `async def`
-- in async bundle code, use async secret helpers:
-  `get_secret_async(...)`, `get_user_secret_async(...)`,
-  `set_user_secret_async(...)`, and `delete_user_secret_async(...)`
+- in bundle code, use awaited secret helpers:
+  `get_secret(...)`, `get_secret("u:...")`,
+  `set_user_secret(...)`, and `delete_user_secret(...)`
 - do not run blocking setup in a request path
 - if expensive work is only needed once for shared bundle storage, make it idempotent and guard it with a storage signature plus a cross-process lock
 
@@ -604,11 +604,11 @@ Use this quick map while writing code:
 | What you need | Read | Write |
 | --- | --- | --- |
 | platform/global props | `get_settings()` | none |
-| platform/global secrets | `await get_secret_async("canonical.key")` | none |
+| platform/global secrets | `await get_secret("canonical.key")` | none |
 | deployment-scoped bundle props | `self.bundle_prop("path", default=...)`, `self.bundle_props` | `await set_bundle_prop(...)` |
-| deployment-scoped bundle secrets | `await get_secret_async("b:...")` | `await set_bundle_secret(...)` |
+| deployment-scoped bundle secrets | `await get_secret("b:...")` | `await set_bundle_secret(...)` |
 | user-scoped bundle props | `get_user_prop(...)`, `get_user_props()` | `set_user_prop(...)`, `delete_user_prop(...)` |
-| user-scoped bundle secrets | `await get_user_secret_async(...)` | `await set_user_secret_async(...)`, `await delete_user_secret_async(...)` |
+| user-scoped bundle secrets | `await get_secret("u:...")` | `await set_user_secret(...)`, `await delete_user_secret(...)` |
 
 Bundle user-scope rule:
 
@@ -627,8 +627,7 @@ Hard rule:
 - bundle code reads all scopes
 - bundle code writes bundle-scoped and user-scoped values only
 - bundle code does not write platform/global props or secrets
-- sync secret helpers still exist for compatibility, but new async request
-  paths should use the async helpers
+- request, tool, cron, and job paths use the awaited secret helpers directly
 
 If long-lived helpers depend on bundle props:
 
@@ -709,7 +708,7 @@ That means:
 
 For git-backed helpers in particular:
 
-- read git configuration through `get_settings()` / `get_secret_async()`
+- read git configuration through `get_settings()` / `get_secret()`
 - build a subprocess env dict for git commands
 - pass that env only to the git subprocess
 - do not write `GIT_HTTP_TOKEN`, `GIT_SSH_COMMAND`, or similar values back into the processor process env
@@ -720,12 +719,12 @@ Correct pattern:
 import asyncio
 import subprocess
 
-from kdcube_ai_app.apps.chat.sdk.config import get_secret_async
+from kdcube_ai_app.apps.chat.sdk.config import get_secret
 
 async def fetch_repo():
     env = build_git_env(
-        git_http_token=await get_secret_async("services.git.http_token"),
-        git_http_user=await get_secret_async("services.git.http_user"),
+        git_http_token=await get_secret("services.git.http_token"),
+        git_http_user=await get_secret("services.git.http_user"),
     )
     await asyncio.to_thread(
         subprocess.run,
@@ -1090,12 +1089,12 @@ Reference:
 
 ```python
 from fastapi import HTTPException, Request
-from kdcube_ai_app.apps.chat.sdk.config import get_secret_async
+from kdcube_ai_app.apps.chat.sdk.config import get_secret
 
 @api(alias="incoming_webhook", route="public", method="POST", public_auth="bundle")
 async def incoming_webhook(self, request: Request, **kwargs):
     header_name = self.bundle_prop("integrations.vendor.webhook_header", "X-Webhook-Secret")
-    expected_token = await get_secret_async("b:integrations.vendor.webhook_secret")
+    expected_token = await get_secret("b:integrations.vendor.webhook_secret")
     if request.headers.get(header_name) != expected_token:
         raise HTTPException(status_code=401, detail="Unauthorized")
     return {"ok": True}
@@ -1165,12 +1164,12 @@ Reference:
 
 ```python
 from fastapi import HTTPException, Request
-from kdcube_ai_app.apps.chat.sdk.config import get_secret_async
+from kdcube_ai_app.apps.chat.sdk.config import get_secret
 
 @mcp(alias="docs", route="operations", transport="streamable-http")
 async def docs_mcp(self, request: Request, **kwargs):
     header_name = self.bundle_prop("mcp.docs.auth.header_name", "X-Docs-MCP-Token")
-    expected_token = await get_secret_async("b:mcp.docs.auth.shared_token")
+    expected_token = await get_secret("b:mcp.docs.auth.shared_token")
     if request.headers.get(header_name) != expected_token:
         raise HTTPException(status_code=401, detail=f"Missing or invalid {header_name}")
     return build_docs_mcp_app()
@@ -1224,7 +1223,7 @@ not mirror all available surfaces as `true`.
 ```python
 async def sync_external(self):
     enabled = self.bundle_prop("features.auto_sync", False)
-    api_key = await get_secret_async("b:external.api_key")
+    api_key = await get_secret("b:external.api_key")
     ...
 ```
 
@@ -1426,7 +1425,7 @@ In this path, entrypoint code has request-bound runtime context:
 - `self.pg_pool`
 - `self.redis`
 - storage helpers
-- `get_secret_async(...)` / `get_user_secret_async(...)`
+- `await get_secret(...)`
 
 This is the path where communicator behavior is request-bound and peer/session-aware.
 
@@ -1739,11 +1738,11 @@ For non-secret deployment config:
 
 For bundle-scoped secrets:
 
-- `await get_secret_async("b:...")`
+- `await get_secret("b:...")`
 
 For platform/global secrets:
 
-- `await get_secret_async("...")` or `await get_secret_async("a:...")`
+- `await get_secret("...")` or `await get_secret("a:...")`
 
 For descriptor-file reads only when absolutely necessary:
 
@@ -1776,7 +1775,7 @@ Exception:
 If you add a standalone helper script for local debugging:
 
 - load `.env` into the platform settings path
-- then read through `get_settings()` / `get_secret_async()`
+- then read through `get_settings()` / `get_secret()`
 - do not let the runtime bundle depend on bundle-local `.env` files
 
 ### Do not call the secrets provider directly
@@ -1786,8 +1785,7 @@ Bundle or feature code must not call secrets-provider internals such as
 
 Use:
 
-- `get_secret_async(...)` in async code
-- `get_secret(...)` only in legacy sync-only code
+- `await get_secret(...)` in async code
 - `get_settings()` for promoted secret-backed settings
 
 Reason:
@@ -2156,7 +2154,7 @@ That is acceptable, but only under these rules:
 
 - standalone mode is for local development/debugging
 - operational runtime must still work entirely through KDCube wiring
-- standalone env must be loaded into `get_settings()` / `get_secret_async()`
+- standalone env must be loaded into `get_settings()` / `get_secret()`
 - operational config must still come from descriptors/bundle props in real runtime
 
 Do not let a successful standalone path hide a broken runtime path.
@@ -2243,7 +2241,7 @@ Symptom:
 
 Fix:
 
-- use `bundle_prop(...)`, `get_settings()`, `get_secret_async(...)`, `get_plain(...)`
+- use `bundle_prop(...)`, `get_settings()`, `get_secret(...)`, `get_plain(...)`
 
 ### Pitfall: direct descriptor file reads through hardcoded paths
 
@@ -2266,7 +2264,7 @@ Symptom:
 
 Fix:
 
-- use `get_secret_async(...)` in async code
+- use `get_secret(...)` in async code
 - use `get_settings()` for promoted secret-backed settings
 
 ### Pitfall: writing cron logic as if it were a request-bound widget/API call

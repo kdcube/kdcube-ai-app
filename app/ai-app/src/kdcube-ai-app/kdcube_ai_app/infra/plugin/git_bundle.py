@@ -14,6 +14,7 @@ from contextlib import contextmanager, asynccontextmanager
 from kdcube_ai_app.apps.chat.sdk.config import get_settings
 
 from kdcube_ai_app.infra.git.auth import (
+    _build_git_env_from_values,
     build_git_env as _build_git_env,
     normalize_git_remote_url,
     ssh_url_to_https_url as _https_url_for_ssh,
@@ -596,7 +597,7 @@ def ensure_git_bundle(
     """
     log = logger or AgentLogger("git.bundle")
     bundle_id = (bundle_id or "").strip() or _repo_name_from_url(git_url)
-    normalized_git_url = normalize_git_remote_url(git_url)
+    normalized_git_url = _https_url_for_ssh(git_url) if os.getenv("GIT_HTTP_TOKEN") else str(git_url or "").strip()
     if normalized_git_url != git_url:
         log.log(f"[git.bundle] using HTTPS for {git_url}", level="INFO")
         git_url = normalized_git_url
@@ -616,7 +617,16 @@ def ensure_git_bundle(
                 )
                 repo_root = paths.repo_root
                 repo_root.parent.mkdir(parents=True, exist_ok=True)
-                env = _build_git_env()
+                env = _build_git_env_from_values(
+                    token=os.getenv("GIT_HTTP_TOKEN"),
+                    user=os.getenv("GIT_HTTP_USER") or "x-access-token",
+                    git_ssh_key_path=None,
+                    git_ssh_known_hosts=None,
+                    git_ssh_strict_host_key_checking=None,
+                    askpass_script_path=None,
+                    base_env=os.environ,
+                    logger=log,
+                )
                 depth = _git_depth()
 
                 git_dir = repo_root / ".git"
@@ -830,7 +840,7 @@ async def ensure_git_bundle_async(
     """
     log = logger or AgentLogger("git.bundle")
     bundle_id = (bundle_id or "").strip() or _repo_name_from_url(git_url)
-    normalized_git_url = normalize_git_remote_url(git_url)
+    normalized_git_url = await normalize_git_remote_url(git_url)
     if normalized_git_url != git_url:
         log.log(f"[git.bundle] using HTTPS for {git_url}", level="INFO")
         git_url = normalized_git_url
@@ -850,7 +860,7 @@ async def ensure_git_bundle_async(
                 )
                 repo_root = paths.repo_root
                 repo_root.parent.mkdir(parents=True, exist_ok=True)
-                env = _build_git_env()
+                env = await _build_git_env()
                 depth = _git_depth()
 
                 git_dir = repo_root / ".git"

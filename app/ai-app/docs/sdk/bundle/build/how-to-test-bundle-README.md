@@ -356,7 +356,7 @@ the method under test reads:
 ```python
 entrypoint = MyEntrypoint.__new__(MyEntrypoint)
 entrypoint.bundle_props = {}
-entrypoint.config = SimpleNamespace(bundle_props={}, bundle_secrets={})
+entrypoint.config = SimpleNamespace(bundle_props={})
 entrypoint.pg_pool = None
 entrypoint.redis = None
 entrypoint.comm_context = None

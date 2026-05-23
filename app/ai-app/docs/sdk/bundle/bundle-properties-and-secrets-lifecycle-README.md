@@ -33,6 +33,21 @@ For the full cross-platform configuration model, use
 For the store-level authority model, use
 [Runtime Configuration and Secrets Store](../../configuration/runtime-configuration-and-secrets-store-README.md).
 
+## Bundle Code Access Contract
+
+Use helpers, not backing fields:
+
+| Need | Read API |
+| --- | --- |
+| Effective non-secret bundle config | `self.bundle_prop("path.to.value", default)` |
+| Whole effective props snapshot | `dict(self.bundle_props or {})` only when a snapshot is required |
+| Current bundle deployment secret | `await get_secret("b:path.to.secret")` |
+| Sync-only code path | `get_secret("b:path.to.secret")` |
+
+Do not read deployment secrets from `self.bundle_secrets`, `config.secrets`, or
+raw descriptor helpers. Secrets have no code defaults and are not merged with
+props.
+
 ## Terms
 
 | Term | Meaning |
@@ -58,7 +73,6 @@ Bundle source code
           v
 +-----------------------------+
 | effective bundle props      |
-| self.bundle_props           |
 | self.bundle_prop("a.b")     |
 +-----------------------------+
           ^
@@ -126,12 +140,12 @@ Secrets use a separate path:
 bundles.secrets.yaml or configured secrets provider
       |
       v
-await get_secret_async("b:group.key")
+await get_secret("b:group.key")
 
 bundle service override:
       |
       v
-await get_service_secret_async("openai.api_key")
+await get_secret("openai.api_key")
       |
       +-- first: current bundle secret services.openai.api_key
       +-- then: platform/global secret services.openai.api_key
@@ -180,7 +194,6 @@ This means bundle code should normally read:
 
 ```python
 self.bundle_prop("my_feature.enabled", default=True)
-self.bundle_props
 ```
 
 Those are effective runtime props, not raw descriptor reads.
@@ -215,7 +228,7 @@ The effective merge does not mean every store is rewritten with every default.
 
 | Surface | Reads | Notes |
 | --- | --- | --- |
-| Bundle Python code | `self.bundle_props`, `self.bundle_prop(...)` | Effective props after code defaults and descriptor/admin props are merged. |
+| Bundle Python code | `self.bundle_prop(...)` | Effective props after code defaults and descriptor/admin props are merged. Use `self.bundle_props` only when a full snapshot is required. |
 | API/MCP/widget route visibility | Effective workflow props | The route layer applies descriptor/admin props to the workflow before checking `enabled.*`, roles, visibility overrides, and other platform-interpreted paths. |
 | Source-folder widget serving | Effective workflow props | `ui.widgets.<alias>.src_folder` and `build_command` may live in code defaults, with descriptors carrying only deployment overrides. |
 | Bundle Admin props GET | `props` plus `defaults` | Exposes persisted props and code defaults separately so an admin can see both authority and default shape. |
@@ -278,9 +291,9 @@ Bundle secrets are deployment-scoped and separate from non-secret bundle props.
 Read a bundle secret:
 
 ```python
-from kdcube_ai_app.apps.chat.sdk.config import get_secret_async
+from kdcube_ai_app.apps.chat.sdk.config import get_secret
 
-token = await get_secret_async("b:integrations.telegram.bot_token")
+token = await get_secret("b:integrations.telegram.bot_token")
 ```
 
 Write a deployment-scoped bundle secret:
@@ -295,9 +308,9 @@ Use service-secret helpers for provider keys that support bundle-specific
 override plus platform fallback:
 
 ```python
-from kdcube_ai_app.apps.chat.sdk.config import get_service_secret_async
+from kdcube_ai_app.apps.chat.sdk.config import get_secret
 
-api_key = await get_service_secret_async("openai.api_key")
+api_key = await get_secret("openai.api_key")
 ```
 
 Resolution order for service secrets:

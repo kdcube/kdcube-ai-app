@@ -72,7 +72,7 @@ different:
 | user/turn context | user id, conversation id, turn id, timezone, request text, attachments | platform runtime | `scratchpad`, `ChatTaskPayload`, request context |
 | bundle context | tenant, project, bundle id, user scope, storage roots, job ids | platform runtime plus bundle entrypoint | `BaseWorkflow`, `bundle_call_context`, job payload |
 | config | non-secret behavior switches, model choices, URLs, feature flags | descriptor/admin/bundle code | `self.bundle_prop(...)`, bundle props |
-| secrets | API keys, auth signing keys, OAuth client secrets | deployment/admin/user secret store | `get_secret(...)`, `get_user_secret(...)` |
+| secrets | API keys, auth signing keys, OAuth client secrets | deployment/admin/user secret store | `await get_secret(...)`, including `await get_secret("u:...")` for user-scoped secrets |
 | custom instructions | product-specific operating rules | bundle code/config | React `additional_instructions`, Claude `CLAUDE.md` |
 | tools | callable capabilities | bundle descriptors or Claude config | React tool subsystem, Claude allowed tools/MCP |
 | MCP connectivity | how to reach MCP servers and authenticate | bundle config/code | `mcp.services`, `MCP_TOOL_SPECS`, `ClaudeCodeWorkspaceConfig` |

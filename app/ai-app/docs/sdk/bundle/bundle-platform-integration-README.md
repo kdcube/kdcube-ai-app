@@ -628,7 +628,7 @@ Important:
   - put the client-facing header name in bundle props such as
     `self.bundle_prop("mcp.inbound.auth.header_name")`
   - put the verification material in bundle secrets such as
-    `await get_secret_async("b:mcp.inbound.auth.shared_token")`
+    `await get_secret("b:mcp.inbound.auth.shared_token")`
   - read `request.headers[...]` in the provider and reject with
     `HTTPException(status_code=401, ...)` before returning the MCP app
 - full worked example:
@@ -851,7 +851,7 @@ Current behavior:
 - `BundleSchedulerManager` in proc reconciles job tasks after every registry or props change
 - no proc restart required for schedule changes
 - if Redis is unavailable for `instance`/`system` spans, the tick is skipped and a warning is logged; the job is **not** silently degraded to `process`
-- the method runs headlessly — no user session or SSE stream, but normal bundle runtime access is available (`self.bundle_props`, `self.redis`, `self.pg_pool`, secrets)
+- the method runs headlessly — no user session or SSE stream, but normal bundle runtime access is available (`self.bundle_prop(...)`, `self.redis`, `self.pg_pool`, `await get_secret("b:...")`)
 - async methods are executed directly; sync methods run via `asyncio.to_thread`
 - overlapping runs within the same exclusivity scope are prevented (in-process flag for `process`, Redis lock for `instance`/`system`)
 
@@ -1364,7 +1364,7 @@ async def telegram_webhook(self, **kwargs):
 
 ```python
 from fastapi import HTTPException, Request
-from kdcube_ai_app.apps.chat.sdk.config import get_secret_async
+from kdcube_ai_app.apps.chat.sdk.config import get_secret
 
 @api(
     alias="telegram_webhook",
@@ -1376,7 +1376,7 @@ async def telegram_webhook(self, request: Request, **kwargs):
         "telegram.webhook.auth.header_name",
         "X-Telegram-Bot-Api-Secret-Token",
     )
-    expected_token = await get_secret_async("b:telegram.webhook.auth.shared_token")
+    expected_token = await get_secret("b:telegram.webhook.auth.shared_token")
     provided_token = request.headers.get(header_name)
     if not expected_token or provided_token != expected_token:
         raise HTTPException(status_code=401, detail="Unauthorized")

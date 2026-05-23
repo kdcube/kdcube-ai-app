@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import pathlib
 import shlex
 import subprocess
@@ -17,14 +18,31 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.workspace import (
     workspace_version_ref,
 )
 from kdcube_ai_app.infra.git.auth import (
-    build_git_env as _build_git_env,
+    _build_git_env_from_values,
     ensure_git_commit_identity as _ensure_git_commit_identity,
-    normalize_git_remote_url as _normalize_git_remote_url,
+    ssh_url_to_https_url as _https_url_for_ssh,
 )
 from kdcube_ai_app.infra.service_hub.inventory import AgentLogger
 from kdcube_ai_app.apps.chat.sdk.runtime.workspace import artifact_outdir_for, runtime_outdir_for_artifact_outdir
 
 _SKIP_WORKSPACE_DIRS = {".git", "__pycache__", ".pytest_cache", "node_modules", ".venv", "logs", "executed_programs"}
+
+
+def _build_git_env() -> Dict[str, str]:
+    return _build_git_env_from_values(
+        token=os.getenv("GIT_HTTP_TOKEN"),
+        user=os.getenv("GIT_HTTP_USER") or "x-access-token",
+        git_ssh_key_path=None,
+        git_ssh_known_hosts=None,
+        git_ssh_strict_host_key_checking=None,
+        askpass_script_path=None,
+        base_env=os.environ,
+        logger=AgentLogger("react.workspace.git"),
+    )
+
+
+def _normalize_git_remote_url(git_url: str) -> str:
+    return _https_url_for_ssh(git_url) if os.getenv("GIT_HTTP_TOKEN") else str(git_url or "").strip()
 
 
 class GitWorkspaceCommandError(RuntimeError):

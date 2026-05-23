@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import pathlib
 import shutil
 import subprocess
@@ -17,13 +18,30 @@ from kdcube_ai_app.apps.chat.sdk.solutions.claude_code.types import (
     ClaudeCodeTurnKind,
 )
 from kdcube_ai_app.infra.git.auth import (
-    build_git_env as _build_git_env,
+    _build_git_env_from_values,
     ensure_git_commit_identity as _ensure_git_commit_identity,
-    normalize_git_remote_url as _normalize_git_remote_url,
+    ssh_url_to_https_url as _https_url_for_ssh,
 )
 
 
 ClaudeCodeSessionStoreImplementation = Literal["local", "git"]
+
+
+def _build_git_env() -> dict[str, str]:
+    return _build_git_env_from_values(
+        token=os.getenv("GIT_HTTP_TOKEN"),
+        user=os.getenv("GIT_HTTP_USER") or "x-access-token",
+        git_ssh_key_path=None,
+        git_ssh_known_hosts=None,
+        git_ssh_strict_host_key_checking=None,
+        askpass_script_path=None,
+        base_env=os.environ,
+        logger=None,
+    )
+
+
+def _normalize_git_remote_url(git_url: str) -> str:
+    return _https_url_for_ssh(git_url) if os.getenv("GIT_HTTP_TOKEN") else str(git_url or "").strip()
 
 
 def _safe_segment(value: str | None, *, fallback: str) -> str:

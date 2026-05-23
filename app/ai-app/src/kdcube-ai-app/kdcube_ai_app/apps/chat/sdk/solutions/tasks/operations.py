@@ -114,13 +114,13 @@ def _b64url_decode(data: str) -> bytes:
     return base64.urlsafe_b64decode((data + padding).encode("ascii"))
 
 
-def _download_token_secret(entrypoint: Any) -> bytes:
+async def _download_token_secret(entrypoint: Any) -> bytes:
     _tenant, _project, bundle_id = _bundle_route_parts(entrypoint)
     secret = str(
         _bundle_prop(entrypoint, "integrations.telegram.artifact_download_secret", "")
-        or get_secret("b:integrations.telegram.artifact_download_secret")
-        or get_secret(f"bundles.{bundle_id}.secrets.integrations.telegram.artifact_download_secret")
-        or _telegram_bot_token()
+        or await get_secret("b:integrations.telegram.artifact_download_secret")
+        or await get_secret(f"bundles.{bundle_id}.secrets.integrations.telegram.artifact_download_secret")
+        or await _telegram_bot_token()
         or ""
     ).strip()
     return secret.encode("utf-8")
@@ -134,13 +134,13 @@ def _download_token_ttl(entrypoint: Any) -> int:
     return max(60, min(ttl, 86400))
 
 
-def _make_download_token(
+async def _make_download_token(
     entrypoint: Any,
     *,
     artifact_ref: str,
     user_id: str,
 ) -> tuple[str, int] | None:
-    secret = _download_token_secret(entrypoint)
+    secret = await _download_token_secret(entrypoint)
     if not secret:
         return None
     expires_at = int(time.time()) + _download_token_ttl(entrypoint)
@@ -155,8 +155,8 @@ def _make_download_token(
     return f"{body}.{sig}", expires_at
 
 
-def _verify_download_token(entrypoint: Any, *, artifact_ref: str, download_token: str) -> Dict[str, Any]:
-    secret = _download_token_secret(entrypoint)
+async def _verify_download_token(entrypoint: Any, *, artifact_ref: str, download_token: str) -> Dict[str, Any]:
+    secret = await _download_token_secret(entrypoint)
     if not secret:
         raise ValueError("artifact download token signing secret is not configured")
     try:
@@ -216,7 +216,7 @@ async def _decorate_execution_artifacts(
     for index, artifact in enumerate(artifacts):
         item = dict(artifact)
         artifact_ref = str(item.get("artifact_ref") or "").strip() or artifact_ref_for_execution_artifact(enriched, item, index=index)
-        signed = _make_download_token(entrypoint, artifact_ref=artifact_ref, user_id=user_id) if public else None
+        signed = await _make_download_token(entrypoint, artifact_ref=artifact_ref, user_id=user_id) if public else None
         download_token = signed[0] if signed else ""
         download_url = _artifact_download_url(entrypoint, artifact_ref=artifact_ref, public=public, download_token=download_token)
         item["artifact_ref"] = artifact_ref
@@ -482,7 +482,7 @@ async def download_execution_artifact(
 ) -> BundleBinaryResponse | Dict[str, Any]:
     if download_token:
         try:
-            token_payload = _verify_download_token(entrypoint, artifact_ref=artifact_ref, download_token=download_token)
+            token_payload = await _verify_download_token(entrypoint, artifact_ref=artifact_ref, download_token=download_token)
         except Exception as exc:
             return {
                 "ok": False,
@@ -772,11 +772,11 @@ async def _execute_task_job(
     )
 
 
-def _telegram_bot_token() -> str:
+async def _telegram_bot_token() -> str:
     bundle_id = BUNDLE_ID or "task-and-memo-app@1-0"
     return (
-        get_secret("b:integrations.telegram.bot_token")
-        or get_secret(f"bundles.{bundle_id}.secrets.integrations.telegram.bot_token")
+        await get_secret("b:integrations.telegram.bot_token")
+        or await get_secret(f"bundles.{bundle_id}.secrets.integrations.telegram.bot_token")
         or ""
     )
 
@@ -891,7 +891,7 @@ async def _deliver_execution_to_telegram(
         messages = [TelegramMessage(kind="text", text=str(execution.get("summary") or "Task execution completed."))]
 
     delivery = await send_telegram_messages(
-        bot_token=_telegram_bot_token(),
+        bot_token=await _telegram_bot_token(),
         chat_id=recipient["chat_id"],
         messages=messages,
     )

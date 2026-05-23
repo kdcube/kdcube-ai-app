@@ -558,11 +558,11 @@ For the exact helper contract and cloud-mode differences, use:
 | Scope | Typical examples | Read / write API | Live authority in the local runtime | Export / ejection path |
 |---|---|---|---|---|
 | platform/global props | ports, auth ids, storage backends, path roots | `get_settings()` for effective values; `get_plain("...")` for raw descriptor inspection; no supported write API from bundle code | staged `assembly.yaml` and `gateway.yaml` under `workdir/config/`, plus env | not part of `kdcube export`; manage through the deployment descriptor set |
-| platform/global secrets | deployment-wide API keys, auth secrets | async read: `await get_secret_async("canonical.key")`; no supported write API from bundle code | `secrets.yaml` only when `secrets-file` is active; otherwise the configured secrets provider | not part of `kdcube export`; manage through deployment secret workflows |
+| platform/global secrets | deployment-wide API keys, auth secrets | async read: `await get_secret("canonical.key")`; no supported write API from bundle code | `secrets.yaml` only when `secrets-file` is active; otherwise the configured secrets provider | not part of `kdcube export`; manage through deployment secret workflows |
 | deployment-scoped bundle props | feature flags, cron expressions, model selection, bundle UI config | read: `self.bundle_prop(...)`; write: `await set_bundle_prop(...)` | `workdir/config/bundles.yaml` when file-backed descriptor mode is active, with Redis as runtime cache | exported by `kdcube export` to `bundles.yaml` |
-| deployment-scoped bundle secrets | webhook secrets, shared API tokens, bundle-specific credentials | async read: `await get_secret_async("b:...")`; write: `await set_bundle_secret(...)` | `workdir/config/bundles.secrets.yaml` only in local `secrets-file` mode; otherwise the configured secrets provider | exported by `kdcube export` to `bundles.secrets.yaml` when the provider/export flow can reconstruct them |
+| deployment-scoped bundle secrets | webhook secrets, shared API tokens, bundle-specific credentials | async read: `await get_secret("b:...")`; write: `await set_bundle_secret(...)` | `workdir/config/bundles.secrets.yaml` only in local `secrets-file` mode; otherwise the configured secrets provider | exported by `kdcube export` to `bundles.secrets.yaml` when the provider/export flow can reconstruct them |
 | user-scoped bundle props | one user's preferences or bundle-managed non-secret state | read/write: `get_user_prop(...)`, `set_user_prop(...)`, `delete_user_prop(...)` | PostgreSQL user bundle props table | never exported |
-| user-scoped bundle secrets | one user's personal tokens or credentials managed by the bundle | async read/write: `await get_user_secret_async(...)`, `await set_user_secret_async(...)`, `await delete_user_secret_async(...)` | configured secrets provider; in local `secrets-file` mode this is `secrets.yaml` | never exported |
+| user-scoped bundle secrets | one user's personal tokens or credentials managed by the bundle | read/write: `await get_secret("u:...")`, `await set_user_secret(...)`, `await delete_user_secret(...)` | configured secrets provider; in local `secrets-file` mode this is `secrets.yaml` | never exported |
 
 In the user-scoped rows, "user" means the bundle user scope, not necessarily a
 KDCube control-plane account. A KDCube-authenticated widget may use the KDCube
@@ -575,9 +575,8 @@ Two hard rules:
 
 - `kdcube export` is a bundle-state export only. It exports `bundles.yaml` and `bundles.secrets.yaml`. It does not export `assembly.yaml`, `gateway.yaml`, `secrets.yaml`, user props, or user secrets.
 - Bundle Admin writes live deployment-scoped bundle state only. It does not rewrite platform/global deployment descriptors.
-- Sync secret helpers are compatibility APIs. In async bundle code, use
-  `get_secret_async(...)`, `get_user_secret_async(...)`,
-  `set_user_secret_async(...)`, and `delete_user_secret_async(...)`.
+- In async bundle code, use `get_secret(...)`, `set_user_secret(...)`, and
+  `delete_user_secret(...)` from `kdcube_ai_app.apps.chat.sdk.config`.
 
 ### Agent Role Model Configuration
 

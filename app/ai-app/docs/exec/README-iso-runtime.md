@@ -258,7 +258,7 @@ Descriptor-backed config behavior in supervised external runtimes:
   - `KDCUBE_RUNTIME_BUNDLES_SECRETS_YAML_B64` for `bundles.secrets.yaml`
 - `py_code_exec_entry.py` materializes them into a root-only directory under `/tmp/kdcube-runtime-descriptors/<exec_id>`.
 - It then sets `PLATFORM_DESCRIPTORS_DIR`, `ASSEMBLY_YAML_DESCRIPTOR_PATH`, `BUNDLES_YAML_DESCRIPTOR_PATH`, `GATEWAY_YAML_PATH`, `GLOBAL_SECRETS_YAML`, and `BUNDLE_SECRETS_YAML` for the supervisor bootstrap and clears the settings cache.
-- Supervisor-side tools use the normal config APIs: `get_settings()`, `get_plain()`, and `get_secret()` / `get_secret_async()`.
+- Supervisor-side tools use the normal config APIs: `get_settings()`, `get_plain()`, and `get_secret()` / `get_secret()`.
 - Bundle props come from `bundles.yaml` bundle `config` (or legacy `props`) and are exposed to bundle tools through `bundle_props` / `ScopedBundleConfig`.
 - Bundle secrets come from `bundles.secrets.yaml` or the configured secrets provider. A bundle-scoped lookup such as `b:docs.api_key` resolves under the active bundle id.
 - By default, descriptor payloads preserve the full platform descriptor files for the trusted supervisor. To scope bundle descriptors to the caller bundle, set `execution.runtime.descriptor_payload_scope: active_bundle` in bundle runtime config. In that mode only `bundles.yaml` and `bundles.secrets.yaml` are filtered; `assembly.yaml`, `gateway.yaml`, and global `secrets.yaml` stay unchanged.

@@ -374,8 +374,8 @@ See:
 | Surface | Access | Isolation | Use it for |
 |---|---|---|---|
 | `bundle_props` | read | tenant + project + bundle | effective non-secret configuration |
-| `get_secret_async(...)` | read | secret key namespace | API keys, tokens, credentials |
-| `get_user_secret_async(...)` | read/write | tenant + project + bundle + user | per-user tokens and credentials |
+| `await get_secret(...)` | read | secret key namespace | API keys, tokens, credentials |
+| `await get_secret("u:...")`, `await set_user_secret(...)`, `await delete_user_secret(...)` | read/write | tenant + project + bundle + user | per-user tokens and credentials |
 | Redis KV cache | read/write | whatever keys you choose | lightweight distributed state, flags, small caches |
 | Bundle storage backend (`CB_BUNDLE_STORAGE_URL`) | read/write | tenant + project + bundle | persistent bundle data on file/S3 storage |
 | Shared local bundle storage (`BUNDLE_STORAGE_ROOT`) | read/write by bundle code | tenant + project + bundle | large local/EFS caches, cloned repos, indexes, read-only assets |
@@ -388,8 +388,8 @@ Bundle developer surfaces
 
   Config / identity
     bundle_props
-    get_secret_async(...)
-    get_user_secret_async(...)
+    await get_secret(...)
+    await get_secret("u:...")
     comm_context.actor.{tenant_id, project_id, user_id, ...}
 
   Distributed state

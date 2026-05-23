@@ -30,7 +30,7 @@ This is the bundle to study first.
 | Bundle-local tools | `tools/preference_tools.py` |
 | Bundle-local skills | `skills_descriptor.py` and bundle `skills/` tree |
 | Effective bundle props | `entrypoint.py`, `orchestrator/workflow.py` |
-| Bundle secrets; prefer `get_secret_async("b:...")` in new async code | `tools/preference_tools.py` |
+| Bundle secrets; prefer `get_secret("b:...")` in new async code | `tools/preference_tools.py` |
 | Bundle storage backend usage | `preferences_store.py` |
 | Widget + widget operations | `entrypoint.py`, `ui/PreferencesBrowser.tsx` |
 | Iframe main view | `ui/main/src/App.tsx`, `entrypoint.py` |

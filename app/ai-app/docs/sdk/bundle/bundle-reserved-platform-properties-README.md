@@ -68,8 +68,8 @@ The storage rule is:
 
 | Mode | Authoritative store for reserved bundle props | Runtime cache | What bundle code reads |
 |---|---|---|---|
-| `BUNDLES_DESCRIPTOR_PROVIDER=file` | mounted writable `bundles.yaml` | Redis per tenant/project/bundle | `self.bundle_prop(...)` / `self.bundle_props` |
-| `BUNDLES_DESCRIPTOR_PROVIDER=aws-sm` | grouped AWS SM bundle descriptor docs | Redis per tenant/project/bundle | `self.bundle_prop(...)` / `self.bundle_props` |
+| `BUNDLES_DESCRIPTOR_PROVIDER=file` | mounted writable `bundles.yaml` | Redis per tenant/project/bundle | `self.bundle_prop(...)` |
+| `BUNDLES_DESCRIPTOR_PROVIDER=aws-sm` | grouped AWS SM bundle descriptor docs | Redis per tenant/project/bundle | `self.bundle_prop(...)` |
 | no provider / code-only fallback | bundle code defaults only | none | `self.bundle_prop(...)` from defaults only |
 
 The Redis cache key format is:
@@ -538,7 +538,7 @@ exec_runtime = self.resolve_exec_runtime(profile="fargate_default")
 ```
 
 The split is:
-- `bundle_prop(...)` reads raw configured values from bundle props
+- `self.bundle_prop(...)` reads effective configured values from bundle props
 - `resolve_exec_runtime(...)` resolves the named profile into the effective
   runtime config handed to the execution subsystem
 

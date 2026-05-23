@@ -508,12 +508,16 @@ Concrete example:
 
 Bundles can store UI config or parameters in bundle props. Define defaults in
 `entrypoint.configuration` / `configuration_defaults()` and read effective
-values from `self.bundle_props` or `self.bundle_prop(...)`.
+values with `self.bundle_prop(...)`.
 
 Effective bundle props are code defaults deep-merged with descriptor/admin
 props. Descriptor/admin writes persist through the configured bundle descriptor
 authority and update Redis as the runtime cache. For the full lifecycle, see
 [Bundle Properties And Secrets Lifecycle](bundle-properties-and-secrets-lifecycle-README.md).
+
+Use `dict(self.bundle_props or {})` only when a method needs the whole effective
+props snapshot. Deployment-scoped bundle secrets are separate: read them with
+`await get_secret("b:...")`.
 
 See: `kdcube_ai_app/apps/chat/sdk/solutions/chatbot/entrypoint.py`.
 
