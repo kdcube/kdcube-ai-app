@@ -1461,3 +1461,56 @@ a { color: inherit; }
   color: var(--muted);
   font-style: italic;
 }
+
+/* ---------------------------------------------------------------------- */
+/*  Files tab — section headers + per-row origin tint.                    */
+/*                                                                        */
+/*  `Sent by you` and `Produced by assistant` are visually distinct so a  */
+/*  user can tell at a glance which side produced each file. The row      */
+/*  carries the same origin signal as a chip + a left-edge accent bar so  */
+/*  origin remains readable when section headers scroll out of view.      */
+/* ---------------------------------------------------------------------- */
+.k-files-section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+}
+.k-files-section-head--user {
+  border-left: 3px solid var(--blue);
+}
+.k-files-section-head--assistant {
+  border-left: 3px solid var(--green);
+}
+.k-files-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: 0.02em;
+}
+.k-files-section-count {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  padding: 0 6px;
+  line-height: 1.6;
+}
+
+/* Origin accent on each row. Subtle left-edge bar matches the section
+ * head's accent, plus the right-side chip carries the explicit label. */
+.k-chat-file--user {
+  border-left: 3px solid var(--blue);
+}
+.k-chat-file--assistant {
+  border-left: 3px solid var(--green);
+}
+.k-chat-file-origin {
+  margin: 0 6px 0 4px;
+  flex: 0 0 auto;
+}

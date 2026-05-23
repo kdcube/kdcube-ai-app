@@ -440,7 +440,9 @@ function DownloadsPanelImpl({
 
   /** Inner attachment / file row — same shape as the Chat-tab `ChatFileBlock`
    *  so the Files tab visually matches the Chat tab. The icon comes from
-   *  `FileExtIcon`; the ext chip mirrors the Chat tab layout. */
+   *  `FileExtIcon`; the ext chip mirrors the Chat tab layout. The
+   *  `origin` chip ("You" or "Assistant") makes who-sent-what readable
+   *  at a glance even if the section headers scroll out of view. */
   const renderRow = (
     key: string,
     label: string,
@@ -448,6 +450,7 @@ function DownloadsPanelImpl({
     filename: string,
     onClick: () => void,
     actionLabel: string,
+    origin: 'user' | 'assistant',
   ) => {
     const ext = fileExtension(filename)
     const kind = fileKind(ext)
@@ -456,7 +459,7 @@ function DownloadsPanelImpl({
         key={key}
         type="button"
         onClick={onClick}
-        className="k-chat-file"
+        className={`k-chat-file k-chat-file--${origin}`}
         title={`Download ${label}`}
       >
         <span className="k-chat-file-icon" aria-hidden="true">
@@ -465,6 +468,9 @@ function DownloadsPanelImpl({
         <span className="k-chat-file-main">
           <span className="k-chat-file-name">{label}</span>
           {subtitle ? <span className="k-chat-file-sub">{subtitle}</span> : null}
+        </span>
+        <span className={`k-chip ${origin === 'user' ? 'k-blue' : 'k-teal'} k-chat-file-origin`}>
+          {origin === 'user' ? 'You' : 'Assistant'}
         </span>
         <span className="k-chat-file-ext">{kind.label}</span>
         <span className="k-chat-file-action">
@@ -482,10 +488,13 @@ function DownloadsPanelImpl({
   }
 
   return (
-    <div className="flex flex-col gap-3 pt-1">
+    <div className="flex flex-col gap-4 pt-1">
       {attachments.length > 0 ? (
-        <div className="flex flex-col gap-1.5">
-          <div className="k-micro">Sent attachments</div>
+        <section className="flex flex-col gap-1.5">
+          <header className="k-files-section-head k-files-section-head--user">
+            <span className="k-files-section-title">Sent by you</span>
+            <span className="k-files-section-count">{attachments.length}</span>
+          </header>
           {attachments.map((attachment, index) =>
             renderRow(
               `attachment:${attachment.id}`,
@@ -496,14 +505,18 @@ function DownloadsPanelImpl({
               attachment.name,
               () => void handleAttachmentDownload(attachment, index),
               downloadingId === `attachment:${index}` ? 'Preparing…' : 'Download',
+              'user',
             ),
           )}
-        </div>
+        </section>
       ) : null}
 
       {files.length > 0 ? (
-        <div className="flex flex-col gap-1.5">
-          <div className="k-micro">Assistant files</div>
+        <section className="flex flex-col gap-1.5">
+          <header className="k-files-section-head k-files-section-head--assistant">
+            <span className="k-files-section-title">Produced by assistant</span>
+            <span className="k-files-section-count">{files.length}</span>
+          </header>
           {files.map((file) =>
             renderRow(
               `file:${file.rn}`,
@@ -512,9 +525,10 @@ function DownloadsPanelImpl({
               file.filename,
               () => void handleFileDownload(file),
               downloadingId === `file:${file.rn}` ? 'Downloading…' : 'Download',
+              'assistant',
             ),
           )}
-        </div>
+        </section>
       ) : null}
     </div>
   )
