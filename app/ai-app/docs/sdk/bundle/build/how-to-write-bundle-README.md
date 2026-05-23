@@ -1210,13 +1210,14 @@ bundles:
       config:
         enabled:
           widget:
-            task-board: true
+            task-board: false
 ```
 
 The platform derives the canonical bundle-props path from decorator metadata
 (see section 4.2 for the full mapping). Use this when the platform should hide
 or suppress the surface directly instead of the bundle method deciding at
-runtime.
+runtime. Missing `enabled.*` keys are enabled by default, so descriptors should
+not mirror all available surfaces as `true`.
 
 ### Bundle props and secrets
 

@@ -698,8 +698,11 @@ package and not a runtime import from the monorepo.
 If the widget imports SDK-owned UI code, the widget config must materialize the
 same source through `shared_sources`. For built-in/reference bundles, this
 should usually live in the bundle's `configuration_defaults()` so descriptors
-only need `enabled: true`. The descriptor can still repeat the values when you
-want the seed file to be self-documenting or to override defaults.
+only need the widget-build setting `ui.widgets.<alias>.enabled: true` when the
+deployment must explicitly expose that built widget. This is not the canonical
+platform surface gate `config.enabled.widget.<alias>`; do not mirror default
+surface gates as `true`. The descriptor can still repeat the build values when
+you want the seed file to be self-documenting or to override defaults.
 
 The required shape is:
 
