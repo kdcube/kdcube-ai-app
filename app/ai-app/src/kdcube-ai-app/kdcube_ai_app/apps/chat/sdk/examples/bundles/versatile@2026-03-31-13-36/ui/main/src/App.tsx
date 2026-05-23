@@ -30,6 +30,7 @@ import {
 import { messageForError } from './components/utils.ts'
 
 import { useAppDispatch, useAppSelector, useStableCallback } from './app/hooks.ts'
+import { store } from './app/store.ts'
 import { chatActions } from './features/chat/chatSlice.ts'
 
 import { BannerStrip } from './features/banners/BannerStrip.tsx'
@@ -58,6 +59,15 @@ export default function App() {
   const connectPromiseRef = useRef<Promise<void> | null>(null)
   const sessionIdRef = useRef<string | null>(null)
   const streamIdRef = useRef<string | null>(null)
+  /* Tail of the in-flight sendMessage chain. Each new send awaits this
+   * tail before it runs, then becomes the new tail. Serializes the
+   * `submitChatMessage` POSTs so rapid clicks don't race conversation
+   * creation (without serialization, two concurrent sends both read
+   * `conversationId === null` and the server either creates two
+   * conversations or rejects the second with 404 "conversation not
+   * found" when the second arrives before the first's index row is
+   * persisted — the failure mode the user reported with attachments). */
+  const sendQueueRef = useRef<Promise<void>>(Promise.resolve())
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const autoScrollRef = useRef(true)
   const [showScrollDown, setShowScrollDown] = useState(false)
@@ -307,24 +317,43 @@ export default function App() {
   }
 
   const sendMessage = async (textOverride?: string, requestedKind?: ContinuationKind) => {
-    const snapshot = stateRef.current
-    const activeTurn = findActiveTurn(snapshot.turns)
-    let continuationKind: ContinuationKind = requestedKind ?? (activeTurn ? 'followup' : 'regular')
-    if (continuationKind !== 'regular' && !activeTurn) {
-      continuationKind = 'regular'
+    /* Queue this send behind any in-flight one. New tail = our promise.
+     * `previousTail` is captured before we install ours, so concurrent
+     * callers each wait for the prior tail and stack in arrival order. */
+    const previousTail = sendQueueRef.current
+    let resolveOurs!: () => void
+    const ours = new Promise<void>((res) => { resolveOurs = res })
+    sendQueueRef.current = ours
+    try {
+      await previousTail
+    } catch {
+      /* Swallow — prior send already handled its own error inside its
+       * try/catch; we just want the serialization to advance. */
     }
-    const isContinuation = continuationKind === 'followup' || continuationKind === 'steer'
-    const isSteer = continuationKind === 'steer'
-    const continuationMessageKind: Exclude<ContinuationKind, 'regular'> =
-      continuationKind === 'steer' ? 'steer' : 'followup'
-    const targetTurnId = isContinuation ? activeTurn?.id : undefined
-    const draftText = (textOverride ?? snapshot.composerText).trim()
-    const draftFiles = isSteer || textOverride !== undefined ? [] : snapshot.composerFiles
-    if (!draftText && draftFiles.length === 0 && !isSteer) return
 
-    const sentAt = Date.now()
-    const existingConversationId = snapshot.conversationId
-    dispatch(chatActions.clearComposer())
+    try {
+      /* Read from the store directly (NOT stateRef) so we see the
+       * previous queued send's submitAck dispatch — stateRef is synced
+       * via a post-commit useEffect, which fires after a microtask
+       * boundary and would leave us reading stale state here. */
+      const snapshot = store.getState().chat
+      const activeTurn = findActiveTurn(snapshot.turns)
+      let continuationKind: ContinuationKind = requestedKind ?? (activeTurn ? 'followup' : 'regular')
+      if (continuationKind !== 'regular' && !activeTurn) {
+        continuationKind = 'regular'
+      }
+      const isContinuation = continuationKind === 'followup' || continuationKind === 'steer'
+      const isSteer = continuationKind === 'steer'
+      const continuationMessageKind: Exclude<ContinuationKind, 'regular'> =
+        continuationKind === 'steer' ? 'steer' : 'followup'
+      const targetTurnId = isContinuation ? activeTurn?.id : undefined
+      const draftText = (textOverride ?? snapshot.composerText).trim()
+      const draftFiles = isSteer || textOverride !== undefined ? [] : snapshot.composerFiles
+      if (!draftText && draftFiles.length === 0 && !isSteer) return
+
+      const sentAt = Date.now()
+      const existingConversationId = snapshot.conversationId
+      dispatch(chatActions.clearComposer())
 
     try {
       await connectStream()
@@ -405,6 +434,11 @@ export default function App() {
         },
         data: { error: text },
       }))
+    }
+    } finally {
+      /* Always advance the queue, even if the body returned early
+       * (empty draft) or threw. */
+      resolveOurs()
     }
   }
 
@@ -516,18 +550,32 @@ export default function App() {
     dispatch(chatActions.removeComposerFile(index))
   })
   const handleComposerSubmit = useStableCallback(() => {
-    const snapshot = stateRef.current
+    const snapshot = store.getState().chat
     if (snapshot.inputLocked || snapshot.connection === 'booting') return
-    const hasPending = snapshot.turns.some(
-      (turn) => turn.state === 'pending' || turn.state === 'running',
-    )
-    void sendMessage(undefined, hasPending ? 'followup' : 'regular')
+    /* Pass no `requestedKind` — sendMessage reads fresh store state
+     * AFTER awaiting the previous queued send, so it correctly sees
+     * the newly-created active turn from a just-completed first send
+     * and continues with `followup`. */
+    void sendMessage()
   })
   const handleComposerStop = useStableCallback(() => {
     const snapshot = stateRef.current
     if (snapshot.inputLocked || snapshot.connection === 'booting') return
     void sendMessage('', 'steer')
   })
+
+  /* Resolve the URL the platform serves our `versatile_webapp` widget
+   * at. Memoised on the bundleId so unrelated re-renders don't bust
+   * the WebappPane's iframe (changing src would reload the widget).
+   * MUST stay above the `!ready` early return — same hook-order
+   * invariant as the useStableCallback block above (React #310). */
+  const webappWidgetUrl = useMemo(() => {
+    try {
+      return bundleWidgetUrl('versatile_webapp')
+    } catch {
+      return ''
+    }
+  }, [bundleId])
 
   if (!ready) {
     return (
@@ -550,16 +598,6 @@ export default function App() {
    * re-evaluate them inline (and so the dependent components see the
    * same boolean reference when nothing has changed). */
   const sendingDisabled = state.inputLocked || state.connection === 'booting'
-  /* Resolve the URL the platform serves our `versatile_webapp` widget
-   * at. Memoised on the bundleId so unrelated re-renders don't bust
-   * the WebappPane's iframe (changing src would reload the widget). */
-  const webappWidgetUrl = useMemo(() => {
-    try {
-      return bundleWidgetUrl('versatile_webapp')
-    } catch {
-      return ''
-    }
-  }, [bundleId])
   const leftPaneVisible = leftPaneMode !== 'collapsed'
 
   return (
