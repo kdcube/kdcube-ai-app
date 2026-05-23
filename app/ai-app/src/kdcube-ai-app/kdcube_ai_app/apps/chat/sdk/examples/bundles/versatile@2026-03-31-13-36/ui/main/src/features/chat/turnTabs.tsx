@@ -469,10 +469,12 @@ function DownloadsPanelImpl({
           <span className="k-chat-file-name">{label}</span>
           {subtitle ? <span className="k-chat-file-sub">{subtitle}</span> : null}
         </span>
-        <span className={`k-chip ${origin === 'user' ? 'k-blue' : 'k-teal'} k-chat-file-origin`}>
-          {origin === 'user' ? 'You' : 'Assistant'}
+        <span className="k-chat-file-tags">
+          <span className={`k-chip ${origin === 'user' ? 'k-blue' : 'k-teal'} k-chat-file-origin`}>
+            {origin === 'user' ? 'You' : 'Assistant'}
+          </span>
+          <span className="k-chat-file-ext">{kind.label}</span>
         </span>
-        <span className="k-chat-file-ext">{kind.label}</span>
         <span className="k-chat-file-action">
           {actionLabel === 'Download' || actionLabel === 'Preparing…' || actionLabel === 'Downloading…' ? (
             <>

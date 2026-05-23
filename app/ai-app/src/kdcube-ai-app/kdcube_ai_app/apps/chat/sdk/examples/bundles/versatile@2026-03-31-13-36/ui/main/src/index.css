@@ -1510,7 +1510,15 @@ a { color: inherit; }
 .k-chat-file--assistant {
   border-left: 3px solid var(--green);
 }
+/* Wraps the optional origin chip together with the ext chip so they
+ * occupy a single grid cell of `.k-chat-file` — keeps the 4-column
+ * layout intact (no row wrapping of the Download action). */
+.k-chat-file-tags {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
 .k-chat-file-origin {
-  margin: 0 6px 0 4px;
   flex: 0 0 auto;
 }
