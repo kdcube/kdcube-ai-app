@@ -241,10 +241,11 @@ async def test_doc_reader_mcp_call_records_and_sends_scoped_event():
     await workflow._record_doc_reader_mcp_call(
         {
             "mcp_name": "doc_reader",
-            "tool": "search",
+            "tool": "search_knowledge",
             "duration_ms": 12,
             "result_count": 2,
             "query_len": 40,
+            "reported_values": [{"concept": "search query", "value": "configure stats sink"}],
             "status": "completed",
         }
     )
@@ -253,6 +254,9 @@ async def test_doc_reader_mcp_call_records_and_sends_scoped_event():
     batch, kwargs = sent_batches[0]
     assert len(batch) == 1
     assert batch[0]["type"] == "kdcube.copilot.mcp.call"
-    assert batch[0]["data"]["tool"] == "search"
+    assert batch[0]["data"]["mcp_address"] == "kdcube.copilot/mcp/doc_reader"
+    assert batch[0]["data"]["mcp_endpoint"] == "search_knowledge"
+    assert batch[0]["data"]["tool"] == "search_knowledge"
+    assert batch[0]["data"]["reported_values"] == [{"concept": "search query", "value": "configure stats sink"}]
     assert kwargs["filter"] == mod.MCP_EVENT_RECORD_SELECTOR
     assert workflow.comm.export_recorded_events() == []

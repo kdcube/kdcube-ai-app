@@ -615,6 +615,8 @@ class ReactWorkflow(BaseEntrypointWithEconomicsAndMemory):
                     agent="kdcube.copilot.mcp",
                     auto_markdown=False,
                     data={
+                        "mcp_address": payload.get("mcp_address") or f"{self._bundle_id()}/mcp/doc_reader",
+                        "mcp_endpoint": payload.get("mcp_endpoint") or payload.get("tool"),
                         "mcp_name": payload.get("mcp_name"),
                         "tool": payload.get("tool"),
                         "duration_ms": payload.get("duration_ms"),
@@ -622,6 +624,7 @@ class ReactWorkflow(BaseEntrypointWithEconomicsAndMemory):
                         "missing": payload.get("missing"),
                         "top_k": payload.get("top_k"),
                         "query_len": payload.get("query_len"),
+                        "reported_values": payload.get("reported_values"),
                         "error": payload.get("error"),
                     },
                 )

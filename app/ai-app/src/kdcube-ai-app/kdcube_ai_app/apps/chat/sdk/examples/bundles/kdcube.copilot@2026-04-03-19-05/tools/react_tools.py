@@ -193,7 +193,9 @@ def build_doc_reader_mcp_app(
                 status="completed",
                 started_at=started_at,
                 data={
+                    "mcp_endpoint": "search_knowledge",
                     "query_len": len(str(query or "")),
+                    "reported_values": [{"concept": "search query", "value": str(query or "")}],
                     "root": root,
                     "top_k": top_k,
                     "result_count": len(result or []),
@@ -205,7 +207,13 @@ def build_doc_reader_mcp_app(
                 tool="search_knowledge",
                 status="error",
                 started_at=started_at,
-                data={"query_len": len(str(query or "")), "root": root, "error": str(exc)[:300]},
+                data={
+                    "mcp_endpoint": "search_knowledge",
+                    "query_len": len(str(query or "")),
+                    "reported_values": [{"concept": "search query", "value": str(query or "")}],
+                    "root": root,
+                    "error": str(exc)[:300],
+                },
             )
             raise
 
@@ -226,6 +234,7 @@ def build_doc_reader_mcp_app(
                 status="completed",
                 started_at=started_at,
                 data={
+                    "mcp_endpoint": "read_knowledge",
                     "path": str(path or "")[:300],
                     "missing": bool((result or {}).get("missing")),
                 },
@@ -236,7 +245,7 @@ def build_doc_reader_mcp_app(
                 tool="read_knowledge",
                 status="error",
                 started_at=started_at,
-                data={"path": str(path or "")[:300], "error": str(exc)[:300]},
+                data={"mcp_endpoint": "read_knowledge", "path": str(path or "")[:300], "error": str(exc)[:300]},
             )
             raise
 
