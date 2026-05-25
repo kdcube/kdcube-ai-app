@@ -11,7 +11,7 @@ export type EventBase = {
 }
 
 export type ExternalLogEvent = EventBase & {
-    level: "error" | "warning" | "info"
+    level: "error" | "warn" | "info"
     message: string
     args: unknown[]
 }

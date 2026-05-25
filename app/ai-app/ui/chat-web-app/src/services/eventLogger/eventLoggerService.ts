@@ -60,9 +60,7 @@ export class EventLoggerService {
 
         console[level] = (...args: unknown[]) => {
             try {
-                // Convert level name for events
-                const eventLevel = level === "warn" ? "warning" : level;
-                this.captureEvent(eventLevel as "error" | "warning" | "info", args);
+                this.captureEvent(level, args);
             } catch (err) {
                 // Prevent service from creating infinite error loops
                 original.apply(console, ["EventLogger error:", err]);
@@ -105,7 +103,7 @@ export class EventLoggerService {
     /**
      * Captures event, enriches with metadata and adds to buffer
      */
-    private captureEvent(level: "error" | "warning" | "info", args: unknown[]): void {
+    private captureEvent(level: ExternalLogEvent["level"], args: unknown[]): void {
         // Get current Redux state
         const state = this.store.getState();
 
