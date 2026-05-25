@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import pathlib
 import subprocess
@@ -31,6 +32,18 @@ from kdcube_ai_app.storage.observed_redis_locks import observed_redis_lock, obse
 class GitBundlePaths:
     repo_root: pathlib.Path
     bundle_root: pathlib.Path
+
+
+@dataclass
+class GitBundleCacheStatus:
+    current: bool
+    reason: str
+    paths: GitBundlePaths
+    marker: Optional[Dict[str, Any]] = None
+
+
+_CACHE_MARKER_FILE = ".kdcube.git-bundle.json"
+_CACHE_MARKER_SCHEMA = 1
 
 
 def _missing_host_path_log_level() -> str:
@@ -443,6 +456,151 @@ def compute_git_bundle_paths(
     return GitBundlePaths(repo_root=repo_root, bundle_root=bundle_root)
 
 
+def _marker_path(repo_root: pathlib.Path) -> pathlib.Path:
+    return repo_root / _CACHE_MARKER_FILE
+
+
+def _clean_marker_value(value: Optional[str]) -> str:
+    return str(value or "").strip()
+
+
+def _expected_cache_marker(
+    *,
+    bundle_id: str,
+    git_url: str,
+    normalized_git_url: str,
+    git_ref: Optional[str],
+    git_subdir: Optional[str],
+    commit: Optional[str] = None,
+) -> Dict[str, Any]:
+    marker: Dict[str, Any] = {
+        "schema": _CACHE_MARKER_SCHEMA,
+        "bundle_id": _clean_marker_value(bundle_id),
+        "git_url": _clean_marker_value(git_url),
+        "normalized_git_url": _clean_marker_value(normalized_git_url),
+        "git_ref": _clean_marker_value(git_ref),
+        "git_subdir": _clean_marker_value(git_subdir),
+    }
+    if commit:
+        marker["commit"] = _clean_marker_value(commit)
+    return marker
+
+
+def _read_cache_marker(repo_root: pathlib.Path) -> tuple[Optional[Dict[str, Any]], Optional[str]]:
+    marker_file = _marker_path(repo_root)
+    if not marker_file.exists():
+        return None, "missing_marker"
+    try:
+        raw = json.loads(marker_file.read_text(encoding="utf-8"))
+    except Exception:
+        return None, "marker_invalid_json"
+    if not isinstance(raw, dict):
+        return None, "marker_invalid_type"
+    return raw, None
+
+
+def _write_cache_marker(
+    *,
+    repo_root: pathlib.Path,
+    bundle_id: str,
+    git_url: str,
+    normalized_git_url: str,
+    git_ref: Optional[str],
+    git_subdir: Optional[str],
+    commit: Optional[str],
+) -> None:
+    marker = _expected_cache_marker(
+        bundle_id=bundle_id,
+        git_url=git_url,
+        normalized_git_url=normalized_git_url,
+        git_ref=git_ref,
+        git_subdir=git_subdir,
+        commit=commit,
+    )
+    marker_file = _marker_path(repo_root)
+    marker_file.parent.mkdir(parents=True, exist_ok=True)
+    tmp = marker_file.with_name(f".{marker_file.name}.tmp.{os.getpid()}.{time.time_ns()}")
+    tmp.write_text(json.dumps(marker, sort_keys=True, indent=2), encoding="utf-8")
+    tmp.replace(marker_file)
+
+
+def _marker_mismatch_reason(
+    marker: Dict[str, Any],
+    *,
+    bundle_id: str,
+    normalized_git_url: str,
+    git_ref: Optional[str],
+    git_subdir: Optional[str],
+) -> Optional[str]:
+    expected = {
+        "schema": _CACHE_MARKER_SCHEMA,
+        "bundle_id": _clean_marker_value(bundle_id),
+        "normalized_git_url": _clean_marker_value(normalized_git_url),
+        "git_ref": _clean_marker_value(git_ref),
+        "git_subdir": _clean_marker_value(git_subdir),
+    }
+    for key, value in expected.items():
+        if marker.get(key) != value:
+            return f"{key}_mismatch"
+    return None
+
+
+async def git_bundle_cache_status(
+    *,
+    bundle_id: Optional[str],
+    git_url: str,
+    git_ref: Optional[str] = None,
+    git_subdir: Optional[str] = None,
+    bundles_root: Optional[pathlib.Path] = None,
+) -> GitBundleCacheStatus:
+    bid = (bundle_id or "").strip() or _repo_name_from_url(git_url)
+    normalized_git_url = await normalize_git_remote_url(git_url)
+    paths = compute_git_bundle_paths(
+        bundle_id=bid,
+        git_url=normalized_git_url,
+        git_ref=git_ref,
+        git_subdir=git_subdir,
+        bundles_root=bundles_root,
+    )
+    if not paths.repo_root.exists():
+        return GitBundleCacheStatus(False, "repo_missing", paths)
+    if not (paths.repo_root / ".git").exists():
+        return GitBundleCacheStatus(False, "git_dir_missing", paths)
+    if not paths.bundle_root.exists():
+        return GitBundleCacheStatus(False, "bundle_subdir_missing", paths)
+
+    marker, marker_error = _read_cache_marker(paths.repo_root)
+    if marker_error:
+        return GitBundleCacheStatus(False, marker_error, paths)
+    assert marker is not None
+
+    mismatch = _marker_mismatch_reason(
+        marker,
+        bundle_id=bid,
+        normalized_git_url=normalized_git_url,
+        git_ref=git_ref,
+        git_subdir=git_subdir,
+    )
+    if mismatch:
+        return GitBundleCacheStatus(False, mismatch, paths, marker=marker)
+
+    marker_commit = _clean_marker_value(marker.get("commit"))
+    if not marker_commit:
+        return GitBundleCacheStatus(False, "commit_missing", paths, marker=marker)
+    try:
+        proc = await _run_git_capture_async(
+            ["git", "-C", str(paths.repo_root), "rev-parse", "HEAD"],
+            check=True,
+        )
+        current_commit = (proc.stdout or "").strip()
+    except Exception:
+        return GitBundleCacheStatus(False, "commit_unreadable", paths, marker=marker)
+    if current_commit != marker_commit:
+        return GitBundleCacheStatus(False, "commit_mismatch", paths, marker=marker)
+
+    return GitBundleCacheStatus(True, "current", paths, marker=marker)
+
+
 def _git_depth() -> Optional[int]:
     raw = os.environ.get("BUNDLE_GIT_CLONE_DEPTH") or ""
     if not raw:
@@ -667,10 +825,21 @@ async def ensure_git_bundle(
 
                 git_dir = repo_root / ".git"
                 if git_dir.exists() and not force_pull:
-                    if not paths.bundle_root.exists():
-                        raise FileNotFoundError(f"Bundle subdir not found: {paths.bundle_root}")
-                    _clear_fail(fail_key)
-                    return paths
+                    status = await git_bundle_cache_status(
+                        bundle_id=bundle_id,
+                        git_url=git_url,
+                        git_ref=git_ref,
+                        git_subdir=git_subdir,
+                        bundles_root=root,
+                    )
+                    if status.current:
+                        _clear_fail(fail_key)
+                        return paths
+                    log.log(
+                        f"[git.bundle] existing cache is not current for {bundle_id}: "
+                        f"reason={status.reason} repo={status.paths.repo_root}",
+                        level="WARNING",
+                    )
                 if not git_dir.exists():
                     if atomic:
                         tmp_root = repo_root.parent / _atomic_dir_name(repo_root.name)
@@ -744,6 +913,7 @@ async def ensure_git_bundle(
                             env=env,
                         )
 
+                commit: Optional[str] = None
                 try:
                     proc = await _run_git_capture_async(
                         ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
@@ -759,6 +929,20 @@ async def ensure_git_bundle(
                 if not paths.bundle_root.exists():
                     raise FileNotFoundError(f"Bundle subdir not found: {paths.bundle_root}")
 
+                _write_cache_marker(
+                    repo_root=repo_root,
+                    bundle_id=bundle_id,
+                    git_url=git_url,
+                    normalized_git_url=git_url,
+                    git_ref=git_ref,
+                    git_subdir=git_subdir,
+                    commit=commit,
+                )
+                log.log(
+                    f"[git.bundle] cache marker written bundle={bundle_id} ref={git_ref or 'head'} "
+                    f"subdir={git_subdir or ''} commit={commit or 'unknown'} repo={repo_root}",
+                    level="INFO",
+                )
                 _clear_fail(fail_key)
                 return paths
             except Exception as e:

@@ -128,6 +128,53 @@ def test_run_once_for_shared_bundle_storage_coalesces_concurrent_callers(tmp_pat
     assert signature_path.read_text(encoding="utf-8").strip() == "sig-1"
 
 
+def test_run_once_for_shared_bundle_storage_heartbeat_keeps_live_lock_fresh(tmp_path):
+    storage_root = tmp_path / "storage"
+    signature_path = storage_root / ".demo.signature"
+    output_path = storage_root / "output.txt"
+    calls = []
+
+    async def _action():
+        calls.append("run")
+        await asyncio.sleep(0.25)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text("ok", encoding="utf-8")
+
+    async def _case():
+        first = asyncio.create_task(
+            run_once_for_shared_bundle_storage(
+                storage_root=storage_root,
+                operation="demo",
+                signature_path=signature_path,
+                signature="sig-1",
+                ready=output_path.exists,
+                action=_action,
+                lock_ttl_seconds=0.12,
+                lock_heartbeat_interval_seconds=0.03,
+                poll_interval_seconds=0.02,
+            )
+        )
+        await asyncio.sleep(0.08)
+        second = await run_once_for_shared_bundle_storage(
+            storage_root=storage_root,
+            operation="demo",
+            signature_path=signature_path,
+            signature="sig-1",
+            ready=output_path.exists,
+            action=_action,
+            lock_wait_seconds=1.0,
+            lock_ttl_seconds=0.12,
+            lock_heartbeat_interval_seconds=0.03,
+            poll_interval_seconds=0.02,
+        )
+        return await first, second
+
+    results = asyncio.run(_case())
+
+    assert calls == ["run"]
+    assert sorted(result.status for result in results) == ["became_current", "ran"]
+
+
 def test_run_once_for_shared_bundle_storage_raises_when_lock_times_out_without_output(tmp_path):
     storage_root = tmp_path / "storage"
     lock_path = storage_root / ".kdcube.once" / "demo.lock"

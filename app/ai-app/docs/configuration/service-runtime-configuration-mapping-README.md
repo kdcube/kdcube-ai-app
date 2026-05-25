@@ -109,9 +109,11 @@ Notes:
 | `BUNDLES_YAML_DESCRIPTOR_PATH` | `bundles.yaml` | local bundle descriptor authority | proc in direct local run; optional explicit path in compose/k8s |
 | `BUNDLES_DESCRIPTOR_PROVIDER` | `platform.services.proc.bundles.descriptor_provider` | `assembly.yaml` | proc in all modes |
 | `BUNDLES_FORCE_ENV_ON_STARTUP` | n/a | current bundle descriptor authority | proc in all modes |
+| `BUNDLES_PRELOAD_ON_START` | `platform.services.proc.bundles.bundles_preload_on_start` | `assembly.yaml` | proc in all modes |
+| `BUNDLES_PRELOAD_LOCK_TTL_SECONDS` | `platform.services.proc.bundles.bundles_preload_lock_ttl_seconds` | `assembly.yaml` | proc in all modes; coarse preload coordination TTL |
+| `BUNDLES_PRELOAD_BUNDLE_LOCK_TTL_SECONDS` | `platform.services.proc.bundles.bundles_preload_bundle_lock_ttl_seconds` | `assembly.yaml` | proc in all modes; per-bundle preload claim TTL |
 | `BUNDLE_SCHEDULER_RECONCILE_INTERVAL_SECONDS` | `platform.services.proc.bundles.bundle_scheduler_reconcile_interval_seconds` | `assembly.yaml` | proc in all modes; `0` disables the periodic loop |
 | `BUNDLE_GIT_RESOLUTION_ENABLED` | bundle items use `repo` / `ref` | `bundles.yaml` | proc in all modes |
-| `BUNDLES_PRELOAD_ON_START` | n/a | not descriptor-backed by default | proc |
 
 Important distinction:
 

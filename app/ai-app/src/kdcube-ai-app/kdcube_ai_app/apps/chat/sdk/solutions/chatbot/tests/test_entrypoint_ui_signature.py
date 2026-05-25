@@ -42,6 +42,7 @@ def _make_entrypoint(
     ep.config = SimpleNamespace(ai_bundle_spec=SimpleNamespace(id="bundle@test"))
     ep.bundle_storage_root = lambda: storage_root  # type: ignore[assignment]
     ep._bundle_root = lambda: str(bundle_root)     # type: ignore[assignment]
+    ep.logger = SimpleNamespace(log=lambda *args, **kwargs: None)
     return ep
 
 
@@ -268,3 +269,55 @@ def test_compute_ui_widget_signature_returns_none_when_storage_unavailable(tmp_p
     ep._bundle_root = lambda: str(bundle_root)  # type: ignore[assignment]
 
     assert ep.compute_ui_widget_signature("demo") is None
+
+
+def test_cleanup_stale_ui_widget_storage_removes_removed_widget(tmp_path):
+    bundle_root = tmp_path / "bundle"
+    storage_root = tmp_path / "storage"
+    ep = _make_entrypoint(
+        bundle_root=bundle_root,
+        storage_root=storage_root,
+        bundle_props={
+            "ui": {
+                "widgets": {
+                    "active": {
+                        "enabled": True,
+                        "src_folder": "ui/widgets/active/src",
+                        "build_command": "npm install --no-package-lock && npm run build",
+                    }
+                }
+            }
+        },
+    )
+
+    _touch(storage_root / "ui" / "widgets" / "active" / "index.html", content="active")
+    _touch(storage_root / "ui" / "widgets" / "removed" / "index.html", content="removed")
+    _touch(storage_root / ".ui.widgets" / "active.signature", content="active-sig")
+    _touch(storage_root / ".ui.widgets" / "removed.signature", content="removed-sig")
+
+    active_aliases = ep._active_ui_widget_aliases(ep.bundle_props["ui"]["widgets"])
+    ep._cleanup_stale_ui_widget_storage(storage_root=storage_root, active_aliases=active_aliases)
+
+    assert (storage_root / "ui" / "widgets" / "active" / "index.html").exists()
+    assert not (storage_root / "ui" / "widgets" / "removed").exists()
+    assert (storage_root / ".ui.widgets" / "active.signature").exists()
+    assert not (storage_root / ".ui.widgets" / "removed.signature").exists()
+
+
+@pytest.mark.asyncio
+async def test_ensure_ui_build_cleans_stale_widgets_when_ui_now_unconfigured(tmp_path):
+    bundle_root = tmp_path / "bundle"
+    storage_root = tmp_path / "storage"
+    ep = _make_entrypoint(
+        bundle_root=bundle_root,
+        storage_root=storage_root,
+        bundle_props={"ui": {}},
+    )
+
+    _touch(storage_root / "ui" / "widgets" / "removed" / "index.html", content="removed")
+    _touch(storage_root / ".ui.widgets" / "removed.signature", content="removed-sig")
+
+    await ep._ensure_ui_build()
+
+    assert not (storage_root / "ui" / "widgets" / "removed").exists()
+    assert not (storage_root / ".ui.widgets" / "removed.signature").exists()

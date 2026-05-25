@@ -40,6 +40,9 @@ class SharedStorageOnceTimeout(TimeoutError):
     pass
 
 
+_LOCK_HEARTBEAT_FILE = "heartbeat"
+
+
 def _sanitize_segment(raw: str) -> str:
     safe = "".join(ch if ch.isalnum() or ch in ("-", "_", ".") else "-" for ch in (raw or ""))
     safe = safe.strip("-_.")
@@ -88,9 +91,17 @@ def _write_signature(signature_path: pathlib.Path, signature: str) -> None:
     tmp_path.replace(signature_path)
 
 
+def _lock_freshness_mtime(lock_path: pathlib.Path) -> float:
+    heartbeat_path = lock_path / _LOCK_HEARTBEAT_FILE
+    try:
+        return heartbeat_path.stat().st_mtime
+    except OSError:
+        return lock_path.stat().st_mtime
+
+
 def _remove_stale_lock(lock_path: pathlib.Path, *, lock_ttl_seconds: float) -> bool:
     try:
-        stale = (time.time() - lock_path.stat().st_mtime) > lock_ttl_seconds
+        stale = (time.time() - _lock_freshness_mtime(lock_path)) > lock_ttl_seconds
     except OSError:
         stale = True
     if not stale:
@@ -101,9 +112,24 @@ def _remove_stale_lock(lock_path: pathlib.Path, *, lock_ttl_seconds: float) -> b
 
 def _lock_age_seconds(lock_path: pathlib.Path) -> Optional[float]:
     try:
-        return max(0.0, time.time() - lock_path.stat().st_mtime)
+        return max(0.0, time.time() - _lock_freshness_mtime(lock_path))
     except OSError:
         return None
+
+
+def _touch_lock_heartbeat(lock_path: pathlib.Path) -> None:
+    heartbeat_path = lock_path / _LOCK_HEARTBEAT_FILE
+    heartbeat_path.write_text(f"{time.time()}\n", encoding="utf-8")
+
+
+async def _heartbeat_lock(lock_path: pathlib.Path, *, interval_seconds: float) -> None:
+    interval = max(0.01, float(interval_seconds))
+    while True:
+        try:
+            _touch_lock_heartbeat(lock_path)
+        except Exception:
+            pass
+        await asyncio.sleep(interval)
 
 
 def _read_lock_owner(lock_path: pathlib.Path) -> dict[str, Any]:
@@ -137,6 +163,7 @@ async def run_once_for_shared_bundle_storage(
     owner_metadata: Optional[dict[str, Any]] = None,
     lock_wait_seconds: float = 600.0,
     lock_ttl_seconds: float = 900.0,
+    lock_heartbeat_interval_seconds: float | None = None,
     poll_interval_seconds: float = 0.25,
     allow_existing_while_locked: bool = False,
     allow_existing_on_timeout: bool = True,
@@ -189,6 +216,7 @@ async def run_once_for_shared_bundle_storage(
             )
             try:
                 (lock_path / "owner.json").write_text(json.dumps(owner, sort_keys=True), encoding="utf-8")
+                _touch_lock_heartbeat(lock_path)
             except Exception:
                 pass
             _logger_log(logger, f"{log_prefix} lock acquired op={op} storage={root}", "INFO")
@@ -232,11 +260,21 @@ async def run_once_for_shared_bundle_storage(
                 last_wait_log_at = now
             await asyncio.sleep(max(0.01, float(poll_interval_seconds)))
 
+    heartbeat_task: asyncio.Task | None = None
     try:
         if _signature_current(signature_path=sig_path, signature=signature, ready=ready):
             _logger_log(logger, f"{log_prefix} skipped: signature cache hit under lock op={op} storage={root}", "INFO")
             return SharedStorageOnceResult("became_current", root, op, lock_path, sig_path, ran=False)
 
+        heartbeat_interval = (
+            float(lock_heartbeat_interval_seconds)
+            if lock_heartbeat_interval_seconds is not None
+            else min(max(1.0, float(lock_ttl_seconds) / 3.0), 10.0)
+        )
+        heartbeat_task = asyncio.create_task(
+            _heartbeat_lock(lock_path, interval_seconds=heartbeat_interval),
+            name=f"bundle-once-heartbeat:{op}",
+        )
         await _run_action(action)
         if not bool(ready()):
             raise RuntimeError(f"{op} action completed but ready() is false for storage={root}")
@@ -244,5 +282,11 @@ async def run_once_for_shared_bundle_storage(
         _logger_log(logger, f"{log_prefix} done: op={op} storage={root}", "INFO")
         return SharedStorageOnceResult("ran", root, op, lock_path, sig_path, ran=True)
     finally:
+        if heartbeat_task is not None:
+            heartbeat_task.cancel()
+            try:
+                await heartbeat_task
+            except asyncio.CancelledError:
+                pass
         if lock_acquired:
             shutil.rmtree(lock_path, ignore_errors=True)

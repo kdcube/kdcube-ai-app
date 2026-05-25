@@ -92,6 +92,68 @@ async def test_ensure_git_bundle_holds_local_lock_during_git_operations(monkeypa
     assert paths.repo_root.exists()
 
 
+@pytest.mark.asyncio
+async def test_git_bundle_cache_status_requires_success_marker(monkeypatch, tmp_path):
+    monkeypatch.setattr(git_bundle, "normalize_git_remote_url", lambda url: git_bundle.asyncio.sleep(0, result=url))
+    repo_root = tmp_path / "repo__demo__main"
+    repo_root.mkdir()
+    (repo_root / ".git").mkdir()
+
+    status = await git_bundle.git_bundle_cache_status(
+        bundle_id="demo",
+        git_url="https://example.com/repo.git",
+        git_ref="main",
+        bundles_root=tmp_path,
+    )
+
+    assert status.current is False
+    assert status.reason == "missing_marker"
+
+
+@pytest.mark.asyncio
+async def test_git_bundle_cache_status_validates_marker_and_commit(monkeypatch, tmp_path):
+    monkeypatch.setattr(git_bundle, "normalize_git_remote_url", lambda url: git_bundle.asyncio.sleep(0, result=url))
+    repo_root = tmp_path / "repo__demo__main"
+    repo_root.mkdir()
+    (repo_root / ".git").mkdir()
+
+    git_bundle._write_cache_marker(
+        repo_root=repo_root,
+        bundle_id="demo",
+        git_url="https://example.com/repo.git",
+        normalized_git_url="https://example.com/repo.git",
+        git_ref="main",
+        git_subdir=None,
+        commit="abc123",
+    )
+
+    async def _capture(args, **kwargs):
+        del args, kwargs
+        return subprocess.CompletedProcess([], 0, stdout="abc123\n", stderr="")
+
+    monkeypatch.setattr(git_bundle, "_run_git_capture_async", _capture)
+
+    status = await git_bundle.git_bundle_cache_status(
+        bundle_id="demo",
+        git_url="https://example.com/repo.git",
+        git_ref="main",
+        bundles_root=tmp_path,
+    )
+
+    assert status.current is True
+    assert status.reason == "current"
+
+    stale = await git_bundle.git_bundle_cache_status(
+        bundle_id="demo",
+        git_url="https://example.com/repo.git",
+        git_ref="other",
+        bundles_root=tmp_path,
+    )
+
+    assert stale.current is False
+    assert stale.reason == "repo_missing"
+
+
 def test_resolve_managed_bundles_root_prefers_dedicated_managed_root(monkeypatch, tmp_path):
     host_git_root = tmp_path / "host-git"
     host_git_root.mkdir()

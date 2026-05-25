@@ -21,14 +21,17 @@ from kdcube_ai_app.infra.plugin import bundle_loader, bundle_store
 
 
 class _FakeRedis:
-    def __init__(self, *, acquire: bool) -> None:
+    def __init__(self, *, acquire: bool, acquire_bundle: bool | None = None) -> None:
         self.acquire = acquire
+        self.acquire_bundle = acquire_bundle
         self.calls: list[tuple] = []
         self.values: dict[str, str] = {}
 
     async def set(self, key, value, ex=None, nx=None):
         self.calls.append(("set", key, value, ex, nx))
-        if not self.acquire:
+        is_bundle_preload_lock = str(key).count(":") > 5
+        acquire = self.acquire_bundle if is_bundle_preload_lock and self.acquire_bundle is not None else self.acquire
+        if not acquire:
             return False
         self.values[key] = value
         return True
@@ -63,6 +66,7 @@ def _settings() -> SimpleNamespace:
         PLATFORM=SimpleNamespace(
             APPLICATIONS=SimpleNamespace(
                 BUNDLES_PRELOAD_LOCK_TTL_SECONDS=45,
+                BUNDLES_PRELOAD_BUNDLE_LOCK_TTL_SECONDS=30,
             )
         ),
     )
@@ -121,13 +125,15 @@ async def test_preload_bundles_loop_acquires_and_releases_leader_lock(monkeypatc
     assert preload_calls == [("/tmp/demo", "bundle.demo")]
     assert app.state.bundles_preload_ready is True
     assert app.state.bundles_preload_errors == {}
+    assert app.state.bundles_preload_status["bundle.demo"]["status"] == "succeeded"
+    assert app.state.bundles_preload_status["bundle.demo"]["duration_ms"] >= 0
     assert redis.calls[0] == ("set", key, redis.calls[0][2], 45, True)
     assert ("delete", key) in redis.calls
 
 
 @pytest.mark.asyncio
 async def test_preload_bundles_loop_still_preloads_when_another_instance_holds_lock(monkeypatch):
-    redis = _FakeRedis(acquire=False)
+    redis = _FakeRedis(acquire=False, acquire_bundle=True)
     app = _app(redis)
     preload_calls: list[str] = []
 
@@ -150,7 +156,40 @@ async def test_preload_bundles_loop_still_preloads_when_another_instance_holds_l
     assert preload_calls == ["called"]
     assert app.state.bundles_preload_ready is True
     assert app.state.bundles_preload_errors == {}
-    assert redis.calls == [("set", key, redis.calls[0][2], 45, True)]
+    assert redis.calls[0] == ("set", key, redis.calls[0][2], 45, True)
+    assert any(call[0] == "delete" and str(call[1]).endswith(":bundle.demo") for call in redis.calls)
+
+
+@pytest.mark.asyncio
+async def test_preload_bundles_loop_skips_bundle_when_bundle_lock_is_held(monkeypatch):
+    redis = _FakeRedis(acquire=True, acquire_bundle=False)
+    app = _app(redis)
+    preload_calls: list[str] = []
+
+    async def _fake_preload(spec, bundle_spec, **kwargs):
+        del spec, kwargs
+        preload_calls.append(bundle_spec.id)
+
+    async def _load_runtime_registry(redis_arg, tenant, project):
+        del redis_arg, tenant, project
+        return _registry({
+            "bundle.a": {"path": "/tmp/a", "module": "entrypoint", "singleton": False},
+            "bundle.b": {"path": "/tmp/b", "module": "entrypoint", "singleton": False},
+        })
+
+    monkeypatch.setattr(web_app, "get_settings", _settings)
+    monkeypatch.setattr(web_app, "load_bundle_runtime_registry", _load_runtime_registry)
+    monkeypatch.setattr(bundle_loader, "preload_bundle_async", _fake_preload)
+    monkeypatch.setattr(bundle_loader, "load_bundle_manifest", lambda *args, **kwargs: _manifest())
+
+    await web_app._preload_bundles_loop(app)
+
+    assert preload_calls == []
+    assert app.state.bundles_preload_ready is True
+    assert app.state.bundles_preload_errors == {}
+    assert app.state.bundles_preload_skipped_locked == 2
+    assert app.state.bundles_preload_status["bundle.a"]["status"] == "skipped_locked"
+    assert app.state.bundles_preload_status["bundle.b"]["status"] == "skipped_locked"
 
 
 @pytest.mark.asyncio

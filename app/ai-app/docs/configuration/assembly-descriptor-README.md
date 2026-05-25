@@ -96,6 +96,7 @@ These env vars are the direct runtime surface for assembly-backed settings.
 | `AI_REACT_RENDER_THINKING` | `ai.react.render_thinking` | `get_settings()` / `RuntimeCtx.render_thinking` | all modes |
 | `CLAUDE_CODE_SESSION_STORE_IMPLEMENTATION` | `storage.claude_code_session.type` | `get_settings()` | CLI local compose, direct local service run |
 | `CLAUDE_CODE_SESSION_GIT_REPO` | `storage.claude_code_session.repo` | `get_settings()` | CLI local compose, direct local service run |
+| `BUNDLES_PRELOAD_BUNDLE_LOCK_TTL_SECONDS` | `platform.services.proc.bundles.bundles_preload_bundle_lock_ttl_seconds` | `get_settings().PLATFORM.APPLICATIONS` | proc in all modes |
 | `BUNDLE_SCHEDULER_RECONCILE_INTERVAL_SECONDS` | `platform.services.proc.bundles.bundle_scheduler_reconcile_interval_seconds` | `get_settings().PLATFORM.APPLICATIONS` | proc in all modes |
 
 ## Fields that are always meaningful
@@ -421,11 +422,13 @@ platform:
   services:
     proc:
       bundles:
+        bundles_preload_bundle_lock_ttl_seconds: 300
         bundle_scheduler_reconcile_interval_seconds: 0
 ```
 
 | Field | Settings API | Meaning |
 |---|---|---|
+| `bundles_preload_bundle_lock_ttl_seconds` | `get_settings().PLATFORM.APPLICATIONS.BUNDLES_PRELOAD_BUNDLE_LOCK_TTL_SECONDS` | per-bundle startup preload claim TTL in seconds; stale claims may be retried by another proc |
 | `bundle_scheduler_reconcile_interval_seconds` | `get_settings().PLATFORM.APPLICATIONS.BUNDLE_SCHEDULER_RECONCILE_INTERVAL_SECONDS` | periodic scheduler reconciliation interval in seconds; `0` disables the periodic loop |
 
 The scheduler still reconciles on proc startup and on bundle update

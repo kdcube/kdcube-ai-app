@@ -15,6 +15,7 @@ import time
 import traceback
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv, find_dotenv
@@ -245,6 +246,24 @@ def _bundle_preload_lock_ttl_seconds() -> int:
     return int(get_settings().PLATFORM.APPLICATIONS.BUNDLES_PRELOAD_LOCK_TTL_SECONDS)
 
 
+def _bundle_preload_bundle_lock_ttl_seconds() -> int:
+    return int(get_settings().PLATFORM.APPLICATIONS.BUNDLES_PRELOAD_BUNDLE_LOCK_TTL_SECONDS)
+
+
+def _utc_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _set_bundle_preload_state(app, bundle_id: str, **updates) -> None:
+    states = getattr(app.state, "bundles_preload_status", None)
+    if not isinstance(states, dict):
+        states = {}
+        app.state.bundles_preload_status = states
+    current = dict(states.get(bundle_id) or {})
+    current.update(updates)
+    states[bundle_id] = current
+
+
 def _is_explicitly_disabled(value) -> bool:
     if isinstance(value, bool):
         return not value
@@ -473,16 +492,37 @@ async def _preload_bundles_loop(app) -> None:
         getattr(reg, "default_bundle_id", None),
         sorted(registry_bundles.keys()),
     )
+    app.state.bundles_preload_status = {}
+    app.state.bundles_preload_started_at = _utc_iso()
     total = 0
     ok = 0
+    skipped_locked = 0
     errors: dict[str, str] = {}
     try:
         for bid, entry in registry_bundles.items():
             if bid == ADMIN_BUNDLE_ID:
                 continue
             path = (entry.path or "").strip()
+            _set_bundle_preload_state(
+                app,
+                bid,
+                status="pending",
+                path=path,
+                module=entry.module,
+                singleton=bool(entry.singleton),
+                attempt=1,
+                updated_at=_utc_iso(),
+            )
             if not path:
                 logger.warning("[Bundles] Preload skip (no path): id=%s", bid)
+                _set_bundle_preload_state(
+                    app,
+                    bid,
+                    status="skipped",
+                    reason="no_path",
+                    finished_at=_utc_iso(),
+                    updated_at=_utc_iso(),
+                )
                 continue
             total += 1
             spec = BundleSpec(
@@ -491,6 +531,74 @@ async def _preload_bundles_loop(app) -> None:
                 singleton=bool(entry.singleton),
             )
             bundle_spec = bundle_entry_to_spec(entry)
+            bundle_lock_key = CONFIG.BUNDLES.PRELOAD_BUNDLE_LOCK_FMT.format(
+                tenant=settings.TENANT,
+                project=settings.PROJECT,
+                bundle_id=bid,
+            )
+            bundle_lock_token = f"{INSTANCE_ID}:{os.getpid()}:{uuid.uuid4().hex}"
+            bundle_lock_acquired = False
+            owner = {
+                "instance_id": INSTANCE_ID,
+                "pid": os.getpid(),
+            }
+            _set_bundle_preload_state(
+                app,
+                bid,
+                status="claiming",
+                lock_key=bundle_lock_key,
+                owner=owner,
+                updated_at=_utc_iso(),
+            )
+            if redis is not None:
+                try:
+                    bundle_lock_acquired = bool(
+                        await redis.set(
+                            bundle_lock_key,
+                            bundle_lock_token,
+                            ex=_bundle_preload_bundle_lock_ttl_seconds(),
+                            nx=True,
+                        )
+                    )
+                except Exception:
+                    logger.exception("[Bundles] Failed to acquire bundle preload lock: id=%s key=%s", bid, bundle_lock_key)
+                    bundle_lock_acquired = False
+                if not bundle_lock_acquired:
+                    skipped_locked += 1
+                    logger.info(
+                        "[Bundles] Preload skip (bundle lock held): id=%s key=%s owner=%s",
+                        bid,
+                        bundle_lock_key,
+                        owner,
+                    )
+                    _set_bundle_preload_state(
+                        app,
+                        bid,
+                        status="skipped_locked",
+                        lock_key=bundle_lock_key,
+                        skipped_at=_utc_iso(),
+                        updated_at=_utc_iso(),
+                        retryable=True,
+                    )
+                    continue
+            started = time.time()
+            _set_bundle_preload_state(
+                app,
+                bid,
+                status="running",
+                lock_key=bundle_lock_key if redis is not None else None,
+                owner=owner,
+                started_at=_utc_iso(),
+                updated_at=_utc_iso(),
+            )
+            logger.info(
+                "[Bundles] Preload start: id=%s path=%s module=%s singleton=%s owner=%s",
+                bid,
+                path,
+                entry.module,
+                bool(entry.singleton),
+                owner,
+            )
             try:
                 await preload_bundle_async(
                     spec,
@@ -507,17 +615,61 @@ async def _preload_bundles_loop(app) -> None:
                     project=settings.PROJECT,
                 )
                 ok += 1
-                logger.info("[Bundles] Preloaded: id=%s path=%s", bid, path)
+                duration_ms = int((time.time() - started) * 1000)
+                logger.info("[Bundles] Preload succeeded: id=%s path=%s duration_ms=%s", bid, path, duration_ms)
+                _set_bundle_preload_state(
+                    app,
+                    bid,
+                    status="succeeded",
+                    duration_ms=duration_ms,
+                    finished_at=_utc_iso(),
+                    updated_at=_utc_iso(),
+                    error=None,
+                    retryable=False,
+                )
             except Exception as e:
                 errors[bid] = str(e)
                 logger.exception("[Bundles] Preload failed: id=%s", bid)
+                _set_bundle_preload_state(
+                    app,
+                    bid,
+                    status="failed",
+                    error=str(e),
+                    duration_ms=int((time.time() - started) * 1000),
+                    finished_at=_utc_iso(),
+                    updated_at=_utc_iso(),
+                    retryable=True,
+                )
+            finally:
+                if bundle_lock_acquired and redis is not None:
+                    try:
+                        current_val = await redis.get(bundle_lock_key)
+                        if isinstance(current_val, bytes):
+                            current_val = current_val.decode("utf-8", "ignore")
+                        if current_val == bundle_lock_token:
+                            await redis.delete(bundle_lock_key)
+                            logger.info("[Bundles] Preload bundle lock released: id=%s key=%s", bid, bundle_lock_key)
+                    except Exception:
+                        logger.exception("[Bundles] Failed to release bundle preload lock: id=%s key=%s", bid, bundle_lock_key)
 
         logger.info(
-            "[Bundles] Preload complete: total=%s ok=%s failed=%s",
-            total, ok, len(errors),
+            "[Bundles] Preload complete: total=%s ok=%s skipped_locked=%s failed=%s",
+            total, ok, skipped_locked, len(errors),
         )
         app.state.bundles_preload_ready = True
         app.state.bundles_preload_errors = errors
+        app.state.bundles_preload_skipped_locked = skipped_locked
+        app.state.bundles_preload_finished_at = _utc_iso()
+    except asyncio.CancelledError:
+        logger.warning(
+            "[Bundles] Preload cancelled: total=%s ok=%s skipped_locked=%s failed=%s",
+            total,
+            ok,
+            skipped_locked,
+            len(errors),
+        )
+        app.state.bundles_preload_finished_at = _utc_iso()
+        raise
     finally:
         if lock_acquired and redis is not None:
             try:
@@ -894,6 +1046,10 @@ async def lifespan(app: FastAPI):
 
         app.state.bundles_preload_ready = True
         app.state.bundles_preload_errors = {}
+        app.state.bundles_preload_skipped_locked = 0
+        app.state.bundles_preload_status = {}
+        app.state.bundles_preload_started_at = None
+        app.state.bundles_preload_finished_at = None
         app.state.bundles_preload_task = None
         if _bundles_preload_enabled():
             app.state.bundles_preload_ready = False
@@ -1067,6 +1223,8 @@ async def health():
     bundle_git_errors = getattr(app.state, "bundle_git_errors", {}) or {}
     bundles_preload_ready = getattr(app.state, "bundles_preload_ready", True)
     bundles_preload_errors = getattr(app.state, "bundles_preload_errors", {}) or {}
+    bundles_preload_skipped_locked = int(getattr(app.state, "bundles_preload_skipped_locked", 0) or 0)
+    bundles_preload_status = getattr(app.state, "bundles_preload_status", {}) or {}
     ready = bundles_git_ready and bundles_preload_ready
     payload = {
         "status": "draining" if draining else ("ok" if ready else "not_ready"),
@@ -1077,6 +1235,10 @@ async def health():
         "bundles_git_errors": bundle_git_errors,
         "bundles_preload_ready": bundles_preload_ready,
         "bundles_preload_errors": bundles_preload_errors,
+        "bundles_preload_skipped_locked": bundles_preload_skipped_locked,
+        "bundles_preload_started_at": getattr(app.state, "bundles_preload_started_at", None),
+        "bundles_preload_finished_at": getattr(app.state, "bundles_preload_finished_at", None),
+        "bundles_preload_status": bundles_preload_status,
     }
     if draining or not ready:
         return JSONResponse(status_code=503, content=payload)

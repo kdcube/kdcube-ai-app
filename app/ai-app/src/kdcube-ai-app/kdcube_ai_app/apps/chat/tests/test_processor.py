@@ -587,7 +587,12 @@ async def test_prefetch_git_bundles_skips_existing_paths(monkeypatch, tmp_path):
     async def _ensure_git_bundle(**kwargs):
         ensure_calls.append(kwargs)
 
+    async def _cache_status(**kwargs):
+        del kwargs
+        return SimpleNamespace(current=True, reason="current")
+
     monkeypatch.setattr(processor_mod, "ensure_git_bundle", _ensure_git_bundle)
+    monkeypatch.setattr(processor_mod, "git_bundle_cache_status", _cache_status)
 
     errors = await processor_mod.prefetch_git_bundles({
         "bundle.ready": {
@@ -598,6 +603,33 @@ async def test_prefetch_git_bundles_skips_existing_paths(monkeypatch, tmp_path):
 
     assert errors == {}
     assert ensure_calls == []
+
+
+@pytest.mark.asyncio
+async def test_prefetch_git_bundles_materializes_existing_path_when_cache_not_current(monkeypatch, tmp_path):
+    bundle_root = tmp_path / "bundle-stale"
+    bundle_root.mkdir()
+    ensure_calls = []
+
+    async def _ensure_git_bundle(**kwargs):
+        ensure_calls.append(kwargs)
+
+    async def _cache_status(**kwargs):
+        del kwargs
+        return SimpleNamespace(current=False, reason="missing_marker")
+
+    monkeypatch.setattr(processor_mod, "ensure_git_bundle", _ensure_git_bundle)
+    monkeypatch.setattr(processor_mod, "git_bundle_cache_status", _cache_status)
+
+    errors = await processor_mod.prefetch_git_bundles({
+        "bundle.stale": {
+            "repo": "https://example.invalid/repo.git",
+            "path": str(bundle_root),
+        }
+    })
+
+    assert errors == {}
+    assert [call["bundle_id"] for call in ensure_calls] == ["bundle.stale"]
 
 
 @pytest.mark.asyncio
@@ -617,7 +649,12 @@ async def test_prefetch_git_bundles_resolves_missing_paths_and_collects_errors(m
         if kwargs["bundle_id"] == "bundle.fail":
             raise RuntimeError("boom")
 
+    async def _cache_status(**kwargs):
+        del kwargs
+        return SimpleNamespace(current=False, reason="repo_missing")
+
     monkeypatch.setattr(processor_mod, "ensure_git_bundle", _ensure_git_bundle)
+    monkeypatch.setattr(processor_mod, "git_bundle_cache_status", _cache_status)
 
     monkeypatch.setattr(
         processor_mod,

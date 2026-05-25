@@ -41,6 +41,7 @@ from kdcube_ai_app.infra.plugin.git_bundle import (
     ensure_git_bundle,
     GitBundleCooldown,
     compute_git_bundle_paths,
+    git_bundle_cache_status,
     resolve_managed_bundles_root,
 )
 from kdcube_ai_app.storage.storage import create_storage_backend
@@ -269,27 +270,59 @@ async def prefetch_git_bundles(registry: Optional[Any] = None) -> dict[str, str]
             continue
 
         path_val = (entry.get("path") or "").strip()
+        cache_status = None
         if not path_val:
             try:
                 paths = compute_git_bundle_paths(
-                bundle_id=bid,
-                git_url=repo,
-                git_ref=entry.get("ref"),
-                git_subdir=entry.get("subdir"),
-                bundles_root=resolve_managed_bundles_root(),
-            )
+                    bundle_id=bid,
+                    git_url=repo,
+                    git_ref=entry.get("ref"),
+                    git_subdir=entry.get("subdir"),
+                    bundles_root=resolve_managed_bundles_root(),
+                )
                 path_val = str(paths.bundle_root)
             except Exception:
                 path_val = ""
 
         if path_val and not force_pull:
             try:
-                if Path(path_val).exists():
+                cache_status = await git_bundle_cache_status(
+                    bundle_id=bid,
+                    git_url=repo,
+                    git_ref=entry.get("ref"),
+                    git_subdir=entry.get("subdir"),
+                    bundles_root=resolve_managed_bundles_root(),
+                )
+                if cache_status.current:
+                    logger.info(
+                        "[Bundles] Git prefetch skip current: id=%s ref=%s subdir=%s path=%s",
+                        bid,
+                        entry.get("ref") or "head",
+                        entry.get("subdir") or "",
+                        path_val,
+                    )
                     continue
             except Exception:
-                pass
+                logger.exception("[Bundles] Git prefetch cache validation failed: id=%s path=%s", bid, path_val)
+            if cache_status is not None:
+                logger.warning(
+                    "[Bundles] Git prefetch cache not current: id=%s reason=%s ref=%s subdir=%s path=%s",
+                    bid,
+                    cache_status.reason,
+                    entry.get("ref") or "head",
+                    entry.get("subdir") or "",
+                    path_val,
+                )
 
         try:
+            logger.info(
+                "[Bundles] Git prefetch materialize start: id=%s ref=%s subdir=%s path=%s force_pull=%s",
+                bid,
+                entry.get("ref") or "head",
+                entry.get("subdir") or "",
+                path_val,
+                bool(force_pull),
+            )
             await ensure_git_bundle(
                 bundle_id=bid,
                 git_url=repo,
@@ -298,10 +331,18 @@ async def prefetch_git_bundles(registry: Optional[Any] = None) -> dict[str, str]
                 bundles_root=resolve_managed_bundles_root(),
                 atomic=get_settings().PLATFORM.APPLICATIONS.GIT.BUNDLE_GIT_ATOMIC,
             )
+            logger.info(
+                "[Bundles] Git prefetch materialize complete: id=%s ref=%s subdir=%s",
+                bid,
+                entry.get("ref") or "head",
+                entry.get("subdir") or "",
+            )
         except GitBundleCooldown as e:
             errors[bid] = str(e)
+            logger.warning("[Bundles] Git prefetch cooldown: id=%s error=%s", bid, e)
         except Exception as e:
             errors[bid] = str(e)
+            logger.exception("[Bundles] Git prefetch failed: id=%s", bid)
 
     return errors
 
@@ -1729,7 +1770,6 @@ class EnhancedChatRequestProcessor:
         from kdcube_ai_app.infra.plugin.bundle_registry import set_registry_async
         from kdcube_ai_app.infra.plugin.bundle_loader import (
             BundleSpec,
-            clear_bundle_loader_caches,
             evict_bundle_scope,
             invalidate_static_bundle_entrypoint_loads,
         )
@@ -1797,10 +1837,14 @@ class EnhancedChatRequestProcessor:
                             exc_info=True,
                         )
             else:
-                try:
-                    clear_bundle_loader_caches()
-                except Exception:
-                    pass
+                logger.info(
+                    "Bundle runtime catch-up has no changed bundle ids; preserving local loader caches: "
+                    "reason=%s tenant=%s project=%s pid=%s",
+                    reason,
+                    tenant,
+                    project,
+                    os.getpid(),
+                )
             if evictions:
                 logger.info(
                     "Evicted changed bundle code during runtime catch-up: reason=%s tenant=%s project=%s pid=%s bundles=%s",

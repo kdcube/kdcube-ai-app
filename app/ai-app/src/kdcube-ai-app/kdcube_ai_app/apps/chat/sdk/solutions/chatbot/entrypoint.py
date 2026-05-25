@@ -840,7 +840,7 @@ class BaseEntrypoint:
                     "dest": str(build_dest),
                 },
                 lock_wait_seconds=max(1, int(os.environ.get("BUNDLE_UI_BUILD_LOCK_WAIT_SECONDS", "600") or "600")),
-                lock_ttl_seconds=max(30, int(os.environ.get("BUNDLE_UI_BUILD_LOCK_TTL_SECONDS", "900") or "900")),
+                lock_ttl_seconds=max(30, int(os.environ.get("BUNDLE_UI_BUILD_LOCK_TTL_SECONDS", "300") or "300")),
                 allow_existing_on_timeout=False,
                 allow_existing_while_locked=False,
                 log_prefix="[bundle.ui]",
@@ -851,6 +851,60 @@ class BaseEntrypoint:
         except Exception:
             self.logger.log(f"[bundle.ui] {kind} build failed:\n{_tb.format_exc()}", "ERROR")
             raise
+
+    def _active_ui_widget_aliases(self, widget_cfgs: Any) -> set[str]:
+        aliases: set[str] = set()
+        if not isinstance(widget_cfgs, dict):
+            return aliases
+        for alias, raw_cfg in widget_cfgs.items():
+            if not isinstance(raw_cfg, dict) or not self._ui_config_enabled(raw_cfg):
+                continue
+            safe_alias = str(alias or "").strip().replace("/", "_")
+            if safe_alias:
+                aliases.add(safe_alias)
+        return aliases
+
+    def _cleanup_stale_ui_widget_storage(self, *, storage_root: pathlib.Path, active_aliases: set[str]) -> None:
+        import shutil
+
+        widgets_root = storage_root / "ui" / "widgets"
+        signatures_root = storage_root / ".ui.widgets"
+
+        if widgets_root.exists():
+            try:
+                for child in widgets_root.iterdir():
+                    if child.name in active_aliases:
+                        continue
+                    if child.is_dir():
+                        shutil.rmtree(child, ignore_errors=True)
+                        self.logger.log(
+                            f"[bundle.ui] stale widget output removed: alias={child.name} path={child}",
+                            "INFO",
+                        )
+                    elif child.is_file():
+                        child.unlink(missing_ok=True)
+                        self.logger.log(
+                            f"[bundle.ui] stale widget file removed: alias={child.name} path={child}",
+                            "INFO",
+                        )
+            except Exception:
+                self.logger.log(f"[bundle.ui] stale widget output cleanup failed:\n{traceback.format_exc()}", "WARNING")
+
+        if signatures_root.exists():
+            try:
+                for sig in signatures_root.iterdir():
+                    if not sig.is_file() or not sig.name.endswith(".signature"):
+                        continue
+                    alias = sig.name[: -len(".signature")]
+                    if alias in active_aliases:
+                        continue
+                    sig.unlink(missing_ok=True)
+                    self.logger.log(
+                        f"[bundle.ui] stale widget signature removed: alias={alias} path={sig}",
+                        "INFO",
+                    )
+            except Exception:
+                self.logger.log(f"[bundle.ui] stale widget signature cleanup failed:\n{traceback.format_exc()}", "WARNING")
 
     async def _ensure_ui_build(self) -> None:
         """
@@ -872,12 +926,15 @@ class BaseEntrypoint:
         main_view = ui_cfg.get("main_view") or {}
         widget_cfgs = ui_cfg.get("widgets") or {}
 
-        if not main_view and not widget_cfgs:
-            return
-
         storage_root = self.bundle_storage_root()
         if not storage_root:
             self.logger.log("[bundle.ui] build skipped: storage_root unavailable", "WARNING")
+            return
+
+        active_widget_aliases = self._active_ui_widget_aliases(widget_cfgs)
+        self._cleanup_stale_ui_widget_storage(storage_root=storage_root, active_aliases=active_widget_aliases)
+
+        if not main_view and not widget_cfgs:
             return
 
         if isinstance(main_view, dict) and self._ui_config_enabled(main_view):

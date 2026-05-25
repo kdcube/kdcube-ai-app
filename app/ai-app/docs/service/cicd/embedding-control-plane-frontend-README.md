@@ -337,9 +337,10 @@ fresh current build already present. If an entrypoint request still triggers
 to serve stale UI.
 
 In multi-proc deployments, every proc should still run local bundle preload.
-Shared storage build signatures and locks are responsible for making the UI
-build itself run once. A cluster-level preload lock must not allow non-leader
-procs to skip preload and then accept iframe traffic cold.
+Per-bundle preload claims let one proc work on bundle A while another proc
+continues with bundle B. Shared storage build signatures and heartbeat-backed
+locks are the final guard that makes each UI build output update once, while
+still allowing stale dead-owner locks to be recovered.
 
 ## Proposed Assembly Descriptor Surface
 
