@@ -3242,6 +3242,12 @@ def gather_configuration(
         update_env_value(env_main, "MANAGED_BUNDLES_ROOT", "/managed-bundles")
     if not descriptor_workspace_mode and is_placeholder(env_main.entries.get("BUNDLE_STORAGE_ROOT", (None, None))[1]):
         update_env_value(env_main, "BUNDLE_STORAGE_ROOT", "/bundle-storage")
+    update_env_value(env_ingress, "HOST_MANAGED_BUNDLES_PATH", host_managed_bundles)
+    update_env_value(env_ingress, "HOST_BUNDLE_STORAGE_PATH", host_bundle_storage)
+    if is_placeholder(env_ingress.entries.get("MANAGED_BUNDLES_ROOT", (None, None))[1]):
+        update_env_value(env_ingress, "MANAGED_BUNDLES_ROOT", "/managed-bundles")
+    if is_placeholder(env_ingress.entries.get("BUNDLE_STORAGE_ROOT", (None, None))[1]):
+        update_env_value(env_ingress, "BUNDLE_STORAGE_ROOT", "/bundle-storage")
 
     ports_block = _get_nested(assembly_data, "ports")
     if not isinstance(ports_block, dict):
