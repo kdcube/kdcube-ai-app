@@ -110,6 +110,37 @@ def test_singleton_workflow_rebinds_request_context(monkeypatch):
     clear_bundle_loader_caches()
 
 
+def test_admin_bundle_storage_widget_source_resolves(monkeypatch):
+    clear_bundle_loader_caches()
+    monkeypatch.setattr(entrypoint_mod, "get_settings", lambda: SimpleNamespace(TENANT="demo", PROJECT="demo-project"))
+    monkeypatch.setattr(entrypoint_mod, "create_kv_cache_from_env", lambda: None)
+
+    admin = _admin_bundle_entry()
+    spec = BundleSpec(
+        path=admin.path,
+        module=admin.module,
+        singleton=bool(admin.singleton),
+    )
+    cfg = _DummyConfig(bundle_id="kdcube.admin")
+    cfg.ai_bundle_spec = SimpleNamespace(
+        id="kdcube.admin",
+        path=admin.path,
+        module=admin.module,
+        singleton=bool(admin.singleton),
+    )
+
+    workflow, _ = get_workflow_instance(spec, cfg, comm_context=_ctx(user_type="privileged"))
+    defaults = workflow.configuration_defaults()
+    src_folder = defaults["ui"]["widgets"]["bundle_storage"]["src_folder"]
+    src_path = workflow._resolve_ui_src_path(src_folder=src_folder, bundle_root=workflow._bundle_root())
+
+    assert src_folder == "ui/storage"
+    assert src_path.exists()
+    assert (src_path / "package.json").exists()
+
+    clear_bundle_loader_caches()
+
+
 @pytest.mark.asyncio
 async def test_singleton_entrypoint_keeps_comm_context_task_local(monkeypatch):
     monkeypatch.setattr(entrypoint_mod, "get_settings", lambda: SimpleNamespace(TENANT="demo", PROJECT="demo-project"))

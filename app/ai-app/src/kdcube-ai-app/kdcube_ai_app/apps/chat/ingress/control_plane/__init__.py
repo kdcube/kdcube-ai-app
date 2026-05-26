@@ -13,6 +13,7 @@ from .control_plane import router as control_plane_router
 from .conversations_browser import router as conversations_browser_router
 from .config import router as config_router
 from .redis_browser import router as redis_browser_router
+from .storage import router as storage_router
 
 
 def mount_control_plane_router(app: FastAPI):
@@ -27,6 +28,7 @@ def mount_control_plane_router(app: FastAPI):
     control_plane_router.state = app.state
     conversations_browser_router.state = app.state
     redis_browser_router.state = app.state
+    storage_router.state = app.state
     config_router.state = app.state
     app.include_router(
         config_router,
@@ -46,6 +48,11 @@ def mount_control_plane_router(app: FastAPI):
         redis_browser_router,
         prefix="/api/admin/control-plane/redis",
         tags=["CP admin redis"],
+    )
+    app.include_router(
+        storage_router,
+        prefix="/api/admin/control-plane/storage",
+        tags=["CP admin storage"],
     )
     return app
 
