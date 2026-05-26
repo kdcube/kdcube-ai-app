@@ -341,8 +341,13 @@ a { color: inherit; }
   display: flex;
   gap: 0;
   border-bottom: 1px solid var(--line);
+  overflow-x: auto;
 }
 .k-tab {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  flex-shrink: 0;
   padding: 5px 9px;
   font-size: 12.5px;
   color: var(--text-2);
