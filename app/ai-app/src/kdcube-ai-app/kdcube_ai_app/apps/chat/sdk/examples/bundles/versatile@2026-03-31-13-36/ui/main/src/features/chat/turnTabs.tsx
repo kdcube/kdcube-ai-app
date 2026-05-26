@@ -2,7 +2,7 @@
  *
  *  - StepList ........... `Steps` tab
  *  - LinksPanel ......... `Links` tab + TurnLink type + collectTurnLinks helper
- *  - CanvasPanel ........ `Canvas` tab
+ *  - CanvasPanel ........ `Artifacts` tab
  *  - ThinkingBlock ...... thinking carrier rendered above the Overview feed
  *  - TimelineFeed ....... `Timeline` tab
  *  - DownloadsPanel ..... `Files` tab
@@ -236,12 +236,12 @@ function CanvasPanelRow({ canvas }: { canvas: CanvasArtifact }) {
           <span className="k-workitem-meta">{formatTime(canvas.timestamp)}</span>
           <span className="k-snippet-tools" onClick={(e) => e.stopPropagation()}>
             <CanvasExpandButton onClick={() => setModalOpen(true)} />
-            <CopyButton value={canvas.content} title="Copy canvas" />
+            <CopyButton value={canvas.content} title="Copy artifact" />
             <DownloadButton
               data={canvas.content}
               filename={canvasFilename(canvas)}
               mime={canvasMime(canvas)}
-              title="Download canvas"
+              title="Download artifact"
             />
           </span>
           <CaretIcon />
@@ -257,7 +257,7 @@ function CanvasPanelRow({ canvas }: { canvas: CanvasArtifact }) {
 
 function CanvasPanelImpl({ canvases }: { canvases: CanvasArtifact[] }) {
   if (canvases.length === 0) {
-    return <p className="pt-2 text-[12px] text-[var(--muted)]">No canvas items in this turn yet.</p>
+    return <p className="pt-2 text-[12px] text-[var(--muted)]">No artifacts in this turn yet.</p>
   }
   return (
     <div className="flex flex-col gap-2 pt-1">

@@ -67,13 +67,18 @@ import type {
 } from './chatTypes.ts'
 import { initialState } from './chatTypes.ts'
 
-export function addBanner(state: ChatState, tone: BannerTone, text: string): ChatState {
+export function addBanner(
+  state: ChatState,
+  tone: BannerTone,
+  text: string,
+  placement: 'top' | 'composer' = 'top',
+): ChatState {
   const trimmed = text.trim()
   if (!trimmed) return state
   if (state.banners.some((banner) => banner.text === trimmed && banner.tone === tone)) {
     return state
   }
-  const banners = [{ id: createLocalId('banner'), tone, text: trimmed }, ...state.banners].slice(0, 4)
+  const banners = [{ id: createLocalId('banner'), tone, text: trimmed, placement }, ...state.banners].slice(0, 4)
   return { ...state, banners }
 }
 
@@ -203,7 +208,7 @@ export function timelineTitleForMarker(marker: string, fallbackName?: string | n
     case 'timeline_text':
       return fallbackName || 'Timeline update'
     case 'canvas':
-      return fallbackName || 'Canvas update'
+      return fallbackName || 'Artifact update'
     default:
       return fallbackName || 'Stream update'
   }

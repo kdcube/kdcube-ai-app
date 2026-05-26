@@ -362,12 +362,12 @@ function ChatCanvasBlockImpl({ artifact }: { artifact: CanvasArtifact }) {
               <details> open/closed state. */}
           <span className="k-snippet-tools" onClick={(e) => e.stopPropagation()}>
             <CanvasExpandButton onClick={() => setModalOpen(true)} />
-            <CopyButton value={artifact.content} title="Copy canvas" />
+            <CopyButton value={artifact.content} title="Copy artifact" />
             <DownloadButton
               data={artifact.content}
               filename={canvasFilename(artifact)}
               mime={canvasMime(artifact)}
-              title="Download canvas"
+              title="Download artifact"
             />
           </span>
           <CaretIcon />

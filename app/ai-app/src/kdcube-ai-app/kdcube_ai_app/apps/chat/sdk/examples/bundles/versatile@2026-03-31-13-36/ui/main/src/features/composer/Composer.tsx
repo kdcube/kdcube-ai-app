@@ -4,27 +4,32 @@
  *  they do, since the transcript is rendered by sibling components. */
 import { memo, useRef } from 'react'
 import { formatBytes } from '../../components/utils.ts'
+import type { AttachedContext } from '../chat/chatTypes.ts'
 
 function ComposerImpl({
   text,
   files,
+  contexts,
   disabled,
   inProgress,
   lockedMessage,
   onTextChange,
   onFilesAdd,
   onFileRemove,
+  onContextRemove,
   onSubmit,
   onStop,
 }: {
   text: string
   files: File[]
+  contexts: AttachedContext[]
   disabled: boolean
   inProgress: boolean
   lockedMessage: string | null
   onTextChange: (value: string) => void
   onFilesAdd: (files: FileList | null) => void
   onFileRemove: (index: number) => void
+  onContextRemove: (id: string) => void
   onSubmit: () => void
   onStop: () => void
 }) {
@@ -37,6 +42,25 @@ function ComposerImpl({
       ) : null}
 
       <div className="k-composer">
+        {contexts.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5 pb-1">
+            {contexts.map((ctx) => (
+              <span
+                key={ctx.id}
+                className="inline-flex items-center gap-1.5 rounded-full border border-[var(--purple)] bg-[var(--purple-pale)] px-2 py-0.5 text-[11px] font-semibold text-[var(--purple)]"
+                title={ctx.summary || ctx.label}
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+                  <line x1="7" y1="7" x2="7.01" y2="7" />
+                </svg>
+                <span>{ctx.label}</span>
+                <button type="button" aria-label={`Remove ${ctx.label}`} onClick={() => onContextRemove(ctx.id)}>×</button>
+              </span>
+            ))}
+          </div>
+        ) : null}
+
         {files.length > 0 ? (
           <div className="k-composer-attachments">
             {files.map((file, index) => (

@@ -140,6 +140,43 @@ export async function submitTurnFeedback(
   }
 }
 
+/** Pull `{ reaction, origin }` out of one raw reaction artifact. The value
+ *  is stored in the message payload as `{ reaction: { reaction, origin, … } }`,
+ *  but recent()/materialize may surface the payload at slightly different
+ *  depths, so probe the plausible shapes defensively. */
+function extractReaction(item: Record<string, unknown>): { reaction?: string; origin?: string } {
+  const get = (obj: unknown, key: string): unknown =>
+    obj && typeof obj === 'object' ? (obj as Record<string, unknown>)[key] : undefined
+  const meta = get(item, 'meta')
+  const candidates = [
+    get(get(item, 'payload'), 'reaction'),
+    get(get(get(item, 'data'), 'payload'), 'reaction'),
+    get(item, 'payload'),
+    item,
+  ]
+  for (const candidate of candidates) {
+    const reaction = get(candidate, 'reaction')
+    if (typeof reaction === 'string') {
+      const origin = get(candidate, 'origin') ?? get(meta, 'origin')
+      return { reaction, origin: typeof origin === 'string' ? origin : undefined }
+    }
+  }
+  return {}
+}
+
+/** The signed-in user's reaction for a turn — the explicit `origin: 'user'`
+ *  reaction only (machine-inferred reactions never light the thumbs). At
+ *  most one user reaction exists per turn (the server replaces it on write). */
+function pickUserReaction(items: Array<Record<string, unknown>>): TurnReaction | null {
+  for (const item of items) {
+    const { reaction, origin } = extractReaction(item)
+    if (origin === 'user' && (reaction === 'ok' || reaction === 'not_ok' || reaction === 'neutral')) {
+      return reaction
+    }
+  }
+  return null
+}
+
 /** Hydrate the signed-in user's saved reactions for a conversation, keyed
  *  by turn id. Maps to POST .../turns-with-feedbacks. Best-effort: returns
  *  an empty map on any failure so a hydration miss never blocks the load. */
@@ -161,21 +198,17 @@ export async function fetchTurnFeedbacks(
     const data = (await response.json()) as {
       turns?: Array<{
         turn_id?: string
-        feedbacks?: Array<{ reaction?: string; origin?: string }>
-        reactions?: Array<{ reaction?: string; origin?: string }>
+        // Raw reaction artifacts; the reaction value lives in the
+        // message payload: { reaction: { reaction, origin, text, ts } }.
+        reactions?: Array<Record<string, unknown>>
       }>
     }
     const out: Record<string, TurnReaction> = {}
     for (const turn of data.turns || []) {
       const turnId = turn.turn_id
       if (!turnId) continue
-      const entries = [...(turn.feedbacks || []), ...(turn.reactions || [])]
-      /* Prefer the user's own reaction; fall back to the latest entry. */
-      const chosen = entries.find((entry) => entry.origin === 'user') || entries[entries.length - 1]
-      const reaction = chosen?.reaction
-      if (reaction === 'ok' || reaction === 'not_ok' || reaction === 'neutral') {
-        out[turnId] = reaction
-      }
+      const value = pickUserReaction(turn.reactions || [])
+      if (value) out[turnId] = value
     }
     return out
   } catch {

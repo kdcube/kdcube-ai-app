@@ -41,14 +41,49 @@ import { ConversationsSidebar } from './features/conversations/ConversationsSide
 import { Composer } from './features/composer/Composer.tsx'
 import { TurnView } from './features/chat/TurnView.tsx'
 import { FileDropZone } from './components/FileDropZone.tsx'
+import { CopyButton } from './components/CopyButton.tsx'
 import { WebappPane, WebappModal } from './components/WebappPane.tsx'
 import { bundleWidgetUrl, fetchProfile } from './api/transport.ts'
-import { requestAuthRequired, requestHostView } from './host.ts'
+import { isKdcubePreviewContext, recognizeContextMessage, requestAuthRequired, requestHostView } from './host.ts'
 
 /* Gentle inline hint shown when an anonymous visitor tries to send. The
  * host also raises its own login surface; this banner explains why the
  * message did not go through if the visitor dismisses that surface. */
 const AUTH_PROMPT_TEXT = 'Sign in to start chatting.'
+
+/** Map a raw send failure (HTTP POST rejection text) to a concise, friendly
+ *  one-liner + tone. The server crafts concise messages for live-turn
+ *  `chat.error` events, but a rejected POST surfaces the raw HTTP body (e.g.
+ *  a 413 HTML page), which must never reach the UI verbatim. User-fixable
+ *  problems (too large, missing message, transient) are warnings (yellow);
+ *  hard failures are errors (red). */
+function describeSendError(raw: string): { text: string; tone: BannerTone } {
+  if (/\b413\b/.test(raw) || /entity too large/i.test(raw)) {
+    return { text: 'That attachment is too large to send.', tone: 'warning' }
+  }
+  if (/\b400\b/.test(raw) && /missing\b[^a-z]*message/i.test(raw)) {
+    return { text: 'Add a short message to send with your attachment.', tone: 'warning' }
+  }
+  if (/no sse stream/i.test(raw)) {
+    return { text: 'Connection lost — please try again.', tone: 'warning' }
+  }
+  if (/\b404\b/.test(raw)) {
+    return { text: 'This conversation is no longer available.', tone: 'error' }
+  }
+  return { text: 'Couldn’t send your message. Please try again.', tone: 'error' }
+}
+
+/** Short conversation timestamp for the compact picker: time if today,
+ *  otherwise a short month/day. */
+function formatConversationDate(ts?: number | null): string {
+  if (!ts) return ''
+  const date = new Date(ts)
+  const now = new Date()
+  if (date.toDateString() === now.toDateString()) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  }
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
+}
 
 export default function App() {
   const state = useAppSelector((s) => s.chat)
@@ -58,14 +93,27 @@ export default function App() {
   const [conversationQuery, setConversationQuery] = useState('')
   /* Landing-page embed: 'expanded' asks the host to promote this chat
    * iframe to a fullscreen overlay. The host drives the overlay; the
-   * widget only signals intent and stays in sync via `kdcube-set-view`. */
-  const [hostView, setHostView] = useState<'compact' | 'expanded'>('compact')
+   * widget only signals intent and stays in sync via `kdcube-set-view`.
+   *
+   * `hostView` also drives the internal layout: 'compact' is the single-
+   * column tile view (no conversations sidebar, trimmed appbar) for the
+   * landing embed; 'expanded' is the usual full view with the sidebar.
+   * Switching between them is a pure view flip — all data lives in Redux,
+   * so expanding never refetches. Default to compact only when embedded;
+   * a standalone full-page open starts expanded so it keeps its sidebar. */
+  const [hostView, setHostView] = useState<'compact' | 'expanded'>(() =>
+    typeof window !== 'undefined' && window.parent !== window ? 'compact' : 'expanded',
+  )
   /* Left-column mode. `chats` shows ConversationsSidebar (default).
    * `webapp` shows the bundle's `versatile_webapp` widget in the same
    * column. `collapsed` hides the column entirely so the chat takes
    * full width. */
   const [leftPaneMode, setLeftPaneMode] = useState<'chats' | 'webapp' | 'collapsed'>('chats')
   const [webappModalOpen, setWebappModalOpen] = useState(false)
+  /* Compact view conversation picker (no sidebar there). A small dropdown in
+   * the appbar lets the user switch chats / start new without leaving the
+   * tile. Selecting just calls loadConversation — no stream refetch. */
+  const [convMenuOpen, setConvMenuOpen] = useState(false)
   /* Public embedding: the chat renders for anonymous visitors, but the
    * server is the authority on who may open the stream and send. `authed`
    * starts optimistic from token presence (direct/non-embedded use) and is
@@ -85,7 +133,7 @@ export default function App() {
   const promptLogin = useCallback(() => {
     requestAuthRequired()
     const exists = store.getState().chat.banners.some((b) => b.text === AUTH_PROMPT_TEXT)
-    if (!exists) dispatch(chatActions.pushBanner({ tone: 'info', text: AUTH_PROMPT_TEXT }))
+    if (!exists) dispatch(chatActions.pushBanner({ tone: 'info', text: AUTH_PROMPT_TEXT, placement: 'composer' }))
   }, [dispatch])
 
   const stateRef = useRef<ChatState>(state)
@@ -103,6 +151,10 @@ export default function App() {
    * persisted — the failure mode the user reported with attachments). */
   const sendQueueRef = useRef<Promise<void>>(Promise.resolve())
   const bottomRef = useRef<HTMLDivElement | null>(null)
+  /* The scrollable messages region. In compact view this is the scroll
+   * parent (the widget is height-capped and never grows); in the regular
+   * view the window scrolls and this stays null-as-scroller. */
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null)
   const autoScrollRef = useRef(true)
   const [showScrollDown, setShowScrollDown] = useState(false)
 
@@ -112,12 +164,36 @@ export default function App() {
   useEffect(() => {
     function onHostMessage(event: MessageEvent) {
       const data = event.data
-      if (!data || typeof data !== 'object' || data.type !== 'kdcube-set-view') return
-      if (data.view === 'compact' || data.view === 'expanded') setHostView(data.view)
+      if (!data || typeof data !== 'object') return
+      if (data.type === 'kdcube-set-view') {
+        if (data.view === 'compact' || data.view === 'expanded') setHostView(data.view)
+        return
+      }
+      /* Host dropped a structured context card onto the chat. Attach it only
+       * if we recognize it (known kind/id) — the demo of the assistant
+       * "naming" familiar surrounding objects as context chips. */
+      const recognized = recognizeContextMessage(data)
+      if (recognized) {
+        dispatch(chatActions.addComposerContext(recognized))
+        /* Best-effort focus so the visitor sees the chip land next to the input. */
+        window.requestAnimationFrame(() => {
+          const textarea = document.querySelector('.k-composer textarea') as HTMLTextAreaElement | null
+          textarea?.focus()
+        })
+      }
     }
     window.addEventListener('message', onHostMessage)
     return () => window.removeEventListener('message', onHostMessage)
-  }, [])
+  }, [dispatch])
+
+  useEffect(() => {
+    if (!convMenuOpen) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setConvMenuOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [convMenuOpen])
 
   const toggleHostView = useCallback(() => {
     setHostView((prev) => {
@@ -127,31 +203,56 @@ export default function App() {
     })
   }, [])
 
+  /* Dev affordance: when the bundle main view is iframed inside a same-origin
+   * KDCube frame (e.g. the control plane), expose a local compact/full preview
+   * toggle so both layouts can be exercised before the public landing host —
+   * which is cross-origin and drives the overlay itself — is wired up. Flips
+   * the view locally only; it does not message any host. */
+  const kdcubePreview = useMemo(() => isKdcubePreviewContext(), [])
+  const toggleViewLocal = useCallback(() => {
+    setHostView((prev) => (prev === 'compact' ? 'expanded' : 'compact'))
+  }, [])
+
   useEffect(() => {
     stateRef.current = state
   }, [state])
 
   useEffect(() => {
-    const updateAutoScroll = () => {
-      const doc = document.documentElement
-      const scrollTop = window.scrollY || doc.scrollTop || 0
-      const remaining = doc.scrollHeight - (scrollTop + window.innerHeight)
-      const near = remaining < 140
-      autoScrollRef.current = near
-      setShowScrollDown(!near && doc.scrollHeight > window.innerHeight + 80)
+    const compactNow = hostView === 'compact'
+    const measure = () => {
+      const scroller = compactNow ? scrollContainerRef.current : null
+      if (scroller) {
+        const remaining = scroller.scrollHeight - (scroller.scrollTop + scroller.clientHeight)
+        const near = remaining < 140
+        autoScrollRef.current = near
+        setShowScrollDown(!near && scroller.scrollHeight > scroller.clientHeight + 80)
+      } else {
+        const doc = document.documentElement
+        const scrollTop = window.scrollY || doc.scrollTop || 0
+        const remaining = doc.scrollHeight - (scrollTop + window.innerHeight)
+        const near = remaining < 140
+        autoScrollRef.current = near
+        setShowScrollDown(!near && doc.scrollHeight > window.innerHeight + 80)
+      }
     }
 
-    updateAutoScroll()
-    window.addEventListener('scroll', updateAutoScroll, { passive: true })
-    window.addEventListener('resize', updateAutoScroll)
+    measure()
+    const scroller = compactNow ? scrollContainerRef.current : null
+    const target: Window | HTMLElement = scroller ?? window
+    target.addEventListener('scroll', measure, { passive: true })
+    window.addEventListener('resize', measure)
     return () => {
-      window.removeEventListener('scroll', updateAutoScroll)
-      window.removeEventListener('resize', updateAutoScroll)
+      target.removeEventListener('scroll', measure)
+      window.removeEventListener('resize', measure)
     }
-  }, [])
+    /* `ready` re-runs this once the messages container mounts (so compact
+     * binds the scroll listener to the container, not the window). */
+  }, [hostView, ready])
 
   const scrollToBottom = () => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    const scroller = hostView === 'compact' ? scrollContainerRef.current : null
+    if (scroller) scroller.scrollTo({ top: scroller.scrollHeight, behavior: 'smooth' })
+    else bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }
 
   /* Auto-scroll dep tracks a compact signature of "what has visually
@@ -162,8 +263,10 @@ export default function App() {
   const scrollSignature = `${state.turns.length}:${lastTurn?.id ?? ''}:${lastTurn?.answer.length ?? 0}:${lastTurn?.timeline.length ?? 0}:${lastTurn?.artifacts.length ?? 0}:${state.banners.length}:${ready ? 1 : 0}`
   useEffect(() => {
     if (!autoScrollRef.current) return
-    bottomRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' })
-  }, [scrollSignature])
+    const scroller = hostView === 'compact' ? scrollContainerRef.current : null
+    if (scroller) scroller.scrollTop = scroller.scrollHeight
+    else bottomRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' })
+  }, [scrollSignature, hostView])
 
   const hasPendingTurn = state.turns.some((turn) => turn.state === 'pending' || turn.state === 'running')
   const bundleId = settings.getBundleId() || BUILT_BUNDLE_ID
@@ -286,21 +389,23 @@ export default function App() {
         message = rateLimit?.user_message || fallbackRateLimitMessage(rateLimit || undefined, data)
         break
       case 'rate_limit.no_funding':
-        tone = (rateLimit?.notification_type as BannerTone | undefined) || (data.notification_type as BannerTone | undefined) || 'error'
+        /* Economic / budget problems are chat-blocking but user-actionable —
+         * yellow (warning), not red, and shown above the composer. */
+        tone = (rateLimit?.notification_type as BannerTone | undefined) || (data.notification_type as BannerTone | undefined) || 'warning'
         message =
           rateLimit?.user_message ||
           (data.user_message as string | undefined) ||
           'This service is not available for your account type.'
         break
       case 'rate_limit.subscription_exhausted':
-        tone = (rateLimit?.notification_type as BannerTone | undefined) || (data.notification_type as BannerTone | undefined) || 'error'
+        tone = (rateLimit?.notification_type as BannerTone | undefined) || (data.notification_type as BannerTone | undefined) || 'warning'
         message =
           rateLimit?.user_message ||
           (data.user_message as string | undefined) ||
           'Your subscription balance is exhausted. Top up your balance to continue.'
         break
       case 'rate_limit.project_exhausted': {
-        tone = 'error'
+        tone = 'warning'
         const hasPersonalBudget = Boolean(data.has_personal_budget)
         const usdShort = typeof data.usd_short === 'number' ? data.usd_short : null
         if (hasPersonalBudget && usdShort && usdShort > 0) {
@@ -322,21 +427,24 @@ export default function App() {
       case 'rate_limit.lane_switch':
       case 'economics.user_underfunded_absorbed':
         return
-      default:
-        message =
-          rateLimit?.user_message ||
-          (data.user_message as string | undefined) ||
-          `${env.type}: service message received`
+      default: {
+        /* Unknown / internal service events (telemetry such as
+         * react.tool.call, accounting.usage) are not user-facing — surface
+         * one only if it carries an explicit user_message, otherwise ignore
+         * it so it doesn't become banner noise. */
+        const explicit = rateLimit?.user_message || (data.user_message as string | undefined)
+        if (!explicit) {
+          console.debug('Ignoring non-user-facing service event', env.type)
+          return
+        }
+        message = explicit
+      }
     }
 
-    dispatch(chatActions.pushBanner({ tone, text: message }))
-    const shouldLockInput =
-      tone === 'error' &&
-      env.type !== 'rate_limit.attachment_failure' &&
-      env.type !== 'rate_limit.warning'
-    if (shouldLockInput) {
-      dispatch(chatActions.lockInput(message))
-    }
+    /* Surface as a dismissible notice right above the composer (a chat-send
+     * concern) — never lock the composer. The user can send again and will
+     * simply see the notice again if still limited. */
+    dispatch(chatActions.pushBanner({ tone, text: message, placement: 'composer' }))
     if (env.type === 'rate_limit.attachment_failure') {
       dispatch(chatActions.setComposerFiles([]))
     }
@@ -438,7 +546,30 @@ export default function App() {
       const targetTurnId = isContinuation ? activeTurn?.id : undefined
       const draftText = (textOverride ?? snapshot.composerText).trim()
       const draftFiles = isSteer || textOverride !== undefined ? [] : snapshot.composerFiles
+      /* Host-dropped context objects ride along with a fresh send (not steers
+       * or programmatic followup-chip sends). For now they are folded into the
+       * wire text as a `{"context": [...]}` block appended after the user's
+       * message; the visible bubble keeps the clean user text. This is the
+       * placeholder until the turn payload grows a first-class `context` field
+       * alongside text + attachments. */
+      const draftContexts = isSteer || textOverride !== undefined ? [] : snapshot.composerContexts
+      const sendText = draftContexts.length
+        ? `${draftText}\n\n${JSON.stringify({
+            context: draftContexts.map((c) => ({ id: c.id, label: c.label, summary: c.summary })),
+          })}`
+        : draftText
       if (!draftText && draftFiles.length === 0 && !isSteer) return
+      /* The server requires a message, even with attachments. Guard here
+       * (before clearing the composer) so an attachment-only send shows a
+       * concise hint instead of a raw 400 — and keeps the attached file. */
+      if (!draftText && draftFiles.length > 0 && !isSteer) {
+        dispatch(chatActions.pushBanner({
+          tone: 'warning',
+          text: 'Add a short message to send with your attachment.',
+          placement: 'composer',
+        }))
+        return
+      }
 
       const sentAt = Date.now()
       const existingConversationId = snapshot.conversationId
@@ -454,7 +585,7 @@ export default function App() {
         streamId,
         bundleId,
         conversationId: existingConversationId,
-        text: draftText,
+        text: sendText,
         files: draftFiles,
         chatHistory: isContinuation ? [] : buildChatHistory(snapshot.turns),
         ...(isContinuation
@@ -515,24 +646,16 @@ export default function App() {
         promptLogin()
         return
       }
-      const errorTurnId = isContinuation && targetTurnId ? targetTurnId : createLocalId('client_submit_error')
-      const latest = stateRef.current
-      dispatch(chatActions.chatErrored({
-        type: 'chat.error',
-        timestamp: new Date().toISOString(),
-        service: { request_id: createLocalId('request') },
-        conversation: {
-          session_id: latest.sessionId || '',
-          conversation_id: existingConversationId || latest.conversationId || '',
-          turn_id: errorTurnId,
-        },
-        event: {
-          step: 'send',
-          status: 'error',
-          title: 'Send failed',
-        },
-        data: { error: text },
-      }))
+      /* A rejected send POST returns the raw HTTP body (e.g. a 413 HTML
+       * page). Never surface that as an error turn. Restore the draft so the
+       * concise notice sits right next to the message / attachment that
+       * caused it (the attachment pill reappears in the composer), and keep
+       * the raw text in the console for debugging. */
+      console.error('send failed', text)
+      if (draftText) dispatch(chatActions.setComposerText(draftText))
+      if (draftFiles.length > 0) dispatch(chatActions.setComposerFiles(draftFiles))
+      const { text: noticeText, tone: noticeTone } = describeSendError(text)
+      dispatch(chatActions.pushBanner({ tone: noticeTone, text: noticeText, placement: 'composer' }))
     }
     } finally {
       /* Always advance the queue, even if the body returned early
@@ -580,6 +703,20 @@ export default function App() {
 
   useEffect(() => {
     let mounted = true
+    /* Host popup login finished: the landing signs in via a popup (no page
+     * reload), then posts `kdcube-auth-changed`. The cookies are already set
+     * same-origin, so re-resolving auth picks up the signed-in profile and
+     * opens the stream in place — no reload, the typed message / dropped
+     * context survive. */
+    const onAuthChanged = (event: MessageEvent) => {
+      const data = event.data
+      if (!data || typeof data !== 'object' || data.type !== 'kdcube-auth-changed') return
+      if (!mounted) return
+      void resolveAuthAndConnect().catch((error) => {
+        console.warn('Re-auth after host auth change failed', error)
+      })
+    }
+    window.addEventListener('message', onAuthChanged)
     ;(async () => {
       try {
         await settings.setupParentListener()
@@ -603,6 +740,7 @@ export default function App() {
 
     return () => {
       mounted = false
+      window.removeEventListener('message', onAuthChanged)
       resetTransport()
     }
   }, [])
@@ -643,6 +781,14 @@ export default function App() {
     void refreshConversationList()
   })
   const handleStartNewChat = useStableCallback(() => {
+    startNewChat()
+  })
+  const handleCompactConvSelect = useStableCallback((conversationId: string) => {
+    setConvMenuOpen(false)
+    void loadConversation(conversationId)
+  })
+  const handleCompactNewChat = useStableCallback(() => {
+    setConvMenuOpen(false)
     startNewChat()
   })
   const handleTurnDownloadError = useStableCallback((text: string) => {
@@ -704,6 +850,9 @@ export default function App() {
   const handleComposerFileRemove = useStableCallback((index: number) => {
     dispatch(chatActions.removeComposerFile(index))
   })
+  const handleContextRemove = useStableCallback((id: string) => {
+    dispatch(chatActions.removeComposerContext(id))
+  })
   const handleComposerSubmit = useStableCallback(() => {
     if (!authedRef.current) {
       promptLogin()
@@ -757,22 +906,59 @@ export default function App() {
    * re-evaluate them inline (and so the dependent components see the
    * same boolean reference when nothing has changed). */
   const sendingDisabled = state.inputLocked || state.connection === 'booting'
-  const leftPaneVisible = leftPaneMode !== 'collapsed'
+  /* Compact (landing tile) view: no sidebar, trimmed appbar. The composer
+   * keeps full functionality (attach + stop) in both views. */
+  const compact = hostView === 'compact'
+  const leftPaneVisible = !compact && leftPaneMode !== 'collapsed'
+  /* Dev preview: inside the KDCube frame the iframe is full-window, so the
+   * compact view would fill the screen and you can't judge the landing tile.
+   * Box it to a fixed tile size (centered, on a faint stage) so it looks the
+   * way it will when the landing host sizes the iframe. Never applies to the
+   * real embed (kdcubePreview is false there) — there the host sets the size
+   * and compact simply fills it. */
+  const previewTile = compact && kdcubePreview
+  /* Notices split by placement, each capped to the 2 newest so they never
+   * accumulate or grow the view, and all dismissible:
+   *  - composer: chat-send concerns (rate-limit / economic / send errors /
+   *    sign-in hint) shown right ABOVE the chat input.
+   *  - top: app-level (boot/connection, list errors) at the top strip. */
+  const composerBanners = state.banners.filter((b) => b.placement === 'composer').slice(0, 2)
+  const topBanners = (
+    bootError
+      ? [{ id: 'boot-error', tone: 'error' as BannerTone, text: bootError }, ...state.banners.filter((b) => b.placement !== 'composer')]
+      : state.banners.filter((b) => b.placement !== 'composer')
+  ).slice(0, 2)
+  const handleDismissAllBanners = () => {
+    setBootError(null)
+    dispatch(chatActions.clearBanners())
+  }
 
   return (
-    <div className="shell-grid">
-      <button
-        type="button"
-        className={`k-scroll-to-bottom ${showScrollDown ? 'k-show' : ''}`}
-        onClick={scrollToBottom}
-        aria-label="Scroll to latest"
+    <div className={`shell-grid ${previewTile ? 'k-preview-stage' : ''}`}>
+      <div
+        className={`relative mx-auto flex w-full flex-col ${
+          previewTile
+            ? 'my-6 h-[560px] max-w-[600px] overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface)] shadow-lg'
+            : compact
+              ? 'h-screen max-w-[1320px] overflow-hidden'
+              : 'min-h-screen max-w-[1320px]'
+        }`}
       >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M12 5v14M5 12l7 7 7-7" />
-        </svg>
-        <span>Latest</span>
-      </button>
-      <div className="mx-auto flex min-h-screen w-full max-w-[1320px] flex-col">
+        {/* "Latest" jump button. Normally fixed to the viewport (correct
+            inside the real iframe tile); in the synthetic boxed preview it is
+            absolute so it stays inside the tile instead of floating in the
+            window corner. */}
+        <button
+          type="button"
+          className={`k-scroll-to-bottom ${previewTile ? 'k-scroll-in-tile' : ''} ${showScrollDown ? 'k-show' : ''}`}
+          onClick={scrollToBottom}
+          aria-label="Scroll to latest"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 5v14M5 12l7 7 7-7" />
+          </svg>
+          <span>Latest</span>
+        </button>
         <header className="k-appbar">
           <div className="k-brand min-w-0">
             {/* KDCube favicon (same robot/cube mark as kdcube.tech). Inlined
@@ -803,9 +989,28 @@ export default function App() {
               <rect x="13" y="57" width="12" height="7" fill="#4372C3" stroke="#06101E" strokeWidth="1.5" rx="1.5" />
               <rect x="39" y="57" width="12" height="7" fill="#4372C3" stroke="#06101E" strokeWidth="1.5" rx="1.5" />
             </svg>
-            <span className="k-brand-name">Versatile</span>
-            <span className="k-brand-sep">/</span>
-            <span className="k-brand-path">{bundleId}</span>
+            {compact ? (
+              /* Compact tile: two-line brand so the current conversation
+                 title is always visible (the title header bar is hidden in
+                 this view). Conversation id is on hover of the title. */
+              <span className="flex min-w-0 flex-col leading-tight">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.05em] text-[var(--muted)]">
+                  Versatile
+                </span>
+                <span
+                  className="truncate text-[13px] font-semibold text-[var(--ink)]"
+                  title={state.conversationId || undefined}
+                >
+                  {state.conversationTitle || (state.conversationId ? 'Untitled conversation' : 'New chat')}
+                </span>
+              </span>
+            ) : (
+              <>
+                <span className="k-brand-name">Versatile</span>
+                <span className="k-brand-sep">/</span>
+                <span className="k-brand-path">{bundleId}</span>
+              </>
+            )}
           </div>
           <div className="flex items-center gap-2">
             {authed ? (
@@ -819,31 +1024,51 @@ export default function App() {
                 Sign in to chat
               </span>
             )}
-            <button
-              type="button"
-              onClick={() =>
-                setLeftPaneMode(leftPaneMode === 'collapsed' ? 'chats' : 'collapsed')
-              }
-              className="k-iconbtn"
-              aria-label={leftPaneMode === 'collapsed' ? 'Show side panel' : 'Hide side panel'}
-              title={leftPaneMode === 'collapsed' ? 'Show side panel' : 'Hide side panel'}
-              aria-pressed={leftPaneMode !== 'collapsed'}
-            >
-              {/* Sidebar-toggle icon — a panel with a chevron pointing in
-                  the direction the panel would move when toggled. */}
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="4" width="18" height="16" rx="2" />
-                <path d="M9 4v16" />
-                {leftPaneMode === 'collapsed' ? (
-                  <path d="M14 9l3 3-3 3" />
-                ) : (
-                  <path d="M17 9l-3 3 3 3" />
-                )}
-              </svg>
-            </button>
+            {/* Compact conversation picker — replaces the sidebar in the
+                tile so chats can still be switched / started here. */}
+            {compact && authed ? (
+              <button
+                type="button"
+                onClick={() => setConvMenuOpen((open) => !open)}
+                className={`k-iconbtn ${convMenuOpen ? 'k-iconbtn-active' : ''}`}
+                aria-label="Conversations"
+                title="Conversations"
+                aria-haspopup="menu"
+                aria-expanded={convMenuOpen}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
+              </button>
+            ) : null}
+            {!compact ? (
+              <button
+                type="button"
+                onClick={() =>
+                  setLeftPaneMode(leftPaneMode === 'collapsed' ? 'chats' : 'collapsed')
+                }
+                className="k-iconbtn"
+                aria-label={leftPaneMode === 'collapsed' ? 'Show side panel' : 'Hide side panel'}
+                title={leftPaneMode === 'collapsed' ? 'Show side panel' : 'Hide side panel'}
+                aria-pressed={leftPaneMode !== 'collapsed'}
+              >
+                {/* Sidebar-toggle icon — a panel with a chevron pointing in
+                    the direction the panel would move when toggled. */}
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="4" width="18" height="16" rx="2" />
+                  <path d="M9 4v16" />
+                  {leftPaneMode === 'collapsed' ? (
+                    <path d="M14 9l3 3-3 3" />
+                  ) : (
+                    <path d="M17 9l-3 3 3 3" />
+                  )}
+                </svg>
+              </button>
+            ) : null}
             {/* Settings opens the user-bound memories webapp — hidden for
-                anonymous visitors who have no user-scoped state. */}
-            {authed ? (
+                anonymous visitors who have no user-scoped state, and in the
+                compact view whose left pane (its target) is not shown. */}
+            {!compact && authed ? (
               <button
                 type="button"
                 onClick={handleOpenWebapp}
@@ -859,18 +1084,39 @@ export default function App() {
                 </svg>
               </button>
             ) : null}
-            <button
-              type="button"
-              onClick={handleReconnect}
-              className="k-iconbtn"
-              aria-label="Reconnect"
-              title="Reconnect"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M21 12a9 9 0 1 1-3-6.7" />
-                <path d="M21 3v6h-6" />
-              </svg>
-            </button>
+            {!compact ? (
+              <button
+                type="button"
+                onClick={handleReconnect}
+                className="k-iconbtn"
+                aria-label="Reconnect"
+                title="Reconnect"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 12a9 9 0 1 1-3-6.7" />
+                  <path d="M21 3v6h-6" />
+                </svg>
+              </button>
+            ) : null}
+            {/* Dev-only: switch compact ↔ full layout locally, shown only when
+                iframed inside a same-origin KDCube frame (e.g. the control
+                plane) so the two views can be tested without a landing host. */}
+            {kdcubePreview ? (
+              <button
+                type="button"
+                onClick={toggleViewLocal}
+                className={`k-iconbtn ${!compact ? 'k-iconbtn-active' : ''}`}
+                aria-label={compact ? 'Preview full view' : 'Preview compact view'}
+                title={compact ? 'KDCube preview: switch to full view' : 'KDCube preview: switch to compact view'}
+                aria-pressed={!compact}
+              >
+                {/* Two-pane layout icon (distinct from the sidebar toggle). */}
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="5" width="7" height="14" rx="1.5" />
+                  <rect x="14" y="5" width="7" height="14" rx="1.5" />
+                </svg>
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={toggleHostView}
@@ -888,32 +1134,85 @@ export default function App() {
                 )}
               </svg>
             </button>
-            <button
-              type="button"
-              onClick={startNewChat}
-              disabled={hasPendingTurn}
-              className="k-btn"
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M12 5v14M5 12h14" />
-              </svg>
-              New chat
-            </button>
+            {!compact ? (
+              <button
+                type="button"
+                onClick={startNewChat}
+                disabled={hasPendingTurn}
+                className="k-btn"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+                New chat
+              </button>
+            ) : null}
           </div>
         </header>
 
-        <main className="flex-1 px-3 py-3 sm:px-4 sm:py-4 lg:px-6 lg:py-5">
-          {bootError || state.banners.length > 0 ? (
-            <div className="pb-3">
-              <BannerStrip
-                banners={bootError ? [{ id: 'boot-error', tone: 'error', text: bootError }, ...state.banners] : state.banners}
-                onDismiss={handleBannerDismiss}
-              />
+        {/* Compact conversation dropdown. Anchored just below the appbar and
+            kept inside the tile; a full-tile backdrop closes it on outside
+            click. Selecting loads the chat without reopening the stream. */}
+        {compact && authed && convMenuOpen ? (
+          <>
+            <div
+              className="absolute inset-0 z-20"
+              onClick={() => setConvMenuOpen(false)}
+              aria-hidden="true"
+            />
+            <div
+              className="absolute inset-x-2 top-[50px] z-30 flex flex-col overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--surface)] shadow-lg"
+              role="menu"
+            >
+              <button type="button" className="k-conv-menu-item k-conv-menu-new" onClick={handleCompactNewChat}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+                New chat
+              </button>
+              <div className="max-h-[240px] overflow-y-auto border-t border-[var(--line-soft)]">
+                {filteredConversations.length === 0 ? (
+                  <div className="px-3 py-2 text-[12px] text-[var(--muted)]">
+                    {state.conversationsLoading ? 'Loading chats…' : 'No saved chats yet.'}
+                  </div>
+                ) : (
+                  filteredConversations.map((conversation) => (
+                    <button
+                      key={conversation.id}
+                      type="button"
+                      className={`k-conv-menu-item ${conversation.id === state.conversationId ? 'is-active' : ''}`}
+                      onClick={() => handleCompactConvSelect(conversation.id)}
+                      title={conversation.title || conversation.id}
+                    >
+                      <span className="truncate">{conversation.title || 'Untitled conversation'}</span>
+                      {(() => {
+                        const when = formatConversationDate(conversation.lastActivityAt ?? conversation.startedAt)
+                        return when ? <span className="k-conv-menu-date">{when}</span> : null
+                      })()}
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          </>
+        ) : null}
+
+        <main className={`flex-1 ${compact ? 'flex min-h-0 flex-col overflow-hidden' : 'px-3 py-3 sm:px-4 sm:py-4 lg:px-6 lg:py-5'}`}>
+          {topBanners.length > 0 ? (
+            <div className={compact ? 'px-3 pt-2' : 'pb-3'}>
+              {topBanners.length > 1 ? (
+                <div className="flex justify-end pb-1">
+                  <button type="button" className="k-btn k-sm k-ghost" onClick={handleDismissAllBanners}>
+                    Dismiss all
+                  </button>
+                </div>
+              ) : null}
+              <BannerStrip banners={topBanners} onDismiss={handleBannerDismiss} />
             </div>
           ) : null}
 
           <div
-            className={`grid gap-3 lg:gap-4 ${
+            className={`grid gap-3 lg:gap-4 ${compact ? 'min-h-0 flex-1 grid-rows-[minmax(0,1fr)]' : ''} ${
               leftPaneVisible
                 ? 'lg:grid-cols-[260px_minmax(0,1fr)]'
                 : 'lg:grid-cols-[minmax(0,1fr)]'
@@ -950,21 +1249,43 @@ export default function App() {
             <FileDropZone
               onFiles={handleDropFiles}
               disabled={sendingDisabled}
-              className="min-w-0 flex"
+              className={`min-w-0 flex ${compact ? 'min-h-0' : ''}`}
             >
-            <div className="glass-panel min-w-0 overflow-hidden flex flex-col flex-1">
+            <div className={`glass-panel min-w-0 overflow-hidden flex flex-col flex-1 ${compact ? 'min-h-0 k-flush' : ''}`}>
+              {/* Conversation-title header bar — hidden in the compact tile
+                  for the clean single-surface look (the appbar carries the
+                  identity there). Shown in the full view. */}
+              {!compact ? (
               <section className="flex items-center justify-between gap-3 border-b border-[var(--line-soft)] px-4 py-2.5">
-                <div className="min-w-0">
-                  <div className="truncate text-[15px] font-semibold text-[var(--ink)]">
-                    {state.conversationTitle || (state.conversationId ? 'Untitled conversation' : 'New chat')}
+                <div className="group min-w-0">
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    {/* Conversation id is no longer printed as a line; it is
+                        available on hover (tooltip) and via the copy button. */}
+                    <span
+                      className="truncate text-[15px] font-semibold text-[var(--ink)]"
+                      title={state.conversationId || undefined}
+                    >
+                      {state.conversationTitle || (state.conversationId ? 'Untitled conversation' : 'New chat')}
+                    </span>
+                    {state.conversationId ? (
+                      <span className="opacity-0 transition-opacity group-hover:opacity-100">
+                        <CopyButton value={state.conversationId} title="Copy conversation id" />
+                      </span>
+                    ) : null}
                   </div>
-                  <div className="truncate text-[11px] text-[var(--muted)]">
-                    {state.conversationId || (state.conversationsLoading ? 'Refreshing chats…' : `${state.conversations.length} saved chat${state.conversations.length === 1 ? '' : 's'}`)}
-                  </div>
+                  {!state.conversationId ? (
+                    <div className="truncate text-[11px] text-[var(--muted)]">
+                      {state.conversationsLoading ? 'Refreshing chats…' : `${state.conversations.length} saved chat${state.conversations.length === 1 ? '' : 's'}`}
+                    </div>
+                  ) : null}
                 </div>
               </section>
+              ) : null}
 
-              <div className="flex-1 px-4 py-3">
+              <div
+                ref={scrollContainerRef}
+                className={`px-4 py-3 ${compact ? 'min-h-0 flex-1 overflow-y-auto' : 'flex-1'}`}
+              >
                 {state.turns.length === 0 ? (
                   <div className="k-empty">
                     <div className="k-empty-title">No turns yet</div>
@@ -1005,15 +1326,25 @@ export default function App() {
               </div>
 
               <div className="border-t border-[var(--line-soft)] px-3 py-3">
+                {/* Chat-send notices (rate-limit / economic / send errors /
+                    sign-in hint) sit right above the input, concise and
+                    dismissible — never as error turns or a frozen composer. */}
+                {composerBanners.length > 0 ? (
+                  <div className="pb-2">
+                    <BannerStrip banners={composerBanners} onDismiss={handleBannerDismiss} />
+                  </div>
+                ) : null}
                 <Composer
                   text={state.composerText}
                   files={state.composerFiles}
+                  contexts={state.composerContexts}
                   disabled={sendingDisabled}
                   inProgress={hasPendingTurn}
                   lockedMessage={state.inputLockMessage}
                   onTextChange={handleComposerTextChange}
                   onFilesAdd={handleComposerFilesAdd}
                   onFileRemove={handleComposerFileRemove}
+                  onContextRemove={handleContextRemove}
                   onSubmit={handleComposerSubmit}
                   onStop={handleComposerStop}
                 />

@@ -51,12 +51,12 @@ export function CanvasModal({
             <span className="k-micro">{canvas.format || 'text'}</span>
           </div>
           <span className="k-snippet-tools">
-            <CopyButton value={canvas.content} title="Copy canvas" />
+            <CopyButton value={canvas.content} title="Copy artifact" />
             <DownloadButton
               data={canvas.content}
               filename={canvasFilename(canvas)}
               mime={canvasMime(canvas)}
-              title="Download canvas"
+              title="Download artifact"
             />
           </span>
           <button

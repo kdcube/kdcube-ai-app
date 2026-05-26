@@ -87,11 +87,52 @@ a { color: inherit; }
 
 .shell-grid { min-height: 100vh; }
 
+/* Dev-only: faint stage behind the boxed compact tile preview so the
+   fixed-size tile reads as a card, the way it will on the landing page. */
+.shell-grid.k-preview-stage { background: var(--surface-2); }
+
 /* Flat surface — no shadow, thin border */
 .glass-panel {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
+}
+
+/* Compact tile: flatten the inner panel (no card-in-a-card border/radius) but
+   keep the white surface so the message area matches the wide/expanded view —
+   transparent here would reveal the tinted page background behind the tile. */
+.glass-panel.k-flush {
+  border: 0;
+  border-radius: 0;
+  background: var(--surface);
+}
+
+/* Compact conversation dropdown items. */
+.k-conv-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 13px;
+  color: var(--text-2);
+  background: var(--surface);
+  border: 0;
+  cursor: pointer;
+}
+.k-conv-menu-item > span { min-width: 0; }
+.k-conv-menu-item:hover { background: var(--surface-2); color: var(--ink); }
+.k-conv-menu-item.is-active { background: var(--accent-soft); color: var(--accent); }
+.k-conv-menu-new { font-weight: 600; color: var(--ink); }
+.k-conv-menu-date {
+  margin-left: auto;
+  flex: none;
+  padding-left: 10px;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .shell-grid input,
@@ -275,14 +316,15 @@ a { color: inherit; }
 /* Notices */
 .k-notice {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
-  padding: 8px 10px;
+  padding: 6px 10px;
   border: 1px solid var(--line);
   border-radius: var(--r-md);
   background: var(--surface);
   color: var(--text-2);
-  font-size: 13px;
+  font-size: 12.5px;
+  line-height: 1.4;
 }
 .k-notice strong { color: var(--ink); font-weight: 600; }
 .k-notice .k-notice-action { margin-left: 8px; }
@@ -301,8 +343,8 @@ a { color: inherit; }
   border-bottom: 1px solid var(--line);
 }
 .k-tab {
-  padding: 8px 12px;
-  font-size: 13px;
+  padding: 5px 9px;
+  font-size: 12.5px;
   color: var(--text-2);
   background: transparent;
   border: 0;
@@ -663,6 +705,9 @@ a { color: inherit; }
   background: var(--surface-2);
 }
 .k-scroll-to-bottom svg { width: 14px; height: 14px; color: var(--text-2); }
+/* Boxed compact preview: keep the jump button inside the tile (the tile's
+   column is position:relative) rather than fixed to the window. */
+.k-scroll-to-bottom.k-scroll-in-tile { position: absolute; right: 14px; bottom: 104px; }
 
 /* Message toolbar (copy on hover for user/assistant message body) */
 .k-msg { position: relative; }

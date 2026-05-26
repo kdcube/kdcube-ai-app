@@ -22,6 +22,10 @@ export interface Banner {
   id: string
   tone: BannerTone
   text: string
+  /** Where the notice renders. `'composer'` = right above the chat input
+   *  (chat-send / rate-limit / economic notices). `'top'` (default) =
+   *  app-level strip at the top (boot/connection, list errors). */
+  placement?: 'top' | 'composer'
 }
 
 export interface TurnStep {
@@ -158,6 +162,18 @@ export interface AdditionalUserMessage {
   continuationKind: Exclude<ContinuationKind, 'regular'>
 }
 
+/** A structured context object the host page dropped onto the chat (e.g. a
+ *  "Why / What / How KDCube" card dragged from the landing). The chat
+ *  recognizes known objects, shows them as removable chips next to the
+ *  composer, and folds them into the next turn. A forerunner of a first-class
+ *  "context" turn input alongside text + attachments. */
+export interface AttachedContext {
+  id: string
+  kind: string
+  label: string
+  summary?: string
+}
+
 export type TimelineEntryKind = 'lifecycle' | 'answer' | 'thinking' | 'timeline' | 'canvas' | 'subsystem' | 'error'
 export type TimelineEntryFormat = 'markdown' | 'text' | 'json' | 'code'
 
@@ -204,6 +220,7 @@ export interface ChatState {
   conversationTitle: string | null
   composerText: string
   composerFiles: File[]
+  composerContexts: AttachedContext[]
   turns: ChatTurn[]
   banners: Banner[]
   /** Signed-in user's saved reaction per assistant turn id. */
@@ -224,6 +241,7 @@ export const initialState: ChatState = {
   conversationTitle: null,
   composerText: '',
   composerFiles: [],
+  composerContexts: [],
   turns: [],
   banners: [],
   feedback: {},

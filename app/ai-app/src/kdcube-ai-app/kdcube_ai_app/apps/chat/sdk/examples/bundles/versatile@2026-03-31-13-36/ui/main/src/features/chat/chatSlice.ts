@@ -33,6 +33,7 @@ import {
 } from './chatTypes.ts'
 import type {
   AdditionalUserMessage,
+  AttachedContext,
   ChatState,
   ChatTurn,
   ConnectionState,
@@ -101,17 +102,29 @@ const slice = createSlice({
     removeComposerFile(state, action: PayloadAction<number>) {
       state.composerFiles = state.composerFiles.filter((_, idx) => idx !== action.payload)
     },
+    addComposerContext(state, action: PayloadAction<AttachedContext>) {
+      /* Dedupe by id so dropping the same card twice doesn't stack chips. */
+      if (state.composerContexts.some((c) => c.id === action.payload.id)) return
+      state.composerContexts = [...state.composerContexts, action.payload]
+    },
+    removeComposerContext(state, action: PayloadAction<string>) {
+      state.composerContexts = state.composerContexts.filter((c) => c.id !== action.payload)
+    },
     clearComposer(state) {
       state.composerText = ''
       state.composerFiles = []
+      state.composerContexts = []
     },
 
     // --- Banners ---
-    pushBanner(state, action: PayloadAction<{ tone: BannerTone; text: string }>) {
-      return addBanner(state as ChatState, action.payload.tone, action.payload.text)
+    pushBanner(state, action: PayloadAction<{ tone: BannerTone; text: string; placement?: 'top' | 'composer' }>) {
+      return addBanner(state as ChatState, action.payload.tone, action.payload.text, action.payload.placement ?? 'top')
     },
     dismissBanner(state, action: PayloadAction<string>) {
       state.banners = state.banners.filter((banner) => banner.id !== action.payload)
+    },
+    clearBanners(state) {
+      state.banners = []
     },
 
     // --- Turn feedback (signed-in user's reaction per assistant turn) ---
@@ -140,6 +153,13 @@ const slice = createSlice({
     // --- Conversations list ---
     setConversations(state, action: PayloadAction<ConversationSummary[]>) {
       state.conversations = action.payload
+      /* The list is the source of truth for titles. Sync the active
+       * conversation's (server-generated) title into the header so a new
+       * chat stops showing "Untitled" once the backend names it. */
+      if (state.conversationId) {
+        const active = action.payload.find((c) => c.id === state.conversationId)
+        if (active?.title) state.conversationTitle = active.title
+      }
     },
     setConversationsLoading(state, action: PayloadAction<boolean>) {
       state.conversationsLoading = action.payload
