@@ -925,6 +925,36 @@ In that topology, `window.location.origin` is intentionally
 the frontend and widgets, including `/platform`, `/api`, streaming endpoints,
 and `/api/integrations/...`.
 
+## Frame View Contract (host-driven expand)
+
+A widget cannot present a fullscreen/overlay view itself — an iframe is clipped
+to its own rectangle, so an in-iframe modal cannot cover the host page. When a
+widget needs an "expand to full view" affordance, the host owns the overlay and
+the widget only signals intent over `postMessage`:
+
+```js
+// widget -> host: the widget wants to expand or collapse
+window.parent.postMessage({ type: 'kdcube-widget-view', widget: 'usage', view: 'dashboard' }, '*')
+
+// host -> widget: keep the widget in sync when the host closes its overlay
+window.addEventListener('message', (e) => {
+  if (e.data?.type === 'kdcube-set-view') applyView(e.data.view) // 'compact' = collapse
+})
+```
+
+- `widget` identifies the source so the host maps it to the right iframe.
+- `view` is `'compact'` (collapse) or a widget-specific expand token (e.g.
+  `'dashboard'`, `'expanded'`). Host rule: `'compact'` collapses, any other
+  value expands.
+- Recommended host implementation: **promote the same iframe** to a fixed
+  fullscreen overlay (CSS `position:fixed; inset:0`) and skip applying the
+  `kdcube-resize` height while expanded. Reusing the same element means **no
+  reload and no re-fetch** — the widget keeps its state. Do not spawn a second
+  iframe (re-fetch) or reparent the iframe in the DOM (browsers reload it).
+
+Widgets should keep an inline fallback (a self-contained bigger/expanded view)
+for when no host listens.
+
 ## Required URL Shape
 
 Bundle operations must be called as:

@@ -233,6 +233,11 @@ Turn it off with:
 localStorage.removeItem('kdcube.resize.debug')
 ```
 
+To let a widget expand to a fullscreen/overlay view, the host (not the iframe)
+owns the overlay; the widget signals intent via `kdcube-widget-view` and stays
+in sync via `kdcube-set-view`. See
+[Frame View Contract](bundle-widget-integration-README.md#frame-view-contract-host-driven-expand).
+
 Bundle UIs that need runtime scope must support both config paths:
 
 1. `GET /api/cp-frontend-config`, used by direct external embedding and by
