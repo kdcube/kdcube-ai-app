@@ -1,6 +1,6 @@
 bundle:
   repo: "https://github.com/kdcube/kdcube-ai-app.git"
-  ref: "unreleased"
+  ref: "2026.5.27.144"
   description: |
     Built-in admin bundle storage interface.
 
