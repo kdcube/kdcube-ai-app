@@ -683,10 +683,16 @@ header; unauthenticated sends fail before the HTTP request.
 
 | Comm type | Telemetry name |
 | --- | --- |
+| `chat.conversation.accepted` | `chat.message` |
+| `queue.continuation.accepted` | `chat.message` |
 | `react.tool.call` | `tool.invoke` |
 | `react.skill.read` | `skill.read` |
 | `kdcube.copilot.mcp.call` | `mcp.call` |
 | `accounting.usage` | `accounting.usage` |
+| selected workflow/turn completion events | `workflow.step` |
+
+Conversation activity is carried by `chat.conversation.turn.completed` as
+`workflow.step` with `active_seconds`.
 
 Unknown selected comm records become `comm.event`.
 

@@ -135,6 +135,7 @@ EVENT_SELECTOR = {
     "include": {
         "types": [
             "accounting.usage",
+            "chat.conversation.accepted",
             "chat.conversation.turn.completed",
             "react.tool.call",
             "react.skill.read",
@@ -553,11 +554,16 @@ the POST. Current built-in mappings include:
 
 | Recorded comm type | Telemetry event name |
 | --- | --- |
+| `chat.conversation.accepted` | `chat.message` |
+| `queue.continuation.accepted` | `chat.message` |
 | `react.tool.call` | `tool.invoke` |
 | `react.skill.read` | `skill.read` |
 | `kdcube.copilot.mcp.call` | `mcp.call` |
 | `accounting.usage` | `accounting.usage` |
 | selected workflow/turn completion events | `workflow.step` |
+
+Conversation activity is carried by `chat.conversation.turn.completed` as
+`workflow.step` with `active_seconds`.
 
 The selector includes only bounded metadata keys. It does not copy raw prompts,
 answers, tool arguments, or delta text.
@@ -628,6 +634,7 @@ Prefer selectors that name semantic event types, not transport routes alone:
     "include": {
         "types": [
             "accounting.usage",
+            "chat.conversation.accepted",
             "chat.conversation.turn.completed",
             "react.tool.call",
             "react.skill.read",

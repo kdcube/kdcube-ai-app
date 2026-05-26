@@ -1,11 +1,19 @@
 from __future__ import annotations
 
 import inspect
+import traceback
 from typing import Any, Dict, Optional
 
 from langgraph.graph import END, START, StateGraph
 
+from kdcube_ai_app.apps.chat.sdk.config import get_secret
 from kdcube_ai_app.apps.chat.sdk.context.vector.conv_ticket_store import ConvTicketStore
+from kdcube_ai_app.apps.chat.sdk.comm.sink import (
+    STATS_COMM_EVENT_SELECTOR,
+    StatsTelemetrySink,
+    StatsTelemetryTarget,
+    configure_stats_event_recording,
+)
 from kdcube_ai_app.apps.chat.sdk.integrations.telegram import TelegramUserAdminStorage
 from kdcube_ai_app.apps.chat.sdk.integrations.telegram import user_admin as telegram_user_admin
 from kdcube_ai_app.apps.chat.sdk.integrations.telegram import webapp as telegram_webapp
@@ -31,6 +39,8 @@ TELEGRAM_WEBHOOK_PUBLIC_AUTH = {
     "secret_key": "integrations.telegram.webhook_secret",
 }
 TELEGRAM_WEBAPP_PUBLIC_AUTH = "none"
+TELEMETRY_SINK_TOKEN_SECRET = "b:telemetry_sink.auth.token"
+EVENT_RECORD_MAX = 200
 
 
 def _api_visibility(
@@ -272,6 +282,72 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
             (storage_root / "_ops").mkdir(parents=True, exist_ok=True)
 
         return None
+
+    async def pre_run_hook(self, *, state: Dict[str, Any], econ_ctx: Optional[Dict[str, Any]] = None) -> None:
+        await self._configure_event_recording()
+        await super().pre_run_hook(state=state, econ_ctx=econ_ctx or {})
+
+    async def post_run_hook(
+        self,
+        *,
+        state: Dict[str, Any],
+        result: Dict[str, Any],
+        econ_ctx: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        await super().post_run_hook(state=state, result=result, econ_ctx=econ_ctx or {})
+        await self._send_recorded_events()
+
+    def _bundle_id(self) -> str:
+        return str(getattr(getattr(self.config, "ai_bundle_spec", None), "id", None) or BUNDLE_ID)
+
+    async def _make_event_sink(self) -> StatsTelemetrySink | None:
+        endpoint_url = str(self.bundle_prop("telemetry_sink.endpoint_url", "") or "").strip()
+        if not endpoint_url:
+            return None
+        token = str(await get_secret(TELEMETRY_SINK_TOKEN_SECRET, bundle_id=self._bundle_id()) or "").strip()
+        if not token:
+            try:
+                self.logger.log(
+                    f"[{BUNDLE_ID}] telemetry sink endpoint is configured but secret "
+                    f"{TELEMETRY_SINK_TOKEN_SECRET} is missing; event sending disabled.",
+                    "WARNING",
+                )
+            except Exception:
+                pass
+            return None
+        return StatsTelemetrySink(
+            StatsTelemetryTarget(
+                endpoint_url=endpoint_url,
+                token=token,
+            ),
+            source_bundle=self._bundle_id(),
+        )
+
+    async def _configure_event_recording(self) -> None:
+        try:
+            comm = self.comm
+            sink = await self._make_event_sink()
+            if sink is None:
+                comm.stop_recording()
+                comm.set_event_sink(None)
+                comm.clear_recorded_events(STATS_COMM_EVENT_SELECTOR)
+                return
+            configure_stats_event_recording(
+                comm,
+                sink,
+                selector=STATS_COMM_EVENT_SELECTOR,
+                scope={"owner": "react", "bundle": self._bundle_id(), "runtime": "on_message"},
+                max_events=EVENT_RECORD_MAX,
+            )
+        except Exception:
+            self.logger.log(traceback.format_exc(), "WARNING")
+
+    async def _send_recorded_events(self) -> Dict[str, Any]:
+        try:
+            return await self.comm.send_recorded_events(STATS_COMM_EVENT_SELECTOR)
+        except Exception:
+            self.logger.log(traceback.format_exc(), "WARNING")
+            return {"ok": False, "error": "Unable to flush recorded versatile events."}
 
     @api(
         alias="versatile_webapp_widget",

@@ -10,6 +10,7 @@ import pytest
 from fastapi import HTTPException
 from starlette.requests import Request
 
+from kdcube_ai_app.apps.chat.emitters import ChatCommunicator
 from kdcube_ai_app.apps.chat.sdk.runtime.dynamic_module_loader import load_dynamic_module_for_path
 from kdcube_ai_app.apps.chat.sdk.storage.ai_bundle_storage import AIBundleStorage
 
@@ -78,6 +79,41 @@ def _request(*, header_name: str, header_value: str | None) -> Request:
             "http_version": "1.1",
         },
         receive=_receive,
+    )
+
+
+class _Relay:
+    async def emit(self, *, event: str, data: dict, **kwargs) -> None:
+        return None
+
+
+class _Logger:
+    def __init__(self):
+        self.lines = []
+
+    def log(self, message, level=None):
+        self.lines.append((level, message))
+
+
+def _comm() -> ChatCommunicator:
+    return ChatCommunicator(
+        emitter=_Relay(),
+        tenant="tenant-a",
+        project="project-a",
+        user_id="user-1",
+        user_type="registered",
+        service={
+            "request_id": "req-1",
+            "tenant": "tenant-a",
+            "project": "project-a",
+            "user": "user-1",
+            "bundle_id": "versatile@2026-03-31-13-36",
+        },
+        conversation={
+            "session_id": "session-1",
+            "conversation_id": "conversation-1",
+            "turn_id": "turn-1",
+        },
     )
 
 
@@ -614,6 +650,93 @@ def test_preferences_tools_mcp_auth_rejects_invalid_header(monkeypatch):
 
     assert exc.value.status_code == 401
     assert exc.value.detail == "Missing or invalid X-Test-Preferences-MCP-Token"
+
+
+@pytest.mark.asyncio
+async def test_event_recording_configures_react_scope_from_endpoint_and_secret(monkeypatch):
+    entrypoint_mod = _load_entrypoint_module()
+    entrypoint = object.__new__(entrypoint_mod.VersatileEntrypoint)
+    entrypoint._comm = _comm()
+    entrypoint.logger = _Logger()
+    entrypoint.config = SimpleNamespace(ai_bundle_spec=SimpleNamespace(id="versatile@2026-03-31-13-36"))
+    entrypoint.bundle_prop = lambda key, default=None: (
+        "http://stats.local/public/ingest" if key == "telemetry_sink.endpoint_url" else default
+    )
+
+    async def _get_secret(key, **kwargs):
+        return "telemetry-token" if key == entrypoint_mod.TELEMETRY_SINK_TOKEN_SECRET else None
+
+    monkeypatch.setattr(entrypoint_mod, "get_secret", _get_secret)
+
+    await entrypoint._configure_event_recording()
+
+    recording = entrypoint.comm.recording_config()
+    assert entrypoint.comm.event_sink is not None
+    assert recording["enabled"] is True
+    assert recording["scopes"][0]["scope"] == {
+        "owner": "react",
+        "bundle": "versatile@2026-03-31-13-36",
+        "runtime": "on_message",
+    }
+
+
+@pytest.mark.asyncio
+async def test_event_recording_sends_chat_message_and_turn_metrics(monkeypatch):
+    entrypoint_mod = _load_entrypoint_module()
+    entrypoint = object.__new__(entrypoint_mod.VersatileEntrypoint)
+    entrypoint._comm = _comm()
+    entrypoint.logger = _Logger()
+    entrypoint.config = SimpleNamespace(ai_bundle_spec=SimpleNamespace(id="versatile@2026-03-31-13-36"))
+    sent_batches = []
+
+    async def sink(batch, **kwargs):
+        sent_batches.append((batch, kwargs))
+        return {"accepted": len(batch)}
+
+    async def _make_event_sink():
+        return sink
+
+    entrypoint._make_event_sink = _make_event_sink
+    await entrypoint._configure_event_recording()
+
+    await entrypoint.comm.event(
+        agent="user",
+        type="chat.conversation.accepted",
+        route="chat.step",
+        title="User Message",
+        step="chat.user.message",
+        status="completed",
+        data={
+            "text": "private user text",
+            "message_len": 17,
+            "input_kind": "message",
+            "attachment_count": 1,
+        },
+    )
+    await entrypoint.comm.event(
+        agent="planner",
+        type="chat.conversation.turn.completed",
+        route="chat.step",
+        title="Plan Completed",
+        step="plan.done",
+        status="completed",
+        data={
+            "produced_file_count": 2,
+            "citation_count": 3,
+        },
+    )
+
+    result = await entrypoint._send_recorded_events()
+
+    assert result["ok"] is True
+    assert len(sent_batches) == 1
+    batch, kwargs = sent_batches[0]
+    assert [item["type"] for item in batch] == [
+        "chat.conversation.accepted",
+        "chat.conversation.turn.completed",
+    ]
+    assert kwargs["filter"] == entrypoint_mod.STATS_COMM_EVENT_SELECTOR
+    assert entrypoint.comm.export_recorded_events() == []
 
 
 @pytest.mark.asyncio

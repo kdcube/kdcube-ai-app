@@ -32,6 +32,7 @@ STATS_COMM_EVENT_TYPES = [
 ]
 
 STATS_COMM_DATA_KEYS = [
+    "active_seconds",
     "agent_costs",
     "attachment_count",
     "attachments_count",
@@ -436,10 +437,8 @@ def _workflow_event(item: Mapping[str, Any], ctx: Mapping[str, str]) -> Dict[str
         dimensions={
             "workflow": workflow,
             "step": step,
-            "status": status,
             "type": typ,
             "run_id": _safe(data.get("run_id") or data.get("thread_id"), max_len=160),
-            "source_bundle": ctx["source_bundle"],
         },
         metrics=_metrics(data, include_latency=True),
         status=status,

@@ -21,6 +21,11 @@ bundles:
         execution:
           runtime:
             mode: docker
+        telemetry_sink:
+          # Plain POST endpoint. Paste the receiver URL exactly as it should be
+          # called. When configured, the bundle records selected comm events
+          # during chat turns and posts them as one bounded batch after the turn.
+          endpoint_url: ""
         integrations:
           telegram:
             enabled: false

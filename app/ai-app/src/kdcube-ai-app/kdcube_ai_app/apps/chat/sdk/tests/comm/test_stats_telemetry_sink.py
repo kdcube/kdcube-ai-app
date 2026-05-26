@@ -202,6 +202,35 @@ async def test_continuation_accept_maps_to_followup_chat_message() -> None:
 
 
 @pytest.mark.anyio
+async def test_turn_completed_event_forwards_conversation_activity_metrics() -> None:
+    comm = _make_comm()
+    comm.record(STATS_COMM_EVENT_SELECTOR, mode="replace")
+
+    await comm.service_event(
+        type="chat.conversation.turn.completed",
+        step="plan.done",
+        status="completed",
+        agent="planner",
+        data={
+            "active_seconds": 7.25,
+            "duration_ms": 7250,
+            "produced_file_count": 2,
+            "citation_count": 3,
+        },
+    )
+
+    events = recorded_comm_batch_to_telemetry(comm.export_recorded_events(), comm=comm)
+
+    assert len(events) == 1
+    assert events[0]["name"] == "workflow.step"
+    assert events[0]["dimensions"]["type"] == "chat.conversation.turn.completed"
+    assert events[0]["metrics"]["active_seconds"] == 7.25
+    assert events[0]["metrics"]["latency_ms"] == 7250
+    assert events[0]["metrics"]["produced_file_count"] == 2
+    assert events[0]["metrics"]["citation_count"] == 3
+
+
+@pytest.mark.anyio
 async def test_accounting_usage_preserves_breakdown_as_list() -> None:
     comm = _make_comm()
     comm.record(STATS_COMM_EVENT_SELECTOR, mode="replace")

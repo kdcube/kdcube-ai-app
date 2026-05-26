@@ -2564,6 +2564,8 @@ class BaseWorkflow():
         step_title = "Plan Completed" if ok else "Plan Failed"
         completion_metrics = {
             "elapsed_ms": total_ms,
+            "active_seconds": round(total_ms / 1000.0, 3),
+            "duration_ms": total_ms,
             "produced_file_count": _produced_file_count(payload.get("blocks") or [], turn_id) if isinstance(payload, dict) else 0,
             "citation_count": len(used_sids or []) if isinstance(used_sids, list) else 0,
         }
