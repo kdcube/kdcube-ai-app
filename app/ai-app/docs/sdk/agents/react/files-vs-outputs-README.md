@@ -1,21 +1,20 @@
 ---
-id: ks:docs/sdk/agents/react/design/files-vs-outputs-README.md
+id: ks:docs/sdk/agents/react/files-vs-outputs-README.md
 title: "Files vs Outputs"
-summary: "Draft design for separating durable workspace files from non-workspace produced artifacts in React."
-tags: ["sdk", "agents", "react", "design", "workspace", "artifacts"]
+summary: "React namespace contract for separating durable workspace files from non-workspace produced artifacts."
+tags: ["sdk", "agents", "react", "workspace", "artifacts"]
 keywords: ["files namespace", "outputs namespace", "workspace membership", "external internal", "git workspace"]
 see_also:
   - ks:docs/sdk/agents/react/artifact-discovery-README.md
   - ks:docs/sdk/agents/react/artifact-storage-README.md
   - ks:docs/sdk/agents/react/react-turn-workspace-README.md
   - ks:docs/sdk/agents/react/workspace/git-based-isolated-workspace-README.md
-status: draft
+status: confirmed
 ---
 # Files vs Outputs
 
-This is a draft design note.
-
-Phase 1 of this split is now implemented.
+This note describes the implemented namespace split between workspace files and
+produced outputs.
 
 It defines the split between:
 - durable workspace/project state

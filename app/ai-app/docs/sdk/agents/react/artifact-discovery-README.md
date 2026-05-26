@@ -8,7 +8,7 @@ see_also:
   - ks:docs/sdk/agents/react/artifact-storage-README.md
   - ks:docs/sdk/agents/react/react-tools-README.md
   - ks:docs/sdk/agents/react/timeline-README.md
-  - ks:docs/sdk/agents/react/design/files-vs-outputs-README.md
+  - ks:docs/sdk/agents/react/files-vs-outputs-README.md
   - ks:docs/sdk/agents/react/memory-recovery-path-README.md
 ---
 # Artifact Discovery (Logical/Physical Paths)

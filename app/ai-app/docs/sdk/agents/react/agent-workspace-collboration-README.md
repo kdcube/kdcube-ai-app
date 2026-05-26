@@ -8,7 +8,7 @@ see_also:
   - ks:docs/sdk/agents/react/react-turn-workspace-README.md
   - ks:docs/sdk/agents/react/artifact-discovery-README.md
   - ks:docs/sdk/agents/react/react-tools-README.md
-  - ks:docs/sdk/agents/react/design/files-vs-outputs-README.md
+  - ks:docs/sdk/agents/react/files-vs-outputs-README.md
 ---
 # Agent Workspace Collaboration
 
@@ -18,7 +18,7 @@ It is about the **current** agent model, not the future shared mutable workspace
 Scope:
 - this doc is about the agent mental model and tool cooperation
 - the actual filesystem lifecycle is covered by `react-turn-workspace-README.md`
-- the current `files/...` vs `outputs/...` split is tracked in `design/files-vs-outputs-README.md`
+- the current `files/...` vs `outputs/...` split is tracked in `files-vs-outputs-README.md`
 
 ## Core model
 

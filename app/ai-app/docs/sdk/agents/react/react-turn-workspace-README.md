@@ -11,7 +11,7 @@ see_also:
   - ks:docs/sdk/agents/react/source-pool-README.md
   - ks:docs/sdk/agents/react/external-exec-README.md
   - ks:docs/exec/distributed-exec-README.md
-  - ks:docs/sdk/agents/react/design/files-vs-outputs-README.md
+  - ks:docs/sdk/agents/react/files-vs-outputs-README.md
 ---
 # ReAct Turn Workspace
 
@@ -25,7 +25,7 @@ The workspace is execution state. Canonical conversation state still lives in ti
 
 Scope:
 - this document describes the concrete workspace filesystem and lifecycle
-- the current namespace separation between workspace files and non-workspace outputs is tracked in `design/files-vs-outputs-README.md`
+- the current namespace separation between workspace files and non-workspace outputs is tracked in `files-vs-outputs-README.md`
 
 ## Effective agent workspace model
 

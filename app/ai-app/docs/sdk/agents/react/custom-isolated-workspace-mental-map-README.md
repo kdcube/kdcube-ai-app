@@ -1,10 +1,9 @@
 ---
-id: ks:docs/sdk/agents/react/design/custom-isolated-workspace-mental-map-README.md
-title: "Draft: Custom Isolated Workspace Mental Map"
-summary: "Draft design for a rolling workspace map in React custom workspace mode, showing latest known file versions and deletions without git backing."
-draft: true
-status: draft
-tags: ["sdk", "agents", "react", "design", "workspace", "custom", "timeline"]
+id: ks:docs/sdk/agents/react/custom-isolated-workspace-mental-map-README.md
+title: "Custom Isolated Workspace Mental Map"
+summary: "Rolling workspace map for React custom workspace mode, showing latest known file versions and deletions without git backing."
+status: confirmed
+tags: ["sdk", "agents", "react", "workspace", "custom", "timeline"]
 keywords: ["custom workspace", "mental map", "workspace tree", "file versions", "deleted files", "announce"]
 see_also:
   - ks:docs/sdk/agents/react/workspace/git-based-isolated-workspace-README.md
@@ -15,7 +14,7 @@ see_also:
 
 # Custom Isolated Workspace Mental Map
 
-This is a draft design for the `workspace_implementation=custom` path.
+This note describes the `workspace_implementation=custom` workspace map.
 
 The goal is to give React a stable **mental model of the workspace tree** even
 when the backend is not git-backed. The model should behave like a rolling

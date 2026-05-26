@@ -23,7 +23,7 @@ see_also:
   - ks:docs/sdk/agents/react/react-announce-README.md
   - ks:docs/sdk/agents/react/source-pool-README.md
   - ks:docs/sdk/agents/react/react-turn-workspace-README.md
-  - ks:docs/sdk/agents/react/design/custom-isolated-workspace-mental-map-README.md
+  - ks:docs/sdk/agents/react/custom-isolated-workspace-mental-map-README.md
 ---
 
 # Memory Architecture

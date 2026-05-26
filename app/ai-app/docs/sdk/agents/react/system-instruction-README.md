@@ -191,7 +191,7 @@ signals and tools exposed to the agent.
 | Skills | Load detailed skill instructions through `sk:<skill_id>` when needed. | `REACT_SKILL_SELECTION_GUIDE`. | `REACT_LITE_SKILLS`; all profiles. |
 | Workspace mental model | React uses timeline/logical paths plus current-turn artifact root, not arbitrary host fs. | `get_workspace_implementation_guide(...)`, exec/path guidance. | `REACT_LITE_WORKSPACE_BASE`; all profiles. |
 | Artifact tree | Physical materialized shape for exec/code: current turn and pulled older turns under artifact root; logs stay in runtime metadata root. | Workspace guide, `EXEC_SNIPPET_RULES`. | `REACT_LITE_WORKSPACE_BASE`; all profiles. |
-| `files/` vs `outputs/` | `files/<scope>` is durable workspace/project state; `outputs/<scope>` is produced artifacts. | Workspace guide plus files-vs-outputs design docs. | `REACT_LITE_FILES_VS_OUTPUTS`; all profiles. |
+| `files/` vs `outputs/` | `files/<scope>` is durable workspace/project state; `outputs/<scope>` is produced artifacts. | Workspace guide plus files-vs-outputs docs. | `REACT_LITE_FILES_VS_OUTPUTS`; all profiles. |
 | Pull/checkout | Pull historical `fi:` refs, then checkout maintained `files/<scope>` into current workspace before editing. | Workspace guide. | `REACT_LITE_WORKSPACE_PULL_CHECKOUT`; workspace profiles except `core`. |
 | Patching | Patch current-turn text files, not old refs; omit displayed line prefixes. | Operating/workspace guide. | `REACT_LITE_PATCHING`; workspace profiles except `core`. |
 | `react.write` artifacts | Write user-visible/canvas and internal artifacts with correct `files/` or `outputs/` placement. | Operating guide, internal notes blocks. | `REACT_LITE_REACT_WRITE_ARTIFACTS`; workspace profiles except `core`. |

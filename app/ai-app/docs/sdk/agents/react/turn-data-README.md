@@ -8,7 +8,7 @@ see_also:
   - ks:docs/sdk/agents/react/conversation-artifacts-README.md
   - ks:docs/sdk/agents/react/turn-log-README.md
   - ks:docs/sdk/agents/react/react-context-README.md
-  - ks:docs/sdk/agents/react/design/files-vs-outputs-README.md
+  - ks:docs/sdk/agents/react/files-vs-outputs-README.md
 ---
 # Turn Data (Conversation Fetch)
 
