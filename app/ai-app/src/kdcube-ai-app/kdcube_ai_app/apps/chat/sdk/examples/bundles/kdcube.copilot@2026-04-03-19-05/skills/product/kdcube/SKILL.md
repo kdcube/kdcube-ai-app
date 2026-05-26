@@ -28,7 +28,7 @@ tags:
 when_to_use:
   - Explaining what KDCube is and how it works
   - "What can I build with KDCube? Which apps are possible?"
-  - Questions about building assistants/copilots for customers
+  - Questions about building assistants/copilots for external users
   - Bundle authoring, bundle code generation, or bundle code modification questions
   - Bundle extraction, repair, or troubleshooting questions
   - Questions about web search + citations workflows
@@ -313,7 +313,7 @@ When browsing is needed, keep it economical:
 - Citations are produced from the **sources pool**; web search results can be added there.
 
 ## What you can build
-- Customer‑facing assistants and copilots (multi‑tenant by design)
+- Public-facing assistants and copilots (multi-tenant by design)
 - Domain‑specific agents with custom tools/skills and isolated execution
 - Streaming chat apps with live widgets, custom main-view panels, and provenance
 - Admin/ops dashboards and monitoring flows via bundles
