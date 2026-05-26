@@ -21,6 +21,7 @@ import type {
   ConversationSummary,
   SubmitChatMessageParams,
   SubmitChatMessageResponse,
+  TurnReaction,
 } from './types.ts'
 
 interface ConversationListResponse {
@@ -109,6 +110,77 @@ export async function requestConversationStatus(conversationId: string, streamId
     headers: buildRequestHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ conversation_id: conversationId, stream_id: streamId }),
   })
+}
+
+/** Submit, update, or clear the signed-in user's reaction to one assistant
+ *  turn. `reaction: null` clears any existing feedback; `text` is an
+ *  optional free-form note (only sent with a non-null reaction). Maps to
+ *  POST /api/cb/conversations/{tenant}/{project}/{id}/turns/{turn}/feedback. */
+export async function submitTurnFeedback(
+  conversationId: string,
+  turnId: string,
+  reaction: TurnReaction | null,
+  text?: string,
+): Promise<void> {
+  const { tenant, project } = requireScope()
+  const body: Record<string, unknown> = { reaction }
+  if (reaction && text) body.text = text
+  const response = await fetch(
+    `${settings.getBaseUrl()}/api/cb/conversations/${tenant}/${project}/${conversationId}/turns/${turnId}/feedback`,
+    {
+      method: 'POST',
+      credentials: 'include',
+      headers: buildRequestHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(body),
+    },
+  )
+  if (!response.ok) {
+    const detail = await response.text().catch(() => response.statusText)
+    throw new Error(`Failed to save feedback (${response.status}): ${detail}`)
+  }
+}
+
+/** Hydrate the signed-in user's saved reactions for a conversation, keyed
+ *  by turn id. Maps to POST .../turns-with-feedbacks. Best-effort: returns
+ *  an empty map on any failure so a hydration miss never blocks the load. */
+export async function fetchTurnFeedbacks(
+  conversationId: string,
+): Promise<Record<string, TurnReaction>> {
+  const { tenant, project } = requireScope()
+  try {
+    const response = await fetch(
+      `${settings.getBaseUrl()}/api/cb/conversations/${tenant}/${project}/${conversationId}/turns-with-feedbacks`,
+      {
+        method: 'POST',
+        credentials: 'include',
+        headers: buildRequestHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({}),
+      },
+    )
+    if (!response.ok) return {}
+    const data = (await response.json()) as {
+      turns?: Array<{
+        turn_id?: string
+        feedbacks?: Array<{ reaction?: string; origin?: string }>
+        reactions?: Array<{ reaction?: string; origin?: string }>
+      }>
+    }
+    const out: Record<string, TurnReaction> = {}
+    for (const turn of data.turns || []) {
+      const turnId = turn.turn_id
+      if (!turnId) continue
+      const entries = [...(turn.feedbacks || []), ...(turn.reactions || [])]
+      /* Prefer the user's own reaction; fall back to the latest entry. */
+      const chosen = entries.find((entry) => entry.origin === 'user') || entries[entries.length - 1]
+      const reaction = chosen?.reaction
+      if (reaction === 'ok' || reaction === 'not_ok' || reaction === 'neutral') {
+        out[turnId] = reaction
+      }
+    }
+    return out
+  } catch {
+    return {}
+  }
 }
 
 /** Hard-delete a conversation (and related artifacts) for the authenticated

@@ -41,6 +41,7 @@ export type {
   OpenChatStreamResult,
   SubmitChatMessageParams,
   SubmitChatMessageResponse,
+  TurnReaction,
 } from './api/types.ts'
 
 export { downloadBlobAsFile } from './api/transport.ts'
@@ -50,7 +51,9 @@ export {
   downloadHostedFile,
   downloadResourceByRN,
   fetchConversationById,
+  fetchTurnFeedbacks,
   listBundleConversations,
   requestConversationStatus,
   submitChatMessage,
+  submitTurnFeedback,
 } from './api/client.ts'

@@ -59,7 +59,23 @@ export function bundleWidgetUrl(alias: string): string {
 
 export async function fetchProfileSessionId(sessionId?: string | null): Promise<string> {
   if (sessionId) return sessionId
+  return (await fetchProfile()).sessionId
+}
 
+export interface ProfileInfo {
+  sessionId: string
+  /** Server-authoritative identity. `'anonymous'` for unauthenticated
+   *  visitors; an authenticated user type otherwise. May be null if the
+   *  server omits it. */
+  userType: string | null
+  roles: string[]
+}
+
+/** Fetch the server profile. The server is the source of truth for
+ *  whether the caller is anonymous — the public landing renders this
+ *  chat for everyone, but only an authenticated profile may open the
+ *  stream and send. */
+export async function fetchProfile(): Promise<ProfileInfo> {
   const response = await fetch(`${settings.getBaseUrl()}/profile`, {
     method: 'GET',
     credentials: 'include',
@@ -70,9 +86,17 @@ export async function fetchProfileSessionId(sessionId?: string | null): Promise<
     throw new Error(`Unable to fetch profile (${response.status}): ${detail}`)
   }
 
-  const data = (await response.json()) as { session_id?: string | null }
+  const data = (await response.json()) as {
+    session_id?: string | null
+    user_type?: string | null
+    roles?: unknown
+  }
   if (!data.session_id) {
     throw new Error('Profile did not include a session id.')
   }
-  return data.session_id
+  return {
+    sessionId: data.session_id,
+    userType: data.user_type ?? null,
+    roles: Array.isArray(data.roles) ? data.roles.filter((r): r is string => typeof r === 'string') : [],
+  }
 }

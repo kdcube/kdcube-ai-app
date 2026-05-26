@@ -8,6 +8,9 @@
 
 export type BannerTone = 'info' | 'warning' | 'error'
 export type StepStatus = 'started' | 'running' | 'completed' | 'error' | 'skipped'
+/** A signed-in user's reaction to one assistant turn. `'neutral'` is a
+ *  comment-only reaction (server-supported) with no thumb highlighted. */
+export type TurnReaction = 'ok' | 'not_ok' | 'neutral'
 
 export interface ServiceInfo {
   request_id: string

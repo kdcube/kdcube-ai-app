@@ -11,6 +11,7 @@ import type {
   ContinuationKind,
   ConversationSummary,
   StepStatus,
+  TurnReaction,
 } from '../../service.ts'
 
 export type ConnectionState = 'booting' | 'connecting' | 'connected' | 'disconnected'
@@ -205,6 +206,8 @@ export interface ChatState {
   composerFiles: File[]
   turns: ChatTurn[]
   banners: Banner[]
+  /** Signed-in user's saved reaction per assistant turn id. */
+  feedback: Record<string, TurnReaction>
   inputLocked: boolean
   inputLockMessage: string | null
   conversations: ConversationSummary[]
@@ -223,6 +226,7 @@ export const initialState: ChatState = {
   composerFiles: [],
   turns: [],
   banners: [],
+  feedback: {},
   inputLocked: false,
   inputLockMessage: null,
   conversations: [],

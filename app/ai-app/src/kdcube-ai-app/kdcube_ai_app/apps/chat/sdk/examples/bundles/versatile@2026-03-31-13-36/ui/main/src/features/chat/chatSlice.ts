@@ -26,6 +26,7 @@ import type {
   ConversationDTO,
   ConversationSummary,
   ConvStatusEnvelope,
+  TurnReaction,
 } from '../../service.ts'
 import {
   initialState,
@@ -113,6 +114,19 @@ const slice = createSlice({
       state.banners = state.banners.filter((banner) => banner.id !== action.payload)
     },
 
+    // --- Turn feedback (signed-in user's reaction per assistant turn) ---
+    setTurnFeedback(state, action: PayloadAction<{ turnId: string; reaction: TurnReaction | null }>) {
+      const { turnId, reaction } = action.payload
+      if (reaction) {
+        state.feedback[turnId] = reaction
+      } else {
+        delete state.feedback[turnId]
+      }
+    },
+    setFeedbackMap(state, action: PayloadAction<Record<string, TurnReaction>>) {
+      state.feedback = action.payload
+    },
+
     // --- Input lock ---
     lockInput(state, action: PayloadAction<string | null>) {
       state.inputLocked = true
@@ -156,6 +170,7 @@ const slice = createSlice({
       state.turns = []
       state.conversationId = null
       state.conversationTitle = null
+      state.feedback = {}
     },
     appendTurn(state, action: PayloadAction<ChatTurn>) {
       state.turns = [...state.turns, action.payload]
@@ -176,6 +191,9 @@ const slice = createSlice({
     ) {
       const conv = action.payload.conversation
       state.turns = hydrateHistoricalConversation(conv)
+      /* Cleared here; App re-hydrates the map via fetchTurnFeedbacks once
+       * the conversation turns are in place. */
+      state.feedback = {}
       state.conversationId = conv.conversation_id
       state.conversationTitle =
         (conv as unknown as { conversation_title?: string | null }).conversation_title

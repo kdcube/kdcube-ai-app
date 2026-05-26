@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   deleteConversationById,
   fetchConversationById,
+  fetchTurnFeedbacks,
   listBundleConversations,
   openChatStream,
   requestConversationStatus,
   submitChatMessage,
+  submitTurnFeedback,
 } from './service.ts'
 import type {
   BannerTone,
@@ -13,6 +15,7 @@ import type {
   ContinuationKind,
   ConversationSummary,
   RateLimitPayload,
+  TurnReaction,
 } from './service.ts'
 import { BUILT_BUNDLE_ID, createLocalId, settings } from './settings.ts'
 
@@ -39,8 +42,13 @@ import { Composer } from './features/composer/Composer.tsx'
 import { TurnView } from './features/chat/TurnView.tsx'
 import { FileDropZone } from './components/FileDropZone.tsx'
 import { WebappPane, WebappModal } from './components/WebappPane.tsx'
-import { bundleWidgetUrl } from './api/transport.ts'
-import { requestHostView } from './host.ts'
+import { bundleWidgetUrl, fetchProfile } from './api/transport.ts'
+import { requestAuthRequired, requestHostView } from './host.ts'
+
+/* Gentle inline hint shown when an anonymous visitor tries to send. The
+ * host also raises its own login surface; this banner explains why the
+ * message did not go through if the visitor dismisses that surface. */
+const AUTH_PROMPT_TEXT = 'Sign in to start chatting.'
 
 export default function App() {
   const state = useAppSelector((s) => s.chat)
@@ -58,6 +66,27 @@ export default function App() {
    * full width. */
   const [leftPaneMode, setLeftPaneMode] = useState<'chats' | 'webapp' | 'collapsed'>('chats')
   const [webappModalOpen, setWebappModalOpen] = useState(false)
+  /* Public embedding: the chat renders for anonymous visitors, but the
+   * server is the authority on who may open the stream and send. `authed`
+   * starts optimistic from token presence (direct/non-embedded use) and is
+   * confirmed/corrected by the `/profile` user_type. While anonymous the
+   * stream stays closed, user-bound surfaces (settings/memories) are
+   * hidden, and a send attempt asks the host to show its login surface. */
+  const [authed, setAuthed] = useState<boolean>(() =>
+    Boolean(settings.getAccessToken() || settings.getIdToken()),
+  )
+  const authedRef = useRef<boolean>(authed)
+  const applyAuthed = useCallback((next: boolean) => {
+    authedRef.current = next
+    setAuthed(next)
+  }, [])
+  /* Ask the host to show its login surface and leave a dismissible hint.
+   * Deduped by text so repeated send clicks don't stack banners. */
+  const promptLogin = useCallback(() => {
+    requestAuthRequired()
+    const exists = store.getState().chat.banners.some((b) => b.text === AUTH_PROMPT_TEXT)
+    if (!exists) dispatch(chatActions.pushBanner({ tone: 'info', text: AUTH_PROMPT_TEXT }))
+  }, [dispatch])
 
   const stateRef = useRef<ChatState>(state)
   const eventSourceRef = useRef<EventSource | null>(null)
@@ -150,6 +179,12 @@ export default function App() {
 
   const refreshConversationList = async () => {
     if (!bundleId) return
+    /* Conversations are user-bound; an anonymous visitor has none and the
+     * list endpoint would 401. Keep the sidebar empty instead of noisy. */
+    if (!authedRef.current) {
+      dispatch(chatActions.setConversations([]))
+      return
+    }
 
     dispatch(chatActions.setConversationsLoading(true))
     dispatch(chatActions.setConversationsError(null))
@@ -184,6 +219,12 @@ export default function App() {
       dispatch(chatActions.hydrateConversation({ conversation }))
       dispatch(chatActions.clearComposer())
       dispatch(chatActions.setConversationLoadingId(null))
+
+      /* Best-effort: restore the user's saved thumbs for this conversation
+       * (hydrateConversation cleared the map). Never blocks the load. */
+      void fetchTurnFeedbacks(conversation.conversation_id)
+        .then((map) => dispatch(chatActions.setFeedbackMap(map)))
+        .catch(() => {})
 
       if (stateRef.current.connection === 'connected') {
         void requestConversationStatusForCurrentStream(conversation.conversation_id)
@@ -245,12 +286,16 @@ export default function App() {
         message = rateLimit?.user_message || fallbackRateLimitMessage(rateLimit || undefined, data)
         break
       case 'rate_limit.no_funding':
-        tone = (data.notification_type as BannerTone | undefined) || 'error'
-        message = (data.user_message as string | undefined) || 'This service is not available for your account type.'
+        tone = (rateLimit?.notification_type as BannerTone | undefined) || (data.notification_type as BannerTone | undefined) || 'error'
+        message =
+          rateLimit?.user_message ||
+          (data.user_message as string | undefined) ||
+          'This service is not available for your account type.'
         break
       case 'rate_limit.subscription_exhausted':
-        tone = (data.notification_type as BannerTone | undefined) || 'error'
+        tone = (rateLimit?.notification_type as BannerTone | undefined) || (data.notification_type as BannerTone | undefined) || 'error'
         message =
+          rateLimit?.user_message ||
           (data.user_message as string | undefined) ||
           'Your subscription balance is exhausted. Top up your balance to continue.'
         break
@@ -268,8 +313,11 @@ export default function App() {
         break
       }
       case 'rate_limit.attachment_failure':
-        tone = (data.notification_type as BannerTone | undefined) || 'error'
-        message = (data.user_message as string | undefined) || 'Attachment was rejected.'
+        tone = (rateLimit?.notification_type as BannerTone | undefined) || (data.notification_type as BannerTone | undefined) || 'error'
+        message =
+          rateLimit?.user_message ||
+          (data.user_message as string | undefined) ||
+          'Attachment was rejected.'
         break
       case 'rate_limit.lane_switch':
       case 'economics.user_underfunded_absorbed':
@@ -295,6 +343,14 @@ export default function App() {
   }
 
   const connectStream = async () => {
+    /* The stream only opens for an authenticated profile — this is the
+     * single client-side guarantee that an anonymous visitor cannot start
+     * a chat (the server enforces the same). Any caller (mount, send,
+     * reconnect) routes through here, so anonymous never reaches the SSE. */
+    if (!authedRef.current) {
+      requestAuthRequired()
+      return
+    }
     if (eventSourceRef.current && streamIdRef.current) {
       return
     }
@@ -343,6 +399,13 @@ export default function App() {
   }
 
   const sendMessage = async (textOverride?: string, requestedKind?: ContinuationKind) => {
+    /* Anonymous visitors can read but not send — ask the host to show its
+     * login surface and stop here (no stream, no POST). Checked before the
+     * queue so we don't churn the send chain. */
+    if (!authedRef.current) {
+      promptLogin()
+      return
+    }
     /* Queue this send behind any in-flight one. New tail = our promise.
      * `previousTail` is captured before we install ours, so concurrent
      * callers each wait for the prior tail and stack in arrival order. */
@@ -442,6 +505,16 @@ export default function App() {
       void refreshConversationList()
     } catch (error) {
       const text = messageForError(error)
+      /* Server-authority backstop: a token can expire mid-session. If the
+       * POST is rejected as unauthenticated, drop to anonymous, close the
+       * stream, and prompt login instead of surfacing a raw error turn. */
+      if (/\b(401|403|unauthorized|forbidden)\b/i.test(text)) {
+        applyAuthed(false)
+        resetTransport()
+        dispatch(chatActions.setConnectionState('disconnected'))
+        promptLogin()
+        return
+      }
       const errorTurnId = isContinuation && targetTurnId ? targetTurnId : createLocalId('client_submit_error')
       const latest = stateRef.current
       dispatch(chatActions.chatErrored({
@@ -478,6 +551,33 @@ export default function App() {
     }
   }
 
+  /* Resolve who the visitor is (server-authoritative via /profile) and,
+   * if authenticated, open the stream and load their conversations.
+   * Called at boot and again whenever the host re-posts runtime config
+   * (e.g. after a successful login), so signing in upgrades the session
+   * in place with no reload. */
+  const resolveAuthAndConnect = async () => {
+    const profile = await fetchProfile()
+    sessionIdRef.current = profile.sessionId
+    dispatch(chatActions.setSessionId(profile.sessionId))
+    const userType = (profile.userType || '').toLowerCase()
+    const isAuthed = userType
+      ? userType !== 'anonymous'
+      : Boolean(settings.getAccessToken() || settings.getIdToken())
+    applyAuthed(isAuthed)
+    if (isAuthed) {
+      const prompt = store.getState().chat.banners.find((b) => b.text === AUTH_PROMPT_TEXT)
+      if (prompt) dispatch(chatActions.dismissBanner(prompt.id))
+      if (!eventSourceRef.current) await connectStream()
+      void refreshConversationList()
+    } else {
+      /* Anonymous: keep the stream closed but leave the composer enabled
+       * (a non-'booting' connection state) so a send attempt can trigger
+       * the host login surface. */
+      dispatch(chatActions.setConnectionState('disconnected'))
+    }
+  }
+
   useEffect(() => {
     let mounted = true
     ;(async () => {
@@ -485,7 +585,16 @@ export default function App() {
         await settings.setupParentListener()
         if (!mounted) return
         setReady(true)
-        await connectStream()
+        await resolveAuthAndConnect()
+        /* React to later runtime-config pushes: a host login success
+         * re-posts CONFIG_RESPONSE with tokens, so re-resolve auth and
+         * open the stream in place. */
+        settings.onConfigReceived(() => {
+          if (!mounted) return
+          void resolveAuthAndConnect().catch((error) => {
+            console.warn('Re-auth after config update failed', error)
+          })
+        })
       } catch (error) {
         if (!mounted) return
         setBootError(messageForError(error))
@@ -539,6 +648,26 @@ export default function App() {
   const handleTurnDownloadError = useStableCallback((text: string) => {
     dispatch(chatActions.pushBanner({ tone: 'error', text: `Download failed: ${text}` }))
   })
+  /* Thumbs up/down on an assistant turn. Optimistic — reflect the choice
+   * immediately, persist in the background, and revert + warn on failure.
+   * `reaction === null` clears. Feedback is a signed-in action, but turns
+   * only exist for authenticated sessions so no extra anon guard is needed. */
+  const handleTurnFeedback = useStableCallback(
+    (turnId: string, reaction: TurnReaction | null, text?: string) => {
+      const snapshot = store.getState().chat
+      const conversationId = snapshot.conversationId
+      if (!conversationId) return
+      const previous = snapshot.feedback[turnId] ?? null
+      dispatch(chatActions.setTurnFeedback({ turnId, reaction }))
+      void submitTurnFeedback(conversationId, turnId, reaction, text).catch((error) => {
+        dispatch(chatActions.setTurnFeedback({ turnId, reaction: previous }))
+        dispatch(chatActions.pushBanner({
+          tone: 'error',
+          text: `Could not save feedback: ${messageForError(error)}`,
+        }))
+      })
+    },
+  )
   /* Clicking a suggested followup chip populates the composer with
    * the suggested text and focuses it — the user reviews / edits and
    * presses Send (or Cmd/Ctrl+Enter) themselves. Sending immediately
@@ -576,6 +705,10 @@ export default function App() {
     dispatch(chatActions.removeComposerFile(index))
   })
   const handleComposerSubmit = useStableCallback(() => {
+    if (!authedRef.current) {
+      promptLogin()
+      return
+    }
     const snapshot = store.getState().chat
     if (snapshot.inputLocked || snapshot.connection === 'booting') return
     /* Pass no `requestedKind` — sendMessage reads fresh store state
@@ -642,17 +775,50 @@ export default function App() {
       <div className="mx-auto flex min-h-screen w-full max-w-[1320px] flex-col">
         <header className="k-appbar">
           <div className="k-brand min-w-0">
-            <span className="k-brand-mark" aria-hidden="true" />
+            {/* KDCube favicon (same robot/cube mark as kdcube.tech). Inlined
+                rather than fetched so it never 404s under the bundle's
+                dynamic serving path. */}
+            <svg
+              className="k-brand-mark"
+              width="20"
+              height="20"
+              viewBox="0 0 64 64"
+              aria-hidden="true"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <defs>
+                <linearGradient id="versatileBrandBody" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stopColor="#C6F3F1" />
+                  <stop offset="100%" stopColor="#4372C3" />
+                </linearGradient>
+              </defs>
+              <line x1="32" y1="7" x2="32" y2="17" stroke="#2B4B8A" strokeWidth="3" strokeLinecap="round" />
+              <circle cx="32" cy="5" r="5" fill="#6B63FE" stroke="#06101E" strokeWidth="1.5" />
+              <rect x="7" y="17" width="50" height="40" fill="url(#versatileBrandBody)" stroke="#06101E" strokeWidth="2.5" rx="4" />
+              <circle cx="23" cy="35" r="9" fill="white" stroke="#06101E" strokeWidth="1.5" />
+              <circle cx="23" cy="35" r="4" fill="#06101E" />
+              <circle cx="41" cy="35" r="9" fill="white" stroke="#06101E" strokeWidth="1.5" />
+              <circle cx="41" cy="35" r="4" fill="#06101E" />
+              <path d="M 23 48 Q 32 55 41 48" stroke="#06101E" strokeWidth="2.5" fill="none" strokeLinecap="round" />
+              <rect x="13" y="57" width="12" height="7" fill="#4372C3" stroke="#06101E" strokeWidth="1.5" rx="1.5" />
+              <rect x="39" y="57" width="12" height="7" fill="#4372C3" stroke="#06101E" strokeWidth="1.5" rx="1.5" />
+            </svg>
             <span className="k-brand-name">Versatile</span>
             <span className="k-brand-sep">/</span>
             <span className="k-brand-path">{bundleId}</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className={connectionDotClass}>
-              {state.connection === 'connected'
-                ? `${settings.getTenant() || 'tenant'} / ${settings.getProject() || 'project'}`
-                : state.connection}
-            </span>
+            {authed ? (
+              <span className={connectionDotClass}>
+                {state.connection === 'connected'
+                  ? `${settings.getTenant() || 'tenant'} / ${settings.getProject() || 'project'}`
+                  : state.connection}
+              </span>
+            ) : (
+              <span className="k-status k-live" title="Public preview — sign in to start chatting">
+                Sign in to chat
+              </span>
+            )}
             <button
               type="button"
               onClick={() =>
@@ -675,20 +841,24 @@ export default function App() {
                 )}
               </svg>
             </button>
-            <button
-              type="button"
-              onClick={handleOpenWebapp}
-              className={`k-iconbtn ${leftPaneMode === 'webapp' ? 'k-iconbtn-active' : ''}`}
-              aria-label="Open settings widget"
-              title="Settings (memories)"
-              aria-pressed={leftPaneMode === 'webapp'}
-            >
-              {/* Gear icon. */}
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="3" />
-                <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
-              </svg>
-            </button>
+            {/* Settings opens the user-bound memories webapp — hidden for
+                anonymous visitors who have no user-scoped state. */}
+            {authed ? (
+              <button
+                type="button"
+                onClick={handleOpenWebapp}
+                className={`k-iconbtn ${leftPaneMode === 'webapp' ? 'k-iconbtn-active' : ''}`}
+                aria-label="Open settings widget"
+                title="Settings (memories)"
+                aria-pressed={leftPaneMode === 'webapp'}
+              >
+                {/* Gear icon. */}
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
+                </svg>
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={handleReconnect}
@@ -823,6 +993,8 @@ export default function App() {
                         key={turn.id}
                         turn={turn}
                         sendingDisabled={sendingDisabled}
+                        reaction={state.feedback[turn.id] ?? null}
+                        onFeedback={handleTurnFeedback}
                         onDownloadError={handleTurnDownloadError}
                         onFollowup={handleTurnFollowup}
                       />

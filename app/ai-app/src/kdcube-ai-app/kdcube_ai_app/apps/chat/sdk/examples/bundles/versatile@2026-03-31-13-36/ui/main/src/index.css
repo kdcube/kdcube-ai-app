@@ -888,9 +888,8 @@ a { color: inherit; }
 .k-brand-mark {
   width: 20px;
   height: 20px;
-  border-radius: 4px;
-  background: linear-gradient(180deg, var(--teal-pale), var(--blue));
-  border: 1px solid rgba(13, 30, 44, 0.1);
+  display: block;
+  flex: none;
 }
 .k-brand-name { font-weight: 600; }
 .k-brand-sep { color: var(--line-strong); }
@@ -1411,6 +1410,56 @@ a { color: inherit; }
   background: var(--accent-soft);
   color: var(--accent);
   border-color: rgba(217, 229, 99, 0.6);
+}
+
+/* ---------------------------------------------------------------------- */
+/*  Turn feedback — thumbs up/down under a completed answer, with an       */
+/*  inline optional-comment box on dislike (inline, never a modal, so it   */
+/*  cannot clip when the chat is embedded as an iframe tile).              */
+/* ---------------------------------------------------------------------- */
+.k-feedback {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 6px;
+}
+.k-feedback-label {
+  font-size: 11px;
+  color: var(--muted);
+  margin-right: 2px;
+}
+.k-feedback-comment {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+  max-width: 480px;
+}
+.k-feedback-comment-label {
+  font-size: 11px;
+  color: var(--muted);
+}
+.k-feedback-textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--ink);
+  padding: 8px 10px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.k-feedback-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.k-feedback-comment-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 /* ---------------------------------------------------------------------- */

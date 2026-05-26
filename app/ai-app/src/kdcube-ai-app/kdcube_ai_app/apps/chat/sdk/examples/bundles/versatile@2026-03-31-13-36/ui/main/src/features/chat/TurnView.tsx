@@ -20,6 +20,7 @@ import type {
   FileArtifact,
   TurnTab,
 } from './chatTypes.ts'
+import type { TurnReaction } from '../../service.ts'
 import {
   ArtifactFeed,
   CanvasPanel,
@@ -34,14 +35,113 @@ import {
 } from './turnTabs.tsx'
 import { ChatTurnView } from './ChatTurnView.tsx'
 
+/** Turn-level reaction control: thumbs up/down on a completed answer.
+ *  Liking is instant; disliking expands an inline optional-comment box
+ *  (Skip / Submit) — inline rather than a modal so it never clips when the
+ *  chat is embedded as an iframe tile. Re-clicking the active thumb clears. */
+function TurnFeedback({
+  turnId,
+  reaction,
+  onFeedback,
+}: {
+  turnId: string
+  reaction: TurnReaction | null
+  onFeedback: (turnId: string, reaction: TurnReaction | null, text?: string) => void
+}) {
+  const [commentOpen, setCommentOpen] = useState(false)
+  const [comment, setComment] = useState('')
+
+  const likeActive = reaction === 'ok'
+  const dislikeActive = reaction === 'not_ok' || commentOpen
+
+  const handleLike = () => {
+    setCommentOpen(false)
+    setComment('')
+    onFeedback(turnId, likeActive ? null : 'ok')
+  }
+  const handleDislike = () => {
+    if (reaction === 'not_ok') {
+      setCommentOpen(false)
+      setComment('')
+      onFeedback(turnId, null)
+      return
+    }
+    /* Open the optional-comment box; don't POST until Submit/Skip. */
+    setComment('')
+    setCommentOpen(true)
+  }
+  const submitComment = () => {
+    const text = comment.trim()
+    onFeedback(turnId, 'not_ok', text || undefined)
+    setCommentOpen(false)
+  }
+  const skipComment = () => {
+    onFeedback(turnId, 'not_ok')
+    setCommentOpen(false)
+  }
+
+  return (
+    <div className="k-feedback">
+      <span className="k-feedback-label">Was this helpful?</span>
+      <button
+        type="button"
+        className={`k-iconbtn k-borderless ${likeActive ? 'k-iconbtn-active' : ''}`}
+        aria-label="Helpful"
+        aria-pressed={likeActive}
+        title="Helpful"
+        onClick={handleLike}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill={likeActive ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M7 10v11" />
+          <path d="M18 21H6a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h2l3-7a2 2 0 0 1 2 2v4h4a2 2 0 0 1 2 2l-2 8a2 2 0 0 1-2 2z" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        className={`k-iconbtn k-borderless ${dislikeActive ? 'k-iconbtn-active' : ''}`}
+        aria-label="Not helpful"
+        aria-pressed={dislikeActive}
+        title="Not helpful"
+        onClick={handleDislike}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill={reaction === 'not_ok' ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M17 14V3" />
+          <path d="M6 3h12a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-2l-3 7a2 2 0 0 1-2-2v-4H7a2 2 0 0 1-2-2l2-8a2 2 0 0 1 2-2z" />
+        </svg>
+      </button>
+      {commentOpen ? (
+        <div className="k-feedback-comment">
+          <label className="k-feedback-comment-label">What went wrong? (optional)</label>
+          <textarea
+            className="k-feedback-textarea"
+            rows={3}
+            value={comment}
+            onChange={(event) => setComment(event.target.value)}
+            placeholder="Tell us what was off…"
+            autoFocus
+          />
+          <div className="k-feedback-comment-actions">
+            <button type="button" className="k-btn k-sm k-ghost" onClick={skipComment}>Skip</button>
+            <button type="button" className="k-btn k-sm k-primary" onClick={submitComment}>Submit</button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function TurnViewImpl({
   turn,
   sendingDisabled,
+  reaction,
+  onFeedback,
   onFollowup,
   onDownloadError,
 }: {
   turn: ChatTurn
   sendingDisabled: boolean
+  reaction: TurnReaction | null
+  onFeedback: (turnId: string, reaction: TurnReaction | null, text?: string) => void
   onFollowup: (text: string) => void
   onDownloadError: (text: string) => void
 }) {
@@ -203,6 +303,12 @@ function TurnViewImpl({
             <DownloadsPanel attachments={allUserAttachments} files={assistantFiles} onError={onDownloadError} />
           ) : null}
         </div>
+
+        {/* Turn-level feedback — available once the answer is complete,
+            regardless of which tab is open. */}
+        {turn.state === 'completed' && turn.answer ? (
+          <TurnFeedback turnId={turn.id} reaction={reaction} onFeedback={onFeedback} />
+        ) : null}
       </div>
     </article>
   )
