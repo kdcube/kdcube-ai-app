@@ -40,6 +40,7 @@ import { TurnView } from './features/chat/TurnView.tsx'
 import { FileDropZone } from './components/FileDropZone.tsx'
 import { WebappPane, WebappModal } from './components/WebappPane.tsx'
 import { bundleWidgetUrl } from './api/transport.ts'
+import { requestHostView } from './host.ts'
 
 export default function App() {
   const state = useAppSelector((s) => s.chat)
@@ -47,6 +48,10 @@ export default function App() {
   const [ready, setReady] = useState(false)
   const [bootError, setBootError] = useState<string | null>(null)
   const [conversationQuery, setConversationQuery] = useState('')
+  /* Landing-page embed: 'expanded' asks the host to promote this chat
+   * iframe to a fullscreen overlay. The host drives the overlay; the
+   * widget only signals intent and stays in sync via `kdcube-set-view`. */
+  const [hostView, setHostView] = useState<'compact' | 'expanded'>('compact')
   /* Left-column mode. `chats` shows ConversationsSidebar (default).
    * `webapp` shows the bundle's `versatile_webapp` widget in the same
    * column. `collapsed` hides the column entirely so the chat takes
@@ -71,6 +76,27 @@ export default function App() {
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const autoScrollRef = useRef(true)
   const [showScrollDown, setShowScrollDown] = useState(false)
+
+  /* Host -> widget view sync. When the host closes its fullscreen overlay
+   * (backdrop / Esc) it posts `kdcube-set-view`, keeping the expand
+   * control in sync with the host. */
+  useEffect(() => {
+    function onHostMessage(event: MessageEvent) {
+      const data = event.data
+      if (!data || typeof data !== 'object' || data.type !== 'kdcube-set-view') return
+      if (data.view === 'compact' || data.view === 'expanded') setHostView(data.view)
+    }
+    window.addEventListener('message', onHostMessage)
+    return () => window.removeEventListener('message', onHostMessage)
+  }, [])
+
+  const toggleHostView = useCallback(() => {
+    setHostView((prev) => {
+      const next = prev === 'expanded' ? 'compact' : 'expanded'
+      requestHostView(next)
+      return next
+    })
+  }, [])
 
   useEffect(() => {
     stateRef.current = state
@@ -673,6 +699,23 @@ export default function App() {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M21 12a9 9 0 1 1-3-6.7" />
                 <path d="M21 3v6h-6" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={toggleHostView}
+              className={`k-iconbtn ${hostView === 'expanded' ? 'k-iconbtn-active' : ''}`}
+              aria-label={hostView === 'expanded' ? 'Collapse' : 'Expand'}
+              title={hostView === 'expanded' ? 'Collapse' : 'Expand'}
+              aria-pressed={hostView === 'expanded'}
+            >
+              {/* Expand / collapse (host-driven fullscreen overlay). */}
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                {hostView === 'expanded' ? (
+                  <path d="M9 3H5a2 2 0 0 0-2 2v4M21 9V5a2 2 0 0 0-2-2h-4M15 21h4a2 2 0 0 0 2-2v-4M3 15v4a2 2 0 0 0 2 2h4" />
+                ) : (
+                  <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                )}
               </svg>
             </button>
             <button
