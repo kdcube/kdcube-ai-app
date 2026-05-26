@@ -19,24 +19,24 @@ see_also:
 Use this doc when a bundle exposes widget UI that KDCube serves and that must
 call bundle operations correctly.
 
-This is the rule:
+Core contract:
 
 - a widget must be declared as a bundle surface with `@ui_widget(...)`
-- `ui.widgets.<alias>` config does not create a widget by itself; it
-  tells the platform how to build and serve the already-declared widget alias
-- new widget apps should be source folders, not Python-rendered TSX snippets
+- `ui.widgets.<alias>` config tells the platform how to build and serve that
+  already-declared widget alias
+- new widget apps use source folders
 - KDCube serves the widget UI; the control plane/prototyping frontend may show
   it in an iframe, but that is a display choice
 - the widget must request runtime config from the display environment
 - the widget must build bundle operation URLs from that runtime config
-- the widget must not hardcode tenant, project, or bundle id from the source tree
+- tenant, project, bundle id, and auth material come from runtime config
 
 For the full lifecycle of discovery, preload, build, request-time fallback,
 shared-storage locks, signatures, and concurrent workers, see
 [UI Components Lifecycle](./ui-components-lifecycle-README.md).
 
 If the same widget or static bundle UI is embedded by an external website, the
-frame permission is an operator deployment setting, not a widget-code setting.
+frame permission is controlled by operator deployment settings.
 Configure `proxy.frame_embedding` so the KDCube proxy clears
 `X-Frame-Options` and emits a CSP `frame-ancestors` allowlist on frameable
 bundle routes. See
@@ -124,7 +124,7 @@ config:
       memories: false
 ```
 
-Do not use this as the suppression mechanism:
+This setting controls only the source-folder build config:
 
 ```yaml
 config:
@@ -134,9 +134,8 @@ config:
         enabled: false
 ```
 
-That only disables the static app config for alias `memories`. If an inherited
-decorated method still exists, the route may fall back to method-rendered HTML
-instead of hiding the widget.
+It disables the static app config for alias `memories`. The widget surface
+remains governed by `enabled.widget.memories`.
 
 To replace an inherited widget UI while keeping the inherited surface, configure
 the same alias as a source-folder widget:
@@ -164,15 +163,17 @@ class MyEntrypoint(BaseEntrypointWithMemory):
         ...
 ```
 
-Do not add a second method with the same alias while inheriting the parent
-method. Duplicate widget aliases are invalid and manifest discovery raises a
+Override the inherited Python method when decorator metadata must change.
+Duplicate widget aliases are invalid and manifest discovery raises a
 duplicate-alias error.
 
 ## Reusing SDK Widget Components
 
-Reusable SDK widget UI is a build-time source materialization contract.
-It is not an npm package, and it is not a runtime import from the KDCube
-monorepo.
+Reusable SDK widget UI is a build-time source materialization contract. The
+loader copies selected SDK source folders into the consuming widget's temporary
+build workspace, then the widget build imports that materialized local source.
+Each consuming bundle produces its own built widget artifact under that
+bundle's storage root.
 
 When a bundle widget imports SDK UI such as User Memory or Telegram
 admin/channels panels, these three places must agree:
@@ -200,8 +201,8 @@ admin/channels panels, these three places must agree:
 
 2. **Widget Vite aliases**
 
-   The widget build must resolve the public import names to the materialized
-   `_shared/...` folders. A monorepo fallback is allowed only for direct local
+   The widget build resolves public import names to the materialized
+   `_shared/...` folders. A monorepo fallback may be present for direct local
    development before the loader materializes shared sources.
 
    ```ts
@@ -212,8 +213,7 @@ admin/channels panels, these three places must agree:
 3. **Widget page wrappers**
 
    The bundle imports shared components and injects its own operation caller.
-   The shared UI must not invent tenant/project/bundle ids or bypass backend
-   auth.
+   Runtime config supplies tenant/project/bundle ids and auth headers.
 
    ```tsx
    import { TelegramAdminPanel } from '@kdcube/telegram-widget';
@@ -524,19 +524,17 @@ ui:
       build_command: npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build
 ```
 
-It does not change inherited method-rendered widgets such as `ai_bundles`,
-`opex`, or other `@ui_widget` methods on a base class. Those aliases continue
-to invoke their Python method and return method-rendered HTML unless their own
-alias also has `src_folder` and `build_command`.
+Other inherited widget aliases such as `ai_bundles`, `opex`, or other
+`@ui_widget` methods on a base class keep their own serving mode. They invoke
+their Python method and return method-rendered HTML until that same alias has
+its own `src_folder` and `build_command`.
 
-Do not add `ui.widgets.<alias>.src_folder/build_command` for an alias
-unless that alias is intentionally migrating to the folder-built widget model.
+Add `ui.widgets.<alias>.src_folder/build_command` when that alias is moving to
+the folder-built widget model.
 
 ## Main View Is Separate
 
-Do not confuse widget app source with main-view source.
-
-Use:
+Use these source conventions:
 
 - `ui.main_view.src_folder: ui/main` for the bundle main view
 - `ui.widgets.<alias>.src_folder: ui/widgets/<alias>` for widget apps
@@ -545,10 +543,9 @@ Both use the same loader/build/storage paradigm. They are different surfaces.
 
 ## Shared UI Source Materialization
 
-Some bundle widgets need to reuse platform UI code without packaging that code
-inside the bundle repository. Configure `shared_sources` on the widget or main
-view build. The builder copies each source into the temporary build source tree
-before running `npm install` / `npm run build`.
+Some bundle widgets reuse SDK UI code by declaring `shared_sources` on the
+widget or main-view build. The builder copies each selected source into the
+temporary build source tree before running `npm install` / `npm run build`.
 
 Ownership rule:
 
@@ -556,18 +553,19 @@ Ownership rule:
   `build_command`, and required SDK `shared_sources`
 - descriptors should normally only set deployment policy such as
   `enabled: true` and provider URLs/secrets
-- descriptor-level `shared_sources` is still allowed for explicit local testing
-  or overrides, but a built-in/reference bundle should not require every
-  descriptor to repeat its own UI source wiring
+- descriptor-level `shared_sources` is available for explicit local testing or
+  deployment overrides
+- built-in/reference bundles should keep intrinsic UI source wiring in code
+  defaults
 
 Runtime flow:
 
 ```text
 bundle defaults / descriptor props
   -> ui.widgets.<alias>.shared_sources
-  -> loader copies sdk://... into widget temp source under _shared/...
+  -> loader copies sdk://... into this bundle's widget temp source under _shared/...
   -> Vite alias resolves @kdcube/<capability>-widget to _shared/...
-  -> one built widget app is served from bundle storage
+  -> one built widget app is served from this bundle's storage root
 ```
 
 ```yaml
@@ -607,33 +605,65 @@ Supported source path forms:
 The build signature includes both the bundle source tree and all shared source
 trees, so updating the shared component triggers a rebuild.
 
+### Build And Storage Scope
+
+`shared_sources` materialization is scoped to the consuming bundle and widget
+alias. For a widget alias `<alias>` in bundle `<bundle_id>`, the build output
+lives under:
+
+```text
+<bundle_storage_root>/<tenant>/<project>/<bundle_id>/ui/widgets/<alias>
+```
+
+The build uses temporary source and output folders under the same bundle storage
+root. The temporary source contains the widget source plus materialized
+`_shared/...` sources and the package manager working files needed for that
+build. After a successful build, the served artifact is the static widget
+output and the per-alias signature file:
+
+```text
+<bundle_storage_root>/<tenant>/<project>/<bundle_id>/ui/widgets/<alias>/
+<bundle_storage_root>/<tenant>/<project>/<bundle_id>/.ui.widgets/<alias>.signature
+```
+
+The same SDK source reused by three bundles produces three built widget
+artifacts, one in each bundle's storage root. This keeps widget routing,
+runtime config, authorization, and rebuild signatures aligned with the bundle
+that exposes the widget.
+
+### Platform Admin Widgets
+
+Platform-wide admin applications belong in the built-in admin bundle
+`kdcube.admin`. This keeps cross-bundle operator tooling in one admin-only
+surface and gives the widget one build/storage lifecycle.
+
+Use this placement for system-level tools such as bundle registry management,
+gateway/Redis inspection, and bundle storage administration:
+
+```text
+kdcube.admin
+  @ui_widget(alias="bundle_storage", user_types=("privileged",))
+  ui.widgets.bundle_storage.src_folder = ui/storage
+  built output = <bundle_storage_root>/<tenant>/<project>/kdcube.admin/ui/widgets/bundle_storage
+```
+
+Bundle-specific widgets belong in the bundle that owns the product workflow or
+data surface. Shared SDK UI components can still be materialized into those
+bundle-specific widgets with `shared_sources`.
+
 ## Advanced: Hybrid Widget Composition
 
-The `shared_sources` pattern is a hybrid between two simpler options:
+The `shared_sources` pattern is hybrid widget composition. It keeps the bundle
+repo small while producing a single React tree at build time. The platform
+materializes selected SDK source into the temporary build workspace, and the
+bundle web app imports that materialized source as local source.
 
-- **iframe composition:** serve an existing platform widget as its own widget
-  route and embed it in another app with `<iframe>`.
-- **bundle-local composition:** copy all shared UI code into the bundle repo and
-  import it like ordinary local source.
+Use this pattern for:
 
-Hybrid composition keeps the bundle repo small while still producing a single
-React tree at build time. The platform materializes the selected SDK source into
-the temporary build workspace, and the bundle web app imports that materialized
-source as if it were local.
-
-Use this pattern when:
-
-- the user experience should be one app surface, not nested frames
+- the user experience should be one app surface
 - the reusable UI is platform-owned SDK code
 - the bundle may live in an external git repository
-- the bundle should not know the developer-machine path to the KDCube monorepo
-
-Do not use this pattern when:
-
-- a standalone iframe widget is good enough
-- the shared code is bundle-specific and should live in the bundle repo
-- the shared source has a large dependency surface that the host widget should
-  not own
+- source paths should resolve through `sdk://...` and materialized `_shared/...`
 
 Example host widget config:
 
@@ -730,19 +760,19 @@ export function ConversationsPage({ conversations, reload }) {
 
 Operational rules:
 
-- the shared source is copied only into the temporary build workspace; it is not
-  committed into the external bundle repo
+- the shared source is copied into the temporary build workspace
 - the host widget `package.json` must include the runtime dependencies required
   by the shared component
 - the copied source is included in the UI build signature, so changes to SDK
   shared source trigger a rebuild
 - the shared component still calls bundle APIs through the normal runtime config
-  or public bridge; it must not hardcode tenant, project, bundle id, or host
-  routes
+  or public bridge
+- tenant, project, bundle id, and host routes come from runtime config or the
+  injected operation caller
 - use a wrapper/export component in the shared source, such as `src/embed.tsx`,
   when the shared widget needs style isolation or its own provider tree
-- shared UI is not an authorization boundary; backend operations still enforce
-  KDCube roles, Telegram `initData`, and Telegram registry roles
+- backend operations enforce KDCube roles, Telegram `initData`, and Telegram
+  registry roles
 - for Telegram Mini App panels, expose the same source-folder widget in KDCube
   and Telegram, but gate admin tabs from backend payload such as
   `permissions.show_admin_component`; regular users should still be able to use

@@ -102,6 +102,32 @@ as Telegram Mini Apps:
 Use that only to serve the app shell/assets. Public widget APIs still need their
 own request authentication, such as Telegram `initData` verification.
 
+The bundle **main view** (`ui/main`) has the same authed/public split. The
+authed route requires a logged-in user:
+
+```text
+/api/integrations/static/{tenant}/{project}/{bundle_id}
+/api/integrations/static/{tenant}/{project}/{bundle_id}/{path}
+```
+
+For a public page that must show the main view to **anonymous** visitors (e.g. a
+landing site embedding the chat read-only), use the public static route:
+
+```text
+/api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/static
+/api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/static/{path}
+```
+
+It serves the same built SPA shell with no authentication. The shell is not
+sensitive — data is still gated by the bundle's authed operations/SSE, and the
+app resolves identity itself via `/profile`. So an anonymous visitor can view
+the UI, while actions that need a user (e.g. sending a chat turn) still return
+`401/403`; the UI can forward that to its host to trigger login (see the
+`kdcube-auth-required` note under
+[bundle-widget-integration-README.md](bundle-widget-integration-README.md#frame-view-contract-host-driven-expand)).
+The injected `<base href>` is route-aware, so relative assets resolve under
+`/public/static/`.
+
 For one widget codebase that runs in both KDCube and Telegram:
 
 - detect Telegram with `window.Telegram?.WebApp?.initData`
@@ -128,7 +154,7 @@ This is no longer a separate top-level client namespace. These docs live under b
 
 ## Sending External Events to the Active Turn
 
-Bundle main UIs, platform chat clients, and customer clients use the same chat
+Bundle main UIs, platform chat clients, and external product clients use the same chat
 send contract for followups and steers:
 
 ```text
@@ -162,6 +188,12 @@ https://dev.kdcube.tech/api/integrations/static/demo/demo-march/versatile@2026-0
 the browser decides whether that document may be framed from the response
 headers on the KDCube route. Bundle React code cannot override
 `X-Frame-Options` or CSP `frame-ancestors`.
+
+That example uses the authed static route (logged-in users only). For an
+anonymous-visible embed (a public landing page), point the iframe at the public
+static route instead —
+`/api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/static` — so
+visitors who are not signed in can still load the shell (see "Source Layout").
 
 Use the deployment `proxy.frame_embedding` descriptor to choose the frame
 policy. Cross-origin embedding requires `mode: allowlist`, clears

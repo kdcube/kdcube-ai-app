@@ -27,8 +27,9 @@ Motivation:
    - Entry: `entrypoint.py` calls `_ensure_knowledge_space()` in `pre_run_hook`.
    - A signature cache prevents rebuilding unless repo/ref/roots change.
    - The builder scans `docs/` for front‑matter and builds:
-     - `index.json` (structured list of docs)
-     - `index.md` (human‑readable list)
+     - `.cache/knowledge_search.sqlite` (SQLite FTS retrieval index)
+     - `index.json` (structured compatibility metadata)
+     - `index.md` (compact builder navigation/status note)
    - Files: `knowledge/index_builder.py`, `knowledge/resolver.py`.
 
 2) **Knowledge source (repo + common root)**
@@ -73,6 +74,7 @@ Then `knowledge.root` is resolved against that repo root.
   deployment/      # symlink or copy of app/ai-app/deployment
   src/             # symlink or copy of app/ai-app/src
   ui/              # symlink or copy of app/ai-app/ui
+  .cache/knowledge_search.sqlite
   index.json
   index.md
 ```
@@ -131,6 +133,7 @@ Notes:
   deployment/
   src/
   ui/
+  .cache/knowledge_search.sqlite
   index.json
   index.md
 ```
@@ -186,8 +189,9 @@ So the child runtime still sees the same three classes of data:
 - readonly knowledge space
 
 4) **Path scheme**
-- `ks:index.md` — short index for navigation.
-- Any real `app/ai-app`-relative path can be read as `ks:<relative path>`.
+- `react.search_knowledge(...)` is the catalog for docs and deployment markdown.
+- Search hits return exact `ks:` paths that can be opened with `react.read(...)`.
+- Any real `app/ai-app`-relative path can be read as `ks:<relative path>` when the path is already known.
 - Common examples in this bundle:
   - `ks:docs/<path>` — doc pages (Markdown).
   - `ks:src/<path>` — source files under the real `app/ai-app/src` tree.
@@ -224,7 +228,7 @@ The agent should convert that directly to:
 ## How React uses it
 
 React tooling (bundle‑provided):
-- `react.search_knowledge(query, root="ks:docs")` — search docs (metadata search).
+- `react.search_knowledge(query, root="ks:docs")` — search docs through the SQLite FTS retrieval index.
 - `react.read(["ks:docs/<path>"])` — open a doc.
 - `react.read(["ks:src/<path>"])` — open a source file.
 - `react.search_knowledge(query, root="ks:deployment")` — search deployment docs.
@@ -373,8 +377,8 @@ Important:
   - `ks:docs/exec/exec-logging-error-propagation-README.md`
 
 The **product skill** (`skills/product/kdcube/SKILL.md`) tells the agent to:
-1) Read `ks:index.md` for entry points.
-2) Search + read docs from `ks:docs/...`.
+1) Search + read docs from `ks:docs/...`.
+2) Search + read deployment markdown from `ks:deployment/...`.
 3) Prefer the advertised roots above as browsing start points.
 4) Read referenced code/deploy files via exact `ks:` paths when the mapping is obvious.
 5) If the exact source/deploy path is unclear, use generated exec code plus `bundle_data.resolve_namespace(...)` to browse the real subtree and emit the exact follow-up `ks:` refs before calling `react.read(...)`.
@@ -402,47 +406,52 @@ Tool registration:
 
 ## Search resolver (how it works)
 
-`react.search_knowledge` is backed by a simple resolver in:
+`react.search_knowledge` is backed by a SQLite FTS resolver in:
 `knowledge/resolver.py`.
 
 Behavior (current):
-- Loads `index.json` generated at startup.
+- Uses `.cache/knowledge_search.sqlite` generated at startup.
+- Falls back to `index.json` metadata search when an old storage tree has not been rebuilt yet.
+- Returns a compact virtual response for oversized `ks:index.md` reads so old
+  generated catalogs do not replace structured search.
 - Filters items by `root`:
   - If `root="ks:docs"` then only paths starting with `ks:docs` are searched.
   - If `root` is omitted, all indexed items are searched.
-- Performs **hybrid metadata search** (case‑insensitive) across:
+- Performs full-text search across:
   - `title`
   - `summary`
-  - `tags` + `keywords`
   - `path`
-- Ranks hits by weighted signals:
-  - Title phrase match (highest)
-  - Tag/keyword match
-  - Summary match
-  - Path match (lowest)
-- Returns `path`, `title`, and `score` (no full‑text search yet).
+  - headings
+  - excerpt and body text
+  - tags, keywords, and see-also references
+- Returns compact hits with `path`, `title`, `summary`, `excerpt`, `score`, and metadata.
 
-This means search is **metadata‑level**, not content‑level.
 For precise answers, the agent must open docs via `react.read(...)`.
+
+The generated `index.md` is a compact builder map, not the exhaustive catalog.
+It starts with checked landing docs people normally need when building or
+integrating apps: bundle authoring, local run/config/test/release, client
+UI/widgets/streaming, storage/isolation/execution, agents/tools/skills, Claude
+Code, jobs, configuration, secrets, and properties. More technical docs stay
+available through `react.search_knowledge(...)`.
 
 ## Read + search flow (visual)
 
 ```mermaid
 flowchart LR
     A[Bundle Startup] --> B[Pull docs repo]
-    B --> C[Build index.json + index.md]
+    B --> C[Build index.json + SQLite FTS + compact index.md]
     C --> D[Expose common-root-relative ks: paths]
 
     U[User question] --> S[React reads skill]
-    S --> I[react.read ks:index.md]
-    I --> Q[react.search_knowledge]
+    S --> Q[react.search_knowledge]
     Q --> R[react.read ks:docs/<path>]
     R --> X[optional: react.read ks:src/<real-path>]
 ```
 
 ## What’s still missing / TODO
 
-1) **Semantic search** for knowledge space (current search is lexical).
+1) **Semantic search** for knowledge space (current search is SQLite lexical FTS).
 2) **Auto‑refresh** of the index when docs change (currently on startup).
 3) **DB/graph knowledge resolvers** (Postgres / Neo4j / hybrid).
 4) **Explicit “doc roots”** beyond `docs/` (e.g., product specs, ADRs).

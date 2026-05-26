@@ -505,8 +505,9 @@ the other.
 
 ## Shared Sources Lifecycle
 
-`shared_sources` are copied at build time, not imported at runtime from the
-KDCube repository.
+`shared_sources` are copied into the consuming bundle's temporary build source
+tree before the widget build runs. The resulting static app is written to that
+bundle's storage root and served as that bundle's widget alias.
 
 ```mermaid
 flowchart LR
@@ -528,6 +529,7 @@ Rules:
 - absolute paths are for local testing only.
 - copied shared source is part of the build signature.
 - shared source must not be edited in the temporary folder.
+- each consuming bundle has its own built widget artifact and signature.
 
 If a widget import fails with a missing SDK UI path, check `shared_sources`
 first. Do not patch the temporary source directory.

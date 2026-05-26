@@ -267,7 +267,9 @@ can produce a browser document inside the control-plane experience.
 | frontend shell, such as `/platform/*` | the host application frames this page |
 | frontend static `index.html` fallback | SPA routes usually return the same document |
 | `/api/integrations/bundles/.../widgets/...` | bundle widgets are iframed by the KDCube frontend |
-| `/api/integrations/static/...` | static integration UI can be iframed by the KDCube frontend |
+| `/api/integrations/bundles/.../public/widgets/...` | anonymous-visible widget shell (public pages, Telegram Mini Apps) |
+| `/api/integrations/static/...` | static integration UI / bundle main view (authed) iframed by the KDCube frontend |
+| `/api/integrations/bundles/.../public/static[/...]` | anonymous-visible bundle main-view shell — a public host page (landing site) frames this; data stays gated by authed APIs |
 | generated HTML/canvas document routes | generated previews may be rendered in an iframe |
 
 Do not apply the relaxed frame policy blindly to unrelated APIs. JSON APIs,
