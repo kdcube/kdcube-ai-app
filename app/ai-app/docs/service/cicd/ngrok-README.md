@@ -177,6 +177,28 @@ Put this file at:
 
 Use the actual port where the frontend process listens.
 
+> **Serving your own static site at the root instead?** To embed KDCube bundle
+> widgets on your own page at the same origin (so the browser auth cookie stays
+> same-site), you'd replace the catch-all `reverse_proxy /* <frontend-port>`
+> with a `file_server` for your site and keep the platform-path proxies above.
+> One gotcha: the frontend SPA references its hashed bundles at the ROOT
+> (`/assets/*`, `/img/*`), which collide with your site's own `/assets`. Route
+> those paths to serve the site file when it exists on disk and otherwise proxy
+> to the frontend — Caddy's `file` matcher does this:
+>
+> ```caddyfile
+> @sharedAssets path /assets/* /img/*
+> handle @sharedAssets {
+>   @siteHasFile file
+>   handle @siteHasFile { file_server }
+>   handle { reverse_proxy 127.0.0.1:<frontend-port> }
+> }
+> ```
+>
+> Without it, `/platform/chat` loads its HTML but the JS/CSS 404 and the page
+> renders blank. (The frontend's bundle names are hashed, so they never exist on
+> your site — the `file` check routes them correctly.)
+
 ### Frontend / Cognito
 
 Frontend browser config is defined in the active `assembly.yaml` used by
