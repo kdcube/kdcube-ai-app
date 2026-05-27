@@ -999,9 +999,9 @@ export default function App() {
             absolute inside the synthetic boxed preview). First/Prev/Next step
             between user messages; Latest jumps to the bottom. Shown for
             multi-turn chats, or single-turn when scrolled away from the bottom. */}
-        {state.turns.length > 1 || showScrollDown ? (
+        {(!compact && state.turns.length > 1) || showScrollDown ? (
           <div className={`k-turn-nav ${previewTile ? 'k-scroll-in-tile' : ''}`}>
-            {state.turns.length > 1 ? (
+            {!compact && state.turns.length > 1 ? (
               <>
                 <button type="button" className="k-turn-nav-btn" onClick={() => scrollToTurn('first')} aria-label="Jump to first message" title="First message">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 4h14M12 20V9M7 14l5-5 5 5" /></svg>
