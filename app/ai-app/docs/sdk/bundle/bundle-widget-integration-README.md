@@ -41,6 +41,9 @@ Configure `proxy.frame_embedding` so the KDCube proxy clears
 `X-Frame-Options` and emits a CSP `frame-ancestors` allowlist on frameable
 bundle routes. See
 [Embedding The Control Plane Frontend](../../service/cicd/embedding-control-plane-frontend-README.md).
+For the integrator picture — embedding topologies (same-origin / same-site
+subdomain / cross-site) and how login/cookies work in each — see
+[Embedding KDCube In A Host App](../../service/cicd/embedding-kdcube-in-a-host-app-README.md).
 
 ## Two Contracts: Surface And Build Config
 

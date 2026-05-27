@@ -202,6 +202,11 @@ the KDCube shell and frameable bundle/static document routes. See
 [Embedding The Control Plane Frontend](../../service/cicd/embedding-control-plane-frontend-README.md)
 for the deployment contract and examples.
 
+For how login and cookies behave when embedded — a same-site subdomain embed can
+reuse a top-level login via a shared parent-domain cookie, while a cross-site
+embed needs `SameSite=None; Secure` cookies or the parent `CONFIG_RESPONSE`
+token handoff — see that doc's **Auth And Cookies** section.
+
 For cross-origin iframe sizing, the embedding page must listen for the KDCube
 resize message. The host page owns the normal iframe width with CSS; do not set
 `iframe.style.width` from every resize event. Doing that can feed a temporary

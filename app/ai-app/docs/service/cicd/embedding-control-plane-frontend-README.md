@@ -14,6 +14,13 @@ see_also:
 This page describes how to deploy a KDCube control-plane frontend so it can be
 embedded inside another web application as an iframe.
 
+> For the integrator-facing big picture — the embedding **topologies**
+> (same-origin / same-site subdomain / cross-site) with diagrams, the **auth
+> flow per topology**, and a decision matrix — see
+> [Embedding KDCube In A Host App](embedding-kdcube-in-a-host-app-README.md).
+> This page is the deployment/renderer contract that emits the headers it
+> describes.
+
 The rule is deployment-level, not frontend-code-only. The browser decides
 whether a page may be framed from response headers emitted by the web/proxy
 layer. The same KDCube frontend may work as a top-level page and fail inside an
