@@ -151,12 +151,23 @@ export default function App() {
    * persisted — the failure mode the user reported with attachments). */
   const sendQueueRef = useRef<Promise<void>>(Promise.resolve())
   const bottomRef = useRef<HTMLDivElement | null>(null)
-  /* The scrollable messages region. In compact view this is the scroll
-   * parent (the widget is height-capped and never grows); in the regular
-   * view the window scrolls and this stays null-as-scroller. */
+  /* The scrollable messages region. Both compact and expanded views are
+   * viewport-height (the root is h-screen + overflow-hidden), so this region
+   * is always the internal scroller and the window itself never scrolls. */
   const scrollContainerRef = useRef<HTMLDivElement | null>(null)
   const autoScrollRef = useRef(true)
   const [showScrollDown, setShowScrollDown] = useState(false)
+
+  /* The messages region is the scroller only where its overflow is active
+   * (compact always; expanded at lg+). Below lg the expanded layout scrolls
+   * the window instead, so resolve the real scroller from computed overflow
+   * rather than assuming. */
+  const activeScroller = (): HTMLElement | null => {
+    const el = scrollContainerRef.current
+    if (!el) return null
+    const oy = window.getComputedStyle(el).overflowY
+    return oy === 'auto' || oy === 'scroll' ? el : null
+  }
 
   /* Host -> widget view sync. When the host closes its fullscreen overlay
    * (backdrop / Esc) it posts `kdcube-set-view`, keeping the expand
@@ -218,9 +229,8 @@ export default function App() {
   }, [state])
 
   useEffect(() => {
-    const compactNow = hostView === 'compact'
     const measure = () => {
-      const scroller = compactNow ? scrollContainerRef.current : null
+      const scroller = activeScroller()
       if (scroller) {
         const remaining = scroller.scrollHeight - (scroller.scrollTop + scroller.clientHeight)
         const near = remaining < 140
@@ -237,22 +247,63 @@ export default function App() {
     }
 
     measure()
-    const scroller = compactNow ? scrollContainerRef.current : null
-    const target: Window | HTMLElement = scroller ?? window
-    target.addEventListener('scroll', measure, { passive: true })
+    /* Bind to BOTH the container and the window: the active scroller can flip
+     * after this effect runs (e.g. the iframe is promoted to fullscreen width
+     * only after hostView changes, switching the scroller from window to the
+     * container). measure() reads whichever is active, so showScrollDown stays
+     * correct regardless of which one the user scrolls. */
+    const el = scrollContainerRef.current
+    if (el) el.addEventListener('scroll', measure, { passive: true })
+    window.addEventListener('scroll', measure, { passive: true })
     window.addEventListener('resize', measure)
     return () => {
-      target.removeEventListener('scroll', measure)
+      if (el) el.removeEventListener('scroll', measure)
+      window.removeEventListener('scroll', measure)
       window.removeEventListener('resize', measure)
     }
-    /* `ready` re-runs this once the messages container mounts (so compact
-     * binds the scroll listener to the container, not the window). */
+    /* `ready` re-runs this once the messages container mounts so the scroll
+     * listener binds to the container (the only scroller) rather than the
+     * window. The user scrolling up sets autoScrollRef=false, which halts the
+     * stream auto-follow until they return near the bottom. */
   }, [hostView, ready])
 
   const scrollToBottom = () => {
-    const scroller = hostView === 'compact' ? scrollContainerRef.current : null
+    /* "Latest" re-pins to the bottom so streaming auto-follows again, until the
+     * user scrolls up. Set the intent immediately rather than waiting for the
+     * smooth scroll to settle and re-trigger measure(). */
+    autoScrollRef.current = true
+    setShowScrollDown(false)
+    const scroller = activeScroller()
     if (scroller) scroller.scrollTo({ top: scroller.scrollHeight, behavior: 'smooth' })
     else bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+  }
+
+  /* Step between user messages (turn anchors). "first" jumps to the top;
+   * "prev"/"next" go to the user message just above / below the current scroll
+   * position. Jumping is a "read here" intent, so it unpins the streaming
+   * auto-follow (only Latest re-pins). */
+  const scrollToTurn = (direction: 'first' | 'prev' | 'next') => {
+    const container = scrollContainerRef.current
+    if (!container) return
+    const anchors = Array.from(container.querySelectorAll<HTMLElement>('[data-turn-anchor]'))
+    if (!anchors.length) return
+    autoScrollRef.current = false
+    setShowScrollDown(true)
+    let target: HTMLElement | null = null
+    if (direction === 'first') {
+      target = anchors[0]
+    } else {
+      const scroller = activeScroller()
+      const refTop = scroller ? scroller.getBoundingClientRect().top : 0
+      const tol = 8
+      if (direction === 'next') {
+        target = anchors.find((a) => a.getBoundingClientRect().top > refTop + tol) || anchors[anchors.length - 1]
+      } else {
+        const above = anchors.filter((a) => a.getBoundingClientRect().top < refTop - tol)
+        target = above.length ? above[above.length - 1] : anchors[0]
+      }
+    }
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   /* Auto-scroll dep tracks a compact signature of "what has visually
@@ -263,7 +314,7 @@ export default function App() {
   const scrollSignature = `${state.turns.length}:${lastTurn?.id ?? ''}:${lastTurn?.answer.length ?? 0}:${lastTurn?.timeline.length ?? 0}:${lastTurn?.artifacts.length ?? 0}:${state.banners.length}:${ready ? 1 : 0}`
   useEffect(() => {
     if (!autoScrollRef.current) return
-    const scroller = hostView === 'compact' ? scrollContainerRef.current : null
+    const scroller = activeScroller()
     if (scroller) scroller.scrollTop = scroller.scrollHeight
     else bottomRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' })
   }, [scrollSignature, hostView])
@@ -941,24 +992,34 @@ export default function App() {
             ? 'my-6 h-[560px] max-w-[600px] overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface)] shadow-lg'
             : compact
               ? 'h-screen max-w-[1320px] overflow-hidden'
-              : 'min-h-screen max-w-[1320px]'
+              : 'min-h-screen lg:h-screen max-w-[1320px] lg:overflow-hidden'
         }`}
       >
-        {/* "Latest" jump button. Normally fixed to the viewport (correct
-            inside the real iframe tile); in the synthetic boxed preview it is
-            absolute so it stays inside the tile instead of floating in the
-            window corner. */}
-        <button
-          type="button"
-          className={`k-scroll-to-bottom ${previewTile ? 'k-scroll-in-tile' : ''} ${showScrollDown ? 'k-show' : ''}`}
-          onClick={scrollToBottom}
-          aria-label="Scroll to latest"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M12 5v14M5 12l7 7 7-7" />
-          </svg>
-          <span>Latest</span>
-        </button>
+        {/* Turn navigation cluster (vertical stack, fixed to the viewport;
+            absolute inside the synthetic boxed preview). First/Prev/Next step
+            between user messages; Latest jumps to the bottom. Shown for
+            multi-turn chats, or single-turn when scrolled away from the bottom. */}
+        {(!compact && state.turns.length > 1) || showScrollDown ? (
+          <div className={`k-turn-nav ${previewTile ? 'k-scroll-in-tile' : ''}`}>
+            {!compact && state.turns.length > 1 ? (
+              <>
+                <button type="button" className="k-turn-nav-btn" onClick={() => scrollToTurn('first')} aria-label="Jump to first message" title="First message">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 4h14M12 20V9M7 14l5-5 5 5" /></svg>
+                </button>
+                <button type="button" className="k-turn-nav-btn" onClick={() => scrollToTurn('prev')} aria-label="Previous message" title="Previous message">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 15l6-6 6 6" /></svg>
+                </button>
+                <button type="button" className="k-turn-nav-btn" onClick={() => scrollToTurn('next')} aria-label="Next message" title="Next message">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6" /></svg>
+                </button>
+              </>
+            ) : null}
+            <button type="button" className="k-turn-nav-btn k-turn-nav-latest" onClick={scrollToBottom} aria-label="Scroll to latest" title="Latest">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12l7 7 7-7" /></svg>
+              <span>Latest</span>
+            </button>
+          </div>
+        ) : null}
         <header className="k-appbar">
           <div className="k-brand min-w-0">
             {/* KDCube favicon (same robot/cube mark as kdcube.tech). Inlined
@@ -1197,7 +1258,7 @@ export default function App() {
           </>
         ) : null}
 
-        <main className={`flex-1 ${compact ? 'flex min-h-0 flex-col overflow-hidden' : 'px-3 py-3 sm:px-4 sm:py-4 lg:px-6 lg:py-5'}`}>
+        <main className={`flex-1 ${compact ? 'flex min-h-0 flex-col overflow-hidden' : 'lg:flex lg:min-h-0 lg:flex-col lg:overflow-hidden px-3 py-3 sm:px-4 sm:py-4 lg:px-6 lg:py-5'}`}>
           {topBanners.length > 0 ? (
             <div className={compact ? 'px-3 pt-2' : 'pb-3'}>
               {topBanners.length > 1 ? (
@@ -1212,7 +1273,7 @@ export default function App() {
           ) : null}
 
           <div
-            className={`grid gap-3 lg:gap-4 ${compact ? 'min-h-0 flex-1 grid-rows-[minmax(0,1fr)]' : ''} ${
+            className={`grid gap-3 lg:gap-4 ${compact ? 'min-h-0 flex-1 grid-rows-[minmax(0,1fr)]' : 'lg:min-h-0 lg:flex-1 lg:grid-rows-[minmax(0,1fr)]'} ${
               leftPaneVisible
                 ? 'lg:grid-cols-[260px_minmax(0,1fr)]'
                 : 'lg:grid-cols-[minmax(0,1fr)]'
@@ -1249,9 +1310,9 @@ export default function App() {
             <FileDropZone
               onFiles={handleDropFiles}
               disabled={sendingDisabled}
-              className={`min-w-0 flex ${compact ? 'min-h-0' : ''}`}
+              className={`min-w-0 flex ${compact ? 'min-h-0' : 'lg:min-h-0'}`}
             >
-            <div className={`glass-panel min-w-0 overflow-hidden flex flex-col flex-1 ${compact ? 'min-h-0 k-flush' : ''}`}>
+            <div className={`glass-panel min-w-0 overflow-hidden flex flex-col flex-1 ${compact ? 'min-h-0 k-flush' : 'lg:min-h-0'}`}>
               {/* Conversation-title header bar — hidden in the compact tile
                   for the clean single-surface look (the appbar carries the
                   identity there). Shown in the full view. */}
@@ -1284,7 +1345,7 @@ export default function App() {
 
               <div
                 ref={scrollContainerRef}
-                className={`px-4 py-3 ${compact ? 'min-h-0 flex-1 overflow-y-auto' : 'flex-1'}`}
+                className={`px-4 py-3 ${compact ? 'min-h-0 flex-1 overflow-y-auto' : 'flex-1 lg:min-h-0 lg:overflow-y-auto'}`}
               >
                 {state.turns.length === 0 ? (
                   <div className="k-empty">

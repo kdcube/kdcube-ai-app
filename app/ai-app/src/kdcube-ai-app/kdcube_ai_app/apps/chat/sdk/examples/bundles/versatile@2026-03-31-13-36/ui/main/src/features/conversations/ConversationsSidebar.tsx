@@ -7,9 +7,14 @@
  *  bar.
  */
 
-import { memo } from 'react'
+import { memo, useEffect, useState } from 'react'
 import type { ConversationSummary } from '../../service.ts'
 import { formatConversationTime } from '../../components/utils.ts'
+
+/* Render only the most recent N (the list is sorted newest-first by the
+ * parent); a "Load more" control reveals older ones in the same-size pages.
+ * Keeps the list short and the DOM light when a user has many conversations. */
+const PAGE_SIZE = 20
 
 function ConversationsSidebarImpl({
   conversations,
@@ -40,8 +45,17 @@ function ConversationsSidebarImpl({
   onStartNew: () => void
   onDelete: (conversation: ConversationSummary) => void
 }) {
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
+  /* Reset the window when the search query changes so results start from the
+   * top of the (re)filtered list. */
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE)
+  }, [query])
+  const visible = conversations.slice(0, visibleCount)
+  const remaining = conversations.length - visible.length
+
   return (
-    <aside className="glass-panel flex min-h-[520px] flex-col overflow-hidden lg:sticky lg:top-4">
+    <aside className="glass-panel flex min-h-0 flex-col overflow-hidden lg:h-full">
       <div className="flex items-center justify-between gap-2 border-b border-[var(--line-soft)] px-3 py-2">
         <div className="min-w-0">
           <div className="text-[13px] font-semibold text-[var(--ink)]">Chats</div>
@@ -105,7 +119,7 @@ function ConversationsSidebarImpl({
 
       {conversations.length > 0 ? (
         <div className="k-rows min-w-0 flex-1 overflow-auto">
-          {conversations.map((conversation) => {
+          {visible.map((conversation) => {
             const isActive = conversation.id === activeConversationId
             const isLoading = loadingConversationId === conversation.id
             const isDeleting = deletingConversationId === conversation.id
@@ -153,6 +167,18 @@ function ConversationsSidebarImpl({
               </div>
             )
           })}
+          {remaining > 0 ? (
+            <div className="px-3 py-2">
+              <button
+                type="button"
+                className="k-btn k-sm k-ghost w-full"
+                onClick={() => setVisibleCount((count) => count + PAGE_SIZE)}
+                disabled={disabled}
+              >
+                Load more · {remaining} older
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </aside>

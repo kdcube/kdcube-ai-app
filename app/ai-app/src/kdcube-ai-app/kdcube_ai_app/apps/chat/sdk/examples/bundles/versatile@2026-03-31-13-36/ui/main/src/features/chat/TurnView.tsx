@@ -211,6 +211,24 @@ function TurnViewImpl({
         ? 'k-chip k-green'
         : 'k-chip k-teal'
 
+  /* Turn cost (from the accounting.usage event) and wall time (from
+   * chat.turn.summary), shown in the status line once they arrive. Cost shows
+   * more decimals when it is small; time as m:ss. */
+  const costUsd = turn.costUsd
+  const costLabel =
+    typeof costUsd === 'number' && costUsd >= 0
+      ? costUsd >= 0.1
+        ? costUsd.toFixed(2)
+        : costUsd.toFixed(4)
+      : null
+  const elapsedMs = turn.elapsedMs
+  let timeLabel: string | null = null
+  if (typeof elapsedMs === 'number' && elapsedMs >= 0) {
+    const total = Math.round(elapsedMs / 1000)
+    // min.sec (dot, not colon, which reads as a clock time)
+    timeLabel = `${Math.floor(total / 60)}.${String(total % 60).padStart(2, '0')}`
+  }
+
   /* Hide the user-bubble entirely when the turn has no text AND no
    * attachments — that's a phantom turn (e.g. a server-side spurious
    * `chat.start` for a queued continuation id) and showing a placeholder
@@ -221,7 +239,7 @@ function TurnViewImpl({
     <article className="flex flex-col gap-2">
       {/* User turn */}
       {hasUserContent ? (
-        <div className="flex flex-col gap-1 self-end max-w-[760px]">
+        <div className="flex flex-col gap-1 self-end max-w-[760px]" data-turn-anchor={turn.id}>
           <div className="flex items-center gap-2 text-[11px] text-[var(--muted)]">
             <span className="font-semibold text-[var(--text-2)]">You</span>
             <span>{formatTime(turn.createdAt)}</span>
@@ -275,6 +293,7 @@ function TurnViewImpl({
           </div>
         </div>
 
+        <div className="k-tabsbar">
         <div className="k-tabs">
           {([
             /* Chat is the default visual; sits first per design. */
@@ -296,6 +315,23 @@ function TurnViewImpl({
               {count ? <span className="k-count">{count}</span> : null}
             </button>
           ))}
+        </div>
+          {costLabel || timeLabel ? (
+            <div className="k-turn-meta k-tabs-meta">
+              {costLabel ? (
+                <span
+                  className="k-turn-cost"
+                  title={costUsd != null ? `Turn cost: $${costUsd.toFixed(6)}` : undefined}
+                >
+                  <span className="k-coin" aria-hidden="true">$</span>
+                  {costLabel}
+                </span>
+              ) : null}
+              {timeLabel ? (
+                <span className="k-turn-time" title="Turn time (min.sec)">t={timeLabel}</span>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <div className="flex flex-col gap-2 pt-1">

@@ -41,6 +41,7 @@ The agent does **not** work against one mutable flat directory. It reasons acros
 2) CONVERSATION ARTIFACT MEMORY (logical)
    ar:...  tc:...  so:...  su:...
    fi:<older_turn>.files/...
+   fi:<older_turn>.outputs/...
    fi:<older_turn>.user.attachments/...
 
 3) BUNDLE KNOWLEDGE SPACE (logical, read-only)
@@ -98,6 +99,8 @@ metadata root.
 - `files/...` means durable workspace/project state
 - `outputs/...` means artifacts that should be kept/shared but should not become durable workspace state
 - unqualified paths default to `outputs/...`; use `files/...` explicitly for durable workspace/project state
+- `kind=file` writes are hosted with their full workspace-relative path preserved
+- `visibility=external` emits the hosted file to the UI; `visibility=internal` keeps the hosted file available for later agent/runtime use without UI emission
 
 `react.patch`
 - updates an existing current-turn materialized text file under `files/...` or `outputs/...`
@@ -136,6 +139,11 @@ This keeps:
 - discovery separate from loading
 - loading separate from mutation
 - turn history preserved
+
+`react.pull` materializes file bytes from hosted blob handles recorded in
+timeline metadata. It must not treat a visible text preview as the complete file
+content. Prefix pulls are metadata-driven and fetch exact hosted blobs; they are
+not object-store scans and they do not extract execution workspace archives.
 
 ## Current limitations
 

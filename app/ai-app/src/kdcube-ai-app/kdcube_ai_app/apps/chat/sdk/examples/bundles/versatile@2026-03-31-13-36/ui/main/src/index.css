@@ -714,6 +714,33 @@ a { color: inherit; }
    column is position:relative) rather than fixed to the window. */
 .k-scroll-to-bottom.k-scroll-in-tile { position: absolute; right: 14px; bottom: 104px; }
 
+/* Turn navigation cluster: a vertical stack matching the Latest pill. First/
+   Prev/Next step between user messages; Latest jumps to the bottom. */
+.k-turn-nav { position: fixed; right: 24px; bottom: 96px; z-index: 4;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.k-turn-nav.k-scroll-in-tile { position: absolute; right: 14px; bottom: 104px; }
+.k-turn-nav-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 30px; min-width: 30px; padding: 0 9px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--text); font-size: 12px; font-weight: 500;
+  box-shadow: 0 2px 6px rgba(13, 30, 44, 0.08); cursor: pointer; transition: background 140ms ease; }
+.k-turn-nav-btn:hover { background: var(--surface-2); }
+.k-turn-nav-btn svg { width: 14px; height: 14px; color: var(--text-2); }
+
+/* Turn status-line accounting: a small gold coin + cost, and the wall time. */
+.k-turn-meta { display: inline-flex; align-items: center; gap: 10px; font-size: 11px;
+  color: var(--text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.k-turn-cost { display: inline-flex; align-items: center; gap: 4px; }
+.k-coin { display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px; border-radius: 50%; color: #6B4304;
+  background: radial-gradient(circle at 35% 30%, #FFEAA8 0%, #F4C53C 55%, #E0A82A 100%);
+  box-shadow: inset 0 0 0 0.5px rgba(120, 72, 8, 0.35);
+  font-size: 9px; font-weight: 800; line-height: 1; }
+.k-turn-time { color: var(--muted); }
+/* Cost + time pinned to the right of the tab bar, sharing its underline. */
+.k-tabsbar { display: flex; align-items: stretch; }
+.k-tabsbar .k-tabs { flex: 1 1 auto; min-width: 0; }
+.k-tabs-meta { flex-shrink: 0; padding: 0 2px 0 12px; border-bottom: 1px solid var(--line); }
+
 /* Message toolbar (copy on hover for user/assistant message body) */
 .k-msg { position: relative; }
 .k-msg-toolbar {

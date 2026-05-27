@@ -24,8 +24,10 @@ https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/storage/sd
 ## Lifecycle (high‑level)
 1. **Agent produces a file** during a turn (e.g., image, PDF, dataset).
 2. The file is **written into conversation storage** under the current turn.
-3. The file is **registered in the turn log / timeline** with an RN (resource name).
-4. The **resources API** resolves the RN and serves the file.
+3. The storage key preserves the full artifact-root-relative path, not only the basename.
+4. The file is **registered in the turn log / timeline** with hosted blob handles (`hosted_uri`, `key`, `rn`).
+5. External files are emitted to the UI; internal files remain available for later agent/runtime use.
+6. The **resources API** resolves the RN and serves visible/downloadable files.
 
 ## Declared File Tool Results
 
@@ -104,20 +106,41 @@ The two file-hosting paths use the same strict result protocol:
 - tool-side path: the tool calls `host_files(...)` and returns the hosted rows;
   React records them and avoids hosting the same files again.
 
-Visibility controls hosting intent:
+Visibility controls transport/UI emission:
 
 ```text
 external  host and emit as a conversation artifact
-internal  keep as internal timeline/tool metadata
+internal  host for later agent/runtime use without UI emission
 ```
 
 If `visibility` is omitted for declared files, React defaults to `external`.
 
+Hosted file keys preserve topology:
+
+```text
+cb/tenants/<tenant>/projects/<project>/attachments/
+  <user_id>/<conversation_id>/<turn_id>/<artifact-root-relative-path>
+```
+
+For example, a produced file with physical path:
+
+```text
+turn_123/outputs/analysis/zip_contents.json
+```
+
+is hosted under the turn using that same relative path suffix. This allows
+`react.pull` to re-materialize the exact file and also allows directory-shaped
+pulls to fetch matching files without flattening duplicate basenames.
+
+`react.pull` uses hosted blob handles from timeline metadata. Text preview
+blocks are model-visible summaries/previews and are not used as file bytes.
+
 ## Where it is implemented
 **Storage / workspace**
-- `kdcube_ai_app/apps/chat/sdk/solutions/react/v2/solution_workspace.py`
-- `kdcube_ai_app/apps/chat/sdk/solutions/react/v2/artifacts.py`
-- `kdcube_ai_app/apps/chat/sdk/solutions/react/v2/tools/external.py`
+- `kdcube_ai_app/apps/chat/sdk/solutions/react/solution_workspace.py`
+- `kdcube_ai_app/apps/chat/sdk/solutions/react/artifacts.py`
+- `kdcube_ai_app/apps/chat/sdk/solutions/react/tools/external.py`
+- `kdcube_ai_app/apps/chat/sdk/solutions/react/tools/write.py`
 
 **Resource retrieval (ingress)**
 - `kdcube_ai_app/apps/chat/ingress/resources/resources.py`
@@ -128,6 +151,8 @@ If `visibility` is omitted for declared files, React defaults to `external`.
   object storage (artifacts/attachments).
 - Full turn workspace snapshots are **optional** and enabled via
   `REACT_PERSIST_WORKSPACE=1` (for debugging only).
+- Workspace snapshots are not the source of truth for file pull/reuse; hosted
+  file blobs and timeline metadata are.
 
 ## Related docs
 - [Conversation artifacts](https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/agents/react/conversation-artifacts-README.md)

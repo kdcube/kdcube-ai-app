@@ -81,7 +81,7 @@ Current behavior:
 Workspace implementation (`RuntimeCtx.workspace_implementation`):
 - `custom`
   - the agent is taught to use `fi:` plus `react.pull(paths=[...])` for historical materialization and `react.checkout(paths=[...])` for copying pulled `files/...` refs into the active current-turn workspace
-  - `.files/...` pulls hydrate from artifact/timeline/hosting-backed snapshot state
+  - `.files/...` pulls hydrate from artifact/timeline metadata and hosted blobs
   - the agent is not instructed to treat the activated workspace as git
 - `git`
   - the agent is taught to use `fi:` plus `react.pull(paths=[...])` for historical materialization and `react.checkout(paths=[...])` for copying pulled `files/...` refs into the active current-turn workspace
@@ -94,7 +94,7 @@ Workspace implementation (`RuntimeCtx.workspace_implementation`):
   - `fi:<turn_id>.files/<scope-or-subtree>` may be pulled as a subtree
   - `fi:<turn_id>.outputs/<file>` may be pulled as an exact file ref
   - `fi:<turn_id>.user.attachments/<name>` may be pulled only as an exact file ref
-  - folder pulls do not imply hosted binaries; binary files must be named point-wise
+  - folder pulls expand from timeline metadata and fetch exact hosted blobs; they do not list storage buckets or extract execution snapshots
   - in `git` mode, exact non-text `.files/...` refs that resolve to hosted artifacts are still hydrated from artifact/hosting history, not from git
 
 ### Knowledge space and exec-time path resolution
@@ -235,12 +235,12 @@ Workspace/read-write summary:
   - `turn_<id>/outputs/...` for non-workspace produced artifacts
 - unqualified `react.write` and exec contract paths default to `outputs/...`; use `files/...` explicitly for durable workspace/project state
 - `react.read` can load any readable artifact-root file through `fi:...`.
-- `react.pull` materializes selected `fi:` snapshot refs locally under the artifact root as historical/reference material.
+- `react.pull` materializes selected `fi:` refs locally under the artifact root as historical/reference material.
 - `react.checkout` copies selected historical `files/...` refs into the active current-turn `files/` workspace so they can be modified there.
 - `.files/...` pulls come from:
-  - artifact/timeline/hosting-backed snapshot state in `custom`
+  - artifact/timeline metadata plus hosted blobs in `custom`
   - git-backed lineage snapshots in `git`
-- `.outputs/...` pulls always come from artifact/timeline/hosting-backed snapshot state
+- `.outputs/...` pulls always come from artifact/timeline metadata plus hosted blobs
 - exact attachment pulls still come from hosted artifact storage in both modes
 - exact non-text `.files/...` refs also stay on the hosted/artifact path when timeline metadata says the file is a hosted binary artifact
 - `react.pull` supports subtree pulls only for `fi:<turn_id>.files/...`; `fi:<turn_id>.outputs/...` and attachment/binary pulls must be exact file refs
@@ -261,16 +261,17 @@ If `REACT_PERSIST_WORKSPACE` is enabled (default on), ReAct stores zipped diagno
 
 ```text
 cb/tenants/<tenant>/projects/<project>/executions/
-  <user_type>/<user_or_fp>/<conversation_id>/<turn_id>/<codegen_run_id>/
-    out.zip
-    pkg.zip
+  <user_or_fp>/<conversation_id>/<turn_id>/<codegen_run_id>/<codegen_run_id>.zip
 ```
 
 Meaning:
-- `out.zip` = snapshot of `out/`
-- `pkg.zip` = snapshot of `work/`
+- the archive contains top-level `out/` and `pkg/` trees
+- `out/` is the runtime output root
+- `pkg/` is the generated execution package/work tree
 
 This is for diagnostics/forensics, not canonical conversation reconstruction.
+`react.pull` uses hosted artifact bytes recorded in timeline metadata; it does
+not extract files from these diagnostic snapshots.
 
 ## Phase 4: Distributed/Fargate workspace serialization and restore
 

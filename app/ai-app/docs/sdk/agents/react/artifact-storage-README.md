@@ -43,10 +43,31 @@ User attachments:
   (e.g., `turn_<id>/attachments/<filename>`).
 
 ## Hosted storage location
-Assistant‑produced files are stored in the conversation attachments path:
+Assistant-produced file bytes are hosted in the conversation file storage
+surface under the current turn. The stored key preserves the full
+artifact-root-relative path, so files with the same basename in different
+directories remain distinct.
+
+General shape:
 ```
-s3://<bucket>/<prefix>/cb/tenants/<tenant>/projects/<project>/attachments/<role>/<user_id>/<conversation_id>/<turn_id>/<filename>
+s3://<bucket>/<prefix>/cb/tenants/<tenant>/projects/<project>/attachments/<user_id>/<conversation_id>/<turn_id>/<artifact-root-relative-path>
 ```
+
+Example:
+```text
+physical_path:
+  turn_2026-05-27-21-10-44-540/outputs/analysis/zip_contents.json
+
+storage key:
+  cb/tenants/demo/projects/demo/attachments/<user>/<conversation>/
+    turn_2026-05-27-21-10-44-540/
+    turn_2026-05-27-21-10-44-540/outputs/analysis/zip_contents.json
+```
+
+Visibility controls transport/UI emission, not whether the file bytes are
+hosted. External files are hosted and emitted to the UI. Internal files are
+hosted for later agent/runtime use and recorded in metadata, but are not emitted
+as visible user files.
 
 ## Conversation State Artifacts
 Conversation state is stored as two artifacts:
@@ -111,22 +132,26 @@ Artifacts never use `current_turn` in their paths. Always use the concrete `turn
 Do not expose absolute host paths, execution sandbox paths, or hosted `file://`
 paths to the agent as write/read targets.
 
-## Hosted file fields (external only)
+## Hosted file fields
 When a file is hosted, metadata blocks include:
 - `rn` (resource name; primary download handle)
 - `hosted_uri` (S3 path)
 - `key` (storage key)
 These are **not interchangeable**; UI expects `rn` for downloads.
 
+`react.pull` uses `hosted_uri` or `key` to materialize file bytes. It must not
+fall back to a visible text preview as if that preview were the complete file.
+
 ## Visibility
 - `visibility=external`: sent to user (chat or file attachment)
-- `visibility=internal`: stored only for agent use
+- `visibility=internal`: hosted and stored for agent/runtime use, not emitted to the user
   - Internal notes written via `react.write(channel="internal")` are stored as `react.note` blocks.
-  - Files created with `kind=file` are **not hosted** (they remain in the artifact root and the timeline).
+  - Files created with `kind=file` are hosted with their full workspace-relative path.
   - Exec contract files may explicitly request `visibility=internal` to keep the output agent-only.
 
 Important:
 - `visibility` answers who receives the artifact
+- it does not suppress persistence of produced file bytes
 - it does **not** answer whether the artifact is part of the durable workspace/project tree
 - that distinction lives at the namespace level (`files/...` vs `outputs/...`), not in `visibility`
 

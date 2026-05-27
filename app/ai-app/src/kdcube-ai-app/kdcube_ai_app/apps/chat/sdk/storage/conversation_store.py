@@ -82,6 +82,15 @@ class ConversationStore:
         import hashlib
         h = hashlib.sha256(); h.update(data); return h.hexdigest()
 
+    def _safe_storage_relpath(self, relpath: str) -> str:
+        rel = str(relpath or "").strip().replace("\\", "/").strip("/")
+        if not rel:
+            raise ValueError("relpath is required")
+        pure = pathlib.PurePosixPath(rel)
+        if rel.startswith("/") or any(part in ("", ".", "..") for part in pure.parts):
+            raise ValueError(f"unsafe storage relpath: {relpath}")
+        return str(pure)
+
     # ---------- messages ----------
 
     async def put_message(
@@ -418,6 +427,38 @@ class ConversationStore:
         # RN is the logical filename (without timestamp) OR the actual stored name?
         # To keep dereferencing simple, we use the stored name.
         # rn = rn_attachment(tenant, project, user_or_fp, conversation_id, turn_id, role, rel_name)
+        return self._uri_for_path(rel), rel, rn
+
+    async def put_artifact_file(
+        self,
+        *,
+        tenant: str,
+        project: str,
+        user: Optional[str],
+        fingerprint: Optional[str],
+        conversation_id: str,
+        turn_id: str,
+        relpath: str,
+        data: bytes,
+        mime: Optional[str] = None,
+        role: str = "artifact",
+    ) -> Tuple[str, str, str]:
+        """
+        Save an artifact blob under the hosted file surface while preserving its
+        workspace-relative path. The file is not visible to users unless callers
+        also emit a file event.
+        """
+        if not turn_id:
+            raise ValueError("turn_id is required for artifact files")
+        safe_relpath = self._safe_storage_relpath(relpath)
+        _, user_or_fp = self._who_and_id(user, fingerprint)
+        rel = self._join(
+            self.root_prefix, "tenants", tenant, "projects", project,
+            "attachments", user_or_fp, conversation_id, turn_id, safe_relpath
+        )
+        rn = rn_file(tenant, project, user_or_fp, conversation_id, turn_id, role, safe_relpath)
+        meta = {"ContentType": mime} if mime else None
+        await self.backend.write_bytes_a(rel, data, meta=meta)
         return self._uri_for_path(rel), rel, rn
 
     async def get_blob_bytes(self, uri_or_path: str) -> bytes:

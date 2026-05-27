@@ -319,7 +319,7 @@ async def handle_react_write(*, react: Any, ctx_browser: Any, state: Dict[str, A
         physical_path=artifact_name,
     )
     hosted = []
-    if visibility != "internal":
+    if kind == "file":
         hosted = await host_artifact_file(
             hosting_service=react.hosting_service,
             comm=react.comm,
@@ -344,10 +344,10 @@ async def handle_react_write(*, react: Any, ctx_browser: Any, state: Dict[str, A
         await emit_hosted_files(
             hosting_service=react.hosting_service,
             hosted=hosted,
-            should_emit=(kind == "file" and channel != "internal"),
+            should_emit=(visibility != "internal" and channel != "internal"),
         )
         abs_path = resolve_artifact_path(pathlib.Path(state["outdir"]), artifact_name)
-        if kind != "display":
+        if visibility != "internal":
             if not abs_path.exists():
                 notice_block(
                     ctx_browser=ctx_browser,
