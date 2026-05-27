@@ -238,7 +238,7 @@ function TurnViewImpl({
     <article className="flex flex-col gap-2">
       {/* User turn */}
       {hasUserContent ? (
-        <div className="flex flex-col gap-1 self-end max-w-[760px]">
+        <div className="flex flex-col gap-1 self-end max-w-[760px]" data-turn-anchor={turn.id}>
           <div className="flex items-center gap-2 text-[11px] text-[var(--muted)]">
             <span className="font-semibold text-[var(--text-2)]">You</span>
             <span>{formatTime(turn.createdAt)}</span>

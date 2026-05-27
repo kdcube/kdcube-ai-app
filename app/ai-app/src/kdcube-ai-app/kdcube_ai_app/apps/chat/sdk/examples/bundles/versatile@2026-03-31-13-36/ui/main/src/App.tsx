@@ -278,6 +278,34 @@ export default function App() {
     else bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }
 
+  /* Step between user messages (turn anchors). "first" jumps to the top;
+   * "prev"/"next" go to the user message just above / below the current scroll
+   * position. Jumping is a "read here" intent, so it unpins the streaming
+   * auto-follow (only Latest re-pins). */
+  const scrollToTurn = (direction: 'first' | 'prev' | 'next') => {
+    const container = scrollContainerRef.current
+    if (!container) return
+    const anchors = Array.from(container.querySelectorAll<HTMLElement>('[data-turn-anchor]'))
+    if (!anchors.length) return
+    autoScrollRef.current = false
+    setShowScrollDown(true)
+    let target: HTMLElement | null = null
+    if (direction === 'first') {
+      target = anchors[0]
+    } else {
+      const scroller = activeScroller()
+      const refTop = scroller ? scroller.getBoundingClientRect().top : 0
+      const tol = 8
+      if (direction === 'next') {
+        target = anchors.find((a) => a.getBoundingClientRect().top > refTop + tol) || anchors[anchors.length - 1]
+      } else {
+        const above = anchors.filter((a) => a.getBoundingClientRect().top < refTop - tol)
+        target = above.length ? above[above.length - 1] : anchors[0]
+      }
+    }
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
   /* Auto-scroll dep tracks a compact signature of "what has visually
    * grown" — turn count + the active turn's answer length + banner
    * count + ready. This fires on streaming deltas (so the page keeps
@@ -967,21 +995,31 @@ export default function App() {
               : 'min-h-screen lg:h-screen max-w-[1320px] lg:overflow-hidden'
         }`}
       >
-        {/* "Latest" jump button. Normally fixed to the viewport (correct
-            inside the real iframe tile); in the synthetic boxed preview it is
-            absolute so it stays inside the tile instead of floating in the
-            window corner. */}
-        <button
-          type="button"
-          className={`k-scroll-to-bottom ${previewTile ? 'k-scroll-in-tile' : ''} ${showScrollDown ? 'k-show' : ''}`}
-          onClick={scrollToBottom}
-          aria-label="Scroll to latest"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M12 5v14M5 12l7 7 7-7" />
-          </svg>
-          <span>Latest</span>
-        </button>
+        {/* Turn navigation cluster (vertical stack, fixed to the viewport;
+            absolute inside the synthetic boxed preview). First/Prev/Next step
+            between user messages; Latest jumps to the bottom. Shown for
+            multi-turn chats, or single-turn when scrolled away from the bottom. */}
+        {state.turns.length > 1 || showScrollDown ? (
+          <div className={`k-turn-nav ${previewTile ? 'k-scroll-in-tile' : ''}`}>
+            {state.turns.length > 1 ? (
+              <>
+                <button type="button" className="k-turn-nav-btn" onClick={() => scrollToTurn('first')} aria-label="Jump to first message" title="First message">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 4h14M12 20V9M7 14l5-5 5 5" /></svg>
+                </button>
+                <button type="button" className="k-turn-nav-btn" onClick={() => scrollToTurn('prev')} aria-label="Previous message" title="Previous message">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 15l6-6 6 6" /></svg>
+                </button>
+                <button type="button" className="k-turn-nav-btn" onClick={() => scrollToTurn('next')} aria-label="Next message" title="Next message">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6" /></svg>
+                </button>
+              </>
+            ) : null}
+            <button type="button" className="k-turn-nav-btn k-turn-nav-latest" onClick={scrollToBottom} aria-label="Scroll to latest" title="Latest">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12l7 7 7-7" /></svg>
+              <span>Latest</span>
+            </button>
+          </div>
+        ) : null}
         <header className="k-appbar">
           <div className="k-brand min-w-0">
             {/* KDCube favicon (same robot/cube mark as kdcube.tech). Inlined
