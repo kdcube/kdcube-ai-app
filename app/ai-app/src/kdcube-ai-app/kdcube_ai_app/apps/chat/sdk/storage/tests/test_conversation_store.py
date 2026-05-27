@@ -27,3 +27,28 @@ async def test_file_attachment_uri_is_absolute_file_uri(tmp_path):
     assert "file://tmp" not in uri
     assert key == "cb/tenants/tenant/projects/project/attachments/user/conversation/turn_1/report.xlsx"
     assert await store.get_blob_bytes(uri) == b"xlsx-bytes"
+
+
+@pytest.mark.asyncio
+async def test_artifact_file_preserves_workspace_relative_path(tmp_path):
+    store = ConversationStore(storage_uri=tmp_path.as_uri())
+
+    uri, key, _rn = await store.put_artifact_file(
+        tenant="tenant",
+        project="project",
+        user="user",
+        fingerprint=None,
+        conversation_id="conversation",
+        turn_id="turn_1",
+        relpath="turn_1/outputs/analysis/report.json",
+        data=b'{"ok": true}\n',
+        mime="application/json",
+    )
+
+    assert uri.startswith("file:///")
+    assert key == (
+        "cb/tenants/tenant/projects/project/attachments/user/conversation/"
+        "turn_1/turn_1/outputs/analysis/report.json"
+    )
+    assert await store.get_blob_bytes(key) == b'{"ok": true}\n'
+    assert await store.get_blob_bytes(uri) == b'{"ok": true}\n'

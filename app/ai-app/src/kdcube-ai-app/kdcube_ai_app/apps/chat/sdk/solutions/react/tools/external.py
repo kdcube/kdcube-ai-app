@@ -1019,7 +1019,16 @@ async def handle_external_tool(*,
                 extra={"tool_id": tool_id, "artifact_id": artifact_id, "error": tr_error},
             )
         hosted = []
-        if visibility == "external":
+        raw_value_for_host = artifact_view.raw.get("value") if isinstance((artifact_view.raw or {}).get("value"), dict) else {}
+        value_looks_like_file = bool(
+            isinstance(raw_value_for_host, dict)
+            and (raw_value_for_host.get("type") == "file" or raw_value_for_host.get("path"))
+        )
+        should_host_artifact = bool(
+            visibility == "external"
+            or (visibility == "internal" and value_looks_like_file)
+        )
+        if should_host_artifact:
             hosted = await host_artifact_file(
                 hosting_service=react.hosting_service,
                 comm=react.comm,
@@ -1031,12 +1040,12 @@ async def handle_external_tool(*,
             await emit_hosted_files(
                 hosting_service=react.hosting_service,
                 hosted=hosted,
-                should_emit=should_emit,
+                should_emit=bool(visibility == "external" and should_emit),
             )
 
         phys_path = ""
         rel_path = ""
-        should_resolve_file_path = visibility == "external" or tools_insights.is_exec_tool(tool_id)
+        should_resolve_file_path = visibility in {"external", "internal"} or tools_insights.is_exec_tool(tool_id)
         if should_resolve_file_path:
             if phys_path_override or rel_path_override:
                 phys_path = phys_path_override
@@ -1069,13 +1078,13 @@ async def handle_external_tool(*,
                             message="Artifact path contained a turn/files prefix; rewritten to current-turn relative path.",
                             extra={"original": original_path, "normalized": phys_path},
                         )
-        expose_internal_exec_file = bool(tools_insights.is_exec_tool(tool_id) and visibility == "internal" and phys_path)
+        expose_internal_file = bool(visibility == "internal" and phys_path)
         artifact_path = (
             physical_path_to_logical_path(phys_path)
-            if (phys_path and (visibility == "external" or expose_internal_exec_file))
+            if (phys_path and (visibility == "external" or expose_internal_file))
             else tc_result_path(turn_id=turn_id, call_id=tool_call_id)
         )
-        physical_path = phys_path if (phys_path and (visibility == "external" or expose_internal_exec_file)) else ""
+        physical_path = phys_path if (phys_path and (visibility == "external" or expose_internal_file)) else ""
         if tools_insights.is_search_tool(tool_id) or tools_insights.is_fetch_uri_content_tool(tool_id):
             try:
                 sids = remapped_source_sids
@@ -1281,7 +1290,7 @@ async def handle_external_tool(*,
             artifact_stats=None,
         )
         hosted = []
-        if visibility == "external":
+        if visibility in {"external", "internal"}:
             if already_hosted:
                 hosted_record = tr.get("hosted_record")
                 if isinstance(hosted_record, dict) and (
@@ -1304,7 +1313,7 @@ async def handle_external_tool(*,
                 await emit_hosted_files(
                     hosting_service=react.hosting_service,
                     hosted=hosted,
-                    should_emit=True,
+                    should_emit=bool(visibility == "external"),
                 )
 
         if already_hosted:

@@ -56,9 +56,9 @@ The existing `visibility=external|internal` axis does not solve this problem.
 It does **not** answer:
 - is this artifact part of the durable workspace/project tree?
 
-## Proposed solution
+## Implemented model
 
-Introduce a second assistant artifact namespace:
+React uses two assistant artifact namespaces:
 
 - `files/...`
   - durable workspace/project tree
@@ -111,6 +111,11 @@ That gives a clean matrix:
 - `outputs/...` + `internal`
   - internal artifact, not part of workspace history
 
+Both external and internal `kind=file` artifacts are hosted under the turn with
+their full workspace-relative path preserved. `external` additionally means the
+file is emitted to the user interface. `internal` means the file is kept
+available for later agent/runtime use without being emitted to the user.
+
 ## Agent mental model
 
 React should be taught:
@@ -144,7 +149,8 @@ Examples:
   - remains the historical workspace activation mechanism
 - `react.pull(fi:<turn>.outputs/...)`
   - should be supported as explicit artifact retrieval
-  - phase 1 can be exact-file only
+  - exact-file refs are the stable contract
+  - folder/prefix retrieval, when supported, expands from timeline metadata and fetches exact hosted blobs; it does not scan storage or extract full execution snapshots
 
 ### `custom`
 
@@ -152,6 +158,7 @@ Examples:
 - `outputs/...` does not become part of the workspace map
 - `react.pull(fi:<turn>.outputs/...)`
   - is still allowed as artifact retrieval
+  - exact-file refs are the stable contract
 
 ## Turn fetch / UI impact
 
@@ -181,24 +188,26 @@ Artifact storage must preserve:
 - namespace
 - visibility
 - kind
+- hosted blob handles (`hosted_uri`, `key`, `rn`) for produced files
+- the full artifact-root-relative physical path, not just the basename
 
 but workspace publish / workspace maps must only consider:
 
 - `files/...`
 
-## Phase 1 rollout
+## Implemented behavior
 
-Recommended rollout:
+Current behavior:
 
-1. Add `outputs/...` path normalization and logical mapping
-2. Keep `files/...` behavior unchanged
-3. Keep `visibility=external|internal` unchanged
-4. Make git publish stage only `files/...`
-5. Teach React:
+1. `outputs/...` paths normalize to `turn_<id>/outputs/...` and `fi:<turn>.outputs/...`.
+2. `files/...` behavior remains the durable workspace/project-tree path.
+3. `visibility=external|internal` is unchanged as an emission policy.
+4. Git publish stages only `files/...`.
+5. React is taught:
    - `files/...` = project tree
    - `outputs/...` = produced artifacts
-6. Add exact `react.pull(fi:<turn>.outputs/<file>)`
-7. Later decide whether folder pulls for `outputs/...` are needed
+6. `react.pull(fi:<turn>.outputs/<file>)` supports exact artifact retrieval.
+7. `react.pull(fi:<turn>.files/<prefix>)` supports subtree retrieval by expanding timeline metadata and fetching exact hosted blobs.
 
 ## Acceptance criteria
 
@@ -207,7 +216,7 @@ Recommended rollout:
 - git publish never stages `outputs/...`
 - custom workspace maps never treat `outputs/...` as workspace members
 - external outputs remain downloadable through the normal artifact flow
-- internal outputs remain agent-visible without being user-emitted
+- internal outputs remain hosted for agent/runtime reuse without being user-emitted
 
 ## Non-goals
 

@@ -716,6 +716,8 @@ async def host_artifact_file(
             )
         if hosted_uri:
             artifact["hosted_uri"] = hosted_uri
+        if hosted_key:
+            artifact["key"] = hosted_key
         if hosted_rn:
             artifact["rn"] = hosted_rn
         _LOG.info(

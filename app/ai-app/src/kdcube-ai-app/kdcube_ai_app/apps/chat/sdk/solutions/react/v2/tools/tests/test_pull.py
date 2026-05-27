@@ -147,6 +147,82 @@ async def test_pull_materializes_exact_attachment_ref(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_pull_materializes_hosted_internal_output_not_preview(tmp_path):
+    outdir = tmp_path / "out"
+    runtime = RuntimeCtx(turn_id="turn_pull", outdir=str(outdir), workdir=str(tmp_path / "work"))
+    ctx = FakeBrowser(runtime)
+    physical = "turn_prev/outputs/analysis/zip_contents.json"
+    logical = "fi:turn_prev.outputs/analysis/zip_contents.json"
+    hosted_key = (
+        "cb/tenants/demo/projects/demo/attachments/user-1/conv-1/"
+        "turn_prev/turn_prev/outputs/analysis/zip_contents.json"
+    )
+    full_payload = b'{"full": true, "items": [1, 2, 3]}\n'
+    blob = tmp_path / hosted_key
+    blob.parent.mkdir(parents=True, exist_ok=True)
+    blob.write_bytes(full_payload)
+    ctx._turn_logs["turn_prev"] = {
+        "blocks": [
+            {
+                "type": "react.tool.result",
+                "mime": "application/json",
+                "text": json.dumps({
+                    "artifact_path": logical,
+                    "physical_path": physical,
+                    "mime": "application/json",
+                    "kind": "file",
+                    "visibility": "internal",
+                    "size_bytes": len(full_payload),
+                    "key": hosted_key,
+                }),
+                "turn_id": "turn_prev",
+            },
+            {
+                "type": "react.tool.result",
+                "mime": "application/json",
+                "path": logical,
+                "text": "[TEXT FILE PREVIEW]\ntruncated preview, not the artifact bytes\n",
+                "turn_id": "turn_prev",
+                "meta": {
+                    "physical_path": physical,
+                    "key": hosted_key,
+                    "size_bytes": len(full_payload),
+                },
+            },
+        ]
+    }
+
+    class _Settings:
+        STORAGE_PATH = str(tmp_path)
+
+    import kdcube_ai_app.apps.chat.sdk.config as cfg
+    cfg.get_settings = lambda: _Settings()
+
+    state = {
+        "last_decision": {
+            "tool_call": {
+                "params": {
+                    "paths": [logical],
+                }
+            }
+        },
+        "outdir": str(outdir),
+    }
+
+    await handle_react_pull(ctx_browser=ctx, state=state, tool_call_id="pull_internal_output")
+
+    payload = _latest_payload(ctx)
+    assert payload["pulled"] == [{
+        "logical_path": logical,
+        "physical_path": physical,
+        "file_count": 1,
+    }]
+    assert "missing" not in payload
+    assert "errors" not in payload
+    assert (outdir / "workdir" / physical).read_bytes() == full_payload
+
+
+@pytest.mark.asyncio
 async def test_pull_rejects_attachment_prefix_pull(tmp_path):
     outdir = tmp_path / "out"
     runtime = RuntimeCtx(turn_id="turn_pull", outdir=str(outdir), workdir=str(tmp_path / "work"))

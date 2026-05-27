@@ -23,8 +23,8 @@ Key components:
 - Preflight/AV: `kdcube_ai_app/infra/gateway/safe_preflight.py`
 - Attachment ingestion and conversion: `kdcube_ai_app/apps/chat/sdk/runtime/user_inputs.py`
 - Multimodal message composition: `kdcube_ai_app/apps/chat/sdk/runtime/files_and_attachments.py`
-- Rehosting to execution workspace: `kdcube_ai_app/apps/chat/sdk/solutions/react/v2/solution_workspace.py`
-- Codegen runtime usage: `kdcube_ai_app/apps/chat/sdk/solutions/react/v2/runtime.py`
+- Rehosting to execution workspace: `kdcube_ai_app/apps/chat/sdk/solutions/react/solution_workspace.py`
+- Codegen runtime usage: `kdcube_ai_app/apps/chat/sdk/solutions/react/v2/runtime.py`, `kdcube_ai_app/apps/chat/sdk/solutions/react/v3/runtime.py`
 
 ```mermaid
 flowchart LR
@@ -83,7 +83,8 @@ multimodal content blocks for LLMs. These appear in the React toolchain.
 For code-generated programs, attachments are rehosted into the execution
 workspace so generated code can read them as files:
 - `kdcube_ai_app/apps/chat/sdk/solutions/react/v2/runtime.py`
-- `kdcube_ai_app/apps/chat/sdk/solutions/react/v2/solution_workspace.py`
+- `kdcube_ai_app/apps/chat/sdk/solutions/react/v3/runtime.py`
+- `kdcube_ai_app/apps/chat/sdk/solutions/react/solution_workspace.py`
 
 Rehosted structure:
 ```
@@ -123,9 +124,11 @@ payload as a declared file result:
 }
 ```
 
-The marker tells React that the files are intentional deliverable artifacts. It
-then hosts `external` files into conversation storage and emits file events for
-transport delivery.
+The marker tells React that the files are intentional file artifacts. React
+hosts produced files into conversation storage with their full
+artifact-root-relative path preserved. `external` files are emitted for
+transport delivery; `internal` files are hosted for later agent/runtime use but
+are not emitted to the user.
 
 The same bundle tool can host immediately with
 `bundle_tool_context.host_files(...)` and return the hosted rows. This works in

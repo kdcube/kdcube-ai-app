@@ -73,11 +73,12 @@ That other case uses a different contract:
 **Block metadata**  
 Artifacts are described by a **metadata JSON result block** plus one or more **content blocks**:
 - **Metadata block** is a `react.tool.result` JSON block whose **text** is a **safe digest** of artifact
-  metadata (no hosted_uri/rn/key/physical_path).
+  metadata.
   - `artifact_path` (logical path)
   - `physical_path` (artifact-root-relative `turn_...` path, when applicable)
   - `tool_call_id`
   - `mime`, `kind`, `visibility`, `channel` (when applicable)
+  - hosted blob handles (`hosted_uri`, `key`, `rn`) when file bytes were hosted
   - `sources_used` (if known)
   - `edited` (boolean if a prior version exists)
 - **Content block(s)** carry the same logical path in `path` and include the payload:
@@ -86,6 +87,10 @@ Artifacts are described by a **metadata JSON result block** plus one or more **c
   - `meta.tool_call_id` is present.
 - **File blocks** also include **hosting metadata** in `meta` (`hosted_uri`, `rn`, `key`, `physical_path`)
     and the safe digest in `meta.digest`.
+
+Text content blocks may be previews. A preview block describes the artifact for
+the model; it is not authoritative storage. File materialization must use the
+hosted blob handles when present.
 
 For **user attachments**, `user.attachment.meta` stores the safe digest in `text`, while the
 attachment file block stores hosting metadata + `meta.digest`.
@@ -151,8 +156,9 @@ The rewrite is recorded as a **protocol notice** in the timeline so the agent ca
 
 **rendering_tools.write_*** / **react.write**
 - Use physical path; timeline stores logical path in `meta`.
-- For `kind=file`, file is hosted and metadata (hosted_uri/rn/key) stored in `meta`.
-  - `visibility=internal` files are **not hosted** (stored only in the artifact root + timeline).
+- For `kind=file`, file bytes are hosted and metadata (`hosted_uri`, `key`, `rn`) is stored in metadata blocks.
+  - `visibility=external` files are also emitted to the UI.
+  - `visibility=internal` files are hosted for later agent/runtime use but are not emitted to the UI.
 - For `kind=display`, content is emitted and stored as text block.
 
 **react.rg**
@@ -170,13 +176,16 @@ The rewrite is recorded as a **protocol notice** in the timeline so the agent ca
 **react.pull**
 - Accepts `fi:` refs only.
 - For `fi:<turn>.files/<prefix>` folder pulls, the current implementation does **not** scan all hosted storage.
-- In `workspace_implementation=custom`, it inspects artifact metadata for the referenced turn from timeline/turn-log state, expands the matching descendants, and fetches only the exact matched blobs.
+- In `workspace_implementation=custom`, it inspects artifact metadata for the referenced turn from timeline/turn-log state, expands the matching descendants, and fetches only the exact matched hosted blobs.
 - In `workspace_implementation=git`, `fi:<turn>.files/...` resolves against the git-backed lineage snapshot for that version instead of scanning artifact history.
 - Folder pulls currently imply:
-  - textual/tree content backed by turn artifacts (`custom`) or a git snapshot tree (`git`)
-  - no implicit hosted-binary descendants
-- Hosted binaries are allowed only by exact logical ref, for example:
+  - descendants are discovered from metadata, not by listing object storage
+  - file bytes come from hosted blob handles, not from text previews
+  - no execution workspace archive extraction
+- User attachments are allowed only by exact logical ref, for example:
   - `fi:<turn>.user.attachments/template.xlsx`
+- Exact produced artifacts are also allowed:
+  - `fi:<turn>.outputs/analysis/zip_contents.json`
 - Future design note:
   - `fi:<turn>.outputs/...` is the explicit non-workspace artifact retrieval namespace
   - unlike `fi:<turn>.files/...`, it does not participate in workspace history semantics
@@ -218,7 +227,7 @@ the required assets before rendering.
 ### How it works
 
 1) **Local path mentions**
-   - The content is scanned for local paths (`turn_<id>/files/...` and `turn_<id>/attachments/...`).
+   - The content is scanned for local paths (`turn_<id>/files/...`, `turn_<id>/outputs/...`, and `turn_<id>/attachments/...`).
    - For each referenced path, the runtime rehosts that file into the artifact root.
    - If any are missing, a tool notice is emitted (`tool_call_error.missing_assets`).
 
@@ -262,17 +271,20 @@ Rendering tools run in isolated workspaces and only see the artifact root throug
 
 This is intentionally different from artifact metadata `physical_path` like:
 - `turn_abc/files/report.pdf`
+- `turn_abc/outputs/analysis/report.json`
 - `turn_abc/attachments/photo.png`
 
 ### File artifact (exec output)
 ```
 meta = {
-  artifact_path: "fi:turn_abc.files/report.pdf",
-  physical_path: "turn_abc/files/report.pdf",
-  mime: "application/pdf",
+  artifact_path: "fi:turn_abc.outputs/analysis/report.json",
+  physical_path: "turn_abc/outputs/analysis/report.json",
+  mime: "application/json",
   kind: "file",
+  visibility: "internal",
   tool_call_id: "c1a2",
   hosted_uri: "s3://...",
+  key: "cb/tenants/.../attachments/.../turn_abc/outputs/analysis/report.json",
   rn: "ef:..."
 }
 ```

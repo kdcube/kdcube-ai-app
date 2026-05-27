@@ -562,6 +562,28 @@ async def rehost_files_from_timeline(
         contrib_log = await _turn_blocks(turn_id)
         return resolve_artifact_from_timeline({"blocks": contrib_log, "sources_pool": []}, artifact_path)
 
+    def _hosted_blob_ref(artifact: Dict[str, Any]) -> str:
+        if not isinstance(artifact, dict):
+            return ""
+        return str(
+            artifact.get("hosted_uri")
+            or artifact.get("key")
+            or artifact.get("rn")
+            or ""
+        ).strip()
+
+    def _is_preview_text(value: str) -> bool:
+        text = str(value or "").lstrip()
+        return text.startswith("[TEXT FILE PREVIEW]") or text.startswith("[BINARY FILE PREVIEW]")
+
+    def _target_looks_like_preview(target: pathlib.Path) -> bool:
+        try:
+            if not target.exists() or not target.is_file() or target.stat().st_size > 256 * 1024:
+                return False
+            return _is_preview_text(target.read_text(encoding="utf-8", errors="ignore"))
+        except Exception:
+            return False
+
     async def _rehost_kind(*, by_turn_paths: Dict[str, List[str]], kind: str) -> None:
         target_ns = "attachments" if kind == "attachments" else ("outputs" if kind == "outputs" else "files")
         for turn_id, rels in by_turn_paths.items():
@@ -602,7 +624,7 @@ async def rehost_files_from_timeline(
                     if not isinstance(target_artifact, dict):
                         missing.append(target_key)
                         continue
-                    src = (target_artifact.get("hosted_uri") or target_artifact.get("key") or target_artifact.get("rn") or "").strip()
+                    src = _hosted_blob_ref(target_artifact)
                     mime = (target_artifact.get("mime") or "").strip().lower()
                     expected_size = target_artifact.get("size_bytes")
                     if not isinstance(expected_size, int):
@@ -623,6 +645,8 @@ async def rehost_files_from_timeline(
                                 needs_rehost = True
                             elif src and current_size == 0:
                                 needs_rehost = True
+                            elif src and _target_looks_like_preview(target):
+                                needs_rehost = True
                         if needs_rehost:
                             if src:
                                 try:
@@ -632,14 +656,22 @@ async def rehost_files_from_timeline(
                                     if target_artifact.get("base64"):
                                         import base64 as _b64
                                         target.write_bytes(_b64.b64decode(target_artifact.get("base64")))
-                                    elif isinstance(target_artifact.get("text"), str) and _is_text_mime(mime):
+                                    elif (
+                                        isinstance(target_artifact.get("text"), str)
+                                        and _is_text_mime(mime)
+                                        and not _is_preview_text(target_artifact.get("text") or "")
+                                    ):
                                         target.write_text(target_artifact.get("text"), encoding="utf-8")
                                     else:
                                         raise
                             elif target_artifact.get("base64"):
                                 import base64 as _b64
                                 target.write_bytes(_b64.b64decode(target_artifact.get("base64")))
-                            elif isinstance(target_artifact.get("text"), str) and _is_text_mime(mime):
+                            elif (
+                                isinstance(target_artifact.get("text"), str)
+                                and _is_text_mime(mime)
+                                and not _is_preview_text(target_artifact.get("text") or "")
+                            ):
                                 target.write_text(target_artifact.get("text"), encoding="utf-8")
                             else:
                                 missing.append(target_key)
@@ -1212,19 +1244,6 @@ class ApplicationHostingService:
                 continue
 
             name = p.name
-            uri, key, rn_f = await self.store.put_attachment(
-                tenant=tenant,
-                project=project,
-                user=user,
-                fingerprint=None,
-                conversation_id=conversation_id,
-                filename=name,
-                data=data,
-                mime=info.get("mime") or "application/octet-stream",
-                user_type=user_type,
-                turn_id=turn_id,
-                request_id=rid,
-            )
             physical_path = str(p)
             if base:
                 try:
@@ -1237,6 +1256,27 @@ class ApplicationHostingService:
                             physical_path = str(p)
                     else:
                         physical_path = str(p)
+            physical_path = physical_path.replace("\\", "/")
+            if physical_path.startswith("/"):
+                physical_path = name
+            physical_path = physical_path.strip("/")
+            try:
+                pure_physical = pathlib.PurePosixPath(physical_path)
+                if not physical_path or physical_path.startswith("/") or any(part in ("", ".", "..") for part in pure_physical.parts):
+                    physical_path = name
+            except Exception:
+                physical_path = name
+            uri, key, rn_f = await self.store.put_artifact_file(
+                tenant=tenant,
+                project=project,
+                user=user,
+                fingerprint=None,
+                conversation_id=conversation_id,
+                relpath=physical_path,
+                data=data,
+                mime=info.get("mime") or "application/octet-stream",
+                turn_id=turn_id,
+            )
             files_rehosted.append({
                 "slot": info.get("slot") or "",
                 "key": key,

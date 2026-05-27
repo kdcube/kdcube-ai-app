@@ -377,6 +377,11 @@ def build_artifact_meta_block(
             meta_json["tokens"] = int(tokens)
         except Exception:
             meta_json["tokens"] = tokens
+    value = artifact.get("value") if isinstance(artifact.get("value"), dict) else {}
+    for key in ("hosted_uri", "key", "rn"):
+        val = value.get(key) or artifact.get(key)
+        if val:
+            meta_json[key] = val
     # Drop empty or None attributes to avoid confusing metadata.
     meta_json = {
         k: v
