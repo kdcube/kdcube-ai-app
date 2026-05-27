@@ -1294,7 +1294,7 @@ export default function App() {
                       {[
                         'Summarize the last attachment as markdown',
                         'Search the web and cite three sources',
-                        'Run a small exec report',
+                        'Create a report with diagrams',
                       ].map((prompt) => (
                         <button
                           key={prompt}
