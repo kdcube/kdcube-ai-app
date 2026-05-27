@@ -126,11 +126,28 @@ _KDCUBE_RESIZE_REPORTER_SCRIPT = (
     "b?b['scroll'+name]:0,b?b['offset'+name]:0,b?b['client'+name]:0"
     ");"
     "}"
+    # contentHeight(): a height that can SHRINK. Measure the body box (+ its own
+    # margins), NOT documentElement — documentElement.scroll/offset/clientHeight
+    # are floored at the iframe viewport (scrollHeight >= clientHeight, and <html>
+    # fills the frame), so once a tile grows it can never report smaller and the
+    # host iframe stays oversized with an empty gap below the content. The body
+    # box is content-sized (height:auto), so it tracks content down as well as up.
+    # Apps that fill the frame on purpose (body{min-height:100vh}/height:100%)
+    # keep a body box >= the viewport and are unaffected — they never shrink below
+    # it. Width still uses maxDim (horizontal-overflow detection is unchanged).
+    "function contentHeight(){"
+    "var b=document.body,d=document.documentElement;"
+    "if(!b){return d?Math.max(d.scrollHeight,d.offsetHeight,d.clientHeight):0;}"
+    "var cs=null;try{cs=window.getComputedStyle?window.getComputedStyle(b):null;}catch(e){}"
+    "var mt=cs?parseFloat(cs.marginTop)||0:0;"
+    "var mb=cs?parseFloat(cs.marginBottom)||0:0;"
+    "return Math.ceil(Math.max(b.offsetHeight,b.scrollHeight)+mt+mb);"
+    "}"
     "function measure(){"
     "var d=document.documentElement,b=document.body;"
     "var viewportWidth=Math.max(window.innerWidth||0,d?d.clientWidth:0,b?b.clientWidth:0);"
     "var contentWidth=maxDim('Width');"
-    "var height=maxDim('Height');"
+    "var height=contentHeight();"
     "var width=(contentWidth>viewportWidth+1)?contentWidth:0;"
     "return {height:height,width:width,contentWidth:contentWidth,viewportWidth:viewportWidth,trustedViewport:viewportWidth>=minTrustedViewportWidth,reason:lastReason};"
     "}"
