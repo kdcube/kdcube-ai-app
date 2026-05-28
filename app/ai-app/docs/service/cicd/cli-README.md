@@ -397,6 +397,9 @@ touching any staged descriptors. Primary form:
 kdcube refresh --tenant <t> --project <p> --build
 ```
 
+In `custom-ui-managed-infra` mode, `--build` also rebuilds `proxylogin`
+because delegated-auth behavior is part of the local platform surface.
+
 Choose at most one source selector when the existing runtime should move to a
 different platform source:
 

@@ -226,6 +226,9 @@ SDK code) on an existing workdir. It:
   `--release <ref>`;
 - restages explicit local `--path <repo>` into `<workdir>/repo` before
   rebuilding when no source selector is provided;
+- rebuilds `proxylogin` in `custom-ui-managed-infra` mode when `--build` is
+  used, so delegated-auth behavior is refreshed with the rest of the local
+  platform surface;
 - stops the stack if it is running;
 - rebuilds platform Docker images when `--build` is given;
 - restarts the stack (unless `--no-restart` is passed);

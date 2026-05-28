@@ -315,6 +315,9 @@ descriptors (`bundles.yaml`, `bundles.secrets.yaml`, `assembly.yaml`,
 kdcube refresh --workdir ~/.kdcube/kdcube-runtime/<tenant>__<project> --build
 ```
 
+In `custom-ui-managed-infra` mode, `--build` also rebuilds `proxylogin`
+because delegated-auth behavior is part of the local platform surface.
+
 Refresh also accepts the same platform source selectors as `init`:
 `--latest`, `--upstream`, and `--release <ref>`. When you pass
 `--path /path/to/kdcube-ai-app` without one of those selectors, refresh
