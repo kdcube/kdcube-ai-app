@@ -500,7 +500,41 @@ Host local bundle paths in seed descriptors are translated to runtime-visible
 `/bundles/...` paths before staging. With `--reload`, changed declared bundle
 ids are reloaded after staging.
 
-### 2.3c Export live effective bundle descriptors
+### 2.3c Export and import local runtime descriptors
+
+For local descriptor-backed runtimes, use `kdcube config export` to snapshot
+the reviewed descriptor source and `kdcube config import` to reapply it:
+
+```bash
+kdcube config export \
+  --tenant <tenant> \
+  --project <project> \
+  --out-dir /tmp/kdcube-export \
+  --include-platform-descriptors
+
+kdcube config import \
+  --tenant <tenant> \
+  --project <project> \
+  --descriptors-location /tmp/kdcube-export \
+  --include-platform-descriptors \
+  --dry-run
+
+kdcube config import \
+  --tenant <tenant> \
+  --project <project> \
+  --descriptors-location /tmp/kdcube-export \
+  --include-platform-descriptors
+```
+
+With `--include-platform-descriptors`, export writes `assembly.yaml`,
+`secrets.yaml`, `gateway.yaml`, `bundles.yaml`, and `bundles.secrets.yaml`.
+Import treats the reviewed descriptor directory as authoritative for the local
+runtime: platform descriptors are overwritten exactly, bundle descriptors are
+path-normalized, and runtime env/config files are regenerated from the imported
+platform descriptors. Restart the stack after importing platform descriptors so
+running services pick up service-level env changes.
+
+### 2.3d Export live effective bundle descriptors
 
 For ECS / `aws-sm` deployments, the current effective live deployment-scoped
 bundle state can be exported directly from AWS Secrets Manager:
@@ -539,9 +573,9 @@ This is the correct export path for current live ECS state. It does not read:
 - mounted `/config/bundles.yaml`
 - GitHub secrets blobs
 
-For local descriptor-backed runtimes, `kdcube export` reads the active runtime
-descriptor files. Export normalizes runtime paths back to reusable descriptor
-shape:
+For local descriptor-backed runtimes, prefer `kdcube config export`. It reads
+the active runtime descriptor files and normalizes runtime paths back to
+reusable descriptor shape:
 
 - local non-git bundle paths such as `/bundles/...` are translated back to host
   paths using `assembly.yaml` / `.env` bundle mount mappings
@@ -1117,6 +1151,37 @@ This is for the user/operator case where the seed `bundles.yaml` /
 `bundles.secrets.yaml` are the chosen descriptor source. It does not refresh the
 platform runtime.
 
+Export and import the reviewed local runtime descriptor set:
+
+```bash
+kdcube config export \
+  --tenant acme \
+  --project prod \
+  --out-dir /tmp/kdcube-export \
+  --include-platform-descriptors
+
+kdcube config import \
+  --tenant acme \
+  --project prod \
+  --descriptors-location /tmp/kdcube-export \
+  --include-platform-descriptors \
+  --dry-run
+
+kdcube config import \
+  --tenant acme \
+  --project prod \
+  --descriptors-location /tmp/kdcube-export \
+  --include-platform-descriptors
+```
+
+With `--include-platform-descriptors`, `config export` includes
+`assembly.yaml`, `secrets.yaml`, and `gateway.yaml` next to the bundle
+descriptors. `config import` treats the reviewed directory as authoritative:
+platform descriptors are overwritten exactly, bundle descriptors are
+path-normalized, and runtime env/config files are regenerated from the imported
+platform descriptors. Restart the stack after importing platform descriptors so
+running services pick up service-level env changes.
+
 Export live bundle descriptors:
 
 ```bash
@@ -1161,11 +1226,11 @@ kdcube defaults \
 | Field | Flag | Purpose |
 |---|---|---|
 | `default_workdir` | `--default-workdir` | Fallback workdir when `--workdir` is omitted from a subcommand |
-| `default_tenant` | `--default-tenant` | Used by `kdcube info` for workdir resolution and display; used by `kdcube export` as fallback tenant |
-| `default_project` | `--default-project` | Used by `kdcube info` for workdir resolution and display; used by `kdcube export` as fallback project |
+| `default_tenant` | `--default-tenant` | Used by `kdcube info` for workdir resolution and display; used by descriptor export/import commands as fallback tenant |
+| `default_project` | `--default-project` | Used by `kdcube info` for workdir resolution and display; used by descriptor export/import commands as fallback project |
 
 `kdcube start`, `kdcube stop`, `kdcube bundle reload`,
-`kdcube bundle config apply`, and `kdcube export` resolve the target workdir
+`kdcube bundle config apply`, `kdcube config export/import`, and `kdcube export` resolve the target workdir
 with the following precedence. The older top-level `kdcube reload` command is a
 compatibility alias for `kdcube bundle reload`.
 
