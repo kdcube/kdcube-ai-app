@@ -1409,7 +1409,10 @@ def test_gather_configuration_treats_null_redis_secret_as_unset(monkeypatch, tmp
     env_ingress = (config_dir / ".env.ingress").read_text()
 
     assert "REDIS_PASSWORD=\n" in env_main or env_main.endswith("REDIS_PASSWORD=")
-    assert "REDIS_URL=redis://redis.example.internal:6379/0" in env_ingress
+    assert env_ingress.strip().splitlines() == [
+        "GATEWAY_COMPONENT=ingress",
+        "PLATFORM_DESCRIPTORS_DIR=/config",
+    ]
     assert "redis://:redispass@" not in env_ingress
 
 

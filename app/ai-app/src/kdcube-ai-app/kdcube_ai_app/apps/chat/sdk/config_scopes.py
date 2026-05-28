@@ -2,6 +2,7 @@ import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlparse
 
 import yaml
 from pydantic import BaseModel, Field
@@ -17,6 +18,9 @@ def _descriptors_dir() -> Path | None:
 def _descriptor_path(*, env_name: str, filename: str, default: str) -> Path:
     explicit = str(os.getenv(env_name) or "").strip()
     if explicit:
+        if explicit.startswith("file://"):
+            parsed = urlparse(explicit)
+            return Path(unquote(parsed.path)).expanduser()
         return Path(explicit).expanduser()
     descriptors_dir = _descriptors_dir()
     if descriptors_dir is not None:
@@ -116,6 +120,19 @@ def _load_assembly_plain(dotted_path: str) -> Any:
         ),
         dotted_path,
     )
+
+
+def _load_global_secret_plain(dotted_path: str) -> Any:
+    data = _load_plain_yaml(
+        _descriptor_path(
+            env_name="GLOBAL_SECRETS_YAML",
+            filename="secrets.yaml",
+            default="/config/secrets.yaml",
+        )
+    )
+    if isinstance(data, dict) and isinstance(data.get("secrets"), dict):
+        data = data.get("secrets")
+    return _resolve_dotted_value(data, dotted_path)
 
 
 def _parse_plain_key(key: str) -> tuple[Path, str]:

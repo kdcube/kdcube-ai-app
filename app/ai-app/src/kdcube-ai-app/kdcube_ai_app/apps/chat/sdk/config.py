@@ -15,7 +15,7 @@ import yaml
 
 from kdcube_ai_app.apps.chat.sdk.config_scopes import (
     PLATFORM_CONFIG, RUNTIME_CONFIG,
-    _load_assembly_plain, _parse_plain_key, _load_plain_yaml, _resolve_dotted_value,
+    _load_assembly_plain, _load_global_secret_plain, _parse_plain_key, _load_plain_yaml, _resolve_dotted_value,
     LOGConfig, ServiceConfig, AVConfig, HostedServicesConfig, MonitoringConfig,
     MetricsConfig, MetricsRuntimeConfig, MetricsProxyConfig, MetricsExportConfig,
     MetricsCloudWatchConfig, MetricsPrometheusConfig,
@@ -673,11 +673,19 @@ class Settings(PLATFORM_CONFIG):
         env_name: str,
         *,
         plain_path: str | None = None,
+        secret_path: str | None = None,
         default: str | None = None,
     ) -> str | None:
         env_val = self._env_str(env_name)
         if env_val is not None:
             return env_val
+        secret_lookup_path = secret_path or plain_path
+        if secret_lookup_path:
+            raw = _load_global_secret_plain(secret_lookup_path)
+            if raw is not None:
+                raw_str = str(raw).strip()
+                if raw_str:
+                    return raw_str
         if plain_path:
             raw = _load_assembly_plain(plain_path)
             if raw is not None:
@@ -808,6 +816,7 @@ class Settings(PLATFORM_CONFIG):
             pg_password = self._resolve_sensitive_str(
                 "POSTGRES_PASSWORD",
                 plain_path="infra.postgres.password",
+                secret_path="infra.postgres.password",
             )
             if pg_password is not None:
                 self.PGPASSWORD = pg_password
@@ -832,6 +841,7 @@ class Settings(PLATFORM_CONFIG):
             self.REDIS_PASSWORD = self._resolve_sensitive_str(
                 "REDIS_PASSWORD",
                 plain_path="infra.redis.password",
+                secret_path="infra.redis.password",
             )
 
         # 4. Build REDIS_URL from components if not explicitly set in env.

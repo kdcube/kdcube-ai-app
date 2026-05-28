@@ -3891,6 +3891,26 @@ def gather_configuration(
                 "PLATFORM_DESCRIPTORS_DIR": "/config",
             },
         )
+        if compose_mode != "all-in-one":
+            for key in (
+                "POSTGRES_HOST",
+                "POSTGRES_PORT",
+                "POSTGRES_USER",
+                "POSTGRES_PASSWORD",
+                "POSTGRES_DATABASE",
+                "POSTGRES_SSL",
+                "POSTGRES_SSL_MODE",
+                "POSTGRES_SSL_ROOT_CERT",
+                "PGUSER",
+                "PGPASSWORD",
+                "PGDATABASE",
+                "REDIS_HOST",
+                "REDIS_PORT",
+                "REDIS_PASSWORD",
+                "REDIS_DB",
+                "REDIS_URL",
+            ):
+                remove_env_key(env_main, key)
 
     save_env_file(env_main)
     save_env_file(env_ingress)

@@ -94,6 +94,8 @@ async def test_get_secret_canonicalizes_legacy_alias_for_provider(monkeypatch):
 def test_settings_does_not_read_provider_during_sync_construction(monkeypatch):
     monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
     monkeypatch.delenv("REDIS_PASSWORD", raising=False)
+    monkeypatch.delenv("GLOBAL_SECRETS_YAML", raising=False)
+    monkeypatch.delenv("PLATFORM_DESCRIPTORS_DIR", raising=False)
     manager = _FakeSecretsManager()
     monkeypatch.setattr(sdk_config, "get_secrets_manager", lambda _settings: manager)
 
@@ -101,6 +103,30 @@ def test_settings_does_not_read_provider_during_sync_construction(monkeypatch):
 
     assert settings.PGPASSWORD == "postgres"
     assert settings.REDIS_PASSWORD is None
+    assert manager.get_calls == []
+
+
+def test_settings_reads_platform_secrets_from_descriptor_without_provider_lookup(monkeypatch, tmp_path):
+    secrets_path = tmp_path / "secrets.yaml"
+    secrets_path.write_text(
+        "infra:\n"
+        "  postgres:\n"
+        "    password: pg-secret-from-file\n"
+        "  redis:\n"
+        "    password: redis-secret-from-file\n",
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+    monkeypatch.delenv("REDIS_PASSWORD", raising=False)
+    monkeypatch.delenv("PLATFORM_DESCRIPTORS_DIR", raising=False)
+    monkeypatch.setenv("GLOBAL_SECRETS_YAML", secrets_path.resolve().as_uri())
+    manager = _FakeSecretsManager()
+    monkeypatch.setattr(sdk_config, "get_secrets_manager", lambda _settings: manager)
+
+    settings = sdk_config.Settings()
+
+    assert settings.PGPASSWORD == "pg-secret-from-file"
+    assert settings.REDIS_PASSWORD == "redis-secret-from-file"
     assert manager.get_calls == []
 
 
