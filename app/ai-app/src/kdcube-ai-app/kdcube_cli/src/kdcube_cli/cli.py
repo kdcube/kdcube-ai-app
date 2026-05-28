@@ -2595,6 +2595,12 @@ def _save_cli_defaults(data: dict) -> None:
 
 
 def _parse_workdir_namespace(workdir: Path) -> tuple[str, str]:
+    meta = _read_install_meta_raw(workdir)
+    if isinstance(meta, dict):
+        tenant = str(meta.get("tenant") or "").strip()
+        project = str(meta.get("project") or "").strip()
+        if tenant and project:
+            return tenant, project
     name = workdir.name
     if "__" in name:
         tenant, _, project = name.partition("__")
@@ -4211,6 +4217,14 @@ def main() -> None:
             if _descriptor_bootstrap["bundles_secrets_path"]:
                 os.environ["KDCUBE_BUNDLES_SECRETS_PATH"] = str(_descriptor_bootstrap["bundles_secrets_path"])
             _init_assembly = _descriptor_bootstrap["assembly"]
+            if (
+                str(args.descriptors_location or "").strip()
+                and not (str(args.tenant or "").strip() or str(args.project or "").strip())
+            ):
+                _descriptor_tenant, _descriptor_project = installer_mod.descriptor_context_from_assembly(_init_assembly)
+                if _descriptor_tenant and _descriptor_project:
+                    _init_preset_tenant = _descriptor_tenant
+                    _init_preset_project = _descriptor_project
             os.environ["KDCUBE_ASSEMBLY_USE_BUNDLES"] = "1" if bool(_get_nested(_init_assembly, "bundles")) else "0"
             os.environ["KDCUBE_ASSEMBLY_USE_FRONTEND"] = "1" if bool(_get_nested(_init_assembly, "frontend")) else "0"
             os.environ["KDCUBE_ASSEMBLY_USE_PLATFORM"] = "0"
