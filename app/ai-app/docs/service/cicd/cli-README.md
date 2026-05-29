@@ -528,10 +528,20 @@ kdcube config import \
 
 With `--include-platform-descriptors`, export writes `assembly.yaml`,
 `secrets.yaml`, `gateway.yaml`, `bundles.yaml`, and `bundles.secrets.yaml`.
-Local host-managed Postgres/Redis entries are exported as descriptor-facing
-`localhost`, even though the running containers use `host.docker.internal`.
-CLI-managed local storage and bundle host paths are exported as `null` so a
-later `init` can derive them from that runtime's workdir.
+
+Exported descriptors are shaped for review and re-seeding, not as a byte-for-byte
+copy of the container runtime files:
+
+| Descriptor area | Exported shape |
+| --- | --- |
+| `bundles.yaml` | Git bundles keep `repo` / `ref` / `subdir`; local path bundles are normalized back to host paths when possible. |
+| `bundles.secrets.yaml` | Exported as the live descriptor secret overlay. |
+| `infra.postgres.host`, `infra.redis.host` | Exported as descriptor-facing `localhost` for local runtimes, even when containers use `host.docker.internal`. |
+| `paths.host_bundles_path` | Preserved. This is the host source root for unmanaged local bundles. |
+| Other `paths.host_*` runtime mounts | Exported as `null` so the next `init` derives them from that runtime's workdir. |
+| `storage.kdcube`, `storage.bundles` local container URIs | Exported as `null` when they point at CLI-generated `/kdcube-storage` or `/bundle-storage` mounts. |
+| Service `log_dir: /logs` | Omitted. `/logs` is a generated container mount, so the next `init` derives it again from the workdir logs folder. |
+
 Import treats the reviewed descriptor directory as authoritative for the local
 runtime: platform descriptors are overwritten exactly, bundle descriptors are
 path-normalized, and runtime env/config files are regenerated from the imported
@@ -1180,11 +1190,11 @@ kdcube config import \
 
 With `--include-platform-descriptors`, `config export` includes
 `assembly.yaml`, `secrets.yaml`, and `gateway.yaml` next to the bundle
-descriptors. Local host-managed Postgres/Redis entries are exported as
-descriptor-facing `localhost`, even though the running containers use
-`host.docker.internal`. CLI-managed local storage and bundle host paths are
-exported as `null` so a later `init` can derive them from that runtime's
-workdir. `config import` treats the reviewed directory as authoritative:
+descriptors. The exported descriptor set is shaped for review and re-seeding:
+local Postgres/Redis hosts are written as descriptor-facing `localhost`,
+`paths.host_bundles_path` is preserved, generated runtime mount paths are
+written as `null`, and generated service `log_dir: /logs` entries are omitted.
+`config import` treats the reviewed directory as authoritative:
 platform descriptors are overwritten exactly, bundle descriptors are
 path-normalized, and runtime env/config files are regenerated from the imported
 platform descriptors. Restart the stack after importing platform descriptors so

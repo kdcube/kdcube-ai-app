@@ -1507,7 +1507,6 @@ def _descriptor_file_changed(source_path: Path, target_path: Path) -> bool:
 
 CLI_MANAGED_ASSEMBLY_PATH_KEYS = (
     "host_kdcube_storage_path",
-    "host_bundles_path",
     "host_managed_bundles_path",
     "host_bundle_storage_path",
     "host_exec_workspace_path",
@@ -1517,6 +1516,10 @@ CLI_MANAGED_LOCAL_STORAGE_URIS = {
     ("storage", "kdcube"): {"file:///kdcube-storage", "/kdcube-storage"},
     ("storage", "bundles"): {"file:///bundle-storage", "/bundle-storage"},
 }
+CLI_MANAGED_SERVICE_LOG_DIR_PATHS = (
+    ("platform", "services", "ingress", "log", "log_dir"),
+    ("platform", "services", "proc", "log", "log_dir"),
+)
 
 
 def _denormalize_exported_assembly_descriptor(data: dict[str, object]) -> bool:
@@ -1537,6 +1540,12 @@ def _denormalize_exported_assembly_descriptor(data: dict[str, object]) -> bool:
         value = _get_nested(data, *path)
         if isinstance(value, str) and value.strip() in generated_values:
             installer_mod._set_nested(data, list(path), None)
+            changed = True
+
+    for path in CLI_MANAGED_SERVICE_LOG_DIR_PATHS:
+        value = _get_nested(data, *path)
+        if isinstance(value, str) and value.strip() == "/logs":
+            installer_mod._delete_nested(data, list(path))
             changed = True
 
     return changed

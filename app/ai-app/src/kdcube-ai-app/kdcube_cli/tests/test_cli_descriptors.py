@@ -2829,6 +2829,12 @@ def test_export_platform_descriptors_drops_cli_managed_local_paths(tmp_path: Pat
         "host_exec_workspace_path": str(runtime / "data" / "exec-workspace"),
         "host_react_debug_path": str(runtime / "data" / "react-debug"),
     }
+    assembly["platform"] = {
+        "services": {
+            "ingress": {"log": {"log_dir": "/logs", "log_level": "INFO"}},
+            "proc": {"log": {"log_dir": "/logs", "log_level": "INFO"}},
+        }
+    }
     assembly_path.write_text(yaml.safe_dump(assembly, sort_keys=False), encoding="utf-8")
     out_dir = tmp_path / "out"
 
@@ -2843,12 +2849,16 @@ def test_export_platform_descriptors_drops_cli_managed_local_paths(tmp_path: Pat
     assert exported["storage"] == {"kdcube": None, "bundles": None}
     assert exported["paths"] == {
         "host_kdcube_storage_path": None,
-        "host_bundles_path": None,
+        "host_bundles_path": str(tmp_path / "src"),
         "host_managed_bundles_path": None,
         "host_bundle_storage_path": None,
         "host_exec_workspace_path": None,
         "host_react_debug_path": None,
     }
+    assert "log_dir" not in exported["platform"]["services"]["ingress"]["log"]
+    assert "log_dir" not in exported["platform"]["services"]["proc"]["log"]
+    assert exported["platform"]["services"]["ingress"]["log"]["log_level"] == "INFO"
+    assert exported["platform"]["services"]["proc"]["log"]["log_level"] == "INFO"
 
 
 def test_apply_config_descriptors_overwrites_platform_files_and_regenerates(monkeypatch, tmp_path: Path):

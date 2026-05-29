@@ -281,9 +281,11 @@ older seed copy. By default it writes `bundles.yaml` and
 paths are normalized back to host paths, while git-backed entries keep
 repo/ref/subdir and drop materialized runtime paths. Local host-managed
 Postgres/Redis entries are exported as descriptor-facing `localhost`, even
-though the running containers use `host.docker.internal`. CLI-managed local
-storage and bundle host paths are exported as `null` so a later `init` can
-derive them from that runtime's workdir.
+though the running containers use `host.docker.internal`. CLI-managed storage
+and runtime host paths are exported as `null`; `host_bundles_path` is preserved
+as the source root for unmanaged local bundles. Generated service `log_dir:
+/logs` entries are omitted, so a later `init` can derive them from that
+runtime's workdir.
 
 ```bash
 kdcube config export \
