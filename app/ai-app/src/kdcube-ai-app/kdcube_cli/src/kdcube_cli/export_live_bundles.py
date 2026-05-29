@@ -11,6 +11,9 @@ import yaml
 from rich.console import Console
 
 
+_MANAGED_BUNDLE_METADATA_FILE = ".kdcube-managed-bundle.json"
+
+
 def aws_cli_env(*, region: str | None, profile: str | None) -> dict[str, str]:
     env = os.environ.copy()
     if region:
@@ -183,6 +186,48 @@ def _container_path_to_host_path(
     return str(Path(host).expanduser().joinpath(*rel.split("/")))
 
 
+def _is_platform_managed_example_path(
+    raw_path: object,
+    *,
+    bundle_id: str,
+    container_managed_root: str,
+    host_managed_root: str,
+) -> bool:
+    path = _norm_container_path(raw_path)
+    root = _norm_container_path(container_managed_root)
+    if not path or not root:
+        return False
+    if path != root and not path.startswith(root.rstrip("/") + "/"):
+        return False
+
+    host_path = _container_path_to_host_path(
+        raw_path,
+        container_root=container_managed_root,
+        host_root=host_managed_root,
+    )
+    if host_path:
+        metadata_path = Path(host_path).expanduser() / _MANAGED_BUNDLE_METADATA_FILE
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            if str(metadata.get("kind") or "") == "shared_example_bundle":
+                return True
+        except Exception:
+            pass
+
+    leaf = posixpath.basename(path.rstrip("/"))
+    bid = str(bundle_id or "").strip()
+    return bool(bid and (leaf == bid or leaf.startswith(f"{bid}__")))
+
+
+def _strip_platform_managed_source_fields(item: dict) -> list[str]:
+    removed: list[str] = []
+    for key in ("path", "repo", "ref", "subdir", "git_commit", "module", "name", "description", "singleton"):
+        if key in item:
+            item.pop(key, None)
+            removed.append(key)
+    return removed
+
+
 def _normalize_exported_bundle_paths(
     data: object,
     *,
@@ -192,9 +237,9 @@ def _normalize_exported_bundle_paths(
 
     Runtime descriptors consumed by Docker use container-visible paths such as
     /bundles/... or /managed-bundles/.... Exported seed descriptors should use
-    host paths for unmanaged local-path bundles. Managed cache paths remain
-    container-visible because they are runtime materialization locations, not
-    portable source roots. Git-backed descriptors should keep their repo/ref/subdir
+    host paths for unmanaged local-path bundles. Platform-managed example bundles
+    are exported without materialized paths; the runtime resolves those built-ins
+    from the bundle id. Git-backed descriptors should keep their repo/ref/subdir
     fields and must not export an incidental materialized path.
     """
     if not isinstance(data, dict):
@@ -237,6 +282,22 @@ def _normalize_exported_bundle_paths(
 
         raw_path = str(item.get("path") or "").strip()
         if not raw_path:
+            continue
+        if _is_platform_managed_example_path(
+            raw_path,
+            bundle_id=bundle_id,
+            container_managed_root=container_managed,
+            host_managed_root=host_managed,
+        ):
+            removed = _strip_platform_managed_source_fields(item)
+            translations.append(
+                {
+                    "bundle_id": bundle_id,
+                    "action": "removed_platform_managed_path",
+                    "runtime_path": raw_path,
+                    "removed_fields": ",".join(removed),
+                }
+            )
             continue
         if _container_path_to_host_path(
             raw_path,
@@ -315,6 +376,11 @@ def _export_live_bundle_descriptors_from_files(
             bundle_id = item.get("bundle_id") or "<unknown>"
             if action == "removed_git_path":
                 console.print(f"[dim]  {bundle_id}: removed git materialized path[/dim]")
+            elif action == "removed_platform_managed_path":
+                console.print(
+                    f"[dim]  {bundle_id}: removed platform-managed materialized path "
+                    f"{item.get('runtime_path')}[/dim]"
+                )
             elif action == "kept_managed_path":
                 console.print(f"[dim]  {bundle_id}: kept managed cache path {item.get('runtime_path')}[/dim]")
             elif action == "translated_path":

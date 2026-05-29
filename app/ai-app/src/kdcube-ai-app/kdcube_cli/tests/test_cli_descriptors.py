@@ -2802,15 +2802,22 @@ bundles:
     )
 
 
-def test_export_live_bundle_descriptors_keeps_managed_cache_paths_runtime_visible(tmp_path: Path):
+def test_export_live_bundle_descriptors_removes_platform_managed_example_paths(tmp_path: Path):
     config_dir = tmp_path / "config"
     config_dir.mkdir()
+    host_managed = tmp_path / "runtime" / "data" / "managed-bundles"
+    managed_bundle_dir = host_managed / "managed.bundle__latest__abc"
+    managed_bundle_dir.mkdir(parents=True)
+    (managed_bundle_dir / ".kdcube-managed-bundle.json").write_text(
+        json.dumps({"kind": "shared_example_bundle", "bundle_name": "managed.bundle"}),
+        encoding="utf-8",
+    )
     (config_dir / "assembly.yaml").write_text(
         yaml.safe_dump(
             {
                 "paths": {
                     "host_bundles_path": str(tmp_path / "src"),
-                    "host_managed_bundles_path": str(tmp_path / "runtime" / "data" / "managed-bundles"),
+                    "host_managed_bundles_path": str(host_managed),
                 },
                 "platform": {
                     "services": {
@@ -2836,8 +2843,12 @@ def test_export_live_bundle_descriptors_keeps_managed_cache_paths_runtime_visibl
                 },
                 {
                     "id": "managed.bundle",
-                    "path": "/managed-bundles/managed.bundle__main__abc",
+                    "name": "managed.bundle",
+                    "path": "/managed-bundles/managed.bundle__latest__abc",
                     "module": "entrypoint",
+                    "singleton": False,
+                    "description": "Built-in example bundle",
+                    "config": {"feature": {"enabled": True}},
                 },
             ]
         }
@@ -2847,8 +2858,11 @@ def test_export_live_bundle_descriptors_keeps_managed_cache_paths_runtime_visibl
 
     items = data["bundles"]["items"]
     assert items[0]["path"] == str(tmp_path / "src" / "apps" / "local.bundle")
-    assert items[1]["path"] == "/managed-bundles/managed.bundle__main__abc"
-    assert {item["action"] for item in translations} == {"translated_path", "kept_managed_path"}
+    assert items[1] == {
+        "id": "managed.bundle",
+        "config": {"feature": {"enabled": True}},
+    }
+    assert {item["action"] for item in translations} == {"translated_path", "removed_platform_managed_path"}
 
 
 def _write_initialized_runtime_config(workdir: Path, *, marker: str = "old") -> Path:
