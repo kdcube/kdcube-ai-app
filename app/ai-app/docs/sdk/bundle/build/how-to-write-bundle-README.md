@@ -1150,13 +1150,13 @@ Reference:
 ### Widget plus structured API
 
 ```python
-@api(alias="task-board", route="operations", method="POST", user_types=("registered",))
-@ui_widget(alias="task-board", icon={"tailwind": "heroicons-outline:check-badge"}, user_types=("registered",))
-def task_board(self, **kwargs):
-    return [self._render_dashboard_html(content=rendered_tsx, title="Task Board")]
+@api(alias="workflow-panel", route="operations", method="POST", user_types=("registered",))
+@ui_widget(alias="workflow-panel", icon={"tailwind": "heroicons-outline:check-badge"}, user_types=("registered",))
+def workflow_panel(self, **kwargs):
+    return [self._render_dashboard_html(content=rendered_tsx, title="Workflow Panel")]
 
-@api(alias="task-board-api", route="operations", method="POST", user_types=("registered",))
-async def task_board_api(self, **kwargs):
+@api(alias="workflow-api", route="operations", method="POST", user_types=("registered",))
+async def workflow_api(self, **kwargs):
     return {"items": []}
 ```
 
@@ -1197,9 +1197,9 @@ Reference:
 ### Scheduled job
 
 ```python
-@cron(alias="sync", expr_config="task_tracker.sync", span="system")
+@cron(alias="sync", expr_config="workflow.sync", span="system")
 async def sync(self, **kwargs):
-    await self._sync_tasks()
+    await self._sync_items()
 ```
 
 Reference:
@@ -1209,22 +1209,22 @@ Reference:
 
 ```python
 @ui_widget(
-    alias="task-board",
+    alias="workflow-panel",
     icon={"tailwind": "heroicons-outline:check-badge"},
     user_types=("registered",),
 )
-def task_board(self, **kwargs):
+def workflow_panel(self, **kwargs):
     return ["<div id='root'></div>"]
 ```
 
 ```yaml
 bundles:
   items:
-    - id: "task.board@1-0"
+    - id: "workflow.panel@1-0"
       config:
         enabled:
           widget:
-            task-board: false
+            workflow-panel: false
 ```
 
 The platform derives the canonical bundle-props path from decorator metadata
@@ -1270,7 +1270,7 @@ agent-authored durable memory changes. The widget remains user-owned CRUD.
 
 ```python
 root = self.bundle_storage_root()
-workspace = root / "_task_tracker"
+workspace = root / "_workflow"
 workspace.mkdir(parents=True, exist_ok=True)
 ```
 
@@ -1999,11 +1999,11 @@ WebApp `initData` verification on every request.
 Recommended pattern:
 
 - widget method:
-  - `@ui_widget(alias="task-board", ...)`
+  - `@ui_widget(alias="workflow-panel", ...)`
 - compatibility operation on the same method if needed:
-  - `@api(alias="task-board", route="operations", ...)`
+  - `@api(alias="workflow-panel", route="operations", ...)`
 - separate structured backend API:
-  - `@api(alias="task-tracker-api", route="operations", method="POST", ...)`
+  - `@api(alias="workflow-api", route="operations", method="POST", ...)`
 
 The widget should call the structured API alias, not the widget alias.
 

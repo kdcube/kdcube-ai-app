@@ -158,7 +158,7 @@ Example pattern used in real bundles:
   bundle needs a generated local index; package/source files are copied or
   materialized into this runtime-visible root during `on_bundle_load`
 - mutable local workspaces such as a cloned repo or a daily pipeline state folder should live under an unversioned subdirectory like:
-  - `<tenant>/<project>/<bundle_id>/_task_tracker`
+  - `<tenant>/<project>/<bundle_id>/_workflow`
   - `<tenant>/<project>/<bundle_id>/_knowledge_base_admin`
 
 When `on_bundle_load()` prepares shared files under this root, protect the

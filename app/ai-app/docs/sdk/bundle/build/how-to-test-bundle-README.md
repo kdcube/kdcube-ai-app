@@ -518,7 +518,7 @@ $PY -m pytest -q /abs/path/to/bundle/tests
 
 ```bash
 curl -X POST \
-  "http://localhost:5173/api/integrations/bundles/<tenant>/<project>/<bundle_id>/operations/task-board-api" \
+  "http://localhost:5173/api/integrations/bundles/<tenant>/<project>/<bundle_id>/operations/workflow-api" \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{"data":{"operation":"list","payload":{}}}'
@@ -578,7 +578,7 @@ If you see `////operations/...`, the widget is not correctly wired.
 Expose the cron body through a helper and test it directly:
 
 ```python
-@cron(alias="sync", expr_config="task_tracker.sync", span="system")
+@cron(alias="sync", expr_config="workflow.sync", span="system")
 async def sync(self, **kwargs):
     await self._sync_impl()
 ```

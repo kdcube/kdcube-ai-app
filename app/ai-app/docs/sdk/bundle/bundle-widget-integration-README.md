@@ -1004,23 +1004,23 @@ Do not build operation URLs with:
 - source-folder names
 - bundle-local constants that may drift from `bundles.yaml`
 
-## Compatibility Pattern
+## Fallback Operation Pattern
 
 For source-folder widgets, prefer a minimal decorated widget method plus
-separate structured APIs. If an existing client still loads the widget through
+separate structured APIs. If an existing client also calls the widget through
 the operations route, keep the widget method decorated with both:
 
 ```python
-@ui_widget(alias="task-board", user_types=("registered",))
-@api(alias="task-board", route="operations", user_types=("registered",))
-async def task_board(self, **kwargs):
+@ui_widget(alias="workflow-panel", user_types=("registered",))
+@api(alias="workflow-panel", route="operations", user_types=("registered",))
+async def workflow_panel(self, **kwargs):
     ...
 ```
 
 That means:
 
 - widget discovery/fetch is still driven by `@ui_widget(...)`
-- legacy operation callers can still call the same method through `/operations/task-board`
+- operation callers can still call the same method through `/operations/workflow-panel`
 
 For a source-folder widget, the method may return only a small compatibility
 fallback because the platform serves the built widget app from bundle storage
@@ -1029,19 +1029,19 @@ when `ui.widgets.<alias>.src_folder/build_command` is configured.
 If the widget UI itself needs a structured backend API, expose a separate alias such as:
 
 ```python
-@api(method="POST", alias="task-tracker-api", route="operations", user_types=("registered",))
-async def task_tracker_api(self, operation: str, payload: dict | None = None, **kwargs):
+@api(method="POST", alias="workflow-api", route="operations", user_types=("registered",))
+async def workflow_api(self, operation: str, payload: dict | None = None, **kwargs):
     ...
 ```
 
 Example operations for that API might be:
 
-- `list_tasks`
-- `create_task`
-- `update_schedule`
-- `run_task_now`
+- `list_items`
+- `create_item`
+- `update_item`
+- `run_action_now`
 
-Then the widget calls `/operations/task-tracker-api`, not `/operations/task-board`.
+Then the widget calls `/operations/workflow-api`, not `/operations/workflow-panel`.
 
 ## Minimal Widget Handshake Example
 
