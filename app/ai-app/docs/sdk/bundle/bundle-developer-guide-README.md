@@ -486,10 +486,15 @@ Practical rule:
 ## Local Storage Rule
 
 If your bundle needs local filesystem state on the proc instance, use the bundle-storage helper.
+The runtime chooses and provides the storage root. Bundle code must create a
+subtree under that root; it must not configure or infer its own filesystem,
+host, or URI root.
 
 Do not:
 - write mutable state next to the bundle source tree
 - invent your own repo-relative `.runtime` directory for runtime data
+- put `file://...`, host absolute paths, or deployment mount paths in bundle
+  props for bundle-local storage
 
 Use:
 - `self.bundle_storage_root()` when you want the bundle-scoped shared local root

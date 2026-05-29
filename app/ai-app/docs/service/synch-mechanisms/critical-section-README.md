@@ -117,6 +117,10 @@ kdcube_ai_app/infra/plugin/bundle_store.py
 kdcube_ai_app/apps/chat/sdk/examples/bundles/kdcube.copilot@2026-04-03-19-05/entrypoint.py
   raw observed file lock for the documentation knowledge registry/index build
 
+applications/src/knowledge@1-0/entrypoint.py
+  raw observed file lock for materializing packaged maintained knowledge into
+  bundle storage and building the runtime SQLite index
+
 kdcube_ai_app/infra/plugin/bundle_once.py
 kdcube_ai_app/apps/chat/sdk/solutions/chatbot/entrypoint.py
   higher-level once-per-signature helper for main UI and widget builds
@@ -386,6 +390,14 @@ The knowledge lock has a bounded wait budget controlled by
 therefore becomes a visible build failure instead of an indefinitely hanging
 MCP read/search call.
 
+The standalone `knowledge@1-0` bundle uses the same shape for a service-style
+knowledge MCP: source knowledge files come from the packaged bundle tree by
+default, the runtime copy and SQLite index are written under
+`self.bundle_storage_root()`, and the materialize/index path is guarded by an
+observed file lock. This avoids host absolute paths in descriptors and keeps
+local multi-worker and EFS-backed deployments safe under concurrent
+`on_bundle_load()` execution.
+
 ### Helper Use In Bundle Code
 
 Bundle code can use the same helper for a bundle-owned shared object such as an
@@ -586,7 +598,9 @@ Observed file locks are currently used for:
 
 - platform-managed git bundle materialization;
 - shared example-bundle materialization into the managed-bundles root;
-- the built-in copilot bundle knowledge-space build lock.
+- the built-in copilot bundle knowledge-space build lock;
+- bundle-owned knowledge/index preparation, such as `knowledge@1-0`
+  materializing packaged maintained knowledge into bundle storage.
 
 They are not yet the general replacement for:
 
@@ -610,6 +624,9 @@ Lock locations are subsystem-specific:
   `<managed-bundles>/.example-bundle-locks/<bundle>.lock`
 - The built-in copilot documentation knowledge build uses:
   `<bundle-storage>/.knowledge.lock`
+- Bundle-owned service knowledge/index preparation may use a bundle-specific
+  observed lock such as:
+  `<bundle-storage>/.knowledge.prepare.lock`
 - UI main/widget builds use the higher-level `bundle_once.py` helper and keep
   operation locks under:
   `<bundle-storage>/.kdcube.once/<operation>.lock/`

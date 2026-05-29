@@ -526,7 +526,8 @@ Rules:
 - `sdk://...` resolves under the installed SDK package.
 - `bundle://...` resolves under the bundle root.
 - relative paths resolve under the bundle root.
-- absolute paths are for local testing only.
+- source-folder absolute paths are for direct local testing only. They are not
+  storage roots and should not be used in reusable descriptors.
 - copied shared source is part of the build signature.
 - shared source must not be edited in the temporary folder.
 - each consuming bundle has its own built widget artifact and signature.

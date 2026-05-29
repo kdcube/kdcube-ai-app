@@ -602,8 +602,8 @@ Supported source path forms:
 - `sdk://...` resolves under the installed KDCube SDK package.
 - `bundle://...` resolves under the bundle root.
 - relative paths resolve under the bundle root.
-- absolute paths are allowed for local development, but should not be used in
-  reusable descriptors.
+- source-folder absolute paths are only for direct local testing. They are not
+  storage roots and should not be used in reusable descriptors.
 
 The build signature includes both the bundle source tree and all shared source
 trees, so updating the shared component triggers a rebuild.

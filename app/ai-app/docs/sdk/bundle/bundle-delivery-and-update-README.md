@@ -125,6 +125,8 @@ For bundle authors this means:
 - resolve local storage through `self.bundle_storage_root()`
 - use `bundle_storage_dir(...)` only in lower-level helpers that do not have an entrypoint instance
 - do not persist operational state under the checked-out bundle code path
+- do not configure bundle-local storage with `file://...`, host absolute paths,
+  or deployment mount paths in bundle props
 
 Why ops cares:
 - local mode expects this data under the mounted bundle storage area

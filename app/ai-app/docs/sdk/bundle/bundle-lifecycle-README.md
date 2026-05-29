@@ -377,8 +377,8 @@ See:
 | `await get_secret(...)` | read | secret key namespace | API keys, tokens, credentials |
 | `await get_secret("u:...")`, `await set_user_secret(...)`, `await delete_user_secret(...)` | read/write | tenant + project + bundle + user | per-user tokens and credentials |
 | Redis KV cache | read/write | whatever keys you choose | lightweight distributed state, flags, small caches |
-| Bundle storage backend (`CB_BUNDLE_STORAGE_URL`) | read/write | tenant + project + bundle | persistent bundle data on file/S3 storage |
-| Shared local bundle storage (`BUNDLE_STORAGE_ROOT`) | read/write by bundle code | tenant + project + bundle | large local/EFS caches, cloned repos, indexes, read-only assets |
+| `BundleArtifactStorage` | read/write | tenant + project + bundle | persistent bundle artifact data through the runtime-configured backend |
+| `self.bundle_storage_root()` | read/write by bundle code | tenant + project + bundle | large local/EFS caches, cloned repos, indexes, read-only assets |
 | Current turn `OUT_DIR` / `workdir` | read/write during execution | current invocation | transient turn files, generated artifacts, isolated exec inputs/outputs |
 
 ## Storage diagram
@@ -394,10 +394,10 @@ Bundle developer surfaces
 
   Distributed state
     Redis KV cache
-    CB_BUNDLE_STORAGE_URL-backed storage
+    BundleArtifactStorage
 
   Local shared state
-    BUNDLE_STORAGE_ROOT/<tenant>/<project>/<bundle_id>/
+    self.bundle_storage_root()
       indexes/
       repos/
       caches/

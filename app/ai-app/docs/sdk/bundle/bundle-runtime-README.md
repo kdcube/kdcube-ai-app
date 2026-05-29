@@ -458,11 +458,17 @@ What the bundle has in this path:
 ## Local bundle storage helpers
 
 If bundle code needs local filesystem state on the proc instance, use the SDK helper.
+The bundle does not choose the physical root. Local development may map this to
+a host directory, and cloud deployments may map it to EFS or equivalent shared
+storage, but bundle code only sees the runtime-provided bundle storage root and
+creates its own subtree below it.
 
 Do not do this:
 - build ad hoc paths under the repo checkout
 - store mutable runtime state next to bundle source files
 - assume the current working directory is durable
+- put `file://...`, host absolute paths, or mount paths in bundle props to
+  define bundle-local storage
 
 Use the canonical bundle local root:
 
@@ -487,6 +493,7 @@ Why this matters:
 - local mode uses a dedicated mounted bundle-storage folder
 - cloud mode uses the shared instance-visible storage root as well
 - the helper gives bundle code the platform-managed location instead of an accidental repo-relative path
+- the same bundle code works when the physical storage mapping changes
 
 Use cases for the local helper root:
 - cloned repos or working copies

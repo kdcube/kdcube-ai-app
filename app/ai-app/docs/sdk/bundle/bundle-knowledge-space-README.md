@@ -111,7 +111,7 @@ This helper is not a platform-wide mandatory name. The `kdcube.copilot` bundle u
 `ks:` does **not** have to come from one specific storage backend.
 
 Common backing choices:
-- shared bundle local storage under `BUNDLE_STORAGE_ROOT`
+- shared bundle local storage resolved through `self.bundle_storage_root()`
 - bundle-cloned repo/cache built in `on_bundle_load(...)`
 - read-only files prepared from remote storage into local cache
 - any other bundle-owned storage the resolver can expose safely
@@ -123,7 +123,8 @@ Recommended default:
 ## Relationship to bundle storage
 
 `ks:` is a **logical namespace**.
-`BUNDLE_STORAGE_ROOT` is a **storage location**.
+`self.bundle_storage_root()` is the bundle's runtime-provided local storage
+root.
 
 They are related, but not the same thing:
 - a bundle may use local bundle storage to back `ks:`

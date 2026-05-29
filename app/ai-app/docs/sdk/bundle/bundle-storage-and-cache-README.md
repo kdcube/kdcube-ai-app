@@ -1,9 +1,9 @@
 ---
 id: ks:docs/sdk/bundle/bundle-storage-and-cache-README.md
 title: "Bundle Storage And Cache"
-summary: "Bundle storage surfaces: per-bundle durable storage, shared local bundle storage, and KV cache, including backend choices, path layout, and access patterns."
+summary: "Bundle storage surfaces: runtime-provided bundle storage root, BundleArtifactStorage, and KV cache, including path layout and access patterns."
 tags: ["sdk", "bundle", "storage", "cache", "s3", "filesystem"]
-keywords: ["per bundle durable storage", "shared local bundle storage", "kv cache usage", "storage backend selection", "filesystem or s3 storage", "storage path layout", "artifact read write patterns", "cache backed bundle state"]
+keywords: ["per bundle durable storage", "runtime provided bundle storage", "kv cache usage", "bundle storage root", "storage path layout", "artifact read write patterns", "cache backed bundle state"]
 see_also:
   - ks:docs/sdk/storage/cache-README.md
   - ks:docs/sdk/bundle/bundle-developer-guide-README.md
@@ -15,20 +15,24 @@ This guide covers **per‑bundle storage** and the **KV cache** available to bun
 
 ---
 
-## Bundle storage backend (localfs or S3)
+## Runtime-provided storage only
 
-Configure the storage backend in env:
+Bundle code must use the storage surfaces the runtime provides. It must not
+invent host paths, mount paths, or storage URIs in bundle props. The deployment
+layer chooses whether a storage surface is backed by local filesystem, EFS, S3,
+or another backend; bundle code receives the resolved SDK/API surface.
 
-```
-CB_BUNDLE_STORAGE_URL=file:///absolute/path/prefix
-```
+For mutable local/runtime state, use `self.bundle_storage_root()` and create a
+subdirectory below it. For artifact-style backend storage, use
+`BundleArtifactStorage`. For small values, use the KV cache.
 
-S3 example:
-```
-CB_BUNDLE_STORAGE_URL=s3://my-bucket/prefix
-```
+## Bundle artifact storage backend
 
-Use inside a bundle:
+`BundleArtifactStorage` is a backend storage API for bundle-owned artifacts.
+Its backend is selected by runtime/deployment configuration, not by bundle
+code. The physical URI may be localfs or S3, but that is an operator concern.
+
+Use the API inside a bundle:
 ```python
 from kdcube_ai_app.apps.chat.sdk.storage.bundle_artifact_storage import BundleArtifactStorage
 
@@ -84,14 +88,8 @@ Bundles can prepare a **shared local filesystem** (local disk or EFS) to store
 large read‑only assets, indexes, or any bundle‑specific data that should be
 reused across conversations and instances.
 
-This storage is **distinct** from `CB_BUNDLE_STORAGE_URL`:
-- `CB_BUNDLE_STORAGE_URL` = per‑bundle, read/write storage backend (localfs/S3).
-- `BUNDLE_STORAGE_ROOT` = shared **local filesystem** mounted into the proc container.
-
-Env (filesystem path, not URI):
-```
-BUNDLE_STORAGE_ROOT=/bundles/_bundle_storage
-```
+Bundle code does not configure this root. The runtime resolves it and exposes
+it through the bundle storage helpers.
 
 Path layout (default):
 ```
@@ -101,6 +99,8 @@ Path layout (default):
 Authoring rule:
 - if bundle code needs instance-local filesystem storage, do not hardcode your own root
 - resolve it through the platform helper
+- never put `file://...` or host absolute paths in bundle-level props for this
+  purpose
 - for normal mutable runtime data that should survive across requests on the same instance, prefer an unversioned subdirectory under the helper-resolved bundle storage root
 
 Use from bundle code:
@@ -140,6 +140,7 @@ Practical split:
 - `BundleArtifactStorage`
   - backend storage API for bundle artifacts
   - separate from the shared local filesystem root
+  - backend selection is runtime/deployment configuration
 - `bundle_tool_context.host_files(...)`
   - current conversation/turn artifact hosting helper for trusted catalog tools
   - available in normal and isolated supervisor/runtime tool execution
@@ -153,10 +154,21 @@ files produced during a React turn should use the strict tool result contract
 trusted tool, so the platform can register hosted metadata and emit `chat.files`.
 
 Example pattern used in real bundles:
-- knowledge/index preparation may live under the bundle storage root
+- knowledge/index preparation should live under the bundle storage root when a
+  bundle needs a generated local index; package/source files are copied or
+  materialized into this runtime-visible root during `on_bundle_load`
 - mutable local workspaces such as a cloned repo or a daily pipeline state folder should live under an unversioned subdirectory like:
   - `<tenant>/<project>/<bundle_id>/_task_tracker`
   - `<tenant>/<project>/<bundle_id>/_knowledge_base_admin`
+
+When `on_bundle_load()` prepares shared files under this root, protect the
+mutation with a shared-storage critical section and a source signature. In local
+multi-worker and EFS-backed cloud deployments, several proc workers can load the
+same bundle at the same time. Only one owner should copy/build the shared
+output; other workers should re-check the signature after the owner finishes.
+Use the synchronization guidance in
+[Synchronization Mechanisms](../../service/synch-mechanisms/critical-section-README.md)
+for bundle-owned indexes, local mirrors, registries, or generated assets.
 
 Important contract:
 - the platform owns only the stable root selection:
