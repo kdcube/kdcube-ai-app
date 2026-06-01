@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -74,7 +76,7 @@ async def test_bootstrap_materializes_remote_session_branch(tmp_path: Path):
         tmp_path / "seed",
         files={
             "agents/knowledge-base-admin.md": "# Agent\n",
-            "sessions/history.json": "{\"turns\": 1}\n",
+            "projects/-fixture/history.json": "{\"turns\": 1}\n",
         },
     )
     config = _config(tmp_path, git_repo=remote_repo)
@@ -84,7 +86,7 @@ async def test_bootstrap_materializes_remote_session_branch(tmp_path: Path):
     result = await bootstrap_claude_code_session_store(config=config)
 
     assert result["bootstrapped"] is True
-    assert (config.local_root / "sessions" / "history.json").read_text(encoding="utf-8") == "{\"turns\": 1}\n"
+    assert (config.local_root / "projects" / "-fixture" / "history.json").read_text(encoding="utf-8") == "{\"turns\": 1}\n"
     remote_url = subprocess.run(
         ["git", "-C", str(config.local_root), "config", "--get", "remote.origin.url"],
         capture_output=True,
@@ -100,7 +102,7 @@ async def test_bootstrap_rerun_reuses_checked_out_workspace_branch(tmp_path: Pat
         tmp_path / "seed",
         files={
             "agents/knowledge-base-admin.md": "# Agent\n",
-            "sessions/history.json": "{\"turns\": 1}\n",
+            "projects/-fixture/history.json": "{\"turns\": 1}\n",
         },
     )
     config = _config(tmp_path, git_repo=remote_repo)
@@ -109,15 +111,15 @@ async def test_bootstrap_rerun_reuses_checked_out_workspace_branch(tmp_path: Pat
 
     first = await bootstrap_claude_code_session_store(config=config)
     assert first["bootstrapped"] is True
-    assert (config.local_root / "sessions" / "history.json").read_text(encoding="utf-8") == "{\"turns\": 1}\n"
+    assert (config.local_root / "projects" / "-fixture" / "history.json").read_text(encoding="utf-8") == "{\"turns\": 1}\n"
 
-    (config.local_root / "sessions" / "history.json").write_text("{\"turns\": 2}\n", encoding="utf-8")
+    (config.local_root / "projects" / "-fixture" / "history.json").write_text("{\"turns\": 2}\n", encoding="utf-8")
     publish = await publish_claude_code_session_store(config=config)
     assert publish["published"] is True
 
     second = await bootstrap_claude_code_session_store(config=config)
     assert second["bootstrapped"] is True
-    assert (config.local_root / "sessions" / "history.json").read_text(encoding="utf-8") == "{\"turns\": 2}\n"
+    assert (config.local_root / "projects" / "-fixture" / "history.json").read_text(encoding="utf-8") == "{\"turns\": 2}\n"
 
 
 @pytest.mark.asyncio
@@ -127,13 +129,13 @@ async def test_publish_pushes_session_root_to_conversation_branch(tmp_path: Path
 
     await bootstrap_claude_code_session_store(config=config)
     config.local_root.mkdir(parents=True, exist_ok=True)
-    (config.local_root / "sessions").mkdir(parents=True, exist_ok=True)
-    (config.local_root / "sessions" / "history.json").write_text("{\"turns\": 2}\n", encoding="utf-8")
+    (config.local_root / "projects" / "-fixture").mkdir(parents=True, exist_ok=True)
+    (config.local_root / "projects" / "-fixture" / "history.json").write_text("{\"turns\": 2}\n", encoding="utf-8")
 
     result = await publish_claude_code_session_store(config=config)
 
     assert result["published"] is True
-    assert _read_remote_file(remote_repo, claude_code_session_branch_ref(config), "sessions/history.json") == "{\"turns\": 2}\n"
+    assert _read_remote_file(remote_repo, claude_code_session_branch_ref(config), "projects/-fixture/history.json") == "{\"turns\": 2}\n"
 
 
 def test_ensure_session_repo_uses_resolved_https_origin(tmp_path: Path):
@@ -163,13 +165,23 @@ def test_ensure_session_repo_uses_resolved_https_origin(tmp_path: Path):
 
 
 class _FakeAgent:
-    def __init__(self, root: Path):
+    def __init__(
+        self,
+        root: Path,
+        *,
+        env: dict[str, str] | None = None,
+        workspace_path: Path | None = None,
+    ):
         self.root = root
         self.calls: list[dict[str, object]] = []
+        self.config = SimpleNamespace(
+            env=dict(env) if env is not None else {},
+            workspace_path=Path(workspace_path) if workspace_path is not None else None,
+        )
 
     async def run_turn(self, prompt: str, *, kind: str = "regular", resume_existing: bool = False) -> ClaudeCodeRunResult:
         self.calls.append({"prompt": prompt, "kind": kind, "resume_existing": resume_existing})
-        target = self.root / "sessions" / "history.json"
+        target = self.root / "projects" / "-fixture" / "history.json"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text("{\"turns\": 3}\n", encoding="utf-8")
         return ClaudeCodeRunResult(
@@ -211,7 +223,7 @@ async def test_run_claude_code_turn_bootstraps_and_publishes_regular_turns(tmp_p
     assert result.status == "completed"
     assert refresh_calls == ["refresh"]
     assert agent.calls == [{"prompt": "hello", "kind": "regular", "resume_existing": False}]
-    assert _read_remote_file(remote_repo, claude_code_session_branch_ref(config), "sessions/history.json") == "{\"turns\": 3}\n"
+    assert _read_remote_file(remote_repo, claude_code_session_branch_ref(config), "projects/-fixture/history.json") == "{\"turns\": 3}\n"
 
 
 @pytest.mark.asyncio
@@ -223,7 +235,7 @@ async def test_run_claude_code_turn_resumes_regular_turn_when_bootstrap_found_ex
     seed_repo = _init_git_repo(
         tmp_path / "seed-existing-lineage",
         files={
-            "sessions/history.json": "{\"turns\": 1}\n",
+            "projects/-fixture/history.json": "{\"turns\": 1}\n",
         },
     )
     _push_branch(seed_repo, remote_repo, branch_ref)
@@ -264,6 +276,7 @@ class _RetryingFakeAgent:
     def __init__(self, root: Path):
         self.root = root
         self.calls: list[dict[str, object]] = []
+        self.config = SimpleNamespace(env={})
 
     async def run_turn(self, prompt: str, *, kind: str = "regular", resume_existing: bool = False) -> ClaudeCodeRunResult:
         self.calls.append({"prompt": prompt, "kind": kind, "resume_existing": resume_existing})
@@ -287,7 +300,7 @@ class _RetryingFakeAgent:
                 api_duration_ms=5,
                 error_message="Error: Session ID 123 is already in use.",
             )
-        target = self.root / "sessions" / "history.json"
+        target = self.root / "projects" / "-fixture" / "history.json"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text("{\"turns\": 4}\n", encoding="utf-8")
         return ClaudeCodeRunResult(
@@ -319,7 +332,7 @@ async def test_run_claude_code_turn_self_heals_stale_session_checkout_and_retrie
     seed_repo = _init_git_repo(
         tmp_path / "seed-stale-lineage",
         files={
-            "sessions/history.json": "{\"turns\": 1}\n",
+            "projects/-fixture/history.json": "{\"turns\": 1}\n",
         },
     )
     _push_branch(seed_repo, remote_repo, branch_ref)
@@ -343,7 +356,7 @@ async def test_run_claude_code_turn_self_heals_stale_session_checkout_and_retrie
     assert agent.calls[0]["resume_existing"] is True
     assert agent.calls[1]["resume_existing"] is True
     assert stale_file.exists() is False
-    assert (config.local_root / "sessions" / "history.json").read_text(encoding="utf-8") == "{\"turns\": 4}\n"
+    assert (config.local_root / "projects" / "-fixture" / "history.json").read_text(encoding="utf-8") == "{\"turns\": 4}\n"
 
 
 @pytest.mark.asyncio
@@ -369,3 +382,216 @@ async def test_run_claude_code_turn_skips_git_sync_for_followup(tmp_path: Path):
         capture_output=True,
     )
     assert show_ref.returncode != 0
+
+
+@pytest.mark.asyncio
+async def test_run_claude_code_turn_points_cli_at_session_local_root(tmp_path: Path):
+    remote_repo = _init_bare_repo(tmp_path / "remote.git")
+    config = _config(tmp_path, git_repo=remote_repo)
+    agent = _FakeAgent(config.local_root)
+
+    assert "CLAUDE_CONFIG_DIR" not in agent.config.env
+
+    result = await run_claude_code_turn(
+        agent=agent,  # type: ignore[arg-type]
+        prompt="hello",
+        kind="regular",
+        resume_existing=False,
+        session_store=config,
+    )
+
+    assert result.status == "completed"
+    assert agent.config.env.get("CLAUDE_CONFIG_DIR") == str(config.local_root)
+
+
+@pytest.mark.asyncio
+async def test_run_claude_code_turn_preserves_explicit_claude_config_dir(tmp_path: Path):
+    remote_repo = _init_bare_repo(tmp_path / "remote.git")
+    config = _config(tmp_path, git_repo=remote_repo)
+    override = str(tmp_path / "custom-claude-home")
+    agent = _FakeAgent(config.local_root, env={"CLAUDE_CONFIG_DIR": override})
+
+    result = await run_claude_code_turn(
+        agent=agent,  # type: ignore[arg-type]
+        prompt="hello",
+        kind="regular",
+        resume_existing=False,
+        session_store=config,
+    )
+
+    assert result.status == "completed"
+    assert agent.config.env["CLAUDE_CONFIG_DIR"] == override
+
+
+@pytest.mark.asyncio
+async def test_run_claude_code_turn_does_not_set_claude_config_dir_for_local_store(tmp_path: Path):
+    config = ClaudeCodeSessionStoreConfig(
+        implementation="local",
+        local_root=tmp_path / "workspace" / ".claude",
+        tenant="home",
+        project="demo",
+        user_id="alice",
+        conversation_id="conv-1",
+        agent_name="knowledge-base-admin",
+    )
+    agent = _FakeAgent(config.local_root)
+
+    result = await run_claude_code_turn(
+        agent=agent,  # type: ignore[arg-type]
+        prompt="hello",
+        kind="regular",
+        resume_existing=False,
+        session_store=config,
+    )
+
+    assert result.status == "completed"
+    assert "CLAUDE_CONFIG_DIR" not in agent.config.env
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_seeds_local_root_gitignore(tmp_path: Path):
+    remote_repo = _init_bare_repo(tmp_path / "remote.git")
+    config = _config(tmp_path, git_repo=remote_repo)
+
+    result = await bootstrap_claude_code_session_store(config=config)
+
+    gitignore_path = config.local_root / ".gitignore"
+    assert gitignore_path.is_file()
+    contents = gitignore_path.read_text(encoding="utf-8")
+    assert ".credentials.json" in contents
+    assert "backups/" in contents
+    assert result.get("gitignore_seeded") is True
+
+    rerun = await bootstrap_claude_code_session_store(config=config)
+    assert rerun.get("gitignore_seeded") is False
+
+
+@pytest.mark.asyncio
+async def test_publish_respects_seeded_gitignore(tmp_path: Path):
+    remote_repo = _init_bare_repo(tmp_path / "remote.git")
+    config = _config(tmp_path, git_repo=remote_repo)
+
+    await bootstrap_claude_code_session_store(config=config)
+    (config.local_root / ".credentials.json").write_text("{\"token\": \"secret\"}", encoding="utf-8")
+    (config.local_root / "backups").mkdir(parents=True, exist_ok=True)
+    (config.local_root / "backups" / "snapshot.json").write_text("{}", encoding="utf-8")
+    projects_dir = config.local_root / "projects" / "-tmp-cwd"
+    projects_dir.mkdir(parents=True, exist_ok=True)
+    (projects_dir / "session.jsonl").write_text("{}\n", encoding="utf-8")
+
+    publish = await publish_claude_code_session_store(config=config)
+    assert publish["published"] is True
+
+    branch_ref = claude_code_session_branch_ref(config)
+    listing = subprocess.run(
+        ["git", "--git-dir", str(remote_repo), "ls-tree", "-r", "--name-only", branch_ref],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    assert "projects/-tmp-cwd/session.jsonl" in listing
+    assert ".gitignore" in listing
+    assert ".credentials.json" not in listing
+    assert all(not name.startswith("backups/") for name in listing)
+
+
+def test_sanitize_cwd_matches_observed_claude_cli_scheme():
+    sanitized = runtime_module._sanitize_cwd_for_claude_projects(
+        Path("/private/tmp/claude-probe2/has.dot and_space")
+    )
+    assert sanitized == "-private-tmp-claude-probe2-has-dot-and-space"
+
+
+def test_retarget_session_project_dir_renames_to_current_cwd(tmp_path: Path):
+    local_root = tmp_path / "local"
+    old_project = local_root / "projects" / "-some-other-host-workspace-issue"
+    old_project.mkdir(parents=True, exist_ok=True)
+    (old_project / "abc.jsonl").write_text(
+        json.dumps({"type": "user", "cwd": "/some/other/host/workspace/issue", "sessionId": "abc"}) + "\n",
+        encoding="utf-8",
+    )
+    current_cwd = tmp_path / "workspace" / "issue"
+    current_cwd.mkdir(parents=True, exist_ok=True)
+
+    renamed = runtime_module._retarget_session_project_dir(
+        local_root=local_root,
+        cwd=current_cwd,
+    )
+
+    expected_name = runtime_module._sanitize_cwd_for_claude_projects(current_cwd)
+    assert renamed is True
+    assert (local_root / "projects" / expected_name / "abc.jsonl").is_file()
+    assert not old_project.exists()
+
+
+def test_retarget_session_project_dir_noop_when_already_matching(tmp_path: Path):
+    local_root = tmp_path / "local"
+    current_cwd = tmp_path / "workspace" / "issue"
+    current_cwd.mkdir(parents=True, exist_ok=True)
+    expected_name = runtime_module._sanitize_cwd_for_claude_projects(current_cwd)
+    project_dir = local_root / "projects" / expected_name
+    project_dir.mkdir(parents=True, exist_ok=True)
+    (project_dir / "abc.jsonl").write_text(
+        json.dumps({"type": "user", "cwd": str(current_cwd.resolve()), "sessionId": "abc"}) + "\n",
+        encoding="utf-8",
+    )
+
+    renamed = runtime_module._retarget_session_project_dir(
+        local_root=local_root,
+        cwd=current_cwd,
+    )
+
+    assert renamed is False
+    assert (project_dir / "abc.jsonl").is_file()
+
+
+def test_retarget_session_project_dir_noop_when_ambiguous(tmp_path: Path):
+    local_root = tmp_path / "local"
+    (local_root / "projects" / "-host-a-workspace").mkdir(parents=True, exist_ok=True)
+    (local_root / "projects" / "-host-b-workspace").mkdir(parents=True, exist_ok=True)
+    current_cwd = tmp_path / "workspace" / "issue"
+    current_cwd.mkdir(parents=True, exist_ok=True)
+
+    renamed = runtime_module._retarget_session_project_dir(
+        local_root=local_root,
+        cwd=current_cwd,
+    )
+
+    assert renamed is False
+    assert (local_root / "projects" / "-host-a-workspace").is_dir()
+    assert (local_root / "projects" / "-host-b-workspace").is_dir()
+
+
+@pytest.mark.asyncio
+async def test_run_claude_code_turn_retargets_project_dir_for_cross_node_resume(tmp_path: Path):
+    remote_repo = _init_bare_repo(tmp_path / "remote.git")
+    config = _config(tmp_path, git_repo=remote_repo)
+    branch_ref = claude_code_session_branch_ref(config)
+
+    seed_repo = _init_git_repo(
+        tmp_path / "seed-cross-node",
+        files={
+            "projects/-old-host-bundle-issue/abc.jsonl": json.dumps(
+                {"type": "user", "cwd": "/old/host/bundle/issue", "sessionId": "abc"}
+            )
+            + "\n",
+        },
+    )
+    _push_branch(seed_repo, remote_repo, branch_ref)
+
+    current_cwd = tmp_path / "current" / "host" / "issue"
+    current_cwd.mkdir(parents=True, exist_ok=True)
+    agent = _FakeAgent(config.local_root, workspace_path=current_cwd)
+
+    result = await run_claude_code_turn(
+        agent=agent,  # type: ignore[arg-type]
+        prompt="resume",
+        kind="regular",
+        resume_existing=False,
+        session_store=config,
+    )
+
+    assert result.status == "completed"
+    expected_name = runtime_module._sanitize_cwd_for_claude_projects(current_cwd)
+    assert (config.local_root / "projects" / expected_name / "abc.jsonl").is_file()
+    assert not (config.local_root / "projects" / "-old-host-bundle-issue").exists()

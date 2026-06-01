@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass, field
@@ -260,6 +262,86 @@ def _reset_local_session_checkout(*, local_root: pathlib.Path) -> None:
         shutil.rmtree(local_root, ignore_errors=True)
 
 
+CLAUDE_CODE_SESSION_GITIGNORE = """\
+# Managed by kdcube ClaudeCodeRuntime — keep session JSONLs, drop everything else.
+# Hand-edit on the remote lineage branch if you need to refine; subsequent
+# bootstraps will respect the version checked out from the remote.
+.credentials.json
+.claude.json
+.claude.json.lock
+backups/
+statsig/
+shell-snapshots/
+ide/
+sessions/
+"""
+
+
+def _ensure_session_gitignore(*, local_root: pathlib.Path) -> bool:
+    gitignore_path = local_root / ".gitignore"
+    if gitignore_path.exists():
+        return False
+    gitignore_path.write_text(CLAUDE_CODE_SESSION_GITIGNORE, encoding="utf-8")
+    return True
+
+
+def _sanitize_cwd_for_claude_projects(cwd: pathlib.Path) -> str:
+    resolved = str(pathlib.Path(cwd).resolve())
+    return re.sub(r"[^A-Za-z0-9-]", "-", resolved)
+
+
+def _read_recorded_cwd(project_dir: pathlib.Path) -> str | None:
+    for jsonl in sorted(project_dir.glob("*.jsonl")):
+        try:
+            with jsonl.open("r", encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        record = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    cwd_value = record.get("cwd") if isinstance(record, dict) else None
+                    if isinstance(cwd_value, str) and cwd_value.strip():
+                        return cwd_value.strip()
+        except OSError:
+            continue
+    return None
+
+
+def _retarget_session_project_dir(
+    *,
+    local_root: pathlib.Path,
+    cwd: pathlib.Path,
+    logger: logging.Logger | None = None,
+) -> bool:
+    projects_dir = local_root / "projects"
+    if not projects_dir.is_dir():
+        return False
+    target_name = _sanitize_cwd_for_claude_projects(cwd)
+    target_dir = projects_dir / target_name
+    if target_dir.exists():
+        return False
+    candidates = [child for child in projects_dir.iterdir() if child.is_dir()]
+    if len(candidates) != 1:
+        return False
+    source_dir = candidates[0]
+    recorded_cwd = _read_recorded_cwd(source_dir)
+    current_resolved = str(pathlib.Path(cwd).resolve())
+    if recorded_cwd is not None and recorded_cwd == current_resolved:
+        return False
+    source_dir.rename(target_dir)
+    (logger or logging.getLogger("ClaudeCodeRuntime")).info(
+        "[ClaudeCodeRuntime] retargeted session project dir %s -> %s for cwd=%s (recorded=%s)",
+        source_dir.name,
+        target_dir.name,
+        current_resolved,
+        recorded_cwd,
+    )
+    return True
+
+
 def _is_session_in_use_error(result: ClaudeCodeRunResult | None) -> bool:
     if result is None:
         return False
@@ -328,13 +410,15 @@ def _bootstrap_claude_code_session_store_sync(
             action = "initialized_empty_workspace"
         else:
             action = "reused_local_workspace"
+    gitignore_seeded = _ensure_session_gitignore(local_root=local_root)
     log.info(
-        "[ClaudeCodeRuntime] bootstrapped session store agent=%s conversation=%s local_root=%s action=%s branch=%s",
+        "[ClaudeCodeRuntime] bootstrapped session store agent=%s conversation=%s local_root=%s action=%s branch=%s gitignore_seeded=%s",
         config.agent_name,
         config.conversation_id,
         local_root,
         action,
         claude_code_session_branch_ref(config),
+        gitignore_seeded,
     )
     return {
         "implementation": config.implementation,
@@ -343,6 +427,7 @@ def _bootstrap_claude_code_session_store_sync(
         "lineage_ref": claude_code_session_branch_ref(config),
         "bootstrapped": bool(lineage_ref),
         "action": action,
+        "gitignore_seeded": gitignore_seeded,
     }
 
 
@@ -498,6 +583,23 @@ async def run_claude_code_turn(
     )
     effective_resume_existing = bool(resume_existing)
 
+    # Point the Claude Code CLI at the session-store's local_root so the
+    # session JSONL it writes (under <CLAUDE_CONFIG_DIR>/projects/...) lands
+    # in the same directory that publish_claude_code_session_store snapshots
+    # to git. Without this the CLI writes JSONLs to $HOME/.claude/projects/...,
+    # local_root stays empty, and publish creates empty lineage branches.
+    if session_store is not None and session_store.implementation == "git":
+        agent_config = getattr(agent, "config", None)
+        agent_env = getattr(agent_config, "env", None) if agent_config is not None else None
+        if isinstance(agent_env, dict) and "CLAUDE_CONFIG_DIR" not in agent_env:
+            agent_env["CLAUDE_CONFIG_DIR"] = str(session_store.local_root)
+
+    workspace_cwd: pathlib.Path | None = None
+    if session_store is not None and session_store.implementation == "git":
+        agent_workspace = getattr(getattr(agent, "config", None), "workspace_path", None)
+        if agent_workspace is not None:
+            workspace_cwd = pathlib.Path(agent_workspace)
+
     if should_bootstrap and session_store is not None:
         bootstrap_result = await bootstrap_claude_code_session_store(
             config=session_store,
@@ -508,6 +610,17 @@ async def run_claude_code_turn(
         # in-memory/state flag alone is not enough, especially after storage or
         # session-store repo changes.
         effective_resume_existing = bool(bootstrap_result.get("bootstrapped"))
+        # Lineage from another node will have projects/<sanitized-old-cwd>/ —
+        # rename it to projects/<sanitized-current-cwd>/ so `--resume` finds the
+        # JSONL under the current cwd. Without this, cross-node resume silently
+        # falls back to a fresh session.
+        if workspace_cwd is not None:
+            await asyncio.to_thread(
+                _retarget_session_project_dir,
+                local_root=pathlib.Path(session_store.local_root),
+                cwd=workspace_cwd,
+                logger=logger,
+            )
         if refresh_support_files is not None:
             refresh_support_files()
 
@@ -540,6 +653,13 @@ async def run_claude_code_turn(
                 config=session_store,
                 logger=logger,
             )
+            if workspace_cwd is not None:
+                await asyncio.to_thread(
+                    _retarget_session_project_dir,
+                    local_root=pathlib.Path(session_store.local_root),
+                    cwd=workspace_cwd,
+                    logger=logger,
+                )
             if refresh_support_files is not None:
                 refresh_support_files()
             result = await agent.run_turn(
