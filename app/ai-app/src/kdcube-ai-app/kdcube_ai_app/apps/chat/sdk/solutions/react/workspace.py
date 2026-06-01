@@ -388,8 +388,10 @@ async def hydrate_workspace_paths(
 ) -> Dict[str, Any]:
     """
     Materialize requested physical workspace paths using the configured implementation.
-    Files under <turn>/files may come from custom timeline rehost or git-backed snapshots.
-    Outputs, snapshots, and attachments always use the custom artifact/hosting path.
+    Text workspace namespaces under <turn>/files and <turn>/snapshots may come
+    from the git-backed workspace when configured, with hosted artifact/turn-log
+    rehost as the fallback path. Outputs and attachments always use the custom
+    artifact/hosting path.
     """
     normalized = [str(p).strip() for p in (paths or []) if isinstance(p, str) and str(p).strip()]
     if not normalized:
@@ -433,23 +435,24 @@ async def hydrate_workspace_paths(
 
     outdir = artifact_outdir_for(outdir)
 
-    files_paths: List[str] = []
+    workspace_paths: List[str] = []
     other_paths: List[str] = []
     for path in normalized:
         _, _, namespace, _ = split_physical_artifact_ref(path)
-        if namespace == ARTIFACT_NAMESPACE_FILES or "/files/" in path or path.endswith("/files"):
-            files_paths.append(path)
+        if (
+            namespace in {ARTIFACT_NAMESPACE_FILES, ARTIFACT_NAMESPACE_SNAPSHOTS}
+            or "/files/" in path
+            or path.endswith("/files")
+            or "/snapshots/" in path
+            or path.endswith("/snapshots")
+        ):
+            workspace_paths.append(path)
         else:
             other_paths.append(path)
 
     result = {"rehosted": [], "missing": [], "errors": []}
     runtime_ctx = getattr(ctx_browser, "runtime_ctx", None)
     impl = get_workspace_implementation(runtime_ctx)
-    current_conversation_id = str(getattr(runtime_ctx, "conversation_id", "") or "").strip()
-    if conversation_id and conversation_id != current_conversation_id:
-        # Git-backed workspace lineage is conversation-local; cross-conversation
-        # recovery must use persisted artifact/turn-log metadata.
-        impl = WORKSPACE_IMPLEMENTATION_CUSTOM
 
     async def _merge(payload: Dict[str, Any] | None) -> None:
         if not isinstance(payload, dict):
@@ -458,7 +461,7 @@ async def hydrate_workspace_paths(
         result["missing"].extend(list(payload.get("missing") or []))
         result["errors"].extend(list(payload.get("errors") or []))
 
-    if files_paths:
+    if workspace_paths:
         if impl == WORKSPACE_IMPLEMENTATION_GIT:
             from kdcube_ai_app.apps.chat.sdk.solutions.react.solution_workspace import (
                 resolve_logical_artifact,
@@ -468,7 +471,7 @@ async def hydrate_workspace_paths(
 
             git_candidate_paths: List[str] = []
             custom_candidate_paths: List[str] = []
-            for physical in files_paths:
+            for physical in workspace_paths:
                 logical = physical_to_logical_artifact_path(physical)
                 artifact = await resolve_logical_artifact(
                     ctx_browser=ctx_browser,
@@ -486,11 +489,26 @@ async def hydrate_workspace_paths(
                 git_candidate_paths.append(physical)
 
             if git_candidate_paths:
-                await _merge(await hydrate_files_from_git_workspace(
+                git_result = await hydrate_files_from_git_workspace(
                     ctx_browser=ctx_browser,
                     paths=git_candidate_paths,
                     outdir=outdir,
-                ))
+                )
+                result["rehosted"].extend(list(git_result.get("rehosted") or []))
+                if git_result.get("missing") or git_result.get("errors"):
+                    fallback_result = await rehost_files_from_timeline(
+                        ctx_browser=ctx_browser,
+                        paths=git_candidate_paths,
+                        outdir=outdir,
+                        conversation_id=conversation_id,
+                    )
+                    await _merge(fallback_result)
+                    if not fallback_result.get("rehosted"):
+                        result["errors"].extend(list(git_result.get("errors") or []))
+                    result["missing"].extend(list(git_result.get("missing") or []))
+                else:
+                    result["missing"].extend(list(git_result.get("missing") or []))
+                    result["errors"].extend(list(git_result.get("errors") or []))
             if custom_candidate_paths:
                 await _merge(await rehost_files_from_timeline(
                     ctx_browser=ctx_browser,
@@ -503,7 +521,7 @@ async def hydrate_workspace_paths(
 
             await _merge(await rehost_files_from_timeline(
                 ctx_browser=ctx_browser,
-                paths=files_paths,
+                paths=workspace_paths,
                 outdir=outdir,
                 conversation_id=conversation_id,
             ))
@@ -519,7 +537,15 @@ async def hydrate_workspace_paths(
         ))
 
     result["rehosted"] = list(dict.fromkeys(result["rehosted"]))
-    result["missing"] = list(dict.fromkeys(result["missing"]))
+    result["missing"] = [
+        missing
+        for missing in list(dict.fromkeys(result["missing"]))
+        if not any(
+            str(rehosted or "").strip() == str(missing or "").strip().rstrip("/")
+            or str(rehosted or "").strip().startswith(f"{str(missing or '').strip().rstrip('/')}/")
+            for rehosted in result["rehosted"]
+        )
+    ]
     result["errors"] = list(dict.fromkeys(result["errors"]))
     return result
 

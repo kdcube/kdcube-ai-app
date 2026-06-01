@@ -754,15 +754,18 @@ def build_announce_workspace_lines(
         if lineage_scopes:
             lines.append("  previous saved workspace paths (pull to bring local; checkout to edit):")
             for item in lineage_scopes[:6]:
+                namespace = str(item.get("namespace") or "files").strip().strip("/") or "files"
                 scope = str(item.get("scope") or "").strip()
                 files = int(item.get("files") or 0)
-                lines.append(f"    - files/{scope} ({files} git-tracked file{'s' if files != 1 else ''})")
+                lines.append(f"    - {namespace}/{scope} ({files} git-tracked file{'s' if files != 1 else ''})")
             source_turn = last_published_turn or "<published_turn>"
             first_path = str((lineage_scopes[0] or {}).get("scope") or "<path_under_files>").strip().strip("/")
-            source_ref = f"fi:{source_turn}.files/{first_path}"
+            first_namespace = str((lineage_scopes[0] or {}).get("namespace") or "files").strip().strip("/") or "files"
+            source_ref = f"fi:{source_turn}.{first_namespace}/{first_path}"
             lines.append("  to focus on one path, use its fi: form, for example:")
             lines.append(f"    react.pull(paths=[\"{source_ref}\"])")
-            lines.append(f"    react.checkout(mode=\"replace\", paths=[\"{source_ref}\"])")
+            if first_namespace == "files":
+                lines.append(f"    react.checkout(mode=\"replace\", paths=[\"{source_ref}\"])")
         else:
             lines.append("  previous saved workspace paths: none")
 
@@ -1458,9 +1461,9 @@ def build_sources_pool_text(
     lines.append(hr)
     if pool:
         lines.append("  Hint: to see the full snippet if not visible / hide if no need and big (example)")
-        lines.append("  Load:  react.read([\"so:sources_pool[1,3,5]\"])")
-        lines.append("  Exec:  ctx_tools.fetch_ctx(\"so:sources_pool[1]\") returns rows; for web rows use content first, text second")
-        lines.append("  Hide:  react.hide([\"so:sources_pool[1]\"])")
+        lines.append("  Load:  react.read(paths=[\"so:sources_pool[1,3,5]\"])")
+        lines.append("  Exec:  ctx_tools.fetch_ctx(path=\"so:sources_pool[1]\") returns rows; for web rows use content first, text second")
+        lines.append("  Hide:  react.hide(path=\"so:sources_pool[1]\", replacement=\"<replacement text to understand why/what its hidden>\")")
         lines.append(hr)
     return "\n".join(lines) + "\n"
 

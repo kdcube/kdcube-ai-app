@@ -298,6 +298,10 @@ def _build_tool_subsystem_from_runtime_globals(
     if not isinstance(raw_tool_specs, list):
         raw_tool_specs = []
 
+    event_specs = rg.get("EVENT_SOURCE_SPECS")
+    if not isinstance(event_specs, list):
+        event_specs = []
+
     ctx_client = None
     if isinstance(integrations, dict):
         ctx_client = integrations.get("ctx_client")
@@ -328,6 +332,7 @@ def _build_tool_subsystem_from_runtime_globals(
             registry=registry,
             raw_tool_specs=raw_tool_specs,
             tool_runtime=rg.get("TOOL_RUNTIME") if isinstance(rg.get("TOOL_RUNTIME"), dict) else None,
+            event_specs=event_specs,
             mcp_subsystem=mcp_subsystem,
             hosting_service=hosting_service,
         )

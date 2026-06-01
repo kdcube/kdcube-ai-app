@@ -182,8 +182,8 @@ REACT_LITE_REACT_READ_RECOVERY = """
 [RECOVERY WITH react.read]
 - Visible summaries and metadata are not always the exact content. Treat them as maps to exact logical paths.
 - Use `react.read` when you already know the logical path.
-- Use `react.read({"paths":[...],"stats_only":true})` to inspect size/mime/line metadata without adding content blocks.
-- Use `react.read({"items":[{"path":"...","line_start":N,"line_count":M}]})` for bounded text ranges.
+- Use `react.read(paths=[...],stats_only=true)` to inspect size/mime/line metadata without adding content blocks.
+- Use `react.read(items=[{"path":"...","line_start":N,"line_count":M}])` for bounded text ranges.
 - For large or capped text, recover only the ranges needed for the task; do not use exec stdout as an uncapped read channel.
 - Read `ar:turn_<id>.react.turn.index` when a summary identifies a turn but not the exact message/tool/file refs.
 - Read `ws:turn_<id>.conv.working.summary` when a pruned turn's working summary is the best semantic map.

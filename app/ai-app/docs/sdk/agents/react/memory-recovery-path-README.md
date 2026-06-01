@@ -246,7 +246,7 @@ Broad conversation overview:
 
 ```text
 user asks "what have we talked about so far?"
-  -> react.memsearch({mode: "timeline", targets: ["summary"], order: "asc", top_k: <enough>})
+  -> react.memsearch(mode="timeline", targets=["summary"], order="asc", top_k=<enough>)
   -> no query; generic query strings like "conversation topics discussed" do not help
   -> summarize the returned working summaries by turn order
 ```
@@ -255,20 +255,20 @@ Semantic clue:
 
 ```text
 visible checkpoint gives semantic clue
-  -> react.memsearch({query, targets=["summary", ...]})
+  -> react.memsearch(query=..., targets=["summary", ...])
   -> memsearch returns turn_id + snippet paths
-  -> react.read(snippet path or ws:<turn_id>.conv.working.summary)
+  -> react.read(paths=[snippet path or ws:<turn_id>.conv.working.summary])
 ```
 
 Ordinal or temporal clue:
 
 ```text
 user asks "what was the second turn about?"
-  -> react.memsearch({mode: "ordinal", ordinal: 2, targets: ["summary", "user", "assistant"]})
+  -> react.memsearch(mode="ordinal", ordinal=2, targets=["summary", "user", "assistant"])
   -> memsearch returns turn_id, ordinal, started_at, turn_index_path, snippet paths
 
 user asks "what did we discuss around March?"
-  -> react.memsearch({mode: "temporal", from: "...", to: "...", targets: ["summary", "user", "assistant"]})
+  -> react.memsearch(mode="temporal", from="...", to="...", targets=["summary", "user", "assistant"])
   -> read returned refs, or read ar:<turn_id>.react.turn.index for exact inventory
 ```
 
@@ -277,7 +277,7 @@ Topic plus temporal clue:
 ```text
 user asks "2 months ago I think we discussed invoices"
   -> convert the relative date to an ISO range
-  -> react.memsearch({query: "invoices", from: "<iso>", to: "<iso>", targets: ["summary", "user", "assistant"]})
+  -> react.memsearch(query="invoices", from="<iso>", to="<iso>", targets=["summary", "user", "assistant"])
   -> omit mode
   -> semantic search is narrowed to that time window
 ```

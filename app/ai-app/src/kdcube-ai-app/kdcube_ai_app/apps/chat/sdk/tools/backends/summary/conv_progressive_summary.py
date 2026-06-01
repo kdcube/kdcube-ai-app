@@ -56,7 +56,7 @@ next:
 recovery_plan:
 - first: "Use this visible reminder and the retained suffix before searching."
 - if_needed: "Use react.memsearch with the exact phrase/entity anchors above."
-- then_read: "Use react.read(read_refs). For large text, first use stats_only, then ranged react.read items to recover the needed lines by parts."
+- then_read: "Use react.read(paths=[...read_refs]). For large text, first use stats_only, then ranged react.read items to recover the needed lines by parts."
 
 ## Goals
 [What is the user trying to accomplish? Can be multiple items if the session covers different tasks.]
@@ -162,7 +162,7 @@ next:
 recovery_plan:
 - first: "Use this visible reminder and the retained suffix before searching."
 - if_needed: "Use react.memsearch with the exact phrase/entity anchors above."
-- then_read: "Use react.read(read_refs) for exact old content; use ctx_tools.fetch_ctx(path=...) from exec only for large tc: results listed in read_refs."
+- then_read: "Use react.read(paths=[...read_refs]) for exact old content; use ctx_tools.fetch_ctx(path=...) from exec only for large tc: results listed in read_refs."
 
 ## Goals
 [Preserve existing goals, add new ones if the task expanded]
@@ -260,7 +260,7 @@ next:
 recovery_plan:
 - first: "Continue from the retained suffix and this reminder."
 - if_needed: "Use react.memsearch with phrase/entity anchors."
-- then_read: "Use react.read(read_refs). For large text, first use stats_only, then ranged react.read items to recover the needed lines by parts."
+- then_read: "Use react.read(paths=[...read_refs]). For large text, first use stats_only, then ranged react.read items to recover the needed lines by parts."
 
 original_request:
 - [What did the user ask for in this turn?]
@@ -283,7 +283,7 @@ compacted_large_results:
   date/internal_date, snippet/body_excerpt, message/thread ids, and any flags
   present.
 - State the recommended recovery method, usually
-  `react.read(["<tc:...result>"])`, then `stats_only` and ranged `react.read`
+  `react.read(paths=["<tc:...result>"])`, then `stats_only` and ranged `react.read`
   items if the result is large text. Exec output is capped too; mention exec
   only for computation or for producing smaller derived artifacts.
 - If there are files or sources produced by the result, mention their logical

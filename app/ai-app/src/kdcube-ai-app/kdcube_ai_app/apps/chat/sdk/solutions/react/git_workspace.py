@@ -9,6 +9,11 @@ import shlex
 import subprocess
 from typing import Any, Dict, List, Optional
 
+from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+    ARTIFACT_NAMESPACE_FILES,
+    ARTIFACT_NAMESPACE_SNAPSHOTS,
+    split_physical_artifact_ref,
+)
 from kdcube_ai_app.apps.chat.sdk.solutions.react.workspace import (
     _guess_mime_from_path,
     _is_text_mime,
@@ -25,6 +30,23 @@ from kdcube_ai_app.infra.service_hub.inventory import AgentLogger
 from kdcube_ai_app.apps.chat.sdk.runtime.workspace import artifact_outdir_for, runtime_outdir_for_artifact_outdir
 
 _SKIP_WORKSPACE_DIRS = {".git", "__pycache__", ".pytest_cache", "node_modules", ".venv", "logs", "executed_programs"}
+_GIT_WORKSPACE_NAMESPACES = (ARTIFACT_NAMESPACE_FILES, ARTIFACT_NAMESPACE_SNAPSHOTS)
+
+
+class _ConversationScopedRuntimeCtx:
+    def __init__(self, base: Any, conversation_id: str) -> None:
+        self._base = base
+        self.conversation_id = conversation_id
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._base, name)
+
+
+def _runtime_ctx_for_conversation(runtime_ctx: Any, conversation_id: str) -> Any:
+    raw = str(conversation_id or "").strip()
+    if not raw or raw == str(getattr(runtime_ctx, "conversation_id", "") or "").strip():
+        return runtime_ctx
+    return _ConversationScopedRuntimeCtx(runtime_ctx, raw)
 
 
 class GitWorkspaceCommandError(RuntimeError):
@@ -162,7 +184,7 @@ def summarize_current_turn_git_lineage_scopes(
         return []
     try:
         proc = subprocess.run(
-            _git_cmd(turn_root, ["ls-tree", "-r", "--name-only", "workspace", "--", "files"]),
+            _git_cmd(turn_root, ["ls-tree", "-r", "--name-only", "workspace", "--", *_GIT_WORKSPACE_NAMESPACES]),
             check=True,
             capture_output=True,
             text=True,
@@ -170,20 +192,30 @@ def summarize_current_turn_git_lineage_scopes(
     except subprocess.CalledProcessError:
         return []
 
-    counts: Dict[str, int] = {}
+    counts: Dict[tuple[str, str], int] = {}
     for line in (proc.stdout or "").splitlines():
         raw = line.strip()
-        if not raw.startswith("files/"):
-            continue
-        rel = raw[len("files/"):].strip("/")
-        if not rel:
-            continue
-        top = rel.split("/", 1)[0]
-        counts[top] = counts.get(top, 0) + 1
+        namespace = ""
+        rel = ""
+        for candidate in _GIT_WORKSPACE_NAMESPACES:
+            prefix = f"{candidate}/"
+            if raw.startswith(prefix):
+                namespace = candidate
+                rel = raw[len(prefix):].strip("/")
+                break
+        if namespace and rel:
+            top = rel.split("/", 1)[0]
+            key = (namespace, top)
+            counts[key] = counts.get(key, 0) + 1
 
     out: List[Dict[str, Any]] = []
-    for scope in sorted(counts.keys(), key=str.lower):
-        out.append({"scope": f"{scope}/", "files": counts[scope], "kind": "dir"})
+    for namespace, scope in sorted(counts.keys(), key=lambda item: (item[0], item[1].lower())):
+        out.append({
+            "namespace": namespace,
+            "scope": f"{scope}/",
+            "files": counts[(namespace, scope)],
+            "kind": "dir",
+        })
     return out
 
 
@@ -286,7 +318,8 @@ def _ensure_local_version_ref(
     remote_ref = workspace_version_ref(runtime_ctx, version_id)
     if not remote_ref:
         raise ValueError("missing_workspace_version_ref")
-    local_ref = f"refs/kdcube-local/versions/{version_id}"
+    segs = workspace_lineage_segments(runtime_ctx)
+    local_ref = f"refs/kdcube-local/versions/{segs['conversation_id']}/{version_id}"
     if _git_has_ref(repo_root=repo_root, ref_name=local_ref):
         return local_ref
     subprocess.run(
@@ -561,21 +594,22 @@ def _stage_current_turn_text_workspace(*, turn_root: pathlib.Path) -> None:
     except GitWorkspaceCommandError as exc:
         if not _is_empty_workspace_pathspec_error(exc):
             raise
-    files_root = turn_root / "files"
-    if not files_root.exists():
-        return
     text_paths: List[str] = []
-    for path in files_root.rglob("*"):
-        if not path.is_file():
+    for namespace in _GIT_WORKSPACE_NAMESPACES:
+        workspace_root = turn_root / namespace
+        if not workspace_root.exists():
             continue
-        if _workspace_path_is_skipped(path, turn_root=turn_root):
-            continue
-        if not _file_is_text_like(path):
-            continue
-        rel_path = str(path.relative_to(turn_root))
-        if _git_path_is_ignored(repo_root=turn_root, rel_path=rel_path):
-            continue
-        text_paths.append(rel_path)
+        for path in workspace_root.rglob("*"):
+            if not path.is_file():
+                continue
+            if _workspace_path_is_skipped(path, turn_root=turn_root):
+                continue
+            if not _file_is_text_like(path):
+                continue
+            rel_path = str(path.relative_to(turn_root))
+            if _git_path_is_ignored(repo_root=turn_root, rel_path=rel_path):
+                continue
+            text_paths.append(rel_path)
     if not text_paths:
         return
     for idx in range(0, len(text_paths), 128):
@@ -583,7 +617,7 @@ def _stage_current_turn_text_workspace(*, turn_root: pathlib.Path) -> None:
         _run_git_checked(
             turn_root,
             ["add", "--sparse", "--", *chunk],
-            op="stage text workspace files",
+            op="stage text workspace paths",
         )
 
 
@@ -605,7 +639,8 @@ def _publish_current_turn_git_workspace_sync(
             turn_root=turn_root,
             reason="workspace_not_materialized",
         )
-    if not (turn_root / ".git").exists() and not (turn_root / "files").exists():
+    has_workspace_namespace = any((turn_root / namespace).exists() for namespace in _GIT_WORKSPACE_NAMESPACES)
+    if not (turn_root / ".git").exists() and not has_workspace_namespace:
         return _workspace_publish_skipped(
             turn_root=turn_root,
             reason="empty_workspace",
@@ -743,7 +778,7 @@ def _checkout_current_turn_git_workspace_sync(
     )
     _run_git_checked(
         turn_root,
-        ["sparse-checkout", "set", "--cone", "files"],
+        ["sparse-checkout", "set", "--cone", *_GIT_WORKSPACE_NAMESPACES],
         op="configure sparse checkout",
     )
     _run_git_checked(
@@ -758,8 +793,8 @@ def _checkout_current_turn_git_workspace_sync(
     )
     _run_git_checked(
         turn_root,
-        ["clean", "-fd", "--", "files"],
-        op="clean workspace files",
+        ["clean", "-fd", "--", *_GIT_WORKSPACE_NAMESPACES],
+        op="clean workspace paths",
     )
     return {
         "turn_root": str(turn_root),
@@ -790,6 +825,25 @@ async def checkout_current_turn_git_workspace(
     )
 
 
+def _parse_git_workspace_physical_ref(physical: str) -> tuple[str, str, str, str]:
+    raw = str(physical or "").strip().strip("/")
+    for namespace in _GIT_WORKSPACE_NAMESPACES:
+        suffix = f"/{namespace}"
+        if raw.endswith(suffix):
+            unscoped = raw[: -len(suffix)].strip("/")
+            conversation_id = ""
+            if unscoped.startswith("conv_") and "/" in unscoped:
+                conversation_segment, _, turn_id = unscoped.partition("/")
+                conversation_id = conversation_segment[len("conv_"):]
+            else:
+                turn_id = unscoped
+            return conversation_id, turn_id, namespace, ""
+    conversation_id, turn_id, namespace, rel = split_physical_artifact_ref(raw)
+    if not turn_id or namespace not in _GIT_WORKSPACE_NAMESPACES:
+        return "", "", "", ""
+    return conversation_id, turn_id, namespace, rel.strip("/")
+
+
 async def hydrate_files_from_git_workspace(
     *,
     ctx_browser: Any,
@@ -815,64 +869,77 @@ async def hydrate_files_from_git_workspace(
     missing: List[str] = []
     errors: List[str] = []
     seen_targets: set[str] = set()
-    version_refs: Dict[str, str] = {}
-    version_errors: Dict[str, str] = {}
+    version_refs: Dict[tuple[str, str], str] = {}
+    version_errors: Dict[tuple[str, str], str] = {}
 
     for physical in paths:
         if not isinstance(physical, str):
             continue
-        if physical.endswith("/files"):
-            turn_id = physical[: -len("/files")].rstrip("/")
-            rel = ""
-        elif "/files/" in physical:
-            turn_id, rel = physical.split("/files/", 1)
-        else:
+        conversation_id, turn_id, namespace, rel = _parse_git_workspace_physical_ref(physical)
+        if not turn_id or not namespace:
             continue
-        tree_path = f"files/{rel}".strip("/")
-        if turn_id in version_errors:
+        scoped_runtime_ctx = _runtime_ctx_for_conversation(runtime_ctx, conversation_id)
+        tree_path = f"{namespace}/{rel}".strip("/")
+        ref_key = (conversation_id, turn_id)
+        if ref_key in version_errors:
             missing.append(physical)
-            errors.append(version_errors[turn_id])
+            errors.append(version_errors[ref_key])
             continue
-        local_ref = version_refs.get(turn_id, "")
+        local_ref = version_refs.get(ref_key, "")
         if not local_ref:
             try:
                 local_ref = await asyncio.to_thread(
                     _ensure_local_version_ref,
                     repo_root=repo_root,
-                    runtime_ctx=runtime_ctx,
+                    runtime_ctx=scoped_runtime_ctx,
                     version_id=turn_id,
                     env=env,
                 )
-                version_refs[turn_id] = local_ref
+                version_refs[ref_key] = local_ref
             except Exception as exc:
-                err = f"version_ref_unavailable:{turn_id}:{exc}"
-                version_errors[turn_id] = err
+                err = f"version_ref_unavailable:{conversation_id + '/' if conversation_id else ''}{turn_id}:{exc}"
+                version_errors[ref_key] = err
                 missing.append(physical)
                 errors.append(err)
                 continue
 
-        target_root = _artifact_outdir(outdir) / turn_id / "files"
+        artifact_root = _artifact_outdir(outdir)
+        target_root = (
+            artifact_root / f"conv_{conversation_id}" / turn_id / namespace
+            if conversation_id
+            else artifact_root / turn_id / namespace
+        )
         if await asyncio.to_thread(_git_path_is_file, repo_root=repo_root, ref_name=local_ref, tree_path=tree_path):
             try:
                 data = await asyncio.to_thread(_git_read_blob, repo_root=repo_root, ref_name=local_ref, tree_path=tree_path)
                 target = target_root / rel
                 await asyncio.to_thread(_write_blob, target, data)
-                rehosted.append(f"{turn_id}/files/{rel}")
+                target_key = f"{turn_id}/{namespace}/{rel}"
+                if conversation_id:
+                    target_key = f"conv_{conversation_id}/{target_key}"
+                rehosted.append(target_key)
             except Exception as exc:
-                errors.append(f"git_materialize_failed:{turn_id}/files/{rel}:{exc}")
+                display_key = f"{conversation_id + '/' if conversation_id else ''}{turn_id}/{namespace}/{rel}"
+                errors.append(f"git_materialize_failed:{display_key}:{exc}")
             continue
 
         candidates = await asyncio.to_thread(_git_list_tree, repo_root=repo_root, ref_name=local_ref, tree_path=tree_path)
         if not candidates:
-            missing.append(f"{turn_id}/files/{rel}")
+            missing_key = f"{turn_id}/{namespace}/{rel}"
+            if conversation_id:
+                missing_key = f"conv_{conversation_id}/{missing_key}"
+            missing.append(missing_key)
             continue
 
         pulled_any = False
         for candidate in candidates:
-            if not candidate.startswith("files/"):
+            prefix = f"{namespace}/"
+            if not candidate.startswith(prefix):
                 continue
-            rel_candidate = candidate[len("files/"):].strip("/")
-            target_key = f"{turn_id}/files/{rel_candidate}"
+            rel_candidate = candidate[len(prefix):].strip("/")
+            target_key = f"{turn_id}/{namespace}/{rel_candidate}"
+            if conversation_id:
+                target_key = f"conv_{conversation_id}/{target_key}"
             if target_key in seen_targets:
                 continue
             try:
@@ -889,6 +956,9 @@ async def hydrate_files_from_git_workspace(
             pulled_any = True
 
         if not pulled_any:
-            missing.append(f"{turn_id}/files/{rel}")
+            missing_key = f"{turn_id}/{namespace}/{rel}"
+            if conversation_id:
+                missing_key = f"conv_{conversation_id}/{missing_key}"
+            missing.append(missing_key)
 
     return {"rehosted": rehosted, "missing": missing, "errors": errors}

@@ -269,7 +269,7 @@ VISIBLE / ADDRESSABLE WORKSPACE MODEL
 - In this CUSTOM mode, folder pulls are resolved from conversation artifact history / hosting-backed artifact state, not from git.
 - Pulling `fi:turn_<id>.user.attachments/...`, `fi:turn_<id>.external.<kind>.attachments/<message_id>/...`, or legacy `fi:turn_<id>.attachments/...` is allowed only as an EXACT file ref. Do not expect binary descendants to appear automatically when you pull a folder.
 - If you need a binary file from hosting (xlsx, pptx, pdf, image, zip, etc.), name that exact `fi:` file in `react.pull`.
-- `react.pull(...)` is for historical side materialization only. Pulled content stays under its historical turn root and should be treated as readonly reference material.
+- `react.pull(paths=[...])` is for historical side materialization only. Pulled content stays under its historical turn root and should be treated as readonly reference material.
 - Use `react.checkout(mode="replace", paths=[...])` after `react.pull` when the active current-turn workspace itself must contain a runnable/searchable/testable project copy, as an editable copy of a historical `files/...` tree under `turn_<current>/files/...`.
 - Use `react.checkout(mode="overlay", paths=[...])` after `react.pull` when you want to import or overwrite selected historical files into an already materialized current-turn workspace.
 - `react.checkout(mode="replace", ...)` replaces the current-turn `files/` tree, then applies the requested `fi:turn_<id>.files/...` refs in order.
@@ -279,7 +279,7 @@ VISIBLE / ADDRESSABLE WORKSPACE MODEL
   - `turn_<id>/attachments/template.xlsx`
   - `turn_<id>/external/followup/attachments/mabc123/brief.pdf`
 - `react.read` still works on logical paths. Use it to inspect text context. Use `react.pull` when execution/code needs the local file.
-- Exec/code do NOT auto-materialize old files for you, and react.patch never edits historical paths directly. If a historical file is not already local, `react.pull(...)` must happen first. If you intend to edit it, checkout the pulled `files/...` ref into the current turn before patching.
+- Exec/code do NOT auto-materialize old files for you, and react.patch never edits historical paths directly. If a historical file is not already local, `react.pull(paths=[...])` must happen first. If you intend to edit it, checkout the pulled `files/...` ref into the current turn before patching.
 - Physical path syntax is defined once in [Artifacts & Paths]. Use its canonical qualified forms in file-writing tools and exec code.
 - Workspace/durable state is determined by path namespace, not by the tool that created the file. Anything under current-turn `turn_<current>/files/<scope>/...` is workspace/project state whether produced by react.write, react.patch, exec, or checkout. Anything under `turn_<current>/outputs/<scope>/...` is a deliverable/output artifact.
 - Keep the workspace tidy by reusing an existing top-level scope when you are continuing the same project:
@@ -339,7 +339,7 @@ VISIBLE / ADDRESSABLE WORKSPACE MODEL
 - Your main workspace, as you should mentally organize and inspect it, is `turn_<current>/files/...`.
 - `turn_<current>/outputs/...` is for current-turn produced artifacts that should not become workspace history.
 - Treat `turn_<current>/files/...` as the authoritative project tree for the turn.
-- `react.pull(fi:turn_<older>.files/...)` creates a version-scoped historical artifact view under `turn_<older>/files/...`; it does NOT implicitly replace or activate the current-turn worktree.
+- `react.pull(paths=["fi:turn_<older>.files/..."])` creates a version-scoped historical artifact view under `turn_<older>/files/...`; it does NOT implicitly replace or activate the current-turn worktree.
 - Use `react.checkout(mode="replace", paths=[...])` after `react.pull` when the current-turn workspace itself must contain a runnable/searchable/testable project copy, as an editable copy under `turn_<current>/files/...`.
 - Use `react.checkout(mode="overlay", paths=[...])` after `react.pull` when you want to import or overwrite selected historical files into an already materialized current-turn workspace.
 - `react.checkout(mode="replace", ...)` replaces the current-turn `files/` tree, then applies the requested `fi:turn_<id>.files/...` refs in order.
@@ -359,7 +359,7 @@ VISIBLE / ADDRESSABLE WORKSPACE MODEL
   5. If you later need to import or overwrite only part of that workspace from an older version, use `react.pull(paths=[...])` and then `react.checkout(mode="overlay", paths=[...])`.
   6. After checkout, work directly in `turn_<current>/files/<scope>/...` and use local git commands in the current-turn repo when they help.
   7. Use exact `fi:` refs for binaries; never assume folder pulls bring them.
-- Exec/code do NOT auto-materialize old files for you, and react.patch never edits historical paths directly. If a historical file is not already local, `react.pull(...)` must happen first. If you intend to edit it, checkout the pulled `files/...` ref into the current turn before patching.
+- Exec/code do NOT auto-materialize old files for you, and react.patch never edits historical paths directly. If a historical file is not already local, `react.pull(paths=[...])` must happen first. If you intend to edit it, checkout the pulled `files/...` ref into the current turn before patching.
 - Use local git commands against that current-turn repo root when they help you inspect history, diff, status, or create local commits.
 - Do NOT use `git pull`, `git fetch`, or `git push` from exec/code. Networked git synchronization is handled by engineering outside exec.
 - After `react.pull`, the materialized local paths are available under OUT_DIR using their physical form, for example:
@@ -478,7 +478,7 @@ HARD:
 - Exec code reads and writes PHYSICAL OUTPUT_DIR-relative paths.
 - Bundle namespace resolvers used inside exec return exec-local physical paths plus access mode. Those physical paths are not valid inputs to react.read or other normal react tools.
 - If exec code browses a resolved namespace root and finds useful descendants, this is discovery only. Emit logical refs by combining the original resolver input logical_ref with the discovered relative path; then use react.read on those logical refs to bring content into visible context.
-- Example: resolve `ks:<bundle-defined-root>`, inspect the returned directory in exec, find `foo/bar.py`, then emit `ks:<bundle-defined-root>/foo/bar.py` in an OUTPUT_DIR file or short user.log note so the agent can later call `react.read(["ks:<bundle-defined-root>/foo/bar.py"])`.
+- Example: resolve `ks:<bundle-defined-root>`, inspect the returned directory in exec, find `foo/bar.py`, then emit `ks:<bundle-defined-root>/foo/bar.py` in an OUTPUT_DIR file or short user.log note so the agent can later call `react.read(paths=["ks:<bundle-defined-root>/foo/bar.py"])`.
 - If you have a physical path, derive logical as above before calling react.read.
 - react.rg returns `root` plus hits with `path`, `size_bytes`, optional `text_symbols`/`line_count`/`logical_path`, and content `matches` with `read_item` ranges.
 - `path` is relative to the searched root and does not include that root prefix.
@@ -549,7 +549,7 @@ Using unsupported logical namespaces with fetch_ctx returns an error rather than
   - input `logical_ref = "ks:<bundle-defined-root>"`
   - discovered relative path `foo/bar.py`
   - emit logical ref `ks:<bundle-defined-root>/foo/bar.py`
-- Emit those logical refs in an `OUTPUT_DIR` file or short `user.log` note so the agent can later use `react.read(...)`.
+- Emit those logical refs in an `OUTPUT_DIR` file or short `user.log` note so the agent can later use `react.read(paths=[...])`.
 
 #### react.rg results
 - `react.rg` does not load full file contents into context.
@@ -560,9 +560,9 @@ Using unsupported logical namespaces with fetch_ctx returns an error rather than
   - `text_symbols` for recognizable text files
   - `line_count` for recognizable text files
   - `logical_path`: suitable for `react.read`
-- Content matches include line-numbered previews and `read_item` ranges. Pass `read_items` back to `react.read({"items":[...]})` to inspect exact regions.
-- Hits are readable via `react.read({"paths":[logical_path]})` or exact ranges via `react.read({"items":[read_item,...]})`.
-- If the text file is large, use `react.rg` to locate regions and `react.read({"items":[...]})` to inspect exact ranges. If the whole text must be visible, read it in sequential bounded ranges. Do not use exec output as an uncapped read channel; exec output is capped too.
+- Content matches include line-numbered previews and `read_item` ranges. Pass `read_items` back to `react.read(items=[...])` to inspect exact regions.
+- Hits are readable via `react.read(paths=[logical_path])` or exact ranges via `react.read(items=[read_item,...])`.
+- If the text file is large, use `react.rg` to locate regions and `react.read(items=[...])` to inspect exact ranges. If the whole text must be visible, read it in sequential bounded ranges. Do not use exec output as an uncapped read channel; exec output is capped too.
 - For exec diagnostics, prefer the exec tool result first because it already extracts the relevant exec-specific log segment. Read raw log files directly only when you specifically need that file itself.
 
 #### Large/capped data operating procedure
@@ -571,8 +571,8 @@ Using unsupported logical namespaces with fetch_ctx returns an error rather than
 - Model-visible text artifact previews are rendered with line numbers when shown on the timeline. These line numbers are viewing prefixes, not file content. Use them to choose `react.read` ranges and patch locations; do not copy the prefixes into full-file replacements or patch content.
 - Use a preview directly only when it is sufficient for the current decision and it does not show truncation/omission/cap markers. If you see `[TOOL RESULT PREVIEW TRUNCATED]`, `[TEXT FILE PREVIEW TRUNCATED]`, `[READ PREVIEW TRUNCATED]`, `omitted`, `capped`, or line windows like `[1-40]/180`, treat the visible text as incomplete.
 - Skills are not read-capped. `ks:` knowledge-space articles are uncapped only when no explicit `knowledge_read_visible_*` caps are configured; capped `ks:` behaves like capped text and must be recovered by ranges.
-- For large text artifacts, do not edit or judge the whole file from the initial preview. Use this loop: `react.read({"paths":[path],"stats_only":true})` for size/line metadata -> `react.rg` when the file is searchable, or known anchors when it is `ks:` -> `react.read({"items":[{"path":path,"line_start":...,"line_count":...}, ...]})` to inspect exact line ranges -> repeat for every affected region -> edit/process only after the needed regions are visible.
-- For source rows, use `react.read(["so:sources_pool[...]"])`. Web rows use `content` for fetched page body and `text` for search preview/snippet; use `content` first when you need evidence.
+- For large text artifacts, do not edit or judge the whole file from the initial preview. Use this loop: `react.read(paths=[path],stats_only=true)` for size/line metadata -> `react.rg` when the file is searchable, or known anchors when it is `ks:` -> `react.read(items=[{"path":path,"line_start":...,"line_count":...}, ...])` to inspect exact line ranges -> repeat for every affected region -> edit/process only after the needed regions are visible.
+- For source rows, use `react.read(paths=["so:sources_pool[...]"])`. Web rows use `content` for fetched page body and `text` for search preview/snippet; use `content` first when you need evidence.
 - If your answer or edit depends on a file/article as evidence, read the needed evidence into visible context. Skills must be read in full. `ks:` articles are read in full only when no explicit `knowledge_read_visible_*` cap is configured; if a deployment caps `ks:`, treat it like capped text. For capped text files/articles, use `react.read` range items to recover content by parts. For searchable `fi:` files, `react.rg` can supply ready-made `read_item` ranges. For capped `ks:` articles, start with `stats_only:true`, then request line windows by `line_start`/`line_count`.
 - Ranged reads always materialize the requested range even if the same logical path is already visible as a full file or preview block.
 - If the whole text must be visible and `text_symbols` is within visible caps, request `max_text_symbols >= text_symbols` and verify the returned status is not truncated. If it is over caps, read consecutive line or symbol ranges until the needed content is visible.
@@ -609,12 +609,12 @@ MEMORY_RECOVERY_GUIDE = """
 When older turns are pruned/compacted, recover only what is needed:
 
 visible exact path
-  -> react.read([path]) or react.pull([fi_path]) when exec needs a file
+  -> react.read(paths=[path]) or react.pull(paths=[fi_path]) when exec needs a file
 
 visible summary path (ws:/su:)
-  -> react.read([summary_path])
-  -> if refs are incomplete: react.read(["ar:turn_<id>.react.turn.index"])
-  -> batch exact refs: react.read([ar_or_tc_or_so_path, ...]) / react.pull([fi_path, ...])
+  -> react.read(paths=[summary_path])
+  -> if refs are incomplete: react.read(paths=["ar:turn_<id>.react.turn.index"])
+  -> batch exact refs: react.read(paths=[ar_or_tc_or_so_path, ...]) / react.pull(paths=[fi_path, ...])
 
 compacted current-turn prefix
   -> appears as [COMPACTED CURRENT TURN PREFIX]
@@ -839,7 +839,7 @@ EXEC_SNIPPET_RULES = f"""
 
 SOURCES_AND_CITATIONS_V2 = """
 [SOURCES & CITATIONS (HARD)]:
-When you produce source content with react.write(content), render that source
+When you produce source content with react.write(content=content), render that source
 content with rendering_tools.write_*, or generate final_answer, you must cite the
 sources of the information you used to produce that content if you synthesized
 this information from those sources.
@@ -1160,7 +1160,7 @@ REACT_DECISION_SHARED_OPERATING_GUIDE = f"""
   In `git` mode, the repo/history shell may exist while the worktree is still sparse. Treat project content as absent until you pulled or intentionally materialized it.
   In `git` mode, your main workspace is `turn_<current>/files/...`. Treat that current-turn tree as the authoritative project structure for the turn.
   In `git` mode, `turn_<current>/outputs/...` is a produced-artifact area, not part of workspace/git history.
-  Use `react.pull(fi:<older_turn>...)` when you need a specific historical version side-by-side as readonly local reference material.
+  Use `react.pull(paths=["fi:<older_turn>..."])` when you need a specific historical version side-by-side as readonly local reference material.
   Use `react.checkout(mode="replace", paths=[fi:...])` after pull when the active current-turn workspace itself must contain a runnable/searchable/testable editable copy.
   Use `react.checkout(mode="overlay", paths=[fi:...])` after pull when you want to import or overwrite selected historical files into an already materialized current-turn workspace.
   `react.checkout(mode="replace", ...)` replaces the current-turn `files/` tree, then applies the requested `fi:turn_<id>.files/...` refs in order.
@@ -1217,7 +1217,7 @@ Remember, you build the user timeline which allows them to efficiently stay in t
 
 [SKILLS (CRITICAL)]
 - Skills catalog is listed in [SKILL CATALOG]. Catalog only shows the skills registry briefly. Not the full content of the skills.
-- use react.read([...]) with skill IDs (e.g., sk:SK1 or sk:1 or sk:namespace.skill_id i.e. sk:public.pptx-press) to load them into visible context.
+- use react.read(paths=[...]) with skill IDs (e.g., sk:SK1 or sk:1 or sk:namespace.skill_id i.e. sk:public.pptx-press) to load them into visible context.
   Once the skill is 'read' you see it with 💡banner which denotes the expanded skill content in the timeline.
 
 [REACT EVENTS, TOOL CALLS AND TOOL RESULTS, ARTIFACTS]
@@ -1401,11 +1401,11 @@ still valid when needed; do not mix inline content and `ref:` in the same
    {{"action":"call_tool","notes":"search recent city transit updates","tool_call":{{"tool_id":"web_tools.web_search","params":{{"queries":["city transit update timetable","public transport service changes"],"objective":"Collect recent official updates and sources","n":6,"country":"DE"}}}}}}
 
 [react.read (CRITICAL)]
-- Use react.read([...]) to control what artifacts/skills are visible in your context so you can refer to them.
+- Use react.read(paths=[...]) to control what artifacts/skills are visible in your context so you can refer to them.
   If the artifacts are already visible in the timeline, you do not need to read them again. This is for artifacts which content is not visible.
 - Skills are never read-capped. `ks:` articles are read in full only when no explicit `knowledge_read_visible_*` caps are configured; capped `ks:` behaves like capped text.
 - For large/capped data, follow the Large/capped data operating procedure in the shared path guide. In short: `react.read` is visible-context retrieval, `react.rg` locates searchable text ranges, `so:sources_pool[...]` returns source rows, and capped text files/articles are recovered into context by bounded `react.read` ranges. Exec can compute or create smaller artifacts, but it is not an uncapped way to show full content to the model.
-- For large text artifacts, do not edit from a capped preview. Use `stats_only:true` to get line metadata, use `react.rg` to find anchors when searchable, pass returned or manual `read_item` ranges to `react.read({{"items":[...]}})`, repeat until every affected region is visible, then edit/process.
+- For large text artifacts, do not edit from a capped preview. Use `stats_only:true` to get line metadata, use `react.rg` to find anchors when searchable, pass returned or manual `read_item` ranges to `react.read(items=[...])`, repeat until every affected region is visible, then edit/process.
 - Example tool_call (load sources + artifact + skill):
   {{"tool_id":"react.read","params":["so:sources_pool[2,3]","fi:turn_<id>.files/some_art.md","sk:<skill id or num>"]}}
 - Example bounded preview:

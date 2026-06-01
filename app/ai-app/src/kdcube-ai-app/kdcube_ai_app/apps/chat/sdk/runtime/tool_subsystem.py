@@ -77,6 +77,7 @@ class ToolSubsystem:
             tools_specs: Optional[List[Dict[str, Any]]] = None,  # [{"module"| "ref", "alias", "use_sk": bool}]
             raw_tool_specs: Optional[List[Dict[str, Any]]] = None,
             tool_runtime: Optional[Dict[str, str]] = None,
+            event_specs: Optional[List[Dict[str, Any]]] = None,
             mcp_subsystem: Optional[Any] = None,
             hosting_service: Optional[Any] = None,
     ):
@@ -92,6 +93,7 @@ class ToolSubsystem:
             self.kv_cache = None
         self.raw_tool_specs = raw_tool_specs or []
         self._tool_runtime = tool_runtime or {}
+        self.raw_event_specs = event_specs or []
         self.mcp_subsystem = mcp_subsystem
         self.hosting_service = hosting_service
         self._mcp_entries: List[Dict[str, Any]] = []
@@ -163,6 +165,20 @@ class ToolSubsystem:
         # fast maps
         self._by_id = {e["id"]: e for e in self.tools_info}
         self._mods_by_alias = {m["alias"]: m for m in self._modules}
+
+        try:
+            from kdcube_ai_app.apps.chat.sdk.events import EventSourceSubsystem
+            self.event_sources = EventSourceSubsystem.from_tool_subsystem(
+                self,
+                event_specs=self.raw_event_specs,
+                logger=self.log,
+            )
+        except Exception as exc:
+            self.event_sources = None
+            try:
+                self.log.warning(f"failed to initialize event source subsystem: {exc}")
+            except Exception:
+                pass
 
         self._secure_stub = ToolStub()
 
@@ -777,6 +793,7 @@ class ToolSubsystem:
             "BUNDLE_SPEC": bundle_dict,
             "BUNDLE_ROOT_HOST": str(self.bundle_root) if self.bundle_root else None,
             "RAW_TOOL_SPECS": self.raw_tool_specs or [],
+            "EVENT_SOURCE_SPECS": self.raw_event_specs or [],
             "MCP_TOOL_SPECS": [
                 {"server_id": s.server_id, "alias": s.alias, "tools": s.tools}
                 for s in (getattr(self.mcp_subsystem, "mcp_specs", []) or [])
@@ -824,6 +841,7 @@ def create_tool_subsystem_with_mcp(
         tools_specs: Optional[List[Dict[str, Any]]] = None,
         raw_tool_specs: Optional[List[Dict[str, Any]]] = None,
         tool_runtime: Optional[Dict[str, str]] = None,
+        event_specs: Optional[List[Dict[str, Any]]] = None,
         mcp_tool_specs: Optional[List[Dict[str, Any]]] = None,
         mcp_services_config: Optional[Any] = None,
         mcp_env_json: Optional[str] = None,
@@ -856,6 +874,7 @@ def create_tool_subsystem_with_mcp(
         tools_specs=tools_specs,
         raw_tool_specs=raw_tool_specs,
         tool_runtime=tool_runtime,
+        event_specs=event_specs,
         mcp_subsystem=mcp_subsystem,
         hosting_service=hosting_service,
     )

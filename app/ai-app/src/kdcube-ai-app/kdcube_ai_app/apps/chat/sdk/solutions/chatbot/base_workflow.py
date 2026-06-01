@@ -1766,6 +1766,7 @@ class BaseWorkflow():
                     additional_instructions: Optional[str] = None,
                     instruction_body: Optional[str] = None,
                     instruction_blocks: Optional[List[str]] = None,
+                    event_source_specs: Optional[List[Dict[str, Any]]] = None,
                     story_snapshots_enabled: Optional[bool] = None,
                     include_tool_catalog: Optional[bool] = None,
                     include_skill_gallery: Optional[bool] = None) -> Any:
@@ -1801,6 +1802,7 @@ class BaseWorkflow():
             },
             raw_tool_specs=mod_tools_spec,
             tool_runtime=tools_runtime,
+            event_specs=event_source_specs,
             mcp_tool_specs=mcp_tools_spec or [],
             mcp_services_config=self._resolve_mcp_services_config(),
             mcp_env_json=os.environ.get("MCP_SERVICES") or "",
@@ -1823,6 +1825,7 @@ class BaseWorkflow():
             },
             mcp_subsystem=mcp_subsystem,
             tool_runtime=tools_runtime,
+            event_specs=event_source_specs,
             hosting_service=self.hosting_service,
         )
         skills = SkillsSubsystem(

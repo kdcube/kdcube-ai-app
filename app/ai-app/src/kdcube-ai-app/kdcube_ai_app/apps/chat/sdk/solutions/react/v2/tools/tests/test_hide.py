@@ -68,7 +68,7 @@ async def test_react_hide_hides_rendered_pdf_artifact_path(monkeypatch, tmp_path
         if b.get("path") == "fi:turn_hide.outputs/test/small_test.pdf" and b.get("hidden") is True
     ]
     assert hidden
-    assert "react.read(path)" in (hidden[0].get("replacement_text") or "")
+    assert "react.read(paths=[path])" in (hidden[0].get("replacement_text") or "")
 
 
 @pytest.mark.asyncio

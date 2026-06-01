@@ -190,9 +190,9 @@ Artifacts created by streamers:
   instance 2 record artifact -> react.record.tc_r2.i2
 
 Execution order stays sequential:
-  tc_r2_a = react.write(report.md)
-  tc_r2_b = react.write(brief.md)
-  tc_r2_c = react.read(report.md)
+  tc_r2_a = react.write(path="report.md")
+  tc_r2_b = react.write(path="brief.md")
+  tc_r2_c = react.read(paths=["report.md"])
 
 
 ROUND 3  supported now

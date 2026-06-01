@@ -204,9 +204,11 @@ def _init_git_workspace_repo(tmp_path):
     (repo / "files" / "projectA" / "src").mkdir(parents=True, exist_ok=True)
     (repo / "files" / "projectA" / "docs").mkdir(parents=True, exist_ok=True)
     (repo / "files" / "projectA" / "assets").mkdir(parents=True, exist_ok=True)
+    (repo / "snapshots" / "wizard").mkdir(parents=True, exist_ok=True)
     (repo / "files" / "projectA" / "src" / "app.py").write_text("print('git')\n", encoding="utf-8")
     (repo / "files" / "projectA" / "docs" / "readme.md").write_text("# readme\n", encoding="utf-8")
     (repo / "files" / "projectA" / "assets" / "logo.bin").write_bytes(b"\x00PNG")
+    (repo / "snapshots" / "wizard" / "state.yaml").write_text("step: classify\n", encoding="utf-8")
 
     subprocess.run(["git", "-C", str(repo), "add", "."], check=True, capture_output=True)
     subprocess.run(["git", "-C", str(repo), "commit", "-m", "init"], check=True, capture_output=True)
@@ -217,6 +219,30 @@ def _init_git_workspace_repo(tmp_path):
             str(repo),
             "update-ref",
             "refs/heads/kdcube/demo-tenant/demo-project/admin-user/conversation-1",
+            "HEAD",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "update-ref",
+            "refs/heads/kdcube/demo-tenant/demo-project/admin-user/conv_2",
+            "HEAD",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "update-ref",
+            "refs/kdcube/demo-tenant/demo-project/admin-user/conv_2/versions/turn_prev",
             "HEAD",
         ],
         check=True,
@@ -379,6 +405,8 @@ async def test_publish_current_turn_git_workspace_pushes_lineage_and_version_ref
     turn_root = await ensure_current_turn_git_workspace(runtime_ctx=runtime, outdir=outdir)
     (turn_root / "files" / "projectA" / "src").mkdir(parents=True, exist_ok=True)
     (turn_root / "files" / "projectA" / "src" / "new.py").write_text("print('new')\n", encoding="utf-8")
+    (turn_root / "snapshots" / "wizard").mkdir(parents=True, exist_ok=True)
+    (turn_root / "snapshots" / "wizard" / "current.yaml").write_text("state: ready\n", encoding="utf-8")
 
     result = await publish_current_turn_git_workspace(runtime_ctx=runtime, outdir=outdir)
 
@@ -410,6 +438,19 @@ async def test_publish_current_turn_git_workspace_pushes_lineage_and_version_ref
         text=True,
     )
     assert (show_version.stdout or "") == "print('new')\n"
+    show_snapshot = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(remote_repo),
+            "show",
+            "refs/kdcube/demo-tenant/demo-project/admin-user/conversation-1/versions/turn_ctx:snapshots/wizard/current.yaml",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert (show_snapshot.stdout or "") == "state: ready\n"
 
 
 @pytest.mark.asyncio
@@ -946,6 +987,68 @@ async def test_hydrate_workspace_paths_git_folder_pull_materializes_text_only(tm
     artifact_outdir = artifact_outdir_for(outdir)
     assert not (artifact_outdir / "turn_prev" / "files" / "projectA" / "assets" / "logo.bin").exists()
     assert (artifact_outdir / "turn_prev" / "files" / "projectA" / "src" / "app.py").read_text(encoding="utf-8") == "print('git')\n"
+
+
+@pytest.mark.asyncio
+async def test_hydrate_workspace_paths_git_snapshot_pull_materializes_text(tmp_path, monkeypatch):
+    monkeypatch.setenv("GIT_HTTP_TOKEN", "test-token")
+    monkeypatch.setenv("GIT_HTTP_USER", "x-access-token")
+    outdir = tmp_path / "out"
+    runtime = RuntimeCtx(
+        turn_id="turn_ctx",
+        outdir=str(outdir),
+        workdir=str(tmp_path / "work"),
+        tenant="demo-tenant",
+        project="demo-project",
+        user_id="admin-user",
+        conversation_id="conversation-1",
+        workspace_implementation="git",
+        workspace_git_repo=str(_init_git_workspace_repo(tmp_path)),
+    )
+    ctx = FakeBrowser(runtime)
+
+    result = await hydrate_workspace_paths(
+        ctx_browser=ctx,
+        paths=["turn_prev/snapshots/wizard"],
+        outdir=outdir,
+    )
+
+    assert result["errors"] == []
+    assert "turn_prev/snapshots/wizard/state.yaml" in result["rehosted"]
+    assert "turn_prev/snapshots/wizard" not in result["missing"]
+    artifact_outdir = artifact_outdir_for(outdir)
+    assert (artifact_outdir / "turn_prev" / "snapshots" / "wizard" / "state.yaml").read_text(encoding="utf-8") == "step: classify\n"
+
+
+@pytest.mark.asyncio
+async def test_hydrate_workspace_paths_git_cross_conversation_snapshot_pull(tmp_path, monkeypatch):
+    monkeypatch.setenv("GIT_HTTP_TOKEN", "test-token")
+    monkeypatch.setenv("GIT_HTTP_USER", "x-access-token")
+    outdir = tmp_path / "out"
+    runtime = RuntimeCtx(
+        turn_id="turn_ctx",
+        outdir=str(outdir),
+        workdir=str(tmp_path / "work"),
+        tenant="demo-tenant",
+        project="demo-project",
+        user_id="admin-user",
+        conversation_id="conversation-1",
+        workspace_implementation="git",
+        workspace_git_repo=str(_init_git_workspace_repo(tmp_path)),
+    )
+    ctx = FakeBrowser(runtime)
+
+    result = await hydrate_workspace_paths(
+        ctx_browser=ctx,
+        paths=["conv_conv_2/turn_prev/snapshots/wizard"],
+        outdir=outdir,
+    )
+
+    assert result["errors"] == []
+    assert "conv_conv_2/turn_prev/snapshots/wizard/state.yaml" in result["rehosted"]
+    assert "conv_conv_2/turn_prev/snapshots/wizard" not in result["missing"]
+    artifact_outdir = artifact_outdir_for(outdir)
+    assert (artifact_outdir / "conv_conv_2" / "turn_prev" / "snapshots" / "wizard" / "state.yaml").read_text(encoding="utf-8") == "step: classify\n"
 
 
 @pytest.mark.asyncio

@@ -19,14 +19,14 @@ TOOL_SPEC = {
     "id": "react.hide",
     "purpose": (
         "Hide a specific timeline path by replacing it with a short placeholder. "
-        "Use to reduce visible context size; can be restored via react.read(path)."
+        "Use to reduce visible context size; can be restored via react.read(paths=[path])."
         "Use only when the snippet is near the tail of your visible timeline of events. "
         "Enforced by RuntimeCtx.cache.editable_tail_size_in_tokens. "
         "This tool accepts a logical path (ar: fi: tc: so: ks:), not a search query."
     ),
     "args": {
         "path": "str (FIRST FIELD). Logical block path to hide (ar: fi: tc: so: ks:).",
-        "replacement": "str (SECOND FIELD). Short replacement text; will auto-append 'retrieve back with react.read(path)'.",
+        "replacement": "str (SECOND FIELD). Short replacement text; will auto-append 'retrieve back with react.read(paths=[path])'.",
     },
     "returns": "hide result (path + replaced count)",
     "constraints": [
@@ -49,9 +49,9 @@ async def handle_react_hide(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
         state["error"] = {"where": "tool_execution", "error": "missing_path", "managed": True}
         return state
     if not replacement:
-        replacement = "[HIDDEN] retrieve back with react.read(path)"
+        replacement = "[HIDDEN] retrieve back with react.read(paths=[path])"
     if "react.read" not in replacement:
-        replacement = replacement.rstrip() + "\n\n(retrieve back with react.read(path))"
+        replacement = replacement.rstrip() + "\n\n(retrieve back with react.read(paths=[path]))"
 
     turn_id = ctx_browser.runtime_ctx.turn_id
     tool_call_block(

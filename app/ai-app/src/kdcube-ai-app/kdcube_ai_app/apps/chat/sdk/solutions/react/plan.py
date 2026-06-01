@@ -795,7 +795,7 @@ def build_compacted_plan_history_blocks(
     lines = [
         "[COMPACTED PLAN HISTORY]",
         "Older plans were compacted out of the main visible stream.",
-        "Use react.read([...]) on the refs below if one becomes relevant again.",
+        "Use react.read(paths=[...]) on the refs below if one becomes relevant again.",
     ]
     preserved_blocks: List[Dict[str, Any]] = []
 

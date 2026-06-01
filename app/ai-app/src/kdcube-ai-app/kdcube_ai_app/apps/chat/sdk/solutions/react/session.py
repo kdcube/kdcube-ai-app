@@ -602,7 +602,7 @@ def _build_file_replacement(block: Dict[str, Any]) -> str:
 def _build_generic_replacement(block: Dict[str, Any], cfg: TruncationConfig) -> str:
     meta = block.get("meta") if isinstance(block.get("meta"), dict) else {}
     if meta.get("kind") == "cache_ttl_pruned":
-        return "[cache prune notice hidden; logical paths still exist. Use visible content first, react.read(path) only if needed.]"
+        return "[cache prune notice hidden; logical paths still exist. Use visible content first, react.read(paths=[path, ..]) only if needed.]"
     text = block.get("text")
     if isinstance(text, str) and text.strip():
         trimmed, _ = _truncate_text_block(text, cfg)
@@ -844,7 +844,7 @@ def _build_prune_message_text(ttl_seconds: int) -> str:
         "Pruning does NOT remove artifacts: their logical paths (fi:/ar:/so:/sk:) still exist. "
         "Do not assume a path must be re-read just because pruning happened: first scan the currently visible timeline. "
         "If the needed content or an ACTIVE 💡 skill block is visible, use it directly. "
-        "Use react.read(path) only when the exact needed content is not visible."
+        "Use react.read(paths=[path]) only when the exact needed content is not visible."
     )
 
 

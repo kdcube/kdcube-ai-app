@@ -2550,7 +2550,7 @@ class Timeline:
                 lines.extend(recovery_lines)
         elif path:
             lines.append("recovery:")
-            lines.append(f"- react.read([\"{path}\"]) returns a bounded visible preview.")
+            lines.append(f"- react.read(paths=[\"{path}\"]) returns a bounded visible preview.")
             lines.append(f"- For large text, use react.read stats_only and then ranged react.read items against \"{path}\".")
             lines.append("- Exec output is capped; use exec only to compute or create smaller derived artifacts.")
         else:
@@ -2563,7 +2563,7 @@ class Timeline:
         lines: List[str] = []
         if path.startswith("fi:"):
             lines.append("- Use react.rg on the file to find relevant regions before editing.")
-            lines.append("- Pass react.rg read_item ranges to react.read({\"items\":[...]}) for exact visible regions.")
+            lines.append("- Pass react.rg read_item ranges to react.read(items=[...]) for exact visible regions.")
             if physical_path:
                 lines.append("- For exec, derive the physical OUT_DIR path from logical_path only when computation needs the file.")
         elif path.startswith("tc:"):
@@ -3045,7 +3045,7 @@ class Timeline:
             f"turn_id: {tid}",
             "position: current-turn prefix compacted here; newer timeline blocks below are normal",
             "use: continue from the timeline below; this is not prior conversation memory",
-            "recovery: exact source blocks remain recoverable by logical path; use react.read(path), stats_only, and ranged react.read items",
+            "recovery: exact source blocks remain recoverable by logical path; use react.read(paths=[path]), stats_only, and ranged react.read items",
             "",
             "semantic_progress:",
         ]

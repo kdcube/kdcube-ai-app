@@ -15,6 +15,7 @@ EXECUTOR_STRIP_RUNTIME_GLOBAL_KEYS = frozenset(
         "COMM_SPEC",
         "BUNDLE_SNAPSHOT_URI",
         "EXEC_SNAPSHOT",
+        "EVENT_SOURCE_SPECS",
         "MCP_SERVICES",
         "MCP_TOOL_SPECS",
         "PORTABLE_SPEC",

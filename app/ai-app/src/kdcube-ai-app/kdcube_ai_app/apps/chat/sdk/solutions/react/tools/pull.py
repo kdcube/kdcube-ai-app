@@ -13,7 +13,9 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.solution_workspace import (
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import split_logical_artifact_ref
 from kdcube_ai_app.apps.chat.sdk.solutions.react.workspace import (
+    WORKSPACE_IMPLEMENTATION_GIT,
     _infer_physical_from_fi,
+    get_workspace_implementation,
     _tree_summary_for_relpaths,
     hydrate_workspace_paths,
     physical_to_logical_artifact_path,
@@ -31,7 +33,8 @@ TOOL_SPEC = {
         "Materialize selected fi: artifact refs locally under OUT_DIR so later exec/code can use them by physical path. "
         "Use this for versioned files/folders you need locally as historical reference material. "
         "Pulled content stays under its historical turn root and does not become the editable current-turn workspace. "
-        "Folder pulls are supported only for fi:turn_<id>.files/<scope-or-subtree>. "
+        "Folder pulls are supported for git-backed fi:turn_<id>.files/<scope-or-subtree> and "
+        "fi:turn_<id>.snapshots/<scope-or-subtree>. "
         "Non-workspace outputs and attachment/binary pulls must name exact refs. "
         "An fi:conv_<conversation_id>.turn_<id>... path belongs to another conversation and is resolved in that conversation. "
         "Current-conversation fi: paths do not have the conv_ segment."
@@ -40,6 +43,7 @@ TOOL_SPEC = {
         "paths": (
             "list[str] of fi: refs to materialize locally. "
             "Allowed: fi:turn_<id>.files/<path> (exact file or subtree), "
+            "fi:turn_<id>.snapshots/<path> (exact text snapshot or subtree when git-backed), "
             "fi:turn_<id>.outputs/<file> (exact file only), "
             "fi:turn_<id>.user.attachments/<file> (exact file only), "
             "fi:turn_<id>.external.<kind>.attachments/<message_id>/<file> (exact file only), "
@@ -171,6 +175,7 @@ async def handle_react_pull(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
     invalid: List[Dict[str, Any]] = []
     accepted_by_conversation: Dict[str, List[str]] = {}
     seen_physical: set[tuple[str, str]] = set()
+    workspace_impl = get_workspace_implementation(getattr(ctx_browser, "runtime_ctx", None))
     for req in requested:
         raw = req["path"]
         embedded_conversation_id, _, _, _ = split_logical_artifact_ref(raw)
@@ -190,7 +195,8 @@ async def handle_react_pull(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
                 "reason": "unresolvable_fi_ref",
             })
             continue
-        if "/attachments/" in physical or "/outputs/" in physical or "/snapshots/" in physical:
+        snapshot_can_use_workspace = "/snapshots/" in physical and workspace_impl == WORKSPACE_IMPLEMENTATION_GIT
+        if "/attachments/" in physical or "/outputs/" in physical or ("/snapshots/" in physical and not snapshot_can_use_workspace):
             artifact = await resolve_logical_artifact(
                 ctx_browser=ctx_browser,
                 path=raw,

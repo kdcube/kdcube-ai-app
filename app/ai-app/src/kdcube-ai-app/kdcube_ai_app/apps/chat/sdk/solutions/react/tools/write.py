@@ -164,7 +164,7 @@ async def handle_react_write(*, react: Any, ctx_browser: Any, state: Dict[str, A
             ext_notice = {
                 "code": "protocol_violation.write_extension_mismatch",
                 "message": (
-                    "react.write(canvas) supports only text formats. "
+                    "react.write(channel=canvas) supports only text formats. "
                     "Use .md/.html/.mmd/.json/.yaml/.txt/.xml or use rendering_tools.write_* for binary files."
                 ),
                 "extra": {"path": artifact_name, "ext": ext},

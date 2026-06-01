@@ -17,6 +17,7 @@ except Exception:
 
 import kdcube_ai_app.apps.chat.sdk.tools.backends.web.search_backends as search_backends
 import kdcube_ai_app.apps.chat.sdk.tools.backends.web.fetch_backends as fetch_backends
+from kdcube_ai_app.apps.chat.sdk.events import event_source
 
 # Bound at runtime by ToolManager
 _SERVICE = None
@@ -67,6 +68,18 @@ class WebTools:
     #         "- 'precision': direct answers only, 20-50% (narrow questions)"
     #     )
     # )
+    @event_source(
+        id="{alias}.web_search",
+        emits=("web.search.results",),
+        policies={
+            "react": {
+                "sources": [
+                    {"name": "react.sources.merge_to_pool"},
+                ],
+            },
+        },
+        description="Web search results are canonical source rows for ReAct sources_pool.",
+    )
     @kernel_function(
         name="web_search",
         description=(
@@ -217,6 +230,18 @@ class WebTools:
     #         "Without objective, refinement is ignored and full content is returned."
     #     )
     # )
+    @event_source(
+        id="{alias}.web_fetch",
+        emits=("web.fetch.results",),
+        policies={
+            "react": {
+                "sources": [
+                    {"name": "react.sources.merge_to_pool"},
+                ],
+            },
+        },
+        description="Fetched URL contents are canonical source rows for ReAct sources_pool.",
+    )
     @kernel_function(
         name="web_fetch",
         description=(
