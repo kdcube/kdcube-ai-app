@@ -76,7 +76,7 @@ Redis Stream by tenant/project/queue
 proc worker
   |
   | acquire per-task lock
-  | build ChatTaskPayload
+  | build ExternalEventPayload
   | bind bundle_call_context.kind=background_job
   v
 bundle @on_job
@@ -96,7 +96,7 @@ stream pending entry cleared
 2. The stream writes to a tenant/project stream by queue, for example registered-user jobs and privileged jobs.
 3. The processor loop polls chat work and background work in a simple round-robin.
 4. For background work, the processor uses a Redis Stream consumer group and `XAUTOCLAIM` to recover idle pending jobs.
-5. The processor builds a `ChatTaskPayload` with operation `__kdcube_on_job__`
+5. The processor builds a `ExternalEventPayload` with operation `__kdcube_on_job__`
    and sets `bundle_call_context.kind=background_job`.
 6. The proc runtime loads the target bundle and calls its async `@on_job` method.
 7. The stream message is acknowledged only after the handler returns. Cancellation leaves the message pending for recovery.

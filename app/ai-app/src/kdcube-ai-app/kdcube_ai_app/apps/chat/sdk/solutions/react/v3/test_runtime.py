@@ -667,7 +667,7 @@ async def test_decision_node_cancels_inflight_phase_on_steer():
     task = asyncio.create_task(solver._decision_node(state))
     await asyncio.sleep(0.05)
     solver.ctx_browser.timeline.last_external_event_seq = 9
-    await solver.on_timeline_event(
+    await solver.on_external_event(
         type="steer",
         event=SimpleNamespace(sequence=9, text="stop now", message_id="evt_9"),
         blocks=[],
@@ -681,7 +681,7 @@ async def test_decision_node_cancels_inflight_phase_on_steer():
 
 
 @pytest.mark.asyncio
-async def test_on_timeline_event_ignores_steer_for_other_turn():
+async def test_on_external_event_ignores_steer_for_other_turn():
     solver = _solver_stub()
     interrupted = {"count": 0}
 
@@ -691,7 +691,7 @@ async def test_on_timeline_event_ignores_steer_for_other_turn():
 
     solver._interrupt_active_phase_for_steer = _fake_interrupt
 
-    handled = await solver.on_timeline_event(
+    handled = await solver.on_external_event(
         type="steer",
         event=SimpleNamespace(
             sequence=14,
@@ -711,7 +711,7 @@ async def test_on_timeline_event_ignores_steer_for_other_turn():
 
 
 @pytest.mark.asyncio
-async def test_on_timeline_event_followup_awards_iteration_credit_for_current_turn():
+async def test_on_external_event_followup_awards_iteration_credit_for_current_turn():
     solver = _solver_stub()
     solver._reactive_iteration_credit_cap = 4
     solver.ctx_browser = SimpleNamespace(
@@ -721,7 +721,7 @@ async def test_on_timeline_event_followup_awards_iteration_credit_for_current_tu
         ),
     )
 
-    handled = await solver.on_timeline_event(
+    handled = await solver.on_external_event(
         type="followup",
         event=SimpleNamespace(
             sequence=15,
@@ -741,7 +741,7 @@ async def test_on_timeline_event_followup_awards_iteration_credit_for_current_tu
 
 
 @pytest.mark.asyncio
-async def test_on_timeline_event_accepts_current_server_owner_with_stale_client_target():
+async def test_on_external_event_accepts_current_server_owner_with_stale_client_target():
     solver = _solver_stub()
     solver._reactive_iteration_credit_cap = 4
     solver.ctx_browser = SimpleNamespace(
@@ -751,7 +751,7 @@ async def test_on_timeline_event_accepts_current_server_owner_with_stale_client_
         ),
     )
 
-    handled = await solver.on_timeline_event(
+    handled = await solver.on_external_event(
         type="followup",
         event=SimpleNamespace(
             sequence=16,
@@ -880,7 +880,7 @@ async def test_tool_execution_node_cancels_inflight_phase_on_steer(monkeypatch):
     task = asyncio.create_task(solver._tool_execution_node(state))
     await asyncio.sleep(0.05)
     solver.ctx_browser.timeline.last_external_event_seq = 11
-    await solver.on_timeline_event(
+    await solver.on_external_event(
         type="steer",
         event=SimpleNamespace(sequence=11, text="stop tool", message_id="evt_11"),
         blocks=[],
@@ -936,7 +936,7 @@ async def test_decision_node_direct_phase_watcher_interrupts_without_browser_lis
             for event in events:
                 self.timeline.last_external_event_seq = int(getattr(event, "sequence", 0) or 0)
                 self.timeline.last_external_event_id = str(getattr(event, "stream_id", "") or "")
-                await self.react.on_timeline_event(type=str(event.kind), event=event, blocks=[{"type": "user.steer"}])
+                await self.react.on_external_event(type=str(event.kind), event=event, blocks=[{"type": "user.steer"}])
             return len(events)
 
         def current_turn_blocks(self):

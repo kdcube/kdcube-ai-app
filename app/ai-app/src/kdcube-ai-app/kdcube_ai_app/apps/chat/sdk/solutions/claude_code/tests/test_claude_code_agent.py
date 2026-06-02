@@ -10,11 +10,11 @@ import pytest
 
 from kdcube_ai_app.apps.chat.emitters import ChatCommunicator
 from kdcube_ai_app.apps.chat.sdk.protocol import (
-    ChatTaskActor,
-    ChatTaskPayload,
-    ChatTaskRequest,
-    ChatTaskRouting,
-    ChatTaskUser,
+    ExternalEventActor,
+    ExternalEventPayload,
+    ExternalEventRequest,
+    ExternalEventRouting,
+    ExternalEventUser,
 )
 from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import bind_current_request_context
 from kdcube_ai_app.apps.chat.sdk.skills.skills_registry import set_skills_descriptor
@@ -98,20 +98,20 @@ class _RecordingAccountingBackend:
         self.writes.append((path, content))
 
 
-def _ctx() -> ChatTaskPayload:
-    return ChatTaskPayload(
-        request=ChatTaskRequest(request_id="req-claude-code"),
-        routing=ChatTaskRouting(
+def _ctx() -> ExternalEventPayload:
+    return ExternalEventPayload(
+        request=ExternalEventRequest(request_id="req-claude-code"),
+        routing=ExternalEventRouting(
             session_id="sid-claude",
             conversation_id="conv-claude",
             turn_id="turn-claude",
             bundle_id="bundle.claude",
         ),
-        actor=ChatTaskActor(
+        actor=ExternalEventActor(
             tenant_id="demo-tenant",
             project_id="demo-project",
         ),
-        user=ChatTaskUser(
+        user=ExternalEventUser(
             user_type="privileged",
             user_id="admin-user-1",
             fingerprint="fingerprint-1",

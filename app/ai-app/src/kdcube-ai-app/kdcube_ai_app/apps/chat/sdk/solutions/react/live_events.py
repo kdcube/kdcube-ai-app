@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict
+
+from kdcube_ai_app.apps.chat.sdk.solutions.react.events.core import event_source_id_for_external_kind
 
 
 def _as_int(value: Any, default: int = 0) -> int:
@@ -18,6 +20,34 @@ def _event_payload(event: Any) -> Dict[str, Any]:
     if isinstance(raw, dict):
         return dict(raw)
     return {}
+
+
+def _source_default(runtime_ctx: Any, event_source_id: str) -> Any:
+    event_sources = getattr(runtime_ctx, "event_sources", None)
+    if event_sources is None:
+        return None
+    by_event_source_id = getattr(event_sources, "by_event_source_id", None)
+    if not callable(by_event_source_id):
+        return None
+    try:
+        return by_event_source_id(event_source_id)
+    except Exception:
+        return None
+
+
+def _bool_from_any(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "y", "on"}:
+        return True
+    if text in {"0", "false", "no", "n", "off"}:
+        return False
+    return default
 
 
 def compute_reactive_iteration_credit_cap(*, runtime_ctx: Any, base_max_iterations: int) -> int:
@@ -44,24 +74,38 @@ def resolve_reactive_iteration_credit(
         return 0
 
     payload = _event_payload(event)
-    policy = payload.get("timeline_event_policy") if isinstance(payload.get("timeline_event_policy"), dict) else {}
+    external_event = payload.get("external_event") if isinstance(payload.get("external_event"), dict) else {}
+    routing = external_event.get("routing") if isinstance(external_event.get("routing"), dict) else {}
+    event_source_id = str(external_event.get("event_source_id") or "").strip()
+    if not event_source_id:
+        event_source_id = event_source_id_for_external_kind(type_norm)
+    source = _source_default(runtime_ctx, event_source_id)
 
-    explicit_reactive = policy.get("continue_react_when_active")
-    if explicit_reactive is None:
-        explicit_reactive = payload.get("continue_react_when_active")
-    if explicit_reactive is None:
-        explicit_reactive = payload.get("reactive")
-
-    is_reactive = type_norm == "followup" or bool(explicit_reactive)
+    if type_norm == "followup":
+        is_reactive = True
+    elif type_norm == "external_event":
+        # Authored external events are expensive when reactive because they run
+        # ReAct. The transported occurrence must carry the effective decision;
+        # source declarations may provide credit defaults, but they do not wake
+        # ReAct by themselves.
+        if "reactive" in routing:
+            is_reactive = _bool_from_any(routing.get("reactive"), False)
+        else:
+            is_reactive = False
+    else:
+        if getattr(source, "reactive", None) is not None:
+            is_reactive = bool(getattr(source, "reactive"))
+        else:
+            is_reactive = False
     if not is_reactive:
         return 0
 
-    per_event = max(1, _as_int(getattr(runtime_ctx, "reactive_event_iteration_credit_per_event", 1), 1))
-    override = policy.get("iteration_credit")
-    if override is None:
-        override = payload.get("iteration_credit")
-    if override is not None:
-        per_event = max(1, _as_int(override, per_event))
+    per_event = max(0, _as_int(getattr(runtime_ctx, "reactive_event_iteration_credit_per_event", 1), 1))
+    source_credit = getattr(source, "iteration_credit", None)
+    if source_credit is not None:
+        per_event = max(0, _as_int(source_credit, per_event))
+    if "iteration_credit" in routing:
+        per_event = max(0, _as_int(routing.get("iteration_credit"), per_event))
     return per_event
 
 

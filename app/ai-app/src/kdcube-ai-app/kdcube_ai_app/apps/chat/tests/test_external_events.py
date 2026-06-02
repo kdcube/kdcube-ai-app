@@ -8,7 +8,7 @@ import pytest
 
 from kdcube_ai_app.apps.chat.external_events import build_conversation_external_event_source
 from kdcube_ai_app.apps.chat.processor import EnhancedChatRequestProcessor
-from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
+from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
 
 
 class _FakeRedis:
@@ -628,7 +628,7 @@ async def test_processor_promotes_next_external_event_from_shared_log():
         project="p1",
         conversation_id="conv1",
     )
-    current_payload = ChatTaskPayload.model_validate(
+    current_payload = ExternalEventPayload.model_validate(
         {
             "meta": {"task_id": "task-current", "created_at": 1.0, "instance_id": "proc-1"},
             "routing": {"bundle_id": "bundle.demo", "session_id": "sess-1", "conversation_id": "conv1", "turn_id": "turn-1"},
@@ -681,7 +681,7 @@ async def test_processor_discards_stale_steers_before_promoting_followup():
         project="p1",
         conversation_id="conv1",
     )
-    current_payload = ChatTaskPayload.model_validate(
+    current_payload = ExternalEventPayload.model_validate(
         {
             "meta": {"task_id": "task-current", "created_at": 1.0, "instance_id": "proc-1"},
             "routing": {"bundle_id": "bundle.demo", "session_id": "sess-1", "conversation_id": "conv1", "turn_id": "turn-1"},

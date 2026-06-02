@@ -27,7 +27,7 @@ from typing import Dict, Any
 from kdcube_ai_app.apps.chat.emitters import ChatCommunicator
 from kdcube_ai_app.apps.chat.sdk.context.vector.conv_index import ConvIndex
 from kdcube_ai_app.apps.chat.sdk.context.vector.conv_ticket_store import ConvTicketStore
-from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
+from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.base_workflow import BaseWorkflow
 from kdcube_ai_app.apps.chat.sdk.runtime.scratchpad import CTurnScratchpad
 from kdcube_ai_app.apps.chat.sdk.util import _tstart, _tend
@@ -55,7 +55,7 @@ class WithReactWorkflow(BaseWorkflow):
         model_service: ModelServiceBase,
         conv_ticket_store: ConvTicketStore,
         config: Config,
-        comm_context: ChatTaskPayload,
+        comm_context: ExternalEventPayload,
         ctx_client: Any = None,
         pg_pool: Any = None,
         redis: Any = None,

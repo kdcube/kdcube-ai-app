@@ -31,6 +31,12 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.events.exploration import (
     structured_result_source_policies,
     write_tool_source_policies,
 )
+from kdcube_ai_app.apps.chat.sdk.solutions.react.events.listener import (
+    LiveExternalEventOwnerLease,
+    acquire_live_external_event_owner,
+    release_live_external_event_owner,
+    run_live_external_event_listener_loop,
+)
 from kdcube_ai_app.apps.chat.sdk.solutions.react.events.projection import (
     TIMELINE_SEGMENT_META_KEY,
     apply_event_source_transformers,
@@ -52,7 +58,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.events.policies import (
     get_react_event_policies,
     react_event_policy,
     react_event_policy_definition,
-    timeline_event_policy,
+    timeline_projection_policy,
     tool_call_validation_policy,
     unknown_policy_paths,
 )
@@ -67,7 +73,9 @@ __all__ = [
     "ReactEventPolicy",
     "ReactEventPolicies",
     "ReactEventPolicyBinding",
+    "LiveExternalEventOwnerLease",
     "TIMELINE_SEGMENT_META_KEY",
+    "acquire_live_external_event_owner",
     "announce_event_policy",
     "apply_event_source_transformers",
     "block_event_id",
@@ -92,10 +100,12 @@ __all__ = [
     "produce_event_source_announce_blocks",
     "react_event_policy",
     "react_event_policy_definition",
+    "release_live_external_event_owner",
+    "run_live_external_event_listener_loop",
     "stamp_event_identity",
     "stamp_event_identity_many",
     "structured_result_source_policies",
-    "timeline_event_policy",
+    "timeline_projection_policy",
     "tool_call_validation_policy",
     "unknown_policy_paths",
     "write_tool_source_policies",

@@ -7,6 +7,8 @@ from typing import Any, Dict, Optional, Literal, List
 from datetime import datetime
 from pydantic import BaseModel, Field
 
+from kdcube_ai_app.apps.chat.sdk.event_identity import DEFAULT_REACT_AGENT_ID
+
 
 # -----------------------------
 # History / client-side request
@@ -32,7 +34,7 @@ class ServiceCtx(_ProtoBase):
     tenant: Optional[str] = None
     project: Optional[str] = None
     user: Optional[str] = None
-    user_obj: Optional[ChatTaskUser] = None
+    user_obj: Optional[ExternalEventUser] = None
 
 
 class ConversationCtx(_ProtoBase):
@@ -117,9 +119,9 @@ class ChatEnvelope(_ProtoBase):
         )
 
 
-# ---- queue payload used between web and processor ----
+# ---- event payload used between ingress and processor ----
 
-class ChatTaskRequest(_ProtoBase):
+class ExternalEventRequest(_ProtoBase):
     message: Optional[str] = None
     chat_history: List[Dict[str, Any]] = []
     operation: Optional[str] = None
@@ -128,7 +130,7 @@ class ChatTaskRequest(_ProtoBase):
     request_id: Optional[str] = None
 
 
-class ChatTaskRouting(_ProtoBase):
+class ExternalEventRouting(_ProtoBase):
     bundle_id: str
     session_id: str
     conversation_id: Optional[str] = None
@@ -136,12 +138,12 @@ class ChatTaskRouting(_ProtoBase):
     socket_id: Optional[str] = None
 
 
-class ChatTaskActor(_ProtoBase):
+class ExternalEventActor(_ProtoBase):
     tenant_id: Optional[str] = None
     project_id: Optional[str] = None
 
 
-class ChatTaskUser(_ProtoBase):
+class ExternalEventUser(_ProtoBase):
     user_type: str
     user_id: Optional[str] = None
     username: Optional[str] = None
@@ -153,34 +155,62 @@ class ChatTaskUser(_ProtoBase):
     utc_offset_min: Optional[int] = None
 
 
-class ChatTaskConfig(_ProtoBase):
+class ExternalEventConfig(_ProtoBase):
     values: Dict[str, Any] = {}
 
 
-class ChatTaskMeta(_ProtoBase):
+class ExternalEventMeta(_ProtoBase):
     task_id: str
     created_at: float
     instance_id: Optional[str] = None
 
 
-class ChatTaskAccounting(_ProtoBase):
+class ExternalEventAccounting(_ProtoBase):
     envelope: Dict[str, Any] = {}   # whatever your accounting layer produces
 
 
-class ChatTaskContinuation(_ProtoBase):
+class ExternalEventContinuation(_ProtoBase):
     kind: Literal["regular", "followup", "steer"] = "regular"
     explicit: bool = False
     active_turn_id: Optional[str] = None
     target_turn_id: Optional[str] = None
 
 
-class ChatTaskPayload(_ProtoBase):
-    meta: Optional[ChatTaskMeta] = None
-    routing: Optional[ChatTaskRouting] = None
-    actor: Optional[ChatTaskActor] = None
-    user: Optional[ChatTaskUser] = None
-    request: Optional[ChatTaskRequest] = None
-    config: Optional[ChatTaskConfig] = None
-    accounting: Optional[ChatTaskAccounting] = None
-    continuation: Optional[ChatTaskContinuation] = None
+class ExternalEvent(_ProtoBase):
+    """
+    Event occurrence metadata for the processor envelope.
+
+    This section identifies what happened (`kind`), which agent lane owns it,
+    which event source/policies describe it, and whether it may wake or extend
+    a runtime.
+    """
+
+    kind: str = "message"
+    agent_id: str = DEFAULT_REACT_AGENT_ID
+    event_source_id: Optional[str] = None
+    event_id: Optional[str] = None
+    sequence: Optional[int] = None
+    reactive: Optional[bool] = True
+    source: Optional[str] = None
+    out_of_turn: bool = False
+
+
+class ExternalEventPayload(_ProtoBase):
+    """
+    Top-level transport/processor payload for an accepted event occurrence.
+
+    It is not necessarily chat and not necessarily a task. A user message,
+    attachment, followup, steer, authored UI event, webhook event, or background
+    work item can all travel as this payload. Chat is one event kind.
+    """
+
+    meta: Optional[ExternalEventMeta] = None
+    routing: Optional[ExternalEventRouting] = None
+    actor: Optional[ExternalEventActor] = None
+    user: Optional[ExternalEventUser] = None
+    request: Optional[ExternalEventRequest] = None
+    config: Optional[ExternalEventConfig] = None
+    accounting: Optional[ExternalEventAccounting] = None
+    continuation: Optional[ExternalEventContinuation] = None
+    event: Optional[ExternalEvent] = None
     bundle_call_context: Dict[str, Any] = Field(default_factory=dict)

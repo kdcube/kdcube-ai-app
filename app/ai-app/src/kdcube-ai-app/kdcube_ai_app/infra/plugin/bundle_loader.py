@@ -28,11 +28,11 @@ from pathlib import Path
 from typing import Callable, Optional, Tuple, Any, Dict, List
 
 from kdcube_ai_app.apps.chat.sdk.protocol import (
-    ChatTaskActor,
-    ChatTaskPayload,
-    ChatTaskRequest,
-    ChatTaskRouting,
-    ChatTaskUser,
+    ExternalEventActor,
+    ExternalEventPayload,
+    ExternalEventRequest,
+    ExternalEventRouting,
+    ExternalEventUser,
 )
 from kdcube_ai_app.infra.service_hub.inventory import AgentLogger
 _log = logging.getLogger("kdcube.plugin.loader")
@@ -56,6 +56,7 @@ MCP_ENDPOINT_ATTR = "__bundle_mcp_endpoint__"
 UI_WIDGET_ATTR = "__bundle_ui_widget__"
 ON_MESSAGE_ATTR = "__bundle_on_message__"
 ON_JOB_ATTR = "__bundle_on_job__"
+PROCESS_OFFLINE_EVENTS_ATTR = "__bundle_process_offline_events__"
 UI_MAIN_ATTR = "__bundle_ui_main__"
 CRON_JOB_ATTR = "__bundle_cron_job__"
 BUNDLE_VENV_ATTR = "__bundle_venv__"
@@ -129,6 +130,11 @@ class OnJobSpec:
 
 
 @dataclass(frozen=True)
+class ProcessOfflineEventsSpec:
+    method_name: str
+
+
+@dataclass(frozen=True)
 class UIMainSpec:
     method_name: str
 
@@ -155,6 +161,7 @@ class BundleInterfaceManifest:
     ui_main: UIMainSpec | None = None
     on_message: OnMessageSpec | None = None
     on_job: OnJobSpec | None = None
+    process_offline_events: ProcessOfflineEventsSpec | None = None
     scheduled_jobs: tuple[CronJobSpec, ...] = ()
 
 
@@ -771,6 +778,25 @@ def on_job(fn):
         fn,
         ON_JOB_ATTR,
         OnJobSpec(method_name=getattr(fn, "__name__", "on_job")),
+    )
+    return fn
+
+
+def process_offline_events(fn):
+    """
+    Mark an entrypoint method that materializes accepted external events while
+    no live turn owns the target lane.
+
+    The processor discovers this surface on the bundle entrypoint. The method
+    is expected to drain/materialize non-reactive events for the supplied
+    id-card and return before the first reactive event that must start normal
+    turn processing.
+    """
+
+    setattr(
+        fn,
+        PROCESS_OFFLINE_EVENTS_ATTR,
+        ProcessOfflineEventsSpec(method_name=getattr(fn, "__name__", "process_offline_events")),
     )
     return fn
 
@@ -1582,7 +1608,7 @@ def _cache_key(spec: BundleSpec) -> str:
 def cache_key_for_spec(spec: BundleSpec) -> str:
     return _cache_key(spec)
 
-def _tp_from_ctx(ctx: ChatTaskPayload) -> tuple[Optional[str], Optional[str]]:
+def _tp_from_ctx(ctx: ExternalEventPayload) -> tuple[Optional[str], Optional[str]]:
     t = getattr(getattr(ctx, "actor", None), "tenant_id", None)
     p = getattr(getattr(ctx, "actor", None), "project_id", None)
     if not t or not p:
@@ -1590,7 +1616,7 @@ def _tp_from_ctx(ctx: ChatTaskPayload) -> tuple[Optional[str], Optional[str]]:
         p = p or getattr(getattr(ctx, "meta", None), "project", None)
     return t, p
 
-def _bundle_load_key(spec: BundleSpec, comm_context: ChatTaskPayload) -> str:
+def _bundle_load_key(spec: BundleSpec, comm_context: ExternalEventPayload) -> str:
     t, p = _tp_from_ctx(comm_context)
     return f"{_cache_key(spec)}::{t or 'default'}::{p or 'default'}"
 
@@ -1748,7 +1774,7 @@ async def _run_bundle_on_load_hook(
     mod: types.ModuleType,
     spec: BundleSpec,
     config: Any,
-    comm_context: ChatTaskPayload,
+    comm_context: ExternalEventPayload,
     pg_pool: Optional[Any],
     redis: Optional[Any],
 ) -> None:
@@ -1811,7 +1837,7 @@ async def _maybe_run_bundle_on_load(
     mod: types.ModuleType,
     spec: BundleSpec,
     config: Any,
-    comm_context: ChatTaskPayload,
+    comm_context: ExternalEventPayload,
     pg_pool: Optional[Any],
     redis: Optional[Any],
 ) -> None:
@@ -1856,21 +1882,21 @@ async def _maybe_run_bundle_on_load(
             await _cleanup_bundle_load_task(key, task)
 
 
-def _props_change_comm_context(*, bundle_id: str, tenant: str, project: str) -> ChatTaskPayload:
+def _props_change_comm_context(*, bundle_id: str, tenant: str, project: str) -> ExternalEventPayload:
     scope_id = f"bundle-props-update:{bundle_id}:{tenant}:{project}"
-    return ChatTaskPayload(
-        request=ChatTaskRequest(request_id=scope_id),
-        routing=ChatTaskRouting(
+    return ExternalEventPayload(
+        request=ExternalEventRequest(request_id=scope_id),
+        routing=ExternalEventRouting(
             bundle_id=bundle_id,
             session_id=scope_id,
             conversation_id=scope_id,
             turn_id=f"bundle-props-update:{bundle_id}",
         ),
-        actor=ChatTaskActor(
+        actor=ExternalEventActor(
             tenant_id=tenant,
             project_id=project,
         ),
-        user=ChatTaskUser(
+        user=ExternalEventUser(
             user_type="system",
             user_id="kdcube-system",
             username="kdcube-system",
@@ -2168,7 +2194,16 @@ def _instantiate_symbol(kind: str, symbol: Any, config: Any, extra_kwargs: Dict[
 
 def _iter_bundle_callable_members(target: Any):
     cls = target if isinstance(target, type) else target.__class__
-    _bundle_attrs = (API_METHOD_ATTR, UI_WIDGET_ATTR, ON_MESSAGE_ATTR, ON_JOB_ATTR, UI_MAIN_ATTR, CRON_JOB_ATTR)
+    _bundle_attrs = (
+        API_METHOD_ATTR,
+        MCP_ENDPOINT_ATTR,
+        UI_WIDGET_ATTR,
+        ON_MESSAGE_ATTR,
+        ON_JOB_ATTR,
+        PROCESS_OFFLINE_EVENTS_ATTR,
+        UI_MAIN_ATTR,
+        CRON_JOB_ATTR,
+    )
     for name, member in inspect.getmembers(cls, predicate=callable):
         if name.startswith("__"):
             continue
@@ -2203,6 +2238,7 @@ def discover_bundle_interface_manifest(target: Any, *, bundle_id: str | None = N
     ui_main_spec: UIMainSpec | None = None
     on_message_spec: OnMessageSpec | None = None
     on_job_spec: OnJobSpec | None = None
+    process_offline_events_spec: ProcessOfflineEventsSpec | None = None
     scheduled_jobs: list[CronJobSpec] = []
     seen_api: set[tuple[str, str]] = set()
     seen_mcp: set[tuple[str, str]] = set()
@@ -2298,6 +2334,20 @@ def discover_bundle_interface_manifest(target: Any, *, bundle_id: str | None = N
                 raise ValueError("Multiple @on_job methods detected on bundle entrypoint")
             on_job_spec = resolved
 
+        current_process_offline_events = getattr(fn, PROCESS_OFFLINE_EVENTS_ATTR, None)
+        if _is_equivalent_decorator_spec(
+            current_process_offline_events,
+            ProcessOfflineEventsSpec,
+            ("method_name",),
+        ):
+            resolved = ProcessOfflineEventsSpec(method_name=member_name)
+            if (
+                process_offline_events_spec
+                and process_offline_events_spec.method_name != resolved.method_name
+            ):
+                raise ValueError("Multiple @process_offline_events methods detected on bundle entrypoint")
+            process_offline_events_spec = resolved
+
         cron_spec = getattr(fn, CRON_JOB_ATTR, None)
         if _is_equivalent_decorator_spec(cron_spec, CronJobSpec, ("method_name", "alias", "span")):
             scheduled_jobs.append(CronJobSpec(
@@ -2328,6 +2378,7 @@ def discover_bundle_interface_manifest(target: Any, *, bundle_id: str | None = N
         ui_main=ui_main_spec,
         on_message=on_message_spec,
         on_job=on_job_spec,
+        process_offline_events=process_offline_events_spec,
         scheduled_jobs=tuple(scheduled_jobs),
     )
 
@@ -2396,7 +2447,7 @@ def get_workflow_instance(
         spec: BundleSpec,
         config: Any,
         *,
-        comm_context: ChatTaskPayload,        # ← optional unified communicator
+        comm_context: ExternalEventPayload,        # ← optional unified communicator
         pg_pool: Optional[Any] = None,             # ← optional DB pools
         redis: Optional[Any] = None,               # ← optional DB pools
 ) -> Tuple[Any, types.ModuleType]:
@@ -2488,7 +2539,7 @@ async def get_workflow_instance_async(
         spec: BundleSpec,
         config: Any,
         *,
-        comm_context: ChatTaskPayload,
+        comm_context: ExternalEventPayload,
         pg_pool: Optional[Any] = None,
         redis: Optional[Any] = None,
 ) -> Tuple[Any, types.ModuleType]:

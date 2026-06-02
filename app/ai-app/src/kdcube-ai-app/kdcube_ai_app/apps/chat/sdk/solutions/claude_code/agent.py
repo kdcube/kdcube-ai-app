@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
+from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
 from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import (
     get_current_comm,
     get_current_request_context,
@@ -994,7 +994,7 @@ class ClaudeCodeAgent:
 
 
 def _binding_from_request_context(
-    request_context: ChatTaskPayload,
+    request_context: ExternalEventPayload,
     *,
     agent_name: str,
 ) -> ClaudeCodeBinding:

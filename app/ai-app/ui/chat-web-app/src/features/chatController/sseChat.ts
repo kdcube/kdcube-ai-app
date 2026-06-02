@@ -124,6 +124,14 @@ class SSEChat extends ChatBase {
             ts: new Date().toISOString(),
         })
 
+        const messagePayload: Record<string, unknown> = {...(req.payload || {})};
+        if (req.target) {
+            messagePayload.target = req.target;
+        }
+        if (req.external_event) {
+            messagePayload.external_event = req.external_event;
+        }
+
         const payload = {
             message: {
                 message: req.message,
@@ -139,6 +147,7 @@ class SSEChat extends ChatBase {
                 ...(req.target_turn_id ? {target_turn_id: req.target_turn_id} : {}),
                 ...(req.followup ? {followup: true} : {}),
                 ...(req.steer ? {steer: true} : {}),
+                ...(Object.keys(messagePayload).length ? {payload: messagePayload} : {}),
             },
             attachment_meta: [] as { filename: string }[],
         };

@@ -25,7 +25,7 @@ from typing import Any, Dict
 
 from langgraph.graph import StateGraph, START, END
 
-from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
+from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
 from kdcube_ai_app.infra.service_hub.inventory import Config, BundleState
 from kdcube_ai_app.infra.plugin.bundle_loader import bundle_entrypoint
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import BaseEntrypoint
@@ -54,7 +54,7 @@ class OpenRouterDataBundle(BaseEntrypoint):
         config: Config,
         pg_pool: Any = None,
         redis: Any = None,
-        comm_context: ChatTaskPayload = None,
+        comm_context: ExternalEventPayload = None,
     ):
         super().__init__(
             config=config,

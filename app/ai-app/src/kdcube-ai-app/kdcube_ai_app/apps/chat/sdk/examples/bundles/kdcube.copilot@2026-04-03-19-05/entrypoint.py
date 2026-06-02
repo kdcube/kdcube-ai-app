@@ -63,7 +63,7 @@ from kdcube_ai_app.apps.chat.sdk.integrations.telegram import user_admin as tele
 from kdcube_ai_app.apps.chat.sdk.integrations.telegram import webapp as telegram_webapp
 from kdcube_ai_app.apps.chat.sdk.integrations.telegram import widget_auth as telegram_widget_auth
 from kdcube_ai_app.apps.chat.sdk.integrations.telegram import widget_ops as telegram_widget_ops
-from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
+from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
 from kdcube_ai_app.apps.chat.sdk.solutions.claude_code import (
     ClaudeCodeAgent,
     ClaudeCodeAgentConfig,
@@ -347,7 +347,7 @@ class ReactWorkflow(BaseEntrypointWithEconomicsAndMemory):
         config: Config,
         pg_pool: Any = None,
         redis: Any = None,
-        comm_context: ChatTaskPayload = None,
+        comm_context: ExternalEventPayload = None,
     ):
         super().__init__(
             config=config,

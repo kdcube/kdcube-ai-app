@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
+from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import BaseEntrypoint
 from kdcube_ai_app.infra.plugin.bundle_loader import api, bundle_entrypoint, ui_widget
 from kdcube_ai_app.infra.service_hub.inventory import Config
@@ -25,7 +25,7 @@ class AdminBundleEntrypoint(BaseEntrypoint):
         config: Config,
         pg_pool: Any = None,
         redis: Any = None,
-        comm_context: ChatTaskPayload = None,
+        comm_context: ExternalEventPayload = None,
     ):
         super().__init__(
             config=config,

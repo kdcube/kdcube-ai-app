@@ -2029,7 +2029,7 @@ const MonitoringDashboard: React.FC = () => {
                             <div className="text-xs text-rose-700">
                                 {resetAllSessions ? 'Warning: clears rate limits for all sessions in this tenant/project.' : ''}
                                 {resetAllSessions && purgeChatQueues ? ' ' : ''}
-                                {purgeChatQueues ? 'Warning: purging queues drops pending chat tasks.' : ''}
+                                {purgeChatQueues ? 'Warning: purging queues drops pending event payloads.' : ''}
                             </div>
                         )}
                         <div className="flex flex-wrap items-center gap-3">

@@ -381,7 +381,7 @@ Notes:
 - Role limits are **per role** and can include any role key the system recognizes.
 - `limits.ingress.max_sse_connections_per_instance` is enforced **per worker process** (SSE hub is per process).
   Total per instance = `max_sse_connections_per_instance × processes_per_instance`.
-- `limits.proc.max_queue_size` is a **hard cap** on total queued chat tasks (0 = unlimited).
+- `limits.proc.max_queue_size` is a **hard cap** on total queued external event payloads (0 = unlimited).
 - All `pools` values are **per process**, except `pg_max_connections` which is
   a global DB capacity reference used only for monitoring warnings.
 - `pools.proc.redis_max_connections` currently caps the **single steady-state shared async Redis pool** used by each proc worker.

@@ -53,9 +53,9 @@ class ContinuationEnvelope:
         )
 
     def task_payload(self):
-        from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
+        from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
 
-        return ChatTaskPayload.model_validate(self.payload or {})
+        return ExternalEventPayload.model_validate(self.payload or {})
 
 
 class ConversationContinuationSource(Protocol):

@@ -10,11 +10,11 @@ from types import SimpleNamespace
 import pytest
 
 from kdcube_ai_app.apps.chat.sdk.protocol import (
-    ChatTaskActor,
-    ChatTaskPayload,
-    ChatTaskRequest,
-    ChatTaskRouting,
-    ChatTaskUser,
+    ExternalEventActor,
+    ExternalEventPayload,
+    ExternalEventRequest,
+    ExternalEventRouting,
+    ExternalEventUser,
 )
 from kdcube_ai_app.apps.chat.sdk.runtime import local_sidecars
 
@@ -54,20 +54,20 @@ def _load_entrypoint_module():
     return module
 
 
-def _ctx() -> ChatTaskPayload:
-    return ChatTaskPayload(
-        request=ChatTaskRequest(request_id="req-node-bridge"),
-        routing=ChatTaskRouting(
+def _ctx() -> ExternalEventPayload:
+    return ExternalEventPayload(
+        request=ExternalEventRequest(request_id="req-node-bridge"),
+        routing=ExternalEventRouting(
             session_id="sid-node-bridge",
             conversation_id="conv-node-bridge",
             turn_id="turn-node-bridge",
             bundle_id="node.bridge.mcp",
         ),
-        actor=ChatTaskActor(
+        actor=ExternalEventActor(
             tenant_id="demo-tenant",
             project_id="demo-project",
         ),
-        user=ChatTaskUser(
+        user=ExternalEventUser(
             user_type="registered",
             user_id="user-1",
             username="user@example.com",

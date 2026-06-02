@@ -33,6 +33,8 @@ class ResolvedEventSource:
     description: str = ""
     version: str = ""
     kind: str = ""
+    reactive: bool | None = None
+    iteration_credit: int | None = None
     module: str = ""
     alias: str = ""
     object_name: str = ""
@@ -49,6 +51,8 @@ class ResolvedEventSource:
             "description": self.description,
             "version": self.version,
             "kind": self.kind,
+            "reactive": self.reactive,
+            "iteration_credit": self.iteration_credit,
             "module": self.module,
             "alias": self.alias,
             "object_name": self.object_name,
@@ -311,6 +315,8 @@ class EventSourceSubsystem:
             description=declaration.description,
             version=declaration.version,
             kind=declaration.kind,
+            reactive=declaration.reactive,
+            iteration_credit=declaration.iteration_credit,
             module=str(module_info.get("name") or ""),
             alias=alias,
             object_name=object_name,

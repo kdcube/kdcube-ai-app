@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from kdcube_ai_app.apps.chat.sdk import config as sdk_config
-from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskActor, ChatTaskPayload, ChatTaskRouting, ChatTaskUser
+from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventActor, ExternalEventPayload, ExternalEventRouting, ExternalEventUser
 from kdcube_ai_app.apps.chat.sdk.runtime import comm_ctx
 
 
@@ -166,9 +166,9 @@ async def test_get_secret_user_namespace_uses_request_context_scope(monkeypatch)
     monkeypatch.setattr(
         comm_ctx,
         "get_current_request_context",
-        lambda: ChatTaskPayload(
-            routing=ChatTaskRouting(bundle_id="bundle.demo", session_id="s-1"),
-            user=ChatTaskUser(user_type="registered", user_id="user-1"),
+        lambda: ExternalEventPayload(
+            routing=ExternalEventRouting(bundle_id="bundle.demo", session_id="s-1"),
+            user=ExternalEventUser(user_type="registered", user_id="user-1"),
         ),
     )
 
@@ -180,9 +180,9 @@ def test_get_user_prop_uses_request_context_scope(monkeypatch):
     monkeypatch.setattr(
         comm_ctx,
         "get_current_request_context",
-        lambda: ChatTaskPayload(
-            routing=ChatTaskRouting(bundle_id="bundle.demo", session_id="s-1"),
-            user=ChatTaskUser(user_type="registered", user_id="user-1"),
+        lambda: ExternalEventPayload(
+            routing=ExternalEventRouting(bundle_id="bundle.demo", session_id="s-1"),
+            user=ExternalEventUser(user_type="registered", user_id="user-1"),
         ),
     )
 
@@ -196,9 +196,9 @@ async def test_get_secret_bundle_namespace_uses_request_context_scope(monkeypatc
     monkeypatch.setattr(
         comm_ctx,
         "get_current_request_context",
-        lambda: ChatTaskPayload(
-            routing=ChatTaskRouting(bundle_id="bundle.demo", session_id="s-1"),
-            user=ChatTaskUser(user_type="registered", user_id="user-1"),
+        lambda: ExternalEventPayload(
+            routing=ExternalEventRouting(bundle_id="bundle.demo", session_id="s-1"),
+            user=ExternalEventUser(user_type="registered", user_id="user-1"),
         ),
     )
 
@@ -253,10 +253,10 @@ async def test_set_bundle_secret_uses_request_context_bundle_scope(monkeypatch):
     monkeypatch.setattr(
         comm_ctx,
         "get_current_request_context",
-        lambda: ChatTaskPayload(
-            routing=ChatTaskRouting(bundle_id="bundle.demo", session_id="s-1"),
-            actor=ChatTaskActor(tenant_id="ctx-tenant", project_id="ctx-project"),
-            user=ChatTaskUser(user_type="registered", user_id="user-1"),
+        lambda: ExternalEventPayload(
+            routing=ExternalEventRouting(bundle_id="bundle.demo", session_id="s-1"),
+            actor=ExternalEventActor(tenant_id="ctx-tenant", project_id="ctx-project"),
+            user=ExternalEventUser(user_type="registered", user_id="user-1"),
         ),
     )
 
@@ -295,10 +295,10 @@ async def test_set_bundle_prop_uses_request_context_scope_and_merges_nested_key(
     monkeypatch.setattr(
         comm_ctx,
         "get_current_request_context",
-        lambda: ChatTaskPayload(
-            routing=ChatTaskRouting(bundle_id="bundle.demo", session_id="s-1"),
-            actor=ChatTaskActor(tenant_id="ctx-tenant", project_id="ctx-project"),
-            user=ChatTaskUser(user_type="registered", user_id="user-1"),
+        lambda: ExternalEventPayload(
+            routing=ExternalEventRouting(bundle_id="bundle.demo", session_id="s-1"),
+            actor=ExternalEventActor(tenant_id="ctx-tenant", project_id="ctx-project"),
+            user=ExternalEventUser(user_type="registered", user_id="user-1"),
         ),
     )
 
@@ -353,10 +353,10 @@ async def test_set_bundle_props_merges_patch_and_publishes_once(monkeypatch):
     monkeypatch.setattr(
         comm_ctx,
         "get_current_request_context",
-        lambda: ChatTaskPayload(
-            routing=ChatTaskRouting(bundle_id="bundle.demo", session_id="s-1"),
-            actor=ChatTaskActor(tenant_id="ctx-tenant", project_id="ctx-project"),
-            user=ChatTaskUser(user_type="registered", user_id="user-1"),
+        lambda: ExternalEventPayload(
+            routing=ExternalEventRouting(bundle_id="bundle.demo", session_id="s-1"),
+            actor=ExternalEventActor(tenant_id="ctx-tenant", project_id="ctx-project"),
+            user=ExternalEventUser(user_type="registered", user_id="user-1"),
         ),
     )
 

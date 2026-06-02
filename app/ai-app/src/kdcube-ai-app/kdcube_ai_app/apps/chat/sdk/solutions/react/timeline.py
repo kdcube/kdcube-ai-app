@@ -642,6 +642,8 @@ def build_turn_index_text(
         "user.followup.preserved": "preserved user followup",
         "user.steer": "user steer",
         "user.steer.preserved": "preserved user steer",
+        "event.external": "external event",
+        "event.external.preserved": "preserved external event",
     }
     user_like_blocks = [
         b for b in filtered
@@ -3047,6 +3049,8 @@ class Timeline:
             "user.steer",
             "user.followup.preserved",
             "user.steer.preserved",
+            "event.external",
+            "event.external.preserved",
         }
         for idx in range(lower, upper):
             blk = blocks[idx]
@@ -3299,6 +3303,8 @@ class Timeline:
             cloned["type"] = "user.followup.preserved"
         elif btype == "user.steer":
             cloned["type"] = "user.steer.preserved"
+        elif btype == "event.external":
+            cloned["type"] = "event.external.preserved"
         cloned["path"] = preserved_path
         cloned["hidden"] = False
         cloned.pop("replacement_text", None)
@@ -3321,6 +3327,8 @@ class Timeline:
                 "user.followup.preserved",
                 "user.steer",
                 "user.steer.preserved",
+                "event.external",
+                "event.external.preserved",
             }:
                 continue
             text = (blk.get("text") or "").strip() if isinstance(blk.get("text"), str) else ""
@@ -3342,7 +3350,10 @@ class Timeline:
             if not blk:
                 continue
             btype = (blk.get("type") or "").strip()
-            suffix = "followup" if "followup" in btype else "steer"
+            meta = blk.get("meta") if isinstance(blk.get("meta"), dict) else {}
+            suffix = str(meta.get("event_kind") or "").strip().lower()
+            if not suffix:
+                suffix = "followup" if "followup" in btype else "steer" if "steer" in btype else "event"
             preserved_path = f"ar:{turn_id}.external.{suffix}.preserved.{idx}" if turn_id else ""
             preserved.append(
                 self._clone_preserved_external_event_block(
@@ -3495,6 +3506,8 @@ class Timeline:
             "user.followup.preserved": "FOLLOWUP DURING TURN",
             "user.steer": "STEER DURING TURN",
             "user.steer.preserved": "STEER DURING TURN",
+            "event.external": "EXTERNAL EVENT",
+            "event.external.preserved": "EXTERNAL EVENT",
         }
         for blk in blocks or []:
             if not isinstance(blk, dict):
@@ -5841,6 +5854,8 @@ class Timeline:
                 "user.steer",
                 "user.followup.preserved",
                 "user.steer.preserved",
+                "event.external",
+                "event.external.preserved",
             }:
                 return True
             if btype_local in {"user.attachment.meta", "user.attachment", "user.attachment.text"}:
@@ -5964,12 +5979,19 @@ class Timeline:
                 "user.steer",
                 "user.followup.preserved",
                 "user.steer.preserved",
+                "event.external",
+                "event.external.preserved",
             }:
                 lines = []
                 ts_line = _ts_line(ts)
                 if ts_line:
                     lines.append(ts_line)
-                lines.append("[FOLLOWUP DURING TURN]" if "followup" in btype else "[STEER DURING TURN]")
+                if "followup" in btype:
+                    lines.append("[FOLLOWUP DURING TURN]")
+                elif "steer" in btype:
+                    lines.append("[STEER DURING TURN]")
+                else:
+                    lines.append("[EXTERNAL EVENT]")
                 if path:
                     lines.append(f"[path: {path}]")
                 if isinstance(meta, dict):

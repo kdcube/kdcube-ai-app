@@ -27,7 +27,7 @@ from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import (
     touch_current_task_activity,
     update_current_bundle_call_context,
 )
-from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
+from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
 from kdcube_ai_app.infra.jobs.stream import BackgroundJob, BackgroundJobClaim
 from kdcube_ai_app.infra.plugin import bundle_store
 
@@ -274,7 +274,7 @@ def _build_task_payload(task_id="task-1", *, user_type="registered"):
 
 
 def test_comm_ctx_snapshots_bundle_call_context():
-    payload = ChatTaskPayload.model_validate(_build_task_payload("bundle-call-context"))
+    payload = ExternalEventPayload.model_validate(_build_task_payload("bundle-call-context"))
     payload.bundle_call_context = {"task_id": "task-a", "execution_id": "exec-a"}
     with bind_current_request_context(payload):
         snapshot = snapshot_comm_ctxvars()
@@ -289,7 +289,7 @@ def test_comm_ctx_snapshots_bundle_call_context():
 
 
 def test_comm_ctx_update_syncs_request_context_and_snapshots():
-    payload = ChatTaskPayload.model_validate(_build_task_payload("bundle-call-context-update"))
+    payload = ExternalEventPayload.model_validate(_build_task_payload("bundle-call-context-update"))
     payload.bundle_call_context = {"task_id": "task-a"}
     with bind_current_request_context(payload):
         update_current_bundle_call_context({"execution_id": "exec-b"})
@@ -309,7 +309,7 @@ def test_comm_ctx_update_syncs_request_context_and_snapshots():
 
 
 def test_comm_ctx_patch_binding_restores_request_context():
-    payload = ChatTaskPayload.model_validate(_build_task_payload("bundle-call-context-patch"))
+    payload = ExternalEventPayload.model_validate(_build_task_payload("bundle-call-context-patch"))
     payload.bundle_call_context = {"scope": "base"}
     with bind_current_request_context(payload):
         with bind_current_bundle_call_context_patch({"role_models": {"agent": "haiku"}}):
@@ -331,7 +331,7 @@ async def test_cleanup_turn_browser_sessions_for_payload_uses_payload_context(mo
     monkeypatch.setattr(browser_backend, "close_browser_sessions_for_current_context", _fake_cleanup)
     payload_dict = _build_task_payload("browser-cleanup-task")
     payload_dict["request"]["request_id"] = "req-1"
-    payload = ChatTaskPayload.model_validate(payload_dict)
+    payload = ExternalEventPayload.model_validate(payload_dict)
 
     await processor_mod._cleanup_turn_browser_sessions_for_payload(payload, reason="task_cancelled")
 

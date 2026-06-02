@@ -5,7 +5,7 @@
 """
 Modular Socket.IO chat handler with gateway integration and Redis relay.
 Redis pub/sub listener relays chat events (chat.events) to clients
-uses a standardized ChatTaskPayload schema (chat/sdk/protocol.py).
+uses a standardized ExternalEventPayload schema (chat/sdk/protocol.py).
 """
 
 from __future__ import annotations
@@ -565,7 +565,9 @@ class SocketIOChatHandler:
                 "message_kind": result.continuation_kind,
                 "message": (
                     "Continuation accepted; available to the active conversation owner"
-                    if result.reason in {"followup_accepted", "steer_accepted"}
+                    if result.reason in {"followup_accepted", "steer_accepted", "external_event_accepted"}
+                    else "External event recorded"
+                    if result.reason == "external_event_recorded"
                     else "Queued; streaming via Socket.IO"
                 ),
             }

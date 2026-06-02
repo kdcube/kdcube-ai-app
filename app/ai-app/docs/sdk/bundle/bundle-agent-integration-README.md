@@ -69,7 +69,7 @@ different:
 
 | Input | What it is | Who provides it | Where it comes from |
 | --- | --- | --- | --- |
-| user/turn context | user id, conversation id, turn id, timezone, request text, attachments | platform runtime | `scratchpad`, `ChatTaskPayload`, request context |
+| user/turn context | user id, conversation id, turn id, timezone, request text, attachments | platform runtime | `scratchpad`, `ExternalEventPayload`, request context |
 | bundle context | tenant, project, bundle id, user scope, storage roots, job ids | platform runtime plus bundle entrypoint | `BaseWorkflow`, `bundle_call_context`, job payload |
 | config | non-secret behavior switches, model choices, URLs, feature flags | descriptor/admin/bundle code | `self.bundle_prop(...)`, bundle props |
 | secrets | API keys, auth signing keys, OAuth client secrets | deployment/admin/user secret store | `await get_secret(...)`, including `await get_secret("u:...")` for user-scoped secrets |
@@ -319,7 +319,7 @@ async def on_job(self, **kwargs):
 ```
 
 If the selection arrives through Socket.IO/SSE ingress instead of inside bundle
-code, place the same JSON object in `ChatTaskPayload.bundle_call_context` before
+code, place the same JSON object in `ExternalEventPayload.bundle_call_context` before
 the task is queued:
 
 ```json

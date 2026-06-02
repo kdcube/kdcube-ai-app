@@ -14,6 +14,7 @@ keywords:
     "event policies",
   ]
 see_also:
+  - ks:docs/sdk/events/external-events-README.md
   - ks:docs/sdk/agents/react/event-source/event-source-README.md
   - ks:docs/sdk/agents/react/event-source/block-production-README.md
   - ks:docs/sdk/tools/tool-subsystem-README.md
@@ -24,7 +25,7 @@ see_also:
 
 The SDK events subsystem provides shared event-source identity and discovery.
 ReAct is the first consumer, but the model is wider than ReAct: the same source
-identity can describe tool calls, external UI events, authored timeline events,
+identity can describe tool calls, external UI events, authored external events,
 and future event-producing SDK surfaces.
 
 ## Core Model
@@ -64,6 +65,7 @@ from kdcube_ai_app.apps.chat.sdk.events import event_source
         },
     ],
     kind="react.tool",
+    reactive=False,
 )
 async def search(...):
     ...
@@ -72,6 +74,38 @@ async def search(...):
 Policy bindings are consumer-specific. Today the supported consumer is ReAct,
 so bindings use `react_phase` and `event_policy_id`. The shared SDK events
 subsystem does not define ReAct timeline behavior by itself.
+
+For non-tool external events, the declaration can also define ReAct admission
+defaults:
+
+```python
+from kdcube_ai_app.apps.chat.sdk.events import event_source_declaration
+
+def list_event_sources():
+    return [
+        event_source_declaration(
+            event_source_id="my_app.wizard.assistance.requested",
+            kind="react.external",
+            reactive=True,
+            iteration_credit=2,
+            policies=[
+                {
+                    "react_phase": "timeline_projection",
+                    "event_policy_id": "my_app.timeline_projection.wizard_event",
+                },
+            ],
+        )
+    ]
+```
+
+`reactive` is declaration metadata/default for code that authors occurrences of
+this source. Transported `external_event` occurrences must still carry their
+effective `payload.external_event.routing.reactive` value; the runtime does not
+silently wake ReAct from a declaration alone. `iteration_credit` is the default
+live-turn credit for one occurrence that is explicitly reactive. A client
+occurrence may override credit with
+`payload.external_event.routing.iteration_credit`; runtime caps always apply
+last.
 
 ## Discovery
 
@@ -105,3 +139,5 @@ It does not own:
 
 Those remain responsibilities of the consuming runtime. For ReAct, see the
 event-source phase documents under `docs/sdk/agents/react/event-source/`.
+For conversation-scoped authored events that arrive through chat ingress, see
+[External Events](external-events-README.md).

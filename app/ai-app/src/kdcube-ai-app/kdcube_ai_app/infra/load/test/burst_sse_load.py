@@ -201,7 +201,7 @@ async def run_load(args: argparse.Namespace) -> int:
                 stream_id = f"burst-{user.role}-{idx}-{int(time.time() * 1000)}"
                 sessions.append(SSESession(user=user, stream_id=stream_id, task=None))
 
-        # Build all chat tasks
+        # Build all event payloads
         tasks: List[asyncio.Task] = []
         sem = asyncio.Semaphore(max(1, args.concurrency))
         results: List[Tuple[int, int, Optional[str]]] = []

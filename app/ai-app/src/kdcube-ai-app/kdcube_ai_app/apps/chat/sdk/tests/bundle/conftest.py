@@ -10,7 +10,7 @@ Run tests for a specific bundle via:
 Infrastructure used:
   - Redis  → real async client via get_async_redis_client() (REDIS_URL from settings)
   - Postgres → real asyncpg pool (PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE from settings)
-  - comm_context → real ChatTaskPayload with minimal required fields
+  - comm_context → real ExternalEventPayload with minimal required fields
   - ai_bundle_spec → real BundleSpec with the actual bundle path and ID
 """
 
@@ -120,28 +120,28 @@ def pg_pool():
 
 @pytest.fixture
 def comm_context(bundle_id):
-    """Real ChatTaskPayload with minimal required fields."""
+    """Real ExternalEventPayload with minimal required fields."""
     from kdcube_ai_app.apps.chat.sdk.protocol import (
-        ChatTaskPayload,
-        ChatTaskMeta,
-        ChatTaskRouting,
-        ChatTaskActor,
-        ChatTaskUser,
-        ChatTaskRequest,
-        ChatTaskConfig,
+        ExternalEventPayload,
+        ExternalEventMeta,
+        ExternalEventRouting,
+        ExternalEventActor,
+        ExternalEventUser,
+        ExternalEventRequest,
+        ExternalEventConfig,
     )
-    return ChatTaskPayload(
-        meta=ChatTaskMeta(task_id="test-task-001", created_at=time.time()),
-        routing=ChatTaskRouting(
+    return ExternalEventPayload(
+        meta=ExternalEventMeta(task_id="test-task-001", created_at=time.time()),
+        routing=ExternalEventRouting(
             bundle_id=bundle_id,
             session_id="test-session",
             conversation_id="test-conversation",
             turn_id="test-turn",
         ),
-        actor=ChatTaskActor(tenant_id="test", project_id="test"),
-        user=ChatTaskUser(user_type="regular"),
-        request=ChatTaskRequest(message="test"),
-        config=ChatTaskConfig(values={}),
+        actor=ExternalEventActor(tenant_id="test", project_id="test"),
+        user=ExternalEventUser(user_type="regular"),
+        request=ExternalEventRequest(message="test"),
+        config=ExternalEventConfig(values={}),
     )
 
 
@@ -152,7 +152,7 @@ def bundle(bundle_dir, bundle_id, redis_client, pg_pool, comm_context):
     Uses real infrastructure:
       - redis_client  → real async Redis client
       - pg_pool       → real asyncpg pool (None if Postgres unavailable)
-      - comm_context  → real ChatTaskPayload
+      - comm_context  → real ExternalEventPayload
       - ai_bundle_spec → real BundleSpec with bundle path and ID
 
     Args:

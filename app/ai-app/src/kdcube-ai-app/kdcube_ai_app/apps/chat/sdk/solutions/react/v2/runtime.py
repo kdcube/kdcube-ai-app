@@ -19,7 +19,7 @@ from langgraph.graph import StateGraph, END
 
 from kdcube_ai_app.apps.chat.emitters import ChatCommunicator
 from kdcube_ai_app.apps.chat.ids import new_exec_id
-from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
+from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
 from kdcube_ai_app.apps.chat.sdk.solutions.react.browser import ContextBrowser
 from kdcube_ai_app.apps.chat.sdk.solutions.infra import emit_event
 from kdcube_ai_app.apps.chat.sdk.runtime.execution import execute_tool, _safe_label
@@ -106,7 +106,7 @@ class ReactSolverV2:
 
         scratchpad: TurnScratchpad,
         comm: ChatCommunicator,
-        comm_context: ChatTaskPayload,
+        comm_context: ExternalEventPayload,
         hosting_service: Optional[ApplicationHostingService] = None,
         ctx_browser: Optional[ContextBrowser] = None,
         additional_instructions: Optional[str] = None,
@@ -145,9 +145,9 @@ class ReactSolverV2:
         self.include_skill_gallery = bool(include_skill_gallery)
         if self.ctx_browser is not None:
             try:
-                self.ctx_browser.add_timeline_event_hook(self.on_timeline_event)
+                self.ctx_browser.add_external_event_hook(self.on_external_event)
             except Exception:
-                self.log.log("[react.v2] failed to register timeline event hook\n" + traceback.format_exc(), level="ERROR")
+                self.log.log("[react.v2] failed to register external event hook\n" + traceback.format_exc(), level="ERROR")
         self.graph = self._build_graph()
         self._timeline_text_idx = {}
         self._outdir_cv_token = None
@@ -198,12 +198,12 @@ class ReactSolverV2:
             return True
         return current_turn_id in set(turn_ids)
 
-    async def on_timeline_event(self, *, type: str, event: Any, blocks: List[Dict[str, Any]]) -> bool:
+    async def on_external_event(self, *, type: str, event: Any, blocks: List[Dict[str, Any]]) -> bool:
         type_norm = str(type or "").strip().lower()
         if type_norm in {"steer", "followup"} and not self._event_targets_current_turn(event):
             try:
                 self.log.log(
-                    f"[react.v2] timeline_event ignored: type={type_norm} current_turn={self._current_turn_id()} "
+                    f"[react.v2] external_event ignored: type={type_norm} current_turn={self._current_turn_id()} "
                     f"target_turn={getattr(event, 'target_turn_id', None) or ''} "
                     f"active_turn={getattr(event, 'active_turn_id_at_ingress', None) or ''} "
                     f"owner_turn={getattr(event, 'owner_turn_id', None) or ''}",
@@ -231,7 +231,7 @@ class ReactSolverV2:
             event_id = getattr(event, "message_id", None) or ""
             credit_awarded = self._award_reactive_iteration_credit(type=type_norm, event=event)
             self.log.log(
-                f"[react.v2] timeline_event accepted: type={type} event_id={event_id} seq={seq} "
+                f"[react.v2] external_event accepted: type={type} event_id={event_id} seq={seq} "
                 f"blocks={len(blocks or [])} credit_awarded={credit_awarded} "
                 f"total_credit={self._reactive_iteration_credit_total}/{self._reactive_iteration_credit_cap}",
                 level="INFO",
@@ -390,7 +390,7 @@ class ReactSolverV2:
                         if stream_id:
                             self._active_phase_external_cursor = stream_id
                         try:
-                            handled = await self.on_timeline_event(
+                            handled = await self.on_external_event(
                                 type=str(getattr(event, "kind", "external") or "external"),
                                 event=event,
                                 blocks=[],
@@ -459,8 +459,8 @@ class ReactSolverV2:
             self._active_phase_external_cursor = ""
         try:
             await self.comm.service_event(
-                type="timeline.external.accepted",
-                step="timeline.external",
+                type="event.external.accepted",
+                step="event.external",
                 status="completed",
                 title="External Timeline Event Accepted",
                 agent=self.MODULE_AGENT_NAME,

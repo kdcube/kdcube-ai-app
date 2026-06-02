@@ -22,7 +22,7 @@ from kdcube_ai_app.apps.chat.sdk.comm.recording import (
 )
 from kdcube_ai_app.apps.chat.sdk.config import get_settings
 from kdcube_ai_app.apps.chat.sdk.protocol import (
-    ChatEnvelope, ServiceCtx, ConversationCtx, ChatTaskRouting, _iso_now, ChatTaskPayload
+    ChatEnvelope, ServiceCtx, ConversationCtx, ExternalEventRouting, _iso_now, ExternalEventPayload
 )
 from kdcube_ai_app.apps.chat.sdk.util import ensure_event_markdown
 from kdcube_ai_app.infra.orchestration.app.communicator import ServiceCommunicator
@@ -279,7 +279,7 @@ class ChatRelayCommunicator:
             self,
             svc: ServiceCtx,
             conv: ConversationCtx,
-            routing: ChatTaskRouting,
+            routing: ExternalEventRouting,
             *,
             state: str,
             updated_at: str,
@@ -1579,7 +1579,7 @@ def build_relay_from_env() -> ChatRelayCommunicator:
     return ChatRelayCommunicator(redis_url=redis_url, channel=channel)
 
 def build_comm_from_comm_context(
-        task: ChatTaskPayload,
+        task: ExternalEventPayload,
         *,
         relay: Optional[ChatRelayCommunicator] = None,
         event_filter: Optional[IEventFilter] = None,

@@ -142,7 +142,7 @@ channels:
       Server relay event for service/control events that do not fit start,
       step, delta, complete, or error. Examples include queue rejections,
       attachment status, continuation acceptance, and bundle-specific service
-      timeline events.
+      external events.
     publish:
       operationId: socketChatService
       message:

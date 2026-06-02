@@ -8,7 +8,7 @@ chat/ingress/idp_users.json
 GATEWAY_CONFIG_JSON='{"tenant":"<TENANT_ID>","project":"<PROJECT_ID>"}'
 
 Note: `burst_sse_load.py` targets **ingress** (`/sse/*` and `/monitoring/system`).
-It will enqueue chat tasks, so **proc is exercised indirectly** if it is running.
+It will enqueue event payloads, so **proc is exercised indirectly** if it is running.
 It does not hit the proc integrations API. For proc/integrations load, use a separate test.
 
 Note: `guarded_bypass_load.py` targets **REST** endpoints on ingress and validates

@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from uuid import uuid4, UUID
 
-from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
+from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import BaseEntrypoint
 from kdcube_ai_app.infra.plugin.bundle_loader import on_message
 from kdcube_ai_app.infra.service_hub.inventory import Config, _mid
@@ -50,7 +50,7 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
         config: Config,
         pg_pool: Any = None,
         redis: Any = None,
-        comm_context: ChatTaskPayload = None,
+        comm_context: ExternalEventPayload = None,
         event_filter: Optional[Any] = None,
         ctx_client: Optional[Any] = None,
     ):
@@ -102,7 +102,7 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
     def rebind_request_context(
         self,
         *,
-        comm_context: Optional[ChatTaskPayload] = None,
+        comm_context: Optional[ExternalEventPayload] = None,
         pg_pool: Any = None,
         redis: Any = None,
     ) -> None:

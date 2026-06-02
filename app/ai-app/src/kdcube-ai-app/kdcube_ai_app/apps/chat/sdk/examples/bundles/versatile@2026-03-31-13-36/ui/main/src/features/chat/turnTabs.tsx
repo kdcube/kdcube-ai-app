@@ -321,7 +321,7 @@ function ThinkingBlockImpl({
 }
 function TimelineFeedImpl({ entries }: { entries: TimelineEntry[] }) {
   if (entries.length === 0) {
-    return <p className="pt-2 text-[12px] text-[var(--muted)]">No timeline events yet.</p>
+    return <p className="pt-2 text-[12px] text-[var(--muted)]">No external events yet.</p>
   }
 
   const sortedEntries = entries.slice().sort((left, right) => left.timestamp - right.timestamp)

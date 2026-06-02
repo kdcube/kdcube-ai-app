@@ -7,6 +7,7 @@ from kdcube_ai_app.apps.chat.sdk.events import event_source_declaration
 
 REACT_FOLLOWUP_EVENT_SOURCE_ID = "react.followup"
 REACT_STEER_EVENT_SOURCE_ID = "react.steer"
+REACT_EXTERNAL_EVENT_SOURCE_ID = "react.external_event"
 REACT_WRITE_EVENT_SOURCE_ID = "react.write"
 REACT_MEMSEARCH_EVENT_SOURCE_ID = "react.memsearch"
 
@@ -38,6 +39,8 @@ def event_source_id_for_external_kind(kind: str) -> str:
         return REACT_FOLLOWUP_EVENT_SOURCE_ID
     if value == "steer":
         return REACT_STEER_EVENT_SOURCE_ID
+    if value == "external_event":
+        return REACT_EXTERNAL_EVENT_SOURCE_ID
     return f"react.external.{value}" if value else "react.external"
 
 
@@ -54,12 +57,22 @@ def list_event_sources():
             policies=[],
             description="User followup events appended to the active ReAct timeline while a turn is running.",
             kind="react.external",
+            reactive=True,
         ),
         event_source_declaration(
             event_source_id=REACT_STEER_EVENT_SOURCE_ID,
             policies=[],
             description="User steer events appended to the active ReAct timeline while a turn is running.",
             kind="react.external",
+            reactive=False,
+            iteration_credit=0,
+        ),
+        event_source_declaration(
+            event_source_id=REACT_EXTERNAL_EVENT_SOURCE_ID,
+            policies=[],
+            description="Generic bundle-authored external events transported over chat ingress.",
+            kind="react.external",
+            reactive=False,
         ),
         event_source_declaration(
             event_source_id=REACT_WRITE_EVENT_SOURCE_ID,

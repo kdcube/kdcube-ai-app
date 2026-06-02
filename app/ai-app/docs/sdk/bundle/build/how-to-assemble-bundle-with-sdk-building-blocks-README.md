@@ -231,7 +231,7 @@ Telegram user message / attachment
   -> Telegram Bot API webhook call
   -> bundle public API: telegram_webhook
   -> SDK user_admin.handle_webhook(...)
-  -> Telegram update -> KDCube ChatTaskPayload / RawAttachment
+  -> Telegram update -> KDCube ExternalEventPayload / RawAttachment
   -> shared chat ingress + bundle entrypoint
   -> SDK run_with_queued_telegram_delivery(...)
   -> Telegram Bot API text/file delivery

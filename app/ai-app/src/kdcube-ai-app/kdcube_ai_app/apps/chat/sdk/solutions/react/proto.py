@@ -9,6 +9,7 @@ import copy
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Protocol
 
+from kdcube_ai_app.apps.chat.sdk.event_identity import DEFAULT_REACT_AGENT_ID
 from kdcube_ai_app.apps.chat.sdk.util import LINE_NUMBERS_LINES
 
 
@@ -97,6 +98,7 @@ class RuntimeCtx:
     user_type: Optional[str] = None
     turn_id: Optional[str] = None
     bundle_id: Optional[str] = None
+    agent_id: str = DEFAULT_REACT_AGENT_ID
     timezone: Optional[str] = None
     max_tokens: Optional[int] = None
     max_iterations: Optional[int] = None
@@ -178,6 +180,7 @@ class RuntimeCtx:
             "user_type": self.user_type,
             "turn_id": self.turn_id,
             "bundle_id": self.bundle_id,
+            "agent_id": self.agent_id,
             "timezone": self.timezone,
             "max_tokens": self.max_tokens,
             "max_iterations": self.max_iterations,

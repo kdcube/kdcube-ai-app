@@ -6,11 +6,11 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from kdcube_ai_app.apps.chat.sdk.protocol import (
-    ChatTaskActor,
-    ChatTaskPayload,
-    ChatTaskRequest,
-    ChatTaskRouting,
-    ChatTaskUser,
+    ExternalEventActor,
+    ExternalEventPayload,
+    ExternalEventRequest,
+    ExternalEventRouting,
+    ExternalEventUser,
 )
 from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import (
     bind_current_request_context,
@@ -62,20 +62,20 @@ class _DummyConfig:
         return None
 
 
-def _ctx(*, user_type: str, user_id: str = "user-1", email: str = "lena@nestlogic.com") -> ChatTaskPayload:
-    return ChatTaskPayload(
-        request=ChatTaskRequest(request_id=f"req-{user_type}"),
-        routing=ChatTaskRouting(
+def _ctx(*, user_type: str, user_id: str = "user-1", email: str = "lena@nestlogic.com") -> ExternalEventPayload:
+    return ExternalEventPayload(
+        request=ExternalEventRequest(request_id=f"req-{user_type}"),
+        routing=ExternalEventRouting(
             session_id=f"sid-{user_type}",
             conversation_id=f"conv-{user_type}",
             turn_id=f"turn-{user_type}",
             bundle_id="kdcube.admin",
         ),
-        actor=ChatTaskActor(
+        actor=ExternalEventActor(
             tenant_id="demo",
             project_id="demo-project",
         ),
-        user=ChatTaskUser(
+        user=ExternalEventUser(
             user_type=user_type,
             user_id=user_id,
             username="lena@nestlogic.com",
@@ -169,7 +169,7 @@ async def test_singleton_entrypoint_keeps_comm_context_task_local(monkeypatch):
 
     ep = _ProbeEntrypoint(config=_DummyConfig(bundle_id="bundle.probe"), comm_context=_ctx(user_type="registered", user_id="seed"))
 
-    async def _call(ctx: ChatTaskPayload, pause: float):
+    async def _call(ctx: ExternalEventPayload, pause: float):
         ep.rebind_request_context(comm_context=ctx)
         return await ep.probe(pause)
 

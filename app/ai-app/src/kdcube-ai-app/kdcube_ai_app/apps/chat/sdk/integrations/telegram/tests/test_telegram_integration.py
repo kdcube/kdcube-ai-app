@@ -121,7 +121,7 @@ def test_telegram_user_admin_storage_maps_roles_and_conversations(tmp_path):
 def test_telegram_user_admin_uses_bound_comm_bundle_id(tmp_path):
     from kdcube_ai_app.apps.chat.sdk.integrations.telegram import TelegramUserAdminStorage
     from kdcube_ai_app.apps.chat.sdk.integrations.telegram import user_admin
-    from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload, ChatTaskRouting
+    from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload, ExternalEventRouting
     from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import bind_current_request_context
 
     storage = TelegramUserAdminStorage(tmp_path)
@@ -134,8 +134,8 @@ def test_telegram_user_admin_uses_bound_comm_bundle_id(tmp_path):
         BUNDLE_ID="kdcube.copilot",
         config=SimpleNamespace(ai_bundle_spec=SimpleNamespace(id="kdcube.copilot")),
     )
-    comm_context = ChatTaskPayload(
-        routing=ChatTaskRouting(
+    comm_context = ExternalEventPayload(
+        routing=ExternalEventRouting(
             bundle_id="kdcube.copilot@2026-04-03-19-05",
             session_id="session-1",
         ),

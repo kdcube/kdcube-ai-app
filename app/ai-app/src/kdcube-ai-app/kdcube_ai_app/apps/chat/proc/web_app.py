@@ -805,7 +805,7 @@ async def lifespan(app: FastAPI):
 
     port = CHAT_PROCESSOR_PORT
 
-    async def agentic_app_func(comm_context: "ChatTaskPayload"):
+    async def agentic_app_func(comm_context: "ExternalEventPayload"):
         """
         Entry-point invoked by the processor.
         """

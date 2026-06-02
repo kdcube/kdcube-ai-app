@@ -34,8 +34,11 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
 from kdcube_ai_app.apps.chat.sdk.solutions.react.workspace import get_workspace_implementation
 from kdcube_ai_app.tools.content_type import is_text_mime_type
 from kdcube_ai_app.apps.chat.sdk.solutions.react.events import (
+    acquire_live_external_event_owner,
     event_source_id_for_external_kind,
     event_source_pipeline_enabled,
+    release_live_external_event_owner,
+    run_live_external_event_listener_loop,
     stamp_event_identity_many,
 )
 
@@ -65,7 +68,7 @@ class ContextBrowser:
         self._cache_min_blocks = max(1, int(cache_additional_min_blocks))
         self._cache_offset = max(1, int(cache_additional_offset))
         self._turn_log_cache: Dict[str, Dict[str, Any]] = {}
-        self._timeline_event_hooks: List[Any] = []
+        self._external_event_hooks: List[Any] = []
         self._external_event_task: Optional[asyncio.Task] = None
         self._external_event_stop: Optional[asyncio.Event] = None
         self._external_listener_id: str = ""
@@ -77,10 +80,10 @@ class ContextBrowser:
     def external_event_source(self):
         return getattr(self._runtime_ctx, "external_event_source", None)
 
-    def add_timeline_event_hook(self, callback: Any) -> None:
+    def add_external_event_hook(self, callback: Any) -> None:
         if not callback:
             return
-        self._timeline_event_hooks.append(callback)
+        self._external_event_hooks.append(callback)
         if self._timeline is not None and (self._external_event_task is None or self._external_event_task.done()):
             try:
                 asyncio.get_running_loop().create_task(self.start_external_event_listener())
@@ -88,7 +91,7 @@ class ContextBrowser:
                 self.log.log("[timeline.external] failed to schedule owner listener start\n" + traceback.format_exc(), "ERROR")
 
     async def ensure_external_event_listener(self) -> None:
-        if self._timeline is None or not self._timeline_event_hooks:
+        if self._timeline is None or not self._external_event_hooks:
             return
         task = self._external_event_task
         if task is not None and not task.done():
@@ -119,23 +122,33 @@ class ContextBrowser:
         self._external_listener_id = self._external_listener_id or f"listener_{uuid.uuid4().hex[:8]}"
         self._external_listener_turn_id = turn_id
         self._external_event_stop = asyncio.Event()
-        try:
-            lease = await source.acquire_owner(
-                turn_id=turn_id,
-                bundle_id=str(self._runtime_ctx.bundle_id or ""),
-                listener_id=self._external_listener_id,
-            )
-            self._external_lease_token = str(getattr(lease, "lease_token", "") or "")
-            self.log.log(
-                f"[timeline.external]: owner lease acquired conversation={conversation_id} turn_id={turn_id} "
-                f"listener_id={self._external_listener_id} lease_epoch={getattr(lease, 'lease_epoch', 0)}",
-                "INFO",
-            )
-        except Exception:
-            self.log.log("[timeline.external] failed to acquire owner lease\n" + traceback.format_exc(), "ERROR")
+        lease = await acquire_live_external_event_owner(
+            source=source,
+            runtime_ctx=self._runtime_ctx,
+            listener_id=self._external_listener_id,
+            log=self.log,
+        )
+        if lease is None:
             return
+        self._external_lease_token = lease.lease_token
+        self.log.log(
+            f"[timeline.external]: owner lease acquired conversation={conversation_id} turn_id={turn_id} "
+            f"listener_id={self._external_listener_id} lease_epoch={lease.lease_epoch}",
+            "INFO",
+        )
         self._external_event_task = asyncio.create_task(
-            self._external_event_listener_loop(),
+            run_live_external_event_listener_loop(
+                source_getter=lambda: self.external_event_source,
+                runtime_ctx=self._runtime_ctx,
+                stop_event=self._external_event_stop,
+                listener_id=self._external_listener_id,
+                lease_token_getter=lambda: self._external_lease_token,
+                last_cursor_getter=lambda: (
+                    str(self._timeline.last_external_event_id or "") if self._timeline is not None else ""
+                ),
+                apply_events=lambda events: self.apply_external_events(list(events or []), call_hooks=True),
+                log=self.log,
+            ),
             name=f"react-timeline-events:{conversation_id}:{turn_id}",
         )
 
@@ -158,11 +171,11 @@ class ContextBrowser:
             except Exception:
                 pass
         source = self.external_event_source
-        if source is not None and self._external_listener_id:
-            try:
-                await source.release_owner(listener_id=self._external_listener_id, lease_token=lease_token)
-            except Exception:
-                pass
+        await release_live_external_event_owner(
+            source=source,
+            listener_id=self._external_listener_id,
+            lease_token=lease_token,
+        )
 
     async def load_timeline(
             self,
@@ -320,53 +333,11 @@ class ContextBrowser:
                 await self._timeline.refresh_feedbacks(ctx_client=self.ctx_client, days=days)
         except Exception:
             self.log.log(f"[timeline.load]: refresh feedbacks failure {traceback.format_exc()}", "ERROR")
-        if self._timeline_event_hooks:
+        if self._external_event_hooks:
             try:
                 await self.start_external_event_listener()
             except Exception:
                 self.log.log(f"[timeline.load]: external event listener start failure {traceback.format_exc()}", "ERROR")
-
-    async def _external_event_listener_loop(self) -> None:
-        source = self.external_event_source
-        stop_evt = self._external_event_stop
-        if source is None or stop_evt is None:
-            return
-        while not stop_evt.is_set():
-            try:
-                refreshed = await source.refresh_owner(
-                    listener_id=self._external_listener_id,
-                    turn_id=str(self._runtime_ctx.turn_id or ""),
-                    bundle_id=str(self._runtime_ctx.bundle_id or ""),
-                    lease_token=self._external_lease_token,
-                )
-                if refreshed is None:
-                    self.log.log("[timeline.external]: owner lease refresh rejected; stopping listener", "INFO")
-                    break
-                current_owner = await source.get_owner()
-                if current_owner is None or str(getattr(current_owner, "lease_token", "") or "") != str(self._external_lease_token or ""):
-                    self.log.log("[timeline.external]: owner lease lost; stopping listener", "INFO")
-                    break
-                last_cursor = ""
-                try:
-                    last_cursor = str(self._timeline.last_external_event_id or "") if self._timeline is not None else ""
-                except Exception:
-                    last_cursor = ""
-                events = await source.wait_for_events_after(last_cursor, block_ms=3000, limit=100)
-                if events:
-                    self.log.log(
-                        f"[timeline.external]: listener received conversation={self._runtime_ctx.conversation_id} "
-                        f"turn_id={self._runtime_ctx.turn_id} count={len(events)} last_cursor={last_cursor}",
-                        "INFO",
-                    )
-                await self.apply_external_events(events, call_hooks=True)
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                self.log.log(f"[timeline.external]: listener loop failure {traceback.format_exc()}", "ERROR")
-                try:
-                    await asyncio.wait_for(stop_evt.wait(), timeout=0.5)
-                except asyncio.TimeoutError:
-                    continue
 
     async def drain_external_events(self, *, call_hooks: bool) -> int:
         if self._timeline is None:
@@ -523,7 +494,7 @@ class ContextBrowser:
                 "INFO",
             )
             if call_hooks:
-                await self._emit_timeline_event_hooks(type=str(event.kind or "external"), event=event, blocks=blocks)
+                await self._emit_external_event_hooks(type=str(event.kind or "external"), event=event, blocks=blocks)
         if max_applied_seq and source is not None:
             try:
                 await source.mark_consumed_up_to(
@@ -534,8 +505,8 @@ class ContextBrowser:
                 self.log.log(f"[timeline.external]: failed to mark consumed {traceback.format_exc()}", "ERROR")
         return added
 
-    async def _emit_timeline_event_hooks(self, *, type: str, event: Any, blocks: List[Dict[str, Any]]) -> None:
-        hooks = list(self._timeline_event_hooks or [])
+    async def _emit_external_event_hooks(self, *, type: str, event: Any, blocks: List[Dict[str, Any]]) -> None:
+        hooks = list(self._external_event_hooks or [])
         for callback in hooks:
             try:
                 result = callback(type=type, event=event, blocks=list(blocks))
@@ -548,7 +519,7 @@ class ContextBrowser:
         if self._timeline is None:
             return []
         kind = str(getattr(event, "kind", "") or "").strip().lower()
-        if kind not in {"followup", "steer"}:
+        if kind not in {"followup", "steer", "external_event"}:
             return []
         turn_id = (
             str(getattr(event, "owner_turn_id", "") or "").strip()
@@ -557,8 +528,17 @@ class ContextBrowser:
             or str(self._runtime_ctx.turn_id or "").strip()
         )
         path = f"ar:{turn_id}.external.{kind}.{getattr(event, 'message_id', '')}" if turn_id else ""
+        payload = getattr(event, "payload", None) or {}
+        payload = payload if isinstance(payload, dict) else {}
+        external_event = payload.get("external_event") if isinstance(payload.get("external_event"), dict) else {}
+        target = payload.get("target") if isinstance(payload.get("target"), dict) else {}
+        event_source_id = (
+            str(external_event.get("event_source_id") or "").strip()
+            or event_source_id_for_external_kind(kind)
+        )
         meta = {
             "event_kind": kind,
+            "event_source_id": event_source_id,
             "message_id": str(getattr(event, "message_id", "") or ""),
             "stream_id": str(getattr(event, "stream_id", "") or ""),
             "sequence": int(getattr(event, "sequence", 0) or 0),
@@ -568,10 +548,20 @@ class ContextBrowser:
             "explicit": bool(getattr(event, "explicit", False)),
             "source": str(getattr(event, "source", "") or ""),
         }
-        payload = getattr(event, "payload", None) or {}
-        if isinstance(payload, dict) and payload:
+        if payload:
             meta["payload"] = dict(payload)
-        attachments = self._attachments_from_external_event(event) if kind == "followup" else []
+        if external_event:
+            meta["external_event"] = dict(external_event)
+        if target:
+            meta["target"] = dict(target)
+        story_id = str(external_event.get("story_id") or target.get("story_id") or "").strip()
+        if story_id:
+            meta["story_id"] = story_id
+        routing = external_event.get("routing") if isinstance(external_event.get("routing"), dict) else {}
+        reactive = bool(routing.get("reactive")) if "reactive" in routing else False
+        if kind == "external_event":
+            meta["reactive"] = reactive
+        attachments = self._attachments_from_external_event(event) if kind in {"followup", "external_event"} else []
         if attachments:
             attachments = await self._hydrate_external_event_attachments(attachments)
         if attachments:
@@ -581,10 +571,31 @@ class ContextBrowser:
             time.gmtime(float(getattr(event, "created_at", 0.0) or time.time())),
         )
         text = str(getattr(event, "text", "") or "").strip()
-        if not text and isinstance(payload, dict):
+        if not text:
             text = str(payload.get("message") or payload.get("text") or "").strip()
+        if kind == "external_event":
+            data = external_event.get("data") if isinstance(external_event.get("data"), dict) else {}
+            if not text:
+                text = str(data.get("request") or data.get("summary") or data.get("title") or "").strip()
+            lines = ["[TIMELINE EVENT]"]
+            if event_source_id:
+                lines.append(f"event_source_id: {event_source_id}")
+            if story_id:
+                lines.append(f"story_id: {story_id}")
+            lines.append(f"reactive: {'true' if reactive else 'false'}")
+            if text:
+                lines.append("")
+                lines.append(text)
+            if data:
+                try:
+                    lines.append("")
+                    lines.append("data:")
+                    lines.append(json.dumps(data, ensure_ascii=False, indent=2, default=str))
+                except Exception:
+                    pass
+            text = "\n".join(lines).strip()
         blocks = [self._timeline.block(
-            type="user.followup" if kind == "followup" else "user.steer",
+            type="user.followup" if kind == "followup" else "user.steer" if kind == "steer" else "event.external",
             author="user",
             turn_id=turn_id,
             ts=event_ts,
@@ -607,6 +618,7 @@ class ContextBrowser:
                 meta_extra={
                     "continuation_kind": kind,
                     "event_kind": kind,
+                    "event_source_id": event_source_id,
                     "message_id": event_id,
                     "sequence": int(getattr(event, "sequence", 0) or 0),
                 },
@@ -614,8 +626,9 @@ class ContextBrowser:
         if event_source_pipeline_enabled(self._runtime_ctx):
             stamp_event_identity_many(
                 blocks,
-                event_source_id=event_source_id_for_external_kind(kind),
+                event_source_id=event_source_id,
                 event_id=event_id,
+                story_id=story_id or None,
             )
         return blocks
 

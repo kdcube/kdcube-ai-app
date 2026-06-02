@@ -1,7 +1,7 @@
 ---
 id: ks:docs/sdk/agents/react/shared-timeline-event-bus-steer-followup-README.md
 title: "Shared Timeline Event Bus for Steer and Followup"
-summary: "How active React turns consume durable followup and steer events through the shared conversation event bus while preserving turn ownership and fallback continuation execution."
+summary: "How active React turns consume followup and steer events through the shared conversation event bus while preserving turn ownership and fallback continuation execution."
 tags: ["sdk", "agents", "react", "timeline", "steer", "followup", "continuations", "redis"]
 keywords:
   [
@@ -16,6 +16,8 @@ keywords:
     "external events",
   ]
 see_also:
+  - ks:docs/sdk/events/external-events-journey-and-handling-README.md
+  - ks:docs/arch/ingress/events-inception-README.md
   - ks:docs/sdk/agents/react/timeline-README.md
   - ks:docs/sdk/agents/react/context-browser-README.md
   - ks:docs/sdk/agents/react/turn-log-README.md
@@ -28,7 +30,7 @@ see_also:
 
 This design is now implemented in the current React runtime with these concrete semantics:
 
-- ingress appends busy-turn `followup` / `steer` into one durable shared conversation event source
+- ingress appends busy-turn `followup` / `steer` into one Redis-backed shared conversation event source
 - the active React turn acquires a fenced owner lease and listens to that source live
 - `followup` is folded into the current turn and can trigger another decision round before completion
 - a consumed live `followup` also mints extra iteration credit for that same turn, capped by runtime configuration, so additive followups do not exhaust the original fixed loop budget
@@ -36,13 +38,23 @@ This design is now implemented in the current React runtime with these concrete 
 - `steer` is folded into the current turn and acts as a control interrupt
 - a consumed steer first interrupts the active generation or cancellable tool phase when possible
 - React then re-enters with the steer already on the current turn timeline and gets a short bounded finalize window
-- if no live owner consumes the event, processor promotes it from that same durable source into a normal scheduled turn
+- if no live owner consumes the event, processor promotes it from that same retained source into a normal scheduled turn
 
 Current boundary:
+- the shared external-event source is Redis-backed retained operational state,
+  not permanent conversation/artifact storage
+- retention is bounded per tenant/project/conversation stream by
+  `CHAT_EXTERNAL_EVENTS_STREAM_MAX_ENTRIES` and
+  `CHAT_EXTERNAL_EVENTS_STREAM_RETENTION_SECONDS`
+- after React folds an event, the folded blocks and cursor become part of the
+  normal persisted timeline; idle non-reactive authored events that never open
+  or reach a React turn currently remain only in the Redis external-event source
 - steer interruption is immediate for the active decision phase task
 - steer interruption is immediate for cancellable exec/tool phases that already honor task cancellation
 - a fully blocking tool that does not cooperate with cancellation can still delay final stop until its await boundary
-- idle arbitrary authored events that do not open React are still a future slice; current implementation here is specifically `followup` / `steer`
+- authored `external_event` inception is documented in
+  [Ingress Event Inception](../../arch/ingress/events-inception-README.md);
+  this article focuses on React consumption of the shared event source
 
 Implemented flow:
 
@@ -56,11 +68,11 @@ Ingress
   reads server conversation state
   active_turn_id_at_ingress = server active turn
   owner_turn_id = live React owner lease, when present
-  writes durable ConversationExternalEvent
+  writes ConversationExternalEvent into the Redis external-event source
         |
         +--> HTTP/Socket ack
         |      status = followup_accepted / steer_accepted
-        |      event_id = durable event id
+        |      event_id = external event id
         |      queued_turn_id = fallback task turn id
         |      live_owner_detected = owner_turn_id == active_turn_id_at_ingress
         |
@@ -89,7 +101,7 @@ This is fine for normal single-turn ownership, but it creates a gap:
 
 - while the turn is running, the authoritative timeline state is **local**
 - external events such as `steer` and `followup` can arrive in ingress / processor
-- those events are accepted at the conversation level, but they are **not durably reachable by the active timeline owner as timeline contributions**
+- those events are accepted at the conversation level, but they are **not reachable by the active timeline owner as timeline contributions**
 
 So the current system has:
 
@@ -136,9 +148,9 @@ This is now both:
 
 The original gaps this design addressed were:
 
-- a shared durable event log for timeline contributions during an active turn
+- a shared Redis-backed event source for timeline contributions during an active turn
 - an active-turn listener lease that says “this turn can accept live contributions now”
-- a formal hook such as `on_timeline_event(...)` in the React engineering layer
+- a formal hook such as `on_external_event(...)` in the React engineering layer
 - a rule for how to handle events that arrive:
   - during the turn
   - after the turn
@@ -150,7 +162,7 @@ We want all of the following:
 
 1. Keep **turn-local ownership** of the mutable in-memory timeline.
 2. Allow `steer` / `followup` to be accepted **during** a running turn.
-3. Make those events **durable** even if the owner process dies before timeline persist.
+3. Make those events replayable while retained in Redis if the owner process dies before timeline persist.
 4. Invoke React-side hooks when such events are accepted.
 5. Preserve the existing continuation model as the **fallback execution path**.
 6. Generalize later to other external event kinds without redesigning the core again.
@@ -176,7 +188,7 @@ Events are accepted live and can have engineering-layer effects before the next 
 The right design is:
 
 - keep the **timeline owner local**
-- make external contributions go through a **shared durable conversation event log**
+- make external contributions go through a **shared Redis-backed conversation event source**
 - let the active owner **listen** and apply those events live
 - fall back to normal continuation task promotion when no live owner exists
 
@@ -187,8 +199,9 @@ Important consequence:
 
 So, logically, “the timeline starts listening when created” is true, but physically the listener is owned by:
 
-- `ContextBrowser`
-- or a small helper owned by `ReactSolverV2`
+- `ContextBrowser` for lifecycle and active timeline ownership
+- `sdk/solutions/react/events/listener.py` for the Redis wait loop and owner
+  lease refresh/release helpers
 
 not by the `Timeline` data class itself.
 
@@ -203,7 +216,7 @@ It is composed of three cooperating pieces:
    - loaded by `ContextBrowser.load_timeline()`
 
 2. **Shared external event log**
-   - a durable append-only conversation event stream
+   - a append-only Redis conversation event stream
    - contains `steer`, `followup`, and future external events
 
 3. **Local active materialization**
@@ -231,7 +244,7 @@ Canonical envelope shape:
 
 ```python
 {
-  "message_id": "evt_...",
+  "event_id": "evt_...",
   "sequence": 123,
   "kind": "followup" | "steer" | "external",
   "created_at": 1775861000.123,
@@ -260,7 +273,7 @@ Notes:
 
 Because a destructive queue is wrong for a shared-timeline contribution model:
 
-- once popped, the event is no longer durably available for replay
+- once popped, the event is no longer available for replay
 - live consumption and crash recovery become fragile
 - “accepted live but not yet folded into persisted timeline” becomes hard to reason about
 
@@ -315,13 +328,13 @@ When `steer` / `followup` arrives:
 
 Important:
 
-- the event is always durably written first
+- the event is always written to Redis first
 - the wake-up signal is only an optimization
 - Pub/Sub alone is not enough
 
 ### Wake-up channel
 
-For efficient live delivery, use a lightweight publish channel in addition to the durable log:
+For efficient live delivery, use a lightweight publish channel in addition to the Redis event source:
 
 - `chat:react:timeline-wake:{tenant}:{project}:{conversation_id}`
 
@@ -331,7 +344,7 @@ The wake event should contain only:
 - latest sequence
 - maybe active turn id observed at ingress
 
-The owner then drains from the durable event log.
+The owner then drains from the Redis event source.
 
 ## 10. Where the Listener Lives
 
@@ -341,7 +354,7 @@ Recommended shape:
 
 - `ContextBrowser.start_external_event_listener(...)`
 - `ContextBrowser.stop_external_event_listener()`
-- `ContextBrowser.add_timeline_event_hook(callback)`
+- `ContextBrowser.add_external_event_hook(callback)`
 
 Lifecycle:
 
@@ -349,7 +362,7 @@ Lifecycle:
 2. React runtime decides the turn is active
 3. browser starts the listener lease + wake subscriber
 4. on incoming event:
-   - read from durable log
+   - read from Redis event source
    - normalize to timeline blocks
    - `timeline.contribute_async(...)`
    - `timeline.write_local()`
@@ -368,7 +381,7 @@ Recommended block families:
 
 - `user.followup`
 - `user.steer`
-- later: `external.event`
+- later: `event.external`
 
 Recommended block example:
 
@@ -383,7 +396,7 @@ Recommended block example:
   "text": "{\"message\": \"also include the legal cases\", ...}",
   "meta": {
     "event_kind": "followup",
-    "message_id": "mabc123",
+    "event_id": "evt_...",
     "sequence": 123,
     "target_turn_id": "turn_122",
     "active_turn_id_at_ingress": "turn_123",
@@ -427,7 +440,7 @@ After the event is accepted into the timeline, the React engineering layer shoul
 Recommended contract:
 
 ```python
-await on_timeline_event(
+await on_external_event(
     type="followup" | "steer" | "external",
     event=envelope,
     blocks=[...],
@@ -495,7 +508,7 @@ Examples:
    - event is added to turn B with metadata saying it targeted turn A
 
 3. Event is accepted while busy, but the owner closes before it is folded
-   - the event remains in the durable source with its `task_payload`
+   - the event remains in the retained Redis source with its `task_payload`
    - proc later claims and promotes it once into the normal ready queue
    - the UI must wait for the later `chat_start`; the original ack was only admission
 
@@ -540,7 +553,8 @@ A generic bundle event system may still be valuable later for webhooks or busine
 
 ## 16. Persistence / Folding Model
 
-The event log is durable independently of the timeline artifact.
+The Redis external-event source is retained independently of the timeline
+artifact, but it is not permanent conversation storage.
 
 The persisted timeline should track the highest external-event sequence already folded in.
 
@@ -557,10 +571,13 @@ Meaning:
 - base timeline artifact contains all event contributions up to that sequence
 - later materialization can replay events with higher sequence values
 
-This gives us crash safety:
+This gives us crash recovery within Redis retention:
 
-- if the owner applied events locally but died before persist, the events are still in the shared log
+- if the owner applied events locally but died before persist, the events are still in the Redis source
 - next materialization replays them
+
+Events that must remain available after Redis retention must also be persisted
+as durable conversation storage or bundle/application artifacts.
 
 ## 17. Recommended Rollout
 
@@ -571,8 +588,8 @@ Introduce the abstraction and listener model:
 - new shared event log abstraction
 - turn-owner lease
 - browser-owned listener
-- timeline event blocks
-- `on_timeline_event(...)` hook
+- external event blocks
+- `on_external_event(...)` hook
 
 Handle only:
 
@@ -636,7 +653,7 @@ Needed behavior:
 - browser owns listener lifecycle
 - timeline stays the storage/persistence model
 - browser translates external event envelopes into timeline blocks
-- browser invokes timeline-event hooks
+- browser invokes external-event hooks
 - persisted timeline tracks folded external-event watermark
 
 ## 19. Proposed API Surface
@@ -647,12 +664,12 @@ Not implementation-final, but directionally:
 class ContextBrowser:
     async def start_external_event_listener(self) -> None: ...
     async def stop_external_event_listener(self) -> None: ...
-    def add_timeline_event_hook(self, cb) -> None: ...
+    def add_external_event_hook(self, cb) -> None: ...
 ```
 
 ```python
 class ReactSolverV2:
-    async def on_timeline_event(self, *, type: str, event: dict, blocks: list[dict]) -> None: ...
+    async def on_external_event(self, *, type: str, event: dict, blocks: list[dict]) -> None: ...
 ```
 
 ```python
@@ -667,7 +684,7 @@ class ConversationExternalEventSource:
 The correct design is:
 
 - **keep local turn ownership**
-- **add a shared durable conversation event log**
+- **add a shared Redis-backed conversation event source**
 - **register an active-turn listener lease**
 - **let the React owner accept events live into its timeline**
 - **persist a folded-event watermark with the timeline**
@@ -682,5 +699,5 @@ And specifically:
 The right mental model is:
 
 - the active React turn owns the local timeline
-- the conversation owns the durable external event log
+- the conversation owns the Redis external event source
 - the shared timeline is the combination of both

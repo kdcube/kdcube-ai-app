@@ -10,11 +10,11 @@ from contextvars import ContextVar
 from typing import Optional, Dict, Any, Callable, Mapping
 
 from kdcube_ai_app.apps.chat.emitters import ChatCommunicator
-from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
+from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
 
 # Public: holds the communicator for the *current execution context*
 COMM_CV: ContextVar[object | None] = ContextVar("COMM_CV", default=None)
-REQUEST_CONTEXT_CV: ContextVar[ChatTaskPayload | None] = ContextVar("REQUEST_CONTEXT_CV", default=None)
+REQUEST_CONTEXT_CV: ContextVar[ExternalEventPayload | None] = ContextVar("REQUEST_CONTEXT_CV", default=None)
 BUNDLE_ID_CV: ContextVar[str | None] = ContextVar("BUNDLE_ID_CV", default=None)
 BUNDLE_CALL_CONTEXT_CV: ContextVar[Dict[str, Any]] = ContextVar("BUNDLE_CALL_CONTEXT_CV", default={})
 TASK_ACTIVITY_TOUCH_CV: ContextVar[Callable[[str], None] | None] = ContextVar("TASK_ACTIVITY_TOUCH_CV", default=None)
@@ -54,12 +54,12 @@ def get_current_comm() -> Optional[object | ChatCommunicator]:
     return get_comm()
 
 
-def set_current_request_context(request_context: ChatTaskPayload | None) -> None:
-    """Register the ChatTaskPayload for the current execution context."""
+def set_current_request_context(request_context: ExternalEventPayload | None) -> None:
+    """Register the ExternalEventPayload for the current execution context."""
     REQUEST_CONTEXT_CV.set(request_context)
 
 
-def get_current_request_context() -> Optional[ChatTaskPayload]:
+def get_current_request_context() -> Optional[ExternalEventPayload]:
     """Get the current request/task payload bound to this execution context."""
     return REQUEST_CONTEXT_CV.get()
 
@@ -186,7 +186,7 @@ def bind_current_bundle_id(bundle_id: str | None):
 
 @contextmanager
 def bind_current_request_context(
-    request_context: ChatTaskPayload | None,
+    request_context: ExternalEventPayload | None,
     *,
     comm: object | ChatCommunicator | None = _BIND_COMM_UNSET,
     bundle_id: str | None | object = _BIND_BUNDLE_UNSET,
@@ -272,7 +272,7 @@ def restore_ctxvars(payload: dict) -> None:
     restored_request_context = None
     if raw_request_context:
         try:
-            restored_request_context = ChatTaskPayload.model_validate(raw_request_context)
+            restored_request_context = ExternalEventPayload.model_validate(raw_request_context)
             REQUEST_CONTEXT_CV.set(restored_request_context)
         except Exception:
             REQUEST_CONTEXT_CV.set(None)

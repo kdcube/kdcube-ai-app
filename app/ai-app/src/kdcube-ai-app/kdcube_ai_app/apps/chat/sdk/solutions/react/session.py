@@ -1154,6 +1154,8 @@ def apply_cache_ttl_pruning(
         "user.followup.preserved",
         "user.steer",
         "user.steer.preserved",
+        "event.external",
+        "event.external.preserved",
     }
 
     # Build replacements for pruned turns (reverse order for most recent per path).

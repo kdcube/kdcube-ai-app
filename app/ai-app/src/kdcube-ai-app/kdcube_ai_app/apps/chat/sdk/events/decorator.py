@@ -22,6 +22,8 @@ class EventSourceDeclaration:
     description: str = ""
     version: str = ""
     kind: str = ""
+    reactive: bool | None = None
+    iteration_credit: int | None = None
 
     def with_event_source_id(self, event_source_id: str) -> "EventSourceDeclaration":
         return EventSourceDeclaration(
@@ -30,6 +32,8 @@ class EventSourceDeclaration:
             description=self.description,
             version=self.version,
             kind=self.kind,
+            reactive=self.reactive,
+            iteration_credit=self.iteration_credit,
         )
 
 
@@ -40,6 +44,8 @@ def event_source_declaration(
     description: str = "",
     version: str = "",
     kind: str = "",
+    reactive: bool | None = None,
+    iteration_credit: int | None = None,
 ) -> EventSourceDeclaration:
     event_source_id = str(event_source_id or "").strip()
     if not event_source_id:
@@ -50,6 +56,8 @@ def event_source_declaration(
         description=str(description or "").strip(),
         version=str(version or "").strip(),
         kind=str(kind or "").strip(),
+        reactive=reactive if reactive is None else bool(reactive),
+        iteration_credit=_normalize_iteration_credit(iteration_credit),
     )
 
 
@@ -60,6 +68,8 @@ def event_source(
     description: str = "",
     version: str = "",
     kind: str = "",
+    reactive: bool | None = None,
+    iteration_credit: int | None = None,
 ) -> Callable[[T], T]:
     """Attach event-source metadata to a tool function or declaration object."""
 
@@ -69,6 +79,8 @@ def event_source(
         description=description,
         version=version,
         kind=kind,
+        reactive=reactive,
+        iteration_credit=iteration_credit,
     )
 
     def _decorate(obj: T) -> T:
@@ -114,3 +126,13 @@ def _normalize_policy_specs(policies: Sequence[Mapping[str, Any]] | None) -> tup
         normalized["event_policy_id"] = event_policy_id
         out.append(normalized)
     return tuple(out)
+
+
+def _normalize_iteration_credit(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        credit = int(value)
+    except Exception as exc:
+        raise ValueError("iteration_credit must be an integer when provided") from exc
+    return max(0, credit)

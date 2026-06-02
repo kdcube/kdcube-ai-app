@@ -113,7 +113,7 @@ context room: `bundle_call_context`.
 
 This is not a seventh stored data class. It is not exported and it is not
 durable. It is a JSON-safe bundle-owned payload attached to the current
-`ChatTaskPayload`, rebound through task-local contextvars, and restored into
+`ExternalEventPayload`, rebound through task-local contextvars, and restored into
 child runtimes through `RUNTIME_GLOBALS_JSON`.
 
 Use `bundle_call_context` for values that should follow the current execution

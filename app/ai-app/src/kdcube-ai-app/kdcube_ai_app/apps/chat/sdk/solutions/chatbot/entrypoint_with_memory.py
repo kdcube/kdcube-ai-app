@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
 
-from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
+from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import BaseEntrypoint
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint_with_economic import BaseEntrypointWithEconomics
 from kdcube_ai_app.infra.plugin.bundle_loader import api, ui_widget
@@ -3535,7 +3535,7 @@ class MemoryEntrypointMixin:
         error: Optional[BaseException] = None,
         status: str = "completed",
         reason: Optional[str] = None,
-        comm_context: ChatTaskPayload = None,
+        comm_context: ExternalEventPayload = None,
         command: str | None = None,
         **kwargs,
     ) -> None:
@@ -3812,7 +3812,7 @@ class BaseEntrypointWithMemory(MemoryEntrypointMixin, BaseEntrypoint):
         config: Config,
         pg_pool: Any = None,
         redis: Any = None,
-        comm_context: ChatTaskPayload = None,
+        comm_context: ExternalEventPayload = None,
         event_filter: Optional[Any] = None,
         ctx_client: Optional[Any] = None,
         continuation_source: Optional[Any] = None,

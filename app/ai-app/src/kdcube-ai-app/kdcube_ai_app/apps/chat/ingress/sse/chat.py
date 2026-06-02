@@ -933,7 +933,9 @@ def create_sse_router(
             "message_kind": result.continuation_kind,
             "message": (
                 "Continuation accepted; available to the active conversation owner"
-                if result.reason in {"followup_accepted", "steer_accepted"}
+                if result.reason in {"followup_accepted", "steer_accepted", "external_event_accepted"}
+                else "External event recorded"
+                if result.reason == "external_event_recorded"
                 else "Queued; streaming via SSE"
             ),
         }

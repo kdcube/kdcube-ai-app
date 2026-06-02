@@ -241,7 +241,7 @@ def block_production_policy(event_policy_id: str, *, description: str = "") -> C
     return react_event_policy(event_policy_id, react_phase="block_production", description=description)
 
 
-def timeline_event_policy(event_policy_id: str, *, description: str = "") -> Callable[[PolicyFn], PolicyFn]:
+def timeline_projection_policy(event_policy_id: str, *, description: str = "") -> Callable[[PolicyFn], PolicyFn]:
     """Register an event policy for the timeline-projection ReAct phase."""
     return react_event_policy(event_policy_id, react_phase="timeline_projection", description=description)
 
@@ -275,7 +275,7 @@ def discover_react_event_policies(owner: ModuleType | Mapping[str, Any] | Any) -
 
 @announce_event_policy(event_policy_id="react.announce_production.identity")
 @compaction_event_policy(event_policy_id="react.compaction_projection.identity")
-@timeline_event_policy(event_policy_id="react.timeline_projection.identity")
+@timeline_projection_policy(event_policy_id="react.timeline_projection.identity")
 @block_production_policy(event_policy_id="react.block_production.identity")
 @tool_call_validation_policy(event_policy_id="react.tool_call_validation.identity")
 def identity_policy(target: Any, **_: Any) -> Any:
@@ -800,7 +800,7 @@ def announce_candidates_block_production_policy(
 
 
 @compaction_event_policy(event_policy_id="react.compaction_projection.hide_by_segment")
-@timeline_event_policy(event_policy_id="react.timeline_projection.hide_by_segment")
+@timeline_projection_policy(event_policy_id="react.timeline_projection.hide_by_segment")
 def hide_by_segment_policy(
     timeline: list[MutableMapping[str, Any]],
     *,

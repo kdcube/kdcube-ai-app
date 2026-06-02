@@ -155,7 +155,7 @@ with bind_current_bundle_call_context_patch(
 ```
 
 When the selection comes from ingress rather than bundle code, put the same JSON
-object into `ChatTaskPayload.bundle_call_context` before enqueueing the task.
+object into `ExternalEventPayload.bundle_call_context` before enqueueing the task.
 The processor binds that payload field into runtime context before bundle code
 runs. See [bundle-agent-integration-README.md](bundle-agent-integration-README.md#model-selection-for-agent-roles)
 and [bundle-runtime-README.md](bundle-runtime-README.md#request-scoped-role-model-override).

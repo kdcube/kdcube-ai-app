@@ -20,6 +20,7 @@ from kdcube_ai_app.apps.chat.emitters import (
 )
 from kdcube_ai_app.apps.chat.external_events import build_conversation_external_event_source
 from kdcube_ai_app.apps.chat.sdk.continuations import get_current_conversation_continuation_source
+from kdcube_ai_app.apps.chat.sdk.event_identity import DEFAULT_REACT_AGENT_ID, normalize_agent_id
 # from kdcube_ai_app.apps.chat.sdk.context.memory.conv_memories import ConvMemoriesStore
 from kdcube_ai_app.apps.chat.sdk.context.retrieval.ctx_rag import ContextRAGClient
 
@@ -28,7 +29,7 @@ from kdcube_ai_app.apps.chat.sdk.context.vector.conv_ticket_index import ConvTic
 from kdcube_ai_app.apps.chat.sdk.context.vector.conv_ticket_store import ConvTicketStore, Ticket
 from kdcube_ai_app.apps.chat.sdk.infra.economics.limiter import subject_id_of
 from kdcube_ai_app.apps.chat.sdk.infra.economics.policy import EconomicsLimitException
-from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
+from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.turn_reporting import _format_ms_table, _format_ms_table_markdown
 from kdcube_ai_app.apps.chat.sdk.runtime.scratchpad import TurnScratchpad, TurnPhaseError
 from kdcube_ai_app.apps.chat.sdk.runtime.exec_runtime_config import (
@@ -313,6 +314,7 @@ def _effective_runtime_ctx_log_payload(runtime_ctx: Any, bundle_props: Dict[str,
         "conversation_id": getattr(runtime_ctx, "conversation_id", None),
         "turn_id": getattr(runtime_ctx, "turn_id", None),
         "bundle_id": getattr(runtime_ctx, "bundle_id", None),
+        "agent_id": getattr(runtime_ctx, "agent_id", None),
         "react_agent_version": _react_agent_version(),
         "max_tokens": getattr(runtime_ctx, "max_tokens", None),
         "max_iterations": getattr(runtime_ctx, "max_iterations", None),
@@ -409,7 +411,7 @@ class BaseWorkflow():
                  model_service: ModelServiceBase,
                  conv_ticket_store: ConvTicketStore,
                  config: Config,
-                 comm_context: ChatTaskPayload,
+                 comm_context: ExternalEventPayload,
                  ctx_client: Any = None,
                  message_resources_fn: Optional[Callable[[str, bool], str]] = None,
                  gate_out_class: Optional[Type] = None,
@@ -489,6 +491,7 @@ class BaseWorkflow():
                 conversation_id=self.comm_context.routing.conversation_id,
                 turn_id=self.comm_context.routing.turn_id,
                 bundle_id=self.config.ai_bundle_spec.id,
+                agent_id=normalize_agent_id(getattr(getattr(self.comm_context, "event", None), "agent_id", None)),
                 max_tokens=runtime_max_tokens,
                 max_iterations=runtime_max_iterations,
                 read_visible_max_text_symbols=_positive_int(getattr(settings, "AI_REACT_READ_VISIBLE_MAX_TEXT_SYMBOLS", None)),
@@ -775,7 +778,7 @@ class BaseWorkflow():
     def rebind_request_context(
         self,
         *,
-        comm_context: Optional[ChatTaskPayload] = None,
+        comm_context: Optional[ExternalEventPayload] = None,
         pg_pool: Any = None,
         redis: Any = None,
     ) -> None:
@@ -808,6 +811,10 @@ class BaseWorkflow():
                 runtime_ctx.timezone = comm_context.user.timezone
                 runtime_ctx.conversation_id = comm_context.routing.conversation_id
                 runtime_ctx.turn_id = comm_context.routing.turn_id
+                runtime_ctx.agent_id = normalize_agent_id(
+                    getattr(getattr(comm_context, "event", None), "agent_id", None)
+                    or getattr(runtime_ctx, "agent_id", None)
+                )
                 runtime_ctx.bundle_storage = self._resolve_runtime_ctx_bundle_storage()
                 runtime_ctx.continuation_source = self.continuation_source
                 runtime_ctx.external_event_source = self._external_event_source_for_runtime()
@@ -834,6 +841,14 @@ class BaseWorkflow():
             tenant = ctx.actor.tenant_id
             project = ctx.actor.project_id
             conversation_id = ctx.routing.conversation_id or ctx.routing.session_id
+            event_ctx = getattr(ctx, "event", None)
+            if event_ctx is None:
+                user_id = ""
+                agent_id = DEFAULT_REACT_AGENT_ID
+            else:
+                user_id = ctx.user.user_id or getattr(ctx.user, "fingerprint", None) or ""
+                runtime_ctx = getattr(self, "runtime_ctx", None)
+                agent_id = normalize_agent_id(getattr(runtime_ctx, "agent_id", None))
         except Exception:
             return None
         if not tenant or not project or not conversation_id:
@@ -844,6 +859,8 @@ class BaseWorkflow():
                 tenant=tenant,
                 project=project,
                 conversation_id=conversation_id,
+                user_id=user_id,
+                agent_id=agent_id,
             )
         except Exception:
             return None

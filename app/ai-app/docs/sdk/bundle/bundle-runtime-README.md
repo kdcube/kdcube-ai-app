@@ -133,7 +133,7 @@ Relevant code:
 - `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/web_app.py`
 
 Current flow:
-1. ingress builds `ChatTaskPayload`
+1. ingress builds `ExternalEventPayload`
 2. processor resolves the bundle from `routing.bundle_id`
 3. `get_workflow_instance(...)` creates or reuses the entrypoint
 4. `comm_context` is rebound for the current request
@@ -176,7 +176,7 @@ props, or bundle storage, and re-applies them on the later invocation.
 
 ### Concept diagram
 
-`bundle_call_context` is attached to the current `ChatTaskPayload`, then bound
+`bundle_call_context` is attached to the current `ExternalEventPayload`, then bound
 to task-local contextvars. That is what makes it visible to bundle code, tools,
 and child runtimes.
 
@@ -185,7 +185,7 @@ HTTP/chat/job request
         |
         v
 +-------------------------------+
-| ChatTaskPayload               |
+| ExternalEventPayload               |
 | - routing / actor / user      |
 | - request                     |
 | - bundle_call_context  <------+  bundle code can add JSON-safe call metadata
@@ -443,7 +443,7 @@ Relevant code:
 
 Current flow:
 1. REST request resolves `bundle_id`
-2. runtime creates `ChatTaskPayload`
+2. runtime creates `ExternalEventPayload`
 3. `get_workflow_instance(...)` creates or reuses the entrypoint
 4. proc resolves decorated `@api` alias + method first, then falls back to same-name method lookup for undecorated bundles
 5. runtime calls the resolved method with `user_id=..., fingerprint=..., **kwargs`

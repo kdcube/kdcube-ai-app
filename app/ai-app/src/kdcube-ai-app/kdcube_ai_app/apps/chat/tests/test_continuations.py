@@ -10,6 +10,17 @@ from kdcube_ai_app.apps.chat.external_events import build_conversation_external_
 from kdcube_ai_app.auth.sessions import UserType
 
 
+def _scoped_external_source(redis):
+    return build_conversation_external_event_source(
+        redis=redis,
+        tenant="tenant-a",
+        project="project-a",
+        conversation_id="conv-1",
+        user_id="user-1",
+        agent_id="default.react.agent",
+    )
+
+
 class _MiniRedis:
     def __init__(self):
         self.lists = {}
@@ -372,12 +383,7 @@ async def test_busy_message_is_stored_as_followup(_patch_ingress_dependencies):
     assert result.queued_turn_id == result.turn_id
     assert result.live_owner_detected is False
 
-    source = build_conversation_external_event_source(
-        redis=redis,
-        tenant="tenant-a",
-        project="project-a",
-        conversation_id="conv-1",
-    )
+    source = _scoped_external_source(redis)
     events = await source.read_since(0)
     assert len(events) == 1
     assert events[0].kind == "followup"
@@ -391,12 +397,7 @@ async def test_busy_message_is_stored_as_followup(_patch_ingress_dependencies):
 @pytest.mark.asyncio
 async def test_busy_followup_ack_preserves_target_and_server_active_owner(_patch_ingress_dependencies):
     redis = _MiniRedis()
-    source = build_conversation_external_event_source(
-        redis=redis,
-        tenant="tenant-a",
-        project="project-a",
-        conversation_id="conv-1",
-    )
+    source = _scoped_external_source(redis)
     await redis.set(source.owner_key, json.dumps({
         "turn_id": "turn-active",
         "bundle_id": "bundle.demo",
@@ -509,12 +510,7 @@ async def test_busy_followup_attachment_is_persisted_into_external_event_payload
     )
 
     assert result.ok is True
-    source = build_conversation_external_event_source(
-        redis=redis,
-        tenant="tenant-a",
-        project="project-a",
-        conversation_id="conv-1",
-    )
+    source = _scoped_external_source(redis)
     events = await source.read_since(0)
     assert len(events) == 1
     payload = events[0].task_payload["request"]["payload"]
@@ -574,12 +570,7 @@ async def test_busy_attachment_only_followup_is_persisted_into_external_event_pa
     assert result.ok is True
     assert result.reason == "followup_accepted"
     assert result.continuation_kind == "followup"
-    source = build_conversation_external_event_source(
-        redis=redis,
-        tenant="tenant-a",
-        project="project-a",
-        conversation_id="conv-1",
-    )
+    source = _scoped_external_source(redis)
     events = await source.read_since(0)
     assert len(events) == 1
     assert events[0].text == ""
@@ -631,12 +622,7 @@ async def test_busy_blank_explicit_steer_is_stored(_patch_ingress_dependencies):
     assert result.reason == "steer_accepted"
     assert result.continuation_kind == "steer"
 
-    source = build_conversation_external_event_source(
-        redis=redis,
-        tenant="tenant-a",
-        project="project-a",
-        conversation_id="conv-1",
-    )
+    source = _scoped_external_source(redis)
     events = await source.read_since(0)
     assert len(events) == 1
     assert events[0].kind == "steer"

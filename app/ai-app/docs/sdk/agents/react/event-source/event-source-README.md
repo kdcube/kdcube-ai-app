@@ -5,6 +5,8 @@ summary: "Event-source declarations, ReAct policy bindings, discovery, identity,
 tags: ["sdk", "agents", "react", "event-source", "policies"]
 keywords: ["event_source", "event_source_id", "event_id", "react_phase", "event_policy_id", "tool policy", "timeline projection"]
 see_also:
+  - ks:docs/sdk/events/external-events-README.md
+  - ks:docs/sdk/events/external-events-journey-and-handling-README.md
   - ks:docs/sdk/events/event-subsystem-README.md
   - ks:docs/sdk/agents/react/event-source/events-blocks-and-rendering-README.md
   - ks:docs/sdk/agents/react/event-source/block-production-README.md
@@ -45,6 +47,11 @@ When a block already has `tool_id`/`tool_call_id` via its tool-call map, code ca
 derive event identity without duplicating durable fields on every block. When a
 non-tool external event is folded into the timeline, it should carry explicit
 `event_source_id` and `event_id`.
+
+External events arrive through chat ingress as `payload.external_event` and are
+retained first in the per-conversation Redis external-event source. The
+transport, reactivity, and story-correlation contract is documented in
+[External Events](../../../events/external-events-README.md).
 
 ## Feature Flag
 
@@ -90,6 +97,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.events import exploration_sourc
     policies=exploration_source_policies(),
     description="Web search results are source rows for ReAct sources_pool.",
     kind="react.tool",
+    reactive=False,
 )
 async def web_search(...):
     ...
@@ -111,6 +119,7 @@ def list_event_sources():
             policies=[],
             description="User followup folded into the active ReAct timeline.",
             kind="react.external",
+            reactive=True,
         )
     ]
 ```
@@ -118,6 +127,27 @@ def list_event_sources():
 If `list_event_sources()` returns any declarations, it is the authoritative
 source list for that module. Otherwise the subsystem scans decorated functions,
 objects, and tool owners.
+
+For authored external events, `reactive` and `iteration_credit` are declaration
+defaults:
+
+```python
+event_source_declaration(
+    event_source_id="my_app.wizard.assistance.requested",
+    kind="react.external",
+    reactive=True,
+    iteration_credit=2,
+    policies=[...],
+)
+```
+
+`reactive=True` is declaration metadata/default for code that authors
+occurrences of this source. A transported `external_event` must still carry its
+effective `payload.external_event.routing.reactive` value; the runtime does not
+wake ReAct from a declaration alone. `iteration_credit=2` means one live
+occurrence that is explicitly reactive grants two extra iterations before
+runtime caps are applied. The occurrence payload can override credit with
+`payload.external_event.routing.iteration_credit`.
 
 ## Binding Policies
 
@@ -145,8 +175,8 @@ Policy functions are registered with phase-specific decorators:
 ```python
 from kdcube_ai_app.apps.chat.sdk.solutions.react.events import block_production_policy
 
-@block_production_policy(event_policy_id="my_bundle.block_production.issue_snapshot")
-def issue_snapshot_policy(target, **context):
+@block_production_policy(event_policy_id="my_bundle.block_production.document_snapshot")
+def document_snapshot_policy(target, **context):
     target.setdefault("snapshot_refs", []).append("fi:turn_1.snapshots/current.yaml")
     return target
 ```

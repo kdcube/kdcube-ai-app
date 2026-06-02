@@ -10,7 +10,7 @@ import uuid
 from typing import Any, Dict, Optional
 
 from kdcube_ai_app.apps.chat.sdk.continuations import ContinuationEnvelope, ContinuationKind
-from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
+from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
 from kdcube_ai_app.infra.namespaces import REDIS, ns_key
 
 logger = logging.getLogger(__name__)
@@ -47,7 +47,7 @@ class RedisConversationContinuationSource:
 
     async def publish(
         self,
-        task_payload: ChatTaskPayload | Dict[str, Any],
+        task_payload: ExternalEventPayload | Dict[str, Any],
         *,
         kind: ContinuationKind,
         explicit: bool = False,
@@ -127,7 +127,7 @@ class RedisConversationContinuationSource:
             logger.debug("Failed to decrement continuation count", exc_info=True)
 
 
-def build_conversation_continuation_source(*, redis, payload: ChatTaskPayload) -> RedisConversationContinuationSource:
+def build_conversation_continuation_source(*, redis, payload: ExternalEventPayload) -> RedisConversationContinuationSource:
     return RedisConversationContinuationSource(
         redis=redis,
         tenant=payload.actor.tenant_id,

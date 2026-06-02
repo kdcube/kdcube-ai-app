@@ -41,11 +41,11 @@ from kdcube_ai_app.infra.service_hub.inventory import (
     resolve_config_request_secrets,
 )
 from kdcube_ai_app.apps.chat.sdk.protocol import (
-    ChatTaskPayload,
-    ChatTaskRouting,
-    ChatTaskActor,
-    ChatTaskUser,
-    ChatTaskRequest,
+    ExternalEventPayload,
+    ExternalEventRouting,
+    ExternalEventActor,
+    ExternalEventUser,
+    ExternalEventRequest,
 )
 from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import bind_current_request_context
 from kdcube_ai_app.apps.chat.sdk.runtime.http_ops import (
@@ -467,15 +467,15 @@ def _bind_route_scope_to_config_request(
     cfg_req.project = project
 
 
-def _build_rest_bundle_routing(*, request: Request, session_id: str, bundle_id: str) -> ChatTaskRouting:
-    return ChatTaskRouting(
+def _build_rest_bundle_routing(*, request: Request, session_id: str, bundle_id: str) -> ExternalEventRouting:
+    return ExternalEventRouting(
         session_id=session_id,
         bundle_id=bundle_id,
         socket_id=_request_stream_id(request),
     )
 
 
-def _unpack_loaded_bundle_workflow(result: tuple[Any, ...]) -> tuple[Any, Any, str, str, Optional[ChatTaskPayload]]:
+def _unpack_loaded_bundle_workflow(result: tuple[Any, ...]) -> tuple[Any, Any, str, str, Optional[ExternalEventPayload]]:
     if len(result) == 5:
         workflow, spec_resolved, tenant_id, project_id, comm_context = result
         return workflow, spec_resolved, tenant_id, project_id, comm_context
@@ -485,7 +485,7 @@ def _unpack_loaded_bundle_workflow(result: tuple[Any, ...]) -> tuple[Any, Any, s
     raise ValueError(f"Unexpected _load_bundle_workflow result shape: {len(result)}")
 
 
-def _resolve_bound_runtime_comm(*, workflow: Any, comm_context: Optional[ChatTaskPayload]):
+def _resolve_bound_runtime_comm(*, workflow: Any, comm_context: Optional[ExternalEventPayload]):
     if comm_context is None:
         return None
     descriptor = getattr(type(workflow), "comm", None)
@@ -1101,14 +1101,14 @@ async def _load_bundle_props_defaults(
         session_id=session.session_id,
         bundle_id=spec_resolved.id,
     )
-    comm_context = ChatTaskPayload(
-        request=ChatTaskRequest(request_id=str(uuid.uuid4())),
+    comm_context = ExternalEventPayload(
+        request=ExternalEventRequest(request_id=str(uuid.uuid4())),
         routing=routing,
-        actor=ChatTaskActor(
+        actor=ExternalEventActor(
             tenant_id=tenant,
             project_id=project,
         ),
-        user=ChatTaskUser(
+        user=ExternalEventUser(
             user_type=session.user_type.value,
             user_id=session.user_id,
             username=session.username,
@@ -3915,7 +3915,7 @@ async def _load_bundle_workflow(
         payload: BundleSuggestionsRequest,
         request: Request,
         session: UserSession,
-) -> tuple[Any, Any, str, str, ChatTaskPayload]:
+) -> tuple[Any, Any, str, str, ExternalEventPayload]:
     cfg_req = payload.config_request or ConfigRequest()
     tenant_id, project_id = _resolve_path_scope(tenant=tenant, project=project)
     _bind_route_scope_to_config_request(cfg_req, tenant=tenant_id, project=project_id)
@@ -3953,14 +3953,14 @@ async def _load_bundle_workflow(
         session_id=session.session_id,
         bundle_id=spec_resolved.id,
     )
-    comm_context = ChatTaskPayload(
-        request=ChatTaskRequest(request_id=request_id),
+    comm_context = ExternalEventPayload(
+        request=ExternalEventRequest(request_id=request_id),
         routing=routing,
-        actor=ChatTaskActor(
+        actor=ExternalEventActor(
             tenant_id=tenant_id,
             project_id=project_id,
         ),
-        user=ChatTaskUser(
+        user=ExternalEventUser(
             user_type=session.user_type.value,
             user_id=session.user_id,
             username=session.username,

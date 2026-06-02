@@ -13,6 +13,11 @@ from typing import Any, Dict, List, Optional
 
 from kdcube_ai_app.apps.chat.sdk.config import get_settings
 from kdcube_ai_app.apps.chat.sdk.continuations import ContinuationKind
+from kdcube_ai_app.apps.chat.sdk.event_identity import (
+    DEFAULT_REACT_AGENT_ID,
+    normalize_agent_id,
+    safe_event_lane_part,
+)
 from kdcube_ai_app.infra.namespaces import REDIS, ns_key
 
 logger = logging.getLogger(__name__)
@@ -47,6 +52,9 @@ class ConversationExternalEvent:
     kind: ContinuationKind | str
     created_at: float
     sequence: int
+    user_id: str = ""
+    agent_id: str = DEFAULT_REACT_AGENT_ID
+    event_source_id: str = ""
     stream_id: Optional[str] = None
     explicit: bool = False
     target_turn_id: Optional[str] = None
@@ -63,12 +71,20 @@ class ConversationExternalEvent:
     failed_at: Optional[float] = None
     failed_reason: Optional[str] = None
 
+    @property
+    def event_id(self) -> str:
+        return self.message_id
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "message_id": self.message_id,
+            "event_id": self.message_id,
             "kind": str(self.kind or "external"),
             "created_at": float(self.created_at or 0.0),
             "sequence": int(self.sequence or 0),
+            "user_id": self.user_id or "",
+            "agent_id": self.agent_id or DEFAULT_REACT_AGENT_ID,
+            "event_source_id": self.event_source_id or "",
             "stream_id": self.stream_id,
             "explicit": bool(self.explicit),
             "target_turn_id": self.target_turn_id,
@@ -97,10 +113,13 @@ class ConversationExternalEvent:
         if not isinstance(raw, dict):
             raise TypeError(f"Unsupported external event payload: {type(raw)!r}")
         return cls(
-            message_id=str(raw.get("message_id") or ""),
+            message_id=str(raw.get("message_id") or raw.get("event_id") or ""),
             kind=str(raw.get("kind") or "external"),
             created_at=float(raw.get("created_at") or 0.0),
             sequence=int(raw.get("sequence") or 0),
+            user_id=str(raw.get("user_id") or ""),
+            agent_id=normalize_agent_id(raw.get("agent_id")),
+            event_source_id=str(raw.get("event_source_id") or ""),
             stream_id=raw.get("stream_id"),
             explicit=bool(raw.get("explicit")),
             target_turn_id=raw.get("target_turn_id"),
@@ -119,9 +138,9 @@ class ConversationExternalEvent:
         )
 
     def task_payload_model(self):
-        from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
+        from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
 
-        return ChatTaskPayload.model_validate(self.task_payload or {})
+        return ExternalEventPayload.model_validate(self.task_payload or {})
 
 
 @dataclass
@@ -185,6 +204,8 @@ class RedisConversationExternalEventSource:
         tenant: str,
         project: str,
         conversation_id: str,
+        user_id: str = "",
+        agent_id: str = DEFAULT_REACT_AGENT_ID,
         stream_max_entries: Optional[int] = None,
         stream_retention_seconds: Optional[int] = None,
         stream_trim_batch: Optional[int] = None,
@@ -193,19 +214,31 @@ class RedisConversationExternalEventSource:
         self.tenant = tenant
         self.project = project
         self.conversation_id = conversation_id
+        self.user_id = str(user_id or "").strip()
+        self.agent_id = normalize_agent_id(agent_id)
         self.stream_max_entries = max(0, int(stream_max_entries if stream_max_entries is not None else _DEFAULT_STREAM_MAX_ENTRIES))
         self.stream_retention_seconds = max(0, int(stream_retention_seconds if stream_retention_seconds is not None else _DEFAULT_STREAM_RETENTION_SECONDS))
         self.stream_trim_batch = max(1, int(stream_trim_batch if stream_trim_batch is not None else _DEFAULT_STREAM_TRIM_BATCH))
 
     @property
+    def lane_id(self) -> str:
+        if not self.user_id and self.agent_id == DEFAULT_REACT_AGENT_ID:
+            return safe_event_lane_part(self.conversation_id)
+        return (
+            f"{safe_event_lane_part(self.conversation_id)}"
+            f":user:{safe_event_lane_part(self.user_id)}"
+            f":agent:{safe_event_lane_part(self.agent_id, default=DEFAULT_REACT_AGENT_ID)}"
+        )
+
+    @property
     def log_key(self) -> str:
         base = ns_key(REDIS.CHAT.CONVERSATION_EXTERNAL_EVENTS_PREFIX, tenant=self.tenant, project=self.project)
-        return f"{base}:{self.conversation_id}"
+        return f"{base}:{self.lane_id}"
 
     @property
     def sequence_key(self) -> str:
         base = ns_key(REDIS.CHAT.CONVERSATION_EXTERNAL_EVENTS_SEQ_PREFIX, tenant=self.tenant, project=self.project)
-        return f"{base}:{self.conversation_id}"
+        return f"{base}:{self.lane_id}"
 
     def event_key(self, message_id: str) -> str:
         return f"{self.log_key}:event:{str(message_id or '').strip()}"
@@ -224,7 +257,7 @@ class RedisConversationExternalEventSource:
     @property
     def owner_key(self) -> str:
         base = ns_key(REDIS.CHAT.CONVERSATION_TIMELINE_OWNER_PREFIX, tenant=self.tenant, project=self.project)
-        return f"{base}:{self.conversation_id}"
+        return f"{base}:{self.lane_id}"
 
     @property
     def owner_token_key(self) -> str:
@@ -243,17 +276,25 @@ class RedisConversationExternalEventSource:
         active_turn_id_at_ingress: Optional[str] = None,
         owner_turn_id: Optional[str] = None,
         source: str = "",
+        event_source_id: str = "",
         text: str = "",
         payload: Optional[Dict[str, Any]] = None,
         task_payload: Optional[Dict[str, Any]] = None,
     ) -> ConversationExternalEvent:
         sequence = int(await self.redis.incr(self.sequence_key))
         created_at = time.time()
+        if not event_source_id and isinstance(task_payload, dict):
+            task_event = task_payload.get("event")
+            if isinstance(task_event, dict):
+                event_source_id = str(task_event.get("event_source_id") or "").strip()
         event = ConversationExternalEvent(
             message_id=_short_event_message_id(created_at=created_at, sequence=sequence),
             kind=str(kind or "external"),
             created_at=created_at,
             sequence=sequence,
+            user_id=self.user_id,
+            agent_id=self.agent_id,
+            event_source_id=str(event_source_id or ""),
             explicit=explicit,
             target_turn_id=target_turn_id,
             active_turn_id_at_ingress=active_turn_id_at_ingress,
@@ -261,15 +302,30 @@ class RedisConversationExternalEventSource:
             source=source or "",
             text=text or "",
             payload=dict(payload or {}),
-            task_payload=dict(task_payload or {}),
+            task_payload=self._patch_task_payload_event(
+                task_payload,
+                kind=str(kind or "external"),
+                event_id="",
+                sequence=sequence,
+                event_source_id=str(event_source_id or ""),
+            ),
+        )
+        event.task_payload = self._patch_task_payload_event(
+            event.task_payload,
+            kind=str(event.kind or "external"),
+            event_id=event.message_id,
+            sequence=event.sequence,
+            event_source_id=event.event_source_id,
         )
         stream_id = await self._append_to_stream(event)
         event.stream_id = str(stream_id or "")
         await self._write_event(event)
         logger.info(
-            "[external_events.publish] conversation=%s kind=%s event_id=%s seq=%s stream_id=%s target_turn=%s active_turn=%s owner_turn=%s explicit=%s text=%r",
+            "[external_events.publish] conversation=%s agent_id=%s kind=%s event_source_id=%s event_id=%s seq=%s stream_id=%s target_turn=%s active_turn=%s owner_turn=%s explicit=%s text=%r",
             self.conversation_id,
+            self.agent_id,
             event.kind,
+            event.event_source_id,
             event.message_id,
             event.sequence,
             event.stream_id,
@@ -281,6 +337,29 @@ class RedisConversationExternalEventSource:
         )
         await self._maybe_cleanup_retention()
         return event
+
+    def _patch_task_payload_event(
+        self,
+        task_payload: Optional[Dict[str, Any]],
+        *,
+        kind: str,
+        event_id: str,
+        sequence: int,
+        event_source_id: str,
+    ) -> Dict[str, Any]:
+        payload = dict(task_payload or {})
+        event = payload.get("event")
+        if not isinstance(event, dict):
+            event = {}
+        event.setdefault("kind", str(kind or "external"))
+        event["agent_id"] = self.agent_id
+        event["event_source_id"] = str(event_source_id or event.get("event_source_id") or "")
+        if event_id:
+            event["event_id"] = str(event_id)
+        if sequence:
+            event["sequence"] = int(sequence)
+        payload["event"] = event
+        return payload
 
     async def read_since(self, cursor: str | int | None, *, limit: Optional[int] = None) -> List[ConversationExternalEvent]:
         raw_items = await self._stream_read_since(cursor, limit=limit)
@@ -1166,6 +1245,8 @@ def build_conversation_external_event_source(
     tenant: str,
     project: str,
     conversation_id: str,
+    user_id: str = "",
+    agent_id: str = DEFAULT_REACT_AGENT_ID,
     stream_max_entries: Optional[int] = None,
     stream_retention_seconds: Optional[int] = None,
     stream_trim_batch: Optional[int] = None,
@@ -1175,6 +1256,8 @@ def build_conversation_external_event_source(
         tenant=tenant,
         project=project,
         conversation_id=conversation_id,
+        user_id=user_id,
+        agent_id=agent_id,
         stream_max_entries=stream_max_entries,
         stream_retention_seconds=stream_retention_seconds,
         stream_trim_batch=stream_trim_batch,

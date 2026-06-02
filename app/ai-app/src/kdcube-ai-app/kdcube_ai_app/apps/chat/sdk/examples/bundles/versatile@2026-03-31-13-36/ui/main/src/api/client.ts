@@ -298,6 +298,16 @@ export async function submitChatMessage(params: SubmitChatMessageParams): Promis
   if (params.steer) {
     message.steer = true
   }
+  const messagePayload: Record<string, unknown> = { ...(params.payload || {}) }
+  if (params.target) {
+    messagePayload.target = params.target
+  }
+  if (params.externalEvent) {
+    messagePayload.external_event = params.externalEvent
+  }
+  if (Object.keys(messagePayload).length > 0) {
+    message.payload = messagePayload
+  }
 
   const payload = {
     message,

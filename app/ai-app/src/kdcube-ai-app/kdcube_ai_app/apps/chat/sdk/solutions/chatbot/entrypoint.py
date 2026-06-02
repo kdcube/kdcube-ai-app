@@ -30,7 +30,7 @@ from kdcube_ai_app.apps.chat.emitters import (
 from kdcube_ai_app.apps.chat.sdk.config import get_settings
 from kdcube_ai_app.apps.chat.sdk.continuations import get_current_conversation_continuation_source
 from kdcube_ai_app.apps.chat.sdk.infra.economics.policy import EconomicsLimitException
-from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
+from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
 from kdcube_ai_app.apps.chat.sdk.runtime.exec_runtime_config import normalize_exec_runtime_config
 from kdcube_ai_app.apps.chat.sdk.runtime.local_sidecars import (
     LocalSidecarHandle,
@@ -75,7 +75,7 @@ class BaseEntrypoint:
         config: Config,
         pg_pool: Any = None,
         redis: Any = None,
-        comm_context: ChatTaskPayload = None,
+        comm_context: ExternalEventPayload = None,
         event_filter: Optional[Any] = None,
         ctx_client: Optional[Any] = None,
         continuation_source: Optional[Any] = None,
@@ -84,7 +84,7 @@ class BaseEntrypoint:
         self.settings = get_settings()
         self.pg_pool = pg_pool
         self.redis = redis
-        self._comm_context: Optional[ChatTaskPayload] = comm_context
+        self._comm_context: Optional[ExternalEventPayload] = comm_context
         self._event_filter = event_filter
         self._continuation_source = continuation_source
 
@@ -118,7 +118,7 @@ class BaseEntrypoint:
         return self._continuation_source or get_current_conversation_continuation_source()
 
     @property
-    def comm_context(self) -> Optional[ChatTaskPayload]:
+    def comm_context(self) -> Optional[ExternalEventPayload]:
         comm_context_cv = getattr(self, "_comm_context_cv", None)
         if comm_context_cv is not None:
             bound = comm_context_cv.get()
@@ -127,13 +127,13 @@ class BaseEntrypoint:
         return getattr(self, "_comm_context", None)
 
     @comm_context.setter
-    def comm_context(self, value: Optional[ChatTaskPayload]) -> None:
+    def comm_context(self, value: Optional[ExternalEventPayload]) -> None:
         self._comm_context = value
 
     def rebind_request_context(
         self,
         *,
-        comm_context: Optional[ChatTaskPayload] = None,
+        comm_context: Optional[ExternalEventPayload] = None,
         pg_pool: Any = None,
         redis: Any = None,
     ) -> None:
@@ -152,7 +152,7 @@ class BaseEntrypoint:
     def bind_request_context(
         self,
         *,
-        comm_context: Optional[ChatTaskPayload] = None,
+        comm_context: Optional[ExternalEventPayload] = None,
         comm: Any = _REQUEST_LOCAL_UNSET,
     ):
         """

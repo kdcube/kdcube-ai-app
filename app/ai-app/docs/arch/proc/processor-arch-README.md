@@ -29,7 +29,7 @@ It reflects the current implementation in:
 
 The `proc` service is the execution side of chat processing. After ingress accepts a request, `proc` is responsible for:
 
-- claiming queued chat tasks from Redis
+- claiming queued external event payloads from Redis
 - executing the target bundle/workflow
 - publishing chat events through the relay communicator
 - updating conversation state to `idle` or `error`
@@ -237,7 +237,7 @@ High-level flow:
 
 Once claimed:
 
-1. proc materializes `ChatTaskPayload`
+1. proc materializes `ExternalEventPayload`
 2. proc builds `ServiceCtx`, `ConversationCtx`, and `ChatCommunicator`
 3. if running on ECS with `ECS_AGENT_URI`, proc enables task-wide ECS scale-in protection for the busy proc task
 4. proc marks the task as started
@@ -714,7 +714,7 @@ Every mailbox item should carry at least:
 - `created_at`
 - monotonic `sequence`
 - optional `target_turn_id`
-- payload metadata needed to rebuild `ChatTaskPayload`
+- payload metadata needed to rebuild `ExternalEventPayload`
 
 #### B. Conversation shard wake-up stream
 

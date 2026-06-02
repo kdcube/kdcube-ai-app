@@ -8,11 +8,11 @@ from types import SimpleNamespace
 import pytest
 
 from kdcube_ai_app.apps.chat.sdk.protocol import (
-    ChatTaskActor,
-    ChatTaskPayload,
-    ChatTaskRequest,
-    ChatTaskRouting,
-    ChatTaskUser,
+    ExternalEventActor,
+    ExternalEventPayload,
+    ExternalEventRequest,
+    ExternalEventRouting,
+    ExternalEventUser,
 )
 from kdcube_ai_app.infra.plugin.bundle_loader import (
     BundleSpec,
@@ -101,16 +101,16 @@ class BadWorkflow(BaseWorkflow):
     )
     spec = BundleSpec(path=str(bundle_root), module="entrypoint", singleton=True)
     config = SimpleNamespace(ai_bundle_spec=SimpleNamespace(id="bad.workflow"), log_level="INFO")
-    ctx = ChatTaskPayload(
-        request=ChatTaskRequest(request_id="req-1"),
-        routing=ChatTaskRouting(
+    ctx = ExternalEventPayload(
+        request=ExternalEventRequest(request_id="req-1"),
+        routing=ExternalEventRouting(
             bundle_id="bad.workflow",
             session_id="session-1",
             conversation_id="conv-1",
             turn_id="turn-1",
         ),
-        actor=ChatTaskActor(tenant_id="demo", project_id="demo-project"),
-        user=ChatTaskUser(user_type="registered", user_id="user-1"),
+        actor=ExternalEventActor(tenant_id="demo", project_id="demo-project"),
+        user=ExternalEventUser(user_type="registered", user_id="user-1"),
     )
 
     try:

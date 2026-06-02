@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
 from kdcube_ai_app.apps.chat.sdk.events import EventSourceSubsystem, event_source, event_source_declaration
+from kdcube_ai_app.apps.chat.sdk.solutions.react.live_events import resolve_reactive_iteration_credit
 from kdcube_ai_app.apps.chat.sdk.solutions.react.events import (
     REACT_FOLLOWUP_EVENT_SOURCE_ID,
     REACT_MEMSEARCH_EVENT_SOURCE_ID,
@@ -17,7 +18,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.events import (
     core as react_core_events,
     produce_event_source_announce_blocks,
     stamp_event_identity_many,
-    timeline_event_policy,
+    timeline_projection_policy,
 )
 
 
@@ -29,7 +30,7 @@ def _module(name: str, **attrs):
 
 
 def test_decorator_discovers_metadata_only_source():
-    @timeline_event_policy(event_policy_id="react.timeline_projection.keep_latest_three")
+    @timeline_projection_policy(event_policy_id="react.timeline_projection.keep_latest_three")
     def keep_latest_three(timeline, **_):
         """Keep only the latest three blocks in the mutable timeline."""
         del timeline[:-3]
@@ -59,9 +60,9 @@ def test_decorator_discovers_metadata_only_source():
     assert subsystem.by_block({
         "event_source_id": "bundle.demo.event",
         "event_id": "evt_1",
-        "type": "external.event",
+        "type": "event.external",
     }) == source
-    assert subsystem.by_block({"event_id": "evt_1", "type": "external.event"}) is None
+    assert subsystem.by_block({"event_id": "evt_1", "type": "event.external"}) is None
     blocks = [{"id": 1}, {"id": 2}, {"id": 3}, {"id": 4}]
     subsystem.apply_react_phase_policies("timeline_projection", "bundle.demo.event", blocks)
     assert blocks == [{"id": 2}, {"id": 3}, {"id": 4}]
@@ -112,7 +113,7 @@ def test_module_can_declare_multiple_event_sources():
 
 
 def test_list_event_sources_discovers_declarations():
-    @timeline_event_policy(event_policy_id="react.timeline_projection.keep_latest_per_story")
+    @timeline_projection_policy(event_policy_id="react.timeline_projection.keep_latest_per_story")
     def keep_latest_per_story(timeline, **_):
         """Keep the latest block per data.story_id in the mutable timeline."""
         seen = set()
@@ -161,6 +162,32 @@ def test_list_event_sources_discovers_declarations():
         {"id": 2, "data": {"story_id": "a"}},
         {"id": 3, "data": {"story_id": "b"}},
     ]
+
+
+def test_event_source_reactivity_defaults_survive_discovery_and_listing():
+    def list_event_sources():
+        return [
+            event_source_declaration(
+                event_source_id="bundle.wizard.assistance.requested",
+                policies=[],
+                kind="react.external",
+                reactive=True,
+                iteration_credit=2,
+                description="Wizard assistance request is authored as a reactive occurrence by default.",
+            )
+        ]
+
+    subsystem = EventSourceSubsystem(modules=[{
+        "mod": _module("wizard_sources", list_event_sources=list_event_sources),
+        "alias": "wizard",
+    }])
+
+    source = subsystem.by_event_source_id("bundle.wizard.assistance.requested")
+    assert source is not None
+    assert source.reactive is True
+    assert source.iteration_credit == 2
+    assert source.to_dict()["reactive"] is True
+    assert source.to_dict()["iteration_credit"] == 2
 
 
 def test_web_tools_event_sources_use_alias_and_namespaced_policies():
@@ -712,10 +739,13 @@ def test_builtin_react_external_event_sources_are_discoverable():
     assert followup.react.timeline_projection == ()
     assert followup.react.compaction_projection == ()
     assert followup.react.announce_production == ()
+    assert followup.reactive is True
     assert steer.react.block_production == ()
     assert steer.react.timeline_projection == ()
     assert steer.react.compaction_projection == ()
     assert steer.react.announce_production == ()
+    assert steer.reactive is False
+    assert steer.iteration_credit == 0
     assert write.kind == "react.native_tool.write"
     assert [binding.event_policy_id for binding in write.react.timeline_projection] == [
         "react.timeline_projection.identity",
@@ -727,6 +757,97 @@ def test_builtin_react_external_event_sources_are_discoverable():
     assert [binding.event_policy_id for binding in memsearch.react.timeline_projection] == [
         "react.timeline_projection.identity",
     ]
+
+
+def test_reactive_credit_requires_occurrence_reactive_and_uses_source_credit_default():
+    def list_event_sources():
+        return [
+            event_source_declaration(
+                event_source_id="bundle.wizard.assistance.requested",
+                policies=[],
+                kind="react.external",
+                reactive=True,
+                iteration_credit=3,
+            )
+        ]
+
+    subsystem = EventSourceSubsystem(modules=[{"mod": _module("wizard_credit_sources", list_event_sources=list_event_sources)}])
+    runtime_ctx = SimpleNamespace(
+        reactive_event_iteration_credit_enabled=True,
+        reactive_event_iteration_credit_per_event=1,
+        event_sources=subsystem,
+    )
+    no_reactive_occurrence = SimpleNamespace(
+        kind="external_event",
+        payload={
+            "external_event": {
+                "event_source_id": "bundle.wizard.assistance.requested",
+                "routing": {},
+            }
+        },
+    )
+
+    assert resolve_reactive_iteration_credit(
+        event_type="external_event",
+        event=no_reactive_occurrence,
+        runtime_ctx=runtime_ctx,
+    ) == 0
+
+    assert resolve_reactive_iteration_credit(
+        event_type="external_event",
+        event=SimpleNamespace(
+            kind="external_event",
+            payload={
+                "external_event": {
+                    "event_source_id": "bundle.wizard.assistance.requested",
+                    "routing": {"reactive": True},
+                }
+            },
+        ),
+        runtime_ctx=runtime_ctx,
+    ) == 3
+
+    assert resolve_reactive_iteration_credit(
+        event_type="external_event",
+        event=SimpleNamespace(
+            kind="external_event",
+            payload={
+                "external_event": {
+                    "event_source_id": "bundle.wizard.assistance.requested",
+                    "routing": {"iteration_credit": 2},
+                }
+            },
+        ),
+        runtime_ctx=runtime_ctx,
+    ) == 0
+
+    assert resolve_reactive_iteration_credit(
+        event_type="external_event",
+        event=SimpleNamespace(
+            kind="external_event",
+            payload={
+                "external_event": {
+                    "event_source_id": "bundle.wizard.assistance.requested",
+                    "routing": {"reactive": True, "iteration_credit": 2},
+                }
+            },
+        ),
+        runtime_ctx=runtime_ctx,
+    ) == 2
+
+    assert resolve_reactive_iteration_credit(
+        event_type="external_event",
+        event=SimpleNamespace(
+            kind="external_event",
+            payload={
+                "external_event": {
+                    "event_source_id": "bundle.wizard.assistance.requested",
+                    "routing": {"reactive": False, "iteration_credit": 5},
+                }
+            },
+        ),
+        runtime_ctx=runtime_ctx,
+    ) == 0
 
 
 def test_announce_production_policy_receives_full_timeline_context():
@@ -770,7 +891,7 @@ def test_announce_production_policy_receives_full_timeline_context():
     timeline_blocks = [
         {"type": "turn.header", "turn_id": "turn_1", "text": "older"},
         {
-            "type": "external.event",
+            "type": "event.external",
             "turn_id": "turn_1",
             "event_source_id": "bundle.snapshot.materialized",
             "event_id": "evt_old",
@@ -778,7 +899,7 @@ def test_announce_production_policy_receives_full_timeline_context():
         },
         {"type": "turn.header", "turn_id": "turn_2", "text": "current"},
         {
-            "type": "external.event",
+            "type": "event.external",
             "turn_id": "turn_2",
             "event_source_id": "bundle.snapshot.materialized",
             "event_id": "evt_new",
@@ -797,7 +918,7 @@ def test_announce_production_policy_receives_full_timeline_context():
 
 
 def test_event_identity_helper_stamps_occurrence_group():
-    blocks = [{"type": "external.event"}, {"type": "user.attachment.meta"}]
+    blocks = [{"type": "event.external"}, {"type": "user.attachment.meta"}]
 
     stamped = stamp_event_identity_many(
         blocks,

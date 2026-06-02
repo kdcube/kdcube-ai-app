@@ -154,6 +154,18 @@ export interface ChatHistoryItem {
 
 export type ContinuationKind = 'regular' | 'followup' | 'steer'
 
+export interface ExternalEvent {
+  event_id?: string
+  event_source_id: string
+  kind?: string
+  story_id?: string
+  routing?: {
+    reactive?: boolean
+  }
+  data?: Record<string, unknown>
+  [key: string]: unknown
+}
+
 export interface OpenChatStreamOptions {
   sessionId?: string | null
   timeoutMs?: number
@@ -187,6 +199,9 @@ export interface SubmitChatMessageParams {
   targetTurnId?: string
   followup?: boolean
   steer?: boolean
+  payload?: Record<string, unknown>
+  target?: Record<string, unknown>
+  externalEvent?: ExternalEvent
 }
 
 interface SubmitChatMessageApiResponse {

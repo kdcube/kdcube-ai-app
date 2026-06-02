@@ -21,9 +21,10 @@ from kdcube_ai_app.apps.chat.sdk.util import _iso
 from kdcube_ai_app.auth.sessions import RequestContext, UserType, UserSession
 from kdcube_ai_app.apps.chat.emitters import ChatRelayCommunicator, ChatCommunicator
 from kdcube_ai_app.apps.chat.sdk.protocol import (
-    ChatTaskPayload, ChatTaskMeta, ChatTaskRouting, ChatTaskActor, ChatTaskUser,
-    ChatTaskRequest, ChatTaskConfig, ChatTaskAccounting, ChatTaskContinuation, ServiceCtx, ConversationCtx
+    ExternalEventPayload, ExternalEventMeta, ExternalEventRouting, ExternalEventActor, ExternalEventUser,
+    ExternalEventRequest, ExternalEventConfig, ExternalEventAccounting, ExternalEventContinuation, ExternalEvent, ServiceCtx, ConversationCtx
 )
+from kdcube_ai_app.apps.chat.sdk.event_identity import DEFAULT_REACT_AGENT_ID, normalize_agent_id
 from kdcube_ai_app.infra.accounting.envelope import build_envelope_from_session
 from kdcube_ai_app.infra.gateway.rate_limiter import RateLimitError
 from kdcube_ai_app.infra.gateway.backpressure import BackpressureError
@@ -189,13 +190,17 @@ class IngressResult:
     live_owner_detected: Optional[bool] = None
 
 
+def _message_payload(message_data: Dict[str, Any]) -> Dict[str, Any]:
+    payload = message_data.get("payload")
+    return payload if isinstance(payload, dict) else {}
+
+
 def _resolve_requested_continuation_kind(
     message_data: Dict[str, Any],
     *,
     conversation_busy: bool,
 ) -> tuple[str, bool]:
-    payload = message_data.get("payload")
-    payload = payload if isinstance(payload, dict) else {}
+    payload = _message_payload(message_data)
 
     raw = (
         message_data.get("message_kind")
@@ -218,8 +223,7 @@ def _resolve_requested_continuation_kind(
 
 
 def _resolve_target_turn_id(message_data: Dict[str, Any]) -> Optional[str]:
-    payload = message_data.get("payload")
-    payload = payload if isinstance(payload, dict) else {}
+    payload = _message_payload(message_data)
     raw = (
         message_data.get("target_turn_id")
         or message_data.get("active_turn_id")
@@ -228,6 +232,86 @@ def _resolve_target_turn_id(message_data: Dict[str, Any]) -> Optional[str]:
     )
     value = str(raw or "").strip()
     return value or None
+
+
+def _external_event_from_message(message_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    payload = _message_payload(message_data)
+    event = payload.get("external_event")
+    if not isinstance(event, dict):
+        return None
+    return event
+
+
+def _external_event_is_reactive(event: Optional[Dict[str, Any]]) -> bool:
+    if not isinstance(event, dict):
+        return False
+    routing = event.get("routing") if isinstance(event.get("routing"), dict) else {}
+    if "reactive" not in routing:
+        return False
+    value = routing.get("reactive")
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "y", "on"}:
+        return True
+    if text in {"0", "false", "no", "n", "off"}:
+        return False
+    return False
+
+
+def _external_event_source_id(event: Optional[Dict[str, Any]]) -> str:
+    if not isinstance(event, dict):
+        return "react.external_event"
+    value = str(event.get("event_source_id") or event.get("type") or event.get("kind") or "").strip()
+    return value or "react.external_event"
+
+
+def _target_agent_id(message_data: Dict[str, Any]) -> str:
+    payload = _message_payload(message_data)
+    target = payload.get("target") if isinstance(payload.get("target"), dict) else {}
+    value = (
+        target.get("agent_id")
+        or target.get("agent")
+        or payload.get("agent_id")
+        or message_data.get("agent_id")
+        or message_data.get("agent")
+    )
+    return normalize_agent_id(value, default=DEFAULT_REACT_AGENT_ID)
+
+
+def _chat_event_kind(*, has_external_event: bool, requested_kind: str) -> str:
+    if has_external_event:
+        return "external_event"
+    kind = str(requested_kind or "").strip().lower()
+    if kind in {"followup", "steer"}:
+        return kind
+    return "message"
+
+
+def _chat_event_source_id(*, has_external_event: bool, external_event: Optional[Dict[str, Any]], requested_kind: str) -> str:
+    if has_external_event:
+        return _external_event_source_id(external_event)
+    kind = _chat_event_kind(has_external_event=False, requested_kind=requested_kind)
+    return f"chat.{kind}"
+
+
+def _external_event_envelope(
+    *,
+    message_data: Dict[str, Any],
+    text: str,
+    event: Dict[str, Any],
+) -> Dict[str, Any]:
+    payload = _message_payload(message_data)
+    target = payload.get("target") if isinstance(payload.get("target"), dict) else {}
+    envelope: Dict[str, Any] = {
+        "message": text or "",
+        "external_event": dict(event),
+    }
+    if target:
+        envelope["target"] = dict(target)
+    return envelope
 
 
 def _resolve_conversation_owner_id(session: UserSession) -> Optional[str]:
@@ -340,6 +424,10 @@ async def process_chat_message(
         conversation_busy=False,
     )
     target_turn_id = _resolve_target_turn_id(message_data)
+    external_event = _external_event_from_message(message_data)
+    has_external_event = external_event is not None
+    external_event_reactive = _external_event_is_reactive(external_event)
+    target_agent_id = _target_agent_id(message_data)
     task_id = str(uuid.uuid4())
     turn_id = message_data.get("turn_id") or new_turn_id()
     conversation_id = str(message_data.get("conversation_id") or "").strip()
@@ -403,8 +491,9 @@ async def process_chat_message(
 
     # Empty text is valid when the user sent attachments: the hosted attachment
     # descriptors are added to request.payload before the turn/follow-up is run.
-    # Explicit steer messages may intentionally carry blank text.
-    if not text and not has_raw_attachments and requested_kind != "steer":
+    # Explicit steer messages and explicit external events may intentionally
+    # carry blank text.
+    if not text and not has_raw_attachments and requested_kind != "steer" and not has_external_event:
         await chat_comm.emit_error(
             svc,
             conv,
@@ -516,7 +605,7 @@ async def process_chat_message(
     if "project" not in ext_config and project_id:
         ext_config["project"] = project_id
 
-    routing = ChatTaskRouting(
+    routing = ExternalEventRouting(
         session_id=session.session_id,
         conversation_id=conversation_id,
         turn_id=turn_id,
@@ -524,18 +613,18 @@ async def process_chat_message(
         bundle_id=bundle_id,
     )
 
-    payload = ChatTaskPayload(
-        meta=ChatTaskMeta(
+    payload = ExternalEventPayload(
+        meta=ExternalEventMeta(
             task_id=task_id,
             created_at=time.time(),
             instance_id=ingress.instance_id,
         ),
         routing=routing,
-        actor=ChatTaskActor(
+        actor=ExternalEventActor(
             tenant_id=tenant_id,
             project_id=project_id,
         ),
-        user=ChatTaskUser(
+        user=ExternalEventUser(
             user_type=session.user_type.value,
             user_id=session.user_id,
             username=session.username,
@@ -546,7 +635,7 @@ async def process_chat_message(
             timezone=session.timezone,
             utc_offset_min=getattr(request_context, "user_utc_offset_min", None),
         ),
-        request=ChatTaskRequest(
+        request=ExternalEventRequest(
             message=text,
             chat_history=message_data.get("chat_history") or [],
             operation=message_data.get("operation") or message_data.get("command"),
@@ -554,12 +643,23 @@ async def process_chat_message(
             payload=message_data.get("payload") or {},
             request_id=request_id,
         ),
-        config=ChatTaskConfig(values=ext_config),
-        accounting=ChatTaskAccounting(envelope=acct_env),
-        continuation=ChatTaskContinuation(
+        config=ExternalEventConfig(values=ext_config),
+        accounting=ExternalEventAccounting(envelope=acct_env),
+        continuation=ExternalEventContinuation(
             kind=requested_kind,
             explicit=requested_kind_explicit,
             target_turn_id=target_turn_id,
+        ),
+        event=ExternalEvent(
+            kind=_chat_event_kind(has_external_event=has_external_event, requested_kind=requested_kind),
+            agent_id=target_agent_id,
+            event_source_id=_chat_event_source_id(
+                has_external_event=has_external_event,
+                external_event=external_event,
+                requested_kind=requested_kind,
+            ),
+            reactive=external_event_reactive if has_external_event else True,
+            source=f"ingress.{ingress.transport}",
         ),
     )
     async def _host_message_attachments(
@@ -774,6 +874,172 @@ async def process_chat_message(
 
         return None
 
+    if has_external_event and not external_event_reactive:
+        try:
+            conv_exists = await app.state.conversation_browser.conversation_exists(
+                user_id=payload.user.user_id,
+                conversation_id=conversation_id,
+                bundle_id=payload.routing.bundle_id,
+            )
+            idle_res = await app.state.conversation_browser.set_conversation_state(
+                tenant=payload.actor.tenant_id,
+                project=payload.actor.project_id,
+                user_id=payload.user.user_id,
+                conversation_id=payload.routing.conversation_id,
+                new_state="idle",
+                by_instance=ingress.instance_id,
+                request_id=request_id,
+                last_turn_id=payload.routing.turn_id,
+                require_not_in_progress=True,
+                user_type=payload.user.user_type,
+                bundle_id=payload.routing.bundle_id,
+            )
+        except Exception as e:
+            logger.error("external event idle state update failed: %s", e)
+            conv_exists = True
+            idle_res = {
+                "ok": False,
+                "error": f"conversation state update failed: {e}",
+                "error_type": "conversation_state_update_error",
+                "updated_at": _iso(),
+                "current_turn_id": turn_id,
+            }
+        if idle_res.get("ok", True):
+            redis_async = getattr(app.state, "redis_async", None)
+            if redis_async is None:
+                err = "External event source unavailable"
+                await chat_comm.emit_error(
+                    svc,
+                    conv,
+                    error=err,
+                    target_sid=ingress.stream_id,
+                    session_id=session.session_id,
+                )
+                return IngressResult(
+                    ok=False,
+                    error_type="external_event_source_unavailable",
+                    error=err,
+                    http_status=503,
+                )
+            attachment_result = await _host_message_attachments(
+                storage_turn_id=turn_id,
+                rollback_conversation_state=False,
+            )
+            if attachment_result is not None:
+                return attachment_result
+            hosted_attachments = []
+            try:
+                hosted_attachments = list((payload.request.payload or {}).get("attachments") or []) if payload.request else []
+            except Exception:
+                hosted_attachments = []
+            external_event_source = build_conversation_external_event_source(
+                redis=redis_async,
+                tenant=tenant_id,
+                project=project_id,
+                conversation_id=conversation_id,
+                user_id=session.user_id or session.fingerprint or "",
+                agent_id=target_agent_id,
+            )
+            env = await external_event_source.publish(
+                kind="external_event",
+                explicit=True,
+                target_turn_id=target_turn_id,
+                active_turn_id_at_ingress=None,
+                owner_turn_id=None,
+                source=f"ingress.{ingress.transport}",
+                event_source_id=_external_event_source_id(external_event),
+                text=text,
+                payload=_external_event_envelope(
+                    message_data=message_data,
+                    text=text,
+                    event=external_event or {},
+                ),
+                task_payload=payload.model_dump(),
+            )
+            logger.info(
+                "[ingress.external] recorded non-reactive external event conversation=%s event_source_id=%s event_id=%s seq=%s target_turn=%s text=%r",
+                conversation_id,
+                _external_event_source_id(external_event),
+                env.message_id,
+                env.sequence,
+                target_turn_id,
+                (text or "")[:160],
+            )
+            try:
+                if not conv_exists:
+                    await chat_comm.emit_conv_status(
+                        svc,
+                        conv,
+                        routing,
+                        state="created",
+                        updated_at=idle_res.get("updated_at", _iso()),
+                        current_turn_id=payload.routing.turn_id,
+                    )
+                await chat_comm.emit_conv_status(
+                    svc,
+                    conv,
+                    routing,
+                    state="idle",
+                    updated_at=idle_res.get("updated_at", _iso()),
+                    current_turn_id=payload.routing.turn_id,
+                )
+                await comm.service_event(
+                    type="event.external.recorded",
+                    step="event.external",
+                    status="completed",
+                    title="External event recorded",
+                    agent="ingress",
+                    data={
+                        "message_kind": "external_event",
+                        "input_kind": "external_event",
+                        "event_source_id": _external_event_source_id(external_event),
+                        "reactive": False,
+                        "message_len": len(text or ""),
+                        "attachment_count": len(hosted_attachments),
+                        "event_id": env.message_id,
+                        "event_sequence": env.sequence,
+                        "target_turn_id": target_turn_id,
+                    },
+                )
+            except Exception:
+                logger.debug("Failed to emit non-reactive external event service status", exc_info=True)
+            return IngressResult(
+                ok=True,
+                task_id=task_id,
+                conversation_id=conversation_id,
+                turn_id=turn_id,
+                session_id=session.session_id,
+                user_type=session.user_type.value,
+                queue_stats={
+                    "external_event_sequence": env.sequence,
+                    "live_owner_detected": False,
+                },
+                reason="external_event_recorded",
+                continuation_kind="external_event",
+                active_turn_id=None,
+                target_turn_id=target_turn_id,
+                queued_turn_id=None,
+                event_id=env.message_id,
+                external_event_sequence=int(env.sequence or 0),
+                live_owner_detected=False,
+            )
+        idle_error_type = idle_res.get("error_type") or ""
+        if idle_error_type != "conversation_busy":
+            error = idle_res.get("error") or "Conversation state update failed"
+            await chat_comm.emit_error(
+                svc,
+                conv,
+                error=error,
+                target_sid=ingress.stream_id,
+                session_id=session.session_id,
+            )
+            return IngressResult(
+                ok=False,
+                error_type=idle_error_type or "conversation_state_update_error",
+                error=error,
+                http_status=409,
+            )
+
     # --- Conversation lock + state ---
     try:
         conv_exists = await app.state.conversation_browser.conversation_exists(
@@ -816,11 +1082,30 @@ async def process_chat_message(
                     message_data,
                     conversation_busy=True,
                 )
-                payload.continuation = ChatTaskContinuation(
+                payload.continuation = ExternalEventContinuation(
                     kind=continuation_kind,
                     explicit=continuation_explicit,
                     target_turn_id=target_turn_id,
                     active_turn_id=active_turn,
+                )
+                external_kind = "external_event" if has_external_event else continuation_kind
+                if payload.event is not None:
+                    payload.event.kind = external_kind
+                    payload.event.agent_id = target_agent_id
+                    payload.event.event_source_id = (
+                        _external_event_source_id(external_event)
+                        if has_external_event
+                        else f"chat.{external_kind}"
+                    )
+                    payload.event.reactive = external_event_reactive if has_external_event else True
+                external_payload = (
+                    _external_event_envelope(
+                        message_data=message_data,
+                        text=text,
+                        event=external_event or {},
+                    )
+                    if has_external_event
+                    else {"message": text}
                 )
                 external_event_source = None
                 redis_async = getattr(app.state, "redis_async", None)
@@ -830,6 +1115,8 @@ async def process_chat_message(
                         tenant=tenant_id,
                         project=project_id,
                         conversation_id=conversation_id,
+                        user_id=session.user_id or session.fingerprint or "",
+                        agent_id=target_agent_id,
                     )
                 owner = await external_event_source.get_owner() if external_event_source is not None else None
                 owner_turn_id = str(owner.turn_id or "").strip() if owner else ""
@@ -847,21 +1134,23 @@ async def process_chat_message(
                     except Exception:
                         hosted_attachments = []
                     env = await external_event_source.publish(
-                        kind=continuation_kind,
+                        kind=external_kind,
                         explicit=continuation_explicit,
                         target_turn_id=target_turn_id,
                         active_turn_id_at_ingress=active_turn,
                         owner_turn_id=owner_turn_id,
                         source=f"ingress.{ingress.transport}",
+                        event_source_id=_external_event_source_id(external_event) if has_external_event else f"chat.{external_kind}",
                         text=text,
-                        payload={"message": text},
+                        payload=external_payload,
                         task_payload=payload.model_dump(),
                     )
                     live_owner_detected = bool(owner_turn_id and active_turn and owner_turn_id == str(active_turn))
                     logger.info(
-                        "[ingress.external] published continuation conversation=%s kind=%s event_id=%s seq=%s active_turn=%s owner_turn=%s target_turn=%s live_owner=%s text=%r",
+                        "[ingress.external] published continuation conversation=%s kind=%s event_source_id=%s event_id=%s seq=%s active_turn=%s owner_turn=%s target_turn=%s live_owner=%s text=%r",
                         conversation_id,
-                        continuation_kind,
+                        external_kind,
+                        _external_event_source_id(external_event) if has_external_event else "",
                         env.message_id,
                         env.sequence,
                         active_turn,
@@ -873,14 +1162,16 @@ async def process_chat_message(
                     try:
                         if live_owner_detected:
                             await comm.service_event(
-                                type="timeline.external.accepted",
-                                step="timeline.external",
+                                type="event.external.accepted",
+                                step="event.external",
                                 status="completed",
-                                title="External timeline event accepted",
+                                title="External event accepted",
                                 agent="ingress",
                                 data={
-                                    "message_kind": continuation_kind,
-                                    "input_kind": continuation_kind,
+                                    "message_kind": external_kind,
+                                    "input_kind": external_kind,
+                                    "event_source_id": _external_event_source_id(external_event) if has_external_event else None,
+                                    "reactive": external_event_reactive if has_external_event else True,
                                     "message_len": len(text or ""),
                                     "attachment_count": len(hosted_attachments),
                                     "active_turn_id": active_turn,
@@ -898,8 +1189,10 @@ async def process_chat_message(
                                 title="Continuation accepted",
                                 agent="ingress",
                                 data={
-                                    "message_kind": continuation_kind,
-                                    "input_kind": continuation_kind,
+                                    "message_kind": external_kind,
+                                    "input_kind": external_kind,
+                                    "event_source_id": _external_event_source_id(external_event) if has_external_event else None,
+                                    "reactive": external_event_reactive if has_external_event else True,
                                     "message_len": len(text or ""),
                                     "attachment_count": len(hosted_attachments),
                                     "active_turn_id": active_turn,
@@ -923,14 +1216,29 @@ async def process_chat_message(
                             "external_event_sequence": env.sequence,
                             "live_owner_detected": live_owner_detected,
                         },
-                        reason=f"{continuation_kind}_accepted",
-                        continuation_kind=continuation_kind,
+                        reason="external_event_accepted" if has_external_event else f"{continuation_kind}_accepted",
+                        continuation_kind=external_kind,
                         active_turn_id=str(active_turn or "") or None,
                         target_turn_id=target_turn_id,
                         queued_turn_id=payload.routing.turn_id,
                         event_id=env.message_id,
                         external_event_sequence=int(env.sequence or 0),
                         live_owner_detected=live_owner_detected,
+                    )
+                if has_external_event:
+                    err = "External event source unavailable"
+                    await chat_comm.emit_error(
+                        svc,
+                        conv,
+                        error=err,
+                        target_sid=ingress.stream_id,
+                        session_id=session.session_id,
+                    )
+                    return IngressResult(
+                        ok=False,
+                        error_type="external_event_source_unavailable",
+                        error=err,
+                        http_status=503,
                     )
                 continuation_source = RedisConversationContinuationSource(
                     redis=getattr(app.state, "redis_async", None),
@@ -1283,7 +1591,7 @@ async def get_conversation_status(
                 session.session_id,
             )
 
-        routing = ChatTaskRouting(
+        routing = ExternalEventRouting(
             session_id=session.session_id,
             conversation_id=conv_id,
             turn_id=current_turn_id,

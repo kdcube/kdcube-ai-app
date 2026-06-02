@@ -367,7 +367,7 @@ platform:
 | Field | Env var | Meaning |
 |---|---|---|
 | `gateway_config_force_env_on_startup` | `GATEWAY_CONFIG_FORCE_ENV_ON_STARTUP` | when true, startup ignores cached Redis gateway config and reloads from `GATEWAY_CONFIG_JSON`, `GATEWAY_YAML_PATH`, or `PLATFORM_DESCRIPTORS_DIR/gateway.yaml` |
-| `chat_task_timeout_sec` | `CHAT_TASK_TIMEOUT_SEC` | legacy overall chat task timeout in seconds |
+| `chat_task_timeout_sec` | `CHAT_TASK_TIMEOUT_SEC` | legacy overall processor event timeout in seconds |
 | `chat_task_idle_timeout_sec` | `CHAT_TASK_IDLE_TIMEOUT_SEC` | watchdog idle timeout in seconds; elapsed time since last task activity |
 | `chat_task_max_wall_time_sec` | `CHAT_TASK_MAX_WALL_TIME_SEC` | watchdog hard wall-clock limit for one task |
 | `chat_task_watchdog_poll_interval_sec` | `CHAT_TASK_WATCHDOG_POLL_INTERVAL_SEC` | watchdog polling interval in seconds |

@@ -4,7 +4,7 @@ from typing import Any, Dict
 
 from langgraph.graph import END, START, StateGraph
 
-from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
+from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
 from kdcube_ai_app.apps.chat.sdk.runtime.node import BundleNodeBackendBridge
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import BaseEntrypoint
 from kdcube_ai_app.infra.plugin.bundle_loader import bundle_entrypoint, api, bundle_id, mcp
@@ -25,7 +25,7 @@ class NodeBridgeBundle(BaseEntrypoint):
         config: Config,
         pg_pool: Any = None,
         redis: Any = None,
-        comm_context: ChatTaskPayload = None,
+        comm_context: ExternalEventPayload = None,
     ):
         super().__init__(
             config=config,

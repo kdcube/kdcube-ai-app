@@ -15,7 +15,7 @@ import logging
 from typing import Any, Dict
 
 from kdcube_ai_app.apps.chat.emitters import ChatCommunicator
-from kdcube_ai_app.apps.chat.sdk.protocol import ChatTaskPayload
+from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
 from kdcube_ai_app.infra.accounting import with_accounting
 from kdcube_ai_app.infra.service_hub.inventory import Config
 from kdcube_ai_app.infra.service_hub.openrouter import openrouter_completion
@@ -47,7 +47,7 @@ class OpenRouterDataWorkflow:
         *,
         comm: ChatCommunicator,
         config: Config,
-        comm_context: ChatTaskPayload = None,
+        comm_context: ExternalEventPayload = None,
     ):
         self.comm = comm
         self.config = config

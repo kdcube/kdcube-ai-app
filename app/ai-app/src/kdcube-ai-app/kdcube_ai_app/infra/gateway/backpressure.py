@@ -1178,7 +1178,7 @@ class AtomicChatQueueManager:
         local paid_cont_key = KEYS[14]
         
         local user_type = ARGV[1]
-        local chat_task_json = ARGV[2]  -- Actual chat task
+        local chat_task_json = ARGV[2]  -- Actual event payload
         local anonymous_ratio = tonumber(ARGV[3])
         local registered_ratio = tonumber(ARGV[4])
         local paid_ratio = tonumber(ARGV[5])
@@ -1261,7 +1261,7 @@ class AtomicChatQueueManager:
         end
         
         if can_admit then
-            -- Atomically add ACTUAL chat task to queue
+            -- Atomically add ACTUAL event payload to queue
             redis.call('LPUSH', queue_key, chat_task_json)
             redis.call('INCR', capacity_counter_key)
             redis.call('EXPIRE', capacity_counter_key, 300)
@@ -1286,7 +1286,7 @@ class AtomicChatQueueManager:
                                        context: RequestContext,
                                        endpoint: str) -> Tuple[bool, str, Dict[str, Any]]:
         """
-        Atomically check capacity and enqueue ACTUAL chat task
+        Atomically check capacity and enqueue ACTUAL event payload
         This is the "by fact" backpressure check that counts for circuit breakers
         """
 
@@ -1326,7 +1326,7 @@ class AtomicChatQueueManager:
                 f"{self.QUEUE_CONTINUATION_COUNT_PREFIX}:paid",
                 # Arguments
                 user_type.value,
-                json.dumps(chat_task_data, ensure_ascii=False),  # Your actual chat task
+                json.dumps(chat_task_data, ensure_ascii=False),  # Your actual event payload
                 str(bp.anonymous_pressure_threshold),
                 str(bp.registered_pressure_threshold),
                 str(bp.paid_pressure_threshold),

@@ -171,7 +171,7 @@ For each REST call to:
 - `/bundles/{tenant}/{project}/{bundle_id}/operations/{operation}`
 - `/bundles/{tenant}/{project}/{bundle_id}/public/{operation}`
 
-proc builds a fresh `ChatTaskPayload` from the current request/session:
+proc builds a fresh `ExternalEventPayload` from the current request/session:
 - tenant and project
 - user/session identity
 - request id
@@ -225,7 +225,7 @@ Flow:
    queued execution record.
 3. The producer enqueues a job to the Redis background job stream.
 4. The processor claims the stream item, applies the normal task lock, and builds
-   a `ChatTaskPayload` with operation `__kdcube_on_job__`.
+   a `ExternalEventPayload` with operation `__kdcube_on_job__`.
 5. Proc loads/rebinds the bundle and calls the discovered async `@on_job` method.
 6. The stream item is acknowledged only after the handler returns.
 

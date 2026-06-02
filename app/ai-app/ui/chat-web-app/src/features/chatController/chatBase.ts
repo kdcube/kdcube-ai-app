@@ -147,6 +147,18 @@ export interface ChatMessage {
     id: number;
 }
 
+export interface ExternalEvent {
+    event_id?: string;
+    event_source_id: string;
+    kind?: string;
+    story_id?: string;
+    routing?: {
+        reactive?: boolean;
+    };
+    data?: Record<string, unknown>;
+    [key: string]: unknown;
+}
+
 export interface ChatRequest {
     message: string;
     chat_history?: ChatMessage[] | null;
@@ -161,6 +173,9 @@ export interface ChatRequest {
     target_turn_id?: string;
     followup?: boolean;
     steer?: boolean;
+    payload?: Record<string, unknown>;
+    target?: Record<string, unknown>;
+    external_event?: ExternalEvent;
 }
 
 interface StepData {

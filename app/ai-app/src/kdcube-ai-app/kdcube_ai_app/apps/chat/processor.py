@@ -46,17 +46,19 @@ from kdcube_ai_app.infra.plugin.git_bundle import (
 )
 from kdcube_ai_app.storage.storage import create_storage_backend
 from kdcube_ai_app.apps.chat.sdk.protocol import (
-    ChatTaskAccounting,
-    ChatTaskActor,
-    ChatTaskConfig,
-    ChatTaskMeta,
-    ChatTaskPayload,
-    ChatTaskRequest,
-    ChatTaskRouting,
-    ChatTaskUser,
+    ExternalEventAccounting,
+    ExternalEventActor,
+    ExternalEventConfig,
+    ExternalEvent,
+    ExternalEventMeta,
+    ExternalEventPayload,
+    ExternalEventRequest,
+    ExternalEventRouting,
+    ExternalEventUser,
     ConversationCtx,
     ServiceCtx,
 )
+from kdcube_ai_app.apps.chat.sdk.event_identity import DEFAULT_REACT_AGENT_ID, normalize_agent_id
 from kdcube_ai_app.infra.jobs.stream import (
     BACKGROUND_JOB_OPERATION,
     BACKGROUND_JOB_QUEUE_ORDER,
@@ -176,7 +178,7 @@ class _ActivityTrackingCommunicator:
         return result
 
 
-async def _cleanup_turn_browser_sessions_for_payload(payload: ChatTaskPayload, *, reason: str) -> None:
+async def _cleanup_turn_browser_sessions_for_payload(payload: ExternalEventPayload, *, reason: str) -> None:
     try:
         from types import SimpleNamespace
 
@@ -791,7 +793,7 @@ class EnhancedChatRequestProcessor:
             last_activity_at=last_activity_at,
         )
 
-    async def _run_handler_with_watchdog(self, payload: ChatTaskPayload):
+    async def _run_handler_with_watchdog(self, payload: ExternalEventPayload):
         handler_task = asyncio.create_task(
             self.chat_handler(payload),
             name=f"chat-handler:{payload.meta.task_id}",
@@ -964,7 +966,7 @@ class EnhancedChatRequestProcessor:
         ttl = await self.redis.ttl(self._task_started_key(logical_id))
         return ttl is not None and ttl >= -1
 
-    async def _mark_task_started(self, task_data: Dict[str, Any], payload: ChatTaskPayload, request_id: str) -> Optional[str]:
+    async def _mark_task_started(self, task_data: Dict[str, Any], payload: ExternalEventPayload, request_id: str) -> Optional[str]:
         logical_id = self._task_logical_id(task_data)
         if not logical_id:
             return None
@@ -988,7 +990,7 @@ class EnhancedChatRequestProcessor:
         task_data["_started_key"] = started_key
         return started_key
 
-    def _build_runtime_context(self, payload: ChatTaskPayload):
+    def _build_runtime_context(self, payload: ExternalEventPayload):
         session_id = payload.routing.session_id
         socket_id = payload.routing.socket_id
         task_id = payload.meta.task_id
@@ -1018,20 +1020,35 @@ class EnhancedChatRequestProcessor:
         )
         return request_id, svc, conv, comm
 
-    def _continuation_source_for(self, payload: ChatTaskPayload):
+    def _continuation_source_for(self, payload: ExternalEventPayload):
         return build_conversation_continuation_source(redis=self.redis, payload=payload)
 
-    def _external_event_source_for(self, payload: ChatTaskPayload):
+    def _external_event_source_for(self, payload: ExternalEventPayload):
+        event_ctx = getattr(payload, "event", None)
+        if event_ctx is None:
+            user_id = ""
+            agent_id = DEFAULT_REACT_AGENT_ID
+        else:
+            try:
+                user_id = payload.user.user_id or payload.user.fingerprint or ""
+            except Exception:
+                user_id = ""
+            try:
+                agent_id = normalize_agent_id(getattr(event_ctx, "agent_id", None))
+            except Exception:
+                agent_id = DEFAULT_REACT_AGENT_ID
         return build_conversation_external_event_source(
             redis=self.redis,
             tenant=payload.actor.tenant_id,
             project=payload.actor.project_id,
             conversation_id=payload.routing.conversation_id or payload.routing.session_id,
+            user_id=user_id,
+            agent_id=agent_id,
         )
 
     async def _mark_task_interrupted(self, task_dict: Dict[str, Any], *, reason: str) -> None:
         try:
-            payload = ChatTaskPayload.model_validate(task_dict)
+            payload = ExternalEventPayload.model_validate(task_dict)
         except Exception:
             logger.warning("Could not materialize interrupted task payload for reason=%s", reason, exc_info=True)
             return
@@ -1072,7 +1089,7 @@ class EnhancedChatRequestProcessor:
         except Exception:
             logger.debug("Failed to emit interrupted error for task %s", payload.meta.task_id, exc_info=True)
 
-    async def _promote_next_continuation(self, payload: ChatTaskPayload) -> Optional[Dict[str, Any]]:
+    async def _promote_next_continuation(self, payload: ExternalEventPayload) -> Optional[Dict[str, Any]]:
         external_promoted = await self._promote_next_external_event(payload)
         if external_promoted is not None:
             return external_promoted
@@ -1118,7 +1135,7 @@ class EnhancedChatRequestProcessor:
             "ready_queue_key": ready_queue_key,
         }
 
-    async def _promote_next_external_event(self, payload: ChatTaskPayload) -> Optional[Dict[str, Any]]:
+    async def _promote_next_external_event(self, payload: ExternalEventPayload) -> Optional[Dict[str, Any]]:
         source = self._external_event_source_for(payload)
         claimant_id = f"{self.middleware.instance_id}:{self.process_id}:{time.time_ns()}"
         while True:
@@ -1530,23 +1547,23 @@ class EnhancedChatRequestProcessor:
         user_type = job.user_type or job.queue or "registered"
         user_id = job.user_id or None
         timezone = metadata.get("timezone")
-        payload = ChatTaskPayload(
-            meta=ChatTaskMeta(
+        payload = ExternalEventPayload(
+            meta=ExternalEventMeta(
                 task_id=job.job_id,
                 created_at=float(job.created_at or time.time()),
                 instance_id=self.middleware.instance_id,
             ),
-            routing=ChatTaskRouting(
+            routing=ExternalEventRouting(
                 bundle_id=job.bundle_id,
                 session_id=conversation_id,
                 conversation_id=conversation_id,
                 turn_id=turn_id,
             ),
-            actor=ChatTaskActor(
+            actor=ExternalEventActor(
                 tenant_id=actor_tenant,
                 project_id=actor_project,
             ),
-            user=ChatTaskUser(
+            user=ExternalEventUser(
                 user_type=user_type,
                 user_id=user_id,
                 username=str(metadata.get("username") or "") or None,
@@ -1556,7 +1573,7 @@ class EnhancedChatRequestProcessor:
                 permissions=self._metadata_list(metadata.get("permissions")),
                 timezone=timezone,
             ),
-            request=ChatTaskRequest(
+            request=ExternalEventRequest(
                 message=message,
                 operation=BACKGROUND_JOB_OPERATION,
                 invocation="async",
@@ -1570,8 +1587,8 @@ class EnhancedChatRequestProcessor:
                 },
                 request_id=request_id,
             ),
-            config=ChatTaskConfig(values={}),
-            accounting=ChatTaskAccounting(
+            config=ExternalEventConfig(values={}),
+            accounting=ExternalEventAccounting(
                 envelope={
                     "user_id": user_id,
                     "session_id": conversation_id,
@@ -1590,6 +1607,13 @@ class EnhancedChatRequestProcessor:
                     },
                     "seed_system_resources": [],
                 }
+            ),
+            event=ExternalEvent(
+                kind="background_job",
+                agent_id=DEFAULT_REACT_AGENT_ID,
+                event_source_id=f"job.{job.work_kind or 'background'}",
+                reactive=True,
+                source="processor.background_job",
             ),
             bundle_call_context={
                 "kind": "background_job",
@@ -2259,7 +2283,7 @@ class EnhancedChatRequestProcessor:
 
         # 1) Normalize payload
         try:
-            payload = ChatTaskPayload.model_validate(task_data)
+            payload = ExternalEventPayload.model_validate(task_data)
         except Exception as e:
             logger.error(f"Cannot normalize legacy task: {e}")
             logger.error(traceback.format_exc())
