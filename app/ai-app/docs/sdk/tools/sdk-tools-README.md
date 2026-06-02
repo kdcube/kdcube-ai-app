@@ -7,6 +7,9 @@ keywords: ["sdk tools", "rendering_tools", "web_tools", "sources_pool", "citatio
 see_also:
   - ks:docs/sdk/tools/custom-tools-README.md
   - ks:docs/sdk/tools/tool-subsystem-README.md
+  - ks:docs/sdk/events/event-subsystem-README.md
+  - ks:docs/sdk/agents/react/event-source/event-source-README.md
+  - ks:docs/sdk/agents/react/event-source/block-production-README.md
   - ks:docs/citations-system.md
   - ks:docs/sdk/agents/react/source-pool-README.md
   - ks:docs/sdk/agents/react/react-tools-README.md
@@ -80,6 +83,25 @@ error such as `tool hosting service is unavailable` or
 `tool communicator is unavailable`.
 
 For full authoring guidance, see [Custom Tools](./custom-tools-README.md).
+
+## ReAct Event-Source Policy Pipeline
+
+Built-in SDK tools declare ReAct event-source metadata so their result handling
+can be addressed by phase-specific policies when
+`event_source_pipeline.enabled=true`.
+
+| Tool family | Event-source behavior |
+|---|---|
+| `web_tools.web_search` / `web_tools.web_fetch` | Use exploration policies: source rows merge into `sources_pool`, and the ordinary result item remains available. |
+| `rendering_tools.write_*` | Use write-tool policies: input paths/assets are prepared before execution, and `params.path` becomes the produced artifact row. |
+| `browser_tools.*` | Use structured-result policies: JSON/text diagnostics render as ordinary tool results, with declared-file rows when screenshots or hosted files are returned. |
+| `exec_tools.execute_code_python` | Uses exec-specific validation and production: generated code/contract are checked before execution, report text is emitted, and `raw.items` become artifact rows. |
+| SDK memory tools | Use structured-result policies: memory results render as ordinary JSON tool results and do not fabricate file artifacts. |
+
+The enabled pipeline is designed to preserve the visible timeline shape of the
+legacy external-tool handler while moving source-specific behavior into
+declarations and policies. Tools without declarations use the same structured
+fallback as ordinary custom tools.
 
 ## Main built-in tool families
 

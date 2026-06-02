@@ -7,6 +7,9 @@ keywords: ["tools_descriptor.py", "TOOLS_SPECS", "module", "ref", "alias", "kern
 see_also:
   - ks:docs/sdk/tools/tool-subsystem-README.md
   - ks:docs/sdk/tools/mcp-README.md
+  - ks:docs/sdk/events/event-subsystem-README.md
+  - ks:docs/sdk/agents/react/event-source/event-source-README.md
+  - ks:docs/sdk/agents/react/event-source/block-production-README.md
   - ks:docs/sdk/bundle/bundle-runtime-README.md
   - ks:docs/sdk/bundle/bundle-index-README.md
   - ks:docs/exec/README-runtime-modes-builtin-tools.md
@@ -302,6 +305,140 @@ as a runtime-preparation bug. Do not ask the LLM to invent those values.
 Direct returned declarations and tool-side hosting are equivalent from React's
 point of view. A tool may either return `ret.artifact_type: "files"` with local
 paths, or call `host_files(...)` and return the already-hosted rows.
+
+## 4.2) ReAct Event-Source Policies
+
+ReAct can run an event-source policy pipeline for tool results. The pipeline is
+controlled by `RuntimeCtx.event_source_pipeline_enabled` and can be enabled per
+bundle:
+
+```yaml
+config:
+  react:
+    event_source_pipeline:
+      enabled: true
+```
+
+A custom tool is a tool-backed event source when it runs inside ReAct. It is
+still implemented and called as a normal tool; the event-source declaration only
+adds policy metadata for validation, block production, timeline projection,
+ANNOUNCE production, and compaction projection.
+
+When the flag is enabled, custom tools continue to work even when they do not
+declare event-source metadata. The default fallback is the structured-result
+policy pack:
+
+```text
+react.block_production.tool_default
+react.block_production.generic_result_item
+react.block_production.declared_file_items
+react.timeline_projection.identity
+react.compaction_projection.identity
+```
+
+That fallback mirrors the old `external.py` behavior for ordinary custom tools:
+- JSON/text results are rendered as ordinary `tc:<turn>.<call>.result`
+  `react.tool.result` blocks.
+- Errors become ordinary tool-result/error notices.
+- `ret.artifact_type == "files"` still produces declared file artifacts.
+- Generic JSON results are not treated as files just because the artifact id is
+  the tool id.
+- No source-pool rows, snapshots, or ANNOUNCE entries are produced unless the
+  tool declares policies that produce those surfaces.
+
+### Declaring a custom event source
+
+If a tool needs custom ReAct behavior, decorate the tool-backed event source
+with `@event_source`:
+
+```python
+from kdcube_ai_app.apps.chat.sdk.events import event_source
+from kdcube_ai_app.apps.chat.sdk.solutions.react.events import structured_result_source_policies
+
+@event_source(
+    event_source_id="{alias}.search",
+    policies=structured_result_source_policies(),
+    description="Search bundle records and return structured result rows.",
+    kind="react.tool",
+)
+@kernel_function(name="search", description="Search bundle records")
+async def search(query: Annotated[str, "Search query"], n: int = 5):
+    ...
+```
+
+`{alias}` resolves to the alias from `TOOLS_SPECS`, so a module registered as
+`{"ref": "tools/local_tools.py", "alias": "doc", "use_sk": True}` produces the
+event source id `doc.search`.
+
+The event source id is the semantic policy key. For tool-backed events:
+
+```text
+event_source_id == tool_id
+event_id        == tool_call_id
+```
+
+### Declaring policy handlers
+
+Policy handlers are normal Python functions registered with a ReAct phase:
+
+```python
+from kdcube_ai_app.apps.chat.sdk.solutions.react.events import block_production_policy
+
+@block_production_policy(event_policy_id="doc.block_production.search_results")
+def search_results_policy(target, **context):
+    rows = (target.get("ret") or {}).get("results") or []
+    target.setdefault("source_rows", []).extend(rows)
+    target["source_rows_merge"] = True
+    return target
+```
+
+Then bind the policy from the event-source declaration:
+
+```python
+@event_source(
+    event_source_id="{alias}.search",
+    policies=[
+        {"react_phase": "block_production", "event_policy_id": "react.block_production.tool_default"},
+        {"react_phase": "block_production", "event_policy_id": "doc.block_production.search_results"},
+        {"react_phase": "block_production", "event_policy_id": "react.block_production.generic_result_item"},
+        {"react_phase": "timeline_projection", "event_policy_id": "react.timeline_projection.identity"},
+        {"react_phase": "compaction_projection", "event_policy_id": "react.compaction_projection.identity"},
+    ],
+    kind="react.tool",
+)
+```
+
+Use the built-in policy packs when they fit:
+- `structured_result_source_policies()` for ordinary JSON/text result tools and
+  declared file rows.
+- `exploration_source_policies()` for search/fetch-like tools that should merge
+  rows into `sources_pool`.
+- `write_tool_source_policies()` for rendering/write tools where `params.path`
+  is the produced artifact.
+- `composite_artifact_source_policies()` for tools that return multiple
+  surfaces such as hosted artifacts, snapshot refs, and announce candidates.
+
+### Event modules without decorating the tool
+
+Policies can also live in a separate event-source module. This is useful when
+the callable tool is remote, generated, or owned by another package. Pass the
+module through `event_source_specs` when calling `BaseWorkflow.build_react(...)`,
+or through `event_specs` when creating a `ToolSubsystem` directly. The module
+can return declarations from `list_event_sources()`.
+
+```python
+def list_event_sources():
+    return [
+        event_source_declaration(
+            event_source_id="doc.search",
+            policies=[...],
+            kind="react.tool",
+        )
+    ]
+```
+
+The source id must still match the runtime tool id if the policy is meant to
+handle that tool's result.
 
 ## 5) What a tool module receives at runtime
 

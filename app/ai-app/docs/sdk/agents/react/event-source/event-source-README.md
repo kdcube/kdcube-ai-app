@@ -5,6 +5,7 @@ summary: "Event-source declarations, ReAct policy bindings, discovery, identity,
 tags: ["sdk", "agents", "react", "event-source", "policies"]
 keywords: ["event_source", "event_source_id", "event_id", "react_phase", "event_policy_id", "tool policy", "timeline projection"]
 see_also:
+  - ks:docs/sdk/events/event-subsystem-README.md
   - ks:docs/sdk/agents/react/event-source/events-blocks-and-rendering-README.md
   - ks:docs/sdk/agents/react/event-source/block-production-README.md
   - ks:docs/sdk/agents/react/tool-call-blocks-README.md
@@ -16,6 +17,11 @@ Event sources make ReAct timeline behavior policy-addressable. A source can be
 a tool, a folded external event, or a future user-input source. The event-source
 layer does not replace timeline block types. It adds semantic identity and
 phase-specific policies around the blocks that already represent what happened.
+
+A tool call is the first implemented special case of an event source. The tool
+is still called through the normal tool subsystem; the event-source layer only
+describes how that tool occurrence is validated, converted into timeline blocks,
+projected into rendered context, announced, or prepared for compaction.
 
 ## Three Layers
 
@@ -177,4 +183,3 @@ Policies do not own transport, queueing, cache marker placement, or final
 message rendering. They own the source-specific transformation at the phase they
 are bound to. The caller remains responsible for invoking policies at the
 correct ReAct spot and for preserving cache-point ordering.
-

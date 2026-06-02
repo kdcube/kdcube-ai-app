@@ -7,6 +7,9 @@ keywords: ["MCP_TOOL_SPECS", "MCP_SERVICES", "MCPToolsSubsystem", "mcp.<alias>.<
 see_also:
   - ks:docs/sdk/tools/tool-subsystem-README.md
   - ks:docs/sdk/tools/custom-tools-README.md
+  - ks:docs/sdk/events/event-subsystem-README.md
+  - ks:docs/sdk/agents/react/event-source/event-source-README.md
+  - ks:docs/sdk/agents/react/event-source/block-production-README.md
   - ks:docs/sdk/agents/react/react-tools-README.md
   - ks:docs/sdk/bundle/bundle-agent-integration-README.md
   - ks:docs/sdk/bundle/bundle-transports-README.md
@@ -181,6 +184,39 @@ storage, and output directory. The normal React path prepares this in
 `BaseWorkflow.build_react(...)`; isolated execution prepares it through
 `bootstrap_bind_all(...)`. If the tool context is not prepared, the helper raises
 a runtime error instead of producing an unscoped hosted file.
+
+### MCP results in the ReAct event-source pipeline
+
+When `event_source_pipeline.enabled=true`, direct MCP tool calls still work with
+the default structured-result behavior. The runtime tool id is:
+
+```text
+mcp.<alias>.<tool_name>
+```
+
+If no event-source declaration matches that id, ReAct applies the structured
+fallback:
+- JSON/text results become ordinary `tc:<turn>.<call>.result` blocks.
+- `ret.artifact_type == "files"` still produces declared file artifacts when
+  the declared files exist in the React workspace.
+- Generic JSON is not treated as a file-backed artifact.
+- No source-pool rows, snapshots, or ANNOUNCE candidates are produced unless a
+  policy explicitly adds them.
+
+Remote MCP servers do not normally expose local Python `@event_source`
+decorators to the KDCube tool subsystem. If an MCP-backed capability needs
+custom ReAct behavior, use one of these patterns:
+
+- wrap the MCP call in a bundle-local tool and decorate that local tool with
+  `@event_source`;
+- provide an explicit event-source module through `event_source_specs` when
+  calling `BaseWorkflow.build_react(...)`, or through `event_specs` when
+  creating a `ToolSubsystem` directly. The declaration's `event_source_id`
+  must match the runtime MCP tool id, for example `mcp.docs.search`.
+
+Use a custom policy only when the default structured result is not enough, such
+as when rows should merge into `sources_pool`, a snapshot ref should be recorded,
+or a later ANNOUNCE phase should materialize source-specific context.
 
 ## HTTP reachability and localhost
 

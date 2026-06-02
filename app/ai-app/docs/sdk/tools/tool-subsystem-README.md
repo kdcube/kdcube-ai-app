@@ -7,6 +7,9 @@ keywords: ["tools_descriptor.py", "TOOLS_SPECS", "MCP_TOOL_SPECS", "TOOL_RUNTIME
 see_also:
   - ks:docs/sdk/tools/custom-tools-README.md
   - ks:docs/sdk/tools/mcp-README.md
+  - ks:docs/sdk/events/event-subsystem-README.md
+  - ks:docs/sdk/agents/react/event-source/event-source-README.md
+  - ks:docs/sdk/agents/react/event-source/block-production-README.md
   - ks:docs/sdk/bundle/bundle-runtime-README.md
   - ks:docs/exec/README-runtime-modes-builtin-tools.md
   - ks:docs/exec/README-iso-runtime.md
@@ -136,6 +139,50 @@ Tool IDs:
 - MCP tools: `mcp.<alias>.<tool_name>`
 
 `ToolSubsystem` introspects loaded modules and builds the catalog used by planner/generator prompts.
+
+## Event-source discovery for ReAct
+
+When ReAct runs with `event_source_pipeline.enabled=true`, the `ToolSubsystem`
+also builds an `EventSourceSubsystem`. This registry is attached to
+`RuntimeCtx.event_sources` and is used by ReAct phases such as
+`tool_call_validation`, `block_production`, `timeline_projection`,
+`announce_production`, and `compaction_projection`.
+
+Discovery includes:
+- all loaded `TOOLS_SPECS` modules;
+- built-in ReAct source declarations such as `react.followup`, `react.steer`,
+  `react.write`, and `react.memsearch`;
+- explicit `event_specs` modules passed when the workflow creates the tool
+  subsystem.
+
+Tool functions can declare event-source metadata directly with `@event_source`.
+An event module can also provide `list_event_sources()` for declarations that
+are separate from the callable tool module.
+
+Inside ReAct, a tool call is a tool-backed event source. Tool execution still
+uses the regular tool subsystem. The event-source registry supplies the ReAct
+policy plane for that tool occurrence.
+
+If a tool has no matching event-source declaration, ReAct still handles it with
+the structured-result default policy pack. That preserves the normal custom
+tool behavior:
+- JSON/text output becomes an ordinary `tc:<turn>.<call>.result` block;
+- `ret.artifact_type == "files"` produces declared file artifacts;
+- generic JSON results are not treated as file paths;
+- no source-pool rows, snapshot refs, or ANNOUNCE candidates are produced unless
+  a policy explicitly adds them.
+
+The runtime identity rule is:
+
+```text
+tool_id      == event_source_id
+tool_call_id == event_id
+```
+
+For direct MCP tools, the local tool subsystem usually cannot discover Python
+decorators from the remote MCP server. Those tools therefore use the same
+structured-result default unless the bundle wraps the MCP call in a local tool
+or supplies an explicit event-source module through `event_specs`.
 
 ## Execution path (runtime enforcement)
 
