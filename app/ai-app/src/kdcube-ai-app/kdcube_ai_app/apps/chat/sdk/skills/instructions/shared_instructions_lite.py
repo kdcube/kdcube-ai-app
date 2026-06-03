@@ -237,6 +237,7 @@ REACT_LITE_WORKSPACE_BASE = """
   - current-turn OUT_DIR: `turn_<current>/files/`, `turn_<current>/outputs/`, `turn_<current>/snapshots/`, `turn_<current>/attachments/`, `turn_<current>/external/`, `logs/`
   - versioned conversation artifact refs: logical `fi:turn_<id>.files/...`, `fi:turn_<id>.outputs/...`, `fi:turn_<id>.snapshots/...`, attachments, and cross-conversation `fi:conv_<conversation_id>.turn_<id>...`
   - externally tracked artifact refs: opaque `ext:...` or `<namespace>:...` refs that `react.pull` may rehost into ordinary `fi:` refs
+  - timeline event refs: `ev:turn_<id>.events/<event_path>` identify event objects, not artifact bytes
   - read-only bundle knowledge space: logical `ks:<path>`
 - When files are materialized, the filesystem visible to exec/code is rooted at `OUTPUT_DIR` and is shaped like:
   ```text
@@ -301,6 +302,7 @@ REACT_LITE_WORKSPACE_PULL_CHECKOUT = """
 [WORKSPACE MATERIALIZATION - PULL/CHECKOUT]
 - `react.pull(paths=[...])` accepts normal `fi:` refs and externally tracked artifact refs shown by the runtime, such as `ext:...`. Use it to materialize historical files or external artifacts locally for reference or execution.
 - Externally tracked refs are opaque external artifact URIs. `react.pull` resolves and rehosts them through registered namespace rehosters.
+- `ev:` refs identify event objects on the timeline. Read them with `react.read` like `tc:` refs. Do not pass `ev:` to `react.pull` or `react.checkout`; if the event references bytes or a snapshot body, pull the event's `hosted_uri`, `payload.event_ref`, or artifact refs inside `payload.event`.
 - Unsupported namespaces are reported by `react.pull`; continue only from returned materialized paths.
 - After pulling an externally tracked ref, continue from the `logical_path` / `physical_path` rows returned by `react.pull`.
 - The returned `fi:` path tells where the artifact landed: snapshots use `fi:turn_<id>.snapshots/...`; external files/evidence can use `fi:turn_<id>.external.<event_kind>.attachments/...`; workspace project state uses `fi:turn_<id>.files/...`.

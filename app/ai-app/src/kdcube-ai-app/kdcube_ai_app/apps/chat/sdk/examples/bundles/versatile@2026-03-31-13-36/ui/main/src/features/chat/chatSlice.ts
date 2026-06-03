@@ -251,6 +251,7 @@ const slice = createSlice({
           queuedTurnId: string | null
           activeTurnId: string | null
           liveOwnerDetected: boolean | null | undefined
+          isContinuation: boolean | null | undefined
         }
         existingConversationId: string | null
         isContinuation: boolean
@@ -259,7 +260,7 @@ const slice = createSlice({
         draftText: string
         draftAttachments: import('./chatTypes.ts').TurnAttachment[]
         sentAt: number
-        continuationMessageKind: 'followup' | 'steer'
+        additionalEventType: string
       }>,
     ) {
       const {
@@ -271,7 +272,7 @@ const slice = createSlice({
         draftText,
         draftAttachments,
         sentAt,
-        continuationMessageKind,
+        additionalEventType,
       } = action.payload
       const stillOwnsTurn = isContinuation
         ? state.turns.some((turn) => turn.id === targetTurnId)
@@ -284,7 +285,7 @@ const slice = createSlice({
       state.conversationId = response.conversationId
       const ackStatus = typeof response.status === 'string' ? response.status : null
       const serverTurnId = response.turnId
-      const continuationAccepted = ackStatus === 'followup_accepted' || ackStatus === 'steer_accepted'
+      const continuationAccepted = Boolean(response.isContinuation)
       const visualContinuationTurnId = response.activeTurnId || targetTurnId
       const continuationMessageId = response.eventId || response.queuedTurnId || serverTurnId
 
@@ -296,7 +297,7 @@ const slice = createSlice({
          * We do NOT speculatively push a new turn for continuations
          * here — that previously caused a blank panel to appear when
          * the server treated the request as a queued followup but the
-         * client didn't see the canonical `followup_accepted` status
+         * client didn't receive the continuation marker
          * (race or transport variance). If the server actually did
          * start a brand-new turn (e.g. because the conversation state
          * was idle by the time the POST arrived), the subsequent
@@ -317,7 +318,7 @@ const slice = createSlice({
                 text: draftText,
                 timestamp: sentAt,
                 attachments: draftAttachments,
-                continuationKind: continuationMessageKind,
+                eventType: additionalEventType,
               })
             }
           }

@@ -156,7 +156,7 @@ def build_user_input_blocks(
     user_text: str,
     user_attachments: Optional[List[Dict[str, Any]]],
     block_factory,
-    continuation_kind: Optional[str] = None,
+    event_type: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     tid = (getattr(runtime, "turn_id", None) or "").strip()
     if not tid:
@@ -168,8 +168,8 @@ def build_user_input_blocks(
     if user_text:
         prompt_path = f"ar:{tid}.user.prompt"
         prompt_meta: Dict[str, Any] = {"message_id": prompt_message_id}
-        if continuation_kind and continuation_kind != "regular":
-            prompt_meta["continuation_kind"] = continuation_kind
+        if event_type:
+            prompt_meta["event_type"] = event_type
         blocks.append(block_factory(
             type="user.prompt",
             author="user",

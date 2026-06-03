@@ -91,7 +91,7 @@ Critical bundle-events smoke rule:
 - if a bundle has wizard/canvas/snapshot flows, verify the runtime can load
   `events_descriptor.py` and the referenced event modules
 - if the UI sends authored external events, verify payloads include
-  `payload.target.agent_id` and `payload.external_event.event_source_id`
+  `payload.target.agent_id` and `external_events[].event_source_id`
 - if the bundle exposes refs such as `ext:...`, verify the namespace rehoster
   is registered and `react.pull` returns an ordinary `fi:` ref
 - use [bundle-events-README.md](../bundle-events-README.md) for the bundle-side

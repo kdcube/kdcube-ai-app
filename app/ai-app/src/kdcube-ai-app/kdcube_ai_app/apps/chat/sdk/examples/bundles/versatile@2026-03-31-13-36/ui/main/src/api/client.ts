@@ -41,7 +41,7 @@ interface SubmitChatMessageApiResponse {
   turn_id?: string
   conversation_created?: boolean
   user_type?: string
-  message_kind?: string | null
+  is_continuation?: boolean | null
   active_turn_id?: string | null
   target_turn_id?: string | null
   queued_turn_id?: string | null
@@ -49,6 +49,66 @@ interface SubmitChatMessageApiResponse {
   external_event_sequence?: number | null
   live_owner_detected?: boolean | null
   message?: string
+}
+
+function newEventId(): string {
+  return crypto.randomUUID ? crypto.randomUUID() : `evt_${Date.now()}_${Math.random().toString(16).slice(2)}`
+}
+
+function buildEventSubmission(params: SubmitChatMessageParams, tenant: string, project: string): Record<string, unknown> {
+  const reactiveEventType = params.reactiveEventType || 'event.user.prompt'
+  const events: Record<string, unknown>[] = []
+  const text = String(params.text || '').trim()
+  const hasAuthoredEvents = Boolean(params.externalEvents?.length)
+  if ((text || reactiveEventType === 'event.user.steer') && !hasAuthoredEvents) {
+    const eventSourceId = reactiveEventType === 'event.user.steer'
+      ? 'chat.steer'
+      : reactiveEventType === 'event.user.followup'
+        ? 'chat.followup'
+        : 'chat.message'
+    events.push({
+      event_id: newEventId(),
+      type: reactiveEventType,
+      event_source_id: eventSourceId,
+      reactive: true,
+      agent_id: (params.target?.agent_id || params.target?.agent) as string | undefined,
+      story_id: params.target?.story_id as string | undefined,
+      payload: { mime: 'text/plain', event: { text } },
+    })
+  }
+  params.files.forEach((file, index) => {
+    events.push({
+      event_id: newEventId(),
+      type: 'event.user.attachment.file',
+      event_source_id: 'chat.attachment',
+      reactive: true,
+      agent_id: (params.target?.agent_id || params.target?.agent) as string | undefined,
+      story_id: params.target?.story_id as string | undefined,
+      payload: {
+        mime: file.type || 'application/octet-stream',
+        event: {
+          filename: file.name,
+          size: file.size,
+          mime: file.type || 'application/octet-stream',
+          file_index: index,
+        },
+      },
+    })
+  })
+  events.push(...(params.externalEvents || []))
+  return {
+    external_events: events,
+    chat_history: params.chatHistory,
+    project,
+    tenant,
+    bundle_id: params.bundleId,
+    ...(params.turnId ? { turn_id: params.turnId } : {}),
+    ...(params.conversationId ? { conversation_id: params.conversationId } : {}),
+    ...(params.activeTurnId ? { active_turn_id: params.activeTurnId } : {}),
+    ...(params.targetTurnId ? { target_turn_id: params.targetTurnId } : {}),
+    ...(params.target ? { target: params.target } : {}),
+    ...(params.payload ? { payload: params.payload } : {}),
+  }
 }
 
 interface ResourceByRnResponse {
@@ -253,7 +313,7 @@ async function parseSubmitChatMessageResponse(
     turnId: raw?.turn_id,
     conversationCreated: Boolean(raw?.conversation_created),
     userType: raw?.user_type,
-    messageKind: raw?.message_kind,
+    isContinuation: Boolean(raw?.is_continuation),
     activeTurnId: raw?.active_turn_id,
     targetTurnId: raw?.target_turn_id,
     queuedTurnId: raw?.queued_turn_id,
@@ -266,53 +326,7 @@ async function parseSubmitChatMessageResponse(
 
 export async function submitChatMessage(params: SubmitChatMessageParams): Promise<SubmitChatMessageResponse> {
   const { tenant, project } = requireScope()
-
-  const message: Record<string, unknown> = {
-    message: params.text,
-    chat_history: params.chatHistory,
-    project,
-    tenant,
-    bundle_id: params.bundleId,
-  }
-  if (params.turnId) {
-    message.turn_id = params.turnId
-  }
-  if (params.conversationId) {
-    message.conversation_id = params.conversationId
-  }
-  if (params.messageKind) {
-    message.message_kind = params.messageKind
-  }
-  if (params.continuationKind) {
-    message.continuation_kind = params.continuationKind
-  }
-  if (params.activeTurnId) {
-    message.active_turn_id = params.activeTurnId
-  }
-  if (params.targetTurnId) {
-    message.target_turn_id = params.targetTurnId
-  }
-  if (params.followup) {
-    message.followup = true
-  }
-  if (params.steer) {
-    message.steer = true
-  }
-  const messagePayload: Record<string, unknown> = { ...(params.payload || {}) }
-  if (params.target) {
-    messagePayload.target = params.target
-  }
-  if (params.externalEvent) {
-    messagePayload.external_event = params.externalEvent
-  }
-  if (Object.keys(messagePayload).length > 0) {
-    message.payload = messagePayload
-  }
-
-  const payload = {
-    message,
-    attachment_meta: params.files.map((file) => ({ filename: file.name })),
-  }
+  const eventSubmission = buildEventSubmission(params, tenant, project)
 
   const url = new URL(`${settings.getBaseUrl()}/sse/chat`)
   url.searchParams.set('stream_id', params.streamId)
@@ -320,8 +334,7 @@ export async function submitChatMessage(params: SubmitChatMessageParams): Promis
   let response: Response
   if (params.files.length > 0) {
     const form = new FormData()
-    form.set('message', JSON.stringify(payload))
-    form.set('attachment_meta', JSON.stringify(params.files.map((file) => ({ filename: file.name }))))
+    form.set('event_submission', JSON.stringify(eventSubmission))
     params.files.forEach((file) => form.append('files', file, file.name))
     response = await fetch(url, {
       method: 'POST',
@@ -334,7 +347,7 @@ export async function submitChatMessage(params: SubmitChatMessageParams): Promis
       method: 'POST',
       credentials: 'include',
       headers: buildRequestHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify(payload),
+      body: JSON.stringify(eventSubmission),
     })
   }
 

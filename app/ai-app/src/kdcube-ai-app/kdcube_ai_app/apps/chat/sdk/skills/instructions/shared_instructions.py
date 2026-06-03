@@ -270,7 +270,11 @@ or file inspection needs artifact bytes, materialize the visible ref with
 3) EXTERNALLY TRACKED ARTIFACT REFS (resolved by react.pull)
    ext:<key> or <namespace>:<key>           # resolved by a registered rehoster
 
-4) BUNDLE KNOWLEDGE SPACE `ks:` (logical; read-only virtual folder)
+4) TIMELINE EVENT REFS (event identity, not artifact bytes)
+   ev:turn_<id>.events/<event_path>
+   ev:conv_<conversation_id>.turn_<id>.events/<event_path>
+
+5) BUNDLE KNOWLEDGE SPACE `ks:` (logical; read-only virtual folder)
    ks:<bundle-defined-path>/...
 ```
 
@@ -283,6 +287,7 @@ or file inspection needs artifact bytes, materialize the visible ref with
 - `react.pull` creates local reference material. `react.checkout` is the step that copies versioned `files/...` refs into the current editable workspace.
 - `react.pull` accepts normal `fi:` refs and externally tracked artifact refs shown by the runtime, such as `ext:...`.
 - Externally tracked artifact refs are resolved through registered rehosters. Pass the visible ref to `react.pull`; then continue from the returned `logical_path` / `physical_path` rows. A missing rehoster is reported in the pull result.
+- `ev:` identifies an event object on the timeline. It is readable with `react.read` like `tc:`, but it is not artifact storage and is not a `react.pull` or `react.checkout` path. If the event points to bytes or a snapshot body, use its `hosted_uri`, `payload.event_ref`, or refs inside `payload.event`; pull only those artifact refs.
 - Bring files in for a reason:
   - use `react.read(paths=[...])` when visible text/context is enough
   - use `react.pull(paths=[...])` when a specific historical or externally tracked artifact must become local reference material for code, rendering, local search, or inspection
@@ -365,7 +370,11 @@ or file inspection needs artifact bytes, materialize the visible ref with
 3) EXTERNALLY TRACKED ARTIFACT REFS (resolved by react.pull)
    ext:<key> or <namespace>:<key>           # resolved by a registered rehoster
 
-4) BUNDLE KNOWLEDGE SPACE `ks:` (logical; read-only virtual folder)
+4) TIMELINE EVENT REFS (event identity, not artifact bytes)
+   ev:turn_<id>.events/<event_path>
+   ev:conv_<conversation_id>.turn_<id>.events/<event_path>
+
+5) BUNDLE KNOWLEDGE SPACE `ks:` (logical; read-only virtual folder)
    ks:<bundle-defined-path>/...
 ```
 
@@ -384,6 +393,7 @@ or file inspection needs artifact bytes, materialize the visible ref with
 - `react.pull` creates local reference material. `react.checkout` is the step that copies versioned `files/...` refs into the current editable workspace.
 - `react.pull` accepts normal `fi:` refs and externally tracked artifact refs shown by the runtime, such as `ext:...`.
 - Externally tracked artifact refs are resolved through registered rehosters. Pass the visible ref to `react.pull`; then continue from the returned `logical_path` / `physical_path` rows. A missing rehoster is reported in the pull result.
+- `ev:` identifies an event object on the timeline. It is readable with `react.read` like `tc:`, but it is not artifact storage and is not a `react.pull` or `react.checkout` path. If the event points to bytes or a snapshot body, use its `hosted_uri`, `payload.event_ref`, or refs inside `payload.event`; pull only those artifact refs.
 - Bring files in for a reason:
   - use `react.read(paths=[...])` when visible text/context is enough
   - use `react.pull(paths=[...])` when a specific historical or externally tracked artifact must become local reference material for code, rendering, local search, or inspection

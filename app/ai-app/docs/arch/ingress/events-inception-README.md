@@ -1,7 +1,7 @@
 ---
 id: ks:docs/arch/ingress/events-inception-README.md
 title: "Ingress Event Inception"
-summary: "How chat ingress classifies user messages, followups, steers, and authored external events before they enter queue, Redis external-event stream, or ReAct."
+summary: "How chat ingress accepts built-in user events and authored domain events before they enter the ordered event lane, ready queue, Redis external-event stream, or ReAct."
 tags: ["arch", "ingress", "events", "chat", "react", "followup", "steer", "external-events"]
 keywords:
   [
@@ -29,21 +29,26 @@ This document describes how a client-side action becomes a platform event at
 chat ingress. It is the ingress-level map; ReAct-specific folding is documented
 in [Shared Timeline Event Bus for Steer and Followup](../../sdk/agents/react/shared-timeline-event-bus-steer-followup-README.md).
 
-## Event Families
+## Event Types And Lane Kinds
 
-| Family | Client shape | Ingress kind | Runtime meaning |
+Ingress accepts one event model. User prompt, attachment, followup, and steer
+are built-in external event types. The existing chat wire fields are authoring
+shortcuts; `external_events[]` is the authored domain/UI event form.
+
+| Semantic event type | Client shape | Operational lane kind | Runtime meaning |
 |---|---|---|---|
-| New user message | `message.message` with no busy conversation | `message` | Publish the accepted event to the lane and enqueue a reactive lane wakeup. |
-| Followup | `message_kind` / `continuation_kind` / `followup=true` | `followup` | Additional same-conversation user input while a turn may be active. |
-| Steer | `message_kind` / `continuation_kind` / `steer=true` | `steer` | Control/reorientation event. ReAct treats it as interrupt-like when supported. |
-| Authored external event | `payload.external_event` | `external_event` | Structured product event, e.g. wizard save/request-assistance. |
+| `event.user.prompt` | `message.message` with no busy conversation | `message` | Publish the accepted event to the lane and enqueue a reactive lane wakeup. |
+| `event.user.attachment.*` | message attachments / attachment metadata | same parent lane kind | Hosted/materialized attachment occurrence associated with prompt/followup. |
+| `event.user.followup` | `message_kind` / `continuation_kind` / `followup=true` | `followup` | Additional same-conversation user input while a turn may be active. |
+| `event.user.steer` | `message_kind` / `continuation_kind` / `steer=true` | `steer` | Control/reorientation event. ReAct treats it as interrupt-like when supported. |
+| `event.external`, `event.snapshot`, `event.canvas`, or custom `event.*` | `external_events[]` | `external_event` | Structured product/domain event, e.g. wizard save/request-assistance. |
 
 `payload.target` is bundle-level routing metadata. It can identify a bundle
 agent, surface, story, or local flow, but it does not own platform turn routing.
 Platform turn routing stays in message-level `active_turn_id` and
 `target_turn_id`.
 
-## Authored External Event Envelope
+## Authored Domain Event Envelope
 
 ```json
 {
@@ -52,19 +57,19 @@ Platform turn routing stays in message-level `active_turn_id` and
       "agent_id": "invoice_wizard",
       "story_id": "invoice:inv-123"
     },
-    "external_event": {
+    "external_events": [{
+      "type": "event.external",
       "event_source_id": "invoice_intake.wizard.assistance.requested",
-      "kind": "action",
       "story_id": "invoice:inv-123",
-      "routing": {
-        "reactive": true,
-        "iteration_credit": 1
-      },
-      "data": {
-        "snapshot_ref": "ext:task-tracker/inv_123/invoice-draft.yaml",
-        "request": "Review this draft and suggest the next useful step."
+      "reactive": true,
+      "payload": {
+        "mime": "application/json",
+        "event": {
+          "snapshot_ref": "ext:task-tracker/inv_123/invoice-draft.yaml",
+          "request": "Review this draft and suggest the next useful step."
+        }
       }
-    }
+    }]
   },
   "active_turn_id": "turn_...",
   "target_turn_id": "turn_..."
@@ -73,19 +78,19 @@ Platform turn routing stays in message-level `active_turn_id` and
 
 Rules:
 
-- `payload.external_event.routing.reactive` is the occurrence-level reactive
-  override visible to ingress.
-- `payload.external_event.routing.iteration_credit` is the occurrence-level
+- `external_events[].reactive` is the occurrence-level reactive flag
+  visible to ingress.
+- `external_events[].payload.iteration_credit` is the occurrence-level
   iteration-credit override when the event is consumed live. The runtime cap
   still applies.
-- If `routing.reactive` is absent or false, the event does not wake ReAct.
+- If `reactive` is absent or false, the event does not wake ReAct.
   Reactive events are expensive because they run the agent, so the effective
   reactive decision must be present on the transported occurrence.
 - Server-side event source declarations can still define authoring defaults,
   for example `event_source_declaration(..., reactive=True, iteration_credit=2)`,
   but producers/helpers must materialize that default into the occurrence before
   ingress receives it.
-- The `external_event` object is preserved as-is in the Redis external-event
+- The `external_events[]` object is preserved as-is in the Redis external-event
   lane payload and in the stored `ExternalEventPayload.request.payload` inside
   that lane event's `task_payload`.
 
@@ -93,13 +98,13 @@ Rules:
 
 | Conversation state | Event family | Ingress action | ReAct wake/credit |
 |---|---|---|---|
-| Idle/new | User message | Set conversation `in_progress`, host attachments, append `kind=message` to the event lane, enqueue `ExternalEventLaneWakeup`. | Normal task budget. |
-| Busy | Followup | Append to per-conversation external-event source with `kind=followup`; active owner may consume live, otherwise proc may promote fallback task. | Reactive by default; grants bounded live iteration credit. |
-| Busy | Steer | Append to per-conversation external-event source with `kind=steer`; active owner may interrupt/finalize. | No iteration credit; control path. |
-| Idle | Authored external event, no ingress-visible `routing.reactive=true` | Set/verify conversation row as `idle`, host attachments, append `kind=external_event` to per-conversation Redis external-event source, return `external_event_recorded`. | No wake, no credit. |
-| Busy | Authored external event, no `routing.reactive=true` | Append `kind=external_event` to per-conversation Redis external-event source, return `external_event_accepted`. | No wake credit. Active owner can still fold the block if it drains the stream. |
-| Idle | Authored external event, ingress-visible `routing.reactive=true` | Set conversation `in_progress`, append `kind=external_event` to the event lane, enqueue `ExternalEventLaneWakeup`. | Normal task budget. |
-| Busy | Authored external event, `routing.reactive=true` | Append `kind=external_event` to per-conversation Redis external-event source, return `external_event_accepted`. | May grant bounded live iteration credit from the source default or `routing.iteration_credit`. |
+| Idle/new | `event.user.prompt` | Set conversation `in_progress`, host attachments as `event.user.attachment.*`, append `kind=message` to the event lane, enqueue `ExternalEventLaneWakeup`. | Normal task budget. |
+| Busy | `event.user.followup` | Append to per-conversation external-event source with `kind=followup`; active owner may consume live, otherwise proc may promote fallback task. | Reactive by default; grants bounded live iteration credit. |
+| Busy | `event.user.steer` | Append to per-conversation external-event source with `kind=steer`; active owner may interrupt/finalize. | No iteration credit; control path. |
+| Idle | Authored domain event, no ingress-visible `reactive=true` | Set/verify conversation row as `idle`, append `kind=external_event` to per-conversation Redis external-event source, return `external_event_recorded`. | No wake, no credit. |
+| Busy | Authored domain event, no `reactive=true` | Append `kind=external_event` to per-conversation Redis external-event source, return `external_event_accepted`. | No wake credit. Active owner can still invoke callbacks and policy production if it drains the stream. |
+| Idle | Authored domain event, ingress-visible `reactive=true` | Set conversation `in_progress`, append `kind=external_event` to the event lane, enqueue `ExternalEventLaneWakeup`. | Normal task budget. |
+| Busy | Authored domain event, `reactive=true` | Append `kind=external_event` to per-conversation Redis external-event source, return `external_event_accepted`. | May grant bounded live iteration credit from the source default or occurrence credit. |
 
 ## Redis External-Event Source
 

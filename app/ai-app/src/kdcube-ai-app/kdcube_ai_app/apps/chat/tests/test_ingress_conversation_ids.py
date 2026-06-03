@@ -11,8 +11,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from kdcube_ai_app.auth.sessions import UserType
-from kdcube_ai_app.apps.chat.ingress import chat_core
-from kdcube_ai_app.apps.chat.ingress.chat_core import GatewayCheckResult, IngressResult
+from kdcube_ai_app.apps.chat.ingress import ingress_core
+from kdcube_ai_app.apps.chat.ingress.ingress_core import GatewayCheckResult, IngressResult
 from kdcube_ai_app.apps.chat.ingress.sse import chat as sse_chat
 from kdcube_ai_app.apps.chat.ingress.socketio import chat as socket_chat
 
@@ -54,7 +54,7 @@ def test_resolve_ingress_conversation_id_generates_uuid_when_missing():
     message_data = {}
 
     conversation_id, created = asyncio.run(
-        chat_core.resolve_ingress_conversation_id(
+        ingress_core.resolve_ingress_conversation_id(
             app=app,
             session=session,
             message_data=message_data,
@@ -71,9 +71,9 @@ def test_resolve_ingress_conversation_id_rejects_unknown_supplied_id():
     session = SimpleNamespace(user_id="user-1", fingerprint="fp-1")
     message_data = {"conversation_id": "conv-does-not-exist"}
 
-    with pytest.raises(chat_core.HTTPException) as exc:
+    with pytest.raises(ingress_core.HTTPException) as exc:
         asyncio.run(
-            chat_core.resolve_ingress_conversation_id(
+            ingress_core.resolve_ingress_conversation_id(
                 app=app,
                 session=session,
                 message_data=message_data,
@@ -91,7 +91,7 @@ def test_resolve_ingress_conversation_id_accepts_state_row_before_turn_artifacts
     message_data = {"conversation_id": "conv-in-flight"}
 
     conversation_id, created = asyncio.run(
-        chat_core.resolve_ingress_conversation_id(
+        ingress_core.resolve_ingress_conversation_id(
             app=app,
             session=session,
             message_data=message_data,

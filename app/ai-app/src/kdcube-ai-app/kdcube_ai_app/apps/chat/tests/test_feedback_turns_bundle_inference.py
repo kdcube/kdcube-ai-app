@@ -231,7 +231,13 @@ async def test_fetch_conversation_artifacts_materializes_multi_entry_turn_in_ord
                             "ts": "2026-04-01T09:01:00Z",
                             "path": "ar:turn-1.external.followup.msg-1",
                             "text": "Extra constraint",
-                            "meta": {"message_id": "msg-1", "sequence": 2, "event_kind": "followup"},
+                            "meta": {
+                                "message_id": "msg-1",
+                                "sequence": 2,
+                                "event_kind": "followup",
+                                "event_type": "event.user.followup",
+                                "is_continuation": True,
+                            },
                         },
                         {
                             "type": "user.attachment.meta",
@@ -242,8 +248,9 @@ async def test_fetch_conversation_artifacts_materializes_multi_entry_turn_in_ord
                                 "filename": "brief.txt",
                                 "mime": "text/plain",
                                 "hosted_uri": "s3://bucket/brief.txt",
-                                "continuation_kind": "followup",
                                 "event_kind": "followup",
+                                "event_type": "event.user.followup",
+                                "is_continuation": True,
                                 "message_id": "msg-1",
                                 "sequence": 2,
                             },
@@ -304,7 +311,8 @@ async def test_fetch_conversation_artifacts_materializes_multi_entry_turn_in_ord
         "artifact:assistant.file",
         "chat:assistant",
     ]
-    assert artifacts[1]["data"]["continuation_kind"] == "followup"
+    assert artifacts[1]["data"]["event_type"] == "event.user.followup"
+    assert artifacts[1]["data"]["is_continuation"] is True
     assert artifacts[1]["data"]["meta"]["message_id"] == "msg-1"
     assert artifacts[1]["data"]["meta"]["path"] == "ar:turn-1.external.followup.msg-1"
     assert artifacts[2]["ts"] == "2026-04-01T09:01:00Z"
@@ -369,7 +377,13 @@ async def test_fetch_conversation_artifacts_preserves_turn_log_chat_timestamps(m
                             "ts": "2026-04-01T09:00:01Z",
                             "path": "ar:turn-1.external.followup.msg-1",
                             "text": "Followup",
-                            "meta": {"message_id": "msg-1", "sequence": 2, "event_kind": "followup"},
+                            "meta": {
+                                "message_id": "msg-1",
+                                "sequence": 2,
+                                "event_kind": "followup",
+                                "event_type": "event.user.followup",
+                                "is_continuation": True,
+                            },
                         },
                     ]
                 },

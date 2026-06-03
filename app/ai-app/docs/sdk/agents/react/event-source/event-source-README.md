@@ -5,6 +5,7 @@ summary: "Event-source declarations, ReAct policy bindings, discovery, identity,
 tags: ["sdk", "agents", "react", "event-source", "policies"]
 keywords: ["event_source", "event_source_id", "event_id", "react_phase", "event_policy_id", "tool policy", "timeline projection"]
 see_also:
+  - ks:docs/sdk/events/external-event-envelope-README.md
   - ks:docs/sdk/events/external-events-README.md
   - ks:docs/sdk/events/external-events-journey-and-handling-README.md
   - ks:docs/arch/proc/events-orchestration-README.md
@@ -32,7 +33,8 @@ projected into rendered context, announced, or prepared for compaction.
 |---|---|---|
 | Source declaration | `event_source_id` | Semantic/policy key, such as `web_tools.web_search` or `react.followup`. |
 | Occurrence | `event_id` | One concrete occurrence of that source. For tools this is the `tool_call_id`. |
-| Physical block shape | `block.type` | Renderer/storage shape, such as `react.tool.call`, `react.tool.result`, `user.followup`, or `user.attachment`. |
+| Accepted event type | `event.type` | Semantic event shape, such as `event.user.prompt`, `event.user.attachment.*`, `event.user.followup`, `event.user.steer`, `event.external`, `event.snapshot`, or `event.canvas`. |
+| Physical block shape | `block.type` | Current renderer/storage projection, such as `react.tool.call`, `react.tool.result`, `user.prompt`, `user.attachment.*`, `user.followup`, `user.steer`, `event.external`, or `event.snapshot`. |
 
 `event_source_id` is the type of event. `event_id` is one occurrence. `block.type`
 is how the timeline renderer stores and renders the block.
@@ -49,10 +51,52 @@ derive event identity without duplicating durable fields on every block. When a
 non-tool external event is folded into the timeline, it should carry explicit
 `event_source_id` and `event_id`.
 
-External events arrive through chat ingress as `payload.external_event` and are
-retained first in the per-conversation Redis external-event source. The
-transport, reactivity, and story-correlation contract is documented in
-[External Events](../../../events/external-events-README.md).
+An authored external event also has a `logical_path` in the `ev:` namespace,
+for example `ev:turn_<id>.events/<event_path>`. That path identifies the event
+object on the timeline and is readable with `react.read`, like `tc:` for tool
+call/result objects. It is not a file/artifact namespace and is not passed to
+`react.pull` or `react.checkout`. If the event body is hosted or points to
+files, the pullable refs live in `hosted_uri`, `payload.event_ref`, or inside
+`payload.event`.
+
+From the event-source perspective, a tool call and an authored external event
+are both event occurrences:
+
+| Occurrence | Accepted event type | Default block group / projection |
+|---|---|
+| User prompt | `event.user.prompt` | Compatibility projection currently emits `user.prompt`. |
+| User attachment | `event.user.attachment.*` | Compatibility projection currently emits `user.attachment.*`. |
+| User followup | `event.user.followup` | Compatibility projection currently emits `user.followup`. |
+| User steer | `event.user.steer` | Compatibility projection currently emits `user.steer` / control path. |
+| Tool call | Tool occurrence uses `tool_id == event_source_id` and `tool_call_id == event_id`. | `react.tool.call` plus one or more `react.tool.result` / artifact blocks. |
+| Authored domain event | `event.external` | One `event.external` block at the event `ev:` path, no blocks, or policy-produced blocks. |
+| Snapshot event | `event.snapshot` | One `event.snapshot` block at the event `ev:` path, or policy-produced blocks. |
+| Canvas state event | `event.canvas` | One `event.canvas` block at the event `ev:` path, or policy-produced blocks. |
+
+Custom `block_production` policies may expand an external event into a richer
+group, such as additional payload/artifact blocks. The default event block body
+uses the tool-result-like shape: `ok`, `status`, optional `error`, optional
+`ret`, and optional `surfaces`. `payload.event` becomes `ret`;
+`payload.event_ref` becomes `ret.event_ref`. The default producer also extracts
+standard tool-result surfaces from that `ret` and stores them in `surfaces`, including
+exploration rows, hosted/artifact rows, declared file rows, snapshot refs,
+ANNOUNCE candidates, and notices. Those blocks remain grouped by `event_id` and
+addressed by `event_source_id`.
+
+`event.snapshot` and `event.canvas` are deliberately different. A snapshot is a
+read-only projection/ref produced from external or bundle state. ReAct may
+pull/read the referenced payload, but it should not patch the snapshot as
+authoritative state. A canvas is the mutually writable JSON state surface; user
+and agent edits append new `event.canvas` occurrences with later revisions.
+
+Authored external events arrive through chat ingress as
+top-level `external_events[]` and are retained first in the per-conversation
+event lane. The accepted event envelope includes `type`, `event_source_id`,
+`event_id`, `logical_path`, optional `hosted_uri`, `reactive`, `agent_id`,
+`story_id`, and `payload`. The transport, reactivity, and story-correlation
+contract is documented in [External Events](../../../events/external-events-README.md);
+the concrete accepted event shape is documented in
+[External Event Envelope](../../../events/external-event-envelope-README.md).
 
 When a retained event starts processor work, the ready queue carries
 `ExternalEventLaneWakeup`; proc resolves that wakeup to the lane event's stored
@@ -148,12 +192,11 @@ event_source_declaration(
 ```
 
 `reactive=True` is declaration metadata/default for code that authors
-occurrences of this source. A transported `external_event` must still carry its
-effective `payload.external_event.routing.reactive` value; the runtime does not
-wake ReAct from a declaration alone. `iteration_credit=2` means one live
-occurrence that is explicitly reactive grants two extra iterations before
-runtime caps are applied. The occurrence payload can override credit with
-`payload.external_event.routing.iteration_credit`.
+occurrences of this source. A transported external event must still carry its
+effective `external_events[].reactive` value; the runtime does not wake
+ReAct from a declaration alone. `iteration_credit=2` means one live occurrence
+that is explicitly reactive grants two extra iterations before runtime caps are
+applied. An occurrence-level credit field can override the declaration default.
 
 ## Binding Policies
 

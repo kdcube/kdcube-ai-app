@@ -425,8 +425,8 @@ const appendUserMessageToTurn = (
     turn: WritableDraft<ChatTurn>,
     message: UserMessage,
 ) => {
-    const continuationKind = String(message.continuationKind ?? "").toLowerCase();
-    const isFollowupLike = continuationKind === "followup" || continuationKind === "steer";
+    const eventType = String(message.eventType ?? "").toLowerCase();
+    const isFollowupLike = eventType === "event.user.followup" || eventType === "event.user.steer";
 
     if (!isFollowupLike && !turn.userMessage.text) {
         turn.userMessage = message;
@@ -586,7 +586,7 @@ const chatStateSlice = createSlice({
             text: string;
             attachments: UserAttachmentDescription[];
             timestamp: number;
-            continuationKind?: string;
+            eventType?: string;
             sourceMessageId?: string;
             artifactPath?: string;
             historyMeta?: Record<string, unknown>;
@@ -600,7 +600,7 @@ const chatStateSlice = createSlice({
                 text: action.payload.text,
                 attachments: action.payload.attachments,
                 timestamp: action.payload.timestamp,
-                continuationKind: action.payload.continuationKind,
+                eventType: action.payload.eventType,
                 sourceMessageId: action.payload.sourceMessageId,
                 artifactPath: action.payload.artifactPath,
                 historyMeta: action.payload.historyMeta,

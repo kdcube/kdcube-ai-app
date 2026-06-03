@@ -814,7 +814,7 @@ def _telegram_recipient_for_user(entrypoint: Any, *, user_id: str) -> Dict[str, 
     return None
 
 
-def _message_kind_for_artifact(artifact: Dict[str, Any]) -> str:
+def _telegram_delivery_kind_for_artifact(artifact: Dict[str, Any]) -> str:
     mime_type = str(artifact.get("mime_type") or artifact.get("mime") or "").strip().lower()
     return "photo" if mime_type.startswith("image/") else "document"
 
@@ -828,7 +828,7 @@ def _execution_artifact_messages(execution: Dict[str, Any]) -> list[TelegramMess
         text = str(artifact.get("description") or artifact.get("filename") or "").strip()
         messages.append(
             TelegramMessage(
-                kind=_message_kind_for_artifact(artifact),
+                kind=_telegram_delivery_kind_for_artifact(artifact),
                 text=text,
                 files=(artifact,),
             )

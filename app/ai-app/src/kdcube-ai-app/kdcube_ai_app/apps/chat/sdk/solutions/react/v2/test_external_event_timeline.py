@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from kdcube_ai_app.apps.chat.external_events import build_conversation_external_event_source
@@ -225,5 +227,264 @@ async def test_browser_folds_external_events_into_history_and_current_turn(tmp_p
         assert hook_saw_current_prompt == [True]
         assert browser.timeline.last_external_event_id == "3-0"
         assert int(browser.timeline.last_external_event_seq or 0) == 3
+    finally:
+        await browser.stop_external_event_listener()
+
+
+@pytest.mark.asyncio
+async def test_browser_uses_default_policy_for_unregistered_snapshot_event(tmp_path):
+    redis = _FakeRedis()
+    source = build_conversation_external_event_source(
+        redis=redis,
+        tenant="tenant",
+        project="project",
+        conversation_id="conv_1",
+    )
+    logical_path = "ev:turn_current.events/task-tracker/snapshots/draft-123/canvas/latest"
+    await source.publish(
+        kind="external_event",
+        event_id="evt_snapshot_1",
+        explicit=True,
+        target_turn_id="turn_current",
+        active_turn_id_at_ingress="turn_current",
+        owner_turn_id="turn_current",
+        source="ingress.sse",
+        event_source_id="task_tracker.canvas.snapshot",
+        payload={
+            "event": {
+                "event_id": "evt_snapshot_1",
+                "type": "event.snapshot",
+                "event_source_id": "task_tracker.canvas.snapshot",
+                "logical_path": logical_path,
+                "reactive": False,
+                "story_id": "draft:123",
+                "payload": {
+                    "mime": "application/json",
+                    "event": {
+                        "title": "Canvas snapshot",
+                        "summary": "Canvas has two notes and one attachment.",
+                    },
+                },
+            }
+        },
+    )
+
+    runtime = RuntimeCtx(
+        tenant="tenant",
+        project="project",
+        user_id="user_1",
+        user_type="privileged",
+        conversation_id="conv_1",
+        turn_id="turn_current",
+        bundle_id="bundle@1",
+        started_at="2026-04-11T10:00:00Z",
+        outdir=str(tmp_path / "out"),
+        workdir=str(tmp_path / "work"),
+        external_event_source=source,
+    )
+    browser = ContextBrowser(
+        ctx_client=_FakeCtxClient(),
+        runtime_ctx=runtime,
+    )
+    await browser.load_timeline()
+    try:
+        current_blocks = browser.timeline.get_turn_blocks()
+        snapshot = next((b for b in current_blocks if b.get("type") == "event.snapshot"), None)
+        assert snapshot is not None
+        meta = snapshot.get("meta") if isinstance(snapshot.get("meta"), dict) else {}
+        assert snapshot.get("path") == logical_path
+        assert meta.get("event_source_id") == "task_tracker.canvas.snapshot"
+        assert meta.get("event_id") == "evt_snapshot_1"
+        assert meta.get("event_type") == "event.snapshot"
+        payload = json.loads(snapshot.get("text") or "{}")
+        assert payload["ok"] is True
+        assert payload["ret"]["summary"] == "Canvas has two notes and one attachment."
+    finally:
+        await browser.stop_external_event_listener()
+
+
+@pytest.mark.asyncio
+async def test_default_event_block_preserves_standard_tool_result_surfaces(tmp_path):
+    redis = _FakeRedis()
+    source = build_conversation_external_event_source(
+        redis=redis,
+        tenant="tenant",
+        project="project",
+        conversation_id="conv_1",
+    )
+    logical_path = "ev:turn_current.events/task-tracker/snapshots/draft-123/canvas/latest"
+    await source.publish(
+        kind="external_event",
+        event_id="evt_snapshot_composite",
+        explicit=True,
+        target_turn_id="turn_current",
+        active_turn_id_at_ingress="turn_current",
+        owner_turn_id="turn_current",
+        source="ingress.sse",
+        event_source_id="task_tracker.canvas.snapshot",
+        payload={
+            "event": {
+                "event_id": "evt_snapshot_composite",
+                "type": "event.snapshot",
+                "event_source_id": "task_tracker.canvas.snapshot",
+                "logical_path": logical_path,
+                "hosted_uri": "ext:task-tracker/snapshots/draft-123/canvas/latest",
+                "reactive": False,
+                "story_id": "draft:123",
+                "payload": {
+                    "mime": "application/json",
+                    "event": {
+                        "title": "Canvas snapshot",
+                        "summary": "Canvas has a selected note and one attachment.",
+                        "exploration_results": [
+                            {
+                                "url": "https://example.test/task-context",
+                                "title": "Task context",
+                                "content": "context row",
+                            }
+                        ],
+                        "hosted_artifacts": [
+                            {
+                                "artifact_id": "diagram",
+                                "filename": "diagram.png",
+                                "mime": "image/png",
+                                "hosted_uri": "ext:task-tracker/files/draft-123/diagram.png",
+                            }
+                        ],
+                        "artifact_type": "files",
+                        "files": [
+                            {
+                                "filename": "brief.md",
+                                "mime": "text/markdown",
+                                "hosted_uri": "ext:task-tracker/files/draft-123/brief.md",
+                                "description": "Canvas brief",
+                                "visibility": "external",
+                            }
+                        ],
+                        "snapshot_ref": "ext:task-tracker/snapshots/draft-123/canvas/latest",
+                        "announce_entry": {
+                            "title": "Canvas snapshot",
+                            "text": "Canvas has a selected note and one attachment.",
+                        },
+                    },
+                },
+            }
+        },
+    )
+
+    runtime = RuntimeCtx(
+        tenant="tenant",
+        project="project",
+        user_id="user_1",
+        user_type="privileged",
+        conversation_id="conv_1",
+        turn_id="turn_current",
+        bundle_id="bundle@1",
+        started_at="2026-04-11T10:00:00Z",
+        outdir=str(tmp_path / "out"),
+        workdir=str(tmp_path / "work"),
+        external_event_source=source,
+    )
+    browser = ContextBrowser(
+        ctx_client=_FakeCtxClient(),
+        runtime_ctx=runtime,
+    )
+    await browser.load_timeline()
+    try:
+        current_blocks = browser.timeline.get_turn_blocks()
+        snapshot = next((b for b in current_blocks if b.get("type") == "event.snapshot"), None)
+        assert snapshot is not None
+        payload = json.loads(snapshot.get("text") or "{}")
+        assert payload["ret"]["summary"] == "Canvas has a selected note and one attachment."
+
+        surfaces = payload.get("surfaces") or {}
+        assert surfaces["source_rows_merge"] is True
+        assert surfaces["source_rows"][0]["url"] == "https://example.test/task-context"
+        assert surfaces["artifact_rows"][0]["hosted_uri"] == "ext:task-tracker/files/draft-123/diagram.png"
+        assert surfaces["declared_file_items_produced"] is True
+        assert surfaces["declared_file_items"][0]["output"]["filename"] == "brief.md"
+        assert surfaces["snapshot_refs"] == ["ext:task-tracker/snapshots/draft-123/canvas/latest"]
+        assert surfaces["announce_candidates"][0]["title"] == "Canvas snapshot"
+    finally:
+        await browser.stop_external_event_listener()
+
+
+@pytest.mark.asyncio
+async def test_default_event_canvas_stores_mutable_canvas_json_occurrence(tmp_path):
+    redis = _FakeRedis()
+    source = build_conversation_external_event_source(
+        redis=redis,
+        tenant="tenant",
+        project="project",
+        conversation_id="conv_1",
+    )
+    logical_path = "ev:turn_current.events/task-tracker/canvas/draft-123/state/rev-7"
+    await source.publish(
+        kind="external_event",
+        event_id="evt_canvas_rev_7",
+        explicit=True,
+        target_turn_id="turn_current",
+        active_turn_id_at_ingress="turn_current",
+        owner_turn_id="turn_current",
+        source="ingress.sse",
+        event_source_id="task_tracker.canvas.state",
+        payload={
+            "event": {
+                "event_id": "evt_canvas_rev_7",
+                "type": "event.canvas",
+                "event_source_id": "task_tracker.canvas.state",
+                "logical_path": logical_path,
+                "reactive": False,
+                "story_id": "draft:123",
+                "payload": {
+                    "mime": "application/json",
+                    "event": {
+                        "canvas_id": "draft-123",
+                        "revision": 7,
+                        "items": [
+                            {
+                                "id": "note-1",
+                                "kind": "note",
+                                "text": "Browser crashes after uploading a large CSV.",
+                                "x": 120,
+                                "y": 96,
+                            }
+                        ],
+                    },
+                },
+            }
+        },
+    )
+
+    runtime = RuntimeCtx(
+        tenant="tenant",
+        project="project",
+        user_id="user_1",
+        user_type="privileged",
+        conversation_id="conv_1",
+        turn_id="turn_current",
+        bundle_id="bundle@1",
+        started_at="2026-04-11T10:00:00Z",
+        outdir=str(tmp_path / "out"),
+        workdir=str(tmp_path / "work"),
+        external_event_source=source,
+    )
+    browser = ContextBrowser(
+        ctx_client=_FakeCtxClient(),
+        runtime_ctx=runtime,
+    )
+    await browser.load_timeline()
+    try:
+        current_blocks = browser.timeline.get_turn_blocks()
+        canvas = next((b for b in current_blocks if b.get("type") == "event.canvas"), None)
+        assert canvas is not None
+        assert canvas.get("path") == logical_path
+        meta = canvas.get("meta") if isinstance(canvas.get("meta"), dict) else {}
+        assert meta.get("event_source_id") == "task_tracker.canvas.state"
+        assert meta.get("event_type") == "event.canvas"
+        payload = json.loads(canvas.get("text") or "{}")
+        assert payload["ret"]["canvas_id"] == "draft-123"
+        assert payload["ret"]["revision"] == 7
+        assert payload["ret"]["items"][0]["text"] == "Browser crashes after uploading a large CSV."
     finally:
         await browser.stop_external_event_listener()

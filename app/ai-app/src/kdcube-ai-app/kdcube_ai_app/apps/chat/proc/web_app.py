@@ -862,6 +862,8 @@ async def lifespan(app: FastAPI):
                 f"{type(e).__name__}: {e}"
             ) from e
 
+        request_payload = comm_context.request.payload if isinstance(comm_context.request.payload, dict) else {}
+        request_external_events = list(comm_context.request.external_events or [])
         state = {
             "request_id": comm_context.request.request_id,
             "tenant": comm_context.actor.tenant_id,
@@ -870,8 +872,7 @@ async def lifespan(app: FastAPI):
             "user_type": comm_context.user.user_type,
             "session_id": comm_context.routing.session_id,
             "conversation_id": (comm_context.routing.conversation_id or comm_context.routing.session_id),
-            "text": comm_context.request.message or (comm_context.request.payload or {}).get("text") or "",
-            "attachments": (comm_context.request.payload or {}).get("attachments") or [],
+            "external_events": request_external_events,
             "turn_id": comm_context.routing.turn_id,
             "history": comm_context.request.chat_history or [],
             "final_answer": "",
@@ -921,9 +922,8 @@ async def lifespan(app: FastAPI):
             except Exception:
                 logger.warning("Bundle on_turn_completed hook failed", exc_info=True)
 
-        params = dict(comm_context.request.payload or {})
-        if "text" not in params and comm_context.request.message:
-            params["text"] = comm_context.request.message
+        params = dict(request_payload)
+        params.setdefault("external_events", request_external_events)
         command = comm_context.request.operation or params.pop("command", None)
 
         result = None

@@ -33,10 +33,10 @@ STATS_COMM_TELEMETRY_TYPES = [
     "kdcube.copilot.workflow.turn.completed",
     "kdcube.copilot.workflow.turn.failed",
     "kdcube.copilot.mcp.call",
-    "queue.continuation.accepted",
+    "event.continuation.accepted",
+    "event.external.accepted",
     "react.tool.call",
     "react.skill.read",
-    "timeline.external.accepted",
 ]
 
 STATS_COMM_RECORD_ONLY_TYPES = [
@@ -62,6 +62,8 @@ STATS_COMM_DATA_KEYS = [
     "duration_ms",
     "error_code",
     "error_count",
+    "event_kind",
+    "event_type",
     "exception_type",
     "file_count",
     "input_kind",
@@ -71,7 +73,6 @@ STATS_COMM_DATA_KEYS = [
     "mcp_endpoint",
     "mcp_name",
     "message_len",
-    "message_kind",
     "missing",
     "missing_count",
     "model_or_service",
@@ -277,8 +278,7 @@ def recorded_comm_item_to_telemetry(
         return [_accounting_event(item, ctx)]
     if typ in {
         "chat.conversation.accepted",
-        "queue.continuation.accepted",
-        "timeline.external.accepted",
+        "event.continuation.accepted",
     }:
         return [_chat_message_event(item, ctx)]
     if typ in {
@@ -687,17 +687,21 @@ def _chat_input_kind(data: Mapping[str, Any], typ: str) -> str:
     raw = (
         data.get("input_kind")
         or data.get("chat_input_kind")
-        or data.get("message_kind")
-        or data.get("continuation_kind")
+        or data.get("event_type")
+        or data.get("event_kind")
         or ""
     )
     text = str(raw or "").strip().lower()
     if typ == "chat.conversation.accepted" and not text:
         return "message"
-    if text in {"", "regular", "user", "prompt"}:
+    if text in {"", "regular", "user", "prompt", "event.user.prompt"}:
         return "message"
     if text in {"message", "followup", "steer"}:
         return text
+    if text == "event.user.followup":
+        return "followup"
+    if text == "event.user.steer":
+        return "steer"
     if "followup" in text:
         return "followup"
     if "steer" in text:

@@ -140,7 +140,7 @@ def comm_context(bundle_id):
         ),
         actor=ExternalEventActor(tenant_id="test", project_id="test"),
         user=ExternalEventUser(user_type="regular"),
-        request=ExternalEventRequest(message="test"),
+        request=ExternalEventRequest(payload={"text": "test"}),
         config=ExternalEventConfig(values={}),
     )
 

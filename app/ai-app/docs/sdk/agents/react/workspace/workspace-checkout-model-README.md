@@ -62,6 +62,9 @@ fi:conv_conversation-42.turn_222.snapshots/wizard/current.yaml
 
 ext:task-tracker/draft_1/issue-draft.yaml
   -> returns source_ref + materialized logical_path/physical_path chosen by the registered rehoster
+
+ev:turn_111.events/task-tracker/snapshots/draft_1/latest
+  -> readable timeline event identity; use the event's hosted_uri/payload.event_ref for bytes
 ```
 
 Pull rules:
@@ -75,6 +78,10 @@ Pull rules:
   materialize under `conv_<conversation_id>/turn_<id>/...`;
 - custom namespace refs are opaque. The agent must use the returned
   `logical_path` / `physical_path` rows and must not derive `fi:` manually.
+- `ev:` refs identify timeline event objects and are readable with
+  `react.read` like `tc:`. They are not artifact refs. Do not pass `ev:` to
+  `react.pull`; pull the event's `hosted_uri`,
+  `payload.event_ref`, or artifact refs carried inside `payload.event`.
 
 ## react.checkout
 
@@ -98,6 +105,7 @@ Checkout rules:
 
 - accepts `fi:...files...` refs only;
 - does not accept `ext:` or other custom namespace refs directly;
+- does not accept `ev:` timeline event refs;
 - `mode="replace"` clears `turn_<current>/files/` and applies the requested
   refs in order;
 - `mode="overlay"` keeps the current `files/` tree and applies requested refs on

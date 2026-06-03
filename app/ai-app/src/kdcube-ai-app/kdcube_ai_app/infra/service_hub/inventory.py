@@ -3046,8 +3046,7 @@ class BundleState(TypedDict, total=False):
     user_type: Optional[str]
     session_id: str
     conversation_id: str
-    text: Optional[str]
-    attachments: Optional[list[dict]]
+    external_events: Optional[list[dict]]
     turn_id: str
     final_answer: Optional[str]
     followups: Optional[list[str]]
@@ -3059,7 +3058,7 @@ class BundleState(TypedDict, total=False):
 
 APP_STATE_KEYS = [
     "request_id", "tenant", "project", "user", "session_id",
-    "text", "attachments", "final_answer", "followups", "error_message", "step_logs",
+    "external_events", "final_answer", "followups", "error_message", "step_logs",
     "turn_log", "timeline"
 ]
 

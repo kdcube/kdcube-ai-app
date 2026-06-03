@@ -17,7 +17,6 @@ export interface ConversationDescriptor {
 export interface ArtifactDataDTO {
     payload: unknown,
     text: string,
-    continuation_kind?: string,
     meta?: Record<string, unknown>,
 }
 
@@ -29,7 +28,6 @@ export interface AssistantFileData {
         description: string | null | undefined,
         artifact_path?: string,
         message_id?: string,
-        continuation_kind?: string,
         meta?: Record<string, unknown>,
     },
     meta?: Record<string, unknown>,

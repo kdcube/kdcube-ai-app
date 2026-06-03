@@ -13,7 +13,6 @@ import {
 
 import {v4 as uuidv4} from "uuid";
 import {ChatServiceEnvelope} from "../chat/serviceEventTypes.ts";
-import {createClientTurnId} from "../../utils/clientIds.ts";
 
 interface SSEChatOptions extends ChatOptions {
     baseUrl: string;
@@ -124,27 +123,7 @@ class SSEChat extends ChatBase {
             ts: new Date().toISOString(),
         })
 
-        const messagePayload = this.buildChatPayload(req);
-
-        const payload = {
-            message: {
-                message: req.message,
-                chat_history: req.chat_history || [],
-                project: req.project || this.project,
-                tenant: req.tenant || this.tenant,
-                turn_id: req.turn_id || createClientTurnId(),
-                ...(conversationId ? {conversation_id: conversationId} : {}),
-                ...(req.bundle_id ? {bundle_id: req.bundle_id} : {}),
-                ...(req.message_kind ? {message_kind: req.message_kind} : {}),
-                ...(req.continuation_kind ? {continuation_kind: req.continuation_kind} : {}),
-                ...(req.active_turn_id ? {active_turn_id: req.active_turn_id} : {}),
-                ...(req.target_turn_id ? {target_turn_id: req.target_turn_id} : {}),
-                ...(req.followup ? {followup: true} : {}),
-                ...(req.steer ? {steer: true} : {}),
-                ...(messagePayload ? {payload: messagePayload} : {}),
-            },
-            attachment_meta: [] as { filename: string }[],
-        };
+        const eventSubmission = this.buildEventSubmission(req, attachments, conversationId);
 
         const baseForUrl = this._baseUrl || window.location.origin;
         const url = new URL(`${baseForUrl}/sse/chat`);
@@ -156,9 +135,7 @@ class SSEChat extends ChatBase {
 
         if (attachments && attachments.length) {
             const form = new FormData();
-            form.set("message", JSON.stringify(payload));
-            const meta = attachments.map((f) => ({filename: f.name}));
-            form.set("attachment_meta", JSON.stringify(meta));
+            form.set("event_submission", JSON.stringify(eventSubmission));
             attachments.forEach((f) => form.append("files", f, f.name));
 
             const headers = makeHeaders(); // auth headers, no content-type for FormData
@@ -171,7 +148,7 @@ class SSEChat extends ChatBase {
             const res = await fetch(url, {
                 method: "POST",
                 headers,
-                body: JSON.stringify(payload),
+                body: JSON.stringify(eventSubmission),
                 credentials: "include"
             });
             if (!res.ok) throw new Error(`sse/chat failed (${res.status}) ${await res.text()}`);

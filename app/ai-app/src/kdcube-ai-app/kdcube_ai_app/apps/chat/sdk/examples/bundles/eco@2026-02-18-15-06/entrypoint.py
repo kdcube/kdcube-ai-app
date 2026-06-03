@@ -134,8 +134,6 @@ class EcoEntrypoint(BaseEntrypointWithEconomics):
                     "session_id": state["session_id"],
                     "conversation_id": state["conversation_id"],
                     "turn_id": state["turn_id"],
-                    "text": state["text"],
-                    "attachments": state.get("attachments") or [],
                 })
                 if not isinstance(res, dict):
                     res = {}

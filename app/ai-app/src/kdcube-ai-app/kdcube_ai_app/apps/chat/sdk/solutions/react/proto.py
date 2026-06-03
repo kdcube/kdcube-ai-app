@@ -123,7 +123,6 @@ class RuntimeCtx:
     knowledge_search_fn: Optional[KnowledgeSearchFn] = None
     knowledge_read_fn: Optional[KnowledgeReadFn] = None
     model_service: Optional[Any] = None
-    continuation_source: Optional[Any] = None
     external_event_source: Optional[Any] = None
     # Runtime-only event-source policy registry populated from ToolSubsystem.
     event_sources: Optional[Any] = None

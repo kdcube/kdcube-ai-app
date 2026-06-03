@@ -31,7 +31,7 @@ from kdcube_ai_app.apps.chat.sdk.protocol import (
 from kdcube_ai_app.apps.chat.emitters import ChatRelayCommunicator
 from kdcube_ai_app.apps.chat.ids import new_turn_id
 
-from kdcube_ai_app.apps.chat.ingress.chat_core import (
+from kdcube_ai_app.apps.chat.ingress.ingress_core import (
     IngressConfig,
     RawAttachment,
     run_gateway_checks,
@@ -41,6 +41,7 @@ from kdcube_ai_app.apps.chat.ingress.chat_core import (
     get_conversation_status, build_ws_connect_request_context, upgrade_session_from_tokens,
     build_ws_chat_request_context,
 )
+from kdcube_ai_app.apps.chat.sdk.protocol import external_event_attachment_payloads, external_events_text
 from kdcube_ai_app.infra.service_hub.multimodality import MESSAGE_MAX_BYTES
 from kdcube_ai_app.apps.middleware.token_extract import resolve_socket_auth_tokens
 
@@ -377,11 +378,11 @@ class SocketIOChatHandler:
             return {"ok": False, "error": "No data provided"}
 
         data = args[0]
-        message_data = data.get("message", {}) or {}
+        message_data = data if isinstance(data, dict) else {}
         logger.info(
-            "chat_message sid=%s '%s'...",
+            "chat_message sid=%s events=%s...",
             sid,
-            (message_data or {}).get("message", "")[:100],
+            len((message_data or {}).get("external_events") or []),
         )
 
         try:
@@ -445,7 +446,7 @@ class SocketIOChatHandler:
 
             # ---------- attachments (Socket.IO → RawAttachment) ----------
             max_mb = getattr(self, "max_upload_mb", 20)
-            attachments_meta = data.get("attachment_meta") or []
+            attachments_meta = external_event_attachment_payloads((message_data or {}).get("external_events") or [])
             raw_attachments: List[RawAttachment] = []
 
             for idx, f in enumerate(attachments_meta):
@@ -493,17 +494,11 @@ class SocketIOChatHandler:
                     "conversation_id": message_data.get("conversation_id"),
                 }
 
-            # ---------- build final message text ----------
-            base_message = (
-                    (message_data or {}).get("text")
-                    or (message_data or {}).get("message")
-                    or ""
-            )
             payload = message_data.get("payload")
             if not isinstance(payload, dict):
                 payload = {}
             message_data["payload"] = payload
-            text = base_message.strip()
+            text = external_events_text((message_data or {}).get("external_events") or [])
 
             # ---------- delegate to core business logic ----------
             ingress_cfg = IngressConfig(
@@ -562,10 +557,10 @@ class SocketIOChatHandler:
                 "live_owner_detected": result.live_owner_detected,
                 "conversation_created": conversation_created,
                 "user_type": result.user_type,
-                "message_kind": result.continuation_kind,
+                "is_continuation": bool(result.is_continuation),
                 "message": (
                     "Continuation accepted; available to the active conversation owner"
-                    if result.reason in {"followup_accepted", "steer_accepted", "external_event_accepted"}
+                    if result.is_continuation
                     else "External event recorded"
                     if result.reason == "external_event_recorded"
                     else "Queued; streaming via Socket.IO"

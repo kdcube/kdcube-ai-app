@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from kdcube_ai_app.auth.sessions import RequestContext, UserSession
-from kdcube_ai_app.apps.chat.ingress.chat_core import (
+from kdcube_ai_app.apps.chat.ingress.ingress_core import (
     IngressConfig,
     IngressResult,
     RawAttachment,

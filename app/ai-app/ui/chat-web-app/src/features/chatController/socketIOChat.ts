@@ -11,7 +11,6 @@ import {
 import {Manager, Socket} from "socket.io-client";
 import {ChatServiceEnvelope} from "../chat/serviceEventTypes.ts";
 import {v4 as uuidv4} from "uuid";
-import {createClientTurnId} from "../../utils/clientIds.ts";
 
 type EngineKey = string;
 const managers = new Map<EngineKey, Manager>();
@@ -218,25 +217,9 @@ class SocketIOChat extends ChatBase {
         if (!this._socket.connected)
             throw new Error("Socket not connected. Call connect() first.");
 
-        const messagePayload = this.buildChatPayload(req);
-        const message = {
-            message: req.message,
-            chat_history: req.chat_history || [],
-            project: req.project || this.project,
-            tenant: req.tenant || this.tenant,
-            turn_id: req.turn_id || createClientTurnId(),
-            ...(conversationId ? {conversation_id: conversationId} : {}),
-            ...(req.bundle_id ? {bundle_id: req.bundle_id} : {}),
-            ...(req.message_kind ? {message_kind: req.message_kind} : {}),
-            ...(req.continuation_kind ? {continuation_kind: req.continuation_kind} : {}),
-            ...(req.active_turn_id ? {active_turn_id: req.active_turn_id} : {}),
-            ...(req.target_turn_id ? {target_turn_id: req.target_turn_id} : {}),
-            ...(req.followup ? {followup: true} : {}),
-            ...(req.steer ? {steer: true} : {}),
-            ...(messagePayload ? {payload: messagePayload} : {}),
-        };
+        const eventSubmission = this.buildEventSubmission(req, attachments, conversationId);
         attachments = attachments ? attachments : [];
-        console.log("📤 Emitting chat_message:", message, attachments);
+        console.log("Emitting chat_message event submission:", eventSubmission, attachments);
 
         const files = []
 
@@ -245,12 +228,8 @@ class SocketIOChat extends ChatBase {
             files.push({name: attachment.name, data})
         }
 
-        const attachment_meta = files.map(value => {
-            return {filename: value.name}
-        })
-
         const data = files.map(value => value.data)
-        return this._socket.emitWithAck("chat_message", {message, attachment_meta}, ...data);
+        return this._socket.emitWithAck("chat_message", eventSubmission, ...data);
     }
 
     public override async requestConvStatus(conversationId: string) {

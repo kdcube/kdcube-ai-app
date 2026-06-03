@@ -29,7 +29,7 @@ from kdcube_ai_app.apps.chat.ids import new_turn_id
 from kdcube_ai_app.apps.chat.sdk.protocol import (
     ServiceCtx, ConversationCtx,
 )
-from kdcube_ai_app.apps.chat.ingress.chat_core import (
+from kdcube_ai_app.apps.chat.ingress.ingress_core import (
     IngressConfig,
     RawAttachment,
     run_gateway_checks,
@@ -38,6 +38,7 @@ from kdcube_ai_app.apps.chat.ingress.chat_core import (
     resolve_ingress_conversation_id,
     get_conversation_status, build_sse_request_context, upgrade_session_from_tokens,
 )
+from kdcube_ai_app.apps.chat.sdk.protocol import external_event_attachment_payloads, external_events_text
 
 logger = logging.getLogger(__name__)
 
@@ -690,8 +691,7 @@ def create_sse_router(
             stream_id: str,
             session: UserSession = Depends(require_auth(RequireUser())),
             # multipart support (attachments)
-            message: Optional[str] = Form(None),
-            attachment_meta: Optional[str] = Form(None),
+            event_submission: Optional[str] = Form(None),
             files: List[UploadFile] = File(default=[]),
     ):
         logger.info(f"[sse_chat] received request session={session.session_id} stream_id={stream_id}")
@@ -772,41 +772,21 @@ def create_sse_router(
                 detail["retry_after"] = mapped["retry_after"]
             raise HTTPException(status_code=mapped["status"], detail=detail)
 
-        # ---------- parse body (JSON or multipart) ----------
-        if message is not None:
+        # ---------- parse event submission (JSON or multipart) ----------
+        if event_submission is not None:
             try:
-                body = json.loads(message)
+                message_data = json.loads(event_submission)
             except Exception:
-                raise HTTPException(status_code=400, detail="Invalid 'message' JSON in multipart form")
-            body_attachment_meta_json = attachment_meta
+                raise HTTPException(status_code=400, detail="Invalid 'event_submission' JSON in multipart form")
         else:
             try:
-                body = await request.json()
+                message_data = await request.json()
             except Exception:
                 raise HTTPException(status_code=400, detail="Invalid JSON body")
-            body_attachment_meta_json = (body or {}).get("attachment_meta")
+        if not isinstance(message_data, dict):
+            raise HTTPException(status_code=400, detail="Invalid event submission")
 
-        message_data = (body or {}).get("message") or {}
-
-        # Accept either:
-        #  - { message: "hello" }
-        #  - { text: "hello" }
-        #  - { message: { msg: "hello" } }
-        raw_msg = message_data.get("text")
-        if raw_msg is None:
-            raw_msg = message_data.get("message")
-
-        if isinstance(raw_msg, dict):
-            base_text = (
-                    raw_msg.get("text")
-                    or raw_msg.get("message")
-                    or raw_msg.get("msg")
-                    or ""
-            )
-        else:
-            base_text = raw_msg or ""
-
-        base_text = str(base_text).strip()
+        base_text = external_events_text(message_data.get("external_events") or [])
 
         turn_id = new_turn_id()
         message_data["turn_id"] = turn_id
@@ -827,17 +807,9 @@ def create_sse_router(
         # ---------- attachments (transport → RawAttachment) ----------
         raw_attachments: List[RawAttachment] = []
 
-        attachment_meta_list: List[Dict[str, Any]] = []
+        attachment_events = external_event_attachment_payloads(message_data.get("external_events") or [])
         if files:
-            if body_attachment_meta_json and isinstance(body_attachment_meta_json, str):
-                try:
-                    attachment_meta_list = json.loads(body_attachment_meta_json) or []
-                except Exception:
-                    attachment_meta_list = []
-
-            by_name = {m.get("filename") or m.get("name"): m for m in (attachment_meta_list or [])}
-
-            for f in files:
+            for idx, f in enumerate(files):
                 try:
                     raw = await f.read()
                 except Exception:
@@ -845,9 +817,9 @@ def create_sse_router(
                 if not raw:
                     continue
 
-                meta_in = by_name.get(f.filename) or {}
+                meta_in = attachment_events[idx] if idx < len(attachment_events) else {}
                 cleaned_meta = {
-                    k: v for k, v in meta_in.items() if k not in ("filename", "name")
+                    k: v for k, v in meta_in.items() if k not in ("filename", "name", "file_index")
                 }
 
                 raw_attachments.append(
@@ -930,10 +902,10 @@ def create_sse_router(
             "live_owner_detected": result.live_owner_detected,
             "conversation_created": conversation_created,
             "user_type": result.user_type,
-            "message_kind": result.continuation_kind,
+            "is_continuation": bool(result.is_continuation),
             "message": (
                 "Continuation accepted; available to the active conversation owner"
-                if result.reason in {"followup_accepted", "steer_accepted", "external_event_accepted"}
+                if result.is_continuation
                 else "External event recorded"
                 if result.reason == "external_event_recorded"
                 else "Queued; streaming via SSE"

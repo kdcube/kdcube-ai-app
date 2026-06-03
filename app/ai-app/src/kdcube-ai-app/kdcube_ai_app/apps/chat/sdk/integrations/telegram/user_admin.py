@@ -8,10 +8,15 @@ import binascii
 import inspect
 import threading
 from dataclasses import asdict
+from datetime import datetime
 from typing import Any, Callable, Dict
 
 from kdcube_ai_app.apps.chat.ids import new_turn_id
-from kdcube_ai_app.apps.chat.ingress.chat_core import IngressConfig, RawAttachment
+from kdcube_ai_app.apps.chat.ingress.ingress_core import IngressConfig, RawAttachment
+from kdcube_ai_app.apps.chat.sdk.event_identity import (
+    DEFAULT_REACT_AGENT_ID,
+    build_event_logical_path,
+)
 from kdcube_ai_app.auth.sessions import RequestContext, UserSession, UserType
 from kdcube_ai_app.apps.chat.sdk.config import get_secret, get_settings
 from kdcube_ai_app.apps.chat.sdk.storage.conversation_store import ConversationStore
@@ -74,6 +79,64 @@ def configure_telegram_user_admin(
 
 def _config(entrypoint: Any = None) -> Dict[str, Any]:
     return resolve_config(_CONFIGS, entrypoint=entrypoint, label="telegram user admin integration")
+
+
+def _telegram_external_events(
+    *,
+    text: str,
+    attachments: list[Dict[str, Any]],
+    turn_id: str,
+    text_event_type: str = "event.user.prompt",
+) -> list[Dict[str, Any]]:
+    events: list[Dict[str, Any]] = []
+
+    def _event_path(event_id: str) -> str:
+        return build_event_logical_path(turn_id=turn_id, event_path=event_id)
+
+    def _timestamp() -> str:
+        return datetime.utcnow().isoformat() + "Z"
+
+    if text:
+        normalized_type = str(text_event_type or "event.user.prompt").strip() or "event.user.prompt"
+        event_suffix = normalized_type.rsplit(".", 1)[-1] or "prompt"
+        event_id = f"telegram.{event_suffix}.{uuid.uuid4().hex[:12]}"
+        events.append(
+            {
+                "event_id": event_id,
+                "type": normalized_type,
+                "event_source_id": f"telegram.user.{event_suffix}",
+                "logical_path": _event_path(event_id),
+                "reactive": True,
+                "agent_id": DEFAULT_REACT_AGENT_ID,
+                "timestamp": _timestamp(),
+                "payload": {
+                    "mime": "text/plain",
+                    "event": {"text": text},
+                },
+            }
+        )
+    for raw in attachments or []:
+        if not isinstance(raw, dict):
+            continue
+        event_id = f"telegram.attachment.{uuid.uuid4().hex[:12]}"
+        hosted_uri = str(raw.get("hosted_uri") or "").strip() or None
+        events.append(
+            {
+                "event_id": event_id,
+                "type": "event.user.attachment",
+                "event_source_id": "telegram.user.attachment",
+                "logical_path": _event_path(event_id),
+                "hosted_uri": hosted_uri,
+                "reactive": bool(not text),
+                "agent_id": DEFAULT_REACT_AGENT_ID,
+                "timestamp": _timestamp(),
+                "payload": {
+                    "mime": str(raw.get("mime") or raw.get("mime_type") or "application/octet-stream"),
+                    "event": dict(raw),
+                },
+            }
+        )
+    return events
 
 
 def _bundle_id(entrypoint: Any = None) -> str:
@@ -432,7 +495,10 @@ async def bot_token(entrypoint: Any = None) -> str:
 
 
 async def _bot_token_value(entrypoint: Any = None) -> str:
-    value = bot_token(entrypoint)
+    try:
+        value = bot_token(entrypoint)
+    except TypeError:
+        value = bot_token()
     if inspect.isawaitable(value):
         value = await value
     return str(value or "")
@@ -513,7 +579,7 @@ async def submit_react_turn(entrypoint: Any, *, summary: Dict[str, Any]) -> Dict
         or f"telegram_chat_{chat_id}"
     )
     turn_id = new_turn_id()
-    message_kind, processed_text = _telegram_command_kind_and_text(text)
+    telegram_command_type, processed_text = _telegram_command_kind_and_text(text)
     user_id = kdcube_user_id or f"telegram_{telegram_user_id}"
     request_context = RequestContext(
         client_ip="telegram",
@@ -551,9 +617,13 @@ async def submit_react_turn(entrypoint: Any, *, summary: Dict[str, Any]) -> Dict
         "turn_id": turn_id,
         "payload": payload,
     }
-    if message_kind:
-        message_data["message_kind"] = message_kind
-        payload["message_kind"] = message_kind
+    text_event_type = (
+        "event.user.steer"
+        if telegram_command_type == "steer"
+        else "event.user.followup"
+        if telegram_command_type == "followup"
+        else "event.user.prompt"
+    )
 
     ingress = IngressConfig(
         transport="telegram",
@@ -580,7 +650,7 @@ async def submit_react_turn(entrypoint: Any, *, summary: Dict[str, Any]) -> Dict
     )
     result_payload = asdict(result)
     log.info(
-        "[%s] telegram submitter result | update_id=%s conversation_id=%s turn_id=%s ok=%s reason=%s error_type=%s continuation_kind=%s attachments=%s",
+        "[%s] telegram submitter result | update_id=%s conversation_id=%s turn_id=%s ok=%s reason=%s error_type=%s is_continuation=%s attachments=%s",
         bundle_id,
         update_id,
         conversation_id,
@@ -588,7 +658,7 @@ async def submit_react_turn(entrypoint: Any, *, summary: Dict[str, Any]) -> Dict
         result.ok,
         result.reason or "",
         result.error_type or "",
-        result.continuation_kind or "",
+        bool(result.is_continuation),
         len(raw_attachments),
     )
     return {
@@ -606,11 +676,6 @@ async def run_react_turn(entrypoint: Any, *, summary: Dict[str, Any]) -> Dict[st
     attachments = list(summary.get("attachments") or [])
     comm_context = getattr(entrypoint, "comm_context", None)
     bundle_id = _bundle_id(entrypoint)
-    if not text and attachments:
-        text = (
-            "The user sent Telegram attachment(s) without text. "
-            "Inspect the attachment(s), describe what is present, and ask a focused follow-up if the user intent is unclear."
-        )
     if not text and not attachments:
         return None
 
@@ -689,6 +754,12 @@ async def run_react_turn(entrypoint: Any, *, summary: Dict[str, Any]) -> Dict[st
                 turn_id=turn_id,
             )
             summary["attachments"] = attachments
+        external_events = _telegram_external_events(
+            text=text,
+            attachments=attachments,
+            turn_id=turn_id,
+            text_event_type=text_event_type,
+        )
 
         state = entrypoint.create_initial_state(
             {
@@ -700,8 +771,7 @@ async def run_react_turn(entrypoint: Any, *, summary: Dict[str, Any]) -> Dict[st
                 "session_id": conversation_id,
                 "conversation_id": conversation_id,
                 "turn_id": turn_id,
-                "text": text,
-                "attachments": attachments,
+                "external_events": external_events,
             }
         )
         state["turn_id"] = turn_id
@@ -717,7 +787,7 @@ async def run_react_turn(entrypoint: Any, *, summary: Dict[str, Any]) -> Dict[st
             turn_id=turn_id,
             enabled=stream_enabled,
         ) as telegram_streamer:
-            result = await entrypoint.run(text=text, attachments=state["attachments"])
+            result = await entrypoint.run(external_events=external_events)
         delivered_file_keys = telegram_streamer.delivered_file_keys() if telegram_streamer else set()
         progress_message_id = telegram_streamer.progress_message_id() if telegram_streamer else None
         progress_summary = telegram_streamer.progress_summary() if telegram_streamer else ""
@@ -886,7 +956,7 @@ async def handle_webhook(entrypoint: Any, **update) -> Dict[str, Any]:
                 stage = (
                     "telegram-continuation"
                     if str(ingress.get("reason") or "").endswith("_accepted")
-                    and str(ingress.get("continuation_kind") or "").strip()
+                    and bool(ingress.get("is_continuation"))
                     else "queued-react-turn" if submitted_turn.get("accepted") else "submit-rejected"
                 )
             result_payload = {

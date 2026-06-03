@@ -63,6 +63,8 @@ class _MinimalRedis:
         self.lrem_calls = []
         self.set_calls = []
         self.lists = {}
+        self.streams = {}
+        self.stream_seq = {}
         self.lock_ttls = {}
         self.values = {}
 
@@ -90,9 +92,15 @@ class _MinimalRedis:
 
     async def set(self, key, value, nx=False, ex=None):
         self.set_calls.append((key, value, nx, ex))
-        if nx and key in self.lock_ttls and self.lock_ttls[key] >= 0:
+        if nx and key in self.values:
             return False
+        self.values[key] = value
         self.lock_ttls[key] = ex if ex is not None else 300
+        return True
+
+    async def setex(self, key, ttl, value):
+        del ttl
+        self.values[key] = value
         return True
 
     async def delete(self, *keys):
@@ -138,6 +146,35 @@ class _MinimalRedis:
         if end == -1:
             return items[start:]
         return items[start:end + 1]
+
+    async def xadd(self, key, fields):
+        seq = int(self.stream_seq.get(key, 0)) + 1
+        self.stream_seq[key] = seq
+        stream_id = f"{seq}-0"
+        self.streams.setdefault(key, []).append((stream_id, dict(fields or {})))
+        return stream_id
+
+    async def xrange(self, key, min="-", max="+", count=None):
+        items = list(self.streams.get(key) or [])
+        out = []
+        for stream_id, fields in items:
+            if min not in ("-", None, ""):
+                exclusive = str(min).startswith("(")
+                floor = str(min)[1:] if exclusive else str(min)
+                if exclusive:
+                    if stream_id <= floor:
+                        continue
+                elif stream_id < floor:
+                    continue
+            if max not in ("+", None, "") and stream_id > str(max):
+                continue
+            out.append((stream_id, dict(fields)))
+            if count is not None and len(out) >= int(count):
+                break
+        return out
+
+    async def xack(self, *_args, **_kwargs):
+        return 1
 
     async def llen(self, key):
         return len(self.lists.get(key) or [])
@@ -267,7 +304,18 @@ def _build_task_payload(task_id="task-1", *, user_type="registered"):
         },
         "actor": {"tenant_id": "tenant-a", "project_id": "project-a"},
         "user": {"user_type": user_type, "user_id": "user-1", "fingerprint": "fp-1"},
-        "request": {"message": "hello", "operation": "chat", "payload": None},
+        "request": {
+            "external_events": [
+                {
+                    "type": "event.user.prompt",
+                    "event_source_id": "event.user.prompt",
+                    "reactive": True,
+                    "payload": {"mime": "text/plain", "event": {"text": "hello"}},
+                }
+            ],
+            "operation": "chat",
+            "payload": None,
+        },
         "config": {"values": {}},
         "accounting": {"envelope": {}},
     }
@@ -854,7 +902,7 @@ async def test_process_task_cancellation_keeps_started_inflight_claim(_patch_pro
 
 
 @pytest.mark.asyncio
-async def test_process_task_promotes_next_continuation_to_ready_queue(_patch_processor_dependencies):
+async def test_process_task_promotes_next_external_event_to_ready_queue(_patch_processor_dependencies):
     redis = _MinimalRedis()
     conversation_ctx = _NoopConversationCtx()
     relay = _NoopRelay()
@@ -863,23 +911,25 @@ async def test_process_task_promotes_next_continuation_to_ready_queue(_patch_pro
     current_payload = _build_task_payload("task-current", user_type="registered")
     next_payload = _build_task_payload("task-next", user_type="registered")
     next_payload["routing"]["turn_id"] = "turn-next"
-    next_payload["request"]["message"] = "follow up"
-    next_payload["continuation"] = {"kind": "followup", "explicit": False, "active_turn_id": "turn-1"}
+    next_payload["request"]["external_events"] = [
+        {
+            "type": "event.user.followup",
+            "event_source_id": "event.user.followup",
+            "reactive": True,
+            "payload": {"mime": "text/plain", "event": {"text": "follow up"}},
+        }
+    ]
+    next_payload["continuation"] = {"is_continuation": True, "active_turn_id": "turn-1"}
 
-    mailbox_key = "tenant-a:project-a:kdcube:chat:conversation:mailbox:conv-1"
-    redis.seed_list(
-        mailbox_key,
-        [
-            json.dumps(
-                {
-                    "message_id": "cont-1",
-                    "kind": "followup",
-                    "created_at": 1.0,
-                    "sequence": 1,
-                    "payload": next_payload,
-                }
-            )
-        ],
+    source = processor._external_event_source_for(ExternalEventPayload.model_validate(current_payload))
+    await source.publish(
+        kind="external_event",
+        event_id="evt-next",
+        source="test",
+        event_source_id="event.user.followup",
+        text="follow up",
+        payload={"event": next_payload["request"]["external_events"][0]},
+        task_payload=next_payload,
     )
 
     raw_payload = json.dumps(current_payload).encode("utf-8")
@@ -901,7 +951,9 @@ async def test_process_task_promotes_next_continuation_to_ready_queue(_patch_pro
     assert redis.lists[inflight_key] == []
     promoted = redis.lists["queue:registered"][0]
     promoted_payload = json.loads(promoted)
+    assert promoted_payload["kind"] == "external_event_lane_wakeup"
     assert promoted_payload["meta"]["task_id"] == "task-next"
+    assert promoted_payload["event_lane"]["event_id"] == "evt-next"
     assert conversation_ctx.calls[-1]["new_state"] == "in_progress"
     assert conversation_ctx.calls[-1]["last_turn_id"] == "turn-next"
     assert relay.conv_status_calls[-1]["kwargs"]["completion"] == "queued_next"

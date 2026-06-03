@@ -133,14 +133,15 @@ The gateway/auth adapters accept tokens from multiple sources, so clients can ch
 
 ### SSE / REST (multipart)
 - `/sse/chat` supports `multipart/form-data`:
-  - `message`: JSON string
-  - `attachment_meta`: JSON string (array)
-  - `files`: binary file parts
+  - `event_submission`: JSON string with `external_events[]`
+  - `files`: binary file parts, ordered to match `event.user.attachment.*`
+    entries
 
 ### Socket.IO (binary frames)
 - `chat_message` payload:
-  - `attachment_meta`: array of `{filename, mime, ...}`
-  - binary frames follow the JSON payload (one per attachment)
+  - first argument is the event submission with `external_events[]`
+  - binary frames follow the JSON payload, one per `event.user.attachment.*`
+    event
 
 **Code references**
 - SSE attachments: [sse/chat.py](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/sse/chat.py)

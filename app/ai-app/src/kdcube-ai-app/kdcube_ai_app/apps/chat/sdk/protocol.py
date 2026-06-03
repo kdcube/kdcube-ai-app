@@ -122,12 +122,99 @@ class ChatEnvelope(_ProtoBase):
 # ---- event payload used between ingress and processor ----
 
 class ExternalEventRequest(_ProtoBase):
-    message: Optional[str] = None
-    chat_history: List[Dict[str, Any]] = []
+    external_events: List[Dict[str, Any]] = Field(default_factory=list)
+    chat_history: List[Dict[str, Any]] = Field(default_factory=list)
     operation: Optional[str] = None
     invocation: Optional[Literal["sync", "async"]] = None
     payload: Any | None = None   # ← generic pass-through to bundle
     request_id: Optional[str] = None
+
+
+def external_event_text(event: Any) -> str:
+    """Return the user-visible text carried by one accepted external event."""
+    if not isinstance(event, dict):
+        return ""
+    event_type = str(event.get("type") or "").strip()
+    if event_type not in {"event.user.prompt", "event.user.followup", "event.user.steer"}:
+        return ""
+    payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+    body = payload.get("event")
+    if isinstance(body, dict):
+        text = body.get("text") or body.get("message") or body.get("request") or ""
+    else:
+        text = body or ""
+    return str(text or "").strip()
+
+
+def external_events_text(events: Any) -> str:
+    """Return the first user-visible text from an external event list."""
+    if not isinstance(events, list):
+        return ""
+    for event in events:
+        text = external_event_text(event)
+        if text:
+            return text
+    return ""
+
+
+def external_event_attachment_payloads(events: Any) -> List[Dict[str, Any]]:
+    """Return attachment bodies carried by `event.user.attachment.*` events."""
+    if not isinstance(events, list):
+        return []
+    out: List[Dict[str, Any]] = []
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        if not str(event.get("type") or "").startswith("event.user.attachment"):
+            continue
+        payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+        body = payload.get("event") if isinstance(payload.get("event"), dict) else {}
+        if body:
+            out.append(dict(body))
+    return out
+
+
+def hosted_external_event_attachments(events: Any) -> List[Dict[str, Any]]:
+    """Return only hosted attachment bodies from accepted external events."""
+    return [
+        item
+        for item in external_event_attachment_payloads(events)
+        if str(item.get("hosted_uri") or "").strip()
+    ]
+
+
+def external_event_request_start_label(request: Any) -> str:
+    """
+    Return a neutral start label for UI/diagnostics.
+
+    Reactive domain events do not have to carry text. This helper first returns
+    real prompt-like text when it exists; otherwise it uses the first event's
+    structural/source identity. It is not part of the authored request model.
+    """
+    events = getattr(request, "external_events", None)
+    if events is None and isinstance(request, dict):
+        events = request.get("external_events")
+    text = external_events_text(events)
+    if text:
+        return text
+    if isinstance(events, list):
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            event_type = str(event.get("type") or "").strip()
+            event_source_id = str(event.get("event_source_id") or "").strip()
+            if event_type and event_source_id:
+                return f"{event_type} ({event_source_id})"
+            if event_type:
+                return event_type
+            if event_source_id:
+                return event_source_id
+    operation = getattr(request, "operation", None)
+    if operation is None and isinstance(request, dict):
+        operation = request.get("operation")
+    if operation:
+        return f"operation={operation}"
+    return ""
 
 
 class ExternalEventRouting(_ProtoBase):
@@ -170,10 +257,44 @@ class ExternalEventAccounting(_ProtoBase):
 
 
 class ExternalEventContinuation(_ProtoBase):
-    kind: Literal["regular", "followup", "steer"] = "regular"
-    explicit: bool = False
+    is_continuation: bool = False
     active_turn_id: Optional[str] = None
     target_turn_id: Optional[str] = None
+
+
+class AcceptedExternalEventPayload(_ProtoBase):
+    """
+    Body of an authored external event.
+
+    `mime` describes the event body. The body can be inline (`event`) or a
+    hosted/resolvable object (`event_ref`). The ref is resolved later by the
+    target agent/runtime, normally through `react.pull`.
+    """
+
+    mime: str = "application/json"
+    event: Optional[Any] = None
+    event_ref: Optional[str] = None
+
+
+class AcceptedExternalEvent(_ProtoBase):
+    """
+    Canonical shape accepted from `external_events[]`.
+
+    The inbound request is plural-only. Each accepted item becomes one ordered
+    lane occurrence and one or more timeline blocks. `logical_path` is the
+    event object's `ev:` reference on the target turn timeline.
+    """
+
+    event_id: str
+    type: str = "event.external"
+    event_source_id: str = "react.external_event"
+    logical_path: str
+    hosted_uri: Optional[str] = None
+    timestamp: str = Field(default_factory=_iso_now)
+    reactive: bool = False
+    agent_id: str = DEFAULT_REACT_AGENT_ID
+    story_id: Optional[str] = None
+    payload: AcceptedExternalEventPayload = Field(default_factory=AcceptedExternalEventPayload)
 
 
 class ExternalEvent(_ProtoBase):
@@ -190,6 +311,9 @@ class ExternalEvent(_ProtoBase):
     event_source_id: Optional[str] = None
     event_id: Optional[str] = None
     sequence: Optional[int] = None
+    logical_path: Optional[str] = None
+    type: Optional[str] = None
+    story_id: Optional[str] = None
     reactive: Optional[bool] = True
     source: Optional[str] = None
     out_of_turn: bool = False

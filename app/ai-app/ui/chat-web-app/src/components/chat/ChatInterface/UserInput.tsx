@@ -43,7 +43,7 @@ const UserInput = ({inputPlaceholder = "Ask me anything..."}: UserInputProps) =>
     const sendSteer = useCallback((message?: string) => {
         dispatch(sendChatMessage({
             message,
-            continuationKind: "steer",
+            reactiveEventType: "event.user.steer",
             targetTurnId: currentTurn?.id,
         }))
         setSteerMessage("")

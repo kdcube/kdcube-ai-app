@@ -50,10 +50,11 @@ channels:
           builtin: true
   chat_message:
     description: >
-      Client submits a chat message. The first Socket.IO argument is the JSON
-      envelope. Additional binary arguments, if present, must correspond by
-      order to attachment_meta items. The server acknowledges immediately after
-      queueing, while chat progress streams back on chat_* and conv_status events.
+      Client submits an external event batch. The first Socket.IO argument is
+      the event submission object with external_events[]. Additional binary
+      arguments, if present, correspond by order to event.user.attachment.*
+      events in that batch. The server acknowledges immediately after queueing,
+      while chat progress streams back on chat_* and conv_status events.
     subscribe:
       operationId: socketChatMessage
       message:
@@ -64,7 +65,7 @@ channels:
           ack:
             $ref: "#/components/schemas/ChatMessageAck"
           binaryArguments:
-            description: Optional bytes/ArrayBuffer values, one per attachment_meta item, after the JSON argument.
+            description: Optional bytes/ArrayBuffer values, one per event.user.attachment.* event, after the JSON argument.
   conv_status.get:
     description: >
       Client asks the ingress to publish current conversation state. The handler
@@ -264,27 +265,21 @@ components:
     ChatMessageRequest:
       type: object
       required:
-        - message
+        - external_events
       properties:
-        message:
-          $ref: "#/components/schemas/ChatMessage"
-        attachment_meta:
+        external_events:
           type: array
-          description: One metadata object per binary argument after the JSON payload.
+          description: Ordered external events accepted for this conversation/agent lane.
           items:
-            $ref: "#/components/schemas/AttachmentMeta"
+            type: object
       additionalProperties: true
     ChatMessage:
       type: object
       description: >
-        Chat request payload passed through the shared ingress core. Either text
-        or message should contain user text unless the request is an explicit
-        steer message.
+        Chat request payload passed through the shared ingress core. User
+        prompt, followup, steer, attachment, and domain UI inputs are all
+        represented as ordered external_events[] items.
       properties:
-        text:
-          type: string
-        message:
-          type: string
         conversation_id:
           type: string
           description: Existing conversation id. If omitted, ingress creates a new conversation id.
@@ -320,25 +315,11 @@ components:
         config:
           type: object
           additionalProperties: true
-        message_kind:
-          $ref: "#/components/schemas/ContinuationKind"
-        continuation_kind:
-          $ref: "#/components/schemas/ContinuationKind"
-        followup:
-          type: boolean
-        steer:
-          type: boolean
         target_turn_id:
           type: string
         active_turn_id:
           type: string
       additionalProperties: true
-    ContinuationKind:
-      type: string
-      enum:
-        - regular
-        - followup
-        - steer
     AttachmentMeta:
       type: object
       properties:
@@ -371,7 +352,7 @@ components:
           const: true
         status:
           type: string
-          description: processing_started, followup_accepted, steer_accepted, or equivalent queue reason.
+          description: processing_started, external_event_accepted, external_event_recorded, or equivalent queue reason.
         task_id:
           type: string
         session_id:
@@ -382,8 +363,8 @@ components:
           type: boolean
         user_type:
           type: string
-        message_kind:
-          type: string
+        is_continuation:
+          type: boolean
         message:
           type: string
       additionalProperties: true

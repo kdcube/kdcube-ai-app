@@ -1,6 +1,7 @@
 import {ISOTimestamped, Timestamped} from "../../types/common.ts";
 import {getClientTimezone} from "../../utils/dateTimeUtils.ts";
 import {ChatServiceEnvelope} from "../chat/serviceEventTypes.ts";
+import {createClientTurnId} from "../../utils/clientIds.ts";
 
 export type EventStatus = "started" | "running" | "completed" | "error" | "skipped";
 
@@ -136,7 +137,7 @@ export interface ChatMessageSendResponse {
     live_owner_detected?: boolean | null;
     conversation_created: number;
     user_type: string;
-    message_kind: string;
+    is_continuation?: boolean | null;
     message: string;
 }
 
@@ -156,19 +157,22 @@ export interface ChatTarget {
     [key: string]: unknown;
 }
 
-export interface ExternalEventRouting {
-    reactive?: boolean;
-    iteration_credit?: number;
-    [key: string]: unknown;
-}
-
 export interface ExternalEvent {
     event_id?: string;
+    type?: string;
     event_source_id: string;
-    kind?: string;
+    logical_path?: string;
+    hosted_uri?: string;
+    reactive?: boolean;
     story_id?: string;
-    routing?: ExternalEventRouting;
-    data?: Record<string, unknown>;
+    agent_id?: string;
+    payload?: {
+        mime?: string;
+        event?: unknown;
+        event_ref?: string;
+        iteration_credit?: number;
+        [key: string]: unknown;
+    };
     [key: string]: unknown;
 }
 
@@ -180,15 +184,12 @@ export interface ChatRequest {
     // we forward this to the server for routing
     turn_id?: string;
     bundle_id?: string;
-    message_kind?: "regular" | "followup" | "steer";
-    continuation_kind?: "regular" | "followup" | "steer";
+    reactiveEventType?: string;
     active_turn_id?: string;
     target_turn_id?: string;
-    followup?: boolean;
-    steer?: boolean;
     payload?: Record<string, unknown>;
     target?: ChatTarget;
-    external_event?: ExternalEvent;
+    external_events?: ExternalEvent[];
 }
 
 interface StepData {
@@ -377,15 +378,64 @@ export abstract class ChatBase {
         return h;
     };
 
-    protected buildChatPayload(req: ChatRequest): Record<string, unknown> | undefined {
-        const payload: Record<string, unknown> = {...(req.payload || {})};
-        if (req.target) {
-            payload.target = req.target;
+    protected buildEventSubmission(req: ChatRequest, attachments?: File[] | null, conversationId?: string | null): Record<string, unknown> {
+        const reactiveEventType = req.reactiveEventType || "event.user.prompt";
+        const events: ExternalEvent[] = [];
+        const text = String(req.message || "").trim();
+        const hasAuthoredEvents = Boolean(req.external_events?.length);
+        if ((text || reactiveEventType === "event.user.steer") && !hasAuthoredEvents) {
+            const source =
+                reactiveEventType === "event.user.steer"
+                    ? "chat.steer"
+                    : reactiveEventType === "event.user.followup"
+                        ? "chat.followup"
+                        : "chat.message";
+            events.push({
+                event_id: crypto.randomUUID ? crypto.randomUUID() : `evt_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+                type: reactiveEventType,
+                event_source_id: source,
+                reactive: true,
+                agent_id: req.target?.agent_id || req.target?.agent,
+                story_id: req.target?.story_id as string | undefined,
+                payload: {
+                    mime: "text/plain",
+                    event: {text},
+                },
+            });
         }
-        if (req.external_event) {
-            payload.external_event = req.external_event;
-        }
-        return Object.keys(payload).length ? payload : undefined;
+        (attachments || []).forEach((file, index) => {
+            events.push({
+                event_id: crypto.randomUUID ? crypto.randomUUID() : `evt_${Date.now()}_${index}_${Math.random().toString(16).slice(2)}`,
+                type: "event.user.attachment.file",
+                event_source_id: "chat.attachment",
+                reactive: true,
+                agent_id: req.target?.agent_id || req.target?.agent,
+                story_id: req.target?.story_id as string | undefined,
+                payload: {
+                    mime: file.type || "application/octet-stream",
+                    event: {
+                        filename: file.name,
+                        size: file.size,
+                        mime: file.type || "application/octet-stream",
+                        file_index: index,
+                    },
+                },
+            });
+        });
+        events.push(...(req.external_events || []));
+        return {
+            external_events: events,
+            chat_history: req.chat_history || [],
+            project: req.project || this.project,
+            tenant: req.tenant || this.tenant,
+            turn_id: req.turn_id || createClientTurnId(),
+            ...(conversationId ? {conversation_id: conversationId} : {}),
+            ...(req.bundle_id ? {bundle_id: req.bundle_id} : {}),
+            ...(req.active_turn_id ? {active_turn_id: req.active_turn_id} : {}),
+            ...(req.target_turn_id ? {target_turn_id: req.target_turn_id} : {}),
+            ...(req.target ? {target: req.target} : {}),
+            ...(req.payload ? {payload: req.payload} : {}),
+        };
     }
 
 }

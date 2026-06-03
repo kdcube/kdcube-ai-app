@@ -143,7 +143,6 @@ def test_rebind_request_context_refreshes_runtime_ctx_bundle_storage(monkeypatch
     wf.config = SimpleNamespace(ai_bundle_spec=SimpleNamespace(id="kdcube.copilot@2026-04-03-19-05"))
     wf.bundle_props = {}
     wf.comm_context = _payload(tenant="tenant-a", project="project-a")
-    wf._continuation_source = None
     wf.hosting_service = None
     wf.turn_status = None
     wf.runtime_ctx = RuntimeCtx(bundle_storage=None)
@@ -170,7 +169,6 @@ def test_rebind_request_context_refreshes_external_event_source_after_redis_bind
     wf = BaseWorkflow.__new__(BaseWorkflow)
     wf.bundle_props = {}
     wf.comm_context = _payload(tenant="tenant-a", project="project-a")
-    wf._continuation_source = None
     wf.hosting_service = None
     wf.turn_status = None
     wf.runtime_ctx = RuntimeCtx(external_event_source=None)
@@ -826,7 +824,7 @@ async def test_persist_turn_entries_store_multiple_user_and_assistant_rows():
         "Goal: finish the task\nOutcome: final completion persisted",
         "[K] fi:turn-1.outputs/report.html - source report\n[D] Keep notes indexed as authored.",
     ]
-    assert saved_messages[1]["tags"][-1] == "continuation:followup"
+    assert saved_messages[1]["tags"][-1] == "event_type:event.user.followup"
     assert "chat:summary" in saved_messages[4]["tags"]
     assert "kind:working.summary" in saved_messages[4]["tags"]
     assert "summary_scope:completion_attempt" in saved_messages[4]["tags"]

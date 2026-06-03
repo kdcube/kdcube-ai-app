@@ -4,7 +4,7 @@ import base64
 import binascii
 from typing import Any, Mapping
 
-from kdcube_ai_app.apps.chat.ingress.chat_core import IngressConfig, RawAttachment
+from kdcube_ai_app.apps.chat.ingress.ingress_core import IngressConfig, RawAttachment
 from kdcube_ai_app.auth.sessions import RequestContext, UserSession, UserType
 
 

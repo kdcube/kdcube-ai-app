@@ -45,13 +45,15 @@ DEFAULT_VISIBLE_READ_MAX_BYTES = 10 * 1024 * 1024
 DEFAULT_VISIBLE_READ_CONTEXT_FRACTION = 0.15
 DEFAULT_SYMBOLS_PER_TOKEN_BUDGET = 4
 MIN_VISIBLE_READ_MAX_TOKENS = 4_000
-READ_DEDUP_PREFIXES = ("fi:", "so:", "sk:", "tc:", "ar:", "ks:", "su:", "ws:")
+READ_DEDUP_PREFIXES = ("fi:", "so:", "sk:", "tc:", "ev:", "ar:", "ks:", "su:", "ws:")
 
 TOOL_SPEC = {
     "id": "react.read",
     "purpose": (
         "Read artifacts or skills into the visible context so you can use them. "
-        "Paths must be context paths (fi:/ar:/so:/sk:/ks:), not physical paths. "
+        "Paths must be context paths (fi:/tc:/ev:/ar:/so:/sk:/ks:), not physical paths. "
+        "ev: refs identify event objects on the timeline and are readable like tc: refs. "
+        "For event payload bytes or snapshot bodies, read a visible fi: path or first use react.pull on the event's hosted_uri/payload.event_ref when it is an externally tracked artifact URI. "
         "For old-turn recovery, ar:turn_<id>.react.turn.index reconstructs a compact semantic inventory; "
         "use it with react.memsearch hits when the summary does not name enough refs. "
         "Batch multiple known paths in one read call. "
@@ -80,15 +82,17 @@ TOOL_SPEC = {
             "list[str] context paths to read: "
             "turn indexes via ar:turn_<id>.react.turn.index, "
             "files via fi:turn_<id>.files/<filepath>, "
+            "event blocks via ev:turn_<id>.events/<event_path>, "
             "sources via so:sources_pool[...], "
             "skills via sk:<skill_id or num>, "
             "knowledge space via ks:<relpath> (read-only reference files). "
             "fi: normally yields full text for text files and multimodal/base64 payloads for PDF/images only. "
-            "An fi:conv_<conversation_id>.turn_<id>... path belongs to another conversation and is resolved in that conversation."
+            "An fi:conv_<conversation_id>.turn_<id>... path belongs to another conversation and is resolved in that conversation. "
+            "An ev:conv_<conversation_id>.turn_<id>... path identifies an event object from another conversation when that event block is present in visible or recovered timeline state."
         ),
         "items": (
             "optional list of read specs, each with path plus optional line_start/line_count or "
-            "offset_text_symbols/max_text_symbols. Works for text-backed logical paths such as fi:, tc:/ar:, and ks:. "
+            "offset_text_symbols/max_text_symbols. Works for text-backed logical paths such as fi:, tc:/ev:/ar:, and ks:. "
             "Use read_items returned by react.rg when available; otherwise create manual line ranges from stats_only metadata."
         ),
         "line_numbers": (

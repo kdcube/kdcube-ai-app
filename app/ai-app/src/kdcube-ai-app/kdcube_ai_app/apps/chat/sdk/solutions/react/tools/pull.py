@@ -35,6 +35,8 @@ TOOL_SPEC = {
         "fi: refs already belong to the ReAct artifact model and have the normal logical/physical path rules. "
         "Externally tracked artifact URIs such as ext:... may appear in timeline events, snapshots, or tool results. "
         "They are opaque external artifact handles resolved by registered namespace rehosters. "
+        "ev: refs identify event objects on the timeline; they are not artifact refs and are not accepted by react.pull. "
+        "When an event points to bytes or a snapshot body, pass the event's hosted_uri, payload.event_ref, or an artifact ref carried inside payload.event. "
         "Unsupported namespaces are reported by the pull result. "
         "For an externally tracked URI, react.pull calls the registered namespace resolver/rehoster, copies the artifact into a ReAct artifact surface, "
         "and returns the materialized fi: logical_path plus physical_path. "
@@ -57,7 +59,8 @@ TOOL_SPEC = {
             "fi:turn_<id>.user.attachments/<file> (exact file only), "
             "fi:turn_<id>.external.<event_kind>.attachments/<event_id>/<file> (exact file only), "
             "and cross-conversation fi:conv_<conversation_id>.turn_<id>... refs. "
-            "Externally tracked URIs such as ext:... are accepted only when a namespace resolver/rehoster is registered."
+            "Externally tracked URIs such as ext:... are accepted only when a namespace resolver/rehoster is registered. "
+            "ev: timeline event refs are not artifact refs."
         ),
     },
     "returns": (

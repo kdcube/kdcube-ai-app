@@ -32,7 +32,7 @@ class TestBundleState:
             "user_type": "registered",
             "session_id": "sess-789",
             "conversation_id": "conv-abc",
-            "text": "hello world",
+            "external_events": [{"type": "event.user.prompt", "payload": {"mime": "text/plain", "event": {"text": "hello world"}}}],
         }
         state = BaseEntrypoint.create_initial_state(payload)
 
@@ -43,7 +43,7 @@ class TestBundleState:
         assert state["user_type"] == "registered"
         assert state["session_id"] == "sess-789"
         assert state["conversation_id"] == "conv-abc"
-        assert state["text"] == "hello world"
+        assert state["external_events"] == payload["external_events"]
 
     def test_create_initial_state_generates_request_id_if_missing(self):
         """create_initial_state generates request_id when not provided."""
@@ -68,35 +68,16 @@ class TestBundleState:
         assert "start_time" in state
         assert before <= state["start_time"] <= after
 
-    def test_create_initial_state_handles_attachments_from_payload_key(self):
-        """Attachments read from top-level 'attachments' key."""
-        attachments = [{"type": "image", "url": "https://example.com/img.png"}]
-        payload = {"attachments": attachments}
+    def test_create_initial_state_preserves_external_events(self):
+        """Accepted external events stay available to bundle code."""
+        payload = {"external_events": [{"event_id": "evt-1", "type": "event.external"}]}
         state = BaseEntrypoint.create_initial_state(payload)
-        assert state["attachments"] == attachments
+        assert state["external_events"] == payload["external_events"]
 
-    def test_create_initial_state_handles_attachments_from_nested_payload(self):
-        """Attachments read from nested payload.attachments when top-level missing."""
-        attachments = [{"type": "file", "name": "doc.pdf"}]
-        payload = {"payload": {"attachments": attachments}}
-        state = BaseEntrypoint.create_initial_state(payload)
-        assert state["attachments"] == attachments
-
-    def test_create_initial_state_defaults_attachments_to_empty_list(self):
-        """Attachments default to empty list when not provided."""
+    def test_create_initial_state_external_events_defaults_to_empty_list(self):
+        """External events default to an empty list when not provided."""
         state = BaseEntrypoint.create_initial_state({})
-        assert state["attachments"] == []
-
-    def test_create_initial_state_strips_whitespace_from_text(self):
-        """Text is stripped of leading/trailing whitespace."""
-        payload = {"text": "  hello  "}
-        state = BaseEntrypoint.create_initial_state(payload)
-        assert state["text"] == "hello"
-
-    def test_create_initial_state_text_defaults_to_empty_string(self):
-        """Text defaults to empty string when not provided."""
-        state = BaseEntrypoint.create_initial_state({})
-        assert state["text"] == ""
+        assert state["external_events"] == []
 
     def test_bundle_state_final_answer_field_exists_in_type(self):
         """BundleState TypedDict contains final_answer field."""
@@ -116,11 +97,11 @@ class TestBundleState:
         annotations = BundleState.__annotations__
         assert "error_message" in annotations
 
-    def test_bundle_state_attachments_field_exists_in_type(self):
-        """BundleState TypedDict contains attachments field."""
+    def test_bundle_state_external_events_field_exists_in_type(self):
+        """BundleState TypedDict contains external_events field."""
         from kdcube_ai_app.infra.service_hub.inventory import BundleState
         annotations = BundleState.__annotations__
-        assert "attachments" in annotations
+        assert "external_events" in annotations
 
     def test_bundle_state_turn_delivery_fields_exist_in_type(self):
         """BundleState preserves turn-level payloads used by external delivery adapters."""
@@ -165,8 +146,7 @@ class TestBundleState:
             "project": "p",
             "user": "u",
             "session_id": "s",
-            "text": "hi",
-            "attachments": [],
+            "external_events": [],
             "final_answer": "The answer",
             "followups": ["follow up?"],
             "error_message": None,

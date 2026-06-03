@@ -887,7 +887,7 @@ def extract_user_attachments_from_blocks(blocks: List[Dict[str, Any]]) -> List[D
             payload["physical_path"] = meta.get("local_path")
         if meta.get("summary") or meta.get("description"):
             payload["summary"] = meta.get("summary") or meta.get("description")
-        for key in ("continuation_kind", "event_kind", "message_id", "sequence"):
+        for key in ("event_kind", "event_type", "is_continuation", "message_id", "sequence"):
             if meta.get(key) is not None:
                 payload[key] = meta.get(key)
         out.append(payload)
@@ -5859,8 +5859,8 @@ class Timeline:
             }:
                 return True
             if btype_local in {"user.attachment.meta", "user.attachment", "user.attachment.text"}:
-                continuation_kind = str(meta_local.get("continuation_kind") or "").strip().lower()
-                return continuation_kind in {"followup", "steer"}
+                event_type = str(meta_local.get("event_type") or "").strip().lower()
+                return bool(meta_local.get("is_continuation")) or event_type in {"event.user.followup", "event.user.steer"}
             if btype_local == "react.thinking":
                 return True
             return False

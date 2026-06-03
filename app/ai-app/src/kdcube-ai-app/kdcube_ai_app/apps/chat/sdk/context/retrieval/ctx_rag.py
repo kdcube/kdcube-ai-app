@@ -2323,21 +2323,19 @@ class ContextRAGClient:
                     _row_meta: Dict[str, Any] = {"source": "turn_log"}
                     if _path:
                         _row_meta["path"] = _path
-                    for _key in ("message_id", "stream_id", "sequence", "event_kind", "continuation_kind", "target_turn_id", "active_turn_id_at_ingress", "owner_turn_id"):
+                    for _key in ("message_id", "stream_id", "sequence", "event_kind", "event_type", "is_continuation", "target_turn_id", "active_turn_id_at_ingress", "owner_turn_id"):
                         if _blk_meta.get(_key) is not None:
                             _row_meta[_key] = _blk_meta.get(_key)
                     if _btype == "user.prompt":
-                        _continuation_kind = (_blk_meta or {}).get("continuation_kind") or None
+                        _event_type = (_blk_meta or {}).get("event_type") or "event.user.prompt"
                         _row_type = "chat:user"
-                        _row_data = {"text": _text, "meta": _row_meta}
-                        if _continuation_kind:
-                            _row_data["continuation_kind"] = _continuation_kind
+                        _row_data = {"text": _text, "event_type": _event_type, "meta": _row_meta}
                     elif _btype in {"user.followup", "user.followup.preserved"}:
                         _row_type = "chat:user"
-                        _row_data = {"text": _text, "continuation_kind": "followup", "meta": _row_meta}
+                        _row_data = {"text": _text, "event_type": "event.user.followup", "meta": _row_meta}
                     elif _btype in {"user.steer", "user.steer.preserved"}:
                         _row_type = "chat:user"
-                        _row_data = {"text": _text, "continuation_kind": "steer", "meta": _row_meta}
+                        _row_data = {"text": _text, "event_type": "event.user.steer", "meta": _row_meta}
                     elif _btype == "assistant.completion":
                         _row_type = "chat:assistant"
                         _row_data = {"text": _text, "meta": _row_meta}
@@ -2346,6 +2344,8 @@ class ContextRAGClient:
 
                     _row_ts = (_blk.get("ts") or ts or "")
                     if _row_type == "chat:user":
+                        if _row_meta.get("is_continuation") is not None:
+                            _row_data["is_continuation"] = bool(_row_meta.get("is_continuation"))
                         replace_types["chat:user"] = True
                     elif _row_type == "chat:assistant":
                         replace_types["chat:assistant"] = True
@@ -2360,7 +2360,7 @@ class ContextRAGClient:
 
                 for a in view.get("attachments") or []:
                     attachment_meta = {"kind": "user.attachment", "turn_id": tid}
-                    for key in ("artifact_path", "continuation_kind", "event_kind", "message_id", "sequence", "ts"):
+                    for key in ("artifact_path", "event_kind", "event_type", "is_continuation", "message_id", "sequence", "ts"):
                         if a.get(key) is not None:
                             attachment_meta[key] = a.get(key)
                     out.append({

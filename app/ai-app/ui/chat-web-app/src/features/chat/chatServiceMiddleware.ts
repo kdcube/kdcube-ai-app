@@ -391,9 +391,15 @@ export const chatServiceMiddleware = (transportType: TransportType): Middleware 
                     const state = store.getState() as RootState;
                     const request = (action as SendChatMessageAction).payload
                     const activeTurn = selectCurrentTurn(state)
-                    const continuationKind = request.continuationKind ?? (activeTurn ? "followup" : "regular")
-                    const isContinuation = continuationKind === "followup" || continuationKind === "steer"
-                    const targetTurnId = request.targetTurnId ?? activeTurn?.id ?? undefined
+                    const reactiveEventType = request.reactiveEventType ?? (activeTurn ? "event.user.followup" : "event.user.prompt")
+                    const isSteerEvent = reactiveEventType === "event.user.steer"
+                    const targetsOpenTurn = Boolean(
+                        activeTurn && (
+                            reactiveEventType === "event.user.followup" ||
+                            reactiveEventType === "event.user.steer"
+                        )
+                    )
+                    const targetTurnId = request.targetTurnId ?? (targetsOpenTurn ? activeTurn?.id : undefined)
                     const turnId = createClientTurnId();
                     const sentAt = new Date().getTime();
 
@@ -424,7 +430,7 @@ export const chatServiceMiddleware = (transportType: TransportType): Middleware 
                         attachments = []
                     }
 
-                    if (!message && attachments.length === 0 && continuationKind !== "steer") {
+                    if (!message && attachments.length === 0 && !isSteerEvent && !request.externalEvents?.length) {
                         //do not send empty message
                         return;
                     }
@@ -433,21 +439,18 @@ export const chatServiceMiddleware = (transportType: TransportType): Middleware 
 
                     const chatRequest: ChatRequest = {
                         message,
-                        chat_history: !isContinuation && sendChatHistory ? getConversationHistory(store) : undefined,
+                        chat_history: !targetsOpenTurn && sendChatHistory ? getConversationHistory(store) : undefined,
                         project: selectProject(state),
                         tenant: selectTenant(state),
                         turn_id: turnId,
                         bundle_id: selectCurrentBundle(state) ?? undefined,
                         ...(request.payload ? {payload: request.payload} : {}),
                         ...(request.target ? {target: request.target} : {}),
-                        ...(request.externalEvent ? {external_event: request.externalEvent} : {}),
-                        ...(isContinuation ? {
-                            message_kind: continuationKind,
-                            continuation_kind: continuationKind,
+                        ...(request.externalEvents?.length ? {external_events: request.externalEvents} : {}),
+                        reactiveEventType,
+                        ...(targetsOpenTurn ? {
                             active_turn_id: targetTurnId,
                             target_turn_id: targetTurnId,
-                            ...(continuationKind === "followup" ? {followup: true} : {}),
-                            ...(continuationKind === "steer" ? {steer: true} : {}),
                         } : {})
                     }
 
@@ -470,7 +473,7 @@ export const chatServiceMiddleware = (transportType: TransportType): Middleware 
 
                         const serverTurnId = ack.turn_id || turnId
 
-                        if (!isContinuation) {
+                        if (!targetsOpenTurn) {
                             dispatch(newTurn({
                                 id: serverTurnId,
                                 state: "new",
@@ -478,20 +481,20 @@ export const chatServiceMiddleware = (transportType: TransportType): Middleware 
                                 attachments
                             }))
                         }
-                        if (isContinuation) {
+                        if (targetsOpenTurn) {
                             const ackStatus = typeof ack?.status === "string" ? ack.status : null
-                            const continuationAccepted = ackStatus === "followup_accepted" || ackStatus === "steer_accepted"
+                            const continuationAccepted = Boolean(ack?.is_continuation)
                             const continuationStartedNewTurn = !!ackStatus && !continuationAccepted
                             const liveContinuationAccepted = continuationAccepted && ack.live_owner_detected !== false
                             const visualTurnId = ack.active_turn_id || targetTurnId
                             const sourceMessageId = ack.event_id || ack.queued_turn_id || serverTurnId
-                            if (!continuationStartedNewTurn && liveContinuationAccepted && continuationKind === "followup" && visualTurnId) {
+                            if (!continuationStartedNewTurn && liveContinuationAccepted && reactiveEventType === "event.user.followup" && visualTurnId) {
                                 dispatch(appendTurnUserMessage({
                                     turnId: visualTurnId,
                                     text: message,
                                     attachments,
                                     timestamp: sentAt,
-                                    continuationKind: "followup",
+                                    eventType: "event.user.followup",
                                     sourceMessageId,
                                 }))
                             }
@@ -501,12 +504,12 @@ export const chatServiceMiddleware = (transportType: TransportType): Middleware 
                                     ? "The previous turn had already advanced. A new turn was started instead."
                                     : continuationAccepted
                                         ? (
-                                            continuationKind === "steer"
+                                            isSteerEvent
                                                 ? (message ? "Steer sent to the in-progress turn." : "Stop signal sent to the in-progress turn.")
                                                 : "Follow-up sent to the in-progress turn."
                                         )
                                         : (
-                                            continuationKind === "steer"
+                                            isSteerEvent
                                                 ? (message ? "Steer sent to the in-progress turn." : "Stop signal sent to the in-progress turn.")
                                                 : "Follow-up sent to the in-progress turn."
                                         ),
@@ -514,7 +517,7 @@ export const chatServiceMiddleware = (transportType: TransportType): Middleware 
                         }
                     }).catch(error => {
                         console.error(error)
-                        if (isContinuation) {
+                        if (targetsOpenTurn) {
                             const conversationId = selectConversationId(store.getState())
                             if (conversationId) {
                                 dispatch(requestConversationStatus(conversationId))

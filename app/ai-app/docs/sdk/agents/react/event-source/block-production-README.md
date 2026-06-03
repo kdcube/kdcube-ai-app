@@ -27,6 +27,27 @@ tool call selected
     -> result-side blocks are appended to timeline
 ```
 
+Authored external events use the same result accumulator shape, but the default
+structural output is one event occurrence block:
+
+```text
+external_event retained in lane
+    -> event reader builds accepted event target
+    -> block_production policies mutate one accumulator
+    -> policy either emits blocks or marks the occurrence as no-timeline
+    -> default producer emits one event.<type> block at the ev: path when
+       no registered policy handled the occurrence
+    -> event block body stores {ok, status, error?, ret?, surfaces?}
+```
+
+For events, `payload.event` is the `ret` analogue. If the body is hosted,
+`payload.event_ref` is represented as `ret.event_ref`. The default event
+producer also runs the common surface extractors and stores non-empty extracted
+rows under `surfaces`, including `source_rows`, `artifact_rows`,
+`declared_file_items`, `snapshot_refs`, `announce_candidates`, and
+`notice_rows`. Later timeline projection, ANNOUNCE, and compaction policies can
+use those durable surfaces without needing the original Redis lane record.
+
 ## Production Target
 
 The target is a mutable accumulator:
@@ -62,6 +83,11 @@ The target is a mutable accumulator:
 Multiple production policies may run on the same target. Each policy reads the
 surface it owns and appends to the matching field.
 
+A policy can also intentionally consume an authored event without producing
+ReAct timeline blocks. Bind `react.block_production.no_timeline` for events that
+should travel through the ordered event lane and bundle callbacks, but should
+not become durable ReAct history.
+
 ## Accumulator Fields
 
 | Field | Meaning |
@@ -71,7 +97,7 @@ surface it owns and appends to the matching field.
 | `source_rows` | Exploration rows for `sources_pool`, such as web search/fetch results. |
 | `artifact_rows` | File/artifact rows, usually from exec `raw.items` or composite hosted artifact results. |
 | `declared_file_items` | Explicit file rows derived from `{artifact_type:"files", files:[...]}`. |
-| `snapshot_refs` | Durable snapshot refs, such as `fi:<turn_id>.snapshots/current.yaml`. |
+| `snapshot_refs` | Read-only snapshot payload refs, such as `fi:<turn_id>.snapshots/current.yaml` or `ext:<bundle>/snapshots/current`, for later projection/ANNOUNCE/compaction. They are not editable canvas state. |
 | `announce_candidates` | Data for a later ANNOUNCE phase. ANNOUNCE itself is not persisted on the timeline. |
 | `notice_rows` | Notices/errors/warnings to emit through the existing ReAct notice transport. |
 
@@ -85,6 +111,7 @@ surface it owns and appends to the matching field.
 | `write_tool_source_policies()` | `react.block_production.write_tool_result`, `react.block_production.declared_file_items` | Rendering/write tools where `params.path` is the produced artifact. |
 | `exec_tool_event_policies()` | `exec_tools.block_production.exec_result` | Exec `raw.report_text` and `raw.items`. |
 | `composite_artifact_source_policies()` | `hosted_artifacts`, `snapshot_refs`, `announce_candidates` | Composite custom results with several result surfaces. |
+| custom event bus-only policy | `react.block_production.no_timeline` | Suppresses default event-block fallback after the bundle/runtime callback has observed the event. |
 
 ## Generic JSON Is Not A File
 
@@ -119,6 +146,40 @@ Block-production policies do not need to agree on one "trait". They mutate the
 same accumulator, so one policy can append source rows, another can append
 artifact rows, and another can record snapshot refs.
 
+`snapshot_refs` means "there is a readable snapshot payload over there." It is
+not a write channel. Snapshot payloads are normally produced from external
+state and are read by ReAct through `react.pull`/`react.read` when needed. For
+shared state that both the user and agent can edit as JSON, use a dedicated
+event type such as `event.canvas`.
+
+The same rule applies to authored event payloads. A snapshot event may carry a
+compact inline payload, a hosted snapshot ref, hosted artifact refs, and an
+ANNOUNCE candidate together:
+
+```json
+{
+  "event_id": "evt_canvas_snapshot_001",
+  "type": "event.snapshot",
+  "event_source_id": "task_tracker.canvas.snapshot",
+  "logical_path": "ev:turn_1.events/task-tracker/snapshots/draft-123/canvas/latest",
+  "payload": {
+    "mime": "application/json",
+    "event": {
+      "summary": "Canvas has one selected note and one attachment.",
+      "hosted_artifacts": [
+        {"hosted_uri": "ext:task-tracker/files/draft-123/diagram.png", "mime": "image/png"}
+      ],
+      "snapshot_ref": "ext:task-tracker/snapshots/draft-123/canvas/latest",
+      "announce_entry": {"title": "Canvas snapshot", "text": "One selected note."}
+    }
+  }
+}
+```
+
+The default block producer emits one event block at the event's `ev:` path. The
+block body keeps `ret.summary` plus `surfaces.artifact_rows`,
+`surfaces.snapshot_refs`, and `surfaces.announce_candidates`.
+
 ## Current Completion Status
 
 The block-production phase is implemented and tested under
@@ -127,3 +188,8 @@ above. The legacy path remains available when the flag is disabled. The enabled
 path is expected to preserve the visible timeline shape of the old path while
 making result production configurable by event-source policy.
 
+For authored external events, the default single event-block production path is
+implemented for unregistered sources and snapshot events.
+The async artifact-hosting consumer is still tool-shaped; event result surfaces
+are preserved durably first, then later phase policies can project or announce
+them.

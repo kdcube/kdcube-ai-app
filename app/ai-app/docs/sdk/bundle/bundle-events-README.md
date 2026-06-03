@@ -512,7 +512,7 @@ selection metadata.
 5. Register `@artifact_namespace_rehoster(...)` for custom artifact refs such as
    `ext:...`.
 6. Make UI events carry `payload.target.agent_id`, `story_kind`, `story_id`,
-   and `payload.external_event.event_source_id`.
-7. Use `payload.external_event.routing.reactive=true` only for events intended
+   and `external_events[].event_source_id`.
+7. Use `external_events[].reactive=true` only for events intended
    to wake or continue the agent.
 8. Return and preserve `logical_path` / `physical_path` rows from rehosters.

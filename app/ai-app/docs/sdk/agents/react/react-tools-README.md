@@ -86,6 +86,10 @@ Reads existing logical artifacts back into the visible timeline.
   attached only when it is under the byte cap; otherwise `react.read` returns a
   recovery marker.
 - accepted paths: `ar:`, `tc:`, `fi:`, `so:`, `su:`, `ws:`, `ks:`, `sk:`
+- `ev:` refs identify event objects on the timeline. Read them like `tc:` refs
+  when the event block itself is needed. If an event points to payload bytes,
+  use the event's `hosted_uri`, `payload.event_ref`, or artifact refs carried
+  inside `payload.event`.
 - cross-conversation `fi:` paths: if a path starts
   `fi:conv_<conversation_id>.turn_<id>...`, it belongs to another
   conversation. Current-conversation `fi:` paths do not have this segment; use
@@ -166,12 +170,20 @@ Example metadata-only read:
 
 ### `react.pull`
 
-Materializes historical `fi:` refs locally so code or later tools can use them by local path.
+Materializes historical `fi:` refs and registered externally tracked artifact
+refs locally so code or later tools can use them by local path.
 
 - input: `paths: list[str]`
-- accepted paths: exact `fi:` refs
+- accepted paths: `fi:` refs and registered external artifact namespaces such
+  as `ext:...`
 - cross-conversation refs: `fi:conv_<conversation_id>.turn_<id>...` belongs to
   another conversation and is resolved with that scope
+- external artifact refs: `react.pull(paths=["ext:..."])` calls the registered
+  namespace rehoster and returns the materialized `logical_path` /
+  `physical_path`; use those returned paths next
+- event refs: `ev:` identifies a readable timeline event object and is not
+  accepted by `react.pull`; pull the event's `hosted_uri`,
+  `payload.event_ref`, or refs inside `payload.event`
 - output: local files plus a result block listing pulled paths
 - workspace effect: does not define or replace the active current-turn workspace
 - historical layout: keeps historical material under its historical turn root
@@ -186,6 +198,9 @@ Copies materialized historical `fi:<turn>.files/...` refs into the active curren
 
 - input: `paths: list[str]`, `mode: replace|overlay`
 - accepted paths: workspace `fi:<turn>.files/...` refs
+- rejected paths: `ext:...`, other external artifact namespaces, and `ev:...`
+  are not checkout refs. Pull/rehost first, then checkout only if the returned
+  `fi:` ref is a `files/...` workspace ref.
 - cross-conversation refs: `fi:conv_<conversation_id>.turn_<id>.files/...`
   belongs to another conversation and is resolved with that scope
 - output: current-turn workspace files plus a compact checkout result block

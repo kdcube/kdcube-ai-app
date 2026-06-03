@@ -821,9 +821,9 @@ def test_reactive_credit_requires_occurrence_reactive_and_uses_source_credit_def
     no_reactive_occurrence = SimpleNamespace(
         kind="external_event",
         payload={
-            "external_event": {
+            "event": {
                 "event_source_id": "bundle.wizard.assistance.requested",
-                "routing": {},
+                "payload": {},
             }
         },
     )
@@ -839,9 +839,10 @@ def test_reactive_credit_requires_occurrence_reactive_and_uses_source_credit_def
         event=SimpleNamespace(
             kind="external_event",
             payload={
-                "external_event": {
+                "event": {
                     "event_source_id": "bundle.wizard.assistance.requested",
-                    "routing": {"reactive": True},
+                    "reactive": True,
+                    "payload": {},
                 }
             },
         ),
@@ -853,9 +854,9 @@ def test_reactive_credit_requires_occurrence_reactive_and_uses_source_credit_def
         event=SimpleNamespace(
             kind="external_event",
             payload={
-                "external_event": {
+                "event": {
                     "event_source_id": "bundle.wizard.assistance.requested",
-                    "routing": {"iteration_credit": 2},
+                    "payload": {"iteration_credit": 2},
                 }
             },
         ),
@@ -867,9 +868,10 @@ def test_reactive_credit_requires_occurrence_reactive_and_uses_source_credit_def
         event=SimpleNamespace(
             kind="external_event",
             payload={
-                "external_event": {
+                "event": {
                     "event_source_id": "bundle.wizard.assistance.requested",
-                    "routing": {"reactive": True, "iteration_credit": 2},
+                    "reactive": True,
+                    "payload": {"iteration_credit": 2},
                 }
             },
         ),
@@ -881,9 +883,10 @@ def test_reactive_credit_requires_occurrence_reactive_and_uses_source_credit_def
         event=SimpleNamespace(
             kind="external_event",
             payload={
-                "external_event": {
+                "event": {
                     "event_source_id": "bundle.wizard.assistance.requested",
-                    "routing": {"reactive": False, "iteration_credit": 5},
+                    "reactive": False,
+                    "payload": {"iteration_credit": 5},
                 }
             },
         ),

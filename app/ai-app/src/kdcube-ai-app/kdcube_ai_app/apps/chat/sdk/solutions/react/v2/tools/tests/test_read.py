@@ -216,6 +216,41 @@ async def test_read_tc_items_materializes_line_range(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_read_ev_event_path(tmp_path):
+    runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path), max_tokens=80_000)
+    ctx = FakeBrowser(runtime)
+    event_path = "ev:turn_src.events/task-tracker/canvas/review/evt_1"
+    ctx.timeline.blocks.append({
+        "type": "event.external",
+        "mime": "application/json",
+        "path": event_path,
+        "text": json.dumps({
+            "event_id": "evt_1",
+            "event_source_id": "task_tracker.canvas.review.requested",
+            "ok": True,
+            "ret": {"prompt": "Review selected text"},
+        }),
+        "turn_id": "turn_src",
+        "meta": {
+            "event_id": "evt_1",
+            "event_source_id": "task_tracker.canvas.review.requested",
+            "event_type": "event.external",
+        },
+    })
+
+    state = {"last_decision": {"tool_call": {"params": {"paths": [event_path]}}}}
+    await handle_react_read(ctx_browser=ctx, state=state, tool_call_id="r_ev")
+
+    assert any(
+        b.get("type") == "react.tool.result"
+        and b.get("call_id") == "r_ev"
+        and b.get("path") == event_path
+        and "Review selected text" in (b.get("text") or "")
+        for b in ctx.timeline.blocks
+    )
+
+
+@pytest.mark.asyncio
 async def test_read_items_materializes_multiple_line_ranges(tmp_path):
     runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path), max_tokens=80_000)
     ctx = FakeBrowser(runtime)

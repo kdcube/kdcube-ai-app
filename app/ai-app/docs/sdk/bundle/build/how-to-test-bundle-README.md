@@ -83,8 +83,8 @@ Critical event-source test:
   rehosters are discoverable by the ReAct event-source subsystem
 - for authored UI events, test the accepted payload shape:
   `payload.target.agent_id`, optional `story_kind` / `story_id`,
-  `payload.external_event.event_source_id`, and
-  `payload.external_event.routing.reactive`
+  `external_events[].event_source_id`, and
+  `external_events[].reactive`
 - for external refs such as `ext:...`, test that `react.pull` invokes the
   rehoster and returns the expected `fi:` logical path plus physical path
 

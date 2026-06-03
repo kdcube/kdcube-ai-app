@@ -82,29 +82,6 @@ class ReactSolverV2:
     )
 
     @property
-    def continuation_source(self):
-        runtime_ctx = getattr(self.ctx_browser, "runtime_ctx", None) if self.ctx_browser else None
-        return getattr(runtime_ctx, "continuation_source", None) if runtime_ctx else None
-
-    async def pending_continuation_count(self) -> int:
-        source = self.continuation_source
-        if source is None:
-            return 0
-        return int(await source.pending_count())
-
-    async def peek_next_continuation(self):
-        source = self.continuation_source
-        if source is None:
-            return None
-        return await source.peek_next()
-
-    async def take_next_continuation(self):
-        source = self.continuation_source
-        if source is None:
-            return None
-        return await source.take_next()
-
-    @property
     def external_event_source(self):
         runtime_ctx = getattr(self.ctx_browser, "runtime_ctx", None) if self.ctx_browser else None
         return getattr(runtime_ctx, "external_event_source", None) if runtime_ctx else None

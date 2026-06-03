@@ -36,7 +36,6 @@ export type {
   ConversationTurnDTO,
   ConversationDTO,
   ChatHistoryItem,
-  ContinuationKind,
   OpenChatStreamOptions,
   OpenChatStreamResult,
   SubmitChatMessageParams,

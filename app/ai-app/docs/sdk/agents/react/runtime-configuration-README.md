@@ -212,10 +212,10 @@ These fields control how active-turn external events affect loop budget:
 - current runtime behavior treats `followup` as reactive by default
 - `steer` never mints iteration credit; it is a control interrupt
 - structured external events must carry
-  `payload.external_event.routing.reactive=true` to mint credit
+  `external_events[].reactive=true` to mint credit
 - `event_source_declaration(..., iteration_credit=...)` can define the default
   credit for one explicitly reactive occurrence
-- `payload.external_event.routing.iteration_credit` overrides that default for
+- `external_events[].payload.iteration_credit` overrides that default for
   one occurrence; the runtime still clamps credit through the configured cap
 
 Effective loop ceiling:

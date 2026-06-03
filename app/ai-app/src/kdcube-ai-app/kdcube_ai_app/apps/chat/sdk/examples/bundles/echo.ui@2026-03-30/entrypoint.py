@@ -20,7 +20,7 @@ from typing import Any, Dict
 
 from langgraph.graph import StateGraph, START, END
 
-from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
+from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload, external_events_text
 from kdcube_ai_app.infra.service_hub.inventory import Config, BundleState
 from kdcube_ai_app.infra.plugin.bundle_loader import bundle_entrypoint, api, bundle_id, cron
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import BaseEntrypoint
@@ -76,7 +76,7 @@ class EchoUIBundle(BaseEntrypoint):
         g = StateGraph(BundleState)
 
         async def echo(state: BundleState) -> BundleState:
-            state["final_answer"] = state.get("text") or ""
+            state["final_answer"] = external_events_text(state.get("external_events") or [])
             return state
 
         g.add_node("echo", echo)

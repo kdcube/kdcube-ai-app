@@ -854,7 +854,7 @@ function FollowupMessageBlockImpl({
   message: AdditionalUserMessage
   onDownloadError?: (text: string) => void
 }) {
-  const isSteer = message.continuationKind === 'steer'
+  const isSteer = message.eventType === 'event.user.steer'
   const text = message.text || (isSteer ? 'Stop requested' : '')
   return (
     <div className="flex flex-col gap-1 self-end max-w-[760px]" style={{ marginLeft: 'auto' }}>

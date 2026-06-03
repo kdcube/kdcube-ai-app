@@ -143,7 +143,7 @@ Widget/API live-event rule that plugins must surface early:
 Bundle event-source rule that plugins must surface early:
 
 - story-aware UI uses authored external events with `payload.target.agent_id`
-  and `payload.external_event.event_source_id`
+  and `external_events[].event_source_id`
 - use `story_kind` and `story_id` when an event belongs to a wizard, canvas,
   case, draft, or other product-flow instance
 - tools are event sources; tool result rendering can be customized through

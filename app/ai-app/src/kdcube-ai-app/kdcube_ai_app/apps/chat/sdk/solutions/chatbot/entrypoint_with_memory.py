@@ -3815,7 +3815,6 @@ class BaseEntrypointWithMemory(MemoryEntrypointMixin, BaseEntrypoint):
         comm_context: ExternalEventPayload = None,
         event_filter: Optional[Any] = None,
         ctx_client: Optional[Any] = None,
-        continuation_source: Optional[Any] = None,
     ):
         super().__init__(
             config=config,
@@ -3824,7 +3823,6 @@ class BaseEntrypointWithMemory(MemoryEntrypointMixin, BaseEntrypoint):
             comm_context=comm_context,
             event_filter=event_filter,
             ctx_client=ctx_client,
-            continuation_source=continuation_source,
         )
 
 

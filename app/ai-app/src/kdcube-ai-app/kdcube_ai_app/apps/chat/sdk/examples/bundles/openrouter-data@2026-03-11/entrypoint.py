@@ -25,7 +25,7 @@ from typing import Any, Dict
 
 from langgraph.graph import StateGraph, START, END
 
-from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
+from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload, external_events_text
 from kdcube_ai_app.infra.service_hub.inventory import Config, BundleState
 from kdcube_ai_app.infra.plugin.bundle_loader import bundle_entrypoint
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import BaseEntrypoint
@@ -86,8 +86,7 @@ class OpenRouterDataBundle(BaseEntrypoint):
                     "session_id": state["session_id"],
                     "conversation_id": state["conversation_id"],
                     "turn_id": state["turn_id"],
-                    "text": state["text"],
-                    "attachments": state.get("attachments") or [],
+                    "prompt_text": external_events_text(state.get("external_events") or []),
                 })
                 if not isinstance(res, dict):
                     res = {}

@@ -430,8 +430,8 @@ See [README-comm.md](README-comm.md) for precedence and examples.
 
 Attachments are supported by both SSE and Socket.IO:
 
-* SSE `/sse/chat` accepts `multipart/form-data` with `message`, `attachment_meta`, and `files`.
-* Socket.IO `chat_message` accepts `attachment_meta` plus binary frames for each attachment.
+* SSE `/sse/chat` accepts `multipart/form-data` with `event_submission` and `files`.
+* Socket.IO `chat_message` accepts an event submission object plus binary frames for each `event.user.attachment.*` event.
 
 See [attachments-system.md](../../hosting/attachments-system.md) for schema details and client expectations.
 

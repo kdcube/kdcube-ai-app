@@ -8,7 +8,6 @@
 
 import type {
   BannerTone,
-  ContinuationKind,
   ConversationSummary,
   StepStatus,
   TurnReaction,
@@ -159,7 +158,7 @@ export interface AdditionalUserMessage {
   text: string
   timestamp: number
   attachments: TurnAttachment[]
-  continuationKind: Exclude<ContinuationKind, 'regular'>
+  eventType: string
 }
 
 /** A structured context object the host page dropped onto the chat (e.g. a

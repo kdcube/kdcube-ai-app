@@ -192,39 +192,45 @@ Current request fields:
 Important:
 
 - `message_kind` / `continuation_kind` are current routing semantics
-- authored UI/application events use `payload.external_event` and
-  `payload.target`; see [Bundle Events](bundle-events-README.md)
+- authored UI/application events use `external_events[]` and
+  top-level `target`; see [Bundle Events](bundle-events-README.md)
 - `turn_id` on the request is a client correlation hint; the server allocates or confirms the authoritative task/turn id in the acknowledgement
 - for continuations, `target_turn_id` is the user/client intent and `active_turn_id` is the client's best known active turn; neither field is authoritative without server state
-- attachments are carried alongside this logical message, not inside it
+- attachments are represented as `event.user.attachment.*` entries in
+  `external_events[]`; multipart carries only the corresponding bytes
 
 ### Attachments on SSE
 
 For `POST /sse/chat` with attachments, the request is multipart:
 
-- form field `message`
-  - JSON string containing the logical request
-- form field `attachment_meta`
-  - JSON array of attachment descriptors
+- form field `event_submission`
+  - JSON string containing the event submission with `external_events[]`
 - repeated `files`
-  - binary attachment bodies
+  - binary attachment bodies, in the same order as `event.user.attachment.*`
+    events
 
 Without attachments, `POST /sse/chat` may be plain JSON.
 
 ### Attachments on Socket.IO
 
-For Socket.IO `chat_message`, the logical request is wrapped as:
+For Socket.IO `chat_message`, the first argument is the event submission:
 
 ```json
 {
-  "message": { ...logical request... },
-  "attachment_meta": [
-    { "filename": "a.txt" }
+  "external_events": [
+    {
+      "type": "event.user.attachment.file",
+      "event_source_id": "chat.attachment",
+      "payload": {
+        "mime": "text/plain",
+        "event": { "filename": "a.txt", "file_index": 0 }
+      }
+    }
   ]
 }
 ```
 
-Binary attachment buffers are sent as additional event arguments.
+Binary attachment buffers are sent as additional event arguments in event order.
 
 ### Synchronous acknowledgement
 

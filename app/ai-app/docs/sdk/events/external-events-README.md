@@ -18,6 +18,7 @@ keywords:
   ]
 see_also:
   - ks:docs/sdk/bundle/bundle-events-README.md
+  - ks:docs/sdk/events/external-event-envelope-README.md
   - ks:docs/sdk/events/external-events-journey-and-handling-README.md
   - ks:docs/arch/ingress/events-inception-README.md
   - ks:docs/arch/proc/events-orchestration-README.md
@@ -31,8 +32,10 @@ see_also:
 
 External events are conversation-scoped facts or intents that arrive from a UI,
 transport, webhook, or system component and may be folded into a ReAct
-conversation. They are not tools, but they use the same event-source identity
-model:
+conversation. User prompts, attachments, followups, and steer controls are
+built-in external event types; `external_events[]` is the authored
+domain/UI event form. Tools are not transported through ingress, but they use
+the same event-source identity model once ReAct invokes them:
 
 ```text
 event_source_id = stable semantic source
@@ -52,27 +55,45 @@ Clients send authored external events through the normal chat ingress request:
 ```json
 {
   "message": {
-    "message": "Review the draft and suggest the next step.",
     "conversation_id": "conv_...",
-    "target_turn_id": "turn_...",
+    "turn_id": "turn_...",
     "payload": {
       "target": {
-        "agent_id": "invoice_wizard",
-        "story_kind": "invoice_review",
-        "story_id": "invoice:inv-123"
+        "agent_id": "default.react.agent"
       },
-      "external_event": {
-        "event_source_id": "invoice_intake.wizard.assistance.requested",
-        "kind": "action",
-        "story_id": "invoice:inv-123",
-        "routing": {
-          "reactive": true,
-          "iteration_credit": 1
+      "external_events": [
+        {
+          "event_id": "evt_canvas_snapshot_001",
+          "type": "event.snapshot",
+          "event_source_id": "task_tracker.canvas.snapshot",
+          "logical_path": "ev:turn_123.events/task-tracker/snapshots/draft-123/canvas/latest",
+          "hosted_uri": "ext:task-tracker/snapshots/draft-123/canvas/latest",
+          "reactive": false,
+          "agent_id": "default.react.agent",
+          "story_id": "task:draft-123",
+          "payload": {
+            "mime": "application/json",
+            "event_ref": "ext:task-tracker/snapshots/draft-123/canvas/latest"
+          }
         },
-        "data": {
-          "snapshot_ref": "ext:task-tracker/inv_123/invoice-draft.yaml"
+        {
+          "event_id": "evt_canvas_review_001",
+          "type": "event.external",
+          "event_source_id": "task_tracker.canvas.review.requested",
+          "logical_path": "ev:turn_123.events/task-tracker/canvas/review-requested/evt_canvas_review_001",
+          "hosted_uri": null,
+          "reactive": true,
+          "agent_id": "default.react.agent",
+          "story_id": "task:draft-123",
+          "payload": {
+            "mime": "application/json",
+            "event": {
+              "prompt": "Review this selected area and suggest the next step.",
+              "snapshot": "ev:turn_123.events/task-tracker/snapshots/draft-123/canvas/latest"
+            }
+          }
         }
-      }
+      ]
     }
   }
 }
@@ -82,13 +103,49 @@ Field roles:
 
 | Field | Meaning |
 |---|---|
-| `payload.external_event.event_source_id` | Semantic event source, used for event-source discovery and policy lookup. |
-| `payload.external_event.routing.reactive` | Required effective occurrence flag when this event may wake or continue ReAct. Absence/false means no wake. |
-| `payload.external_event.routing.iteration_credit` | Optional occurrence override for live iteration credit. Runtime caps still apply. |
-| `payload.external_event.story_id` | Optional product/story correlation carried with the event. |
-| `payload.external_event.data` | Opaque event payload owned by the bundle/application. |
-| `payload.target` | Bundle-level routing metadata, such as agent id, surface, or story. |
-| `target_turn_id` / `active_turn_id` | Platform turn routing fields. Do not hide these inside `payload.target`. |
+| `external_events[]` | Plural list of authored event occurrences. The target protocol does not use a singular event field. |
+| `external_events[].type` | Structural event block shape, for example `event.snapshot` or `event.external`. |
+| `external_events[].event_source_id` | Semantic event source, used for event-source discovery and policy lookup. |
+| `external_events[].logical_path` | `ev:` path of this event object on the turn timeline. |
+| `external_events[].hosted_uri` | Optional external URI for a hosted copy of the event payload/body. |
+| `external_events[].reactive` | Effective occurrence flag when this event may wake or continue ReAct. Absence/false means no wake. |
+| `external_events[].story_id` | Optional product/story correlation carried with the event. |
+| `external_events[].payload` | Event body descriptor: `payload.mime` plus either inline `payload.event` or pullable `payload.event_ref`. |
+| `payload.target.agent_id` | Target agent lane. |
+| `turn_id` / `active_turn_id` | Platform turn routing fields. Do not hide these inside `payload.target`. |
+
+The canonical envelope and examples for snapshot, file upload, and text
+selection events are in
+[External Event Envelope](external-event-envelope-README.md).
+
+`ev:` is event identity, not artifact storage. ReAct can read the event object
+with `react.read(paths=["ev:..."])`, similar to `tc:` tool-call/result refs.
+ReAct should not pass `ev:` to `react.pull` or `react.checkout`. When the event
+points to material that must become local, use the event's `hosted_uri`,
+`payload.event_ref`, or artifact refs carried inside `payload.event`.
+
+When ReAct folds an authored event, block-production policies decide whether
+the event becomes timeline material. The SDK default block producer emits one
+event block at the event's `ev:` path. The block type is the accepted event
+type, such as `event.external`, `event.snapshot`, or `event.canvas`. The block
+body mirrors a tool-result envelope: `payload.event` becomes `ret`, errors
+become `error`, and recognized composite result surfaces are preserved under
+`surfaces`. Current built-in surface extractors understand exploration/source
+rows, hosted artifact rows, declared file rows, snapshot refs, ANNOUNCE
+candidates, and notice rows.
+
+Registered sources can override the default, including with
+`react.block_production.no_timeline`. That policy consumes the event for lane
+ordering and bundle callbacks but produces no durable ReAct blocks. This lets
+bundles reuse the same event bus for hosting, product API calls, and bundle
+storage updates without forcing every received event into the ReAct timeline.
+
+Snapshot events are read-only from ReAct's perspective: they project external
+or bundle state into a readable snapshot ref for timeline/ANNOUNCE/compaction.
+Canvas state is represented separately by `event.canvas`, an append-only
+sequence of JSON canvas revisions. ReAct updates canvas through a bundle
+tool/API that validates and writes the canvas, then emits a new `event.canvas`
+occurrence; it does not patch `event.snapshot`.
 
 ## Event Source Defaults
 
@@ -111,14 +168,13 @@ def list_event_sources():
     ]
 ```
 
-For transported external events, reactivity is an occurrence fact. The accepted
-event must carry the effective value in `payload.external_event.routing.reactive`.
+For transported external events, reactivity is an occurrence fact. Each accepted
+event must carry the effective value in `external_events[].reactive`.
 This avoids silently waking ReAct for an event just because a declaration exists.
 
 Live credit is resolved only after the occurrence is explicitly reactive:
 
-1. `payload.external_event.routing.iteration_credit` when the occurrence sets
-   it.
+1. An occurrence-level iteration credit field when the occurrence sets it.
 2. `event_source_declaration(..., iteration_credit=...)` when the source defines
    a default.
 3. Runtime default `reactive_event_iteration_credit_per_event`.
@@ -127,20 +183,20 @@ The runtime cap still clamps granted credit.
 
 Ingress is earlier than ReAct and does not load bundle declarations just to
 classify an idle event. If an idle external event must start ReAct, the producer
-must send `payload.external_event.routing.reactive=true`.
+must send `external_events[].reactive=true`.
 
-## Artifact Refs In Event Data
+## Payload Refs
 
-`payload.external_event.data` may contain custom namespace artifact URIs, for example
-`ext:...` refs produced by bundle-owned storage. ReAct does not treat those
-refs as local files. A bundle or SDK module must register an artifact namespace
-rehoster, such as `@artifact_namespace_rehoster(namespace="ext")`, and the
-agent materializes the ref explicitly with `react.pull(paths=["ext:..."])`.
-The rehoster resolves the custom URI and copies the bytes into the current
-ReAct artifact surface. The pull result then contains the materialized `fi:`
-logical path and current-turn physical path that `react.read` or generated code
-can use. Agents should follow the returned rows instead of deriving a target
-path from the `ext:` ref.
+`payload.event_ref` or fields inside `payload.event` may contain custom
+namespace artifact URIs, for example `ext:...` refs produced by bundle-owned
+storage. ReAct does not treat those refs as local files. A bundle or SDK module
+must register an artifact namespace rehoster, such as
+`@artifact_namespace_rehoster(namespace="ext")`, and the agent materializes the
+ref explicitly with `react.pull(paths=["ext:..."])`. The rehoster resolves the
+custom URI and copies the bytes into the current ReAct artifact surface. The
+pull result then contains the materialized `fi:` logical path and current-turn
+physical path that `react.read` or generated code can use. Agents should follow
+the returned rows instead of deriving a target path from the `ext:` ref.
 
 ## Semantic Axes
 
@@ -150,7 +206,7 @@ External events are arranged along four independent axes.
 |---|---|---|
 | Source | `event_source_id` | Selects semantic source and representation policies. |
 | Occurrence | `event_id` | Identifies one accepted event. Ingress/Redis assigns this for transport-level events. |
-| Reactivity | `routing.reactive` | Decides whether the event may start or extend ReAct. Absence/false means no wake. |
+| Reactivity | `reactive` | Decides whether the event may start or extend ReAct. Absence/false means no wake. |
 | Story correlation | `story_id`, `story_kind`, `payload.target` | Lets a bundle or agent tie the event to a product flow; it does not replace conversation or turn routing. |
 
 `story_id` is intentionally semantic metadata. It helps policies, tools, and
@@ -166,17 +222,17 @@ Client/UI
         v
 Ingress
   validates session, bundle visibility, conversation ownership
-  classifies message/followup/steer/external_event
+  normalizes prompt/attachment/followup/steer/domain submissions into event metadata
   builds ExternalEventPayload.event
         |
         +-- idle reactive event
         |     append to event lane
         |     enqueue ExternalEventLaneWakeup; wakeup carries lane pointer only
         |
-        +-- busy followup/steer/external_event
+        +-- busy followup/steer/external events
         |     append to event lane for live owner or later promotion
         |
-        +-- idle non-reactive authored external_event
+        +-- idle non-reactive authored external events
               append to event lane and return without model wake
         |
         v
@@ -187,7 +243,9 @@ Processor / ReAct owner
         |
         v
 ReAct ContextBrowser
-  converts external event into blocks
+  calls bundle/runtime event callbacks
+  applies block-production policies
+  projects built-in user event types and converts policy-produced domain events into blocks
   stamps event_source_id/event_id when event-source pipeline is enabled
   contributes blocks to the active turn timeline
 ```

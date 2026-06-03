@@ -66,14 +66,14 @@ class OpenRouterDataWorkflow:
         Parameters
         ----------
         payload : dict
-            Standard bundle payload with at minimum ``text`` (the user query).
+            Standard bundle payload with at minimum ``prompt_text``.
 
         Returns
         -------
         dict
             {"answer": str, "followups": list}
         """
-        user_text = payload.get("text") or ""
+        user_text = payload.get("prompt_text") or ""
         model = self._resolve_model()
 
         # Emit a progress step so the UI knows work is happening

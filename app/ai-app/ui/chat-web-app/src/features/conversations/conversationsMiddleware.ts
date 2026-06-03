@@ -104,7 +104,7 @@ const parseExternalAttachmentPath = (artifactPath?: string | null) => {
     const externalMatch = artifactPath.match(/^fi:([^.]*)\.external\.([^.]+)\.attachments\/([^/]+)\/(.+)$/);
     if (externalMatch) {
         return {
-            continuationKind: externalMatch[2],
+            eventType: `event.user.${externalMatch[2]}`,
             sourceMessageId: externalMatch[3],
         };
     }
@@ -112,7 +112,7 @@ const parseExternalAttachmentPath = (artifactPath?: string | null) => {
     const legacyExternalMatch = artifactPath.match(/^fi:([^.]*)\.external\.([^.]+)\.([^.]+)\.attachments\/(.+)$/);
     if (legacyExternalMatch) {
         return {
-            continuationKind: legacyExternalMatch[2],
+            eventType: `event.user.${legacyExternalMatch[2]}`,
             sourceMessageId: legacyExternalMatch[3],
         };
     }
@@ -157,9 +157,9 @@ const bindAttachmentsToUserMessages = (messages: UserMessage[], attachments: Use
             return !!sourceMessageId && sourceMessageId === getUserMessageIdentity(message);
         });
 
-        if (!target && attachment.continuationKind) {
+        if (!target && attachment.eventType) {
             const attachmentTs = attachment.timestamp ?? Number.MAX_SAFE_INTEGER;
-            const candidates = messages.filter((message) => message.continuationKind === attachment.continuationKind);
+            const candidates = messages.filter((message) => message.eventType === attachment.eventType);
             target = candidates
                 .filter((message) => message.timestamp <= attachmentTs)
                 .sort((a, b) => b.timestamp - a.timestamp)[0] ?? candidates.at(-1);
@@ -222,7 +222,9 @@ const conversationsMiddleware = (): Middleware => {
                             case "chat:user": {
                                 const meta = getArtifactMeta(it.data);
                                 const artifactPath = typeof meta.path === "string" ? meta.path : undefined;
-                                const continuationKind = it.data.continuation_kind ?? (typeof meta.continuation_kind === "string" ? meta.continuation_kind : undefined);
+                                const eventType =
+                                    (typeof it.data.event_type === "string" ? it.data.event_type : undefined) ??
+                                    (typeof meta.event_type === "string" ? meta.event_type : undefined);
                                 const sourceMessageId =
                                     (typeof meta.message_id === "string" ? meta.message_id : undefined) ??
                                     parseExternalMessageIdFromPath(artifactPath);
@@ -230,7 +232,7 @@ const conversationsMiddleware = (): Middleware => {
                                     text: it.data.text,
                                     timestamp: Date.parse(it.ts),
                                     attachments: [],
-                                    continuationKind,
+                                    eventType,
                                     sourceMessageId,
                                     artifactPath,
                                     historyMeta: meta,
@@ -247,7 +249,7 @@ const conversationsMiddleware = (): Middleware => {
                                         rn?: string | null;
                                         artifact_path?: string;
                                         message_id?: string;
-                                        continuation_kind?: string;
+                                        event_type?: string;
                                         meta?: Record<string, unknown>;
                                     };
                                     meta?: Record<string, unknown>;
@@ -264,7 +266,10 @@ const conversationsMiddleware = (): Middleware => {
                                     rn: payload.rn,
                                     artifactPath,
                                     sourceMessageId: payload.message_id ?? (typeof meta.message_id === "string" ? meta.message_id : undefined) ?? parsedPath.sourceMessageId,
-                                    continuationKind: payload.continuation_kind ?? (typeof meta.continuation_kind === "string" ? meta.continuation_kind : undefined) ?? parsedPath.continuationKind,
+                                    eventType:
+                                        (typeof payload.event_type === "string" ? payload.event_type : undefined) ??
+                                        (typeof meta.event_type === "string" ? meta.event_type : undefined) ??
+                                        parsedPath.eventType,
                                     historyMeta: meta,
                                 });
                                 break
@@ -402,11 +407,11 @@ const conversationsMiddleware = (): Middleware => {
                     const skipRestoredUserMessages =
                         userMessages.length > 0 &&
                         assistantMessages.length === 0 &&
-                        userMessages.every((message) => message.continuationKind === "followup");
+                        userMessages.every((message) => message.eventType === "event.user.followup");
 
                     if (!skipRestoredUserMessages) {
                         for (const message of userMessages) {
-                            const isFollowup = message.continuationKind === "followup";
+                            const isFollowup = message.eventType === "event.user.followup";
                             if (isFollowup) {
                                 additionalUserMessages.push(message);
                             } else if (!userMessage) {

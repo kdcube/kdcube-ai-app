@@ -591,6 +591,54 @@ class ContextBrowser:
             except Exception:
                 self.log.log(f"[timeline.external]: hook failure {traceback.format_exc()}", "ERROR")
 
+    async def _produce_external_event_blocks(
+        self,
+        *,
+        event_source_id: str,
+        target: Dict[str, Any],
+    ) -> List[Dict[str, Any]]:
+        event_sources = getattr(self._runtime_ctx, "event_sources", None)
+        source = None
+        if event_sources is not None:
+            by_event_source_id = getattr(event_sources, "by_event_source_id", None)
+            if callable(by_event_source_id):
+                try:
+                    source = by_event_source_id(event_source_id)
+                except Exception:
+                    source = None
+        if source is not None:
+            try:
+                await event_sources.apply_react_phase_policies_async(
+                    "block_production",
+                    event_source_id,
+                    target,
+                    runtime_ctx=self._runtime_ctx,
+                    ctx_browser=self,
+                    timeline=self._timeline,
+                )
+            except Exception:
+                self.log.log(
+                    f"[timeline.external]: event block-production policy failure source={event_source_id!r}\n{traceback.format_exc()}",
+                    "ERROR",
+                )
+        if not target.get("blocks") and not target.get("blocks_produced"):
+            try:
+                from kdcube_ai_app.apps.chat.sdk.solutions.react.events.policies import (
+                    external_event_default_block_production_policy,
+                    snapshot_event_default_block_production_policy,
+                )
+                block_type = str(target.get("block_type") or "").strip()
+                if block_type == "event.snapshot":
+                    snapshot_event_default_block_production_policy(target)
+                else:
+                    external_event_default_block_production_policy(target)
+            except Exception:
+                self.log.log(
+                    f"[timeline.external]: default event block-production failure source={event_source_id!r}\n{traceback.format_exc()}",
+                    "ERROR",
+                )
+        return [block for block in (target.get("blocks") or []) if isinstance(block, dict)]
+
     async def _blocks_from_external_event(self, event: Any) -> List[Dict[str, Any]]:
         if self._timeline is None:
             return []
@@ -611,16 +659,30 @@ class ContextBrowser:
             path = f"ar:{turn_id}.external.{kind}.{event_id}" if turn_id else ""
         payload = getattr(event, "payload", None) or {}
         payload = payload if isinstance(payload, dict) else {}
-        external_event = payload.get("external_event") if isinstance(payload.get("external_event"), dict) else {}
+        accepted_event = payload.get("event") if isinstance(payload.get("event"), dict) else {}
         target = payload.get("target") if isinstance(payload.get("target"), dict) else {}
         event_source_id = (
-            str(external_event.get("event_source_id") or "").strip()
+            str(accepted_event.get("event_source_id") or "").strip()
             or event_source_id_for_external_kind(kind)
         )
+        block_type = str(accepted_event.get("type") or "").strip()
+        if not block_type:
+            if kind in {"message", "regular"}:
+                block_type = "event.user.prompt"
+            elif kind == "followup":
+                block_type = "event.user.followup"
+            elif kind == "steer":
+                block_type = "event.user.steer"
+            else:
+                block_type = "event.external"
+        logical_path = str(accepted_event.get("logical_path") or "").strip()
+        hosted_uri = str(accepted_event.get("hosted_uri") or "").strip()
         meta = {
             "event_kind": kind,
+            "event_type": block_type,
             "event_source_id": event_source_id,
             "event_id": event_id,
+            "is_continuation": bool(getattr(event, "is_continuation", False)),
             "message_id": str(getattr(event, "message_id", "") or ""),
             "stream_id": str(getattr(event, "stream_id", "") or ""),
             "sequence": int(getattr(event, "sequence", 0) or 0),
@@ -632,15 +694,18 @@ class ContextBrowser:
         }
         if payload:
             meta["payload"] = dict(payload)
-        if external_event:
-            meta["external_event"] = dict(external_event)
+        if accepted_event:
+            meta["event"] = dict(accepted_event)
+        if logical_path:
+            meta["logical_path"] = logical_path
+        if hosted_uri:
+            meta["hosted_uri"] = hosted_uri
         if target:
             meta["target"] = dict(target)
-        story_id = str(external_event.get("story_id") or target.get("story_id") or "").strip()
+        story_id = str(accepted_event.get("story_id") or target.get("story_id") or "").strip()
         if story_id:
             meta["story_id"] = story_id
-        routing = external_event.get("routing") if isinstance(external_event.get("routing"), dict) else {}
-        reactive = bool(routing.get("reactive")) if "reactive" in routing else False
+        reactive = bool(accepted_event.get("reactive")) if "reactive" in accepted_event else False
         if kind == "external_event":
             meta["reactive"] = reactive
         attachments = self._attachments_from_external_event(event) if kind in {"message", "regular", "followup", "external_event"} else []
@@ -663,46 +728,69 @@ class ContextBrowser:
             attachments = await self._hydrate_external_event_attachments(attachments)
         if attachments:
             meta["attachments_count"] = len(attachments)
-        event_ts = time.strftime(
+        event_ts = str(accepted_event.get("timestamp") or accepted_event.get("ts") or "").strip()
+        if not event_ts:
+            event_ts = time.strftime(
             "%Y-%m-%dT%H:%M:%SZ",
             time.gmtime(float(getattr(event, "created_at", 0.0) or time.time())),
-        )
+            )
+        if event_ts:
+            meta["timestamp"] = event_ts
         text = str(getattr(event, "text", "") or "").strip()
-        if not text:
-            text = str(payload.get("message") or payload.get("text") or "").strip()
-        if kind == "external_event":
-            data = external_event.get("data") if isinstance(external_event.get("data"), dict) else {}
-            if not text:
-                text = str(data.get("request") or data.get("summary") or data.get("title") or "").strip()
-            lines = ["[TIMELINE EVENT]"]
-            if event_source_id:
-                lines.append(f"event_source_id: {event_source_id}")
-            if story_id:
-                lines.append(f"story_id: {story_id}")
-            lines.append(f"reactive: {'true' if reactive else 'false'}")
-            if text:
-                lines.append("")
-                lines.append(text)
-            if data:
-                try:
-                    lines.append("")
-                    lines.append("data:")
-                    lines.append(json.dumps(data, ensure_ascii=False, indent=2, default=str))
-                except Exception:
-                    pass
-            text = "\n".join(lines).strip()
-        if is_prompt_event:
+        if not text and accepted_event:
+            accepted_payload = accepted_event.get("payload") if isinstance(accepted_event.get("payload"), dict) else {}
+            body = accepted_payload.get("event")
+            if isinstance(body, dict):
+                text = str(body.get("text") or body.get("message") or body.get("request") or "").strip()
+            elif body is not None:
+                text = str(body or "").strip()
+        builtin_user_prompt = block_type == "event.user.prompt"
+        builtin_user_followup = block_type == "event.user.followup"
+        builtin_user_steer = block_type == "event.user.steer"
+        if is_prompt_event or builtin_user_prompt:
             meta["prompt_origin"] = "external_event_lane"
-        blocks = [self._timeline.block(
-            type="user.prompt" if is_prompt_event else "user.followup" if kind == "followup" else "user.steer" if kind == "steer" else "event.external",
-            author="user",
-            turn_id=turn_id,
-            ts=event_ts,
-            mime="text/markdown",
-            text=text,
-            path=path,
-            meta=meta,
-        )]
+        if kind == "external_event" and not (builtin_user_prompt or builtin_user_followup or builtin_user_steer):
+            target = {
+                "event": dict(accepted_event or {}),
+                "event_source_id": event_source_id,
+                "event_id": event_id,
+                "block_type": block_type,
+                "logical_path": logical_path,
+                "hosted_uri": hosted_uri,
+                "story_id": story_id,
+                "reactive": reactive,
+                "text": text,
+                "path": logical_path or path,
+                "turn_id": turn_id,
+                "ts": event_ts,
+                "mime": "text/markdown",
+                "author": "user",
+                "meta": meta,
+                "blocks": [],
+                "block_factory": self._timeline.block,
+            }
+            blocks = await self._produce_external_event_blocks(
+                event_source_id=event_source_id,
+                target=target,
+            )
+        else:
+            physical_type = (
+                "user.prompt"
+                if is_prompt_event or builtin_user_prompt
+                else "user.followup"
+                if kind == "followup" or builtin_user_followup
+                else "user.steer"
+            )
+            blocks = [self._timeline.block(
+                type=physical_type,
+                author="user",
+                turn_id=turn_id,
+                ts=event_ts,
+                mime="text/markdown",
+                text=text,
+                path=path,
+                meta=meta,
+            )]
         if attachments:
             from kdcube_ai_app.apps.chat.sdk.solutions.react.layout import build_user_attachment_blocks
 
@@ -714,11 +802,12 @@ class ContextBrowser:
                 path_root=path_root,
                 synthetic_physical_root=physical_root,
                 meta_extra={
-                    "continuation_kind": None if is_prompt_event else kind,
                     "event_kind": kind,
+                    "event_type": "event.user.attachment",
                     "event_source_id": event_source_id,
                     "message_id": event_id,
                     "sequence": int(getattr(event, "sequence", 0) or 0),
+                    "is_continuation": bool(getattr(event, "is_continuation", False)),
                     "attachment_origin": attachment_kind,
                 },
             ))
@@ -765,7 +854,10 @@ class ContextBrowser:
         if not tenant or not project or not conversation_id or not turn_id:
             return [dict(item) for item in attachments if isinstance(item, dict)]
 
-        store = ConversationStore(get_settings().STORAGE_PATH)
+        try:
+            store = ConversationStore(get_settings().STORAGE_PATH)
+        except Exception:
+            return [dict(item) for item in attachments if isinstance(item, dict)]
         materialized: List[Dict[str, Any]] = []
         for raw in attachments:
             if not isinstance(raw, dict):
@@ -848,24 +940,46 @@ class ContextBrowser:
         return hydrated
 
     def _attachments_from_external_event(self, event: Any) -> List[Dict[str, Any]]:
-        def _normalize(raw: Any) -> List[Dict[str, Any]]:
-            if not isinstance(raw, list):
-                return []
-            return [dict(item) for item in raw if isinstance(item, dict)]
-
         task_payload = getattr(event, "task_payload", None)
+        payload = getattr(event, "payload", None)
+        if isinstance(payload, dict):
+            accepted = payload.get("event") if isinstance(payload.get("event"), dict) else {}
+            event_type = str(accepted.get("type") or "").strip()
+            if event_type.startswith("event.user.attachment"):
+                accepted_payload = accepted.get("payload") if isinstance(accepted.get("payload"), dict) else {}
+                body = accepted_payload.get("event") if isinstance(accepted_payload.get("event"), dict) else {}
+                if body:
+                    return [dict(body)]
         if isinstance(task_payload, dict):
             request = task_payload.get("request") if isinstance(task_payload.get("request"), dict) else {}
-            payload = request.get("payload") if isinstance(request.get("payload"), dict) else {}
-            attachments = _normalize(payload.get("attachments"))
+            external_events = request.get("external_events") if isinstance(request.get("external_events"), list) else []
+            attachments = []
+            for accepted in external_events:
+                if not isinstance(accepted, dict):
+                    continue
+                if not str(accepted.get("type") or "").startswith("event.user.attachment"):
+                    continue
+                accepted_payload = accepted.get("payload") if isinstance(accepted.get("payload"), dict) else {}
+                body = accepted_payload.get("event") if isinstance(accepted_payload.get("event"), dict) else {}
+                if body:
+                    attachments.append(dict(body))
             if attachments:
                 return attachments
         try:
             payload_model = event.task_payload_model()
             request = getattr(payload_model, "request", None)
-            payload = getattr(request, "payload", None)
-            if isinstance(payload, dict):
-                attachments = _normalize(payload.get("attachments"))
+            external_events = getattr(request, "external_events", None)
+            if isinstance(external_events, list):
+                attachments = []
+                for accepted in external_events:
+                    if not isinstance(accepted, dict):
+                        continue
+                    if not str(accepted.get("type") or "").startswith("event.user.attachment"):
+                        continue
+                    accepted_payload = accepted.get("payload") if isinstance(accepted.get("payload"), dict) else {}
+                    body = accepted_payload.get("event") if isinstance(accepted_payload.get("event"), dict) else {}
+                    if body:
+                        attachments.append(dict(body))
                 if attachments:
                     return attachments
         except Exception:

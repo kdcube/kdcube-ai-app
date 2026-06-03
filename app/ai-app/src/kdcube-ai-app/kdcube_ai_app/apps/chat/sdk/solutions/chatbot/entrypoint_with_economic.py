@@ -618,10 +618,8 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
 
         state = dict(getattr(self, "_app_state", {}) or {})
         state["turn_id"] = turn_id
-        if params.get("text"):
-            state["text"] = params["text"]
-        if "attachments" in params:
-            state["attachments"] = params.get("attachments") or []
+        if "external_events" in params:
+            state["external_events"] = params.get("external_events") or []
 
         tenant = state.get("tenant")
         project = state.get("project")
@@ -642,12 +640,12 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
             tenant=tenant, project=project,
             user_id=user_id, user_type=role,
             thread_id=thread_id, turn_id=turn_id, bundle_id=bundle_id, rl_bundle_id=rl_bundle_id,
-            text_len=len((state.get("text") or "")),
+            event_count=len(state.get("external_events") or []),
         )
         if budget_bypass:
             _log("budget.bypass", "Budget bypass enabled for user type", user_type=role)
 
-        input_text = state.get("text") or ""
+        input_text = ""
         usd_per_token = float(llm_output_price_usd_per_token(ref_provider=anthropic, ref_model=sonnet_45))
         try:
             input_tokens_est = int(token_count(input_text))

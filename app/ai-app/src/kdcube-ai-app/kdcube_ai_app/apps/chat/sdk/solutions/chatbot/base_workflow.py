@@ -19,7 +19,6 @@ from kdcube_ai_app.apps.chat.emitters import (
     build_relay_from_env,
 )
 from kdcube_ai_app.apps.chat.external_events import build_conversation_external_event_source
-from kdcube_ai_app.apps.chat.sdk.continuations import get_current_conversation_continuation_source
 from kdcube_ai_app.apps.chat.sdk.event_identity import DEFAULT_REACT_AGENT_ID, normalize_agent_id
 # from kdcube_ai_app.apps.chat.sdk.context.memory.conv_memories import ConvMemoriesStore
 from kdcube_ai_app.apps.chat.sdk.context.retrieval.ctx_rag import ContextRAGClient
@@ -29,7 +28,11 @@ from kdcube_ai_app.apps.chat.sdk.context.vector.conv_ticket_index import ConvTic
 from kdcube_ai_app.apps.chat.sdk.context.vector.conv_ticket_store import ConvTicketStore, Ticket
 from kdcube_ai_app.apps.chat.sdk.infra.economics.limiter import subject_id_of
 from kdcube_ai_app.apps.chat.sdk.infra.economics.policy import EconomicsLimitException
-from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
+from kdcube_ai_app.apps.chat.sdk.protocol import (
+    ExternalEventPayload,
+    external_event_attachment_payloads,
+    external_events_text,
+)
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.turn_reporting import _format_ms_table, _format_ms_table_markdown
 from kdcube_ai_app.apps.chat.sdk.runtime.scratchpad import TurnScratchpad, TurnPhaseError
 from kdcube_ai_app.apps.chat.sdk.runtime.exec_runtime_config import (
@@ -88,15 +91,13 @@ def _nonnegative_int(value: Any) -> Optional[int]:
     return parsed if parsed >= 0 else None
 
 
-def _chat_input_kind(kind: Any) -> str:
-    text = str(kind or "").strip().lower()
-    if text in {"", "regular", "user", "prompt"}:
+def _chat_input_kind(event_type: Any) -> str:
+    text = str(event_type or "").strip().lower()
+    if text in {"", "event.user.prompt", "user.prompt", "message", "user", "prompt"}:
         return "message"
-    if text in {"message", "followup", "steer"}:
-        return text
-    if "followup" in text:
+    if text in {"event.user.followup", "user.followup", "followup"}:
         return "followup"
-    if "steer" in text:
+    if text in {"event.user.steer", "user.steer", "steer"}:
         return "steer"
     return "message"
 
@@ -417,7 +418,6 @@ class BaseWorkflow():
                  gate_out_class: Optional[Type] = None,
                  answer_system_prompt: Optional[str] = None,
                  graph: GraphCtx = None,
-                 continuation_source: Optional[Any] = None,
                  pg_pool: Any = None,
                  redis: Any = None,
                  bundle_props: Optional[Dict[str, Any]] = None):
@@ -426,7 +426,6 @@ class BaseWorkflow():
         self.kb = kb
         self.comm = comm
         self.comm_context = comm_context
-        self._continuation_source = continuation_source
 
         self.model_service = model_service
         self.store = store
@@ -512,7 +511,6 @@ class BaseWorkflow():
                 bundle_storage=self._resolve_runtime_ctx_bundle_storage(),
                 workspace_implementation=settings.REACT_WORKSPACE_IMPLEMENTATION,
                 workspace_git_repo=settings.REACT_WORKSPACE_GIT_REPO,
-                continuation_source=self.continuation_source,
                 external_event_source=self._external_event_source_for_runtime(),
                 multi_action_mode=settings.AI_REACT_AGENT_MULTI_ACTION,
             )
@@ -561,7 +559,6 @@ class BaseWorkflow():
                 multi_action_mode=settings.AI_REACT_AGENT_MULTI_ACTION,
             )
             _apply_react_session_settings(self.runtime_ctx, settings)
-            self.runtime_ctx.continuation_source = self.continuation_source
             self.runtime_ctx.external_event_source = self._external_event_source_for_runtime()
             self.ctx_browser = ContextBrowser(
                 ctx_client=self.ctx_client,
@@ -583,10 +580,6 @@ class BaseWorkflow():
                 )
             except Exception:
                 pass
-
-    @property
-    def continuation_source(self) -> Optional[Any]:
-        return self._continuation_source or get_current_conversation_continuation_source()
 
     @staticmethod
     def get_prop_path(data: Dict[str, Any], path: str, default: Any = None) -> Any:
@@ -835,21 +828,13 @@ class BaseWorkflow():
                     or getattr(runtime_ctx, "agent_id", None)
                 )
                 runtime_ctx.bundle_storage = self._resolve_runtime_ctx_bundle_storage()
-                runtime_ctx.continuation_source = self.continuation_source
                 runtime_ctx.external_event_source = self._external_event_source_for_runtime()
                 self._sync_runtime_ctx_bundle_props()
         else:
             runtime_ctx = getattr(self, "runtime_ctx", None)
             if runtime_ctx is not None:
-                runtime_ctx.continuation_source = self.continuation_source
                 runtime_ctx.external_event_source = self._external_event_source_for_runtime()
         self._sync_runtime_ctx_bundle_props()
-
-    async def pending_continuation_count(self) -> int:
-        source = self.continuation_source
-        if source is None:
-            return 0
-        return int(await source.pending_count())
 
     def _external_event_source_for_runtime(self) -> Optional[Any]:
         redis = getattr(self, "redis", None)
@@ -886,18 +871,6 @@ class BaseWorkflow():
 
     def react_debug_timeline_enabled(self, *, default: bool = False) -> bool:
         return _react_debug_timeline_enabled(self.bundle_props, get_settings(), default=default)
-
-    async def peek_next_continuation(self):
-        source = self.continuation_source
-        if source is None:
-            return None
-        return await source.peek_next()
-
-    async def take_next_continuation(self):
-        source = self.continuation_source
-        if source is None:
-            return None
-        return await source.take_next()
 
     def resolve_exec_runtime(
         self,
@@ -1265,7 +1238,7 @@ class BaseWorkflow():
             ts=ts,
             turn_id=turn_id,
             path=path,
-            continuation_kind=None,
+            user_event_type="event.user.prompt",
         )
         scratch.user_message_persisted = True
         scratch.persisted_turn_entry_paths.add(path)
@@ -1289,13 +1262,13 @@ class BaseWorkflow():
             path = str(blk.get("path") or "").strip()
             ts = str(blk.get("ts") or "").strip()
             meta = blk.get("meta") if isinstance(blk.get("meta"), dict) else {}
-            continuation_kind: Optional[str] = None
+            user_event_type: Optional[str] = None
             if btype == "user.prompt":
-                continuation_kind = str(meta.get("continuation_kind") or "").strip() or None
+                user_event_type = str(meta.get("event_type") or "event.user.prompt").strip() or "event.user.prompt"
             elif btype in {"user.followup", "user.followup.preserved"}:
-                continuation_kind = "followup"
+                user_event_type = "event.user.followup"
             elif btype in {"user.steer", "user.steer.preserved"}:
-                continuation_kind = "steer"
+                user_event_type = "event.user.steer"
             else:
                 continue
             if not text:
@@ -1304,7 +1277,7 @@ class BaseWorkflow():
                 "text": text,
                 "ts": ts,
                 "path": path,
-                "continuation_kind": continuation_kind,
+                "user_event_type": user_event_type,
             })
         return entries
 
@@ -1374,7 +1347,7 @@ class BaseWorkflow():
         ts: str,
         turn_id: str,
         path: str,
-        continuation_kind: Optional[str],
+        user_event_type: Optional[str],
     ) -> Optional[str]:
         tenant, project, user, user_type = (
             self._ctx["service"]["tenant"],
@@ -1393,8 +1366,8 @@ class BaseWorkflow():
         safe_path = re.sub(r"[^a-zA-Z0-9._-]+", "_", path).strip("_") or "prompt"
         msgid_u = f"{_mid('user', msg_ts)}-{safe_path}"
         tags = ["chat:user", f"turn:{turn_id}"] + [f"topic:{t}" for t in scratchpad.turn_topics_plain or []]
-        if continuation_kind:
-            tags.append(f"continuation:{continuation_kind}")
+        if user_event_type:
+            tags.append(f"event_type:{user_event_type}")
         await self.conv_idx.add_message(
             user_id=user,
             conversation_id=conversation_id,
@@ -1426,7 +1399,7 @@ class BaseWorkflow():
                 ts=str(entry.get("ts") or self._ctx["conversation"]["ts"]),
                 turn_id=turn_id,
                 path=path,
-                continuation_kind=entry.get("continuation_kind"),
+                user_event_type=entry.get("user_event_type"),
             )
             if msgid:
                 persisted += 1
@@ -2173,9 +2146,9 @@ class BaseWorkflow():
         conversation_id = payload.get("conversation_id") or session_id
         user_type = payload.get("user_type") or "anonymous"
         turn_id = payload.get("turn_id")
-        text = (payload["text"] or "").strip()
-        attachments = payload.get("attachments") or []
-        attachments = await self._ingest_user_attachments(attachments=attachments)
+        external_events = payload.get("external_events") if isinstance(payload.get("external_events"), list) else []
+        text = external_events_text(external_events)
+        attachments = external_event_attachment_payloads(external_events)
 
         # bind for envelope composition
         self._ctx["service"] = {"request_id": rid, "tenant": tenant, "project": project,
@@ -2186,7 +2159,7 @@ class BaseWorkflow():
         scratchpad = CTurnScratchpad(user=user,
                                      conversation_id=conversation_id,
                                      turn_id=turn_id,
-                                     text=text.strip(),
+                                     text=text,
                                      attachments=attachments,
                                      gate_out_class=self.gate_out_class)
         scratchpad.user_ts = self._ctx["conversation"].get("ts")
@@ -2431,9 +2404,9 @@ class BaseWorkflow():
             timing_ctx = _tend(t1, ms1)
             scratchpad.timings.append({"title": "context.load", "elapsed_ms": timing_ctx["elapsed_ms"]})
 
-        _continuation = self.comm_context.continuation if hasattr(self.comm_context, "continuation") else None
-        _continuation_kind = (getattr(_continuation, "kind", None) or "") or ""
-        _chat_input = _chat_input_kind(_continuation_kind)
+        _event_ctx = self.comm_context.event if hasattr(self.comm_context, "event") else None
+        _user_event_type = (getattr(_event_ctx, "type", None) or "") or ""
+        _chat_input = _chat_input_kind(_user_event_type)
         _attachment_count = len([att for att in (scratchpad.user_attachments or []) if isinstance(att, dict)])
 
         # (1) user message
@@ -2458,7 +2431,7 @@ class BaseWorkflow():
                         user_text=scratchpad.user_text or "",
                         user_attachments=list(scratchpad.user_attachments or []),
                         block_factory=self.ctx_browser.timeline.block,
-                        continuation_kind=_continuation_kind or None,
+                        event_type=_user_event_type or None,
                     ),
                 )
                 # Add attachments to sources_pool so local attachment paths are citable.

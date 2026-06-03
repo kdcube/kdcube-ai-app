@@ -152,17 +152,22 @@ export interface ChatHistoryItem {
   id: number
 }
 
-export type ContinuationKind = 'regular' | 'followup' | 'steer'
-
 export interface ExternalEvent {
   event_id?: string
+  type?: string
   event_source_id: string
-  kind?: string
+  logical_path?: string
+  hosted_uri?: string
+  reactive?: boolean
   story_id?: string
-  routing?: {
-    reactive?: boolean
+  agent_id?: string
+  payload?: {
+    mime?: string
+    event?: unknown
+    event_ref?: string
+    iteration_credit?: number
+    [key: string]: unknown
   }
-  data?: Record<string, unknown>
   [key: string]: unknown
 }
 
@@ -193,15 +198,12 @@ export interface SubmitChatMessageParams {
   text: string
   files: File[]
   chatHistory: ChatHistoryItem[]
-  messageKind?: ContinuationKind
-  continuationKind?: ContinuationKind
+  reactiveEventType?: string
   activeTurnId?: string
   targetTurnId?: string
-  followup?: boolean
-  steer?: boolean
   payload?: Record<string, unknown>
   target?: Record<string, unknown>
-  externalEvent?: ExternalEvent
+  externalEvents?: ExternalEvent[]
 }
 
 interface SubmitChatMessageApiResponse {
@@ -212,7 +214,7 @@ interface SubmitChatMessageApiResponse {
   turn_id?: string
   conversation_created?: boolean
   user_type?: string
-  message_kind?: string | null
+  is_continuation?: boolean | null
   active_turn_id?: string | null
   target_turn_id?: string | null
   queued_turn_id?: string | null
@@ -230,7 +232,7 @@ export interface SubmitChatMessageResponse {
   turnId?: string
   conversationCreated: boolean
   userType?: string
-  messageKind?: string | null
+  isContinuation?: boolean | null
   activeTurnId?: string | null
   targetTurnId?: string | null
   queuedTurnId?: string | null

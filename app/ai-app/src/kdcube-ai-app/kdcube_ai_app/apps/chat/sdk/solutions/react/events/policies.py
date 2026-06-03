@@ -219,7 +219,11 @@ def block_production_policy(event_policy_id: str, *, description: str = "") -> C
     - `declared_file_items`: explicit file rows derived from
       `{artifact_type:"files", files:[...]}` and fed to the declared-file
       artifact loop;
-    - `snapshot_refs`: durable snapshot refs;
+    - `snapshot_refs`: read-only snapshot payload refs for later projection,
+      ANNOUNCE, or compaction. These refs point to state produced outside
+      ReAct, or by a tool, and are not an editable state channel. Use a
+      source-specific event such as `event.canvas` for mutually writable JSON
+      state;
     - `announce_candidates`: data for a later ANNOUNCE phase;
     - `notice_rows`: explicit notice rows to emit through the ReAct notice
       helper. Policies own the decision that an error/warning notice exists;
@@ -280,6 +284,309 @@ def discover_react_event_policies(owner: ModuleType | Mapping[str, Any] | Any) -
 @tool_call_validation_policy(event_policy_id="react.tool_call_validation.identity")
 def identity_policy(target: Any, **_: Any) -> Any:
     """Leave the supplied block-production or block-transform target unchanged."""
+    return target
+
+
+@block_production_policy(event_policy_id="react.block_production.no_timeline")
+def no_timeline_block_production_policy(
+    target: MutableMapping[str, Any],
+    **_: Any,
+) -> MutableMapping[str, Any]:
+    """Mark an event occurrence as handled without producing timeline blocks.
+
+    Use this for registered external-event sources that should travel through
+    the ordered lane and bundle callbacks, but should not become durable ReAct
+    timeline history. The caller still advances the external-event cursor; the
+    default event block fallback is suppressed by `blocks_produced=True`.
+    """
+    if not isinstance(target, MutableMapping):
+        return target
+    blocks = target.setdefault("blocks", [])
+    if isinstance(blocks, list):
+        blocks.clear()
+    target["blocks_produced"] = True
+    target["timeline_blocks_suppressed"] = True
+    return target
+
+
+def _external_event_target_lines(target: Mapping[str, Any], *, snapshot: bool = False) -> list[str]:
+    accepted_event = target.get("event") if isinstance(target.get("event"), Mapping) else {}
+    event_payload = accepted_event.get("payload") if isinstance(accepted_event.get("payload"), Mapping) else {}
+    data = event_payload.get("event") if isinstance(event_payload.get("event"), Mapping) else {}
+    event_ref = str(event_payload.get("event_ref") or "").strip()
+    event_source_id = str(target.get("event_source_id") or accepted_event.get("event_source_id") or "").strip()
+    logical_path = str(target.get("logical_path") or accepted_event.get("logical_path") or "").strip()
+    hosted_uri = str(target.get("hosted_uri") or accepted_event.get("hosted_uri") or "").strip()
+    story_id = str(target.get("story_id") or accepted_event.get("story_id") or "").strip()
+    reactive = bool(target.get("reactive") if "reactive" in target else accepted_event.get("reactive"))
+    text = str(target.get("text") or "").strip()
+    if not text and data:
+        text = str(data.get("request") or data.get("summary") or data.get("title") or "").strip()
+
+    lines = ["[SNAPSHOT EVENT]" if snapshot else "[TIMELINE EVENT]"]
+    if event_source_id:
+        lines.append(f"event_source_id: {event_source_id}")
+    if logical_path:
+        lines.append(f"logical_path: {logical_path}")
+    if hosted_uri:
+        lines.append(f"hosted_uri: {hosted_uri}")
+    if story_id:
+        lines.append(f"story_id: {story_id}")
+    lines.append(f"reactive: {'true' if reactive else 'false'}")
+    if event_ref:
+        lines.append(f"event_ref: {event_ref}")
+    if text:
+        lines.append("")
+        lines.append(text)
+    if data:
+        try:
+            lines.append("")
+            lines.append("data:")
+            lines.append(json.dumps(data, ensure_ascii=False, indent=2, default=str))
+        except Exception:
+            pass
+    return lines
+
+
+def _event_block_meta(target: Mapping[str, Any]) -> dict[str, Any]:
+    accepted_event = target.get("event") if isinstance(target.get("event"), Mapping) else {}
+    meta = dict(target.get("meta") or {})
+    for key, value in {
+        "event_id": target.get("event_id") or accepted_event.get("event_id"),
+        "event_source_id": target.get("event_source_id") or accepted_event.get("event_source_id"),
+        "event_type": target.get("block_type") or accepted_event.get("type") or "event.external",
+        "logical_path": target.get("logical_path") or accepted_event.get("logical_path"),
+        "hosted_uri": target.get("hosted_uri") or accepted_event.get("hosted_uri"),
+        "story_id": target.get("story_id") or accepted_event.get("story_id"),
+        "reactive": target.get("reactive") if "reactive" in target else accepted_event.get("reactive"),
+    }.items():
+        if value is not None and (not isinstance(value, str) or value.strip()):
+            meta[key] = value
+    return meta
+
+
+def _event_block_payload(target: Mapping[str, Any]) -> dict[str, Any]:
+    accepted_event = target.get("event") if isinstance(target.get("event"), Mapping) else {}
+    event_payload = accepted_event.get("payload") if isinstance(accepted_event.get("payload"), Mapping) else {}
+    sentinel = object()
+    ret = target.get("ret", sentinel)
+    if ret is sentinel:
+        if "ret" in event_payload:
+            ret = event_payload.get("ret")
+        elif "event" in event_payload:
+            ret = event_payload.get("event")
+        elif event_payload.get("event_ref"):
+            ret = {"event_ref": event_payload.get("event_ref")}
+        else:
+            ret = None
+    event_ref = event_payload.get("event_ref")
+    error = target.get("error")
+    if error is None:
+        error = accepted_event.get("error")
+    if error is None:
+        error = event_payload.get("error")
+    if error is None and isinstance(ret, Mapping):
+        error = ret.get("error")
+    ok_value = target.get("ok")
+    if ok_value is None:
+        ok_value = event_payload.get("ok") if "ok" in event_payload else accepted_event.get("ok", True)
+    ok = bool(ok_value)
+    if error is not None:
+        ok = False
+    payload: dict[str, Any] = {
+        "event_id": target.get("event_id") or accepted_event.get("event_id"),
+        "event_source_id": target.get("event_source_id") or accepted_event.get("event_source_id"),
+        "event_type": target.get("block_type") or accepted_event.get("type") or "event.external",
+        "logical_path": target.get("logical_path") or accepted_event.get("logical_path"),
+        "hosted_uri": target.get("hosted_uri") or accepted_event.get("hosted_uri"),
+        "story_id": target.get("story_id") or accepted_event.get("story_id"),
+        "reactive": target.get("reactive") if "reactive" in target else accepted_event.get("reactive"),
+        "mime": event_payload.get("mime") or accepted_event.get("mime"),
+        "status": "success" if ok else "error",
+        "ok": ok,
+    }
+    if ret is not None:
+        payload["ret"] = ret
+    if event_ref:
+        payload["event_ref"] = event_ref
+    if error is not None:
+        payload["error"] = error
+    surfaces = _event_block_surfaces(target)
+    if surfaces:
+        payload["surfaces"] = surfaces
+    return {
+        key: value
+        for key, value in payload.items()
+        if value is not None and (not isinstance(value, str) or value.strip())
+    }
+
+
+def _event_block_surfaces(target: Mapping[str, Any]) -> dict[str, Any]:
+    """Return standard production surfaces preserved in an event block body."""
+    surfaces: dict[str, Any] = {}
+    for key in (
+        "source_rows",
+        "artifact_rows",
+        "declared_file_items",
+        "snapshot_refs",
+        "announce_candidates",
+        "notice_rows",
+    ):
+        rows = target.get(key)
+        if isinstance(rows, Sequence) and not isinstance(rows, (str, bytes, bytearray)):
+            values = [
+                dict(row) if isinstance(row, Mapping) else row
+                for row in rows
+                if row not in (None, "")
+            ]
+            if values:
+                surfaces[key] = values
+    for key in (
+        "source_rows_merge",
+        "result_items_produced",
+        "declared_file_items_produced",
+        "notice_rows_produced",
+    ):
+        if key == "source_rows_merge" and "source_rows" not in surfaces:
+            continue
+        if key == "declared_file_items_produced" and "declared_file_items" not in surfaces:
+            continue
+        if key == "notice_rows_produced" and "notice_rows" not in surfaces:
+            continue
+        if key == "result_items_produced" and "result_items" not in surfaces:
+            continue
+        if target.get(key) is True:
+            surfaces[key] = True
+    return surfaces
+
+
+def _normalize_event_payload_target(target: MutableMapping[str, Any]) -> MutableMapping[str, Any]:
+    """Normalize an authored event target into the tool-result-style accumulator."""
+    target = tool_default_block_production_policy(target)
+    accepted_event = target.get("event") if isinstance(target.get("event"), Mapping) else {}
+    event_payload = accepted_event.get("payload") if isinstance(accepted_event.get("payload"), Mapping) else {}
+    event_source_id = str(target.get("event_source_id") or accepted_event.get("event_source_id") or "").strip()
+    event_id = str(target.get("event_id") or accepted_event.get("event_id") or "").strip()
+    if event_source_id:
+        target.setdefault("tool_id", event_source_id)
+    if event_id:
+        target.setdefault("tool_call_id", event_id)
+
+    ret_missing = "ret" not in target or target.get("ret") is None
+    if ret_missing:
+        if "ret" in event_payload:
+            target["ret"] = event_payload.get("ret")
+        elif "event" in event_payload:
+            target["ret"] = event_payload.get("event")
+        elif event_payload.get("event_ref"):
+            target["ret"] = {"event_ref": event_payload.get("event_ref")}
+        else:
+            target["ret"] = {}
+
+    raw_missing = "raw" not in target or target.get("raw") is None
+    if raw_missing:
+        target["raw"] = {
+            "ok": event_payload.get("ok", accepted_event.get("ok", True)),
+            "ret": target.get("ret"),
+            "error": event_payload.get("error", accepted_event.get("error")),
+            "event": dict(accepted_event),
+        }
+
+    if target.get("ok") is None:
+        target["ok"] = event_payload.get("ok", accepted_event.get("ok", True))
+    if target.get("error") is None:
+        target["error"] = event_payload.get("error", accepted_event.get("error"))
+    if not target.get("summary"):
+        ret = target.get("ret")
+        if isinstance(ret, Mapping):
+            target["summary"] = str(ret.get("summary") or ret.get("title") or "").strip()
+    return target
+
+
+def _apply_standard_event_surface_policies(target: MutableMapping[str, Any]) -> MutableMapping[str, Any]:
+    """Extract the common tool-result surfaces from an authored event result."""
+    for policy_name in (
+        "exploration_results_block_production_policy",
+        "hosted_artifacts_block_production_policy",
+        "declared_file_items_block_production_policy",
+        "snapshot_refs_block_production_policy",
+        "announce_candidates_block_production_policy",
+    ):
+        policy = globals().get(policy_name)
+        if callable(policy):
+            policy(target)
+    return target
+
+
+def _default_event_block(target: MutableMapping[str, Any], *, snapshot: bool = False) -> None:
+    blocks = target.setdefault("blocks", [])
+    block_factory = target.get("block_factory")
+    if not callable(block_factory):
+        return
+    accepted_event = target.get("event") if isinstance(target.get("event"), Mapping) else {}
+    event_id = str(target.get("event_id") or accepted_event.get("event_id") or "").strip()
+    event_source_id = str(target.get("event_source_id") or accepted_event.get("event_source_id") or "").strip()
+    event_type = str(target.get("block_type") or accepted_event.get("type") or ("event.snapshot" if snapshot else "event.external")).strip()
+    logical_path = str(target.get("logical_path") or accepted_event.get("logical_path") or target.get("path") or "").strip()
+    event_path = logical_path or str(target.get("path") or "").strip()
+    common_meta = _event_block_meta({**target, "block_type": event_type})
+    result_payload = _event_block_payload({**target, "block_type": event_type})
+    blocks.append(block_factory(
+        type=event_type,
+        author=str(target.get("author") or "user"),
+        turn_id=str(target.get("turn_id") or ""),
+        ts=str(target.get("ts") or ""),
+        mime="application/json",
+        text=json.dumps(result_payload, ensure_ascii=False, indent=2, default=str),
+        path=event_path,
+        meta={
+            **common_meta,
+            "event_id": event_id,
+            "event_source_id": event_source_id,
+            "event_type": event_type,
+            "event_occurrence": True,
+        },
+    ))
+
+
+@block_production_policy(event_policy_id="react.block_production.event_default")
+def external_event_default_block_production_policy(
+    target: MutableMapping[str, Any],
+    **_: Any,
+) -> MutableMapping[str, Any]:
+    """Produce the default timeline block for an authored external event.
+
+    This is the fallback for unregistered event sources and for registered
+    sources that do not override external-event block production. The caller
+    supplies a `block_factory` compatible with `Timeline.block`. The event
+    payload is normalized into the same `{ok,error,ret,raw}` accumulator shape
+    used for tool results, then common result-surface policies extract hosted
+    artifacts, exploration rows, snapshot refs, announce candidates, and
+    declared file rows. Those surfaces are stored in the durable event block
+    block for later projection, announce, or compaction policies.
+    """
+    if not isinstance(target, MutableMapping):
+        return target
+    _normalize_event_payload_target(target)
+    _apply_standard_event_surface_policies(target)
+    _default_event_block(target)
+    target["blocks_produced"] = True
+    return target
+
+
+@block_production_policy(event_policy_id="react.block_production.snapshot_default")
+def snapshot_event_default_block_production_policy(
+    target: MutableMapping[str, Any],
+    **_: Any,
+) -> MutableMapping[str, Any]:
+    """Produce the default durable timeline block for a snapshot event."""
+    if not isinstance(target, MutableMapping):
+        return target
+    target["block_type"] = "event.snapshot"
+    _normalize_event_payload_target(target)
+    _apply_standard_event_surface_policies(target)
+    _default_event_block(target, snapshot=True)
+    target["blocks_produced"] = True
     return target
 
 
@@ -746,11 +1053,14 @@ def snapshot_refs_block_production_policy(
     target: MutableMapping[str, Any],
     **_: Any,
 ) -> MutableMapping[str, Any]:
-    """Collect snapshot refs from a composite tool result.
+    """Collect read-only snapshot refs from a composite tool/event result.
 
-    Snapshot refs are durable references such as
-    `fi:<turn_id>.snapshots/current.yaml`. This policy records refs in the
-    accumulator; it does not materialize or read the snapshot.
+    Snapshot refs are durable or rehostable references such as
+    `fi:<turn_id>.snapshots/current.yaml` or `ext:<bundle>/snapshots/current`.
+    They tell later projection/ANNOUNCE/compaction policies that a snapshot can
+    be read. They do not authorize ReAct to edit that snapshot in place.
+    Mutually writable state should be represented by a dedicated structural
+    event, for example `event.canvas`.
     """
     if not isinstance(target, MutableMapping):
         return target

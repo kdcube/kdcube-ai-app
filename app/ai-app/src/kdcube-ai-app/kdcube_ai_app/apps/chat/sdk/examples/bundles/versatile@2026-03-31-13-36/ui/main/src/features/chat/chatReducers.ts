@@ -336,11 +336,12 @@ export function hydrateHistoricalConversation(conversation: ConversationDTO): Ch
             (typeof artifact.data?.text === 'string' && artifact.data.text) ||
             (typeof payload.text === 'string' && payload.text) ||
             ''
-          const continuationKind =
-            (typeof dataRecord.continuation_kind === 'string' && dataRecord.continuation_kind) ||
-            (typeof payload.continuation_kind === 'string' && payload.continuation_kind) ||
+          const eventType =
+            (typeof dataRecord.event_type === 'string' && dataRecord.event_type) ||
+            (typeof payload.event_type === 'string' && payload.event_type) ||
             null
-          if (turn.userMessage || continuationKind === 'followup' || continuationKind === 'steer') {
+          const isAdditionalUserEvent = eventType === 'event.user.followup' || eventType === 'event.user.steer'
+          if (turn.userMessage || isAdditionalUserEvent) {
             turn = {
               ...turn,
               createdAt: Math.min(turn.createdAt, ts),
@@ -351,7 +352,7 @@ export function hydrateHistoricalConversation(conversation: ConversationDTO): Ch
                   text,
                   timestamp: ts,
                   attachments: [],
-                  continuationKind: continuationKind === 'steer' ? 'steer' : 'followup',
+                  eventType: eventType === 'event.user.steer' ? 'event.user.steer' : 'event.user.followup',
                 },
               ],
             }
@@ -1109,8 +1110,6 @@ export function applyChatDelta(state: ChatState, env: ChatDeltaEnvelope): ChatSt
     }
   })
 }
-
-
 
 
 

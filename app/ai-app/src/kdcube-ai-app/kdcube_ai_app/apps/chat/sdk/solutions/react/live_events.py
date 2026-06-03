@@ -74,9 +74,9 @@ def resolve_reactive_iteration_credit(
         return 0
 
     payload = _event_payload(event)
-    external_event = payload.get("external_event") if isinstance(payload.get("external_event"), dict) else {}
-    routing = external_event.get("routing") if isinstance(external_event.get("routing"), dict) else {}
-    event_source_id = str(external_event.get("event_source_id") or "").strip()
+    accepted_event = payload.get("event") if isinstance(payload.get("event"), dict) else {}
+    event_payload = accepted_event.get("payload") if isinstance(accepted_event.get("payload"), dict) else {}
+    event_source_id = str(accepted_event.get("event_source_id") or "").strip()
     if not event_source_id:
         event_source_id = event_source_id_for_external_kind(type_norm)
     source = _source_default(runtime_ctx, event_source_id)
@@ -88,8 +88,8 @@ def resolve_reactive_iteration_credit(
         # ReAct. The transported occurrence must carry the effective decision;
         # source declarations may provide credit defaults, but they do not wake
         # ReAct by themselves.
-        if "reactive" in routing:
-            is_reactive = _bool_from_any(routing.get("reactive"), False)
+        if "reactive" in accepted_event:
+            is_reactive = _bool_from_any(accepted_event.get("reactive"), False)
         else:
             is_reactive = False
     else:
@@ -104,8 +104,10 @@ def resolve_reactive_iteration_credit(
     source_credit = getattr(source, "iteration_credit", None)
     if source_credit is not None:
         per_event = max(0, _as_int(source_credit, per_event))
-    if "iteration_credit" in routing:
-        per_event = max(0, _as_int(routing.get("iteration_credit"), per_event))
+    if "iteration_credit" in event_payload:
+        per_event = max(0, _as_int(event_payload.get("iteration_credit"), per_event))
+    if "iteration_credit" in accepted_event:
+        per_event = max(0, _as_int(accepted_event.get("iteration_credit"), per_event))
     return per_event
 
 

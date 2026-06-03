@@ -18,13 +18,11 @@ from pathlib import Path
 from typing import Optional, Dict, Any, Iterable, List
 
 from kdcube_ai_app.apps.chat.sdk.config import get_settings
-from kdcube_ai_app.apps.chat.continuations import build_conversation_continuation_source
 from kdcube_ai_app.apps.chat.external_events import build_conversation_external_event_source
 from kdcube_ai_app.apps.chat.processor_scheduler_backend import (
     build_processor_scheduler_backend,
     normalize_processor_scheduler_backend,
 )
-from kdcube_ai_app.apps.chat.sdk.continuations import bind_current_conversation_continuation_source
 from kdcube_ai_app.apps.chat.sdk.context.retrieval.ctx_rag import ContextRAGClient
 from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import (
     bind_current_request_context,
@@ -59,6 +57,7 @@ from kdcube_ai_app.apps.chat.sdk.protocol import (
     ExternalEventUser,
     ConversationCtx,
     ServiceCtx,
+    external_event_request_start_label,
 )
 from kdcube_ai_app.apps.chat.sdk.event_identity import DEFAULT_REACT_AGENT_ID, normalize_agent_id
 from kdcube_ai_app.infra.jobs.stream import (
@@ -1022,9 +1021,6 @@ class EnhancedChatRequestProcessor:
         )
         return request_id, svc, conv, comm
 
-    def _continuation_source_for(self, payload: ExternalEventPayload):
-        return build_conversation_continuation_source(redis=self.redis, payload=payload)
-
     def _external_event_source_for(self, payload: ExternalEventPayload):
         event_ctx = getattr(payload, "event", None)
         if event_ctx is None:
@@ -1184,52 +1180,6 @@ class EnhancedChatRequestProcessor:
             )
         except Exception:
             logger.debug("Failed to emit interrupted error for task %s", payload.meta.task_id, exc_info=True)
-
-    async def _promote_next_continuation(self, payload: ExternalEventPayload) -> Optional[Dict[str, Any]]:
-        external_promoted = await self._promote_next_external_event(payload)
-        if external_promoted is not None:
-            return external_promoted
-
-        source = self._continuation_source_for(payload)
-        envelope = await source.take_next()
-        if envelope is None:
-            return None
-
-        try:
-            next_payload = envelope.task_payload()
-        except Exception:
-            logger.exception(
-                "Dropping malformed continuation envelope for conversation=%s message_id=%s",
-                payload.routing.conversation_id,
-                envelope.message_id,
-            )
-            return None
-
-        user_type = next_payload.user.user_type
-        if hasattr(user_type, "value"):
-            user_type = user_type.value
-        ready_queue_key = self._ready_queue_key(str(user_type).lower())
-        raw_payload = json.dumps(next_payload.model_dump(), ensure_ascii=False)
-
-        try:
-            await self.redis.lpush(ready_queue_key, raw_payload)
-        except Exception:
-            await source.restore_taken(envelope)
-            raise
-
-        logger.info(
-            "Promoted continuation message_id=%s kind=%s conversation=%s turn_id=%s to %s",
-            envelope.message_id,
-            envelope.kind,
-            next_payload.routing.conversation_id,
-            next_payload.routing.turn_id,
-            ready_queue_key,
-        )
-        return {
-            "envelope": envelope,
-            "payload": next_payload,
-            "ready_queue_key": ready_queue_key,
-        }
 
     async def _promote_next_external_event(self, payload: ExternalEventPayload) -> Optional[Dict[str, Any]]:
         source = self._external_event_source_for(payload)
@@ -1675,7 +1625,6 @@ class EnhancedChatRequestProcessor:
                 timezone=timezone,
             ),
             request=ExternalEventRequest(
-                message=message,
                 operation=BACKGROUND_JOB_OPERATION,
                 invocation="async",
                 payload={
@@ -2450,17 +2399,15 @@ class EnhancedChatRequestProcessor:
             logger.info(
                 f"Starting task {task_id} queue_wait_ms={queue_wait_ms} current_load={self._current_load}"
             )
-        # Send the full request message in chat.start.data.message — clients
-        # treat it as the authoritative user-bubble text (e.g. when the SSE
-        # event wins a race against the POST ack). Truncating here previously
-        # left the user bubble stuck at "<first 100 chars>..." until reload.
-        start_message = payload.request.message or f"operation={payload.request.operation}"
+        # Send full text derived from accepted event bodies. Clients treat
+        # chat.start.data.message as the authoritative user-bubble text when
+        # the SSE event wins a race against the POST ack.
+        start_message = external_event_request_start_label(payload.request)
 
         success = False
         task_cancelled = False
         finalization_reason = "task_completed"
         exec_started_at = None
-        continuation_source = self._continuation_source_for(payload)
         try:
             protection_label = f"task_id={task_id}"
             async with self._task_scale_in_protection.hold(label=protection_label):
@@ -2499,8 +2446,7 @@ class EnhancedChatRequestProcessor:
                                             task=_task,
                                         )
                                 ):
-                                    with bind_current_conversation_continuation_source(continuation_source):
-                                        result = await self._run_handler_with_watchdog(payload)
+                                    result = await self._run_handler_with_watchdog(payload)
 
                 result = result or {}
                 success = True
@@ -2542,7 +2488,7 @@ class EnhancedChatRequestProcessor:
             success = False
         finally:
             exec_ms = None
-            promoted_continuation = None
+            promoted_external_event = None
             if exec_started_at is not None:
                 try:
                     exec_ms = int((time.monotonic() - exec_started_at) * 1000)
@@ -2559,10 +2505,10 @@ class EnhancedChatRequestProcessor:
                 self._current_load = max(0, self._current_load - 1)
             if not task_cancelled:
                 try:
-                    promoted_continuation = await self._promote_next_continuation(payload)
+                    promoted_external_event = await self._promote_next_external_event(payload)
                 except Exception:
                     logger.exception(
-                        "Failed to promote next continuation for conversation=%s",
+                        "Failed to promote next external event for conversation=%s",
                         payload.routing.conversation_id,
                     )
             if not task_cancelled:
@@ -2597,8 +2543,8 @@ class EnhancedChatRequestProcessor:
                 except Exception:
                     logger.debug("Failed to record task latency metrics", exc_info=True)
                 try:
-                    if promoted_continuation is not None:
-                        next_payload = promoted_continuation["payload"]
+                    if promoted_external_event is not None:
+                        next_payload = promoted_external_event["payload"]
                         next_request_id, next_svc, next_conv, _ = self._build_runtime_context(next_payload)
                         res = await self.conversation_ctx.set_conversation_state(
                             tenant=next_payload.actor.tenant_id,

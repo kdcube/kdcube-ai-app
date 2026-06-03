@@ -47,7 +47,7 @@ export interface UserAttachmentDescription {
     rn?: string | null;
     artifactPath?: string;
     sourceMessageId?: string;
-    continuationKind?: string;
+    eventType?: string;
     historyMeta?: Record<string, unknown>;
 }
 
@@ -76,7 +76,7 @@ export interface ChatState extends ConversationState {
 export interface UserMessage extends Timestamped {
     text: string,
     attachments: UserAttachmentDescription[],
-    continuationKind?: string;
+    eventType?: string;
     sourceMessageId?: string;
     artifactPath?: string;
     historyMeta?: Record<string, unknown>;
@@ -204,11 +204,11 @@ export interface FileArtifact extends Artifact<RNFile> {
 export interface UserMessageRequest {
     message?: string;
     files?: File[] | null;
-    continuationKind?: "regular" | "followup" | "steer";
+    reactiveEventType?: string;
     targetTurnId?: string;
     payload?: Record<string, unknown>;
     target?: ChatTarget;
-    externalEvent?: ExternalEvent;
+    externalEvents?: ExternalEvent[];
 }
 
 export type TurnState = "new" | "inProgress" | "finished" | "error"

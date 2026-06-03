@@ -12,7 +12,6 @@ import {
 import type {
   BannerTone,
   ChatServiceEnvelope,
-  ContinuationKind,
   ConversationSummary,
   RateLimitPayload,
   TurnReaction,
@@ -557,7 +556,7 @@ export default function App() {
     }
   }
 
-  const sendMessage = async (textOverride?: string, requestedKind?: ContinuationKind) => {
+  const sendMessage = async (textOverride?: string, requestedReactiveEventType?: string) => {
     /* Anonymous visitors can read but not send — ask the host to show its
      * login surface and stop here (no stream, no POST). Checked before the
      * queue so we don't churn the send chain. */
@@ -586,14 +585,15 @@ export default function App() {
        * boundary and would leave us reading stale state here. */
       const snapshot = store.getState().chat
       const activeTurn = findActiveTurn(snapshot.turns)
-      let continuationKind: ContinuationKind = requestedKind ?? (activeTurn ? 'followup' : 'regular')
-      if (continuationKind !== 'regular' && !activeTurn) {
-        continuationKind = 'regular'
-      }
-      const isContinuation = continuationKind === 'followup' || continuationKind === 'steer'
-      const isSteer = continuationKind === 'steer'
-      const continuationMessageKind: Exclude<ContinuationKind, 'regular'> =
-        continuationKind === 'steer' ? 'steer' : 'followup'
+      const reactiveEventType = requestedReactiveEventType ?? (activeTurn ? 'event.user.followup' : 'event.user.prompt')
+      const isSteer = reactiveEventType === 'event.user.steer'
+      const isContinuation = Boolean(
+        activeTurn && (
+          reactiveEventType === 'event.user.followup' ||
+          reactiveEventType === 'event.user.steer'
+        ),
+      )
+      const additionalEventType = reactiveEventType === 'event.user.steer' ? 'event.user.steer' : 'event.user.followup'
       const targetTurnId = isContinuation ? activeTurn?.id : undefined
       const draftText = (textOverride ?? snapshot.composerText).trim()
       const draftFiles = isSteer || textOverride !== undefined ? [] : snapshot.composerFiles
@@ -639,14 +639,11 @@ export default function App() {
         text: sendText,
         files: draftFiles,
         chatHistory: isContinuation ? [] : buildChatHistory(snapshot.turns),
+        reactiveEventType,
         ...(isContinuation
           ? {
-              messageKind: continuationKind,
-              continuationKind,
               activeTurnId: targetTurnId,
               targetTurnId,
-              followup: continuationKind === 'followup',
-              steer: continuationKind === 'steer',
             }
           : {}),
       })
@@ -674,6 +671,7 @@ export default function App() {
           queuedTurnId: response.queuedTurnId ?? null,
           activeTurnId: response.activeTurnId ?? null,
           liveOwnerDetected: response.liveOwnerDetected,
+          isContinuation: response.isContinuation,
         },
         existingConversationId,
         isContinuation,
@@ -682,7 +680,7 @@ export default function App() {
         draftText,
         draftAttachments,
         sentAt,
-        continuationMessageKind,
+        additionalEventType,
       }))
       void refreshConversationList()
     } catch (error) {
@@ -911,16 +909,16 @@ export default function App() {
     }
     const snapshot = store.getState().chat
     if (snapshot.inputLocked || snapshot.connection === 'booting') return
-    /* Pass no `requestedKind` — sendMessage reads fresh store state
+    /* Pass no event type — sendMessage reads fresh store state
      * AFTER awaiting the previous queued send, so it correctly sees
      * the newly-created active turn from a just-completed first send
-     * and continues with `followup`. */
+     * and submits `event.user.followup`. */
     void sendMessage()
   })
   const handleComposerStop = useStableCallback(() => {
     const snapshot = stateRef.current
     if (snapshot.inputLocked || snapshot.connection === 'booting') return
-    void sendMessage('', 'steer')
+    void sendMessage('', 'event.user.steer')
   })
 
   /* Resolve the URL the platform serves our `versatile_webapp` widget

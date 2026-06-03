@@ -248,8 +248,6 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
                     "session_id": state["session_id"],
                     "conversation_id": state["conversation_id"],
                     "turn_id": state["turn_id"],
-                    "text": state["text"],
-                    "attachments": state.get("attachments") or [],
                 }
 
                 async def _run_versatile_turn() -> Dict[str, Any]:

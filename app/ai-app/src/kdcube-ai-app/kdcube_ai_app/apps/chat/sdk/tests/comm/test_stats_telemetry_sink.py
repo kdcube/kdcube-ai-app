@@ -176,17 +176,18 @@ async def test_chat_accept_maps_to_chat_message_without_text() -> None:
 
 
 @pytest.mark.anyio
-async def test_continuation_accept_maps_to_followup_chat_message() -> None:
+async def test_continuation_accept_maps_followup_event_to_chat_message() -> None:
     comm = _make_comm()
     comm.record(STATS_COMM_EVENT_SELECTOR, mode="replace")
 
     await comm.service_event(
-        type="queue.continuation.accepted",
-        step="queue.continuation",
+        type="event.continuation.accepted",
+        step="event.continuation",
         status="completed",
         agent="ingress",
         data={
-            "message_kind": "followup",
+            "event_type": "event.user.followup",
+            "is_continuation": True,
             "message_len": 19,
             "attachment_count": 1,
         },

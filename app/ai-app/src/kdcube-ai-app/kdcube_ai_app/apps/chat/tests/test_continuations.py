@@ -3,9 +3,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import kdcube_ai_app.apps.chat.ingress.chat_core as chat_core
-from kdcube_ai_app.apps.chat.ingress.chat_core import IngressConfig, process_chat_message
-from kdcube_ai_app.apps.chat.continuations import RedisConversationContinuationSource
+import kdcube_ai_app.apps.chat.ingress.ingress_core as ingress_core
+from kdcube_ai_app.apps.chat.ingress.ingress_core import IngressConfig, process_chat_message
 from kdcube_ai_app.apps.chat.external_events import build_conversation_external_event_source
 from kdcube_ai_app.auth.sessions import UserType
 
@@ -19,6 +18,42 @@ def _scoped_external_source(redis):
         user_id="user-1",
         agent_id="default.react.agent",
     )
+
+
+def _text_event(event_type: str, text: str, *, reactive: bool = True) -> dict:
+    return {
+        "type": event_type,
+        "event_source_id": event_type,
+        "reactive": reactive,
+        "payload": {
+            "mime": "text/plain",
+            "event": {"text": text},
+        },
+    }
+
+
+def _attachment_event(*, filename: str, mime: str = "application/octet-stream", reactive: bool = True) -> dict:
+    return {
+        "type": "event.user.attachment",
+        "event_source_id": "event.user.attachment",
+        "reactive": reactive,
+        "payload": {
+            "mime": mime,
+            "event": {"filename": filename, "mime": mime},
+        },
+    }
+
+
+def _domain_event(event_type: str, body: dict, *, reactive: bool = False) -> dict:
+    return {
+        "type": event_type,
+        "event_source_id": event_type,
+        "reactive": reactive,
+        "payload": {
+            "mime": "application/json",
+            "event": dict(body),
+        },
+    }
 
 
 class _MiniRedis:
@@ -105,54 +140,6 @@ class _MiniRedis:
 
     async def delete(self, key):
         self.values.pop(key, None)
-
-
-def _task_payload(*, task_id: str, turn_id: str, text: str, kind: str = "followup"):
-    return {
-        "meta": {"task_id": task_id, "created_at": 1.0, "instance_id": "ingress-1"},
-        "routing": {
-            "bundle_id": "bundle.demo",
-            "session_id": "sess-1",
-            "conversation_id": "conv-1",
-            "turn_id": turn_id,
-            "socket_id": "stream-1",
-        },
-        "actor": {"tenant_id": "tenant-a", "project_id": "project-a"},
-        "user": {"user_type": "registered", "user_id": "user-1", "fingerprint": "fp-1"},
-        "request": {"message": text, "operation": "chat", "payload": {}},
-        "config": {"values": {}},
-        "accounting": {"envelope": {"request_id": f"req-{task_id}"}},
-        "continuation": {"kind": kind, "explicit": kind != "followup"},
-    }
-
-
-@pytest.mark.asyncio
-async def test_redis_continuation_source_preserves_order_and_count():
-    redis = _MiniRedis()
-    source = RedisConversationContinuationSource(
-        redis=redis,
-        tenant="tenant-a",
-        project="project-a",
-        conversation_id="conv-1",
-    )
-
-    await source.publish(_task_payload(task_id="task-1", turn_id="turn-1", text="first"), kind="followup")
-    await source.publish(_task_payload(task_id="task-2", turn_id="turn-2", text="second"), kind="steer", explicit=True)
-
-    assert await source.pending_count() == 2
-
-    first = await source.peek_next()
-    assert first.payload["meta"]["task_id"] == "task-1"
-
-    taken_first = await source.take_next()
-    taken_second = await source.take_next()
-
-    assert taken_first.payload["meta"]["task_id"] == "task-1"
-    assert taken_second.payload["meta"]["task_id"] == "task-2"
-    assert await source.pending_count() == 0
-
-    await source.restore_taken(taken_second)
-    assert await source.pending_count() == 1
 
 
 class _BusyConversationBrowser:
@@ -264,7 +251,7 @@ def _patch_ingress_dependencies(monkeypatch):
             bundles={"bundle.demo": SimpleNamespace(id="bundle.demo")},
         )
     monkeypatch.setattr(
-        chat_core,
+        ingress_core,
         "get_settings",
         lambda: SimpleNamespace(
             TENANT="tenant-a",
@@ -279,9 +266,9 @@ def _patch_ingress_dependencies(monkeypatch):
             ),
         ),
     )
-    monkeypatch.setattr(chat_core, "_load_active_registry", _load_registry)
-    monkeypatch.setattr(chat_core, "build_envelope_from_session", lambda **_kwargs: _DummyEnvelope())
-    monkeypatch.setattr(chat_core, "ChatCommunicator", _DummyCommunicator)
+    monkeypatch.setattr(ingress_core, "_load_active_registry", _load_registry)
+    monkeypatch.setattr(ingress_core, "build_envelope_from_session", lambda **_kwargs: _DummyEnvelope())
+    monkeypatch.setattr(ingress_core, "ChatCommunicator", _DummyCommunicator)
 
 
 @pytest.mark.asyncio
@@ -311,10 +298,13 @@ async def test_regular_attachment_only_message_is_enqueued(_patch_ingress_depend
         chat_comm=_DummyRelay(),
         session=session,
         request_context=SimpleNamespace(user_utc_offset_min=None),
-        message_data={"conversation_id": "conv-1", "payload": {}},
+        message_data={
+            "conversation_id": "conv-1",
+            "external_events": [_attachment_event(filename="notes.txt", mime="text/plain")],
+        },
         message_text="",
         raw_attachments=[
-            chat_core.RawAttachment(
+            ingress_core.RawAttachment(
                 content=b"hello",
                 name="notes.txt",
                 mime="text/plain",
@@ -343,14 +333,133 @@ async def test_regular_attachment_only_message_is_enqueued(_patch_ingress_depend
     source = _scoped_external_source(redis)
     events = await source.read_since(0)
     assert len(events) == 1
-    assert events[0].kind == "message"
+    assert events[0].kind == "external_event"
     payload = events[0].task_payload
-    assert payload["request"]["message"] == ""
-    attachments = payload["request"]["payload"].get("attachments") or []
+    accepted_events = payload["request"]["external_events"]
+    assert accepted_events[0]["type"] == "event.user.attachment"
+    attachments = [accepted_events[0]["payload"]["event"]]
     assert len(attachments) == 1
     assert attachments[0]["filename"] == "notes.txt"
     assert attachments[0]["hosted_uri"].endswith("/notes.txt")
     assert "base64" not in attachments[0]
+
+
+@pytest.mark.asyncio
+async def test_idle_non_reactive_external_event_is_recorded_without_wakeup(_patch_ingress_dependencies):
+    redis = _MiniRedis()
+    app = SimpleNamespace(state=SimpleNamespace(
+        redis_async=redis,
+        conversation_browser=_IdleConversationBrowser(),
+        conversation_store=_DummyConversationStore(),
+    ))
+    queue = _QueueManagerCaptures()
+    session = SimpleNamespace(
+        session_id="sess-1",
+        user_type=UserType.REGISTERED,
+        user_id="user-1",
+        username="user",
+        email="user@example.com",
+        fingerprint="fp-1",
+        roles=[],
+        permissions=[],
+        timezone="UTC",
+    )
+
+    result = await process_chat_message(
+        app=app,
+        chat_queue_manager=queue,
+        chat_comm=_DummyRelay(),
+        session=session,
+        request_context=SimpleNamespace(user_utc_offset_min=None),
+        message_data={
+            "conversation_id": "conv-1",
+            "external_events": [
+                _domain_event("task_tracker.wizard.snapshot", {"draft_id": "draft-1"}, reactive=False)
+            ],
+        },
+        message_text="",
+        ingress=IngressConfig(
+            transport="sse",
+            entrypoint="/sse/chat",
+            component="chat.sse",
+            instance_id="ingress-1",
+            stream_id="stream-1",
+        ),
+    )
+
+    assert result.ok is True
+    assert result.reason == "external_event_recorded"
+    assert result.is_continuation is False
+    assert queue.payloads == []
+
+    source = _scoped_external_source(redis)
+    events = await source.read_since(0)
+    assert len(events) == 1
+    assert events[0].kind == "external_event"
+    assert events[0].is_continuation is False
+    assert events[0].active_turn_id_at_ingress is None
+    accepted_event = events[0].task_payload["request"]["external_events"][0]
+    assert accepted_event["type"] == "task_tracker.wizard.snapshot"
+    assert accepted_event["reactive"] is False
+
+
+@pytest.mark.asyncio
+async def test_busy_non_reactive_external_event_is_accepted_by_open_turn(_patch_ingress_dependencies):
+    redis = _MiniRedis()
+    app = SimpleNamespace(state=SimpleNamespace(
+        redis_async=redis,
+        conversation_browser=_BusyConversationBrowser(),
+        conversation_store=_DummyConversationStore(),
+    ))
+    session = SimpleNamespace(
+        session_id="sess-1",
+        user_type=UserType.REGISTERED,
+        user_id="user-1",
+        username="user",
+        email="user@example.com",
+        fingerprint="fp-1",
+        roles=[],
+        permissions=[],
+        timezone="UTC",
+    )
+
+    result = await process_chat_message(
+        app=app,
+        chat_queue_manager=_QueueManagerShouldNotRun(),
+        chat_comm=_DummyRelay(),
+        session=session,
+        request_context=SimpleNamespace(user_utc_offset_min=None),
+        message_data={
+            "conversation_id": "conv-1",
+            "external_events": [
+                _domain_event("task_tracker.wizard.snapshot", {"draft_id": "draft-1"}, reactive=False)
+            ],
+        },
+        message_text="",
+        ingress=IngressConfig(
+            transport="sse",
+            entrypoint="/sse/chat",
+            component="chat.sse",
+            instance_id="ingress-1",
+            stream_id="stream-1",
+        ),
+    )
+
+    assert result.ok is True
+    assert result.reason == "external_event_accepted"
+    assert result.is_continuation is True
+    assert result.active_turn_id == "turn-active"
+
+    source = _scoped_external_source(redis)
+    events = await source.read_since(0)
+    assert len(events) == 1
+    assert events[0].kind == "external_event"
+    assert events[0].is_continuation is True
+    assert events[0].active_turn_id_at_ingress == "turn-active"
+    assert events[0].payload["is_continuation"] is True
+    accepted_event = events[0].task_payload["request"]["external_events"][0]
+    assert accepted_event["type"] == "task_tracker.wizard.snapshot"
+    assert accepted_event["reactive"] is False
 
 
 @pytest.mark.asyncio
@@ -378,7 +487,10 @@ async def test_busy_message_is_stored_as_followup(_patch_ingress_dependencies):
         chat_comm=_DummyRelay(),
         session=session,
         request_context=SimpleNamespace(user_utc_offset_min=None),
-        message_data={"conversation_id": "conv-1", "payload": {}},
+        message_data={
+            "conversation_id": "conv-1",
+            "external_events": [_text_event("event.user.followup", "followup text")],
+        },
         message_text="followup text",
         ingress=IngressConfig(
             transport="sse",
@@ -390,8 +502,8 @@ async def test_busy_message_is_stored_as_followup(_patch_ingress_dependencies):
     )
 
     assert result.ok is True
-    assert result.reason == "followup_accepted"
-    assert result.continuation_kind == "followup"
+    assert result.reason == "external_event_accepted"
+    assert result.is_continuation is True
     assert result.active_turn_id == "turn-active"
     assert result.target_turn_id is None
     assert result.queued_turn_id == result.turn_id
@@ -400,12 +512,15 @@ async def test_busy_message_is_stored_as_followup(_patch_ingress_dependencies):
     source = _scoped_external_source(redis)
     events = await source.read_since(0)
     assert len(events) == 1
-    assert events[0].kind == "followup"
+    assert events[0].kind == "external_event"
+    assert events[0].is_continuation is True
     assert events[0].active_turn_id_at_ingress == "turn-active"
     assert not events[0].owner_turn_id
     assert result.event_id == events[0].message_id
     assert result.external_event_sequence == events[0].sequence
-    assert events[0].task_payload["continuation"]["kind"] == "followup"
+    assert events[0].task_payload["event"]["kind"] == "external_event"
+    assert events[0].task_payload["request"]["external_events"][0]["type"] == "event.user.followup"
+    assert events[0].task_payload["continuation"]["is_continuation"] is True
 
 
 @pytest.mark.asyncio
@@ -449,7 +564,7 @@ async def test_busy_followup_ack_preserves_target_and_server_active_owner(_patch
         message_data={
             "conversation_id": "conv-1",
             "target_turn_id": "turn-client-visible",
-            "payload": {},
+            "external_events": [_text_event("event.user.followup", "followup text")],
         },
         message_text="followup text",
         ingress=IngressConfig(
@@ -462,7 +577,8 @@ async def test_busy_followup_ack_preserves_target_and_server_active_owner(_patch
     )
 
     assert result.ok is True
-    assert result.reason == "followup_accepted"
+    assert result.reason == "external_event_accepted"
+    assert result.is_continuation is True
     assert result.active_turn_id == "turn-active"
     assert result.target_turn_id == "turn-client-visible"
     assert result.queued_turn_id == result.turn_id
@@ -470,9 +586,11 @@ async def test_busy_followup_ack_preserves_target_and_server_active_owner(_patch
 
     events = await source.read_since(0)
     assert len(events) == 1
+    assert events[0].is_continuation is True
     assert events[0].target_turn_id == "turn-client-visible"
     assert events[0].active_turn_id_at_ingress == "turn-active"
     assert events[0].owner_turn_id == "turn-active"
+    assert events[0].task_payload["continuation"]["is_continuation"] is True
     assert events[0].task_payload["continuation"]["target_turn_id"] == "turn-client-visible"
     assert events[0].task_payload["continuation"]["active_turn_id"] == "turn-active"
     assert result.event_id == events[0].message_id
@@ -504,10 +622,16 @@ async def test_busy_followup_attachment_is_persisted_into_external_event_payload
         chat_comm=_DummyRelay(),
         session=session,
         request_context=SimpleNamespace(user_utc_offset_min=None),
-        message_data={"conversation_id": "conv-1", "payload": {}},
+        message_data={
+            "conversation_id": "conv-1",
+            "external_events": [
+                _text_event("event.user.followup", "followup text"),
+                _attachment_event(filename="notes.txt", mime="text/plain", reactive=False),
+            ],
+        },
         message_text="followup text",
         raw_attachments=[
-            chat_core.RawAttachment(
+            ingress_core.RawAttachment(
                 content=b"hello",
                 name="notes.txt",
                 mime="text/plain",
@@ -526,9 +650,15 @@ async def test_busy_followup_attachment_is_persisted_into_external_event_payload
     assert result.ok is True
     source = _scoped_external_source(redis)
     events = await source.read_since(0)
-    assert len(events) == 1
-    payload = events[0].task_payload["request"]["payload"]
-    attachments = payload.get("attachments") or []
+    assert len(events) == 2
+    accepted_events = []
+    for lane_event in events:
+        accepted_events.extend(lane_event.task_payload["request"]["external_events"])
+    attachments = [
+        item["payload"]["event"]
+        for item in accepted_events
+        if item.get("type") == "event.user.attachment"
+    ]
     assert len(attachments) == 1
     assert attachments[0]["filename"] == "notes.txt"
     assert attachments[0]["hosted_uri"] == "file:///tmp/turn-active/notes.txt"
@@ -562,10 +692,13 @@ async def test_busy_attachment_only_followup_is_persisted_into_external_event_pa
         chat_comm=_DummyRelay(),
         session=session,
         request_context=SimpleNamespace(user_utc_offset_min=None),
-        message_data={"conversation_id": "conv-1", "payload": {}, "followup": True},
+        message_data={
+            "conversation_id": "conv-1",
+            "external_events": [_attachment_event(filename="followup-notes.txt", mime="text/plain")],
+        },
         message_text="",
         raw_attachments=[
-            chat_core.RawAttachment(
+            ingress_core.RawAttachment(
                 content=b"hello",
                 name="followup-notes.txt",
                 mime="text/plain",
@@ -582,14 +715,18 @@ async def test_busy_attachment_only_followup_is_persisted_into_external_event_pa
     )
 
     assert result.ok is True
-    assert result.reason == "followup_accepted"
-    assert result.continuation_kind == "followup"
+    assert result.reason == "external_event_accepted"
+    assert result.is_continuation is True
     source = _scoped_external_source(redis)
     events = await source.read_since(0)
     assert len(events) == 1
     assert events[0].text == ""
-    payload = events[0].task_payload["request"]["payload"]
-    attachments = payload.get("attachments") or []
+    accepted_events = events[0].task_payload["request"]["external_events"]
+    attachments = [
+        item["payload"]["event"]
+        for item in accepted_events
+        if item.get("type") == "event.user.attachment"
+    ]
     assert len(attachments) == 1
     assert attachments[0]["filename"] == "followup-notes.txt"
     assert attachments[0]["hosted_uri"] == "file:///tmp/turn-active/followup-notes.txt"
@@ -621,7 +758,10 @@ async def test_busy_blank_explicit_steer_is_stored(_patch_ingress_dependencies):
         chat_comm=_DummyRelay(),
         session=session,
         request_context=SimpleNamespace(user_utc_offset_min=None),
-        message_data={"conversation_id": "conv-1", "payload": {}, "steer": True},
+        message_data={
+            "conversation_id": "conv-1",
+            "external_events": [_text_event("event.user.steer", "")],
+        },
         message_text="",
         ingress=IngressConfig(
             transport="socket",
@@ -633,12 +773,14 @@ async def test_busy_blank_explicit_steer_is_stored(_patch_ingress_dependencies):
     )
 
     assert result.ok is True
-    assert result.reason == "steer_accepted"
-    assert result.continuation_kind == "steer"
+    assert result.reason == "external_event_accepted"
+    assert result.is_continuation is True
 
     source = _scoped_external_source(redis)
     events = await source.read_since(0)
     assert len(events) == 1
-    assert events[0].kind == "steer"
-    assert events[0].task_payload["request"]["message"] == ""
+    assert events[0].kind == "external_event"
+    assert events[0].is_continuation is True
+    assert events[0].task_payload["request"]["external_events"][0]["type"] == "event.user.steer"
+    assert events[0].task_payload["continuation"]["is_continuation"] is True
     assert events[0].task_payload["continuation"]["target_turn_id"] is None

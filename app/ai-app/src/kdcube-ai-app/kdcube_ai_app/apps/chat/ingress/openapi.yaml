@@ -3588,16 +3588,12 @@ components:
         Completely separate from plan quotas.'
     Body_sse_chat_sse_chat_post:
       properties:
-        message:
+        event_submission:
           anyOf:
           - type: string
           - type: 'null'
-          title: Message
-        attachment_meta:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Attachment Meta
+          title: Event Submission
+          description: JSON external event submission with external_events[].
         files:
           items:
             type: string

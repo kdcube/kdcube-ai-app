@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from kdcube_ai_app.apps.chat.ingress import chat_core
+from kdcube_ai_app.apps.chat.ingress import ingress_core
 
 
 class _FakeIdx:
@@ -46,14 +46,14 @@ async def test_get_conversation_status_returns_404_when_conversation_not_found_f
         assert project == "project-a"
         return SimpleNamespace(bundles={"bundle.scoped": object()}, default_bundle_id="bundle.scoped")
 
-    monkeypatch.setattr(chat_core, "_load_registry_from_redis", _load_registry)
+    monkeypatch.setattr(ingress_core, "_load_registry_from_redis", _load_registry)
 
     browser = _FakeConversationBrowser(None, exists=False)
     app = SimpleNamespace(state=SimpleNamespace(conversation_browser=browser))
     session = SimpleNamespace(session_id="sess-1", user_id="user-1")
 
-    with pytest.raises(chat_core.HTTPException) as exc:
-        await chat_core.get_conversation_status(
+    with pytest.raises(ingress_core.HTTPException) as exc:
+        await ingress_core.get_conversation_status(
             app=app,
             chat_comm=_FakeChatComm(),
             session=session,
@@ -88,7 +88,7 @@ async def test_get_conversation_status_returns_404_when_bundle_id_not_in_tenant_
         del app
         return SimpleNamespace(bundles={"bundle.scoped": object()}, default_bundle_id="bundle.scoped")
 
-    monkeypatch.setattr(chat_core, "_load_registry_from_redis", _load_registry)
+    monkeypatch.setattr(ingress_core, "_load_registry_from_redis", _load_registry)
 
     idx = _FakeIdx(
         {
@@ -101,8 +101,8 @@ async def test_get_conversation_status_returns_404_when_bundle_id_not_in_tenant_
     app = SimpleNamespace(state=SimpleNamespace(conversation_browser=SimpleNamespace(idx=idx)))
     session = SimpleNamespace(session_id="sess-1", user_id="user-1")
 
-    with pytest.raises(chat_core.HTTPException) as exc:
-        await chat_core.get_conversation_status(
+    with pytest.raises(ingress_core.HTTPException) as exc:
+        await ingress_core.get_conversation_status(
             app=app,
             chat_comm=_FakeChatComm(),
             session=session,
@@ -124,13 +124,13 @@ async def test_get_conversation_status_returns_idle_when_state_row_missing_but_c
         del app
         return SimpleNamespace(bundles={"bundle.scoped": object()}, default_bundle_id="bundle.scoped")
 
-    monkeypatch.setattr(chat_core, "_load_registry_from_redis", _load_registry)
+    monkeypatch.setattr(ingress_core, "_load_registry_from_redis", _load_registry)
 
     browser = _FakeConversationBrowser(None, exists=True)
     app = SimpleNamespace(state=SimpleNamespace(conversation_browser=browser))
     session = SimpleNamespace(session_id="sess-1", user_id="user-1", user_type=SimpleNamespace(value="registered"))
 
-    result = await chat_core.get_conversation_status(
+    result = await ingress_core.get_conversation_status(
         app=app,
         chat_comm=_FakeChatComm(),
         session=session,

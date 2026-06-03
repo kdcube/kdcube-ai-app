@@ -18,6 +18,7 @@ keywords:
   ]
 see_also:
   - ks:docs/sdk/bundle/bundle-events-README.md
+  - ks:docs/sdk/events/external-event-envelope-README.md
   - ks:docs/sdk/events/external-events-README.md
   - ks:docs/arch/proc/events-orchestration-README.md
   - ks:docs/sdk/agents/react/agent-workspace-collboration-README.md
@@ -55,6 +56,16 @@ tool_call_id == event_id
 The tool still executes through the normal tool subsystem. Event-source metadata
 only tells downstream consumers how to validate, produce, project, announce, or
 compact the occurrence.
+
+Authored UI/domain events use the same source/occurrence model. Their accepted
+transport envelope is documented in
+[External Event Envelope](external-event-envelope-README.md). In that envelope,
+`event_source_id` selects policies, `event_id` identifies the occurrence, and
+`logical_path` is the `ev:` path of the event object on the turn timeline.
+User prompts, user attachments, followups, and steers are built-in external
+event types (`event.user.prompt`, `event.user.attachment.*`,
+`event.user.followup`, `event.user.steer`) even when they are authored through
+the existing chat message or continuation wire fields.
 
 ## Declaration
 
@@ -107,13 +118,12 @@ def list_event_sources():
 ```
 
 `reactive` is declaration metadata/default for code that authors occurrences of
-this source. Transported `external_event` occurrences must still carry their
-effective `payload.external_event.routing.reactive` value; the runtime does not
+this source. Transported external-event occurrences must still carry their
+effective `external_events[].reactive` value; the runtime does not
 silently wake ReAct from a declaration alone. `iteration_credit` is the default
-live-turn credit for one occurrence that is explicitly reactive. A client
-occurrence may override credit with
-`payload.external_event.routing.iteration_credit`; runtime caps always apply
-last.
+live-turn credit for one occurrence that is explicitly reactive. An accepted
+occurrence may override the declaration default with an occurrence-level credit
+field; runtime caps always apply last.
 
 ## Discovery
 

@@ -28,7 +28,6 @@ from kdcube_ai_app.apps.chat.emitters import (
     build_relay_from_env,
 )
 from kdcube_ai_app.apps.chat.sdk.config import get_settings
-from kdcube_ai_app.apps.chat.sdk.continuations import get_current_conversation_continuation_source
 from kdcube_ai_app.apps.chat.sdk.infra.economics.policy import EconomicsLimitException
 from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
 from kdcube_ai_app.apps.chat.sdk.runtime.exec_runtime_config import normalize_exec_runtime_config
@@ -85,7 +84,6 @@ class BaseEntrypoint:
         comm_context: ExternalEventPayload = None,
         event_filter: Optional[Any] = None,
         ctx_client: Optional[Any] = None,
-        continuation_source: Optional[Any] = None,
     ):
         self.config = config
         self.settings = get_settings()
@@ -93,7 +91,6 @@ class BaseEntrypoint:
         self.redis = redis
         self._comm_context: Optional[ExternalEventPayload] = comm_context
         self._event_filter = event_filter
-        self._continuation_source = continuation_source
 
         self._comm: Optional[ChatCommunicator] = None
         self._comm_context_cv: ContextVar[object] = ContextVar(
@@ -119,10 +116,6 @@ class BaseEntrypoint:
             self.ctx_client = None
 
         self._apply_configuration_overrides()
-
-    @property
-    def continuation_source(self) -> Optional[Any]:
-        return self._continuation_source or get_current_conversation_continuation_source()
 
     @property
     def comm_context(self) -> Optional[ExternalEventPayload]:
@@ -183,24 +176,6 @@ class BaseEntrypoint:
                 self._comm_cv.reset(comm_token)
             if comm_context_token is not None:
                 self._comm_context_cv.reset(comm_context_token)
-
-    async def pending_continuation_count(self) -> int:
-        source = self.continuation_source
-        if source is None:
-            return 0
-        return int(await source.pending_count())
-
-    async def peek_next_continuation(self):
-        source = self.continuation_source
-        if source is None:
-            return None
-        return await source.peek_next()
-
-    async def take_next_continuation(self):
-        source = self.continuation_source
-        if source is None:
-            return None
-        return await source.take_next()
 
     # ---------- Common helpers ----------
 
@@ -1280,8 +1255,7 @@ class BaseEntrypoint:
             "user_type": payload.get("user_type"),
             "session_id": payload.get("session_id"),
             "conversation_id": payload.get("conversation_id"),
-            "text": (payload.get("text") or "").strip(),
-            "attachments": payload.get("attachments") or (payload.get("payload") or {}).get("attachments") or [],
+            "external_events": payload.get("external_events") or [],
             "step_logs": [],
             "start_time": time.time(),
         }
@@ -1468,10 +1442,8 @@ class BaseEntrypoint:
         state = dict(getattr(self, "_app_state", {}) or {})
         self._turn_id = self._turn_id or _mid("turn")
         state["turn_id"] = self._turn_id
-        if params.get("text"):
-            state["text"] = params["text"]
-        if "attachments" in params:
-            state["attachments"] = params.get("attachments") or []
+        if "external_events" in params:
+            state["external_events"] = params.get("external_events") or []
 
         tenant = state.get("tenant")
         project = state.get("project")
