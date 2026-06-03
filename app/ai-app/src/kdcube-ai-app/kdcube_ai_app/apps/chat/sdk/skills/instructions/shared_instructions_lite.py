@@ -68,7 +68,7 @@ REACT_LITE_EXTERNAL_EVENTS = """
 - The timeline is streamed to the user as you produce it. If an earlier same-turn completion already answered something, do not re-list or re-answer it unless the user explicitly asks, the earlier answer was unclear/failed, or one short bridge is needed for context.
 - `steer` means the user is redirecting or stopping the current work. Treat it as latest user intent.
 - If a steer places you in a finalize/reorient phase, wrap up from known progress unless the steer clearly asks for new work.
-- Followup/steer blocks are part of the same turn once folded. Their attachments use event-scoped `fi:turn_<id>.external.<kind>.attachments/<message_id>/<name>` paths.
+- Followup/steer blocks are part of the same turn once folded. Their attachments use event-scoped `fi:turn_<id>.external.<event_kind>.attachments/<event_id>/<name>` paths, for example `fi:turn_<id>.external.followup.attachments/<event_id>/<name>`.
 - Do not continue an old plan blindly after a steer.
 """
 
@@ -151,26 +151,30 @@ REACT_LITE_PATHS_AND_NAMESPACES = """
   - `ar:turn_<id>.assistant.completion.<n>` for an earlier visible assistant completion from the same turn
   - `ar:turn_<id>.react.turn.index`
   - `ar:plan.latest:<plan_id>`
-- `fi:` addresses files, outputs, and attachments:
+- `fi:` addresses files, outputs, snapshots, and attachments:
   - `fi:turn_<id>.files/<path>` for durable workspace/project files
   - `fi:turn_<id>.outputs/<path>` for non-workspace produced artifacts
+  - `fi:turn_<id>.snapshots/<name>` for story/wizard snapshots
   - `fi:turn_<id>.user.attachments/<name>` for original user attachments
-  - `fi:turn_<id>.external.<kind>.attachments/<message_id>/<name>` for followup/steer attachments
+  - `fi:turn_<id>.external.<event_kind>.attachments/<event_id>/<name>` for followup/steer/external-event attachments
 - If an `fi:` path starts `fi:conv_<conversation_id>.turn_<id>...`, the `conv_` segment is the conversation scope and the artifact belongs to another conversation. Current-conversation `fi:` paths do not have this segment. Use scoped paths exactly as supplied.
 - `tc:turn_<id>.<tool_call_id>.call` and `.result` address tool call inputs/results.
 - `so:sources_pool[1,3]` and `so:sources_pool[2:6]` address source rows.
 - `ws:turn_<id>.conv.working.summary` addresses the latest working summary for a turn.
 - `su:turn_<id>.conv.range.summary` addresses a compacted range summary.
 - `ks:<path>` addresses read-only bundle knowledge space. `sk:<skill_id>` addresses skill text.
-- Canonical physical OUT_DIR-relative paths are qualified with a turn root: `turn_<id>/files/...`, `turn_<id>/outputs/...`, `turn_<id>/attachments/...`, plus runtime `logs/...`.
-- Only `fi:` file/output/attachment refs have a derived physical OUT_DIR path. `ar:`, `tc:`, `so:`, `su:`, `ks:`, and `sk:` are logical context refs, not filesystem paths.
+- Externally tracked artifact refs such as `ext:...` may appear in event data or snapshots. They are opaque external artifact URIs. Resolve and rehost them with `react.pull`; after pull, continue from the returned `fi:` logical path or physical path. Unsupported namespaces are reported by the pull result.
+- Canonical physical OUT_DIR-relative paths are qualified with a turn root: `turn_<id>/files/...`, `turn_<id>/outputs/...`, `turn_<id>/snapshots/...`, `turn_<id>/attachments/...`, `turn_<id>/external/...`, plus runtime `logs/...`.
+- Derived physical OUT_DIR paths exist for `fi:` file/output/snapshot/attachment refs. `ar:`, `tc:`, `so:`, `su:`, `ks:`, and `sk:` stay logical context refs.
 - Logical <-> physical conversion is mechanical:
   - `fi:turn_<id>.files/<rel>` <-> `turn_<id>/files/<rel>`
   - `fi:turn_<id>.outputs/<rel>` <-> `turn_<id>/outputs/<rel>`
+  - `fi:turn_<id>.snapshots/<rel>` <-> `turn_<id>/snapshots/<rel>`
   - `fi:turn_<id>.user.attachments/<rel>` <-> `turn_<id>/attachments/<rel>`
-  - `fi:turn_<id>.external.<kind>.attachments/<message_id>/<rel>` <-> `turn_<id>/external/<kind>/attachments/<message_id>/<rel>`
-- Do not mix separators: logical `fi:` paths use a dot after the turn id and slash after the namespace; physical paths use slashes. If you see `fi:turn_<id>/outputs/...` or `turn_<id>.outputs/...`, normalize mentally to the canonical form above.
-- If an artifact line says `physical_path: exists (derive)`, derive the physical path with the conversion rule. If it does not, treat the logical path as context-only.
+  - `fi:turn_<id>.external.<event_kind>.attachments/<event_id>/<rel>` <-> `turn_<id>/external/<event_kind>/attachments/<event_id>/<rel>`
+- Cross-conversation `fi:conv_<conversation_id>.turn_<id>...` refs use the same mapping under `conv_<conversation_id>/turn_<id>/...`.
+- Canonical separators: logical `fi:` paths use a dot after the turn id and slash after the namespace; physical paths use slashes. If you see `fi:turn_<id>/outputs/...` or `turn_<id>.outputs/...`, normalize mentally to the canonical form above.
+- If an artifact line says `physical_path: exists (derive)`, derive the physical path with the conversion rule. Otherwise treat the logical path as context-only.
 - Physical paths are for exec code, `react.write`, `react.patch`, rendering tools, and browser tools. Logical paths are for `react.read`, `react.pull`, and context recovery.
 - For current-turn writes, use the exact current turn root from ANNOUNCE/tool context: `turn_<current>/files/<scope>/<path>` for maintained workspace state and `turn_<current>/outputs/<scope>/<path>` for produced artifacts.
 - The first segment after `files/` is a maintained workspace scope. Treat it like a project root that may be continued, tested, patched, packaged, versioned, or published later.
@@ -229,9 +233,10 @@ REACT_LITE_REACT_WRITE_ARTIFACTS = """
 REACT_LITE_WORKSPACE_BASE = """
 [VIRTUAL WORKSPACE MODEL]
 - You do not have direct host filesystem access. You operate through the rendered timeline, logical paths, and the current turn OUT_DIR workspace.
-- Reason about three spaces:
-  - current-turn OUT_DIR: `turn_<current>/files/`, `turn_<current>/outputs/`, `turn_<current>/attachments/`, `logs/`
-  - versioned conversation artifact refs: logical `fi:turn_<id>.files/...`, `fi:turn_<id>.outputs/...`, attachments
+- Reason about four spaces:
+  - current-turn OUT_DIR: `turn_<current>/files/`, `turn_<current>/outputs/`, `turn_<current>/snapshots/`, `turn_<current>/attachments/`, `turn_<current>/external/`, `logs/`
+  - versioned conversation artifact refs: logical `fi:turn_<id>.files/...`, `fi:turn_<id>.outputs/...`, `fi:turn_<id>.snapshots/...`, attachments, and cross-conversation `fi:conv_<conversation_id>.turn_<id>...`
+  - externally tracked artifact refs: opaque `ext:...` or `<namespace>:...` refs that `react.pull` may rehost into ordinary `fi:` refs
   - read-only bundle knowledge space: logical `ks:<path>`
 - When files are materialized, the filesystem visible to exec/code is rooted at `OUTPUT_DIR` and is shaped like:
   ```text
@@ -239,17 +244,22 @@ REACT_LITE_WORKSPACE_BASE = """
     turn_<current>/
       files/<scope>/...       # current editable workspace/project trees
       outputs/<scope>/...     # current produced artifacts
+      snapshots/...            # current story/wizard snapshots
       attachments/...         # current user attachments
+      external/...             # rehosted event/domain attachments or evidence
     turn_<older>/
       files/<scope>/...       # pulled historical refs; reference material
       outputs/<scope>/...     # pulled historical output files
+      snapshots/...            # pulled historical snapshots
       attachments/...         # pulled exact historical attachments
+    conv_<conversation_id>/     # pulled cross-conversation refs
+      turn_<older>/...
     logs/...
   ```
 - In git workspace mode, the current turn root may be a sparse local git repo, but maintained workspace content still belongs under `turn_<current>/files/<scope>/...`.
 - Read ANNOUNCE `[WORKSPACE]` first when workspace state matters. It tells you what is already materialized and which previous saved workspace paths can be pulled/checked out.
-- Historical `fi:` refs are not automatically local. Read them for visible context; pull them only when code/tools need local files.
-- Do not patch historical `fi:` refs or old `turn_<id>/...` paths directly.
+- For historical `fi:` refs, use `react.read` for visible context and `react.pull` when code/tools need local files.
+- To edit historical workspace files, pull first, checkout into current-turn `files/...`, then patch the current copy.
 - Keep durable project state under current-turn `turn_<current>/files/...`; keep generated deliverables, reports, test results, and exports under `turn_<current>/outputs/...`.
 - Treat the first path segment under `files/` as a durable workspace scope: a project/folder that may be continued, patched, tested, packaged, or published in later turns.
 - Reuse an existing `turn_<current>/files/<scope>/...` when continuing the same maintained workspace. Create a new scope only for a separate project/fork.
@@ -279,24 +289,30 @@ REACT_LITE_FILES_VS_OUTPUTS = """
 # Include this block only when the runtime opts this agent into story/wizard snapshots.
 REACT_LITE_STORY_SNAPSHOTS = """
 [STORY SNAPSHOTS]
-- Story snapshots are durable state artifacts for a user story, wizard, or reactive workflow. Use them only when the visible workflow or runtime explicitly exposes snapshot paths.
-- A snapshot is separate from ordinary workspace files and produced outputs. It captures current story state, observed signals, missing fields, evidence refs, and the next useful action.
+- Story snapshots are durable state artifacts for a user story or wizard.
+- A snapshot is separate from ordinary workspace files and produced outputs. It captures current story state, observed signals, missing fields, evidence refs, and the next useful action. Producers include tool calls, story/wizard event sources, and rehosted bundle/external storage.
 - The canonical logical path is `fi:turn_<id>.snapshots/<name>`. Current-turn writes use `turn_<current>/snapshots/<name>`.
-- The format is chosen by the workflow: YAML, JSON, Markdown, or another text-oriented representation. Preserve the existing format when updating a snapshot.
-- Do not invent snapshots, snapshot paths, or snapshot-required behavior when the current workflow does not expose them.
+- The format is chosen by the story/wizard implementation: YAML, JSON, Markdown, or another text-oriented representation. Preserve the existing format when updating a snapshot.
 """
 
 
 # Include this block only when `react.pull`/`react.checkout` are available.
 REACT_LITE_WORKSPACE_PULL_CHECKOUT = """
 [WORKSPACE MATERIALIZATION - PULL/CHECKOUT]
-- `react.pull(paths=[...])` accepts `fi:` refs only. Use it to materialize historical files locally for reference or execution.
-- Folder/slice pulls are for `fi:turn_<id>.files/<scope-or-subtree>` only. `fi:turn_<id>.outputs/...` and attachments require exact file refs.
-- Pulling does not activate or replace the current editable workspace; pulled content stays under its historical `turn_<id>/...` root.
+- `react.pull(paths=[...])` accepts normal `fi:` refs and externally tracked artifact refs shown by the runtime, such as `ext:...`. Use it to materialize historical files or external artifacts locally for reference or execution.
+- Externally tracked refs are opaque external artifact URIs. `react.pull` resolves and rehosts them through registered namespace rehosters.
+- Unsupported namespaces are reported by `react.pull`; continue only from returned materialized paths.
+- After pulling an externally tracked ref, continue from the `logical_path` / `physical_path` rows returned by `react.pull`.
+- The returned `fi:` path tells where the artifact landed: snapshots use `fi:turn_<id>.snapshots/...`; external files/evidence can use `fi:turn_<id>.external.<event_kind>.attachments/...`; workspace project state uses `fi:turn_<id>.files/...`.
+- Folder/slice pulls are supported for `fi:turn_<id>.files/<scope-or-subtree>`.
+- `fi:turn_<id>.outputs/...` requires an exact file ref.
+- `fi:turn_<id>.user.attachments/...`, `fi:turn_<id>.external.<event_kind>.attachments/<event_id>/...`, and hosted binaries require exact file refs.
+- Snapshot subtree pulls are available only when the pull tool reports snapshot subtree support; otherwise use exact `fi:turn_<id>.snapshots/<name>` refs.
+- Pulling creates a local reference view under its historical `turn_<id>/...` root. Checkout is the step that copies versioned `files/...` refs into the current editable workspace.
 - After pull, exec/code can inspect pulled material through physical paths under `Path(OUTPUT_DIR)`, for example `turn_<older>/files/<scope>/src/app.py` or `turn_<older>/outputs/report.html`.
 - `react.checkout(mode="replace", paths=[...])` copies pulled `fi:turn_<id>.files/...` refs into the current `files/...` workspace, replacing the current workspace tree.
 - `react.checkout(mode="overlay", paths=[...])` copies pulled `fi:turn_<id>.files/...` refs on top of existing current work.
-- After checkout, edit/run/search the current copy under `turn_<current>/files/<scope>/...` or `Path(OUTPUT_DIR) / "turn_<current>/files/<scope>/..."`, not the old pulled `turn_<older>/...` copy.
+- After checkout, edit/run/search the current copy under `turn_<current>/files/<scope>/...` or `Path(OUTPUT_DIR) / "turn_<current>/files/<scope>/..."`.
 - To continue a previous workspace path, use the two-step pattern: pull the `fi:turn_<id>.files/<scope>` ref, then checkout it, then edit current-turn `turn_<current>/files/<scope>/...`.
 - Use exact `fi:` refs for binaries such as xlsx, pptx, docx, pdf, images, and zip files; folder pulls do not imply hosted binary descendants.
 """

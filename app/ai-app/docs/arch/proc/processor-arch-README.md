@@ -1,12 +1,13 @@
 ---
 id: ks:docs/arch/proc/processor-arch-README.md
 title: "Processor Architecture"
-summary: "Current chat processor architecture: queue claiming, execution, recovery, shutdown, and the implemented shared external-event behavior for followup and steer."
+summary: "Current processor architecture: queue claiming, lane-backed external-event wakeups, execution, recovery, shutdown, and shared followup/steer behavior."
 tags: ["arch", "proc", "processor", "queues", "redis", "sse", "shutdown"]
 keywords: ["proc", "chat processor", "inflight", "drain", "turn interruption", "steer", "followup", "redis streams"]
 see_also:
   - ks:docs/arch/architecture-long.md
   - ks:docs/arch/proc/longrun-protection-README.md
+  - ks:docs/arch/proc/events-orchestration-README.md
   - ks:docs/arch/proc/design/conversation-scheduler-streams-README.md
   - ks:docs/service/streams/conversation-scheduler-README.md
   - ks:docs/ops/ecs/components/proc-README.md
@@ -16,7 +17,10 @@ see_also:
 ---
 # Chat Processor Architecture
 
-This document describes the current `proc` service architecture, including the currently implemented shared external-event behavior for `followup` and `steer`, and the next-step design beyond that slice.
+This document describes the current `proc` service architecture, including
+queue claiming, execution, recovery, shutdown, and the current lane-backed
+external-event behavior. The focused event-orchestration map lives in
+[events-orchestration-README.md](events-orchestration-README.md).
 
 It reflects the current implementation in:
 - `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/web_app.py`
@@ -171,16 +175,36 @@ Key patterns:
 {tenant}:{project}:kdcube:chat:conversation:timeline-owner:{conversation_id}
 ```
 
-The shared external event source stores accepted `followup` / `steer` messages for a busy conversation.
+New lane-backed events use the scoped identity:
+
+```text
+tenant + project + user_id + conversation_id + agent_id
+```
+
+and keys shaped like:
+
+```text
+{tenant}:{project}:kdcube:chat:conversation:external-events:{conversation_id}:user:{user_id}:agent:{agent_id}
+{tenant}:{project}:kdcube:chat:conversation:external-events:seq:{conversation_id}:user:{user_id}:agent:{agent_id}
+{tenant}:{project}:kdcube:chat:conversation:timeline-owner:{conversation_id}:user:{user_id}:agent:{agent_id}
+```
+
+The shared external event source stores accepted user messages, `followup`,
+`steer`, and authored `external_event` occurrences when those events are
+lane-backed.
 
 Important:
 
 - events are ordered per conversation
-- events are not placed onto the main ready queue immediately
+- lane-backed event bodies are not copied onto the main ready queue
+- the ready queue carries an `ExternalEventLaneWakeup` when proc needs to start
+  work from a lane event
 - the active React workflow may consume them while it is still running
 - a live consumed `followup` stays on the current turn
 - a live consumed `steer` interrupts the active generation or cancellable tool phase and then hands React a short finalize phase on the same turn
-- if the active workflow does not consume them, proc promotes the next event back into the normal ready queue after the active turn finishes
+- if the active workflow does not consume a promotable event, proc promotes the
+  next event back into the ready queue as a lane wakeup after the active turn
+  finishes
 
 ---
 
@@ -190,13 +214,15 @@ Important:
 
 Ingress now has two admission paths.
 
-Regular path, when the conversation is not currently working:
+Reactive idle path, when the conversation is not currently working:
 
 1. auth, gateway, rate limit, and backpressure checks run
 2. conversation state is set to `in_progress`
 3. ingress requires `require_not_in_progress=True`
-4. the task payload is enqueued into the ready queue for the user type
-5. ingress emits `conv_status` so the client sees the conversation move to `in_progress`
+4. ingress publishes the accepted event into the external-event lane
+5. a small `ExternalEventLaneWakeup` is enqueued into the ready queue for the
+   user type
+6. ingress emits `conv_status` so the client sees the conversation move to `in_progress`
 
 Busy-conversation continuation path:
 
@@ -205,10 +231,11 @@ Busy-conversation continuation path:
    - `steer` if explicitly marked; blank text is allowed
    - `followup` if explicitly marked
    - `followup` by default for any message that arrives while the conversation is busy
-3. ingress writes the message into the per-conversation shared external event source
+3. ingress writes the message into the per-conversation/per-agent shared external
+   event source
 4. ingress emits `chat_service` with `type="queue.continuation.accepted"`
 5. the synchronous `/sse/chat` response returns `status="followup_accepted"` or `status="steer_accepted"`
-6. no item is added to the main ready queue yet
+6. no item is added to the main ready queue yet unless a later promotion is needed
 
 If a live React owner exists:
 - `followup` can be folded into the active turn and influence the next decision boundary
@@ -238,6 +265,9 @@ High-level flow:
 Once claimed:
 
 1. proc materializes `ExternalEventPayload`
+   - if the queue item is `ExternalEventLaneWakeup`, proc first reads the lane
+     event by `event_id` and reconstructs the payload from `event.task_payload`
+   - if the queue item is already `ExternalEventPayload`, proc validates it directly
 2. proc builds `ServiceCtx`, `ConversationCtx`, and `ChatCommunicator`
 3. if running on ECS with `ECS_AGENT_URI`, proc enables task-wide ECS scale-in protection for the busy proc task
 4. proc marks the task as started
@@ -271,7 +301,7 @@ On terminal completion:
     - emit `conv_status` with `completion="success"`
   - if there is a pending external event to promote:
     - take exactly one oldest unconsumed event
-    - push it into the normal ready queue for its user type
+    - push an `ExternalEventLaneWakeup` into the normal ready queue for its user type
     - set conversation state back to `in_progress` for the promoted turn
     - emit `conv_status` with `completion="queued_next"`
 - failure:
@@ -316,9 +346,11 @@ sequenceDiagram
     participant R as Bundle/workflow runtime
     participant P2 as Next proc worker
 
-    C->>I: POST /sse/chat (regular turn T1)
-    I->>Q: LPUSH T1
-    P1->>Q: BRPOPLPUSH claim T1
+    C->>I: POST /sse/chat (message turn T1)
+    I->>M: Append message event
+    I->>Q: LPUSH ExternalEventLaneWakeup for T1
+    P1->>Q: BRPOPLPUSH claim wakeup
+    P1->>M: Resolve event.task_payload by event_id
     P1->>R: Execute T1
 
     C->>I: POST /sse/chat (busy conversation)
@@ -331,10 +363,11 @@ sequenceDiagram
         R->>R: Apply followup during active turn or stop on steer at safe checkpoint
     else runtime does not consume event
         P1->>M: claim next promotable external event after T1 completes
-        P1->>Q: LPUSH promoted next turn
+        P1->>Q: LPUSH promoted ExternalEventLaneWakeup
         P1-->>C: conv_status completion=queued_next
         Note over P1,P2: P2 may be the same or a different proc worker
-        P2->>Q: BRPOPLPUSH claim promoted turn
+        P2->>Q: BRPOPLPUSH claim promoted wakeup
+        P2->>M: Resolve event.task_payload by event_id
         P2->>R: Execute next turn
     end
 ```
@@ -521,7 +554,9 @@ What happens today:
   - `take_next_continuation()`
 - if the live runtime consumes a `followup` while it is running, that input stays inside the active turn
 - if the live runtime consumes a `steer` while it is running, engineering interrupts the active phase and React finishes through a short bounded finalize pass on the same turn
-- if the runtime does not consume the event, proc promotes exactly one next pending event into the normal ready queue after the current turn finishes
+- if the runtime does not consume the event, proc promotes exactly one next
+  pending event into the normal ready queue as `ExternalEventLaneWakeup` after
+  the current turn finishes
 
 This is the answer to the main operational question:
 
@@ -532,7 +567,7 @@ This is the answer to the main operational question:
 
 Current message-kind rule:
 
-- `regular`: normal turn when the conversation is idle
+- `message`: normal turn when the conversation is idle
 - `followup`: any message received while the conversation is busy unless explicitly marked otherwise
 - `steer`: explicit control message, may be blank, intended for runtimes that can react mid-turn
 
@@ -644,7 +679,7 @@ The target behavior should be:
 - never let two processors execute the same conversation at the same time
 - allow a client to send a new message while a turn is still active
 - distinguish message intent:
-  - `regular`: normal user turn when the conversation is not currently working
+  - `message`: normal user turn when the conversation is not currently working
   - `followup`: any message that arrives while the conversation is already working, unless it is explicitly marked otherwise
   - `steer`: an explicitly marked control message for the currently running turn; it may contain blank text
 - let reactive bundles check for steer/followup while the turn is still running and decide whether to pick them
@@ -702,7 +737,7 @@ All accepted messages for a conversation go into shared ordered storage:
 
 This mailbox holds:
 
-- `regular` head turns
+- `message` head turns
 - `followup` messages
 - `steer` messages
 
@@ -813,7 +848,7 @@ Ingress should become append-oriented, not enqueue-oriented.
 
 Recommended flow:
 
-1. classify the incoming message as `regular`, `followup`, or `steer`
+1. classify the incoming message as `message`, `followup`, or `steer`
 2. append it to the per-conversation mailbox with monotonic sequence
 3. if the conversation is not already scheduled or leased:
    - set the scheduled marker
@@ -959,13 +994,13 @@ It should not reinterpret the message into another kind before calling the bundl
 
 That means:
 
-- `regular` stays `regular`
+- `message` stays `message`
 - `followup` stays `followup`
 - `steer` stays `steer`
 
 The bundle/runtime is responsible for deciding whether that message kind is actionable.
 
-#### Regular
+#### Message
 
 - always valid as a normal turn input
 - bundle `run()` handles it as ordinary user input
@@ -1002,7 +1037,7 @@ Yes, but the scheduler-facing taxonomy should stay small and stable.
 Recommended separation:
 
 - scheduler/control kinds:
-  - `regular`
+  - `message`
   - `followup`
   - `steer`
   - future control kinds like `cancel` if needed

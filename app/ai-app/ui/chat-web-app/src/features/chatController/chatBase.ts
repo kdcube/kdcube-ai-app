@@ -147,14 +147,27 @@ export interface ChatMessage {
     id: number;
 }
 
+export interface ChatTarget {
+    agent_id?: string;
+    agent?: string;
+    story_id?: string;
+    story_kind?: string;
+    surface?: string;
+    [key: string]: unknown;
+}
+
+export interface ExternalEventRouting {
+    reactive?: boolean;
+    iteration_credit?: number;
+    [key: string]: unknown;
+}
+
 export interface ExternalEvent {
     event_id?: string;
     event_source_id: string;
     kind?: string;
     story_id?: string;
-    routing?: {
-        reactive?: boolean;
-    };
+    routing?: ExternalEventRouting;
     data?: Record<string, unknown>;
     [key: string]: unknown;
 }
@@ -174,7 +187,7 @@ export interface ChatRequest {
     followup?: boolean;
     steer?: boolean;
     payload?: Record<string, unknown>;
-    target?: Record<string, unknown>;
+    target?: ChatTarget;
     external_event?: ExternalEvent;
 }
 
@@ -363,5 +376,16 @@ export abstract class ChatBase {
         }
         return h;
     };
+
+    protected buildChatPayload(req: ChatRequest): Record<string, unknown> | undefined {
+        const payload: Record<string, unknown> = {...(req.payload || {})};
+        if (req.target) {
+            payload.target = req.target;
+        }
+        if (req.external_event) {
+            payload.external_event = req.external_event;
+        }
+        return Object.keys(payload).length ? payload : undefined;
+    }
 
 }

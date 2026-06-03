@@ -1,10 +1,10 @@
 ---
 id: ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
 title: "How To Test A Bundle"
-summary: "Testing guide for bundle authors and QA: local syntax/suite/pytest validation, runtime reload validation, widget and API checks, scheduled-job verification, and failure diagnosis in the local runtime."
-tags: ["sdk", "bundle", "testing", "pytest", "widget", "runtime", "validation"]
-keywords: ["bundle testing workflow", "shared bundle suite", "local bundle tests", "widget and api validation", "shared sdk widget source validation", "runtime reload verification", "scheduled job checks", "bundle failure diagnosis", "manual and automated test loop", "local qa for bundles", "integration qa for bundles"]
-updated_at: 2026-05-23
+summary: "Testing guide for bundle authors and QA: local syntax/suite/pytest validation, runtime reload validation, widget/API/event-source checks, scheduled-job verification, and failure diagnosis in the local runtime."
+tags: ["sdk", "bundle", "testing", "pytest", "widget", "events", "runtime", "validation"]
+keywords: ["bundle testing workflow", "shared bundle suite", "local bundle tests", "widget and api validation", "event source validation", "artifact rehoster validation", "shared sdk widget source validation", "runtime reload verification", "scheduled job checks", "bundle failure diagnosis", "manual and automated test loop", "local qa for bundles", "integration qa for bundles"]
+updated_at: 2026-06-03
 see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/sdk/bundle/build/how-to-write-bundle-README.md
@@ -17,12 +17,16 @@ see_also:
   - ks:docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
   - ks:docs/sdk/bundle/versatile-reference-bundle-README.md
   - ks:docs/sdk/bundle/bundle-widget-integration-README.md
+  - ks:docs/sdk/bundle/bundle-events-README.md
   - ks:docs/sdk/integrations/telegram/telegram-README.md
   - ks:docs/sdk/integrations/telegram/telegram-external-prereq-README.md
   - ks:docs/sdk/integrations/browser/browser-tools-README.md
   - ks:docs/service/cicd/ngrok-README.md
   - ks:docs/sdk/tools/custom-tools-README.md
   - ks:docs/sdk/tools/tool-subsystem-README.md
+  - ks:docs/sdk/events/event-subsystem-README.md
+  - ks:docs/sdk/events/external-events-README.md
+  - ks:docs/sdk/agents/react/event-source/event-source-README.md
   - ks:docs/sdk/bundle/bundle-delivery-and-update-README.md
   - ks:docs/sdk/bundle/bundle-runtime-README.md
   - ks:docs/sdk/bundle/build/design/bundle-loader-import-isolation-README.md
@@ -71,6 +75,19 @@ Critical widget/browser test:
   widget integration bug unless the deployment intentionally reverse-proxies all
   KDCube paths under that same origin
 
+Critical event-source test:
+
+- if the bundle declares `events_descriptor.py`, prove every event module loads
+  through the same import mode as bundle-local tools
+- verify event-source ids, policy bindings, and custom artifact namespace
+  rehosters are discoverable by the ReAct event-source subsystem
+- for authored UI events, test the accepted payload shape:
+  `payload.target.agent_id`, optional `story_kind` / `story_id`,
+  `payload.external_event.event_source_id`, and
+  `payload.external_event.routing.reactive`
+- for external refs such as `ext:...`, test that `react.pull` invokes the
+  rehoster and returns the expected `fi:` logical path plus physical path
+
 Use this together with:
 
 - [how-to-navigate-kdcube-docs-README.md](how-to-navigate-kdcube-docs-README.md)
@@ -112,6 +129,7 @@ This means:
 - browser/widget validation
 - API and MCP validation
 - cron/runtime-path validation inside the real environment
+- event-source/rehoster discovery and authored event payload validation
 - provider callback validation through public HTTPS when the provider cannot
   call localhost directly, for example Telegram webhooks, OAuth callbacks, or
   remote-control style callbacks
@@ -130,8 +148,9 @@ Run tests in this order:
 2. shared SDK bundle suite
 3. bundle-local pytest tests
 4. isolated direct checks for generated HTML/builders if applicable
-5. local runtime reload path
-6. real widget/API/manual runtime checks
+5. event-source/rehoster discovery checks if the bundle declares events
+6. local runtime reload path
+7. real widget/API/manual runtime checks
 
 After validation passes, use
 [how-to-release-bundle-content-README.md](how-to-release-bundle-content-README.md)
@@ -217,6 +236,9 @@ For a brand-new bundle skeleton, prove the contract before adding product logic:
   descriptor templates
 - `docs/design/` and `docs/journal/journal.md` exist and are updated with the
   first implementation decisions
+- event modules and `events_descriptor.py` parse if the first milestone has
+  wizard/canvas/snapshot events, tool event-source policies, or custom artifact
+  namespace rehosters
 
 Do this before building UI, tools, or scheduler logic. A clean skeleton makes
 later failures narrower.

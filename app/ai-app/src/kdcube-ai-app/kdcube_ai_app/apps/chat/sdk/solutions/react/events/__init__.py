@@ -18,6 +18,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.events.artifact_production impo
 from kdcube_ai_app.apps.chat.sdk.solutions.react.events.core import (
     REACT_FOLLOWUP_EVENT_SOURCE_ID,
     REACT_MEMSEARCH_EVENT_SOURCE_ID,
+    REACT_MESSAGE_EVENT_SOURCE_ID,
     REACT_STEER_EVENT_SOURCE_ID,
     REACT_WRITE_EVENT_SOURCE_ID,
     event_source_id_for_external_kind,
@@ -67,6 +68,7 @@ __all__ = [
     "DEFAULT_REACT_EVENT_POLICIES",
     "REACT_FOLLOWUP_EVENT_SOURCE_ID",
     "REACT_MEMSEARCH_EVENT_SOURCE_ID",
+    "REACT_MESSAGE_EVENT_SOURCE_ID",
     "REACT_POLICY_PHASES",
     "REACT_STEER_EVENT_SOURCE_ID",
     "REACT_WRITE_EVENT_SOURCE_ID",

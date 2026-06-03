@@ -1,10 +1,10 @@
 ---
 id: ks:docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
 title: "How To Assemble A Bundle With SDK Building Blocks"
-summary: "Tier 1 bundle-builder map for choosing reusable KDCube SDK and platform blocks before writing custom bundle services: tools, agents, storage, widgets, jobs, integrations, and solutions."
+summary: "Tier 1 bundle-builder map for choosing reusable KDCube SDK and platform blocks before writing custom bundle services: tools, event sources, agents, storage, widgets, jobs, integrations, and solutions."
 tags: ["sdk", "bundle", "tier-1", "building-blocks", "integrations", "solutions", "tools"]
-keywords: ["bundle building blocks", "sdk integrations", "sdk solutions", "bundle assembly map", "reuse sdk components", "telegram integration", "email integration", "tasks solution", "delivery integration", "shared sdk widget components", "built in tools", "react tools"]
-updated_at: 2026-05-23
+keywords: ["bundle building blocks", "sdk integrations", "sdk solutions", "bundle assembly map", "reuse sdk components", "telegram integration", "email integration", "tasks solution", "delivery integration", "shared sdk widget components", "built in tools", "react tools", "bundle events", "event sources", "artifact rehosters"]
+updated_at: 2026-06-03
 see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/sdk/bundle/build/how-to-write-bundle-README.md
@@ -24,6 +24,7 @@ see_also:
   - ks:docs/sdk/tools/tool-subsystem-README.md
   - ks:docs/sdk/bundle/bundle-agent-integration-README.md
   - ks:docs/sdk/bundle/bundle-client-communication-README.md
+  - ks:docs/sdk/bundle/bundle-events-README.md
   - ks:docs/sdk/bundle/bundle-entrypoint-classes-README.md
   - ks:docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
@@ -31,6 +32,8 @@ see_also:
   - ks:docs/sdk/bundle/bundle-transports-README.md
   - ks:docs/sdk/bundle/build/design/bundle-loader-import-isolation-README.md
   - ks:docs/sdk/bundle/bundle-widget-integration-README.md
+  - ks:docs/sdk/events/event-subsystem-README.md
+  - ks:docs/sdk/agents/react/event-source/event-source-README.md
 ---
 # How To Assemble A Bundle With SDK Building Blocks
 
@@ -104,6 +107,21 @@ Critical live-event rule:
 - read the exact client and bundle recipe:
   [Bundle Client Communication: non-chat bundle events over the shared stream](../bundle-client-communication-README.md#non-chat-bundle-events-over-the-shared-stream)
 
+Critical event-source rule:
+
+- use authored external events for story-aware UI moments such as wizard
+  assistance, canvas review, saved snapshot, or uploaded evidence
+- tools are event sources too: `tool_id` is the `event_source_id`, and
+  `tool_call_id` is the `event_id`
+- bind event-source policies by `react_phase`; `block_production` owns how a
+  tool result or authored event becomes timeline blocks and artifact rows
+- when event data carries an external artifact URI such as `ext:...`, register
+  an artifact namespace rehoster in a loaded tool module or event module so
+  `react.pull` can materialize it as a normal `fi:` ref
+- read [Bundle Events](../bundle-events-README.md) and
+  [React Event Sources](../../agents/react/event-source/event-source-README.md)
+  before building wizard/canvas/snapshot flows or custom artifact refs
+
 ## Current Reusable Blocks
 
 | Need | Use | Primary docs |
@@ -114,6 +132,9 @@ Critical live-event rule:
 | Local public HTTPS origin for provider callbacks, Telegram webhooks, OAuth callbacks, and remote-control style integrations while KDCube runs on localhost | one ngrok HTTPS URL through a local reverse proxy into frontend, ingress, and proc | [Serving Local KDCube With Ngrok](../../../service/cicd/ngrok-README.md) |
 | Explicit report delivery to email/Telegram with delivered-file metadata | `kdcube_ai_app.apps.chat.sdk.integrations.delivery` | [Email Integration](../../integrations/email/email-README.md), [Telegram Integration](../../integrations/telegram/telegram-README.md) |
 | Web search and web fetch with source-pool provenance | `web_tools` | [SDK Tools](../../tools/sdk-tools-README.md) |
+| Policy-driven tool result rendering | tool `@event_source(...)` declarations plus `react_phase=block_production` policies | [Bundle Events](../bundle-events-README.md), [React Event Sources](../../agents/react/event-source/event-source-README.md) |
+| Story-aware wizard/canvas/chat events and snapshots | authored external events with `payload.target.agent_id`, `story_kind`, `story_id`, and `payload.external_event.event_source_id` | [Bundle Events](../bundle-events-README.md), [External Events](../../events/external-events-README.md) |
+| Bundle/domain artifact refs visible to ReAct | `@artifact_namespace_rehoster(...)` for compact namespaces such as `ext:...`; `react.pull` returns the materialized `fi:` path | [Bundle Events](../bundle-events-README.md), [React Event Source](../../agents/react/event-source/event-source-README.md), [React Turn Workspace](../../agents/react/react-turn-workspace-README.md) |
 | Real browser verification for generated HTML, widgets, and local browser flows | `browser_tools`, shared Playwright backend, per-turn BrowserContext | [Browser Tools](../../integrations/browser/browser-tools-README.md), [Playwright Backend](../../integrations/browser/playwright-README.md) |
 | ReAct-side artifact recovery, search, and precise text editing | `react.pull`, `react.checkout`, `react.rg`, `react.read`, `react.patch` | [React Turn Workspace](../../agents/react/react-turn-workspace-README.md), [React Runtime Configuration](../../agents/react/runtime-configuration-README.md) |
 | PDF, DOCX, PPTX, PNG, HTML generation | `rendering_tools` plus public rendering skills | [SDK Tools](../../tools/sdk-tools-README.md) |
@@ -139,6 +160,8 @@ Critical live-event rule:
 | --- | --- |
 | `entrypoint.py` | Decorators, route aliases, SDK module configuration, storage-root and user-scope hooks, product role policy. |
 | `tools_descriptor.py` | Tool aliases for SDK tool modules and bundle-local tool modules used by the agent. Bundle-local tools should use `ref: "tools/name.py"` and package-relative imports; `module` is for installed modules. |
+| `events_descriptor.py` | Event-source modules loaded into ReAct, including authored UI event declarations and custom artifact namespace rehosters. |
+| `events/*.py` | Bundle-owned event-source declarations, phase policy bindings, and rehosters for domain artifact namespaces. |
 | `skills_descriptor.py` | Bundle-local skill root plus `AGENTS_CONFIG` filters for core SDK skills, SDK solution skills such as `task.*`, and bundle-local product skills. |
 | skill `tools.yaml` | Tool metadata for a skill; add `required: true` for tool ids that must exist before that skill is shown or loaded. |
 | `config/bundles.template.yaml` | Deployment-scoped non-secret props that enable/configure the block. |
@@ -205,6 +228,22 @@ If multiple SDK blocks can receive background jobs, do not add multiple
 decorated `@on_job` methods. The final bundle entrypoint keeps one `@on_job`,
 calls `await super().handle_job(**kwargs)` first, and only dispatches local
 `work_kind` values when the superclass returns `handled=false`.
+
+### Story-Aware Wizard Or Canvas With Agent Review
+
+```text
+main UI
+  -> side chat iframe
+  -> wizard or canvas iframe
+  -> bundle APIs save product state and host domain files
+  -> authored external events carry story_id, agent_id, and snapshot/artifact refs
+  -> ReAct event-source policies produce timeline blocks
+  -> rehosters materialize ext: refs into fi: refs when react.pull is called
+```
+
+Bundle code owns the story identity model, event-source ids, snapshot storage,
+artifact namespace rehosters, and policies for how those events appear to the
+agent. UI code owns the interaction surface and sends explicit product events.
 
 ### Telegram Bot Transport And Optional Mini App Controls
 

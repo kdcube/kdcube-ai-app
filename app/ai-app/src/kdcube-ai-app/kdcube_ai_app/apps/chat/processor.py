@@ -50,6 +50,8 @@ from kdcube_ai_app.apps.chat.sdk.protocol import (
     ExternalEventActor,
     ExternalEventConfig,
     ExternalEvent,
+    ExternalEventLaneRef,
+    ExternalEventLaneWakeup,
     ExternalEventMeta,
     ExternalEventPayload,
     ExternalEventRequest,
@@ -1046,9 +1048,103 @@ class EnhancedChatRequestProcessor:
             agent_id=agent_id,
         )
 
+    def _external_event_source_for_wakeup(self, wakeup: ExternalEventLaneWakeup):
+        lane = wakeup.event_lane
+        return build_conversation_external_event_source(
+            redis=self.redis,
+            tenant=lane.tenant or wakeup.actor.tenant_id,
+            project=lane.project or wakeup.actor.project_id,
+            conversation_id=lane.conversation_id or wakeup.routing.conversation_id or wakeup.routing.session_id,
+            user_id=lane.user_id or wakeup.user.user_id or wakeup.user.fingerprint or "",
+            agent_id=normalize_agent_id(lane.agent_id, default=DEFAULT_REACT_AGENT_ID),
+        )
+
+    @staticmethod
+    def _is_external_event_lane_wakeup(task_data: Dict[str, Any]) -> bool:
+        kind = str(task_data.get("kind") or "").strip()
+        return kind == "external_event_lane_wakeup" or isinstance(task_data.get("event_lane"), dict)
+
+    @staticmethod
+    def _payload_for_lane_wakeup(
+        payload: ExternalEventPayload,
+        *,
+        wakeup: ExternalEventLaneWakeup,
+        event: Any,
+    ) -> ExternalEventPayload:
+        resolved = payload.model_copy(deep=True)
+        if resolved.request is None:
+            resolved.request = ExternalEventRequest(request_id=str(getattr(getattr(resolved, "meta", None), "task_id", "") or ""))
+        if resolved.event is None:
+            resolved.event = ExternalEvent()
+        resolved.event.kind = str(getattr(event, "kind", "") or resolved.event.kind or "message")
+        resolved.event.agent_id = normalize_agent_id(
+            getattr(event, "agent_id", None) or wakeup.event_lane.agent_id,
+            default=DEFAULT_REACT_AGENT_ID,
+        )
+        resolved.event.event_source_id = str(
+            getattr(event, "event_source_id", "") or resolved.event.event_source_id or ""
+        ) or None
+        resolved.event.event_id = str(getattr(event, "message_id", "") or wakeup.event_lane.event_id or "") or None
+        resolved.event.sequence = int(getattr(event, "sequence", 0) or wakeup.event_lane.sequence or 0) or None
+        resolved.event.source = "processor.external_event_lane_wakeup"
+        resolved.bundle_call_context = dict(getattr(resolved, "bundle_call_context", {}) or {})
+        resolved.bundle_call_context["event_lane_wakeup"] = wakeup.model_dump()
+        return resolved
+
+    @staticmethod
+    def _wakeup_for_event_payload(
+        payload: ExternalEventPayload,
+        *,
+        event: Any,
+        reason: str = "reactive_event",
+    ) -> ExternalEventLaneWakeup:
+        event_ctx = getattr(payload, "event", None)
+        agent_id = normalize_agent_id(
+            getattr(event, "agent_id", None)
+            or getattr(event_ctx, "agent_id", None),
+            default=DEFAULT_REACT_AGENT_ID,
+        )
+        return ExternalEventLaneWakeup(
+            meta=payload.meta,
+            routing=payload.routing,
+            actor=payload.actor,
+            user=payload.user,
+            config=payload.config,
+            accounting=payload.accounting,
+            continuation=payload.continuation,
+            event=payload.event,
+            bundle_call_context=dict(getattr(payload, "bundle_call_context", {}) or {}),
+            reason=reason,
+            event_lane=ExternalEventLaneRef(
+                tenant=payload.actor.tenant_id,
+                project=payload.actor.project_id,
+                user_id=payload.user.user_id or payload.user.fingerprint or "",
+                conversation_id=payload.routing.conversation_id or payload.routing.session_id,
+                agent_id=agent_id,
+                event_id=str(getattr(event, "message_id", "") or "") or None,
+                sequence=int(getattr(event, "sequence", 0) or 0) or None,
+                stream_id=str(getattr(event, "stream_id", "") or "") or None,
+            ),
+        )
+
+    async def _resolve_queue_item_payload(self, task_data: Dict[str, Any]) -> ExternalEventPayload:
+        if not self._is_external_event_lane_wakeup(task_data):
+            return ExternalEventPayload.model_validate(task_data)
+
+        wakeup = ExternalEventLaneWakeup.model_validate(task_data)
+        source = self._external_event_source_for_wakeup(wakeup)
+        event_id = str(wakeup.event_lane.event_id or "").strip()
+        if not event_id:
+            raise RuntimeError("External event lane wakeup is missing event_id")
+        event = await source.get_event(event_id)
+        if event is None:
+            raise RuntimeError(f"External event lane wakeup event not found: {event_id}")
+        payload = event.task_payload_model()
+        return self._payload_for_lane_wakeup(payload, wakeup=wakeup, event=event)
+
     async def _mark_task_interrupted(self, task_dict: Dict[str, Any], *, reason: str) -> None:
         try:
-            payload = ExternalEventPayload.model_validate(task_dict)
+            payload = await self._resolve_queue_item_payload(task_dict)
         except Exception:
             logger.warning("Could not materialize interrupted task payload for reason=%s", reason, exc_info=True)
             return
@@ -1193,7 +1289,12 @@ class EnhancedChatRequestProcessor:
             if hasattr(user_type, "value"):
                 user_type = user_type.value
             ready_queue_key = self._ready_queue_key(str(user_type).lower())
-            raw_payload = json.dumps(next_payload.model_dump(), ensure_ascii=False)
+            wakeup = self._wakeup_for_event_payload(
+                next_payload,
+                event=event,
+                reason=f"promoted_{event_kind or 'external_event'}",
+            )
+            raw_payload = json.dumps(wakeup.model_dump(), ensure_ascii=False)
 
             try:
                 await self.redis.lpush(ready_queue_key, raw_payload)
@@ -1204,10 +1305,10 @@ class EnhancedChatRequestProcessor:
             await source.mark_promoted(
                 message_id=event.message_id,
                 claimant_id=claimant_id,
-                task_id=str(getattr(next_payload.meta, "task_id", "") or ""),
+                task_id=str(getattr(wakeup.meta, "task_id", "") or ""),
             )
             logger.info(
-                "Promoted external event message_id=%s kind=%s conversation=%s turn_id=%s to %s",
+                "Promoted external event wakeup message_id=%s kind=%s conversation=%s turn_id=%s to %s",
                 event.message_id,
                 event.kind,
                 next_payload.routing.conversation_id,
@@ -2283,9 +2384,9 @@ class EnhancedChatRequestProcessor:
 
         # 1) Normalize payload
         try:
-            payload = ExternalEventPayload.model_validate(task_data)
+            payload = await self._resolve_queue_item_payload(task_data)
         except Exception as e:
-            logger.error(f"Cannot normalize legacy task: {e}")
+            logger.error(f"Cannot normalize processor queue item: {e}")
             logger.error(traceback.format_exc())
             try:
                 await self._ack_claimed_task(task_data)

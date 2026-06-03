@@ -2,9 +2,16 @@
 
 import base64
 import json
+from types import ModuleType
 
 import pytest
 
+from kdcube_ai_app.apps.chat.sdk.events import EventSourceSubsystem, artifact_namespace_rehoster
+from kdcube_ai_app.apps.chat.sdk.runtime.workspace import resolve_artifact_path
+from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+    build_physical_artifact_path,
+    physical_path_to_logical_path,
+)
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.tools.pull import handle_react_pull
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.tools.tests.helpers import FakeBrowser
@@ -91,6 +98,62 @@ async def test_pull_materializes_turn_file_subtree_from_fi_paths(tmp_path):
     artifact_root = outdir / "workdir"
     assert (artifact_root / "turn_prev" / "files" / "projectA" / "settings.json").read_text(encoding="utf-8") == '{"theme": "dark"}'
     assert (artifact_root / "turn_prev" / "files" / "projectA" / "src" / "app.py").read_text(encoding="utf-8") == 'print("ok")\n'
+
+
+@pytest.mark.asyncio
+async def test_pull_materializes_registered_namespace_ref(tmp_path):
+    outdir = tmp_path / "out"
+
+    @artifact_namespace_rehoster(namespace="ext")
+    async def rehost_external_ref(*, ref, key, ctx_browser, outdir, **_):
+        turn_id = ctx_browser.runtime_ctx.turn_id
+        physical_path = build_physical_artifact_path(
+            turn_id=turn_id,
+            namespace="snapshots",
+            relpath=f"ext/{key}",
+        )
+        target = resolve_artifact_path(outdir, physical_path, prefer_existing=False)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("status: draft\n", encoding="utf-8")
+        return {
+            "materialized": [{
+                "source_ref": ref,
+                "logical_path": physical_path_to_logical_path(physical_path),
+                "physical_path": physical_path,
+                "namespace": "snapshots",
+            }]
+        }
+
+    mod = ModuleType("external_rehosters")
+    mod.rehost_external_ref = rehost_external_ref
+    runtime = RuntimeCtx(turn_id="turn_pull", outdir=str(outdir), workdir=str(tmp_path / "work"))
+    runtime.event_sources = EventSourceSubsystem(modules=[{"mod": mod}])
+    ctx = FakeBrowser(runtime)
+    state = {
+        "last_decision": {
+            "tool_call": {
+                "params": {
+                    "paths": ["ext:task-tracker/draft_1/issue-draft.yaml"],
+                }
+            }
+        },
+        "outdir": str(outdir),
+    }
+
+    await handle_react_pull(ctx_browser=ctx, state=state, tool_call_id="pull_ext")
+
+    payload = _latest_payload(ctx)
+    assert payload["pulled"] == [{
+        "source_ref": "ext:task-tracker/draft_1/issue-draft.yaml",
+        "logical_path": "fi:turn_pull.snapshots/ext/task-tracker/draft_1/issue-draft.yaml",
+        "physical_path": "turn_pull/snapshots/ext/task-tracker/draft_1/issue-draft.yaml",
+        "namespace": "snapshots",
+        "file_count": 1,
+    }]
+    assert "invalid" not in payload
+    assert "missing" not in payload
+    assert "errors" not in payload
+    assert (outdir / "workdir" / "turn_pull" / "snapshots" / "ext" / "task-tracker" / "draft_1" / "issue-draft.yaml").read_text(encoding="utf-8") == "status: draft\n"
 
 
 @pytest.mark.asyncio

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+import json
 
 import pytest
 
@@ -667,6 +668,10 @@ async def test_processor_promotes_next_external_event_from_shared_log():
     assert promoted is not None
     assert promoted["payload"].routing.turn_id == "turn-2"
     assert redis._kv["__lists__"]["chat-ready:registered"]
+    queued = json.loads(redis._kv["__lists__"]["chat-ready:registered"][0])
+    assert queued["kind"] == "external_event_lane_wakeup"
+    assert queued["event_lane"]["event_id"] == event.message_id
+    assert "request" not in queued
     stored = await source.get_event(event.message_id)
     assert stored is not None
     assert stored.promoted_task_id == "task-next"
@@ -760,6 +765,10 @@ async def test_processor_discards_stale_steers_before_promoting_followup():
     assert promoted is not None
     assert promoted["payload"].routing.turn_id == "turn-2"
     assert redis._kv["__lists__"]["chat-ready:registered"]
+    queued = json.loads(redis._kv["__lists__"]["chat-ready:registered"][0])
+    assert queued["kind"] == "external_event_lane_wakeup"
+    assert queued["event_lane"]["event_id"] == followup.message_id
+    assert "request" not in queued
 
     steer_one_state = await source.get_event(steer_one.message_id)
     steer_two_state = await source.get_event(steer_two.message_id)

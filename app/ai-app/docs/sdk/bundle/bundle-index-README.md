@@ -15,6 +15,7 @@ see_also:
   - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
   - ks:docs/sdk/bundle/bundle-delivery-and-update-README.md
   - ks:docs/sdk/bundle/bundle-agent-integration-README.md
+  - ks:docs/sdk/bundle/bundle-events-README.md
   - ks:docs/sdk/bundle/bundle-entrypoint-classes-README.md
   - ks:docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
@@ -56,19 +57,21 @@ Older `docs/sdk/example-bundle` sample docs are no longer part of the bundle pat
    - runtime surfaces available to bundle code
 9. [bundle-event-recording-and-sinks-README.md](bundle-event-recording-and-sinks-README.md)
    - how bundles record selected comm events and send bounded batches to sinks
-10. [bundle-agent-integration-README.md](bundle-agent-integration-README.md)
+10. [bundle-events-README.md](bundle-events-README.md)
+   - bundle-authored events, tool-backed event sources, ReAct policy bindings, UI story events, snapshots, and custom artifact namespace rehosters
+11. [bundle-agent-integration-README.md](bundle-agent-integration-README.md)
    - React tools/skills, MCP connector/server patterns, and Claude Code subagent requirements
-11. [bundle-entrypoint-classes-README.md](bundle-entrypoint-classes-README.md)
+12. [bundle-entrypoint-classes-README.md](bundle-entrypoint-classes-README.md)
    - which SDK entrypoint base to use: base, economics, memory, or both
-12. [bundle-properties-and-secrets-lifecycle-README.md](bundle-properties-and-secrets-lifecycle-README.md)
+13. [bundle-properties-and-secrets-lifecycle-README.md](bundle-properties-and-secrets-lifecycle-README.md)
    - how code defaults, descriptor/admin props, effective bundle props, and bundle secrets flow at runtime
-13. [bundle-platform-integration-README.md](bundle-platform-integration-README.md)
+14. [bundle-platform-integration-README.md](bundle-platform-integration-README.md)
    - exact decorator and route contract
-14. [bundle-transports-README.md](bundle-transports-README.md)
+15. [bundle-transports-README.md](bundle-transports-README.md)
    - canonical inbound/outbound protocol and transport map
-15. [../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../configuration/bundle-runtime-configuration-and-secrets-README.md)
+16. [../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../configuration/bundle-runtime-configuration-and-secrets-README.md)
    - platform/global, bundle-scoped, and user-scoped configuration and secrets
-16. [bundle-delivery-and-update-README.md](bundle-delivery-and-update-README.md)
+17. [bundle-delivery-and-update-README.md](bundle-delivery-and-update-README.md)
    - local reload, registry updates, delivery modes, and deployment-side changes
 
 ## Core Doc Map
@@ -85,6 +88,7 @@ Older `docs/sdk/example-bundle` sample docs are no longer part of the bundle pat
 | Choose the SDK entrypoint base class | [bundle-entrypoint-classes-README.md](bundle-entrypoint-classes-README.md) |
 | Runtime surfaces | [bundle-runtime-README.md](bundle-runtime-README.md) |
 | Record and sink selected comm events | [bundle-event-recording-and-sinks-README.md](bundle-event-recording-and-sinks-README.md) |
+| Bundle-authored events, event sources, ReAct policies, snapshots, and custom namespace rehosters | [bundle-events-README.md](bundle-events-README.md) |
 | React, tools/skills, MCP, Claude Code, and file-producing tool integration | [bundle-agent-integration-README.md](bundle-agent-integration-README.md) |
 | Decorators, widget/API/public integration, `@on_job` | [bundle-platform-integration-README.md](bundle-platform-integration-README.md) |
 | Inbound/outbound transports and protocols | [bundle-transports-README.md](bundle-transports-README.md) |

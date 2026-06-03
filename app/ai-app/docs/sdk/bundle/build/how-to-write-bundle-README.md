@@ -1,10 +1,10 @@
 ---
 id: ks:docs/sdk/bundle/build/how-to-write-bundle-README.md
 title: "How To Write A Bundle"
-summary: "Authoring guide for bundle creators and integrators: bundle shape, lifecycle, decorators, runtime surfaces, configuration and storage decisions, and how to turn a product idea or existing app into a deployable bundle."
-tags: ["sdk", "bundle", "authoring", "workflow", "widget", "api", "testing"]
-keywords: ["bundle authoring guide", "bundle creator path", "bundle integrator path", "end to end bundle design", "decorator selection", "runtime surface selection", "widget api mcp cron on_job choices", "shared sdk widget components", "configuration and storage decisions", "bundle lifecycle design", "reference authoring patterns"]
-updated_at: 2026-05-23
+summary: "Authoring guide for bundle creators and integrators: bundle shape, lifecycle, decorators, runtime surfaces, bundle events, configuration and storage decisions, and how to turn a product idea or existing app into a deployable bundle."
+tags: ["sdk", "bundle", "authoring", "workflow", "widget", "api", "events", "testing"]
+keywords: ["bundle authoring guide", "bundle creator path", "bundle integrator path", "end to end bundle design", "decorator selection", "runtime surface selection", "widget api mcp cron on_job choices", "bundle events", "event sources", "artifact rehosters", "shared sdk widget components", "configuration and storage decisions", "bundle lifecycle design", "reference authoring patterns"]
+updated_at: 2026-06-03
 see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
@@ -19,6 +19,7 @@ see_also:
   - ks:docs/sdk/bundle/bundle-agent-integration-README.md
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
   - ks:docs/sdk/bundle/bundle-client-communication-README.md
+  - ks:docs/sdk/bundle/bundle-events-README.md
   - ks:docs/sdk/bundle/bundle-transports-README.md
   - ks:docs/sdk/bundle/bundle-widget-integration-README.md
   - ks:docs/sdk/integrations/telegram/telegram-README.md
@@ -28,6 +29,9 @@ see_also:
   - ks:docs/sdk/bundle/bundle-storage-and-cache-README.md
   - ks:docs/sdk/tools/custom-tools-README.md
   - ks:docs/sdk/tools/tool-subsystem-README.md
+  - ks:docs/sdk/events/event-subsystem-README.md
+  - ks:docs/sdk/events/external-events-README.md
+  - ks:docs/sdk/agents/react/event-source/event-source-README.md
   - ks:docs/sdk/bundle/build/design/bundle-loader-import-isolation-README.md
   - ks:docs/sdk/storage/cache-README.md
   - ks:docs/sdk/storage/git-store-README.md
@@ -72,6 +76,7 @@ Use this document together with:
 - [versatile-reference-bundle-README.md](../versatile-reference-bundle-README.md)
 - [bundle-platform-integration-README.md](../bundle-platform-integration-README.md)
 - [bundle-widget-integration-README.md](../bundle-widget-integration-README.md)
+- [bundle-events-README.md](../bundle-events-README.md)
 - [bundle-properties-and-secrets-lifecycle-README.md](../bundle-properties-and-secrets-lifecycle-README.md)
 - [bundle-runtime-README.md](../bundle-runtime-README.md)
 - [../../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../../configuration/bundle-runtime-configuration-and-secrets-README.md)
@@ -145,6 +150,21 @@ Critical bundle-to-browser event rule:
 - read the concrete client and bundle recipe before implementing this:
   [bundle-client-communication-README.md#non-chat-bundle-events-over-the-shared-stream](../bundle-client-communication-README.md#non-chat-bundle-events-over-the-shared-stream)
 
+Critical bundle event-source rule:
+
+- use authored external events for product moments that should become agent
+  context, such as wizard assistance, canvas review, snapshot available, or
+  evidence uploaded
+- route those events with `payload.target.agent_id`; include `story_kind` and
+  `story_id` when the event belongs to a product-flow instance
+- tools are event sources; a tool can declare `@event_source(...)` and bind
+  policies such as `react_phase=block_production`
+- if event data or tool results expose compact external refs such as `ext:...`,
+  register `@artifact_namespace_rehoster(...)` in a loaded tool module or event
+  module
+- read [bundle-events-README.md](../bundle-events-README.md) before designing
+  wizard/canvas/snapshot flows or custom artifact refs
+
 Shared widget rule:
 
 - do not copy SDK-owned UI panels into every bundle
@@ -192,6 +212,7 @@ It may expose one or more of these surfaces:
 - bundle main UI apps
 - MCP endpoints
 - scheduled jobs
+- authored external events for story-aware UI or service inputs
 
 Operational rule:
 
@@ -372,6 +393,8 @@ Add only the implementation folders the first milestone needs, for example:
 ```text
   services/
   tools/
+  events/
+  events_descriptor.py
   ui/
     main/
     widgets/
@@ -394,6 +417,9 @@ Skeleton file rules:
 - `interface/README.md` documents the bundle-visible contract: widget aliases,
   API/MCP/cron/job route aliases, public-auth rules, payload shapes, and the
   config keys that control them
+- if the bundle has authored external events, `interface/README.md` documents
+  `payload.target.agent_id`, `story_kind`, `story_id`, event-source ids,
+  reactive flags, and artifact-ref namespaces the UI may send
 - user-owned credentials and user state do not belong in descriptor templates
 - `docs/design/` should contain the structured design that implementation will
   follow, not only raw notes
@@ -414,6 +440,28 @@ Skeleton file rules:
 - do not decorate a `BaseWorkflow` subclass as the singleton bundle entrypoint.
   `BaseWorkflow` is the per-message orchestrator created inside the
   `BaseEntrypoint` turn execution.
+
+### If the bundle has wizard, canvas, snapshot, or external artifact flows
+
+Use this file split:
+
+- `events_descriptor.py` lists event modules loaded into the ReAct event-source
+  subsystem
+- `events/*.py` declares authored event sources, phase policy bindings, and
+  artifact namespace rehosters
+- `tools/*.py` keeps tool implementations; tool functions can add
+  `@event_source(...)` when they need custom result handling
+- bundle APIs save product/domain state and submit explicit events for agent
+  context
+- UI sends meaningful events with `agent_id`, `story_kind`, `story_id`,
+  `event_source_id`, and compact artifact refs
+
+Use `@artifact_namespace_rehoster(...)` when a snapshot, attachment, or domain
+artifact is represented by an external namespace such as `ext:...`. The
+rehoster chooses the ReAct destination by artifact meaning: snapshots under
+`snapshots/`, editable workspace files under `files/`, produced artifacts under
+`outputs/`, and domain attachments under
+`external/<event_kind>/attachments/<event_id>/...`.
 
 If the bundle needs external human setup before an integration can work, add an
 operator-facing integration homework doc such as:

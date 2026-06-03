@@ -1178,7 +1178,7 @@ class AtomicChatQueueManager:
         local paid_cont_key = KEYS[14]
         
         local user_type = ARGV[1]
-        local chat_task_json = ARGV[2]  -- Actual event payload
+        local chat_task_json = ARGV[2]  -- Processor wakeup payload
         local anonymous_ratio = tonumber(ARGV[3])
         local registered_ratio = tonumber(ARGV[4])
         local paid_ratio = tonumber(ARGV[5])
@@ -1261,7 +1261,7 @@ class AtomicChatQueueManager:
         end
         
         if can_admit then
-            -- Atomically add ACTUAL event payload to queue
+            -- Atomically add processor wakeup payload to queue
             redis.call('LPUSH', queue_key, chat_task_json)
             redis.call('INCR', capacity_counter_key)
             redis.call('EXPIRE', capacity_counter_key, 300)
@@ -1286,7 +1286,7 @@ class AtomicChatQueueManager:
                                        context: RequestContext,
                                        endpoint: str) -> Tuple[bool, str, Dict[str, Any]]:
         """
-        Atomically check capacity and enqueue ACTUAL event payload
+        Atomically check capacity and enqueue a processor wakeup payload.
         This is the "by fact" backpressure check that counts for circuit breakers
         """
 
@@ -1326,7 +1326,7 @@ class AtomicChatQueueManager:
                 f"{self.QUEUE_CONTINUATION_COUNT_PREFIX}:paid",
                 # Arguments
                 user_type.value,
-                json.dumps(chat_task_data, ensure_ascii=False),  # Your actual event payload
+                json.dumps(chat_task_data, ensure_ascii=False),
                 str(bp.anonymous_pressure_threshold),
                 str(bp.registered_pressure_threshold),
                 str(bp.paid_pressure_threshold),
@@ -1355,7 +1355,7 @@ class AtomicChatQueueManager:
                 "configured_capacity": self.gateway_config.total_capacity_per_instance,
                 "theoretical_thresholds": theoretical_thresholds,
                 "user_type": user_type.value,
-                "task_id": chat_task_data.get("task_id"),
+                "task_id": (chat_task_data.get("meta") or {}).get("task_id") or chat_task_data.get("task_id"),
                 "check_type": "chat_enqueue_by_fact",
                 "gateway_config": {
                     "profile": self.gateway_config.profile.value,
@@ -1364,10 +1364,12 @@ class AtomicChatQueueManager:
             }
 
             if success:
-                logger.info(f"Chat task admitted atomically: {chat_task_data.get('task_id')} "
+                task_id = (chat_task_data.get("meta") or {}).get("task_id") or chat_task_data.get("task_id")
+                logger.info(f"Chat task wakeup admitted atomically: {task_id} "
                             f"({user_type.value}), queue={current_queue_size}/{actual_capacity}")
             else:
-                logger.warning(f"Chat task rejected atomically: {chat_task_data.get('task_id')} "
+                task_id = (chat_task_data.get("meta") or {}).get("task_id") or chat_task_data.get("task_id")
+                logger.warning(f"Chat task wakeup rejected atomically: {task_id} "
                                f"({user_type.value}), reason={reason}, queue={current_queue_size}/{actual_capacity}")
 
                 # Record this rejection for circuit breaker machinery

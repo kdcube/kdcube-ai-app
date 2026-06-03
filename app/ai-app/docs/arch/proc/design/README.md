@@ -6,6 +6,7 @@ tags: ["arch", "proc", "design", "scheduler", "redis-streams", "kafka"]
 keywords: ["proc design", "conversation scheduler", "redis streams", "kafka", "leases", "wake stream"]
 see_also:
   - ks:docs/arch/proc/processor-arch-README.md
+  - ks:docs/arch/proc/events-orchestration-README.md
   - ks:docs/arch/proc/longrun-protection-README.md
 ---
 # Proc Design Notes
@@ -18,6 +19,11 @@ The current source-of-truth for the shipped processor remains:
 - [longrun-protection-README.md](../longrun-protection-README.md)
 
 Current design notes:
+
+- [../events-orchestration-README.md](../events-orchestration-README.md)
+  The current processor event-orchestration map for lane-backed external events,
+  ready-queue wakeups, processor payload resolution, and the boundary with ReAct
+  timeline folding.
 
 - [conversation-scheduler-streams-README.md](conversation-scheduler-streams-README.md)
   The proposed migration from the current global Lists-based proc queue to a

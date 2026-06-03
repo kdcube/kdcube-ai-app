@@ -1,10 +1,10 @@
 ---
 id: ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
 title: "How To Configure And Run A Bundle"
-summary: "Current bundle-development runtime workflow: tenant/project environment setup, descriptor staging, local-path and git bundles, configuration translation, start/stop/reload loop, configuration/secret scopes, and the rule that one machine may hold many local deployment snapshots but should not be treated as running many local compose-backed KDCubes at once."
+summary: "Current bundle-development runtime workflow: tenant/project environment setup, descriptor staging, local-path and git bundles, configuration translation, start/stop/reload loop, configuration/secret scopes, bundle events, and the rule that one machine may hold many local deployment snapshots but should not be treated as running many local compose-backed KDCubes at once."
 tags: ["sdk", "bundle", "configuration", "runtime", "cli", "bundles.yaml"]
-keywords: ["local bundle development workflow", "tenant project environment boundary", "descriptor driven runtime setup", "local path bundle loop", "git bundle loop", "bundle reload workflow", "runtime sandbox selection", "bundle config and secret scopes", "shared sdk widget sources", "bundle configurator workflow", "bundle deployer workflow", "current kdcube cli workflow", "multiple local runtime snapshots", "single active local compose deployment", "run multiple kdcubes on one machine", "kdcube bundle command", "patch bundle config cli", "patch bundle secret cli"]
-updated_at: 2026-05-23
+keywords: ["local bundle development workflow", "tenant project environment boundary", "descriptor driven runtime setup", "local path bundle loop", "git bundle loop", "bundle reload workflow", "runtime sandbox selection", "bundle config and secret scopes", "shared sdk widget sources", "bundle events", "event sources", "artifact rehosters", "bundle configurator workflow", "bundle deployer workflow", "current kdcube cli workflow", "multiple local runtime snapshots", "single active local compose deployment", "run multiple kdcubes on one machine", "kdcube bundle command", "patch bundle config cli", "patch bundle secret cli"]
+updated_at: 2026-06-03
 see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/configuration/bundles-descriptor-README.md
@@ -21,6 +21,7 @@ see_also:
   - ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-release-bundle-content-README.md
   - ks:docs/sdk/bundle/bundle-client-communication-README.md
+  - ks:docs/sdk/bundle/bundle-events-README.md
   - ks:docs/sdk/bundle/bundle-transports-README.md
   - ks:docs/sdk/integrations/telegram/telegram-README.md
   - ks:docs/sdk/integrations/telegram/telegram-external-prereq-README.md
@@ -29,6 +30,8 @@ see_also:
   - ks:docs/sdk/bundle/bundle-agent-integration-README.md
   - ks:docs/sdk/tools/custom-tools-README.md
   - ks:docs/sdk/tools/tool-subsystem-README.md
+  - ks:docs/sdk/events/event-subsystem-README.md
+  - ks:docs/sdk/agents/react/event-source/event-source-README.md
   - ks:docs/sdk/bundle/build/design/bundle-loader-import-isolation-README.md
   - ks:docs/sdk/bundle/bundle-widget-integration-README.md
 ---
@@ -92,6 +95,20 @@ Critical widget/browser runtime rule:
   request-bound communicator
 - see [bundle-client-communication-README.md#non-chat-bundle-events-over-the-shared-stream](../bundle-client-communication-README.md#non-chat-bundle-events-over-the-shared-stream)
 
+Critical event-source runtime rule:
+
+- `events_descriptor.py`, `events/*.py`, tool `@event_source(...)`
+  declarations, and `@artifact_namespace_rehoster(...)` handlers are bundle
+  source code
+- after changing them, use the normal bundle source loop:
+  `kdcube bundle reload <bundle_id>` for a local-path bundle, or update the
+  git `ref` and reload/refresh according to the descriptor flow for a git
+  bundle
+- custom artifact namespace resolution comes from the loaded rehoster for that
+  namespace; descriptors select the bundle source/ref and deployment config
+- read [Bundle Events](../bundle-events-README.md) before debugging wizard,
+  canvas, snapshot, or `ext:...` materialization behavior
+
 Important:
 
 - `tenant/project` isolation already exists in the current model
@@ -108,6 +125,7 @@ Use the companion docs for those:
 - [how-to-test-bundle-README.md](how-to-test-bundle-README.md)
 - [how-to-bootstrap-local-bundle-runtime-as-coding-agent-README.md](how-to-bootstrap-local-bundle-runtime-as-coding-agent-README.md)
 - [bundle-client-communication-README.md](../bundle-client-communication-README.md)
+- [bundle-events-README.md](../bundle-events-README.md)
 - [bundle-platform-integration-README.md](../bundle-platform-integration-README.md)
 - [bundle-runtime-README.md](../bundle-runtime-README.md)
 - [../../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../../configuration/bundle-runtime-configuration-and-secrets-README.md)
@@ -1391,7 +1409,8 @@ served hashed asset before changing runtime storage manually.
 ### If you changed a file-producing tool
 
 No descriptor flag enables file hosting for a tool. The contract is part of the
-React/tool runtime.
+React/tool runtime. With the event-source pipeline enabled, file and result
+block production can also be owned by the tool's event-source policies.
 
 The tool must either:
 
@@ -1410,6 +1429,26 @@ turn id, conversation storage, and output directory. Normal React workflows
 prepare this through `BaseWorkflow.build_react(...)`; isolated execution
 prepares it through `bootstrap_bind_all(...)`. Without that prep the helper
 raises a runtime error instead of creating an unscoped artifact.
+
+### If you changed bundle events, policies, or artifact rehosters
+
+Use the same source reload path as for tools:
+
+```bash
+kdcube bundle reload my.bundle@1-0 --workdir ~/.kdcube/kdcube-runtime/mytenant__myproject
+```
+
+Validate these runtime facts after reload:
+
+- the bundle imports `events_descriptor.py` with package-relative imports
+- event modules are included in `event_source_specs` passed to
+  `BaseWorkflow.build_react(...)`
+- authored UI events target the intended `agent_id`
+- `react.pull(paths=["ext:..."])` returns a materialized `fi:` path when the
+  namespace is registered
+- the returned physical path lands in the ReAct workspace namespace selected by
+  the rehoster: `snapshots/`, `files/`, `outputs/`, or
+  `external/<event_kind>/attachments/<event_id>/...`
 
 ## Bundle Props, Secrets, And Canonical `enabled.*`
 

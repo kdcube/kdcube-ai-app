@@ -74,24 +74,35 @@ class ContextBrowser:
         self._external_listener_id: str = ""
         self._external_listener_turn_id: str = ""
         self._external_lease_token: str = ""
+        self._external_event_listener_requested: bool = False
         self._external_apply_lock = asyncio.Lock()
+        self._last_external_event_reader_result: Dict[str, Any] = {}
 
     @property
     def external_event_source(self):
         return getattr(self._runtime_ctx, "external_event_source", None)
 
-    def add_external_event_hook(self, callback: Any) -> None:
+    def add_external_event_hook(self, callback: Any, *, start_listener: bool = True) -> None:
         if not callback:
             return
         self._external_event_hooks.append(callback)
-        if self._timeline is not None and (self._external_event_task is None or self._external_event_task.done()):
+        if start_listener:
+            self._external_event_listener_requested = True
+        if (
+            start_listener
+            and self._timeline is not None
+            and (self._external_event_task is None or self._external_event_task.done())
+        ):
             try:
                 asyncio.get_running_loop().create_task(self.start_external_event_listener())
             except Exception:
                 self.log.log("[timeline.external] failed to schedule owner listener start\n" + traceback.format_exc(), "ERROR")
 
+    def last_external_event_reader_result(self) -> Dict[str, Any]:
+        return dict(self._last_external_event_reader_result or {})
+
     async def ensure_external_event_listener(self) -> None:
-        if self._timeline is None or not self._external_event_hooks:
+        if self._timeline is None or not self._external_event_hooks or not self._external_event_listener_requested:
             return
         task = self._external_event_task
         if task is not None and not task.done():
@@ -238,8 +249,12 @@ class ContextBrowser:
 
         self._timeline = Timeline.from_payload(timeline_payload, runtime=self._runtime_ctx, svc=self.svc)
         deferred_current_turn_blocks: List[Dict[str, Any]] = []
+        deferred_current_turn_hooks: List[Dict[str, Any]] = []
         try:
-            deferred_current_turn_blocks = await self._fold_external_events_initial()
+            (
+                deferred_current_turn_blocks,
+                deferred_current_turn_hooks,
+            ) = await self._fold_external_events_initial()
         except Exception:
             self.log.log(f"[timeline.load]: external event fold failure {traceback.format_exc()}", "ERROR")
         if not self._timeline.conversation_started_at:
@@ -259,6 +274,12 @@ class ContextBrowser:
             if deferred_current_turn_blocks:
                 await self._timeline.contribute_async(deferred_current_turn_blocks)
                 self._timeline.write_local()
+                for hook in deferred_current_turn_hooks:
+                    await self._emit_external_event_hooks(
+                        type=str(hook.get("type") or "external"),
+                        event=hook.get("event"),
+                        blocks=list(hook.get("blocks") or []),
+                    )
         except Exception:
             self.log.log(f"[timeline.load]: deferred current-turn external event fold failure {traceback.format_exc()}", "ERROR")
         if self._timeline.cache_last_touch_at is None and self._timeline.cache_last_ttl_seconds is None:
@@ -333,7 +354,7 @@ class ContextBrowser:
                 await self._timeline.refresh_feedbacks(ctx_client=self.ctx_client, days=days)
         except Exception:
             self.log.log(f"[timeline.load]: refresh feedbacks failure {traceback.format_exc()}", "ERROR")
-        if self._external_event_hooks:
+        if self._external_event_hooks and self._external_event_listener_requested:
             try:
                 await self.start_external_event_listener()
             except Exception:
@@ -363,18 +384,32 @@ class ContextBrowser:
         events = await source.wait_for_events_after(last_cursor, block_ms=max(1, int(block_ms or 1)), limit=max(1, int(limit or 1)))
         return int(await self.apply_external_events(events, call_hooks=call_hooks) or 0)
 
-    async def _fold_external_events_initial(self) -> List[Dict[str, Any]]:
+    async def _fold_external_events_initial(self) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         source = self.external_event_source
+        self._last_external_event_reader_result = {
+            "source": "initial_fold",
+            "events_read": 0,
+            "events_materialized": 0,
+            "blocks_materialized": 0,
+            "current_turn_user_input_materialized": False,
+            "current_turn_prompt_text": "",
+            "max_sequence": int(getattr(self._timeline, "last_external_event_seq", 0) or 0) if self._timeline is not None else 0,
+            "max_stream_id": str(getattr(self._timeline, "last_external_event_id", "") or "") if self._timeline is not None else "",
+        }
         if source is None or self._timeline is None:
-            return []
+            return [], []
         last_cursor = self._timeline.last_external_event_id or int(self._timeline.last_external_event_seq or 0)
         events = await source.read_since(last_cursor)
+        self._last_external_event_reader_result["events_read"] = len(events or [])
         if not events:
-            return []
+            return [], []
         current_turn_id = str(self._runtime_ctx.turn_id or "").strip()
         deferred_current_turn_blocks: List[Dict[str, Any]] = []
+        deferred_current_turn_hooks: List[Dict[str, Any]] = []
         max_seq = int(self._timeline.last_external_event_seq or 0)
         max_cursor = str(self._timeline.last_external_event_id or "")
+        max_applied_seq = 0
+        current_prompt_texts: List[str] = []
         for event in events:
             blocks = await self._blocks_from_external_event(event)
             max_seq = max(max_seq, int(getattr(event, "sequence", 0) or 0))
@@ -382,19 +417,60 @@ class ContextBrowser:
                 max_cursor = str(getattr(event, "stream_id", "") or max_cursor)
             if not blocks:
                 continue
+            self._last_external_event_reader_result["events_materialized"] = (
+                int(self._last_external_event_reader_result.get("events_materialized") or 0) + 1
+            )
+            self._last_external_event_reader_result["blocks_materialized"] = (
+                int(self._last_external_event_reader_result.get("blocks_materialized") or 0) + len(blocks)
+            )
+            max_applied_seq = max(max_applied_seq, int(getattr(event, "sequence", 0) or 0))
             event_turn_id = (
                 str(getattr(event, "owner_turn_id", "") or "").strip()
                 or str(getattr(event, "active_turn_id_at_ingress", "") or "").strip()
             )
-            if current_turn_id and event_turn_id == current_turn_id:
+            block_turn_ids = {
+                str(block.get("turn_id") or "").strip()
+                for block in blocks
+                if isinstance(block, dict) and str(block.get("turn_id") or "").strip()
+            }
+            is_current_turn_event = bool(current_turn_id and (event_turn_id == current_turn_id or current_turn_id in block_turn_ids))
+            if is_current_turn_event:
                 deferred_current_turn_blocks.extend(blocks)
+                deferred_current_turn_hooks.append({
+                    "type": str(getattr(event, "kind", "") or "external"),
+                    "event": event,
+                    "blocks": list(blocks),
+                })
+                for block in blocks:
+                    if not isinstance(block, dict):
+                        continue
+                    block_type = str(block.get("type") or "")
+                    if block_type == "user.prompt":
+                        text = str(block.get("text") or "").strip()
+                        if text:
+                            current_prompt_texts.append(text)
+                    if block_type == "user.prompt" or block_type.startswith("user.attachment."):
+                        self._last_external_event_reader_result["current_turn_user_input_materialized"] = True
             else:
                 await self._timeline.contribute_async(blocks)
+                await self._emit_external_event_hooks(type=str(getattr(event, "kind", "") or "external"), event=event, blocks=blocks)
         self._timeline.last_external_event_id = max_cursor
         self._timeline.last_external_event_seq = max_seq
+        self._last_external_event_reader_result["max_sequence"] = max_seq
+        self._last_external_event_reader_result["max_stream_id"] = max_cursor
+        if current_prompt_texts:
+            self._last_external_event_reader_result["current_turn_prompt_text"] = "\n\n".join(current_prompt_texts)
+        if max_applied_seq and source is not None:
+            try:
+                await source.mark_consumed_up_to(
+                    max_sequence=max_applied_seq,
+                    turn_id=str(self._runtime_ctx.turn_id or ""),
+                )
+            except Exception:
+                self.log.log(f"[timeline.external]: failed to mark initial fold consumed {traceback.format_exc()}", "ERROR")
         if self._timeline.blocks:
             self._timeline.write_local()
-        return deferred_current_turn_blocks
+        return deferred_current_turn_blocks, deferred_current_turn_hooks
 
     async def _fold_external_events(self, *, call_hooks: bool) -> int:
         source = self.external_event_source
@@ -519,7 +595,7 @@ class ContextBrowser:
         if self._timeline is None:
             return []
         kind = str(getattr(event, "kind", "") or "").strip().lower()
-        if kind not in {"followup", "steer", "external_event"}:
+        if kind not in {"message", "regular", "followup", "steer", "external_event"}:
             return []
         turn_id = (
             str(getattr(event, "owner_turn_id", "") or "").strip()
@@ -527,7 +603,12 @@ class ContextBrowser:
             or str(getattr(event, "target_turn_id", "") or "").strip()
             or str(self._runtime_ctx.turn_id or "").strip()
         )
-        path = f"ar:{turn_id}.external.{kind}.{getattr(event, 'message_id', '')}" if turn_id else ""
+        event_id = str(getattr(event, "message_id", "") or "").strip() or f"seq_{int(getattr(event, 'sequence', 0) or 0)}"
+        is_prompt_event = kind in {"message", "regular"}
+        if is_prompt_event:
+            path = f"ar:{turn_id}.user.prompt.{event_id}" if turn_id else ""
+        else:
+            path = f"ar:{turn_id}.external.{kind}.{event_id}" if turn_id else ""
         payload = getattr(event, "payload", None) or {}
         payload = payload if isinstance(payload, dict) else {}
         external_event = payload.get("external_event") if isinstance(payload.get("external_event"), dict) else {}
@@ -539,6 +620,7 @@ class ContextBrowser:
         meta = {
             "event_kind": kind,
             "event_source_id": event_source_id,
+            "event_id": event_id,
             "message_id": str(getattr(event, "message_id", "") or ""),
             "stream_id": str(getattr(event, "stream_id", "") or ""),
             "sequence": int(getattr(event, "sequence", 0) or 0),
@@ -561,8 +643,23 @@ class ContextBrowser:
         reactive = bool(routing.get("reactive")) if "reactive" in routing else False
         if kind == "external_event":
             meta["reactive"] = reactive
-        attachments = self._attachments_from_external_event(event) if kind in {"followup", "external_event"} else []
+        attachments = self._attachments_from_external_event(event) if kind in {"message", "regular", "followup", "external_event"} else []
+        attachment_kind = "user" if is_prompt_event else f"external.{kind}"
+        path_root = (
+            f"fi:{turn_id}.user.attachments/{event_id}"
+            if is_prompt_event
+            else f"fi:{turn_id}.external.{kind}.attachments/{event_id}"
+        )
+        physical_root = (
+            f"{turn_id}/attachments/{event_id}"
+            if is_prompt_event
+            else f"{turn_id}/external/{kind}/attachments/{event_id}"
+        )
         if attachments:
+            attachments = await self._materialize_external_event_attachments(
+                attachments,
+                physical_root=physical_root,
+            )
             attachments = await self._hydrate_external_event_attachments(attachments)
         if attachments:
             meta["attachments_count"] = len(attachments)
@@ -594,8 +691,10 @@ class ContextBrowser:
                 except Exception:
                     pass
             text = "\n".join(lines).strip()
+        if is_prompt_event:
+            meta["prompt_origin"] = "external_event_lane"
         blocks = [self._timeline.block(
-            type="user.followup" if kind == "followup" else "user.steer" if kind == "steer" else "event.external",
+            type="user.prompt" if is_prompt_event else "user.followup" if kind == "followup" else "user.steer" if kind == "steer" else "event.external",
             author="user",
             turn_id=turn_id,
             ts=event_ts,
@@ -604,7 +703,6 @@ class ContextBrowser:
             path=path,
             meta=meta,
         )]
-        event_id = str(getattr(event, "message_id", "") or "").strip() or f"seq_{int(getattr(event, 'sequence', 0) or 0)}"
         if attachments:
             from kdcube_ai_app.apps.chat.sdk.solutions.react.layout import build_user_attachment_blocks
 
@@ -613,14 +711,15 @@ class ContextBrowser:
                 ts=event_ts,
                 user_attachments=attachments,
                 block_factory=self._timeline.block,
-                path_root=f"fi:{turn_id}.external.{kind}.attachments/{event_id}",
-                synthetic_physical_root=f"{turn_id}/external/{kind}/attachments/{event_id}",
+                path_root=path_root,
+                synthetic_physical_root=physical_root,
                 meta_extra={
-                    "continuation_kind": kind,
+                    "continuation_kind": None if is_prompt_event else kind,
                     "event_kind": kind,
                     "event_source_id": event_source_id,
                     "message_id": event_id,
                     "sequence": int(getattr(event, "sequence", 0) or 0),
+                    "attachment_origin": attachment_kind,
                 },
             ))
         if event_source_pipeline_enabled(self._runtime_ctx):
@@ -631,6 +730,90 @@ class ContextBrowser:
                 story_id=story_id or None,
             )
         return blocks
+
+    async def _materialize_external_event_attachments(
+        self,
+        attachments: List[Dict[str, Any]],
+        *,
+        physical_root: str,
+    ) -> List[Dict[str, Any]]:
+        """
+        Copy authored external-event artifact rows into the ReAct conversation
+        artifact surface before blocks are written to timeline.
+
+        Bundle widgets may stage bytes in bundle storage first and send event
+        data with `storage_uri`/`hosted_uri`. ReAct materialization turns that
+        source object into a normal conversation-hosted artifact so later
+        `react.read`, `react.pull`, and cross-conversation `fi:conv_...` paths
+        resolve through the existing artifact pipeline.
+        """
+
+        if not attachments:
+            return []
+        try:
+            from kdcube_ai_app.apps.chat.sdk.config import get_settings
+            from kdcube_ai_app.apps.chat.sdk.storage.conversation_store import ConversationStore
+        except Exception:
+            return [dict(item) for item in attachments if isinstance(item, dict)]
+
+        runtime = self._runtime_ctx
+        conversation_id = str(getattr(runtime, "conversation_id", None) or "").strip()
+        turn_id = str(getattr(runtime, "turn_id", None) or "").strip()
+        user_id = str(getattr(runtime, "user_id", None) or "").strip()
+        tenant = str(getattr(runtime, "tenant", None) or "").strip()
+        project = str(getattr(runtime, "project", None) or "").strip()
+        if not tenant or not project or not conversation_id or not turn_id:
+            return [dict(item) for item in attachments if isinstance(item, dict)]
+
+        store = ConversationStore(get_settings().STORAGE_PATH)
+        materialized: List[Dict[str, Any]] = []
+        for raw in attachments:
+            if not isinstance(raw, dict):
+                continue
+            item = dict(raw)
+            source_uri = str(item.get("source_hosted_uri") or item.get("source_storage_uri") or item.get("storage_uri") or item.get("hosted_uri") or "").strip()
+            name = str(item.get("filename") or item.get("name") or "").strip() or "attachment.bin"
+            safe_name = pathlib.PurePosixPath(name).name or "attachment.bin"
+            target_relpath = f"{physical_root.rstrip('/')}/{safe_name}"
+            if item.get("key") and item.get("hosted_uri") and str(item.get("physical_path") or "").strip() == target_relpath:
+                materialized.append(item)
+                continue
+            source_data: bytes | None = None
+            if source_uri:
+                try:
+                    source_data = await store.get_blob_bytes(source_uri)
+                except Exception:
+                    source_data = None
+            if source_data is None:
+                materialized.append(item)
+                continue
+            try:
+                uri, key, rn = await store.put_artifact_file(
+                    tenant=tenant,
+                    project=project,
+                    user=user_id or None,
+                    fingerprint=None,
+                    conversation_id=conversation_id,
+                    turn_id=turn_id,
+                    relpath=target_relpath,
+                    data=source_data,
+                    mime=str(item.get("mime") or "application/octet-stream"),
+                    role=str(item.get("role") or "external-event-artifact"),
+                )
+                if source_uri:
+                    item.setdefault("source_hosted_uri", source_uri)
+                item["hosted_uri"] = uri
+                item["key"] = key
+                item["rn"] = rn
+                item["physical_path"] = target_relpath
+                item["materialized"] = True
+            except Exception:
+                self.log.log(
+                    f"[timeline.external] attachment materialization failed source={source_uri!r}\n{traceback.format_exc()}",
+                    "WARNING",
+                )
+            materialized.append(item)
+        return materialized
 
     async def _hydrate_external_event_attachments(self, attachments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         store = getattr(getattr(self.ctx_client, "store", None), "get_blob_bytes", None)
@@ -682,7 +865,9 @@ class ContextBrowser:
             request = getattr(payload_model, "request", None)
             payload = getattr(request, "payload", None)
             if isinstance(payload, dict):
-                return _normalize(payload.get("attachments"))
+                attachments = _normalize(payload.get("attachments"))
+                if attachments:
+                    return attachments
         except Exception:
             return []
         return []

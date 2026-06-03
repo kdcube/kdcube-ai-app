@@ -25,16 +25,16 @@ _TIMESTAMP_TURN_ID_RE = re.compile(
     r"^\d{4}-\d{2}-\d{2}-\d{2}-\d{2}(?:-\d{2})?(?:-\d{3,6})?$"
 )
 _EXTERNAL_LOGICAL_RE = re.compile(
-    r"^(?P<turn>[^.]+)\.external\.(?P<kind>[^.]+)\.attachments/(?P<message_id>[^/]+)/(?P<rel>.+)$"
+    r"^(?P<turn>[^.]+)\.external\.(?P<event_kind>[^.]+)\.attachments/(?P<message_id>[^/]+)/(?P<rel>.+)$"
 )
 _EXTERNAL_LOGICAL_LEGACY_RE = re.compile(
-    r"^(?P<turn>[^.]+)\.external\.(?P<kind>[^.]+)\.(?P<message_id>[^.]+)\.attachments/(?P<rel>.+)$"
+    r"^(?P<turn>[^.]+)\.external\.(?P<event_kind>[^.]+)\.(?P<message_id>[^.]+)\.attachments/(?P<rel>.+)$"
 )
 _EXTERNAL_PHYSICAL_RE = re.compile(
-    r"^(?P<turn>[^/]+)/external/(?P<kind>[^/]+)/attachments/(?P<message_id>[^/]+)/(?P<rel>.+)$"
+    r"^(?P<turn>[^/]+)/external/(?P<event_kind>[^/]+)/attachments/(?P<message_id>[^/]+)/(?P<rel>.+)$"
 )
 _EXTERNAL_PHYSICAL_LEGACY_RE = re.compile(
-    r"^(?P<turn>[^/]+)/external/(?P<kind>[^/]+)/(?P<message_id>[^/]+)/attachments/(?P<rel>.+)$"
+    r"^(?P<turn>[^/]+)/external/(?P<event_kind>[^/]+)/(?P<message_id>[^/]+)/attachments/(?P<rel>.+)$"
 )
 
 
@@ -181,7 +181,7 @@ def split_physical_artifact_path(path_value: str) -> tuple[str, str, str]:
     match = _EXTERNAL_PHYSICAL_RE.match(raw) or _EXTERNAL_PHYSICAL_LEGACY_RE.match(raw)
     if match:
         turn_id = match.group("turn")
-        kind = match.group("kind")
+        kind = match.group("event_kind")
         message_id = match.group("message_id")
         rel = match.group("rel")
         if is_turn_id(turn_id) and kind and message_id and rel:
@@ -225,7 +225,7 @@ def split_logical_artifact_path(path_value: str) -> tuple[str, str, str]:
     match = _EXTERNAL_LOGICAL_RE.match(raw) or _EXTERNAL_LOGICAL_LEGACY_RE.match(raw)
     if match:
         turn_id = match.group("turn")
-        kind = match.group("kind")
+        kind = match.group("event_kind")
         message_id = match.group("message_id")
         rel = match.group("rel")
         if is_turn_id(turn_id) and kind and message_id and rel:
@@ -246,9 +246,6 @@ def split_logical_artifact_path(path_value: str) -> tuple[str, str, str]:
         turn_id, rel = raw.split("/user.attachments/", 1)
         if is_turn_id(turn_id) and rel:
             return turn_id, ARTIFACT_NAMESPACE_ATTACHMENTS, rel
-    if ".attachments/" in raw:
-        turn_id, rel = raw.split(".attachments/", 1)
-        return turn_id, ARTIFACT_NAMESPACE_ATTACHMENTS, rel
     for namespace in (
         ARTIFACT_NAMESPACE_FILES,
         ARTIFACT_NAMESPACE_OUTPUTS,

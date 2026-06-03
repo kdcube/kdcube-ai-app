@@ -1,10 +1,10 @@
 ---
 id: ks:docs/sdk/bundle/build/sync-tier1-bundle-docs-to-build-with-kdcube-plugins-README.md
 title: "Tier 1 Bundle Pack For Build-With-KDCube Plugins"
-summary: "Short handoff note for Claude Code and Codex plugin engineers describing the Tier 1 bundle-doc pack, the agent task facets it must support, and the minimal integration contract."
+summary: "Short handoff note for Claude Code and Codex plugin engineers describing the Tier 1 bundle-doc pack, bundle events, the agent task facets it must support, and the minimal integration contract."
 tags: ["sdk", "bundle", "plugins", "claude-code", "codex", "handoff", "tier-1"]
-keywords: ["tier 1 bundle pack", "build with kdcube plugin", "claude code plugin", "codex plugin", "bundle docs pack", "bundle agent facets", "shared sdk widget source", "plugin doc links update"]
-updated_at: 2026-05-23
+keywords: ["tier 1 bundle pack", "build with kdcube plugin", "claude code plugin", "codex plugin", "bundle docs pack", "bundle agent facets", "shared sdk widget source", "bundle events", "event sources", "artifact rehosters", "plugin doc links update"]
+updated_at: 2026-06-03
 see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
@@ -17,12 +17,16 @@ see_also:
   - ks:docs/sdk/bundle/build/how-to-release-bundle-content-README.md
   - ks:docs/sdk/bundle/bundle-agent-integration-README.md
   - ks:docs/sdk/bundle/bundle-client-communication-README.md
+  - ks:docs/sdk/bundle/bundle-events-README.md
   - ks:docs/sdk/bundle/bundle-transports-README.md
   - ks:docs/sdk/integrations/telegram/telegram-README.md
   - ks:docs/sdk/integrations/telegram/telegram-external-prereq-README.md
   - ks:docs/sdk/integrations/browser/browser-tools-README.md
   - ks:docs/sdk/tools/custom-tools-README.md
   - ks:docs/sdk/tools/tool-subsystem-README.md
+  - ks:docs/sdk/events/event-subsystem-README.md
+  - ks:docs/sdk/events/external-events-README.md
+  - ks:docs/sdk/agents/react/event-source/event-source-README.md
   - ks:docs/service/cicd/ngrok-README.md
   - ks:docs/sdk/bundle/bundle-widget-integration-README.md
   - ks:docs/sdk/bundle/build/design/bundle-loader-import-isolation-README.md
@@ -136,6 +140,21 @@ Widget/API live-event rule that plugins must surface early:
 - route agents to [bundle-client-communication-README.md#non-chat-bundle-events-over-the-shared-stream](../bundle-client-communication-README.md#non-chat-bundle-events-over-the-shared-stream)
   before they add raw bundle WebSocket/SSE endpoints or custom relay plumbing
 
+Bundle event-source rule that plugins must surface early:
+
+- story-aware UI uses authored external events with `payload.target.agent_id`
+  and `payload.external_event.event_source_id`
+- use `story_kind` and `story_id` when an event belongs to a wizard, canvas,
+  case, draft, or other product-flow instance
+- tools are event sources; tool result rendering can be customized through
+  `@event_source(...)` phase policies such as `react_phase=block_production`
+- compact refs such as `ext:...` require a registered artifact namespace
+  rehoster; `react.pull` returns the materialized `fi:` path
+- route agents to [bundle-events-README.md](../bundle-events-README.md),
+  [event-subsystem-README.md](../../events/event-subsystem-README.md), and
+  [event-source-README.md](../../agents/react/event-source/event-source-README.md)
+  before they design wizard/canvas/snapshot flows or custom artifact refs
+
 Preferred reading order:
 
 1. navigation
@@ -187,6 +206,9 @@ Recommended:
   connector/server wiring, Claude Code subprocess agents, and the common
   model-selection recipe that uses `config.role_models` for defaults and
   `bundle_call_context.role_models` for one API/MCP/cron/chat/job invocation
+- keep [bundle-events-README.md](../bundle-events-README.md) reachable for
+  authored external events, event-source policies, story-aware UI flows, and
+  artifact namespace rehosters
 - keep [browser-tools-README.md](../../integrations/browser/browser-tools-README.md)
   reachable for ReAct-side browser verification of generated HTML and widgets
 - keep [ngrok-README.md](../../../service/cicd/ngrok-README.md) reachable for
@@ -250,6 +272,12 @@ The plugin should steer agents away from these recurring mistakes:
   handlers from the job payload when needed
 - file-producing tools use the strict `ret.artifact_type == "files"` protocol
   with `ret.files[]`, or trusted tool-side `host_files(...)`
+- custom tool result handling should be expressed as event-source policies when
+  the tool owns how its result becomes timeline blocks or artifact rows
+- bundles with wizard/canvas/snapshot events should include `events_descriptor.py`
+  and event modules in the implementation, docs, tests, and release scope
+- externally tracked artifact refs visible to ReAct need a namespace rehoster
+  that materializes them into the appropriate `fi:` namespace
 - `host_files(...)` documentation states that it requires prepared tool context
   from `BaseWorkflow.build_react(...)` or isolated `bootstrap_bind_all(...)`
 - generated executor code gets files by calling a catalog tool through

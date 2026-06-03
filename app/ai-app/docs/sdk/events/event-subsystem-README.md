@@ -12,9 +12,17 @@ keywords:
     "EventSourceSubsystem",
     "tool-backed event source",
     "event policies",
+    "artifact_namespace_rehoster",
+    "namespace rehoster",
+    "react.pull",
   ]
 see_also:
+  - ks:docs/sdk/bundle/bundle-events-README.md
   - ks:docs/sdk/events/external-events-README.md
+  - ks:docs/arch/proc/events-orchestration-README.md
+  - ks:docs/sdk/agents/react/agent-workspace-collboration-README.md
+  - ks:docs/sdk/agents/react/react-turn-workspace-README.md
+  - ks:docs/sdk/agents/react/files-vs-outputs-README.md
   - ks:docs/sdk/agents/react/event-source/event-source-README.md
   - ks:docs/sdk/agents/react/event-source/block-production-README.md
   - ks:docs/sdk/tools/tool-subsystem-README.md
@@ -120,6 +128,123 @@ The subsystem validates duplicate `event_source_id` values and lets consumers
 look up declarations by source id or, when a durable block carries
 `event_source_id`, by block.
 
+## Artifact Namespace Rehosters
+
+The same module discovery path can register artifact namespace rehosters. A
+rehoster is different from an event source: it turns a custom namespace
+artifact URI such as `ext:...` into a normal ReAct `fi:` artifact ref by
+copying bytes into the current turn artifact surface. The rehoster owns the
+mapping from the custom URI to the ReAct artifact namespace.
+
+A rehoster must be aware of the ReAct workspace and artifact surfaces. It does
+not merely download bytes; it chooses where the artifact belongs in the ReAct
+model and returns the resulting `fi:` logical path plus `OUTPUT_DIR`-relative
+physical path. Read
+[Agent Workspace Collaboration](../agents/react/agent-workspace-collboration-README.md)
+and [Files vs Outputs](../agents/react/files-vs-outputs-README.md) before
+writing a bundle rehoster.
+
+### Where rehosters are discovered
+
+`@artifact_namespace_rehoster` is discovered only from modules that are loaded
+into the ReAct `EventSourceSubsystem`. There are two normal bundle paths:
+
+1. A tool module listed in `tools_descriptor.py`.
+2. An event module listed in `events_descriptor.py` and passed to
+   `BaseWorkflow.build_react(..., event_source_specs=...)`.
+
+Tool modules are scanned automatically because `ToolSubsystem` builds
+`EventSourceSubsystem` from its loaded tool modules. Event-only modules are
+loaded from `event_source_specs`; a descriptor file by itself is not scanned
+unless the workflow passes those specs into `build_react`.
+
+Bundle shape:
+
+```text
+my.bundle@1-0/
+  tools_descriptor.py
+  events_descriptor.py
+  events/
+    my_artifacts.py
+  orchestrator/
+    workflow.py
+```
+
+`events_descriptor.py`:
+
+```python
+EVENT_SOURCE_SPECS = [
+    {"ref": "events/my_artifacts.py", "alias": "my_artifacts"},
+]
+```
+
+Workflow handoff:
+
+```python
+from .. import events_descriptor, tools_descriptor
+
+react = self.build_react(
+    scratchpad,
+    mod_tools_spec=tools_descriptor.TOOLS_SPECS,
+    event_source_specs=events_descriptor.EVENT_SOURCE_SPECS,
+)
+```
+
+Inside `events/my_artifacts.py`:
+
+- snapshot-like state should materialize as `fi:turn_<id>.snapshots/...`
+- external evidence/files should materialize as
+  `fi:turn_<id>.external.<event_kind>.attachments/<event_id>/<name>`
+- editable workspace/project state should materialize as
+  `fi:turn_<id>.files/...`
+- produced deliverables/reports should materialize as `fi:turn_<id>.outputs/...`
+
+The destination is semantic:
+
+| Source artifact meaning | ReAct destination |
+|---|---|
+| Story/wizard state snapshot | `fi:turn_<id>.snapshots/<path>` / `turn_<id>/snapshots/<path>` |
+| Evidence or domain attachment | `fi:turn_<id>.external.<event_kind>.attachments/<event_id>/<name>` / `turn_<id>/external/<event_kind>/attachments/<event_id>/<name>` |
+| Editable project/workspace file | `fi:turn_<id>.files/<workspace_scope>/<path>` / `turn_<id>/files/<workspace_scope>/<path>` |
+| Produced report/export/rendered artifact | `fi:turn_<id>.outputs/<artifact_scope>/<path>` / `turn_<id>/outputs/<artifact_scope>/<path>` |
+
+The returned paths are the agent contract. After `react.pull(paths=["ext:..."])`,
+the agent should use the returned `logical_path` or `physical_path`; it should
+not derive a replacement path from the external URI.
+
+```python
+from kdcube_ai_app.apps.chat.sdk.events import artifact_namespace_rehoster
+
+@artifact_namespace_rehoster(
+    namespace="ext",
+    description="Materialize external artifact refs for ReAct tools.",
+)
+async def rehost_external_ref(*, ref, key, ctx_browser, outdir, **context):
+    ...
+    return {
+        "materialized": [{
+            "source_ref": ref,
+            "logical_path": "fi:turn_<id>.snapshots/ext/path.yaml",
+            "physical_path": "turn_<id>/snapshots/ext/path.yaml",
+        }]
+    }
+```
+
+The same module can also expose an explicit list when it does not want the
+subsystem to scan all top-level objects:
+
+```python
+def list_artifact_namespace_rehosters():
+    return [rehost_external_ref]
+```
+
+`react.pull` calls registered rehosters before the normal `fi:` hydration path.
+A registered rehoster is required for each external namespace. This keeps custom
+namespace artifact URIs such as `ext:...` explicit on the timeline while giving
+agents a standard way to materialize them when they need the actual file. The
+pull result is the contract consumed by the agent: it includes the source ref
+and the resolved/rehosted `logical_path` / `physical_path` rows to use next.
+
 ## Boundary
 
 The shared events subsystem owns:
@@ -128,11 +253,13 @@ The shared events subsystem owns:
 - identity naming;
 - source discovery;
 - policy binding lookup.
+- artifact namespace rehoster discovery.
 
 It does not own:
 
 - transport delivery;
 - queueing or turn ownership;
+- processor wakeup resolution;
 - final renderer block shapes;
 - ReAct cache marker placement;
 - ANNOUNCE text formatting.

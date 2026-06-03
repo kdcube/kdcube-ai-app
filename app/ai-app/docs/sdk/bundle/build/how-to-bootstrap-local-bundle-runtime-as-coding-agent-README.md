@@ -1,16 +1,17 @@
 ---
 id: ks:docs/sdk/bundle/build/how-to-bootstrap-local-bundle-runtime-as-coding-agent-README.md
 title: "How To Bootstrap A Local Bundle Runtime As A Coding Agent"
-summary: "Tier 1 coding-agent runbook for Claude Code, Codex, or a build-with-KDCube plugin to configure a local KDCube runtime, wire a bundle through the CLI, start ngrok when public callbacks are needed, set bundle props and secrets, register Telegram webhooks, prepare Gmail OAuth settings, and report only the external steps the agent cannot complete."
+summary: "Tier 1 coding-agent runbook for Claude Code, Codex, or a build-with-KDCube plugin to configure a local KDCube runtime, wire a bundle through the CLI, start ngrok when public callbacks are needed, set bundle props and secrets, register Telegram webhooks, prepare Gmail OAuth settings, validate bundle events, and report only the external steps the agent cannot complete."
 tags: ["sdk", "bundle", "tier-1", "agents", "local-runtime", "cli", "ngrok", "telegram", "gmail", "oauth"]
-keywords: ["agent local bundle setup", "configure bundle with cli", "run kdcube local runtime", "telegram webhook setup", "gmail oauth local setup", "ngrok local kdcube", "bundles yaml staged descriptors", "bundles secrets yaml", "kdcube bundle command", "autonomous runtime smoke test"]
-updated_at: 2026-05-23
+keywords: ["agent local bundle setup", "configure bundle with cli", "run kdcube local runtime", "telegram webhook setup", "gmail oauth local setup", "ngrok local kdcube", "bundles yaml staged descriptors", "bundles secrets yaml", "bundle events", "event sources", "artifact rehosters", "kdcube bundle command", "autonomous runtime smoke test"]
+updated_at: 2026-06-03
 see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
   - ks:docs/sdk/bundle/bundle-client-communication-README.md
+  - ks:docs/sdk/bundle/bundle-events-README.md
   - ks:docs/sdk/bundle/bundle-transports-README.md
   - ks:docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
   - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
@@ -21,6 +22,8 @@ see_also:
   - ks:docs/sdk/integrations/email/email-external-prereq-README.md
   - ks:docs/sdk/tools/custom-tools-README.md
   - ks:docs/sdk/tools/tool-subsystem-README.md
+  - ks:docs/sdk/events/event-subsystem-README.md
+  - ks:docs/sdk/agents/react/event-source/event-source-README.md
   - ks:docs/sdk/bundle/build/design/bundle-loader-import-isolation-README.md
 ---
 # How To Bootstrap A Local Bundle Runtime As A Coding Agent
@@ -82,6 +85,18 @@ Critical live-event smoke rule:
 - backend code emits with the request-bound communicator, usually
   `comm.service_event(...)`
 - see [bundle-client-communication-README.md#non-chat-bundle-events-over-the-shared-stream](../bundle-client-communication-README.md#non-chat-bundle-events-over-the-shared-stream)
+
+Critical bundle-events smoke rule:
+
+- if a bundle has wizard/canvas/snapshot flows, verify the runtime can load
+  `events_descriptor.py` and the referenced event modules
+- if the UI sends authored external events, verify payloads include
+  `payload.target.agent_id` and `payload.external_event.event_source_id`
+- if the bundle exposes refs such as `ext:...`, verify the namespace rehoster
+  is registered and `react.pull` returns an ordinary `fi:` ref
+- use [bundle-events-README.md](../bundle-events-README.md) for the bundle-side
+  contract and [event-source-README.md](../../agents/react/event-source/event-source-README.md)
+  for policy phases
 
 ## Agent Contract
 

@@ -26,6 +26,13 @@ see_also:
 ---
 # Git-Based Isolated Workspace
 
+This is an engineering reference for the git-backed workspace backend. It is
+not the primary agent-facing path contract. For the compact operational model
+used by agents, start with
+[agent-workspace-collboration-README.md](../agent-workspace-collboration-README.md)
+and
+[workspace-checkout-model-README.md](./workspace-checkout-model-README.md).
+
 This document explains the git-backed React workspace model that complements the
 existing `custom` backend while keeping the same agent-facing `fi:` /
 `react.pull(...)` contract.
@@ -54,6 +61,9 @@ Current implementation status:
 - git publish failure is treated as turn failure
 - exact non-text `.files/...` refs are treated as hosted/custom artifacts, not as git blobs
 - folder pulls remain text-only
+- registered custom namespace refs such as `ext:...` can be materialized by
+  `react.pull`, but the registered rehoster chooses whether the result is a
+  snapshot, hosted output, attachment, or workspace file
 - ANNOUNCE exposes a compact `[WORKSPACE]` operational summary
 - in `git` mode that summary may expose `previous saved workspace paths (pull to bring local; checkout to edit)` so React can see prior saved top-level workspace paths without mistaking them for local editable files
 - detailed publish metadata is persisted as an internal `react.workspace.publish` block
@@ -113,6 +123,10 @@ The model is:
 - one immutable named git ref per turn version
 - the public version id remains the existing `turn_...`
 - `fi:<version>.files/<scope>/<path>` stays the visible reference syntax
+- cross-conversation refs keep the same syntax with a conversation prefix:
+  `fi:conv_<conversation_id>.turn_<id>.files|outputs|snapshots/...`
+- custom namespace refs such as `ext:...` are not `fi:` refs; `react.pull`
+  resolves them only when a matching namespace rehoster is registered
 - `REACT_WORKSPACE_GIT_REPO` identifies the remote repo engineering uses for that lineage
 - engineering resolves that version id to the correct git ref in the current lineage
 - engineering prefetches the isolated lineage repo locally before exec/code runs
@@ -134,6 +148,15 @@ Both paradigms keep the same user-facing contract:
 But the agent is instructed differently:
 - in `custom`, it does not reason about the activated workspace as git
 - in `git`, it is explicitly taught that the activated workspace can be explored with local git commands except pull/push
+
+Custom namespace refs are separate from the git lineage. For example,
+`ext:task-tracker/...` is an opaque domain artifact until a registered
+`@artifact_namespace_rehoster(namespace="ext")` materializes it. If the rehoster
+returns `fi:turn_<id>.snapshots/...`, the result is a snapshot artifact; if it
+returns `fi:turn_<id>.external.ext.attachments/...`, the result is an attachment
+artifact. It becomes git workspace content only if the rehoster deliberately
+places it under `files/...` or the agent explicitly writes a current-turn
+`turn_<current>/files/...` copy.
 
 ### Acceptance Criteria
 

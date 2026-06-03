@@ -17,6 +17,10 @@ rendered into model-visible messages and before cache markers are assigned.
 The target is the mutable timeline block list. Policies may hide, replace, or
 annotate blocks inline. They must not create a new durable timeline history.
 
+This phase is after transport. It does not read Redis lanes, resolve
+`ExternalEventLaneWakeup`, or decide whether an event should start a processor
+task; those responsibilities belong to ingress/proc and the live lane reader.
+
 ## Segment Marks
 
 For cold-cache and TTL-pruning paths, the caller temporarily annotates blocks:
@@ -41,4 +45,3 @@ temporary mark after policies run. Other policy changes, such as `hidden` or
 Timeline projection must complete before cache marker assignment. ANNOUNCE and
 sources tail material is appended after cache markers, so projection policies
 should not depend on tail blocks being present.
-

@@ -34,7 +34,7 @@ from kdcube_ai_app.infra.plugin.bundle_loader import (
     discover_bundle_interface_manifest,
     mcp,
     on_job,
-    on_message,
+    on_reactive_event,
     resolve_bundle_message_method,
     resolve_bundle_api_endpoint,
     resolve_bundle_mcp_endpoint,
@@ -278,7 +278,7 @@ class _DecoratedWorkflow:
     def main_ui(self):
         return ["<html></html>"]
 
-    @on_message
+    @on_reactive_event
     async def handle_message(self, **kwargs):
         return kwargs
 

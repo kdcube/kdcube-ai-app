@@ -3,8 +3,8 @@ id: ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
 title: "How To Navigate KDCube Bundle Docs"
 summary: "Tier 1 navigation guide for bundle creators, integrators, configurators, deployers, local QA, integration QA, and document readers who need the shortest path through KDCube docs without reading the whole tree."
 tags: ["sdk", "bundle", "docs", "navigation", "tier-1", "authoring"]
-keywords: ["bundle docs navigation", "tier 1 reading order", "new bundle path", "wrap existing app into bundle", "bundle integrator path", "bundle configurator path", "bundle deployer path", "bundle qa path", "integration qa path", "shared sdk widget source", "kdcube docs reading strategy", "which doc to read next"]
-updated_at: 2026-05-23
+keywords: ["bundle docs navigation", "tier 1 reading order", "new bundle path", "wrap existing app into bundle", "bundle integrator path", "bundle configurator path", "bundle deployer path", "bundle qa path", "integration qa path", "shared sdk widget source", "bundle events", "event sources", "artifact rehosters", "kdcube docs reading strategy", "which doc to read next"]
+updated_at: 2026-06-03
 see_also:
   - ks:docs/sdk/bundle/bundle-index-README.md
   - ks:docs/sdk/bundle/build/how-to-write-bundle-README.md
@@ -15,6 +15,7 @@ see_also:
   - ks:docs/sdk/bundle/build/how-to-release-bundle-content-README.md
   - ks:docs/sdk/bundle/bundle-agent-integration-README.md
   - ks:docs/sdk/bundle/bundle-client-communication-README.md
+  - ks:docs/sdk/bundle/bundle-events-README.md
   - ks:docs/sdk/bundle/bundle-transports-README.md
   - ks:docs/sdk/bundle/bundle-widget-integration-README.md
   - ks:docs/sdk/bundle/bundle-entrypoint-classes-README.md
@@ -24,6 +25,9 @@ see_also:
   - ks:docs/sdk/integrations/browser/browser-tools-README.md
   - ks:docs/sdk/tools/custom-tools-README.md
   - ks:docs/sdk/tools/tool-subsystem-README.md
+  - ks:docs/sdk/events/event-subsystem-README.md
+  - ks:docs/sdk/events/external-events-README.md
+  - ks:docs/sdk/agents/react/event-source/event-source-README.md
   - ks:docs/service/cicd/ngrok-README.md
   - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
   - ks:docs/sdk/bundle/versatile-reference-bundle-README.md
@@ -132,6 +136,22 @@ Critical browser event-stream rule:
 - read the short recipe before implementing this:
   [bundle-client-communication-README.md#non-chat-bundle-events-over-the-shared-stream](../bundle-client-communication-README.md#non-chat-bundle-events-over-the-shared-stream)
 
+Critical bundle-events rule:
+
+- for story-aware UI, use authored external events rather than ad hoc API/chat
+  conventions
+- the event target includes `agent_id`; event data can include `story_kind`,
+  `story_id`, and compact artifact refs such as `ext:...`
+- tools are also event sources; tool result handling can be customized with
+  event-source policies, starting with `react_phase=block_production`
+- custom artifact namespaces need a registered rehoster so `react.pull` can
+  materialize the external ref into a normal ReAct `fi:` path
+- read [bundle-events-README.md](../bundle-events-README.md),
+  [event-subsystem-README.md](../../events/event-subsystem-README.md), and
+  [event-source-README.md](../../agents/react/event-source/event-source-README.md)
+  when the bundle has wizard/canvas/snapshot flows, custom tool rendering, or
+  externally tracked artifacts
+
 Entrypoint and request-context changes:
 
 - if you change entrypoint inheritance, singleton behavior, per-turn
@@ -161,6 +181,11 @@ file-producing tools, MCP connectors, bundle-served MCP, or Claude Code
 subagents, add this focused page to the Tier 1 pack:
 
 - [../bundle-agent-integration-README.md](../bundle-agent-integration-README.md)
+
+When the bundle defines story-aware UI events, custom event-source policies,
+or artifact namespace rehosters, add this focused page:
+
+- [../bundle-events-README.md](../bundle-events-README.md)
 
 When choosing the Python entrypoint base class, especially for economics,
 memory, inherited widgets, or source-folder UI builds, read:
@@ -399,6 +424,7 @@ Then jump only to the row that matches your question.
 | How do I expose widget, API, MCP, cron, or `@on_job`? | [../bundle-platform-integration-README.md](../bundle-platform-integration-README.md) | It is the exact decorator and surface contract. |
 | What runtime helpers exist inside bundle code? | [../bundle-runtime-README.md](../bundle-runtime-README.md) | It explains the bundle runtime objects and capabilities. |
 | How can a non-chat bundle UI get live progress/events from a bundle operation? | [../bundle-client-communication-README.md#non-chat-bundle-events-over-the-shared-stream](../bundle-client-communication-README.md#non-chat-bundle-events-over-the-shared-stream) and [../bundle-transports-README.md#71-communicator-output](../bundle-transports-README.md#71-communicator-output) | Open `/sse/stream` or Socket.IO, pass `KDC-Stream-ID` on the REST operation, and emit `comm.service_event(...)` from request-bound bundle code. |
+| How do I model wizard/canvas/chat events, snapshots, and external artifact refs for an agent? | [../bundle-events-README.md](../bundle-events-README.md), [../../events/event-subsystem-README.md](../../events/event-subsystem-README.md), and [../../agents/react/event-source/event-source-README.md](../../agents/react/event-source/event-source-README.md) | Use authored external events with `agent_id`, `event_source_id`, optional story ids, event-source policies for ReAct phases, and namespace rehosters so refs such as `ext:...` become `fi:` paths through `react.pull`. |
 | How do I use storage, cache, local bundle storage, or git-backed helpers? | [how-to-write-bundle-README.md](how-to-write-bundle-README.md) | It now contains the compact SDK cheat sheet and points to the deeper storage docs only when needed. |
 | How should a bundle tool return files or hosted attachments? | [../bundle-agent-integration-README.md](../bundle-agent-integration-README.md) and [../../tools/custom-tools-README.md](../../tools/custom-tools-README.md) | Use the strict `ret.artifact_type == "files"` protocol or trusted tool-side `host_files(...)`; `host_files(...)` requires prepared tool context from `BaseWorkflow.build_react(...)` or isolated `bootstrap_bind_all(...)`; generated executor code should call a catalog tool through `agent_io_tools.tool_call(...)`. |
 | How do I talk to the browser correctly? | [../bundle-client-ui-README.md](../bundle-client-ui-README.md) | It routes you to widget, browser, and transport-facing docs. |

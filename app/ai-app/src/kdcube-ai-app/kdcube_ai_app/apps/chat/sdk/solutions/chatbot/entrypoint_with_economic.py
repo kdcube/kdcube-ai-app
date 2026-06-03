@@ -19,7 +19,7 @@ from uuid import uuid4, UUID
 
 from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import BaseEntrypoint
-from kdcube_ai_app.infra.plugin.bundle_loader import on_message
+from kdcube_ai_app.infra.plugin.bundle_loader import on_reactive_event
 from kdcube_ai_app.infra.service_hub.inventory import Config, _mid
 from kdcube_ai_app.apps.chat.sdk.infra.economics.events_resources import (
     msg_denied_quota_reset,
@@ -265,7 +265,7 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
         """
         return {"privileged", "admin"}
 
-    @on_message
+    @on_reactive_event
     async def run(self, **params) -> Dict[str, Any]:
         """
         Economics-aware run() with strict two-source funding and atomic reservations.

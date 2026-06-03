@@ -7,6 +7,7 @@ from kdcube_ai_app.apps.chat.sdk.events import event_source_declaration
 
 REACT_FOLLOWUP_EVENT_SOURCE_ID = "react.followup"
 REACT_STEER_EVENT_SOURCE_ID = "react.steer"
+REACT_MESSAGE_EVENT_SOURCE_ID = "react.message"
 REACT_EXTERNAL_EVENT_SOURCE_ID = "react.external_event"
 REACT_WRITE_EVENT_SOURCE_ID = "react.write"
 REACT_MEMSEARCH_EVENT_SOURCE_ID = "react.memsearch"
@@ -35,6 +36,8 @@ def native_react_tool_policies() -> list[dict[str, str]]:
 def event_source_id_for_external_kind(kind: str) -> str:
     """Map built-in external-event kinds to ReAct event-source ids."""
     value = str(kind or "").strip().lower()
+    if value in {"message", "regular"}:
+        return REACT_MESSAGE_EVENT_SOURCE_ID
     if value == "followup":
         return REACT_FOLLOWUP_EVENT_SOURCE_ID
     if value == "steer":
@@ -52,6 +55,13 @@ def list_event_sources():
     `user.steer` block shapes.
     """
     return [
+        event_source_declaration(
+            event_source_id=REACT_MESSAGE_EVENT_SOURCE_ID,
+            policies=[],
+            description="User message events that start or contribute prompt blocks to a ReAct turn timeline.",
+            kind="react.external",
+            reactive=True,
+        ),
         event_source_declaration(
             event_source_id=REACT_FOLLOWUP_EVENT_SOURCE_ID,
             policies=[],

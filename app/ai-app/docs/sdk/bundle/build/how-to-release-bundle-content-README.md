@@ -1,10 +1,10 @@
 ---
 id: ks:docs/sdk/bundle/build/how-to-release-bundle-content-README.md
 title: "How To Release Bundle Content"
-summary: "Optional but recommended Tier 1 lifecycle procedure for releasing bundle/content repositories: align bundle docs, config templates, release.yaml, validation, git commit/tag/push, and descriptor ref updates from a self-contained public bundle-builder workflow."
+summary: "Optional but recommended Tier 1 lifecycle procedure for releasing bundle/content repositories: align bundle docs, event-source contracts, config templates, release.yaml, validation, git commit/tag/push, and descriptor ref updates from a self-contained public bundle-builder workflow."
 tags: ["sdk", "bundle", "release", "content", "lifecycle", "tier-1"]
-keywords: ["bundle content release", "bundle release procedure", "release yaml", "bundle config templates", "bundle tag", "bundle descriptor ref", "shared widget source validation", "agent release workflow", "optional release procedure", "bundle lifecycle maintenance"]
-updated_at: 2026-05-22
+keywords: ["bundle content release", "bundle release procedure", "release yaml", "bundle config templates", "bundle tag", "bundle descriptor ref", "shared widget source validation", "bundle events release", "event source validation", "artifact rehoster validation", "agent release workflow", "optional release procedure", "bundle lifecycle maintenance"]
+updated_at: 2026-06-03
 see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/sdk/bundle/build/how-to-write-bundle-README.md
@@ -20,8 +20,11 @@ see_also:
   - ks:docs/service/cicd/ngrok-README.md
   - ks:docs/sdk/bundle/bundle-delivery-and-update-README.md
   - ks:docs/sdk/bundle/bundle-widget-integration-README.md
+  - ks:docs/sdk/bundle/bundle-events-README.md
   - ks:docs/sdk/tools/custom-tools-README.md
   - ks:docs/sdk/tools/tool-subsystem-README.md
+  - ks:docs/sdk/events/event-subsystem-README.md
+  - ks:docs/sdk/agents/react/event-source/event-source-README.md
   - ks:docs/sdk/bundle/build/design/bundle-loader-import-isolation-README.md
 ---
 # How To Release Bundle Content
@@ -70,6 +73,17 @@ Critical release check for browser surfaces:
 - use [bundle-widget-integration-README.md#frame-origin-and-api-base-url](../bundle-widget-integration-README.md#frame-origin-and-api-base-url)
   as the release-time contract
 
+Critical release check for bundle events:
+
+- if the release adds authored external events, event-source policies, or
+  artifact namespace rehosters, release docs must name the event-source ids,
+  accepted UI payload shape, `agent_id` routing, `story_kind` / `story_id`
+  meaning, and artifact namespaces
+- release validation must prove event modules load and rehosters materialize
+  external refs such as `ext:...` into the expected `fi:` namespace
+- use [bundle-events-README.md](../bundle-events-README.md) as the
+  release-time contract
+
 ## 1. Release Decision With The User
 
 Do not start a release just because code changed.
@@ -103,6 +117,8 @@ For every released bundle, check these files:
 <bundle>/
   README.md
   release.yaml
+  events_descriptor.py        # when the bundle declares authored events/rehosters
+  events/                     # when event sources or rehosters are bundle-owned
   config/
     bundles.template.yaml
     bundles.secrets.template.yaml
@@ -131,6 +147,9 @@ Rules:
 - `docs/design/` reflects the implemented design, not only early notes
 - if the bundle uses SDK integrations or solutions, `docs/design/` names those
   blocks and explains which product policy remains in the bundle
+- if the bundle has wizard/canvas/snapshot events, `docs/design/` and
+  `interface/README.md` describe event-source ids, reactive vs non-reactive
+  events, story ids, agent ids, snapshot refs, and custom artifact namespaces
 - `docs/journal/journal.md` records important implementation and release
   decisions
 - tests prove the bundle contract before release
@@ -222,6 +241,13 @@ validate the tool result contract from
 Confirm the runtime produces hosted file metadata, and include the isolated
 runtime path when the tool can execute there.
 
+If a release changes authored external events, event-source policies, or
+artifact namespace rehosters, validate the event contract from
+[how-to-test-bundle-README.md](how-to-test-bundle-README.md): event modules load,
+policy bindings are discoverable, accepted UI payloads include the intended
+`agent_id` and `event_source_id`, and `react.pull(paths=["ext:..."])` returns
+the expected `fi:` logical path when the namespace is registered.
+
 If user identity or external auth changed, validate both:
 
 - the KDCube-authenticated path
@@ -267,6 +293,9 @@ git push origin 2026.5.2.1643
 
 Do not stage unrelated repository changes.
 Do not put real secrets into committed bundle templates.
+When the bundle declares event sources or artifact rehosters, also stage the
+release-owned `events_descriptor.py` and `events/` files after confirming they
+exist in that bundle.
 
 ## 6. Descriptor Ref Update
 

@@ -48,7 +48,7 @@ from kdcube_ai_app.apps.chat.sdk.config import get_settings
 from kdcube_ai_app.apps.chat.sdk.util import (truncate_text_by_tokens, _to_jsonable,
                                               ensure_event_markdown, _to_json_safe, _jd,  _now_ms,
                                               _tstart, _tend,
-                                              LINE_NUMBERS_LINES, normalize_line_numbers_mode)
+                                              LINE_NUMBERS_LINES, normalize_line_numbers_mode, _shorten)
 from kdcube_ai_app.infra.accounting import with_accounting
 from kdcube_ai_app.infra.service_hub.errors import ServiceException, ServiceError, is_context_limit_error
 
@@ -523,6 +523,7 @@ class BaseWorkflow():
                 model_service=self.model_service,
                 runtime_ctx=self.runtime_ctx,
             )
+            self._register_workflow_external_event_hook()
             self._sync_runtime_ctx_bundle_props()
             try:
                 self.logger.log(
@@ -568,6 +569,7 @@ class BaseWorkflow():
                 model_service=self.model_service,
                 runtime_ctx=self.runtime_ctx,
             )
+            self._register_workflow_external_event_hook()
             self._sync_runtime_ctx_bundle_props()
             try:
                 self.logger.log(
@@ -663,6 +665,23 @@ class BaseWorkflow():
         if not runtime_ctx.memory_announce_enabled:
             runtime_ctx.memory_hotset = []
             runtime_ctx.memory_hotset_error = None
+
+    def _register_workflow_external_event_hook(self) -> None:
+        ctx_browser = getattr(self, "ctx_browser", None)
+        if ctx_browser is None:
+            return
+        try:
+            ctx_browser.add_external_event_hook(self.on_external_event_received, start_listener=False)
+        except TypeError:
+            try:
+                ctx_browser.add_external_event_hook(self.on_external_event_received)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    async def on_external_event_received(self, *, type: str, event: Any, blocks: List[Dict[str, Any]], **kwargs: Any) -> None:
+        return None
 
     async def _refresh_user_memory_hotset_for_announce(self) -> None:
         runtime_ctx = getattr(self, "runtime_ctx", None)
@@ -2278,13 +2297,9 @@ class BaseWorkflow():
             "elapsed_ms": timing_uconv["elapsed_ms"]
         })
 
-        # start of turn
-        if summarize_attachments:
-            await self._summarize_user_attachments(scratchpad)
-            await self._persist_attachment_summaries(scratchpad)
-
         # --- 1) Load context bundle + timeline blocks
         t1, ms1 = _tstart()
+        event_reader_materialized_input = False
         try:
             await self._emit_turn_work_status(
                 [
@@ -2363,6 +2378,18 @@ class BaseWorkflow():
             except Exception:
                 pass
             try:
+                event_reader_result = self.ctx_browser.last_external_event_reader_result()
+            except Exception:
+                event_reader_result = {}
+            event_reader_materialized_input = bool(event_reader_result.get("current_turn_user_input_materialized"))
+            prompt_text = str(event_reader_result.get("current_turn_prompt_text") or "").strip()
+            if prompt_text:
+                scratchpad.user_text = prompt_text
+                scratchpad.short_text = _shorten(prompt_text, 1000)
+            if summarize_attachments and not event_reader_materialized_input:
+                await self._summarize_user_attachments(scratchpad)
+                await self._persist_attachment_summaries(scratchpad)
+            try:
                 await self._refresh_user_memory_hotset_for_announce()
             except Exception:
                 pass
@@ -2405,59 +2432,59 @@ class BaseWorkflow():
                           }})
         self.logger.log_step("recv_user_message", {"len": len(scratchpad.user_text)})
 
-        # Contribute user prompt + attachments to current turn log
-        await self._materialize_current_turn_user_attachments(scratchpad)
-        try:
-            build_user_input_blocks = _react_symbol("layout", "build_user_input_blocks")
-            self.ctx_browser.contribute(
-                blocks=build_user_input_blocks(
-                    runtime=self.ctx_browser.runtime_ctx,
-                    user_text=scratchpad.user_text or "",
-                    user_attachments=list(scratchpad.user_attachments or []),
-                    block_factory=self.ctx_browser.timeline.block,
-                    continuation_kind=_continuation_kind or None,
-                ),
-            )
-            # Add attachments to sources_pool so local attachment paths are citable.
+        if not event_reader_materialized_input:
+            await self._materialize_current_turn_user_attachments(scratchpad)
             try:
-                merge_sources_pool_for_attachment_rows = _react_symbol(
-                    "sources",
-                    "merge_sources_pool_for_attachment_rows",
+                build_user_input_blocks = _react_symbol("layout", "build_user_input_blocks")
+                self.ctx_browser.contribute(
+                    blocks=build_user_input_blocks(
+                        runtime=self.ctx_browser.runtime_ctx,
+                        user_text=scratchpad.user_text or "",
+                        user_attachments=list(scratchpad.user_attachments or []),
+                        block_factory=self.ctx_browser.timeline.block,
+                        continuation_kind=_continuation_kind or None,
+                    ),
                 )
-                turn_id = self.ctx_browser.runtime_ctx.turn_id if self.ctx_browser and self.ctx_browser.runtime_ctx else ""
-                new_rows = []
-                for att in (scratchpad.user_attachments or []):
-                    if not isinstance(att, dict):
-                        continue
-                    filename = (att.get("filename") or att.get("name") or "").strip()
-                    if not filename or not turn_id:
-                        continue
-                    physical_path = f"{turn_id}/attachments/{filename}"
-                    hosted_uri = (att.get("hosted_uri") or att.get("source_path") or att.get("path") or att.get("key") or "").strip()
-                    row = {
-                        "url": hosted_uri or physical_path,
-                        "title": filename,
-                        "text": "",
-                        "source_type": "attachment",
-                        "mime": (att.get("mime") or att.get("mime_type") or "").strip(),
-                        "size_bytes": att.get("size") or att.get("size_bytes"),
-                        "physical_path": physical_path,
-                        "artifact_path": f"fi:{turn_id}.user.attachments/{filename}",
-                        "turn_id": turn_id,
-                    }
-                    if hosted_uri:
-                        row["hosted_uri"] = hosted_uri
-                    if att.get("rn"):
-                        row["rn"] = att.get("rn")
-                    if att.get("key"):
-                        row["key"] = att.get("key")
-                    new_rows.append(row)
-                if new_rows:
-                    merge_sources_pool_for_attachment_rows(ctx_browser=self.ctx_browser, rows=new_rows)
+                # Add attachments to sources_pool so local attachment paths are citable.
+                try:
+                    merge_sources_pool_for_attachment_rows = _react_symbol(
+                        "sources",
+                        "merge_sources_pool_for_attachment_rows",
+                    )
+                    turn_id = self.ctx_browser.runtime_ctx.turn_id if self.ctx_browser and self.ctx_browser.runtime_ctx else ""
+                    new_rows = []
+                    for att in (scratchpad.user_attachments or []):
+                        if not isinstance(att, dict):
+                            continue
+                        filename = (att.get("filename") or att.get("name") or "").strip()
+                        if not filename or not turn_id:
+                            continue
+                        physical_path = f"{turn_id}/attachments/{filename}"
+                        hosted_uri = (att.get("hosted_uri") or att.get("source_path") or att.get("path") or att.get("key") or "").strip()
+                        row = {
+                            "url": hosted_uri or physical_path,
+                            "title": filename,
+                            "text": "",
+                            "source_type": "attachment",
+                            "mime": (att.get("mime") or att.get("mime_type") or "").strip(),
+                            "size_bytes": att.get("size") or att.get("size_bytes"),
+                            "physical_path": physical_path,
+                            "artifact_path": f"fi:{turn_id}.user.attachments/{filename}",
+                            "turn_id": turn_id,
+                        }
+                        if hosted_uri:
+                            row["hosted_uri"] = hosted_uri
+                        if att.get("rn"):
+                            row["rn"] = att.get("rn")
+                        if att.get("key"):
+                            row["key"] = att.get("key")
+                        new_rows.append(row)
+                    if new_rows:
+                        merge_sources_pool_for_attachment_rows(ctx_browser=self.ctx_browser, rows=new_rows)
+                except Exception:
+                    pass
             except Exception:
                 pass
-        except Exception:
-            pass
 
         self.logger.start_operation(
             "orchestrator.process",

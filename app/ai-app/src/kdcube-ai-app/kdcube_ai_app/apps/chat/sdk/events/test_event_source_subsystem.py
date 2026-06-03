@@ -4,7 +4,12 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
-from kdcube_ai_app.apps.chat.sdk.events import EventSourceSubsystem, event_source, event_source_declaration
+from kdcube_ai_app.apps.chat.sdk.events import (
+    EventSourceSubsystem,
+    artifact_namespace_rehoster,
+    event_source,
+    event_source_declaration,
+)
 from kdcube_ai_app.apps.chat.sdk.solutions.react.live_events import resolve_reactive_iteration_credit
 from kdcube_ai_app.apps.chat.sdk.solutions.react.events import (
     REACT_FOLLOWUP_EVENT_SOURCE_ID,
@@ -66,6 +71,42 @@ def test_decorator_discovers_metadata_only_source():
     blocks = [{"id": 1}, {"id": 2}, {"id": 3}, {"id": 4}]
     subsystem.apply_react_phase_policies("timeline_projection", "bundle.demo.event", blocks)
     assert blocks == [{"id": 2}, {"id": 3}, {"id": 4}]
+
+
+@pytest.mark.asyncio
+async def test_artifact_namespace_rehoster_is_discovered_and_invoked(tmp_path):
+    @artifact_namespace_rehoster(namespace="ext")
+    async def external_rehoster(*, ref, key, outdir, **_):
+        target = tmp_path / "out" / f"{key}.txt"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("ok", encoding="utf-8")
+        return {
+            "materialized": [{
+                "source_ref": ref,
+                "logical_path": "fi:turn_1.files/ext/demo.txt",
+                "physical_path": "turn_1/files/ext/demo.txt",
+            }]
+        }
+
+    subsystem = EventSourceSubsystem(modules=[{
+        "mod": _module("namespace_rehosters", external_rehoster=external_rehoster),
+    }])
+
+    assert subsystem.namespace_rehoster("ext") is not None
+    result = await subsystem.rehost_namespace_ref(
+        "ext:demo",
+        ctx_browser=SimpleNamespace(),
+        outdir=tmp_path / "out",
+    )
+
+    assert result["errors"] == []
+    assert result["materialized"] == [{
+        "source_ref": "ext:demo",
+        "logical_path": "fi:turn_1.files/ext/demo.txt",
+        "physical_path": "turn_1/files/ext/demo.txt",
+        "file_count": 1,
+    }]
+    assert result["rehosted"] == ["turn_1/files/ext/demo.txt"]
 
 
 def test_module_can_declare_multiple_event_sources():

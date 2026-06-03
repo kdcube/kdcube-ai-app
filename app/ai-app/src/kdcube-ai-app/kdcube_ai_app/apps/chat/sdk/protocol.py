@@ -195,6 +195,47 @@ class ExternalEvent(_ProtoBase):
     out_of_turn: bool = False
 
 
+class ExternalEventLaneRef(_ProtoBase):
+    """
+    Address of the ordered event lane that owns the accepted event body.
+
+    Ready queues carry wakeups that point at this lane; they do not carry the
+    user message, attachment payload, followup, steer, or authored UI event as
+    the processing source.
+    """
+
+    tenant: Optional[str] = None
+    project: Optional[str] = None
+    user_id: Optional[str] = None
+    conversation_id: str
+    agent_id: str = DEFAULT_REACT_AGENT_ID
+    event_id: Optional[str] = None
+    sequence: Optional[int] = None
+    stream_id: Optional[str] = None
+
+
+class ExternalEventLaneWakeup(_ProtoBase):
+    """
+    Processor-ready-queue wakeup.
+
+    The queue item says "run this lane". The actual event occurrence remains in
+    the external-event stream and is folded into the timeline by the lane owner.
+    """
+
+    kind: Literal["external_event_lane_wakeup"] = "external_event_lane_wakeup"
+    meta: ExternalEventMeta
+    routing: ExternalEventRouting
+    actor: ExternalEventActor
+    user: ExternalEventUser
+    event_lane: ExternalEventLaneRef
+    config: Optional[ExternalEventConfig] = None
+    accounting: Optional[ExternalEventAccounting] = None
+    continuation: Optional[ExternalEventContinuation] = None
+    event: Optional[ExternalEvent] = None
+    bundle_call_context: Dict[str, Any] = Field(default_factory=dict)
+    reason: str = "reactive_event"
+
+
 class ExternalEventPayload(_ProtoBase):
     """
     Top-level transport/processor payload for an accepted event occurrence.

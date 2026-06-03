@@ -69,6 +69,8 @@ class _FakeCtxClient:
         async def get_blob_bytes(self, uri_or_path):
             if uri_or_path == "s3://bucket/brief.txt":
                 return b"attachment text from followup"
+            if uri_or_path == "s3://bucket/prompt.txt":
+                return b"attachment text from prompt"
             raise FileNotFoundError(uri_or_path)
 
     def __init__(self):
@@ -114,6 +116,29 @@ async def test_browser_folds_external_events_into_history_and_current_turn(tmp_p
         },
     )
     await source.publish(
+        kind="message",
+        explicit=True,
+        target_turn_id="turn_current",
+        active_turn_id_at_ingress="turn_current",
+        owner_turn_id="turn_current",
+        source="ingress.sse",
+        text="stream-originated prompt",
+        payload={"message": "stream-originated prompt"},
+        task_payload={
+            "request": {
+                "payload": {
+                    "attachments": [
+                        {
+                            "filename": "prompt.txt",
+                            "mime": "text/plain",
+                            "hosted_uri": "s3://bucket/prompt.txt",
+                        }
+                    ]
+                }
+            }
+        },
+    )
+    await source.publish(
         kind="steer",
         explicit=True,
         target_turn_id="turn_current",
@@ -141,6 +166,21 @@ async def test_browser_folds_external_events_into_history_and_current_turn(tmp_p
         ctx_client=_FakeCtxClient(),
         runtime_ctx=runtime,
     )
+    hook_saw_current_prompt = []
+
+    async def _hook(*, type, event, blocks):
+        del event, blocks
+        if type == "message":
+            hook_saw_current_prompt.append(
+                any(
+                    b.get("type") == "user.prompt"
+                    and b.get("turn_id") == "turn_current"
+                    and b.get("text") == "stream-originated prompt"
+                    for b in browser.timeline.get_turn_blocks()
+                )
+            )
+
+    browser.add_external_event_hook(_hook, start_listener=False)
 
     await browser.load_timeline()
     try:
@@ -162,9 +202,29 @@ async def test_browser_folds_external_events_into_history_and_current_turn(tmp_p
             for b in history_blocks
         )
         assert any(att.get("filename") == "brief.txt" for att in history_attachments)
+        assert any(
+            b.get("type") == "user.prompt"
+            and b.get("turn_id") == "turn_current"
+            and b.get("text") == "stream-originated prompt"
+            and ".user.prompt." in str(b.get("path") or "")
+            for b in current_blocks
+        )
+        assert any(
+            b.get("type") == "user.attachment.meta"
+            and b.get("turn_id") == "turn_current"
+            and ".user.attachments/" in str(b.get("path") or "")
+            for b in current_blocks
+        )
+        assert any(
+            b.get("type") == "user.attachment.text"
+            and b.get("turn_id") == "turn_current"
+            and b.get("text") == "attachment text from prompt"
+            for b in current_blocks
+        )
         assert any(b.get("type") == "user.steer" and b.get("turn_id") == "turn_current" for b in current_blocks)
-        assert browser.timeline.last_external_event_id == "2-0"
-        assert int(browser.timeline.last_external_event_seq or 0) == 2
+        assert hook_saw_current_prompt == [True]
+        assert browser.timeline.last_external_event_id == "3-0"
+        assert int(browser.timeline.last_external_event_seq or 0) == 3
     finally:
         await browser.stop_external_event_listener()
 

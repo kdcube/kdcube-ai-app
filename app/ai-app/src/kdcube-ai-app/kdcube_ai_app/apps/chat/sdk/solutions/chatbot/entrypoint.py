@@ -40,7 +40,7 @@ from kdcube_ai_app.apps.chat.sdk.runtime.local_sidecars import (
     update_local_sidecar_runtime_metadata as update_runtime_local_sidecar_runtime_metadata,
 )
 from kdcube_ai_app.apps.chat.sdk.viz.patch_platform_dashboard import patch_dashboard
-from kdcube_ai_app.infra.plugin.bundle_loader import api, on_message, ui_widget
+from kdcube_ai_app.infra.plugin.bundle_loader import api, on_reactive_event, ui_widget
 from kdcube_ai_app.infra.service_hub.inventory import (
     APP_STATE_KEYS,
     AgentLogger,
@@ -1384,7 +1384,7 @@ class BaseEntrypoint:
                 "ERROR",
             )
 
-    @on_message
+    @on_reactive_event
     async def run(self, **params) -> Dict[str, Any]:
         state = dict(getattr(self, "_app_state", {}) or {})
         self._turn_id = self._turn_id or _mid("turn")

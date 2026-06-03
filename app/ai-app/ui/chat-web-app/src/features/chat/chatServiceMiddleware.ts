@@ -438,6 +438,9 @@ export const chatServiceMiddleware = (transportType: TransportType): Middleware 
                         tenant: selectTenant(state),
                         turn_id: turnId,
                         bundle_id: selectCurrentBundle(state) ?? undefined,
+                        ...(request.payload ? {payload: request.payload} : {}),
+                        ...(request.target ? {target: request.target} : {}),
+                        ...(request.externalEvent ? {external_event: request.externalEvent} : {}),
                         ...(isContinuation ? {
                             message_kind: continuationKind,
                             continuation_kind: continuationKind,

@@ -286,7 +286,9 @@ def _patch_ingress_dependencies(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_regular_attachment_only_message_is_enqueued(_patch_ingress_dependencies):
+    redis = _MiniRedis()
     app = SimpleNamespace(state=SimpleNamespace(
+        redis_async=redis,
         conversation_browser=_IdleConversationBrowser(),
         conversation_store=_DummyConversationStore(),
     ))
@@ -329,8 +331,20 @@ async def test_regular_attachment_only_message_is_enqueued(_patch_ingress_depend
     )
 
     assert result.ok is True
+    assert result.event_id
+    assert result.external_event_sequence == 1
     assert len(queue.payloads) == 1
-    payload = queue.payloads[0]
+    wakeup = queue.payloads[0]
+    assert wakeup["kind"] == "external_event_lane_wakeup"
+    assert wakeup["event_lane"]["event_id"] == result.event_id
+    assert wakeup["event_lane"]["sequence"] == result.external_event_sequence
+    assert "request" not in wakeup
+
+    source = _scoped_external_source(redis)
+    events = await source.read_since(0)
+    assert len(events) == 1
+    assert events[0].kind == "message"
+    payload = events[0].task_payload
     assert payload["request"]["message"] == ""
     attachments = payload["request"]["payload"].get("attachments") or []
     assert len(attachments) == 1

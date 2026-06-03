@@ -9,6 +9,7 @@ from typing import Any, Callable, TypeVar
 
 
 EVENT_SOURCE_ATTR = "__kdcube_event_source__"
+ARTIFACT_NAMESPACE_REHOSTER_ATTR = "__kdcube_artifact_namespace_rehoster__"
 
 T = TypeVar("T")
 
@@ -37,6 +38,23 @@ class EventSourceDeclaration:
         )
 
 
+@dataclass(frozen=True)
+class ArtifactNamespaceRehosterDeclaration:
+    """Callable metadata for a non-`fi:` artifact namespace.
+
+    A rehoster accepts a domain ref such as `ext:...` and copies the source
+    bytes into the ReAct artifact surface, returning normal `fi:`/physical path
+    rows that `react.read`, `react.pull`, and `react.checkout` already know how
+    to use. The rehoster chooses the destination by artifact meaning: workspace
+    state goes to files, story/wizard state goes to snapshots, evidence goes to
+    external event attachments, and produced deliverables go to outputs.
+    """
+
+    namespace: str
+    description: str = ""
+    version: str = ""
+
+
 def event_source_declaration(
     *,
     event_source_id: str,
@@ -59,6 +77,52 @@ def event_source_declaration(
         reactive=reactive if reactive is None else bool(reactive),
         iteration_credit=_normalize_iteration_credit(iteration_credit),
     )
+
+
+def artifact_namespace_rehoster_declaration(
+    *,
+    namespace: str,
+    description: str = "",
+    version: str = "",
+) -> ArtifactNamespaceRehosterDeclaration:
+    namespace = str(namespace or "").strip().rstrip(":")
+    if not namespace:
+        raise ValueError("namespace must be non-empty")
+    if any(ch.isspace() for ch in namespace) or "/" in namespace or "\\" in namespace:
+        raise ValueError("namespace must be a compact URI-style prefix such as 'ext'")
+    return ArtifactNamespaceRehosterDeclaration(
+        namespace=namespace,
+        description=str(description or "").strip(),
+        version=str(version or "").strip(),
+    )
+
+
+def artifact_namespace_rehoster(
+    *,
+    namespace: str,
+    description: str = "",
+    version: str = "",
+) -> Callable[[T], T]:
+    """Mark a callable as a namespace rehoster for ReAct artifact tools.
+
+    The callable is discovered from the same tool/event modules as event
+    sources. It is invoked by `react.pull` before the normal `fi:` hydration
+    path when a requested ref starts with the registered namespace prefix. The
+    returned rows must use the ReAct workspace/artifact layout so downstream
+    tools can continue from the returned `logical_path` or `physical_path`.
+    """
+
+    declaration = artifact_namespace_rehoster_declaration(
+        namespace=namespace,
+        description=description,
+        version=version,
+    )
+
+    def _decorate(obj: T) -> T:
+        setattr(obj, ARTIFACT_NAMESPACE_REHOSTER_ATTR, declaration)
+        return obj
+
+    return _decorate
 
 
 def event_source(
@@ -88,6 +152,22 @@ def event_source(
         return obj
 
     return _decorate
+
+
+def get_artifact_namespace_rehoster_declaration(obj: Any) -> ArtifactNamespaceRehosterDeclaration | None:
+    if obj is None:
+        return None
+    declaration = getattr(obj, ARTIFACT_NAMESPACE_REHOSTER_ATTR, None)
+    if declaration is None and hasattr(obj, "__func__"):
+        declaration = getattr(getattr(obj, "__func__", None), ARTIFACT_NAMESPACE_REHOSTER_ATTR, None)
+    if isinstance(declaration, ArtifactNamespaceRehosterDeclaration):
+        return declaration
+    if isinstance(declaration, Mapping):
+        try:
+            return artifact_namespace_rehoster_declaration(**declaration)
+        except Exception:
+            return None
+    return None
 
 
 def get_event_source_declaration(obj: Any) -> EventSourceDeclaration | None:

@@ -7,6 +7,7 @@ keywords: ["event_source", "event_source_id", "event_id", "react_phase", "event_
 see_also:
   - ks:docs/sdk/events/external-events-README.md
   - ks:docs/sdk/events/external-events-journey-and-handling-README.md
+  - ks:docs/arch/proc/events-orchestration-README.md
   - ks:docs/sdk/events/event-subsystem-README.md
   - ks:docs/sdk/agents/react/event-source/events-blocks-and-rendering-README.md
   - ks:docs/sdk/agents/react/event-source/block-production-README.md
@@ -52,6 +53,11 @@ External events arrive through chat ingress as `payload.external_event` and are
 retained first in the per-conversation Redis external-event source. The
 transport, reactivity, and story-correlation contract is documented in
 [External Events](../../../events/external-events-README.md).
+
+When a retained event starts processor work, the ready queue carries
+`ExternalEventLaneWakeup`; proc resolves that wakeup to the lane event's stored
+`ExternalEventPayload` before the bundle is invoked. ReAct policies see the
+event only after transport and processor resolution have already happened.
 
 ## Feature Flag
 

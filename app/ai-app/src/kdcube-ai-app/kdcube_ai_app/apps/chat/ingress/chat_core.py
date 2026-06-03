@@ -22,7 +22,8 @@ from kdcube_ai_app.auth.sessions import RequestContext, UserType, UserSession
 from kdcube_ai_app.apps.chat.emitters import ChatRelayCommunicator, ChatCommunicator
 from kdcube_ai_app.apps.chat.sdk.protocol import (
     ExternalEventPayload, ExternalEventMeta, ExternalEventRouting, ExternalEventActor, ExternalEventUser,
-    ExternalEventRequest, ExternalEventConfig, ExternalEventAccounting, ExternalEventContinuation, ExternalEvent, ServiceCtx, ConversationCtx
+    ExternalEventRequest, ExternalEventConfig, ExternalEventAccounting, ExternalEventContinuation, ExternalEvent,
+    ExternalEventLaneRef, ExternalEventLaneWakeup, ServiceCtx, ConversationCtx
 )
 from kdcube_ai_app.apps.chat.sdk.event_identity import DEFAULT_REACT_AGENT_ID, normalize_agent_id
 from kdcube_ai_app.infra.accounting.envelope import build_envelope_from_session
@@ -312,6 +313,60 @@ def _external_event_envelope(
     if target:
         envelope["target"] = dict(target)
     return envelope
+
+
+def _event_lane_ref_from_envelope(
+    *,
+    tenant: Optional[str],
+    project: Optional[str],
+    user_id: Optional[str],
+    conversation_id: str,
+    agent_id: str,
+    event: Any,
+) -> ExternalEventLaneRef:
+    return ExternalEventLaneRef(
+        tenant=tenant,
+        project=project,
+        user_id=user_id,
+        conversation_id=conversation_id,
+        agent_id=normalize_agent_id(agent_id, default=DEFAULT_REACT_AGENT_ID),
+        event_id=str(getattr(event, "message_id", "") or "") or None,
+        sequence=int(getattr(event, "sequence", 0) or 0) or None,
+        stream_id=str(getattr(event, "stream_id", "") or "") or None,
+    )
+
+
+def _event_lane_wakeup_from_payload(
+    *,
+    payload: ExternalEventPayload,
+    event: Any,
+    tenant: Optional[str],
+    project: Optional[str],
+    user_id: Optional[str],
+    conversation_id: str,
+    agent_id: str,
+    reason: str,
+) -> ExternalEventLaneWakeup:
+    return ExternalEventLaneWakeup(
+        meta=payload.meta,
+        routing=payload.routing,
+        actor=payload.actor,
+        user=payload.user,
+        config=payload.config,
+        accounting=payload.accounting,
+        continuation=payload.continuation,
+        event=payload.event,
+        bundle_call_context=dict(getattr(payload, "bundle_call_context", {}) or {}),
+        event_lane=_event_lane_ref_from_envelope(
+            tenant=tenant,
+            project=project,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            agent_id=agent_id,
+            event=event,
+        ),
+        reason=reason,
+    )
 
 
 def _resolve_conversation_owner_id(session: UserSession) -> Optional[str]:
@@ -1363,12 +1418,108 @@ async def process_chat_message(
     if attachment_result is not None:
         return attachment_result
 
-    # --- Enqueue ---
+    redis_async = getattr(app.state, "redis_async", None)
+    if redis_async is None:
+        err = "External event source unavailable"
+        await chat_comm.emit_error(
+            svc,
+            conv,
+            error=err,
+            target_sid=ingress.stream_id,
+            session_id=session.session_id,
+        )
+        try:
+            res_reset = await app.state.conversation_browser.set_conversation_state(
+                tenant=payload.actor.tenant_id,
+                project=payload.actor.project_id,
+                user_id=payload.user.user_id,
+                conversation_id=payload.routing.conversation_id,
+                new_state="idle",
+                by_instance=ingress.instance_id,
+                request_id=request_id,
+                last_turn_id=payload.routing.turn_id,
+                require_not_in_progress=False,
+                user_type=payload.user.user_type,
+                bundle_id=payload.routing.bundle_id,
+            )
+            await chat_comm.emit_conv_status(
+                svc,
+                conv,
+                routing,
+                state="idle",
+                updated_at=res_reset.get("updated_at", _iso()),
+                current_turn_id=res_reset.get("current_turn_id"),
+                completion="rollback",
+                target_sid=ingress.stream_id,
+            )
+        except Exception:
+            logger.exception("failed to reset conv state after missing external event source")
+        return IngressResult(
+            ok=False,
+            error_type="external_event_source_unavailable",
+            error=err,
+            http_status=503,
+        )
+
+    event_kind = _chat_event_kind(has_external_event=has_external_event, requested_kind=requested_kind)
+    event_source_id = _chat_event_source_id(
+        has_external_event=has_external_event,
+        external_event=external_event,
+        requested_kind=requested_kind,
+    )
+    if payload.event is not None:
+        payload.event.kind = event_kind
+        payload.event.agent_id = target_agent_id
+        payload.event.event_source_id = event_source_id
+        payload.event.reactive = external_event_reactive if has_external_event else True
+        payload.event.source = f"ingress.{ingress.transport}"
+
+    external_event_source = build_conversation_external_event_source(
+        redis=redis_async,
+        tenant=tenant_id,
+        project=project_id,
+        conversation_id=conversation_id,
+        user_id=session.user_id or session.fingerprint or "",
+        agent_id=target_agent_id,
+    )
+    event_payload = (
+        _external_event_envelope(
+            message_data=message_data,
+            text=text,
+            event=external_event or {},
+        )
+        if has_external_event
+        else {"message": text}
+    )
+    env = await external_event_source.publish(
+        kind=event_kind,
+        explicit=bool(requested_kind_explicit or has_external_event),
+        target_turn_id=target_turn_id,
+        active_turn_id_at_ingress=None,
+        owner_turn_id=None,
+        source=f"ingress.{ingress.transport}",
+        event_source_id=event_source_id,
+        text=text,
+        payload=event_payload,
+        task_payload=payload.model_dump(),
+    )
+    wakeup = _event_lane_wakeup_from_payload(
+        payload=payload,
+        event=env,
+        tenant=tenant_id,
+        project=project_id,
+        user_id=session.user_id or session.fingerprint or "",
+        conversation_id=conversation_id,
+        agent_id=target_agent_id,
+        reason="reactive_event",
+    )
+
+    # --- Enqueue wakeup ---
     enqueue_started_at = time.monotonic()
     try:
         success, reason, stats = await chat_queue_manager.enqueue_chat_task_atomic(
             session.user_type,
-            payload.model_dump(),
+            wakeup.model_dump(),
             session,
             request_context,
             ingress.entrypoint,
@@ -1389,8 +1540,10 @@ async def process_chat_message(
             ingress_to_enqueue_ms = None
 
     logger.info(
-        "enqueue_chat_task_atomic result task_id=%s user_type=%s success=%s reason=%s enqueue_ms=%s ingress_to_enqueue_ms=%s queue_stats=%s",
+        "enqueue_chat_task_atomic wakeup result task_id=%s event_id=%s event_seq=%s user_type=%s success=%s reason=%s enqueue_ms=%s ingress_to_enqueue_ms=%s queue_stats=%s",
         task_id,
+        env.message_id,
+        env.sequence,
         session.user_type.value,
         success,
         reason,
@@ -1400,6 +1553,17 @@ async def process_chat_message(
     )
 
     if not success:
+        try:
+            await external_event_source.mark_failed(
+                message_id=env.message_id,
+                claimant_id="ingress.enqueue_failure",
+                reason=f"wakeup_enqueue_failed:{reason}",
+            )
+        except Exception:
+            logger.exception(
+                "failed to mark lane event failed after wakeup enqueue failure event_id=%s",
+                env.message_id,
+            )
         # rollback state since nothing will process this turn
         try:
             res_reset = await app.state.conversation_browser.set_conversation_state(
@@ -1508,7 +1672,14 @@ async def process_chat_message(
         turn_id=turn_id,
         session_id=session.session_id,
         user_type=session.user_type.value,
-        queue_stats=stats,
+        queue_stats={
+            **(stats or {}),
+            "external_event_sequence": env.sequence,
+            "event_id": env.message_id,
+            "queue_payload_kind": "external_event_lane_wakeup",
+        },
+        event_id=env.message_id,
+        external_event_sequence=int(env.sequence or 0),
     )
 
 

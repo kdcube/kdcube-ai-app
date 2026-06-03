@@ -6,6 +6,7 @@ tags: ["arch", "proc", "shutdown", "recovery", "task-protection", "ecs"]
 keywords: ["long run protection", "started marker", "task protection", "proc drain", "worker loss", "turn interrupted"]
 see_also:
   - ks:docs/arch/proc/processor-arch-README.md
+  - ks:docs/arch/proc/events-orchestration-README.md
   - ks:docs/ops/ecs/components/proc-README.md
   - ks:docs/arch/ecs-service-README.md
 ---
@@ -67,6 +68,10 @@ The most important platform rule is:
 
 - before start: replay may be safe
 - after start: replay is not safe by default
+
+For lane-backed external events, the ready queue may contain only an
+`ExternalEventLaneWakeup`. Proc resolves the full `ExternalEventPayload` from
+the Redis event lane before the same started-marker rule applies.
 
 In [processor.py](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py), proc writes a started marker before communicator start and before bundle execution proceeds.
 

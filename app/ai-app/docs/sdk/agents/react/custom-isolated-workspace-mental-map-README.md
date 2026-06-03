@@ -60,7 +60,9 @@ In `custom` mode the agent does not see one mutable directory. It reasons across
   │     turn_<current>/                                                      │
   │       files/<scope>/...        ← durable workspace/project state         │
   │       outputs/<scope>/...      ← produced artifacts, not workspace state │
+  │       snapshots/<name>         ← story/workflow snapshots                │
   │       attachments/<name>       ← attachments for this turn               │
+  │       external/<event_kind>/attachments/<event_id>/...                    │
   │                                                                          │
   │   Written via: react.write, react.patch, exec, react.checkout            │
   │   Read via:    react.read (logical fi: paths), react.rg                  │
@@ -72,7 +74,10 @@ In `custom` mode the agent does not see one mutable directory. It reasons across
   │                                                                          │
   │   fi:turn_<older>.files/<scope>/<path>      ← prior workspace versions   │
   │   fi:turn_<older>.outputs/<scope>/<path>    ← prior produced artifacts   │
+  │   fi:turn_<older>.snapshots/<path>          ← prior story snapshots      │
   │   fi:turn_<older>.user.attachments/<name>   ← prior attachments          │
+  │   fi:turn_<older>.external.<event_kind>.attachments/<event_id>/<name>    │
+  │   fi:conv_<conversation_id>.turn_<older>... ← other conversation refs    │
   │   ar:turn_<id>.* / tc:turn_<id>.* / so:... / su:...                      │
   │                                                                          │
   │   Materialized locally only via:  react.pull(paths=[fi:...])             │
@@ -86,6 +91,17 @@ In `custom` mode the agent does not see one mutable directory. It reasons across
   │   ks:<bundle-defined-path>/...                                           │
   │   Not part of the artifact root. Loaded into context via react.read.    │
   └─────────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ (4) CUSTOM ARTIFACT NAMESPACE REFS  ─  logical, opaque until pulled      │
+  │                                                                          │
+  │   ext:<domain-key>     ← example custom namespace                        │
+  │   <namespace>:<key>    ← only valid if a namespace rehoster is registered│
+  │                                                                          │
+  │   Materialized via: react.pull(paths=["ext:..."])                        │
+  │   Continue with:    returned logical_path / physical_path rows           │
+  └─────────────────────────────────────────────────────────────────────────┘
 ```
 
 What is **not** in the agent's picture in custom mode:
@@ -94,6 +110,8 @@ What is **not** in the agent's picture in custom mode:
 - No automatic hydration of older versions into the current turn.
 - No tombstone or "deleted" state for files (see §4).
 - No `previous saved workspace paths` populated from a lineage branch — that list, when present, comes from a different mechanism (see §3.3).
+- No derived filesystem path for custom refs such as `ext:...`; only
+  `react.pull` plus a registered rehoster can materialize them.
 
 ---
 
@@ -133,6 +151,10 @@ There is **no separate `fi:` artifact path** holding "the latest known version p
 
 - inspecting `[WORKSPACE]` in ANNOUNCE every round
 - following `fi:turn_<id>.files/...` refs that appear in tool result blocks earlier in the timeline
+- following `fi:conv_<conversation_id>.turn_<id>...` refs only when a
+  cross-conversation search/result explicitly provides them
+- pulling custom namespace refs such as `ext:...` only when they are visible in
+  event/snapshot/tool-result data and a rehoster is available
 - using `react.pull` + `react.checkout` to bring a chosen slice into the active turn
 
 ---
@@ -270,6 +292,29 @@ Key invariants:
 - The agent never assumes prior files are *already there*. It pulls or checks out explicitly.
 - The agent never reasons about deletion as a runtime event. It either carries a file forward or does not.
 - The "rolling map" of "what scope to continue under" is read from ANNOUNCE, not from a separate registry.
+- The agent never invents `fi:` for a custom namespace ref. It calls
+  `react.pull(paths=["ext:..."])` and then uses the returned paths.
+
+## 5.1 Artifact origins in one local workspace
+
+Different artifact origins can coexist under the same `OUTPUT_DIR`, but custom
+mode adds no hidden lineage. Historical, cross-conversation, and custom-domain
+refs become local only after explicit `react.pull`.
+
+```text
+OUTPUT_DIR/
+  turn_<current>/
+    files/<scope>/...                  # current editable workspace
+    outputs/<scope>/...                # current produced artifacts
+    snapshots/...                      # current or rehosted snapshots
+    external/...                       # rehosted domain attachments
+  turn_<older>/...                     # pulled same-conversation refs
+  conv_<conversation_id>/turn_<older>/ # pulled cross-conversation refs
+```
+
+For the complete namespace grammar, `ext:` examples, and resolver/rehoster
+discovery rules, see
+[agent-workspace-collboration-README.md](./agent-workspace-collboration-README.md).
 
 ---
 

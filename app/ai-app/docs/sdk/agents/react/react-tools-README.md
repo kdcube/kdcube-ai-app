@@ -261,7 +261,7 @@ Targets:
 Event-scoped attachment paths use:
 
 ```text
-fi:<turn>.external.<kind>.attachments/<message_id>/<filename>
+fi:<turn>.external.<event_kind>.attachments/<event_id>/<filename>
 ```
 
 Scenarios:

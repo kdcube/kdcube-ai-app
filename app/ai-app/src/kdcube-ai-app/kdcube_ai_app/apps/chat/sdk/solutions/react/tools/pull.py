@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, Dict, List
 
 import json
@@ -30,31 +31,40 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.common import (
 TOOL_SPEC = {
     "id": "react.pull",
     "purpose": (
-        "Materialize selected fi: artifact refs locally under OUT_DIR so later exec/code can use them by physical path. "
+        "Materialize artifact refs locally under OUT_DIR and return the paths that other tools should use next. "
+        "fi: refs already belong to the ReAct artifact model and have the normal logical/physical path rules. "
+        "Externally tracked artifact URIs such as ext:... may appear in timeline events, snapshots, or tool results. "
+        "They are opaque external artifact handles resolved by registered namespace rehosters. "
+        "Unsupported namespaces are reported by the pull result. "
+        "For an externally tracked URI, react.pull calls the registered namespace resolver/rehoster, copies the artifact into a ReAct artifact surface, "
+        "and returns the materialized fi: logical_path plus physical_path. "
+        "The rehoster chooses whether the artifact lands as files, snapshots, external attachments, or another supported ReAct artifact surface. "
+        "Use those returned paths with react.read, react.rg, exec/code, or later artifact operations. "
         "Use this for versioned files/folders you need locally as historical reference material. "
-        "Pulled content stays under its historical turn root and does not become the editable current-turn workspace. "
-        "Folder pulls are supported for git-backed fi:turn_<id>.files/<scope-or-subtree> and "
-        "fi:turn_<id>.snapshots/<scope-or-subtree>. "
-        "Non-workspace outputs and attachment/binary pulls must name exact refs. "
+        "Pulled content stays under its historical turn root as reference material; checkout copies versioned files into the editable current-turn workspace. "
+        "Folder/slice pulls are supported for fi:turn_<id>.files/<scope-or-subtree>. "
+        "Snapshot subtree pulls are available when the backing implementation reports snapshot subtree support. "
+        "Outputs, user attachments, external-event attachments, and hosted binaries require exact refs. "
         "An fi:conv_<conversation_id>.turn_<id>... path belongs to another conversation and is resolved in that conversation. "
-        "Current-conversation fi: paths do not have the conv_ segment."
+        "Current-conversation fi: paths use fi:turn_<id>... without a conv_ scope segment."
     ),
     "args": {
         "paths": (
-            "list[str] of fi: refs to materialize locally. "
-            "Allowed: fi:turn_<id>.files/<path> (exact file or subtree), "
+            "list[str] of artifact refs to materialize locally. Each item is either a normal fi: ref or an externally tracked artifact URI shown by the runtime. "
+            "Allowed fi: refs include fi:turn_<id>.files/<path> (exact file or subtree), "
             "fi:turn_<id>.snapshots/<path> (exact text snapshot or subtree when git-backed), "
             "fi:turn_<id>.outputs/<file> (exact file only), "
             "fi:turn_<id>.user.attachments/<file> (exact file only), "
-            "fi:turn_<id>.external.<kind>.attachments/<message_id>/<file> (exact file only), "
-            "legacy fi:turn_<id>.attachments/<file> (exact file only), "
-            "and cross-conversation fi:conv_<conversation_id>.turn_<id>... refs."
+            "fi:turn_<id>.external.<event_kind>.attachments/<event_id>/<file> (exact file only), "
+            "and cross-conversation fi:conv_<conversation_id>.turn_<id>... refs. "
+            "Externally tracked URIs such as ext:... are accepted only when a namespace resolver/rehoster is registered."
         ),
     },
     "returns": (
         "JSON object with requested refs and compact pulled summaries. "
         "Folder pulls are grouped by logical_root/physical_root with file_count, bounded tree, and path_rule. "
         "Exact file pulls return one logical_path/physical_path item. "
+        "Externally tracked refs return source_ref plus the resolved/rehosted fi: logical_path and physical_path. "
         "Diagnostics such as missing, invalid, and errors are included only when non-empty."
     ),
 }
@@ -173,19 +183,58 @@ async def handle_react_pull(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
     outdir = pathlib.Path(outdir_raw) if outdir_raw else None
 
     invalid: List[Dict[str, Any]] = []
+    namespace_materialized: List[Dict[str, Any]] = []
+    namespace_rehosted: List[str] = []
+    namespace_missing: List[Dict[str, Any]] = []
+    namespace_errors: List[str] = []
     accepted_by_conversation: Dict[str, List[str]] = {}
     seen_physical: set[tuple[str, str]] = set()
     workspace_impl = get_workspace_implementation(getattr(ctx_browser, "runtime_ctx", None))
+    event_sources = getattr(getattr(ctx_browser, "runtime_ctx", None), "event_sources", None)
     for req in requested:
         raw = req["path"]
         embedded_conversation_id, _, _, _ = split_logical_artifact_ref(raw)
         source_conversation_id = str(embedded_conversation_id or "").strip()
         if not raw.startswith("fi:"):
-            invalid.append({
-                "path": raw,
-                **({"conversation_id": source_conversation_id} if source_conversation_id else {}),
-                "reason": "react.pull accepts fi: refs only",
-            })
+            namespace = raw.partition(":")[0].strip() if ":" in raw else ""
+            rehoster = getattr(event_sources, "namespace_rehoster", lambda _namespace: None)(namespace) if namespace else None
+            if rehoster is None:
+                invalid.append({
+                    "path": raw,
+                    **({"conversation_id": source_conversation_id} if source_conversation_id else {}),
+                    "reason": "react.pull accepts fi: refs or registered artifact namespaces",
+                })
+                continue
+            if not outdir:
+                namespace_errors.append("missing_outdir")
+                continue
+            result = await event_sources.rehost_namespace_ref(
+                raw,
+                ctx_browser=ctx_browser,
+                outdir=outdir,
+                tool_call_id=tool_call_id,
+                state=state,
+                tool_id=tool_id,
+            )
+            namespace_materialized.extend(
+                dict(row)
+                for row in (result.get("materialized") or [])
+                if isinstance(row, Mapping)
+            )
+            namespace_rehosted.extend(
+                str(path or "").strip()
+                for path in (result.get("rehosted") or [])
+                if str(path or "").strip()
+            )
+            namespace_errors.extend(str(item) for item in (result.get("errors") or []) if str(item))
+            for item in result.get("missing") or []:
+                if isinstance(item, Mapping):
+                    namespace_missing.append(dict(item))
+                else:
+                    namespace_missing.append({"source_ref": raw, "missing": str(item or raw)})
+            for item in result.get("invalid") or []:
+                if isinstance(item, Mapping):
+                    invalid.append(dict(item))
             continue
         physical = _infer_physical_from_fi(raw)
         if not physical:
@@ -252,14 +301,22 @@ async def handle_react_pull(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
             "errors": [],
         }
 
-    pulled = _compact_path_rows(
+    hydrated_pulled = _compact_path_rows(
         [str(p or "") for p in (rehost_result.get("rehosted") or [])],
         requested_roots=accepted_physical,
     )
-    missing = _compact_path_rows(
+    namespace_fallback_pulled = []
+    if namespace_rehosted and not namespace_materialized:
+        namespace_fallback_pulled = _compact_path_rows(
+            [str(p or "") for p in namespace_rehosted],
+            requested_roots=namespace_rehosted,
+        )
+    pulled = namespace_materialized + namespace_fallback_pulled + hydrated_pulled
+    hydrated_missing = _compact_path_rows(
         [str(p or "") for p in (rehost_result.get("missing") or [])],
         requested_roots=accepted_physical,
     )
+    missing = namespace_missing + hydrated_missing
 
     payload = {
         "requested": requested_paths,
@@ -269,7 +326,7 @@ async def handle_react_pull(*, ctx_browser: Any, state: Dict[str, Any], tool_cal
         payload["missing"] = missing
     if invalid:
         payload["invalid"] = invalid
-    errors = list(rehost_result.get("errors") or [])
+    errors = list(namespace_errors) + list(rehost_result.get("errors") or [])
     if errors:
         payload["errors"] = errors
     add_block(ctx_browser, {

@@ -10,6 +10,7 @@ see_also:
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
   - ks:docs/sdk/bundle/bundle-transports-README.md
   - ks:docs/sdk/bundle/bundle-event-recording-and-sinks-README.md
+  - ks:docs/sdk/bundle/bundle-events-README.md
   - ks:docs/sdk/bundle/bundle-reserved-platform-properties-README.md
   - ks:docs/sdk/tools/mcp-README.md
   - ks:docs/sdk/agents/claude/claude-code-README.md
@@ -23,6 +24,8 @@ This page is the canonical bundle-level map for agent integration points.
 Use it when a bundle needs any of these:
 
 - a KDCube React agent with bundle-local tools and skills
+- bundle-local tools or UI events that need event-source policies, timeline
+  block production, snapshots, or custom artifact refs
 - MCP tools available to the React tool subsystem
 - a bundle-served MCP endpoint exposed through `@mcp(...)`
 - a Claude Code subprocess agent that uses custom MCP tools
@@ -87,6 +90,10 @@ results.
 For recording selected events emitted by React, tools, skills, MCP endpoints,
 or Claude Code wrapper flows, use
 [Bundle Event Recording And Sinks](bundle-event-recording-and-sinks-README.md).
+
+For bundle-authored UI events, tools as event sources, ReAct policy bindings,
+story/wizard/canvas snapshots, and custom artifact namespace rehosters, use
+[Bundle Events](bundle-events-README.md).
 
 ### ReAct Preview Line Numbering
 

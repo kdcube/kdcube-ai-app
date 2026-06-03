@@ -17,8 +17,10 @@ keywords:
     "react event source",
   ]
 see_also:
+  - ks:docs/sdk/bundle/bundle-events-README.md
   - ks:docs/sdk/events/external-events-journey-and-handling-README.md
   - ks:docs/arch/ingress/events-inception-README.md
+  - ks:docs/arch/proc/events-orchestration-README.md
   - ks:docs/sdk/events/event-subsystem-README.md
   - ks:docs/sdk/agents/react/event-source/event-source-README.md
   - ks:docs/sdk/agents/react/shared-timeline-event-bus-steer-followup-README.md
@@ -68,7 +70,7 @@ Clients send authored external events through the normal chat ingress request:
           "iteration_credit": 1
         },
         "data": {
-          "snapshot_ref": "bundle:snapshots/inv_123/invoice-draft.yaml"
+          "snapshot_ref": "ext:task-tracker/inv_123/invoice-draft.yaml"
         }
       }
     }
@@ -127,6 +129,19 @@ Ingress is earlier than ReAct and does not load bundle declarations just to
 classify an idle event. If an idle external event must start ReAct, the producer
 must send `payload.external_event.routing.reactive=true`.
 
+## Artifact Refs In Event Data
+
+`payload.external_event.data` may contain custom namespace artifact URIs, for example
+`ext:...` refs produced by bundle-owned storage. ReAct does not treat those
+refs as local files. A bundle or SDK module must register an artifact namespace
+rehoster, such as `@artifact_namespace_rehoster(namespace="ext")`, and the
+agent materializes the ref explicitly with `react.pull(paths=["ext:..."])`.
+The rehoster resolves the custom URI and copies the bytes into the current
+ReAct artifact surface. The pull result then contains the materialized `fi:`
+logical path and current-turn physical path that `react.read` or generated code
+can use. Agents should follow the returned rows instead of deriving a target
+path from the `ext:` ref.
+
 ## Semantic Axes
 
 External events are arranged along four independent axes.
@@ -154,17 +169,21 @@ Ingress
   classifies message/followup/steer/external_event
   builds ExternalEventPayload.event
         |
-        +-- current rollout: normal idle messages still enter ready queue directly
+        +-- idle reactive event
+        |     append to event lane
+        |     enqueue ExternalEventLaneWakeup; wakeup carries lane pointer only
         |
-        +-- external_event/followup/steer --> append Redis event lane
+        +-- busy followup/steer/external_event
+        |     append to event lane for live owner or later promotion
         |
-        +-- target rollout: every accepted event is appended to lane;
-            ready queue is only an id-card wake-up
+        +-- idle non-reactive authored external_event
+              append to event lane and return without model wake
         |
         v
 Processor / ReAct owner
+  processor resolves wakeups back to lane event task_payload
   live owner drains Redis source when active
-  otherwise proc may promote eligible reactive pending task_payload as fallback
+  otherwise proc may promote eligible retained events as wakeups
         |
         v
 ReAct ContextBrowser
@@ -183,9 +202,9 @@ tenant + project + user_id + conversation_id + agent_id
 ```
 
 The Redis keys include `user_id` and `agent_id` when the payload carries event
-metadata. Payloads produced before this protocol widening fall back to the
-legacy tenant/project/conversation key so retained operational events are not
-lost during rollout.
+metadata. New producers should use the scoped lane. The implementation can still
+read retained operational records from the older tenant/project/conversation
+lane during rollout.
 
 ```text
 kdcube:chat:conversation:external-events:{tenant}:{project}:{conversation_id}:user:{user_id}:agent:{agent_id}

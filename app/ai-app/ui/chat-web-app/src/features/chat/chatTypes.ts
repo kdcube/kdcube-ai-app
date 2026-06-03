@@ -1,5 +1,5 @@
 import {Indexed, Timestamped} from "../../types/common.ts";
-import {RichLink, RNFile, TurnStep} from "../chatController/chatBase.ts";
+import {ChatTarget, ExternalEvent, RichLink, RNFile, TurnStep} from "../chatController/chatBase.ts";
 import {AuthConfig} from "../auth/authTypes.ts";
 import {CookieOptions} from "../../utils/cookies.ts";
 
@@ -206,6 +206,9 @@ export interface UserMessageRequest {
     files?: File[] | null;
     continuationKind?: "regular" | "followup" | "steer";
     targetTurnId?: string;
+    payload?: Record<string, unknown>;
+    target?: ChatTarget;
+    externalEvent?: ExternalEvent;
 }
 
 export type TurnState = "new" | "inProgress" | "finished" | "error"

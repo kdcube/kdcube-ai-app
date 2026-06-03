@@ -33,7 +33,7 @@ in [Shared Timeline Event Bus for Steer and Followup](../../sdk/agents/react/sha
 
 | Family | Client shape | Ingress kind | Runtime meaning |
 |---|---|---|---|
-| New user message | `message.message` with no busy conversation | `regular` | Create/enqueue a reactive event payload. |
+| New user message | `message.message` with no busy conversation | `message` | Publish the accepted event to the lane and enqueue a reactive lane wakeup. |
 | Followup | `message_kind` / `continuation_kind` / `followup=true` | `followup` | Additional same-conversation user input while a turn may be active. |
 | Steer | `message_kind` / `continuation_kind` / `steer=true` | `steer` | Control/reorientation event. ReAct treats it as interrupt-like when supported. |
 | Authored external event | `payload.external_event` | `external_event` | Structured product event, e.g. wizard save/request-assistance. |
@@ -61,7 +61,7 @@ Platform turn routing stays in message-level `active_turn_id` and
         "iteration_credit": 1
       },
       "data": {
-        "snapshot_ref": "bundle:snapshots/inv_123/invoice-draft.yaml",
+        "snapshot_ref": "ext:task-tracker/inv_123/invoice-draft.yaml",
         "request": "Review this draft and suggest the next useful step."
       }
     }
@@ -85,20 +85,20 @@ Rules:
   for example `event_source_declaration(..., reactive=True, iteration_credit=2)`,
   but producers/helpers must materialize that default into the occurrence before
   ingress receives it.
-- The `external_event` object is preserved as-is in `ExternalEventPayload.request.payload`
-  when the event opens a new turn, and in the Redis external-event payload when
-  the event is accepted while the conversation is busy.
+- The `external_event` object is preserved as-is in the Redis external-event
+  lane payload and in the stored `ExternalEventPayload.request.payload` inside
+  that lane event's `task_payload`.
 
 ## Inception Matrix
 
 | Conversation state | Event family | Ingress action | ReAct wake/credit |
 |---|---|---|---|
-| Idle/new | Regular user message | Set conversation `in_progress`, host attachments, enqueue reactive event payload. | Normal task budget. |
+| Idle/new | User message | Set conversation `in_progress`, host attachments, append `kind=message` to the event lane, enqueue `ExternalEventLaneWakeup`. | Normal task budget. |
 | Busy | Followup | Append to per-conversation external-event source with `kind=followup`; active owner may consume live, otherwise proc may promote fallback task. | Reactive by default; grants bounded live iteration credit. |
 | Busy | Steer | Append to per-conversation external-event source with `kind=steer`; active owner may interrupt/finalize. | No iteration credit; control path. |
 | Idle | Authored external event, no ingress-visible `routing.reactive=true` | Set/verify conversation row as `idle`, host attachments, append `kind=external_event` to per-conversation Redis external-event source, return `external_event_recorded`. | No wake, no credit. |
 | Busy | Authored external event, no `routing.reactive=true` | Append `kind=external_event` to per-conversation Redis external-event source, return `external_event_accepted`. | No wake credit. Active owner can still fold the block if it drains the stream. |
-| Idle | Authored external event, ingress-visible `routing.reactive=true` | Treat like a normal task inception: set conversation `in_progress`, preserve `payload.external_event`, enqueue task. | Normal task budget. |
+| Idle | Authored external event, ingress-visible `routing.reactive=true` | Set conversation `in_progress`, append `kind=external_event` to the event lane, enqueue `ExternalEventLaneWakeup`. | Normal task budget. |
 | Busy | Authored external event, `routing.reactive=true` | Append `kind=external_event` to per-conversation Redis external-event source, return `external_event_accepted`. | May grant bounded live iteration credit from the source default or `routing.iteration_credit`. |
 
 ## Redis External-Event Source
@@ -118,8 +118,8 @@ kdcube:chat:conversation:external-events:seq:{tenant}:{project}:{conversation_id
 kdcube:chat:conversation:external-events:{tenant}:{project}:{conversation_id}:user:{user_id}:agent:{agent_id}:event:{event_id}
 ```
 
-Payloads produced before this protocol widening can still fall back to the
-legacy tenant/project/conversation key during rollout. New traffic should target
+Payloads produced before this protocol widening can still be read from the
+older tenant/project/conversation key during rollout. New traffic should target
 the scoped lane. The stream sequence is per lane.
 
 Current retention:
@@ -134,6 +134,11 @@ If an event must survive Redis retention independently of ReAct folding, the
 event or its payload must also be materialized into conversation storage or a
 bundle/application artifact. That durable external-event history is a separate
 storage slice and is not completed by the current transport implementation.
+
+The ready queue is not the event body for lane-backed starts. It carries an
+`ExternalEventLaneWakeup`, which points at the accepted lane occurrence by
+`event_id` and `sequence`. Processor resolves that pointer back to the lane
+event's stored `task_payload` before invoking the bundle.
 
 ## Concurrency Model
 

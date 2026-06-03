@@ -19,6 +19,7 @@ keywords:
   ]
 see_also:
   - ks:docs/arch/proc/processor-arch-README.md
+  - ks:docs/arch/proc/events-orchestration-README.md
   - ks:docs/arch/proc/longrun-protection-README.md
   - ks:docs/service/streams/conversation-scheduler-README.md
   - ks:docs/sdk/agents/react/shared-timeline-event-bus-steer-followup-README.md
@@ -418,7 +419,7 @@ Ingress should become append-oriented.
 Recommended flow:
 
 1. classify the incoming message as:
-   - `regular`
+   - `message`
    - `followup`
    - `steer`
 2. append the message to the conversation mailbox stream
@@ -547,7 +548,7 @@ The framework should not silently reinterpret them.
 
 | Kind | Meaning | Framework behavior |
 | --- | --- | --- |
-| `regular` | Normal user turn | Start a normal turn |
+| `message` | Normal user turn | Start a normal turn |
 | `followup` | Busy-conversation continuation | May be consumed live or delivered as the next ordered turn |
 | `steer` | Control/interrupt message | May be consumed live; if later delivered as a scheduled turn it must still be visible as `steer` |
 

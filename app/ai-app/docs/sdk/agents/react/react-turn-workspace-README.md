@@ -29,42 +29,32 @@ Scope:
 
 ## Effective agent workspace model
 
-The agent does **not** perceive one flat filesystem. It reasons across several surfaces:
+The full agent-facing path contract is in
+[agent-workspace-collboration-README.md](./agent-workspace-collboration-README.md).
+This lifecycle doc only names the physical runtime roots and the most important
+invariants.
 
 ```text
-VISIBLE / ADDRESSABLE WORKSPACE MODEL
-
-1) CURRENT TURN ARTIFACT ROOT / OUTPUT_DIR (physical; current-turn execution surface)
-   out/
-     timeline.json
-     tool_calls_index.json
-     logs/
-     ...                 # runtime metadata, tool-call JSON, diagnostics
-     workdir/            # artifact root exposed as OUTPUT_DIR
-       turn_<current_turn>/
-         files/           # durable workspace/project namespace
-         outputs/         # non-workspace produced artifacts
-         attachments/     # current-turn attachments and rehosted copies pulled into this turn
-   work/                  # exec scratch only; not stable collaboration state
-
-   Agent-visible paths are relative to out/workdir:
-     turn_<id>/files/...
-     turn_<id>/outputs/...
-     turn_<id>/attachments/...
-
-2) CONVERSATION ARTIFACT MEMORY (logical; cross-turn; not a browsable folder)
-   ar:...  tc:...  so:...  su:...
-   fi:<older_turn>.files/...
-   fi:<older_turn>.user.attachments/...
-
-3) BUNDLE KNOWLEDGE SPACE `ks:` (logical; read-only virtual folder)
-   ks:<bundle-defined-path>/...
-   ...
-
+exec_<UTC timestamp>_<suffix>/
+  work/                 # internal exec scratch
+  out/                  # runtime metadata root
+    timeline.json
+    tool_calls_index.json
+    logs/
+    workdir/            # artifact root exposed as OUTPUT_DIR
+      turn_<current>/
+        files/          # durable workspace/project state
+        outputs/        # produced artifacts, not workspace state
+        snapshots/      # story/workflow snapshots
+        attachments/    # user attachments
+        external/...    # rehosted external/followup/domain attachments
+      turn_<older>/...  # pulled same-conversation history
+      conv_<conversation_id>/turn_<older>/...
+                           # pulled cross-conversation history
 ```
 
 Current behavior:
-- History is preserved physically under `out/workdir/turn_<id>/files/...`, `out/workdir/turn_<id>/outputs/...`, and `out/workdir/turn_<id>/attachments/...`.
+- History is preserved physically under `out/workdir/turn_<id>/...`; cross-conversation refs materialize under `out/workdir/conv_<conversation_id>/turn_<id>/...`.
 - Writes for the current turn go to:
   - `out/workdir/<current_turn>/files/...` for durable workspace/project state
   - `out/workdir/<current_turn>/outputs/...` for non-workspace produced artifacts
@@ -72,11 +62,9 @@ Current behavior:
   - versioned turn artifacts and attachments
   - any readable artifact file already present under `out/workdir/`
   - exact logical `ks:` paths via `react.read`
-- The practical mental model is:
-  - `turn_<id>/files/...` and `turn_<id>/attachments/...` preserve origin and history
-  - the latest visible version of a file path is the current logical workspace view
-  - runtime folders like `logs/` are platform diagnostics under the sibling runtime root, not artifact paths
-  - `ks:` is not inside the artifact root at all; it is a bundle-owned read-only virtual space
+- `ext:` and other custom namespace refs have no physical path until
+  `react.pull` invokes a registered namespace rehoster and returns the
+  materialized `fi:` / physical rows.
 
 Workspace implementation (`RuntimeCtx.workspace_implementation`):
 - `custom`
@@ -91,10 +79,9 @@ Workspace implementation (`RuntimeCtx.workspace_implementation`):
   - ANNOUNCE may show `previous saved workspace paths (pull to bring local; checkout to edit)` so React can see prior saved workspace paths without mistaking them for the current editable workspace
   - the agent may use local git inspection/history/edit commands inside that current-turn repo, except pull/push/fetch
 - in both modes:
-  - `fi:<turn_id>.files/<scope-or-subtree>` may be pulled as a subtree
-  - `fi:<turn_id>.outputs/<file>` may be pulled as an exact file ref
-  - `fi:<turn_id>.user.attachments/<name>` may be pulled only as an exact file ref
-  - folder pulls expand from timeline metadata and fetch exact hosted blobs; they do not list storage buckets or extract execution snapshots
+  - `react.pull` materializes refs as historical/reference material
+  - `react.checkout` copies selected `fi:...files...` refs into the active current-turn `files/` workspace
+  - folder pulls expand from timeline/git metadata and fetch exact hosted blobs; they do not list storage buckets or extract execution snapshots
   - in `git` mode, exact non-text `.files/...` refs that resolve to hosted artifacts are still hydrated from artifact/hosting history, not from git
 
 ### Knowledge space and exec-time path resolution
@@ -195,9 +182,16 @@ exec_20260506125243_ab12/
         user_code.py                       # verbatim agent-generated program body/snippet
     workdir/                               # artifact root exposed as OUTPUT_DIR
       turn_<turn_id>/
-        files/                             # turn-scoped file artifacts/rehosted files
+        files/                             # durable workspace/project state
         outputs/                           # non-workspace produced artifacts
-        attachments/                       # turn-scoped attachment files
+        snapshots/                         # story/workflow snapshots
+        attachments/                       # turn-scoped user attachment files
+        external/<event_kind>/attachments/... # external-event attachments, e.g. followup
+      conv_<conversation_id>/               # pulled artifacts from another conversation
+        turn_<turn_id>/
+          files/
+          outputs/
+          snapshots/
     logs/                                  # isolated runtime logs
       user.log                             # program/user stream (stdout/stderr + logger "user")
       infra.log                            # merged infra view for current execution id
@@ -221,38 +215,36 @@ Notes:
 
 ### Path conventions used inside the workspace
 
-Logical `fi:` paths map to physical artifact-root paths by convention:
-- `fi:<turn_id>.files/<rel>` -> `turn_<id>/files/<rel>`
-- `fi:<turn_id>.user.attachments/<rel>` -> `turn_<id>/attachments/<rel>`
-- legacy `fi:<turn_id>.attachments/<rel>` -> `turn_<id>/attachments/<rel>`
-- `fi:<artifact-root-relative-path>` -> `<artifact-root-relative-path>` for readable files already present under `out/workdir/`
+The full `fi:` grammar, custom namespace rules, and pull/checkout contract live
+in [agent-workspace-collboration-README.md](./agent-workspace-collboration-README.md).
+This runtime article only needs the operational shape:
 
-Other logical paths (`ar:`, `tc:`, `so:`) resolve from timeline state and are not always direct files.
+```text
+OUTPUT_DIR/
+  turn_<current>/
+    files/...       # editable workspace/project state
+    outputs/...     # produced artifacts, reports, render sources, diagnostics
+    snapshots/...   # story/workflow state snapshots
+    attachments/... # user uploads for this turn
+  turn_<older>/...  # pulled same-conversation references
+  conv_<conversation_id>/turn_<older>/...
+                   # pulled cross-conversation references
+```
 
 Workspace/read-write summary:
-- `react.write`, `react.patch`, rendering tools, and exec outputs may write to either:
-  - `turn_<id>/files/...` for durable workspace state
-  - `turn_<id>/outputs/...` for non-workspace produced artifacts
-- unqualified `react.write` and exec contract paths default to `outputs/...`; use `files/...` explicitly for durable workspace/project state
-- `react.read` can load any readable artifact-root file through `fi:...`.
-- `react.pull` materializes selected `fi:` refs locally under the artifact root as historical/reference material.
-- `react.checkout` copies selected historical `files/...` refs into the active current-turn `files/` workspace so they can be modified there.
-- `.files/...` pulls come from:
-  - artifact/timeline metadata plus hosted blobs in `custom`
-  - git-backed lineage snapshots in `git`
-- `.outputs/...` pulls always come from artifact/timeline metadata plus hosted blobs
-- exact attachment pulls still come from hosted artifact storage in both modes
-- exact non-text `.files/...` refs also stay on the hosted/artifact path when timeline metadata says the file is a hosted binary artifact
-- `react.pull` supports subtree pulls only for `fi:<turn_id>.files/...`; `fi:<turn_id>.outputs/...` and attachment/binary pulls must be exact file refs
-- `react.checkout(mode="replace")` accepts ordered `fi:<turn_id>.files/...` refs after pull and replaces `turn_<current>/files/` before applying them
-- `react.checkout(mode="overlay")` accepts ordered `fi:<turn_id>.files/...` refs after pull and applies them into the existing current workspace without deleting unspecified files
-- exec/code no longer auto-materialize historical workspace files, and `react.patch` never edits historical paths directly; if the file is not already local, React must `react.pull(...)` it first, then `react.checkout(...)` historical `files/...` refs before editing
-- when continuing the same project, React is expected to reuse the existing top-level `files/<scope>/...` folder rather than inventing a sibling scope
-- if the old scope name is clearly weak or misleading, React may intentionally rename/migrate the project tree to a better canonical scope
-- a rename is different from sibling drift: the project should continue under the new scope instead of leaving the old scope active and starting a second one
-- `react.rg` can search readable files already materialized in the local artifact workspace and returns `logical_path` so the agent can immediately call `react.read`. For content matches it also returns `read_item` ranges for exact `react.read({"items":[...]})` inspection.
-- Preferred `react.rg` roots are visible path forms: `files/...`, `outputs/...`, `attachments/...`, `turn_<id>/files/...`, `turn_<id>/outputs/...`, `turn_<id>/attachments/...`, or matching `fi:` artifact paths such as `fi:<turn_id>.files/...`, `fi:<turn_id>.outputs/...`, and `fi:<turn_id>.user.attachments/...`. Legacy `outdir/...` roots are accepted only for compatibility.
-- `react.rg` is not a search over the endless/pruned conversation timeline or unpulled historical snapshots. If the needed file is older state, React must identify the `fi:` ref, then `react.pull` it before local search. Checkout is only for making an editable current-turn copy.
+- `react.write`, `react.patch`, rendering tools, and exec outputs may write to
+  `turn_<current>/files/...` or `turn_<current>/outputs/...`.
+- Use `files/...` for durable workspace/project state; use `outputs/...` for
+  generated artifacts that should not become editable project state.
+- `react.pull` materializes selected same-turn, older-turn, cross-conversation,
+  or custom-namespace refs into `OUTPUT_DIR`.
+- `react.checkout` copies pulled historical `files/...` refs into the active
+  current-turn `files/` workspace for editing.
+- Custom refs such as `ext:...` have no derived local path. `react.pull` calls a
+  registered namespace rehoster and its result tells the agent the materialized
+  `fi:` path.
+- `react.rg` searches readable files already materialized in `OUTPUT_DIR`; it is
+  not a search over unpulled history.
 - `work/` is internal execution scratch and is not part of the normal React search/read contract.
 
 ## Phase 3: Optional turn snapshot persistence (`react.persist_workspace()`)

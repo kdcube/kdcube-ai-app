@@ -9,6 +9,7 @@ see_also:
   - ks:docs/sdk/bundle/bundle-client-ui-README.md
   - ks:docs/sdk/bundle/bundle-chat-stream-events-README.md
   - ks:docs/sdk/bundle/bundle-frontend-awareness-README.md
+  - ks:docs/sdk/bundle/bundle-events-README.md
   - ks:docs/sdk/agents/react/shared-timeline-event-bus-steer-followup-README.md
   - ks:docs/sdk/bundle/bundle-interfaces-README.md
   - ks:docs/service/auth/auth-README.md
@@ -191,7 +192,8 @@ Current request fields:
 Important:
 
 - `message_kind` / `continuation_kind` are current routing semantics
-- they do **not** yet represent a general authored event model
+- authored UI/application events use `payload.external_event` and
+  `payload.target`; see [Bundle Events](bundle-events-README.md)
 - `turn_id` on the request is a client correlation hint; the server allocates or confirms the authoritative task/turn id in the acknowledgement
 - for continuations, `target_turn_id` is the user/client intent and `active_turn_id` is the client's best known active turn; neither field is authoritative without server state
 - attachments are carried alongside this logical message, not inside it

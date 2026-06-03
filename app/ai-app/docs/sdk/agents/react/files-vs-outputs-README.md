@@ -1,226 +1,81 @@
 ---
 id: ks:docs/sdk/agents/react/files-vs-outputs-README.md
-title: "Files vs Outputs"
-summary: "React namespace contract for separating durable workspace files from non-workspace produced artifacts."
+title: "Files Vs Outputs"
+summary: "Short ReAct namespace reference for files, outputs, snapshots, and attachments. The canonical workspace/artifact model is agent-workspace-collboration-README.md."
 tags: ["sdk", "agents", "react", "workspace", "artifacts"]
-keywords: ["files namespace", "outputs namespace", "workspace membership", "external internal", "git workspace"]
+keywords: ["files namespace", "outputs namespace", "snapshots namespace", "workspace membership", "artifact origin"]
 see_also:
-  - ks:docs/sdk/agents/react/artifact-discovery-README.md
-  - ks:docs/sdk/agents/react/artifact-storage-README.md
+  - ks:docs/sdk/agents/react/agent-workspace-collboration-README.md
   - ks:docs/sdk/agents/react/react-turn-workspace-README.md
-  - ks:docs/sdk/agents/react/workspace/git-based-isolated-workspace-README.md
+  - ks:docs/sdk/agents/react/workspace/workspace-checkout-model-README.md
+  - ks:docs/sdk/events/event-subsystem-README.md
 status: confirmed
 ---
-# Files vs Outputs
+# Files Vs Outputs
 
-This note describes the implemented namespace split between workspace files and
-produced outputs.
+This is the compact namespace reference. The full agent-facing workspace model,
+including cross-conversation refs, custom namespace rehosters, and pull/checkout
+behavior, lives in
+[agent-workspace-collboration-README.md](./agent-workspace-collboration-README.md).
 
-It defines the split between:
-- durable workspace/project state
-- produced artifacts that should be kept or shared, but should not become part of workspace history
-
-## Problem
-
-Today React mostly writes assistant-produced files under:
+## Namespace Meanings
 
 ```text
-turn_<id>/files/...
+files/       durable workspace/project state
+outputs/     produced artifacts, reports, render sources, diagnostics
+snapshots/   story/workflow state snapshots
+attachments/ user-uploaded files for a turn
+external/    externally authored/domain/followup attachments rehosted for ReAct
 ```
 
-That path currently mixes two different meanings:
-- file is part of the durable project/workspace tree
-- file is merely an output artifact for this turn
+`files/` is the only namespace that represents current editable project state.
+It is the namespace that `react.checkout` populates under
+`turn_<current>/files/...`.
 
-This becomes incorrect for cases such as:
-- test results
-- temporary reports
-- generated analysis snapshots
-- one-off exports for the user
+`outputs/` is not workspace history. It can hold HTML, Markdown, JSON, images,
+PDFs, logs, reports, render sources, and test output, but those are produced
+artifacts, not the project tree.
 
-Those artifacts may need to be:
-- shown to the user
-- hosted and downloadable
-- visible to the agent later
+`snapshots/` is separate from `files/` even when the snapshot is text. A
+snapshot records current story/workflow state, for example wizard state, canvas
+state, or user-story state.
 
-but they should not automatically become:
-- workspace members
-- git-tracked project files
-- part of the rolling workspace tree in `custom` mode
-
-The existing `visibility=external|internal` axis does not solve this problem.
-
-`visibility` only answers:
-- should the user receive this artifact?
-
-It does **not** answer:
-- is this artifact part of the durable workspace/project tree?
-
-## Implemented model
-
-React uses two assistant artifact namespaces:
-
-- `files/...`
-  - durable workspace/project tree
-  - eligible for workspace history
-  - eligible for git publish in `git` mode
-  - participates in workspace map / mental model
-
-- `outputs/...`
-  - produced artifact namespace
-  - not part of workspace history
-  - never committed to git
-  - not part of the workspace tree shown to the agent as project state
-  - still available for hosting, download, reuse, and later reading
-
-Physical paths:
+## Canonical Paths
 
 ```text
-turn_<id>/files/<relpath>
-turn_<id>/outputs/<relpath>
-turn_<id>/attachments/<name>
+fi:turn_<id>.files/<rel>                              -> turn_<id>/files/<rel>
+fi:turn_<id>.outputs/<rel>                            -> turn_<id>/outputs/<rel>
+fi:turn_<id>.snapshots/<rel>                          -> turn_<id>/snapshots/<rel>
+fi:turn_<id>.user.attachments/<rel>                   -> turn_<id>/attachments/<rel>
+fi:turn_<id>.external.<event_kind>.attachments/<event_id>/<rel>  -> turn_<id>/external/<event_kind>/attachments/<event_id>/<rel>
+fi:conv_<conversation_id>.turn_<id>.files/<rel>       -> conv_<conversation_id>/turn_<id>/files/<rel>
 ```
 
-Logical paths:
+Custom namespace refs, such as `ext:task-tracker/...`, are not `fi:` refs until
+pulled. A registered namespace rehoster chooses the destination:
 
 ```text
-fi:<turn_id>.files/<relpath>
-fi:<turn_id>.outputs/<relpath>
-fi:<turn_id>.user.attachments/<name>
+ext:task-tracker/draft_1/issue-draft.yaml
+  -> fi:turn_<current>.snapshots/ext/task-tracker/draft_1/issue-draft.yaml
+
+ext:task-tracker/draft_1/evidence/screenshot.png
+  -> fi:turn_<current>.external.ext.attachments/ext_<id>/ext/task-tracker/draft_1/evidence/screenshot.png
 ```
 
-## Orthogonal visibility axis
+`ext` is only an example namespace. It is valid only when a bundle/module
+registers `@artifact_namespace_rehoster(namespace="ext")`.
 
-Keep the current visibility axis unchanged:
+## Visibility Is Separate
 
-- `visibility=external`
-  - user receives it
-- `visibility=internal`
-  - agent/runtime only
+```text
+files/...   + external  -> workspace member also emitted to the user
+files/...   + internal  -> workspace member not emitted to the user
+outputs/... + external  -> downloadable/visible artifact, not workspace state
+outputs/... + internal  -> runtime/agent artifact, not workspace state
+```
 
-This remains orthogonal to namespace.
+Use `turn_<current>/files/<scope>/...` for durable source trees, tests, assets,
+configuration, and project docs that may be continued across turns.
 
-That gives a clean matrix:
-
-- `files/...` + `external`
-  - project/workspace member that is also shared
-- `files/...` + `internal`
-  - project/workspace member not shared
-- `outputs/...` + `external`
-  - downloadable or visible artifact, not part of workspace history
-- `outputs/...` + `internal`
-  - internal artifact, not part of workspace history
-
-Both external and internal `kind=file` artifacts are hosted under the turn with
-their full workspace-relative path preserved. `external` additionally means the
-file is emitted to the user interface. `internal` means the file is kept
-available for later agent/runtime use without being emitted to the user.
-
-## Agent mental model
-
-React should be taught:
-
-- `turn_<current_turn>/files/...` is the current project/workspace tree
-- `turn_<current_turn>/outputs/...` is an artifact area, not the project tree
-- if it wants durable project state, write to `files/...`
-- if it wants a result/report/export/test-output that should not become project state, write to `outputs/...`
-- unqualified generated-artifact paths default to `outputs/...`; `files/...` must be explicit
-
-Examples:
-
-- `files/bookbot/src/app.py`
-  - workspace member
-- `files/bookbot/README.md`
-  - workspace member
-- `outputs/bookbot/test_results.txt`
-  - produced result, not workspace
-- `outputs/bookbot/coverage.json`
-  - produced diagnostic, not workspace
-- `outputs/bookbot/report.md`
-  - downloadable artifact, not workspace
-
-## Effects by workspace backend
-
-### `git`
-
-- only `files/...` is eligible for staging/commit/publish
-- `outputs/...` is ignored by workspace publish
-- `react.pull(fi:<turn>.files/...)`
-  - remains the historical workspace activation mechanism
-- `react.pull(fi:<turn>.outputs/...)`
-  - should be supported as explicit artifact retrieval
-  - exact-file refs are the stable contract
-  - folder/prefix retrieval, when supported, expands from timeline metadata and fetches exact hosted blobs; it does not scan storage or extract full execution snapshots
-
-### `custom`
-
-- rolling workspace map tracks only `files/...`
-- `outputs/...` does not become part of the workspace map
-- `react.pull(fi:<turn>.outputs/...)`
-  - is still allowed as artifact retrieval
-  - exact-file refs are the stable contract
-
-## Turn fetch / UI impact
-
-This split should not require a new UI artifact family immediately.
-
-Current fetch already surfaces:
-- `artifact:assistant.file` for external files
-
-That can remain true for both:
-- external `files/...`
-- external `outputs/...`
-
-The difference is in workspace semantics, not necessarily in basic user download behavior.
-
-If needed later, fetch can expose namespace/kind more explicitly in metadata.
-
-## Discovery / storage implications
-
-Artifact discovery must understand:
-
-- `fi:<turn_id>.files/...`
-- `fi:<turn_id>.outputs/...`
-- `fi:<turn_id>.user.attachments/...`
-
-Artifact storage must preserve:
-
-- namespace
-- visibility
-- kind
-- hosted blob handles (`hosted_uri`, `key`, `rn`) for produced files
-- the full artifact-root-relative physical path, not just the basename
-
-but workspace publish / workspace maps must only consider:
-
-- `files/...`
-
-## Implemented behavior
-
-Current behavior:
-
-1. `outputs/...` paths normalize to `turn_<id>/outputs/...` and `fi:<turn>.outputs/...`.
-2. `files/...` behavior remains the durable workspace/project-tree path.
-3. `visibility=external|internal` is unchanged as an emission policy.
-4. Git publish stages only `files/...`.
-5. React is taught:
-   - `files/...` = project tree
-   - `outputs/...` = produced artifacts
-6. `react.pull(fi:<turn>.outputs/<file>)` supports exact artifact retrieval.
-7. `react.pull(fi:<turn>.files/<prefix>)` supports subtree retrieval by expanding timeline metadata and fetching exact hosted blobs.
-
-## Acceptance criteria
-
-- React has a clear path-level distinction between workspace state and produced artifacts
-- `visibility` remains separate from workspace membership
-- git publish never stages `outputs/...`
-- custom workspace maps never treat `outputs/...` as workspace members
-- external outputs remain downloadable through the normal artifact flow
-- internal outputs remain hosted for agent/runtime reuse without being user-emitted
-
-## Non-goals
-
-- no attempt here to redesign user attachment paths
-- no automatic inference from file type or filename
-- no `.gitignore`-based implicit contract for workspace membership
-- no promise yet that `outputs/...` folder pulls will ever be supported; exact-file pull is the phase-1 contract
+Use `turn_<current>/outputs/<scope>/...` for reports, exports, render sources,
+screenshots, diagnostics, and one-off deliverables.

@@ -5,17 +5,21 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import inspect
 import os
 import pathlib
+from collections.abc import Iterable as IterableABC
 from dataclasses import dataclass, field
 from types import ModuleType
-from typing import Any, Iterable, Mapping, MutableMapping
+from typing import Any, Callable, Iterable, Mapping, MutableMapping
 
 from kdcube_ai_app.apps.chat.sdk.runtime.dynamic_module_loader import load_dynamic_module_for_path
 
 from kdcube_ai_app.apps.chat.sdk.events.decorator import (
+    ArtifactNamespaceRehosterDeclaration,
     EventSourceDeclaration,
     event_source_declaration,
+    get_artifact_namespace_rehoster_declaration,
     get_event_source_declaration,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.events.policies import (
@@ -53,6 +57,27 @@ class ResolvedEventSource:
             "kind": self.kind,
             "reactive": self.reactive,
             "iteration_credit": self.iteration_credit,
+            "module": self.module,
+            "alias": self.alias,
+            "object_name": self.object_name,
+        }
+
+
+@dataclass(frozen=True)
+class ResolvedArtifactNamespaceRehoster:
+    namespace: str
+    handler: Callable[..., Any] = field(compare=False)
+    description: str = ""
+    version: str = ""
+    module: str = ""
+    alias: str = ""
+    object_name: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "namespace": self.namespace,
+            "description": self.description,
+            "version": self.version,
             "module": self.module,
             "alias": self.alias,
             "object_name": self.object_name,
@@ -111,6 +136,7 @@ class EventSourceSubsystem:
         self.bundle_root = pathlib.Path(bundle_root).resolve() if bundle_root else None
         self.warnings: list[str] = []
         self._by_event_source_id: dict[str, ResolvedEventSource] = {}
+        self._namespace_rehosters: dict[str, ResolvedArtifactNamespaceRehoster] = {}
         self._modules: list[dict[str, Any]] = []
         self._event_policies: dict[str, ReactEventPolicy] = {}
 
@@ -159,6 +185,8 @@ class EventSourceSubsystem:
 
         self._modules.append(module_info)
         self._event_policies.update(discover_react_event_policies(mod))
+        for rehoster in self._discover_namespace_rehosters(module_info):
+            self._register_namespace_rehoster(rehoster)
         for source in self._discover_module(module_info):
             self._register(source)
 
@@ -217,6 +245,52 @@ class EventSourceSubsystem:
 
     def list_sources(self) -> list[dict[str, Any]]:
         return [source.to_dict() for source in sorted(self._by_event_source_id.values(), key=lambda s: s.event_source_id)]
+
+    def namespace_rehoster(self, namespace: str) -> ResolvedArtifactNamespaceRehoster | None:
+        return self._namespace_rehosters.get(str(namespace or "").strip().rstrip(":"))
+
+    def list_namespace_rehosters(self) -> list[dict[str, Any]]:
+        return [
+            rehoster.to_dict()
+            for rehoster in sorted(self._namespace_rehosters.values(), key=lambda item: item.namespace)
+        ]
+
+    async def rehost_namespace_ref(
+        self,
+        ref: str,
+        *,
+        ctx_browser: Any,
+        outdir: pathlib.Path,
+        **context: Any,
+    ) -> dict[str, Any]:
+        raw = str(ref or "").strip()
+        namespace, sep, key = raw.partition(":")
+        namespace = namespace.strip()
+        if not sep or not namespace:
+            return {"rehosted": [], "missing": [], "errors": [], "invalid": [{"path": raw, "reason": "missing_namespace"}], "materialized": []}
+        rehoster = self.namespace_rehoster(namespace)
+        if rehoster is None:
+            return {"rehosted": [], "missing": [], "errors": [], "invalid": [{"path": raw, "reason": "no_namespace_rehoster"}], "materialized": []}
+        try:
+            result = rehoster.handler(
+                ref=raw,
+                namespace=namespace,
+                key=key,
+                ctx_browser=ctx_browser,
+                outdir=outdir,
+                **context,
+            )
+            if inspect.isawaitable(result):
+                result = await result
+            return self._normalize_rehost_result(result, source_ref=raw)
+        except Exception as exc:
+            return {
+                "rehosted": [],
+                "missing": [],
+                "errors": [f"{namespace}_rehost_failed:{exc}"],
+                "invalid": [],
+                "materialized": [],
+            }
 
     def _load_module(self, ref: str) -> tuple[str, ModuleType]:
         if ref.endswith(".py") or os.path.sep in ref:
@@ -279,6 +353,74 @@ class EventSourceSubsystem:
                     out.append(resolved)
 
         return out
+
+    def _discover_namespace_rehosters(self, module_info: Mapping[str, Any]) -> list[ResolvedArtifactNamespaceRehoster]:
+        mod = module_info["mod"]
+        alias = str(module_info.get("alias") or "").strip()
+        out: list[ResolvedArtifactNamespaceRehoster] = []
+
+        list_fn = getattr(mod, "list_artifact_namespace_rehosters", None)
+        listed = False
+        if callable(list_fn):
+            for idx, item in enumerate(list_fn() or []):
+                resolved = self._resolve_rehoster_item(
+                    item,
+                    module_info=module_info,
+                    alias=alias,
+                    object_name=f"list_artifact_namespace_rehosters[{idx}]",
+                )
+                if resolved:
+                    listed = True
+                    out.append(resolved)
+            if listed:
+                return out
+
+        for name, obj in vars(mod).items():
+            resolved = self._resolve_rehoster_item(
+                obj,
+                module_info=module_info,
+                alias=alias,
+                object_name=name,
+            )
+            if resolved:
+                out.append(resolved)
+
+        return out
+
+    def _resolve_rehoster_item(
+        self,
+        item: Any,
+        *,
+        module_info: Mapping[str, Any],
+        alias: str,
+        object_name: str,
+    ) -> ResolvedArtifactNamespaceRehoster | None:
+        handler: Any = item
+        declaration: ArtifactNamespaceRehosterDeclaration | None = None
+        if isinstance(item, Mapping):
+            handler = item.get("handler")
+            declaration = get_artifact_namespace_rehoster_declaration(handler)
+        else:
+            declaration = get_artifact_namespace_rehoster_declaration(item)
+        if declaration is None:
+            return None
+        if not callable(handler):
+            self._warn(f"invalid namespace rehoster in {module_info.get('name')}.{object_name}: handler is not callable")
+            return None
+        namespace = str(declaration.namespace or "").strip().rstrip(":")
+        if "{alias}" in namespace:
+            if not alias:
+                raise ValueError(f"namespace uses {{alias}} but module has no alias: {namespace}")
+            namespace = namespace.replace("{alias}", alias)
+        return ResolvedArtifactNamespaceRehoster(
+            namespace=namespace,
+            handler=handler,
+            description=declaration.description,
+            version=declaration.version,
+            module=str(module_info.get("name") or ""),
+            alias=alias,
+            object_name=object_name,
+        )
 
     def _resolve_declared_item(
         self,
@@ -346,6 +488,56 @@ class EventSourceSubsystem:
                 return
             raise ValueError(f"Duplicate event_source_id: {source.event_source_id}")
         self._by_event_source_id[source.event_source_id] = source
+
+    def _register_namespace_rehoster(self, rehoster: ResolvedArtifactNamespaceRehoster) -> None:
+        existing = self._namespace_rehosters.get(rehoster.namespace)
+        if existing:
+            if existing.to_dict() == rehoster.to_dict():
+                return
+            raise ValueError(f"Duplicate artifact namespace rehoster: {rehoster.namespace}")
+        self._namespace_rehosters[rehoster.namespace] = rehoster
+
+    @staticmethod
+    def _normalize_rehost_result(result: Any, *, source_ref: str) -> dict[str, Any]:
+        if result is None:
+            return {"rehosted": [], "missing": [source_ref], "errors": [], "invalid": [], "materialized": []}
+        if isinstance(result, str):
+            result = {"physical_path": result}
+        if isinstance(result, Mapping):
+            rows_raw = result.get("materialized")
+            if rows_raw is None and (result.get("physical_path") or result.get("logical_path")):
+                rows_raw = [result]
+            rows = [dict(row) for row in (rows_raw or []) if isinstance(row, Mapping)]
+            rehosted = [
+                str(row.get("physical_path") or "").strip()
+                for row in rows
+                if str(row.get("physical_path") or "").strip()
+            ]
+            rehosted.extend(str(item or "").strip() for item in (result.get("rehosted") or []) if str(item or "").strip())
+            for row in rows:
+                row.setdefault("source_ref", source_ref)
+                if not row.get("file_count"):
+                    row["file_count"] = 1
+            return {
+                "rehosted": list(dict.fromkeys(rehosted)),
+                "missing": list(result.get("missing") or []),
+                "errors": list(result.get("errors") or []),
+                "invalid": list(result.get("invalid") or []),
+                "materialized": rows,
+            }
+        if isinstance(result, IterableABC) and not isinstance(result, (bytes, str)):
+            rows = [dict(row) for row in result if isinstance(row, Mapping)]
+            rehosted = [
+                str(row.get("physical_path") or "").strip()
+                for row in rows
+                if str(row.get("physical_path") or "").strip()
+            ]
+            for row in rows:
+                row.setdefault("source_ref", source_ref)
+                if not row.get("file_count"):
+                    row["file_count"] = 1
+            return {"rehosted": list(dict.fromkeys(rehosted)), "missing": [], "errors": [], "invalid": [], "materialized": rows}
+        return {"rehosted": [], "missing": [], "errors": ["namespace_rehoster_returned_unsupported_shape"], "invalid": [], "materialized": []}
 
     def _warn(self, message: str) -> None:
         self.warnings.append(message)

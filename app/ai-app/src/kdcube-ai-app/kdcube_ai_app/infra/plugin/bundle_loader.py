@@ -535,7 +535,7 @@ def bundle_entrypoint_factory(
     Mark a function as the bundle's entrypoint FACTORY.
 
     The returned object is the bundle runtime surface. It may expose
-    @on_message, @api, @mcp, @ui_widget, @cron, @on_job, lifecycle hooks, or any
+    @on_reactive_event, @api, @mcp, @ui_widget, @cron, @on_job, lifecycle hooks, or any
     subset of those surfaces. It does not imply that the bundle is an agentic
     workflow.
 
@@ -565,7 +565,7 @@ def bundle_entrypoint(
     message handling, APIs, MCP, widgets, cron, jobs, lifecycle hooks, storage
     setup, or any combination of those surfaces. It does not imply that the
     bundle itself is a workflow; per-message agent orchestration belongs behind
-    @on_message and may use BaseWorkflow internally.
+    @on_reactive_event and may use BaseWorkflow internally.
 
     Recommended signature (flexible):
         class(config, *, comm_context=None, pg_pool=None, redis=None)
@@ -764,7 +764,7 @@ def mcp(
 mcp_endpoint = mcp
 
 
-def on_message(fn):
+def on_reactive_event(fn):
     setattr(
         fn,
         ON_MESSAGE_ATTR,
@@ -2324,7 +2324,7 @@ def discover_bundle_interface_manifest(target: Any, *, bundle_id: str | None = N
         if _is_equivalent_decorator_spec(current_on_message, OnMessageSpec, ("method_name",)):
             resolved = OnMessageSpec(method_name=member_name)
             if on_message_spec and on_message_spec.method_name != resolved.method_name:
-                raise ValueError("Multiple @on_message methods detected on bundle entrypoint")
+                raise ValueError("Multiple @on_reactive_event methods detected on bundle entrypoint")
             on_message_spec = resolved
 
         current_on_job = getattr(fn, ON_JOB_ATTR, None)
