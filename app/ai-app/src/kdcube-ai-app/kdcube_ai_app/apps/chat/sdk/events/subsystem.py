@@ -325,6 +325,8 @@ class EventSourceSubsystem:
                 return out
 
         for name, obj in vars(mod).items():
+            if name.startswith("__") and name.endswith("__"):
+                continue
             resolved = self._resolve_declared_item(
                 obj,
                 module_info=module_info,
@@ -376,6 +378,8 @@ class EventSourceSubsystem:
                 return out
 
         for name, obj in vars(mod).items():
+            if name.startswith("__") and name.endswith("__"):
+                continue
             resolved = self._resolve_rehoster_item(
                 obj,
                 module_info=module_info,
