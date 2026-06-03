@@ -632,6 +632,40 @@ def _git_is_dirty(*, repo_root: pathlib.Path) -> bool:
     return bool((proc.stdout or "").strip())
 
 
+def _publish_workspace_version_alias(
+    *,
+    turn_root: pathlib.Path,
+    repo_root: pathlib.Path,
+    head_sha: str,
+    lineage_ref: str,
+    version_ref: str,
+    turn_id: str,
+    env: Dict[str, str],
+) -> None:
+    _run_git_checked(
+        turn_root,
+        ["push", str(repo_root), "HEAD:refs/heads/workspace"],
+        op="push unchanged workspace branch into local lineage repo",
+    )
+    _run_git_checked(
+        turn_root,
+        ["push", str(repo_root), f"{head_sha}:refs/kdcube-local/versions/{turn_id}"],
+        op="push unchanged workspace version ref into local lineage repo",
+    )
+    _run_git_checked(
+        repo_root,
+        ["push", "origin", f"refs/heads/workspace:{lineage_ref}"],
+        op="push unchanged workspace lineage branch to origin",
+        env=env,
+    )
+    _run_git_checked(
+        repo_root,
+        ["push", "origin", f"refs/kdcube-local/versions/{turn_id}:{version_ref}"],
+        op="push unchanged workspace version ref to origin",
+        env=env,
+    )
+
+
 def _file_is_text_like(path: pathlib.Path) -> bool:
     try:
         data = path.read_bytes()
@@ -740,9 +774,31 @@ def _publish_current_turn_git_workspace_sync(
     _stage_current_turn_text_workspace(turn_root=turn_root)
     has_head = _git_has_head(repo_root=turn_root)
     if not _git_has_staged_changes(repo_root=turn_root):
+        if has_head:
+            head_sha = _git_head_sha(repo_root=turn_root)
+            _publish_workspace_version_alias(
+                turn_root=turn_root,
+                repo_root=repo_root,
+                head_sha=head_sha,
+                lineage_ref=lineage_ref,
+                version_ref=version_ref,
+                turn_id=turn_id,
+                env=env,
+            )
+            result = _workspace_publish_skipped(
+                turn_root=turn_root,
+                reason="workspace_unchanged",
+            )
+            result.update({
+                "commit_sha": head_sha,
+                "lineage_ref": lineage_ref,
+                "version_ref": version_ref,
+                "version_aliased": True,
+            })
+            return result
         return _workspace_publish_skipped(
             turn_root=turn_root,
-            reason="empty_workspace" if not has_head else "workspace_unchanged",
+            reason="empty_workspace",
         )
     if not has_head:
         _run_git_checked(

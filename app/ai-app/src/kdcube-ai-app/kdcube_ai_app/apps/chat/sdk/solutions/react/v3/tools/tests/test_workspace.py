@@ -551,7 +551,7 @@ async def test_publish_current_turn_git_workspace_skips_missing_materialized_wor
 
 
 @pytest.mark.asyncio
-async def test_publish_current_turn_git_workspace_skips_unchanged_workspace_without_version_push(tmp_path, monkeypatch):
+async def test_publish_current_turn_git_workspace_aliases_unchanged_workspace_version(tmp_path, monkeypatch):
     monkeypatch.setenv("GIT_HTTP_TOKEN", "test-token")
     monkeypatch.setenv("GIT_HTTP_USER", "x-access-token")
     outdir = tmp_path / "out"
@@ -575,13 +575,29 @@ async def test_publish_current_turn_git_workspace_skips_unchanged_workspace_with
     assert result["skipped"] is True
     assert result["reason"] == "workspace_unchanged"
     assert result["committed"] is False
+    assert result["version_aliased"] is True
     version_ref = "refs/kdcube/demo-tenant/demo-project/admin-user/conversation-1/versions/turn_ctx"
     version_exists = subprocess.run(
         ["git", "-C", str(remote_repo), "show-ref", "--verify", "--quiet", version_ref],
         check=False,
         capture_output=True,
     )
-    assert version_exists.returncode != 0
+    assert version_exists.returncode == 0
+    show_version = subprocess.run(
+        ["git", "-C", str(remote_repo), "show", f"{version_ref}:files/projectA/src/app.py"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert (show_version.stdout or "") == "print('git')\n"
+
+    ctx = FakeBrowser(runtime)
+    pull_result = await hydrate_workspace_paths(
+        ctx_browser=ctx,
+        paths=["turn_ctx/files/projectA"],
+        outdir=outdir,
+    )
+    assert "turn_ctx/files/projectA/src/app.py" in pull_result.get("rehosted", [])
 
 
 def test_v3_ensure_workspace_repo_rewrites_ssh_origin_to_https_when_pat_is_configured(tmp_path, monkeypatch):
