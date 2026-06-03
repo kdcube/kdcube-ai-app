@@ -1236,11 +1236,27 @@ class BaseWorkflow():
         )
         return snap
 
+    def _current_turn_user_input_materialized_from_event_lane(self) -> bool:
+        ctx_browser = getattr(self, "ctx_browser", None)
+        if ctx_browser is None:
+            return False
+        try:
+            reader_result_fn = getattr(ctx_browser, "last_external_event_reader_result", None)
+            reader_result = reader_result_fn() if callable(reader_result_fn) else {}
+        except Exception:
+            return False
+        if not isinstance(reader_result, dict):
+            return False
+        return bool(reader_result.get("current_turn_user_input_materialized"))
+
     async def persist_user_message(self, scratch: CTurnScratchpad):
 
         if getattr(scratch, "user_message_persisted", False):
             return
-        conversation_id, turn_id = self._ctx["conversation"]["conversation_id"], self._ctx["conversation"]["turn_id"]
+        turn_id = self._ctx["conversation"]["turn_id"]
+        if self._current_turn_user_input_materialized_from_event_lane():
+            scratch.user_message_persisted = True
+            return
         ts = self._ctx["conversation"]["ts"]
         path = f"ar:{turn_id}.user.prompt"
         await self._persist_user_conversation_entry(

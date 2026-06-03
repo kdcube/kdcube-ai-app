@@ -851,3 +851,71 @@ async def test_persist_turn_entries_store_multiple_user_and_assistant_rows():
         for payload in emitted
         if isinstance(payload, dict) and payload.get("step") == "conversation.persist.assistant_message"
     )
+
+
+@pytest.mark.asyncio
+async def test_event_lane_prompt_is_not_indexed_twice_by_legacy_persist_call():
+    saved_messages = []
+
+    class _ConvIdxStub:
+        async def add_message(self, **kwargs):
+            saved_messages.append(dict(kwargs))
+
+    class _TimelineWithBlocks(_TimelineStub):
+        def __init__(self, blocks):
+            self.blocks = list(blocks)
+
+    async def _embed_texts(texts):
+        return [[0.1, 0.2, 0.3] for _ in texts]
+
+    wf = BaseWorkflow.__new__(BaseWorkflow)
+    wf.conv_idx = _ConvIdxStub()
+    wf.model_service = SimpleNamespace(embed_texts=_embed_texts)
+    wf.config = SimpleNamespace(ai_bundle_spec=SimpleNamespace(id="bundle.test"))
+    wf._ctx = {
+        "service": {
+            "tenant": "tenant-a",
+            "project": "project-a",
+            "user": "user-a",
+            "user_type": "registered",
+        },
+        "conversation": {
+            "conversation_id": "conv-1",
+            "turn_id": "turn-1",
+            "ts": "2026-04-26T10:00:00Z",
+        },
+    }
+    wf.ctx_browser = SimpleNamespace(
+        timeline=_TimelineWithBlocks(
+            [
+                {
+                    "type": "user.prompt",
+                    "turn_id": "turn-1",
+                    "ts": "2026-04-26T10:00:00Z",
+                    "path": "ar:turn-1.user.prompt.evt_1",
+                    "text": "Original prompt",
+                    "meta": {"prompt_origin": "external_event_lane", "event_id": "evt_1"},
+                },
+            ]
+        ),
+        last_external_event_reader_result=lambda: {"current_turn_user_input_materialized": True},
+    )
+
+    scratchpad = SimpleNamespace(
+        turn_topics_plain=[],
+        persisted_turn_entry_paths=set(),
+        user_text="Original prompt",
+        short_text="Original prompt",
+        user_message_persisted=False,
+    )
+
+    await wf.persist_user_message(scratchpad)
+    assert saved_messages == []
+    assert scratchpad.user_message_persisted is True
+
+    prompt_count = await wf.persist_turn_prompt_entries(scratchpad)
+
+    assert prompt_count == 1
+    assert [m["role"] for m in saved_messages] == ["user"]
+    assert saved_messages[0]["text"] == "Original prompt"
+    assert "ar:turn-1.user.prompt.evt_1" in scratchpad.persisted_turn_entry_paths
