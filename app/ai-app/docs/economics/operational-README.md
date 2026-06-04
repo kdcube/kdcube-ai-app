@@ -46,7 +46,7 @@ Window semantics (global per tenant/project):
 - Monthly requests/tokens: rolling 30‑day window anchored to first usage per tenant/project.
 - Reservation floor is configured per bundle via props `economics.reservation_amount_dollars`.
 
-Customer billing widget:
+Billing widget:
 - `GET /api/economics/me/budget-breakdown` accepts an optional `bundle_id`.
 - If omitted, the backend uses limiter bundle id `__project__`, which matches the actual quota enforcement scope.
 - The displayed usage therefore covers the user’s combined usage across all bundles/apps in the tenant/project.
@@ -54,8 +54,9 @@ Customer billing widget:
 - The widget labels should match the rolling limiter semantics: `Last 60 minutes`, `Last 24 hours`, and `Rolling 30-day window`.
 
 Funding split (runtime):
-- If a user has a subscription **and** a wallet, subscription balance is reserved up to available and wallet covers overflow for that turn.
-- If actual spend exceeds both plan funding and wallet, project budget absorbs the remainder (shortfall note in ledger).
+- Plan quota/funding is consumed first. Wallet covers only overflow and wallet-paid tokens do **not** consume plan quota.
+- Settlement uses current available capacity net of active reservations, then adds this request's own still-live reservation back for each source.
+- If actual spend exceeds both plan funding and wallet, project budget absorbs the remainder (shortfall note in ledger). If plan quota remains, that absorbed remainder also consumes quota.
 - If subscription funds **zero** for a turn, the request switches to **paid lane** and **payasyougo** quotas apply.
 - Subscriptions and wallets never go negative; only project budget can absorb shortfalls.
 
@@ -66,7 +67,8 @@ Absorption reporting:
 - API: `GET /app-budget/absorption-report?period=day|month&days=90&group_by=none|user|bundle&format=json|csv`
 
 Request lineage:
-- `GET /economics/request-lineage?request_id=turn_id`
+- `GET /economics/request-lineage?request_id=<request_id>`
+- For chat, `<request_id>` is the runtime `turn_id`. Non-chat flows use their own stable accountable request id.
 
 ## Maintenance Jobs
 

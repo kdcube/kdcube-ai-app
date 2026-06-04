@@ -74,9 +74,9 @@ Special case (wallet + no subscription):
 
 Special case (subscription + wallet):
 - Plan remains the subscription plan.
-- **Subscription balance** is reserved up to what is available.
-- **Wallet** covers any overflow for that turn.
-- If actual spend exceeds both, project budget absorbs the remainder (shortfall note in ledger).
+- **Subscription balance and subscription plan quota** cover the maximum eligible request share.
+- **Wallet** covers only overflow; wallet-paid tokens do **not** consume subscription plan quota.
+- If actual spend exceeds both plan funding and wallet, project budget absorbs the remainder (shortfall note in ledger). If plan quota remains, that absorbed fallback also consumes quota.
 - If subscription funds **zero** for the turn, the request switches to **paid lane** and **payasyougo** quotas apply.
 - Subscriptions and wallets never go negative; only project budget can absorb shortfalls.
 
@@ -141,9 +141,9 @@ Backend:
 - `GET /app-budget/balance`
 - `POST /app-budget/topup`
 - `GET /app-budget/absorption-report?period=day|month&days=90&group_by=none|user|bundle&format=json|csv`
-- `GET /economics/request-lineage?request_id=turn_id`
+- `GET /economics/request-lineage?request_id=<request_id>`
 
-Note: `request_id` is the **turn_id** from runtime logs.
+Note: chat requests use the runtime `turn_id` as `request_id`; non-chat top-level flows use their own stable accountable request id.
 
 ### Renew internal subscription
 

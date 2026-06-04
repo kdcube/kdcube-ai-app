@@ -41,8 +41,9 @@ Lane vs funding (important):
 - A **subscription plan** runs in the **plan lane**; it just uses **subscription funding**.
 
 Tracing a single request:
-- `request_id` is the **turn_id**.
-- Use `GET /economics/request-lineage?request_id=turn_id` to fetch ledger + reservation rows.
+- Chat requests use the chat **turn_id** as `request_id`.
+- Non-chat top-level flows use their own stable accountable request id.
+- Use `GET /economics/request-lineage?request_id=<request_id>` to fetch ledger + reservation rows.
 
 ### Role (economics role)
 
@@ -152,7 +153,7 @@ Plan lane is the normal path when rate‑limit admit succeeds.
 Funding for plan lane:
 
 - Active subscription → reserve from subscription period budget.
-  - If a wallet exists and the subscription cannot cover the full reservation, reserve **subscription up to available** and reserve **wallet overflow** for the remainder.
+  - If a wallet exists and subscription funding cannot cover the full reservation, reserve **subscription up to available** and reserve **wallet overflow** for the remainder.
   - If subscription funds **zero** for the turn, the request switches to **paid lane** and **payasyougo** quotas apply.
   - If no wallet exists and actual spend exceeds reservation, **project budget absorbs the overage** (`shortfall:subscription_overage`).
 - Registered role (no subscription) → reserve from project budget.
@@ -160,7 +161,9 @@ Funding for plan lane:
 - If project‑funded (free plan) actual spend exceeds reservation, **project budget absorbs the overage** (`shortfall:free_plan`).
 - Wallet‑backed free users keep `plan_id=free` but use **payasyougo service limits** (requests/concurrency) while **token limits** remain from `free`.
 
-If the **actual** spend exceeds both plan funding and wallet (e.g., underestimated cost), the **project budget absorbs the remainder** and a ledger entry is written with a shortfall note. **Subscriptions and wallets never go negative.**
+Post-run settlement uses current available capacity net of active reservations, then adds back this request's own still-live reservation for each funding source. Settlement consumes the maximum possible share from plan quota and normal plan funding first. Wallet pays only the overflow, and wallet-paid tokens do **not** consume plan quota.
+
+If the **actual** spend exceeds both plan funding and wallet (e.g., underestimated cost), the **project budget absorbs the remainder** and a ledger entry is written with a shortfall note. If plan quota remains, that project-absorbed fallback also consumes quota. **Subscriptions and wallets never go negative.**
 Shortfall notes are tagged as `shortfall:wallet_subscription`, `shortfall:wallet_paid`, `shortfall:wallet_plan`, `shortfall:subscription_overage`, or `shortfall:free_plan` for reporting.
 
 ### Paid lane

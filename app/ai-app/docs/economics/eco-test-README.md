@@ -49,9 +49,9 @@ Use these definitions while testing:
 - **Plan**: stays `free`
 - **Lane**: plan lane unless plan quota is exceeded; can switch to paid lane if needed
 - **Funding**:
-  - First: project budget covers **free plan portion**
-  - Overflow: wallet covers remaining
-  - If wallet runs out: project budget absorbs the remainder (shortfall)
+  - First: free plan quota and project budget cover the maximum plan-funded portion
+  - Overflow: wallet covers remaining usage; wallet-paid tokens do **not** consume free plan quota
+  - If wallet runs out: project budget absorbs the remainder (shortfall), and any remaining free plan quota is consumed by that fallback
 - **Limits**:
   - **Service limits** (requests/concurrency) from `payasyougo`
   - **Token limits** from `free`
@@ -63,9 +63,9 @@ Use these definitions while testing:
 - **Plan**: subscription plan
 - **Lane**: plan lane while subscription funds the turn; switches to paid lane if subscription funds **zero**
 - **Funding**:
-  - Subscription covers up to available (cannot go negative)
-  - Wallet covers overflow (cannot go negative)
-  - If both are insufficient → project budget absorbs remainder (shortfall)
+  - Subscription quota/funding covers the maximum plan-funded portion (cannot go negative)
+  - Wallet covers overflow (cannot go negative); wallet-paid tokens do **not** consume subscription plan quota
+  - If both are insufficient → project budget absorbs remainder (shortfall), and any remaining subscription plan quota is consumed by that fallback
 - **Limits**:
   - If subscription funds any portion → subscription plan quotas apply
   - If subscription funds **zero** and wallet covers the full request → **payasyougo** quotas apply
@@ -104,11 +104,11 @@ Filters:
 
 This is your primary “who caused project budget to go negative” view.
 
-### B) Request lineage (turn_id = request_id)
+### B) Request lineage
 
 UI: **App Budget → Request lineage**
 
-Paste a `turn_id` from runtime logs. The UI shows:
+Paste a chat `turn_id` or another top-level accountable `request_id` from runtime logs. The UI shows:
 
 - Project budget reservations + ledger entries
 - Subscription reservations + ledger entries
@@ -194,7 +194,7 @@ Use this to confirm:
 
 ### Test F — Lineage spot‑check (10 min)
 
-1. Take a `turn_id` from any of the above runs.
+1. Take a chat `turn_id` or top-level accountable `request_id` from any of the above runs.
 2. Open **Request lineage** in UI.
 3. Confirm the split matches expectation for that scenario.
 
@@ -204,6 +204,6 @@ If any result differs from this guide, record:
 - user_id
 - plan_id
 - role
-- turn_id
+- request_id (chat uses turn_id)
 - expected vs observed funding
 - screenshots from Absorption Report and Request Lineage

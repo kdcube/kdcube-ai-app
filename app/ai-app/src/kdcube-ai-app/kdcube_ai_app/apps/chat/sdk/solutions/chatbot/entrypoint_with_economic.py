@@ -280,6 +280,10 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
         from kdcube_ai_app.apps.chat.sdk.infra.economics.policy import QuotaPolicy, EconomicsLimitException
         from kdcube_ai_app.apps.chat.sdk.infra.economics.limiter import _merge_policy_with_plan_override
         from kdcube_ai_app.apps.chat.sdk.infra.economics.project_budget import BudgetInsufficientFunds
+        from kdcube_ai_app.apps.chat.sdk.infra.economics.settlement_allocation import (
+            PlanWalletSettlementInput,
+            allocate_plan_wallet_settlement,
+        )
         from kdcube_ai_app.infra.accounting.usage import llm_output_price_usd_per_token, anthropic, sonnet_45
         from kdcube_ai_app.apps.chat.sdk.util import safe_frac, token_count
         from kdcube_ai_app.infra import accounting as acct
@@ -1728,68 +1732,153 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
 
             post_run_snapshot = None
             post_run_violations = []
-            if effective_policy and not budget_bypass:
-                post_run_snapshot = _post_run_snapshot(
-                    admit_snapshot_pre,
-                    ranked=int(ranked_tokens),
-                    reserved=int(plan_reserved_tokens),
-                    lane_name=lane,
-                )
-                post_run_violations = _post_run_violations(effective_policy, post_run_snapshot)
-                try:
-                    if getattr(effective_policy, "tokens_per_hour", None) is not None:
-                        prefix = f"{self.rl.ns}:{rl_bundle_id}:{self.subj}:toks:hour:bucket"
-                        tok_h_now, reset_at = await self.rl._rolling_hour_stats(
-                            prefix,
-                            now,
-                            limit=getattr(effective_policy, "tokens_per_hour", None),
-                            reserved=0,
-                        )
-                        post_run_snapshot["tok_hour"] = int(tok_h_now or 0)
-                        if reset_at:
-                            post_run_snapshot["tok_hour_reset_at"] = int(reset_at)
-                except Exception as ex:
-                    _log("rate_limit", "Failed to compute rolling-hour reset", "WARN", error=str(ex))
+            plan_settlement_allocation = None
+            plan_quota_commit_tokens = int(ranked_tokens) if lane == "plan" else 0
+            project_absorption_tokens = 0
+            project_absorption_usd = 0.0
 
-            if budget_bypass or use_subscription_funding:
+            def _cost_for_tokens(tokens: int) -> float:
+                if int(tokens or 0) <= 0 or ranked_tokens <= 0 or total_cost <= 0:
+                    return 0.0
+                return float(total_cost) * safe_frac(float(tokens), float(ranked_tokens))
+
+            if budget_bypass:
                 plan_covered_tokens = int(ranked_tokens)
+                plan_covered_usd = float(total_cost)
+                overflow_tokens = 0
+                overflow_usd = 0.0
+            elif lane == "paid" and use_subscription_funding:
+                plan_covered_tokens = int(ranked_tokens)
+                plan_covered_usd = float(total_cost)
+                overflow_tokens = 0
+                overflow_usd = 0.0
             elif lane == "plan":
-                plan_covered_tokens = min(int(ranked_tokens), int(plan_project_tokens_est))
+                quota_available_tokens: Optional[int] = None
+                quota_reserved_tokens = 0
+                try:
+                    quota_capacity = await self.rl.token_capacity_for_reservation(
+                        bundle_id=rl_bundle_id,
+                        subject_id=self.subj,
+                        policy=effective_policy,
+                        reservation_id=plan_reservation_id if plan_reservation_active else None,
+                        reserved_tokens=int(plan_reserved_tokens or 0) if plan_reservation_active else 0,
+                        now=now,
+                    )
+                    quota_available_tokens = quota_capacity.get("available_tokens")
+                    quota_reserved_tokens = int(quota_capacity.get("own_reserved_tokens") or 0)
+                except Exception as ex:
+                    quota_available_tokens = 0 if plan_reservation_active else int(plan_project_tokens_est or 0)
+                    quota_reserved_tokens = int(plan_reserved_tokens or 0) if plan_reservation_active else 0
+                    _log(
+                        "charge.capacity",
+                        "Failed to read fresh quota capacity; using reservation estimate",
+                        "WARN",
+                        error=str(ex),
+                        quota_available_tokens=quota_available_tokens,
+                        quota_reserved_tokens=quota_reserved_tokens,
+                    )
+
+                primary_funding_available_usd: Optional[float] = 0.0
+                if funding_source == "project":
+                    try:
+                        fresh_project_budget = await self.budget_limiter.get_app_budget_balance()
+                        primary_funding_available_usd = float(fresh_project_budget.get("available_usd") or 0.0)
+                    except Exception as ex:
+                        primary_funding_available_usd = 0.0 if app_reservation_active else float(funding_available_usd or 0.0)
+                        _log(
+                            "charge.capacity",
+                            "Failed to read fresh project budget; using pre-run snapshot",
+                            "WARN",
+                            error=str(ex),
+                            primary_funding_available_usd=primary_funding_available_usd,
+                        )
+                elif funding_source == "subscription" and subscription_budget_limiter:
+                    try:
+                        fresh_subscription_budget = await subscription_budget_limiter.get_subscription_budget_balance()
+                        primary_funding_available_usd = float(fresh_subscription_budget.get("available_usd") or 0.0)
+                    except Exception as ex:
+                        primary_funding_available_usd = 0.0 if app_reservation_active else float(funding_available_usd or 0.0)
+                        _log(
+                            "charge.capacity",
+                            "Failed to read fresh subscription budget; using pre-run snapshot",
+                            "WARN",
+                            error=str(ex),
+                            primary_funding_available_usd=primary_funding_available_usd,
+                        )
+
+                wallet_available_tokens = 0
+                if plan_balance and plan_balance.has_lifetime_budget():
+                    try:
+                        wallet_balance = await self.cp_manager.user_credits_mgr.get_lifetime_balance(
+                            tenant=tenant,
+                            project=project,
+                            user_id=user_id,
+                        )
+                        wallet_available_tokens = int(wallet_balance or 0)
+                    except Exception as ex:
+                        wallet_available_tokens = max(
+                            int(user_budget_tokens or 0)
+                            - (int(personal_reserved_tokens or 0) if personal_reservation_active else 0),
+                            0,
+                        )
+                        _log(
+                            "charge.capacity",
+                            "Failed to read fresh wallet balance; using pre-run snapshot",
+                            "WARN",
+                            error=str(ex),
+                            wallet_available_tokens=wallet_available_tokens,
+                        )
+
+                plan_settlement_allocation = allocate_plan_wallet_settlement(
+                    PlanWalletSettlementInput(
+                        actual_tokens=int(ranked_tokens),
+                        actual_cost_usd=float(total_cost),
+                        quota_available_tokens=quota_available_tokens,
+                        quota_reserved_tokens=int(quota_reserved_tokens),
+                        primary_funding_available_usd=primary_funding_available_usd,
+                        primary_funding_reserved_usd=float(app_reserved_usd or 0.0) if app_reservation_active else 0.0,
+                        wallet_available_tokens=int(wallet_available_tokens),
+                        wallet_reserved_tokens=int(personal_reserved_tokens or 0) if personal_reservation_active else 0,
+                    )
+                )
+                plan_covered_tokens = int(plan_settlement_allocation.primary_funding_tokens)
+                plan_covered_usd = float(plan_settlement_allocation.primary_funding_usd)
+                overflow_tokens = max(int(ranked_tokens) - int(plan_covered_tokens), 0)
+                overflow_usd = max(float(total_cost) - float(plan_covered_usd), 0.0)
+                project_absorption_tokens = int(plan_settlement_allocation.project_absorption_tokens)
+                project_absorption_usd = float(plan_settlement_allocation.project_absorption_usd)
+                plan_quota_commit_tokens = int(plan_settlement_allocation.quota_tokens)
             else:
                 plan_covered_tokens = 0
-
-            overflow_tokens = max(int(ranked_tokens) - int(plan_covered_tokens), 0)
-
-            plan_covered_usd = 0.0
-            overflow_usd = 0.0
-            if ranked_tokens > 0 and total_cost > 0:
-                plan_covered_usd = float(total_cost) * safe_frac(float(plan_covered_tokens), float(ranked_tokens))
-                overflow_usd = float(total_cost) * safe_frac(float(overflow_tokens), float(ranked_tokens))
-
-            if use_subscription_funding and total_cost > 0:
-                plan_covered_usd = float(total_cost)
-                overflow_usd = 0.0
+                plan_covered_usd = 0.0
+                overflow_tokens = int(ranked_tokens)
+                overflow_usd = float(total_cost)
 
             _log(
                 "charge.split",
                 "Computed actual split",
                 ranked_tokens=ranked_tokens,
+                funding_source=funding_source,
                 plan_covered_tokens=plan_covered_tokens,
                 overflow_tokens=overflow_tokens,
+                wallet_tokens=int(plan_settlement_allocation.wallet_tokens) if plan_settlement_allocation else None,
+                project_absorption_tokens=project_absorption_tokens,
+                quota_tokens=plan_quota_commit_tokens if lane == "plan" else None,
                 total_cost=total_cost,
                 plan_covered_usd=plan_covered_usd,
                 overflow_usd=overflow_usd,
+                wallet_usd=float(plan_settlement_allocation.wallet_usd) if plan_settlement_allocation else None,
+                project_absorption_usd=project_absorption_usd,
             )
 
-            if use_subscription_funding:
+            if lane == "paid" and use_subscription_funding:
                 user_target_tokens = 0
             elif lane == "paid":
                 user_target_tokens = int(ranked_tokens)
+            elif plan_settlement_allocation is not None:
+                user_target_tokens = int(plan_settlement_allocation.wallet_tokens)
             else:
-                if funding_source == "project" and not has_wallet:
-                    user_target_tokens = 0
-                else:
-                    user_target_tokens = int(overflow_tokens)
+                user_target_tokens = 0
 
             if (
                 user_target_tokens > 0
@@ -1808,17 +1897,34 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
                 )
 
             user_uncovered_tokens = 0
+            wallet_consumed_tokens = 0
             if user_target_tokens > 0 and not budget_bypass:
-                rid = str(personal_reservation_id or turn_id)
-                try:
-                    user_uncovered_tokens = await self.cp_manager.user_credits_mgr.commit_reserved_lifetime_tokens(
-                        tenant=tenant, project=project, user_id=user_id,
-                        reservation_id=rid,
-                        tokens=int(user_target_tokens),
-                    )
-                finally:
-                    if personal_reservation_active:
+                remaining_user_target = int(user_target_tokens)
+                if personal_reservation_active and personal_reservation_id and personal_reserved_tokens > 0:
+                    rid = str(personal_reservation_id)
+                    reserved_target = min(int(remaining_user_target), int(personal_reserved_tokens))
+                    try:
+                        reserved_uncovered = await self.cp_manager.user_credits_mgr.commit_reserved_lifetime_tokens(
+                            tenant=tenant,
+                            project=project,
+                            user_id=user_id,
+                            reservation_id=rid,
+                            tokens=int(reserved_target),
+                        )
+                    finally:
                         personal_reservation_active = False
+                    reserved_consumed = max(int(reserved_target) - int(reserved_uncovered or 0), 0)
+                    wallet_consumed_tokens += int(reserved_consumed)
+                    remaining_user_target = max(int(remaining_user_target) - int(reserved_consumed), 0)
+
+                if remaining_user_target > 0:
+                    user_uncovered_tokens = await self.cp_manager.user_credits_mgr.consume_lifetime_tokens(
+                        tenant=tenant,
+                        project=project,
+                        user_id=user_id,
+                        tokens=int(remaining_user_target),
+                    )
+                    wallet_consumed_tokens += max(int(remaining_user_target) - int(user_uncovered_tokens or 0), 0)
 
             if personal_reservation_active and user_target_tokens <= 0 and personal_reservation_id:
                 try:
@@ -1831,9 +1937,46 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
                     personal_reservation_active = False
 
             user_uncovered_tokens = int(user_uncovered_tokens or 0)
-            user_uncovered_usd = 0.0
-            if user_uncovered_tokens > 0 and ranked_tokens > 0 and total_cost > 0:
-                user_uncovered_usd = float(total_cost) * safe_frac(float(user_uncovered_tokens), float(ranked_tokens))
+            user_uncovered_usd = _cost_for_tokens(user_uncovered_tokens)
+
+            if plan_settlement_allocation is not None and user_uncovered_tokens > 0:
+                extra_quota_room = max(
+                    int(plan_settlement_allocation.quota_capacity_tokens) - int(plan_quota_commit_tokens),
+                    0,
+                )
+                extra_quota_tokens = min(int(user_uncovered_tokens), int(extra_quota_room))
+                if extra_quota_tokens > 0:
+                    plan_quota_commit_tokens += int(extra_quota_tokens)
+                    _log(
+                        "charge.split",
+                        "Wallet shortfall reallocated to remaining plan quota",
+                        extra_quota_tokens=int(extra_quota_tokens),
+                        plan_quota_commit_tokens=int(plan_quota_commit_tokens),
+                    )
+
+            if effective_policy and not budget_bypass:
+                post_run_snapshot = _post_run_snapshot(
+                    admit_snapshot_pre,
+                    ranked=int(plan_quota_commit_tokens) if lane == "plan" else int(ranked_tokens),
+                    reserved=int(plan_reserved_tokens),
+                    lane_name=lane,
+                )
+                try:
+                    if getattr(effective_policy, "tokens_per_hour", None) is not None:
+                        prefix = f"{self.rl.ns}:{rl_bundle_id}:{self.subj}:toks:hour:bucket"
+                        tok_h_now, reset_at = await self.rl._rolling_hour_stats(
+                            prefix,
+                            now,
+                            limit=getattr(effective_policy, "tokens_per_hour", None),
+                            reserved=0,
+                        )
+                        commit_tokens_for_snapshot = int(plan_quota_commit_tokens) if lane == "plan" else int(ranked_tokens)
+                        post_run_snapshot["tok_hour"] = int(tok_h_now or 0) + int(commit_tokens_for_snapshot)
+                        if reset_at:
+                            post_run_snapshot["tok_hour_reset_at"] = int(reset_at)
+                except Exception as ex:
+                    _log("rate_limit", "Failed to compute rolling-hour reset", "WARN", error=str(ex))
+                post_run_violations = _post_run_violations(effective_policy, post_run_snapshot)
 
             if user_uncovered_tokens > 0 and not budget_bypass:
                 await _emit_event(
@@ -1847,6 +1990,7 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
                         "lane": lane,
                         "ranked_tokens": ranked_tokens,
                         "user_target_tokens": int(user_target_tokens),
+                        "wallet_consumed_tokens": int(wallet_consumed_tokens),
                         "user_uncovered_tokens": int(user_uncovered_tokens),
                         "user_uncovered_usd": float(user_uncovered_usd),
                         "funding_source": funding_source,
@@ -1858,6 +2002,7 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
                     "WARN",
                     lane=lane,
                     user_target_tokens=int(user_target_tokens),
+                    wallet_consumed_tokens=int(wallet_consumed_tokens),
                     user_uncovered_tokens=int(user_uncovered_tokens),
                     user_uncovered_usd=float(user_uncovered_usd),
                 )
@@ -1867,7 +2012,7 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
             if budget_bypass:
                 app_spend_usd = float(total_cost)
                 app_note = "post-run settle: admin bypass"
-            elif use_subscription_funding:
+            elif lane == "paid" and use_subscription_funding:
                 app_spend_usd = float(plan_covered_usd)
                 app_note = "post-run settle: subscription_cost"
                 if app_reservation_active and app_reserved_usd is not None and float(app_spend_usd) > float(app_reserved_usd):
@@ -1876,13 +2021,21 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
                     extra_project_items.append((float(over), "shortfall:subscription_overage"))
                 if user_uncovered_usd > 0:
                     extra_project_items.append((float(user_uncovered_usd), "shortfall:wallet_subscription"))
+            elif lane == "plan" and funding_source == "subscription":
+                app_spend_usd = float(plan_covered_usd)
+                app_note = "post-run settle: subscription_cost"
+                if project_absorption_usd > 0:
+                    extra_project_items.append((float(project_absorption_usd), "shortfall:subscription_overage"))
+                if user_uncovered_usd > 0:
+                    extra_project_items.append((float(user_uncovered_usd), "shortfall:wallet_subscription"))
             elif lane == "plan":
                 app_spend_usd = float(plan_covered_usd)
                 app_note = "post-run settle: plan_cost"
+                if project_absorption_usd > 0:
+                    project_absorption_note = "shortfall:wallet_plan" if (has_wallet or int(user_target_tokens or 0) > 0) else "shortfall:free_plan"
+                    extra_project_items.append((float(project_absorption_usd), project_absorption_note))
                 if user_uncovered_usd > 0:
                     extra_project_items.append((float(user_uncovered_usd), "shortfall:wallet_plan"))
-                if funding_source == "project" and not has_wallet and float(overflow_usd) > 0:
-                    extra_project_items.append((float(overflow_usd), "shortfall:free_plan"))
             else:
                 app_spend_usd = 0.0
                 app_note = "shortfall:wallet_paid"
@@ -1996,7 +2149,10 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
                     )
 
             if not lock_released:
-                tokens_to_commit = int(ranked_tokens) if ranked_tokens > 0 else int(plan_covered_tokens)
+                if lane == "plan":
+                    tokens_to_commit = int(plan_quota_commit_tokens)
+                else:
+                    tokens_to_commit = int(ranked_tokens) if ranked_tokens > 0 else int(plan_covered_tokens)
                 if lane == "plan":
                     await self.rl.commit_with_reservation(
                         bundle_id=rl_bundle_id,

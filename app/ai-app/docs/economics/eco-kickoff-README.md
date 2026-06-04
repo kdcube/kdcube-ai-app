@@ -28,7 +28,7 @@ It is written for a director‑led setup session using the admin UI.
 - Plan decides quota limits (`free`, `payasyougo`, `admin`, or custom plan IDs).
 - Paid role is derived automatically if a user has an active subscription or wallet credits.
 - Plan is resolved at runtime from subscription or wallet.
-- If a user has both subscription and wallet, subscription covers up to available and wallet covers overflow for the turn.
+- Plan quota/funding covers the maximum eligible request share first. Wallet covers only overflow; wallet-paid tokens do **not** consume plan quota.
 - Quotas are enforced **per tenant/project** (global across bundles): hourly is rolling 60‑minute, monthly is rolling 30‑day (anchored to first usage per tenant/project), daily is calendar day (UTC).
 
 ## Visual Overview

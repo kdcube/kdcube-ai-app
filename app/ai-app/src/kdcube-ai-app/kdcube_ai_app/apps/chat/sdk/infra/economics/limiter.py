@@ -1457,6 +1457,121 @@ class UserEconomicsRateLimiter:
         )
         return int(out or 0)
 
+    async def token_capacity_for_reservation(
+            self,
+            *,
+            bundle_id: str,
+            subject_id: str,
+            policy: QuotaPolicy,
+            reservation_id: Optional[str] = None,
+            reserved_tokens: int = 0,
+            now: Optional[datetime] = None,
+    ) -> Dict[str, Any]:
+        """
+        Return settlement-time token capacity for one in-flight reservation.
+
+        Current availability is net of active reservations. This returns that
+        availability with other requests' reservations still excluded, and
+        returns this request's still-live reservation separately so settlement
+        can add back only the capacity this request already held.
+        """
+        now = (now or datetime.utcnow()).replace(tzinfo=timezone.utc)
+
+        k_resv_idx = _k(self.ns, bundle_id, subject_id, "toks_resv:index")
+        k_resv_map = _k(self.ns, bundle_id, subject_id, "toks_resv:data")
+        try:
+            await self.r.eval(
+                _LUA_RELEASE_RESERVATION,
+                2,
+                *_strs(k_resv_idx, k_resv_map),
+                *_strs(int(now.timestamp()), ""),
+            )
+        except Exception:
+            # Capacity reads should not fail only because expired-reservation
+            # cleanup failed. The normal commit/release path still purges.
+            pass
+
+        day_period_start, day_period_end, day_period_key = await self._rolling_day_period(
+            bundle_id=bundle_id,
+            subject_id=subject_id,
+            now=now,
+            create_if_missing=False,
+        )
+        period_start, period_end, period_key = await self._rolling_month_period(
+            bundle_id=bundle_id,
+            subject_id=subject_id,
+            now=now,
+            create_if_missing=False,
+        )
+
+        k_tok_h_prefix = _k(self.ns, bundle_id, subject_id, "toks:hour:bucket")
+        tok_h, tok_h_reset_at = await self._rolling_hour_stats(
+            k_tok_h_prefix,
+            now,
+            limit=getattr(policy, "tokens_per_hour", None),
+            reserved=0,
+        )
+
+        k_tok_d = _k(self.ns, bundle_id, subject_id, "toks:day", day_period_key) if day_period_key else None
+        k_tok_m = _k(self.ns, bundle_id, subject_id, "toks:month", period_key) if period_key else None
+        k_tok_hr = _k(self.ns, bundle_id, subject_id, "toks_resv:hour", _ymdh(now))
+        k_tok_dr = _k(self.ns, bundle_id, subject_id, "toks_resv:day", day_period_key) if day_period_key else None
+        k_tok_mr = _k(self.ns, bundle_id, subject_id, "toks_resv:month", period_key) if period_key else None
+
+        keys = [k for k in (k_tok_d, k_tok_m, k_tok_hr, k_tok_dr, k_tok_mr) if k]
+        vals = await self.r.mget(*keys) if keys else []
+        val_map = dict(zip(keys, vals))
+
+        tok_d = int(val_map.get(k_tok_d) or 0) if k_tok_d else 0
+        tok_m = int(val_map.get(k_tok_m) or 0) if k_tok_m else 0
+        tok_hr = int(val_map.get(k_tok_hr) or 0)
+        tok_dr = int(val_map.get(k_tok_dr) or 0) if k_tok_dr else 0
+        tok_mr = int(val_map.get(k_tok_mr) or 0) if k_tok_mr else 0
+
+        own_reserved = 0
+        if reservation_id:
+            try:
+                meta = await self.r.hget(k_resv_map, str(reservation_id))
+                if isinstance(meta, bytes):
+                    meta = meta.decode("utf-8", errors="replace")
+                if meta:
+                    amount, *_ = str(meta).split("|", 1)
+                    own_reserved = max(int(amount or 0), 0)
+                    if reserved_tokens and int(reserved_tokens) > 0:
+                        own_reserved = min(own_reserved, int(reserved_tokens))
+            except Exception:
+                own_reserved = 0
+
+        windows: list[Dict[str, Any]] = []
+
+        def add_window(name: str, limit: Optional[int], committed: int, reserved_total: int) -> None:
+            if limit is None:
+                return
+            other_reserved = max(int(reserved_total or 0) - own_reserved, 0)
+            available = max(int(limit) - int(committed or 0) - int(other_reserved), 0)
+            windows.append({
+                "name": name,
+                "limit": int(limit),
+                "committed_tokens": int(committed or 0),
+                "reserved_tokens": int(reserved_total or 0),
+                "other_reserved_tokens": int(other_reserved),
+                "available_tokens": int(available),
+            })
+
+        add_window("hour", getattr(policy, "tokens_per_hour", None), tok_h, tok_hr)
+        add_window("day", getattr(policy, "tokens_per_day", None), tok_d, tok_dr)
+        add_window("month", getattr(policy, "tokens_per_month", None), tok_m, tok_mr)
+
+        available_tokens = None if not windows else min(int(w["available_tokens"]) for w in windows)
+
+        return {
+            "available_tokens": available_tokens,
+            "own_reserved_tokens": own_reserved,
+            "reservation_id": str(reservation_id or ""),
+            "windows": windows,
+            "tok_hour_reset_at": tok_h_reset_at,
+        }
+
     async def commit_with_reservation(
             self,
             *,

@@ -13,7 +13,7 @@ see_also:
 
 This subsystem controls:
 1) **Economic rate limiting** (requests/tokens/concurrency; per-user; plan-aware)
-2) **Charging** (who pays for each request: user credits first, then project budget)
+2) **Charging** (who pays for each request: plan quota/funding first, wallet overflow second, project absorption last)
 3) **Budgets** (plan quotas, plan overrides, user lifetime credits, project money)
 4) **Top-ups** (admin top-ups, subscription top-ups, Stripe credit purchases)
 
@@ -72,9 +72,9 @@ Wallet + no subscription behavior:
 
 Subscription + wallet behavior:
 - Plan remains the subscription plan.
-- Subscription balance is reserved up to available.
-- Wallet covers overflow for the remainder of the turn.
-- If actual spend exceeds both, project budget absorbs the remainder (ledger note indicates shortfall). Tags: `shortfall:wallet_subscription`, `shortfall:wallet_paid`, `shortfall:wallet_plan`, `shortfall:subscription_overage`, `shortfall:free_plan`.
+- Subscription balance funds the maximum portion allowed by subscription balance and plan quota.
+- Wallet covers only the remaining overflow. Wallet-paid tokens do **not** consume plan quota.
+- If actual spend exceeds both plan funding and wallet, project budget absorbs the remainder (ledger note indicates shortfall). If plan quota remains, that absorbed remainder also consumes quota. Tags: `shortfall:wallet_subscription`, `shortfall:wallet_paid`, `shortfall:wallet_plan`, `shortfall:subscription_overage`, `shortfall:free_plan`.
 - If subscription funds **zero** for a turn, the request switches to **paid lane** and **payasyougo** quotas apply.
 
 Subscription only (no wallet):
@@ -82,8 +82,9 @@ Subscription only (no wallet):
 - If actual spend exceeds reservation, **project budget absorbs the overage** (`shortfall:subscription_overage`).
 
 Request lineage:
-- `request_id` is the **turn_id**.
-- `GET /economics/request-lineage?request_id=turn_id` returns the ledger + reservation rows.
+- Chat requests use the chat **turn_id** as `request_id`.
+- Non-chat top-level flows must use their own stable accountable request id.
+- `GET /economics/request-lineage?request_id=<request_id>` returns the ledger + reservation rows.
 
 ### D) Economic RL (Redis)
 **Module:** `UserEconomicsRateLimiter`
