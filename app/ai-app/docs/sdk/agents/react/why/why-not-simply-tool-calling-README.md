@@ -1,8 +1,8 @@
 ---
 id: ks:docs/sdk/agents/react/why/why-not-simply-tool-calling-README.md
 title: "Why Not Simply Tool Calling"
-summary: "Why React does not use provider-native tool calling as its primary orchestration protocol, and why it instead uses a timeline-driven, channeled, distributed execution model."
-tags: ["sdk", "agents", "react", "tool-calling", "timeline", "streaming"]
+summary: "Why React does not use provider-native tool calling as its primary orchestration protocol, and why it instead uses a timeline-driven, event-source-policy-driven, channeled, distributed execution model."
+tags: ["sdk", "agents", "react", "tool-calling", "timeline", "streaming", "event-sources", "external-events"]
 keywords:
   [
     "tool calling",
@@ -12,6 +12,9 @@ keywords:
     "ReactDecisionOutV2",
     "distributed execution",
     "workspace isolation",
+    "external events",
+    "event source policies",
+    "namespace rehoster",
   ]
 see_also:
   - ks:docs/sdk/agents/react/react-context-README.md
@@ -19,6 +22,10 @@ see_also:
   - ks:docs/sdk/agents/react/flow-README.md
   - ks:docs/sdk/agents/react/external-exec-README.md
   - ks:docs/sdk/agents/react/tool-call-blocks-README.md
+  - ks:docs/sdk/agents/react/event-source/event-source-README.md
+  - ks:docs/sdk/agents/react/event-source/timeline-projection-README.md
+  - ks:docs/sdk/events/external-events-README.md
+  - ks:docs/sdk/events/external-event-envelope-README.md
   - ks:docs/sdk/streaming/channeled-streamer-README.md
   - ks:docs/service/comm/README-comm.md
   - ks:docs/sdk/bundle/bundle-client-communication-README.md
@@ -46,10 +53,14 @@ React lives inside a broader event landscape:
 - append-only timeline blocks
 - uncached ANNOUNCE tail state
 - rolling sources pool
+- plural accepted event batches (`external_events[]`)
+- event-source policies for block production, timeline projection, ANNOUNCE
+  production, and compaction projection
 - multi-channel streaming
 - subsystem/widget delivery
 - distributed isolated execution
 - explicit logical-path-based workspace activation
+- registered namespace rehosters for externally tracked artifacts
 
 That landscape is the main reason the React protocol is custom.
 
@@ -99,7 +110,9 @@ More precisely:
 - the primary shared state is the **timeline**
 - the primary immediate operational surface is **ANNOUNCE**
 - the primary output surface is **channeled generation**
-- tools are one important kind of event inside that system
+- tools are one important kind of event source inside that system
+- tool call/result is a specialized event occurrence, not a separate ontology
+- accepted external events are also first-class event occurrences
 - tools are **not** the only kind of event the agent must react to
 
 This makes React:
@@ -127,13 +140,14 @@ Instead, the decision model sees:
 
 - a **system message** containing protocol + tool catalog + skills + policies
 - a **single human message** containing:
-  - timeline blocks
+  - timeline blocks rendered through projection policies
   - sources pool tail
   - ANNOUNCE tail
 
 See:
 - `react-context-README.md`
 - `react-announce-README.md`
+- `event-source/timeline-projection-README.md`
 
 That human message is an engineered render of the current event landscape, not
 just a transcript of tool invocations.
@@ -186,9 +200,11 @@ without forcing those outputs to masquerade as:
 The React timeline is multi-contributor and only partially agent-caused.
 
 It can contain:
-- user prompts
-- attachments
-- tool calls and tool results
+- user prompt events
+- user attachment events
+- accepted external events (`external_events[]`)
+- tool call/result events
+- canvas, wizard, snapshot, or other bundle/widget events
 - plan events
 - workspace/publish notices
 - feedback or steer events
@@ -202,6 +218,17 @@ Some are caused by the operator or surrounding systems.
 
 That means the model must reason over an **event landscape**, not only over the
 causal chain of its own function calls.
+
+The protocol is intentionally plural. One user action may submit, in order:
+- a snapshot event saying what wizard state was current
+- a canvas/focus event saying which board or pins were relevant
+- attachment events with hosted file metadata
+- a reactive user prompt event that wakes the turn
+
+Policies decide which of those event occurrences become durable timeline
+blocks, how they render for the model, which live state appears in ANNOUNCE,
+and how they compact later. Provider-native tool calling has no equivalent
+place for this source-specific event-to-memory contract.
 
 Provider-native tool calling assumes that the important world state is mainly:
 - assistant decides to call tool
@@ -225,6 +252,7 @@ ANNOUNCE is where the runtime places:
 - authoritative temporal context
 - open plan state
 - workspace status
+- live canvas maps, focused pins, and wizard/task snapshot projections
 - current operational notices
 - compaction/pruning warnings
 - short-lived guidance that should grab attention immediately
@@ -248,6 +276,12 @@ as part of the agent contract.
 
 React uses ANNOUNCE as an attention surface by design.
 That is a core architectural choice.
+
+This matters for externally owned dynamic objects. A canvas or wizard snapshot
+may be important now without being stable historical text. The timeline records
+the causal event and durable refs; ANNOUNCE can render the current live
+projection, such as a compact canvas map and legend, without caching that whole
+object into every historical context slice.
 
 ---
 
@@ -381,8 +415,15 @@ That pushes the architecture toward:
 - runtime-controlled tool surfaces
 
 For example:
-- React tools operate mostly on logical paths such as `fi:`, `ar:`, `so:`, `tc:`, `ks:`, `sk:`
-- historical files are activated explicitly with `react.pull(...)`
+- React tools operate mostly on logical paths such as `fi:`, `ar:`, `so:`,
+  `su:`, `tc:`, `ev:`, `ks:`, and `sk:`
+- `tc:` addresses tool call/result memory
+- `ev:` addresses generic accepted event occurrences
+- registered external namespaces such as `ext:` can be resolved by a bundle
+  namespace rehoster and materialized by `react.pull(...)` into normal `fi:`
+  refs
+- historical files and rehosted external artifacts are activated explicitly
+  with `react.pull(...)`
 - code execution happens in isolated runtime
 - only certain tools are available directly in the React loop
 - others are used via code inside isolated exec
@@ -409,6 +450,8 @@ Those events can still all matter for the next decision.
 
 In other words:
 - tool results are important
+- tool calls/results now use the same event-source policy architecture as
+  other event sources
 - but they are not the only meaningful state transitions
 
 That is why the timeline is the main carrier.
@@ -590,18 +633,29 @@ The current React implementation that reflects this design includes:
 - timeline-driven context rendering:
   - `react-context-README.md`
   - `flow-README.md`
+- event-source policy phases:
+  - block production
+  - timeline projection
+  - ANNOUNCE production
+  - compaction projection
+  - `event-source/event-source-README.md`
 - ANNOUNCE as uncached operational tail:
   - `react-announce-README.md`
 - channeled generation:
   - `decision.py`
   - `channeled-streamer-README.md`
-- tool calls/results as timeline blocks:
+- tool calls/results as one specialized event source family:
   - `tool-call-blocks-README.md`
+- accepted external events as generic event occurrences:
+  - `external-events-README.md`
+  - `external-event-envelope-README.md`
 - distributed/isolated exec:
   - `external-exec-README.md`
 - explicit workspace activation and logical-path-oriented artifacts:
   - `react.pull(...)`
-  - `fi:`, `ar:`, `so:`, `tc:`, `ks:`, `sk:`
+  - `fi:`, `ar:`, `so:`, `su:`, `tc:`, `ev:`, `ks:`, `sk:`
+  - registered externally tracked namespaces such as `ext:` through namespace
+    rehosters
 
 Current output protocol:
 
@@ -615,6 +669,7 @@ Current workspace model:
 - current-turn `files/...` = durable workspace/project state
 - current-turn `outputs/...` = non-workspace produced artifacts
 - historical workspace activation is explicit
+- external artifact activation is explicit and resolver/rehoster-driven
 - in `git` mode, the current turn root is a sparse local git repo
 
 These are not side details.

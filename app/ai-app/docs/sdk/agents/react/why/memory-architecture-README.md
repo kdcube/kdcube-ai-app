@@ -1,8 +1,8 @@
 ---
 id: ks:docs/sdk/agents/react/why/memory-architecture-README.md
 title: "Memory Architecture"
-summary: "How memory is represented, stored, indexed, surfaced, compressed, and reopened in the React system."
-tags: ["sdk", "agents", "react", "memory", "timeline", "workspace", "retrieval"]
+summary: "How memory is represented, stored, indexed, policy-projected, surfaced, compressed, and reopened in the React system."
+tags: ["sdk", "agents", "react", "memory", "timeline", "workspace", "retrieval", "event-sources", "external-events"]
 keywords:
   [
     "memory architecture",
@@ -14,6 +14,9 @@ keywords:
     "pruning",
     "logical paths",
     "memsearch",
+    "event source policies",
+    "namespace rehoster",
+    "external events",
   ]
 see_also:
   - ks:docs/sdk/agents/react/context-layout.md
@@ -24,6 +27,10 @@ see_also:
   - ks:docs/sdk/agents/react/source-pool-README.md
   - ks:docs/sdk/agents/react/react-turn-workspace-README.md
   - ks:docs/sdk/agents/react/custom-isolated-workspace-mental-map-README.md
+  - ks:docs/sdk/agents/react/event-source/event-source-README.md
+  - ks:docs/sdk/agents/react/event-source/timeline-projection-README.md
+  - ks:docs/sdk/events/external-events-README.md
+  - ks:docs/sdk/events/external-event-envelope-README.md
 ---
 
 # Memory Architecture
@@ -35,15 +42,18 @@ It works with a **memory architecture** composed of several cooperating surfaces
 - the **timeline** as durable temporal event memory
 - the **attention area** (`SOURCES POOL + ANNOUNCE`) as always-visible rolling state
 - the **turn log** as structured per-turn reconstruction memory
+- **event-source policy projections** as the model-facing views over durable event blocks
 - the **workspace** as project/produced-file memory
 - the **conversation artifact store + index** as durable persisted memory
 - derived memory forms such as **summaries**, **replacement text**, **feedback**, and **plans**
 - a durable beacon lane of **Internal Memory Beacons** inside the timeline
 - adjacent readable memory realms exposed through **logical namespaces** such as `ks:` and `sk:`
+- registered external artifact namespaces that can be rehosted into React-readable `fi:` refs
 
 The key design choice is this:
 
 - **visible context is only one slice of memory**
+- **policies decide how durable event memory becomes visible model context**
 - **logical paths are the routing layer that let React reopen what is no longer visible**
 
 ## 1. Design Goal
@@ -69,6 +79,7 @@ That is why React memory is organized around:
 | SOURCES POOL | Rolling source registry and citation memory | Tail, always easy to find | Persisted as `conv:sources_pool` |
 | ANNOUNCE | Operational attention board / signal memory | Tail, always easy to find | Rebuilt each round; final state persisted on exit |
 | Turn log | Per-turn reconstruction memory | Not directly the model view | Persisted as `artifact:turn.log` |
+| Event-source policy projections | Source-specific model views over durable blocks | Render-time only | Derived from timeline blocks and source policies |
 | Workspace | Project/file continuity memory | Local filesystem + `fi:` refs | Files/outputs in the artifact root, optionally git-backed |
 | Conversation artifact index | Searchable/indexed memory | Not directly visible | Postgres index rows + storage blobs |
 | Summaries / hidden replacements / feedback / plans | Derived memory layers | Sometimes visible, sometimes retrievable | Persisted as blocks and/or artifacts |
@@ -79,10 +90,12 @@ The timeline is the core temporal memory surface.
 
 It stores ordered blocks such as:
 
-- user prompts
-- user attachments
+- user prompt events
+- user attachment events
 - assistant completions
-- tool calls and tool results
+- tool call/result events
+- accepted external event occurrences
+- canvas, wizard, snapshot, focus, and other bundle/widget event facts
 - plan snapshots and plan history
 - feedback blocks
 - system messages such as TTL pruning notices
@@ -106,6 +119,13 @@ Important semantic rule:
 - it sees a rendered, pruned, compacted slice of it
 
 So “in memory” and “currently visible” are not the same thing.
+
+Event-source policies are part of this distinction. Durable blocks should carry
+enough structured data and refs to remain authoritative. The model-facing view
+of those blocks is produced later by timeline projection, ANNOUNCE production,
+and compaction projection policies. A canvas snapshot event, for example, can
+leave a compact causal fact in the timeline while its current board projection
+is rendered in ANNOUNCE.
 
 ### Internal Memory Beacons
 
@@ -163,10 +183,12 @@ Logical paths do two jobs:
 | `so:` | Sources pool memory | source rows and citations |
 | `su:` | Summary memory | `conv.range.summary` blocks and compacted ranges |
 | `tc:` | Tool call/result memory | exact call/result artifacts from tool execution |
+| `ev:` | Event occurrence memory | accepted external events and their durable event refs |
 | `ks:` | Knowledge-space memory | bundle-owned read-only reference space |
 | `sk:` | Skill memory | loaded skill instructions and sources |
+| registered external namespaces such as `ext:` | Externally tracked artifact memory | bundle/domain artifacts resolved and rehosted through `react.pull` |
 
-Some of these are strictly conversation memory (`ar:`, `so:`, `su:`, `tc:`), while others connect adjacent reusable memory realms (`ks:`, `sk:`). React treats them as one readable system because the retrieval contract is unified at the path level.
+Some of these are strictly conversation memory (`ar:`, `so:`, `su:`, `tc:`, `ev:`), while others connect adjacent reusable memory realms (`ks:`, `sk:`) or bundle/domain artifact stores (`ext:` and other registered namespaces). React treats them as one readable system because the retrieval contract is unified at the path level.
 
 Examples:
 
@@ -180,11 +202,21 @@ Examples:
 - `so:sources_pool[1-5]`
 - `su:<turn_id>.conv.range.summary`
 - `tc:<turn_id>.<tool_call_id>.result`
+- `ev:turn_<id>.events/<event_id>`
+- `ev:conv_<conversation_id>.turn_<id>.events/<event_id>`
+- `ext:task-tracker/users/<user_id>/canvases/<canvas_id>/latest.json`
 
 This is one of the main reasons the memory system stays coherent:
 
 - the agent does not have to remember every storage backend
 - it remembers a path family and the tool that can reopen it
+
+Registered external refs do not have a deterministic `fi:` mapping until the
+namespace rehoster runs. React calls `react.pull(paths=["ext:..."])` or the
+equivalent registered namespace ref. The namespace rehoster resolves the
+external object, places the bytes into a React-readable artifact location, and
+returns the resulting `fi:` logical path and physical path. After that,
+ordinary file-oriented tools use the returned `fi:` path.
 
 ## 5. Attention Area: Always-On-Top Memory
 
@@ -235,6 +267,8 @@ It is the fixed place where React can expect to find things that must stay in fr
 - temporal ground truth
 - open plans
 - workspace state
+- current canvas map and legend when a canvas is attached as context
+- current wizard/task snapshot summary and refs when a snapshot is attached as context
 - publish/prune notices
 - new feedback notices
 - bundle/runtime signals
@@ -248,6 +282,11 @@ This is why ANNOUNCE matters even beyond caching:
 The model learns:
 
 - “if something is important right now, it will be there”
+
+This is deliberately different from writing the full live object body into the
+timeline every round. Timeline memory records that an event happened and stores
+durable refs. ANNOUNCE is where policy-rendered current state lives while it is
+operationally relevant.
 
 ## 6. Turn Log: Per-Turn Reconstruction Memory
 
@@ -338,6 +377,14 @@ Workspace memory therefore spans:
 - hosted artifact references
 - logical paths that reconnect all of the above
 
+Registered external artifact refs extend this model. A bundle may expose a
+domain ref such as `ext:...` for a user attachment, canvas object, or snapshot.
+`react.pull` invokes the registered namespace rehoster, which decides whether
+the resolved object belongs under `files/`, `outputs/`, `snapshots/`, or another
+React-readable artifact shape, and returns the resulting `fi:` handle. The
+agent should use that returned handle for later `react.read`, `react.rg`, exec,
+or checkout decisions.
+
 ## 8. Fetch and Stream Artifacts Are Delivery Views
 
 The system also materializes client-facing views over memory.
@@ -368,6 +415,23 @@ So the rule is:
 Not all memory is raw original content.
 
 React deliberately creates **derived memory** that preserves continuity while shrinking visible load.
+
+### Event-source projections
+
+Event-source projections are derived memory views, not new authoritative
+stores.
+
+Source policies can produce:
+
+- durable timeline blocks from a raw event/tool occurrence
+- timeline projection text for the visible session view
+- ANNOUNCE records for uncached live state
+- compaction projection text for older ranges
+
+This is why a tool result, an accepted external event, a canvas revision, and a
+wizard snapshot can share the same memory architecture without sharing the same
+raw data shape. The timeline keeps the structured facts and refs; projections
+decide what the model sees in each context phase.
 
 ### Compaction summaries
 
@@ -482,8 +546,10 @@ Examples:
 - reopen a summary via `su:...`
 - reopen source rows via `so:...`
 - reopen workspace files or outputs via `fi:...`
+- reopen an accepted event occurrence via `ev:...`
 - load a skill via `sk:...`
 - read knowledge-space references via `ks:...`
+- read the `fi:` path returned by `react.pull` for a registered external ref
 
 This is the most direct path-based memory retrieval tool.
 
@@ -507,24 +573,34 @@ Use to search the current local filesystem surface:
 
 - files already materialized under the artifact root
 
-It does not search hidden/pruned timeline, unpulled historical snapshots, or `ks:`. Use visible refs or `react.memsearch` to identify older `fi:` refs, then `react.pull` or `react.checkout` them before local search.
+It does not search hidden/pruned timeline, unpulled historical snapshots,
+registered external refs, or `ks:`. Use visible refs or `react.memsearch` to
+identify older `fi:` or registered external refs, then `react.pull` or
+`react.checkout` them before local search.
 
 It returns `logical_path` for hits, and content matches include `read_item` ranges so the agent can immediately reopen exact regions with `react.read({"items":[...]})`.
 
 ### `react.pull`
 
-Use to materialize historical workspace/file memory locally.
+Use to materialize historical workspace/file memory and registered external
+artifact memory locally.
 
-This is the historical materialization tool for workspace/file memory:
+This is the materialization tool for:
 
 - subtree pulls for `.files/...`
 - exact file pulls for `.outputs/...` and attachments
+- registered external namespace refs such as `ext:...`, resolved through a
+  namespace rehoster into returned `fi:` refs
 
 ### `react.checkout`
 
 Use to materialize the active current-turn workspace itself under
 `turn_<current_turn>/files/...` when React needs a runnable/searchable/testable
 project snapshot.
+
+`react.checkout` remains a workspace activation tool. It works from materialized
+workspace file refs, not directly from arbitrary external namespace refs. Pull
+first, then use the returned `fi:...files...` ref when a checkout is needed.
 
 ### Generated code / exec
 
@@ -631,12 +707,16 @@ At turn start, React memory is reassembled from several stores:
 2. latest timeline artifact is loaded
 3. latest sources-pool artifact is loaded
 4. the in-memory timeline is initialized
-5. user prompt and attachments are contributed into the new turn
+5. the accepted event batch is folded in order, so context events such as
+   snapshots, canvas/focus changes, prompt events, and attachment events land in
+   their causal order
 6. feedback refresh updates either ANNOUNCE or the timeline, depending on cache state
 
 During the turn:
 
 - React contributes new blocks into the timeline
+- event-source policies project durable blocks into timeline text, ANNOUNCE
+  records, and compaction views
 - the turn log grows as the per-turn reconstruction memory
 - SOURCES POOL and ANNOUNCE are refreshed as the attention area
 - hidden replacements, TTL pruning, and compaction may change the visible window without destroying deeper memory
@@ -666,6 +746,8 @@ It combines:
 
 - temporal event memory in the timeline
 - always-visible operational memory in the attention area
+- event-source policy projections for model-facing timeline, ANNOUNCE, and
+  compaction views
 - per-turn reconstruction memory in turn logs
 - file/project memory in workspace and hosted artifacts
 - indexed/searchable memory in the conversation index
@@ -674,6 +756,7 @@ It combines:
 The glue across all of this is:
 
 - **logical paths**
+- **source policies**
 
 That is what allows React to work with memory that is:
 
