@@ -491,6 +491,75 @@ RRF `k` and the recency lift constant): per-hit `(sem_rank, lex_rank,
 final_score, recency_factor)` logged at memsearch's call site. The agent
 never sees those.
 
+## Cross-Conversation Recovery — The Full Chain
+
+`scope="user"` is the entry point. Every path memsearch returns from a
+cross-conversation hit is encoded as `<ns>:conv_<conv_id>.turn_<turn_id>...`
+so the agent can hand it verbatim to any read-side tool without separately
+tracking which conversation it belongs to.
+
+The full recovery chain, hop by hop:
+
+1. **`react.memsearch(query=..., scope="user")`** — runs hybrid retrieval
+   across the same user's other conversations. Returns hits with snippet
+   paths self-scoped as `ev:conv_X.turn_Y.events/...`,
+   `ar:conv_X.turn_Y.assistant.completion`,
+   `ws:conv_X.turn_Y.conv.working.summary...`, and friends. The envelope
+   already carries an inline text preview (≤500 chars per snippet), so
+   for most "I just need to recall what happened" cases the agent has the
+   material in hand without another tool call.
+
+2. **`react.read` on the snippet paths** (`ev:`/`ar:`/`ws:`/`tc:`) — works
+   immediately because memsearch added each snippet to the timeline as a
+   `react.tool.result` block keyed by the same self-scoped path. The agent
+   reads the path; the in-context block is matched and returned. No
+   cross-conversation fetch needed.
+
+3. **`react.read("ar:conv_X.turn_Y.react.turn.index")`** — for deeper
+   traversal: the agent reads the turn-index of a cross-conv turn to
+   discover all the artifact refs that turn produced.
+   - `parse_turn_index_path` strips the `conv_X.` segment and returns
+     `turn_Y`.
+   - `_conversation_id_for_path` peels the same segment and returns `X`.
+   - The read pipeline calls `get_turn_log(turn_id=Y, conversation_id=X)`
+     against the conversation index, fetches the blocks for that turn,
+     and renders the turn-index from them.
+
+4. **`react.pull(["fi:conv_X.turn_Y.files/foo.py"])`** — materializes a
+   cross-conversation file into the current-turn workspace. Already
+   supported via `split_logical_artifact_ref` honoring the `conv_<id>`
+   prefix on `fi:` paths.
+
+5. **`react.checkout(paths=["fi:conv_X.turn_Y.files/..."])`** — same
+   resolution path as pull; copies cross-conv files into the editable
+   current-turn workspace.
+
+6. **`react.exec` referencing cross-conv files in code** — the exec
+   validator's path-extraction regex (`_CODE_PATH_RE` in
+   `solutions/react/workspace.py`) accepts the optional `conv_<id>/`
+   prefix on physical paths. If a referenced cross-conv file is not yet
+   materialized locally, the validator stops with `pre_exec_pull_required`
+   and the `pull_hint` includes the cross-conv `fi:conv_<id>...` ref so
+   the agent's next call has the right path.
+
+All five read-side tool surfaces (`read`, `pull`, `checkout`, `rg`, `exec`)
+accept the same self-describing `<ns>:conv_<id>...` shape. The agent does
+not need to track conversation_id separately; the path itself is the
+address.
+
+**`tc:` cross-conv is intentionally not wired through memsearch.** `tc:`
+tool-call results are not indexed in `conv_messages`, so memsearch never
+returns `tc:conv_<id>...` directly. `tc:` refs surface only inside a
+cross-conv turn-index (step 3 above); the agent traverses to them by
+reading the cross-conv turn-index and pulling the underlying `fi:` or
+`ar:` ref the `tc:` references.
+
+**What's not crossable.** `scope="user"` cannot cross tenants, projects,
+or storage backends — those are configuration-level boundaries enforced
+by the runtime, not by path syntax. A `<ns>:conv_<id>...` path pointing at
+a conversation outside the current tenant/project still resolves only if
+that conversation is within the same scope.
+
 ## TTL and Boundaries
 
 - All searches apply `ts + ttl_days >= now()`. The default TTL is 365 days. Rows
@@ -545,6 +614,19 @@ kdcube_ai_app/apps/chat/sdk/solutions/chatbot/base_workflow.py
 
 kdcube_ai_app/ops/deployment/sql/chatbot/deploy-kdcube-proj-schema.sql
   conv_messages.anchors_text + generated search_tsv (BM25F setweight) + GIN
+
+kdcube_ai_app/apps/chat/sdk/solutions/react/artifacts.py
+  peel_conversation_prefix — generic <ns>:conv_<id>.<rest> peeler;
+  foundation for cross-conv path resolution across all namespaces
+
+kdcube_ai_app/apps/chat/sdk/solutions/react/timeline.py
+  parse_turn_index_path, parse_turn_index_ref — accept the cross-conv
+  ar:conv_<id>.turn_<X>.react.turn.index form;
+  ws: alias resolver and tc: call_id parser also strip the conv_<id>. prefix
+
+kdcube_ai_app/apps/chat/sdk/solutions/react/tools/read.py
+  _conversation_id_for_path — falls back to peel_conversation_prefix for
+  ar:/ws:/ev:/tc:/so: paths so cross-conv loading via get_turn_log fires
 ```
 
 ## Bottom Line
