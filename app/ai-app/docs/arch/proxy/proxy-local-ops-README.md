@@ -57,6 +57,11 @@ There is no TLS termination and no auth unmask step. The proxy accepts any `Host
 | `chat-proc` | `chat-proc:8020` | `/api/integrations/`, `/admin/integrations/` |
 | `kb` | `kb:8000` | `/api/kb/` (dynamic `$kb_backend` variable) |
 
+The shared Socket.IO transport is exposed at `/cb/socket.io/` and proxies to
+chat ingress `/socket.io/`. Clients should use the slash route on the wire.
+Outer dev proxies such as Caddy may accept `/cb/socket.io` too, but OpenResty
+templates keep the routed location as `/cb/socket.io/`.
+
 `proxylogin` is **not present** in this deployment. The `/auth/*` route group does not exist.
 
 ---

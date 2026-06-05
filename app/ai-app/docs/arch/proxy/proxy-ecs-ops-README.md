@@ -117,6 +117,11 @@ The ALB listener rules:
 - `:443` → forward to target group (proxy ECS service, port 80)
 - `:80` → redirect to `https://#{host}:443/#{path}?#{query}` (HTTP 301)
 
+Use an ALB idle timeout long enough for browser streaming transports. The
+Terraform ECS deployment sets this through `alb_idle_timeout` and defaults to
+600 seconds, matching the OpenResty SSE and `/cb/socket.io/` WebSocket proxy
+timeouts.
+
 ---
 
 ## ALB health check
@@ -379,7 +384,7 @@ log_format main '$remote_addr - $remote_user [$time_local] "$request" '
 - [ ] Build and push image to ECR
 - [ ] Register task definition with ECS, attach execution role and (if EFS) task role
 - [ ] Create ALB target group pointing to port 80, health check path `/`
-- [ ] Configure ALB listener: `:443` → forward, `:80` → redirect 301
+- [ ] Configure ALB listener: `:443` → forward, `:80` → redirect 301, ALB idle timeout 600 s
 - [ ] Set security groups: proxy accepts only from ALB SG; backends accept only from proxy SG
 - [ ] Enable CloudWatch log group `/ecs/kdcube-web-proxy`
 

@@ -1,9 +1,9 @@
 ---
 id: ks:docs/service/cicd/ngrok-README.md
 title: "Serving Local KDCube With Ngrok"
-summary: "Short operational recipe for exposing a local KDCube development stack through one ngrok HTTPS origin for Cognito and Telegram testing."
+summary: "Short operational recipe for exposing a local KDCube development stack through one ngrok HTTPS origin for Cognito, Telegram, and WebSocket/Data Bus testing."
 tags: ["service", "cicd", "local", "ngrok", "cognito", "telegram"]
-keywords: ["ngrok local kdcube", "caddy reverse proxy", "cognito callback ngrok", "telegram webhook ngrok"]
+keywords: ["ngrok local kdcube", "kdcube web proxy", "caddy reverse proxy", "cognito callback ngrok", "telegram webhook ngrok", "socket.io websocket ngrok"]
 see_also:
   - ks:docs/service/cicd/cli-README.md
   - ks:docs/configuration/assembly-descriptor-README.md
@@ -19,7 +19,7 @@ There are two local shapes:
 
 - **CLI-started runtime**: `kdcube start` runs Docker Compose and already puts
   the KDCube web proxy in front of frontend, ingress, and proc. This is the
-  normal user path.
+  normal user path. Point ngrok directly at the web proxy port.
 - **Manual split services**: frontend, ingress, and proc are started by hand.
   In that case use a local Caddy proxy first, then point ngrok at Caddy.
 
@@ -36,14 +36,18 @@ to webhooks, callback URLs, CORS, and bundle config.
 Use a Domain assigned to your ngrok account, then pass it every time:
 
 ```bash
-ngrok http 5173 --url https://<stable-ngrok-domain> --host-header=rewrite
+ngrok http 5173 --url https://<stable-ngrok-domain>
 ```
 
 For manual split services through Caddy:
 
 ```bash
-ngrok http 18080 --url https://<stable-ngrok-domain> --host-header=rewrite
+ngrok http 18080 --url https://<stable-ngrok-domain>
 ```
+
+Do not use `--host-header=rewrite` for KDCube browser flows. The browser
+configuration, static links, Socket.IO/Data Bus origin, and callback URLs must
+see the public Host that the browser is using.
 
 On a free ngrok account, use the automatically assigned Dev Domain. On a paid
 account, create the desired ngrok-managed or custom domain in the ngrok
@@ -55,9 +59,10 @@ CLI-started runtime:
 ```text
 https://<ngrok-domain>
   -> KDCube web proxy :<proxy-http-port>
-      /api/integrations/* -> proc
-      /sse/*, /api/*      -> ingress
-      /*                  -> frontend
+      /api/integrations/*      -> proc
+      /sse/*, /api/*           -> ingress
+      /cb/socket.io/           -> ingress /socket.io/ websocket
+      /*                       -> frontend
 ```
 
 Manual split services:
@@ -67,6 +72,7 @@ https://<ngrok-domain>
   -> Caddy :18080
       /api/integrations/* -> proc :8020
       /sse/*, /api/*      -> ingress :8010
+      /cb/socket.io/*     -> ingress :8010 as /socket.io/*
       /*                  -> frontend :<frontend-port>
 ```
 
@@ -128,13 +134,13 @@ http://localhost:5173/platform/chat
 Start ngrok against that same port:
 
 ```bash
-ngrok http 5173 --url https://<stable-ngrok-domain> --host-header=rewrite
+ngrok http 5173 --url https://<stable-ngrok-domain>
 ```
 
 If `kdcube start` printed another port, use that port instead:
 
 ```bash
-ngrok http <proxy-http-port> --url https://<stable-ngrok-domain> --host-header=rewrite
+ngrok http <proxy-http-port> --url https://<stable-ngrok-domain>
 ```
 
 You do not need Caddy for the CLI-started runtime. Docker Compose already starts
@@ -166,6 +172,10 @@ Put this file at:
     flush_interval -1
   }
   reverse_proxy /socket.io* 127.0.0.1:8010
+  handle /cb/socket.io* {
+    uri strip_prefix /cb
+    reverse_proxy 127.0.0.1:8010
+  }
   reverse_proxy /api/* 127.0.0.1:8010
   reverse_proxy /profile* 127.0.0.1:8010
   reverse_proxy /admin/* 127.0.0.1:8010
@@ -187,6 +197,13 @@ Use the actual port where the frontend process listens.
 > to the frontend — Caddy's `file` matcher does this:
 >
 > ```caddyfile
+> @kdcube path /api/* /sse/* /socket.io /socket.io/* /cb/socket.io /cb/socket.io/* /profile /profile/* /admin/* /monitoring/* /platform /platform/*
+> handle @kdcube {
+>   reverse_proxy 127.0.0.1:<proxy-http-port> {
+>     flush_interval -1
+>   }
+> }
+>
 > @sharedAssets path /assets/* /img/*
 > handle @sharedAssets {
 >   @siteHasFile file
@@ -291,7 +308,7 @@ The ngrok target port is `5173`.
 3. Start ngrok:
 
 ```bash
-ngrok http 5173 --url https://<stable-ngrok-domain> --host-header=rewrite
+ngrok http 5173 --url https://<stable-ngrok-domain>
 ```
 
 4. Confirm the ngrok HTTPS URL is the stable domain you configured.
@@ -346,7 +363,22 @@ curl -i https://<ngrok-domain>/api/cp-frontend-config
 
 Expected: JSON with the configured auth block and `routesPrefix: "/platform"`.
 
-10. Register Telegram webhook:
+10. Check the public Socket.IO/Data Bus websocket route when a bundle uses
+    socket transport:
+
+```bash
+curl -i -m 5 --http1.1 \
+  -H 'Connection: Upgrade' \
+  -H 'Upgrade: websocket' \
+  -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+  -H 'Sec-WebSocket-Version: 13' \
+  'https://<ngrok-domain>/cb/socket.io/?EIO=4&transport=websocket'
+```
+
+Expected: `HTTP/1.1 101 Switching Protocols`. A timeout after the 101 is fine
+for this raw curl check because the websocket stays open.
+
+11. Register Telegram webhook:
 
 ```bash
 export TELEGRAM_BOT_TOKEN='...'
@@ -357,7 +389,7 @@ curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
   -d "secret_token=${TELEGRAM_WEBHOOK_SECRET}"
 ```
 
-11. Open the app:
+12. Open the app:
 
 ```text
 https://<ngrok-domain>/platform/chat
@@ -382,7 +414,7 @@ caddy run --config ~/.kdcube/ngrok/Caddyfile
 3. Start ngrok:
 
 ```bash
-ngrok http 18080 --url https://<stable-ngrok-domain> --host-header=rewrite
+ngrok http 18080 --url https://<stable-ngrok-domain>
 ```
 
 4. Confirm the ngrok HTTPS URL is the stable domain you configured.
@@ -414,7 +446,21 @@ curl -i https://<ngrok-domain>/api/cp-frontend-config
 
 Expected: JSON with `auth.authType: "cognito"` and `routesPrefix: "/platform"`.
 
-9. Confirm the Cognito redirect URI generated by the browser.
+9. Check `/cb/socket.io` if any bundle uses Socket.IO/Data Bus. With the Caddy
+   config above, this route is rewritten to ingress `/socket.io`.
+
+```bash
+curl -i -m 5 --http1.1 \
+  -H 'Connection: Upgrade' \
+  -H 'Upgrade: websocket' \
+  -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+  -H 'Sec-WebSocket-Version: 13' \
+  'https://<ngrok-domain>/cb/socket.io/?EIO=4&transport=websocket'
+```
+
+Expected: `HTTP/1.1 101 Switching Protocols`.
+
+10. Confirm the Cognito redirect URI generated by the browser.
 
 Open browser network tools, preserve the log, then open:
 
@@ -425,7 +471,7 @@ https://<ngrok-domain>/platform
 Find the Cognito `authorize` request and check the `redirect_uri` query
 parameter. It must exactly match one of the Cognito app client's callback URLs.
 
-10. Register Telegram webhook:
+11. Register Telegram webhook:
 
 ```bash
 export TELEGRAM_BOT_TOKEN='...'
@@ -436,7 +482,7 @@ curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
   -d "secret_token=${TELEGRAM_WEBHOOK_SECRET}"
 ```
 
-11. Open the app:
+12. Open the app:
 
 ```text
 https://<ngrok-domain>/platform/chat
@@ -446,6 +492,13 @@ https://<ngrok-domain>/platform/chat
 
 `502 Bad Gateway` from ngrok usually means ngrok reached the local proxy target,
 but that proxy could not reach the downstream service.
+
+`404 Not Found` from `Server: Caddy` for `/cb/socket.io` means ngrok reached a
+Caddy bridge that is missing the `/cb/socket.io` route. In the normal
+CLI-started runtime, point ngrok directly at the KDCube web proxy port instead
+of Caddy. If Caddy is intentionally in front, add `/cb/socket.io` and
+`/cb/socket.io/*` to the KDCube proxy matcher, or rewrite `/cb/socket.io*` to
+ingress `/socket.io*` as shown above.
 
 For the CLI-started runtime, first check the KDCube web proxy port:
 
