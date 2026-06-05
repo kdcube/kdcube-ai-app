@@ -642,7 +642,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
         telegram_init_data: str = "",
         **kwargs,
     ) -> Dict[str, Any]:
-        identity = telegram_widget_auth.resolve_identity(
+        identity = await telegram_widget_auth.resolve_identity(
             self,
             request=request,
             telegram_init_data=telegram_init_data,

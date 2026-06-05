@@ -166,8 +166,8 @@ email_settings.configure_email_settings(
     bundle_id="my.bundle@1-0",
 )
 
-payload = email_settings.status(entrypoint, user_id="user-a")
-oauth = email_settings.start_oauth(entrypoint, request=request)
+payload = await email_settings.status(entrypoint, user_id="user-a")
+oauth = await email_settings.start_oauth(entrypoint, request=request)
 ```
 
 The operations cover:

@@ -73,11 +73,14 @@ def _target_user(entrypoint: Any, *, user_id: Optional[str] = None, fingerprint:
     return _config(entrypoint)["target_user_id"](entrypoint, user_id=user_id, fingerprint=fingerprint)
 
 
-def _telegram_identity(entrypoint: Any, *, request: Any = None, telegram_init_data: str = "") -> Any:
+async def _telegram_identity(entrypoint: Any, *, request: Any = None, telegram_init_data: str = "") -> Any:
     resolver = _config(entrypoint).get("resolve_identity")
     if resolver is None:
         raise RuntimeError("LinkedIn settings integration is not configured: resolve_identity is missing")
-    return resolver(entrypoint, request=request, telegram_init_data=telegram_init_data)
+    identity = resolver(entrypoint, request=request, telegram_init_data=telegram_init_data)
+    if hasattr(identity, "__await__"):
+        identity = await identity
+    return identity
 
 
 def _configured(value: str) -> bool:
@@ -250,7 +253,7 @@ async def callback(entrypoint: Any, *, request: Any = None, code: str = "", stat
 
 
 async def telegram_status(entrypoint: Any, *, request: Any = None, telegram_init_data: str = "") -> Dict[str, Any]:
-    identity = _telegram_identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
+    identity = await _telegram_identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
     payload = await status(entrypoint, user_id=identity.user_id, fingerprint=identity.fingerprint)
     payload["auth_surface"] = "telegram_webapp"
     return payload
@@ -263,7 +266,7 @@ async def telegram_start_oauth(
     telegram_init_data: str = "",
     return_hint: str = "",
 ) -> Dict[str, Any]:
-    identity = _telegram_identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
+    identity = await _telegram_identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
     payload = await start_oauth(
         entrypoint,
         request=request,
@@ -283,7 +286,7 @@ async def telegram_disconnect(
     request: Any = None,
     telegram_init_data: str = "",
 ) -> Dict[str, Any]:
-    identity = _telegram_identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
+    identity = await _telegram_identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
     payload = await disconnect(entrypoint, account_id=account_id, user_id=identity.user_id, fingerprint=identity.fingerprint)
     payload["auth_surface"] = "telegram_webapp"
     return payload

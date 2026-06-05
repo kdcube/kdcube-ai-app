@@ -75,9 +75,9 @@ def _bundle_id(entrypoint: Any = None) -> str:
     return configured_bundle_id(_config(entrypoint)) or BUNDLE_ID
 
 
-def _identity(entrypoint: Any, *, request: Any = None, telegram_init_data: str = ""):
+async def _identity(entrypoint: Any, *, request: Any = None, telegram_init_data: str = ""):
     cfg = _config(entrypoint)
-    return cfg["telegram_widget_auth"].resolve_identity(
+    return await cfg["telegram_widget_auth"].resolve_identity(
         entrypoint,
         request=request,
         telegram_init_data=telegram_init_data,
@@ -86,9 +86,9 @@ def _identity(entrypoint: Any, *, request: Any = None, telegram_init_data: str =
     )
 
 
-def _profile_identity(entrypoint: Any, *, request: Any = None, telegram_init_data: str = ""):
+async def _profile_identity(entrypoint: Any, *, request: Any = None, telegram_init_data: str = ""):
     cfg = _config(entrypoint)
-    return cfg["telegram_widget_auth"].resolve_identity(
+    return await cfg["telegram_widget_auth"].resolve_identity(
         entrypoint,
         request=request,
         telegram_init_data=telegram_init_data,
@@ -97,9 +97,9 @@ def _profile_identity(entrypoint: Any, *, request: Any = None, telegram_init_dat
     )
 
 
-def _admin_identity(entrypoint: Any, *, request: Any = None, telegram_init_data: str = ""):
+async def _admin_identity(entrypoint: Any, *, request: Any = None, telegram_init_data: str = ""):
     cfg = _config(entrypoint)
-    return cfg["telegram_widget_auth"].resolve_identity(
+    return await cfg["telegram_widget_auth"].resolve_identity(
         entrypoint,
         request=request,
         telegram_init_data=telegram_init_data,
@@ -134,7 +134,7 @@ async def profile(
     request: Any = None,
     telegram_init_data: str = "",
 ) -> Dict[str, Any]:
-    identity = _profile_identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
+    identity = await _profile_identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
     role = str(identity.role or "anonymous").strip().lower() or "anonymous"
     allowed = role in {"registered", "admin"}
     mapped_kdcube_user_id = str(identity.mapping.get("kdcube_user_id") or "").strip()
@@ -173,7 +173,7 @@ async def list_conversations(
     request: Any = None,
     telegram_init_data: str = "",
 ) -> Dict[str, Any]:
-    identity = _identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
+    identity = await _identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
     admin = _config(entrypoint)["telegram_user_admin"]
     result = admin.storage(entrypoint).list_conversations(
         telegram_user_id=identity.telegram_user_id,
@@ -197,7 +197,7 @@ async def create_conversation(
     telegram_init_data: str = "",
     title: str = "",
 ) -> Dict[str, Any]:
-    identity = _identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
+    identity = await _identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
     admin = _config(entrypoint)["telegram_user_admin"]
     result = admin.storage(entrypoint).create_conversation(
         telegram_user_id=identity.telegram_user_id,
@@ -221,7 +221,7 @@ async def switch_conversation(
     request: Any = None,
     telegram_init_data: str = "",
 ) -> Dict[str, Any]:
-    identity = _identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
+    identity = await _identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
     admin = _config(entrypoint)["telegram_user_admin"]
     result = admin.storage(entrypoint).switch_conversation(
         telegram_user_id=identity.telegram_user_id,
@@ -246,7 +246,7 @@ async def delete_conversation(
     telegram_init_data: str = "",
     delete_history: bool = True,
 ) -> Dict[str, Any]:
-    identity = _identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
+    identity = await _identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
     admin = _config(entrypoint)["telegram_user_admin"]
     registry_result = admin.storage(entrypoint).delete_conversation(
         telegram_user_id=identity.telegram_user_id,
@@ -297,7 +297,7 @@ async def webapp_data(
     widget_path: str = "",
     path: str = "",
 ) -> Dict[str, Any]:
-    identity = _identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
+    identity = await _identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
     app = _config(entrypoint)["webapp"]
     payload = await app.payload(
         entrypoint,
@@ -318,7 +318,7 @@ async def admin_payload(
     request: Any = None,
     telegram_init_data: str = "",
 ) -> Dict[str, Any]:
-    identity = _admin_identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
+    identity = await _admin_identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
     admin = _config(entrypoint)["telegram_user_admin"]
     payload = admin.payload(entrypoint)
     payload["auth_surface"] = "telegram_webapp"
@@ -346,7 +346,7 @@ async def admin_upsert(
     conversation_id: str = "",
     notes: str = "",
 ) -> Dict[str, Any]:
-    identity = _admin_identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
+    identity = await _admin_identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
     admin = _config(entrypoint)["telegram_user_admin"]
     payload = admin.upsert(
         entrypoint,
@@ -372,7 +372,7 @@ async def admin_delete(
     request: Any = None,
     telegram_init_data: str = "",
 ) -> Dict[str, Any]:
-    identity = _admin_identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
+    identity = await _admin_identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
     admin = _config(entrypoint)["telegram_user_admin"]
     payload = admin.delete(entrypoint, telegram_user_id=telegram_user_id)
     payload["auth_surface"] = "telegram_webapp"
@@ -391,7 +391,7 @@ async def list_tasks(
     limit: int = 50,
     execution_limit: int = 3,
 ) -> Dict[str, Any]:
-    identity = _identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
+    identity = await _identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
     tasks = _config(entrypoint)["task_operations"]
     return await tasks.list_tasks(
         entrypoint,
@@ -413,7 +413,7 @@ async def get_task(
     telegram_init_data: str = "",
     execution_limit: int = 10,
 ) -> Dict[str, Any]:
-    identity = _identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
+    identity = await _identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
     tasks = _config(entrypoint)["task_operations"]
     return await tasks.get_task(
         entrypoint,
@@ -439,7 +439,7 @@ async def create_task(
     source: str = "telegram_widget",
     conversation_id: str = "",
 ) -> Dict[str, Any]:
-    identity = _identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
+    identity = await _identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
     tasks = _config(entrypoint)["task_operations"]
     return await tasks.create_task(
         entrypoint,
@@ -476,7 +476,7 @@ async def update_task(
     relations_patch: Optional[Dict[str, Any]] = None,
     revision_mode: str = "auto",
 ) -> Dict[str, Any]:
-    identity = _identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
+    identity = await _identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
     tasks = _config(entrypoint)["task_operations"]
     return await tasks.update_task(
         entrypoint,
@@ -507,7 +507,7 @@ async def delete_task(
     telegram_init_data: str = "",
     hard: bool = False,
 ) -> Dict[str, Any]:
-    identity = _identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
+    identity = await _identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
     tasks = _config(entrypoint)["task_operations"]
     return await tasks.delete_task(
         entrypoint,
@@ -528,7 +528,7 @@ async def search_tasks(
     limit: int = 20,
     execution_limit: int = 3,
 ) -> Dict[str, Any]:
-    identity = _identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
+    identity = await _identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
     tasks = _config(entrypoint)["task_operations"]
     return await tasks.search_tasks(
         entrypoint,
@@ -551,7 +551,7 @@ async def list_executions(
     status: str = "",
     limit: int = 50,
 ) -> Dict[str, Any]:
-    identity = _identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
+    identity = await _identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
     tasks = _config(entrypoint)["task_operations"]
     return await tasks.list_executions(
         entrypoint,
@@ -574,7 +574,7 @@ async def search_executions(
     status: str = "",
     limit: int = 50,
 ) -> Dict[str, Any]:
-    identity = _identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
+    identity = await _identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
     tasks = _config(entrypoint)["task_operations"]
     return await tasks.search_executions(
         entrypoint,
@@ -596,7 +596,7 @@ async def get_execution(
     telegram_init_data: str = "",
     task_id: str = "",
 ) -> Dict[str, Any]:
-    identity = _identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
+    identity = await _identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
     tasks = _config(entrypoint)["task_operations"]
     return await tasks.get_execution(
         entrypoint,
@@ -618,7 +618,7 @@ async def download_execution_artifact(
     download_token: str = "",
     task_id: str = "",
 ):
-    identity = None if download_token else _identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
+    identity = None if download_token else await _identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
     tasks = _config(entrypoint)["task_operations"]
     result = await tasks.download_execution_artifact(
         entrypoint,
@@ -640,7 +640,7 @@ async def run_task_now(
     telegram_init_data: str = "",
     conversation_id: str = "",
 ) -> Dict[str, Any]:
-    identity = _identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
+    identity = await _identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
     tasks = _config(entrypoint)["task_operations"]
     return await tasks.run_task_now(
         entrypoint,
