@@ -3005,11 +3005,16 @@ async def search_context(
     # Collect all hits
     hits = []
 
-    # RRF constants — k=60 is the de-facto literature default; 0.25 recency lift
-    # is multiplicative on the RRF score so recency nudges fresh turns up without
-    # swamping the rank fusion. Tuneable from telemetry once we have it.
+    # RRF constants — k=60 is the de-facto literature default. _RECENCY_LIFT
+    # is the max multiplicative boost a top-recency hit gets over an
+    # arbitrarily-old hit with the same RRF rank: final_score = rrf * (1 + L*rec).
+    # At L=1.0 a today-row is worth 2x a month-old row at the same RRF rank;
+    # week-old still gets 1.5x; month-old gets ~1.05x. That's strong enough to
+    # break ties decisively toward recent turns without crowding out older
+    # high-quality matches. Tuneable from telemetry — earlier 0.25 was too
+    # conservative; recency was barely discriminating.
     _RRF_K = 60
-    _RECENCY_LIFT = 0.25
+    _RECENCY_LIFT = 1.0
 
     def _row_to_hit(r: dict, *, query: str, where: str, score_override: Optional[float] = None,
                      sim_override: Optional[float] = None, rec_override: Optional[float] = None,

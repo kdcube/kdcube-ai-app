@@ -119,7 +119,7 @@ TURN N (the producing turn)                       TURN N+K (the recovering turn)
   |        summary, ...]      |                |             + 1/(60+lex_rank)  |
   |   ts, ttl_days            |                |                |               |
   +-------------+-------------+                |                v               |
-                |                              |  final = rrf * (1 + 0.25*rec)  |
+                |                              |  final = rrf * (1 + 1.0*rec)   |
                 | INSERT INTO conv_messages    |                                  |
                 v                              +----------------+-----------------+
   +---------------------------+                                 |
@@ -313,7 +313,7 @@ Fusion (per turn_id):
               (each term contributes only if the turn appeared in
                that retriever's top-k)
 
-  final_score = rrf_score x (1 + 0.25 x recency)
+  final_score = rrf_score x (1 + 1.0 x recency)
                 where recency = exp(-ln(2) x age / half_life_days),
                 half_life_days = 7
 ```
@@ -325,8 +325,11 @@ Four things to notice about this shape:
    — a weighted sum would over- or under-weight one depending on query
    and corpus. Position-based fusion is robust against that.
 2. **Recency is multiplicative on the fused rank score.** It nudges fresh
-   turns up without overwhelming the lexical/semantic ordering. The 0.25
-   ceiling is intentionally modest.
+   turns up while leaving the rank ordering substantively intact. At
+   `L=1.0` today's turn is worth 2x a month-old turn at the same RRF
+   rank; week-old gets 1.5x; month-old gets ~1.05x. Strong enough to
+   break ties decisively toward recent turns without crowding out older
+   high-quality matches.
 3. **A turn does not have to appear in all three lists.** Semantic-only,
    lexical-only, or trigram-only matches still return; they just get
    one or two RRF terms instead of three.
@@ -624,7 +627,7 @@ kdcube_ai_app/apps/chat/sdk/solutions/react/tools/memsearch.py
 
 kdcube_ai_app/apps/chat/sdk/context/retrieval/ctx_rag.py
   search_context with scoring_mode="rrf_hybrid":
-  parallel semantic+lexical, RRF (k=60), multiplicative recency lift (0.25)
+  parallel semantic+lexical+trigram, RRF (k=60), multiplicative recency lift (L=1.0)
 
 kdcube_ai_app/apps/chat/sdk/context/vector/conv_index.py
   search_turn_logs_via_content          (semantic, pgvector cosine)
