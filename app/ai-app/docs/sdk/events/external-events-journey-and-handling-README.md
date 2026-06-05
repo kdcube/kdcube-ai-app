@@ -69,8 +69,8 @@ For tool-backed events inside ReAct, `tool_id` is equivalent to
 
 ```text
 Client / widget / API
-  sends user message, attachment, followup, steer, or authored external events
-  authored event submissions use external_events[]
+  sends one ordered external_events[] batch
+  built-in user events and bundle/domain events use the same batch protocol
         |
         v
 Ingress
@@ -84,11 +84,12 @@ Ingress
         |     queue ExternalEventLaneWakeup
         |     wakeup points at the lane event; it does not carry request data
         |
-        +-- busy followup / steer / external events
+        +-- busy turn events
+        |     includes followup, steer, prompt-like continuation, and domain events
         |     retain in the same lane for the live owner
         |     if not consumed live, proc can promote the retained event later
         |
-        +-- idle non-reactive authored external events
+        +-- idle non-reactive accepted events
               retain in the lane and return; no model wake
         |
         v
@@ -131,7 +132,7 @@ client submits one ordered batch
     - event.external   task_tracker.task.file.uploaded
     - event.canvas     task_tracker.canvas.state
     - event.snapshot   task_tracker.canvas.snapshot
-    - event.external   task_tracker.canvas.review.requested reactive=true
+    - event.user.prompt  chat message from the active surface reactive=true
         |
         v
 ingress accepts each occurrence
@@ -163,27 +164,30 @@ only produced blocks are appended to the ReAct timeline
   operate only on those blocks, not on every bus event
 ```
 
-This means bundles can use the same SSE/Socket.IO-backed lane for all explicit
-domain events. An event can be useful to the bundle even when it should not be
-shared with ReAct. For example, a widget can submit a telemetry-like save
-boundary, the bundle callback can store or forward it, and the event source can
-bind `react.block_production.no_timeline` so the occurrence advances the lane
-cursor without creating durable ReAct blocks.
+This means bundles can use the same SSE/Socket.IO-backed lane for explicit
+conversation events. An event can be useful to the bundle even when it should
+not be shared with ReAct. For example, a widget can submit a telemetry-like
+save boundary, the bundle callback can store or forward it, and the event
+source can bind `react.block_production.no_timeline` so the occurrence advances
+the lane cursor without creating durable ReAct blocks.
 
-The default is still useful for ordinary authored events: if no source-specific
-block-production policy is registered, ReAct emits one event block at the
-event's `ev:` path. A registered source can override that default, including by
-intentionally producing zero timeline blocks.
+The structural default is still useful for ordinary generic/domain, snapshot,
+and canvas events. When no source-specific block-production policy is
+registered for those event types, the produced ReAct block uses the event's
+`ev:` path. Built-in user events have their own defaults that project to
+`user.prompt`, `user.attachment.*`, `user.followup`, and `user.steer`. A
+registered source can override either default, including by intentionally
+producing zero timeline blocks.
 
 ## Event Classes And Outcomes
 
 | Event class | Reactive? | Typical bundle callback | Timeline outcome |
 |---|---:|---|---|
-| `event.user.prompt` | Yes | Optional raw event callback; BaseWorkflow persists/indexes prompt projection blocks later. | Compatibility projection currently emits `user.prompt`. |
-| `event.user.attachment.*` | Yes, follows parent prompt/followup event | Optional raw event callback; hosting/materialization may run before ReAct render. | Compatibility projection currently emits `user.attachment.*`. |
-| `event.user.followup` | Yes, active turn only | Optional raw event callback. | Compatibility projection currently emits `user.followup`. |
-| `event.user.steer` | Active control | Optional raw event callback. | Compatibility projection currently emits `user.steer` / control path. |
-| Explicit review request | Usually yes | Validate story access, maybe persist request metadata. | Source policy usually emits `event.external` summary/ref blocks. |
+| `event.user.prompt` | Yes | Optional raw event callback; BaseWorkflow persists/indexes prompt projection blocks later. | Built-in projection emits `user.prompt`. |
+| `event.user.attachment.*` | Yes, follows parent prompt/followup event | Optional raw event callback; hosting/materialization may run before ReAct render. | Built-in projection emits `user.attachment.*`. |
+| `event.user.followup` | Yes, active turn only | Optional raw event callback. | Built-in projection emits `user.followup`. |
+| `event.user.steer` | Active control | Optional raw event callback. | Built-in projection emits `user.steer` / control path. |
+| Generic bundle/domain event | Depends on occurrence | Validate story access, maybe persist request metadata, call APIs, update bundle state. | Source policy usually emits `event.external` summary/ref blocks, or no blocks for bus-only events. |
 | Snapshot projection | Usually no | Store or refresh snapshot payload/ref. | Source policy may emit `event.snapshot`; projection/announce decide visibility. |
 | Canvas state revision | Usually no | Store latest shared canvas JSON/revision. | Source policy may emit `event.canvas`; later projection can keep only latest/visible summary. |
 | Host/process-only event | Usually no | Host bytes, call API, update bundle storage, or audit. | `react.block_production.no_timeline` produces no ReAct blocks. |
@@ -204,8 +208,8 @@ are source-owned and opt-in through explicit `text_preview`.
 ## Payloads
 
 `ExternalEventPayload` is the top-level ingress-to-processor event envelope. It
-is not necessarily chat and not necessarily a task. Authored UI/domain events
-enter as `external_events[]`; each accepted item becomes one lane
+is not necessarily chat and not necessarily a task. All authored events enter
+as `external_events[]`; each accepted item becomes one lane
 occurrence with an event envelope described in
 [External Event Envelope](external-event-envelope-README.md):
 
@@ -232,33 +236,28 @@ ExternalEventLaneWakeup.event_lane.sequence
 ```
 
 It intentionally does **not** contain `request`. The prompt, attachments,
-followup text, steer text, or authored event payload are recovered from the lane
+followup text, steer text, or generic/domain event payload are recovered from the lane
 event's stored `task_payload`.
 
 ## Built-In User Events
 
 User prompt, attachment, followup, and steer are not a separate semantic
-category. They are built-in external events. The older transport fields
-`request.message`, message attachments, and continuation kind are authoring
-shortcuts that ingress normalizes into event metadata:
+category. They are built-in external event types. New clients should author
+them directly in `external_events[]`:
 
 ```text
-request.message              -> type event.user.prompt
-message attachments          -> type event.user.attachment.*
-continuation_kind=followup   -> type event.user.followup
-continuation_kind=steer      -> type event.user.steer
+chat prompt                  -> type event.user.prompt
+chat attachments             -> type event.user.attachment.*
+open-turn followup           -> type event.user.followup, continuation=true
+open-turn steer              -> type event.user.steer, continuation=true
 ```
 
-The Redis lane kind may still be `message`, `followup`, or `steer` for
-compatibility and scheduling. The accepted event type is the semantic type
+The Redis lane kind may still be `message`, `followup`, or `steer` as an
+operational scheduling label. The accepted event type is the semantic type
 above. The current ReAct lane-to-timeline fold projects those built-in event
 types into existing renderer block shapes: `user.prompt`, `user.attachment.*`,
-`user.followup`, and `user.steer`.
-
-During rollout, retained lane records may still have `kind=regular`. The fold
-normalizes those retained records exactly like `event.user.prompt`; new
-producers should use `message` as the lane kind and `event.user.prompt` as the
-accepted type.
+`user.followup`, and `user.steer`. Producers should author the semantic event
+type in `external_events[]`.
 
 This conversion is important because prompt blocks are the inputs later handled
 by normal BaseWorkflow persistence and indexing, including
@@ -267,14 +266,14 @@ by normal BaseWorkflow persistence and indexing, including
 ## Lane Kinds And Event Types
 
 The lane kind is an operational/scheduling field. The accepted event `type` is
-the semantic event shape. Current compatibility projections are:
+the semantic event shape. Current built-in/default projections are:
 
 | Lane event kind | Accepted event type | Current timeline projection |
 |---|---|---|
 | `message` / retained `regular` | `event.user.prompt` plus `event.user.attachment.*` for attachments | `user.prompt` plus optional `user.attachment.*` |
 | `followup` | `event.user.followup` plus `event.user.attachment.*` for attachments | `user.followup` plus optional external attachment blocks |
 | `steer` | `event.user.steer` | `user.steer` |
-| `external_event` | Accepted event `type`, such as `event.external`, `event.snapshot`, or `event.canvas` | Policy-produced blocks, or no blocks with `react.block_production.no_timeline` |
+| `external_event` | Generic lane label for accepted semantic types such as `event.external`, `event.snapshot`, `event.canvas`, or `event.user.prompt` when submitted through the plural event batch | Policy-produced blocks, built-in user projections, or no blocks with `react.block_production.no_timeline` |
 
 When the ReAct event-source pipeline is enabled, folded blocks are stamped with
 event identity:
@@ -282,7 +281,7 @@ event identity:
 ```json
 {
   "meta": {
-    "event_source_id": "chat.message",
+    "event_source_id": "react.message",
     "event_id": "m...",
     "sequence": 12
   }
@@ -330,7 +329,7 @@ event.
 
 ## Non-Reactive Idle Events
 
-An authored external event with no accepted `reactive=true` does not wake ReAct.
+An accepted event with no `reactive=true` does not wake ReAct.
 In the current implementation it is retained in the Redis event lane and the
 conversation remains idle.
 

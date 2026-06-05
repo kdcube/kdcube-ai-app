@@ -18,9 +18,10 @@ see_also:
 # React Event Sources
 
 Event sources make ReAct timeline behavior policy-addressable. A source can be
-a tool, a folded external event, or a future user-input source. The event-source
-layer does not replace timeline block types. It adds semantic identity and
-phase-specific policies around the blocks that already represent what happened.
+a tool, a folded conversation event, or a future event-producing SDK surface.
+The event-source layer does not replace timeline block types. It adds semantic
+identity and phase-specific policies around the blocks that already represent
+what happened.
 
 A tool call is the first implemented special case of an event source. The tool
 is still called through the normal tool subsystem; the event-source layer only
@@ -48,10 +49,10 @@ tool_call_id == event_id
 
 When a block already has `tool_id`/`tool_call_id` via its tool-call map, code can
 derive event identity without duplicating durable fields on every block. When a
-non-tool external event is folded into the timeline, it should carry explicit
-`event_source_id` and `event_id`.
+non-tool conversation event is folded into the timeline, it should carry
+explicit `event_source_id` and `event_id`.
 
-An authored external event also has a `logical_path` in the `ev:` namespace,
+An accepted conversation event also has a `logical_path` in the `ev:` namespace,
 for example `ev:turn_<id>.events/<event_path>`. That path identifies the event
 object on the timeline and is readable with `react.read`, like `tc:` for tool
 call/result objects. It is not a file/artifact namespace and is not passed to
@@ -59,21 +60,21 @@ call/result objects. It is not a file/artifact namespace and is not passed to
 files, the pullable refs live in `hosted_uri`, `payload.event_ref`, or inside
 `payload.event`.
 
-From the event-source perspective, a tool call and an authored external event
-are both event occurrences:
+From the event-source perspective, a tool call and an accepted conversation
+event are both event occurrences:
 
 | Occurrence | Accepted event type | Default block group / projection |
 |---|---|
-| User prompt | `event.user.prompt` | Compatibility projection currently emits `user.prompt`. |
-| User attachment | `event.user.attachment.*` | Compatibility projection currently emits `user.attachment.*`. |
-| User followup | `event.user.followup` | Compatibility projection currently emits `user.followup`. |
-| User steer | `event.user.steer` | Compatibility projection currently emits `user.steer` / control path. |
+| User prompt | `event.user.prompt` | Built-in projection emits `user.prompt` with an `ar:<turn>.user.prompt...` path. |
+| User attachment | `event.user.attachment.*` | Built-in projection emits `user.attachment.*` with `fi:<turn>.user.attachments/...` paths. |
+| User followup | `event.user.followup` | Built-in projection emits `user.followup` with an `ar:<turn>.external.followup...` path. |
+| User steer | `event.user.steer` | Built-in projection emits `user.steer` / control path with an `ar:<turn>.external.steer...` path. |
 | Tool call | Tool occurrence uses `tool_id == event_source_id` and `tool_call_id == event_id`. | `react.tool.call` plus one or more `react.tool.result` / artifact blocks. |
-| Authored domain event | `event.external` | One `event.external` block at the event `ev:` path, no blocks, or policy-produced blocks. |
+| Generic/domain event | `event.external` | One `event.external` block at the event `ev:` path, no blocks, or policy-produced blocks. |
 | Snapshot event | `event.snapshot` | One `event.snapshot` block at the event `ev:` path, or policy-produced blocks. |
 | Canvas state event | `event.canvas` | One `event.canvas` block at the event `ev:` path, or policy-produced blocks. |
 
-Custom `block_production` policies may expand an external event into a richer
+Custom `block_production` policies may expand an accepted event into a richer
 group, such as additional payload/artifact blocks. The default event block body
 uses the tool-result-like shape: `ok`, `status`, optional `error`, optional
 `ret`, and optional `surfaces`. `payload.event` becomes `ret`;
@@ -89,9 +90,11 @@ pull/read the referenced payload, but it should not patch the snapshot as
 authoritative state. A canvas is the mutually writable JSON state surface; user
 and agent edits append new `event.canvas` occurrences with later revisions.
 
-Authored external events arrive through chat ingress as
-top-level `external_events[]` and are retained first in the per-conversation
-event lane. The accepted event envelope includes `type`, `event_source_id`,
+Conversation events arrive through chat ingress as top-level `external_events[]`
+and are retained first in the per-conversation event lane. Built-in user
+events (`event.user.prompt`, `event.user.attachment.*`,
+`event.user.followup`, `event.user.steer`) and bundle/domain events use the
+same envelope. The accepted event envelope includes `type`, `event_source_id`,
 `event_id`, `logical_path`, optional `hosted_uri`, `reactive`, `agent_id`,
 `story_id`, and `payload`. The transport, reactivity, and story-correlation
 contract is documented in [External Events](../../../events/external-events-README.md);
@@ -178,7 +181,7 @@ If `list_event_sources()` returns any declarations, it is the authoritative
 source list for that module. Otherwise the subsystem scans decorated functions,
 objects, and tool owners.
 
-For authored external events, `reactive` and `iteration_credit` are declaration
+For non-tool event sources, `reactive` and `iteration_credit` are declaration
 defaults:
 
 ```python
@@ -267,7 +270,7 @@ wrap/line-number the preview again.
 
 | Source family | Declarations | Policy pack |
 |---|---|---|
-| ReAct external events | `react.message`, `react.user_attachment`, `react.followup`, `react.steer`, `react.external_event` | Built-in default block producers for prompt, attachment, followup, steer, and generic authored external events; snapshot/canvas defaults are selected by accepted event `type`; some legacy compaction preservation remains partly hardcoded. |
+| ReAct conversation events | `react.message`, `react.user_attachment`, `react.followup`, `react.steer`, `react.external_event` | Built-in default block producers for prompt, attachment, followup, steer, and generic/domain events; snapshot/canvas defaults are selected by accepted event `type`; some built-in user-event compaction preservation remains partly hardcoded. |
 | Native ReAct tools | `react.write`, `react.memsearch` | Native handlers produce blocks directly; timeline/compaction policies make them addressable. |
 | Web tools | `web_tools.web_search`, `web_tools.web_fetch` | `exploration_source_policies()` merges source rows into `sources_pool` and creates the ordinary result item. |
 | Browser tools | `browser_tools.open_page`, `click`, `fill`, `scroll`, `status`, `close` | `structured_result_source_policies()` creates JSON/text result items and declared-file rows. |

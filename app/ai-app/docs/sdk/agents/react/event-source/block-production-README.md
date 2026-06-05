@@ -27,11 +27,11 @@ tool call selected
     -> result-side blocks are appended to timeline
 ```
 
-Authored external events use the same result accumulator shape, but the default
+Accepted event-lane occurrences use the same result accumulator shape, but the default
 structural output is one event occurrence block:
 
 ```text
-external_event retained in lane
+accepted event retained in lane
     -> event reader builds accepted event target
     -> block_production policies mutate one accumulator
     -> policy either emits blocks or marks the occurrence as no-timeline
@@ -83,7 +83,7 @@ The target is a mutable accumulator:
 Multiple production policies may run on the same target. Each policy reads the
 surface it owns and appends to the matching field.
 
-A policy can also intentionally consume an authored event without producing
+A policy can also intentionally consume an accepted event without producing
 ReAct timeline blocks. Bind `react.block_production.no_timeline` for events that
 should travel through the ordered event lane and bundle callbacks, but should
 not become durable ReAct history.
@@ -157,17 +157,17 @@ treated as raw text and may be rendered with the standard line window,
 | `composite_artifact_source_policies()` | `hosted_artifacts`, `snapshot_refs`, `announce_candidates` | Composite custom results with several result surfaces. |
 | custom event bus-only policy | `react.block_production.no_timeline` | Suppresses default event-block fallback after the bundle/runtime callback has observed the event. |
 
-## Default Authored Event Producers
+## Default Accepted Event Producers
 
 | Policy ID | Input event type | Default timeline output |
 |---|---|---|
 | `react.block_production.event_default` | `event.external` and other generic domain events | One `event.<type>` JSON block at the accepted event's `ev:` path. The body stores `ok`, `status`, `ret`, optional `error`, optional `event_ref`, and extracted `surfaces`. |
 | `react.block_production.snapshot_default` | `event.snapshot` | One `event.snapshot` JSON block at the `ev:` path. The body preserves snapshot refs and ANNOUNCE candidates as read-only projection data. |
 | `react.block_production.canvas_default` | `event.canvas` | One `event.canvas` JSON block at the `ev:` path. The body preserves the canvas revision/state as collaborative domain state; edits must still go through a bundle API/tool that emits a later canvas event. |
-| `react.block_production.user_prompt_default` | `event.user.prompt` | Compatibility `user.prompt` block with event identity in metadata. |
-| `react.block_production.user_followup_default` | `event.user.followup` | Compatibility `user.followup` block with event identity and `is_continuation` metadata. |
-| `react.block_production.user_steer_default` | `event.user.steer` | Compatibility `user.steer` block with event identity and `is_continuation` metadata. |
-| `react.block_production.user_attachment_default` | `event.user.attachment.*` or attachments carried alongside a prompt/followup/domain event | Compatibility `user.attachment.meta`, `user.attachment`, and `user.attachment.text` blocks through the shared attachment builder. Hosted metadata such as `hosted_uri`, `rn`, `key`, and `physical_path` is preserved in block metadata. |
+| `react.block_production.user_prompt_default` | `event.user.prompt` | Built-in `user.prompt` block with event identity in metadata. |
+| `react.block_production.user_followup_default` | `event.user.followup` | Built-in `user.followup` block with event identity and `is_continuation` metadata. |
+| `react.block_production.user_steer_default` | `event.user.steer` | Built-in `user.steer` block with event identity and `is_continuation` metadata. |
+| `react.block_production.user_attachment_default` | `event.user.attachment.*` or attachments carried alongside a prompt/followup/generic event | Built-in `user.attachment.meta`, `user.attachment`, and `user.attachment.text` blocks through the shared attachment builder. Hosted metadata such as `hosted_uri`, `rn`, `key`, and `physical_path` is preserved in block metadata. |
 
 ## Generic JSON Is Not A File
 
@@ -208,7 +208,7 @@ state and are read by ReAct through `react.pull`/`react.read` when needed. For
 shared state that both the user and agent can edit as JSON, use a dedicated
 event type such as `event.canvas`.
 
-The same rule applies to authored event payloads. A snapshot event may carry a
+The same rule applies to accepted event payloads. A snapshot event may carry a
 compact inline payload, a hosted snapshot ref, hosted artifact refs, and an
 ANNOUNCE candidate together:
 
@@ -232,19 +232,21 @@ ANNOUNCE candidate together:
 }
 ```
 
-The default block producer emits one event block at the event's `ev:` path. The
-block body keeps `ret.summary` plus `surfaces.artifact_rows`,
+For this snapshot event, the default block producer emits one event block at
+the event's `ev:` path. The block body keeps `ret.summary` plus
+`surfaces.artifact_rows`,
 `surfaces.snapshot_refs`, and `surfaces.announce_candidates`.
 
 ## Current Completion Status
 
 The block-production phase is implemented and tested under
 `event_source_pipeline.enabled=true` for the external SDK tool families listed
-above. The legacy path remains available when the flag is disabled. The enabled
-path is expected to preserve the visible timeline shape of the old path while
+above. The previous hardcoded ReAct result path remains available when the flag
+is disabled. The enabled path is expected to preserve the visible timeline shape
+of the previous path while
 making result production configurable by event-source policy.
 
-For authored external events, the default single event-block production path is
+For accepted external-event types, the default single event-block production path is
 implemented for unregistered sources, snapshots, canvas state, prompt, followup,
 steer, and attachment events. Event result surfaces are preserved durably first;
 later timeline, ANNOUNCE, and compaction policies project or announce them.

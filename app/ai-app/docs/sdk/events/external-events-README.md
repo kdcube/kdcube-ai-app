@@ -34,8 +34,9 @@ External events are conversation-scoped facts or intents that arrive from a UI,
 transport, webhook, or system component and may be folded into a ReAct
 conversation. User prompts, attachments, followups, and steer controls are
 built-in external event types; `external_events[]` is the authored
-domain/UI event form. Tools are not transported through ingress, but they use
-the same event-source identity model once ReAct invokes them:
+event transport for both built-in user events and bundle/domain events. Tools
+are not transported through ingress, but they use the same event-source identity
+model once ReAct invokes them:
 
 ```text
 event_source_id = stable semantic source
@@ -50,7 +51,7 @@ The end-to-end transport and handling journey is documented in
 
 ## Wire Shape
 
-Clients send authored external events through the normal chat ingress request:
+Clients send client-authored events through the normal chat ingress request:
 
 ```json
 {
@@ -77,19 +78,21 @@ Clients send authored external events through the normal chat ingress request:
           }
         },
         {
-          "event_id": "evt_canvas_review_001",
-          "type": "event.external",
-          "event_source_id": "task_tracker.canvas.review.requested",
-          "logical_path": "ev:turn_123.events/task-tracker/canvas/review-requested/evt_canvas_review_001",
+          "event_id": "evt_prompt_001",
+          "type": "event.user.prompt",
+          "event_source_id": "react.message",
+          "logical_path": "ev:turn_123.events/chat/user-prompt/evt_prompt_001",
           "hosted_uri": null,
           "reactive": true,
           "agent_id": "default.react.agent",
           "story_id": "task:draft-123",
           "payload": {
-            "mime": "application/json",
+            "mime": "text/plain",
             "event": {
-              "prompt": "Review this selected area and suggest the next step.",
-              "snapshot": "ev:turn_123.events/task-tracker/snapshots/draft-123/canvas/latest"
+              "text": "Review this selected area and suggest the next step.",
+              "context_refs": [
+                "ev:turn_123.events/task-tracker/snapshots/draft-123/canvas/latest"
+              ]
             }
           }
         }
@@ -103,8 +106,8 @@ Field roles:
 
 | Field | Meaning |
 |---|---|
-| `external_events[]` | Plural list of authored event occurrences. The target protocol does not use a singular event field. |
-| `external_events[].type` | Structural event block shape, for example `event.snapshot` or `event.external`. |
+| `external_events[]` | Plural list of client-authored event occurrences. The target protocol does not use a singular event field. |
+| `external_events[].type` | Structural event block shape, for example `event.user.prompt`, `event.snapshot`, or `event.external`. |
 | `external_events[].event_source_id` | Semantic event source, used for event-source discovery and policy lookup. |
 | `external_events[].logical_path` | `ev:` path of this event object on the turn timeline. |
 | `external_events[].hosted_uri` | Optional external URI for a hosted copy of the event payload/body. |
@@ -124,15 +127,17 @@ ReAct should not pass `ev:` to `react.pull` or `react.checkout`. When the event
 points to material that must become local, use the event's `hosted_uri`,
 `payload.event_ref`, or artifact refs carried inside `payload.event`.
 
-When ReAct folds an authored event, block-production policies decide whether
-the event becomes timeline material. The SDK default block producer emits one
-event block at the event's `ev:` path. The block type is the accepted event
-type, such as `event.external`, `event.snapshot`, or `event.canvas`. The block
-body mirrors a tool-result envelope: `payload.event` becomes `ret`, errors
-become `error`, and recognized composite result surfaces are preserved under
-`surfaces`. Current built-in surface extractors understand exploration/source
-rows, hosted artifact rows, declared file rows, snapshot refs, ANNOUNCE
-candidates, and notice rows.
+When ReAct folds an accepted event, block-production policies decide whether
+the event becomes timeline material. Built-in user event policies project
+`event.user.prompt`, `event.user.followup`, `event.user.steer`, and
+`event.user.attachment.*` into the current ReAct user block shapes (`ar:` for
+chat text/control blocks and `fi:` for user attachment refs). Generic/domain,
+snapshot, and canvas event policies emit event blocks at the accepted event's
+`ev:` path. Those event block bodies mirror a tool-result envelope:
+`payload.event` becomes `ret`, errors become `error`, and recognized composite
+result surfaces are preserved under `surfaces`. Current built-in surface
+extractors understand exploration/source rows, hosted artifact rows, declared
+file rows, snapshot refs, ANNOUNCE candidates, and notice rows.
 
 Registered sources can override the default, including with
 `react.block_production.no_timeline`. That policy consumes the event for lane
@@ -177,8 +182,8 @@ def list_event_sources():
     ]
 ```
 
-For transported external events, reactivity is an occurrence fact. Each accepted
-event must carry the effective value in `external_events[].reactive`.
+For transported events, reactivity is an occurrence fact. Each accepted event
+must carry the effective value in `external_events[].reactive`.
 This avoids silently waking ReAct for an event just because a declaration exists.
 
 Live credit is resolved only after the occurrence is explicitly reactive:
@@ -191,8 +196,8 @@ Live credit is resolved only after the occurrence is explicitly reactive:
 The runtime cap still clamps granted credit.
 
 Ingress is earlier than ReAct and does not load bundle declarations just to
-classify an idle event. If an idle external event must start ReAct, the producer
-must send `external_events[].reactive=true`.
+classify an idle event. If an idle event must start ReAct, the producer must
+send `external_events[].reactive=true`.
 
 ## Payload Refs
 
@@ -231,17 +236,19 @@ Client/UI
         v
 Ingress
   validates session, bundle visibility, conversation ownership
-  normalizes prompt/attachment/followup/steer/domain submissions into event metadata
+  accepts ordered external_events[] items
+  normalizes built-in user events and bundle/domain events into event metadata
   builds ExternalEventPayload.event
         |
         +-- idle reactive event
         |     append to event lane
         |     enqueue ExternalEventLaneWakeup; wakeup carries lane pointer only
         |
-        +-- busy followup/steer/external events
+        +-- busy turn events
+        |     includes followup, steer, prompt-like continuation, and domain events
         |     append to event lane for live owner or later promotion
         |
-        +-- idle non-reactive authored external events
+        +-- idle non-reactive accepted events
               append to event lane and return without model wake
         |
         v
@@ -254,7 +261,7 @@ Processor / ReAct owner
 ReAct ContextBrowser
   calls bundle/runtime event callbacks
   applies block-production policies
-  projects built-in user event types and converts policy-produced domain events into blocks
+  projects built-in user events and policy-produced bundle/domain events into blocks
   stamps event_source_id/event_id when event-source pipeline is enabled
   contributes blocks to the active turn timeline
 ```
@@ -317,7 +324,7 @@ Non-reactive events are still ordered and may be folded if an active owner
 drains them, but they do not request another model decision by themselves.
 
 `steer` remains a built-in control event. A future product can also define an
-authored event whose semantics mean "stop", "pause", or "reorient"; that should
+event source whose semantics mean "stop", "pause", or "reorient"; that should
 be represented by its own `event_source_id` and policy rather than by a generic
 interrupt flag.
 

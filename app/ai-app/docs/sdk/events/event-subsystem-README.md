@@ -34,7 +34,7 @@ see_also:
 
 The SDK events subsystem provides shared event-source identity and discovery.
 ReAct is the first consumer, but the model is wider than ReAct: the same source
-identity can describe tool calls, external UI events, authored external events,
+identity can describe tool calls, conversation-scoped UI/user/domain events,
 and future event-producing SDK surfaces.
 
 ## Core Model
@@ -43,7 +43,7 @@ An event source has two identities:
 
 | Term | Meaning |
 |---|---|
-| `event_source_id` | Stable semantic source key, such as `web_tools.web_search`, `react.followup`, or `bundle.wizard.field_changed`. |
+| `event_source_id` | Stable semantic source key, such as `web_tools.web_search`, `react.message`, `react.followup`, or `bundle.wizard.field_changed`. |
 | `event_id` | One occurrence of that source. For tool-backed events this is the tool call id. |
 
 A tool call is the first implemented special case of an event source:
@@ -64,15 +64,15 @@ material, or prepare compaction views. The shared SDK events subsystem only
 discovers and names those policies; it does not itself render timeline text or
 generate file previews.
 
-Authored UI/domain events use the same source/occurrence model. Their accepted
-transport envelope is documented in
+Authored conversation events use the same source/occurrence model. Their
+accepted transport envelope is documented in
 [External Event Envelope](external-event-envelope-README.md). In that envelope,
 `event_source_id` selects policies, `event_id` identifies the occurrence, and
 `logical_path` is the `ev:` path of the event object on the turn timeline.
 User prompts, user attachments, followups, and steers are built-in external
 event types (`event.user.prompt`, `event.user.attachment.*`,
-`event.user.followup`, `event.user.steer`) even when they are authored through
-the existing chat message or continuation wire fields.
+`event.user.followup`, `event.user.steer`) and should be authored through the
+same plural `external_events[]` protocol as bundle/domain events.
 
 ## Declaration
 
@@ -101,7 +101,7 @@ Policy bindings are consumer-specific. Today the supported consumer is ReAct,
 so bindings use `react_phase` and `event_policy_id`. The shared SDK events
 subsystem does not define ReAct timeline behavior by itself.
 
-For non-tool external events, the declaration can also define ReAct admission
+For non-tool event sources, the declaration can also define ReAct admission
 defaults:
 
 ```python
@@ -319,5 +319,5 @@ It does not own:
 
 Those remain responsibilities of the consuming runtime. For ReAct, see the
 event-source phase documents under `docs/sdk/agents/react/event-source/`.
-For conversation-scoped authored events that arrive through chat ingress, see
+For conversation-scoped events that arrive through chat ingress, see
 [External Events](external-events-README.md).

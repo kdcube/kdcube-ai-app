@@ -27,13 +27,13 @@ The target is a mutable block list. Policies mutate blocks inline.
 
 ## Open Work
 
-Some preservation logic is still hardcoded, especially followup/steer and
-tool-round preservation. The desired direction is to move that behavior into
-event-source policies so custom event sources can define their own compaction
-shape without editing ReAct core.
+Some preservation logic is still hardcoded, especially built-in user-event
+preservation (`event.user.followup`, `event.user.steer`) and tool-round
+preservation. The desired direction is to move that behavior into event-source
+policies so custom event sources can define their own compaction shape without
+editing ReAct core.
 
 Compaction policies should preserve durable recovery anchors. For story
 snapshots and cross-conversation recovery, leave explicit refs such as
 `fi:<turn>.snapshots/...` or `fi:conv_<conversation_id>.<turn>.snapshots/...`
 visible enough for later `react.read`, `react.pull`, or `react.checkout`.
-

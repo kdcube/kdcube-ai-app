@@ -29,15 +29,15 @@ see_also:
 ---
 # External Event Envelope
 
-Clients submit authored UI/domain events as a plural list:
+Clients submit authored conversation events as a plural list:
 
 ```text
 external_events[]
 ```
 
 There is no singular event field in the target protocol. A user prompt with
-attachments, a canvas snapshot plus review request, or a wizard field update
-can all be represented as multiple ordered event occurrences in one client
+attachments, a canvas snapshot plus user request, or a wizard field update can
+all be represented as multiple ordered event occurrences in one client
 submission.
 
 ## Accepted Event Shape
@@ -99,7 +99,7 @@ rendered timeline/ANNOUNCE context:
 ```text
 ev:turn_123.events/task-tracker/snapshots/draft-123/canvas/latest
 ev:turn_123.events/task-tracker/canvas/files/file-7/uploaded
-ev:turn_123.events/task-tracker/canvas/selection/review-requested/evt_9
+ev:turn_123.events/task-tracker/canvas/selection/evt_9
 ```
 
 `ev:` identifies the event occurrence or event object on the timeline. It is
@@ -122,17 +122,17 @@ The conceptual event group is the same layer as a tool occurrence:
 
 | Event-source occurrence | Default timeline representation |
 |---|---|
-| User prompt event | Accepted type `event.user.prompt`; current compatibility projection is `user.prompt` |
-| User attachment event | Accepted type family `event.user.attachment.*`; current compatibility projection is `user.attachment.*` |
-| User followup event | Accepted type `event.user.followup`; current compatibility projection is `user.followup` |
-| User steer event | Accepted type `event.user.steer`; current compatibility projection is `user.steer` / control path |
+| User prompt event | Accepted type `event.user.prompt`; built-in projection is `user.prompt` with an `ar:<turn>.user.prompt...` path |
+| User attachment event | Accepted type family `event.user.attachment.*`; built-in projection is `user.attachment.*` with `fi:<turn>.user.attachments/...` paths |
+| User followup event | Accepted type `event.user.followup`; built-in projection is `user.followup` with an `ar:<turn>.external.followup...` path |
+| User steer event | Accepted type `event.user.steer`; built-in projection is `user.steer` / control path with an `ar:<turn>.external.steer...` path |
 | Tool call | `react.tool.call` plus one or more `react.tool.result` / artifact blocks |
-| Authored external event | One `event.external` block at the event `ev:` path |
+| Generic/domain event | One `event.external` block at the event `ev:` path |
 | Snapshot event | One `event.snapshot` block at the event `ev:` path |
 | Canvas state event | One `event.canvas` block at the event `ev:` path |
 | Event with attachments | Event block plus `user.attachment.*` / external attachment blocks |
 
-The built-in prompt/followup/steer compatibility blocks are produced by
+The built-in prompt/followup/steer/attachment blocks are produced by
 block-production policies:
 
 - `react.block_production.user_prompt_default`
@@ -140,20 +140,22 @@ block-production policies:
 - `react.block_production.user_steer_default`
 - `react.block_production.user_attachment_default`
 
-Generic authored events use `react.block_production.event_default`. Snapshot and
+Generic/domain events use `react.block_production.event_default`. Snapshot and
 canvas events have explicit defaults:
 `react.block_production.snapshot_default` and
 `react.block_production.canvas_default`. The attachment default preserves hosted
 artifact metadata (`hosted_uri`, `rn`, `key`, `physical_path`) on the produced
 attachment blocks.
 
-The default event block body has the tool-result-like shape: `ok`, `status`,
-optional `error`, optional `ret`, and optional `surfaces`. `payload.event` is
-the `ret` analogue. If the body is hosted, `payload.event_ref` is represented
-as `ret.event_ref`. The SDK default producer also extracts standard result
-surfaces from `ret` and stores them under `surfaces`, for example
-`source_rows`, `artifact_rows`, `declared_file_items`, `snapshot_refs`,
-`announce_candidates`, and `notice_rows`.
+For generic/domain, snapshot, and canvas event blocks, the default body has the
+tool-result-like shape: `ok`, `status`, optional `error`, optional `ret`, and
+optional `surfaces`. `payload.event` is the `ret` analogue. If the body is
+hosted, `payload.event_ref` is represented as `ret.event_ref`. The SDK default
+producer also extracts standard result surfaces from `ret` and stores them
+under `surfaces`, for example `source_rows`, `artifact_rows`,
+`declared_file_items`, `snapshot_refs`, `announce_candidates`, and
+`notice_rows`. Built-in user prompt/followup/steer/attachment events keep the
+current ReAct user block bodies while carrying event identity in metadata.
 
 If an event source registers a `block_production` policy, that policy may
 replace or expand this group with source-specific payload/result/artifact
@@ -169,18 +171,17 @@ Small or already-bounded event bodies can be inline:
 
 ```json
 {
-  "event_id": "evt_canvas_review_001",
+  "event_id": "evt_canvas_selection_001",
   "type": "event.external",
-  "event_source_id": "task_tracker.canvas.review.requested",
-  "logical_path": "ev:turn_123.events/task-tracker/canvas/review-requested/evt_canvas_review_001",
+  "event_source_id": "task_tracker.canvas.selection.changed",
+  "logical_path": "ev:turn_123.events/task-tracker/canvas/selection/evt_canvas_selection_001",
   "hosted_uri": null,
-  "reactive": true,
+  "reactive": false,
   "agent_id": "default.react.agent",
   "story_id": "task:draft-123",
   "payload": {
     "mime": "application/json",
     "event": {
-      "prompt": "Review this selected area and suggest the next step.",
       "selection": {
         "item_ids": ["note-7"]
       },
@@ -347,46 +348,67 @@ text block as an already-rendered `text_file_preview.v1` projection.
 
 ## Text Selection Context Event
 
-When the user selects text or a canvas area and asks for assistance, send an
-explicit event for that action. The current selection can be inline, while the
-current editable canvas state is referenced by the latest `event.canvas`
-occurrence. A snapshot ref can also be present when the bundle wants ANNOUNCE
-or read-oriented projection:
+When the user selects text or a canvas area and asks for assistance, send the
+current selection/context as events before the chat prompt in the same ordered
+batch. The current selection can be inline, while the current editable canvas
+state is referenced by the latest `event.canvas` occurrence. The actual chat
+request is `event.user.prompt`; it is not a generic `event.external`.
 
 ```json
-{
-  "event_id": "evt_canvas_selection_review_001",
-  "type": "event.external",
-  "event_source_id": "task_tracker.canvas.selection.review.requested",
-  "logical_path": "ev:turn_123.events/task-tracker/canvas/selection/review-requested/evt_canvas_selection_review_001",
-  "hosted_uri": null,
-  "reactive": true,
-  "agent_id": "default.react.agent",
-  "story_id": "task:draft-123",
-  "payload": {
-    "mime": "application/json",
-    "event": {
-      "prompt": "Review this selected text and suggest how to improve it.",
-      "selection": {
-        "surface": "canvas",
-        "text": "The browser crashes after uploading a large CSV.",
-        "range": {
-          "anchor": "note-7:12",
-          "focus": "note-7:68"
+[
+  {
+    "event_id": "evt_canvas_selection_001",
+    "type": "event.external",
+    "event_source_id": "task_tracker.canvas.selection.changed",
+    "logical_path": "ev:turn_123.events/task-tracker/canvas/selection/evt_canvas_selection_001",
+    "hosted_uri": null,
+    "reactive": false,
+    "agent_id": "default.react.agent",
+    "story_id": "task:draft-123",
+    "payload": {
+      "mime": "application/json",
+      "event": {
+        "selection": {
+          "surface": "canvas",
+          "text": "The browser crashes after uploading a large CSV.",
+          "range": {
+            "anchor": "note-7:12",
+            "focus": "note-7:68"
+          }
         }
-      },
-      "canvas": "ev:turn_123.events/task-tracker/canvas/draft-123/state/rev-7",
-      "snapshot": "ev:turn_123.events/task-tracker/snapshots/draft-123/canvas/latest"
+      }
+    }
+  },
+  {
+    "event_id": "evt_prompt_001",
+    "type": "event.user.prompt",
+    "event_source_id": "react.message",
+    "logical_path": "ev:turn_123.events/chat/user-prompt/evt_prompt_001",
+    "hosted_uri": null,
+    "reactive": true,
+    "agent_id": "default.react.agent",
+    "story_id": "task:draft-123",
+    "payload": {
+      "mime": "text/plain",
+      "event": {
+        "text": "Review this selected text and suggest how to improve it.",
+        "context_refs": [
+          "ev:turn_123.events/task-tracker/canvas/selection/evt_canvas_selection_001",
+          "ev:turn_123.events/task-tracker/canvas/draft-123/state/rev-7",
+          "ev:turn_123.events/task-tracker/snapshots/draft-123/canvas/latest"
+        ]
+      }
     }
   }
-}
+]
 ```
 
 The snapshot should already include the applied user effects that matter for
 context, such as current field values, current selection, attached files, and
-canvas item positions. The selection event tells ReAct why the user is asking
-now; `event.canvas` tells ReAct what the editable canvas state is; the snapshot
-is the read-oriented projection for ANNOUNCE or compact context.
+canvas item positions. The selection event tells ReAct what context was active;
+`event.canvas` tells ReAct what the editable canvas state is; the snapshot is
+the read-oriented projection for ANNOUNCE or compact context; `event.user.prompt`
+is the wake-up/request text that renders as the chat user message.
 
 ## Policy Implication
 
