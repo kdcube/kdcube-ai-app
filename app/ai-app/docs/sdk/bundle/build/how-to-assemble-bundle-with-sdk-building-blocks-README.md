@@ -88,11 +88,15 @@ Critical widget/browser rule:
 
 - widgets and generated static HTML must call KDCube through the KDCube
   frame/runtime origin
+- buildable `ui/main` apps and source-folder widgets must emit relative asset
+  URLs. For Vite set `base: './'` and verify built `index.html` contains
+  `./assets/...`, not `/assets/...`
 - use runtime `baseUrl` from `CONFIG_REQUEST` / `CONN_RESPONSE`, with
   `window.location.origin` of the widget frame as the fallback
 - do not use the embedding host page origin, `window.top.location`, or
   `document.referrer` as an API base
-- see [Bundle Widget Integration](../bundle-widget-integration-README.md#frame-origin-and-api-base-url)
+- see [Bundle Widget Integration](../bundle-widget-integration-README.md#source-folder-widget-apps)
+  and [Bundle Widget Integration](../bundle-widget-integration-README.md#frame-origin-and-api-base-url)
   before implementing any browser-facing API client
 
 Critical live-event rule:

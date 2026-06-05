@@ -1,48 +1,53 @@
 platform:
   repo: "kdcube-ai-app"
-  ref: "2026.5.29.1534"
+  ref: "2026.6.5.342"
   description: |
-    This platform release improves local descriptor export/import workflows,
-    fixes seed descriptor materialization, and includes several chat/runtime
-    hardening updates.
+    This platform release improves conversation event handling, cross-turn
+    artifact recovery, memory retrieval, authenticated profile reporting, and
+    economics settlement behavior.
 
     Highlights
 
-    - Adds and aligns `kdcube config export` / `kdcube config import` for
-      local seed descriptor workflows.
-    - Exports local descriptors in seed-compatible form: local storage defaults
-      remain portable, local service hosts are normalized, platform-managed
-      bundles are not exported with materialized managed paths, and unmanaged
-      local bundle paths are preserved.
-    - Fixes descriptor-mode platform secret resolution.
-    - Accepts attachment-only chat and follow-up messages for processing.
-    - Hardens delegated auth cookie forwarding.
-    - Splits recorded telemetry event types from telemetry-shippable payloads.
-    - Updates isolated workspace mental-map documentation to match the current
-      implementation.
+    - Adds the event-source pipeline for ReAct turns, including configurable
+      per-bundle event recording policies and clearer event payload flow.
+    - Persists turn cost and timing summaries as chat artifacts.
+    - Improves external event handling so follow-up and wake-up events are
+      rendered consistently in the timeline.
+    - Supports cross-conversation source-pool reads and execution artifact
+      recovery paths.
+    - Adds lexical retrieval and reciprocal-rank fusion to memory search, with
+      more compact search envelopes for model context.
+    - Surfaces authenticated profile state more accurately in the web client.
+    - Corrects plan, project, and wallet settlement so reservation splits are
+      preserved through final charging.
+    - Clarifies bundle UI asset paths and runtime storage contracts in the
+      developer documentation.
 
     Runtime and deployment notes:
 
-    - Deployments must point the platform ref at 2026.5.29.1534 to receive this
+    - Deployments must point the platform ref at 2026.6.5.342 to receive this
       update.
-    - Exported local descriptors may be reviewed and re-used as seed
-      descriptors; `null` local storage values mean "use the runtime default"
-      during init/import.
-    - No private deployment content is part of this OSS release.
+    - Existing bundle UI builds remain compatible; rebuild when the configured
+      platform ref changes.
+    - ReAct memory and event-source behavior depends on bundle policy
+      configuration and available tools.
 
     Validation and regression coverage:
 
-    - CLI descriptor tests passed.
-    - Staged OSS private-name scan must pass before the release commit.
+    - Focused economics settlement tests passed.
+    - Focused hook tests for the economics entrypoint passed.
+    - TypeScript checks for updated dashboard components passed.
+    - Staged release diff private-name scan must pass before the release
+      commit.
 
     Changelog
 
-    - Fixed config export/import seed descriptor behavior.
-    - Fixed local descriptor default materialization.
-    - Fixed platform-managed bundle export shape.
-    - Fixed descriptor-mode platform secret resolution.
-    - Fixed attachment-only message promotion.
-    - Hardened delegated auth cookie forwarding.
-    - Split recorded and shippable telemetry event schemas.
+    - Added ReAct event-source pipeline and event recording policy support.
+    - Added persisted turn cost and timing artifacts.
+    - Added cross-conversation source-pool and artifact recovery support.
+    - Added lexical memory search and reciprocal-rank fusion.
+    - Fixed duplicate prompt indexing and git workspace bad-ref recovery.
+    - Fixed authenticated profile state reporting.
+    - Fixed plan/wallet settlement allocation.
 config:
-    version: "2026.5.29.1534"
+    version: "2026.6.5.342"
