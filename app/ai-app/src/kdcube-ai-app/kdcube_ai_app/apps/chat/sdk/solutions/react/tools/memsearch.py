@@ -97,6 +97,14 @@ ALLOWED_ORDERS = frozenset({ORDER_ASC, ORDER_DESC})
 # react.tool.result blocks on the timeline.
 SNIPPET_PREVIEW_CHARS = 500
 
+# Maximum number of hits returned per source conversation in a single
+# memsearch response. Caps the visibility of a single conversation's
+# polluted/repetitive content (e.g., the agent's own recovery sessions
+# about a topic) so other conversations get representation in the top-k.
+# Cap of 2 keeps legitimate multi-turn matches inside one conversation
+# while preventing one conversation from monopolizing the result.
+MAX_HITS_PER_CONVERSATION = 2
+
 # Whitelist of hit-level fields surfaced in the JSON result envelope. Anything
 # else on the rich hit (sim/rec/rrf sub-scores, ranks, matched_via_role lists,
 # source_query echoes, ts, best_turn_id, conversation_id, turn_id) is telemetry
@@ -351,6 +359,10 @@ async def handle_react_memsearch(*, ctx_browser: Any, state: Dict[str, Any], too
                 search_targets.append({"where": where, "query": query})
                 seen_where.add(where)
 
+            # Over-fetch from the retriever so the per-conversation dedup
+            # below has enough material to fill the user-requested top_k
+            # after collapsing same-conversation runs.
+            retriever_top_k = max(top_k * MAX_HITS_PER_CONVERSATION + top_k, top_k + 10)
             best_tid, hits = await ctx_browser.search(
                 targets=search_targets,
                 user=user,
@@ -358,11 +370,27 @@ async def handle_react_memsearch(*, ctx_browser: Any, state: Dict[str, Any], too
                 scope=scope,
                 scoring_mode="rrf_hybrid",
                 half_life_days=7.0,
-                top_k=top_k,
+                top_k=retriever_top_k,
                 days=days,
                 with_payload=True,
                 timestamp_filters=_timestamp_filters_from_params(params),
             )
+            # Per-conversation dedup: keep at most MAX_HITS_PER_CONVERSATION
+            # hits per source conversation, preserving the retriever's rank
+            # order, then trim to the user-requested top_k. Prevents one
+            # noisy / repetitive conversation from monopolizing the result.
+            if hits:
+                per_conv_count: Dict[str, int] = {}
+                deduped: List[Dict[str, Any]] = []
+                for h in hits:
+                    conv = _as_str(h.get("conversation_id") or conversation_id)
+                    if per_conv_count.get(conv, 0) >= MAX_HITS_PER_CONVERSATION:
+                        continue
+                    deduped.append(h)
+                    per_conv_count[conv] = per_conv_count.get(conv, 0) + 1
+                    if len(deduped) >= top_k:
+                        break
+                hits = deduped
         for h in ([] if catalog_mode else (hits or [])):
             tid = (h.get("turn_id") or "").strip()
             if not tid:
