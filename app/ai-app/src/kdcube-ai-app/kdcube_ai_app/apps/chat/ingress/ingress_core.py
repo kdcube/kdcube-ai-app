@@ -1705,6 +1705,21 @@ async def process_chat_message(
             reason=reason,
         )
 
+    try:
+        for item in published_events:
+            await external_event_source.mark_promoted(
+                message_id=item.message_id,
+                claimant_id="ingress.initial_wakeup",
+                task_id=task_id,
+            )
+    except Exception:
+        logger.warning(
+            "Failed to mark initially queued external event wakeup as promoted conversation=%s task_id=%s",
+            conversation_id,
+            task_id,
+            exc_info=True,
+        )
+
     # --- Success: emit start + ack payload ---
     try:
         await chat_comm.emit_start(

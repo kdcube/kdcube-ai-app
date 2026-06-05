@@ -334,6 +334,9 @@ async def test_regular_attachment_only_message_is_enqueued(_patch_ingress_depend
     events = await source.read_since(0)
     assert len(events) == 1
     assert events[0].kind == "external_event"
+    stored = await source.get_event(result.event_id)
+    assert stored is not None
+    assert stored.promoted_task_id == result.task_id
     payload = events[0].task_payload
     accepted_events = payload["request"]["external_events"]
     assert accepted_events[0]["type"] == "event.user.attachment"
