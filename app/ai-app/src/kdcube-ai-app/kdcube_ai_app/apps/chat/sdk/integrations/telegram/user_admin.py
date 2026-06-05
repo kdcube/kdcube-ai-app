@@ -624,6 +624,12 @@ async def submit_react_turn(entrypoint: Any, *, summary: Dict[str, Any]) -> Dict
         if telegram_command_type == "followup"
         else "event.user.prompt"
     )
+    message_data["external_events"] = _telegram_external_events(
+        text=processed_text,
+        attachments=attachments,
+        turn_id=turn_id,
+        text_event_type=text_event_type,
+    )
 
     ingress = IngressConfig(
         transport="telegram",

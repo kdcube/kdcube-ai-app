@@ -38,7 +38,8 @@ The bundle or platform still owns:
 - validation of `X-Telegram-Bot-Api-Secret-Token`
 - Telegram user allow-list, roles, and KDCube user mapping
 - conversation binding for Telegram-originated turns
-- workflow submission and final response delivery
+- workflow submission through conversation `external_events[]`
+- final response delivery through the bundle's Telegram queued-delivery wrapper
 
 ## Telegram Bot Setup
 

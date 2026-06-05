@@ -118,6 +118,74 @@ def test_telegram_user_admin_storage_maps_roles_and_conversations(tmp_path):
     assert storage.claim_telegram_update(update_id="42")["claimed"] is False
 
 
+@pytest.mark.asyncio
+async def test_telegram_submit_react_turn_sends_external_events(tmp_path):
+    from kdcube_ai_app.apps.chat.ingress.ingress_core import IngressResult
+    from kdcube_ai_app.apps.chat.sdk.integrations.telegram import TelegramUserAdminStorage
+    from kdcube_ai_app.apps.chat.sdk.integrations.telegram import user_admin
+
+    storage = TelegramUserAdminStorage(tmp_path)
+    storage.upsert_user(
+        telegram_user_id="2002",
+        telegram_chat_id="1001",
+        telegram_username="elena",
+        kdcube_user_id="user-a",
+        role="registered",
+        conversation_id="conv-main",
+    )
+    user_admin.configure_telegram_user_admin(
+        storage_factory=lambda entrypoint: storage,
+        storage_root_or_error=lambda entrypoint: tmp_path,
+        bundle_id="test.telegram-submit",
+    )
+
+    captured: dict[str, object] = {}
+
+    async def _submit(**kwargs):
+        captured["message_data"] = dict(kwargs["message_data"])
+        return IngressResult(
+            ok=True,
+            conversation_id=kwargs["message_data"]["conversation_id"],
+            turn_id=kwargs["message_data"]["turn_id"],
+            session_id="conv-main",
+            user_type="registered",
+        )
+
+    entrypoint = SimpleNamespace(
+        BUNDLE_ID="test.telegram-submit",
+        chat_submitter=SimpleNamespace(submit=_submit),
+        comm_context=SimpleNamespace(
+            actor=SimpleNamespace(tenant_id="tenant-a", project_id="project-a"),
+            meta=SimpleNamespace(instance_id="telegram-test"),
+        ),
+    )
+
+    result = await user_admin.submit_react_turn(
+        entrypoint,
+        summary={
+            "text": "hello from telegram",
+            "chat_id": "1001",
+            "user_id": "2002",
+            "username": "elena",
+            "update_id": "upd-1",
+            "message_id": 42,
+            "attachments": [],
+        },
+    )
+
+    assert result["accepted"] is True
+    message_data = captured["message_data"]
+    events = message_data["external_events"]
+    assert len(events) == 1
+    assert events[0]["type"] == "event.user.prompt"
+    assert events[0]["event_source_id"] == "telegram.user.prompt"
+    assert events[0]["reactive"] is True
+    assert events[0]["payload"] == {
+        "mime": "text/plain",
+        "event": {"text": "hello from telegram"},
+    }
+
+
 def test_telegram_user_admin_uses_bound_comm_bundle_id(tmp_path):
     from kdcube_ai_app.apps.chat.sdk.integrations.telegram import TelegramUserAdminStorage
     from kdcube_ai_app.apps.chat.sdk.integrations.telegram import user_admin

@@ -27,7 +27,8 @@ from kdcube_ai_app.apps.chat.sdk.integrations import telegram
 The SDK owns Telegram protocol mechanics and the reusable Telegram user
 registry store. The bundle still owns application policy: where the registry is
 stored, which roles are allowed, which conversation a Telegram chat is bound to,
-and which entrypoint/message handler handles the submitted message.
+which entrypoint/message handler handles the submitted message, and how the
+Telegram update becomes conversation `external_events[]`.
 
 External BotFather, webhook, public URL, and Mini App setup is documented
 separately in `telegram-external-prereq-README.md`. Keep this article focused
@@ -171,7 +172,7 @@ async def telegram_webhook(self, **update):
 
 The configured `public_auth` checks Telegram's header secret before the handler
 runs. `handle_webhook(...)` owns duplicate update claims, registry lookup,
-conversation binding, chat-core submission, activity streaming, and final
+conversation binding, chat ingress submission, activity streaming, and final
 Telegram delivery through the configured helpers.
 
 ### 5. Expose Mini App Operations Only Through `initData` Verification
@@ -340,7 +341,8 @@ Telegram update
   -> telegram_command_kind_and_text(text)
   -> raw_attachments_from_telegram(attachments)
   -> ChatIngressSubmitter.submit(...)
-  -> shared chat_core processing
+       message_data.external_events[] contains event.user.*
+  -> shared conversation ingress processing
   -> ReAct workflow
   -> deliver_react_turn_to_telegram(...)
        -> render_react_turn_messages(...)
@@ -350,6 +352,45 @@ Telegram update
 `ChatIngressSubmitter` is provided by the chat service layer. Telegram helpers
 prepare the transport-specific inputs; the submitter sends the message through
 the same ingestion core used by browser transports.
+
+Telegram is not a separate downstream request shape. By the time a Telegram
+turn reaches conversation ingress, user text and Telegram files are represented
+as the same plural event batch used by every other client:
+
+```json
+{
+  "conversation_id": "conv-main",
+  "turn_id": "turn_2026-06-05-10-00-00-000",
+  "payload": {
+    "source": "telegram",
+    "telegram": {
+      "chat_id": "12345",
+      "update_id": "98765",
+      "turn_id": "turn_2026-06-05-10-00-00-000"
+    }
+  },
+  "external_events": [
+    {
+      "event_id": "telegram.prompt.abc123",
+      "type": "event.user.prompt",
+      "event_source_id": "telegram.user.prompt",
+      "logical_path": "ev:turn_2026-06-05-10-00-00-000.events/telegram.prompt.abc123",
+      "reactive": true,
+      "agent_id": "react",
+      "payload": {
+        "mime": "text/plain",
+        "event": {"text": "hello from telegram"}
+      }
+    }
+  ]
+}
+```
+
+Telegram attachments are additional `event.user.attachment` entries in the same
+`external_events[]` array. When a Telegram update contains attachments without
+text, the attachment event is reactive and the SDK adds explicit prompt text
+asking the agent to inspect the attachments and ask a focused follow-up if the
+user's intent is unclear.
 
 ## Incoming Updates
 
@@ -388,21 +429,23 @@ Telegram slash commands can map to chat continuation kinds:
 ```python
 from kdcube_ai_app.apps.chat.sdk.integrations.telegram import telegram_command_kind_and_text
 
-message_kind, processed_text = telegram_command_kind_and_text(text)
+command_kind, processed_text = telegram_command_kind_and_text(text)
 ```
 
 Mapping:
 
 ```text
-/followup <text>  -> message_kind="followup", text=<text>
-/f <text>         -> message_kind="followup", text=<text>
-/steer <text>     -> message_kind="steer", text=<text>
-/s <text>         -> message_kind="steer", text=<text>
-anything else     -> normal message
+/followup <text>  -> event.user.followup
+/f <text>         -> event.user.followup
+/steer <text>     -> event.user.steer
+/s <text>         -> event.user.steer
+anything else     -> event.user.prompt
 ```
 
-The bundle puts `message_kind` into `message_data` when calling
-`ChatIngressSubmitter.submit(...)`.
+The SDK maps the command into the event type before calling
+`ChatIngressSubmitter.submit(...)`. Do not send a top-level text scalar as the
+authoritative request. The authoritative request is the plural
+`message_data.external_events[]` batch.
 
 ## Submitter Helpers
 
@@ -430,8 +473,53 @@ ingress = telegram_ingress_config(
 raw_attachments = raw_attachments_from_telegram(attachments)
 ```
 
-These helpers only create normalized chat-core inputs. They do not read bundle
+These helpers only create normalized chat ingress inputs. They do not read bundle
 storage, choose a conversation, authorize a user, or enqueue a workflow.
+
+For Telegram webhook turns that go through the queue, `submit_react_turn(...)`
+must pass `message_data.external_events[]` to the shared ingress submitter.
+Without that event batch, ingress rejects the submission as
+`missing_external_events` before a workflow can be enqueued.
+
+## Queued Delivery Boundary
+
+Queued Telegram turns have two distinct phases:
+
+```text
+webhook request
+  -> submit_react_turn(...)
+       stores Telegram metadata under request.payload.telegram
+       submits external_events[] through ChatIngressSubmitter
+  -> returns accepted/rejected webhook acknowledgement
+
+processor turn
+  -> bundle entrypoint run path wraps the real ReAct runner with
+     telegram_user_admin.run_with_queued_telegram_delivery(...)
+       -> TelegramActivityStreamer streams progress for that turn
+       -> deliver_react_turn_to_telegram(...) sends the final rendered result
+```
+
+The webhook should not spawn a separate relay-subscriber task to deliver the
+final answer. Final delivery belongs to the processor-side queued-delivery
+wrapper because that code sees the actual turn result, turn log, timeline,
+streamed-file de-duplication keys, and configured `send_responses` policy.
+A webhook-side background delivery path can duplicate messages for bundles that
+already use the wrapper and can bypass the normal ReAct rendering path.
+
+Reference bundles that support Telegram queued delivery should wrap their run
+method, for example:
+
+```python
+res = await telegram_user_admin.run_with_queued_telegram_delivery(
+    self,
+    runner=lambda: super().run(*args, **kwargs),
+)
+```
+
+If a bundle accepts Telegram webhook turns but never delivers the final answer,
+first check whether its processor run path uses
+`run_with_queued_telegram_delivery(...)`. Do not add a second delivery loop to
+`handle_webhook(...)`.
 
 ## Rendering Responses
 
