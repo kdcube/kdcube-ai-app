@@ -50,6 +50,11 @@ MCP_TOOL_SPECS: List[Dict[str, Any]] = [
     {"server_id": "docs", "alias": "docs", "tools": ["*"]},
     {"server_id": "local", "alias": "local", "tools": ["*"]},
     {"server_id": "firecrawl", "alias": "firecrawl", "tools": ["*"]},
+    {
+        "server_id": "knowledge",
+        "alias": "knowledge",
+        "tools": ["*"],
+    },
 ]
 
 TOOL_RUNTIME: Dict[str, str] = {
