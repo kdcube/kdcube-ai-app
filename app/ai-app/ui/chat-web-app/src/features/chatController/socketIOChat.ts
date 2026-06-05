@@ -64,7 +64,10 @@ class SocketIOChat extends ChatBase {
         this._timeout = options.timeout === undefined ? 10000 : options.timeout;
 
         this._manager = getManager(this._baseUrl, this._path, {
-            reconnectionAttempts: 1000,
+            reconnectionAttempts: 3,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000,
+            randomizationFactor: 0.25,
             timeout: this._timeout,
         });
         this._socket = this._manager.socket(this._namespace, {auth: {}});

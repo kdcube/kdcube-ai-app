@@ -79,7 +79,8 @@ export async function openChatStream(options: OpenChatStreamOptions): Promise<Op
         reject(new Error('Unable to open the event stream.'))
         return
       }
-      options.onDisconnect?.()
+      eventSource?.close()
+      options.onDisconnect?.('event_stream_error')
     })
   })
 

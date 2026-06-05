@@ -68,6 +68,10 @@ function managerFor(baseUrl: string, path: string): Manager {
       upgrade: false,
       autoConnect: false,
       withCredentials: true,
+      reconnectionAttempts: 3,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      randomizationFactor: 0.25,
     })
     managers.set(key, manager)
   }
@@ -108,7 +112,7 @@ export async function openSocketTransport(
   bindJson<ChatErrorEnvelope>(socket, 'chat_error', options.onChatError)
   bindJson<ConvStatusEnvelope>(socket, 'conv_status', options.onConversationStatus)
   bindJson<ChatServiceEnvelope>(socket, 'chat_service', options.onChatService)
-  socket.on('disconnect', () => options.onDisconnect?.())
+  socket.on('disconnect', (reason: string) => options.onDisconnect?.(reason))
 
   await new Promise<void>((resolve, reject) => {
     const timeout = window.setTimeout(() => {

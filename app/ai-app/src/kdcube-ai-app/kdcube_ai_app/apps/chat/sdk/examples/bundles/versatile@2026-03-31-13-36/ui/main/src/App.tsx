@@ -49,6 +49,9 @@ import { isKdcubePreviewContext, recognizeContextMessage, requestAuthRequired, r
  * host also raises its own login surface; this banner explains why the
  * message did not go through if the visitor dismisses that surface. */
 const AUTH_PROMPT_TEXT = 'Sign in to start chatting.'
+const STREAM_RECONNECT_DELAYS_MS = [1000, 2500, 5000]
+const STREAM_RECONNECT_STABLE_MS = 30000
+const STREAM_RECONNECT_EXHAUSTED_TEXT = 'Connection lost. Send again or use Reconnect to open a fresh stream.'
 
 /** Map a raw send failure (HTTP POST rejection text) to a concise, friendly
  *  one-liner + tone. The server crafts concise messages for live-turn
@@ -138,6 +141,8 @@ export default function App() {
   const stateRef = useRef<ChatState>(state)
   const eventSourceRef = useRef<EventSource | null>(null)
   const connectPromiseRef = useRef<Promise<void> | null>(null)
+  const reconnectTimerRef = useRef<number | null>(null)
+  const reconnectAttemptRef = useRef(0)
   const sessionIdRef = useRef<string | null>(null)
   const streamIdRef = useRef<string | null>(null)
   /* Tail of the in-flight sendMessage chain. Each new send awaits this
@@ -418,11 +423,60 @@ export default function App() {
     }
   }
 
-  const resetTransport = () => {
+  const clearReconnectTimer = () => {
+    if (reconnectTimerRef.current !== null) {
+      window.clearTimeout(reconnectTimerRef.current)
+      reconnectTimerRef.current = null
+    }
+  }
+
+  const closeTransport = () => {
     eventSourceRef.current?.close()
     eventSourceRef.current = null
     streamIdRef.current = null
     connectPromiseRef.current = null
+  }
+
+  const resetTransport = () => {
+    clearReconnectTimer()
+    closeTransport()
+  }
+
+  const pushReconnectExhaustedBanner = () => {
+    const exists = store.getState().chat.banners.some((b) => b.text === STREAM_RECONNECT_EXHAUSTED_TEXT)
+    if (!exists) {
+      dispatch(chatActions.pushBanner({
+        tone: 'warning',
+        text: STREAM_RECONNECT_EXHAUSTED_TEXT,
+        placement: 'composer',
+      }))
+    }
+  }
+
+  const scheduleStreamReconnect = (reason?: string) => {
+    if (!authedRef.current || reconnectTimerRef.current !== null || connectPromiseRef.current) return
+    const attempt = reconnectAttemptRef.current
+    if (attempt >= STREAM_RECONNECT_DELAYS_MS.length) {
+      console.warn('SSE stream reconnect attempts exhausted', { reason })
+      pushReconnectExhaustedBanner()
+      return
+    }
+    const delay = STREAM_RECONNECT_DELAYS_MS[attempt]
+    reconnectAttemptRef.current = attempt + 1
+    console.info('Scheduling SSE stream reconnect', { attempt: attempt + 1, delay, reason })
+    reconnectTimerRef.current = window.setTimeout(() => {
+      reconnectTimerRef.current = null
+      void connectStream().catch((error) => {
+        console.warn('SSE stream reconnect failed', error)
+        scheduleStreamReconnect('reconnect_failed')
+      })
+    }, delay)
+  }
+
+  const handleStreamDisconnect = (reason?: string) => {
+    closeTransport()
+    dispatch(chatActions.setConnectionState('disconnected'))
+    scheduleStreamReconnect(reason)
   }
 
   const handleServiceEvent = (env: ChatServiceEnvelope) => {
@@ -532,7 +586,7 @@ export default function App() {
         onChatError: (env) => dispatch(chatActions.chatErrored(env)),
         onConversationStatus: (env) => dispatch(chatActions.convStatusUpdated(env)),
         onChatService: handleServiceEvent,
-        onDisconnect: () => dispatch(chatActions.setConnectionState('disconnected')),
+        onDisconnect: handleStreamDisconnect,
       })
 
       eventSourceRef.current = transport.eventSource
@@ -540,6 +594,11 @@ export default function App() {
       sessionIdRef.current = transport.sessionId
       dispatch(chatActions.setConnectionState('connected'))
       dispatch(chatActions.setSessionId(transport.sessionId))
+      window.setTimeout(() => {
+        if (eventSourceRef.current === transport.eventSource) {
+          reconnectAttemptRef.current = 0
+        }
+      }, STREAM_RECONNECT_STABLE_MS)
       if (stateRef.current.conversationId) {
         void requestConversationStatusForCurrentStream(stateRef.current.conversationId)
       }
@@ -715,6 +774,7 @@ export default function App() {
 
   const handleReconnect = async () => {
     resetTransport()
+    reconnectAttemptRef.current = 0
     try {
       await connectStream()
       setBootError(null)

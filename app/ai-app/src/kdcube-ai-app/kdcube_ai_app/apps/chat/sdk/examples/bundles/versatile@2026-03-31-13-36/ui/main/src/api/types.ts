@@ -181,7 +181,7 @@ export interface OpenChatStreamOptions {
   onChatError?: (payload: ChatErrorEnvelope) => void
   onConversationStatus?: (payload: ConvStatusEnvelope) => void
   onChatService?: (payload: ChatServiceEnvelope) => void
-  onDisconnect?: () => void
+  onDisconnect?: (reason?: string) => void
 }
 
 export interface OpenChatStreamResult {
