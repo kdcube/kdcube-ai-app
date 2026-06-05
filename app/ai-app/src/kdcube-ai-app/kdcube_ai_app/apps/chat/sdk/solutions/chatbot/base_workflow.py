@@ -1317,6 +1317,55 @@ class BaseWorkflow():
             })
         return entries
 
+    # Tools that don't produce new substantive content — they only retrieve
+    # or inspect what already exists. A turn whose only tool calls came from
+    # this set is a "recovery session" (the agent was looking things up, not
+    # producing). We tag its working summary so future memsearches can skip
+    # the agent's own recovery activity by default, instead of recursively
+    # surfacing it for every future query about the same topic.
+    _RECOVERY_TOOL_IDS = frozenset({
+        "react.memsearch",
+        "react.read",
+        "react.rg",
+        "react.pull",
+        "react.checkout",
+        "react.plan",
+        "react.hide",
+    })
+
+    def _is_recovery_turn(self, *, turn_id: str) -> bool:
+        """
+        Return True iff the turn called `react.memsearch` at least once and
+        every tool it called was in the recovery/read-only set. Such a turn
+        produced no new artifact; its working summary is metadata about the
+        agent's lookup activity, not substantive content the user authored.
+        """
+        called_memsearch = False
+        for blk in self._current_turn_blocks(turn_id=turn_id):
+            if str(blk.get("type") or "").strip() != "react.tool.call":
+                continue
+            tid = ""
+            payload_text = blk.get("text")
+            if isinstance(payload_text, str) and payload_text:
+                try:
+                    payload = json.loads(payload_text)
+                except Exception:
+                    payload = None
+                if isinstance(payload, dict):
+                    tid = str(payload.get("tool_id") or "").strip()
+            if not tid:
+                meta = blk.get("meta") if isinstance(blk.get("meta"), dict) else {}
+                tid = str(meta.get("tool_id") or blk.get("tool_id") or "").strip()
+            if not tid:
+                continue
+            if tid not in self._RECOVERY_TOOL_IDS:
+                # A non-recovery tool was called — this turn produced or
+                # acted on something new.
+                return False
+            if tid == "react.memsearch":
+                called_memsearch = True
+        return called_memsearch
+
     def _iter_turn_internal_note_entries(self, *, turn_id: str) -> List[Dict[str, Any]]:
         entries: List[Dict[str, Any]] = []
         for blk in self._current_turn_blocks(turn_id=turn_id):
@@ -1459,6 +1508,7 @@ class BaseWorkflow():
             persisted += 1
             persisted_completions += 1
         summary_entries = self._iter_turn_working_summary_entries(turn_id=turn_id)
+        is_recovery_turn = self._is_recovery_turn(turn_id=turn_id) if summary_entries else False
         for entry in summary_entries:
             path = str(entry.get("path") or "").strip()
             if not path or path in scratchpad.persisted_turn_entry_paths:
@@ -1478,6 +1528,12 @@ class BaseWorkflow():
                 "kind:working.summary",
                 f"turn:{turn_id}",
             ] + [f"topic:{t}" for t in scratchpad.turn_topics_plain or []]
+            if is_recovery_turn:
+                # The agent only called memsearch / read / pull / etc. — no new
+                # artifact was produced. Tag the summary so memsearch can
+                # exclude these by default. Otherwise the agent's own
+                # search-about-X summaries dominate future searches for X.
+                tags.append("kind:react.recovery.session")
             scope = str(meta.get("summary_scope") or "").strip()
             if scope:
                 tags.append(f"summary_scope:{scope}")

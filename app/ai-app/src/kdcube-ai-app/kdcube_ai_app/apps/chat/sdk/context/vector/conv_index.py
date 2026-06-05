@@ -1816,6 +1816,7 @@ class ConvIndex:
             bundle_id: Optional[str] = None,
             half_life_days: float = 7.0,
             timestamp_filters: Optional[List[Dict[str, Any]]] = None,
+            include_recovery_sessions: bool = False,
     ) -> List[Dict[str, Any]]:
         """
         Two-stage search optimized for finding turn logs:
@@ -1842,6 +1843,12 @@ class ConvIndex:
             "m.ts >= now() - ($2::text || ' days')::interval",
             "m.ts + (m.ttl_days || ' days')::interval >= now()",
         ]
+
+        # Exclude working summaries tagged kind:react.recovery.session by
+        # default — these are the agent's own memsearch/recovery activity
+        # which would self-pollute future searches for the same topic.
+        if not include_recovery_sessions:
+            where.append("NOT (m.tags @> ARRAY['kind:react.recovery.session']::text[])")
 
         # Semantic similarity (if embedding provided)
         if query_embedding is not None:
@@ -1976,6 +1983,7 @@ class ConvIndex:
             bundle_id: Optional[str] = None,
             half_life_days: float = 7.0,
             timestamp_filters: Optional[List[Dict[str, Any]]] = None,
+            include_recovery_sessions: bool = False,
     ) -> List[Dict[str, Any]]:
         """
         Lexical sibling of search_turn_logs_via_content.
@@ -2010,6 +2018,8 @@ class ConvIndex:
             "m.ts + (m.ttl_days || ' days')::interval >= now()",
             "m.search_tsv @@ (websearch_to_tsquery('simple', $3) || websearch_to_tsquery('english', $3))",
         ]
+        if not include_recovery_sessions:
+            where.append("NOT (m.tags @> ARRAY['kind:react.recovery.session']::text[])")
 
         def _role_tag_clause(roles: Sequence[str], tags: Optional[Sequence[str]]) -> str:
             args.append(list(roles))
@@ -2131,6 +2141,7 @@ class ConvIndex:
             half_life_days: float = 7.0,
             timestamp_filters: Optional[List[Dict[str, Any]]] = None,
             min_word_similarity: float = 0.2,
+            include_recovery_sessions: bool = False,
     ) -> List[Dict[str, Any]]:
         """
         Trigram-similarity sibling of search_turn_logs_via_content_lexical.
@@ -2177,6 +2188,8 @@ class ConvIndex:
             "m.ts + (m.ttl_days || ' days')::interval >= now()",
             "(m.text <> '' OR m.anchors_text <> '')",
         ]
+        if not include_recovery_sessions:
+            where.append("NOT (m.tags @> ARRAY['kind:react.recovery.session']::text[])")
 
         def _role_tag_clause(roles: Sequence[str], tags: Optional[Sequence[str]]) -> str:
             args.append(list(roles))

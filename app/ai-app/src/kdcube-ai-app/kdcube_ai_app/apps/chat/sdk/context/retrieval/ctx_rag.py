@@ -2909,6 +2909,7 @@ async def search_context(
         custom_score_fn: Optional[Callable] = None,
         with_payload: bool = False,
         timestamp_filters: Optional[List[Dict[str, Any]]] = None,
+        include_recovery_sessions: bool = False,
         logger = None,
 ) -> tuple[str | None, list[dict]]:
     """
@@ -2953,6 +2954,7 @@ async def search_context(
                 scope=scope,
                 half_life_days=half_life_days,
                 timestamp_filters=timestamp_filters,
+                include_recovery_sessions=include_recovery_sessions,
             )
             return res or []
         except Exception as e:
@@ -2974,6 +2976,7 @@ async def search_context(
                 scope=scope,
                 half_life_days=half_life_days,
                 timestamp_filters=timestamp_filters,
+                include_recovery_sessions=include_recovery_sessions,
             )
             return res or []
         except Exception as e:
@@ -2995,6 +2998,7 @@ async def search_context(
                 scope=scope,
                 half_life_days=half_life_days,
                 timestamp_filters=timestamp_filters,
+                include_recovery_sessions=include_recovery_sessions,
             )
             return res or []
         except Exception as e:

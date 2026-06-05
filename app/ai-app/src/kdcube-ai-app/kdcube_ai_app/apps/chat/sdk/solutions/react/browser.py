@@ -1418,6 +1418,7 @@ class ContextBrowser:
             custom_score_fn: Optional[Any] = None,
             with_payload: bool = False,
             timestamp_filters: Optional[List[Dict[str, Any]]] = None,
+            include_recovery_sessions: bool = False,
             conv_idx: Optional[Any] = None,
             ctx_client: Optional[ContextRAGClient] = None,
             model_service: Optional[Any] = None,
@@ -1447,6 +1448,7 @@ class ContextBrowser:
             custom_score_fn=custom_score_fn,
             with_payload=with_payload,
             timestamp_filters=timestamp_filters,
+            include_recovery_sessions=include_recovery_sessions,
             logger=self.log,
         )
 

@@ -56,6 +56,7 @@ TOOL_SPEC = {
         "order": "str (optional). asc|desc for catalog results. Default asc.",
         "top_k": "int (optional). Max hits to return (default 5).",
         "days": "int (optional). Lookback window in days (default 365).",
+        "include_recovery_sessions": "bool (optional). Default false. Working summaries from turns where you only called memsearch/read/pull (no new artifact produced) are excluded by default, because they self-reference the search topic and would dominate future searches for it. Set true ONLY when explicitly asked to introspect prior memsearch activity.",
     },
     "returns": "turn hits with conversation_id, turn_id, turn_index_path, working_summary_path, snippets, timestamps, and scores/ordinals when available",
     "constraints": [
@@ -264,6 +265,7 @@ async def handle_react_memsearch(*, ctx_browser: Any, state: Dict[str, Any], too
     order = _as_str(params.get("order") or ORDER_ASC).lower()
     if order not in ALLOWED_ORDERS:
         order = ORDER_ASC
+    include_recovery_sessions = bool(params.get("include_recovery_sessions"))
     catalog_mode = mode in CATALOG_MODES or ordinal is not None or (has_temporal_bounds and not query)
     if catalog_mode:
         effective_mode = mode if mode in CATALOG_MODES else (
@@ -374,6 +376,7 @@ async def handle_react_memsearch(*, ctx_browser: Any, state: Dict[str, Any], too
                 days=days,
                 with_payload=True,
                 timestamp_filters=_timestamp_filters_from_params(params),
+                include_recovery_sessions=include_recovery_sessions,
             )
             # Per-conversation dedup: keep at most MAX_HITS_PER_CONVERSATION
             # hits per source conversation, preserving the retriever's rank

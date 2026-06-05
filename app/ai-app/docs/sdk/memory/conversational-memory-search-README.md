@@ -520,6 +520,46 @@ RRF `k` and the recency lift constant): per-hit `(sem_rank, lex_rank,
 trgm_rank, final_score, recency_factor)` logged at memsearch's call site.
 The agent never sees those.
 
+## Avoiding the Self-Reference Feedback Loop
+
+The Retrieval-anchors contract says anchors should be *verbatim strings the
+user might re-quote — including the user's exact wording*. That works for
+substantive turns ("user asked about X, agent gave info about X"). For
+recovery turns ("user asked whether we previously discussed X, agent searched
+and found / didn't find"), it self-poisons: the agent dutifully anchors X,
+X gets indexed, the next search for X retrieves *this* turn instead of the
+original X conversation. Repeated searches make the pollution worse.
+
+The runtime breaks this loop structurally at the index layer:
+
+1. **Detection at persistence time** (`base_workflow._is_recovery_turn`).
+   When persisting the working summary, the runtime inspects the turn's
+   tool-call manifest. If the turn called `react.memsearch` at least once
+   and every tool it called was in the recovery/read-only set
+   (`react.memsearch | react.read | react.rg | react.pull | react.checkout
+   | react.plan | react.hide`), the turn produced no new artifact — it was a
+   recovery session.
+
+2. **Tag at persistence time.** The working summary's tags get
+   `kind:react.recovery.session` added.
+
+3. **Default exclusion in all three retrievers.** Each of the semantic,
+   lexical, and trigram retrievers adds
+   `NOT (tags @> ARRAY['kind:react.recovery.session'])` to the WHERE clause
+   by default. Recovery summaries are invisible to future memsearches even
+   though they're still in `conv_messages` (so the agent's own immediate
+   turn-recall paths still find them).
+
+4. **Opt-in surfacing.** `react.memsearch` exposes
+   `include_recovery_sessions: bool` (default false). The agent sets this
+   to true only when explicitly asked to introspect prior search activity
+   (e.g., *"what did you previously try to find?"*).
+
+Two side benefits: (a) per-conversation cap of 2 hits stops any single
+polluted conversation from dominating top-k visibility on top of the
+exclusion, and (b) the rich struct on `state["last_tool_result"]` keeps
+everything for runtime callers even when the envelope drops noise.
+
 ## Cross-Conversation Recovery — The Full Chain
 
 `scope="user"` is the entry point. Every path memsearch returns from a
