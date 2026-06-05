@@ -126,13 +126,17 @@ Critical Python import rule:
 Critical widget/browser rule:
 
 - widget and generated HTML API clients must be frame-origin aware
+- buildable `ui/main` apps and source-folder widgets must use relative built
+  asset URLs. For Vite set `base: './'`; built HTML should contain
+  `./assets/...`, not `/assets/...`
 - request runtime `baseUrl` from the KDCube config bridge and use it to build
   `/api/integrations/...` operation URLs
 - if runtime config is unavailable, fall back only to that frame's own
   `window.location.origin`
 - do not use `window.top.location`, `document.referrer`, or an embedding host
   page URL as the API base
-- read [bundle-widget-integration-README.md#frame-origin-and-api-base-url](../bundle-widget-integration-README.md#frame-origin-and-api-base-url)
+- read [bundle-widget-integration-README.md#source-folder-widget-apps](../bundle-widget-integration-README.md#source-folder-widget-apps)
+  and [bundle-widget-integration-README.md#frame-origin-and-api-base-url](../bundle-widget-integration-README.md#frame-origin-and-api-base-url)
   before writing widget networking code
 
 Critical bundle-to-browser event rule:

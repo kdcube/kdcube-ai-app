@@ -128,6 +128,24 @@ the UI, while actions that need a user (e.g. sending a chat turn) still return
 The injected `<base href>` is route-aware, so relative assets resolve under
 `/public/static/`.
 
+Buildable bundle browser apps must therefore emit relative asset URLs. For Vite
+apps under `ui/main` or `ui/widgets/<alias>`, set `base: './'`:
+
+```ts
+export default defineConfig({
+  base: './',
+  build: {
+    outDir: process.env.OUTDIR || 'dist',
+    emptyOutDir: true,
+  },
+})
+```
+
+After `npm run build`, inspect `dist/index.html`. It should contain
+`./assets/index-....js` and `./assets/index-....css`. Root-relative
+`/assets/...` URLs bypass the injected route base and make the browser request
+assets from the KDCube domain root instead of the bundle static route.
+
 For one widget codebase that runs in both KDCube and Telegram:
 
 - detect Telegram with `window.Telegram?.WebApp?.initData`

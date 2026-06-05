@@ -1256,6 +1256,9 @@ Current behavior:
   current proc
 
 This is the route used for bundle main-view apps embedded in the host UI.
+The built app must use relative asset URLs. For Vite main UIs, configure
+`base: './'` and verify the built HTML uses `./assets/...`; `/assets/...`
+will resolve at the KDCube domain root instead of this bundle static route.
 
 ## 4) Role visibility
 

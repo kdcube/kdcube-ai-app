@@ -298,7 +298,7 @@ Build command contract:
   positional build argument
 - for Vite, configure `build.outDir` from `process.env.OUTDIR`
 - for Vite, `base: './'` is required so built assets are relative to the
-  widget route
+  widget route; the same rule applies to bundle main views under `ui/main`
 
 Minimal Vite config:
 
