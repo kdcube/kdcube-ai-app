@@ -2981,6 +2981,27 @@ async def search_context(
                 logger.log(f"Lexical search failed for where={where}: {e}", "WARN")
             return []
 
+    async def _search_one_trigram(where: str, query: str) -> list[dict]:
+        try:
+            where, search_roles, search_tags = _resolve_roles_and_tags(where)
+            res = await conv_idx.search_turn_logs_via_content_trigram(
+                user_id=user,
+                conversation_id=conv,
+                query_text=query,
+                search_roles=search_roles,
+                search_tags=search_tags,
+                top_k=top_k,
+                days=days,
+                scope=scope,
+                half_life_days=half_life_days,
+                timestamp_filters=timestamp_filters,
+            )
+            return res or []
+        except Exception as e:
+            if logger:
+                logger.log(f"Trigram search failed for where={where}: {e}", "WARN")
+            return []
+
     # Collect all hits
     hits = []
 
@@ -3040,9 +3061,14 @@ async def search_context(
             continue
 
         if scoring_mode == "rrf_hybrid":
-            sem_rows, lex_rows = await asyncio.gather(
+            # Three parallel retrievers: semantic (cosine on embedding),
+            # lexical (BM25F via ts_rank_cd on search_tsv, simple+english union),
+            # trigram (word_similarity on anchors and body — catches spelling
+            # variants like Vinnitsa/Vinnytsia that token-equality misses).
+            sem_rows, lex_rows, trgm_rows = await asyncio.gather(
                 _search_one(where, query, embedding=t.get("embedding")),
                 _search_one_lexical(where, query),
+                _search_one_trigram(where, query),
             )
 
             def _rank_map(rows: list[dict]) -> dict:
@@ -3056,9 +3082,10 @@ async def search_context(
 
             sem_rank = _rank_map(sem_rows)
             lex_rank = _rank_map(lex_rows)
+            trgm_rank = _rank_map(trgm_rows)
 
             # Prefer the semantic row's payload (text/hosted_uri/log artifact);
-            # fall back to lexical when only lexical produced the turn.
+            # fall back to lexical, then trigram, when only those produced the turn.
             by_tid: dict = {}
             for r in sem_rows:
                 tid = r.get("turn_id") or _turn_id_from_tags_safe(r.get("tags") or [])
@@ -3068,6 +3095,10 @@ async def search_context(
                 tid = r.get("turn_id") or _turn_id_from_tags_safe(r.get("tags") or [])
                 if tid and tid not in by_tid:
                     by_tid[tid] = ("lex", r)
+            for r in trgm_rows:
+                tid = r.get("turn_id") or _turn_id_from_tags_safe(r.get("tags") or [])
+                if tid and tid not in by_tid:
+                    by_tid[tid] = ("trgm", r)
 
             for tid, (origin, row) in by_tid.items():
                 rrf_score = 0.0
@@ -3075,12 +3106,15 @@ async def search_context(
                     rrf_score += 1.0 / (_RRF_K + sem_rank[tid])
                 if tid in lex_rank:
                     rrf_score += 1.0 / (_RRF_K + lex_rank[tid])
+                if tid in trgm_rank:
+                    rrf_score += 1.0 / (_RRF_K + trgm_rank[tid])
                 rec = float(row.get("rec") or 0.0)
                 final_score = rrf_score * (1.0 + _RECENCY_LIFT * rec)
                 extra = {
                     "rrf_score": rrf_score,
                     "sem_rank": sem_rank.get(tid),
                     "lex_rank": lex_rank.get(tid),
+                    "trgm_rank": trgm_rank.get(tid),
                     "primary_source": origin,
                 }
                 hits.append(_row_to_hit(

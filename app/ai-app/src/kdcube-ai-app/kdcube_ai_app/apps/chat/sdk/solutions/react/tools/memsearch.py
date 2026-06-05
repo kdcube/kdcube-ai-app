@@ -515,7 +515,7 @@ async def handle_react_memsearch(*, ctx_browser: Any, state: Dict[str, Any], too
                 "ts": h["ts"].isoformat() if hasattr(h.get("ts"), "isoformat") else h.get("ts"),
                 "best_turn_id": best_tid,
             }
-            for key in ("rrf_score", "sem_rank", "lex_rank", "primary_source"):
+            for key in ("rrf_score", "sem_rank", "lex_rank", "trgm_rank", "primary_source"):
                 if key in h:
                     hit_out_meta[key] = h[key]
             search_hits_formatted.append(hit_out_meta)

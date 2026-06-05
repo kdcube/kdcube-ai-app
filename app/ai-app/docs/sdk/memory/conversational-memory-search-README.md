@@ -270,45 +270,66 @@ ranked result lists are fused by Reciprocal Rank Fusion (RRF) and lifted by
 recency.
 
 ```text
-For each target:
+For each target — three parallel retrievers:
 
-  ┌─ Semantic ────────────────────────────────┐
-  │  embed(query) → cosine on conv_messages.  │
-  │  embedding via pgvector ivfflat.           │
-  │  Returns turn-grouped rows ranked by sim.  │
-  └───────────────────────────────────────────┘
-  ┌─ Lexical ─────────────────────────────────┐
-  │  websearch_to_tsquery('english', query)   │
-  │   against conv_messages.search_tsv         │
-  │   (generated: setweight('A', anchors_text)│
-  │   || setweight('B', text)). Ranked by      │
-  │   ts_rank_cd(...) with log-length norm.    │
-  └───────────────────────────────────────────┘
+  +-- Semantic --------------------------------+
+  |  embed(query) -> cosine on conv_messages.  |
+  |  embedding via pgvector ivfflat.            |
+  |  Returns turn-grouped rows ranked by sim.   |
+  +--------------------------------------------+
+  +-- Lexical (BM25F) -------------------------+
+  |  (websearch_to_tsquery('simple',  q)        |
+  |   || websearch_to_tsquery('english', q))    |
+  |   against conv_messages.search_tsv          |
+  |   (generated: setweight('A', anchors_text)  |
+  |   || setweight('B', text)).                 |
+  |  Union analyzers match anchors (simple)     |
+  |  AND body (english) without one side        |
+  |  silently mismatching the query side.       |
+  |  Ranked by ts_rank_cd(...) with log-length  |
+  |  norm.                                       |
+  +--------------------------------------------+
+  +-- Trigram (fuzzy) -------------------------+
+  |  word_similarity(token, anchors_text) and   |
+  |  word_similarity(token, text) per query     |
+  |  token, weighted 1.0 on anchors / 0.5 on    |
+  |  body. Backed by gin (text gin_trgm_ops).   |
+  |  Catches spelling variants (Vinnitsa <->   |
+  |  Vinnytsia), typos, and morphological       |
+  |  drift that token-equality misses.          |
+  |  Threshold: word_similarity >= 0.3.         |
+  +--------------------------------------------+
 
 Fusion (per turn_id):
 
-  rrf_score = 1/(60 + sem_rank) + 1/(60 + lex_rank)
-              (each term contributes only if the turn appeared in that list)
+  rrf_score = 1/(60 + sem_rank)
+            + 1/(60 + lex_rank)
+            + 1/(60 + trgm_rank)
+              (each term contributes only if the turn appeared in
+               that retriever's top-k)
 
-  final_score = rrf_score × (1 + 0.25 × recency)
-                where recency = exp(-ln(2) × age / half_life_days),
+  final_score = rrf_score x (1 + 0.25 x recency)
+                where recency = exp(-ln(2) x age / half_life_days),
                 half_life_days = 7
 ```
 
-Three things to notice about this shape:
+Four things to notice about this shape:
 
-1. **RRF fuses by rank position, not raw score.** Cosine similarity and
-   `ts_rank_cd` live on different scales; a weighted sum would over- or
-   under-weight one of them depending on query and corpus. Position-based
-   fusion is robust against that.
+1. **RRF fuses by rank position, not raw score.** Cosine similarity,
+   `ts_rank_cd`, and `word_similarity` live on entirely different scales
+   — a weighted sum would over- or under-weight one depending on query
+   and corpus. Position-based fusion is robust against that.
 2. **Recency is multiplicative on the fused rank score.** It nudges fresh
    turns up without overwhelming the lexical/semantic ordering. The 0.25
    ceiling is intentionally modest.
-3. **A turn does not have to appear in both lists.** Semantic-only or
-   lexical-only matches are still returned; they just get one RRF term
-   instead of two. This is the entire reason BM25 was added — semantic search
-   misses literal strings (filenames, error messages, exact user phrasings)
-   that the lexical side catches.
+3. **A turn does not have to appear in all three lists.** Semantic-only,
+   lexical-only, or trigram-only matches still return; they just get
+   one or two RRF terms instead of three.
+4. **The three retrievers cover different failure modes.** Semantic
+   handles paraphrase; lexical handles literal token recall (filenames,
+   error strings, exact phrasings the user might re-quote); trigram
+   handles spelling variants and typos that defeat token-equality. None
+   of the three alone is sufficient.
 
 The hybrid path applies only when `query` is set. The catalog modes (ordinal,
 temporal date-window without query, timeline overview) use the persisted turn
@@ -482,14 +503,14 @@ per snippet:
 Conversation and turn are encoded in the snippet paths themselves; carrying
 them as separate fields would be redundant. Timestamps, sub-scores
 (`sim_score`, `recency_score`, `rrf_score`), per-side ranks (`sem_rank`,
-`lex_rank`), `primary_source`, `matched_via_role(s)`, and `source_query`
-echoes are all omitted — they're telemetry for offline analysis and don't
-drive agent decisions.
+`lex_rank`, `trgm_rank`), `primary_source`, `matched_via_role(s)`, and
+`source_query` echoes are all omitted — they're telemetry for offline
+analysis and don't drive agent decisions.
 
 Telemetry that *is* recorded (outside the envelope, for offline tuning of
 RRF `k` and the recency lift constant): per-hit `(sem_rank, lex_rank,
-final_score, recency_factor)` logged at memsearch's call site. The agent
-never sees those.
+trgm_rank, final_score, recency_factor)` logged at memsearch's call site.
+The agent never sees those.
 
 ## Cross-Conversation Recovery — The Full Chain
 
@@ -601,8 +622,14 @@ kdcube_ai_app/apps/chat/sdk/context/retrieval/ctx_rag.py
   parallel semantic+lexical, RRF (k=60), multiplicative recency lift (0.25)
 
 kdcube_ai_app/apps/chat/sdk/context/vector/conv_index.py
-  search_turn_logs_via_content          (semantic)
-  search_turn_logs_via_content_lexical  (lexical, ts_rank_cd over search_tsv)
+  search_turn_logs_via_content          (semantic, pgvector cosine)
+  search_turn_logs_via_content_lexical  (BM25F via ts_rank_cd over search_tsv;
+                                         queries the union of simple+english
+                                         tsquery so anchors and body each match
+                                         their respective analyzer side)
+  search_turn_logs_via_content_trigram  (fuzzy via word_similarity; catches
+                                         spelling variants and typos the
+                                         token-equality retrievers miss)
   add_message accepts anchors_text
 
 kdcube_ai_app/apps/chat/sdk/context/vector/anchors.py
