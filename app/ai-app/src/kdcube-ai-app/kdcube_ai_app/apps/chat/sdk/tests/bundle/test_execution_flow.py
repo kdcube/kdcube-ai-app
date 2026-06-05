@@ -129,10 +129,15 @@ class TestSequentialRequests:
 
     def test_create_initial_state_called_twice_no_shared_state(self):
         """Two consecutive create_initial_state() calls produce independent states."""
-        from kdcube_ai_app.infra.service_hub.inventory import Config
-        s1 = BaseEntrypoint.create_initial_state({"request_id": "req-1", "text": "first"})
-        s2 = BaseEntrypoint.create_initial_state({"request_id": "req-2", "text": "second"})
+        s1 = BaseEntrypoint.create_initial_state({
+            "request_id": "req-1",
+            "external_events": [{"event_type": "event.user.prompt", "payload": {"text": "first"}}],
+        })
+        s2 = BaseEntrypoint.create_initial_state({
+            "request_id": "req-2",
+            "external_events": [{"event_type": "event.user.prompt", "payload": {"text": "second"}}],
+        })
         assert s1["request_id"] != s2["request_id"]
-        assert s1["text"] != s2["text"]
+        assert s1["external_events"] != s2["external_events"]
         s1["step_logs"].append("x")
         assert s2["step_logs"] == []
