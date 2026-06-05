@@ -105,6 +105,7 @@ class MemoryEntrypointMixin:
                     "retention_days": 30,
                     "storage_prefix": "memory/reconciliation/jobs",
                     "timeout_seconds": 45.0,
+                    "reservation_amount_dollars": 0.10,
                 },
                 "snapshots": {
                     "enabled": True,
@@ -3281,6 +3282,92 @@ class MemoryEntrypointMixin:
             "capabilities": self._memory_capabilities_payload(),
         }
 
+    def _memory_economics_enabled(self) -> bool:
+        return bool(
+            getattr(self, "cp_manager", None)
+            and getattr(self, "rl", None)
+            and getattr(self, "budget_limiter", None)
+        )
+
+    def _memory_reconciliation_reservation_usd(self) -> float:
+        cfg = self._memory_reconciliation_config()
+        try:
+            return float(cfg.get("reservation_amount_dollars") or 0.10)
+        except Exception:
+            return 0.10
+
+    async def _memory_reconciliation_econ_subject(self, job: Dict[str, Any]):
+        """Build an EconomicsSubject from the persisted job scope + carried role.
+
+        privileged/admin is preserved from the carried (enqueue-time) role;
+        paid/registered is re-resolved at run time from economics state.
+        """
+        from kdcube_ai_app.apps.chat.sdk.infra.economics.enforcement import (
+            EconomicsSubject,
+            RoleResolver,
+        )
+
+        scope = job.get("scope") or {}
+        tenant = str(scope.get("tenant") or "")
+        project = str(scope.get("project") or "")
+        user_id = str(scope.get("user_id") or "")
+        carried_role = str(job.get("user_type") or "registered")
+        role = carried_role
+        try:
+            pg_pool = getattr(self, "pg_pool", None)
+            if pg_pool is not None and tenant and project and user_id:
+                resolver = RoleResolver(pg_pool=pg_pool, tenant=tenant, project=project)
+                role = await resolver.resolve(user_id=user_id, carried_role=carried_role)
+        except Exception as exc:
+            logger.warning(
+                "[memory.reconciliation] role resolve failed; using carried role: job_id=%s carried=%s err=%s",
+                job.get("job_id"), carried_role, exc,
+            )
+            role = carried_role
+        return EconomicsSubject(
+            tenant=tenant, project=project, user_id=user_id,
+            user_type=role, timezone=str(job.get("timezone") or "") or None,
+        )
+
+    async def _memory_reconciliation_make_guard(self, job: Dict[str, Any], job_id: str):
+        """Return an EconomicsGuard for the reconciliation job, or None if economics
+        is not configured in this runtime (then the job runs unmetered, as before)."""
+        if not self._memory_economics_enabled():
+            return None
+        from kdcube_ai_app.apps.chat.sdk.infra.economics.enforcement import (
+            EconomicsGuard,
+            EconomicsEstimate,
+            FlowPolicy,
+        )
+
+        subject = await self._memory_reconciliation_econ_subject(job)
+        if not (subject.tenant and subject.project and subject.user_id):
+            return None
+        return EconomicsGuard(
+            self,
+            subject=subject,
+            scope_id=f"mem_reconcile_{job_id}",
+            flow="memory.reconciler",
+            estimate=EconomicsEstimate(reservation_usd=self._memory_reconciliation_reservation_usd()),
+            policy=FlowPolicy(enforce_concurrency=False, emit_user_events=False),
+        )
+
+    async def _memory_reconciliation_mark_economics_denied(self, job: Dict[str, Any], exc) -> None:
+        job_id = str(job.get("job_id") or "")
+        job["status"] = "failed"
+        job["error"] = f"economics_denied: {getattr(exc, 'code', 'rate_limited')}: {exc}"
+        job["economics"] = {
+            "denied": True,
+            "code": getattr(exc, "code", "rate_limited"),
+            "message": str(exc),
+            "data": getattr(exc, "data", {}) or {},
+        }
+        await self._memory_reconciliation_store_job(job)
+        logger.warning(
+            "[memory.reconciliation] job denied by economics: job_id=%s code=%s",
+            job_id, getattr(exc, "code", "rate_limited"),
+        )
+
     async def _memory_reconciliation_run_job(
         self,
         *,
@@ -3303,6 +3390,11 @@ class MemoryEntrypointMixin:
         )
         if job_reconciliation_context:
             job["reconciliation_context"] = job_reconciliation_context
+
+        from kdcube_ai_app.apps.chat.sdk.infra.economics.policy import EconomicsLimitException
+
+        guard = await self._memory_reconciliation_make_guard(job, job_id)
+        econ_decision = None
         try:
             logger.info(
                 "[memory.reconciliation] job start: job_id=%s bundle=%s scope_filter=%s limit=%s agent_type=%s",
@@ -3312,6 +3404,14 @@ class MemoryEntrypointMixin:
                 limit,
                 normalized_agent_type,
             )
+            # Verify the user's quotas/funding at the START of the flow; reserve and
+            # bind accounting under scope_id=mem_reconcile_<job_id>. Denial -> no LLM run.
+            if guard is not None:
+                try:
+                    econ_decision = await guard.__aenter__()
+                except EconomicsLimitException as exc:
+                    await self._memory_reconciliation_mark_economics_denied(job, exc)
+                    return
             job["status"] = "running"
             job = await self._memory_reconciliation_store_job(job)
 
@@ -3426,6 +3526,15 @@ class MemoryEntrypointMixin:
                 job_id,
                 normalized_scope_filter,
             )
+        finally:
+            # Settle economics (run_accounting -> charge/release) for the flow we entered.
+            if guard is not None and econ_decision is not None:
+                try:
+                    await guard.__aexit__(None, None, None)
+                except Exception:
+                    logger.exception(
+                        "[memory.reconciliation] economics settlement failed: job_id=%s", job_id
+                    )
 
     async def _memory_reconciliation_handle_background_job(
         self,
@@ -3688,6 +3797,14 @@ class MemoryEntrypointMixin:
                 ]).encode("utf-8")
             ).hexdigest()[:12]
             job_id = f"memrec_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_{digest}"
+            # Carry the authenticated/gateway-resolved role and timezone into the job so the
+            # detached worker can enforce economics on the correct funding lane. privileged/admin
+            # is NOT derivable from economics state, so it must be persisted here at enqueue time.
+            enqueue_user = getattr(self.comm_context, "user", None)
+            carried_user_type = self._memory_effective_user_type(
+                str(getattr(enqueue_user, "user_type", "") or "registered")
+            )
+            carried_timezone = str(getattr(enqueue_user, "timezone", "") or "")
             job: Dict[str, Any] = {
                 "job_id": job_id,
                 "status": "queued",
@@ -3698,6 +3815,8 @@ class MemoryEntrypointMixin:
                     "user_id": scope.user_id,
                     "bundle_id": scope.bundle_id,
                 },
+                "user_type": carried_user_type,
+                "timezone": carried_timezone,
                 "scope_filter": normalized_scope_filter,
                 "candidate_count": 0,
                 "proposal_count": 0,
@@ -3738,8 +3857,8 @@ class MemoryEntrypointMixin:
 
             from kdcube_ai_app.infra.jobs.stream import RedisBackgroundJobStream
 
-            user = getattr(self.comm_context, "user", None)
-            user_type = self._memory_effective_user_type(str(getattr(user, "user_type", "") or "registered"))
+            user = enqueue_user
+            user_type = carried_user_type
             routing = getattr(self.comm_context, "routing", None)
             stream = RedisBackgroundJobStream(redis, tenant=scope.tenant, project=scope.project)
             try:
