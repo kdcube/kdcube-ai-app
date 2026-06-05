@@ -14,6 +14,8 @@ see_also:
   - ks:docs/sdk/bundle/bundle-interfaces-README.md
   - ks:docs/service/auth/auth-README.md
   - ks:docs/service/comm/README-comm.md
+  - ks:docs/service/comm/conversation-event-bus-and-data-bus-README.md
+  - ks:docs/service/comm/data-bus-README.md
   - ks:docs/service/cicd/embedding-control-plane-frontend-README.md
 ---
 # Bundle Client UI
@@ -194,6 +196,33 @@ For the field-level contract, read
 [bundle-client-communication-README.md](bundle-client-communication-README.md).
 For stream behavior after admission, read
 [bundle-chat-stream-events-README.md](bundle-chat-stream-events-README.md).
+
+## Sending Durable Bundle State Messages
+
+When a bundle UI mutates bundle-owned state, use the Data Bus instead of
+conversation `external_events[]`.
+
+```text
+widget/main UI action
+  -> Socket.IO data_bus.publish
+  -> bundle Data Bus stream
+  -> @data_bus_handler(...)
+  -> durable storage revision/object update
+  -> optional chat_service reply for this connected peer/session
+```
+
+Use this pattern for collaborative board patches, issue edits, annotations, or
+other domain mutations that must be processed even when no chat turn is open.
+The `data_bus.publish` ack is only stream admission; the UI should wait for the
+handler reply or refetch durable state when it needs the final result.
+
+If the same action should also wake or inform an agent, bridge it explicitly
+into conversation `external_events[]` after the bundle decides that is needed.
+
+Read the bus distinction in
+[Conversation Event Bus And Data Bus](../../service/comm/conversation-event-bus-and-data-bus-README.md)
+and the field contract in
+[bundle-client-communication-README.md#data-bus-contract](bundle-client-communication-README.md#data-bus-contract).
 
 ## External Embedding
 

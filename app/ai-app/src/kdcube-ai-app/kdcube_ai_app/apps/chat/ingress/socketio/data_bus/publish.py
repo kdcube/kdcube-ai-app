@@ -211,6 +211,15 @@ class DataBusSocketIOIngress:
         if not _bundle_allowed_for_session(manifest, session, props):
             return self._ack(status="rejected", rejected=[{"index": None, "error": "bundle is not visible to this user"}])
 
+        logger.info(
+            "[data_bus.publish] received package tenant=%s project=%s bundle=%s sid=%s messages=%s bytes=%s",
+            tenant,
+            project,
+            bundle_id,
+            sid,
+            len(messages),
+            encoded_size,
+        )
         stream = RedisDataBusStream(
             self._redis(),
             tenant=tenant,
@@ -231,7 +240,28 @@ class DataBusSocketIOIngress:
                     sid=sid,
                     handler_by_subject=handler_by_subject,
                 )
+                logger.info(
+                    "[data_bus.publish] received message tenant=%s project=%s bundle=%s subject=%s object_ref=%s message_id=%s sid=%s index=%s",
+                    tenant,
+                    project,
+                    bundle_id,
+                    message.subject,
+                    message.object_ref,
+                    message.message_id,
+                    sid,
+                    index,
+                )
                 result = await stream.publish(message)
+                logger.info(
+                    "[data_bus.publish] accepted message tenant=%s project=%s bundle=%s subject=%s object_ref=%s message_id=%s stream_id=%s",
+                    tenant,
+                    project,
+                    bundle_id,
+                    message.subject,
+                    message.object_ref,
+                    result.message_id,
+                    result.stream_id,
+                )
                 accepted.append({
                     "message_id": result.message_id,
                     "stream_id": result.stream_id,

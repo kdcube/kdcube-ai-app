@@ -7,6 +7,7 @@ keywords: ["session subscription", "project subscription", "fanout", "redis pubs
 see_also:
   - ks:docs/service/comm/comm-system.md
   - ks:docs/service/comm/README-comm.md
+  - ks:docs/service/comm/conversation-event-bus-and-data-bus-README.md
   - ks:docs/service/comm/data-bus-README.md
   - ks:docs/service/README-monitoring-observability.md
 ---
@@ -18,9 +19,10 @@ see_also:
 > - [Comm integrations overview](README-comm.md)
 
 > Boundary: this relay is for transient client delivery. Durable non-chat
-> bundle messages, such as canvas patches or issue updates, belong to the
-> planned [Data Bus](data-bus-README.md) and should be routed to Data Bus Redis
-> Streams, not to this Pub/Sub relay.
+> bundle messages, such as collaborative board patches or issue updates, belong
+> to the [Data Bus](data-bus-README.md) and should be routed to Data Bus Redis
+> Streams, not to this Pub/Sub relay. For the bus split, see
+> [Conversation Event Bus And Data Bus](conversation-event-bus-and-data-bus-README.md).
 
 This document describes the architecture of the **chat relay** in the KDCube AI App, specifically:
 

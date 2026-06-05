@@ -7,6 +7,7 @@ keywords: ["SSE", "Socket.IO", "REST", "relay", "transports", "data bus"]
 see_also:
   - ks:docs/service/comm/CHAT-RELAY-SESSION-SUBSCR-SSE-SOCKETIO-FUNOUT.README.md
   - ks:docs/service/comm/comm-system.md
+  - ks:docs/service/comm/conversation-event-bus-and-data-bus-README.md
   - ks:docs/service/comm/data-bus-README.md
   - ks:docs/service/comm/design/databus-runtime.md
   - ks:docs/service/comm/comm-recording-event-sinks-README.md
@@ -27,12 +28,17 @@ This README is the entry point for **communication integrations**:
 - **Tenant/project SSE events**: opt-in project-scoped service updates for
   compact cross-session UI refreshes
 - **Data Bus**: durable, bundle-scoped inbound message path for
-  non-conversation domain state changes, such as canvas patches or issue
-  updates, routed through separate Redis Streams instead of the chat turn queue
+  non-conversation domain state changes, such as collaborative board patches or
+  issue updates, routed through separate Redis Streams instead of the chat turn
+  queue
 - **Comm recording and event sinks**: optional recording of selected comm
   envelopes and bounded batch dispatch to telemetry or other configured sinks
 
 If you are implementing a UI, API client, or a new transport, start here.
+
+For the central distinction between conversation `external_events[]` and Data
+Bus `messages[]`, read
+[Conversation Event Bus And Data Bus](conversation-event-bus-and-data-bus-README.md).
 
 ---
 

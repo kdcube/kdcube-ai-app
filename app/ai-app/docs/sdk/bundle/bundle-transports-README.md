@@ -14,6 +14,7 @@ see_also:
   - ks:docs/sdk/bundle/bundle-chat-stream-events-README.md
   - ks:docs/sdk/bundle/bundle-runtime-README.md
   - ks:docs/service/streams/background-jobs-README.md
+  - ks:docs/service/comm/conversation-event-bus-and-data-bus-README.md
   - ks:docs/service/comm/data-bus-README.md
 ---
 # Bundle Transports
@@ -102,7 +103,9 @@ Socket.IO `data_bus.publish` package with `bundle_id` and `messages[]`; ingress
 validates the target bundle and subject, writes accepted messages to the
 bundle's Data Bus stream, and processor-owned workers invoke the registered
 `@data_bus_handler(...)` methods. This path is separate from `chat_message`,
-conversation `external_events[]`, and communicator Pub/Sub.
+conversation `external_events[]`, and communicator Pub/Sub. See
+[Conversation Event Bus And Data Bus](../../service/comm/conversation-event-bus-and-data-bus-README.md)
+for the bus-level design boundary.
 
 ## 3. REST Operations
 

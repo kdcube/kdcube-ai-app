@@ -12,6 +12,7 @@ see_also:
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
   - ks:docs/sdk/bundle/bundle-client-ui-README.md
   - ks:docs/sdk/bundle/bundle-client-communication-README.md
+  - ks:docs/service/comm/conversation-event-bus-and-data-bus-README.md
   - ks:docs/service/comm/data-bus-README.md
   - ks:docs/service/cicd/embedding-control-plane-frontend-README.md
 ---
@@ -51,7 +52,8 @@ subdomain / cross-site) and how login/cookies work in each — see
 ## Widget Data Bus Publishing
 
 Use Socket.IO `data_bus.publish` when a widget sends a durable bundle-owned
-domain message, for example a canvas patch, issue edit, or object annotation.
+domain message, for example a collaborative board patch, issue edit, or object
+annotation.
 This is a different contract from calling `/operations/...` and a different
 contract from sending a chat `external_events[]` submission.
 
@@ -63,8 +65,8 @@ socket.emit("data_bus.publish", {
   bundle_id: runtime.defaultAppBundleId,
   messages: [
     {
-      subject: "task_tracker.canvas.patch",
-      object_ref: "canvas:main",
+      subject: "example.board.patch",
+      object_ref: "board:main",
       idempotency_key: clientOperationId,
       payload: {
         base_revision: currentRevision,
@@ -98,6 +100,7 @@ serialization.
 
 See:
 
+- [Conversation Event Bus And Data Bus](../../service/comm/conversation-event-bus-and-data-bus-README.md)
 - [bundle-client-communication-README.md#data-bus-contract](bundle-client-communication-README.md#data-bus-contract)
 - [Data Bus](../../service/comm/data-bus-README.md)
 

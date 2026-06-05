@@ -14,6 +14,7 @@ see_also:
   - ks:docs/sdk/bundle/bundle-interfaces-README.md
   - ks:docs/service/auth/auth-README.md
   - ks:docs/service/comm/README-comm.md
+  - ks:docs/service/comm/conversation-event-bus-and-data-bus-README.md
   - ks:docs/service/comm/data-bus-README.md
 ---
 # Bundle Client Communication
@@ -165,19 +166,23 @@ Socket.IO clients should bind all shared server event routes, including `chat_co
 ## 7. Data Bus Contract
 
 Use Socket.IO `data_bus.publish` for durable bundle-domain messages that are
-not chat turns, such as canvas patches or issue updates.
+not chat turns, such as collaborative board patches or issue updates.
+
+For the design distinction between conversation `external_events[]` and Data
+Bus `messages[]`, read
+[Conversation Event Bus And Data Bus](../../service/comm/conversation-event-bus-and-data-bus-README.md).
 
 Request shape:
 
 ```json
 {
   "schema": "kdcube.data_bus.ingress.v1",
-  "bundle_id": "task-tracker@1-0",
+  "bundle_id": "example-collab@1-0",
   "messages": [
     {
       "message_id": "dbmsg_01HX",
-      "subject": "task_tracker.canvas.patch",
-      "object_ref": "canvas:main",
+      "subject": "example.board.patch",
+      "object_ref": "board:main",
       "idempotency_key": "client-op-01HX",
       "payload": {
         "base_revision": 17,
@@ -198,12 +203,12 @@ Bundle handler registration:
 from kdcube_ai_app.apps.chat.sdk.data_bus import data_bus_handler
 
 @data_bus_handler(
-    subject="task_tracker.canvas.patch",
+    subject="example.board.patch",
     partition_by="object_ref",
     ordering="serial_per_partition",
     idempotency="required",
 )
-async def handle_canvas_patch(self, ctx, message):
+async def handle_board_patch(self, ctx, message):
     ...
 ```
 

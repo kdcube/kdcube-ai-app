@@ -10,6 +10,8 @@ see_also:
   - ks:docs/sdk/bundle/bundle-client-communication-README.md
   - ks:docs/sdk/bundle/bundle-chat-stream-events-README.md
   - ks:docs/sdk/bundle/bundle-interfaces-README.md
+  - ks:docs/service/comm/conversation-event-bus-and-data-bus-README.md
+  - ks:docs/service/comm/data-bus-README.md
   - ks:docs/service/README-monitoring-observability.md
   - ks:docs/service/auth/auth-README.md
 ---
@@ -164,9 +166,28 @@ panels, is frontend code compiled into the host widget through
 
 See [bundle-widget-integration-README.md#shared-ui-source-materialization](bundle-widget-integration-README.md#shared-ui-source-materialization).
 
+## I. Data Bus Awareness
+
+If the frontend uses Socket.IO for both chat and Data Bus, keep the UI state
+machines separate.
+
+| Action | Send through | UI expectation |
+| --- | --- | --- |
+| user prompt, followup, steer, chat context | `chat_message` / `/sse/chat` with `external_events[]` | chat admission, timeline/turn events, ReAct may consume |
+| durable bundle state mutation | `data_bus.publish` with `messages[]` | stream admission ack first, handler result later through `chat_service` or refetch |
+
+Data Bus retries and conflicts are domain-state concerns. Do not auto-replay a
+state mutation unless the idempotency key and current object revision make that
+safe. For collaborative objects, the UI should keep the latest revision visible
+and be prepared to show a conflict when the server rejects a stale
+`base_revision`.
+
+Read the design boundary in
+[Conversation Event Bus And Data Bus](../../service/comm/conversation-event-bus-and-data-bus-README.md).
+
 ---
 
-## I. Do/Don’t Summary
+## J. Do/Don’t Summary
 
 | ✅ Do | ❌ Don’t |
 | --- | --- |
@@ -178,7 +199,7 @@ See [bundle-widget-integration-README.md#shared-ui-source-materialization](bundl
 
 ---
 
-## J. Troubleshooting Checklist
+## K. Troubleshooting Checklist
 
 - 429 spikes? → reduce burst, add backoff, coalesce requests.
 - 503 spikes? → capacity pressure, wait and retry.

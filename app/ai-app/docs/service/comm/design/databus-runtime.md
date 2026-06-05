@@ -12,9 +12,10 @@ keywords:
     "bundle handlers",
     "serial per partition",
     "idempotency",
-    "canvas patch",
+    "board patch",
   ]
 see_also:
+  - ks:docs/service/comm/conversation-event-bus-and-data-bus-README.md
   - ks:docs/service/comm/data-bus-README.md
   - ks:docs/service/comm/README-comm.md
   - ks:docs/service/comm/comm-system.md
@@ -26,6 +27,7 @@ This document is the runtime reference for the first Data Bus implementation.
 Read first:
 
 - [Data Bus](../data-bus-README.md)
+- [Conversation Event Bus And Data Bus](../conversation-event-bus-and-data-bus-README.md)
 - [Comm System](../comm-system.md)
 - [Bundle Client Communication](../../../sdk/bundle/bundle-client-communication-README.md)
 
