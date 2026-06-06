@@ -19,6 +19,48 @@ from ..agents.gate import GateOut as MinimalGateOut, gate_stream
 from ..resources.service_messages.resources import get_friendly_error_message
 
 
+# Channel-conditional ReAct instructions: the bundle decides at agent-construction
+# time which surface the user is reaching us through, and passes the matching
+# UI-topology description. The bundles.yaml common React config stays
+# channel-agnostic — only what truly applies regardless of inbound surface.
+
+_WEB_CHAT_REACT_INSTRUCTIONS = """\
+UI topology for this chat (web interface):
+- The user sees per-turn tabs and can switch between:
+  * "Artifacts" tab — anything written via react.write channel="canvas" (large markdown reports, HTML/JSON/YAML/XML/Mermaid sources, slide/document sources, renderer inputs).
+  * "Files" tab — downloadable files: anything kind="file", PDFs/PPTX/DOCX/PNG produced by rendering_tools.write_*, archives, spreadsheets, and other binary deliverables.
+  * "Links" tab — citations (sources_pool entries cited) and any web_search/web_fetch URLs referenced.
+  * "Steps" tab — tool calls and process steps for the turn.
+  * "Timeline" tab — the full message-by-message timeline.
+When the final_answer needs to point the user at something produced, use these exact tab names: e.g., "the report is in the Artifacts tab", "available in the Files tab", "see the Links tab for the source".
+"""
+
+_TELEGRAM_REACT_INSTRUCTIONS = """\
+UI topology for this chat (Telegram):
+- The user is interacting through Telegram. Everything reaches them as plain messages and attachments in a single conversation thread; there are no tabs, panels, or side areas.
+- For artifacts written via react.write channel="canvas" and large files: confirm in plain prose that the artifact was produced and mention that the full version is available in the web chat for review (Telegram's message surface is short-form).
+- For downloadable files small enough for Telegram, the user receives them as document attachments in the conversation thread directly.
+"""
+
+
+def _resolve_react_ui_instructions(comm_context: ExternalEventPayload) -> str:
+    """
+    Return the UI-topology block that matches the inbound channel for this turn.
+
+    The ingress layer sets `event.source` to `ingress.<transport>` (e.g.,
+    `ingress.telegram`, `ingress.web`). When the source is unknown we default
+    to the web-chat instructions, since that's the canonical interface for
+    the bundle.
+    """
+    source = ""
+    event = getattr(comm_context, "event", None) if comm_context is not None else None
+    if event is not None:
+        source = str(getattr(event, "source", "") or "").strip().lower()
+    if source.endswith(".telegram") or source == "ingress.telegram":
+        return _TELEGRAM_REACT_INSTRUCTIONS
+    return _WEB_CHAT_REACT_INSTRUCTIONS
+
+
 class VersatileWorkflow(BaseWorkflow):
     def __init__(
         self,
@@ -150,6 +192,7 @@ class VersatileWorkflow(BaseWorkflow):
                     custom_skills_root=skills_descriptor.CUSTOM_SKILLS_ROOT,
                     skills_visibility_agents_config=skills_descriptor.AGENTS_CONFIG or {},
                     scratchpad=scratchpad,
+                    additional_instructions=_resolve_react_ui_instructions(self.comm_context),
                 )
                 allowed_plugins = [
                     spec.get("alias")
