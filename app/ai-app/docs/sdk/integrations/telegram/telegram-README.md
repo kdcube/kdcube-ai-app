@@ -104,7 +104,8 @@ from kdcube_ai_app.apps.chat.sdk.integrations.telegram import widget_ops as tele
 
 telegram_widget_auth.configure_telegram_widget_auth(
     storage_for=telegram_user_admin.storage,
-    bot_token=lambda: telegram_user_admin.bot_token(),
+    bot_token=telegram_user_admin.bot_token,
+    bundle_id=BUNDLE_ID,
 )
 webapp.configure_telegram_webapp(
     memory_widgets_module=memory_widgets,

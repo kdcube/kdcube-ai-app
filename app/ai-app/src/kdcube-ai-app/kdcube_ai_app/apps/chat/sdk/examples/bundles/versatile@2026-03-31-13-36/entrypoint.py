@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 
 import inspect
+import logging
 import traceback
 from typing import Any, Dict, Optional
 
 from langgraph.graph import END, START, StateGraph
 
+from kdcube_ai_app.auth.federated import issue_federated_data_bus_token
 from kdcube_ai_app.apps.chat.sdk.config import get_secret
 from kdcube_ai_app.apps.chat.sdk.context.vector.conv_ticket_store import ConvTicketStore
 from kdcube_ai_app.apps.chat.sdk.comm.sink import (
@@ -25,6 +28,7 @@ from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint_with_memory import (
     BaseEntrypointWithEconomicsAndMemory,
 )
+from kdcube_ai_app.apps.chat.sdk.runtime.data_bus import data_bus_handler
 from kdcube_ai_app.infra.plugin.bundle_loader import bundle_entrypoint, api, on_job, ui_widget
 from kdcube_ai_app.infra.service_hub.inventory import BundleState, Config
 
@@ -43,6 +47,8 @@ TELEGRAM_WEBHOOK_PUBLIC_AUTH = {
 TELEGRAM_WEBAPP_PUBLIC_AUTH = "none"
 TELEMETRY_SINK_TOKEN_SECRET = "b:telemetry_sink.auth.token"
 EVENT_RECORD_MAX = 200
+DATA_BUS_ECHO_SUBJECT = "versatile.echo"
+_log = logging.getLogger("kdcube.bundle.versatile")
 
 
 def _api_visibility(
@@ -199,6 +205,28 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
         if handled.get("handled"):
             return handled
         return handled
+
+    @data_bus_handler(
+        subject=DATA_BUS_ECHO_SUBJECT,
+        idempotency="required",
+        user_types=("anonymous",),
+    )
+    async def data_bus_echo(self, ctx, message) -> Dict[str, Any]:
+        payload = {
+            "echo": dict(message.payload or {}),
+            "actor": dict(ctx.actor or {}),
+            "stream_id": ctx.stream_id,
+            "handled_at": datetime.now(timezone.utc).isoformat(),
+        }
+        _log.info(
+            "[data_bus.echo] handled bundle=%s subject=%s message_id=%s stream_id=%s",
+            BUNDLE_ID,
+            message.subject,
+            message.message_id,
+            ctx.stream_id,
+        )
+        await ctx.reply.ok(payload)
+        return {"status": "ok", "data": payload}
 
     def _build_graph(self) -> StateGraph:
         g = StateGraph(BundleState)
@@ -634,6 +662,45 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
             path=path,
         )
 
+    @api(method="POST", alias="telegram_federated_data_bus_claim", route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)
+    async def telegram_federated_data_bus_claim(
+        self,
+        request: Any = None,
+        telegram_init_data: str = "",
+        **kwargs,
+    ) -> Dict[str, Any]:
+        del kwargs
+        identity = await telegram_widget_auth.resolve_identity(
+            self,
+            request=request,
+            telegram_init_data=telegram_init_data,
+            allowed_roles=("registered", "admin"),
+        )
+        roles = [TELEGRAM_ADMIN_ROLE] if identity.role == "admin" else []
+        user_type = "privileged" if identity.role == "admin" else "registered"
+        grant = await issue_federated_data_bus_token(
+            request=request,
+            tenant=self.settings.TENANT,
+            project=self.settings.PROJECT,
+            bundle_id=BUNDLE_ID,
+            provider="telegram",
+            provider_subject=identity.telegram_user_id,
+            user_id=identity.user_id,
+            user_type=user_type,
+            username=identity.telegram_username or identity.user_id,
+            roles=roles,
+            allowed_subjects=(DATA_BUS_ECHO_SUBJECT,),
+        )
+        return {
+            "ok": True,
+            "schema": "kdcube.federated_token_claim.v1",
+            "federated_token": grant.token,
+            "session_id": grant.session.session_id,
+            "expires_at": grant.expires_at,
+            "bundle_id": BUNDLE_ID,
+            "allowed_subjects": [DATA_BUS_ECHO_SUBJECT],
+        }
+
     async def _telegram_memory_widget_call(
         self,
         operation: str,
@@ -642,7 +709,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
         telegram_init_data: str = "",
         **kwargs,
     ) -> Dict[str, Any]:
-        identity = telegram_widget_auth.resolve_identity(
+        identity = await telegram_widget_auth.resolve_identity(
             self,
             request=request,
             telegram_init_data=telegram_init_data,

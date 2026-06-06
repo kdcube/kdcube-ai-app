@@ -4,6 +4,7 @@ title: "Bundle Client Communication"
 summary: "Browser-to-bundle communication contract across widget iframes, integrations, REST, SSE, Socket.IO, and Data Bus: auth propagation, headers, cookies, stream and session identifiers, and peer targeting."
 tags: ["sdk", "bundle", "transport", "auth", "headers", "cookies", "sse", "socketio", "rest", "integrations", "data-bus"]
 keywords: ["browser to bundle transport", "widget iframe communication", "integration request headers", "data bus publish", "auth token forwarding", "session and stream identifiers", "peer targeting", "sse and socket communication", "bundle client request contract"]
+updated_at: 2026-06-06
 see_also:
   - ks:docs/sdk/bundle/bundle-transports-README.md
   - ks:docs/sdk/bundle/bundle-client-ui-README.md
@@ -138,6 +139,22 @@ Clients should use the same stream/session pairing they established for chat.
 
 ### Connect auth payload
 
+Use the Socket.IO root namespace `/` and the normal path `/socket.io`:
+
+```ts
+const manager = new Manager(baseUrl, {
+  path: "/socket.io",
+  transports: ["websocket"],
+  withCredentials: true,
+});
+
+const socket = manager.socket("/", { auth });
+```
+
+Do not pass an empty namespace string. The server can accept the underlying
+Engine.IO websocket while the browser-side Socket.IO client never reaches the
+application-level `connect` state.
+
 The Socket.IO `connect` auth payload may include:
 
 | Auth field | Purpose |
@@ -147,6 +164,8 @@ The Socket.IO `connect` auth payload may include:
 | `id_token` | ID token |
 | `tenant` | Tenant override |
 | `project` | Project override |
+| `bundle_id` | Bundle scope for bundle-issued federated Data Bus tokens |
+| `federated_token` | Short-lived token issued by a bundle for app-specific clients |
 
 The Socket.IO connection `sid` is the peer stream identifier for direct delivery.
 
@@ -172,6 +191,14 @@ For the design distinction between conversation `external_events[]` and Data
 Bus `messages[]`, read
 [Conversation Event Bus And Data Bus](../../service/comm/conversation-event-bus-and-data-bus-README.md).
 
+There are two supported auth paths:
+
+- platform-authenticated widgets/main views connect with the normal runtime
+  session and token material;
+- app-specific clients first call a bundle endpoint, the bundle validates that
+  upstream context and issues a short-lived federated Data Bus token, and the
+  client connects Socket.IO with `federated_token`.
+
 Request shape:
 
 ```json
@@ -194,8 +221,11 @@ Request shape:
 ```
 
 The Socket.IO ack confirms that accepted messages were written to the Data Bus
-Redis Stream. Handler completion is separate and may arrive later as a
-`chat_service` event when the bundle handler uses `ctx.reply.*`.
+Redis Stream. It does not prove that a bundle handler exists or that the
+domain mutation succeeded. Handler completion, unknown-subject failures,
+handler access failures, and domain conflicts are proc-side results and may
+arrive later as a `chat_service` event when the bundle handler/runtime uses
+`ctx.reply.*`.
 
 Bundle handler registration:
 
@@ -216,7 +246,12 @@ Data Bus is separate from `chat_message`, `/sse/chat`, `external_events[]`, and
 ReAct timelines. A bundle that wants a handled domain message to become visible
 to an agent must explicitly bridge it into conversation ingress.
 
-See [Data Bus](../../service/comm/data-bus-README.md).
+Ingress owns socket auth, federated token scope, JSON bounds, actor/reply
+normalization, and stream admission. Proc owns bundle manifest loading,
+bundle/handler visibility, partition locking, and handler invocation.
+
+See [Data Bus](../../service/comm/data-bus-README.md) and
+[Bundle Federated Auth For Data Bus](auth-bundle-federated-README.md).
 
 ---
 

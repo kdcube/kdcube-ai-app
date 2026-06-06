@@ -12,11 +12,7 @@ from typing import Any, Mapping
 from kdcube_ai_app.apps.chat.sdk.config import get_settings
 from kdcube_ai_app.apps.chat.sdk.runtime.data_bus.stream import RedisDataBusStream
 from kdcube_ai_app.apps.chat.sdk.runtime.data_bus.types import (
-    DATA_BUS_IDEMPOTENCY_REQUIRED,
     DATA_BUS_INGRESS_SCHEMA,
-    DATA_BUS_ORDERING_SERIAL_PER_PARTITION,
-    DATA_BUS_PARTITION_OBJECT_REF,
-    DataBusHandlerSpec,
     DataBusMessage,
     ensure_json_object,
     ensure_json_serializable,
@@ -25,11 +21,6 @@ from kdcube_ai_app.apps.chat.sdk.runtime.data_bus.types import (
     utc_now_iso,
 )
 from kdcube_ai_app.auth.sessions import UserSession, UserType
-from kdcube_ai_app.infra.plugin.bundle_loader import (
-    BundleSpec,
-    apply_bundle_overrides,
-    load_bundle_manifest,
-)
 from kdcube_ai_app.infra.plugin.bundle_store import get_bundle_props, load_registry
 
 logger = logging.getLogger("kdcube.data_bus.socketio")
@@ -39,12 +30,6 @@ DATA_BUS_PACKAGE_MAX_BYTES = max(
     int(os.getenv("DATA_BUS_PACKAGE_MAX_BYTES", str(1024 * 1024)) or str(1024 * 1024)),
 )
 _DISABLED_VALUES = frozenset({"false", "disable", "disabled", "off", "0"})
-_USER_TYPE_VISIBILITY_ORDER = {
-    "anonymous": 0,
-    "registered": 1,
-    "paid": 2,
-    "privileged": 3,
-}
 
 
 def _is_truthy_enabled(value: Any) -> bool:
@@ -67,59 +52,6 @@ def _bundle_enabled(props: Mapping[str, Any] | None) -> bool:
 def _session_user_type(session: UserSession) -> str:
     value = getattr(getattr(session, "user_type", None), "value", None)
     return str(value or getattr(session, "user_type", "") or "").strip().lower()
-
-
-def _user_types_visible(required_user_types: tuple[str, ...] | list[str] | None, session: UserSession) -> bool:
-    user_types = tuple(
-        str(user_type or "").strip().lower()
-        for user_type in (required_user_types or ())
-        if str(user_type or "").strip()
-    )
-    if not user_types:
-        return True
-    current = _session_user_type(session)
-    if not current:
-        return False
-    current_rank = _USER_TYPE_VISIBILITY_ORDER.get(current)
-    if current_rank is None:
-        return current in set(user_types)
-    thresholds = [
-        _USER_TYPE_VISIBILITY_ORDER[user_type]
-        for user_type in user_types
-        if user_type in _USER_TYPE_VISIBILITY_ORDER
-    ]
-    if not thresholds:
-        return current in set(user_types)
-    return current_rank >= min(thresholds)
-
-
-def _user_raw_roles(session: UserSession) -> set[str]:
-    return {
-        role for role in (session.roles or [])
-        if isinstance(role, str) and role.startswith("kdcube:role:")
-    }
-
-
-def _raw_roles_visible(required_roles: tuple[str, ...] | list[str] | None, session: UserSession) -> bool:
-    roles = tuple(str(role or "").strip() for role in (required_roles or ()) if str(role or "").strip())
-    if not roles:
-        return True
-    return bool(_user_raw_roles(session) & set(roles))
-
-
-def _endpoint_visible(
-    required_user_types: tuple[str, ...] | list[str] | None,
-    required_roles: tuple[str, ...] | list[str] | None,
-    session: UserSession,
-) -> bool:
-    return _user_types_visible(required_user_types, session) and _raw_roles_visible(required_roles, session)
-
-
-def _bundle_allowed_for_session(manifest: Any, session: UserSession, props: Mapping[str, Any] | None) -> bool:
-    effective = apply_bundle_overrides(manifest, dict(props or {}))
-    if not effective.allowed_roles:
-        return True
-    return bool(_user_raw_roles(session) & set(effective.allowed_roles))
 
 
 def _session_from_socket_meta(socket_session: Mapping[str, Any] | None) -> UserSession:
@@ -151,6 +83,17 @@ def _actor_from_session(session: UserSession) -> dict[str, Any]:
     }
 
 
+def _allowed_subjects_from_socket_meta(socket_session: Mapping[str, Any] | None) -> set[str]:
+    claims = (socket_session or {}).get("federated_claims")
+    if not isinstance(claims, Mapping):
+        return set()
+    return {
+        str(subject).strip()
+        for subject in (claims.get("allowed_subjects") or ())
+        if str(subject).strip()
+    }
+
+
 class DataBusSocketIOIngress:
     def __init__(self, *, app: Any, redis: Any | None = None) -> None:
         self.app = app
@@ -175,6 +118,14 @@ class DataBusSocketIOIngress:
         bundle_id = str(data.get("bundle_id") or "").strip()
         if not bundle_id:
             return self._ack(status="rejected", rejected=[{"index": None, "error": "bundle_id is required"}])
+        federated_claims = (socket_session or {}).get("federated_claims")
+        if isinstance(federated_claims, Mapping):
+            scoped_bundle_id = str(federated_claims.get("bundle_id") or "").strip()
+            if scoped_bundle_id and scoped_bundle_id != bundle_id:
+                return self._ack(status="rejected", rejected=[{
+                    "index": None,
+                    "error": "bundle_id is not allowed by federated token",
+                }])
         messages = data.get("messages")
         if not isinstance(messages, list) or not messages:
             return self._ack(status="rejected", rejected=[{"index": None, "error": "messages[] is required"}])
@@ -188,7 +139,7 @@ class DataBusSocketIOIngress:
         session = _session_from_socket_meta(socket_session)
 
         try:
-            manifest, handler_by_subject = await self._load_handler_contract(
+            await self._ensure_registered_bundle(
                 tenant=tenant,
                 project=project,
                 bundle_id=bundle_id,
@@ -208,8 +159,7 @@ class DataBusSocketIOIngress:
         props = await get_bundle_props(self._redis(), tenant=tenant, project=project, bundle_id=bundle_id)
         if not _bundle_enabled(props):
             return self._ack(status="rejected", rejected=[{"index": None, "error": "bundle is disabled"}])
-        if not _bundle_allowed_for_session(manifest, session, props):
-            return self._ack(status="rejected", rejected=[{"index": None, "error": "bundle is not visible to this user"}])
+        allowed_subjects = _allowed_subjects_from_socket_meta(socket_session)
 
         logger.info(
             "[data_bus.publish] received package tenant=%s project=%s bundle=%s sid=%s messages=%s bytes=%s",
@@ -238,7 +188,7 @@ class DataBusSocketIOIngress:
                     bundle_id=bundle_id,
                     session=session,
                     sid=sid,
-                    handler_by_subject=handler_by_subject,
+                    allowed_subjects=allowed_subjects,
                 )
                 logger.info(
                     "[data_bus.publish] received message tenant=%s project=%s bundle=%s subject=%s object_ref=%s message_id=%s sid=%s index=%s",
@@ -279,7 +229,7 @@ class DataBusSocketIOIngress:
         status = "accepted" if accepted and not rejected else "partial" if accepted else "rejected"
         return self._ack(status=status, accepted=accepted, rejected=rejected)
 
-    async def _load_handler_contract(
+    async def _ensure_registered_bundle(
         self,
         *,
         tenant: str,
@@ -290,16 +240,6 @@ class DataBusSocketIOIngress:
         entry = (getattr(reg, "bundles", None) or {}).get(bundle_id)
         if entry is None:
             raise ValueError("bundle not found")
-        spec = BundleSpec(
-            path=entry.path,
-            module=entry.module,
-            singleton=bool(getattr(entry, "singleton", False)),
-        )
-        manifest = load_bundle_manifest(spec, bundle_id=bundle_id)
-        handler_by_subject = {handler.subject: handler for handler in manifest.data_bus_handlers}
-        if not handler_by_subject:
-            raise ValueError("bundle has no Data Bus handlers")
-        return manifest, handler_by_subject
 
     def _normalize_message(
         self,
@@ -311,27 +251,16 @@ class DataBusSocketIOIngress:
         bundle_id: str,
         session: UserSession,
         sid: str,
-        handler_by_subject: Mapping[str, DataBusHandlerSpec],
+        allowed_subjects: set[str],
     ) -> DataBusMessage:
         if not isinstance(item, Mapping):
             raise ValueError("message must be an object")
         subject = normalize_subject(item.get("subject"))
-        handler = handler_by_subject.get(subject)
-        if handler is None:
-            raise ValueError(f"subject is not handled by bundle: {subject}")
-        if not _endpoint_visible(handler.user_types, handler.roles, session):
-            raise ValueError(f"subject is not visible to this user: {subject}")
+        if allowed_subjects and subject not in allowed_subjects:
+            raise ValueError(f"subject is not allowed by federated token: {subject}")
 
         object_ref = normalize_optional_string(item.get("object_ref"))
-        if (
-            handler.partition_by == DATA_BUS_PARTITION_OBJECT_REF
-            or handler.ordering == DATA_BUS_ORDERING_SERIAL_PER_PARTITION
-        ) and not object_ref:
-            raise ValueError(f"subject requires object_ref: {subject}")
-
         idempotency_key = normalize_optional_string(item.get("idempotency_key"))
-        if handler.idempotency == DATA_BUS_IDEMPOTENCY_REQUIRED and not idempotency_key:
-            raise ValueError(f"subject requires idempotency_key: {subject}")
 
         payload = ensure_json_object(item.get("payload"), field_name="payload")
         ensure_json_serializable(payload, field_name="payload")

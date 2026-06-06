@@ -14,14 +14,14 @@ from kdcube_ai_app.apps.chat.sdk.integrations.telegram import (
 )
 
 _storage_for: Callable[[Any], Any] | None = None
-_bot_token: Callable[..., str] | None = None
+_bot_token: Callable[..., Any] | None = None
 _CONFIGS: Dict[str, Dict[str, Any]] = {}
 
 
 def configure_telegram_widget_auth(
     *,
     storage_for: Callable[[Any], Any],
-    bot_token: Callable[..., str],
+    bot_token: Callable[..., Any],
     bundle_id: str = "",
 ) -> None:
     """Bind bundle-owned Telegram user storage and bot token resolution."""
@@ -49,17 +49,24 @@ def _storage(entrypoint: Any) -> Any:
     return storage_for(entrypoint)
 
 
-def _token(entrypoint: Any) -> str:
+async def _token(entrypoint: Any) -> str:
     bot_token = _config(entrypoint).get("bot_token")
     if bot_token is None:
         raise RuntimeError("telegram widget auth integration is not configured: bot_token is missing")
     try:
         signature = inspect.signature(bot_token)
     except (TypeError, ValueError):
-        return bot_token(entrypoint)
+        value = bot_token(entrypoint)
+        if inspect.isawaitable(value):
+            value = await value
+        return str(value or "")
     if len(signature.parameters) == 0:
-        return bot_token()
-    return bot_token(entrypoint)
+        value = bot_token()
+    else:
+        value = bot_token(entrypoint)
+    if inspect.isawaitable(value):
+        value = await value
+    return str(value or "")
 
 
 @dataclass(frozen=True)
@@ -87,7 +94,7 @@ class TelegramWidgetIdentity:
         }
 
 
-def resolve_identity(
+async def resolve_identity(
     entrypoint: Any,
     *,
     request: Any = None,
@@ -102,7 +109,7 @@ def resolve_identity(
     max_age = int(entrypoint.bundle_prop("integrations.telegram.web_app_auth_max_age_seconds", 86400) or 86400)
     verified = validate_telegram_init_data(
         init_data,
-        bot_token=_token(entrypoint),
+        bot_token=await _token(entrypoint),
         max_age_seconds=max_age,
     )
     user = verified.user

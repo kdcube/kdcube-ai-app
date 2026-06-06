@@ -4,7 +4,7 @@ title: "Bundle Client UI"
 summary: "Entry page for bundle-facing frontend integration: source layout for main UI vs widgets, browser transport, auth, chat stream lifecycle, multi-tab behavior, and widget or operation interoperability."
 tags: ["sdk", "bundle", "frontend", "transport", "auth", "sse", "socketio", "rest", "ui"]
 keywords: ["frontend integration entrypoint", "bundle ui contract", "main view ui/main", "widget source folder", "widget and operation interoperability", "browser auth and transport", "chat stream lifecycle guidance", "multi tab coordination", "client side bundle behavior"]
-updated_at: 2026-05-19
+updated_at: 2026-06-06
 see_also:
   - ks:docs/sdk/bundle/bundle-widget-integration-README.md
   - ks:docs/sdk/bundle/bundle-client-communication-README.md
@@ -204,9 +204,10 @@ conversation `external_events[]`.
 
 ```text
 widget/main UI action
-  -> Socket.IO data_bus.publish
-  -> bundle Data Bus stream
-  -> @data_bus_handler(...)
+  -> optional bundle token claim for app-specific/public clients
+  -> Socket.IO data_bus.publish on namespace "/"
+  -> ingress normalizes and enqueues to the bundle Data Bus stream
+  -> proc loads @data_bus_handler(...)
   -> durable storage revision/object update
   -> optional chat_service reply for this connected peer/session
 ```
@@ -215,6 +216,11 @@ Use this pattern for collaborative board patches, issue edits, annotations, or
 other domain mutations that must be processed even when no chat turn is open.
 The `data_bus.publish` ack is only stream admission; the UI should wait for the
 handler reply or refetch durable state when it needs the final result.
+
+Platform-authenticated UIs use the normal runtime session and token material.
+App-specific clients, such as a public widget opened outside the platform
+session, call a bundle endpoint first; the bundle validates that upstream
+context and issues a short-lived federated Data Bus token.
 
 If the same action should also wake or inform an agent, bridge it explicitly
 into conversation `external_events[]` after the bundle decides that is needed.

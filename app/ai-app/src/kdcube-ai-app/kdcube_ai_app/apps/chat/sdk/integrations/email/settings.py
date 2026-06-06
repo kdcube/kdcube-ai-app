@@ -51,10 +51,13 @@ def _target_user(entrypoint: Any, *, user_id: Optional[str] = None, fingerprint:
     return _target_user_id(entrypoint, user_id=user_id, fingerprint=fingerprint)
 
 
-def _telegram_identity(entrypoint: Any, *, request: Any = None, telegram_init_data: str = "") -> Any:
+async def _telegram_identity(entrypoint: Any, *, request: Any = None, telegram_init_data: str = "") -> Any:
     if _resolve_identity is None:
         raise RuntimeError("email settings integration is not configured: resolve_identity is missing")
-    return _resolve_identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
+    identity = _resolve_identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
+    if hasattr(identity, "__await__"):
+        identity = await identity
+    return identity
 
 
 def _configured(value: str) -> bool:
@@ -300,13 +303,13 @@ async def callback(entrypoint: Any, *, request: Any = None, code: str = "", stat
 
 
 async def telegram_status(entrypoint: Any, *, request: Any = None, telegram_init_data: str = "") -> Dict[str, Any]:
-    identity = _telegram_identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
+    identity = await _telegram_identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
     payload = await status(entrypoint, user_id=identity.user_id, fingerprint=identity.fingerprint)
     payload["auth_surface"] = "telegram_webapp"
     return payload
 
 
-def telegram_start_oauth(
+async def telegram_start_oauth(
     entrypoint: Any,
     *,
     request: Any = None,
@@ -314,8 +317,8 @@ def telegram_start_oauth(
     provider: str = "google",
     return_hint: str = "",
 ) -> Dict[str, Any]:
-    identity = _telegram_identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
-    payload = start_oauth(
+    identity = await _telegram_identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
+    payload = await start_oauth(
         entrypoint,
         request=request,
         provider=provider,
@@ -328,20 +331,20 @@ def telegram_start_oauth(
     return payload
 
 
-def telegram_disconnect(
+async def telegram_disconnect(
     entrypoint: Any,
     *,
     account_id: str,
     request: Any = None,
     telegram_init_data: str = "",
 ) -> Dict[str, Any]:
-    identity = _telegram_identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
-    payload = disconnect(entrypoint, account_id=account_id, user_id=identity.user_id, fingerprint=identity.fingerprint)
+    identity = await _telegram_identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
+    payload = await disconnect(entrypoint, account_id=account_id, user_id=identity.user_id, fingerprint=identity.fingerprint)
     payload["auth_surface"] = "telegram_webapp"
     return payload
 
 
-def telegram_connect_app_password(
+async def telegram_connect_app_password(
     entrypoint: Any,
     *,
     request: Any = None,
@@ -352,8 +355,8 @@ def telegram_connect_app_password(
     display_name: str = "",
     username: str = "",
 ) -> Dict[str, Any]:
-    identity = _telegram_identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
-    payload = connect_app_password(
+    identity = await _telegram_identity(entrypoint, request=request, telegram_init_data=telegram_init_data)
+    payload = await connect_app_password(
         entrypoint,
         provider=provider,
         email=email,

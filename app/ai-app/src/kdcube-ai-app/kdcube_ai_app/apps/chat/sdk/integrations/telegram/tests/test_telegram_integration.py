@@ -258,6 +258,53 @@ async def test_telegram_profile_creates_pending_admin_row(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_telegram_widget_auth_accepts_async_bot_token(tmp_path):
+    from kdcube_ai_app.apps.chat.sdk.integrations.telegram import TelegramUserAdminStorage
+    from kdcube_ai_app.apps.chat.sdk.integrations.telegram import widget_auth, widget_ops
+
+    bundle_id = "test.telegram-async-token"
+    token = "123456:test-token"
+    storage = TelegramUserAdminStorage(tmp_path)
+
+    async def bot_token(entrypoint=None):
+        del entrypoint
+        return token
+
+    widget_auth.configure_telegram_widget_auth(
+        storage_for=lambda entrypoint: storage,
+        bot_token=bot_token,
+        bundle_id=bundle_id,
+    )
+    widget_ops.configure_telegram_widget_ops(
+        task_operations_module=SimpleNamespace(),
+        telegram_user_admin_module=SimpleNamespace(storage=lambda entrypoint: storage),
+        telegram_widget_auth_module=widget_auth,
+        webapp_module=SimpleNamespace(),
+        bundle_id=bundle_id,
+    )
+
+    entrypoint = SimpleNamespace(
+        BUNDLE_ID=bundle_id,
+        bundle_prop=lambda path, default=None: default,
+    )
+    result = await widget_ops.profile(
+        entrypoint,
+        telegram_init_data=_signed_init_data(
+            bot_token=token,
+            telegram_user_id=1111,
+            username="async-token",
+        ),
+    )
+
+    assert result["ok"] is True
+    assert result["telegram"]["user_id"] == "1111"
+    users = storage.list_users()
+    assert len(users) == 1
+    assert users[0]["telegram_user_id"] == "1111"
+    assert users[0]["telegram_username"] == "async-token"
+
+
+@pytest.mark.asyncio
 async def test_telegram_admin_approval_preserves_chat_id_and_notifies(tmp_path, monkeypatch):
     from kdcube_ai_app.apps.chat.sdk.integrations.telegram import TelegramUserAdminStorage
     from kdcube_ai_app.apps.chat.sdk.integrations.telegram import user_admin
