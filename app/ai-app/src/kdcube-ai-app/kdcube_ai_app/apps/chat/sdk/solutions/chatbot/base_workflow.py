@@ -158,6 +158,60 @@ def _get_prop_path(data: Dict[str, Any], path: str, default: Any = None) -> Any:
     return cur
 
 
+def _react_agent_config_keys(agent_id: Any) -> List[str]:
+    normalized = normalize_agent_id(agent_id)
+    safe = re.sub(r"[^A-Za-z0-9_]+", "_", normalized).strip("_")
+    keys: List[str] = []
+    for key in (normalized, safe):
+        if key and key not in keys:
+            keys.append(key)
+    for key in ("default_agent", "default"):
+        if key not in keys:
+            keys.append(key)
+    return keys
+
+
+def _iter_react_config_blocks(
+    bundle_props: Dict[str, Any],
+    *,
+    agent_id: Any = None,
+) -> List[tuple[str, Dict[str, Any]]]:
+    blocks: List[tuple[str, Dict[str, Any]]] = []
+    roots: List[tuple[str, Any]] = [
+        ("react", _get_prop_path(bundle_props or {}, "react")),
+        ("config.react", _get_prop_path(bundle_props or {}, "config.react")),
+    ]
+    for root_path, root in roots:
+        if not isinstance(root, dict):
+            continue
+        keys = _react_agent_config_keys(agent_id)
+        agents = root.get("agents")
+        for key in keys:
+            direct = root.get(key)
+            if isinstance(direct, dict):
+                blocks.append((f"{root_path}.{key}", direct))
+            if isinstance(agents, dict):
+                nested = agents.get(key)
+                if isinstance(nested, dict):
+                    blocks.append((f"{root_path}.agents.{key}", nested))
+        blocks.append((root_path, root))
+    return blocks
+
+
+def _react_config_lookup(
+    bundle_props: Dict[str, Any],
+    *keys: str,
+    agent_id: Any = None,
+    default: Any = None,
+) -> tuple[Any, Optional[str]]:
+    for block_source, block in _iter_react_config_blocks(bundle_props or {}, agent_id=agent_id):
+        for key in keys:
+            value = _get_prop_path(block, key)
+            if value is not None:
+                return value, f"{block_source}.{key}"
+    return default, None
+
+
 def _react_context_max_tokens(config: Any, settings: Any) -> Optional[int]:
     configured = _positive_int(getattr(config, "max_tokens", None))
     if configured is not None:
@@ -165,10 +219,9 @@ def _react_context_max_tokens(config: Any, settings: Any) -> Optional[int]:
     return _positive_int(getattr(settings, "AI_REACT_CONTEXT_MAX_TOKENS", None))
 
 
-def _react_max_iterations(bundle_props: Dict[str, Any], settings: Any) -> int:
-    configured = _positive_int(_get_prop_path(bundle_props or {}, "react.max_iterations"))
-    if configured is None:
-        configured = _positive_int(_get_prop_path(bundle_props or {}, "config.react.max_iterations"))
+def _react_max_iterations(bundle_props: Dict[str, Any], settings: Any, *, agent_id: Any = None) -> int:
+    raw, _ = _react_config_lookup(bundle_props, "max_iterations", agent_id=agent_id)
+    configured = _positive_int(raw)
     if configured is not None:
         return configured
     return _positive_int(getattr(settings, "AI_REACT_MAX_ITERATIONS", None)) or 15
@@ -190,60 +243,59 @@ def _bool_or_none(value: Any) -> Optional[bool]:
     return None
 
 
-def _react_render_thinking(bundle_props: Dict[str, Any], settings: Any) -> bool:
-    configured = _bool_or_none(_get_prop_path(bundle_props or {}, "react.render_thinking"))
-    if configured is None:
-        configured = _bool_or_none(_get_prop_path(bundle_props or {}, "config.react.render_thinking"))
+def _react_render_thinking(bundle_props: Dict[str, Any], settings: Any, *, agent_id: Any = None) -> bool:
+    raw, _ = _react_config_lookup(bundle_props, "render_thinking", agent_id=agent_id)
+    configured = _bool_or_none(raw)
     if configured is not None:
         return configured
     return bool(getattr(settings, "AI_REACT_RENDER_THINKING", True))
 
 
-def _react_line_numbers_mode(bundle_props: Dict[str, Any], settings: Any) -> str:
-    configured = _get_prop_path(bundle_props or {}, "react.line_numbers_mode")
-    if configured is None:
-        configured = _get_prop_path(bundle_props or {}, "config.react.line_numbers_mode")
+def _react_line_numbers_mode(bundle_props: Dict[str, Any], settings: Any, *, agent_id: Any = None) -> str:
+    configured, _ = _react_config_lookup(bundle_props, "line_numbers_mode", agent_id=agent_id)
     if configured is None:
         configured = getattr(settings, "AI_REACT_LINE_NUMBERS_MODE", LINE_NUMBERS_LINES)
     return normalize_line_numbers_mode(configured, default=LINE_NUMBERS_LINES)
 
 
-def _react_story_snapshots_enabled(bundle_props: Dict[str, Any]) -> bool:
-    configured = _bool_or_none(_get_prop_path(bundle_props or {}, "react.story_snapshots.enabled"))
-    if configured is None:
-        configured = _bool_or_none(_get_prop_path(bundle_props or {}, "config.react.story_snapshots.enabled"))
+def _react_story_snapshots_enabled(bundle_props: Dict[str, Any], *, agent_id: Any = None) -> bool:
+    raw, _ = _react_config_lookup(bundle_props, "story_snapshots.enabled", agent_id=agent_id)
+    configured = _bool_or_none(raw)
     return bool(configured) if configured is not None else False
 
 
-def _react_event_source_pipeline_enabled(bundle_props: Dict[str, Any], settings: Any) -> bool:
-    configured = _bool_or_none(_get_prop_path(bundle_props or {}, "react.event_source_pipeline.enabled"))
-    if configured is None:
-        configured = _bool_or_none(_get_prop_path(bundle_props or {}, "react.event_source_pipeline_enabled"))
-    if configured is None:
-        configured = _bool_or_none(_get_prop_path(bundle_props or {}, "config.react.event_source_pipeline.enabled"))
-    if configured is None:
-        configured = _bool_or_none(_get_prop_path(bundle_props or {}, "config.react.event_source_pipeline_enabled"))
+def _react_event_source_pipeline_enabled(bundle_props: Dict[str, Any], settings: Any, *, agent_id: Any = None) -> bool:
+    raw, _ = _react_config_lookup(
+        bundle_props,
+        "event_source_pipeline.enabled",
+        "event_source_pipeline_enabled",
+        agent_id=agent_id,
+    )
+    configured = _bool_or_none(raw)
     if configured is not None:
         return configured
     return bool(getattr(settings, "AI_REACT_EVENT_SOURCE_PIPELINE_ENABLED", False))
 
 
-def _react_event_source_pipeline_config_report(bundle_props: Dict[str, Any], settings: Any) -> Dict[str, Any]:
-    paths = (
-        "react.event_source_pipeline.enabled",
-        "react.event_source_pipeline_enabled",
-        "config.react.event_source_pipeline.enabled",
-        "config.react.event_source_pipeline_enabled",
+def _react_event_source_pipeline_config_report(
+    bundle_props: Dict[str, Any],
+    settings: Any,
+    *,
+    agent_id: Any = None,
+) -> Dict[str, Any]:
+    raw, source = _react_config_lookup(
+        bundle_props,
+        "event_source_pipeline.enabled",
+        "event_source_pipeline_enabled",
+        agent_id=agent_id,
     )
-    for path in paths:
-        raw = _get_prop_path(bundle_props or {}, path)
-        configured = _bool_or_none(raw)
-        if configured is not None:
-            return {
-                "source": f"bundle_props.{path}",
-                "raw": raw,
-                "effective": configured,
-            }
+    configured = _bool_or_none(raw)
+    if configured is not None:
+        return {
+            "source": f"bundle_props.{source}",
+            "raw": raw,
+            "effective": configured,
+        }
     raw = getattr(settings, "AI_REACT_EVENT_SOURCE_PIPELINE_ENABLED", False)
     return {
         "source": "settings.AI_REACT_EVENT_SOURCE_PIPELINE_ENABLED",
@@ -252,10 +304,15 @@ def _react_event_source_pipeline_config_report(bundle_props: Dict[str, Any], set
     }
 
 
-def _react_debug_timeline_enabled(bundle_props: Dict[str, Any], settings: Any, *, default: bool = False) -> bool:
-    configured = _bool_or_none(_get_prop_path(bundle_props or {}, "react.debug_timeline"))
-    if configured is None:
-        configured = _bool_or_none(_get_prop_path(bundle_props or {}, "config.react.debug_timeline"))
+def _react_debug_timeline_enabled(
+    bundle_props: Dict[str, Any],
+    settings: Any,
+    *,
+    default: bool = False,
+    agent_id: Any = None,
+) -> bool:
+    raw, _ = _react_config_lookup(bundle_props, "debug_timeline", agent_id=agent_id)
+    configured = _bool_or_none(raw)
     if configured is not None:
         return configured
     configured = _bool_or_none(getattr(settings, "AI_REACT_DEBUG_TIMELINE", None))
@@ -323,7 +380,11 @@ def _effective_runtime_ctx_log_payload(runtime_ctx: Any, bundle_props: Dict[str,
         "line_numbers_mode": getattr(runtime_ctx, "line_numbers_mode", None),
         "story_snapshots_enabled": bool(getattr(runtime_ctx, "story_snapshots_enabled", False)),
         "event_source_pipeline_enabled": bool(getattr(runtime_ctx, "event_source_pipeline_enabled", False)),
-        "event_source_pipeline_config": _react_event_source_pipeline_config_report(bundle_props, settings),
+        "event_source_pipeline_config": _react_event_source_pipeline_config_report(
+            bundle_props,
+            settings,
+            agent_id=getattr(runtime_ctx, "agent_id", None),
+        ),
         "debug_timeline": bool(getattr(runtime_ctx, "debug_timeline", False)),
         "debug_timeline_root": getattr(runtime_ctx, "debug_timeline_root", None),
         "debug_timeline_keep_files": getattr(runtime_ctx, "debug_timeline_keep_files", None),
@@ -473,11 +534,16 @@ class BaseWorkflow():
         # Runtime context + context browser are constructed once per workflow instance
         settings = get_settings()
         runtime_max_tokens = _react_context_max_tokens(self.config, settings)
-        runtime_max_iterations = _react_max_iterations(self.bundle_props, settings)
-        runtime_render_thinking = _react_render_thinking(self.bundle_props, settings)
-        runtime_line_numbers_mode = _react_line_numbers_mode(self.bundle_props, settings)
-        runtime_story_snapshots_enabled = _react_story_snapshots_enabled(self.bundle_props)
-        runtime_event_source_pipeline_enabled = _react_event_source_pipeline_enabled(self.bundle_props, settings)
+        runtime_agent_id = normalize_agent_id(getattr(getattr(self.comm_context, "event", None), "agent_id", None))
+        runtime_max_iterations = _react_max_iterations(self.bundle_props, settings, agent_id=runtime_agent_id)
+        runtime_render_thinking = _react_render_thinking(self.bundle_props, settings, agent_id=runtime_agent_id)
+        runtime_line_numbers_mode = _react_line_numbers_mode(self.bundle_props, settings, agent_id=runtime_agent_id)
+        runtime_story_snapshots_enabled = _react_story_snapshots_enabled(self.bundle_props, agent_id=runtime_agent_id)
+        runtime_event_source_pipeline_enabled = _react_event_source_pipeline_enabled(
+            self.bundle_props,
+            settings,
+            agent_id=runtime_agent_id,
+        )
         runtime_debug_timeline_root = _react_debug_timeline_root(settings)
         runtime_debug_timeline_keep_files = _react_debug_timeline_keep_files(settings)
         try:
@@ -490,7 +556,7 @@ class BaseWorkflow():
                 conversation_id=self.comm_context.routing.conversation_id,
                 turn_id=self.comm_context.routing.turn_id,
                 bundle_id=self.config.ai_bundle_spec.id,
-                agent_id=normalize_agent_id(getattr(getattr(self.comm_context, "event", None), "agent_id", None)),
+                agent_id=runtime_agent_id,
                 max_tokens=runtime_max_tokens,
                 max_iterations=runtime_max_iterations,
                 read_visible_max_text_symbols=_positive_int(getattr(settings, "AI_REACT_READ_VISIBLE_MAX_TEXT_SYMBOLS", None)),
@@ -537,6 +603,7 @@ class BaseWorkflow():
                 pass
         except Exception:
             self.runtime_ctx = RuntimeCtx(
+                agent_id=runtime_agent_id,
                 max_tokens=runtime_max_tokens,
                 max_iterations=runtime_max_iterations,
                 read_visible_max_text_symbols=_positive_int(getattr(settings, "AI_REACT_READ_VISIBLE_MAX_TEXT_SYMBOLS", None)),
@@ -630,10 +697,16 @@ class BaseWorkflow():
         runtime_ctx.exec_runtime = copy.deepcopy(normalize_exec_runtime_config(raw))
         try:
             settings = get_settings()
-            runtime_ctx.render_thinking = _react_render_thinking(self.bundle_props, settings)
-            runtime_ctx.line_numbers_mode = _react_line_numbers_mode(self.bundle_props, settings)
-            runtime_ctx.story_snapshots_enabled = _react_story_snapshots_enabled(self.bundle_props)
-            runtime_ctx.event_source_pipeline_enabled = _react_event_source_pipeline_enabled(self.bundle_props, settings)
+            agent_id = getattr(runtime_ctx, "agent_id", None)
+            runtime_ctx.max_iterations = _react_max_iterations(self.bundle_props, settings, agent_id=agent_id)
+            runtime_ctx.render_thinking = _react_render_thinking(self.bundle_props, settings, agent_id=agent_id)
+            runtime_ctx.line_numbers_mode = _react_line_numbers_mode(self.bundle_props, settings, agent_id=agent_id)
+            runtime_ctx.story_snapshots_enabled = _react_story_snapshots_enabled(self.bundle_props, agent_id=agent_id)
+            runtime_ctx.event_source_pipeline_enabled = _react_event_source_pipeline_enabled(
+                self.bundle_props,
+                settings,
+                agent_id=agent_id,
+            )
             runtime_ctx.debug_timeline_root = _react_debug_timeline_root(settings)
             runtime_ctx.debug_timeline_keep_files = _react_debug_timeline_keep_files(settings)
         except Exception:
@@ -825,7 +898,6 @@ class BaseWorkflow():
                 runtime_ctx.turn_id = comm_context.routing.turn_id
                 runtime_ctx.agent_id = normalize_agent_id(
                     getattr(getattr(comm_context, "event", None), "agent_id", None)
-                    or getattr(runtime_ctx, "agent_id", None)
                 )
                 runtime_ctx.bundle_storage = self._resolve_runtime_ctx_bundle_storage()
                 runtime_ctx.external_event_source = self._external_event_source_for_runtime()
@@ -870,7 +942,12 @@ class BaseWorkflow():
             return None
 
     def react_debug_timeline_enabled(self, *, default: bool = False) -> bool:
-        return _react_debug_timeline_enabled(self.bundle_props, get_settings(), default=default)
+        return _react_debug_timeline_enabled(
+            self.bundle_props,
+            get_settings(),
+            default=default,
+            agent_id=getattr(getattr(self, "runtime_ctx", None), "agent_id", None),
+        )
 
     def resolve_exec_runtime(
         self,
@@ -2028,12 +2105,14 @@ class BaseWorkflow():
             },
             bundle_root=bundle_root,
         )
-        def _first_prop(*paths: str, default: Any = None) -> Any:
-            for path in paths:
-                value = _get_prop_path(self.bundle_props or {}, path)
-                if value is not None:
-                    return value
-            return default
+        def _first_react_prop(*keys: str, default: Any = None) -> Any:
+            value, _source = _react_config_lookup(
+                self.bundle_props or {},
+                *keys,
+                agent_id=getattr(getattr(self, "runtime_ctx", None), "agent_id", None),
+                default=default,
+            )
+            return value
 
         def _str_list(value: Any) -> List[str]:
             if value is None:
@@ -2045,43 +2124,31 @@ class BaseWorkflow():
             return [str(value)]
 
         if additional_instructions is None:
-            additional_instructions = _first_prop(
-                "react.additional_instructions",
-                "config.react.additional_instructions",
-            )
-        raw_instructions = _first_prop(
-            "react.instructions",
-            "config.react.instructions",
-        )
+            additional_instructions = _first_react_prop("additional_instructions")
+        raw_instructions = _first_react_prop("instructions")
         if instruction_body is None:
             if isinstance(raw_instructions, str):
                 instruction_body = raw_instructions
             else:
-                instruction_body = _first_prop(
-                    "react.instructions.body",
-                    "config.react.instructions.body",
-                    "react.instruction_body",
-                    "config.react.instruction_body",
+                instruction_body = _first_react_prop(
+                    "instructions.body",
+                    "instruction_body",
                 )
         if instruction_blocks is None:
             if isinstance(raw_instructions, (list, tuple)):
                 instruction_blocks = _str_list(raw_instructions)
             else:
-                instruction_blocks = _str_list(_first_prop(
-                    "react.instructions.blocks",
-                    "config.react.instructions.blocks",
-                    "react.instruction_blocks",
-                    "config.react.instruction_blocks",
+                instruction_blocks = _str_list(_first_react_prop(
+                    "instructions.blocks",
+                    "instruction_blocks",
                 ))
         if include_tool_catalog is None:
-            include_tool_catalog = _bool_or_none(_first_prop(
-                "react.instructions.include_tool_catalog",
-                "config.react.instructions.include_tool_catalog",
+            include_tool_catalog = _bool_or_none(_first_react_prop(
+                "instructions.include_tool_catalog",
             ))
         if include_skill_gallery is None:
-            include_skill_gallery = _bool_or_none(_first_prop(
-                "react.instructions.include_skill_gallery",
-                "config.react.instructions.include_skill_gallery",
+            include_skill_gallery = _bool_or_none(_first_react_prop(
+                "instructions.include_skill_gallery",
             ))
         if include_tool_catalog is None:
             include_tool_catalog = True

@@ -160,7 +160,7 @@ The proc service reads these non-secret ReAct limits from `assembly.yaml` throug
 
 | Env var | Descriptor path | Descriptor file | Modes | Meaning |
 |---|---|---|---|---|
-| `AI_REACT_MAX_ITERATIONS` | `ai.react.max_iterations` | `assembly.yaml` | all modes | base ReAct decision/tool-use round cap; bundle `config.react.max_iterations` overrides this default for that bundle; runtime fallback `15` |
+| `AI_REACT_MAX_ITERATIONS` | `ai.react.max_iterations` | `assembly.yaml` | all modes | base ReAct decision/tool-use round cap; bundle `config.react.default_agent.max_iterations` or named-agent `config.react.<agent_key>.max_iterations` overrides this default; runtime fallback `15` |
 | `AI_REACT_CONTEXT_MAX_TOKENS` | `ai.react.context_max_tokens` | `assembly.yaml` | all modes | hard model-input budget before compaction; includes system/instruction text plus rendered timeline |
 | `AI_REACT_READ_VISIBLE_MAX_TEXT_SYMBOLS` | `ai.react.read_visible_max_text_symbols` | `assembly.yaml` | all modes | max visible text characters per `react.read` text path |
 | `AI_REACT_READ_VISIBLE_MAX_TOKENS` | `ai.react.read_visible_max_tokens` | `assembly.yaml` | all modes | token guard per `react.read` text path |
@@ -171,14 +171,14 @@ The proc service reads these non-secret ReAct limits from `assembly.yaml` throug
 | `AI_REACT_KNOWLEDGE_READ_VISIBLE_MAX_BYTES` | `ai.react.knowledge_read_visible_max_bytes` | `assembly.yaml` | all modes | optional byte guard for `ks:` payloads; default `null` means uncapped |
 | `AI_REACT_EXEC_TEXT_PREVIEW_MAX_SYMBOLS` | `ai.react.exec_text_preview_max_symbols` | `assembly.yaml` | all modes | text preview cap for each exec-produced text artifact |
 | `AI_REACT_TOOL_RESULT_PREVIEW_MAX_TEXT_SYMBOLS` | `ai.react.tool_result_preview_max_text_symbols` | `assembly.yaml` | all modes | model-visible text preview cap for large initial tool results |
-| `AI_REACT_LINE_NUMBERS_MODE` | `ai.react.line_numbers_mode` | `assembly.yaml` | all modes | rendered text preview line numbering mode: `disabled`, `lines`, or `sparsed`; bundle `config.react.line_numbers_mode` overrides this default |
+| `AI_REACT_LINE_NUMBERS_MODE` | `ai.react.line_numbers_mode` | `assembly.yaml` | all modes | rendered text preview line numbering mode: `disabled`, `lines`, or `sparsed`; bundle `config.react.default_agent.line_numbers_mode` or named-agent override takes precedence |
 | `AI_REACT_CACHE_KEEP_RECENT_TURNS` | `ai.react.cache_keep_recent_turns` | `assembly.yaml` | all modes | recent turns kept visible after TTL pruning |
 | `AI_REACT_CACHE_KEEP_RECENT_INTACT_TURNS` | `ai.react.cache_keep_recent_intact_turns` | `assembly.yaml` | all modes | newest turns kept untrimmed during TTL pruning |
 | `AI_REACT_WORKING_SUMMARY_ENABLED` | `ai.react.working_summary_enabled` | `assembly.yaml` | all modes | emits and indexes React working-summary cards |
 | `AI_REACT_PRUNED_TURN_SUMMARY_MODE` | `ai.react.pruned_turn_summary_mode` | `assembly.yaml` | all modes | controls whether pruned historical turns prefer working-summary cards |
-| `AI_REACT_RENDER_THINKING` | `ai.react.render_thinking` | `assembly.yaml` | all modes | renders live model thinking blocks in the active ReAct timeline; bundle `config.react.render_thinking` overrides this default |
-| `AI_REACT_EVENT_SOURCE_PIPELINE_ENABLED` | `ai.react.event_source_pipeline_enabled` | `assembly.yaml` | all modes | enables the alternate event-source policy pipeline; bundle `config.react.event_source_pipeline.enabled` overrides this default |
-| `AI_REACT_DEBUG_TIMELINE` | `ai.react.debug_timeline` | `assembly.yaml` | all modes | enables rendered prompt snapshot files; bundle `config.react.debug_timeline` overrides this default |
+| `AI_REACT_RENDER_THINKING` | `ai.react.render_thinking` | `assembly.yaml` | all modes | renders live model thinking blocks in the active ReAct timeline; bundle `config.react.default_agent.render_thinking` or named-agent override takes precedence |
+| `AI_REACT_EVENT_SOURCE_PIPELINE_ENABLED` | `ai.react.event_source_pipeline_enabled` | `assembly.yaml` | all modes | enables the alternate event-source policy pipeline; bundle `config.react.default_agent.event_source_pipeline.enabled` or named-agent override takes precedence |
+| `AI_REACT_DEBUG_TIMELINE` | `ai.react.debug_timeline` | `assembly.yaml` | all modes | enables rendered prompt snapshot files; bundle `config.react.default_agent.debug_timeline` or named-agent override takes precedence |
 
 Unit contract:
 

@@ -292,7 +292,7 @@ ai:
 |---|---|---|
 | `react_agent_version` | `AI_REACT_AGENT_VERSION` | React decision runtime version (`v2` or `v3`) |
 | `react_agent_multiaction` | `AI_REACT_AGENT_MULTI_ACTION` | Experimental multi-action decision mode (`on` or `off`) |
-| `max_iterations` | `AI_REACT_MAX_ITERATIONS` | Base ReAct decision/tool-use round cap; bundle `config.react.max_iterations` overrides this default for that bundle; runtime fallback `15` |
+| `max_iterations` | `AI_REACT_MAX_ITERATIONS` | Base ReAct decision/tool-use round cap; bundle `config.react.default_agent.max_iterations` or named-agent `config.react.<agent_key>.max_iterations` overrides this default; runtime fallback `15` |
 | `context_max_tokens` | `AI_REACT_CONTEXT_MAX_TOKENS` | Default hard model-input budget before compaction when a bundle does not set `max_tokens`; includes system/instruction text plus rendered timeline; default `80000` |
 | `read_visible_max_text_symbols` | `AI_REACT_READ_VISIBLE_MAX_TEXT_SYMBOLS` | Default max visible text characters per `react.read` text path; default `48000` |
 | `read_visible_max_tokens` | `AI_REACT_READ_VISIBLE_MAX_TOKENS` | Default token guard per `react.read` text path; default `12000` |
@@ -303,14 +303,14 @@ ai:
 | `knowledge_read_visible_max_bytes` | `AI_REACT_KNOWLEDGE_READ_VISIBLE_MAX_BYTES` | Optional raw byte guard for `ks:` knowledge-space payloads; default `null` means uncapped |
 | `exec_text_preview_max_symbols` | `AI_REACT_EXEC_TEXT_PREVIEW_MAX_SYMBOLS` | Max text characters embedded as preview for each text file produced by exec tools; default `8000` |
 | `tool_result_preview_max_text_symbols` | `AI_REACT_TOOL_RESULT_PREVIEW_MAX_TEXT_SYMBOLS` | Max text characters embedded from a large initial tool result before the prompt renderer replaces the rest with shape/recovery metadata; default `12000` |
-| `line_numbers_mode` | `AI_REACT_LINE_NUMBERS_MODE` | How rendered text previews show line numbers: `lines` numbers every line, `sparsed` numbers first/middle/last lines only, and `disabled` omits line prefixes; bundle `config.react.line_numbers_mode` / `react.line_numbers_mode` overrides this default |
+| `line_numbers_mode` | `AI_REACT_LINE_NUMBERS_MODE` | How rendered text previews show line numbers: `lines` numbers every line, `sparsed` numbers first/middle/last lines only, and `disabled` omits line prefixes; bundle `config.react.default_agent.line_numbers_mode` or named-agent override takes precedence |
 | `cache_keep_recent_turns` | `AI_REACT_CACHE_KEEP_RECENT_TURNS` | Recent turns kept visible after TTL pruning; default `6` |
 | `cache_keep_recent_intact_turns` | `AI_REACT_CACHE_KEEP_RECENT_INTACT_TURNS` | Newest turns kept untrimmed during TTL pruning; default `1` |
 | `working_summary_enabled` | `AI_REACT_WORKING_SUMMARY_ENABLED` | Capture React `channel:summary` on complete/exit, emit it as `conv.working.summary`, and embed it for memory search; default `true` |
 | `pruned_turn_summary_mode` | `AI_REACT_PRUNED_TURN_SUMMARY_MODE` | Prefer working-summary cards when rendering pruned historical turns; multiple same-turn summaries are preserved; set to `working_summary` by default |
-| `render_thinking` | `AI_REACT_RENDER_THINKING` | Render live model thinking blocks in the active ReAct timeline; bundle `config.react.render_thinking` / `react.render_thinking` overrides this default; pruned thinking is never rendered |
-| `event_source_pipeline_enabled` | `AI_REACT_EVENT_SOURCE_PIPELINE_ENABLED` | Enables the alternate event-source policy pipeline for ReAct blocks; bundle `config.react.event_source_pipeline.enabled` / `react.event_source_pipeline.enabled` overrides this default; keep `false` unless explicitly testing |
-| `debug_timeline` | `AI_REACT_DEBUG_TIMELINE` | Enable rendered prompt snapshot files for ReAct timelines; bundle `config.react.debug_timeline` / `react.debug_timeline` overrides this default; keep `false` for normal deployments |
+| `render_thinking` | `AI_REACT_RENDER_THINKING` | Render live model thinking blocks in the active ReAct timeline; bundle `config.react.default_agent.render_thinking` or named-agent override takes precedence; pruned thinking is never rendered |
+| `event_source_pipeline_enabled` | `AI_REACT_EVENT_SOURCE_PIPELINE_ENABLED` | Enables the alternate event-source policy pipeline for ReAct blocks; bundle `config.react.default_agent.event_source_pipeline.enabled` or named-agent override takes precedence; keep `false` unless explicitly testing |
+| `debug_timeline` | `AI_REACT_DEBUG_TIMELINE` | Enable rendered prompt snapshot files for ReAct timelines; bundle `config.react.default_agent.debug_timeline` or named-agent override takes precedence; keep `false` for normal deployments |
 
 Visible read limits use separate units:
 

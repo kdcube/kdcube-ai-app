@@ -30,9 +30,25 @@ React is selected before the runtime instance is built:
 
 The base ReAct decision/tool-use round cap is resolved before the runtime loop starts:
 
-1. Bundle props `config.react.max_iterations` / `react.max_iterations`
-2. Assembly/env `ai.react.max_iterations` / `AI_REACT_MAX_ITERATIONS`
-3. Runtime fallback `15`
+1. Agent-scoped bundle props:
+   `config.react.<agent_key>.max_iterations`,
+   `config.react.agents.<agent_key>.max_iterations`, then
+   `config.react.default_agent.max_iterations`
+2. Legacy bundle props `config.react.max_iterations` / `react.max_iterations`
+3. Assembly/env `ai.react.max_iterations` / `AI_REACT_MAX_ITERATIONS`
+4. Runtime fallback `15`
+
+The runtime normalizes missing `agent_id` to `default.react.agent`, whose
+descriptor alias is `default_agent`.
+
+```yaml
+config:
+  react:
+    default_agent:
+      max_iterations: 15
+    reviewer_agent:
+      max_iterations: 6
+```
 
 The resolved value is passed through `RuntimeCtx.max_iterations`. Reactive external-event credit, when enabled, can temporarily add bounded extra iterations during the active turn.
 
@@ -40,9 +56,13 @@ The resolved value is passed through `RuntimeCtx.max_iterations`. Reactive exter
 
 Live model thinking blocks are persisted as `react.thinking` timeline blocks. Rendering them into the active ReAct context is controlled by:
 
-1. Bundle props `config.react.render_thinking` / `react.render_thinking`
-2. Assembly/env `ai.react.render_thinking` / `AI_REACT_RENDER_THINKING`
-3. Runtime fallback `true`
+1. Agent-scoped bundle props:
+   `config.react.<agent_key>.render_thinking`,
+   `config.react.agents.<agent_key>.render_thinking`, then
+   `config.react.default_agent.render_thinking`
+2. Legacy bundle props `config.react.render_thinking` / `react.render_thinking`
+3. Assembly/env `ai.react.render_thinking` / `AI_REACT_RENDER_THINKING`
+4. Runtime fallback `true`
 
 This switch only controls rendering. It does not change channel parsing or persistence. Thinking from pruned/compacted historical rounds is not rendered.
 
@@ -50,9 +70,13 @@ This switch only controls rendering. It does not change channel parsing or persi
 
 Rendered prompt snapshots are controlled separately from thinking visibility:
 
-1. Bundle props `config.react.debug_timeline` / `react.debug_timeline`
-2. Assembly/env `ai.react.debug_timeline` / `AI_REACT_DEBUG_TIMELINE`
-3. Bundle code default, usually `false` for normal bundles and `true` for
+1. Agent-scoped bundle props:
+   `config.react.<agent_key>.debug_timeline`,
+   `config.react.agents.<agent_key>.debug_timeline`, then
+   `config.react.default_agent.debug_timeline`
+2. Legacy bundle props `config.react.debug_timeline` / `react.debug_timeline`
+3. Assembly/env `ai.react.debug_timeline` / `AI_REACT_DEBUG_TIMELINE`
+4. Bundle code default, usually `false` for normal bundles and `true` for
    diagnostic/reference bundles
 
 When enabled, snapshots are written under `REACT_DEBUG_ROOT`, normally

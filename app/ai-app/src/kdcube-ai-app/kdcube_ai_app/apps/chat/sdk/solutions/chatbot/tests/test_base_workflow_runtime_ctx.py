@@ -313,6 +313,56 @@ def test_react_render_thinking_prefers_bundle_props_over_settings():
     assert workflow_mod._react_render_thinking({}, settings) is True
 
 
+def test_react_config_resolves_agent_blocks_before_default_and_legacy():
+    settings = SimpleNamespace(
+        AI_REACT_MAX_ITERATIONS=15,
+        AI_REACT_RENDER_THINKING=True,
+        AI_REACT_LINE_NUMBERS_MODE="lines",
+        AI_REACT_EVENT_SOURCE_PIPELINE_ENABLED=False,
+    )
+    props = {
+        "config": {
+            "react": {
+                "render_thinking": "off",
+                "max_iterations": 2,
+                "default_agent": {
+                    "render_thinking": False,
+                    "max_iterations": 7,
+                    "event_source_pipeline": {"enabled": False},
+                    "additional_instructions": "default instructions",
+                },
+                "review.agent": {
+                    "render_thinking": True,
+                    "max_iterations": 3,
+                    "event_source_pipeline_enabled": "yes",
+                },
+                "review_agent": {
+                    "line_numbers_mode": "disabled",
+                },
+            }
+        }
+    }
+
+    assert workflow_mod._react_render_thinking(props, settings, agent_id="review.agent") is True
+    assert workflow_mod._react_max_iterations(props, settings, agent_id="review.agent") == 3
+    assert workflow_mod._react_line_numbers_mode(props, settings, agent_id="review.agent") == "disabled"
+    assert workflow_mod._react_event_source_pipeline_enabled(props, settings, agent_id="review.agent") is True
+
+    assert workflow_mod._react_render_thinking(props, settings, agent_id="unknown.agent") is False
+    assert workflow_mod._react_max_iterations(props, settings, agent_id="unknown.agent") == 7
+    value, source = workflow_mod._react_config_lookup(
+        props,
+        "additional_instructions",
+        agent_id="unknown.agent",
+    )
+    assert value == "default instructions"
+    assert source == "config.react.default_agent.additional_instructions"
+
+    legacy_only = {"config": {"react": {"render_thinking": "off", "max_iterations": 4}}}
+    assert workflow_mod._react_render_thinking(legacy_only, settings, agent_id="review.agent") is False
+    assert workflow_mod._react_max_iterations(legacy_only, settings, agent_id="review.agent") == 4
+
+
 def test_react_event_source_pipeline_enabled_prefers_bundle_props_over_settings():
     settings = SimpleNamespace(AI_REACT_EVENT_SOURCE_PIPELINE_ENABLED=False)
 

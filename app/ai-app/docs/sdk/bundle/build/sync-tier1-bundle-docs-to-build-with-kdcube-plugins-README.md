@@ -312,16 +312,18 @@ The plugin should steer agents away from these recurring mistakes:
   `config/secrets.yaml`; use `kdcube info --workdir ...` to verify the concrete
   initialized runtime
 - ReAct max rounds are configurable through `ai.react.max_iterations` /
-  `AI_REACT_MAX_ITERATIONS`, with per-bundle override through
-  `config.react.max_iterations` or `react.max_iterations`
+  `AI_REACT_MAX_ITERATIONS`, with default-agent override through
+  `config.react.default_agent.max_iterations` and named-agent override through
+  `config.react.<agent_key>.max_iterations` or
+  `config.react.agents.<agent_key>.max_iterations`
 - ReAct live thinking rendering is configurable through
-  `ai.react.render_thinking` / `AI_REACT_RENDER_THINKING`, with per-bundle
-  override through `config.react.render_thinking` or `react.render_thinking`;
-  pruned/compacted historical thinking is not rendered
+  `ai.react.render_thinking` / `AI_REACT_RENDER_THINKING`, with the same
+  default-agent/named-agent override shape; pruned/compacted historical
+  thinking is not rendered
 - ReAct rendered prompt snapshot debugging is controlled separately by
-  `ai.react.debug_timeline` / `AI_REACT_DEBUG_TIMELINE`, with per-bundle
-  override through `config.react.debug_timeline` or `react.debug_timeline`;
-  keep it off unless diagnosing the exact rendered model context
+  `ai.react.debug_timeline` / `AI_REACT_DEBUG_TIMELINE`, with the same
+  default-agent/named-agent override shape; keep it off unless diagnosing the
+  exact rendered model context
 - User Memory subsystem config is reserved under `config.memory` for bundles
   that derive from the memory entrypoint mixin; the widget route also needs
   `config.ui.widgets.memories.enabled: true`

@@ -956,18 +956,33 @@ ReAct round limits can be set globally or per bundle:
 
 - global runtime default: `ai.react.max_iterations` in `assembly.yaml`, or
   `AI_REACT_MAX_ITERATIONS` in env
-- per-bundle override: `config.react.max_iterations` or
-  `react.max_iterations` in the bundle's deployment-scoped props
+- default-agent override: `config.react.default_agent.max_iterations`
+- named-agent override: `config.react.<agent_key>.max_iterations` or
+  `config.react.agents.<agent_key>.max_iterations`
 
-The per-bundle prop wins over the assembly/env default. If neither is set, the
-runtime fallback is `15`.
+Agent-scoped bundle props win over the assembly/env default. Flat props such as
+`config.react.max_iterations` and `react.max_iterations` remain compatibility
+fallbacks. If neither is set, the runtime fallback is `15`.
+
+```yaml
+config:
+  react:
+    default_agent:
+      max_iterations: 15
+      render_thinking: true
+      additional_instructions: |
+        Keep answers concise unless the user asks for implementation detail.
+    reviewer_agent:
+      max_iterations: 6
+```
 
 Live ReAct thinking rendering follows the same precedence:
 
 - global runtime default: `ai.react.render_thinking` in `assembly.yaml`, or
   `AI_REACT_RENDER_THINKING` in env
-- per-bundle override: `config.react.render_thinking` or
-  `react.render_thinking` in the bundle's deployment-scoped props
+- default-agent override: `config.react.default_agent.render_thinking`
+- named-agent override: `config.react.<agent_key>.render_thinking` or
+  `config.react.agents.<agent_key>.render_thinking`
 
 This only controls whether live `react.thinking` blocks are rendered into the
 active ReAct timeline. Pruned/compacted historical thinking is never rendered.
@@ -975,7 +990,8 @@ active ReAct timeline. Pruned/compacted historical thinking is never rendered.
 Rendered prompt snapshot debugging is separate from thinking visibility. Keep
 `ai.react.debug_timeline: false` for normal deployments; enable it only when
 you need to inspect exactly what the ReAct runtime sent to the model. A bundle
-can override with `config.react.debug_timeline` or `react.debug_timeline`.
+can override with `config.react.default_agent.debug_timeline` or the matching
+named-agent key.
 
 Then start the initialized runtime:
 

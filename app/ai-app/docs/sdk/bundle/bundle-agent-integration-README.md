@@ -107,7 +107,8 @@ items:
   - id: my.bundle@1-0
     config:
       react:
-        line_numbers_mode: sparsed  # disabled | lines | sparsed
+        default_agent:
+          line_numbers_mode: sparsed  # disabled | lines | sparsed
 ```
 
 `lines` preserves the historical behavior and numbers every rendered preview
@@ -731,7 +732,7 @@ The workflow builds React from those descriptors:
 base_instructions = (
     "You are the product assistant. Use product tools for durable product state."
 )
-configured_instructions = self.bundle_prop("react.additional_instructions", "")
+configured_instructions = self.bundle_prop("react.default_agent.additional_instructions", "")
 additional_instructions = "\n".join(
     item for item in [base_instructions, configured_instructions] if item
 )
@@ -765,7 +766,7 @@ React configuration sources:
 - `skills_descriptor.py` controls skill roots and visibility
 - bundle props such as `mcp.services` control MCP connection details
 - bundle props may add product-specific instructions, for example
-  `react.additional_instructions`
+  `react.default_agent.additional_instructions`
 - platform config selects the React runtime version; bundle code should call
   `BaseWorkflow.build_react(...)` instead of hardcoding a React version
 
