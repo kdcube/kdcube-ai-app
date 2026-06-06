@@ -631,7 +631,7 @@ can be changed by descriptor/admin overrides, and survives reload.
 Do not use descriptor props for a one-off user choice such as "run this API call
 with lite/regular/strong". For that, the bundle should put
 `role_models` in `bundle_call_context` around the current `@api`, `@mcp`,
-`@cron`, `@on_message`, or `@on_job` execution. See
+`@cron`, `@on_reactive_event`, or `@on_job` execution. See
 [bundle-agent-integration-README.md#model-selection-for-agent-roles](../bundle-agent-integration-README.md#model-selection-for-agent-roles).
 
 ## One Environment Can Host Many Bundles

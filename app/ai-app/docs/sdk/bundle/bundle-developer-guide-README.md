@@ -18,6 +18,7 @@ see_also:
   - ks:docs/sdk/bundle/auth-bundle-federated-README.md
   - ks:docs/sdk/bundle/bundle-runtime-README.md
   - ks:docs/sdk/bundle/bundle-delivery-and-update-README.md
+  - ks:docs/service/comm/bus-routing-and-partitioning-README.md
   - ks:docs/service/streams/background-jobs-README.md
   - ks:docs/service/comm/data-bus-README.md
   - ks:docs/service/synch-mechanisms/critical-section-README.md
@@ -81,13 +82,16 @@ with hosting service, tenant/project/user/conversation/turn scope, conversation
 storage, and output directory.
 
 If a widget or service sends durable non-chat domain messages into the bundle,
-read [Data Bus](../../service/comm/data-bus-README.md),
+read [Bus Routing And Partitioning](../../service/comm/bus-routing-and-partitioning-README.md),
+[Data Bus](../../service/comm/data-bus-README.md),
 [Bundle Federated Auth For Data Bus](auth-bundle-federated-README.md),
 [bundle-platform-integration-README.md#110-data_bus_handler](bundle-platform-integration-README.md#110-data_bus_handler),
 and [bundle-client-communication-README.md#data-bus-contract](bundle-client-communication-README.md#data-bus-contract).
 Use Data Bus for bundle-owned state mutations that need retry, idempotency, or
 per-object serialization; use chat ingress only for conversation turns and
 authored `external_events[]`.
+Use `target.agent_id` for conversation agent lanes; use Data Bus `subject` for
+durable handler routing; use `object_ref` for object partitioning.
 When the client has bundle-owned upstream identity instead of a platform
 browser session, expose a bundle public `federated_token_claim` operation and
 use a scoped federated Data Bus token.
@@ -148,7 +152,7 @@ items:
           model: claude-haiku-4-5
 ```
 
-Ad hoc override in `@api`, `@mcp`, `@cron`, `@on_message`, or `@on_job` code:
+Ad hoc override in `@api`, `@mcp`, `@cron`, `@on_reactive_event`, or `@on_job` code:
 
 ```python
 from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import (
@@ -284,7 +288,7 @@ For the exact decorator contract, route mapping, widget/public endpoints, `@cron
 | `@mcp(...)` | entrypoint method | bundle-served MCP endpoints |
 | `@ui_widget(...)` | entrypoint method | widget manifest entries |
 | `@ui_main` | entrypoint method | bundle main UI entrypoint |
-| `@on_message` | entrypoint method | message-handler metadata |
+| `@on_reactive_event` | entrypoint method | conversation external-event handler metadata |
 | `@cron(...)` | entrypoint method | scheduled background jobs |
 | `@on_job` | entrypoint method | ready background jobs claimed by proc from the jobs stream |
 | `@venv(...)` | helper function or method | cached subprocess virtualenv execution for selected helpers |

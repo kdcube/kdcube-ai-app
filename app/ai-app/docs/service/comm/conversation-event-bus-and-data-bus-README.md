@@ -1,7 +1,7 @@
 ---
 id: ks:docs/service/comm/conversation-event-bus-and-data-bus-README.md
 title: "Conversation Event Bus And Data Bus"
-summary: "Design distinction between conversation external events and the bundle-scoped Data Bus, including transport shape, routing, persistence, ordering, replies, and bridge patterns."
+summary: "How conversation external events and the bundle-scoped Data Bus fit together, including transport shape, routing, persistence, ordering, replies, and bridge patterns."
 status: active
 tags: ["service", "comm", "conversation-events", "data-bus", "socketio", "redis-streams", "bundle-runtime"]
 keywords:
@@ -18,6 +18,7 @@ keywords:
   ]
 see_also:
   - ks:docs/service/comm/comm-system.md
+  - ks:docs/service/comm/bus-routing-and-partitioning-README.md
   - ks:docs/service/comm/data-bus-README.md
   - ks:docs/sdk/bundle/bundle-client-communication-README.md
   - ks:docs/sdk/bundle/bundle-widget-integration-README.md
@@ -27,8 +28,8 @@ see_also:
 ---
 # Conversation Event Bus And Data Bus
 
-KDCube has two durable inbound message paths that can share browser transport
-but must not share semantics.
+KDCube has two durable inbound message paths. They can share browser transport,
+while each path keeps its own routing, partitioning, and handler contract.
 
 Use this page when deciding whether a browser/widget action should become
 conversation context for an agent, or should mutate bundle-owned domain state.
@@ -41,7 +42,24 @@ conversation context for an agent, or should mutate bundle-owned domain state.
 | Data Bus | tenant + project + bundle, optionally object-partitioned | Socket.IO `data_bus.publish` with `messages[]` | bundle Data Bus Redis Stream | processor-owned `@data_bus_handler(...)` worker | board patch, issue edit, object comment, widget persistence signal |
 
 The same browser can keep one Socket.IO connection and use both events. That is
-transport reuse only. It does not collapse the two contracts.
+transport reuse; routing still follows the selected bus contract.
+
+For the compact routing and partitioning contract, including `agent_id`,
+`subject`, `object_ref`, and handler examples, read
+[Bus Routing And Partitioning](bus-routing-and-partitioning-README.md).
+
+## Routing Snapshot
+
+```text
+conversation event:
+  target.agent_id -> tenant/project/user/conversation/agent_id lane
+  -> @on_reactive_event run(...)
+
+data bus message:
+  messages[].subject -> bundle Data Bus stream
+  -> optional object_ref partition lock
+  -> @data_bus_handler(ctx, message)
+```
 
 ## Conversation Event Bus
 

@@ -1059,6 +1059,9 @@ class EnhancedChatRequestProcessor:
                 agent_id = normalize_agent_id(getattr(event_ctx, "agent_id", None))
             except Exception:
                 agent_id = DEFAULT_REACT_AGENT_ID
+        # Conversation event lanes are partitioned by agent_id. Promotion reads
+        # the same lane that ingress wrote, keeping internal agent streams
+        # independent for the same conversation.
         return build_conversation_external_event_source(
             redis=self.redis,
             tenant=payload.actor.tenant_id,
@@ -1097,6 +1100,9 @@ class EnhancedChatRequestProcessor:
         if resolved.event is None:
             resolved.event = ExternalEvent()
         resolved.event.kind = str(getattr(event, "kind", "") or resolved.event.kind or "message")
+        # Rehydrate the processor envelope from the retained lane occurrence.
+        # Bundle @on_reactive_event handlers can read this as the canonical
+        # target agent for internal dispatch.
         resolved.event.agent_id = normalize_agent_id(
             getattr(event, "agent_id", None) or wakeup.event_lane.agent_id,
             default=DEFAULT_REACT_AGENT_ID,

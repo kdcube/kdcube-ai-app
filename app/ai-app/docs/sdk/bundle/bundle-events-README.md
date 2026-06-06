@@ -21,6 +21,7 @@ keywords:
     "custom namespace",
   ]
 see_also:
+  - ks:docs/service/comm/bus-routing-and-partitioning-README.md
   - ks:docs/sdk/events/event-subsystem-README.md
   - ks:docs/sdk/events/external-events-README.md
   - ks:docs/sdk/events/external-events-journey-and-handling-README.md
@@ -194,6 +195,40 @@ the payload:
 correlation for the bundle and policies. `snapshot_ref` can point at bundle
 storage, a domain system, or another artifact namespace; ReAct materializes it
 only through a registered namespace rehoster.
+
+## Agent Lane Routing
+
+A bundle can run several internal agents behind one reactive entrypoint. The
+conversation event bus routes to the selected lane with `agent_id`.
+
+```text
+target.agent_id = "example.reviewer"
+  -> tenant/project/user/conversation/example.reviewer lane
+  -> @on_reactive_event run(...)
+  -> bundle dispatches to reviewer agent
+```
+
+In `run(...)`, read the target from the accepted event list or from the bound
+request context:
+
+```python
+@on_reactive_event
+async def run(self, **params):
+    events = params.get("external_events") or []
+    agent_id = next(
+        (
+            event.get("agent_id")
+            for event in events
+            if isinstance(event, dict) and event.get("agent_id")
+        ),
+        "default.react.agent",
+    )
+    return await self.route_to_agent(agent_id, **params)
+```
+
+Use one target `agent_id` for one submitted package. If a UI needs to address
+two agents, submit two explicit events/packages so each agent lane keeps its own
+ordering.
 
 ## Defining Bundle Event Sources
 

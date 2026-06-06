@@ -19,6 +19,7 @@ see_also:
   - ks:docs/sdk/bundle/bundle-developer-guide-README.md
   - ks:docs/sdk/bundle/bundle-venv-README.md
   - ks:docs/service/streams/background-jobs-README.md
+  - ks:docs/service/comm/bus-routing-and-partitioning-README.md
   - ks:docs/service/comm/data-bus-README.md
   - ks:docs/sdk/bundle/bundle-index-README.md
   - ks:docs/sdk/bundle/versatile-reference-bundle-README.md
@@ -108,7 +109,7 @@ Bundles currently support these decorators:
 | `@mcp(...)` | entrypoint method | Declares a remotely callable bundle MCP endpoint. |
 | `@ui_widget(...)` | entrypoint method | Declares a widget in the bundle interface manifest. |
 | `@ui_main` | entrypoint method | Declares the bundle main UI entrypoint. |
-| `@on_message` | entrypoint method | Declares the bundle message handler metadata. |
+| `@on_reactive_event` | entrypoint method | Declares the bundle conversation external-event handler metadata. |
 | `@data_bus_handler(...)` | entrypoint method | Declares a durable Data Bus subject handler managed by proc. |
 | `@cron(...)` | entrypoint method | Declares a scheduled background job managed by proc. |
 | `@on_job` | entrypoint method | Declares the bundle handler for ready background jobs claimed by proc. |
@@ -117,7 +118,7 @@ Bundles currently support these decorators:
 Important distinction:
 
 - `@bundle_entrypoint(...)`, `@bundle_entrypoint_factory(...)`, `@bundle_id(...)`,
-  `@api(...)`, `@mcp(...)`, `@ui_widget(...)`, `@ui_main`, `@on_message`,
+  `@api(...)`, `@mcp(...)`, `@ui_widget(...)`, `@ui_main`, `@on_reactive_event`,
   `@data_bus_handler(...)`, `@cron(...)`, and `@on_job`
   participate in bundle manifest and runtime interface discovery
 - `@venv(...)` is an execution decorator, not an HTTP/UI manifest decorator
@@ -381,7 +382,7 @@ and background work can be retried after task interruption.
 | --- | --- | --- | --- | --- |
 | `on_bundle_load(**kwargs)` | `BaseEntrypoint` and subclasses | Once per process / tenant / project when the bundle is loaded or preloaded | Build static UI, warm local indexes, prepare per-process assets | Accept only kwargs you need. Default refreshes bundle props and ensures UI build. If overriding a `BaseEntrypoint` family class, call `await super().on_bundle_load(**kwargs)` after applying needed runtime handles from `kwargs`. Avoid long unbounded work. |
 | `on_props_changed(previous_props, current_props, reason, tenant, project, updated_by, source)` | `BaseEntrypoint` and subclasses | After effective bundle props change for the live bundle instance | Reconcile side effects after config changes | Default is no-op except UI-related cache handling. Treat props as deployment/runtime config, not secrets. |
-| `pre_run_hook(state)` | `BaseEntrypoint` and subclasses | Before the main `@on_message` execution core | Per-turn setup, state enrichment, request-local checks | Keep fast. For `BaseEntrypointWithEconomics`, the hook may also accept `econ_ctx`. |
+| `pre_run_hook(state)` | `BaseEntrypoint` and subclasses | Before the main `@on_reactive_event` execution core | Per-turn setup, state enrichment, request-local checks | Keep fast. For `BaseEntrypointWithEconomics`, the hook may also accept `econ_ctx`. |
 | `post_run_hook(state, result)` | `BaseEntrypoint` and subclasses | After successful main turn execution | Per-turn finalization based on output | Keep fast and non-critical. For `BaseEntrypointWithEconomics`, the hook may also accept `econ_ctx`. |
 | `on_turn_completed(state, result, error, status, reason, **kwargs)` | `BaseEntrypoint` and subclasses | After the turn exits, errors, or is cancelled | Cleanup that must run even when a turn fails | If overriding in a class that also uses mixins, call `super().on_turn_completed(...)` so platform/mixin cleanup still runs. |
 | `handle_job(**kwargs)` | Bundles with `@on_job`, plus mixins that implement job handling | When proc claims a background job and dispatches it to the bundle | Handle custom background work | If inheriting mixins, call `await super().handle_job(**kwargs)` first and return it when `handled=true`. Then process bundle-specific `work_kind` values. |
@@ -557,14 +558,14 @@ Important current rule:
   follow the current API/widget invocation into tools, nested agents, or
   isolated runtimes; for request-scoped model routing, set
   `bundle_call_context.role_models`
-- the same pattern applies in `@mcp`, `@cron`, `@on_message`, and `@on_job`:
+- the same pattern applies in `@mcp`, `@cron`, `@on_reactive_event`, and `@on_job`:
   bind the `bundle_call_context.role_models` override around the downstream
   SDK agent/React/tool call, not around unrelated setup code
 
 Model-selection sketch:
 
 ```text
-@api / @mcp / @cron / @on_message / @on_job
+@api / @mcp / @cron / @on_reactive_event / @on_job
         |
         | bind_current_bundle_call_context_patch({
         |   "role_models": {"my.agent": {"provider": "...", "model": "..."}}
@@ -756,20 +757,40 @@ Current behavior:
 - build-on-first-request is supported for bundles that have a UI defined but
   were not yet built in the current proc
 
-### 1.8 `@on_message`
+### 1.8 `@on_reactive_event`
 
-Marks the bundle message handler metadata.
+Marks the bundle handler for conversation external events.
 
 ```python
-@on_message
+from kdcube_ai_app.infra.plugin.bundle_loader import on_reactive_event
+
+
+@on_reactive_event
 async def run(self, **params):
-    ...
+    events = params.get("external_events") or []
+    agent_id = next(
+        (
+            event.get("agent_id")
+            for event in events
+            if isinstance(event, dict) and event.get("agent_id")
+        ),
+        "default.react.agent",
+    )
+    return await self.route_to_agent(agent_id, **params)
 ```
 
 Current practical pattern:
 
-- base entrypoints already decorate `run()` with `@on_message`
+- base entrypoints already decorate `run()` with `@on_reactive_event`
 - manifest discovery reports the message handler method name
+- `target.agent_id` selects the conversation event lane
+- `params["external_events"][].agent_id` carries the accepted event target
+- `ExternalEventPayload.event.agent_id` is available through the bound request
+  context when the handler needs the canonical lane target
+- one bundle has one discovered reactive entrypoint; multiple internal agents
+  dispatch inside that method
+
+See [Bus Routing And Partitioning](../../service/comm/bus-routing-and-partitioning-README.md).
 
 ### 1.9 `@on_job`
 
@@ -897,6 +918,7 @@ domain message into conversation ingress.
 
 See:
 
+- [docs/service/comm/bus-routing-and-partitioning-README.md](../../service/comm/bus-routing-and-partitioning-README.md)
 - [docs/service/comm/data-bus-README.md](../../service/comm/data-bus-README.md)
 - [auth-bundle-federated-README.md](auth-bundle-federated-README.md)
 - [bundle-client-communication-README.md#data-bus-contract](bundle-client-communication-README.md#data-bus-contract)
@@ -1185,7 +1207,7 @@ Current response shape includes:
   - includes `user_types`
   - includes `roles`
 - `ui_main`
-- `on_message`
+- `on_message` manifest field for the `@on_reactive_event` method
 - `on_job`
 - `scheduled_jobs`
   - includes `method_name`
@@ -1439,8 +1461,8 @@ Use these rules for new bundles:
 6. If a widget method is also called through `/operations/...`, add
    `@api(route="operations", alias="<operation-alias>")` to the same method.
 7. Use `@ui_main` when the bundle has a main static UI application.
-8. Use `@on_message` on the bundle message handler. The base entrypoints already
-   do this on `run()`.
+8. Use `@on_reactive_event` on the bundle conversation event handler. The base
+   entrypoints already do this on `run()`.
 9. Use `@data_bus_handler(...)` when the bundle accepts durable non-chat domain
    messages from widgets or services. Keep it async, make mutation subjects
    idempotent, and use `partition_by="object_ref"` plus
@@ -1475,7 +1497,7 @@ Relevant code:
   `src/kdcube-ai-app/kdcube_ai_app/infra/plugin/bundle_loader.py`
 - integrations controller:
   `src/kdcube-ai-app/kdcube_ai_app/apps/chat/proc/rest/integrations/integrations.py`
-- base entrypoint widget and `@on_message` usage:
+- base entrypoint widget and `@on_reactive_event` usage:
   `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/entrypoint.py`
 - background job stream:
   `src/kdcube-ai-app/kdcube_ai_app/infra/jobs/stream.py`

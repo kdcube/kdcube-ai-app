@@ -11,6 +11,7 @@ see_also:
   - ks:docs/sdk/bundle/bundle-transports-README.md
   - ks:docs/sdk/bundle/bundle-event-recording-and-sinks-README.md
   - ks:docs/sdk/bundle/bundle-events-README.md
+  - ks:docs/service/comm/bus-routing-and-partitioning-README.md
   - ks:docs/sdk/bundle/bundle-reserved-platform-properties-README.md
   - ks:docs/sdk/tools/mcp-README.md
   - ks:docs/sdk/agents/claude/claude-code-README.md
@@ -304,10 +305,10 @@ async def nightly_report(self):
         await self._enqueue_or_run_nightly_report()
 ```
 
-`@on_message`:
+`@on_reactive_event`:
 
 ```python
-@on_message
+@on_reactive_event
 async def run(self, **params):
     strength = str(params.get("agent_strength") or "regular")
     with use_agent_model("solver.react.v2.decision.v2.regular", strength=strength):

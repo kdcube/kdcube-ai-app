@@ -7,6 +7,7 @@ keywords: ["SSE", "Socket.IO", "REST", "relay", "transports", "data bus"]
 see_also:
   - ks:docs/service/comm/CHAT-RELAY-SESSION-SUBSCR-SSE-SOCKETIO-FUNOUT.README.md
   - ks:docs/service/comm/comm-system.md
+  - ks:docs/service/comm/bus-routing-and-partitioning-README.md
   - ks:docs/service/comm/conversation-event-bus-and-data-bus-README.md
   - ks:docs/service/comm/data-bus-README.md
   - ks:docs/service/comm/comm-recording-event-sinks-README.md
@@ -35,9 +36,11 @@ This README is the entry point for **communication integrations**:
 
 If you are implementing a UI, API client, or a new transport, start here.
 
-For the central distinction between conversation `external_events[]` and Data
-Bus `messages[]`, read
+For how conversation `external_events[]` and Data Bus `messages[]` fit
+together, read
 [Conversation Event Bus And Data Bus](conversation-event-bus-and-data-bus-README.md).
+For routing keys and partitioning, read
+[Bus Routing And Partitioning](bus-routing-and-partitioning-README.md).
 
 ---
 

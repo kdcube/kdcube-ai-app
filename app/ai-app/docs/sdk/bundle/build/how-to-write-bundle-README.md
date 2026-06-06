@@ -161,6 +161,7 @@ Critical Data Bus rule:
 - register entrypoint handlers with `@data_bus_handler(...)`
 - accepted messages go to bundle-scoped Redis Streams and processor-owned
   workers; bundles do not start their own Redis consumers
+- route handlers by `messages[].subject`
 - use `idempotency="required"` for mutations
 - use `partition_by="object_ref"` and `ordering="serial_per_partition"` for
   shared objects such as canvases, boards, issues, and documents
@@ -178,6 +179,8 @@ Critical bundle event-source rule:
   evidence uploaded
 - route those events with `payload.target.agent_id`; include `story_kind` and
   `story_id` when the event belongs to a product-flow instance
+- handle them through the bundle's single `@on_reactive_event run(...)` method
+  and dispatch to internal agents by `agent_id`
 - tools are event sources; a tool can declare `@event_source(...)` and bind
   policies such as `react_phase=block_production`
 - if event data or tool results expose compact external refs such as `ext:...`,
@@ -185,6 +188,8 @@ Critical bundle event-source rule:
   module
 - read [bundle-events-README.md](../bundle-events-README.md) before designing
   wizard/canvas/snapshot flows or custom artifact refs
+- read [Bus Routing And Partitioning](../../../service/comm/bus-routing-and-partitioning-README.md)
+  for the compact field map across `agent_id`, `subject`, and `object_ref`
 
 Shared widget rule:
 
@@ -634,7 +639,7 @@ Before writing code, classify the product surface and state model.
 
 | Product need | Primary surface | Typical runtime path | Typical state/storage | Notes |
 | --- | --- | --- | --- | --- |
-| Copilot/chat experience | `@bundle_entrypoint` / `@on_message` | request-bound chat path | conversation stores, retrieval systems, bundle props | start here for assistant-style products |
+| Copilot/chat experience | `@bundle_entrypoint` / `@on_reactive_event` | request-bound chat path | conversation stores, retrieval systems, bundle props | start here for assistant-style products |
 | Admin console | `@ui_widget` + `@api(route="operations")` | widget -> operations | descriptor-backed config, bundle local storage, DB/Redis | keep admin separate from public/user surface |
 | Durable widget/domain mutation | Socket.IO `data_bus.publish` + `@data_bus_handler(...)` | Data Bus Redis Stream -> proc worker -> handler | bundle-owned DB/Redis/storage with idempotency | use for non-chat state changes that need retry or per-object serialization |
 | External webhook/integration | `@api(route="public")` | public HTTP path | bundle props + secrets, external systems | auth boundary must be explicit |
@@ -1091,8 +1096,8 @@ with bind_current_bundle_call_context_patch({"role_models": role_models}):
     await self._run_report_agent(...)
 ```
 
-For the full code examples across `@api`, `@mcp`, `@cron`, `@on_message`, and
-`@on_job`, read
+For the full code examples across `@api`, `@mcp`, `@cron`,
+`@on_reactive_event`, and `@on_job`, read
 [bundle-agent-integration-README.md#model-selection-for-agent-roles](../bundle-agent-integration-README.md#model-selection-for-agent-roles).
 
 Channel rule:
@@ -1420,7 +1425,7 @@ Effect on each surface:
 
 - API / MCP / widget: platform returns 404 when the surface is disabled
 - cron: scheduler skips reconciliation for the job
-- on_message / on_job: covered transitively by `enabled.bundle`
+- reactive event / on_job: covered transitively by `enabled.bundle`
 
 Use it for:
 

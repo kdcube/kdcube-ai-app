@@ -147,6 +147,7 @@ Critical bundle-events rule:
 - custom artifact namespaces need a registered rehoster so `react.pull` can
   materialize the external ref into a normal ReAct `fi:` path
 - read [bundle-events-README.md](../bundle-events-README.md),
+  [bus-routing-and-partitioning-README.md](../../../service/comm/bus-routing-and-partitioning-README.md),
   [event-subsystem-README.md](../../events/event-subsystem-README.md), and
   [event-source-README.md](../../agents/react/event-source/event-source-README.md)
   when the bundle has wizard/canvas/snapshot flows, custom tool rendering, or
@@ -320,7 +321,7 @@ Practical rule:
   - MCP server -> `@mcp(...)`
   - background sync -> `@cron(...)`
   - ready background job execution -> `@on_job`
-  - assistant workflow -> `@bundle_entrypoint` / `@on_message`
+  - assistant workflow -> `@bundle_entrypoint` / `@on_reactive_event`
 
 ### C. I am configuring a bundle or translating an existing app config
 
@@ -412,7 +413,7 @@ Then jump only to the row that matches your question.
 | I have existing code. How do I wrap it? | [how-to-write-bundle-README.md](how-to-write-bundle-README.md) | It contains the design matrix and process-boundary guidance. |
 | How do I map existing app settings into KDCube settings, bundle props, and user state? | [../../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../../configuration/bundle-runtime-configuration-and-secrets-README.md) | It is the Tier 1 configuration model and ownership map. |
 | Are bundle code defaults merged with `bundles.yaml` props, and what gets written back? | [../bundle-properties-and-secrets-lifecycle-README.md](../bundle-properties-and-secrets-lifecycle-README.md) | It is the concise bundle-author lifecycle for `configuration_defaults()`, descriptor/admin props, effective props, bundle secrets, and materialization. |
-| How do I choose Haiku/Sonnet/Opus for one agent/API/chat/job call? | [../bundle-agent-integration-README.md#model-selection-for-agent-roles](../bundle-agent-integration-README.md#model-selection-for-agent-roles) and [../bundle-runtime-README.md#request-scoped-role-model-override](../bundle-runtime-README.md#request-scoped-role-model-override) | Use `config.role_models` for bundle/deployment defaults and `bundle_call_context.role_models` for one `@api`, `@mcp`, `@cron`, `@on_message`, or `@on_job` invocation. |
+| How do I choose Haiku/Sonnet/Opus for one agent/API/chat/job call? | [../bundle-agent-integration-README.md#model-selection-for-agent-roles](../bundle-agent-integration-README.md#model-selection-for-agent-roles) and [../bundle-runtime-README.md#request-scoped-role-model-override](../bundle-runtime-README.md#request-scoped-role-model-override) | Use `config.role_models` for bundle/deployment defaults and `bundle_call_context.role_models` for one `@api`, `@mcp`, `@cron`, `@on_reactive_event`, or `@on_job` invocation. |
 | How do I run a bundle locally? | [how-to-configure-and-run-bundle-README.md](how-to-configure-and-run-bundle-README.md) | It documents the current local runtime contract and staged descriptor model. |
 | How does Claude Code, Codex, or a plugin agent configure the runtime, wire my bundle, start ngrok, and set Telegram or Gmail values? | [how-to-bootstrap-local-bundle-runtime-as-coding-agent-README.md](how-to-bootstrap-local-bundle-runtime-as-coding-agent-README.md) | It is the coding-agent runbook for discovery, CLI setup, staged bundle props/secrets, ngrok, Telegram webhook registration, Gmail OAuth config, and final verification reporting. |
 | How do I expose local KDCube through public HTTPS for Telegram webhooks, OAuth callbacks, or remote callbacks? | [../../../service/cicd/ngrok-README.md](../../../service/cicd/ngrok-README.md) | It documents the one-ngrok-origin local reverse-proxy flow and the descriptor values that must be updated. |
@@ -423,6 +424,7 @@ Then jump only to the row that matches your question.
 | How do I start, stop, reload, and descriptor-wire a bundle into a project? | [how-to-configure-and-run-bundle-README.md](how-to-configure-and-run-bundle-README.md) | It is the Tier 1 deployer and integrator page for current local runtime operations. |
 | How do I expose widget, API, MCP, cron, or `@on_job`? | [../bundle-platform-integration-README.md](../bundle-platform-integration-README.md) | It is the exact decorator and surface contract. |
 | What runtime helpers exist inside bundle code? | [../bundle-runtime-README.md](../bundle-runtime-README.md) | It explains the bundle runtime objects and capabilities. |
+| How do I choose `agent_id`, Data Bus `subject`, and `object_ref` partitioning? | [../../../service/comm/bus-routing-and-partitioning-README.md](../../../service/comm/bus-routing-and-partitioning-README.md) | It is the compact routing contract for conversation agent lanes and durable bundle Data Bus messages. |
 | How can a non-chat bundle UI get live progress/events from a bundle operation? | [../bundle-client-communication-README.md#non-chat-bundle-events-over-the-shared-stream](../bundle-client-communication-README.md#non-chat-bundle-events-over-the-shared-stream) and [../bundle-transports-README.md#71-communicator-output](../bundle-transports-README.md#71-communicator-output) | Open `/sse/stream` or Socket.IO, pass `KDC-Stream-ID` on the REST operation, and emit `comm.service_event(...)` from request-bound bundle code. |
 | How do I model wizard/canvas/chat events, snapshots, and external artifact refs for an agent? | [../bundle-events-README.md](../bundle-events-README.md), [../../events/event-subsystem-README.md](../../events/event-subsystem-README.md), and [../../agents/react/event-source/event-source-README.md](../../agents/react/event-source/event-source-README.md) | Use authored external events with `agent_id`, `event_source_id`, optional story ids, event-source policies for ReAct phases, and namespace rehosters so refs such as `ext:...` become `fi:` paths through `react.pull`. |
 | How do I use storage, cache, local bundle storage, or git-backed helpers? | [how-to-write-bundle-README.md](how-to-write-bundle-README.md) | It now contains the compact SDK cheat sheet and points to the deeper storage docs only when needed. |

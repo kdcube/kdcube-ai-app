@@ -210,6 +210,15 @@ class TimelineOwnerLease:
 
 
 class RedisConversationExternalEventSource:
+    """
+    Durable conversation event lane.
+
+    The lane is partitioned by tenant/project/user/conversation/agent_id. Each
+    agent inside a bundle gets its own ordered retained event lane for the same
+    conversation, while the bundle entrypoint still receives the event through a
+    single ``@on_reactive_event`` method and dispatches internally.
+    """
+
     def __init__(
         self,
         *,

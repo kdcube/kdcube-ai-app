@@ -10,6 +10,7 @@ see_also:
   - ks:docs/sdk/bundle/bundle-chat-stream-events-README.md
   - ks:docs/sdk/bundle/bundle-agent-integration-README.md
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
+  - ks:docs/service/comm/bus-routing-and-partitioning-README.md
   - ks:docs/sdk/bundle/bundle-scheduled-jobs-README.md
   - ks:docs/exec/README-iso-runtime.md
 ---
@@ -67,7 +68,7 @@ Configure recording at the outer execution boundary that owns the invocation:
 - workflow `run(...)`, `pre_run_hook(...)`, or `post_run_hook(...)`
 - decorated `@api(...)` handler
 - decorated `@mcp(...)` handler
-- decorated `@on_message` handler
+- decorated `@on_reactive_event` handler
 - decorated `@on_job` handler when the job has a communicator context
 
 Tools should normally just emit useful comm events. The outer workflow or
@@ -187,7 +188,7 @@ Use this matrix to decide where to open recording scopes and where to send.
 | Chat turn / normal workflow | workflow boundary, usually `async with self.comm.recording(..., mode="replace", sink=..., send_on_exit=True)` or early/late lifecycle hooks | host comm events from workflow, React, and in-process tools; platform child tool events after side-file merge | host active scopes are exported to platform child runtimes launched inside the scope | host workflow boundary |
 | `@api(...)` operation | inside the handler | events emitted by that operation and nested tools | same as workflow when the handler launches platform child tools | host API handler |
 | `@mcp(...)` endpoint | inside the handler | events emitted by that MCP request and nested work | same as `@api(...)` | host MCP handler; batch once per request |
-| `@on_message` | inside the message handler when `self.comm` is bound | events emitted by that message handler and nested tools | same as workflow when child tools are launched inside the scope | host message handler |
+| `@on_reactive_event` | inside the reactive event handler when `self.comm` is bound | events emitted by that message handler and nested tools | same as workflow when child tools are launched inside the scope | host message handler |
 | `@on_job` | inside the job handler when `self.comm` exists | job-handler events and nested tools | same as workflow when child tools are launched inside the scope | host job handler |
 | `@cron(...)` | normally nowhere; cron is headless | no request/session comm events by default | none | do not send through comm recording; enqueue `@on_job` or write durable operational facts |
 | In-process tool | inside the tool with `get_comm()` / `_COMMUNICATOR` when the tool owns extra policy | events emitted by that tool into the same host buffer | no runtime boundary; scope is live in host process | outer host workflow/API/MCP/job sends |
@@ -291,20 +292,20 @@ async def docs_mcp(self, **kwargs):
 For high-volume MCP endpoints, prefer batching one send at request completion
 over sending one sink request per tool call.
 
-### `@on_message`
+### `@on_reactive_event`
 
 ```python
-from kdcube_ai_app.infra.plugin.bundle_loader import on_message
+from kdcube_ai_app.infra.plugin.bundle_loader import on_reactive_event
 
 
-@on_message
-async def on_message(self, **kwargs):
+@on_reactive_event
+async def run(self, **kwargs):
     if getattr(self, "comm", None) is None:
         return await self.message_handler.run(**kwargs)
 
     async with self.comm.recording(
         EVENT_SELECTOR,
-        scope={"owner": "on_message"},
+        scope={"owner": "on_reactive_event"},
         sink=sink,
         send_on_exit=True,
     ):

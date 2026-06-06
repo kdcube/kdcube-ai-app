@@ -20,6 +20,7 @@ see_also:
   - ks:docs/sdk/bundle/auth-bundle-federated-README.md
   - ks:docs/sdk/bundle/bundle-chat-stream-events-README.md
   - ks:docs/sdk/bundle/bundle-event-recording-and-sinks-README.md
+  - ks:docs/service/comm/bus-routing-and-partitioning-README.md
   - ks:docs/service/comm/data-bus-README.md
   - ks:docs/service/synch-mechanisms/critical-section-README.md
   - ks:docs/service/cicd/cli-README.md
@@ -377,8 +378,8 @@ with bind_current_bundle_call_context_patch({
 ```
 
 Use the same call-context patch inside `@api`, `@mcp`, `@cron`,
-`@on_message`, or `@on_job` when the current request/job chooses a temporary
-agent model. For MCP servers, bind around the actual operation that performs
+`@on_reactive_event`, or `@on_job` when the current request/job chooses a
+temporary agent model. For MCP servers, bind around the actual operation that performs
 the model call; if the decorated method only builds an MCP app, bind inside the
 app's later request handler.
 
@@ -806,6 +807,8 @@ Runtime-owned behavior:
 - group creation, `XREADGROUP`, retry, result stream, DLQ, and shutdown are
   owned by proc
 - `ordering="serial_per_partition"` uses a Redis token lock per partition
+- handler routing is by `message.subject`; object serialization is by
+  `message.object_ref`
 - bundles enforce durable idempotency and optimistic concurrency in their own
   storage
 - federated Data Bus clients arrive as ordinary `UserSession` actors after the
@@ -817,6 +820,7 @@ Runtime-owned behavior:
 See:
 
 - [Data Bus](../../service/comm/data-bus-README.md)
+- [Bus Routing And Partitioning](../../service/comm/bus-routing-and-partitioning-README.md)
 - [Bundle Federated Auth For Data Bus](auth-bundle-federated-README.md)
 - [bundle-platform-integration-README.md#110-data_bus_handler](bundle-platform-integration-README.md#110-data_bus_handler)
 

@@ -285,8 +285,8 @@ with bind_current_bundle_call_context_patch({"role_models": role_models}):
 ```
 
 The request overlay is appropriate inside `@api`, `@mcp`, `@cron`,
-`@on_message`, and `@on_job` handlers when the current request or job payload
-chooses a temporary agent strength.
+`@on_reactive_event`, and `@on_job` handlers when the current request or job
+payload chooses a temporary agent strength.
 
 Precedence:
 

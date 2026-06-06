@@ -6,6 +6,7 @@ tags: ["sdk", "bundle", "interfaces", "streaming", "sse", "widgets", "operations
 keywords: ["communicator interface", "data bus handler interface", "background job interface", "on_job interface", "operations interface", "widget and panel interface", "artifact surface", "bundle visible runtime interfaces", "streaming and interaction surfaces", "knowledge and attachment surfaces"]
 updated_at: 2026-05-22
 see_also:
+  - ks:docs/service/comm/bus-routing-and-partitioning-README.md
   - ks:docs/sdk/bundle/bundle-developer-guide-README.md
   - ks:docs/sdk/bundle/bundle-runtime-README.md
   - ks:docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
@@ -221,9 +222,21 @@ Data Bus messages stay outside `chat_message`, `/sse/chat`,
 `external_events[]`, and ReAct timelines unless bundle code explicitly bridges
 a handled message into conversation ingress.
 
+Routing model:
+
+| Surface | Route key | Partition key | Handler |
+| --- | --- | --- | --- |
+| Conversation event bus | `target.agent_id` / `external_events[].agent_id` | conversation event lane | one `@on_reactive_event` method |
+| Data Bus | `messages[].subject` | optional `messages[].object_ref` | one `@data_bus_handler(...)` per subject |
+
+Use `agent_id` to choose an internal conversation agent. Use Data Bus `subject`
+to choose a durable domain-message handler. Use `object_ref` only when the
+handler needs serialized work for one durable object.
+
 See:
 
 - [Data Bus](../../service/comm/data-bus-README.md)
+- [Bus Routing And Partitioning](../../service/comm/bus-routing-and-partitioning-README.md)
 - [Bundle Federated Auth For Data Bus](auth-bundle-federated-README.md)
 - [bundle-client-communication-README.md#data-bus-contract](bundle-client-communication-README.md#data-bus-contract)
 - [bundle-platform-integration-README.md#110-data_bus_handler](bundle-platform-integration-README.md#110-data_bus_handler)

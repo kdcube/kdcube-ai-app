@@ -771,6 +771,16 @@ mcp_endpoint = mcp
 
 
 def on_reactive_event(fn):
+    """
+    Mark the bundle entrypoint method that receives conversation external events.
+
+    A bundle has one discovered reactive entrypoint. If the bundle runs multiple
+    internal agents, route inside this method using the event lane target:
+    ``params["external_events"][].agent_id`` and/or the bound request context
+    ``ExternalEventPayload.event.agent_id``. The platform partitions the
+    conversation event lane by tenant/project/user/conversation/agent_id before
+    this method is invoked.
+    """
     setattr(
         fn,
         ON_MESSAGE_ATTR,
@@ -937,8 +947,10 @@ def data_bus_handler(
     Mark a bundle method as a Data Bus subject handler.
 
     Data Bus handlers process durable, bundle-scoped inbound messages from the
-    runtime-managed Redis Streams path. They are separate from chat turns and
-    comm relay output.
+    runtime-managed Redis Streams path. Data Bus routing is by ``subject``; when
+    a handler needs serialized object mutation, use ``partition_by="object_ref"``
+    with ``ordering="serial_per_partition"``. This is separate from conversation
+    event lanes, which route agent-visible events by ``agent_id``.
     """
     resolved_subject, resolved_partition_by, resolved_ordering, resolved_idempotency = (
         validate_handler_spec_values(

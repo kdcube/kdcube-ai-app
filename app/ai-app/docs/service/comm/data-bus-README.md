@@ -18,6 +18,7 @@ keywords:
 see_also:
   - ks:docs/service/comm/README-comm.md
   - ks:docs/service/comm/comm-system.md
+  - ks:docs/service/comm/bus-routing-and-partitioning-README.md
   - ks:docs/service/comm/conversation-event-bus-and-data-bus-README.md
   - ks:docs/sdk/bundle/bundle-client-communication-README.md
   - ks:docs/sdk/bundle/auth-bundle-federated-README.md
@@ -63,9 +64,11 @@ wants to send a transient update to a connected peer/session. Use the Data Bus
 when a bundle owns durable state and wants platform-managed admission, retry,
 partition locking, and handler execution.
 
-For the full distinction between the conversation event bus and the Data Bus,
-including when to bridge between them, see
+For how the conversation event bus and the Data Bus fit together, including
+when to bridge between them, see
 [Conversation Event Bus And Data Bus](conversation-event-bus-and-data-bus-README.md).
+For the compact routing and partitioning contract, see
+[Bus Routing And Partitioning](bus-routing-and-partitioning-README.md).
 
 ## Ownership Boundary
 
@@ -213,6 +216,32 @@ Canonical fields:
 The client controls only the bundle-owned payload and message intent fields.
 Ingress attaches `actor`, `reply`, `trace`, tenant/project, and timestamps from
 the authenticated socket context.
+
+## Routing And Partitioning
+
+Data Bus routing is subject based:
+
+```text
+messages[].subject -> @data_bus_handler(subject="...")
+```
+
+Data Bus stream ownership is bundle based:
+
+```text
+kdcube:data-bus:{tenant}:{project}:{bundle_id}:messages
+```
+
+Object serialization is optional and explicit:
+
+```text
+messages[].object_ref
+  + @data_bus_handler(partition_by="object_ref", ordering="serial_per_partition")
+  -> one active handler for tenant/project/bundle/subject/object_ref
+```
+
+Use conversation `target.agent_id` only for the conversation event bus. Data Bus
+does not select handlers by `agent_id`; use `subject` for handler routing and
+`object_ref` for object partitioning.
 
 ## Stream Layout
 

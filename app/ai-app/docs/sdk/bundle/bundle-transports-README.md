@@ -68,7 +68,7 @@ So:
 
 | Surface | Decorator / entry | Transport | Routes | Who authenticates | Typical caller |
 | --- | --- | --- | --- | --- | --- |
-| chat turn | `run()` / `@on_message` | platform chat ingress + proc | chat endpoints such as `/sse/chat` or Socket.IO | KDCube | platform chat client |
+| chat turn | `run()` / `@on_reactive_event` | platform chat ingress + proc | chat endpoints such as `/sse/chat` or Socket.IO | KDCube | platform chat client |
 | Data Bus message | `@data_bus_handler(...)` | Socket.IO `data_bus.publish` + Redis Stream + proc worker | no HTTP route; stream key `kdcube:data-bus:{tenant}:{project}:{bundle_id}:messages` | KDCube connection auth + bundle/subject visibility | widget, custom frontend, internal service |
 | background job | `@on_job` | Redis Stream + proc | no HTTP route; processor operation `__kdcube_on_job__` | producer/platform context | `@cron`, widget/API run-now, internal service |
 | authenticated bundle operation | `@api(route="operations")` | HTTP REST | `/api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/{alias}` | KDCube | widget, custom frontend, internal platform UI |
@@ -84,6 +84,7 @@ bundle transport: it is a normal `/sse/chat` or Socket.IO `chat_message` request
 with continuation intent. Ingress stores it in the shared conversation external
 event source. A live React owner consumes it on the current turn, or proc later
 promotes the stored `task_payload` into one normal ready-queue turn. See
+[Bus Routing And Partitioning](../../service/comm/bus-routing-and-partitioning-README.md),
 [Bundle Client Communication](bundle-client-communication-README.md) and
 [Bundle Chat Stream Events](bundle-chat-stream-events-README.md).
 
@@ -105,7 +106,8 @@ bundle's Data Bus stream, and processor-owned workers invoke the registered
 `@data_bus_handler(...)` methods. This path is separate from `chat_message`,
 conversation `external_events[]`, and communicator Pub/Sub. See
 [Conversation Event Bus And Data Bus](../../service/comm/conversation-event-bus-and-data-bus-README.md)
-for the bus-level design boundary.
+and [Bus Routing And Partitioning](../../service/comm/bus-routing-and-partitioning-README.md)
+for the bus-level routing contract.
 
 ## 3. REST Operations
 
@@ -641,5 +643,7 @@ Choose by caller and auth ownership:
   [bundle-chat-stream-events-README.md](bundle-chat-stream-events-README.md)
 - durable Data Bus messages:
   [../../service/comm/data-bus-README.md](../../service/comm/data-bus-README.md)
+- routing and partitioning:
+  [../../service/comm/bus-routing-and-partitioning-README.md](../../service/comm/bus-routing-and-partitioning-README.md)
 - runtime objects available to bundle code:
   [bundle-runtime-README.md](bundle-runtime-README.md)

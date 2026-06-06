@@ -15,6 +15,7 @@ see_also:
   - ks:docs/sdk/bundle/bundle-interfaces-README.md
   - ks:docs/service/auth/auth-README.md
   - ks:docs/service/comm/README-comm.md
+  - ks:docs/service/comm/bus-routing-and-partitioning-README.md
   - ks:docs/service/comm/conversation-event-bus-and-data-bus-README.md
   - ks:docs/service/comm/data-bus-README.md
 ---
@@ -187,9 +188,11 @@ Socket.IO clients should bind all shared server event routes, including `chat_co
 Use Socket.IO `data_bus.publish` for durable bundle-domain messages that are
 not chat turns, such as collaborative board patches or issue updates.
 
-For the design distinction between conversation `external_events[]` and Data
-Bus `messages[]`, read
+For how conversation `external_events[]` and Data Bus `messages[]` fit
+together, read
 [Conversation Event Bus And Data Bus](../../service/comm/conversation-event-bus-and-data-bus-README.md).
+For the compact routing and partitioning map, read
+[Bus Routing And Partitioning](../../service/comm/bus-routing-and-partitioning-README.md).
 
 There are two supported auth paths:
 
@@ -245,6 +248,14 @@ async def handle_board_patch(self, ctx, message):
 Data Bus is separate from `chat_message`, `/sse/chat`, `external_events[]`, and
 ReAct timelines. A bundle that wants a handled domain message to become visible
 to an agent must explicitly bridge it into conversation ingress.
+
+Routing keys:
+
+| Client intent | Field |
+| --- | --- |
+| Send conversation context to a named internal agent | `target.agent_id` or `external_events[].agent_id` |
+| Route durable bundle-domain work to a handler | `messages[].subject` |
+| Serialize durable work for one object | `messages[].object_ref` with handler `partition_by="object_ref"` |
 
 Ingress owns socket auth, federated token scope, JSON bounds, actor/reply
 normalization, and stream admission. Proc owns bundle manifest loading,

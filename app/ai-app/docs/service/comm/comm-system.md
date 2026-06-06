@@ -209,7 +209,8 @@ This does not change the current note above: Socket.IO project subscriptions
 are not part of the comm broadcast contract. The Data Bus Socket.IO event is an
 inbound durable message package, not a project-broadcast subscription.
 
-See [Conversation Event Bus And Data Bus](conversation-event-bus-and-data-bus-README.md)
+See [Bus Routing And Partitioning](bus-routing-and-partitioning-README.md),
+[Conversation Event Bus And Data Bus](conversation-event-bus-and-data-bus-README.md),
 and [Data Bus](data-bus-README.md).
 
 ---

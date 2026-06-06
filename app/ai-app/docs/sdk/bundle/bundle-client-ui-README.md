@@ -14,6 +14,7 @@ see_also:
   - ks:docs/sdk/bundle/bundle-interfaces-README.md
   - ks:docs/service/auth/auth-README.md
   - ks:docs/service/comm/README-comm.md
+  - ks:docs/service/comm/bus-routing-and-partitioning-README.md
   - ks:docs/service/comm/conversation-event-bus-and-data-bus-README.md
   - ks:docs/service/comm/data-bus-README.md
   - ks:docs/service/cicd/cli-README.md
@@ -238,8 +239,10 @@ context and issues a short-lived federated Data Bus token.
 If the same action should also wake or inform an agent, bridge it explicitly
 into conversation `external_events[]` after the bundle decides that is needed.
 
-Read the bus distinction in
+Read how the buses fit together in
 [Conversation Event Bus And Data Bus](../../service/comm/conversation-event-bus-and-data-bus-README.md)
+and the routing/partitioning map in
+[Bus Routing And Partitioning](../../service/comm/bus-routing-and-partitioning-README.md)
 and the field contract in
 [bundle-client-communication-README.md#data-bus-contract](bundle-client-communication-README.md#data-bus-contract).
 

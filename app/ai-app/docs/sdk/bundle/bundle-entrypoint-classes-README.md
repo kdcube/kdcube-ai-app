@@ -10,6 +10,7 @@ see_also:
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
   - ks:docs/sdk/bundle/bundle-widget-integration-README.md
   - ks:docs/sdk/bundle/bundle-lifecycle-README.md
+  - ks:docs/service/comm/bus-routing-and-partitioning-README.md
   - ks:docs/sdk/bundle/bundle-reserved-platform-properties-README.md
   - ks:docs/sdk/bundle/versatile-reference-bundle-README.md
 ---
@@ -28,7 +29,7 @@ capabilities.
 
 The decorated bundle object is the **entrypoint**. It is loaded by the platform
 loader, may be cached as a singleton, and owns bundle-level surfaces such as
-`@on_message`, `@api`, `@mcp`, `@ui_widget`, `@cron`, `@on_job`,
+`@on_reactive_event`, `@api`, `@mcp`, `@ui_widget`, `@cron`, `@on_job`,
 `on_bundle_load`, and bundle props/secrets handling.
 
 `BaseWorkflow` is a **per-message orchestrator**, not the decorated singleton
@@ -57,6 +58,8 @@ Rules:
 - do not expose a `BaseWorkflow` subclass as a singleton bundle entrypoint
 - if a descriptor sets `singleton: true`, the decorated class must not inherit
   `BaseWorkflow`
+- if the bundle has multiple internal conversation agents, keep one
+  `@on_reactive_event` method and dispatch by the incoming `agent_id`
 
 The runtime enforces this rule for singleton bundles. A singleton decorated
 `BaseWorkflow` subclass is rejected because `BaseWorkflow` keeps mutable
