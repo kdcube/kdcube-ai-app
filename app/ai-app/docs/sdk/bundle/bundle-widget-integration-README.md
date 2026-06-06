@@ -4,7 +4,7 @@ title: "Bundle Widget Integration"
 summary: "Bundle widget UI contract: source-folder widget apps, runtime config handshake, operation URL construction, Data Bus publishing, auth propagation, and the recommended pattern when a capability is both widget and operation."
 tags: ["sdk", "bundle", "widget", "iframe", "frontend", "integrations", "telegram", "memory", "data-bus"]
 keywords: ["bundle widget contract", "iframe widget contract", "widget source folder", "static widget build", "runtime config handshake", "operation url construction", "data bus publishing", "auth propagation to widget", "widget and operation dual pattern", "shared sdk widget source", "telegram widget components", "memory widget component", "bundle widget integration"]
-updated_at: 2026-05-22
+updated_at: 2026-06-06
 see_also:
   - ks:docs/sdk/bundle/bundle-interfaces-README.md
   - ks:docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
@@ -60,6 +60,8 @@ contract from sending a chat `external_events[]` submission.
 Client package shape:
 
 ```ts
+const socket = manager.socket("/", { auth });
+
 socket.emit("data_bus.publish", {
   schema: "kdcube.data_bus.ingress.v1",
   bundle_id: runtime.defaultAppBundleId,
@@ -83,12 +85,17 @@ Widget rules:
 
 - keep using the runtime config handshake for `baseUrl`, tenant, project,
   bundle id, and auth material
-- connect Socket.IO with the same authenticated runtime identity used by the
-  rest of the widget
+- connect Socket.IO on namespace `/` with the same authenticated runtime
+  identity used by the rest of the widget
+- for an app-specific public widget, call a bundle token-claim endpoint first;
+  the bundle validates the upstream identity and returns a short-lived
+  federated Data Bus token for the Socket.IO auth payload
 - include `messages[]`; it is plural even for one message
 - include `idempotency_key` for mutations
 - include `object_ref` when the handler declares `partition_by="object_ref"`
 - treat the Socket.IO ack as durable acceptance into the Data Bus stream
+- expect handler-not-found, handler-visibility, and domain failures to surface
+  from the proc-side handler path, not from the ingress ack
 - listen for handler replies through the existing `chat_service` event when the
   handler uses `ctx.reply.*`
 - fetch the durable object state from normal bundle APIs after reconnect or
@@ -98,11 +105,18 @@ Use `/operations/...` for direct request/response commands. Use Data Bus for
 state mutations that need durable processing, retry, and optional per-object
 serialization.
 
+Ingress authenticates and enqueues the package. Proc loads the bundle manifest,
+checks the active bundle/handler visibility rules, and invokes the
+`@data_bus_handler(...)`. Keep app-specific identity decoding in the bundle
+token-claim endpoint; ingress should receive a platform or bundle-issued token,
+not raw upstream app context.
+
 See:
 
 - [Conversation Event Bus And Data Bus](../../service/comm/conversation-event-bus-and-data-bus-README.md)
 - [bundle-client-communication-README.md#data-bus-contract](bundle-client-communication-README.md#data-bus-contract)
 - [Data Bus](../../service/comm/data-bus-README.md)
+- [Bundle Federated Auth For Data Bus](auth-bundle-federated-README.md)
 
 ## Two Contracts: Surface And Build Config
 

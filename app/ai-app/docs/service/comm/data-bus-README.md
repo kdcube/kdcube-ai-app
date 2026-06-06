@@ -4,6 +4,7 @@ title: "Data Bus"
 summary: "Runtime contract for the bundle-scoped Data Bus: durable non-conversation messages, handler registration, ordering, and comm fanout boundary."
 status: active
 tags: ["service", "comm", "data-bus", "socketio", "redis-streams", "bundle-runtime"]
+updated_at: 2026-06-06
 keywords:
   [
     "data bus",
@@ -42,7 +43,7 @@ It is intended for bundle-domain state changes and state signals such as:
 It reuses the authenticated transport layer where practical, especially
 Socket.IO, but it must not be confused with the conversation bus.
 
-## Boundary
+## Message Paths And Ownership
 
 KDCube currently has several message paths. They have different semantics:
 
@@ -56,25 +57,40 @@ KDCube currently has several message paths. They have different semantics:
 The Data Bus is for messages that the bundle should handle even when no chat
 turn is running and no active browser listener exists.
 
+Use the conversation path when a message should enter a chat turn or timeline.
+Use the comm relay when code already running inside a request, job, or handler
+wants to send a transient update to a connected peer/session. Use the Data Bus
+when a bundle owns durable state and wants platform-managed admission, retry,
+partition locking, and handler execution.
+
 For the full distinction between the conversation event bus and the Data Bus,
 including when to bridge between them, see
 [Conversation Event Bus And Data Bus](conversation-event-bus-and-data-bus-README.md).
 
-## What It Is Not
+## Ownership Boundary
 
-The Data Bus is not:
+The Data Bus path has one strict ownership boundary:
 
-- a chat turn;
-- `external_events[]`;
-- a timeline write by default;
-- an `ev:` artifact path by default;
-- a replacement for `comm.service_event(...)` or `comm.project_event(...)`;
-- a raw log or telemetry stream.
+```text
+browser/widget
+  -> optional bundle token-claim operation
+  -> Socket.IO connect on namespace "/"
+  -> data_bus.publish
+  -> ingress authenticates, normalizes, and enqueues
+  -> proc Data Bus worker loads bundle manifest
+  -> proc enforces bundle/handler visibility and invokes @data_bus_handler
+```
 
-A bundle may explicitly bridge a handled Data Bus message into a conversation
-later, for example by emitting conversation `external_events[]` or adding a
-timeline block through an existing ReAct event-source policy. That bridge is a
-bundle decision, not a Data Bus default.
+Ingress owns transport concerns: socket authentication, tenant/project/session
+normalization, payload bounds, federated token scope, and stream admission.
+
+Proc owns bundle execution concerns: loading bundle code, discovering
+`@data_bus_handler(...)`, applying effective bundle props, enforcing
+bundle/handler visibility, acquiring partition locks, and calling handler code.
+
+Ingress does not import bundle modules. That is intentional because ingress
+should not require bundle execution dependencies and should not decide handler
+visibility from code that proc owns.
 
 ## Transport Shape
 
@@ -83,6 +99,16 @@ package over the already-authenticated Socket.IO connection.
 
 The package is separate from `chat_message`. Ingress routes it to Data Bus
 Redis Streams, not to the chat conversation queue.
+
+Socket.IO clients must use the root namespace `/`:
+
+```ts
+const socket = manager.socket("/", { auth });
+```
+
+Use the normal Socket.IO path `/socket.io`. Passing an empty namespace string
+can leave the Engine.IO websocket connected while the Socket.IO client never
+receives the application-level `connect` event.
 
 Example client package:
 
@@ -116,13 +142,35 @@ Example client package:
 `messages[]` is plural from the start. A client can send a batch of related
 messages when it needs the server to observe their order as submitted.
 
-### Federated Clients
+### Platform-Authenticated Clients
+
+A client running inside the platform uses the normal authenticated browser
+session. It connects Socket.IO with the session and token material supplied by
+runtime config:
+
+```json
+{
+  "tenant": "tenant-a",
+  "project": "project-a",
+  "user_session_id": "<session-id>",
+  "bearer_token": "<optional-access-token>",
+  "id_token": "<optional-id-token>"
+}
+```
+
+Cookies are still accepted as fallback by the gateway, but explicit auth in the
+Socket.IO auth payload is the preferred browser contract when the widget has
+runtime config.
+
+### Bundle-Issued Federated Clients
 
 Clients that do not have a platform browser session can publish to Data Bus
-through a bundle-issued federated token. The bundle exposes a public
-`federated_token_claim` operation, validates the upstream identity itself, and
+through a bundle-issued federated token.
+
+The client first calls a bundle endpoint. The bundle validates the upstream
+application context itself, maps that context to a platform actor and role, and
 calls `issue_federated_data_bus_token(...)`. The client then connects to
-Socket.IO with:
+Socket.IO namespace `/` with:
 
 ```json
 {
@@ -133,9 +181,11 @@ Socket.IO with:
 }
 ```
 
-Socket.IO verifies the token, scope, Redis registration, and backing session
-before accepting the connection. After that, `data_bus.publish` uses the same
-normalized actor/reply metadata as ordinary platform-authenticated sockets.
+Socket.IO verifies token integrity, scope, Redis registration, and backing
+session before accepting the connection. If the token carries
+`allowed_subjects`, ingress rejects publishes outside that subject allowlist.
+After that, `data_bus.publish` uses the same normalized actor/reply metadata as
+ordinary platform-authenticated sockets.
 
 Use the full bundle recipe in
 [Bundle Federated Auth For Data Bus](../../sdk/bundle/auth-bundle-federated-README.md).
@@ -160,8 +210,9 @@ Canonical fields:
 | `reply` | Optional connected peer/session info for status events back to the UI. |
 | `trace` | Optional request/stream ids for diagnostics. |
 
-The payload is bundle-owned. Platform fields are routing, auth, idempotency,
-and observability metadata.
+The client controls only the bundle-owned payload and message intent fields.
+Ingress attaches `actor`, `reply`, `trace`, tenant/project, and timestamps from
+the authenticated socket context.
 
 ## Stream Layout
 
@@ -252,8 +303,9 @@ Runtime code:
 
 - decorator metadata is collected in the bundle interface manifest;
 - Socket.IO ingress writes accepted packages to the bundle stream;
-- the processor-owned Data Bus runtime reconciles bundle manifests and starts
-  one managed worker per bundle with registered handlers.
+- the processor-owned Data Bus runtime reconciles bundle manifests, enforces
+  effective bundle and handler visibility, and starts one managed worker per
+  bundle with registered handlers.
 
 The bundle manifest exposes registered subjects as `data_bus_handlers`.
 
@@ -294,13 +346,16 @@ For browser widgets, the practical pattern is:
 ```text
 client creates mutation message
   -> socket.emit("data_bus.publish", package, ack_handler)
-  -> ack says accepted/partial/rejected by ingress
+  -> ack says accepted/partial/rejected by ingress for stream admission
   -> handler later calls ctx.reply.ok/conflict/error
   -> UI receives chat_service status event for the same session/peer
   -> UI fetches durable state if it needs the full object
 ```
 
-The ack is not the durable object result. It only confirms stream admission.
+The ack is not the durable object result and does not prove that a handler
+exists. It confirms stream admission. Handler absence, handler visibility
+failure, partition conflicts, and domain validation failures are proc-side
+results.
 
 The handler result should be compact. If the client needs full state after a
 successful mutation, it should call the bundle's normal read API.
@@ -320,19 +375,22 @@ Processing flow:
 
 1. `XREADGROUP` reads a message from the bundle stream.
 2. The runtime decodes and validates the normalized record.
-3. The runtime finds the registered handler by `subject`.
-4. If no handler exists, the runtime writes a failure result or DLQ record and
+3. The runtime loads the active bundle manifest and effective bundle props.
+4. The runtime verifies the bundle is enabled and visible to the actor.
+5. The runtime finds the registered handler by `subject`.
+6. The runtime verifies handler `user_types` / `roles` visibility.
+7. If no handler exists or access is denied, the runtime writes a failure result and
    acknowledges the stream item.
-5. If the handler uses `serial_per_partition`, the runtime acquires the
+8. If the handler uses `serial_per_partition`, the runtime acquires the
    partition token lock before invoking bundle code.
-6. The handler mutates bundle-owned durable storage.
-7. The runtime writes a result record and emits an optional reply when reply
+9. The handler mutates bundle-owned durable storage.
+10. The runtime writes a result record and emits an optional reply when reply
    metadata exists.
-8. The runtime acknowledges the stream item after the durable mutation and
+11. The runtime acknowledges the stream item after the durable mutation and
    result handling path completes.
-9. Retryable failures remain pending or are requeued according to the runtime
+12. Retryable failures remain pending or are requeued according to the runtime
    retry policy.
-10. Non-retryable failures or exhausted retries go to the DLQ.
+13. Non-retryable failures or exhausted retries go to the DLQ.
 
 Suggested result record shape:
 
@@ -363,13 +421,24 @@ Exact retention values should be configurable by deployment.
 Ingress must:
 
 - resolve tenant/project from the authenticated platform context;
-- verify that the target bundle exists and is visible to the caller;
-- verify that the target subject is registered and visible to the caller;
+- verify token/session integrity for platform-authenticated sockets;
+- verify federated token scope, backing session, and `allowed_subjects` when a
+  bundle-issued token is used;
+- verify that the target bundle exists and is enabled in the active registry;
 - reject client-supplied tenant/project/actor overrides;
 - attach actor and reply metadata from the authenticated connection;
 - cap JSON payload size;
 - reject unexpected binary data in the JSON package;
 - avoid logging user-authored payload bodies.
+
+Proc must:
+
+- load bundle manifests and handler metadata;
+- apply effective bundle props;
+- enforce bundle `allowed_roles` and handler `user_types` / `roles`;
+- reject unknown subjects;
+- enforce handler idempotency and partition policy before invoking bundle code;
+- write result/DLQ records for handler admission or execution failures.
 
 Handlers must still perform domain authorization. For example, a board handler
 must verify that the actor can read or mutate the selected board.
@@ -418,13 +487,16 @@ Core tests should cover:
 - lock acquire/release token safety;
 - retry and DLQ transitions;
 - Socket.IO `data_bus.publish` writing accepted messages to the bundle stream;
+- Socket.IO clients using namespace `/`;
+- ingress not importing bundle modules or handler manifests;
 - worker consumption and handler invocation;
+- proc-side unknown-subject and handler-visibility rejection;
 - handler replies reaching the connected peer/session through comm;
 - disconnected clients still relying on durable state reads;
 - two messages for the same `object_ref` not running concurrently when the
   handler requests `serial_per_partition`;
 - stale `base_revision` returning conflict;
-- unauthorized subject rejection.
+- federated `allowed_subjects` rejection at ingress.
 
 Regression tests should prove:
 

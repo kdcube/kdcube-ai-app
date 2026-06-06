@@ -4,7 +4,7 @@ title: "Bundle Platform Integration"
 summary: "Declarative platform contract for exposing bundle capabilities through decorators, manifest metadata, REST operations, widgets, MCP routes, static UI, public routes, Data Bus handlers, scheduled jobs, and background job handlers."
 tags: ["sdk", "bundle", "integration", "decorators", "widgets", "operations", "mcp", "ui", "manifest", "cron", "scheduled-jobs", "background-jobs", "data-bus"]
 keywords: ["decorator based integration", "bundle manifest contract", "rest operations exposure", "widget exposure", "mcp route exposure", "static ui exposure", "public route exposure", "data bus handler", "scheduled job exposure", "on_job background job handler"]
-updated_at: 2026-05-24
+updated_at: 2026-06-06
 see_also:
   - ks:docs/sdk/bundle/bundle-agent-integration-README.md
   - ks:docs/sdk/bundle/bundle-entrypoint-classes-README.md
@@ -870,10 +870,16 @@ Current fields:
 Current behavior:
 
 - proc discovers all `@data_bus_handler(...)` methods through the manifest path
-- the Socket.IO `data_bus.publish` ingress validates bundle visibility, subject
-  visibility, required `object_ref`, and required `idempotency_key`
+- Socket.IO `data_bus.publish` ingress authenticates the socket, verifies the
+  target bundle exists/enabled, normalizes actor/reply metadata, applies
+  federated token scope such as `allowed_subjects`, and enqueues accepted
+  messages
+- ingress does not import bundle modules or handler manifests
+- proc validates registered subjects, handler `user_types` / `roles`, required
+  `object_ref`, and required `idempotency_key` before invoking handler code
 - Socket.IO accepts scoped federated Data Bus tokens issued by bundle public
-  claim endpoints for clients without a platform browser session
+  claim endpoints for clients without a platform browser session; the bundle
+  endpoint validates the upstream app context and maps it to a platform actor
 - accepted messages are written to
   `kdcube:data-bus:{tenant}:{project}:{bundle_id}:messages`
 - the processor-owned Data Bus runtime reconciles the active registry and
@@ -892,6 +898,7 @@ domain message into conversation ingress.
 See:
 
 - [docs/service/comm/data-bus-README.md](../../service/comm/data-bus-README.md)
+- [auth-bundle-federated-README.md](auth-bundle-federated-README.md)
 - [bundle-client-communication-README.md#data-bus-contract](bundle-client-communication-README.md#data-bus-contract)
 
 ### 1.11 `@cron(...)`
