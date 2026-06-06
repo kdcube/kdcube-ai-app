@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from kdcube_ai_app.auth.federated import (
+    FEDERATED_TOKEN_SECRET_KEY,
     FederatedTokenInvalid,
     issue_federated_data_bus_token,
     verify_federated_data_bus_token,
@@ -73,8 +74,7 @@ def _request(redis: FakeRedis, session_manager: FakeSessionManager):
 
 
 @pytest.mark.asyncio
-async def test_issue_and_verify_federated_data_bus_token(monkeypatch):
-    monkeypatch.setenv("KDCUBE_FEDERATED_TOKEN_SECRET", "test-secret")
+async def test_issue_and_verify_federated_data_bus_token():
     redis = FakeRedis()
     session_manager = FakeSessionManager()
 
@@ -90,6 +90,7 @@ async def test_issue_and_verify_federated_data_bus_token(monkeypatch):
         username="alice",
         roles=["kdcube:role:bundle-admin"],
         allowed_subjects=["task.patch"],
+        secret="test-secret",
     )
 
     verified = await verify_federated_data_bus_token(
@@ -99,6 +100,7 @@ async def test_issue_and_verify_federated_data_bus_token(monkeypatch):
         bundle_id="task-tracker@1-0",
         redis=redis,
         session_manager=session_manager,
+        secret="test-secret",
     )
 
     assert verified.session.session_id == grant.session.session_id
@@ -110,8 +112,7 @@ async def test_issue_and_verify_federated_data_bus_token(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_federated_data_bus_token_is_bundle_scoped(monkeypatch):
-    monkeypatch.setenv("KDCUBE_FEDERATED_TOKEN_SECRET", "test-secret")
+async def test_federated_data_bus_token_is_bundle_scoped():
     redis = FakeRedis()
     session_manager = FakeSessionManager()
 
@@ -123,6 +124,7 @@ async def test_federated_data_bus_token_is_bundle_scoped(monkeypatch):
         provider="telegram",
         provider_subject="42",
         user_id="telegram:42",
+        secret="test-secret",
     )
 
     with pytest.raises(FederatedTokenInvalid):
@@ -133,20 +135,19 @@ async def test_federated_data_bus_token_is_bundle_scoped(monkeypatch):
             bundle_id="other@1-0",
             redis=redis,
             session_manager=session_manager,
+            secret="test-secret",
         )
 
 
 @pytest.mark.asyncio
 async def test_federated_data_bus_token_does_not_fallback_to_service_tokens(monkeypatch):
-    monkeypatch.delenv("KDCUBE_FEDERATED_TOKEN_SECRET", raising=False)
-    monkeypatch.delenv("FEDERATED_TOKEN_SECRET", raising=False)
     monkeypatch.setenv("SECRETS_TOKEN", "service-local-read-token")
     monkeypatch.setenv("SECRETS_ADMIN_TOKEN", "service-local-admin-token")
 
     redis = FakeRedis()
     session_manager = FakeSessionManager()
 
-    with pytest.raises(FederatedTokenInvalid, match="secret is not configured"):
+    with pytest.raises(FederatedTokenInvalid, match=FEDERATED_TOKEN_SECRET_KEY):
         await issue_federated_data_bus_token(
             request=_request(redis, session_manager),
             tenant="tenant-a",

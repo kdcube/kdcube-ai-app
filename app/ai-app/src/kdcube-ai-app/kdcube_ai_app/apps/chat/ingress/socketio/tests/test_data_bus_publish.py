@@ -432,7 +432,15 @@ async def test_socketio_chat_message_and_data_bus_publish_coexist_without_cross_
 
 @pytest.mark.asyncio
 async def test_socketio_connect_accepts_scoped_federated_data_bus_token(monkeypatch):
-    monkeypatch.setenv("KDCUBE_FEDERATED_TOKEN_SECRET", "test-secret")
+    from kdcube_ai_app.apps.chat.sdk import config as sdk_config
+
+    async def fake_get_secret(key, default=None, **kwargs):
+        del kwargs
+        if key == "services.federated_token.secret":
+            return "test-secret"
+        return default
+
+    monkeypatch.setattr(sdk_config, "get_secret", fake_get_secret)
     redis = FakeRedis()
     session_manager = FakeSessionManager()
     app = SimpleNamespace(
@@ -455,6 +463,7 @@ async def test_socketio_connect_accepts_scoped_federated_data_bus_token(monkeypa
         user_id="telegram:42",
         user_type=UserType.REGISTERED,
         username="telegram-user",
+        secret="test-secret",
     )
 
     handler = socket_chat.SocketIOChatHandler.__new__(socket_chat.SocketIOChatHandler)

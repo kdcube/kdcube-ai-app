@@ -223,7 +223,6 @@ services:
       - MANAGED_BUNDLES_ROOT=${MANAGED_BUNDLES_ROOT:-/managed-bundles}
       - BUNDLE_STORAGE_ROOT=${BUNDLE_STORAGE_ROOT:-/bundle-storage}
       - SECRETS_TOKEN=${SECRETS_TOKEN_INGRESS:-}
-      - KDCUBE_FEDERATED_TOKEN_SECRET=${KDCUBE_FEDERATED_TOKEN_SECRET:-}
     volumes:
       - ${HOST_KDCUBE_STORAGE_PATH?}:/kdcube-storage
       - ${KDCUBE_LOGS_DIR:-./logs}/chat-ingress:/logs
@@ -277,7 +276,6 @@ services:
       - BUNDLES_ROOT=${BUNDLES_ROOT:-/bundles}
       - MANAGED_BUNDLES_ROOT=${MANAGED_BUNDLES_ROOT:-/managed-bundles}
       - SECRETS_TOKEN=${SECRETS_TOKEN_PROC:-}
-      - KDCUBE_FEDERATED_TOKEN_SECRET=${KDCUBE_FEDERATED_TOKEN_SECRET:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${HOST_KDCUBE_STORAGE_PATH?}:/kdcube-storage

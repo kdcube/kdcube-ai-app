@@ -7,7 +7,6 @@ import base64
 import hashlib
 import hmac
 import json
-import os
 import time
 import uuid
 from dataclasses import dataclass
@@ -19,6 +18,7 @@ from kdcube_ai_app.infra.namespaces import ns_key
 
 FEDERATED_TOKEN_SCHEMA = "kdcube.federated_token.v1"
 FEDERATED_TOKEN_PREFIX = "kft1"
+FEDERATED_TOKEN_SECRET_KEY = "services.federated_token.secret"
 FEDERATED_TOKEN_DEFAULT_TTL_SECONDS = 900
 FEDERATED_TOKEN_MAX_TTL_SECONDS = 3600
 FEDERATED_TOKEN_REDIS_BASE = "kdcube:federated-idp:token"
@@ -81,15 +81,30 @@ def _secret_bytes(secret: str | bytes | None = None) -> bytes:
     if isinstance(secret, bytes):
         value = secret
     else:
-        raw = (
-            secret
-            or os.getenv("KDCUBE_FEDERATED_TOKEN_SECRET")
-            or os.getenv("FEDERATED_TOKEN_SECRET")
-        )
-        value = str(raw or "").encode("utf-8")
+        value = str(secret or "").encode("utf-8")
     if not value:
-        raise FederatedTokenInvalid("federated token secret is not configured")
+        raise FederatedTokenInvalid(
+            f"federated token secret is not configured at {FEDERATED_TOKEN_SECRET_KEY}"
+        )
     return value
+
+
+async def _resolve_secret(secret: str | bytes | None = None) -> str | bytes:
+    if secret is not None:
+        return secret
+    try:
+        from kdcube_ai_app.apps.chat.sdk.config import get_secret
+
+        resolved = await get_secret(FEDERATED_TOKEN_SECRET_KEY, default=None)
+    except Exception as exc:
+        raise FederatedTokenInvalid(
+            f"federated token secret is not configured at {FEDERATED_TOKEN_SECRET_KEY}"
+        ) from exc
+    if not str(resolved or "").strip():
+        raise FederatedTokenInvalid(
+            f"federated token secret is not configured at {FEDERATED_TOKEN_SECRET_KEY}"
+        )
+    return str(resolved).strip()
 
 
 def _token_subject(*, tenant: str, project: str, bundle_id: str) -> str:
@@ -245,7 +260,8 @@ async def issue_federated_data_bus_token(
         "iat": issued_at,
         "exp": expires_at,
     }
-    token = _make_token(claims, secret=secret)
+    resolved_secret = await _resolve_secret(secret)
+    token = _make_token(claims, secret=resolved_secret)
     record = {
         "schema": FEDERATED_TOKEN_SCHEMA,
         "token_sha256": _hash_token(token),
@@ -277,7 +293,8 @@ async def verify_federated_data_bus_token(
     secret: str | bytes | None = None,
     now: int | None = None,
 ) -> FederatedTokenVerification:
-    claims = _verify_token_signature(token, secret=secret)
+    resolved_secret = await _resolve_secret(secret)
+    claims = _verify_token_signature(token, secret=resolved_secret)
     current_time = int(time.time() if now is None else now)
     try:
         expires_at = int(claims.get("exp") or 0)
@@ -325,6 +342,7 @@ __all__ = [
     "FEDERATED_TOKEN_DEFAULT_TTL_SECONDS",
     "FEDERATED_TOKEN_MAX_TTL_SECONDS",
     "FEDERATED_TOKEN_SCHEMA",
+    "FEDERATED_TOKEN_SECRET_KEY",
     "FederatedTokenError",
     "FederatedTokenExpired",
     "FederatedTokenGrant",
