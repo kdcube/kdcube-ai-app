@@ -17,7 +17,9 @@ Use these docs in this order:
 - [Telegram SDK Integration](telegram-README.md) - bundle wiring checklist,
   reusable KDCube SDK modules, webhook submitter helpers, Bot API rendering,
   progress streaming, Mini App auth, widget operations, signed downloads, and
-  the Telegram-to-`external_events[]` ingress contract.
+  the Telegram-to-`external_events[]` ingress contract. Mini App shells are
+  served from the bundle public static widget route,
+  `/api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/widgets/{alias}/`.
 - [Telegram External Prerequisites](telegram-external-prereq-README.md) - work
   that must happen outside KDCube before the integration can function,
   including BotFather setup, public HTTPS exposure, webhook registration,

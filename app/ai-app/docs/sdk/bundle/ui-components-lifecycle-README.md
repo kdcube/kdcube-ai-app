@@ -319,6 +319,12 @@ When the browser opens:
 GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/widgets/{alias}/index.html
 ```
 
+or a public launcher opens:
+
+```text
+GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/widgets/{alias}/index.html
+```
+
 the route does this:
 
 1. Load the bundle entrypoint for that request's worker.
@@ -331,8 +337,9 @@ the route does this:
    tenant/project/bundle/widget/storage key.
 8. That entrypoint load may call bundle defaults and `on_bundle_load()`.
 9. If output still does not exist, call `_ensure_ui_build()` from the workflow.
-10. Serve `index.html`, injecting a `<base href=".../widgets/<alias>/">`.
-11. Serve assets from the same widget route, with immutable cache headers for
+10. Serve `index.html`, injecting a route-aware `<base href>` for either
+    `.../widgets/<alias>/` or `.../public/widgets/<alias>/`.
+11. Serve assets from the same route family, with immutable cache headers for
     `assets/*`.
 
 ```mermaid
@@ -583,6 +590,7 @@ Useful filters:
 | Widget icon does not appear | `@ui_widget` missing, visibility hides it, bundle disabled, or listing did not see effective props | Manifest widgets, `enabled.widget.<alias>`, roles/user types |
 | Widget icon appears but route says undefined widget | Serving worker did not discover `@ui_widget(alias)` for that bundle path/version | Manifest validation logs, worker PID headers, bundle path |
 | Widget route says not available | `enabled.widget.<alias>` resolves false | Effective props after defaults + descriptor |
+| Telegram Mini App says widget is unavailable | BotFather URL uses `/widgets/...` or widget visibility excludes the public/anonymous static-route session | Use `/public/widgets/<alias>/`; check `visibility.widget.<alias>` roles/user types |
 | Widget route returns method-rendered payload instead of static app | `ui.widgets.<alias>` missing/disabled | Effective `ui.widgets` |
 | Static widget iframe is blank | Built `index.html` references root-relative assets | Vite `base: './'`, browser asset URLs |
 | Build repeats across workers | Signature not written, request cancellation before shielded build, stale lock, or differing signatures | `[bundle.ui] done`, `.ui.widgets/<alias>.signature`, lock owner logs |
@@ -600,6 +608,8 @@ Before shipping a source-folder widget:
   also needs to be callable as an operation
 - put stable `ui.widgets.<alias>` wiring in bundle defaults
 - enable the widget in deployment descriptor or bundle defaults
+- for Telegram/public launchers, use the `/public/widgets/<alias>/` URL and
+  leave widget visibility compatible with the public/anonymous static session
 - include every imported SDK UI source in `shared_sources`
 - set Vite `base: './'`
 - make `build.outDir` read `process.env.OUTDIR`

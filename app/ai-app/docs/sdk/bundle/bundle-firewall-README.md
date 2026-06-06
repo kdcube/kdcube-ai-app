@@ -77,3 +77,18 @@ workflow = WithReactWorkflow(
 - Filters are **fail‑open**: if the filter crashes, the event is allowed.
 - This is a **bundle‑level** control. It can be different for each bundle.
 - If you need org‑wide restrictions, implement them at the gateway or relay layer.
+
+## Public Widget Boundary
+
+Telegram Mini Apps and similar public launch surfaces load built widget assets
+from:
+
+```text
+/api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/widgets/{alias}/
+```
+
+That route is a static app shell route. Bundle data/actions should go through
+explicit bundle public APIs, for example `@api(route="public", ...)` handlers
+that verify Telegram WebApp `initData`, or through Socket.IO Data Bus with a
+bundle-issued federated token. The outbound firewall still applies only when
+bundle code emits events back to connected clients.

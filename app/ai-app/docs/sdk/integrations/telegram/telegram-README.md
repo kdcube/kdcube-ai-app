@@ -47,6 +47,7 @@ Common combinations:
 | Surface | Bundle route | Auth boundary | SDK subsystem |
 | --- | --- | --- | --- |
 | Telegram chat webhook | `@api(route="public", alias="telegram_webhook", method="POST")` | `X-Telegram-Bot-Api-Secret-Token` header secret | `user_admin.handle_webhook(...)` |
+| Telegram Mini App static shell | `@ui_widget(alias="<widget_alias>")` plus `ui.widgets.<widget_alias>`; launch URL uses `/public/widgets/<widget_alias>/` | public static load; every data/action API verifies Telegram `initData` | source-folder widget build, `webapp`, `widget_auth`, `widget_ops` |
 | Telegram Mini App data/actions | `@api(route="public", alias="telegram_*", method=...)` | Telegram WebApp `initData` verified inside each handler | `widget_auth`, `widget_ops`, `webapp` |
 | Telegram user registry/admin from KDCube UI | `@api(route="operations", alias="telegram_user_admin_*")` | KDCube-authenticated operations role policy | `user_admin.payload/upsert/delete(...)` |
 | Generated artifact downloads from Mini App | public download/action alias | signed link or Telegram `initData` | `widget_ops.download_execution_artifact(...)` |
@@ -199,6 +200,44 @@ The public route is not the trust boundary. The trust boundary is Telegram
 bot token and max-age policy. Do not trust caller-supplied `user_id`,
 conversation id, role, or fingerprint from a Telegram Mini App request.
 
+### 5.1 Serve The Mini App Shell Through The Public Widget Route
+
+The Telegram Mini App browser must open the built widget shell through the
+public static widget route:
+
+```text
+https://<PUBLIC_HOST>/api/integrations/bundles/<TENANT>/<PROJECT>/<BUNDLE_ID>/public/widgets/<WIDGET_ALIAS>/
+```
+
+There is no `public` flag on `@ui_widget(...)`. The decorator declares the
+widget surface once; `ui.widgets.<WIDGET_ALIAS>` tells the loader how to build
+the source-folder app. After the widget is built, KDCube serves the same static
+app through both route families:
+
+```text
+/api/integrations/bundles/<TENANT>/<PROJECT>/<BUNDLE_ID>/widgets/<WIDGET_ALIAS>/
+/api/integrations/bundles/<TENANT>/<PROJECT>/<BUNDLE_ID>/public/widgets/<WIDGET_ALIAS>/
+```
+
+Use `/widgets/...` from the KDCube-authenticated control plane. Use
+`/public/widgets/...` as the BotFather menu button or Mini App URL.
+
+The public widget route only loads static HTML, JS, CSS, and assets. The Mini
+App must call bundle public API aliases for data/actions, and those handlers
+must verify `window.Telegram.WebApp.initData`.
+
+Widget visibility still applies to the static route. A Telegram Mini App widget
+must not be restricted to KDCube-only user types or roles. For config-driven
+visibility, leave the widget visibility unset or allow the public/anonymous
+session that the public widget route uses.
+
+Reference implementation:
+
+```text
+app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/entrypoint.py
+app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/ui/widgets/versatile_webapp
+```
+
 ### 6. Keep Admin Operations Separate
 
 KDCube operations APIs that manage the Telegram registry should be separate
@@ -254,6 +293,8 @@ Before calling the bundle done, prove:
 
 - `enabled.api.public.telegram_webhook.POST` and any `telegram_*` Mini App APIs are
   explicitly enabled for the test deployment
+- the BotFather Mini App/menu button URL uses `/public/widgets/<widget_alias>/`,
+  not `/widgets/<widget_alias>/`
 - the webhook rejects missing or wrong `X-Telegram-Bot-Api-Secret-Token`
 - `setWebhook` points at the active public URL
 - a Telegram user can be recorded, approved/mapped, and bound to a conversation

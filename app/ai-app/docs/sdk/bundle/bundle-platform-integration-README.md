@@ -1343,6 +1343,7 @@ Returns only `@ui_widget(...)` metadata visible to the current user.
 
 ```text
 GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/widgets/{alias}
+GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/widgets/{alias}
 ```
 
 Current rules:
@@ -1350,6 +1351,9 @@ Current rules:
 - resolves only `@ui_widget(...)` aliases
 - applies role visibility before invocation
 - does not use operation routing
+- `/public/widgets/{alias}` serves the same built widget shell for public
+  launchers such as Telegram Mini Apps; bundle data/actions still go through
+  explicit public APIs with their own verification
 
 ### 3.8 Bundle static UI
 

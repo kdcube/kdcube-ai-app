@@ -98,11 +98,18 @@ Source-folder widgets also have a public static route for launch surfaces such
 as Telegram Mini Apps:
 
 ```text
-/api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/widgets/{widget_alias}
+/api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/widgets/{widget_alias}/
 ```
 
-Use that only to serve the app shell/assets. Public widget APIs still need their
-own request authentication, such as Telegram `initData` verification.
+`@ui_widget(alias="<alias>")` has no separate public-serving flag. The
+decorator creates the widget surface, `ui.widgets.<alias>` builds the static
+app, and the URL family chooses the serving mode. Use `/widgets/...` for the
+KDCube-authenticated control plane and `/public/widgets/...` for a Telegram
+Mini App menu button or another public launcher.
+
+Use the public widget route only to serve the app shell/assets. Public widget
+APIs still need their own request authentication, such as Telegram `initData`
+verification or a bundle-issued federated Data Bus token.
 
 The bundle **main view** (`ui/main`) has the same authed/public split. The
 authed route requires a logged-in user:
@@ -155,7 +162,8 @@ For one widget codebase that runs in both KDCube and Telegram:
   and call `/operations/{alias}`
 - if that endpoint is unavailable, fall back to iframe parent
   `CONFIG_REQUEST` / `CONFIG_RESPONSE`
-- in Telegram, skip parent config, call `/public/{telegram_alias}`, and send
+- in Telegram, load the shell from `/public/widgets/{widget_alias}/`, skip
+  parent config, call `/public/{telegram_alias}`, and send
   `X-Telegram-Init-Data`
 - keep admin-only panels behind KDCube-authenticated operations, not Telegram
   Mini App public APIs

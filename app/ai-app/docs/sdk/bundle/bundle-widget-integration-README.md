@@ -516,9 +516,17 @@ GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/widgets/{wid
 GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/widgets/{widget_alias}/{widget_path}
 ```
 
-That route serves only the built widget app assets. It does not authenticate
-product data. Any public data/action API used by that widget must have its own
-bundle-level auth, for example Telegram WebApp `initData` verification.
+The public route is selected by URL. `@ui_widget(...)` declares the widget
+surface once; `ui.widgets.<widget_alias>` declares how to build it. The same
+built widget app is available through the authenticated `/widgets/...` route
+and the public `/public/widgets/...` route.
+
+Widget visibility still applies. A public Mini App widget should leave
+`roles` empty and allow the public/anonymous session used by the static route.
+
+That route serves only the built widget app assets. Any public data/action API
+used by that widget must have its own bundle-level auth, for example Telegram
+WebApp `initData` verification or a bundle-issued federated Data Bus token.
 
 ## Dual Runtime Pattern
 

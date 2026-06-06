@@ -165,9 +165,21 @@ Recommended initial commands:
 ```
 
 If the bundle ships a Telegram Mini App, configure the bot menu button or app
-entry in `@BotFather` with the deployed widget URL. The widget URL is
-bundle-specific, but the public API calls it makes should validate Telegram
-Mini App `initData` through the SDK `widget_auth` integration.
+entry in `@BotFather` with the public static widget URL:
+
+```text
+https://<PUBLIC_HOST>/api/integrations/bundles/<TENANT>/<PROJECT>/<BUNDLE_ID>/public/widgets/<WIDGET_ALIAS>/
+```
+
+Do not use the authenticated control-plane widget URL:
+
+```text
+/api/integrations/bundles/<TENANT>/<PROJECT>/<BUNDLE_ID>/widgets/<WIDGET_ALIAS>/
+```
+
+The static widget URL only loads the Mini App shell and assets. The public API
+calls it makes should validate Telegram Mini App `initData` through the SDK
+`widget_auth` integration.
 
 ## User Approval
 

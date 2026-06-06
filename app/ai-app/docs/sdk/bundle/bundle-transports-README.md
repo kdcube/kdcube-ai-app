@@ -73,7 +73,7 @@ So:
 | background job | `@on_job` | Redis Stream + proc | no HTTP route; processor operation `__kdcube_on_job__` | producer/platform context | `@cron`, widget/API run-now, internal service |
 | authenticated bundle operation | `@api(route="operations")` | HTTP REST | `/api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/{alias}` | KDCube | widget, custom frontend, internal platform UI |
 | public bundle operation | `@api(route="public")` | HTTP REST | `/api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/{alias}` | KDCube or bundle | webhook, external caller |
-| widget fetch | `@ui_widget(...)` | HTTP GET | `/api/integrations/bundles/{tenant}/{project}/{bundle_id}/widgets/{alias}` | KDCube | platform widget loader / browser client |
+| widget fetch | `@ui_widget(...)` | HTTP GET | `/api/integrations/bundles/{tenant}/{project}/{bundle_id}/widgets/{alias}` or `/public/widgets/{alias}` | KDCube for `/widgets`; public/static session for `/public/widgets` | platform widget loader, Telegram Mini App, browser client |
 | main bundle UI | `@ui_main` | static HTTP asset serving | `/api/integrations/static/{tenant}/{project}/{bundle_id}/...` | KDCube | platform UI / browser client |
 | bundle-authenticated MCP | `@mcp(route="operations")` | MCP over `streamable-http` | `/api/integrations/bundles/{tenant}/{project}/{bundle_id}/mcp/{alias}` | bundle MCP app | MCP client |
 | public MCP | `@mcp(route="public")` | MCP over `streamable-http` | `/api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/mcp/{alias}` | nobody by default | MCP client |
@@ -515,12 +515,15 @@ Routes:
 ```text
 GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/widgets
 GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/widgets/{alias}
+GET /api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/widgets/{alias}
 ```
 
 Auth:
 
-- normal integrations/browser auth
-- KDCube-managed, not bundle-managed
+- `/widgets/...` uses normal integrations/browser auth
+- `/public/widgets/...` serves the built static shell with a public session
+- data/action APIs called by a public widget use their own public API auth,
+  such as Telegram `initData` verification or a bundle-issued federated token
 
 ### 5.2 `@ui_main`
 
