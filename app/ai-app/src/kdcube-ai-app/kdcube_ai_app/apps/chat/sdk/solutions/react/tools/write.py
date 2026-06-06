@@ -40,7 +40,7 @@ TOOL_SPEC = {
         "If kind='display', content is streamed only; if kind='file', content is streamed and also shared as a file. "
         "Pick the channel by the SHAPE of the content, not by a default. "
         "Use channel='timeline_text' for SHORT MARKDOWN that lands INLINE in the main chat stream — mid-turn observations, intermediate findings, a short milestone summary the user benefits from seeing now rather than waiting for the final answer. This is distinct from `channel:thinking`: `channel:thinking` is the agent narrating about itself; timeline_text is content for the user delivered inline. HARD: markdown only, paragraph-sized at most. Do not combine timeline_text with kind='file' — for downloadable files use channel='canvas' or a renderer. "
-        "Use channel='canvas' for LARGE MARKDOWN OR any non‑markdown (HTML/JSON/YAML/XML/Mermaid) — shown in a separate canvas panel in the UI. Markdown is first-class on canvas: full reports, multi-section briefs, big markdown tables, slide sources all live here. The split is SIZE/SHAPE (paragraph vs. report), not format. "
+        "Use channel='canvas' for LARGE MARKDOWN OR any non‑markdown (HTML/JSON/YAML/XML/Mermaid) — produced as an external artifact the connected interface surfaces to the user (the exact surface depends on the interface; see runtime additional_instructions if topology is described there). Markdown is first-class on canvas: full reports, multi-section briefs, big markdown tables, slide sources all live here. The split is SIZE/SHAPE (paragraph vs. report), not format. "
         "Use channel='internal' to write user-invisible internal file artifacts. "
         "Set scratchpad=true only for short inline notes that should appear as react.note. "
         "Use canonical current-turn physical paths: turn_<current>/files/... for durable workspace state, "
@@ -60,7 +60,7 @@ TOOL_SPEC = {
     ),
     "args": {
         "path": "str (FIRST FIELD). Canonical current-turn physical filepath: turn_<current>/outputs/<scope>/<name> or turn_<current>/files/<scope>/<path> for durable workspace state.",
-        "channel": "str (SECOND FIELD). Pick by content shape: 'timeline_text' for short inline content in the main chat stream (mid-turn updates, intermediate findings); 'canvas' for LARGE / visual / tabular content or renderer sources, shown in a separate canvas panel; 'internal' only for private scratch never shown to the user.",
+        "channel": "str (SECOND FIELD). Pick by content shape: 'timeline_text' for short inline content in the main chat stream (mid-turn updates, intermediate findings); 'canvas' for LARGE / visual / tabular content or renderer sources, produced as an external artifact the connected interface surfaces to the user; 'internal' only for private scratch never shown to the user.",
         "content": "str|object (THIRD FIELD). Content to record.",
         "kind": "str (FOURTH FIELD). 'display' or 'file'.",
         "scratchpad": "bool. Optional. Only for channel='internal'; true also creates a short inline react.note.",
