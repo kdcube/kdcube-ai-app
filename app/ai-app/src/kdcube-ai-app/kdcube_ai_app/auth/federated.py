@@ -85,20 +85,7 @@ def _secret_bytes(secret: str | bytes | None = None) -> bytes:
             secret
             or os.getenv("KDCUBE_FEDERATED_TOKEN_SECRET")
             or os.getenv("FEDERATED_TOKEN_SECRET")
-            or os.getenv("SECRETS_ADMIN_TOKEN")
-            or os.getenv("SECRETS_TOKEN")
         )
-        if not raw:
-            try:
-                from kdcube_ai_app.apps.chat.sdk.config import get_settings
-
-                settings = get_settings()
-                raw = (
-                    getattr(settings, "SECRETS_ADMIN_TOKEN", None)
-                    or getattr(settings, "SECRETS_TOKEN", None)
-                )
-            except Exception:
-                raw = None
         value = str(raw or "").encode("utf-8")
     if not value:
         raise FederatedTokenInvalid("federated token secret is not configured")

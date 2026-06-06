@@ -1376,11 +1376,13 @@ def generate_runtime_tokens() -> Dict[str, str]:
     admin = secrets.token_urlsafe(24)
     ingress = secrets.token_urlsafe(16)
     proc = secrets.token_urlsafe(16)
+    federated = secrets.token_urlsafe(32)
     return {
         "SECRETS_ADMIN_TOKEN": admin,
         "SECRETS_READ_TOKENS": f"{ingress},{proc}",
         "SECRETS_TOKEN_INGRESS": ingress,
         "SECRETS_TOKEN_PROC": proc,
+        "KDCUBE_FEDERATED_TOKEN_SECRET": federated,
     }
 
 
