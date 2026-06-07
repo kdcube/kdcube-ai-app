@@ -59,15 +59,20 @@ export class EventLoggerService {
         const original = console[level];
 
         console[level] = (...args: unknown[]) => {
-            try {
-                this.captureEvent(level, args);
-            } catch (err) {
-                // Prevent service from creating infinite error loops
-                original.apply(console, ["EventLogger error:", err]);
-            }
-
-            // Call original function
             original.apply(console, args);
+            const capture = () => {
+                try {
+                    this.captureEvent(level, args);
+                } catch (err) {
+                    // Prevent service from creating infinite error loops.
+                    original.apply(console, ["EventLogger error:", err]);
+                }
+            };
+            if (typeof queueMicrotask === "function") {
+                queueMicrotask(capture);
+            } else {
+                window.setTimeout(capture, 0);
+            }
         };
     }
 

@@ -28,6 +28,7 @@ import type {
 } from '../../api/types';
 
 interface MemoriesState {
+  viewMode: 'full' | 'compact';
   scopeFilter: ScopeFilter;
   query: string;
   labelsFilter: string;
@@ -76,6 +77,7 @@ interface MemoriesState {
 }
 
 const initialState: MemoriesState = {
+  viewMode: 'full',
   scopeFilter: 'current_bundle',
   query: '',
   labelsFilter: '',
@@ -148,6 +150,7 @@ export const loadMemories = createAsyncThunk<MemoriesPayload, void, { state: { m
     return callOperation<MemoriesPayload>('memories_widget_data', {
       scope_filter: state.scopeFilter,
       query: state.query,
+      mode: state.viewMode === 'compact' && !state.query.trim() ? 'recent' : undefined,
       labels: terms(state.labelsFilter),
       keywords: terms(state.keywordsFilter),
       status: state.status,
@@ -423,6 +426,16 @@ const memoriesSlice = createSlice({
     setQuery(state, action: PayloadAction<string>) {
       state.query = action.payload;
       state.page = 0;
+    },
+    setViewMode(state, action: PayloadAction<'full' | 'compact'>) {
+      state.viewMode = action.payload;
+      state.page = 0;
+      state.pageSize = action.payload === 'compact' ? 2 : 30;
+      if (action.payload === 'compact') {
+        state.labelsFilter = '';
+        state.keywordsFilter = '';
+        state.status = 'active';
+      }
     },
     setLabelsFilter(state, action: PayloadAction<string>) {
       state.labelsFilter = action.payload;
@@ -799,6 +812,7 @@ export const {
   setKeywordsFilter,
   setLabelsFilter,
   setQuery,
+  setViewMode,
   setScopeFilter,
   setStatus,
 } = memoriesSlice.actions;

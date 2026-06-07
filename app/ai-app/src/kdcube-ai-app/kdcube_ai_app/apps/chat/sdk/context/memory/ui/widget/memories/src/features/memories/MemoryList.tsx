@@ -1,16 +1,80 @@
 import { useAppDispatch, useAppSelector } from '../../app/hooks';
+import type { MemoryEntry } from '../../api/types';
 import { loadMemories, loadMemoryEvents, nextPage, previousPage, selectMemory } from './memoriesSlice';
 
 function percent(value: number): string {
   return `${Math.round(Math.max(0, Math.min(1, value || 0)) * 100)}%`;
 }
 
+function memoryContextPayload(memory: MemoryEntry) {
+  const ref = `mem:${memory.id}`;
+  return {
+    id: ref,
+    kind: 'memory',
+    label: memory.memory,
+    summary: memory.context || undefined,
+    ref,
+    logical_path: ref,
+    mime: 'application/json',
+    data: {
+      memory_id: memory.id,
+      bundle_id: memory.bundle_id,
+      kind: memory.kind,
+      status: memory.status,
+      tier: memory.tier,
+      pinned: memory.pinned,
+      labels: memory.labels,
+      keywords: memory.keywords,
+    },
+  };
+}
+
+function setMemoryDragData(dataTransfer: DataTransfer, memory: MemoryEntry): void {
+  const payload = memoryContextPayload(memory);
+  dataTransfer.effectAllowed = 'copy';
+  dataTransfer.setData('application/json', JSON.stringify(payload));
+  dataTransfer.setData('text/plain', memory.memory);
+  dataTransfer.setData('text/uri-list', payload.ref);
+}
+
 export function MemoryList() {
   const dispatch = useAppDispatch();
-  const { count, hasMore, loading, memories, page, pageSize, selectedId } = useAppSelector((state) => state.memories);
+  const { count, hasMore, loading, memories, page, pageSize, selectedId, viewMode } = useAppSelector((state) => state.memories);
+  const compact = viewMode === 'compact';
 
   if (loading) return <div className="empty-state">Opening notes...</div>;
-  if (memories.length === 0) return <div className="empty-state">No memory notes yet.</div>;
+  if (memories.length === 0) return <div className="empty-state">{compact ? 'No matching memories.' : 'No memory notes yet.'}</div>;
+
+  if (compact) {
+    return (
+      <section className="memory-list compact-memory-list" aria-label="Memories">
+        {memories.slice(0, 2).map((memory) => (
+          <button
+            key={memory.id}
+            className={`memory-row compact-memory-row tone-${memory.status || 'active'} ${memory.id === selectedId ? 'selected' : ''}`}
+            draggable
+            onDragStart={(event) => setMemoryDragData(event.dataTransfer, memory)}
+            onClick={() => {
+              dispatch(selectMemory(memory.id));
+              void dispatch(loadMemoryEvents(memory.id));
+            }}
+            title="Drag to canvas or click to open memory detail"
+          >
+            <div className="memory-row-main">
+              <span className="memory-title">{memory.memory}</span>
+              <span className="memory-bundle">{memory.pinned ? 'pinned' : memory.kind || 'memory'}</span>
+            </div>
+            {memory.context ? <span className="memory-context">{memory.context}</span> : null}
+            <div className="term-row compact-terms">
+              {[...memory.labels, ...memory.keywords].slice(0, 4).map((term) => (
+                <span key={`${memory.id}-term-${term}`}>{term}</span>
+              ))}
+            </div>
+          </button>
+        ))}
+      </section>
+    );
+  }
 
   const sorted = [...memories].sort((left, right) => (
     left.tier - right.tier
@@ -34,10 +98,13 @@ export function MemoryList() {
             <button
               key={memory.id}
               className={`memory-row tone-${memory.status || 'active'} ${memory.id === selectedId ? 'selected' : ''}`}
+              draggable
+              onDragStart={(event) => setMemoryDragData(event.dataTransfer, memory)}
               onClick={() => {
                 dispatch(selectMemory(memory.id));
                 void dispatch(loadMemoryEvents(memory.id));
               }}
+              title="Drag to canvas or click to open memory detail"
             >
               <div className="memory-row-main">
                 <span className="memory-title">{memory.memory}</span>

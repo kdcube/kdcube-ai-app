@@ -8,6 +8,7 @@ import pytest
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot import base_workflow as workflow_mod
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.base_workflow import BaseWorkflow
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
+from kdcube_ai_app.infra.service_hub.errors import ServiceError, ServiceException, ServiceKind
 
 
 class _TimelineStub:
@@ -25,11 +26,19 @@ class _CtxBrowserStub:
         self.contributed.extend(list(blocks or []))
 
 
-def _payload(*, tenant: str, project: str, user_id: str = "u1", turn_id: str = "turn-1"):
+def _payload(
+    *,
+    tenant: str,
+    project: str,
+    user_id: str = "u1",
+    turn_id: str = "turn-1",
+    agent_id: str | None = None,
+):
     return SimpleNamespace(
         actor=SimpleNamespace(tenant_id=tenant, project_id=project),
         user=SimpleNamespace(user_id=user_id, user_type="registered", timezone="UTC"),
         routing=SimpleNamespace(conversation_id="conv-1", turn_id=turn_id),
+        event=SimpleNamespace(agent_id=agent_id) if agent_id is not None else None,
     )
 
 
@@ -441,22 +450,29 @@ def test_sync_runtime_ctx_bundle_props_refreshes_render_thinking(monkeypatch):
         ),
     )
     wf = BaseWorkflow.__new__(BaseWorkflow)
-    wf.bundle_props = {"react": {"render_thinking": False}}
-    wf.runtime_ctx = RuntimeCtx(render_thinking=True)
+    wf.bundle_props = {"react": {"render_thinking": False, "debug_timeline": True}}
+    wf.runtime_ctx = RuntimeCtx(render_thinking=True, debug_timeline=False)
 
     wf._sync_runtime_ctx_bundle_props()
 
     assert wf.runtime_ctx.render_thinking is False
+    assert wf.runtime_ctx.debug_timeline is True
     assert wf.runtime_ctx.debug_timeline_root == "/react-debug"
     assert wf.runtime_ctx.debug_timeline_keep_files == 17
 
 
 def test_base_workflow_constructor_binds_external_event_source_when_redis_present(monkeypatch):
     sentinel = object()
+    calls = []
+
+    def _fake_build_conversation_external_event_source(**kwargs):
+        calls.append(dict(kwargs))
+        return sentinel
+
     monkeypatch.setattr(
         workflow_mod,
         "build_conversation_external_event_source",
-        lambda **kwargs: sentinel,
+        _fake_build_conversation_external_event_source,
     )
 
     wf = BaseWorkflow(
@@ -470,13 +486,16 @@ def test_base_workflow_constructor_binds_external_event_source_when_redis_presen
             ai_bundle_spec=SimpleNamespace(id="bundle.test"),
             max_tokens=256,
         ),
-        comm_context=_payload(tenant="tenant-a", project="project-a", turn_id="turn-ctor"),
+        comm_context=_payload(tenant="tenant-a", project="project-a", turn_id="turn-ctor", agent_id="main"),
         ctx_client=SimpleNamespace(),
         redis="redis-client",
     )
 
     assert wf.redis == "redis-client"
     assert wf.runtime_ctx.external_event_source is sentinel
+    assert calls
+    assert calls[-1]["agent_id"] == "main"
+    assert calls[-1]["user_id"] == "u1"
 
 
 @pytest.mark.asyncio
@@ -724,6 +743,99 @@ async def test_emit_committed_answer_once_streams_single_answer_pair():
     assert deltas[0]["completed"] is False
     assert deltas[1]["text"] == ""
     assert deltas[1]["completed"] is True
+
+
+def test_service_exception_chain_detects_wrapped_connectivity_error():
+    err = ServiceError(
+        kind=ServiceKind.llm,
+        service_name="decision",
+        error_type="APIConnectionError",
+        message="Connection error.",
+        stage="decision",
+        retryable=True,
+    )
+    wrapped = RuntimeError("[react.v3] Graph error: Connection error.")
+    wrapped.__cause__ = ServiceException(err)
+
+    found = workflow_mod._service_exception_from_chain(wrapped)
+
+    assert found is not None
+    assert found.err is err
+    assert workflow_mod._is_service_connectivity_error(found.err) is True
+
+
+@pytest.mark.asyncio
+async def test_handle_turn_exception_sanitizes_wrapped_react_connection_error(monkeypatch):
+    errors = []
+    deleted_turns = []
+
+    async def _error(**kwargs):
+        errors.append(dict(kwargs))
+
+    async def _delete_turn(**kwargs):
+        deleted_turns.append(dict(kwargs))
+
+    async def _report_timings(*args, **kwargs):
+        del args, kwargs
+        return ("timings", "| timings |", [])
+
+    monkeypatch.setattr(workflow_mod, "_cleanup_turn_workspace", lambda *args, **kwargs: None)
+
+    wf = BaseWorkflow.__new__(BaseWorkflow)
+    wf.logger = SimpleNamespace(log=lambda *args, **kwargs: None)
+    wf.comm = SimpleNamespace(error=_error, delta=lambda **kwargs: None)
+    wf.ctx_client = SimpleNamespace(delete_turn=_delete_turn)
+    wf.config = SimpleNamespace(ai_bundle_spec=SimpleNamespace(id="task-tracker@1-0"))
+    wf.runtime_ctx = RuntimeCtx(turn_id="turn-connection", conversation_id="conv-1")
+    wf.ctx_browser = _CtxBrowserStub(wf.runtime_ctx)
+    wf.report_timings = _report_timings
+    wf.message_resources_fn = lambda code, fallback=None: None
+    wf._ctx = {
+        "service": {
+            "tenant": "tenant-a",
+            "project": "project-a",
+            "user": "user-a",
+            "user_type": "registered",
+            "request_id": "req-1",
+        },
+        "turn": {
+            "t_turn0": time.perf_counter(),
+            "ms0u": 0,
+        },
+    }
+
+    service_error = ServiceError(
+        kind=ServiceKind.llm,
+        service_name="decision",
+        provider="openai",
+        model_name="model-x",
+        error_type="APIConnectionError",
+        message="Connection error.",
+        stage="decision",
+        retryable=True,
+    )
+    exc = RuntimeError("[react.v3] Graph error: Connection error.\nTraceback (most recent call last):\n  File \"x\", line 1")
+    exc.__cause__ = ServiceException(service_error)
+    scratchpad = SimpleNamespace(
+        conversation_id="conv-1",
+        turn_id="turn-connection",
+        current_phase=SimpleNamespace(agent="react", name="decision", meta={}),
+    )
+
+    with pytest.raises(RuntimeError):
+        await wf._handle_turn_exception(exc, scratchpad)
+
+    assert errors
+    message = errors[0]["message"]
+    assert message.startswith("The AI service connection failed")
+    assert "Traceback" not in message
+    assert "File " not in message
+    data = errors[0]["data"]
+    assert "traceback" not in data
+    assert "raw_error" not in data
+    assert data["error_type"] == "APIConnectionError"
+    assert data["service_error"]["error_type"] == "APIConnectionError"
+    assert deleted_turns
 
 
 @pytest.mark.asyncio

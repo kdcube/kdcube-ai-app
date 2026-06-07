@@ -104,6 +104,23 @@ def is_context_limit_error(err: ServiceError) -> bool:
         )
     )
 
+
+def exception_chain(exc: BaseException | None, *, max_depth: int = 6) -> list[dict[str, str]]:
+    chain: list[dict[str, str]] = []
+    seen: set[int] = set()
+    cur = exc
+    while cur is not None and len(chain) < max_depth and id(cur) not in seen:
+        seen.add(id(cur))
+        chain.append({
+            "type": type(cur).__name__,
+            "module": type(cur).__module__,
+            "message": str(cur),
+            "repr": repr(cur),
+        })
+        cur = cur.__cause__ or cur.__context__
+    return chain
+
+
 def mk_llm_error(
         exc: Exception,
         stage: str,
@@ -114,6 +131,8 @@ def mk_llm_error(
         retryable: bool | None = None,
         context: dict | None = None,
 ) -> ServiceError:
+    safe_context = dict(context or {})
+    safe_context.setdefault("exception_chain", exception_chain(exc))
     return ServiceError(
         kind=ServiceKind.llm,
         service_name=service_name,
@@ -125,5 +144,5 @@ def mk_llm_error(
         http_status=http_status,
         code=code,
         retryable=retryable,
-        context=context or {},
+        context=safe_context,
     )

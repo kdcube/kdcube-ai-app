@@ -1988,7 +1988,9 @@ class MemoryEntrypointMixin:
     @ui_widget(
         icon={"tailwind": "heroicons-outline:archive-box", "lucide": "Archive"},
         alias="memories",
-        user_types=("registered", "paid", "privileged"),
+        user_types=(),
+        user_types_config="visibility.widget.memories.user_types",
+        roles_config="visibility.widget.memories.roles",
     )
     def memories_widget(self, **kwargs):
         del kwargs
@@ -2007,6 +2009,7 @@ class MemoryEntrypointMixin:
         query: str = "",
         status: str = "active",
         kind: str = "",
+        mode: str = "",
         labels: Sequence[str] | str = (),
         keywords: Sequence[str] | str = (),
         limit: int = 30,
@@ -2029,6 +2032,10 @@ class MemoryEntrypointMixin:
         keywords_list = normalize_terms(keywords)
         normalized_query = str(query or "").strip()
         query_embedding = await self._memory_search_embed_or_downgrade(normalized_query)
+        requested_mode = str(mode or "").strip().lower()
+        if requested_mode not in {"hotset", "recent"}:
+            requested_mode = "hotset"
+        search_mode = "hybrid" if normalized_query else requested_mode
         search_limit = min(page_limit + 1, 101)
         try:
             min_relevance_score = float(self._memory_widget_config().get("search_min_relevance_score") or 0.58)
@@ -2054,7 +2061,7 @@ class MemoryEntrypointMixin:
             MemorySearchRequest(
                 scope=scope,
                 query=normalized_query,
-                mode="hybrid" if normalized_query else "hotset",
+                mode=search_mode,
                 labels=labels_list,
                 keywords=keywords_list,
                 status=status or "active",
@@ -2089,6 +2096,7 @@ class MemoryEntrypointMixin:
                 "query": normalized_query,
                 "status": status or "active",
                 "kind": kind,
+                "mode": search_mode,
                 "labels": labels_list,
                 "keywords": keywords_list,
                 "min_relevance_score": min_relevance_score if normalized_query else 0.0,

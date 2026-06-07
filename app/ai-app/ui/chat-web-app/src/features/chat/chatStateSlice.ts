@@ -620,7 +620,6 @@ const chatStateSlice = createSlice({
         conversationStatus: (state, action: PayloadAction<ConvStatusEnvelope>) => {
             const payload = action.payload;
             if (!payload.conversation.conversation_id || state.conversationId !== payload.conversation.conversation_id) {
-                console.warn("received event for an unknown conversation id or no conversation id in payload", action.payload)
                 return
             }
 

@@ -7,6 +7,7 @@ interface AppShellProps {
   memoryUseEnabled: boolean;
   onCreate: () => void;
   onToggleMemoryUse: () => void;
+  compact?: boolean;
   saving?: boolean;
 }
 
@@ -17,16 +18,17 @@ export function AppShell({
   memoryUseEnabled,
   onCreate,
   onToggleMemoryUse,
+  compact = false,
   saving = false,
 }: AppShellProps) {
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${compact ? 'compact-shell' : ''}`}>
       <header className="app-header">
         <div>
-          <h1>Memory notes</h1>
-          <p>{count} records in scope</p>
+          <h1>{compact ? 'Memories' : 'Memory notes'}</h1>
+          <p>{compact ? `${count} in scope` : `${count} records in scope`}</p>
         </div>
-        <label className="memory-use-toggle">
+        <label className={`memory-use-toggle ${compact ? 'sr-only' : ''}`}>
           <input
             type="checkbox"
             checked={memoryUseEnabled}
@@ -35,7 +37,7 @@ export function AppShell({
           />
           <span>Use my memory</span>
         </label>
-        {allowWrite ? (
+        {allowWrite && !compact ? (
           <button type="button" className="primary-button" onClick={onCreate} disabled={!memoryUseEnabled}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6 }}>
               <path d="M12 5v14M5 12h14" />

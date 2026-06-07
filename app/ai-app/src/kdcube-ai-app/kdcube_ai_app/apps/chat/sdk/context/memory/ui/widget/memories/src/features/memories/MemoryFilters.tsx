@@ -21,8 +21,10 @@ export function MemoryFilters() {
     query,
     scopeFilter,
     status,
+    viewMode,
     loading,
   } = useAppSelector((state) => state.memories);
+  const compact = viewMode === 'compact';
   const hasFilters = Boolean(query.trim() || labelsFilter.trim() || keywordsFilter.trim() || status !== 'active');
 
   function submit(event: FormEvent) {
@@ -56,8 +58,8 @@ export function MemoryFilters() {
   }
 
   return (
-    <form className="filters" onSubmit={submit}>
-      <div className="filter-row">
+    <form className={`filters ${compact ? 'compact-filters' : ''}`} onSubmit={submit}>
+      {compact ? null : <div className="filter-row">
         <label>
           <span>Scope</span>
           <select
@@ -81,28 +83,41 @@ export function MemoryFilters() {
             <option value="any">Any</option>
           </select>
         </label>
-      </div>
+      </div>}
       <div className="search-row">
         <input
           value={query}
           onChange={(event) => dispatch(setQuery(event.target.value))}
-          placeholder="Semantic search"
+          placeholder={compact ? 'Search memories...' : 'Semantic search'}
         />
-        <input
+        {compact ? null : <input
           value={labelsFilter}
           onChange={(event) => dispatch(setLabelsFilter(event.target.value))}
           placeholder="Tags"
-        />
-        <input
+        />}
+        {compact ? null : <input
           value={keywordsFilter}
           onChange={(event) => dispatch(setKeywordsFilter(event.target.value))}
           placeholder="Keywords"
-        />
+        />}
+        {compact && allowAllUserMemories ? (
+          <select
+            aria-label="Memory scope"
+            value={scopeFilter}
+            onChange={(event) => {
+              dispatch(setScopeFilter(event.target.value as ScopeFilter));
+              void dispatch(loadMemories());
+            }}
+          >
+            <option value="current_bundle">This bundle</option>
+            <option value="all_user_memories">All memories</option>
+          </select>
+        ) : null}
         <button type="submit" disabled={loading}>
           Search
         </button>
       </div>
-      <div className="memory-actions-row">
+      {compact ? null : <div className="memory-actions-row">
         <button type="button" className="secondary-button" disabled={loading} onClick={() => void runExport('json', false)}>
           Download matching JSON
         </button>
@@ -118,7 +133,7 @@ export function MemoryFilters() {
         <button type="button" className="danger-button" disabled={loading} onClick={() => void runDelete(true)}>
           Delete all
         </button>
-      </div>
+      </div>}
     </form>
   );
 }

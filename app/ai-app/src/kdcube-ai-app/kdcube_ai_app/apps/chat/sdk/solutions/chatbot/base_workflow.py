@@ -91,6 +91,72 @@ def _nonnegative_int(value: Any) -> Optional[int]:
     return parsed if parsed >= 0 else None
 
 
+def _service_exception_from_chain(exc: BaseException | None) -> ServiceException | None:
+    seen: set[int] = set()
+    cur: BaseException | None = exc
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        if isinstance(cur, ServiceException):
+            return cur
+        cur = cur.__cause__ or cur.__context__
+    return None
+
+
+def _is_service_connectivity_error(err: ServiceError) -> bool:
+    hay = " ".join(
+        str(value or "").lower()
+        for value in (
+            err.code,
+            err.error_type,
+            err.message,
+            err.stage,
+            err.provider,
+            err.service_name,
+        )
+    )
+    return any(
+        token in hay
+        for token in (
+            "connection error",
+            "connectionerror",
+            "api_connection_error",
+            "connect error",
+            "connecterror",
+            "network",
+            "dns",
+            "temporary failure",
+            "timeout",
+            "timed out",
+            "read timeout",
+            "write timeout",
+            "service unavailable",
+            "unavailable",
+        )
+    )
+
+
+def _looks_like_traceback_message(message: str) -> bool:
+    text = str(message or "")
+    return (
+        "Traceback (most recent call last)" in text
+        or "\n  File " in text
+        or text.count("\n") >= 6
+    )
+
+
+def _generic_turn_failure_message(raw_message: str = "") -> str:
+    del raw_message
+    return "The assistant hit an internal error before it could complete the turn. Please retry."
+
+
+def _service_connectivity_user_message(err: ServiceError) -> str:
+    del err
+    return (
+        "The AI service connection failed while the assistant was working. "
+        "Please retry in a moment; if you just changed networks, wait for connectivity to settle first."
+    )
+
+
 def _chat_input_kind(event_type: Any) -> str:
     text = str(event_type or "").strip().lower()
     if text in {"", "event.user.prompt", "user.prompt", "message", "user", "prompt"}:
@@ -544,6 +610,11 @@ class BaseWorkflow():
             settings,
             agent_id=runtime_agent_id,
         )
+        runtime_debug_timeline_enabled = _react_debug_timeline_enabled(
+            self.bundle_props,
+            settings,
+            agent_id=runtime_agent_id,
+        )
         runtime_debug_timeline_root = _react_debug_timeline_root(settings)
         runtime_debug_timeline_keep_files = _react_debug_timeline_keep_files(settings)
         try:
@@ -572,15 +643,17 @@ class BaseWorkflow():
                 line_numbers_mode=runtime_line_numbers_mode,
                 story_snapshots_enabled=runtime_story_snapshots_enabled,
                 event_source_pipeline_enabled=runtime_event_source_pipeline_enabled,
+                debug_timeline=runtime_debug_timeline_enabled,
                 debug_timeline_root=runtime_debug_timeline_root,
                 debug_timeline_keep_files=runtime_debug_timeline_keep_files,
                 bundle_storage=self._resolve_runtime_ctx_bundle_storage(),
                 workspace_implementation=settings.REACT_WORKSPACE_IMPLEMENTATION,
                 workspace_git_repo=settings.REACT_WORKSPACE_GIT_REPO,
-                external_event_source=self._external_event_source_for_runtime(),
+                external_event_source=None,
                 multi_action_mode=settings.AI_REACT_AGENT_MULTI_ACTION,
             )
             _apply_react_session_settings(self.runtime_ctx, settings)
+            self.runtime_ctx.external_event_source = self._external_event_source_for_runtime()
             self.ctx_browser = ContextBrowser(
                 ctx_client=self.ctx_client,
                 logger=self.logger,
@@ -619,6 +692,7 @@ class BaseWorkflow():
                 line_numbers_mode=runtime_line_numbers_mode,
                 story_snapshots_enabled=runtime_story_snapshots_enabled,
                 event_source_pipeline_enabled=runtime_event_source_pipeline_enabled,
+                debug_timeline=runtime_debug_timeline_enabled,
                 debug_timeline_root=runtime_debug_timeline_root,
                 debug_timeline_keep_files=runtime_debug_timeline_keep_files,
                 workspace_implementation=settings.REACT_WORKSPACE_IMPLEMENTATION,
@@ -703,6 +777,11 @@ class BaseWorkflow():
             runtime_ctx.line_numbers_mode = _react_line_numbers_mode(self.bundle_props, settings, agent_id=agent_id)
             runtime_ctx.story_snapshots_enabled = _react_story_snapshots_enabled(self.bundle_props, agent_id=agent_id)
             runtime_ctx.event_source_pipeline_enabled = _react_event_source_pipeline_enabled(
+                self.bundle_props,
+                settings,
+                agent_id=agent_id,
+            )
+            runtime_ctx.debug_timeline = _react_debug_timeline_enabled(
                 self.bundle_props,
                 settings,
                 agent_id=agent_id,
@@ -1076,11 +1155,6 @@ class BaseWorkflow():
             "type": err.__class__.__name__,
             "message": str(err),
         }
-        # traceback is useful but purely diagnostic; if you don't want it on the wire, drop it
-        try:
-            err_info["traceback"] = traceback.format_exc()
-        except Exception:
-            pass
 
         if extra:
             err_info["extra"] = extra
@@ -2495,11 +2569,37 @@ class BaseWorkflow():
                     days=365,
                 )
             except Exception:
-                pass
+                try:
+                    self.logger.log(
+                        f"[react.timeline.load] failed turn_id={scratchpad.turn_id} conversation_id={scratchpad.conversation_id}: "
+                        f"{traceback.format_exc()}",
+                        level="ERROR",
+                    )
+                except Exception:
+                    pass
             try:
                 event_reader_result = self.ctx_browser.last_external_event_reader_result()
             except Exception:
                 event_reader_result = {}
+            try:
+                self.logger.log(
+                    "[react.external.initial_fold] "
+                    + json.dumps(
+                        {
+                            "turn_id": scratchpad.turn_id,
+                            "conversation_id": scratchpad.conversation_id,
+                            "agent_id": getattr(getattr(self, "runtime_ctx", None), "agent_id", None),
+                            "event_source_pipeline_enabled": bool(getattr(getattr(self, "runtime_ctx", None), "event_source_pipeline_enabled", False)),
+                            "external_event_source": bool(getattr(getattr(self, "runtime_ctx", None), "external_event_source", None)),
+                            **(event_reader_result if isinstance(event_reader_result, dict) else {}),
+                        },
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                    level="INFO",
+                )
+            except Exception:
+                pass
             event_reader_materialized_input = bool(event_reader_result.get("current_turn_user_input_materialized"))
             prompt_text = str(event_reader_result.get("current_turn_prompt_text") or "").strip()
             if prompt_text:
@@ -2925,6 +3025,7 @@ class BaseWorkflow():
         extra_data: dict = {}
         managed_exception: Exception | None = None
         show_error_in_timeline = True
+        service_exception = _service_exception_from_chain(exc)
 
         # Defaults for generic path
         message = str(exc) or repr(exc)
@@ -2934,8 +3035,7 @@ class BaseWorkflow():
                 safe_msg = self.message_resources_fn("server_error") if self.message_resources_fn else None
             except Exception:
                 safe_msg = None
-            if safe_msg:
-                message = safe_msg
+            message = safe_msg or _generic_turn_failure_message(str(exc))
             try:
                 extra_data["raw_error"] = str(exc)
                 extra_data["traceback"] = traceback.format_exc()
@@ -2943,7 +3043,39 @@ class BaseWorkflow():
                 pass
 
         # ---- unwrap ServiceException / TurnPhaseError vs generic errors ----
-        if isinstance(exc, ServiceException):
+        if service_exception is not None and _is_service_connectivity_error(service_exception.err):
+            se: ServiceError = service_exception.err
+            agent = se.service_name or agent
+            stage = se.stage or stage
+            try:
+                resource_msg = self.message_resources_fn("service_connection_error") if self.message_resources_fn else None
+            except Exception:
+                resource_msg = None
+            message = resource_msg or _service_connectivity_user_message(se)
+            error_type = se.code or se.error_type or "service_connection_error"
+            extra_data = {
+                "service_error": {
+                    "kind": getattr(se.kind, "value", se.kind),
+                    "service_name": se.service_name,
+                    "provider": se.provider,
+                    "model_name": se.model_name,
+                    "error_type": se.error_type,
+                    "stage": se.stage,
+                    "http_status": se.http_status,
+                    "code": se.code,
+                    "retryable": se.retryable,
+                },
+                "service_kind": getattr(se.kind, "value", se.kind),
+                "service_name": se.service_name,
+                "provider": se.provider,
+                "model_name": se.model_name,
+                "http_status": se.http_status,
+                "retryable": se.retryable,
+                "service_stage": se.stage,
+            }
+            show_error_in_timeline = True
+
+        elif isinstance(exc, ServiceException):
             se: ServiceError = exc.err
 
             # Optional: prefer service payload for "agent"/"stage" if present

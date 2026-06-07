@@ -1593,7 +1593,7 @@ class ReactSolverV2:
                 self.log.log(f"[react.v2] Graph error: {exc}\n{tb}", level="ERROR")
             except Exception:
                 pass
-            raise RuntimeError(f"[react.v2] Graph error: {exc}\n{tb}") from exc
+            raise RuntimeError(f"[react.v2] Graph error: {exc}") from exc
         finally:
             # workspace is managed by ContextBrowser; no CV reset here
             self._outdir_cv_token = None

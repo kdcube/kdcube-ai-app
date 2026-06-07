@@ -494,6 +494,10 @@ class AgentLogger:
             "error_type": type(error).__name__, "error_message": str(error),
             "context": context, "timestamp": datetime.now().isoformat()
         }
+        try:
+            data["exception_chain"] = service_errors.exception_chain(error)
+        except Exception:
+            pass
         if self.start_time:
             data["elapsed_time"] = f"{time.time() - self.start_time:.2f}s"
         self._emit("error", "💥 Error - ", obj=data)
