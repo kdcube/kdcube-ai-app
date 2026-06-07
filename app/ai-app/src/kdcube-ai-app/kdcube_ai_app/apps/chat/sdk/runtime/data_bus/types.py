@@ -7,7 +7,6 @@ import dataclasses
 import inspect
 import json
 import time
-import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Mapping, Optional
@@ -45,6 +44,15 @@ def utc_now_iso() -> str:
 
 def now_ms() -> int:
     return int(time.time() * 1000)
+
+
+def timestamp_message_id(prefix: str = "dbmsg") -> str:
+    ns = time.time_ns()
+    seconds, nanos = divmod(ns, 1_000_000_000)
+    current = datetime.fromtimestamp(seconds, tz=timezone.utc)
+    safe_prefix = "".join(ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in str(prefix or "").strip())
+    safe_prefix = safe_prefix.strip("_-") or "dbmsg"
+    return f"{safe_prefix}_{current:%Y-%m-%d-%H-%M-%S}-{nanos:09d}"
 
 
 def ensure_json_object(value: Any, *, field_name: str) -> dict[str, Any]:
@@ -117,7 +125,7 @@ class DataBusMessage:
         data = dict(value or {})
         return cls(
             schema=str(data.get("schema") or DATA_BUS_MESSAGE_SCHEMA),
-            message_id=str(data.get("message_id") or f"dbmsg_{uuid.uuid4().hex}"),
+            message_id=str(data.get("message_id") or timestamp_message_id()),
             tenant=str(data.get("tenant") or ""),
             project=str(data.get("project") or ""),
             bundle_id=str(data.get("bundle_id") or ""),

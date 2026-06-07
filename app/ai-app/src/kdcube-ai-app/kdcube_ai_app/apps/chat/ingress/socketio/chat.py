@@ -189,8 +189,23 @@ class SocketIOChatHandler:
             if not event:
                 return
             if target_sid:
+                if event == "chat_service" and str(data.get("type") or "").startswith("kdcube.data_bus."):
+                    logger.info(
+                        "[socketio.relay] emitting data_bus event type=%s target_sid=%s session_id=%s message_id=%s",
+                        data.get("type"),
+                        target_sid,
+                        session_id,
+                        (data.get("data") or {}).get("message_id") if isinstance(data.get("data"), dict) else None,
+                    )
                 await self.sio.emit(event, data, room=target_sid)
             elif session_id:
+                if event == "chat_service" and str(data.get("type") or "").startswith("kdcube.data_bus."):
+                    logger.info(
+                        "[socketio.relay] broadcasting data_bus event type=%s session_id=%s message_id=%s",
+                        data.get("type"),
+                        session_id,
+                        (data.get("data") or {}).get("message_id") if isinstance(data.get("data"), dict) else None,
+                    )
                 await self.sio.emit(event, data, room=session_id)
         except Exception as e:
             logger.error("[chat relay] emit failed: %s", e)

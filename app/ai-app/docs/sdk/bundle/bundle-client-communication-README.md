@@ -185,8 +185,18 @@ Socket.IO clients should bind all shared server event routes, including `chat_co
 
 ## 7. Data Bus Contract
 
-Use Socket.IO `data_bus.publish` for durable bundle-domain messages that are
-not chat turns, such as collaborative board patches or issue updates.
+Use Data Bus publish for durable bundle-domain messages that are not chat
+turns, such as collaborative board patches or issue updates.
+
+Browser clients may publish through:
+
+- Socket.IO `data_bus.publish`;
+- HTTP `POST /sse/data_bus.publish?stream_id=<open-stream-id>` while listening
+  on `/sse/stream`.
+
+Both routes accept the same package and write the same normalized message to
+the same bundle Data Bus Redis Stream. The SSE stream itself is still
+server-to-client only; the POST is the inbound half.
 
 For how conversation `external_events[]` and Data Bus `messages[]` fit
 together, read
@@ -202,7 +212,7 @@ There are two supported auth paths:
   upstream context and issues a short-lived federated Data Bus token, and the
   client connects Socket.IO with `federated_token`.
 
-Request shape:
+Request shape for both browser transports:
 
 ```json
 {
@@ -210,9 +220,9 @@ Request shape:
   "bundle_id": "example-collab@1-0",
   "messages": [
     {
-      "message_id": "dbmsg_01HX",
-      "subject": "example.board.patch",
-      "object_ref": "board:main",
+      "message_id": "dbmsg_2026-06-07-10-20-30-123456789",
+      "subject": "example.document.patch",
+      "object_ref": "document-123",
       "idempotency_key": "client-op-01HX",
       "payload": {
         "base_revision": 17,
@@ -223,12 +233,12 @@ Request shape:
 }
 ```
 
-The Socket.IO ack confirms that accepted messages were written to the Data Bus
-Redis Stream. It does not prove that a bundle handler exists or that the
-domain mutation succeeded. Handler completion, unknown-subject failures,
-handler access failures, and domain conflicts are proc-side results and may
-arrive later as a `chat_service` event when the bundle handler/runtime uses
-`ctx.reply.*`.
+The Socket.IO ack or HTTP response confirms that accepted messages were written
+to the Data Bus Redis Stream. It does not prove that a bundle handler exists or
+that the domain mutation succeeded. Handler completion, unknown-subject
+failures, handler access failures, and domain conflicts are proc-side results
+and may arrive later as a `chat_service` event when the bundle handler/runtime
+uses `ctx.reply.*`.
 
 Bundle handler registration:
 
@@ -236,12 +246,12 @@ Bundle handler registration:
 from kdcube_ai_app.apps.chat.sdk.data_bus import data_bus_handler
 
 @data_bus_handler(
-    subject="example.board.patch",
+    subject="example.document.patch",
     partition_by="object_ref",
     ordering="serial_per_partition",
     idempotency="required",
 )
-async def handle_board_patch(self, ctx, message):
+async def handle_document_patch(self, ctx, message):
     ...
 ```
 
@@ -263,6 +273,15 @@ bundle/handler visibility, partition locking, and handler invocation.
 
 See [Data Bus](../../service/comm/data-bus-README.md) and
 [Bundle Federated Auth For Data Bus](auth-bundle-federated-README.md).
+
+Server-side bundle code and trusted tools can publish the same durable messages
+without a browser socket by using `comm.data_bus.publish(...)` or
+`comm.data_bus.publish_and_wait(...)`; isolated/generated-code runtimes use
+`comm_ctx.data_bus_publish(...)` or `comm_ctx.data_bus_publish_and_wait(...)`.
+Use that producer path when a tool must mutate bundle-owned state through the
+same `@data_bus_handler(...)` pipeline as a browser action. See
+[Data Bus: Producer APIs From Bundle Runtimes](../../service/comm/data-bus-README.md#producer-apis-from-bundle-runtimes)
+and [Bundle Runtime](bundle-runtime-README.md#publishing-to-data-bus-from-tools-and-entrypoints).
 
 ---
 

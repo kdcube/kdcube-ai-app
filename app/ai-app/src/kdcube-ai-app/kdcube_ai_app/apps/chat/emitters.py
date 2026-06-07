@@ -8,7 +8,7 @@ import asyncio
 from datetime import datetime
 
 from dataclasses import dataclass, field
-from typing import Any, Optional, Callable, Awaitable, Dict, List, Tuple, Set, Iterable
+from typing import Any, Optional, Callable, Awaitable, Dict, List, Tuple, Set, Iterable, Mapping
 import os, logging, time, inspect
 
 from kdcube_ai_app.apps.chat.sdk.comm.event_filter import IEventFilter, EventFilterInput
@@ -24,6 +24,7 @@ from kdcube_ai_app.apps.chat.sdk.config import get_settings
 from kdcube_ai_app.apps.chat.sdk.protocol import (
     ChatEnvelope, ServiceCtx, ConversationCtx, ExternalEventRouting, _iso_now, ExternalEventPayload
 )
+from kdcube_ai_app.apps.chat.sdk.runtime.data_bus.publisher import DataBusPublisher
 from kdcube_ai_app.apps.chat.sdk.util import ensure_event_markdown
 from kdcube_ai_app.infra.orchestration.app.communicator import ServiceCommunicator
 
@@ -628,11 +629,25 @@ class ChatCommunicator:
     event_filter: Optional[IEventFilter] = None
     event_sink: Optional[Callable[..., Any]] = None
     activity_listeners: Set[Callable[[dict], Awaitable[None]]] = field(default_factory=set, init=False, repr=False)
+    data_bus: DataBusPublisher = field(default=None, init=False, repr=False)
 
     def __post_init__(self):
         # default room = session_id
         self.room = self.room or self.conversation.get("session_id")
         self.target_sid = self.target_sid or self.conversation.get("socket_id")
+        redis_url = None
+        try:
+            relay_comm = getattr(getattr(self, "emitter", None), "_comm", None)
+            redis_url = getattr(relay_comm, "redis_url", None)
+        except Exception:
+            redis_url = None
+        self.data_bus = DataBusPublisher(
+            redis_url=redis_url,
+            tenant=self.tenant,
+            project=self.project,
+            actor_provider=self._data_bus_actor,
+            reply_provider=self._data_bus_reply,
+        )
         self._delta_cache: dict[Tuple[str, str, str, str, str, str, str], _DeltaAggregate] = {}
         self._recording_enabled: bool = False
         self._recording_filter: Any = None
@@ -642,6 +657,46 @@ class ChatCommunicator:
         self._recorded_event_ids: set[str] = set()
         self._recording_dropped: int = 0
         # self.event_filter: IEventFilter = self.event_filter or DefaultEventFilter()
+
+    def _data_bus_actor(self) -> dict[str, Any]:
+        actor: dict[str, Any] = {
+            "user_id": self.user_id,
+            "user_type": self.user_type,
+            "session_id": self.conversation.get("session_id") if isinstance(self.conversation, Mapping) else None,
+        }
+        try:
+            service = dict(self.service or {})
+        except Exception:
+            service = {}
+        user_obj = service.get("user_obj")
+        if isinstance(user_obj, Mapping):
+            for key in (
+                "username",
+                "email",
+                "fingerprint",
+                "roles",
+                "permissions",
+                "timezone",
+                "utc_offset_min",
+            ):
+                if user_obj.get(key) not in (None, "", [], {}):
+                    actor[key] = user_obj.get(key)
+        return {key: value for key, value in actor.items() if value not in (None, "", [], {})}
+
+    def _data_bus_reply(self) -> dict[str, Any]:
+        session_id = self.conversation.get("session_id") if isinstance(self.conversation, Mapping) else None
+        socket_id = self.target_sid or (
+            self.conversation.get("socket_id") if isinstance(self.conversation, Mapping) else None
+        )
+        if not session_id:
+            return {}
+        reply = {
+            "transport": "communicator",
+            "session_id": session_id,
+        }
+        if socket_id:
+            reply["socket_id"] = socket_id
+        return reply
 
     def add_activity_listener(self, cb: Callable[[dict], Awaitable[None]]) -> None:
         """Subscribe to this communicator's already-enveloped activity stream."""
@@ -1473,6 +1528,7 @@ class ChatCommunicator:
         tenant = None
         project = None
         recording = None
+        data_bus = None
 
         if comm is not None:
             # payloads for identity
@@ -1498,6 +1554,10 @@ class ChatCommunicator:
                 # ChatRelayCommunicator has _comm (ServiceCommunicator) and _channel
                 if relay is not None:
                     channel = getattr(relay, "_channel", channel)
+                    relay_comm = getattr(relay, "_comm", None)
+                    redis_url = getattr(relay_comm, "redis_url", None)
+                    if redis_url:
+                        data_bus = {"redis_url": redis_url}
             except Exception:
                 pass
             try:
@@ -1532,6 +1592,7 @@ class ChatCommunicator:
             "tenant": tenant,
             "project": project,
             "recording": recording,
+            "data_bus": data_bus,
         }
 
 def build_relay_from_env() -> ChatRelayCommunicator:

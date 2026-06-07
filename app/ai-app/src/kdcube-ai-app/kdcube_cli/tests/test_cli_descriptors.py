@@ -39,6 +39,7 @@ from kdcube_cli.installer import (
     PathsContext,
     apply_runtime_secrets_to_file_descriptors,
     build_ui_url,
+    ensure_generated_runtime_secrets,
     ensure_local_dirs,
     gather_configuration,
     render_nginx_frame_embedding_config,
@@ -2671,6 +2672,26 @@ bundles:
     bundle_item = next(item for item in items if item["id"] == "demo-bundle")
     assert bundle_item["secrets"]["existing"]["key"] == "value"
     assert bundle_item["secrets"]["api"]["token"] == "abc"
+
+
+def test_ensure_generated_runtime_secrets_backfills_federated_token_secret(tmp_path: Path):
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "secrets.yaml").write_text("services:\n  openai:\n    api_key: sk-test\n")
+
+    generated = ensure_generated_runtime_secrets(config_dir)
+    secrets_data = yaml.safe_load((config_dir / "secrets.yaml").read_text())
+    secret = secrets_data["services"]["federated_token"]["secret"]
+
+    assert sorted(generated) == ["services.federated_token.secret"]
+    assert isinstance(secret, str)
+    assert secret
+
+    generated_again = ensure_generated_runtime_secrets(config_dir)
+    secrets_data_again = yaml.safe_load((config_dir / "secrets.yaml").read_text())
+
+    assert generated_again == {}
+    assert secrets_data_again["services"]["federated_token"]["secret"] == secret
 
 
 def test_resolve_aws_sm_prefix_defaults_from_tenant_project():

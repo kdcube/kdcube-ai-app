@@ -817,6 +817,62 @@ Runtime-owned behavior:
   timeline entries, or `ev:` artifacts unless bundle code explicitly bridges
   into conversation ingress
 
+### Publishing to Data Bus from tools and entrypoints
+
+Bundle code can also be a Data Bus producer. The current communicator exposes
+`comm.data_bus.publish(...)` and `comm.data_bus.publish_and_wait(...)`.
+
+This shares the communicator object, not the bus semantics. Existing
+`comm.service_event(...)`, `comm.project_event(...)`, chat deltas, and
+completion/error calls still use the normal transient relay path. Only
+`comm.data_bus.*` writes durable Data Bus messages, and those messages do not
+enter conversation history or ReAct timeline unless the bundle deliberately
+bridges them there.
+
+Use this when code that is already running server-side must still go through
+the durable bundle handler path. Typical examples are ReAct tools or generated
+code that need to patch a collaborative object, update a domain record, or
+attach a produced artifact while preserving Data Bus idempotency, object
+partitioning, handler authorization, and client reply semantics.
+
+Entrypoint/tool pattern:
+
+```python
+from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import get_current_comm
+
+comm = get_current_comm() or self.comm
+
+result = await comm.data_bus.publish_and_wait(
+    bundle_id="example-docs@1-0",
+    subject="example.document.patch",
+    object_ref="document-123",
+    idempotency_key="tool-op-2026-06-07-10-20-30-123456789",
+    message_id="dbmsg_2026-06-07-10-20-30-123456789",
+    reply=True,
+    payload={"base_revision": 17, "operations": []},
+)
+```
+
+Isolated/generated-code pattern:
+
+```python
+from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import data_bus_publish_and_wait
+
+result = await data_bus_publish_and_wait(
+    bundle_id="example-docs@1-0",
+    subject="example.document.patch",
+    object_ref="document-123",
+    idempotency_key="tool-op-2026-06-07-10-20-30-123456789",
+    message_id="dbmsg_2026-06-07-10-20-30-123456789",
+    reply=True,
+    payload={"base_revision": 17, "operations": []},
+)
+```
+
+The isolated runtime reconstructs the Data Bus publisher from the portable
+runtime spec. Custom isolated runners must preserve that runtime context if
+trusted tools need to publish durable Data Bus messages.
+
 See:
 
 - [Data Bus](../../service/comm/data-bus-README.md)
@@ -829,6 +885,7 @@ See:
 | Surface | Bundle entrypoint: chat turn | Bundle entrypoint: REST op | Bundle entrypoint: Data Bus handler | Tool module: in proc | Tool module: isolated |
 | --- | --- | --- | --- | --- | --- |
 | `self.comm` | yes | yes | reply-scoped when reply metadata exists | no | no |
+| `self.comm.data_bus` | yes | yes | yes | through `get_current_comm()` | through `comm_ctx.data_bus_publish*` helpers |
 | `self.comm_context` | yes | yes | yes | no | no |
 | `DataBusContext` / `ctx.reply` | no | no | yes | no | no |
 | `bundle_props` / `self.bundle_prop(...)` | yes | yes | yes | indirectly through bundle code only | indirectly through bundle code only |

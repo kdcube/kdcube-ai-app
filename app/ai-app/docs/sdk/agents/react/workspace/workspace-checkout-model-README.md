@@ -15,6 +15,7 @@ keywords:
     "custom workspace",
   ]
 see_also:
+  - ks:docs/sdk/events/namespaces-README.md
   - ks:docs/sdk/agents/react/agent-workspace-collboration-README.md
   - ks:docs/sdk/agents/react/react-turn-workspace-README.md
   - ks:docs/sdk/agents/react/custom-isolated-workspace-mental-map-README.md

@@ -44,8 +44,9 @@ There are two different auth ownership models:
 
 - `@api(route="operations")`, widgets, and static UI are
   **KDCube-authenticated** surfaces
-- Data Bus `data_bus.publish` uses the existing authenticated Socket.IO
-  connection and then applies bundle/subject visibility checks
+- Data Bus publish uses either the existing authenticated Socket.IO connection
+  or HTTP `POST /sse/data_bus.publish` with an open SSE peer, then applies
+  bundle/subject visibility checks
 - `@api(route="public")` can be either:
   - **KDCube-authenticated** via built-in `public_auth`
   - **bundle-authenticated** via `public_auth="bundle"`
@@ -69,7 +70,7 @@ So:
 | Surface | Decorator / entry | Transport | Routes | Who authenticates | Typical caller |
 | --- | --- | --- | --- | --- | --- |
 | chat turn | `run()` / `@on_reactive_event` | platform chat ingress + proc | chat endpoints such as `/sse/chat` or Socket.IO | KDCube | platform chat client |
-| Data Bus message | `@data_bus_handler(...)` | Socket.IO `data_bus.publish` + Redis Stream + proc worker | no HTTP route; stream key `kdcube:data-bus:{tenant}:{project}:{bundle_id}:messages` | KDCube connection auth + bundle/subject visibility | widget, custom frontend, internal service |
+| Data Bus message | `@data_bus_handler(...)` | Socket.IO `data_bus.publish`, HTTP `POST /sse/data_bus.publish`, or `comm.data_bus.publish(...)` + Redis Stream + proc worker | stream key `kdcube:data-bus:{tenant}:{project}:{bundle_id}:messages` | KDCube connection auth + bundle/subject visibility, or current runtime actor for server-side publishers | widget, custom frontend, bundle tool, internal service |
 | background job | `@on_job` | Redis Stream + proc | no HTTP route; processor operation `__kdcube_on_job__` | producer/platform context | `@cron`, widget/API run-now, internal service |
 | authenticated bundle operation | `@api(route="operations")` | HTTP REST | `/api/integrations/bundles/{tenant}/{project}/{bundle_id}/operations/{alias}` | KDCube | widget, custom frontend, internal platform UI |
 | public bundle operation | `@api(route="public")` | HTTP REST | `/api/integrations/bundles/{tenant}/{project}/{bundle_id}/public/{alias}` | KDCube or bundle | webhook, external caller |
@@ -99,12 +100,15 @@ from SDK mixins, call `await super().handle_job(**kwargs)` first and only handle
 bundle-owned `work_kind` values when that returns `handled=false`.
 
 Data Bus messages are also durable Redis Stream messages, but they are inbound
-bundle-domain messages rather than background jobs. A client publishes a
-Socket.IO `data_bus.publish` package with `bundle_id` and `messages[]`; ingress
-validates the target bundle and subject, writes accepted messages to the
-bundle's Data Bus stream, and processor-owned workers invoke the registered
+bundle-domain messages rather than background jobs. A browser client publishes a
+package with `bundle_id` and `messages[]` through Socket.IO `data_bus.publish`
+or HTTP `POST /sse/data_bus.publish`; server side bundle code can publish the
+same message through
+`comm.data_bus.publish(...)` / `publish_and_wait(...)`, including from trusted
+isolated tools through `comm_ctx.data_bus_publish*` helpers. Both paths write to
+the bundle's Data Bus stream, and processor-owned workers invoke the registered
 `@data_bus_handler(...)` methods. This path is separate from `chat_message`,
-conversation `external_events[]`, and communicator Pub/Sub. See
+conversation `external_events[]`, and transient communicator Pub/Sub. See
 [Conversation Event Bus And Data Bus](../../service/comm/conversation-event-bus-and-data-bus-README.md)
 and [Bus Routing And Partitioning](../../service/comm/bus-routing-and-partitioning-README.md)
 for the bus-level routing contract.

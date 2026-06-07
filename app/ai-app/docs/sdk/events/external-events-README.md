@@ -17,6 +17,7 @@ keywords:
     "react event source",
   ]
 see_also:
+  - ks:docs/sdk/events/namespaces-README.md
   - ks:docs/sdk/bundle/bundle-events-README.md
   - ks:docs/sdk/events/external-event-envelope-README.md
   - ks:docs/sdk/events/external-events-journey-and-handling-README.md
@@ -120,6 +121,8 @@ Field roles:
 The canonical envelope and examples for snapshot, file upload, and text
 selection events are in
 [External Event Envelope](external-event-envelope-README.md).
+The logical reference namespace model for `ev:`, `ar:`, `fi:`, `ext:`,
+`task:`, and related refs is in [Logical Reference Namespaces](namespaces-README.md).
 
 `ev:` is event identity, not artifact storage. ReAct can read the event object
 with `react.read(paths=["ev:..."])`, similar to `tc:` tool-call/result refs.

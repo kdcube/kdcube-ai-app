@@ -848,7 +848,9 @@ See:
 
 Marks a method as a durable Data Bus subject handler. Data Bus handlers process
 non-conversation domain messages that were accepted through Socket.IO
-`data_bus.publish` and written to the bundle-scoped Data Bus Redis Stream.
+`data_bus.publish` or published by bundle runtime code through
+`comm.data_bus.publish(...)`, then written to the bundle-scoped Data Bus Redis
+Stream.
 
 ```python
 from kdcube_ai_app.apps.chat.sdk.data_bus import data_bus_handler
@@ -922,6 +924,7 @@ See:
 - [docs/service/comm/data-bus-README.md](../../service/comm/data-bus-README.md)
 - [auth-bundle-federated-README.md](auth-bundle-federated-README.md)
 - [bundle-client-communication-README.md#data-bus-contract](bundle-client-communication-README.md#data-bus-contract)
+- [bundle-runtime-README.md#publishing-to-data-bus-from-tools-and-entrypoints](bundle-runtime-README.md#publishing-to-data-bus-from-tools-and-entrypoints)
 
 ### 1.11 `@cron(...)`
 

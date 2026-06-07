@@ -5,6 +5,7 @@ summary: "How artifacts are discovered from timeline blocks and how logical/phys
 tags: ["sdk", "agents", "react", "artifacts", "paths"]
 keywords: ["logical paths", "physical paths", "react.read", "attachments", "artifact resolution", "timeline blocks"]
 see_also:
+  - ks:docs/sdk/events/namespaces-README.md
   - ks:docs/sdk/agents/react/artifact-storage-README.md
   - ks:docs/sdk/agents/react/react-tools-README.md
   - ks:docs/sdk/agents/react/timeline-README.md
@@ -15,6 +16,9 @@ see_also:
 
 This document defines how artifacts are discovered from timeline blocks and how logical/physical paths
 are resolved for tools (`react.read`, `fetch_ctx`, `react.patch`, exec code).
+For the broader namespace model across `ar:`, `ev:`, `tc:`, `fi:`, `ext:`,
+`task:`, `mem:`, and `so:`, read
+[Logical Reference Namespaces](../../events/namespaces-README.md).
 
 Important distinction:
 - this document is about artifact discovery and artifact-root-relative paths
@@ -179,7 +183,10 @@ The rewrite is recorded as a **protocol notice** in the timeline so the agent ca
 - This is the bridge from filesystem discovery to content loading.
 
 **react.pull**
-- Accepts `fi:` refs only.
+- Accepts `fi:` refs and registered custom namespace refs such as `ext:...`.
+- Custom namespace refs are rehosted by the registered namespace owner; use the
+  returned `fi:` rows for later `react.read`, generated code, or checkout
+  decisions.
 - `fi:conv_<conversation_id>.turn_<id>...` paths are cross-conversation refs and
   are resolved with that conversation scope.
 - For `fi:<turn>.files/<prefix>` folder pulls, the current implementation does **not** scan all hosted storage.

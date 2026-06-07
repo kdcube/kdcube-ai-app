@@ -204,6 +204,11 @@ currently listening. Do not model those messages as chat turns or
 `external_events[]` unless the bundle explicitly bridges the result into a
 conversation later.
 
+Data Bus producers can be browser Socket.IO clients or server-side bundle
+runtimes. Bundle entrypoints, tools, and trusted isolated/generated-code
+runtimes use `comm.data_bus.publish(...)` or `comm_ctx.data_bus_publish(...)`
+to write into the same stream and handler path.
+
 Runtime entry points:
 
 - SDK contract and decorator re-export:
@@ -213,8 +218,8 @@ Runtime entry points:
 - Socket.IO package handler:
   [socketio/data_bus/publish.py](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/socketio/data_bus/publish.py)
 
-Socket.IO `data_bus.publish` accepts a package with `bundle_id` and
-`messages[]`; accepted messages are written to:
+Socket.IO `data_bus.publish` and HTTP `POST /sse/data_bus.publish` accept a
+package with `bundle_id` and `messages[]`; accepted messages are written to:
 
 ```text
 kdcube:data-bus:{tenant}:{project}:{bundle_id}:messages

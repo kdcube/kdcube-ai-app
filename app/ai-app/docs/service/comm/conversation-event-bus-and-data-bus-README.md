@@ -39,7 +39,7 @@ conversation context for an agent, or should mutate bundle-owned domain state.
 | Bus | Scope | Ingress event | Durable route | Consumer | Typical payload |
 | --- | --- | --- | --- | --- | --- |
 | Conversation event bus | conversation + turn | `/sse/chat` or Socket.IO `chat_message` with `external_events[]` | chat task queue and conversation external event store | chat workflow / ReAct owner | user prompt, chat attachment, followup, steer, selected context, snapshot event intended for timeline |
-| Data Bus | tenant + project + bundle, optionally object-partitioned | Socket.IO `data_bus.publish` with `messages[]` | bundle Data Bus Redis Stream | processor-owned `@data_bus_handler(...)` worker | board patch, issue edit, object comment, widget persistence signal |
+| Data Bus | tenant + project + bundle, optionally object-partitioned | Socket.IO `data_bus.publish` or HTTP `POST /sse/data_bus.publish` with `messages[]` | bundle Data Bus Redis Stream | processor-owned `@data_bus_handler(...)` worker | board patch, issue edit, object comment, widget persistence signal |
 
 The same browser can keep one Socket.IO connection and use both events. That is
 transport reuse; routing still follows the selected bus contract.
@@ -98,7 +98,7 @@ chat turn is running and no browser remains connected.
 
 ```text
 widget/custom UI
-  -> Socket.IO data_bus.publish
+  -> Socket.IO data_bus.publish or POST /sse/data_bus.publish
   -> ingress validates bundle + subject + actor visibility
   -> kdcube:data-bus:{tenant}:{project}:{bundle}:messages
   -> processor-owned @data_bus_handler(...)
@@ -123,7 +123,7 @@ conversation `external_events[]` after or during handling.
 
 ## Browser Transport Pattern
 
-One browser connection may carry both contracts:
+One browser Socket.IO connection may carry both contracts:
 
 ```ts
 socket.emit("chat_message", {
@@ -143,14 +143,14 @@ socket.emit("data_bus.publish", {
   messages: [
     {
       message_id: "dbmsg_...",
-      subject: "example.board.patch",
-      object_ref: "board:main",
+      subject: "example.document.patch",
+      object_ref: "document-123",
       idempotency_key: "client-op-...",
       payload: {
         base_revision: 12,
         operations: [{ op: "update_item", item_id: "U1", set: { note: "..." } }],
       },
-      client: { surface: "main-board" },
+      client: { surface: "document-editor" },
     },
   ],
 })
@@ -161,6 +161,21 @@ does not mean the handler already applied the change. Handler completion,
 conflict, and error notifications are sent later through the comm relay when
 the handler calls `ctx.reply.*`.
 
+With an SSE client, the same Data Bus package is sent by HTTP POST while
+`/sse/stream` remains open for replies:
+
+```ts
+await fetch(`${baseUrl}/sse/data_bus.publish?stream_id=${encodeURIComponent(streamId)}`, {
+  method: "POST",
+  credentials: "include",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(dataBusPackage),
+})
+```
+
+This is still Data Bus, not `/sse/chat`. The stream carries handler replies;
+the POST carries the inbound durable message.
+
 ## Bundle Handler Pattern
 
 Bundles register handled subjects. The runtime owns consumers, retries,
@@ -170,13 +185,13 @@ shutdown, and per-partition execution.
 from kdcube_ai_app.apps.chat.sdk.data_bus import data_bus_handler
 
 @data_bus_handler(
-    subject="example.board.patch",
+    subject="example.document.patch",
     partition_by="object_ref",
     ordering="serial_per_partition",
     idempotency="required",
 )
-async def handle_board_patch(self, ctx, message):
-    result = await self.board_store.apply_patch(
+async def handle_document_patch(self, ctx, message):
+    result = await self.document_store.apply_patch(
         actor=message.actor,
         object_ref=message.object_ref,
         idempotency_key=message.idempotency_key,
@@ -216,7 +231,7 @@ Bundle storage should log durable revision or object creation facts, again as
 metadata. For example:
 
 ```text
-[domain.revision] created object_ref=board:main revision=13 actor=...
+[domain.revision] created object_ref=document-123 revision=13 actor=...
 ```
 
 These two logs let operators distinguish:

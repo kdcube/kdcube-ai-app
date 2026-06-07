@@ -17,6 +17,7 @@ keywords:
     "event timeline",
   ]
 see_also:
+  - ks:docs/sdk/events/namespaces-README.md
   - ks:docs/sdk/events/external-event-envelope-README.md
   - ks:docs/sdk/events/external-events-README.md
   - ks:docs/sdk/events/event-subsystem-README.md

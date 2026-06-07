@@ -72,8 +72,8 @@ socket.emit("data_bus.publish", {
   bundle_id: runtime.defaultAppBundleId,
   messages: [
     {
-      subject: "example.board.patch",
-      object_ref: "board:main",
+      subject: "example.document.patch",
+      object_ref: "document-123",
       idempotency_key: clientOperationId,
       payload: {
         base_revision: currentRevision,

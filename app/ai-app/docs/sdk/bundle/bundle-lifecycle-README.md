@@ -204,6 +204,8 @@ So yes: the bundle does receive a request-specific communicator for REST calls, 
 Practical rule:
 - inside bundle code, use `self.comm` / `self.comm_context` as request-bound surfaces
 - if the bundle is singleton, never retain an old communicator reference across requests
+- `self.comm.data_bus` follows the same rule; publish from the current
+  invocation's communicator so actor/reply metadata is fresh
 - use `bundle_call_context` for small bundle-owned metadata that must follow
   this invocation into tools, nested agents, and isolated runtimes
 
@@ -211,6 +213,8 @@ For custom singleton bundles that do not use `BaseEntrypoint`, the platform now
 also exposes request-local helpers via `kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx`:
 - `get_current_request_context()`
 - `get_current_comm()`
+- `data_bus_publish(...)`
+- `data_bus_publish_and_wait(...)`
 - `get_current_bundle_call_context()`
 - `update_current_bundle_call_context(...)`
 - `bind_current_bundle_call_context_patch(...)`

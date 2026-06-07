@@ -157,8 +157,8 @@ socket.emit(
     bundle_id: bundleId,
     messages: [
       {
-        subject: "example.task.patch",
-        object_ref: "task:123",
+        subject: "example.document.patch",
+        object_ref: "document-123",
         idempotency_key: "client-op-123",
         payload: { title: "Updated title" },
       },
@@ -228,18 +228,18 @@ Ingress verifies that:
 - each published subject is registered by `@data_bus_handler(...)`;
 - each subject is visible to the session user type and roles.
 
-The handler still owns domain authorization. For example, a task handler should
-check that the federated actor may mutate the selected task.
+The handler still owns domain authorization. For example, a document handler
+should check that the federated actor may mutate the selected document.
 
 ```python
 @data_bus_handler(
-    subject="example.task.patch",
+    subject="example.document.patch",
     partition_by="object_ref",
     user_types=("registered",),
 )
-async def handle_task_patch(self, message, ctx):
+async def handle_document_patch(self, message, ctx):
     actor = message.actor
-    if not await self.tasks.can_edit(actor["user_id"], message.object_ref):
+    if not await self.documents.can_edit(actor["user_id"], message.object_ref):
         return await ctx.reply.error("not_allowed")
     ...
 ```
@@ -260,14 +260,14 @@ Use this pattern for files:
 ```json
 {
   "subject": "example.attachment.added",
-  "object_ref": "task:123",
+  "object_ref": "document-123",
   "payload": {
     "attachments": [
       {
         "name": "photo.png",
         "mime": "image/png",
         "size": 18433,
-        "ref": "fi:task:123.attachments/photo.png"
+        "storage_ref": "uploaded-file-789"
       }
     ]
   }

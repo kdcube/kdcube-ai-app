@@ -18,6 +18,7 @@ from kdcube_ai_app.apps.chat.sdk.runtime.data_bus.types import (
     ensure_json_serializable,
     normalize_optional_string,
     normalize_subject,
+    timestamp_message_id,
     utc_now_iso,
 )
 from kdcube_ai_app.auth.sessions import UserSession, UserType
@@ -105,7 +106,14 @@ class DataBusSocketIOIngress:
             raise RuntimeError("redis_async is not initialized on app.state")
         return redis
 
-    async def handle_publish(self, *, sid: str, socket_session: Mapping[str, Any] | None, data: Any) -> dict[str, Any]:
+    async def handle_publish(
+        self,
+        *,
+        sid: str,
+        socket_session: Mapping[str, Any] | None,
+        data: Any,
+        reply_transport: str = "socketio",
+    ) -> dict[str, Any]:
         if not isinstance(data, Mapping):
             return self._ack(status="rejected", rejected=[{"index": None, "error": "payload must be an object"}])
         try:
@@ -188,6 +196,7 @@ class DataBusSocketIOIngress:
                     bundle_id=bundle_id,
                     session=session,
                     sid=sid,
+                    reply_transport=reply_transport,
                     allowed_subjects=allowed_subjects,
                 )
                 logger.info(
@@ -251,6 +260,7 @@ class DataBusSocketIOIngress:
         bundle_id: str,
         session: UserSession,
         sid: str,
+        reply_transport: str,
         allowed_subjects: set[str],
     ) -> DataBusMessage:
         if not isinstance(item, Mapping):
@@ -275,8 +285,17 @@ class DataBusSocketIOIngress:
         if isinstance(client, Mapping):
             trace["client"] = dict(client)
 
+        reply = {
+            "transport": str(reply_transport or "socketio"),
+            "session_id": session.session_id,
+        }
+        if sid:
+            reply["socket_id"] = sid
+            if str(reply_transport or "").strip().lower() == "sse":
+                reply["stream_id"] = sid
+
         return DataBusMessage(
-            message_id=str(item.get("message_id") or f"dbmsg_{uuid.uuid4().hex}"),
+            message_id=str(item.get("message_id") or timestamp_message_id()),
             tenant=tenant,
             project=project,
             bundle_id=bundle_id,
@@ -285,11 +304,7 @@ class DataBusSocketIOIngress:
             idempotency_key=idempotency_key,
             actor=_actor_from_session(session),
             payload=payload,
-            reply={
-                "transport": "socketio",
-                "session_id": session.session_id,
-                "socket_id": sid,
-            },
+            reply=reply,
             trace=trace,
             created_at=str(item.get("created_at") or utc_now_iso()),
         )

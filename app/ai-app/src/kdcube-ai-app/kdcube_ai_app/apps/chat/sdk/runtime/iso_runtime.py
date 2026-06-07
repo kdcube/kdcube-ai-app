@@ -1478,7 +1478,8 @@ from kdcube_ai_app.apps.chat.sdk.config import get_settings
 from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import set_comm, get_comm
 
 def _rebuild_communicator_from_spec(spec: dict) -> ChatCommunicator:
-    redis_url = get_settings().REDIS_URL
+    data_bus_spec = (spec or {}).get("data_bus") if isinstance((spec or {}).get("data_bus"), dict) else {}
+    redis_url = data_bus_spec.get("redis_url") or get_settings().REDIS_URL
     if redis_url.startswith('"') and redis_url.endswith('"'):
         redis_url = redis_url[1:-1]
     channel   = (spec or {}).get("channel")   or "chat.events"

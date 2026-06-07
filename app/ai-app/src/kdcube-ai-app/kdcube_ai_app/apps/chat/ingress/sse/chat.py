@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional, Dict, Any, List, Tuple
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 
 from kdcube_ai_app.apps.chat.ingress.resolvers import require_auth
@@ -38,6 +38,7 @@ from kdcube_ai_app.apps.chat.ingress.ingress_core import (
     resolve_ingress_conversation_id,
     get_conversation_status, build_sse_request_context, upgrade_session_from_tokens,
 )
+from kdcube_ai_app.apps.chat.ingress.socketio.data_bus.publish import DataBusSocketIOIngress
 from kdcube_ai_app.apps.chat.sdk.protocol import external_event_attachment_payloads, external_events_text
 
 logger = logging.getLogger(__name__)
@@ -421,7 +422,11 @@ class SSEHub:
                         self._enqueue(c, frame)
                         delivered = True
                 if not delivered:
-                    logger.warning(
+                    log_method = logger.debug if (
+                        event == "chat_service"
+                        and str(data.get("type") or "").startswith("kdcube.data_bus.")
+                    ) else logger.warning
+                    log_method(
                         "[SSEHub._on_relay] target stream_id=%s not found among %d session client(s) for session=%s; "
                         "message dropped (connected stream_ids: %s)",
                         target_sid, len(recipients), room,
@@ -485,6 +490,36 @@ def create_sse_router(
         )
 
     settings = get_settings()
+
+    def _session_dict(session_obj: UserSession) -> dict[str, Any]:
+        serializer = getattr(session_obj, "serialize_to_dict", None)
+        if callable(serializer):
+            try:
+                value = serializer()
+                if isinstance(value, dict):
+                    return value
+            except Exception:
+                pass
+        return {
+            "session_id": session_obj.session_id,
+            "user_type": getattr(session_obj.user_type, "value", str(session_obj.user_type)),
+            "fingerprint": session_obj.fingerprint,
+            "user_id": session_obj.user_id,
+            "username": session_obj.username,
+            "email": session_obj.email,
+            "roles": list(session_obj.roles or []),
+            "permissions": list(session_obj.permissions or []),
+            "timezone": session_obj.timezone,
+        }
+
+    def _resolve_sse_client(session_id: str, stream_id: str | None) -> Client | None:
+        hub = router.state.sse_hub
+        clients = list(hub._by_session.get(session_id) or [])
+        if stream_id:
+            for client in clients:
+                if client.stream_id == stream_id:
+                    return client
+        return next(iter(clients), None)
 
     # ---------- STREAM ----------
     @router.get("/stream")
@@ -913,6 +948,61 @@ def create_sse_router(
         }
 
     # ---------- conv_status.get (parity, now via core) ----------
+    @router.post("/data_bus.publish")
+    async def sse_data_bus_publish(
+            request: Request,
+            data: Dict[str, Any] = Body(...),
+            stream_id: Optional[str] = None,
+            session: UserSession = Depends(require_auth(RequireUser())),
+    ):
+        logger.info(
+            "[sse_data_bus.publish] received request session=%s stream_id=%s",
+            session.session_id,
+            stream_id,
+        )
+        ctx = build_sse_request_context(request, session=session)
+        if os.environ.get("CHAT_SSE_REJECT_ANONYMOUS", "1") == "1":
+            await _reject_anonymous(
+                endpoint="/sse/data_bus.publish",
+                session=session,
+                stream_id=stream_id,
+                chat_comm=chat_comm,
+            )
+        gw_res = await run_gateway_checks(
+            gateway_adapter=gateway_adapter,
+            session=session,
+            context=ctx,
+            endpoint="/sse/data_bus.publish",
+        )
+        if gw_res.kind != "ok":
+            mapped = map_gateway_error(gw_res)
+            raise HTTPException(status_code=mapped["status"], detail={"error": mapped["message"]})
+
+        client = _resolve_sse_client(session.session_id, stream_id)
+        tenant = client.tenant if client else settings.TENANT
+        project = client.project if client else settings.PROJECT
+        socket_meta = {
+            "user_session": _session_dict(session),
+            "tenant": tenant,
+            "project": project,
+        }
+        ingress = DataBusSocketIOIngress(app=app)
+        ack = await ingress.handle_publish(
+            sid=str(stream_id or ""),
+            socket_session=socket_meta,
+            data=data,
+            reply_transport="sse",
+        )
+        logger.info(
+            "[sse_data_bus.publish] completed session=%s stream_id=%s status=%s accepted=%s rejected=%s",
+            session.session_id,
+            stream_id,
+            ack.get("status"),
+            len(ack.get("accepted") or []),
+            len(ack.get("rejected") or []),
+        )
+        return ack
+
     @router.post("/conv_status.get")
     async def sse_conv_status_get(
             data: Dict[str, Any],

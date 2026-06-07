@@ -240,6 +240,26 @@ async def step(step: str, status: str, **payload) -> None:
         return
     await comm.step(step=step, status=status, **payload)
 
+
+async def data_bus_publish(**kwargs) -> Any:
+    """Publish a durable Data Bus message through the current communicator."""
+    comm = get_comm()
+    data_bus = getattr(comm, "data_bus", None) if comm is not None else None
+    publish = getattr(data_bus, "publish", None)
+    if not callable(publish):
+        raise RuntimeError("current communicator does not expose data_bus.publish")
+    return await publish(**kwargs)
+
+
+async def data_bus_publish_and_wait(**kwargs) -> Dict[str, Any]:
+    """Publish a durable Data Bus message and wait for the handler result."""
+    comm = get_comm()
+    data_bus = getattr(comm, "data_bus", None) if comm is not None else None
+    publish_and_wait = getattr(data_bus, "publish_and_wait", None)
+    if not callable(publish_and_wait):
+        raise RuntimeError("current communicator does not expose data_bus.publish_and_wait")
+    return await publish_and_wait(**kwargs)
+
 async def complete(data: Dict[str, Any] | None = None) -> None:
     comm = get_comm()
     if comm is None:

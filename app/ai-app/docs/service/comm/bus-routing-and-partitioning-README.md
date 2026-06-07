@@ -136,7 +136,10 @@ Use this surface when the bundle owns a durable state change or domain message.
 
 ```text
 widget / app-specific client / service
-  -> Socket.IO data_bus.publish
+  -> Socket.IO data_bus.publish or POST /sse/data_bus.publish
+bundle tool / isolated runtime
+  -> comm.data_bus.publish(...) or comm_ctx.data_bus_publish(...)
+both routes
   -> bundle_id + messages[].subject
   -> kdcube:data-bus:{tenant}:{project}:{bundle_id}:messages
   -> proc worker claims message
@@ -158,22 +161,28 @@ Abilities:
 | Report status to a peer | Handler calls `ctx.reply.ok/conflict/error` when reply metadata exists. |
 | Bridge to an agent | Handler submits conversation `external_events[]` only when an agent should react. |
 
-Client package:
+Server-side bundle producers use the same message semantics as browser
+producers. Tools should use this route when the mutation must pass through the
+bundle's Data Bus handler, idempotency, object partitioning, and reply path.
+See [Data Bus](data-bus-README.md#producer-apis-from-bundle-runtimes).
+
+Client package for either Socket.IO `data_bus.publish` or HTTP
+`POST /sse/data_bus.publish`:
 
 ```json
 {
   "schema": "kdcube.data_bus.ingress.v1",
-  "bundle_id": "example-board@1-0",
+  "bundle_id": "example-docs@1-0",
   "messages": [
     {
-      "message_id": "dbmsg_01",
-      "subject": "example.board.patch",
-      "object_ref": "board:main",
+      "message_id": "dbmsg_2026-06-07-10-20-30-123456789",
+      "subject": "example.document.patch",
+      "object_ref": "document-123",
       "idempotency_key": "client-op-01",
       "payload": {
         "base_revision": 17,
         "operations": [
-          {"op": "update_card", "card_id": "A1", "set": {"title": "Review"}}
+          {"op": "update_item", "item_id": "item-17", "set": {"title": "Review"}}
         ]
       }
     }
@@ -189,13 +198,13 @@ from kdcube_ai_app.apps.chat.sdk.data_bus import data_bus_handler
 
 class Entrypoint:
     @data_bus_handler(
-        subject="example.board.patch",
+        subject="example.document.patch",
         partition_by="object_ref",
         ordering="serial_per_partition",
         idempotency="required",
     )
-    async def handle_board_patch(self, ctx, message):
-        result = await self.board_store.apply_patch(
+    async def handle_document_patch(self, ctx, message):
+        result = await self.document_store.apply_patch(
             actor=message.actor,
             object_ref=message.object_ref,
             idempotency_key=message.idempotency_key,

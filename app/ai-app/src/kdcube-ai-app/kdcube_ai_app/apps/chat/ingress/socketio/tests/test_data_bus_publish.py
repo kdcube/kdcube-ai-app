@@ -209,6 +209,73 @@ async def test_data_bus_publish_accepts_messages_into_bundle_stream(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_data_bus_publish_defaults_to_timestamp_message_id(monkeypatch):
+    redis = FakeRedis()
+    app = SimpleNamespace(state=SimpleNamespace(redis_async=redis))
+    _patch_data_bus_contract(monkeypatch, _manifest())
+
+    ingress = DataBusSocketIOIngress(app=app)
+    ack = await ingress.handle_publish(
+        sid="socket-1",
+        socket_session=_socket_session(),
+        data={
+            "schema": "kdcube.data_bus.ingress.v1",
+            "bundle_id": "task-tracker@1-0",
+            "messages": [
+                {
+                    "subject": "task_tracker.canvas.patch",
+                    "object_ref": "canvas:main",
+                    "payload": {"base_revision": 1, "operations": []},
+                }
+            ],
+        },
+    )
+
+    assert ack["status"] == "accepted"
+    message_id = ack["accepted"][0]["message_id"]
+    assert message_id.startswith("dbmsg_20")
+    stream_key = "kdcube:data-bus:tenant-a:project-a:task-tracker@1-0:messages"
+    record = json.loads(redis.streams[stream_key][0][1]["json"])
+    assert record["message_id"] == message_id
+
+
+@pytest.mark.asyncio
+async def test_data_bus_publish_can_target_sse_reply_stream(monkeypatch):
+    redis = FakeRedis()
+    app = SimpleNamespace(state=SimpleNamespace(redis_async=redis))
+    _patch_data_bus_contract(monkeypatch, _manifest())
+
+    ingress = DataBusSocketIOIngress(app=app)
+    ack = await ingress.handle_publish(
+        sid="stream-1",
+        socket_session=_socket_session(),
+        reply_transport="sse",
+        data={
+            "schema": "kdcube.data_bus.ingress.v1",
+            "bundle_id": "task-tracker@1-0",
+            "messages": [
+                {
+                    "message_id": "m1",
+                    "subject": "task_tracker.canvas.patch",
+                    "object_ref": "canvas:main",
+                    "payload": {"base_revision": 1, "operations": []},
+                }
+            ],
+        },
+    )
+
+    assert ack["status"] == "accepted"
+    stream_key = "kdcube:data-bus:tenant-a:project-a:task-tracker@1-0:messages"
+    record = json.loads(redis.streams[stream_key][0][1]["json"])
+    assert record["reply"] == {
+        "transport": "sse",
+        "session_id": "session-1",
+        "socket_id": "stream-1",
+        "stream_id": "stream-1",
+    }
+
+
+@pytest.mark.asyncio
 async def test_data_bus_publish_anonymous_threshold_handler_accepts_platform_registered_session(monkeypatch):
     redis = FakeRedis()
     app = SimpleNamespace(state=SimpleNamespace(redis_async=redis))

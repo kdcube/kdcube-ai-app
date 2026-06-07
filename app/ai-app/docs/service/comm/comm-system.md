@@ -206,8 +206,9 @@ Use comm relay when:
 - the payload is compact and already safe for the selected delivery scope.
 
 This does not change the current note above: Socket.IO project subscriptions
-are not part of the comm broadcast contract. The Data Bus Socket.IO event is an
-inbound durable message package, not a project-broadcast subscription.
+are not part of the comm broadcast contract. Data Bus publish, whether through
+Socket.IO or HTTP `POST /sse/data_bus.publish`, is an inbound durable message
+package, not a project-broadcast subscription.
 
 See [Bus Routing And Partitioning](bus-routing-and-partitioning-README.md),
 [Conversation Event Bus And Data Bus](conversation-event-bus-and-data-bus-README.md),
@@ -221,6 +222,13 @@ and [Data Bus](data-bus-README.md).
 progress, custom typed, service, completion, and error events. Recording and
 event sinks should reuse that choke point where possible instead of asking
 bundles to emit a second parallel event for every signal.
+
+The same communicator may also expose `comm.data_bus`, but this is a separate
+API surface. `comm.service_event(...)` and related relay methods continue to
+send transient session/conversation UI events. `comm.data_bus.publish(...)`
+writes durable bundle-scoped Data Bus messages to Redis Streams and does not
+create conversation `external_events[]`, ReAct timeline entries, or agent turns
+unless bundle code explicitly bridges a result back into conversation ingress.
 
 Proposed generic flow:
 

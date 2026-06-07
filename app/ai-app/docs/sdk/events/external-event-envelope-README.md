@@ -20,6 +20,7 @@ keywords:
     "canvas event",
   ]
 see_also:
+  - ks:docs/sdk/events/namespaces-README.md
   - ks:docs/sdk/events/external-events-README.md
   - ks:docs/sdk/events/external-events-journey-and-handling-README.md
   - ks:docs/sdk/events/event-subsystem-README.md

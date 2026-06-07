@@ -38,6 +38,7 @@ class CommSpec:
     tenant: Optional[str] = None
     project: Optional[str] = None
     recording: Optional[Dict[str, Any]] = None
+    data_bus: Optional[Dict[str, Any]] = None
 
 @dataclass
 class IntegrationsSpec:

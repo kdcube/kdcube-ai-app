@@ -4587,6 +4587,13 @@ def main() -> None:
                     workdir=_resolved,
                 )
             _refresh_runtime_proxy_config(console, repo_root=_repo, workdir=_resolved)
+            _generated_refresh_secrets = installer_mod.ensure_generated_runtime_secrets(
+                _refresh_reuse_config
+            )
+            if _generated_refresh_secrets:
+                console.print(
+                    "[dim]Refresh: generated missing platform runtime secrets in staged descriptors.[/dim]"
+                )
             _t, _p = _parse_workdir_namespace(_resolved)
             # Stop if running (no-op if already stopped).
             try:

@@ -584,6 +584,32 @@ def apply_runtime_secrets_to_file_descriptors(
     save_release_descriptor(bundles_secrets_path, bundles_secrets_data)
 
 
+def ensure_generated_runtime_secrets(config_dir: Path) -> Dict[str, str]:
+    """Backfill generated platform secrets in an initialized descriptor set.
+
+    Existing runtimes can predate generated secrets introduced by newer platform
+    versions. `kdcube refresh` intentionally reuses staged descriptors, so it
+    must repair this small class of generated local secrets before restart.
+    """
+    secrets_path = config_dir / "secrets.yaml"
+    secrets_data = load_release_descriptor(secrets_path) if secrets_path.exists() else {}
+    generated: Dict[str, str] = {}
+
+    federated_token_secret = _get_nested(secrets_data, "services", "federated_token", "secret")
+    if not isinstance(federated_token_secret, str) or is_placeholder(federated_token_secret):
+        federated_token_secret = secrets.token_urlsafe(32)
+        _set_nested(
+            secrets_data,
+            ["services", "federated_token", "secret"],
+            federated_token_secret,
+        )
+        generated["services.federated_token.secret"] = federated_token_secret
+
+    if generated:
+        save_release_descriptor(secrets_path, secrets_data)
+    return generated
+
+
 def _has_nested(dct: Dict[str, object], *keys: str) -> bool:
     cur: object = dct
     for key in keys:

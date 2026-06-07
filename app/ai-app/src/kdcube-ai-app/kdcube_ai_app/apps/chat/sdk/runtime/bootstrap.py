@@ -133,8 +133,12 @@ def make_model_service(spec: PortableSpec) -> ModelServiceBase:
 def make_chat_comm(spec: PortableSpec) -> Optional[ChatCommunicator]:
     if not spec.comm:
         return None
-    # ChatRelayCommunicator will pick redis URL from env (REDIS_URL) if not overridden
-    relay = ChatRelayCommunicator(channel=spec.comm.channel)
+    data_bus_spec = spec.comm.data_bus if isinstance(spec.comm.data_bus, dict) else {}
+    redis_url = data_bus_spec.get("redis_url") if isinstance(data_bus_spec, dict) else None
+    # ChatRelayCommunicator will pick redis URL from env (REDIS_URL) if not overridden.
+    # When the parent exported an explicit Data Bus Redis URL, reuse it so
+    # generated/isolated code publishes to the same durable stream fabric.
+    relay = ChatRelayCommunicator(redis_url=redis_url, channel=spec.comm.channel)
     comm = ChatCommunicator(
         emitter=relay,
         service=spec.comm.service,
