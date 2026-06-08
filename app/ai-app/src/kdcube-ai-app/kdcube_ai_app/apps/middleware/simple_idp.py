@@ -5,42 +5,22 @@
 """
 Framework-agnostic Simple IDP implementation
 """
-import json
-import os
 from typing import Dict, Optional
 
 from kdcube_ai_app.auth.AuthManager import AuthManager, User, AuthenticationError
 from kdcube_ai_app.apps.chat.sdk.config import get_settings
+from kdcube_ai_app.apps.middleware.simple_idp_registry import (
+    DEFAULT_SIMPLE_IDP_USERS,
+    SimpleIDPRegistry,
+    get_simple_idp_registry,
+)
 
 
 # Simple user database - stored as JSON file
 IDP_DB_PATH = get_settings().AUTH.IDP.local.IDP_DB_PATH or "./idp_users.json"
 
 # Default users
-DEFAULT_USERS = {
-    "test-admin-token-123": {
-        "sub": "admin-user-1",
-        "username": "admin",
-        "email": "admin@test.com",
-        "name": "Administrator",
-        "roles": ["kdcube:role:super-admin"],
-        "permissions": [
-            "kdcube:*:knowledge_base:*;read;write;delete",
-            "kdcube:*:chat:*;read;write;delete",
-            "kdcube:*:monitoring:*;read"
-        ]
-    },
-    "test-chat-token-456": {
-        "sub": "chat-user-1",
-        "username": "chatuser",
-        "email": "chat@test.com",
-        "name": "Chat User",
-        "roles": ["kdcube:role:chat-user"],
-        "permissions": [
-            "kdcube:*:chat:*;read"
-        ]
-    }
-}
+DEFAULT_USERS = DEFAULT_SIMPLE_IDP_USERS
 
 
 class SimpleIDPUser(User):
@@ -52,31 +32,26 @@ class SimpleIDPUser(User):
 class SimpleIDP(AuthManager):
     """Framework-agnostic Simple IDP for testing"""
 
-    def __init__(self, send_validation_error_details: bool = False, service_user_token: Optional[str] = None):
+    def __init__(
+        self,
+        send_validation_error_details: bool = False,
+        service_user_token: Optional[str] = None,
+        *,
+        idp_db_path: Optional[str] = None,
+        registry: Optional[SimpleIDPRegistry] = None,
+    ):
         super().__init__(send_validation_error_details)
-        self.users_db = self._load_users()
+        self.registry = registry or get_simple_idp_registry(idp_db_path or IDP_DB_PATH, default_users=DEFAULT_USERS)
         self.service_user_token = service_user_token
 
     def _load_users(self) -> Dict:
         """Load users from JSON file or create default"""
-        if os.path.exists(IDP_DB_PATH):
-            try:
-                with open(IDP_DB_PATH, 'r') as f:
-                    return json.load(f)
-            except Exception as e:
-                print(f"Error loading users database: {e}")
-
-        # Create default users file
-        self._save_users(DEFAULT_USERS)
-        return DEFAULT_USERS.copy()
+        return self.registry.list_users_sync()
 
     def _save_users(self, users: Dict):
         """Save users to JSON file"""
-        try:
-            with open(IDP_DB_PATH, 'w') as f:
-                json.dump(users, f, indent=2)
-        except Exception as e:
-            print(f"Error saving users database: {e}")
+        for token, user_data in users.items():
+            self.registry.upsert_user_sync(token, user_data)
 
     async def authenticate(self, token: str) -> SimpleIDPUser:
         """
@@ -94,7 +69,7 @@ class SimpleIDP(AuthManager):
         if not token:
             raise AuthenticationError("No token provided")
 
-        user_data = self.users_db.get(token)
+        user_data = await self.registry.get_user(token)
 
         if not user_data:
             raise AuthenticationError("Invalid token")
@@ -113,14 +88,14 @@ class SimpleIDP(AuthManager):
     # Utility methods for managing the simple IDP
     def get_all_users(self) -> Dict:
         """Get all users (for debugging) - excludes tokens"""
+        users_db = self.registry.list_users_sync()
         return {token: {k: v for k, v in user.items() if k != 'token'}
-                for token, user in self.users_db.items()}
+                for token, user in users_db.items()}
 
     def add_user(self, token: str, user_data: Dict) -> bool:
         """Add a new user to the database"""
         try:
-            self.users_db[token] = user_data
-            self._save_users(self.users_db)
+            self.registry.upsert_user_sync(token, user_data)
             return True
         except Exception as e:
             print(f"Error adding user: {e}")
@@ -129,11 +104,7 @@ class SimpleIDP(AuthManager):
     def remove_user(self, token: str) -> bool:
         """Remove a user from the database"""
         try:
-            if token in self.users_db:
-                del self.users_db[token]
-                self._save_users(self.users_db)
-                return True
-            return False
+            return self.registry.remove_user_sync(token)
         except Exception as e:
             print(f"Error removing user: {e}")
             return False
@@ -141,14 +112,20 @@ class SimpleIDP(AuthManager):
     def update_user(self, token: str, user_data: Dict) -> bool:
         """Update an existing user in the database"""
         try:
-            if token in self.users_db:
-                self.users_db[token].update(user_data)
-                self._save_users(self.users_db)
+            existing = self.registry.list_users_sync().get(token)
+            if existing:
+                existing.update(user_data)
+                self.registry.upsert_user_sync(token, existing)
                 return True
             return False
         except Exception as e:
             print(f"Error updating user: {e}")
             return False
+
+    async def register_user(self, token: str, user_data: Dict) -> SimpleIDPUser:
+        """Register or replace a SimpleIDP user through the shared registry."""
+        await self.registry.upsert_user(token, user_data)
+        return await self.authenticate(token)
 
     async def get_service_token(self) -> str:
         return self.service_user_token

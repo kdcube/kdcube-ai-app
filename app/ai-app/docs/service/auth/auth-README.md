@@ -5,6 +5,7 @@ summary: "Authentication providers and token transport across REST/SSE/Socket.IO
 tags: ["service", "auth", "security", "tokens"]
 keywords: ["delegated auth", "cookie auth", "JWT", "SSE auth", "Socket.IO"]
 see_also:
+  - ks:docs/service/auth/bundle-simple-idp-bridge-README.md
   - ks:docs/service/comm/README-comm.md
   - ks:docs/arch/architecture-long.md
   - ks:docs/service/README-monitoring-observability.md
@@ -49,6 +50,8 @@ mismatched sessions are rejected (401/403).
 2) SimpleIDP (dev / local)
 - Implementation: [SimpleIDP](../../../src/kdcube-ai-app/kdcube_ai_app/apps/middleware/simple_idp.py)
 - Token-to-user mapping stored in `idp_users.json` (or `IDP_DB_PATH`).
+- Bundle-owned sign-in flows can register users through the cached registry
+  utility documented in [Bundle SimpleIDP Bridge](bundle-simple-idp-bridge-README.md).
 
 3) Delegated auth (proxy login service)
 - Proxy service build: [ProxyLogin Dockerfile](../../../deployment/docker/custom-ui-managed-infra/Dockerfile_ProxyLogin)
