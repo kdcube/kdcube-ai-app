@@ -98,6 +98,7 @@ class CONFIG:
         PROPS_UPDATE_CHANNEL = "kdcube:config:bundles:props:update:{tenant}:{project}"
         SECRETS_KEYS_FMT = "kdcube:config:bundles:secrets:{tenant}:{project}:{bundle_id}"
         USER_SECRETS_KEYS_FMT = "kdcube:config:bundles:user-secrets:{tenant}:{project}:{bundle_id}:{user_id}"
+        SECRETS_UPDATE_CHANNEL = "kdcube:config:bundles:secrets:update:{tenant}:{project}"
         SECRETS_FILE_LOCK_FMT = "kdcube:config:bundles:secrets:file:lock:{tenant}:{project}"
         SECRETS_AWS_SM_LOCK_FMT = "kdcube:config:bundles:secrets:aws-sm:lock:{tenant}:{project}:{doc}"
         DESCRIPTORS_AWS_SM_LOCK_FMT = "kdcube:config:bundles:descriptor:aws-sm:lock:{tenant}:{project}:{doc}"

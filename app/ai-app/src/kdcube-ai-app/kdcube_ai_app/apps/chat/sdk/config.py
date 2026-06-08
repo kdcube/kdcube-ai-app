@@ -16,6 +16,7 @@ import yaml
 from kdcube_ai_app.apps.chat.sdk.config_scopes import (
     PLATFORM_CONFIG, RUNTIME_CONFIG,
     _load_assembly_plain, _load_global_secret_plain, _parse_plain_key, _load_plain_yaml, _resolve_dotted_value,
+    _descriptor_cache_token,
     LOGConfig, ServiceConfig, AVConfig, HostedServicesConfig, MonitoringConfig,
     MetricsConfig, MetricsRuntimeConfig, MetricsProxyConfig, MetricsExportConfig,
     MetricsCloudWatchConfig, MetricsPrometheusConfig,
@@ -24,6 +25,13 @@ from kdcube_ai_app.apps.chat.sdk.config_scopes import (
 )
 from kdcube_ai_app.infra.props import get_props_manager
 from kdcube_ai_app.infra.secrets import get_secrets_manager
+from kdcube_ai_app.apps.chat.sdk.config_cache import (
+    clear_config_cache,
+    clear_secret_cache,
+    get_plain_cache,
+    get_secret_cache,
+    set_secret_cache,
+)
 from kdcube_ai_app.apps.chat.sdk.util import LINE_NUMBERS_LINES, normalize_line_numbers_mode
 
 _SECRET_LOG = logging.getLogger("kdcube.settings.secrets")
@@ -53,6 +61,49 @@ _LEGACY_SECRET_TO_CANON: dict[str, str] = {
     legacy: canon for canon, aliases in _SECRET_ALIASES.items() for legacy in aliases
 }
 _PG_SSL_MODES = {"disable", "allow", "prefer", "require", "verify-ca", "verify-full"}
+
+
+def _settings_secret_scope(settings: Any) -> tuple[str, str]:
+    return (
+        str(getattr(settings, "TENANT", "") or "").strip(),
+        str(getattr(settings, "PROJECT", "") or "").strip(),
+    )
+
+
+async def _get_provider_secret_cached(settings: Any, provider_key: str) -> str | None:
+    tenant, project = _settings_secret_scope(settings)
+    cache_key = ("provider", tenant, project, provider_key)
+    hit, value = get_secret_cache(cache_key)
+    if hit:
+        return value
+    try:
+        value = await get_secrets_manager(settings).get_secret(provider_key)
+    except Exception:
+        value = None
+    return set_secret_cache(cache_key, value)
+
+
+async def _get_user_secret_cached(
+    settings: Any,
+    *,
+    user_id: str,
+    bundle_id: str | None,
+    key: str,
+) -> str | None:
+    tenant, project = _settings_secret_scope(settings)
+    cache_key = ("user", tenant, project, user_id, str(bundle_id or "").strip(), key)
+    hit, value = get_secret_cache(cache_key)
+    if hit:
+        return value
+    try:
+        value = await get_secrets_manager(settings).get_user_secret(
+            user_id=user_id,
+            bundle_id=bundle_id,
+            key=key,
+        )
+    except Exception:
+        value = None
+    return set_secret_cache(cache_key, value)
 
 
 
@@ -141,14 +192,12 @@ async def get_secret(
         )
         if not resolved_user_id:
             return default
-        try:
-            value = await get_secrets_manager(get_settings()).get_user_secret(
-                user_id=resolved_user_id,
-                bundle_id=resolved_bundle_id,
-                key=tail,
-            )
-        except Exception:
-            value = None
+        value = await _get_user_secret_cached(
+            get_settings(),
+            user_id=resolved_user_id,
+            bundle_id=resolved_bundle_id,
+            key=tail,
+        )
         return value or default
 
     normalized_key = _normalize_secret_lookup_key(key, bundle_id=bundle_id)
@@ -166,10 +215,7 @@ async def get_secret(
         if candidate in _LEGACY_SECRET_TO_CANON:
             continue
         provider_key = _provider_secret_key(candidate)
-        try:
-            value = await get_secrets_manager(settings).get_secret(provider_key)
-        except Exception:
-            value = None
+        value = await _get_provider_secret_cached(settings, provider_key)
         if value:
             return value
     return default
@@ -277,6 +323,7 @@ async def set_user_secret(
         key=key,
         value=value,
     )
+    clear_secret_cache(user_id=resolved_user_id, bundle_id=resolved_bundle_id, key=key)
 
 
 async def set_bundle_secret(
@@ -291,10 +338,9 @@ async def set_bundle_secret(
     tail = str(key or "").strip().strip(".")
     if not tail:
         raise ValueError("Bundle secret key path is empty")
-    await get_secrets_manager(get_settings()).set_secret(
-        f"bundles.{resolved_bundle_id}.secrets.{tail}",
-        value,
-    )
+    secret_key = f"bundles.{resolved_bundle_id}.secrets.{tail}"
+    await get_secrets_manager(get_settings()).set_secret(secret_key, value)
+    clear_secret_cache(bundle_id=resolved_bundle_id, key=secret_key)
 
 
 async def delete_user_secret(
@@ -314,6 +360,7 @@ async def delete_user_secret(
         bundle_id=resolved_bundle_id,
         key=key,
     )
+    clear_secret_cache(user_id=resolved_user_id, bundle_id=resolved_bundle_id, key=key)
 
 
 def get_user_prop(
@@ -1326,7 +1373,18 @@ class Settings(PLATFORM_CONFIG):
 
     def plain(self, key: str, default: Any = None) -> Any:
         path, dotted_path = _parse_plain_key(key)
-        value = _resolve_dotted_value(_load_plain_yaml(path), dotted_path)
+        token = _descriptor_cache_token(path)
+        if token is None:
+            value = None
+        else:
+            path_str, mtime_ns, size = token
+            value = get_plain_cache(
+                path=path_str,
+                mtime_ns=mtime_ns,
+                size=size,
+                dotted_path=dotted_path,
+                loader=lambda: _resolve_dotted_value(_load_plain_yaml(path), dotted_path),
+            )
         return default if value is None else value
 
 @lru_cache()

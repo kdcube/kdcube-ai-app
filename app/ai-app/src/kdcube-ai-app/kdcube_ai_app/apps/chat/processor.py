@@ -1887,6 +1887,46 @@ class EnhancedChatRequestProcessor:
         update_channel = namespaces.CONFIG.BUNDLES.UPDATE_CHANNEL.format(tenant=tenant, project=project)
         cleanup_channel = namespaces.CONFIG.BUNDLES.CLEANUP_CHANNEL.format(tenant=tenant, project=project)
         props_update_channel = namespaces.CONFIG.BUNDLES.PROPS_UPDATE_CHANNEL.format(tenant=tenant, project=project)
+        secrets_update_channel = namespaces.CONFIG.BUNDLES.SECRETS_UPDATE_CHANNEL.format(tenant=tenant, project=project)
+
+        def _invalidate_config_secret_cache(
+                *,
+                reason: str,
+                bundle_id: str | None = None,
+                user_id: str | None = None,
+                keys: list[str] | set[str] | tuple[str, ...] | None = None,
+        ) -> None:
+            try:
+                from kdcube_ai_app.apps.chat.sdk.config_cache import clear_secret_cache
+
+                cleared = clear_secret_cache(
+                    tenant=tenant,
+                    project=project,
+                    bundle_id=bundle_id,
+                    user_id=user_id,
+                    keys=keys,
+                )
+                logger.info(
+                    "Invalidated central secret cache: reason=%s tenant=%s project=%s pid=%s bundle=%s user=%s keys=%s cleared=%s",
+                    reason,
+                    tenant,
+                    project,
+                    os.getpid(),
+                    bundle_id,
+                    user_id,
+                    sorted(str(key) for key in (keys or [])),
+                    cleared,
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to invalidate central secret cache: reason=%s tenant=%s project=%s bundle=%s user=%s",
+                    reason,
+                    tenant,
+                    project,
+                    bundle_id,
+                    user_id,
+                    exc_info=True,
+                )
 
         async def _catch_up_runtime_snapshot(reason: str, changed_bundle_ids: Optional[set[str]] = None) -> None:
             current = await store_load(self.redis, tenant, project)
@@ -2022,10 +2062,11 @@ class EnhancedChatRequestProcessor:
                     update_channel,
                     cleanup_channel,
                     props_update_channel,
+                    secrets_update_channel,
                 )
                 logger.info(
                     "Subscribed to bundles channels: "
-                    f"{update_channel}, {cleanup_channel}, {props_update_channel}"
+                    f"{update_channel}, {cleanup_channel}, {props_update_channel}, {secrets_update_channel}"
                 )
                 try:
                     await _catch_up_runtime_snapshot("config-listener.subscribe")
@@ -2125,6 +2166,11 @@ class EnhancedChatRequestProcessor:
                             evt.get("updated_by"),
                             evt.get("ts"),
                         )
+                        for bundle_id in changed_bundle_ids:
+                            _invalidate_config_secret_cache(
+                                reason="bundles.update",
+                                bundle_id=bundle_id,
+                            )
                         try:
                             await _catch_up_runtime_snapshot("bundles.update", changed_bundle_ids=changed_bundle_ids)
                         except Exception:
@@ -2250,6 +2296,33 @@ class EnhancedChatRequestProcessor:
                         continue
 
                     if message.get("channel") in (
+                        secrets_update_channel,
+                        secrets_update_channel.encode(),
+                    ):
+                        bundle_id = str(evt.get("bundle_id") or "").strip() or None
+                        raw_keys = evt.get("keys") or []
+                        keys = [str(key) for key in raw_keys if str(key)]
+                        _invalidate_config_secret_cache(
+                            reason=str(evt.get("type") or "bundles.secrets.update"),
+                            bundle_id=bundle_id,
+                            user_id=str(evt.get("user_id") or "").strip() or None,
+                            keys=keys,
+                        )
+                        logger.info(
+                            "Received bundles.secrets.update broadcast: tenant=%s project=%s pid=%s bundle=%s scope=%s mode=%s key_count=%s updated_by=%s ts=%s",
+                            tenant,
+                            project,
+                            os.getpid(),
+                            bundle_id,
+                            evt.get("scope"),
+                            evt.get("mode"),
+                            len(keys),
+                            evt.get("updated_by"),
+                            evt.get("ts"),
+                        )
+                        continue
+
+                    if message.get("channel") in (
                         props_update_channel,
                         props_update_channel.encode(),
                     ):
@@ -2269,6 +2342,10 @@ class EnhancedChatRequestProcessor:
                                 logger.warning("Bundle runtime reconcile failed after props update", exc_info=True)
                         bundle_id = str(evt.get("bundle_id") or "").strip()
                         if bundle_id:
+                            _invalidate_config_secret_cache(
+                                reason="bundles.props.update",
+                                bundle_id=bundle_id,
+                            )
                             try:
                                 from kdcube_ai_app.infra.plugin.bundle_loader import (
                                     BundleSpec,
@@ -2320,7 +2397,7 @@ class EnhancedChatRequestProcessor:
             finally:
                 if pubsub:
                     try:
-                        await pubsub.unsubscribe(update_channel, cleanup_channel, props_update_channel)
+                        await pubsub.unsubscribe(update_channel, cleanup_channel, props_update_channel, secrets_update_channel)
                         await pubsub.close()
                     except Exception:
                         pass

@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import re
+import time
 import traceback
 import uuid
 from dataclasses import asdict
@@ -988,6 +989,58 @@ def _bundle_secrets_key(*, tenant: str, project: str, bundle_id: str) -> str:
     )
 
 
+def _bundle_secrets_update_channel(*, tenant: str, project: str) -> str:
+    return namespaces.CONFIG.BUNDLES.SECRETS_UPDATE_CHANNEL.format(
+        tenant=tenant,
+        project=project,
+    )
+
+
+async def _publish_bundle_secrets_update(
+        redis,
+        *,
+        tenant: str,
+        project: str,
+        bundle_id: str,
+        scope: str,
+        mode: str,
+        keys: Set[str],
+        actor: Optional[str] = None,
+        user_id: Optional[str] = None,
+) -> None:
+    if redis is None:
+        return
+    payload: Dict[str, Any] = {
+        "type": "bundles.secrets.update",
+        "tenant": tenant,
+        "project": project,
+        "bundle_id": bundle_id,
+        "scope": scope,
+        "mode": mode,
+        "keys": sorted(str(key) for key in keys),
+        "ts": time.time(),
+    }
+    if actor:
+        payload["updated_by"] = actor
+    if user_id:
+        payload["user_id"] = user_id
+    try:
+        await redis.publish(
+            _bundle_secrets_update_channel(tenant=tenant, project=project),
+            json.dumps(payload, ensure_ascii=False),
+        )
+    except Exception:
+        logger.warning(
+            "Failed to publish bundle secrets update: tenant=%s project=%s bundle=%s scope=%s mode=%s",
+            tenant,
+            project,
+            bundle_id,
+            scope,
+            mode,
+            exc_info=True,
+        )
+
+
 def _user_bundle_secrets_key(*, tenant: str, project: str, bundle_id: str, user_id: str) -> str:
     return namespaces.CONFIG.BUNDLES.USER_SECRETS_KEYS_FMT.format(
         tenant=tenant,
@@ -1751,6 +1804,17 @@ async def set_bundle_secrets(
     except Exception:
         pass
 
+    await _publish_bundle_secrets_update(
+        redis,
+        tenant=tenant_id,
+        project=project_id,
+        bundle_id=bundle_id,
+        scope="bundle",
+        mode=mode,
+        keys=keys,
+        actor=session.username or session.user_id or "unknown",
+    )
+
     return {
         "status": "ok",
         "bundle_id": bundle_id,
@@ -1889,6 +1953,18 @@ async def set_current_user_bundle_secrets(
         await redis.set(secrets_key, json.dumps(sorted(stored_keys)))
     except Exception:
         pass
+
+    await _publish_bundle_secrets_update(
+        redis,
+        tenant=tenant,
+        project=project,
+        bundle_id=bundle_id,
+        scope="user",
+        mode=mode,
+        keys=keys,
+        actor=session.username or session.user_id or "unknown",
+        user_id=user_id,
+    )
 
     return {
         "status": "ok",

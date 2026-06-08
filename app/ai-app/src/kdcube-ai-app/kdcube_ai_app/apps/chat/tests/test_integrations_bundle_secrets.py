@@ -9,6 +9,7 @@ from kdcube_ai_app.apps.chat.proc.rest.integrations import integrations
 class _FakeRedis:
     def __init__(self):
         self.data = {}
+        self.published = []
 
     async def get(self, key):
         return self.data.get(key)
@@ -16,7 +17,8 @@ class _FakeRedis:
     async def set(self, key, value):
         self.data[key] = value
 
-    async def publish(self, *_args, **_kwargs):
+    async def publish(self, channel, message):
+        self.published.append((channel, message))
         return 1
 
 
@@ -80,6 +82,17 @@ async def test_set_bundle_secrets_uses_provider_and_tracks_known_keys(monkeypatc
     assert json.loads(
         redis.data["kdcube:config:bundles:secrets:tenant-a:project-a:bundle@1"]
     ) == ["bundles.bundle@1.secrets.openai.api_key"]
+    channel, message = redis.published[-1]
+    payload = json.loads(message)
+    assert channel == "kdcube:config:bundles:secrets:update:tenant-a:project-a"
+    assert payload["type"] == "bundles.secrets.update"
+    assert payload["scope"] == "bundle"
+    assert payload["mode"] == "set"
+    assert payload["bundle_id"] == "bundle@1"
+    assert payload["tenant"] == "tenant-a"
+    assert payload["project"] == "project-a"
+    assert payload["keys"] == ["bundles.bundle@1.secrets.openai.api_key"]
+    assert "sk-test" not in message
 
     result = await integrations.set_bundle_secrets(
         "bundle@1",
@@ -97,6 +110,13 @@ async def test_set_bundle_secrets_uses_provider_and_tracks_known_keys(monkeypatc
     assert json.loads(
         redis.data["kdcube:config:bundles:secrets:tenant-a:project-a:bundle@1"]
     ) == []
+    channel, message = redis.published[-1]
+    payload = json.loads(message)
+    assert channel == "kdcube:config:bundles:secrets:update:tenant-a:project-a"
+    assert payload["scope"] == "bundle"
+    assert payload["mode"] == "clear"
+    assert payload["keys"] == ["bundles.bundle@1.secrets.openai.api_key"]
+    assert "sk-test" not in message
 
 
 @pytest.mark.asyncio
@@ -130,5 +150,17 @@ async def test_set_current_user_bundle_secrets_uses_current_user_scope(monkeypat
     assert json.loads(
         redis.data["kdcube:config:bundles:user-secrets:tenant-a:project-a:bundle@1:user-1"]
     ) == [expected_key]
+    channel, message = redis.published[-1]
+    payload = json.loads(message)
+    assert channel == "kdcube:config:bundles:secrets:update:tenant-a:project-a"
+    assert payload["type"] == "bundles.secrets.update"
+    assert payload["scope"] == "user"
+    assert payload["mode"] == "set"
+    assert payload["bundle_id"] == "bundle@1"
+    assert payload["tenant"] == "tenant-a"
+    assert payload["project"] == "project-a"
+    assert payload["user_id"] == "user-1"
+    assert payload["keys"] == [expected_key]
+    assert "sk-user" not in message
     assert "keys" not in result
     assert "stored_keys" not in result

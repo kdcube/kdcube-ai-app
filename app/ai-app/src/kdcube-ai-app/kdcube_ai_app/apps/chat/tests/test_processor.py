@@ -79,6 +79,39 @@ class _RedisWithTimeoutPubSub:
         return self.pubsub_instance
 
 
+class _MessagePubSub:
+    def __init__(self, stop_event: asyncio.Event, messages):
+        self.stop_event = stop_event
+        self.messages = list(messages)
+        self.subscribe_calls = []
+        self.unsubscribe_calls = []
+        self.closed = False
+
+    async def subscribe(self, *channels):
+        self.subscribe_calls.append(channels)
+
+    async def get_message(self, **_kwargs):
+        if self.messages:
+            return self.messages.pop(0)
+        self.stop_event.set()
+        return None
+
+    async def unsubscribe(self, *channels):
+        self.unsubscribe_calls.append(channels)
+
+    async def close(self):
+        self.closed = True
+
+
+class _RedisWithMessagePubSub:
+    def __init__(self, stop_event: asyncio.Event, messages):
+        self.connection_pool = _FakePool()
+        self.pubsub_instance = _MessagePubSub(stop_event, messages)
+
+    def pubsub(self):
+        return self.pubsub_instance
+
+
 async def _noop_handler(_payload):
     return {}
 
@@ -535,6 +568,63 @@ async def test_config_listener_timeout_leaves_shared_pool_connected(monkeypatch)
     assert "Config listener get_message exceeded" in (
         processor.get_runtime_metadata()["last_config_error"] or ""
     )
+
+
+@pytest.mark.asyncio
+async def test_config_listener_secrets_update_invalidates_config_secret_cache(monkeypatch):
+    settings = SimpleNamespace(TENANT="tenant-a", PROJECT="project-a")
+    import kdcube_ai_app.apps.chat.sdk.config as sdk_config_mod
+    import kdcube_ai_app.infra.plugin.bundle_registry as bundle_registry_mod
+    import kdcube_ai_app.infra.plugin.bundle_store as bundle_store_mod
+    import kdcube_ai_app.apps.chat.sdk.config_cache as config_cache_mod
+
+    async def _fake_load_registry(*_args, **_kwargs):
+        return SimpleNamespace(bundles={}, default_bundle_id=None)
+
+    async def _fake_set_registry_async(*_args, **_kwargs):
+        return None
+
+    invalidations = []
+
+    def _fake_clear_secret_cache(**kwargs):
+        invalidations.append(kwargs)
+        return 3
+
+    monkeypatch.setattr(sdk_config_mod, "get_settings", lambda: settings)
+    monkeypatch.setattr(bundle_store_mod, "load_registry", _fake_load_registry)
+    monkeypatch.setattr(bundle_registry_mod, "set_registry_async", _fake_set_registry_async)
+    monkeypatch.setattr(config_cache_mod, "clear_secret_cache", _fake_clear_secret_cache)
+
+    channel = "kdcube:config:bundles:secrets:update:tenant-a:project-a"
+    event = {
+        "type": "bundles.secrets.update",
+        "tenant": "tenant-a",
+        "project": "project-a",
+        "bundle_id": "bundle@1",
+        "scope": "bundle",
+        "mode": "set",
+        "keys": ["bundles.bundle@1.secrets.openai.api_key"],
+    }
+    redis = _RedisWithMessagePubSub(
+        asyncio.Event(),
+        [{"type": "message", "channel": channel, "data": json.dumps(event)}],
+    )
+    processor = _build_processor(redis)
+    redis.pubsub_instance.stop_event = processor._stop_event
+
+    await processor._config_listener_loop()
+
+    assert invalidations == [
+        {
+            "tenant": "tenant-a",
+            "project": "project-a",
+            "bundle_id": "bundle@1",
+            "user_id": None,
+            "keys": ["bundles.bundle@1.secrets.openai.api_key"],
+        }
+    ]
+    assert redis.connection_pool.disconnect_calls == []
+    assert redis.pubsub_instance.closed is True
 
 
 def test_processor_defaults_to_legacy_lists_scheduler_backend():
