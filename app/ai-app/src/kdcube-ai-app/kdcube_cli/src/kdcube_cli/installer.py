@@ -605,6 +605,16 @@ def ensure_generated_runtime_secrets(config_dir: Path) -> Dict[str, str]:
         )
         generated["services.federated_token.secret"] = federated_token_secret
 
+    session_token_secret = _get_nested(secrets_data, "services", "session_token", "secret")
+    if not isinstance(session_token_secret, str) or is_placeholder(session_token_secret):
+        session_token_secret = secrets.token_urlsafe(32)
+        _set_nested(
+            secrets_data,
+            ["services", "session_token", "secret"],
+            session_token_secret,
+        )
+        generated["services.session_token.secret"] = session_token_secret
+
     if generated:
         save_release_descriptor(secrets_path, secrets_data)
     return generated
@@ -3099,6 +3109,15 @@ def gather_configuration(
             federated_token_secret,
         )
     runtime_secrets["services.federated_token.secret"] = federated_token_secret
+    session_token_secret = _secret_pick(("services", "session_token", "secret"))
+    if not session_token_secret:
+        session_token_secret = secrets.token_urlsafe(32)
+        _set_nested(
+            secrets_data,
+            ["services", "session_token", "secret"],
+            session_token_secret,
+        )
+    runtime_secrets["services.session_token.secret"] = session_token_secret
     openai_key = prompt_secret_value(
         console,
         "OpenAI API key",

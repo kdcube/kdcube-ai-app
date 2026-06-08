@@ -144,11 +144,17 @@ def _assembly_auth_type(assembly: Optional[Mapping[str, Any]]) -> str:
     auth_idp = as_text(get_nested(assembly or {}, "auth", "idp")).lower()
     if auth_type == "delegated":
         return "delegated"
+    if auth_type in {"bundle", "bundle-session"} or auth_idp in {"session", "bundle", "bundle-session"}:
+        return "bundle"
     if auth_type == "simple" or auth_idp == "simple":
         return "simple"
     if auth_type == "cognito" or auth_idp == "cognito":
         return "cognito"
     return "simple"
+
+
+def _assembly_auth_declared(assembly: Optional[Mapping[str, Any]]) -> bool:
+    return bool(as_text(get_nested(assembly or {}, "auth", "type")) or as_text(get_nested(assembly or {}, "auth", "idp")))
 
 
 def _normalize_frontend_auth_type(value: Any) -> str:
@@ -209,7 +215,13 @@ def build_frontend_config(
     assembly_company = as_text(get_nested(assembly or {}, "company"))
     company = as_text(company_name) or assembly_company or "KDCube"
     auth = copy.deepcopy(merged.get("auth") if isinstance(merged.get("auth"), dict) else {})
-    auth_type = _normalize_frontend_auth_type(auth.get("authType")) or _assembly_auth_type(assembly)
+    explicit_frontend_auth_type = get_nested(frontend_overrides, "auth", "authType")
+    if as_text(explicit_frontend_auth_type):
+        auth_type = _normalize_frontend_auth_type(explicit_frontend_auth_type)
+    elif _assembly_auth_declared(assembly):
+        auth_type = _assembly_auth_type(assembly)
+    else:
+        auth_type = _normalize_frontend_auth_type(auth.get("authType")) or _assembly_auth_type(assembly)
     auth["authType"] = auth_type
 
     id_token_header = as_text(get_nested(assembly or {}, "auth", "id_token_header_name")) or "X-ID-Token"
@@ -236,6 +248,8 @@ def build_frontend_config(
         if auth.get("totpIssuer") in (None, "", "COMPANY_NAME", "<COMPANY_NAME>"):
             auth["totpIssuer"] = company
         auth.setdefault("apiBase", "/auth/")
+    elif auth_type == "bundle":
+        auth.pop("token", None)
 
     turnstile_token = (
         as_text(turnstile_development_token)

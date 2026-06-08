@@ -59,6 +59,8 @@ Typical keys:
 | `services.stripe.webhook_secret` | `STRIPE_WEBHOOK_SECRET` | `get_secret(...)` |
 | `services.huggingface.api_key` | `HUGGING_FACE_KEY`, `HUGGINGFACE_API_KEY`, `HUGGING_FACE_API_TOKEN` | `get_secret(...)` |
 | `services.firecrawl.api_key` | `FIRECRAWL_API_KEY` | `get_secret(...)` |
+| `services.federated_token.secret` | none | `get_secret(...)` |
+| `services.session_token.secret` | none | `get_secret(...)` |
 | `services.email.password` | `EMAIL_PASSWORD` | `get_secret(...)` |
 | `auth.oidc.admin_email` | `OIDC_SERVICE_USER_EMAIL` | `get_secret(...)` |
 | `auth.oidc.admin_username` | `OIDC_SERVICE_ADMIN_USERNAME` | `get_secret(...)` |
@@ -76,6 +78,10 @@ When bundle code wants bundle-first service-key lookup, use the explicit pattern
 `await get_secret("b:services.<name>.<key>") or await get_secret("services.<name>.<key>")`.
 See [bundles-secrets-descriptor-README.md](bundles-secrets-descriptor-README.md)
 for the override mechanism and the list of overridable keys.
+
+`services.federated_token.secret` and `services.session_token.secret` are
+platform-wide service secrets. Keep each value consistent across ingress/proc
+workers.
 
 ## Authority by mode
 

@@ -5,6 +5,7 @@ summary: "Authentication providers and token transport across REST/SSE/Socket.IO
 tags: ["service", "auth", "security", "tokens"]
 keywords: ["delegated auth", "cookie auth", "JWT", "SSE auth", "Socket.IO"]
 see_also:
+  - ks:docs/service/auth/bundle-session-auth-README.md
   - ks:docs/service/auth/bundle-simple-idp-bridge-README.md
   - ks:docs/service/comm/README-comm.md
   - ks:docs/arch/architecture-long.md
@@ -53,7 +54,16 @@ mismatched sessions are rejected (401/403).
 - Bundle-owned sign-in flows can register users through the cached registry
   utility documented in [Bundle SimpleIDP Bridge](bundle-simple-idp-bridge-README.md).
 
-3) Delegated auth (proxy login service)
+3) Bundle session auth
+- Implementation: [Bundle session auth](../../../src/kdcube-ai-app/kdcube_ai_app/auth/bundle/sessions.py)
+- `auth.idp: session`.
+- A bundle/front shell validates an external identity and calls the async
+  platform session authority to register/login/logout/delete/invalidate users.
+- Session cookies carry a signed `kst1.*` token. Redis stores the active
+  session record, user record, and revocation/version state.
+- Details: [Bundle Session Auth](bundle-session-auth-README.md).
+
+4) Delegated auth (proxy login service)
 - Proxy service build: [ProxyLogin Dockerfile](../../../deployment/docker/custom-ui-managed-infra/Dockerfile_ProxyLogin)
 - Proxy service wiring: [custom-ui-managed compose](../../../deployment/docker/custom-ui-managed-infra/docker-compose.yaml)
 - The proxy service exchanges credentials and returns tokens; the UI stores
@@ -61,6 +71,15 @@ mismatched sessions are rejected (401/403).
 - The delegated web-proxy supports both the existing masquerade cookie flow and
   a non-masquerade flow where the real auth and identity cookies are already
   present on the request.
+
+## Bundle Builder Reading Path
+
+| Goal | Read |
+|---|---|
+| Bundle/front shell performs login and browser should become a platform user | [Bundle Session Auth](bundle-session-auth-README.md) |
+| Bundle writes a SimpleIDP token for local/embedded simple auth | [Bundle SimpleIDP Bridge](bundle-simple-idp-bridge-README.md) |
+| Public mini app needs Socket.IO Data Bus publish rights | [Bundle Federated Auth](../../sdk/bundle/auth-bundle-federated-README.md) |
+| Bundle endpoint should be public or role-protected | [Bundle Firewall](../../sdk/bundle/bundle-firewall-README.md) |
 
 ## Token transport (server-side)
 
@@ -124,11 +143,13 @@ Common environment variables:
 - `AUTH_TOKEN_COOKIE_NAME` (default `__Secure-LATC`)
 - `ID_TOKEN_COOKIE_NAME` (default `__Secure-LITC`)
 - `IDP_DB_PATH` (SimpleIDP user token map)
+- `services.session_token.secret` (descriptor secret used by bundle session auth)
 
 In descriptor-driven deployments these values come from `assembly.yaml`:
 
 ```yaml
 auth:
+  idp: "simple" # simple | cognito | session
   id_token_header_name: "X-ID-Token"
   auth_token_cookie_name: "__Secure-LATC"
   id_token_cookie_name: "__Secure-LITC"

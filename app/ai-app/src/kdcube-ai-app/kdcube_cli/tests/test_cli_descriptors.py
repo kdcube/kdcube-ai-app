@@ -468,6 +468,36 @@ def test_write_frontend_config_uses_cli_frontend_config_module(tmp_path: Path):
     assert config["debug"] == {"injectDebugCommands": True, "animateStreaming": True}
 
 
+def test_write_frontend_config_derives_bundle_auth_type(tmp_path: Path):
+    template = tmp_path / "template.json"
+    template.write_text(
+        json.dumps({"auth": {"authType": "hardcoded", "token": "test-admin-token-123"}}),
+        encoding="utf-8",
+    )
+    target = tmp_path / "frontend.config.json"
+
+    write_frontend_config(
+        target,
+        "tenant-one",
+        "project-one",
+        template_path=template,
+        assembly={
+            "auth": {
+                "type": "bundle",
+                "idp": "session",
+                "auth_token_cookie_name": "__Secure-APP",
+                "id_token_cookie_name": "__Secure-ID",
+            },
+        },
+    )
+
+    config = json.loads(target.read_text())
+    assert config["auth"]["authType"] == "bundle"
+    assert config["auth"]["authTokenCookieName"] == "__Secure-APP"
+    assert config["auth"]["idTokenCookieName"] == "__Secure-ID"
+    assert "token" not in config["auth"]
+
+
 def test_update_nginx_routes_prefix_adds_prefix_root_redirect(tmp_path: Path):
     nginx = tmp_path / "nginx.conf"
     nginx.write_text(

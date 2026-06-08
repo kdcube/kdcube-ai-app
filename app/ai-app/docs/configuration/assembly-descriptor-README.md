@@ -58,6 +58,7 @@ These env vars are the direct runtime surface for assembly-backed settings.
 | Env var | `assembly.yaml` path | Primary API | Modes |
 |---|---|---|---|
 | `SECRETS_PROVIDER` | `secrets.provider` | `get_settings()` | all modes |
+| `AUTH_PROVIDER` | `auth.idp` | `get_settings()` | effective runtime value; descriptor remains the source of truth |
 | `COGNITO_REGION` | `auth.cognito.region` | `get_settings()` | CLI local compose, AWS deployment |
 | `COGNITO_USER_POOL_ID` | `auth.cognito.user_pool_id` | `get_settings()` | CLI local compose, AWS deployment |
 | `COGNITO_APP_CLIENT_ID` | `auth.cognito.app_client_id` | `get_settings()` | CLI local compose, AWS deployment |
@@ -127,8 +128,8 @@ Example:
 
 ```yaml
 auth:
-  type: "delegated"             # simple | cognito | delegated
-  idp: "cognito"                # simple | cognito
+  type: "delegated"             # simple | cognito | delegated | bundle
+  idp: "cognito"                # simple | cognito | session
   id_token_header_name: "X-ID-Token"
   auth_token_cookie_name: "__Secure-LATC"
   id_token_cookie_name: "__Secure-LITC"
@@ -160,6 +161,12 @@ validate tokens using the configured auth provider.
 
 `auth.proxy_login.enforce_mfa` maps to Proxy Login `COGNITO_ENFORCEMFA`. When
 enabled, Proxy Login enforces MFA during the Cognito login flow.
+
+`auth.idp: session` selects bundle session auth, where a bundle/front shell
+validates an external identity and calls the async platform session authority to
+issue platform-recognized `kst1.*` cookies. It requires
+`services.session_token.secret` in `secrets.yaml`. See
+[Bundle Session Auth](../service/auth/bundle-session-auth-README.md).
 
 ### `auth.turnstile_development_token`
 
@@ -194,7 +201,7 @@ Example:
 frontend:
   config:
     auth:
-      authType: "delegated"      # simple | cognito | delegated
+      authType: "delegated"      # none | bundle | simple | cognito | delegated
       totpAppName: "Example App"
       totpIssuer: "Example App"
       apiBase: "/auth/"
@@ -212,9 +219,12 @@ is still read from the `auth` section and is published as
 If `frontend.config.auth.authType` is omitted, it is derived from top-level
 auth: `auth.type: simple` emits browser `authType: simple`, `auth.type:
 cognito` emits `authType: cognito`, and `auth.type: delegated` emits
-`authType: delegated`. The older browser value `hardcoded` is a legacy alias
-for `simple`; new descriptors should use `simple`. `oauth` is not a deployment
-auth mode; use `cognito` for the OSS browser Cognito/OIDC flow.
+`authType: delegated`. `auth.type: bundle` or `auth.idp: session` emits
+`authType: bundle`: a bundle/front shell performs login and sets the
+descriptor-configured platform cookies, while the platform still validates
+requests through `auth.idp: session`. The older browser value `hardcoded` is a
+legacy alias for `simple`; new descriptors should use `simple`. `oauth` is not
+a deployment auth mode; use `cognito` for the OSS browser Cognito/OIDC flow.
 
 ### `proxy.frame_embedding`
 

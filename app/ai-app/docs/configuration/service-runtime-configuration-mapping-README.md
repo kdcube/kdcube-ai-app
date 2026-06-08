@@ -62,6 +62,7 @@ per-descriptor pages. This section keeps only the cross-descriptor overview.
 
 | Env var | Descriptor path | Descriptor file | Modes |
 |---|---|---|---|
+| `AUTH_PROVIDER` | `auth.idp` | `assembly.yaml` | effective runtime value; descriptor remains the source of truth |
 | `COGNITO_REGION` | `auth.cognito.region` | `assembly.yaml` | CLI local compose, AWS deployment |
 | `COGNITO_USER_POOL_ID` | `auth.cognito.user_pool_id` | `assembly.yaml` | CLI local compose, AWS deployment |
 | `COGNITO_APP_CLIENT_ID` | `auth.cognito.app_client_id` | `assembly.yaml` | CLI local compose, AWS deployment |
@@ -88,6 +89,8 @@ Notes:
 - in delegated auth deployments, `AUTH_TOKEN_COOKIE_NAME` and
   `ID_TOKEN_COOKIE_NAME` are also passed to the web-proxy so it can distinguish
   already-present real cookies from the proxylogin masquerade/unmask flow
+- `auth.idp: session` is the bundle session auth provider. It requires the
+  platform secret `services.session_token.secret`.
 
 ### Secrets provider and secrets-file inputs
 
@@ -96,6 +99,13 @@ Notes:
 | `SECRETS_PROVIDER` | `secrets.provider` | `assembly.yaml` | all modes |
 | `GLOBAL_SECRETS_YAML` | n/a | `secrets.yaml` | direct local run, CLI local compose in `secrets-file` mode |
 | `BUNDLE_SECRETS_YAML` | n/a | `bundles.secrets.yaml` | direct local run, CLI local compose in `secrets-file` mode |
+
+Common platform service secrets:
+
+| Secret path | Purpose |
+|---|---|
+| `services.federated_token.secret` | Short-lived bundle-federated Data Bus token signing. |
+| `services.session_token.secret` | Bundle session auth cookie signing. |
 
 ### Gateway config source
 

@@ -6,6 +6,7 @@ tags: ["service", "auth", "simple-idp", "bundle", "sso"]
 keywords: ["SimpleIDP", "bundle auth", "external identity", "SSO bridge", "cookie auth", "idp_users.json"]
 see_also:
   - ks:docs/service/auth/auth-README.md
+  - ks:docs/service/auth/bundle-session-auth-README.md
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
   - ks:docs/sdk/bundle/bundle-firewall-README.md
   - ks:docs/service/comm/data-bus-README.md
@@ -16,6 +17,10 @@ SimpleIDP can be used as a platform-level identity bridge in local and embedded
 deployments. In this pattern, a bundle owns one or more external sign-in flows,
 validates the external identity, registers a platform token in the SimpleIDP
 registry, and sets the platform auth cookies for the browser.
+
+For new bundle-owned browser login sessions that need logout, delete, and
+cluster-wide invalidation, use [Bundle Session Auth](bundle-session-auth-README.md).
+This bridge remains the SimpleIDP-specific path.
 
 The browser then reaches platform routes as a normal authenticated platform
 session. The gateway still performs platform authentication; the bundle only

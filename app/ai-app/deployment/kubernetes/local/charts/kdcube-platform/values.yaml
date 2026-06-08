@@ -48,7 +48,9 @@ context:
   project: "PROJECT_ID"
 
 auth:
-  type: "simple" # simple | cognito | delegated
+  # Same type/idp contract as deployment/assembly.yaml.
+  type: "simple" # simple | cognito | delegated | bundle
+  idp: "simple" # simple | cognito | session
   cognito:
     region: ""
     user_pool_id: ""

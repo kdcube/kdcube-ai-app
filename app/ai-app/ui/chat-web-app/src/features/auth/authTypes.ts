@@ -1,4 +1,4 @@
-export type AuthType = "none" | "cognito" | "simple" | "hardcoded"
+export type AuthType = "none" | "bundle" | "cognito" | "simple" | "hardcoded"
 
 export interface AuthConfig {
     authType: AuthType;
@@ -6,6 +6,10 @@ export interface AuthConfig {
 
 export interface NoAuthConfig extends AuthConfig {
     authType: "none";
+}
+
+export interface BundleSessionAuthConfig extends AuthConfig {
+    authType: "bundle";
 }
 
 export interface SimpleAuthConfig extends AuthConfig {

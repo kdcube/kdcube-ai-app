@@ -21,8 +21,8 @@ So current local CLI usage is still deployment-isolated, but workdir-first.
 Operationally, that means:
 
 - one `tenant/project` = one isolated environment
-- use separate `tenant/project` values for different customers or different
-  stages such as `dev`, `staging`, and `prod`
+- use separate `tenant/project` values for different deployments or stages such
+  as `dev`, `staging`, and `prod`
 - keep multiple bundles inside one `tenant/project` when they belong to the
   same environment
 
@@ -723,7 +723,7 @@ When you run `kdcube`, the **wizard** performs the steps below:
 3) Copies nginx configs into `config/` for runtime overrides:
    - `nginx_ui.conf`
    - runtime proxy config (based on selected auth mode)
-4) Selects **auth mode** (simple, cognito, or delegated) and writes:
+4) Selects **auth mode** (simple, cognito, delegated, or bundle) and writes:
    - `AUTH_PROVIDER` in `.env.ingress` + `.env.proc`
    - Cognito fields when applicable (see below)
 5) Generates frontend runtime config based on auth mode or descriptor template.
@@ -756,6 +756,14 @@ The wizard prompts for an auth mode and updates both backend and frontend config
 - If `assembly.yaml` provides `company`, the generated delegated config uses it for:
   - `auth.totpAppName`
   - `auth.totpIssuer`
+
+**Bundle session**
+- `AUTH_PROVIDER=session`
+- Frontend config auth type: `bundle`
+- A bundle/front shell validates an external identity, calls the platform bundle
+  session authority, and sets the descriptor-configured platform cookies.
+- Requires `services.session_token.secret` in `secrets.yaml`; the CLI generates
+  it when missing during init/refresh.
 
 ### Routes prefix & nginx proxy
 The frontend config includes `routesPrefix` (default: `/chatbot`).

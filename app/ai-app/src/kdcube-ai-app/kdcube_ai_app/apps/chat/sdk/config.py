@@ -744,7 +744,9 @@ class Settings(PLATFORM_CONFIG):
 
     def _resolve_auth_provider_from_assembly(self) -> str | None:
         auth_idp = (self._assembly_str("auth.idp") or "").strip().lower()
-        if auth_idp in {"simple", "cognito"}:
+        if auth_idp in {"simple", "cognito", "session", "bundle", "bundle-session"}:
+            if auth_idp in {"bundle", "bundle-session"}:
+                return "session"
             return auth_idp
 
         # Backward compatibility for older descriptors that overloaded auth.type.
@@ -753,6 +755,8 @@ class Settings(PLATFORM_CONFIG):
             return "simple"
         if auth_mode in {"cognito", "delegated"}:
             return "cognito"
+        if auth_mode in {"bundle", "bundle-session"}:
+            return "session"
         return None
 
     def model_post_init(self, __context) -> None:

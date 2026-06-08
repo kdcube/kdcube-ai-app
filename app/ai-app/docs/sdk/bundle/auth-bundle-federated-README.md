@@ -217,6 +217,11 @@ Do not reuse service-local secrets-read tokens for this purpose. Those tokens
 can intentionally differ between ingress and proc, while federated Data Bus
 tokens are issued in one component and verified in another.
 
+This secret is only for short-lived Data Bus capability tokens. Browser login
+sessions for bundle-owned sign-in flows use `services.session_token.secret` and
+the provider described in
+[Bundle Session Auth](../../service/auth/bundle-session-auth-README.md).
+
 ## Handler Authorization
 
 Ingress verifies that:

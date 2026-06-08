@@ -2,19 +2,21 @@
 {{- $project := default "PROJECT_ID" .Values.context.project -}}
 {{- $routePrefix := default "/chatbot" .Values.proxy.route_prefix -}}
 {{- $authMode := lower (default "simple" .Values.auth.type) -}}
-{{- $validAuthModes := list "simple" "cognito" "delegated" -}}
+{{- $validAuthModes := list "simple" "cognito" "delegated" "bundle" -}}
 {{- if not (has $authMode $validAuthModes) -}}
-{{- fail (printf "unsupported auth.type=%q (expected one of: simple, cognito, delegated)" $authMode) -}}
+{{- fail (printf "unsupported auth.type=%q (expected one of: simple, cognito, delegated, bundle)" $authMode) -}}
 {{- end -}}
 {{- $authIdp := lower (default "" .Values.auth.idp) -}}
-{{- $validAuthIdps := list "" "simple" "cognito" -}}
+{{- $validAuthIdps := list "" "simple" "cognito" "session" -}}
 {{- if not (has $authIdp $validAuthIdps) -}}
-{{- fail (printf "unsupported auth.idp=%q (expected one of: simple, cognito)" $authIdp) -}}
+{{- fail (printf "unsupported auth.idp=%q (expected one of: simple, cognito, session)" $authIdp) -}}
 {{- end -}}
 {{- $authProvider := $authIdp -}}
 {{- if eq $authProvider "" -}}
   {{- if eq $authMode "simple" -}}
     {{- $authProvider = "simple" -}}
+  {{- else if eq $authMode "bundle" -}}
+    {{- $authProvider = "session" -}}
   {{- else -}}
     {{- $authProvider = "cognito" -}}
   {{- end -}}
@@ -67,6 +69,8 @@
 {{- $frontendAuth := dict -}}
 {{- if eq $authMode "simple" -}}
 {{- $frontendAuth = dict "authType" "simple" "token" (default "test-admin-token-123" .Values.frontend.authToken) -}}
+{{- else if eq $authMode "bundle" -}}
+{{- $frontendAuth = dict "authType" "bundle" -}}
 {{- else -}}
 {{- $authority := "" -}}
 {{- if and .Values.auth.cognito.region .Values.auth.cognito.user_pool_id -}}

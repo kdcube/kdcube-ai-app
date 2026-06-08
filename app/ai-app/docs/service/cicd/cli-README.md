@@ -181,6 +181,7 @@ If `frontend_config` is omitted, it falls back to a built-in template based on a
 - `simple` -> `config.hardcoded.json`
 - `cognito` -> `config.cognito.json`
 - `delegated` -> `config.delegated.json`
+- `bundle` -> generated config with browser `authType: "bundle"`
 
 If `nginx_ui_config` is omitted, the CLI falls back to the built-in `nginx_ui.conf`.
 
@@ -276,6 +277,12 @@ kdcube init --tenant acme --project prod \
 
 These values are written to the staged runtime `config/secrets.yaml`; they are
 not written to `.env` files.
+
+The CLI also generates missing platform signing secrets during init/refresh and
+persists them to `config/secrets.yaml`, including:
+
+- `services.federated_token.secret`
+- `services.session_token.secret`
 
 All version selectors work the same way without `--descriptors-location`:
 

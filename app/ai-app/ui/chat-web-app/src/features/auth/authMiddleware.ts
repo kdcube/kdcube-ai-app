@@ -109,6 +109,7 @@ export const authMiddleware = (): Middleware => {
                 if (!handler) {
                     switch (authConfig.authType) {
                         case "none":
+                        case "bundle":
                             store.dispatch(setCredentials({
                                 loggedIn: true,
                             }));
@@ -130,6 +131,9 @@ export const authMiddleware = (): Middleware => {
             case LOG_IN_CALLBACK:
             case LOG_OUT:
                 if (!handler) {
+                    if (authConfig.authType === "none" || authConfig.authType === "bundle") {
+                        return;
+                    }
                     throw new Error("auth action handler is not initialized");
                 }
                 handler(store as AppStore, action as AuthActions);

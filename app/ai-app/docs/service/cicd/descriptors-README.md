@@ -164,6 +164,22 @@ Typical use:
 - local host paths belong only to local run modes
 - do not copy local `assembly.paths.*` values into AWS descriptors
 
+## Auth Descriptor Modes
+
+`auth.type` describes the deployment/routing shape. `auth.idp` selects the
+backend auth provider used by ingress/proc.
+
+| `auth.type` | `auth.idp` | Provider behavior |
+|---|---|---|
+| `simple` | `simple` | SimpleIDP token registry. |
+| `cognito` | `cognito` | Cognito JWT validation. |
+| `delegated` | `cognito` | Proxy-login/delegated deployment shape with Cognito backend validation. |
+| `bundle` | `session` | Bundle/front shell validates external identity and issues platform-recognized bundle session cookies. |
+
+Bundle session auth requires the platform/global secret
+`services.session_token.secret` in `secrets.yaml` or the configured secret
+provider. See [Bundle Session Auth](../auth/bundle-session-auth-README.md).
+
 ## Where to continue
 
 - Descriptor fields and examples:

@@ -130,19 +130,22 @@ Set auth routing mode only in `assembly.yaml`:
 - `auth.type: simple`
 - `auth.type: cognito`
 - `auth.type: delegated`
+- `auth.type: bundle`
 
 Set backend IDP implementation separately:
 - `auth.idp: simple`
 - `auth.idp: cognito`
+- `auth.idp: session`
 
 Current chart behavior:
 - `auth.type` drives routing / frontend mode
 - `auth.idp` drives backend `AUTH_PROVIDER`
 - if `auth.idp` is omitted, chart falls back for backward compatibility:
-  `simple` -> backend `AUTH_PROVIDER=simple`; `cognito` / `delegated` -> backend `AUTH_PROVIDER=cognito`
+  `simple` -> backend `AUTH_PROVIDER=simple`; `bundle` -> backend `AUTH_PROVIDER=session`; `cognito` / `delegated` -> backend `AUTH_PROVIDER=cognito`
 - frontend remains:
   `simple` -> `authType=simple`
   `cognito` / `delegated` -> `authType=cognito`
+  `bundle` -> `authType=bundle` because the bundle/front shell sets the platform cookies
 
 Do not configure auth mode in bundles.
 Do not manually edit generated env vars for the chart flow.
