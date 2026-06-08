@@ -7,9 +7,11 @@ keywords: ["bundle docs navigation", "authoring doc index", "runtime doc index",
 see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/sdk/bundle/bundle-developer-guide-README.md
+  - ks:docs/sdk/bundle/bundle-subsystem-integration-README.md
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-write-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
+  - ks:docs/sdk/bundle/build/how-to-avoid-common-bundle-integration-failures-README.md
   - ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
   - ks:docs/sdk/bundle/versatile-reference-bundle-README.md
   - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
@@ -50,29 +52,33 @@ Older `docs/sdk/example-bundle` sample docs are no longer part of the bundle pat
    - builder playbook for designing and structuring a bundle
 5. [build/how-to-assemble-bundle-with-sdk-building-blocks-README.md](build/how-to-assemble-bundle-with-sdk-building-blocks-README.md)
    - reusable SDK/platform blocks: Tasks, Email, Telegram, Delivery, tools, storage, widgets, jobs, MCP, Claude Code
-6. [build/how-to-test-bundle-README.md](build/how-to-test-bundle-README.md)
+6. [build/how-to-avoid-common-bundle-integration-failures-README.md](build/how-to-avoid-common-bundle-integration-failures-README.md)
+   - recurring implementation recipes: imports, widget origins/assets, visibility, live events, Data Bus, authored events, and resolvers
+7. [bundle-subsystem-integration-README.md](bundle-subsystem-integration-README.md)
+   - how to mount an existing SDK subsystem as one complete surface: entrypoint, config, widgets, APIs, tools, events, resolvers, storage, and tests
+8. [build/how-to-test-bundle-README.md](build/how-to-test-bundle-README.md)
    - builder playbook for validation and runtime checks
-7. [versatile-reference-bundle-README.md](versatile-reference-bundle-README.md)
+9. [versatile-reference-bundle-README.md](versatile-reference-bundle-README.md)
    - the concrete reference bundle to study
-8. [bundle-runtime-README.md](bundle-runtime-README.md)
+10. [bundle-runtime-README.md](bundle-runtime-README.md)
    - runtime surfaces available to bundle code
-9. [bundle-event-recording-and-sinks-README.md](bundle-event-recording-and-sinks-README.md)
+11. [bundle-event-recording-and-sinks-README.md](bundle-event-recording-and-sinks-README.md)
    - how bundles record selected comm events and send bounded batches to sinks
-10. [bundle-events-README.md](bundle-events-README.md)
+12. [bundle-events-README.md](bundle-events-README.md)
    - bundle-authored events, tool-backed event sources, ReAct policy bindings, UI story events, snapshots, and custom artifact namespace rehosters
-11. [bundle-agent-integration-README.md](bundle-agent-integration-README.md)
+13. [bundle-agent-integration-README.md](bundle-agent-integration-README.md)
    - React tools/skills, MCP connector/server patterns, and Claude Code subagent requirements
-12. [bundle-entrypoint-classes-README.md](bundle-entrypoint-classes-README.md)
+14. [bundle-entrypoint-classes-README.md](bundle-entrypoint-classes-README.md)
    - which SDK entrypoint base to use: base, economics, memory, or both
-13. [bundle-properties-and-secrets-lifecycle-README.md](bundle-properties-and-secrets-lifecycle-README.md)
+15. [bundle-properties-and-secrets-lifecycle-README.md](bundle-properties-and-secrets-lifecycle-README.md)
    - how code defaults, descriptor/admin props, effective bundle props, and bundle secrets flow at runtime
-14. [bundle-platform-integration-README.md](bundle-platform-integration-README.md)
+16. [bundle-platform-integration-README.md](bundle-platform-integration-README.md)
    - exact decorator and route contract
-15. [bundle-transports-README.md](bundle-transports-README.md)
+17. [bundle-transports-README.md](bundle-transports-README.md)
    - canonical inbound/outbound protocol and transport map
-16. [../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../configuration/bundle-runtime-configuration-and-secrets-README.md)
+18. [../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../configuration/bundle-runtime-configuration-and-secrets-README.md)
    - platform/global, bundle-scoped, and user-scoped configuration and secrets
-17. [bundle-delivery-and-update-README.md](bundle-delivery-and-update-README.md)
+19. [bundle-delivery-and-update-README.md](bundle-delivery-and-update-README.md)
    - local reload, registry updates, delivery modes, and deployment-side changes
 
 ## Core Doc Map
@@ -84,6 +90,8 @@ Older `docs/sdk/example-bundle` sample docs are no longer part of the bundle pat
 | Configure local runtime, descriptors, and CLI loop | [build/how-to-configure-and-run-bundle-README.md](build/how-to-configure-and-run-bundle-README.md) |
 | Builder playbook | [build/how-to-write-bundle-README.md](build/how-to-write-bundle-README.md) |
 | Reusable SDK/platform building blocks for bundle assembly | [build/how-to-assemble-bundle-with-sdk-building-blocks-README.md](build/how-to-assemble-bundle-with-sdk-building-blocks-README.md) |
+| Recurring bundle implementation recipes and failure modes | [build/how-to-avoid-common-bundle-integration-failures-README.md](build/how-to-avoid-common-bundle-integration-failures-README.md) |
+| Mount an existing SDK subsystem as a complete bundle surface | [bundle-subsystem-integration-README.md](bundle-subsystem-integration-README.md) |
 | Testing playbook | [build/how-to-test-bundle-README.md](build/how-to-test-bundle-README.md) |
 | Study the reference bundle | [versatile-reference-bundle-README.md](versatile-reference-bundle-README.md) |
 | Choose the SDK entrypoint base class | [bundle-entrypoint-classes-README.md](bundle-entrypoint-classes-README.md) |

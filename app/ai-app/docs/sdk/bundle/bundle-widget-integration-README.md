@@ -7,6 +7,7 @@ keywords: ["bundle widget contract", "iframe widget contract", "widget source fo
 updated_at: 2026-06-06
 see_also:
   - ks:docs/sdk/bundle/bundle-interfaces-README.md
+  - ks:docs/sdk/bundle/bundle-subsystem-integration-README.md
   - ks:docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
   - ks:docs/sdk/bundle/ui-components-lifecycle-README.md
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
@@ -35,6 +36,12 @@ Core contract:
 - the widget should use Socket.IO `data_bus.publish` for durable non-chat
   bundle-owned state changes
 - tenant, project, bundle id, and auth material come from runtime config
+
+If the widget belongs to an existing SDK subsystem, this widget contract is
+only one layer of the integration. Also wire the subsystem entrypoint
+surface, config, visibility, APIs, tools, event policies, resolvers, storage,
+and tests. Use [Bundle Subsystem Integration](bundle-subsystem-integration-README.md)
+before mounting shared UI such as memory or canvas.
 
 For the full lifecycle of discovery, preload, build, request-time fallback,
 shared-storage locks, signatures, and concurrent workers, see

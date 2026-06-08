@@ -10,6 +10,8 @@ see_also:
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
+  - ks:docs/sdk/bundle/build/how-to-avoid-common-bundle-integration-failures-README.md
+  - ks:docs/sdk/bundle/bundle-subsystem-integration-README.md
   - ks:docs/sdk/bundle/bundle-client-communication-README.md
   - ks:docs/sdk/bundle/bundle-events-README.md
   - ks:docs/sdk/bundle/bundle-transports-README.md
@@ -56,6 +58,9 @@ It does not replace:
   for BotFather and Telegram provider setup
 - [email-external-prereq-README.md](../../integrations/email/email-external-prereq-README.md)
   for Google Cloud and Gmail OAuth provider setup
+- [bundle-subsystem-integration-README.md](../bundle-subsystem-integration-README.md)
+  for the checklist used when a local bundle mounts existing SDK subsystems
+  such as memory or canvas
 
 Before running or changing CLI commands, use the canonical schemas in
 [how-to-configure-and-run-bundle-README.md#canonical-cli-flow-schemas](how-to-configure-and-run-bundle-README.md#canonical-cli-flow-schemas).
@@ -63,40 +68,16 @@ They define the distinction between `init`, `refresh`, `bundle config apply`,
 `bundle reload`, and `export`. This page is the agent runbook that applies
 those flows.
 
-Critical Python import rule:
+Common failure smoke checks:
 
-- when this setup exposes bundle import failures, check that bundle-local code
-  uses package-relative imports such as `from .services.storage import ...`
-- do not patch around import failures by adding top-level `services`, `apps`,
-  `tools`, or `resources` imports for bundle-local modules
-- for bundle-local tools, check `tools_descriptor.py`: local tools should be
-  registered with `ref: "tools/name.py"` and imported with package-relative
-  imports such as `from ..services.storage import ...`; `module` is for
-  installed SDK/external modules
-- see [bundle-runtime-README.md#critical-bundle-local-import-rule](../bundle-runtime-README.md#critical-bundle-local-import-rule)
-
-Critical live-event smoke rule:
-
-- if a bundle UI expects live progress from a non-chat bundle operation, verify
-  the shared stream path instead of inventing a raw bundle SSE/WebSocket route
-- the client opens `/sse/stream` or Socket.IO, calls
-  `/api/integrations/.../operations/...`, passes `KDC-Stream-ID`, and listens
-  for `chat_service`
-- backend code emits with the request-bound communicator, usually
-  `comm.service_event(...)`
-- see [bundle-client-communication-README.md#non-chat-bundle-events-over-the-shared-stream](../bundle-client-communication-README.md#non-chat-bundle-events-over-the-shared-stream)
-
-Critical bundle-events smoke rule:
-
-- if a bundle has wizard/canvas/snapshot flows, verify the runtime can load
-  `events_descriptor.py` and the referenced event modules
-- if the UI sends authored external events, verify payloads include
-  `payload.target.agent_id` and `external_events[].event_source_id`
-- if the bundle exposes refs such as `ext:...`, verify the namespace rehoster
-  is registered and `react.pull` returns an ordinary `fi:` ref
-- use [bundle-events-README.md](../bundle-events-README.md) for the bundle-side
-  contract and [event-source-README.md](../../agents/react/event-source/event-source-README.md)
-  for policy phases
+- when setup exposes bundle import, widget, live-event, Data Bus, authored
+  event, or resolver failures, route the agent to
+  [how-to-avoid-common-bundle-integration-failures-README.md](how-to-avoid-common-bundle-integration-failures-README.md)
+  instead of patching around symptoms
+- if a bundle mounts memory, canvas, tasks, Telegram, delivery, or another
+  reusable SDK subsystem, use
+  [bundle-subsystem-integration-README.md](../bundle-subsystem-integration-README.md)
+  as the smoke checklist
 
 ## Agent Contract
 

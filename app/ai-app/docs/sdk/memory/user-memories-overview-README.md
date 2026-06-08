@@ -5,6 +5,7 @@ summary: "Overview of SDK cross-conversation user memory: durable Postgres stora
 tags: ["sdk", "memory", "user-memory", "postgres", "pgvector", "bundle-tools"]
 keywords: ["cross-conversation memory", "user_memory_entries", "user_memory_events", "user_memory_aliases", "MemorySignal", "MemoryScope", "hotset", "semantic memory search", "me memory id", "memory rendering"]
 see_also:
+  - ks:docs/sdk/bundle/bundle-subsystem-integration-README.md
   - ks:docs/sdk/memory/how-react-remembers-README.md
   - ks:docs/sdk/memory/user-memories-operational-README.md
   - ks:docs/sdk/memory/user-memories-react-integration-README.md
@@ -22,6 +23,13 @@ Code lives in:
 ```text
 kdcube_ai_app/apps/chat/sdk/context/memory/
 ```
+
+For bundle mounting details, read
+[Bundle Subsystem Integration](../bundle/bundle-subsystem-integration-README.md).
+Memory is a reusable subsystem: inheriting `MemoryEntrypointMixin` or
+`BaseEntrypointWithMemory` is necessary but not sufficient. The consuming
+bundle must also configure memory enablement, widget/static UI, visibility,
+tools, announce, storage/schema, and tests.
 
 ## Goals
 

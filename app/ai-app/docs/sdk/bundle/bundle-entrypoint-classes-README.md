@@ -7,6 +7,7 @@ keywords: ["BaseEntrypoint", "BaseEntrypointWithEconomics", "MemoryEntrypointMix
 updated_at: 2026-05-22
 see_also:
   - ks:docs/sdk/bundle/bundle-developer-guide-README.md
+  - ks:docs/sdk/bundle/bundle-subsystem-integration-README.md
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
   - ks:docs/sdk/bundle/bundle-widget-integration-README.md
   - ks:docs/sdk/bundle/bundle-lifecycle-README.md
@@ -111,6 +112,12 @@ turn execution must participate in economics policy.
 Use memory entrypoints when the bundle should expose KDCube memory behavior:
 memory widgets, memory tools, memory announcements, reconciliation, snapshots,
 or memory maintenance jobs.
+
+Choosing the entrypoint base is only the first layer of subsystem integration.
+For a reusable subsystem such as memory or canvas, also verify configuration
+defaults, widget build config, visibility, APIs, tools, event policies,
+resolvers, storage/schema hooks, and tests. See
+[Bundle Subsystem Integration](bundle-subsystem-integration-README.md).
 
 For both economics and memory, prefer:
 

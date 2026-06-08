@@ -17,6 +17,7 @@ see_also:
   - ks:docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
   - ks:docs/sdk/bundle/build/how-to-write-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
+  - ks:docs/sdk/bundle/build/how-to-avoid-common-bundle-integration-failures-README.md
   - ks:docs/sdk/bundle/build/how-to-bootstrap-local-bundle-runtime-as-coding-agent-README.md
   - ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-release-bundle-content-README.md
@@ -28,6 +29,7 @@ see_also:
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-new-cli-README.md
   - ks:docs/sdk/bundle/bundle-developer-guide-README.md
   - ks:docs/sdk/bundle/bundle-agent-integration-README.md
+  - ks:docs/sdk/bundle/bundle-subsystem-integration-README.md
   - ks:docs/sdk/tools/custom-tools-README.md
   - ks:docs/sdk/tools/tool-subsystem-README.md
   - ks:docs/sdk/events/event-subsystem-README.md
@@ -67,47 +69,18 @@ This page is not the primary source for bundle design or test strategy.
 It documents the supported local CLI/runtime workflow for descriptor-backed
 bundle development.
 
-Critical Python import rule:
+Runtime failure recipes:
 
-- bundle-local code must use package-relative imports such as
-  `from .services.storage import ...`
-- do not import bundle-local folders as top-level packages such as `services`,
-  `apps`, `tools`, or `resources`
-- the same applies to `tools_descriptor.py` and bundle-local tools; local tool
-  specs should use `ref: "tools/name.py"`, while `module` is reserved for
-  installed SDK/external modules
-- see [bundle-runtime-README.md#critical-bundle-local-import-rule](../bundle-runtime-README.md#critical-bundle-local-import-rule)
-
-Critical widget/browser runtime rule:
-
-- opening KDCube inside another app does not make widget APIs call the outer
-  app's origin
-- widget API base must be the KDCube frame/runtime origin from `baseUrl`, or the
-  widget frame's own `window.location.origin` as fallback
-- if a deployment intentionally serves KDCube under the host app origin through
-  a reverse proxy, that proxy must route `/platform`, `/api`, streaming paths,
-  and `/api/integrations/...`
-- do not fix widget networking by hardcoding local ports or external host
-  application URLs
-- if a widget or bundle UI needs live updates from a non-chat operation, reuse
-  `/sse/stream` or Socket.IO and pass `KDC-Stream-ID` on the
-  `/api/integrations/.../operations/...` call; backend code emits with the
-  request-bound communicator
-- see [bundle-client-communication-README.md#non-chat-bundle-events-over-the-shared-stream](../bundle-client-communication-README.md#non-chat-bundle-events-over-the-shared-stream)
-
-Critical event-source runtime rule:
-
-- `events_descriptor.py`, `events/*.py`, tool `@event_source(...)`
-  declarations, and `@artifact_namespace_rehoster(...)` handlers are bundle
-  source code
-- after changing them, use the normal bundle source loop:
-  `kdcube bundle reload <bundle_id>` for a local-path bundle, or update the
-  git `ref` and reload/refresh according to the descriptor flow for a git
+- for recurring mistakes in bundle-local imports, widget origins/assets,
+  widget visibility, live operation events, Data Bus boundaries, authored
+  event-source policies, and resolver ownership, use
+  [how-to-avoid-common-bundle-integration-failures-README.md](how-to-avoid-common-bundle-integration-failures-README.md)
+- after changing `events_descriptor.py`, `events/*.py`, tool
+  `@event_source(...)` declarations, or
+  `@artifact_namespace_rehoster(...)` handlers, use the normal bundle source
+  loop: `kdcube bundle reload <bundle_id>` for a local-path bundle, or update
+  the git `ref` and reload/refresh according to the descriptor flow for a git
   bundle
-- custom artifact namespace resolution comes from the loaded rehoster for that
-  namespace; descriptors select the bundle source/ref and deployment config
-- read [Bundle Events](../bundle-events-README.md) before debugging wizard,
-  canvas, snapshot, or `ext:...` materialization behavior
 
 Important:
 
@@ -146,8 +119,13 @@ SDK block configuration rule:
 
 - when a bundle uses an SDK integration or solution, configure it through
   bundle props/secrets and user settings rather than hardcoded local constants
+- when a bundle mounts an existing SDK subsystem, configure every layer of that
+  subsystem: main enable flag, widget/tool/announce flags, `ui.widgets`,
+  `enabled.*`, `visibility.*`, resolver/policy modules, and storage settings
 - use [how-to-assemble-bundle-with-sdk-building-blocks-README.md](how-to-assemble-bundle-with-sdk-building-blocks-README.md)
   to find the package-level docs
+- use [bundle-subsystem-integration-README.md](../bundle-subsystem-integration-README.md)
+  for the exact subsystem mounting checklist
 - use the package external-prerequisites doc when provider setup is outside
   KDCube, for example Telegram BotFather/webhook setup or Google Cloud OAuth
   setup

@@ -9,10 +9,12 @@ see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
+  - ks:docs/sdk/bundle/build/how-to-avoid-common-bundle-integration-failures-README.md
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-release-bundle-content-README.md
   - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
   - ks:docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
+  - ks:docs/sdk/bundle/bundle-subsystem-integration-README.md
   - ks:docs/sdk/bundle/bundle-developer-guide-README.md
   - ks:docs/sdk/bundle/versatile-reference-bundle-README.md
   - ks:docs/sdk/bundle/bundle-entrypoint-classes-README.md
@@ -112,84 +114,15 @@ Configuration/runtime rule:
 - use this page for how to structure the bundle code
 - use [how-to-configure-and-run-bundle-README.md](how-to-configure-and-run-bundle-README.md) for `assembly.yaml`, `bundles.yaml`, `bundles.secrets.yaml`, `kdcube refresh --upstream --build`, and `kdcube info`
 
-Critical Python import rule:
+Common failure recipes:
 
-- bundle-local code must use package-relative imports such as
-  `from .services.storage import ...`
-- do not import bundle-local folders as top-level packages such as `services`,
-  `apps`, `tools`, or `resources`
-- for bundle-local tools, register them in `TOOLS_SPECS` with `ref` and import
-  same-bundle helpers with package-relative imports; use `module` only for
-  installed SDK/external modules
-- see [bundle-runtime-README.md#critical-bundle-local-import-rule](../bundle-runtime-README.md#critical-bundle-local-import-rule)
-
-Critical widget/browser rule:
-
-- widget and generated HTML API clients must be frame-origin aware
-- buildable `ui/main` apps and source-folder widgets must use relative built
-  asset URLs. For Vite set `base: './'`; built HTML should contain
-  `./assets/...`, not `/assets/...`
-- request runtime `baseUrl` from the KDCube config bridge and use it to build
-  `/api/integrations/...` operation URLs
-- if runtime config is unavailable, fall back only to that frame's own
-  `window.location.origin`
-- do not use `window.top.location`, `document.referrer`, or an embedding host
-  page URL as the API base
-- read [bundle-widget-integration-README.md#source-folder-widget-apps](../bundle-widget-integration-README.md#source-folder-widget-apps)
-  and [bundle-widget-integration-README.md#frame-origin-and-api-base-url](../bundle-widget-integration-README.md#frame-origin-and-api-base-url)
-  before writing widget networking code
-
-Critical bundle-to-browser event rule:
-
-- SSE and Socket.IO streams are reusable session event transports, not only
-  chat-turn transports
-- if a widget or bundle UI calls a non-chat `/api/integrations/.../operations`
-  endpoint and expects live updates, keep an open `/sse/stream` or Socket.IO
-  connection and pass the connected peer id as `KDC-Stream-ID`
-- in the bundle operation, use the request-bound communicator from
-  `get_current_comm()` or `self.comm`, then emit `comm.service_event(...)`
-- `broadcast=False` targets that peer when `KDC-Stream-ID` was supplied;
-  `broadcast=True` sends to all connected peers in the same authenticated
-  session
-- read the concrete client and bundle recipe before implementing this:
-  [bundle-client-communication-README.md#non-chat-bundle-events-over-the-shared-stream](../bundle-client-communication-README.md#non-chat-bundle-events-over-the-shared-stream)
-
-Critical Data Bus rule:
-
-- use Socket.IO `data_bus.publish` for durable non-chat domain messages that
-  mutate bundle-owned state
-- register entrypoint handlers with `@data_bus_handler(...)`
-- accepted messages go to bundle-scoped Redis Streams and processor-owned
-  workers; bundles do not start their own Redis consumers
-- route handlers by `messages[].subject`
-- use `idempotency="required"` for mutations
-- use `partition_by="object_ref"` and `ordering="serial_per_partition"` for
-  shared objects such as canvases, boards, issues, and documents
-- Data Bus does not write conversation `external_events[]` or timeline entries
-  unless the bundle explicitly bridges a handled message into conversation
-  ingress
-- read [Data Bus](../../../service/comm/data-bus-README.md) and
-  [bundle-client-communication-README.md#data-bus-contract](../bundle-client-communication-README.md#data-bus-contract)
-  before implementing widget-driven domain mutations
-
-Critical bundle event-source rule:
-
-- use authored external events for product moments that should become agent
-  context, such as wizard assistance, canvas review, snapshot available, or
-  evidence uploaded
-- route those events with `payload.target.agent_id`; include `story_kind` and
-  `story_id` when the event belongs to a product-flow instance
-- handle them through the bundle's single `@on_reactive_event run(...)` method
-  and dispatch to internal agents by `agent_id`
-- tools are event sources; a tool can declare `@event_source(...)` and bind
-  policies such as `react_phase=block_production`
-- if event data or tool results expose compact external refs such as `ext:...`,
-  register `@artifact_namespace_rehoster(...)` in a loaded tool module or event
-  module
-- read [bundle-events-README.md](../bundle-events-README.md) before designing
-  wizard/canvas/snapshot flows or custom artifact refs
-- read [Bus Routing And Partitioning](../../../service/comm/bus-routing-and-partitioning-README.md)
-  for the compact field map across `agent_id`, `subject`, and `object_ref`
+- before editing bundle-local imports, widget networking, static assets,
+  widget visibility, live progress events, Data Bus mutations, authored event
+  policies, or resolver registration, read
+  [how-to-avoid-common-bundle-integration-failures-README.md](how-to-avoid-common-bundle-integration-failures-README.md)
+- before integrating memory, canvas, tasks, Telegram, delivery, or another
+  reusable SDK subsystem, read
+  [bundle-subsystem-integration-README.md](../bundle-subsystem-integration-README.md)
 
 Shared widget rule:
 

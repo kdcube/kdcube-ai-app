@@ -16,6 +16,7 @@ keywords:
     "canvas ui component",
   ]
 see_also:
+  - ks:docs/sdk/bundle/bundle-subsystem-integration-README.md
   - ks:docs/sdk/solutions/canvas/canvas-module-guide-README.md
   - ks:docs/sdk/solutions/canvas/pin-operations-README.md
   - ks:docs/sdk/solutions/canvas/pin-integration-README.md
@@ -34,6 +35,12 @@ object represented by a pin remains owned by its original subsystem.
 
 The SDK owns canvas mechanics. The composition bundle owns product routes,
 auth, mounted widgets, and subsystem resolver registration.
+
+For the bundle-level mounting checklist, read
+[Bundle Subsystem Integration](../../bundle/bundle-subsystem-integration-README.md).
+Canvas integration is a full subsystem integration: API routes, Data Bus
+handler, UI component source, tools, instructions, event policies, resolver
+registry, storage config, visibility, and tests must be wired together.
 
 ## Package Surface
 

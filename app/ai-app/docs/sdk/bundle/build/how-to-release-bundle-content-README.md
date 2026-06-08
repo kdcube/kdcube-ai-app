@@ -11,7 +11,9 @@ see_also:
   - ks:docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
   - ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
+  - ks:docs/sdk/bundle/build/how-to-avoid-common-bundle-integration-failures-README.md
   - ks:docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
+  - ks:docs/sdk/bundle/bundle-subsystem-integration-README.md
   - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
   - ks:docs/configuration/bundles-descriptor-README.md
   - ks:docs/configuration/bundles-secrets-descriptor-README.md
@@ -52,37 +54,16 @@ platform source/image changes and `bundle reload` for bundle changes.
 Do not rely on another release procedure when using this page.
 This page is the self-contained public bundle-builder procedure.
 
-Critical Python import rule:
+Release checks for common integration failures:
 
-- release validation must prove bundle-local code uses package-relative imports
-  such as `from .services.storage import ...`
-- do not bless top-level bundle-local imports such as `from services...`,
-  `from apps...`, or `import tools`
-- release validation must include bundle-local tool modules: local
-  `TOOLS_SPECS` entries use `ref: "tools/name.py"` and those tools use
-  package-relative imports such as `from ..services.storage import ...`
-- see [bundle-runtime-README.md#critical-bundle-local-import-rule](../bundle-runtime-README.md#critical-bundle-local-import-rule)
-
-Critical release check for browser surfaces:
-
-- if the release changes widgets, generated HTML apps, Mini Apps, or
-  browser-facing operation clients, verify they use the KDCube runtime/frame
-  origin for API calls
+- use [how-to-avoid-common-bundle-integration-failures-README.md](how-to-avoid-common-bundle-integration-failures-README.md)
+  before blessing changes to bundle-local imports, widgets, browser-facing
+  clients, live events, Data Bus, authored events, or resolver registration
+- if the release mounts or changes memory, canvas, tasks, Telegram, delivery,
+  or another reusable subsystem, validate the complete subsystem surface with
+  [bundle-subsystem-integration-README.md](../bundle-subsystem-integration-README.md)
 - release notes should not bless hardcoded `localhost`, host-app domains,
   `window.top.location`, or `document.referrer` as API base sources
-- use [bundle-widget-integration-README.md#frame-origin-and-api-base-url](../bundle-widget-integration-README.md#frame-origin-and-api-base-url)
-  as the release-time contract
-
-Critical release check for bundle events:
-
-- if the release adds authored external events, event-source policies, or
-  artifact namespace rehosters, release docs must name the event-source ids,
-  accepted UI payload shape, `agent_id` routing, `story_kind` / `story_id`
-  meaning, and artifact namespaces
-- release validation must prove event modules load and rehosters materialize
-  external refs such as `ext:...` into the expected `fi:` namespace
-- use [bundle-events-README.md](../bundle-events-README.md) as the
-  release-time contract
 
 ## 1. Release Decision With The User
 

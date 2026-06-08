@@ -9,7 +9,9 @@ see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
+  - ks:docs/sdk/bundle/build/how-to-avoid-common-bundle-integration-failures-README.md
   - ks:docs/sdk/bundle/build/how-to-write-bundle-README.md
+  - ks:docs/sdk/bundle/bundle-subsystem-integration-README.md
   - ks:docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
   - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
@@ -71,6 +73,17 @@ These 7 docs form the compact Tier 1 build baseline and should be available toge
 6. [../../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../../configuration/bundle-runtime-configuration-and-secrets-README.md)
 7. [how-to-configure-and-run-bundle-README.md](how-to-configure-and-run-bundle-README.md)
 
+Add [../bundle-subsystem-integration-README.md](../bundle-subsystem-integration-README.md)
+whenever the task mounts or changes an existing SDK subsystem such as memory,
+canvas, tasks, Telegram, or delivery. Plugin prompts should not inline that
+checklist; they should link to it.
+
+Add [how-to-avoid-common-bundle-integration-failures-README.md](how-to-avoid-common-bundle-integration-failures-README.md)
+whenever the task touches bundle-local imports, widget origins/assets, widget
+visibility, live events, Data Bus, authored event policies, or resolver
+registration. Plugin prompts should surface it as a recipe page, not duplicate
+its contents.
+
 This optional lifecycle doc should also be available:
 
 8. [how-to-release-bundle-content-README.md](how-to-release-bundle-content-README.md)
@@ -104,56 +117,11 @@ It is used for Telegram webhooks, OAuth/Cognito callbacks, and other
 callback/remote-control flows that need public HTTPS while the runtime is still
 on localhost.
 
-Python import rule that plugins must surface early:
-
-- bundle-local code must use package-relative imports such as
-  `from .services.storage import ...`
-- do not import bundle-local folders as top-level packages such as `services`,
-  `apps`, `tools`, or `resources`
-- this includes `tools_descriptor.py` and bundle-local tool modules: local
-  tools use `TOOLS_SPECS` `ref` entries and package-relative imports; `module`
-  is for installed SDK/external modules
-- route agents to [bundle-runtime-README.md#critical-bundle-local-import-rule](../bundle-runtime-README.md#critical-bundle-local-import-rule)
-  and [custom-tools-README.md#bundle-local-imports-from-ref-tools](../../tools/custom-tools-README.md#bundle-local-imports-from-ref-tools)
-  before they change bundle-local Python imports or tool descriptors
-
-Widget/API origin rule that plugins must surface early:
-
-- browser-facing bundle code must call KDCube APIs through the KDCube
-  frame/runtime origin
-- use `baseUrl` from the KDCube runtime config bridge first, then the widget
-  frame's own `window.location.origin` as fallback
-- do not use `window.top.location`, `document.referrer`, or the embedding host
-  page URL as the API base
-- route agents to [bundle-widget-integration-README.md#frame-origin-and-api-base-url](../bundle-widget-integration-README.md#frame-origin-and-api-base-url)
-  before they write widget or generated-static HTML networking code
-
-Widget/API live-event rule that plugins must surface early:
-
-- bundles are backend plus frontend applications; frontend progress from a
-  non-chat operation should use the existing platform event stream
-- browser code opens `/sse/stream` or Socket.IO, calls
-  `/api/integrations/.../operations/...`, and passes the connected peer id as
-  `KDC-Stream-ID`
-- bundle backend code emits through the request-bound communicator with
-  `comm.service_event(...)`
-- route agents to [bundle-client-communication-README.md#non-chat-bundle-events-over-the-shared-stream](../bundle-client-communication-README.md#non-chat-bundle-events-over-the-shared-stream)
-  before they add raw bundle WebSocket/SSE endpoints or custom relay plumbing
-
-Bundle event-source rule that plugins must surface early:
-
-- story-aware UI uses authored external events with `payload.target.agent_id`
-  and `external_events[].event_source_id`
-- use `story_kind` and `story_id` when an event belongs to a wizard, canvas,
-  case, draft, or other product-flow instance
-- tools are event sources; tool result rendering can be customized through
-  `@event_source(...)` phase policies such as `react_phase=block_production`
-- compact refs such as `ext:...` require a registered artifact namespace
-  rehoster; `react.pull` returns the materialized `fi:` path
-- route agents to [bundle-events-README.md](../bundle-events-README.md),
-  [event-subsystem-README.md](../../events/event-subsystem-README.md), and
-  [event-source-README.md](../../agents/react/event-source/event-source-README.md)
-  before they design wizard/canvas/snapshot flows or custom artifact refs
+The common failure recipes that plugins must surface early now live in
+[how-to-avoid-common-bundle-integration-failures-README.md](how-to-avoid-common-bundle-integration-failures-README.md).
+That page owns the recurring rules for bundle-local imports, widget origins and
+assets, widget visibility, live operation events, Data Bus boundaries, authored
+event-source policies, subsystem mounting, and resolver ownership.
 
 Preferred reading order:
 

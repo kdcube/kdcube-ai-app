@@ -9,12 +9,14 @@ see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/sdk/bundle/build/how-to-write-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
+  - ks:docs/sdk/bundle/build/how-to-avoid-common-bundle-integration-failures-README.md
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-bootstrap-local-bundle-runtime-as-coding-agent-README.md
   - ks:docs/sdk/bundle/build/how-to-release-bundle-content-README.md
   - ks:docs/sdk/bundle/bundle-agent-integration-README.md
   - ks:docs/sdk/bundle/bundle-entrypoint-classes-README.md
   - ks:docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
+  - ks:docs/sdk/bundle/bundle-subsystem-integration-README.md
   - ks:docs/sdk/bundle/versatile-reference-bundle-README.md
   - ks:docs/sdk/bundle/bundle-widget-integration-README.md
   - ks:docs/sdk/bundle/bundle-events-README.md
@@ -53,46 +55,22 @@ The testing loop normally uses `kdcube bundle reload <bundle_id>` after bundle
 source/config changes and `kdcube refresh ... --build` only after platform
 source/image changes.
 
-Critical Python import rule:
+Common failure tests:
 
-- bundle-local code must use package-relative imports such as
-  `from .services.storage import ...`
-- do not import bundle-local folders as top-level packages such as `services`,
-  `apps`, `tools`, or `resources`
-- this includes bundle-local tools referenced from `TOOLS_SPECS`; use
-  `ref: "tools/name.py"` for local tools and `module` only for installed
-  SDK/external modules
-- see [bundle-runtime-README.md#critical-bundle-local-import-rule](../bundle-runtime-README.md#critical-bundle-local-import-rule)
-
-Critical widget/browser test:
-
-- verify widget network requests call the KDCube hosted origin, not the
-  embedding host page origin
-- in browser devtools, a control-plane iframe opened from
-  `https://kdcube.example.com/platform/chat` should make widget/API calls to
-  `https://kdcube.example.com/api/...`
-- treat calls to `localhost`, `window.top`'s origin, or a host app domain as a
-  widget integration bug unless the deployment intentionally reverse-proxies all
-  KDCube paths under that same origin
-
-Critical event-source test:
-
-- if the bundle declares `events_descriptor.py`, prove every event module loads
-  through the same import mode as bundle-local tools
-- verify event-source ids, policy bindings, and custom artifact namespace
-  rehosters are discoverable by the ReAct event-source subsystem
-- for authored UI events, test the accepted payload shape:
-  `payload.target.agent_id`, optional `story_kind` / `story_id`,
-  `external_events[].event_source_id`, and
-  `external_events[].reactive`
-- for external refs such as `ext:...`, test that `react.pull` invokes the
-  rehoster and returns the expected `fi:` logical path plus physical path
+- use [how-to-avoid-common-bundle-integration-failures-README.md](how-to-avoid-common-bundle-integration-failures-README.md)
+  as the test checklist for bundle-local imports, widget origins/assets,
+  widget visibility, live operation events, Data Bus boundaries, authored
+  event-source policies, and resolver ownership
+- if a bundle mounts an SDK subsystem, use
+  [bundle-subsystem-integration-README.md](../bundle-subsystem-integration-README.md)
+  to test the whole mounted surface, not only the visible widget
 
 Use this together with:
 
 - [how-to-navigate-kdcube-docs-README.md](how-to-navigate-kdcube-docs-README.md)
 - [how-to-write-bundle-README.md](how-to-write-bundle-README.md)
 - [how-to-assemble-bundle-with-sdk-building-blocks-README.md](how-to-assemble-bundle-with-sdk-building-blocks-README.md)
+- [how-to-avoid-common-bundle-integration-failures-README.md](how-to-avoid-common-bundle-integration-failures-README.md)
 - [how-to-configure-and-run-bundle-README.md](how-to-configure-and-run-bundle-README.md)
 - [how-to-release-bundle-content-README.md](how-to-release-bundle-content-README.md)
 - [versatile-reference-bundle-README.md](../versatile-reference-bundle-README.md)

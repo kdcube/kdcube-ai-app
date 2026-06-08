@@ -18,6 +18,7 @@ keywords:
     "external_events",
   ]
 see_also:
+  - ks:docs/sdk/bundle/bundle-subsystem-integration-README.md
   - ks:docs/sdk/solutions/canvas/canvas-module-guide-README.md
   - ks:docs/sdk/solutions/canvas/pin-operations-README.md
   - ks:docs/sdk/solutions/canvas/external-subsystem-event-source-products-pins-README.md
@@ -31,6 +32,10 @@ The canvas module should be reusable. It cannot hardcode task-tracker,
 platform-file, memory, knowledge, or source-pool behavior. A bundle that embeds
 canvas registers object resolvers for the namespaces it wants canvas to
 understand.
+
+The bundle-level checklist for mounting canvas lives in
+[Bundle Subsystem Integration](../../bundle/bundle-subsystem-integration-README.md).
+This page covers the pin/object resolver part of that integration.
 
 A composition bundle can integrate several subsystems. The task-tracker pilot
 currently uses this shape:

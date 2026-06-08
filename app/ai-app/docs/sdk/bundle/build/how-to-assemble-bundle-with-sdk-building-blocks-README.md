@@ -10,6 +10,7 @@ see_also:
   - ks:docs/sdk/bundle/build/how-to-write-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
+  - ks:docs/sdk/bundle/build/how-to-avoid-common-bundle-integration-failures-README.md
   - ks:docs/sdk/bundle/build/how-to-bootstrap-local-bundle-runtime-as-coding-agent-README.md
   - ks:docs/sdk/solutions/tasks-README.md
   - ks:docs/sdk/integrations/README.md
@@ -26,6 +27,7 @@ see_also:
   - ks:docs/sdk/bundle/bundle-client-communication-README.md
   - ks:docs/sdk/bundle/bundle-events-README.md
   - ks:docs/sdk/bundle/bundle-entrypoint-classes-README.md
+  - ks:docs/sdk/bundle/bundle-subsystem-integration-README.md
   - ks:docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
   - ks:docs/sdk/bundle/bundle-runtime-README.md
@@ -72,64 +74,26 @@ or the bundle needs domain-specific storage and prompts.
 When a feature becomes reusable across bundles, move it into an SDK integration
 or solution package and update this page.
 
-Critical Python import rule:
+If the selected block is an existing SDK subsystem, integration means mounting
+the whole subsystem contract, not only importing its widget or one helper. Read
+[Bundle Subsystem Integration](../bundle-subsystem-integration-README.md) and
+wire entrypoint mixins/decorators, config, visibility, UI source, APIs, tools,
+skills, event policies, resolvers, storage/schema hooks, transport, and tests
+as one unit.
 
-- bundle-local code must use package-relative imports such as
-  `from .services.storage import ...`
-- do not import bundle-local folders as top-level packages such as `services`,
-  `apps`, `tools`, or `resources`
-- this includes `tools_descriptor.py` and bundle-local tool modules; use
-  `TOOLS_SPECS` `ref` entries for bundle-local tools and `module` entries only
-  for installed SDK/external modules
-- see [Bundle Runtime](../bundle-runtime-README.md#critical-bundle-local-import-rule)
-  and [Custom Tools](../../tools/custom-tools-README.md#bundle-local-imports-from-ref-tools)
-
-Critical widget/browser rule:
-
-- widgets and generated static HTML must call KDCube through the KDCube
-  frame/runtime origin
-- buildable `ui/main` apps and source-folder widgets must emit relative asset
-  URLs. For Vite set `base: './'` and verify built `index.html` contains
-  `./assets/...`, not `/assets/...`
-- use runtime `baseUrl` from `CONFIG_REQUEST` / `CONN_RESPONSE`, with
-  `window.location.origin` of the widget frame as the fallback
-- do not use the embedding host page origin, `window.top.location`, or
-  `document.referrer` as an API base
-- see [Bundle Widget Integration](../bundle-widget-integration-README.md#source-folder-widget-apps)
-  and [Bundle Widget Integration](../bundle-widget-integration-README.md#frame-origin-and-api-base-url)
-  before implementing any browser-facing API client
-
-Critical live-event rule:
-
-- do not create bundle-owned raw WebSocket or raw SSE endpoints just to stream
-  progress from a bundle operation
-- reuse the platform SSE or Socket.IO session stream; the browser passes the
-  connected peer id as `KDC-Stream-ID` on the `/api/integrations/...`
-  operation call
-- bundle code emits via the request-bound communicator
-  (`get_current_comm()` / `self.comm`) with `comm.service_event(...)`
-- read the exact client and bundle recipe:
-  [Bundle Client Communication: non-chat bundle events over the shared stream](../bundle-client-communication-README.md#non-chat-bundle-events-over-the-shared-stream)
-
-Critical event-source rule:
-
-- use authored external events for story-aware UI moments such as wizard
-  assistance, canvas review, saved snapshot, or uploaded evidence
-- tools are event sources too: `tool_id` is the `event_source_id`, and
-  `tool_call_id` is the `event_id`
-- bind event-source policies by `react_phase`; `block_production` owns how a
-  tool result or authored event becomes timeline blocks and artifact rows
-- when event data carries an external artifact URI such as `ext:...`, register
-  an artifact namespace rehoster in a loaded tool module or event module so
-  `react.pull` can materialize it as a normal `fi:` ref
-- read [Bundle Events](../bundle-events-README.md) and
-  [React Event Sources](../../agents/react/event-source/event-source-README.md)
-  before building wizard/canvas/snapshot flows or custom artifact refs
+After selecting the block, keep
+[How To Avoid Common Bundle Integration Failures](how-to-avoid-common-bundle-integration-failures-README.md)
+open while implementing. That page owns the recurring sharp rules for
+bundle-local imports, widget origins/assets, visibility gates, live events,
+Data Bus boundaries, authored events, subsystem mounting, and resolver
+ownership.
 
 ## Current Reusable Blocks
 
 | Need | Use | Primary docs |
 | --- | --- | --- |
+| Durable user memories, memory widget, memory tools, reconciliation, and `mem:` refs | `MemoryEntrypointMixin` / `BaseEntrypointWithMemory` plus `kdcube_ai_app.apps.chat.sdk.context.memory` | [Bundle Subsystem Integration](../bundle-subsystem-integration-README.md), [User Memories Overview](../../memory/user-memories-overview-README.md) |
+| Versioned collaborative board, pins, canvas tools, canvas ANNOUNCE/timeline policies, and object resolver registry | `kdcube_ai_app.apps.chat.sdk.solutions.canvas` | [Canvas SDK Solution](../../solutions/canvas/canvas-sdk-solution-README.md), [Bundle Subsystem Integration](../bundle-subsystem-integration-README.md) |
 | Saved tasks, schedules, fresh executions, execution journals, output recovery | `kdcube_ai_app.apps.chat.sdk.solutions.tasks` | [Tasks SDK Solution](../../solutions/tasks-README.md) |
 | Gmail/iCloud accounts, OAuth/settings, email attachment materialization, Email MCP, Claude Code email processing | `kdcube_ai_app.apps.chat.sdk.integrations.email` | [Email Integration](../../integrations/email/README.md) |
 | Telegram webhook, Bot API rendering, progress streaming, Mini App auth, widget operations, user registry, signed downloads | `kdcube_ai_app.apps.chat.sdk.integrations.telegram` | [Telegram Integration](../../integrations/telegram/README.md) |

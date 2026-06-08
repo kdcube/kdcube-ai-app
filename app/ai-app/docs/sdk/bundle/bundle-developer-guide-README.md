@@ -9,6 +9,7 @@ see_also:
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
   - ks:docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
   - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
+  - ks:docs/sdk/bundle/bundle-subsystem-integration-README.md
   - ks:docs/sdk/bundle/versatile-reference-bundle-README.md
   - ks:docs/sdk/bundle/bundle-entrypoint-classes-README.md
   - ks:docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
@@ -31,6 +32,7 @@ Use it together with:
 
 - [build/how-to-configure-and-run-bundle-README.md](build/how-to-configure-and-run-bundle-README.md)
 - [build/how-to-assemble-bundle-with-sdk-building-blocks-README.md](build/how-to-assemble-bundle-with-sdk-building-blocks-README.md)
+- [bundle-subsystem-integration-README.md](bundle-subsystem-integration-README.md)
 - [versatile-reference-bundle-README.md](versatile-reference-bundle-README.md)
 - [bundle-entrypoint-classes-README.md](bundle-entrypoint-classes-README.md)
 - [bundle-properties-and-secrets-lifecycle-README.md](bundle-properties-and-secrets-lifecycle-README.md)
@@ -62,6 +64,13 @@ Read in this order:
 The assembly map is the fastest way to find reusable Tasks, Email, Telegram,
 Delivery, web/rendering/exec tools, storage, widgets, jobs, MCP, and Claude
 Code blocks before writing a bundle-local service.
+
+When the selected reusable block is an SDK subsystem, read
+[bundle-subsystem-integration-README.md](bundle-subsystem-integration-README.md)
+before wiring it. A subsystem integration is a full bundle surface:
+entrypoint mixins/decorators, config, widget visibility, UI source, APIs,
+tools, skills, event policies, resolvers, storage/schema hooks, transport, and
+tests.
 
 Critical Python import rule:
 
