@@ -283,15 +283,35 @@ Checklist:
   instructions
 - document which tool operations are allowed for each object type
 
+The connection pattern for reusable subsystem instructions is explicit:
+
+1. Import the SDK instruction from the subsystem module, for example
+   `kdcube_ai_app.apps.chat.sdk.solutions.canvas.instructions`.
+2. Compose that stable instruction with the bundle/domain instruction.
+3. Pass the result as `additional_instructions` to ReAct construction.
+4. Register tools, event policies, skills, and resolvers separately. The
+   instruction explains semantics; it does not expose `canvas.patch`, render
+   `[CANVAS BOARD]`, or register `event.canvas.focus` by itself.
+
 Canvas example:
 
 ```python
+from kdcube_ai_app.apps.chat.sdk.solutions.canvas.instructions import (
+    CANVAS_REACT_ADDITIONAL_INSTRUCTIONS,
+)
+
 TOOLS_SPECS = [
     {
         "module": "kdcube_ai_app.apps.chat.sdk.solutions.canvas.tools",
         "class": "CanvasToolsPlugin",
     },
 ]
+
+ADDITIONAL_INSTRUCTIONS = (
+    PRODUCT_REACT_ADDITIONAL_INSTRUCTIONS
+    + "\n\n"
+    + CANVAS_REACT_ADDITIONAL_INSTRUCTIONS
+)
 ```
 
 The canvas tool documentation should describe canvas collaboration. It should

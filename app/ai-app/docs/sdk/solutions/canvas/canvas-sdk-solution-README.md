@@ -189,7 +189,10 @@ from kdcube_ai_app.apps.chat.sdk.solutions.canvas.instructions import (
 The instructions explain:
 
 - `[CANVAS BOARD]` ANNOUNCE is live board state.
-- `[CANVAS FOCUSED CONTEXT]` is user-selected turn-local priority context.
+- `[CANVAS FOCUSED CONTEXT]` is turn-local selected/multi-selected card
+  context for batch operations on the attached board.
+- Individual pins dragged from canvas into chat render as their proxied objects
+  (`task:`, `mem:`, `fi:`, `ext:`, etc.), not as canvas-focus events.
 - `canvas.read` is for exact hidden state.
 - `canvas.patch` is the only agent write path.
 - Agents do not move or resize existing cards.
@@ -268,7 +271,7 @@ This is the intended SDK boundary:
 
 | Layer | Owns |
 | --- | --- |
-| Canvas SDK policies | Text shape for `[CANVAS STATE]`, `[CANVAS BOARD]`, `[CANVAS FOCUS]`, and `[CANVAS FOCUSED CONTEXT]`. |
+| Canvas SDK policies | Text shape for `[CANVAS STATE]`, `[CANVAS BOARD]`, `[CANVAS FOCUS]`, and `[CANVAS FOCUSED CONTEXT]`. Focus means selected/multi-selected cards on a board. |
 | Composition bundle wrappers | Event-source ids, event-policy ids, storage prefixes, and compatibility metadata keys. |
 | Domain resolvers | Object-specific previews, open/download/rehost actions for refs such as `task:`, `mem:`, `fi:`, and `ks:`. |
 

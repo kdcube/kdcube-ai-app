@@ -81,6 +81,20 @@ wire entrypoint mixins/decorators, config, visibility, UI source, APIs, tools,
 skills, event policies, resolvers, storage/schema hooks, transport, and tests
 as one unit.
 
+For chat-owning bundles that mount an agent-facing SDK subsystem, wire the
+agent surface explicitly:
+
+1. Import the subsystem's stable instruction constant, for example
+   `CANVAS_REACT_ADDITIONAL_INSTRUCTIONS` from
+   `kdcube_ai_app.apps.chat.sdk.solutions.canvas.instructions`.
+2. Compose it with the bundle/domain instruction in bundle code. Keep this
+   stable; do not put per-turn state or selected objects into cached
+   instructions.
+3. Pass the composed text as `additional_instructions` when constructing ReAct.
+4. Register the subsystem tools and event policies separately through
+   `tools_descriptor.py` and `events_descriptor.py`. Instructions alone do not
+   expose tools, render timeline/ANNOUNCE blocks, or make refs resolvable.
+
 After selecting the block, keep
 [How To Avoid Common Bundle Integration Failures](how-to-avoid-common-bundle-integration-failures-README.md)
 open while implementing. That page owns the recurring sharp rules for

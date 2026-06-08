@@ -7,7 +7,9 @@ When a bundle attaches this canvas module, live canvas state can be rendered
 for ReAct in ANNOUNCE. Treat that ANNOUNCE content as non-cached, current
 working context for the turn.
 
-The canvas renderer currently contributes two model-facing sections:
+The canvas renderer contributes one model-facing board section when the canvas
+object itself is attached, and can add one optional selection/focus section
+when selected cards are part of the request:
 
 1. `[CANVAS BOARD]`
    This is the current live board state. It includes the canvas name/id/uri,
@@ -19,10 +21,19 @@ The canvas renderer currently contributes two model-facing sections:
    canvas JSON directly.
 
 2. `[CANVAS FOCUSED CONTEXT]`
-   This lists canvas cards/refs the user explicitly dragged, pinned, selected,
-   or attached into chat for this request. Treat focused cards as the user's
-   priority context. Inspect focused cards before broader canvas context unless
-   the user asks otherwise.
+   This is optional canvas selection context for the same board/revision. It is
+   emitted when the user has selected or multi-selected cards on the canvas and
+   asks about that selection, for example "analyze selected cards" or other
+   batch operations over the board selection. It carries selected card ids/refs
+   plus canvas provenance. Treat it as a turn-local selection over canvas
+   cards, not as a new object identity.
+
+Cards dragged from canvas into chat are not rendered as a special canvas-focus
+section. They are rendered as the objects they proxy: `mem:` as memory context,
+`task:` as task/issue context, `fi:` as a platform artifact, canvas-owned
+`ext:` refs as canvas-owned user/assistant content, and so on. Canvas
+provenance may appear as metadata such as `canvas_context`, but the canonical
+object ref remains the identity.
 
 Canvas read/write behavior:
 - Use the map/legend for awareness. Use `canvas.read` only when exact hidden
@@ -37,18 +48,23 @@ Canvas read/write behavior:
   turn ends. In a later turn, re-read or wait for a fresh canvas event if the
   board is relevant.
 
-Card and ref behavior:
+Card placement and ref behavior:
 - Map labels are for spatial reasoning. For patching existing cards, use
   `card_id` values from the legend or from `canvas.read`.
+- `placement=placed` means the card is visible on the board map with a rect.
+  `placement=floating` means the card exists in the canvas revision but is not
+  part of the placed spatial map yet. `placement=suggested` is a pending
+  assistant/user suggestion waiting for user acceptance or arrangement.
+  `placement=trashed` means it is in the persisted bin.
 - `ext:` and `fi:` refs are pull/readable when the visible preview is missing
   or insufficient. `mem:`, `so:`, and `task:` refs use their subsystem tools or
   resolvers.
 - Canvas-owned cards are hosted by the bundle, not by the platform
   conversation artifact store:
   - `user.text` is user-authored text created on the canvas and remains an
-    `ext:` ref when focused into chat.
+    `ext:` ref when attached into chat.
   - `user.attachment` is a user upload created on the canvas and remains an
-    `ext:` ref when focused into chat.
+    `ext:` ref when attached into chat.
   - `agent.text` is assistant-authored text created on the canvas through
     `canvas.patch` or dragged from an assistant response; it is also an `ext:`
     ref.
@@ -75,8 +91,8 @@ Semantics:
   they are not the board identity.
 - Snapshot context is read-only informative state. It is not editable canvas
   state and should not be patched through canvas tools.
-- Focus is turn-local user intent. It does not create, delete, or move canvas
-  cards by itself.
+- Attaching a pin to chat is turn-local user intent about the proxied object.
+  It does not create, delete, or move canvas cards by itself.
 - Positioning existing cards is the user's/UI's responsibility. Do not move,
   resize, or arrange existing cards.
 """.strip()

@@ -40,8 +40,8 @@ The canvas is a named, versioned, collaborative board of pins. It is not a
 ticket, not a conversation, and not a timeline summary. A ticket, memory, file,
 search result, user note, user upload, or assistant-produced object can be
 pinned on the board as a card. The board gives the user a visual way to collect
-context, focus a subset into chat, and receive assistant outputs back as
-suggested cards.
+context, share a selected subset as canvas focus, attach individual proxied
+objects into chat, and receive assistant outputs back as suggested cards.
 
 Related docs:
 
@@ -62,6 +62,15 @@ card             one pin on the board
 logical_path     ref to the object behind a card
 placement        placed, floating, suggested, or trashed
 ```
+
+Placement semantics:
+
+| Placement | Meaning |
+|---|---|
+| `placed` | Card is visible in the board spatial map and has a rect. |
+| `floating` | Card exists in the canvas revision but is not part of the placed spatial map yet. |
+| `suggested` | Card is a pending suggestion waiting for user acceptance or arrangement. |
+| `trashed` | Card is persisted in the bin. |
 
 The user can have multiple named canvases. A canvas may be attached to any
 selected conversation as context. Opening a canvas should not force creation of
@@ -101,7 +110,7 @@ These are not platform-managed chat replicas:
 - Assistant text put on canvas by `canvas.patch` is a canvas-owned `agent.text`
   object with an `ext:` ref.
 
-If a canvas-owned card is focused into chat, it remains an `ext:` ref. Focusing
+If a canvas-owned card is attached into chat, it remains an `ext:` ref. Attaching
 does not convert it into a chat prompt, chat attachment, or `fi:` artifact.
 
 Cards are proxies to objects. For resolver-backed pins, the card id is the
@@ -212,14 +221,14 @@ sends `external_events[]` before the reactive prompt. Typical order:
 
 ```text
 event.canvas          latest board revision, non-reactive
-event.canvas.focus    focused cards/pins, non-reactive
+event.canvas.focus    selected/multi-selected cards on that board, non-reactive
 event.snapshot        read-only task/wizard state when attached, non-reactive
 event.user.prompt     chat request, reactive
 ```
 
-The canvas event body is rendered into ANNOUNCE as `[CANVAS BOARD]`. Focus is
-rendered as `[CANVAS FOCUSED CONTEXT]`. Timeline rendering should show compact
-facts and causality, not dump full board JSON.
+The canvas event body is rendered into ANNOUNCE as `[CANVAS BOARD]`. Canvas
+selection focus is rendered as `[CANVAS FOCUSED CONTEXT]`. Timeline rendering
+should show compact facts and causality, not dump full board JSON.
 
 ### 3. Agent Tool Events
 
@@ -333,16 +342,23 @@ Canvas-owned durable card ids are timestamp-bearing (`ut_...`, `ua_...`,
 `at_...`). Proxy card ids are the original resolver refs (`task:...`, `fi:...`,
 `mem:...`, etc.). The legend's `card_id` is the value to use in `canvas.patch`.
 
-`[CANVAS FOCUSED CONTEXT]` is separate and turn-local:
+`[CANVAS FOCUSED CONTEXT]` is separate and turn-local. It represents the user's
+selected or multi-selected cards on the attached canvas, for requests such as
+"for selected cards, analyze ..." or other batch operations over cards on the
+same board:
 
 ```text
 [CANVAS FOCUSED CONTEXT]
 focused_cards:
 - A1 user.attachment title=trace.pdf ref=ext:... mime=application/pdf
 
-focus_semantics: these refs were explicitly attached to chat for this request.
-priority: inspect focused cards before broader canvas context unless the user asks otherwise.
+focus_semantics: these cards were explicitly selected on the canvas for this request.
+priority: inspect selected cards before broader canvas context unless the user asks otherwise.
 ```
+
+Dragging an individual pin to chat is different. The chat context for that pin
+uses the proxied object ref (`task:`, `mem:`, `fi:`, `ext:`, etc.) and may carry
+canvas provenance in metadata, but it is not a canvas-focus event by itself.
 
 ## Collaboration, Versioning, And Conflicts
 
@@ -381,7 +397,8 @@ a time.
 The canvas module supports external event integration in two ways:
 
 1. It can render/consume generic canvas events (`event.canvas`,
-   `event.canvas.focus`) through event-source policies.
+   `event.canvas.focus`) through event-source policies. `event.canvas.focus`
+   is for canvas selection/multiselect context, not for every dragged pin.
 2. It can host app-specific pins by preserving their `kind`, `logical_path`,
    MIME, preview, descriptions, and comments.
 

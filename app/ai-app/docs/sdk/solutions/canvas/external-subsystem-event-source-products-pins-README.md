@@ -124,7 +124,7 @@ the ordered batch should look like:
 
 ```text
 1. event.canvas       latest board revision, non-reactive
-2. event.canvas.focus focused cards/pins, non-reactive when any were attached
+2. event.canvas.focus selected/multi-selected cards on the board, non-reactive when selection is attached
 3. event.snapshot     latest issue/wizard snapshot, non-reactive when attached
 4. event.user.prompt  user chat message, reactive
 ```

@@ -284,9 +284,9 @@ Expected order:
 
 ```text
 event.canvas           current board context, if attached
-event.canvas.focus     focused cards/pins, if attached
+event.canvas.focus     selected/multi-selected cards on that board, if attached
 event.snapshot         task/story editor context, if attached
-event.external         other focused objects, if attached
+event.external         proxied objects attached from pins or other widgets
 event.user.prompt      reactive chat prompt
 ```
 
@@ -308,6 +308,11 @@ ANNOUNCE contains the volatile rich views:
 [CANVAS FOCUSED CONTEXT]
 [TASK CONTEXT]
 ```
+
+`[CANVAS FOCUSED CONTEXT]` is for selected/multi-selected cards on the attached
+canvas. A pin dragged by itself is rendered as the object it proxies (`task:`,
+`mem:`, `fi:`, `ext:`, etc.) and may carry canvas provenance metadata, but it
+is not a canvas-focus event by itself.
 
 If dry-run rendering shows context but live rendering only shows
 `[USER MESSAGE]`, the normal send path is losing `external_events[]` or the

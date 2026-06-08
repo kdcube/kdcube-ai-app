@@ -98,7 +98,8 @@ move card
 resize card
 select card
 multi-select cards
-drag card to chat as focused context
+share selected/multi-selected cards as canvas focus
+drag card to chat as the proxied object context
 drag card to bin
 restore card from bin
 clean bin
