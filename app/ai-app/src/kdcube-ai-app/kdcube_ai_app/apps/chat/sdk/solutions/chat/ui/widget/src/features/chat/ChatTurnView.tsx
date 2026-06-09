@@ -570,19 +570,6 @@ function ChatTurnViewImpl({
     [turn.artifacts, turn.additionalUserMessages],
   )
   const isStreaming = turn.state === 'pending' || turn.state === 'running'
-  const costUsd = turn.costUsd
-  const costLabel =
-    typeof costUsd === 'number' && costUsd >= 0
-      ? costUsd >= 0.1
-        ? costUsd.toFixed(2)
-        : costUsd.toFixed(4)
-      : null
-  const elapsedMs = turn.elapsedMs
-  let timeLabel: string | null = null
-  if (typeof elapsedMs === 'number' && elapsedMs >= 0) {
-    const total = Math.round(elapsedMs / 1000)
-    timeLabel = `${Math.floor(total / 60)}.${String(total % 60).padStart(2, '0')}`
-  }
   return (
     <div className="k-chat-view">
       <ChatThinkingTimeline entries={thinkingEntries} streaming={isStreaming} />
@@ -602,22 +589,6 @@ function ChatTurnViewImpl({
         <div className="flex items-center gap-2 text-[12px] text-[var(--muted)]">
           <span className="k-status k-live" />
           <span>Streaming response…</span>
-        </div>
-      ) : null}
-      {costLabel || timeLabel ? (
-        <div className="k-turn-meta k-tabs-meta">
-          {costLabel ? (
-            <span
-              className="k-turn-cost"
-              title={costUsd != null ? `Turn cost: $${costUsd.toFixed(6)}` : undefined}
-            >
-              <span className="k-coin" aria-hidden="true">$</span>
-              {costLabel}
-            </span>
-          ) : null}
-          {timeLabel ? (
-            <span className="k-turn-time" title="Turn time (min.sec)">t={timeLabel}</span>
-          ) : null}
         </div>
       ) : null}
       <SuggestedQuestions items={turn.followups} disabled={sendingDisabled} onSelect={onFollowup} />
