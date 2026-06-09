@@ -8,6 +8,8 @@ see_also:
   - ks:docs/sdk/agents/react/context-layout.md
   - ks:docs/sdk/agents/react/context-progression.md
   - ks:docs/sdk/agents/react/turn-log-README.md
+  - ks:docs/sdk/agents/react/react-tools-README.md
+  - ks:docs/sdk/events/namespaces-README.md
 ---
 # ReAct v2 — Context + Turn Data
 
@@ -79,6 +81,12 @@ Notes:
 - **OUTPUT_DIR** is where tools write artifacts during a turn. It points to the artifact root (`out/workdir` in local host storage). Turn outputs map to `fi:<turn_id>.files/...` or `fi:<turn_id>.outputs/...`, and readable artifact files can be loaded with `fi:<artifact-root-relative-path>`.
 - Runtime metadata such as `timeline.json`, `tool_calls_index.json`, tool-call JSON, and logs lives in the sibling runtime root `out/`; it is platform state, not the normal agent artifact namespace.
 - **Conversation Workspace** will be the long‑lived, writable project state for copilot‑style flows.
+
+Other owner-domain namespaces can also become readable context when their
+owning module registers an event-source reader. Examples are `mem:` for memory
+items and `cnv:` for canvas boards. In that case the decision agent still uses
+`react.read(paths=[...])`; the namespace owner resolves the ref and its
+event-source policies render the blocks.
 
 ---
 

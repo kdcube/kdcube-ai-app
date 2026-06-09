@@ -185,6 +185,19 @@ def list_event_sources():
     ]
 ```
 
+Use `kind="react.external"` for authored UI/integration events. Other source
+kinds exist for different occurrence families:
+
+| `kind` | Use |
+| --- | --- |
+| `react.external` | Authored external event in `external_events[]`. |
+| `react.tool` | ReAct tool-call/result source. |
+| `react.event_source_reader` | Namespace-owner reader behind `react.read(paths=[...])`. |
+
+The transported `external_events[]` payload does not carry this declaration
+`kind`; it carries `event_source_id`, `event_id`, `type`, and occurrence facts
+such as `reactive`.
+
 For transported events, reactivity is an occurrence fact. Each accepted event
 must carry the effective value in `external_events[].reactive`.
 This avoids silently waking ReAct for an event just because a declaration exists.

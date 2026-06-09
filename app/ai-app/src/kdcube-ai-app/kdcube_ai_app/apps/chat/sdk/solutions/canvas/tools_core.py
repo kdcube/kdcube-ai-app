@@ -19,8 +19,8 @@ DEFAULT_CANVAS_TOOL_EVENT_SOURCE_DESCRIPTIONS: Dict[str, str] = {
         "suggesting content edits. Agents do not manage card positions."
     ),
     "read": (
-        "Read a canvas by canvas: URI and return agent_view plus exact state. "
-        "Use this only when ANNOUNCE map/legend or focused-context previews are insufficient."
+        "Read a canvas board by cnv: URI and return agent_view plus exact state. "
+        "This is an event-source reader for react.read, not an agent-visible canvas tool."
     ),
 }
 

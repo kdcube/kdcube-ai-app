@@ -52,6 +52,11 @@ def _deep_merge_missing(target: Dict[str, Any], defaults: Dict[str, Any]) -> Dic
     return target
 
 
+def _memory_id_from_ref(value: Any) -> str:
+    ref = str(value or "").strip()
+    return ref[4:].strip() if ref.startswith("mem:") else ref
+
+
 _memory_reconciliation_locks_guard = threading.Lock()
 _memory_reconciliation_locks: dict[str, asyncio.Lock] = {}
 _memory_user_override: ContextVar[dict[str, str] | None] = ContextVar("kdcube_memory_user_override", default=None)
@@ -66,6 +71,12 @@ class MemoryEntrypointMixin:
         class MyEntrypoint(MemoryEntrypointMixin, BaseEntrypointWithEconomics): ...
 
     or use the convenience classes below.
+
+    Bundle authors mounting memory must also configure the full subsystem
+    surface: memory.* props, ui.widgets.memories, visibility.widget.memories,
+    tools/announce policy, storage/schema behavior, and tests. See
+    repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-subsystem-integration-README.md
+    and repo:kdcube-ai-app/app/ai-app/docs/sdk/memory/user-memories-overview-README.md.
     """
 
     @property
@@ -2310,6 +2321,7 @@ class MemoryEntrypointMixin:
         del kwargs
         if not self._memory_widget_enabled():
             return self._memory_error("memory_disabled")
+        memory_id = _memory_id_from_ref(memory_id)
         memory = await self._memory_store().get_memory(
             scope=self._memory_scope(),
             memory_id=memory_id,
@@ -2331,6 +2343,7 @@ class MemoryEntrypointMixin:
         del kwargs
         if not self._memory_widget_enabled():
             return self._memory_error("memory_disabled")
+        memory_id = _memory_id_from_ref(memory_id)
         store = self._memory_store()
         scope = self._memory_scope()
         normalized_scope_filter = self._memory_scope_filter(scope_filter)

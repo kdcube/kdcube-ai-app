@@ -2,7 +2,7 @@
 title: Versatile Bundle Storage
 kind: storage-map
 bundle_id: versatile@2026-03-31-13-36
-updated_at: 2026-05-12
+updated_at: 2026-06-09
 ---
 
 # Versatile Bundle Storage
@@ -39,6 +39,17 @@ $B/
     telegram-updates/
       state.json
       <update_id>.json
+  canvas/
+    users/
+      <user_id>/
+        canvases/
+          index.json
+          <canvas_id>/
+            latest.json
+            revisions/
+              <revision>.json
+            objects/
+              ...
 ```
 
 ### Preferences
@@ -78,12 +89,34 @@ Telegram bot turns or Telegram Mini App APIs.
 webhook retries do not execute the same update repeatedly. These files are
 bundle operational state and should be preserved with the bundle storage root.
 
+### Canvas
+
+`canvas/users/<user_id>/canvases/index.json` is the per-user canvas manifest
+for the active scene story.
+
+`canvas/users/<user_id>/canvases/<canvas_id>/latest.json` is the latest
+materialized board state. Revisions are retained under `revisions/` according
+to `canvas.revision_retention`.
+
+Canvas-owned text and attachments are stored under `objects/`. Proxy cards keep
+their canonical object refs (`fi:`, `mem:`, `cnv:`, etc.) and are not rehosted
+just because they were pinned.
+
 ## Rebuildable Data
 
 ```text
 $B/
   ui/
+    main_view/
+      index.html
+      assets/...
     widgets/
+      versatile_chat/
+        index.html
+        assets/...
+      memories/
+        index.html
+        assets/...
       versatile_webapp/
         index.html
         assets/...
@@ -91,9 +124,11 @@ $B/
     ui-widget-versatile_webapp.lock
 ```
 
-Widget output under `ui/widgets/versatile_webapp/` is generated from:
+Widget output under `ui/widgets/` is generated from:
 
 ```text
+sdk://solutions/chat/ui/widget
+sdk://context/memory/ui/widget/memories
 ui/widgets/versatile_webapp/
 ```
 
@@ -101,13 +136,14 @@ It is safe to rebuild from source. The shared build lock under `.kdcube.once/`
 prevents multiple workers from building the same static widget at the same
 time.
 
-The custom main view is generated from:
+The active main view is generated from:
 
 ```text
-ui/main/
+ui/scene/
 ```
 
-The main view output is also rebuildable from source.
+The main view output is also rebuildable from source. The previous custom chat
+implementation remains under `ui/main/` as legacy comparison source.
 
 ## Platform-Owned Conversation Data
 
@@ -127,8 +163,11 @@ temporary execution workspaces are cleaned.
 | Preference event history | `$B/preferences/users/<user_id>/events.jsonl` | Yes | Append-only history for preference changes. |
 | Telegram user registry | `$B/admin/telegram-users.json` | Yes | Operator-managed mapping from Telegram users to KDCube users/roles/conversations. |
 | Telegram webhook update state | `$B/admin/telegram-updates/...` | Yes | Idempotency state for Bot API retries. |
+| Canvas state | `$B/canvas/users/<user_id>/canvases/...` | Yes | Versioned board state and canvas-owned objects for the active scene. |
+| Chat widget static output | `$B/ui/widgets/versatile_chat/...` | No | Built from `sdk://solutions/chat/ui/widget`. |
+| Memory widget static output | `$B/ui/widgets/memories/...` | No | Built from `sdk://context/memory/ui/widget/memories`. |
 | Widget static output | `$B/ui/widgets/versatile_webapp/...` | No | Built from `ui/widgets/versatile_webapp`. |
-| Main view static output | bundle UI build output | No | Built from `ui/main`. |
+| Main view static output | bundle UI build output | No | Built from `ui/scene`. |
 | Exec report artifact | platform turn artifacts | No | Created by `preferences_exec_report` and hosted by the platform if needed. |
 | Chat timeline/files | platform conversation store | Yes, platform-owned | Normal KDCube conversation persistence. |
 

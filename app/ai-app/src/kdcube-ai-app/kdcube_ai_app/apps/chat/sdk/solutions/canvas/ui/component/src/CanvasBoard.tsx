@@ -1156,9 +1156,16 @@ export function CanvasBoard({
           [card.id]: text || 'Preview resolved.',
         }))
       } else if (action === 'open') {
-        setResolverNoticeByCard((current) => ({ ...current, [card.id]: 'Open request sent.' }))
+        const opened = Boolean(result.ui_event || result.issue || result.memory || result.resolved)
+        setResolverNoticeByCard((current) => ({
+          ...current,
+          [card.id]: opened ? 'Open request sent.' : (result.message || 'Resolver returned no open target.'),
+        }))
       } else if (action === 'download') {
-        setResolverNoticeByCard((current) => ({ ...current, [card.id]: 'Download prepared.' }))
+        setResolverNoticeByCard((current) => ({
+          ...current,
+          [card.id]: result.content_base64 ? 'Download started.' : (result.message || 'Resolver returned no downloadable content.'),
+        }))
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)

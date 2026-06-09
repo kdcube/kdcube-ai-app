@@ -114,7 +114,14 @@ runtime behavior:
 
 ## Track-Specific Instructions
 
-**Chat main UI agents** (`ui/main/`) must start with:
+**Active main scene agents** (`ui/scene/`) must start with:
+
+- [ui/scene/src/main.ts](ui/scene/src/main.ts)
+- [ui/scene/src/styles.css](ui/scene/src/styles.css)
+- `ks:docs/sdk/solutions/chat/chat-widget-solution-README.md`
+- `ks:docs/sdk/bundle/bundle-client-ui-README.md`
+
+**Legacy chat main UI agents** (`ui/main/`, retained for comparison) must start with:
 
 - [ui/main/src/App.tsx](ui/main/src/App.tsx)
 - [ui/main/src/app/store.ts](ui/main/src/app/store.ts)
@@ -222,13 +229,13 @@ export BUNDLE_PATH="<kdcube-ai-app-root>/app/ai-app/src/kdcube-ai-app/kdcube_ai_
 "$KDCUBE" reload "$BUNDLE_ID" --tenant "$TENANT" --project "$PROJECT"
 ```
 
-After editing the main UI source under `ui/main/src/`, a `kdcube reload`
+After editing the active main UI source under `ui/scene/src/`, a `kdcube reload`
 is enough — the platform's `_ensure_ui_build` machinery rebuilds the
 Vite bundle on the next request once the source tree's signature
 changes. If you want to verify the build locally before reloading:
 
 ```bash
-cd "$BUNDLE_PATH/ui/main"
+cd "$BUNDLE_PATH/ui/scene"
 npm install --no-package-lock
 OUTDIR=/tmp/versatile-main-build npm run build
 ```
@@ -406,12 +413,15 @@ Keep these invariants:
 - The orchestrator drives a single ReAct workflow; the chat main UI is
   a transcript over that workflow's events, not an independent state
   machine.
-- The custom iframe main view (`ui/main/`) is the canonical chat
-  surface. It uses the modular RTK architecture described above. The
-  source-folder widget (`ui/widgets/versatile_webapp/`) is a separate
-  surface that exercises the source-folder widget contract.
+- The active custom iframe main view (`ui/scene/`) is the canonical scene
+  surface. It embeds the reusable SDK chat widget, embeds the SDK memory
+  widget, and renders the SDK canvas component. Canvas protocol names are
+  generic (`canvas.patch`, `canvas.state`, `canvas.focus`), not
+  bundle-prefixed. The legacy `ui/main/` source remains in the bundle for
+  comparison. The source-folder widget (`ui/widgets/versatile_webapp/`) is a
+  separate surface that exercises the source-folder widget contract.
 - Vite `base: './'` and `OUTDIR` build behavior must be preserved for
-  both `ui/main/` and `ui/widgets/versatile_webapp/`.
+  `ui/scene/`, legacy `ui/main/`, and `ui/widgets/versatile_webapp/`.
 - Bundle props / secrets / quota policies stay declarative in
   `entrypoint.py` (and `configuration_defaults()` where applicable).
   Patch values through `kdcube bundle … --set-config / --set-secret`,

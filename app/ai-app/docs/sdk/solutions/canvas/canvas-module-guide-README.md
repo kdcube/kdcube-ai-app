@@ -53,9 +53,9 @@ Related docs:
 
 ```text
 canvas_name      user-visible board name, for example main or evidence
-canvas_id        stable board id, usually canvas:<user_id>:<canvas_name>
+canvas_id        stable board id, usually cnv:<user_id>:<canvas_name>
 revision         monotonically increasing integer per canvas_id
-canvas_uri       short agent-facing handle, for example canvas:main@27
+canvas_uri       short agent-facing handle, for example cnv:main@27
 canvas_ref       immutable ext: ref to a stored revision JSON
 latest_ref       ext: ref to the latest stored JSON for the board
 card             one pin on the board
@@ -232,9 +232,20 @@ should show compact facts and causality, not dump full board JSON.
 
 ### 3. Agent Tool Events
 
-When ReAct calls `canvas.read` or `canvas.patch`, those tools are event sources.
-Their tool results carry enough canvas projection for the announce policy to
-refresh `[CANVAS BOARD]` during the current turn.
+Canvas exposes two different model-facing operations:
+
+```text
+react.read(paths=["cnv:<name>@<revision>"])   read exact board state
+canvas.patch(...)                             write content changes
+```
+
+`canvas.patch` is a ReAct tool source. Its result carries enough canvas
+projection for the announce policy to refresh `[CANVAS BOARD]` during the
+current turn.
+
+`canvas.read` is not an agent-visible tool. It is the event source id behind
+the `cnv:` namespace reader. `react.read(paths=["cnv:main@27"])` dispatches to
+the canvas reader, and the `canvas.read` source policies render the result.
 
 Agent-originated patches do not require the client to rebroadcast a canvas
 event to the backend. The tool result is already the authoritative event source
@@ -276,16 +287,18 @@ The canvas module contributes additional instructions through
 `canvas/instructions.py`. Any bundle using this module must append those
 instructions to the ReAct prompt, not hide them as an optional skill.
 
-The module exposes two ReAct-visible tools:
+The module exposes one ReAct-visible write tool and one model-facing read
+source:
 
 ```text
-canvas.read(uri="canvas:<name>@<revision>")
+react.read(paths=["cnv:<name>@<revision>"])
 canvas.patch(canvas_name="main", base_revision=<visible revision>, operations=<json>)
 ```
 
-`canvas.read`:
+`react.read(paths=["cnv:<name>@<revision>"])`:
 
 - reads exact board JSON plus an `agent_view`;
+- is implemented by `@event_source_reader(namespace="cnv", event_source_id="canvas.read")`;
 - should be used only when the ANNOUNCE map/legend is insufficient;
 - refreshes canvas ANNOUNCE;
 - should leave only compact facts on timeline.
@@ -317,8 +330,8 @@ The current canvas is shown in ANNOUNCE, not repeatedly cached in timeline.
 ```text
 [CANVAS BOARD]
 canvas_name: main
-canvas_id: canvas:user-1:main
-canvas_uri: canvas:main@27
+canvas_id: cnv:user-1:main
+canvas_uri: cnv:main@27
 revision: 27
 
 spatial_map:
@@ -333,7 +346,7 @@ legend:
 - T1 issue.ref card_id=task:issues/ticket_2026-06-07-10-19-00-123456789 title=Upload fails after selecting screenshot ref=task:issues/ticket_2026-06-07-10-19-00-123456789
 - R1 agent.text card_id=at_2026-06-07-10-23-00_h7pn suggested title=Suggested repro steps ref=ext:...
 
-canvas_read: canvas.read(uri="canvas:main@27") returns exact JSON plus agent_view.
+canvas_read: react.read(paths=["cnv:main@27"]) returns exact JSON plus agent_view.
 canvas_write: collaborate only through canvas.patch with base_revision=revision.
 ```
 
@@ -389,7 +402,7 @@ suggestions, deletion suggestions, and allowed user-text edits.
 
 Future data bus work should provide ordered per-object delivery for UI
 collaboration. Ordering must be scoped by `object_ref`, for example
-`canvas:<user_id>:main`, so only one handler applies a patch for that board at
+`cnv:<user_id>:main`, so only one handler applies a patch for that board at
 a time.
 
 ## External Events And Host Extensions

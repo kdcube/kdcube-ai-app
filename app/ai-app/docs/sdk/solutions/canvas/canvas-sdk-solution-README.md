@@ -50,10 +50,11 @@ kdcube_ai_app.apps.chat.sdk.solutions.canvas
                           projection, retention, and UI event envelopes
   api.py                  Bundle route/operation helpers for read, write,
                           patch, upload, search, pin read, and object action
-  tools.py                Reusable Semantic Kernel ReAct tool module; include
-                          it from tools_descriptor.py as module
+  tools.py                Reusable Semantic Kernel ReAct write-tool module and
+                          cnv: event-source reader; include it from
+                          tools_descriptor.py as module
                           kdcube_ai_app.apps.chat.sdk.solutions.canvas.tools
-  tools_core.py           Reusable ReAct canvas read/patch execution core
+  tools_core.py           Reusable canvas read/patch execution core
   instructions.py         Stable additional ReAct instructions for canvas
   ids.py                  Timestamp-bearing canvas/message id helpers
   storage_utils.py        Storage-safe segment helper
@@ -80,7 +81,7 @@ A canvas document is a versioned board state:
 ```json
 {
   "schema": "kdcube.canvas.v1",
-  "canvas_id": "canvas:<user-or-scope>:main",
+  "canvas_id": "cnv:<user-or-scope>:main",
   "canvas_name": "main",
   "revision": 17,
   "bounds": {"x": 0, "y": 0, "w": 1680, "h": 1080},
@@ -144,6 +145,15 @@ store = CanvasStore.from_scope(
 Use `handoff_resolver_names` only to name resolvers owned elsewhere. It is not
 a place to implement object semantics.
 
+The scope passed to `CanvasStore` must come from the shared runtime identity
+contract. In entrypoint methods that run from REST/widget/tool calls, use
+`BaseEntrypoint.runtime_identity()` and pass the resulting tenant/project/user
+into the store. In Data Bus handlers, do not assume `comm_context` has the
+full chat-turn shape; copy `ctx.tenant`, `ctx.project`, and actor user fields
+from the Data Bus message into the canvas operation payload before creating the
+store. Missing this step can make a canvas patch fail with a store/identity
+error or write under the wrong tenant/project scope.
+
 ## Resolver Ownership
 
 Canvas has a resolver registry because pins are object proxies. The resolver
@@ -193,7 +203,7 @@ The instructions explain:
   context for batch operations on the attached board.
 - Individual pins dragged from canvas into chat render as their proxied objects
   (`task:`, `mem:`, `fi:`, `ext:`, etc.), not as canvas-focus events.
-- `canvas.read` is for exact hidden state.
+- `react.read(paths=["cnv:<name>@<revision>"])` is for exact hidden board state.
 - `canvas.patch` is the only agent write path.
 - Agents do not move or resize existing cards.
 - Proxy card underlying objects stay owned by their source subsystem.
@@ -207,7 +217,15 @@ from kdcube_ai_app.apps.chat.sdk.solutions.canvas.tools_core import (
 )
 ```
 
-A bundle still defines its own SK plugin class and event-source policy ids:
+The SDK tool module exposes one direct model tool and one reader-backed source:
+
+| Source id | `kind` | How the model uses it |
+| --- | --- | --- |
+| `canvas.patch` | `react.tool` | Calls `canvas.patch(...)` to create a new content revision. |
+| `canvas.read` | `react.event_source_reader` | Calls `react.read(paths=["cnv:<name>@<revision>"])`; the `cnv:` reader resolves the board and the `canvas.read` policies render it. |
+
+A bundle still defines its own SK plugin class and event-source policy ids when
+it wraps the SDK core directly:
 
 ```python
 class CanvasTools:
@@ -283,7 +301,7 @@ direct `store.patch(...)`. The subject is supplied by the composition bundle:
 
 ```text
 subject = "<bundle>.canvas.patch"
-object_ref = "canvas:<scope>:<name>"
+object_ref = "cnv:<scope>:<name>"
 ```
 
 The bundle-side data-bus handler must apply the same SDK `api.patch(...)` or

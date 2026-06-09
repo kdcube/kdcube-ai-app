@@ -14,6 +14,8 @@ see_also:
   - ks:docs/service/comm/data-bus-README.md
   - ks:docs/configuration/bundle-runtime-configuration-and-secrets-README.md
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
+  - ks:docs/sdk/solutions/canvas/canvas-sdk-solution-README.md
+  - ks:docs/sdk/solutions/event-hub/resolver-and-policy-registration-README.md
 ---
 # Versatile Reference Bundle
 
@@ -35,11 +37,16 @@ This is the bundle to study first.
 | Effective bundle props and defaults | `entrypoint.py`, `config/bundles.template.yaml` |
 | Bundle secrets; prefer `await get_secret("b:...")` in async code | `config/bundles.secrets.template.yaml`, `tools/preference_tools.py` |
 | Bundle storage layout | `preferences_store.py`, `docs/storage/README.md` |
-| Source-folder widget with shared UI sources | `entrypoint.py`, `ui/widgets/versatile_webapp`, `config/bundles.template.yaml` |
-| Iframe main view | `ui/main/src/App.tsx`, `entrypoint.py` |
+| Active iframe main scene | `ui/scene`, `entrypoint.py`, `docs/design/scene-sdk-components.md` |
+| SDK chat widget mount | `ui.widgets.versatile_chat` in `entrypoint.py` and `config/bundles.template.yaml` |
+| SDK memory widget mount | `ui.widgets.memories` in `entrypoint.py` and `config/bundles.template.yaml` |
+| SDK canvas component mount | `ui/scene`, `sdk://solutions/canvas/ui/component`, `entrypoint.py` canvas operations |
+| Legacy custom chat main UI kept for comparison | `ui/main/src/App.tsx` |
+| Source-folder Telegram/WebApp widget with shared UI sources | `entrypoint.py`, `ui/widgets/versatile_webapp`, `config/bundles.template.yaml` |
 | Public Telegram webhook and WebApp bridge | `entrypoint.py`, `docs/integrations/telegram-setup.md`, `docs/design/telegram-webapp.md` |
 | Federated Data Bus claim for Telegram WebApp | `entrypoint.py:telegram_federated_data_bus_claim` |
 | Data Bus handler and browser probe | `entrypoint.py:data_bus_echo`, `ui/widgets/versatile_webapp/src/store/dataBusClient.ts` |
+| Canvas Data Bus mutation path | `entrypoint.py` handler for subject `canvas.patch` |
 | MCP connector declarations | `tools_descriptor.py` |
 
 When studying the entrypoint, pay attention to lifecycle inheritance. A bundle
@@ -61,16 +68,24 @@ subagent integration:
 ## Study Order
 
 1. `entrypoint.py`
-2. `orchestrator/workflow.py`
-3. `docs/scenarios/README.md`
-4. `docs/storage/README.md`
-5. `ui/main/src/App.tsx`
-6. `ui/widgets/versatile_webapp/src/App.tsx`
-7. `ui/widgets/versatile_webapp/src/store/dataBusClient.ts`
-8. `tools_descriptor.py`
-9. `skills_descriptor.py`
-10. `tools/preference_tools.py`
-11. bundle-local tests under `tests/`
+2. `config/bundles.template.yaml`
+3. `docs/design/scene-sdk-components.md`
+4. `ui/scene/src/main.tsx`
+5. `ui/scene/vite.config.js`
+6. `orchestrator/workflow.py`
+7. `docs/scenarios/README.md`
+8. `docs/storage/README.md`
+9. `ui/widgets/versatile_webapp/src/App.tsx`
+10. `ui/widgets/versatile_webapp/src/store/dataBusClient.ts`
+11. `ui/main/src/App.tsx`
+12. `tools_descriptor.py`
+13. `skills_descriptor.py`
+14. `tools/preference_tools.py`
+15. bundle-local tests under `tests/`
+
+`ui/main` is no longer the active main-view reference. Keep it in the study
+order only when comparing the older bundle-owned chat implementation with the
+new SDK chat-widget scene.
 
 ## Config Surfaces Used by This Bundle
 
@@ -90,6 +105,20 @@ Non-secret props demonstrated here include:
 - `integrations.telegram.stream_activity`
 - `integrations.telegram.web_app_auth_max_age_seconds`
 - `visibility.bundle.allowed_roles`
+- `canvas.artifact_prefix`
+- `canvas.origin_prefix`
+- `canvas.state_event_source_id`
+- `canvas.ui_event_type`
+- `canvas.artifact_resolver_name`
+- `canvas.data_bus_subject`
+- `canvas.revision_retention`
+- `ui.main_view.src_folder`
+- `ui.main_view.build_command`
+- `ui.main_view.shared_sources.canvas_component`
+- `ui.widgets.versatile_chat.src_folder`
+- `ui.widgets.versatile_chat.build_command`
+- `ui.widgets.memories.src_folder`
+- `ui.widgets.memories.build_command`
 - `ui.widgets.versatile_webapp.src_folder`
 - `ui.widgets.versatile_webapp.build_command`
 - `ui.widgets.versatile_webapp.shared_sources`
@@ -103,8 +132,17 @@ Secret props demonstrated here include:
 - `mcp.preferences.auth.shared_token`
 - `preferences.snapshot_hmac_key`
 
-The `versatile_webapp` widget imports two shared source packages during the
-widget build:
+The active main scene imports the SDK canvas component as a shared source:
+
+- `sdk://solutions/canvas/ui/component` into `_shared/canvas-component`
+
+The active scene embeds two separately built SDK widgets:
+
+- `sdk://solutions/chat/ui/widget` as widget alias `versatile_chat`
+- `sdk://context/memory/ui/widget/memories` as widget alias `memories`
+
+The `versatile_webapp` widget remains a Telegram/WebApp reference surface. It
+imports two shared source packages during the widget build:
 
 - `sdk://context/memory/ui/widget/memories` into `_shared/memory-widget`
 - `sdk://integrations/telegram/ui/widget.telegram` into `_shared/telegram-widget`
@@ -121,12 +159,19 @@ This bundle currently demonstrates:
 - authenticated operations endpoints via `@api(..., route="operations")`
 - widget discovery via `@ui_widget(...)`
 - public Telegram endpoints via `@api(..., route="public", public_auth=TELEGRAM_WEBAPP_PUBLIC_AUTH)`
-- a custom main UI
+- an active scene main UI built from `ui/scene`
+- the reusable SDK chat widget mounted as `versatile_chat`
+- the reusable SDK memory widget mounted as `memories`
+- the reusable SDK canvas component mounted into the scene as shared source
+- canvas operations: `canvas_list`, `canvas_read`, `canvas_search`,
+  `canvas_pin_read`, `canvas_write`, `canvas_patch`,
+  `canvas_attachment_upload`, and `canvas_object_action`
 - a source-folder widget alias: `versatile_webapp`
 - shared source materialization for widget builds
 - Telegram webhook ingestion and Telegram WebApp operations
 - a federated Data Bus token claim endpoint for the Telegram WebApp
 - a scoped Data Bus handler on subject `versatile.echo`
+- a scoped Data Bus handler on subject `canvas.patch`
 - the single-`@on_job` dispatch pattern for SDK mixins: call
   `await super().handle_job(**kwargs)` first, then process bundle-owned
   `work_kind` values only when the superclass returns `handled=false`
@@ -135,12 +180,77 @@ Use the exact decorator and route contract here:
 
 - [bundle-platform-integration-README.md](bundle-platform-integration-README.md)
 
+## Active Scene Composition
+
+The current main view is `ui/scene`. It is a host scene that composes SDK
+components instead of reimplementing chat, memory, and canvas behavior in one
+bundle-owned React app.
+
+```text
+platform opens bundle main UI
+  -> ui/scene
+       |
+       +-- iframe widget: versatile_chat
+       |     src_folder: sdk://solutions/chat/ui/widget
+       |
+       +-- iframe widget: memories
+       |     src_folder: sdk://context/memory/ui/widget/memories
+       |
+       +-- React component: CanvasBoard
+             shared source: sdk://solutions/canvas/ui/component
+```
+
+The scene brokers browser messages between mounted components. For example,
+memory and canvas selections are forwarded to the chat widget as context
+attachments. Canvas mutations are published through Data Bus subject
+`canvas.patch`, partitioned by canvas object reference on the backend handler.
+
+Use generic canvas protocol names:
+
+| Protocol item | Current value |
+| --- | --- |
+| Canvas mutation subject | `canvas.patch` |
+| Canvas state event source | `canvas.state` |
+| Canvas focus event source | `canvas.focus` |
+| Canvas UI event type | `canvas.patch.applied` |
+| Canvas artifact resolver | `canvas.bundle_artifact_storage` |
+
+Do not introduce bundle-prefixed names such as `versatile.canvas.*` for these
+reusable canvas concepts.
+
+The scene also demonstrates current resolver ownership boundaries:
+
+| Namespace | Owner |
+| --- | --- |
+| `fi:` | ReAct event/artifact resolver |
+| `mem:` | memory subsystem resolver |
+| `cnv:` | canvas-owned object resolver |
+
+The canvas card stores one canonical object reference. The resolver owns
+preview, open, download, and rehost behavior for that namespace. The scene and
+canvas component should not store transport handles as alternate identities.
+
+Current implementation note: the scene uses explicit entrypoint glue and a
+Vite shared-source adapter while this SDK component composition path is being
+tested. Treat this bundle as the reference for the current integration shape.
+The intended SDK direction is to move the repeatable mount/build glue behind
+helpers so future bundles do not copy the scene adapter by hand.
+
+Detailed bundle-local notes:
+
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/docs/design/scene-sdk-components.md`
+- `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/config/bundles.template.yaml`
+
 ## Data Bus Echo Probe
 
 The Memory tab in `versatile_webapp` includes a small Data Bus echo probe. It is
 intended as a working integration example for widgets that need server-pushed
 bundle events without running a chat turn. The same probe is available from the
 normal platform widget and from the Telegram WebApp.
+
+This echo probe is separate from the active scene canvas mutation path. Canvas
+patches use subject `canvas.patch`; the echo probe uses subject
+`versatile.echo`.
 
 Platform widget path:
 
@@ -187,7 +297,15 @@ PYTHONPATH=app/ai-app/src/kdcube-ai-app \
 pytest -q app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/tests
 ```
 
-Widget build check:
+Active scene build check:
+
+```bash
+cd app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/ui/scene
+npm install --no-package-lock
+OUTDIR=/private/tmp/versatile-scene-build npm run build
+```
+
+Legacy WebApp widget build check:
 
 ```bash
 cd app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/ui/widgets/versatile_webapp
@@ -198,4 +316,5 @@ npm run build
 Data Bus manifest sanity check:
 
 - the bundle manifest should include handler subject `versatile.echo`
+- the bundle manifest should include handler subject `canvas.patch`
 - the Telegram claim endpoint should return only a token scoped to that subject

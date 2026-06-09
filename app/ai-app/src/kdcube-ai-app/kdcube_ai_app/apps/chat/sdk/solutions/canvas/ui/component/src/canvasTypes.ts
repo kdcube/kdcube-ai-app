@@ -277,6 +277,7 @@ export interface CanvasObjectActionResponse {
   filename?: string
   size?: number
   issue?: unknown
+  memory?: unknown
   ui_event?: {
     type?: string
     subject?: string
@@ -286,6 +287,7 @@ export interface CanvasObjectActionResponse {
     target_surface?: string
     mode?: string
     issue_id?: string
+    memory_id?: string
     title?: string
   }
   error?: string

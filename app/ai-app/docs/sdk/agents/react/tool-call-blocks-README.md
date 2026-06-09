@@ -9,6 +9,8 @@ see_also:
   - ks:docs/sdk/agents/react/event-blocks-README.md
   - ks:docs/sdk/agents/react/event-source/block-production-README.md
   - ks:docs/sdk/agents/react/event-source/event-source-README.md
+  - ks:docs/sdk/events/event-subsystem-README.md
+  - ks:docs/sdk/events/namespaces-README.md
   - ks:docs/sdk/agents/react/context-progression.md
 ---
 # Tool Call Blocks
@@ -141,6 +143,21 @@ Path handling
   - file/attachment rows resolve as `fi:`
   - non-file rows render as sources_pool text
 - `sk:` emits ACTIVE skill blocks
+- owner-domain namespaces registered with `@event_source_reader`, such as
+  `mem:` or `cnv:`, dispatch to the namespace owner. The visible action is
+  still the `react.read` tool call. The owner source id, for example
+  `memory.read_memory` or `canvas.read`, selects block-production policies for
+  the resolved payload. These source ids are not direct model tools unless they
+  are separately exposed as tools.
+
+Example:
+
+```text
+react.read(paths=["cnv:main@27"])
+  -> reader namespace cnv
+  -> event_source_id canvas.read
+  -> canvas block-production policies emit canvas state/read blocks
+```
 
 ---
 

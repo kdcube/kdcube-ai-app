@@ -8,6 +8,8 @@ see_also:
   - ks:docs/sdk/agents/react/artifact-discovery-README.md
   - ks:docs/sdk/agents/react/react-round-README.md
   - ks:docs/sdk/agents/react/tool-call-blocks-README.md
+  - ks:docs/sdk/events/event-subsystem-README.md
+  - ks:docs/sdk/events/namespaces-README.md
   - ks:docs/sdk/agents/react/workspace/workspace-checkout-model-README.md
   - ks:docs/sdk/memory/conversational-memory-search-README.md
 ---
@@ -87,6 +89,12 @@ Reads existing logical artifacts back into the visible timeline.
   attached only when it is under the byte cap; otherwise `react.read` returns a
   recovery marker.
 - accepted paths: `ar:`, `tc:`, `fi:`, `so:`, `su:`, `ws:`, `ks:`, `sk:`
+- owner-domain paths: a bundle may register namespace readers with
+  `@event_source_reader`; then `react.read` can dispatch refs such as `mem:...`
+  or `cnv:main@7` to the namespace owner. The owner reader resolves the ref and
+  the owner event-source `block_production` policies decide the model-visible
+  block shape. ReAct does not hard-code memory, canvas, task, or knowledge
+  object rendering.
 - `ev:` refs identify event objects on the timeline. Read them like `tc:` refs
   when the event block itself is needed. If an event points to payload bytes,
   use the event's `hosted_uri`, `payload.event_ref`, or artifact refs carried
@@ -121,6 +129,18 @@ Reads existing logical artifacts back into the visible timeline.
   - bytes = raw payload admission guard for all readable payloads
 
 Use it when the path already exists and React needs to inspect the content again.
+
+Do not call owner reader event-source ids as tools. For example, a canvas board
+read is not `canvas.read(...)`; it is:
+
+```json
+{"paths":["cnv:main@27"]}
+```
+
+The `canvas.read` event source id is still important because it selects the
+canvas read policies, but it is `kind="react.event_source_reader"`, not an
+agent-visible `react.tool`. The model-visible write path remains
+`canvas.patch(...)`.
 
 Skills are not read-capped. `ks:` knowledge-space articles are uncapped only
 when no `ai.react.knowledge_read_visible_*` cap is configured. If a `ks:` cap is

@@ -132,6 +132,12 @@ function terms(value: string): string[] {
     .filter(Boolean);
 }
 
+export function normalizeMemoryRef(value: string): string {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return '';
+  return trimmed.startsWith('mem:') ? trimmed.slice(4).trim() : trimmed;
+}
+
 function upsertMemory(state: MemoriesState, memory?: MemoryEntry, incrementIfNew = false) {
   if (!memory) return;
   const index = state.memories.findIndex((item) => item.id === memory.id);
@@ -158,6 +164,14 @@ export const loadMemories = createAsyncThunk<MemoriesPayload, void, { state: { m
       offset: state.page * state.pageSize,
     });
   },
+);
+
+export const loadMemory = createAsyncThunk<MemoryMutationPayload, string>(
+  'memories/loadOne',
+  async (memoryRef) => callOperation<MemoryMutationPayload>('memories_widget_get', {
+    memory_id: normalizeMemoryRef(memoryRef),
+    scope_filter: 'all_user_memories',
+  }),
 );
 
 export const createMemory = createAsyncThunk<MemoryMutationPayload, MemoryDraft>(
@@ -242,8 +256,8 @@ export const loadMemoryEvents = createAsyncThunk<MemoryEventsPayload, string, { 
   async (memoryId, thunkApi) => {
     const state = thunkApi.getState().memories;
     return callOperation<MemoryEventsPayload>('memories_widget_events', {
-      memory_id: memoryId,
-      scope_filter: state.scopeFilter,
+      memory_id: normalizeMemoryRef(memoryId),
+      scope_filter: state.allowAllUserMemories ? 'all_user_memories' : state.scopeFilter,
       limit: 25,
     });
   },
@@ -462,7 +476,7 @@ const memoriesSlice = createSlice({
       state.selectedEvents = [];
     },
     selectMemory(state, action: PayloadAction<string>) {
-      state.selectedId = action.payload;
+      state.selectedId = normalizeMemoryRef(action.payload);
       state.selectedEvents = [];
     },
     selectReconciliationJob(state, action: PayloadAction<string>) {
@@ -519,6 +533,24 @@ const memoriesSlice = createSlice({
       .addCase(loadMemories.rejected, (state, action) => {
         state.loading = false;
         state.error = action.error.message || 'Unable to load memories.';
+      })
+      .addCase(loadMemory.pending, (state) => {
+        state.loading = true;
+        state.error = '';
+      })
+      .addCase(loadMemory.fulfilled, (state, action) => {
+        state.loading = false;
+        if (!action.payload.ok || !action.payload.memory) {
+          state.error = action.payload.message || action.payload.error || 'Unable to load memory.';
+          return;
+        }
+        state.error = '';
+        state.mutationError = '';
+        upsertMemory(state, action.payload.memory);
+      })
+      .addCase(loadMemory.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.error.message || 'Unable to load memory.';
       })
       .addCase(loadMemoryEvents.pending, (state) => {
         state.eventsLoading = true;

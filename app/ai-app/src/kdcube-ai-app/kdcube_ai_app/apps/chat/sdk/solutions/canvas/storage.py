@@ -35,7 +35,7 @@ def parse_canvas_uri(uri: Any) -> Dict[str, Any]:
     raw = str(uri or "").strip()
     if not raw:
         return {}
-    if raw.startswith("canvas:"):
+    if raw.startswith("cnv:"):
         body = raw.split(":", 1)[1].strip()
         revision: int | None = None
         if "@" in body:
@@ -46,7 +46,7 @@ def parse_canvas_uri(uri: Any) -> Dict[str, Any]:
         else:
             name = body
         return {
-            "scheme": "canvas",
+            "scheme": "cnv",
             "uri": raw,
             "canvas_name": safe_storage_segment(name or DEFAULT_CANVAS_NAME, default=DEFAULT_CANVAS_NAME),
             "revision": revision,
@@ -372,13 +372,13 @@ class CanvasStore:
         explicit = str(canvas_id or "").strip()
         if explicit:
             return explicit
-        return f"canvas:{self.user_id}:{self.canvas_name(canvas_name)}"
+        return f"cnv:{self.user_id}:{self.canvas_name(canvas_name)}"
 
     def storage_id(self, canvas_id: str) -> str:
         return safe_storage_segment(canvas_id, default=timestamp_id("canvas"))
 
     def canvas_uri(self, *, canvas_name: str, revision: int | None = None) -> str:
-        uri = f"canvas:{self.canvas_name(canvas_name)}"
+        uri = f"cnv:{self.canvas_name(canvas_name)}"
         if revision is not None:
             uri = f"{uri}@{max(0, int(revision or 0))}"
         return uri
@@ -1036,7 +1036,7 @@ class CanvasStore:
     ) -> Dict[str, Any]:
         parsed = parse_canvas_uri(uri)
         scheme = str(parsed.get("scheme") or "")
-        if scheme == "canvas":
+        if scheme == "cnv":
             name = self.canvas_name(parsed.get("canvas_name") or canvas_name)
             cid = self.canvas_id(canvas_name=name, canvas_id=canvas_id)
             return self.read(

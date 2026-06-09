@@ -5,7 +5,13 @@ from typing import Any, Dict, Mapping, Sequence
 
 from .ids import timestamp_slug_id
 from .storage_utils import safe_storage_segment
-from .events.resolver import CanvasObjectResolverRegistry, CanvasPinResolver, search_canvas_cards
+from .events.resolver import (
+    CanvasObjectResolverRegistry,
+    CanvasPinResolver,
+    namespace_for_ref,
+    object_ref_from_payload,
+    search_canvas_cards,
+)
 from .storage import CanvasStore
 
 
@@ -131,7 +137,46 @@ async def object_action(
     story_id: str,
 ) -> Dict[str, Any]:
     action = str(payload.get("action") or "capabilities").strip().lower()
-    result = await registry.object_action(payload, user_id=user_id, story_id=story_id)
+    ref = object_ref_from_payload(payload)
+    namespace = namespace_for_ref(ref)
+    LOGGER.info(
+        "[canvas.object_action] requested action=%s namespace=%s ref=%s user_id=%s story_id=%s",
+        action,
+        namespace,
+        ref,
+        user_id,
+        story_id,
+    )
+    try:
+        result = await registry.object_action(payload, user_id=user_id, story_id=story_id)
+    except Exception:
+        LOGGER.exception(
+            "[canvas.object_action] exception action=%s namespace=%s ref=%s user_id=%s story_id=%s",
+            action,
+            namespace,
+            ref,
+            user_id,
+            story_id,
+        )
+        raise
+    ok = bool(result.get("ok"))
+    log_payload = {
+        "action": action,
+        "namespace": result.get("namespace") or namespace,
+        "resolver": result.get("resolver"),
+        "resolver_status": result.get("resolver_status"),
+        "ref": result.get("object_ref") or result.get("ref") or ref,
+        "user_id": user_id,
+        "story_id": story_id,
+        "has_content_base64": bool(result.get("content_base64")),
+        "has_ui_event": bool(result.get("ui_event")),
+        "error": result.get("error"),
+        "status": result.get("status"),
+    }
+    if ok:
+        LOGGER.info("[canvas.object_action] resolved %s", log_payload)
+    else:
+        LOGGER.warning("[canvas.object_action] failed %s", log_payload)
     return {"user_id": user_id, "story_id": story_id, "action": action, **result}
 
 

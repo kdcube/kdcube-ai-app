@@ -10,6 +10,7 @@ from typing import Any, Callable, TypeVar
 
 EVENT_SOURCE_ATTR = "__kdcube_event_source__"
 ARTIFACT_NAMESPACE_REHOSTER_ATTR = "__kdcube_artifact_namespace_rehoster__"
+EVENT_SOURCE_READER_ATTR = "__kdcube_event_source_reader__"
 
 T = TypeVar("T")
 
@@ -51,6 +52,23 @@ class ArtifactNamespaceRehosterDeclaration:
     """
 
     namespace: str
+    description: str = ""
+    version: str = ""
+
+
+@dataclass(frozen=True)
+class EventSourceReaderDeclaration:
+    """Callable metadata for resolving canonical refs into event-source payloads.
+
+    A reader belongs to the resource/event owner for a namespace such as `mem`,
+    `task`, or `canvas`. `react.read` may use these readers only as a generic
+    dispatch layer: the owner callable resolves the ref, and the declared
+    event source's ReAct policies decide how that resolved payload is placed on
+    the timeline.
+    """
+
+    namespace: str
+    event_source_id: str
     description: str = ""
     version: str = ""
 
@@ -97,6 +115,29 @@ def artifact_namespace_rehoster_declaration(
     )
 
 
+def event_source_reader_declaration(
+    *,
+    namespace: str,
+    event_source_id: str,
+    description: str = "",
+    version: str = "",
+) -> EventSourceReaderDeclaration:
+    namespace = str(namespace or "").strip().rstrip(":")
+    if not namespace:
+        raise ValueError("namespace must be non-empty")
+    if any(ch.isspace() for ch in namespace) or "/" in namespace or "\\" in namespace:
+        raise ValueError("namespace must be a compact URI-style prefix such as 'mem'")
+    event_source_id = str(event_source_id or "").strip()
+    if not event_source_id:
+        raise ValueError("event_source_id must be non-empty")
+    return EventSourceReaderDeclaration(
+        namespace=namespace,
+        event_source_id=event_source_id,
+        description=str(description or "").strip(),
+        version=str(version or "").strip(),
+    )
+
+
 def artifact_namespace_rehoster(
     *,
     namespace: str,
@@ -120,6 +161,36 @@ def artifact_namespace_rehoster(
 
     def _decorate(obj: T) -> T:
         setattr(obj, ARTIFACT_NAMESPACE_REHOSTER_ATTR, declaration)
+        return obj
+
+    return _decorate
+
+
+def event_source_reader(
+    *,
+    namespace: str,
+    event_source_id: str,
+    description: str = "",
+    version: str = "",
+) -> Callable[[T], T]:
+    """Mark a callable as the owner reader for a canonical ref namespace.
+
+    The callable is discovered from the same modules as event sources. It is
+    invoked by generic readers such as `react.read` before the normal missing
+    path handling when a requested ref starts with the registered namespace
+    prefix. The returned mapping is treated as the payload for `event_source_id`
+    and rendered through that source's ReAct policies.
+    """
+
+    declaration = event_source_reader_declaration(
+        namespace=namespace,
+        event_source_id=event_source_id,
+        description=description,
+        version=version,
+    )
+
+    def _decorate(obj: T) -> T:
+        setattr(obj, EVENT_SOURCE_READER_ATTR, declaration)
         return obj
 
     return _decorate
@@ -165,6 +236,22 @@ def get_artifact_namespace_rehoster_declaration(obj: Any) -> ArtifactNamespaceRe
     if isinstance(declaration, Mapping):
         try:
             return artifact_namespace_rehoster_declaration(**declaration)
+        except Exception:
+            return None
+    return None
+
+
+def get_event_source_reader_declaration(obj: Any) -> EventSourceReaderDeclaration | None:
+    if obj is None:
+        return None
+    declaration = getattr(obj, EVENT_SOURCE_READER_ATTR, None)
+    if declaration is None and hasattr(obj, "__func__"):
+        declaration = getattr(getattr(obj, "__func__", None), EVENT_SOURCE_READER_ATTR, None)
+    if isinstance(declaration, EventSourceReaderDeclaration):
+        return declaration
+    if isinstance(declaration, Mapping):
+        try:
+            return event_source_reader_declaration(**declaration)
         except Exception:
             return None
     return None

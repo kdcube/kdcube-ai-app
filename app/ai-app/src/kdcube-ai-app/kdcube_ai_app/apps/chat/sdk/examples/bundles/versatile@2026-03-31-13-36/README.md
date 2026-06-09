@@ -27,7 +27,9 @@ It intentionally demonstrates the main SDK bundle surfaces together in one place
 | Bundle-authenticated MCP endpoint      | `entrypoint.py:preferences_tools_mcp`, `tools/preference_tools.py:build_preferences_mcp_app` |
 | Direct isolated exec from bundle code  | `entrypoint.py:preferences_exec_report`                                                    |
 | Source-folder webapp widget            | `ui/widgets/versatile_webapp`, `entrypoint.py:versatile_webapp_widget`                     |
-| Custom iframe main view                | `ui/main/src/App.tsx`, `ui/main/src/settings.ts`, `entrypoint.py`                            |
+| Active iframe main view                | `ui/scene`, `entrypoint.py` main-view config                                               |
+| Legacy custom iframe main view         | `ui/main/src/App.tsx`, `ui/main/src/settings.ts` retained for comparison                    |
+| SDK chat widget mount                  | `versatile_chat`, backed by `sdk://solutions/chat/ui/widget`                               |
 | SDK durable memory widget              | shared memory widget source, inherited `memories_widget_*` operations                      |
 | Memory maintenance                     | `memories_widget_snapshot_*`, `memories_widget_reconcile_*` inherited from SDK memory mixin |
 | Bundle interface contract              | `interface/README.md`                                                                       |
@@ -71,6 +73,10 @@ documentation expected from real bundles:
 ## Bundle behavior
 
 - The workflow is a normal gate → solver React loop.
+- The active main view is `ui/scene`. It is a small scene shell that embeds the
+  reusable SDK chat widget as `versatile_chat`; the previous `ui/main` source is
+  kept in the bundle for comparison while the main-view configuration points at
+  `ui/scene`.
 - The bundle heuristically captures preference statements from user messages while the chat is running.
 - Preferences are stored per user in the shared bundle storage backend (`AIBundleStorage`).
 - The solver can consult those preferences with the bundle-local tool:
@@ -433,13 +439,17 @@ This bundle also exposes widget and notebook operations:
   - is wired to the widget's `Run Exec Report` button through the same integrations
 operations API
 
-## Custom main view UI
+## Main View UI
 
 This bundle also ships a standalone main UI configured through `ui.main_view`
 in `entrypoint.py`.
 
-The source lives under `ui/main/`, and `ui/main/src/App.tsx` is the current lightweight
-reference implementation for a custom bundle chat surface.
+The active source lives under `ui/scene/`. It is a scene shell that embeds the
+reusable SDK chat widget as `versatile_chat`, embeds the SDK memory widget as
+`memories`, and renders the SDK canvas component as the main work surface.
+
+The previous custom chat implementation remains under `ui/main/` as a legacy
+reference for comparison.
 
 It intentionally covers the minimal but real platform contract:
 
@@ -450,8 +460,15 @@ It intentionally covers the minimal but real platform contract:
 - assistant file download resolution through `POST /api/cb/resources/by-rn`
 - attachments, rate-limit/service banners, streamed markdown, followups, tool widgets, and separate timeline/steps/downloads tabs
 
-The main view also includes a chats panel for the current bundle and can load an
-existing conversation back into the same turn UI used for live streaming.
+The active scene inherits those chat behaviors from the SDK chat widget.
+
+The scene writes canvas mutations through Data Bus subject `canvas.patch` and
+keeps request/response operations such as `canvas_read`, `canvas_list`,
+`canvas_attachment_upload`, and `canvas_object_action` as bundle operations.
+The canvas event source ids are generic protocol names: `canvas.state` and
+`canvas.focus`.
+
+Detailed scene wiring is documented in `docs/design/scene-sdk-components.md`.
 
 ## Widget integration contract
 

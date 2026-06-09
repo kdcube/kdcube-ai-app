@@ -391,7 +391,7 @@ export function canvasProjection(canvas: CanvasDefinition): CanvasProjection {
     schema: 'kdcube.canvas.projection.v1',
     canvas_id: canvas.id,
     canvas_name: canvas.name,
-    canvas_uri: `canvas:${canvas.name}@${canvas.revision}`,
+    canvas_uri: `cnv:${canvas.name}@${canvas.revision}`,
     revision: canvas.revision,
     bounds: canvasBounds(canvas.cards),
     cards_count: canvas.cards.length,

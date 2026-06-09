@@ -4,7 +4,7 @@ title: "Event Domain Resolvers And Policies"
 summary: "Concrete SDK contract for namespace-owning event domains, their object resolvers, ReAct rendering policies, and the composition bundle that mounts multiple integrations."
 status: draft
 tags: ["sdk", "solutions", "event-hub", "resolvers", "react", "events", "namespaces", "composition-bundle"]
-updated_at: 2026-06-08
+updated_at: 2026-06-09
 keywords:
   [
     "event domain resolver",
@@ -18,6 +18,7 @@ keywords:
     "react event policy",
   ]
 see_also:
+  - ks:docs/sdk/solutions/event-hub/design/resolver-directory-and-operation-routing-README.md
   - ks:docs/sdk/events/namespaces-README.md
   - ks:docs/sdk/events/event-subsystem-README.md
   - ks:docs/sdk/events/external-events-README.md
@@ -40,6 +41,7 @@ one working assistant scene.
 | Namespace | The prefix before `:` in a logical ref. Examples: `fi:`, `mem:`, `task:`, `cnv:`. |
 | Namespace owner | The domain that mints refs in a namespace and defines their semantics. |
 | Resolver | Backend callable owned by the namespace owner. It maps `object_ref + action` to a bounded result. |
+| Event source reader | Backend callable owned by the namespace owner. It resolves a canonical ref for model reads such as `react.read(paths=["mem:..."])`. |
 | Policy | ReAct rendering callable owned by the event domain. It maps events/tool results into blocks, timeline text, compaction text, or ANNOUNCE text. |
 | Composition bundle | A bundle that imports available domains, registers their resolvers/policies/tools/widgets, and mounts the UI scene. |
 
@@ -50,8 +52,10 @@ one working assistant scene.
 3. Canvas stores canonical refs and board metadata; it does not rehost or
    reinterpret non-canvas objects.
 4. ReAct rendering uses event policies; it must not depend on UI card code.
-5. A ref keeps its original namespace when it moves between surfaces.
-6. Current resolver registration is local Python import plus explicit
+5. `react.read` for owner-domain refs resolves through event source readers,
+   then renders through the owner's event policies.
+6. A ref keeps its original namespace when it moves between surfaces.
+7. Current resolver registration is local Python import plus explicit
    registration. Remote resolver discovery is not implemented.
 
 ## Domain Ownership Table
@@ -139,12 +143,74 @@ source. A domain can ship default policy ids for its own events. A composition
 bundle can override or add policy ids only when it intentionally changes the
 agent-facing representation for that scene.
 
+## Model Read Contract
+
+Object resolvers are for UI or service actions: preview, open, download, and
+rehost. Model reads use the event-source reader path.
+
+```text
+react.read(paths=["mem:mem_123"])
+  -> namespace owner reader for mem:
+  -> source id memory.read_memory
+  -> memory block-production policy
+  -> rendered block on the current timeline/read result
+```
+
+Owner module example:
+
+```python
+from kdcube_ai_app.apps.chat.sdk.events import event_source_reader
+
+@event_source_reader(
+    namespace="mem",
+    event_source_id="{alias}.read_memory",
+    description="Read a durable memory by mem: ref.",
+)
+async def read_memory_event_ref(*, ref, ctx_browser=None, **context):
+    ...
+```
+
+The reader returns the owner-domain payload. It should not pre-render timeline
+text unless that text is part of the domain object. The source's
+`block_production` policy renders the payload into model-visible blocks.
+
+This is the same ownership rule as external event ingestion:
+
+```text
+external event occurrence
+  -> event source declaration
+  -> block-production policy
+  -> timeline block
+
+react.read(owner-ref)
+  -> event source reader
+  -> event source declaration
+  -> block-production policy
+  -> read block
+```
+
+The event source declaration's `kind` must match the occurrence family:
+
+| `kind` | Use |
+| --- | --- |
+| `react.tool` | Actual model-callable tool source, for example `canvas.patch`. |
+| `react.event_source_reader` | Read source behind `react.read` owner refs, for example `memory.read_memory` for `mem:` or `canvas.read` for `cnv:`. |
+| `react.external` | Authored UI/integration event transported through `external_events[]`. |
+
+`kind` is not tool visibility. Tool visibility still comes from the tool
+subsystem. Reader sources are intentionally not called directly by the model.
+
+Do not add namespace-specific branches to ReAct for every subsystem. Add an
+owner reader and owner policies, then load that module into the composition
+bundle's event source subsystem.
+
 ## Resolver And Policy Are Different
 
 | Question | Resolver answers | Policy answers |
 | --- | --- | --- |
 | User clicked "open" on a `task:` card. | Which task object to open, and which UI event to emit. | Not involved. |
 | Agent sees `[CANVAS BOARD]` in ANNOUNCE. | Not involved. | Canvas announce policy rendered the board. |
+| Agent calls `react.read(paths=["mem:..."])`. | Not involved unless the owner reader itself delegates to an object resolver. | Memory block-production policy renders the resolved memory. |
 | User drags a `fi:` file to canvas. | `fi:` resolver can later preview/download it. | ReAct artifact policies can render it in timeline/ANNOUNCE if included as event context. |
 | Agent calls `task.patch`. | Task tool and task resolver own the task mutation result. | Task tool result policy renders compact timeline and refreshed ANNOUNCE. |
 | Old turn is compacted. | Not involved. | Compaction policy renders durable summary. |
@@ -253,6 +319,7 @@ For each domain mounted into a scene:
 | --- | --- | --- |
 | Canonical namespace | Yes | Preserves refs unchanged. |
 | Resolver | Yes | Imports and registers it. |
+| Event source reader | Yes, if `react.read` should resolve refs in this namespace | Imports the owner module through tool/event source specs. |
 | ReAct event policies | Yes | Imports policy module and binds policy ids through event source descriptors. |
 | Tools | Yes, if the domain is agent-editable | Exposes tool descriptors to the agent. |
 | Additional instructions | Yes, if the agent needs stable operational rules | Concatenates instruction blocks. |
@@ -320,6 +387,14 @@ card" ambiguous for ReAct.
 | Timeline policy dumps full JSON bodies. | Timeline policy renders compact facts and refs; ANNOUNCE carries current high-priority view. |
 | Agent instructions contain mutable per-turn state. | Mutable state is rendered by event policies into timeline/ANNOUNCE. Instructions describe stable rules only. |
 | Widget open silently replaces dirty editor state. | Target widget gates navigation and asks the user. |
+
+## Related Resolver Directory Design
+
+The current runtime uses local Python import plus explicit registration in the
+composition bundle. The proposed cross-bundle design for a Redis TTL resolver
+directory, direct resolver operation calls, temporary blob exchange, and Data
+Bus handoff for async/UI cases is tracked in
+[Resolver Directory And Operation Routing Design](design/resolver-directory-and-operation-routing-README.md).
 
 ## Implementation Status
 

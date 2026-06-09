@@ -4,7 +4,7 @@ title: "Logical Reference Namespaces"
 summary: "Foundational model for model-facing logical refs such as ar:, ev:, tc:, fi:, ext:, task:, mem:, and so:, and how they relate to events, react.read, react.pull, and react.checkout."
 status: draft
 tags: ["sdk", "events", "react", "logical-references", "namespaces", "artifacts"]
-updated_at: 2026-06-07
+updated_at: 2026-06-09
 keywords:
   [
     "logical reference namespace",
@@ -19,6 +19,7 @@ keywords:
     "task:",
     "mem:",
     "so:",
+    "cnv:",
   ]
 see_also:
   - ks:docs/sdk/events/external-events-README.md
@@ -78,13 +79,22 @@ namespace.
 | `fi:` | ReAct artifact/file storage | yes | yes, to materialize bytes locally | only for supported `fi:...files/...` workspace refs |
 | `ext:` | Bundle or external hosted artifact refs | not directly by default | yes when a registered namespace rehoster exists; returns `fi:` rows | no; pull first, then checkout only if the returned `fi:` is a supported files ref |
 | `task:` | Task subsystem object refs | through task tools/policies, not generic artifact read by default | only if the task subsystem registers an artifact projection/rehoster | no |
-| `mem:` | Memory subsystem refs | through memory tools/policies | subsystem-defined | no |
+| `mem:` | Memory subsystem refs | yes when the memory module is loaded; dispatches through the memory event-source reader and memory block-production policy | subsystem-defined | no |
+| `cnv:` | Canvas subsystem refs, including boards such as `cnv:main@7` and canvas-owned objects | yes when the canvas module is loaded; dispatches through the canvas event-source reader and canvas block-production policy | subsystem-defined | no |
 | `so:` / `su:` | Source/search subsystems | through source/search tooling or visible source pools | subsystem-defined | no |
 | `ks:` | Knowledge/docs namespace | subsystem-defined; often read/browse tooling | subsystem-defined | no |
 
 This table describes the default architectural contract. A bundle can add a
 registered rehoster or tool for a namespace, but that registration belongs to
 the namespace owner and must be documented by that subsystem.
+
+`react.read` support for owner-domain refs is policy-based. For example,
+`react.read(paths=["mem:mem_..."])` first resolves the ref through the
+memory-owned `@event_source_reader(namespace="mem", ...)`, then renders the
+resolved payload through the memory event source's `block_production` policies.
+`react.read(paths=["cnv:main@7"])` does the same through the canvas-owned
+reader and canvas policies. ReAct does not contain hard-coded memory or canvas
+renderers.
 
 ## Events And Namespaces
 
@@ -176,6 +186,8 @@ When introducing a new namespace:
 - define the namespace owner;
 - define whether refs are event objects, artifacts, domain objects, or aliases;
 - define whether `react.read` can read them directly;
+- if `react.read` is supported, register an owner-domain event source reader
+  and block-production policy;
 - define whether `react.pull` can rehost them to `fi:`;
 - define whether any returned `fi:` refs can be checked out;
 - define permissions and user/project/tenant visibility;

@@ -14,6 +14,19 @@ function formatDate(value: string): string {
   }
 }
 
+function uniqueTerms(...groups: string[][]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  groups.flat().forEach((term) => {
+    const clean = String(term || '').trim();
+    const key = clean.toLowerCase();
+    if (!clean || seen.has(key)) return;
+    seen.add(key);
+    result.push(clean);
+  });
+  return result;
+}
+
 interface MemoryDetailProps {
   onEdit: () => void;
 }
@@ -22,6 +35,7 @@ export function MemoryDetail({ onEdit }: MemoryDetailProps) {
   const dispatch = useAppDispatch();
   const { allowWrite, eventsLoading, memories, memoryUseEnabled, saving, selectedEvents, selectedId } = useAppSelector((state) => state.memories);
   const memory = memories.find((item) => item.id === selectedId);
+  const terms = memory ? uniqueTerms(memory.labels, memory.keywords) : [];
 
   useEffect(() => {
     if (selectedId) void dispatch(loadMemoryEvents(selectedId));
@@ -93,8 +107,7 @@ export function MemoryDetail({ onEdit }: MemoryDetailProps) {
       </dl>
 
       <div className="term-row">
-        {memory.labels.map((label) => <span key={`label-${label}`}>{label}</span>)}
-        {memory.keywords.map((keyword) => <span key={`keyword-${keyword}`}>{keyword}</span>)}
+        {terms.map((term) => <span key={`term-${term}`}>{term}</span>)}
       </div>
 
       <section className="events">

@@ -58,13 +58,27 @@
 
 * { box-sizing: border-box; }
 
-html, body, #root { min-height: 100%; }
+html, body, #root {
+  min-height: 100%;
+}
+
+html[data-memory-view="compact"],
+html[data-memory-view="compact"] body,
+html[data-memory-view="compact"] #root {
+  min-height: 0;
+  height: auto;
+}
 
 body {
   margin: 0;
   background: var(--bg);
   font-size: 13px;
   line-height: 1.5;
+  overflow: hidden;
+}
+
+html[data-memory-view="compact"] body {
+  overflow: visible;
 }
 
 button, input, select, textarea { font: inherit; color: inherit; }
@@ -78,10 +92,25 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   padding: 12px 14px 24px;
 }
 
+.expanded-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100vh;
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: 10px;
+}
+
 .compact-shell {
+  display: block;
   width: 100%;
+  height: auto;
+  min-height: 0;
+  max-height: 100vh;
   margin: 0;
-  padding: 8px;
+  padding: 6px;
+  overflow: auto;
 }
 
 .sr-only {
@@ -107,17 +136,46 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 }
 
 .compact-shell .app-header {
-  padding-bottom: 6px;
-  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-height: 24px;
+  padding-bottom: 4px;
+  margin-bottom: 5px;
+}
+
+.host-controlled-shell {
+  padding-top: 0;
+}
+
+.host-controlled-shell .warning-box {
+  margin-top: 0;
+}
+
+.app-title-block {
+  min-width: 0;
+}
+
+.compact-shell .app-title-block {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  margin-right: auto;
 }
 
 .compact-shell .app-header h1 {
-  margin-top: 0;
+  margin: 0;
   font-size: 14px;
+  line-height: 1.15;
 }
 
 .compact-shell .app-header p {
+  margin: 0;
   font-size: 11px;
+  line-height: 1.15;
+  white-space: nowrap;
 }
 
 .eyebrow {
@@ -165,6 +223,29 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   height: 14px;
 }
 
+.compact-memory-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  margin: 0 0 6px;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.compact-memory-toggle input {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+
+.compact-memory-toggle span {
+  display: inline;
+  margin: 0;
+}
+
 /* ─── Surfaces ─── */
 .filters,
 .memory-list,
@@ -188,15 +269,50 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   font-size: 13px;
 }
 
+.compact-shell .warning-box {
+  margin-bottom: 6px;
+  padding: 6px 7px;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
 .filters {
   display: grid;
   gap: 8px;
   padding: 10px;
 }
 
+.expanded-shell .filters {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-height: 0;
+  overflow: visible;
+}
+
+.expanded-shell .filter-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.expanded-shell .search-row {
+  grid-template-columns: minmax(180px, 1.2fr) minmax(140px, 0.8fr) minmax(140px, 0.8fr) auto;
+}
+
+.expanded-shell .search-row button {
+  min-width: 96px;
+}
+
+.expanded-shell .warning-box,
+.expanded-shell .maintenance-toggle-row,
+.expanded-shell .error-box {
+  flex: 0 0 auto;
+}
+
 .compact-filters {
-  padding: 8px;
-  gap: 6px;
+  padding: 5px;
+  gap: 5px;
 }
 
 .filter-row,
@@ -211,17 +327,29 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 
 .compact-filters .search-row {
   grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 6px;
+  gap: 5px;
 }
 
 .compact-filters .search-row select {
-  width: 118px;
+  width: 116px;
+}
+
+.compact-shell input,
+.compact-shell select,
+.compact-shell .search-row button {
+  height: 28px;
+  padding-top: 4px;
+  padding-bottom: 4px;
 }
 
 .memory-actions-row {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.expanded-shell .memory-actions-row {
+  gap: 6px;
 }
 
 label span {
@@ -331,12 +459,48 @@ textarea:focus {
   color: var(--text-2);
 }
 
+.compact-add-button,
+.compact-expand-button {
+  flex: 0 0 auto;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  border-color: var(--line-soft);
+  border-radius: var(--r-md);
+}
+
+.compact-add-button {
+  background: var(--teal);
+  border-color: var(--teal);
+  color: #fff;
+}
+
+.compact-add-button:hover:not(:disabled) {
+  background: var(--teal-dark);
+  border-color: var(--teal-dark);
+}
+
+.compact-expand-button {
+  color: var(--blue-dark);
+}
+
 /* ─── Workspace ─── */
 .workspace {
   display: grid;
-  grid-template-columns: minmax(300px, 0.95fr) minmax(380px, 1.05fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
   margin-top: 10px;
+  min-height: 0;
+}
+
+.workspace.with-side-panel {
+  grid-template-columns: minmax(300px, 0.95fr) minmax(380px, 1.05fr);
+}
+
+.maintenance-toggle-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
 }
 
 .compact-workspace {
@@ -580,12 +744,32 @@ textarea:focus {
 .compact-error { margin-top: 0; }
 
 /* ─── Memory list ─── */
-.side-panel { min-width: 0; }
+.side-panel {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
 
 .memory-list,
 .memory-detail,
 .memory-editor {
   min-height: 420px;
+}
+
+.expanded-shell .workspace {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 auto;
+  margin-top: 0;
+  min-height: 180px;
+  overflow: auto;
+}
+
+.expanded-shell .memory-list,
+.expanded-shell .memory-detail,
+.expanded-shell .memory-editor {
+  min-height: 0;
+  overflow: auto;
 }
 
 .compact-memory-list {
@@ -622,13 +806,13 @@ textarea:focus {
 .memory-row {
   position: relative;
   display: grid;
-  gap: 4px;
+  gap: 5px;
   width: 100%;
   border: 0;
   border-bottom: 1px solid var(--line-soft);
   background: var(--surface);
   color: inherit;
-  padding: 8px 12px;
+  padding: 8px 10px;
   text-align: left;
   transition: background 120ms ease;
 }
@@ -648,24 +832,27 @@ textarea:focus {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
+  min-width: 0;
 }
 
 .memory-title {
+  min-width: 0;
   color: var(--ink);
   font-size: 13px;
-  font-weight: 500;
-  line-height: 1.4;
+  font-weight: 700;
+  line-height: 1.3;
   overflow: hidden;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
 }
 
 .memory-context {
+  min-width: 0;
   color: var(--text-2);
   font-size: 12px;
-  line-height: 1.35;
+  line-height: 1.3;
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -689,7 +876,8 @@ textarea:focus {
 }
 
 .memory-bundle {
-  max-width: 140px;
+  flex: 0 0 auto;
+  max-width: 72px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -709,10 +897,20 @@ textarea:focus {
 .term-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 4px 5px;
+  min-width: 0;
 }
 
-.compact-terms { min-height: 0; }
+.compact-terms {
+  min-height: 0;
+  max-height: 46px;
+  overflow: hidden;
+}
+
+.memory-meta {
+  max-height: 22px;
+  overflow: hidden;
+}
 
 .memory-meta span,
 .term-row span,
@@ -720,6 +918,7 @@ textarea:focus {
 .edit-chip {
   display: inline-flex;
   align-items: center;
+  max-width: 100%;
   height: 18px;
   padding: 0 6px;
   border: 1px solid var(--line-soft);
@@ -728,6 +927,18 @@ textarea:focus {
   color: var(--text-2);
   font-size: 11px;
   font-weight: 500;
+  line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.term-row span {
+  max-width: 104px;
+}
+
+.memory-meta span {
+  max-width: 132px;
 }
 
 /* Tag colors — 6-color rotation so adjacent labels/keywords are easy to scan */

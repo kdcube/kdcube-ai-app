@@ -9,6 +9,7 @@ keywords:
     "event_source",
     "event_source_id",
     "event_id",
+    "event_source_reader",
     "EventSourceSubsystem",
     "tool-backed event source",
     "event policies",
@@ -57,6 +58,22 @@ tool_call_id == event_id
 The tool still executes through the normal tool subsystem. Event-source metadata
 only tells downstream consumers how to validate, produce, project, announce, or
 compact the occurrence.
+
+`event_source_declaration.kind` classifies the occurrence family. It does not
+make a callable visible to the model by itself.
+
+| `kind` | Meaning | Agent-visible tool? |
+|---|---|---:|
+| `react.tool` | ReAct tool-call lifecycle source. The occurrence is a tool call/result; `event_source_id` normally equals the tool id. | Yes, only when the callable is also loaded as a tool, for example through `@kernel_function`. |
+| `react.event_source_reader` | Owner-domain reader backing `react.read` for a logical namespace such as `mem:` or `cnv:`. The model calls `react.read`, not this source id directly. | No |
+| `react.external` | Authored external event from UI, integration, Data Bus, or another bundle surface. Reactivity is an occurrence property on transported `external_events[]`. | No |
+| `react.native_tool.write` / `react.native_tool.source` | Built-in ReAct-native source families such as write/source-pool handling. | Runtime-owned |
+
+Keep this distinction strict. A source can have policy bindings without being a
+tool. For example, the canvas board read source is `canvas.read` with
+`kind="react.event_source_reader"`; the agent reads it through
+`react.read(paths=["cnv:main@7"])`. The write source `canvas.patch` remains
+`kind="react.tool"` because the agent calls `canvas.patch(...)` directly.
 
 Event-source policy bindings are the integration contract. For ReAct, a source
 can declare policies that find result surfaces, convert them to timeline
@@ -145,6 +162,52 @@ field; runtime caps always apply last.
 The subsystem validates duplicate `event_source_id` values and lets consumers
 look up declarations by source id or, when a durable block carries
 `event_source_id`, by block.
+
+## Event Source Readers
+
+An event source reader is the owner-domain read hook for canonical refs. It is
+used when a model-facing ref names an object whose current representation is
+owned by an event domain, for example `mem:mem_...`.
+
+The reader resolves the ref. It does not decide how the resolved object should
+look on the timeline. The event source's block-production policies render the
+resolved payload into blocks.
+
+```python
+from kdcube_ai_app.apps.chat.sdk.events import event_source_reader
+
+@event_source_reader(
+    namespace="mem",
+    event_source_id="{alias}.read_memory",
+    description="Read a durable memory by mem: ref.",
+)
+async def read_memory_event_ref(*, ref, ctx_browser=None, **context):
+    ...
+```
+
+Runtime flow:
+
+```text
+react.read(paths=["mem:mem_123"])
+  -> EventSourceSubsystem.event_source_reader_for_ref("mem:mem_123")
+  -> owner reader resolves the ref
+  -> event_source_id selects source policies
+  -> block_production policies emit model-visible blocks
+```
+
+This keeps `react.read` generic. ReAct does not implement memory, task, canvas,
+or knowledge-source semantics itself; it dispatches to the namespace owner's
+reader and then uses that source's policies.
+
+Readers are discovered from the same loaded tool/event modules as event
+sources:
+
+- decorated callables with `@event_source_reader(...)`;
+- callables or declaration dictionaries returned from
+  `list_event_source_readers()`.
+
+Each namespace can have one local reader in the current `EventSourceSubsystem`.
+Duplicate namespace registrations are rejected during discovery.
 
 ## Artifact Namespace Rehosters
 

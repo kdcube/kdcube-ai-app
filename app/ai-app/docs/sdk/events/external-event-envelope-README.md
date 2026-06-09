@@ -78,6 +78,13 @@ Field roles:
 | `payload.event` | Inline event object/string/bytes metadata. |
 | `payload.event_ref` | Pullable URI for the event payload/body, for example `fi:` or `ext:`. |
 
+The transported envelope carries `event_source_id`, not the source
+declaration's `kind`. `kind` lives in the server-side
+`event_source_declaration(...)` and classifies the source family, for example
+`react.external`, `react.tool`, or `react.event_source_reader`. Clients should
+not invent a `kind` field to decide rendering. They send the accepted event
+fields above; the runtime looks up the source declaration and policies.
+
 `payload` must describe the event body. It should contain exactly one of
 `event` or `event_ref`, plus `mime`.
 

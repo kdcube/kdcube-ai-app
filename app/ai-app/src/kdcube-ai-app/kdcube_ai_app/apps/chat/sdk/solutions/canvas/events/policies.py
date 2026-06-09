@@ -124,7 +124,14 @@ def _canvas_tool_fact(target: Mapping[str, Any], *, action: str, canvas: Mapping
     }
     final_params = target.get("final_params") if isinstance(target.get("final_params"), Mapping) else {}
     if action == "read":
-        fact["requested_uri"] = str(final_params.get("uri") or final_params.get("canvas_uri") or "").strip()
+        fact["requested_uri"] = str(
+            final_params.get("uri")
+            or final_params.get("canvas_uri")
+            or final_params.get("path")
+            or final_params.get("ref")
+            or final_params.get("object_ref")
+            or ""
+        ).strip()
     if action == "patch":
         fact["base_revision"] = final_params.get("base_revision")
     compacted_error = _compact_error(error)
@@ -150,6 +157,8 @@ def append_canvas_tool_fact_block(
     tool_call_id = str(target.get("tool_call_id") or target.get("event_id") or "").strip()
     turn_id = str(target.get("turn_id") or "").strip()
     path = str(target.get("tool_result_path") or "").strip()
+    if action == "read":
+        path = str(fact.get("requested_uri") or fact.get("canvas_uri") or "").strip()
     if not path and turn_id and tool_call_id:
         path = f"tc:{turn_id}.{tool_call_id}.result"
     blocks = target.setdefault("blocks", [])
@@ -663,7 +672,7 @@ def _legend_lines(legend: list[dict[str, Any]], *, total_count: int) -> list[str
         if description:
             lines.append(f"  description: {description[:500]}")
     if total_count > len(legend):
-        lines.append(f"- ... {total_count - len(legend)} older cards omitted from ANNOUNCE; use canvas.read for exact full board state.")
+        lines.append(f"- ... {total_count - len(legend)} older cards omitted from ANNOUNCE; use react.read on the cnv: board ref for exact full board state.")
     return lines
 
 
@@ -695,7 +704,7 @@ def produce_canvas_announce_blocks(
     canvas_id = str(canvas.get("canvas_id") or projection.get("canvas_id") or "")
     revision = str(canvas.get("revision") or projection.get("revision") or "0")
     canvas_ref = str(canvas.get("_event_ref") or canvas.get("canvas_ref") or "")
-    canvas_uri = str(canvas.get("canvas_uri") or projection.get("canvas_uri") or f"canvas:{canvas_name}@{revision}")
+    canvas_uri = str(canvas.get("canvas_uri") or projection.get("canvas_uri") or f"cnv:{canvas_name}@{revision}")
 
     bounds = projection.get("bounds") if isinstance(projection.get("bounds"), Mapping) else {}
     full_legend = _labelled_legend(projection)

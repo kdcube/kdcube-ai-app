@@ -18,6 +18,7 @@ keywords:
     "canvas",
     "snapshot",
     "artifact_namespace_rehoster",
+    "event_source_reader",
     "custom namespace",
   ]
 see_also:
@@ -63,7 +64,9 @@ assistance requests, canvas review requests, or saved story snapshots.
 | `event_id` | One occurrence of that source. For a tool-backed event this is the `tool_call_id`. For an authored UI event it is assigned by ingress/transport. |
 | `react_phase` | ReAct lifecycle spot where a policy runs, such as `block_production`, `timeline_projection`, `announce_production`, or `compaction_projection`. |
 | `event_policy_id` | Registered handler for a phase. Built-in ReAct policies use `react.*`; bundle policies should use a bundle namespace. |
+| `kind` | Event-source occurrence family. `react.tool` means a ReAct tool-call/result source; `react.event_source_reader` means a reader backing `react.read`; `react.external` means an authored external event. |
 | `story_id` | Bundle-owned product-flow instance id, for example one open wizard/canvas/case. It helps policies and tools interpret the event. |
+| `event source reader` | Namespace-owner callable registered with `@event_source_reader`; resolves refs such as `mem:...` or `cnv:main@7` for `react.read`. |
 | `artifact namespace rehoster` | A bundle/SDK handler that turns an external URI such as `ext:...` into a ReAct `fi:` artifact path. |
 
 For tool-backed events:
@@ -72,6 +75,13 @@ For tool-backed events:
 tool_id      == event_source_id
 tool_call_id == event_id
 ```
+
+Do not treat every event source as a tool. Agent-visible tools require normal
+tool exposure, such as a Semantic Kernel `@kernel_function` loaded through the
+tool subsystem. Event-source declarations only attach policy identity. A source
+like `canvas.read` can exist with `kind="react.event_source_reader"` so
+`react.read(paths=["cnv:main@7"])` has canvas policies, while `canvas.read(...)`
+is not a callable model tool.
 
 ## Where Events Fit In A Bundle
 

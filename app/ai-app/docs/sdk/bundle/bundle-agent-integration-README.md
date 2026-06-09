@@ -3,7 +3,7 @@ id: ks:docs/sdk/bundle/bundle-agent-integration-README.md
 title: "Bundle Agent Integration"
 summary: "Canonical bundle guide for wiring React agents, bundle-local tools and skills, MCP connectors, bundle-served MCP endpoints, and Claude Code subagents with deployable auth and network requirements."
 tags: ["sdk", "bundle", "agents", "react", "claude-code", "tools", "skills", "mcp", "deployment"]
-keywords: ["bundle agent integration", "React tools descriptor", "skills descriptor", "MCP_TOOL_SPECS", "bundle served MCP", "Claude Code MCP", "ClaudeCodeAgent", "mcp_base_url", "agent runtime context"]
+keywords: ["bundle agent integration", "React tools descriptor", "skills descriptor", "MCP_TOOL_SPECS", "event_source_reader", "bundle served MCP", "Claude Code MCP", "ClaudeCodeAgent", "mcp_base_url", "agent runtime context"]
 see_also:
   - ks:docs/sdk/bundle/bundle-runtime-README.md
   - ks:docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
@@ -377,6 +377,8 @@ A React bundle agent is configured through `BaseWorkflow.build_react(...)`.
 | --- | --- | --- |
 | local Python tools | `tools_descriptor.py` / `TOOLS_SPECS` | exposes bundle tool modules by alias |
 | MCP tools | `tools_descriptor.py` / `MCP_TOOL_SPECS` | selects which configured MCP server tools enter the catalog |
+| event source readers | loaded tool/event modules with `@event_source_reader` | lets `react.read` resolve owner-domain refs such as `mem:` or `cnv:` |
+| event policies | loaded tool/event modules with policy decorators plus event source declarations | renders external events, tool results, and reader results into timeline/ANNOUNCE/compaction |
 | MCP server connection config | bundle props `config.mcp.services` | controls server URLs, transports, and auth |
 | skills | `skills_descriptor.py`, `CUSTOM_SKILLS_ROOT`, `AGENTS_CONFIG` | exposes bundle skill prompts and visibility rules |
 | skill-tool mapping | skill `tools.yaml` | tells the agent which tool ids belong to a skill; `required: true` gates the skill on active tool availability |
@@ -762,6 +764,9 @@ result = await react.run(allowed_plugins=list(dict.fromkeys(allowed_plugins)))
 React configuration sources:
 
 - `tools_descriptor.py` controls local Python tool modules and aliases
+- loaded modules can also contribute event-source declarations, event-source
+  readers, rehosters, and policies; these are not automatically model-visible
+  tools
 - `MCP_TOOL_SPECS` controls which MCP server tools enter the React catalog
 - `skills_descriptor.py` controls skill roots and visibility
 - bundle props such as `mcp.services` control MCP connection details
@@ -769,6 +774,19 @@ React configuration sources:
   `react.default_agent.additional_instructions`
 - platform config selects the React runtime version; bundle code should call
   `BaseWorkflow.build_react(...)` instead of hardcoding a React version
+
+Event-source `kind` is part of this contract:
+
+- `kind="react.tool"` means the occurrence is an actual tool call/result, such
+  as `canvas.patch`;
+- `kind="react.event_source_reader"` means the source backs
+  `react.read(paths=[...])`, such as `canvas.read` for `cnv:` or memory read
+  for `mem:`;
+- `kind="react.external"` means a UI/integration-authored event transported as
+  `external_events[]`.
+
+Do not expose read-only owner readers as direct tools just because they have an
+event source id. The model should call `react.read` on the canonical ref.
 
 Runtime context rule:
 

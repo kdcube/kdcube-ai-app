@@ -68,8 +68,10 @@ For each subsystem, answer these questions:
 | Agent tools | Which tool modules must be included in `tools_descriptor.py`? | Agent sees context but cannot act on it. |
 | Instructions/skills | Which stable instructions and skills describe the subsystem object model? | Agent guesses wrong operations or edits the wrong owner. |
 | Event policies | Which event source modules render timeline/ANNOUNCE/compaction blocks? | Context is lost or appears as generic JSON. |
+| Event-source readers | Which namespace readers are registered for `react.read` on owner refs such as `mem:` or `cnv:`? | Agent sees refs but `react.read` reports missing namespace/path. |
 | Resolvers | Which namespace/object resolvers are registered, and who owns each namespace? | Pins/refs are visible but cannot preview/open/download/rehost. |
 | Storage | Which store/schema/user-scope hooks does the subsystem need? | State is lost, cross-user data leaks, or first request fails schema checks. |
+| Runtime identity | Which shared helper supplies tenant/project/user/fingerprint for REST, Data Bus, tools, and jobs? | One transport works while another writes to `default/default`, fails store creation, or loses user scope. |
 | Transport | Does UI use REST operations, Data Bus, comm stream, or all three? | UI mutations hang, duplicate, or never reach the owning bundle. |
 | Tests | Which manifest, route, UI, tool, event, and resolver checks prove it is live? | Integration appears done but fails during real use. |
 
@@ -145,6 +147,27 @@ Canvas currently uses bundle-provided API methods that call SDK helpers and a
 SDK tool module included from `tools_descriptor.py`. The reusable surface should
 stay in `kdcube_ai_app.apps.chat.sdk.solutions.canvas`; product-specific issue
 or task semantics stay in the product subsystem.
+
+Canvas storage must be created with request-bound identity from the shared
+entrypoint/runtime helper, not with a bundle-private copy. Use
+`self.runtime_identity()` from `BaseEntrypoint` for normal REST/widget/tool
+calls. For Data Bus handlers, also copy the `DataBusContext` scope into the
+operation payload before calling the same SDK helper:
+
+```python
+async def handle_canvas_patch_data_bus(self, ctx, message):
+    payload = dict(message.payload or {})
+    payload.setdefault("tenant", ctx.tenant)
+    payload.setdefault("project", ctx.project)
+    actor = dict(message.actor or {})
+    if actor.get("user_id"):
+        payload.setdefault("user_id", actor["user_id"])
+    return self._apply_canvas_patch_payload(payload)
+```
+
+This is required because Data Bus messages carry tenant/project as stream
+metadata, while the actor object carries user fields. Treat both as part of the
+canvas storage scope.
 
 ### 2. Configuration Defaults
 
@@ -336,6 +359,31 @@ Do not dump raw subsystem JSON by default. The policy should render the object
 model that the agent needs to act: ids, refs, status, revision, selected/focused
 state, and a bounded preview.
 
+If the subsystem owns a logical namespace that should be readable by the agent,
+also register an event-source reader:
+
+```python
+from kdcube_ai_app.apps.chat.sdk.events import event_source_reader
+
+@event_source_reader(
+    namespace="mem",
+    event_source_id="{alias}.read_memory",
+    description="Read a durable memory by mem: ref.",
+)
+async def read_memory_event_ref(*, ref, ctx_browser=None, **context):
+    ...
+```
+
+The reader resolves the object. The event source declaration for
+`{alias}.read_memory` binds the block-production policies that render the
+resolved payload. The model still calls `react.read(paths=["mem:..."])`; it
+does not call `memory.read_memory(...)` unless that function is also explicitly
+exposed as a normal tool.
+
+Use `kind="react.event_source_reader"` for read-only owner readers that are not
+direct model tools. Use `kind="react.tool"` only for actual tool-call sources,
+such as `canvas.patch`.
+
 ### 8. Object Resolvers
 
 Resolvers belong to the subsystem that owns the object namespace.
@@ -461,10 +509,14 @@ Validation:
 
 - canvas board loads and stores revisions
 - card pins keep canonical refs (`fi:`, `mem:`, `task:`, canvas-owned refs)
+- board refs use the canvas namespace, for example `cnv:main@27`; exact board
+  reads are `react.read(paths=["cnv:main@27"])`
 - object action calls route through resolver registry
 - unknown refs stay pinned but expose no owner-specific actions
 - ReAct timeline contains compact canvas facts and ANNOUNCE contains current
   board/focused context
+- `canvas.patch` is the only model-visible canvas write tool; `canvas.read` is
+  an event-source reader behind `react.read(paths=["cnv:<name>@<revision>"])`
 - `canvas.patch` uses base revision and returns a new revision fact
 
 ## Common Failure Modes

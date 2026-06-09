@@ -18,9 +18,11 @@ from kdcube_ai_app.apps.chat.sdk.runtime.dynamic_module_loader import load_dynam
 from kdcube_ai_app.apps.chat.sdk.events.decorator import (
     ArtifactNamespaceRehosterDeclaration,
     EventSourceDeclaration,
+    EventSourceReaderDeclaration,
     event_source_declaration,
     get_artifact_namespace_rehoster_declaration,
     get_event_source_declaration,
+    get_event_source_reader_declaration,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.react.events.policies import (
     ReactEventPolicies,
@@ -84,6 +86,29 @@ class ResolvedArtifactNamespaceRehoster:
         }
 
 
+@dataclass(frozen=True)
+class ResolvedEventSourceReader:
+    namespace: str
+    event_source_id: str
+    handler: Callable[..., Any] = field(compare=False)
+    description: str = ""
+    version: str = ""
+    module: str = ""
+    alias: str = ""
+    object_name: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "namespace": self.namespace,
+            "event_source_id": self.event_source_id,
+            "description": self.description,
+            "version": self.version,
+            "module": self.module,
+            "alias": self.alias,
+            "object_name": self.object_name,
+        }
+
+
 def _module_to_file(module_name: str) -> pathlib.Path:
     spec = importlib.util.find_spec(module_name)
     if not spec or not spec.origin:
@@ -137,6 +162,7 @@ class EventSourceSubsystem:
         self.warnings: list[str] = []
         self._by_event_source_id: dict[str, ResolvedEventSource] = {}
         self._namespace_rehosters: dict[str, ResolvedArtifactNamespaceRehoster] = {}
+        self._event_source_readers: dict[str, ResolvedEventSourceReader] = {}
         self._modules: list[dict[str, Any]] = []
         self._event_policies: dict[str, ReactEventPolicy] = {}
 
@@ -187,6 +213,8 @@ class EventSourceSubsystem:
         self._event_policies.update(discover_react_event_policies(mod))
         for rehoster in self._discover_namespace_rehosters(module_info):
             self._register_namespace_rehoster(rehoster)
+        for reader in self._discover_event_source_readers(module_info):
+            self._register_event_source_reader(reader)
         for source in self._discover_module(module_info):
             self._register(source)
 
@@ -254,6 +282,59 @@ class EventSourceSubsystem:
             rehoster.to_dict()
             for rehoster in sorted(self._namespace_rehosters.values(), key=lambda item: item.namespace)
         ]
+
+    def event_source_reader(self, namespace: str) -> ResolvedEventSourceReader | None:
+        return self._event_source_readers.get(str(namespace or "").strip().rstrip(":"))
+
+    def event_source_reader_for_ref(self, ref: str) -> ResolvedEventSourceReader | None:
+        namespace = str(ref or "").strip().partition(":")[0].strip()
+        return self.event_source_reader(namespace)
+
+    def list_event_source_readers(self) -> list[dict[str, Any]]:
+        return [
+            reader.to_dict()
+            for reader in sorted(self._event_source_readers.values(), key=lambda item: item.namespace)
+        ]
+
+    async def read_event_source_ref(
+        self,
+        ref: str,
+        *,
+        ctx_browser: Any = None,
+        **context: Any,
+    ) -> dict[str, Any]:
+        raw = str(ref or "").strip()
+        namespace, sep, key = raw.partition(":")
+        namespace = namespace.strip()
+        if not sep or not namespace:
+            return {"ok": False, "ref": raw, "missing": True, "error": "missing_namespace"}
+        reader = self.event_source_reader(namespace)
+        if reader is None:
+            return {"ok": False, "ref": raw, "missing": True, "error": "no_event_source_reader"}
+        try:
+            result = reader.handler(
+                ref=raw,
+                namespace=namespace,
+                key=key,
+                ctx_browser=ctx_browser,
+                **context,
+            )
+            if inspect.isawaitable(result):
+                result = await result
+            payload = dict(result) if isinstance(result, Mapping) else {"value": result}
+            payload.setdefault("ok", True)
+            payload.setdefault("ref", raw)
+            payload.setdefault("object_ref", raw)
+            payload.setdefault("event_source_id", reader.event_source_id)
+            return payload
+        except Exception as exc:
+            return {
+                "ok": False,
+                "ref": raw,
+                "event_source_id": reader.event_source_id,
+                "error": "event_source_reader_failed",
+                "message": str(exc),
+            }
 
     async def rehost_namespace_ref(
         self,
@@ -391,6 +472,82 @@ class EventSourceSubsystem:
 
         return out
 
+    def _discover_event_source_readers(self, module_info: Mapping[str, Any]) -> list[ResolvedEventSourceReader]:
+        mod = module_info["mod"]
+        alias = str(module_info.get("alias") or "").strip()
+        out: list[ResolvedEventSourceReader] = []
+
+        list_fn = getattr(mod, "list_event_source_readers", None)
+        listed = False
+        if callable(list_fn):
+            for idx, item in enumerate(list_fn() or []):
+                resolved = self._resolve_event_source_reader_item(
+                    item,
+                    module_info=module_info,
+                    alias=alias,
+                    object_name=f"list_event_source_readers[{idx}]",
+                )
+                if resolved:
+                    listed = True
+                    out.append(resolved)
+            if listed:
+                return out
+
+        for name, obj in vars(mod).items():
+            if name.startswith("__") and name.endswith("__"):
+                continue
+            resolved = self._resolve_event_source_reader_item(
+                obj,
+                module_info=module_info,
+                alias=alias,
+                object_name=name,
+            )
+            if resolved:
+                out.append(resolved)
+
+        return out
+
+    def _resolve_event_source_reader_item(
+        self,
+        item: Any,
+        *,
+        module_info: Mapping[str, Any],
+        alias: str,
+        object_name: str,
+    ) -> ResolvedEventSourceReader | None:
+        handler: Any = item
+        declaration: EventSourceReaderDeclaration | None = None
+        if isinstance(item, Mapping):
+            handler = item.get("handler")
+            declaration = get_event_source_reader_declaration(handler)
+        else:
+            declaration = get_event_source_reader_declaration(item)
+        if declaration is None:
+            return None
+        if not callable(handler):
+            self._warn(f"invalid event source reader in {module_info.get('name')}.{object_name}: handler is not callable")
+            return None
+        namespace = str(declaration.namespace or "").strip().rstrip(":")
+        if "{alias}" in namespace:
+            if not alias:
+                raise ValueError(f"event source reader namespace uses {{alias}} but module has no alias: {namespace}")
+            namespace = namespace.replace("{alias}", alias)
+        event_source_id = self._resolve_event_source_id(
+            declaration.event_source_id,
+            alias=alias,
+            object_name=object_name,
+        )
+        return ResolvedEventSourceReader(
+            namespace=namespace,
+            event_source_id=event_source_id,
+            handler=handler,
+            description=declaration.description,
+            version=declaration.version,
+            module=str(module_info.get("name") or ""),
+            alias=alias,
+            object_name=object_name,
+        )
+
     def _resolve_rehoster_item(
         self,
         item: Any,
@@ -500,6 +657,14 @@ class EventSourceSubsystem:
                 return
             raise ValueError(f"Duplicate artifact namespace rehoster: {rehoster.namespace}")
         self._namespace_rehosters[rehoster.namespace] = rehoster
+
+    def _register_event_source_reader(self, reader: ResolvedEventSourceReader) -> None:
+        existing = self._event_source_readers.get(reader.namespace)
+        if existing:
+            if existing.to_dict() == reader.to_dict():
+                return
+            raise ValueError(f"Duplicate event source reader namespace: {reader.namespace}")
+        self._event_source_readers[reader.namespace] = reader
 
     @staticmethod
     def _normalize_rehost_result(result: Any, *, source_ref: str) -> dict[str, Any]:

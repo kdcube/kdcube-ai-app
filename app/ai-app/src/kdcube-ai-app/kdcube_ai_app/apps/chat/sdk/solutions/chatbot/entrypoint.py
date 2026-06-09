@@ -226,6 +226,38 @@ class BaseEntrypoint:
                 return config_attr
         return config_attr
 
+    def runtime_identity(self) -> Dict[str, str]:
+        """
+        Return request-bound runtime identity in the compact form used by SDK
+        subsystems that need tenant/project/user-scoped storage.
+
+        Prefer this over bundle-local helpers. The values come from the current
+        request context when available, merged over the runtime ContextVar
+        binding used by tools, jobs, and Data Bus handlers.
+        """
+        try:
+            from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import get_current_user_identity
+
+            identity = dict(get_current_user_identity() or {})
+        except Exception:
+            identity = {}
+
+        actor = getattr(self.comm_context, "actor", None)
+        user_ctx = getattr(self.comm_context, "user", None)
+        tenant = getattr(actor, "tenant_id", None) if actor is not None else None
+        project = getattr(actor, "project_id", None) if actor is not None else None
+        user_id = getattr(user_ctx, "user_id", None) if user_ctx is not None else None
+        fingerprint = getattr(user_ctx, "fingerprint", None) if user_ctx is not None else None
+        user_type = getattr(user_ctx, "user_type", None) if user_ctx is not None else None
+
+        return {
+            "tenant": str(tenant or identity.get("tenant_id") or identity.get("tenant") or "").strip(),
+            "project": str(project or identity.get("project_id") or identity.get("project") or "").strip(),
+            "user": str(user_id or identity.get("user_id") or "").strip(),
+            "fingerprint": str(fingerprint or identity.get("fingerprint") or "").strip(),
+            "user_type": str(user_type or identity.get("user_type") or "anonymous").strip() or "anonymous",
+        }
+
     async def on_bundle_load(self, **kwargs) -> None:
         """
         Optional one-time hook called when the bundle is first loaded

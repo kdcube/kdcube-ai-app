@@ -9,6 +9,7 @@ interface AppShellProps {
   onExpand?: () => void;
   onToggleMemoryUse: () => void;
   compact?: boolean;
+  hostControls?: boolean;
   saving?: boolean;
 }
 
@@ -21,13 +22,14 @@ export function AppShell({
   onExpand,
   onToggleMemoryUse,
   compact = false,
+  hostControls = false,
   saving = false,
 }: AppShellProps) {
   return (
-    <main className={`app-shell ${compact ? 'compact-shell' : ''}`}>
-      <header className="app-header">
-        <div>
-          <h1>{compact ? 'Memories' : 'Memory notes'}</h1>
+    <main className={`app-shell ${compact ? 'compact-shell' : 'expanded-shell'} ${compact && hostControls ? 'host-controlled-shell' : ''}`}>
+      {compact && hostControls ? null : <header className="app-header">
+        <div className="app-title-block">
+          {compact ? null : <h1>Memory notes</h1>}
           <p>{compact ? `${count} in scope` : `${count} records in scope`}</p>
         </div>
         <label className={`memory-use-toggle ${compact ? 'sr-only' : ''}`}>
@@ -47,10 +49,24 @@ export function AppShell({
             New note
           </button>
         ) : null}
+        {allowWrite && compact ? (
+          <button
+            type="button"
+            className="icon-button compact-add-button"
+            onClick={onCreate}
+            disabled={!memoryUseEnabled}
+            aria-label="Add memory"
+            title="Add memory"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+          </button>
+        ) : null}
         {compact && onExpand ? (
           <button
             type="button"
-            className="icon-button"
+            className="icon-button compact-expand-button"
             onClick={onExpand}
             aria-label="Expand memories"
             title="Expand memories"
@@ -61,7 +77,7 @@ export function AppShell({
             </svg>
           </button>
         ) : null}
-      </header>
+      </header>}
       {children}
     </main>
   );

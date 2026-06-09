@@ -1,12 +1,15 @@
 """Reusable ReAct tools for the SDK canvas solution.
 
 Bundles normally include this module in `tools_descriptor.py` with alias
-`canvas` and `use_sk: true`. The exported tool ids are:
+`canvas` and `use_sk: true`. The exported tool id is:
 
 ```text
-canvas.read
 canvas.patch
 ```
+
+Canvas board reads are not exposed as an agent tool. They are exposed as an
+event source reader for the `cnv:` namespace, so agents use
+`react.read(paths=["cnv:<name>@<revision>"])`.
 
 The tools bind to the current bundle runtime at call time. Bundle-specific
 transport and storage names are supplied through `bundle_props.canvas`; the
@@ -19,7 +22,7 @@ from typing import Annotated, Any, Dict, Mapping
 
 import semantic_kernel as sk
 
-from kdcube_ai_app.apps.chat.sdk.events import event_source, event_source_declaration
+from kdcube_ai_app.apps.chat.sdk.events import event_source, event_source_declaration, event_source_reader
 from kdcube_ai_app.apps.chat.sdk.solutions.canvas.storage import DEFAULT_CANVAS_NAME, CanvasStore
 from kdcube_ai_app.apps.chat.sdk.solutions.canvas.tools_core import (
     DEFAULT_CANVAS_TOOL_EVENT_SOURCE_DESCRIPTIONS,
@@ -126,7 +129,7 @@ def list_event_sources() -> list[Any]:
             event_source_id=f"{{alias}}.{name}",
             policies=_canvas_tool_policies(name),
             description=description,
-            kind="react.tool",
+            kind="react.event_source_reader" if name == "read" else "react.tool",
         )
         for name, description in DEFAULT_CANVAS_TOOL_EVENT_SOURCE_DESCRIPTIONS.items()
     ]
@@ -186,7 +189,7 @@ class CanvasTools:
             ),
         ],
         canvas_name: Annotated[str, "Named canvas to patch. Defaults to main."] = DEFAULT_CANVAS_NAME,
-        canvas_id: Annotated[str, "Explicit canvas id. Leave empty to use canvas:<user_id>:<canvas_name>."] = "",
+        canvas_id: Annotated[str, "Explicit canvas id. Leave empty to use cnv:<user_id>:<canvas_name>."] = "",
         story_id: Annotated[str, "Optional story/ticket context for this patch."] = "",
         base_revision: Annotated[int | None, "Expected current canvas revision for optimistic concurrency."] = None,
         reason: Annotated[str, "Short reason for the patch, recorded in canvas history."] = "",
@@ -230,61 +233,43 @@ class CanvasTools:
         except Exception as exc:
             return error("canvas_patch_failed", str(exc))
 
-    @event_source(
-        event_source_id="{alias}.read",
-        policies=_canvas_tool_policies("read"),
-        description="Read a canvas by canvas: URI and return agent_view plus exact state.",
-        kind="react.tool",
-    )
-    @kernel_function(
-        name="read",
-        description=(
-            "Read a canvas board and agent_view. Prefer ANNOUNCE for current canvas "
-            "awareness; use this when the map/legend is insufficient and you need "
-            "exact card ids, coordinates, refs, or hidden metadata before patching. "
-            "This tool refreshes the canvas view in ANNOUNCE and records only a "
-            "small timeline fact; it does not edit the board. Focused context from "
-            "ANNOUNCE remains the user's priority selection, while the full board "
-            "is used for surrounding spatial context."
-        ),
-    )
-    async def read(
-        self,
-        uri: Annotated[
-            str,
-            "Canvas URI to read, for example canvas:main@7. ext: revision refs are accepted as a lower-level fallback.",
-        ] = "",
-        canvas_name: Annotated[str, "Named canvas to read. Defaults to main."] = DEFAULT_CANVAS_NAME,
-        canvas_id: Annotated[str, "Explicit canvas id. Leave empty to use canvas:<user_id>:<canvas_name>."] = "",
-        story_id: Annotated[str, "Optional story/ticket context."] = "",
-        revision: Annotated[int | None, "Specific revision to read. Leave empty for latest."] = None,
-    ) -> Annotated[
-        Dict[str, Any],
-        "Envelope {ok,error,ret}. ret includes canvas_uri, canvas_id, revision, agent_view, canvas JSON, projection, canvas_ref, latest_ref.",
-    ]:
-        try:
-            result = read_canvas_for_agent(
-                store=_store_from_scope(scope()),
-                uri=uri,
-                canvas_name=canvas_name,
-                canvas_id=canvas_id,
-                story_id=story_id,
-                revision=revision,
-            )
-            return ok(result)
-        except Exception as exc:
-            return error("canvas_read_failed", str(exc))
-
 
 kernel = sk.Kernel()
 tools = CanvasTools()
 kernel.add_plugin(tools, "canvas")
 
 
+@event_source_reader(
+    namespace="cnv",
+    event_source_id="{alias}.read",
+    description="Resolve a cnv:<name>@<revision> board ref into the canvas.read event-source payload.",
+)
+async def read_canvas_event_ref(
+    *,
+    ref: str,
+    namespace: str = "cnv",
+    key: str = "",
+    ctx_browser: Any = None,
+    **_context: Any,
+) -> Dict[str, Any]:
+    uri = ref or (f"{namespace}:{key}" if key else "")
+    try:
+        result = read_canvas_for_agent(
+            store=_store_from_scope(scope()),
+            uri=uri,
+        )
+        if not result.get("ok"):
+            result = {"ok": False, "error": result.get("error") or "canvas_read_failed", **result}
+        return result
+    except Exception as exc:
+        return {"ok": False, "ref": uri, "object_ref": uri, "error": "canvas_read_failed", "message": str(exc)}
+
+
 __all__ = [
     "CanvasTools",
     "kernel",
     "list_event_sources",
+    "read_canvas_event_ref",
     "tools",
     "_canonicalize_canvas_operations_for_context",
 ]

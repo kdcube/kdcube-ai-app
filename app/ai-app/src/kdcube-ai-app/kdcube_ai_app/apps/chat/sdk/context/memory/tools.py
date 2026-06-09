@@ -6,6 +6,7 @@ Bundles normally include this module in `tools_descriptor.py` with alias
 ```text
 memory.search_memory
 memory.recent_memories
+memory.read_memory
 memory.record_memory
 memory.confirm_memory
 memory.retire_memory
@@ -38,9 +39,14 @@ import sys
 from dataclasses import dataclass
 from typing import Annotated, Any, Awaitable, Callable, Dict, Optional, Sequence
 
-from kdcube_ai_app.apps.chat.sdk.events import event_source_declaration
+from kdcube_ai_app.apps.chat.sdk.events import event_source_declaration, event_source_reader
 from kdcube_ai_app.apps.chat.sdk.solutions.react.events import structured_result_source_policies
 
+from .events.resolver import memory_id_from_ref
+from .events.policies import (  # noqa: F401 - discovered by event-source subsystem
+    MEMORY_READ_BLOCK_POLICY_ID,
+    memory_read_block_policy,
+)
 from .models import MemoryScope, MemorySearchRequest, MemorySignal, normalize_scope_filter, normalize_terms
 from .store import UserMemoryStore
 
@@ -70,6 +76,7 @@ _MEMORY_TOOL_EVENT_SOURCE_DESCRIPTIONS: Dict[str, str] = {
         "Search durable cross-conversation user memory and return structured memory or event rows."
     ),
     "recent_memories": "Return recent durable user memories for the current configured scope.",
+    "read_memory": "Read one durable user memory by mem: URI or bare memory id.",
     "record_memory": "Create or refine durable user memory when the bundle config permits writes.",
     "confirm_memory": "Confirm an existing durable memory by id when the bundle config permits writes.",
     "retire_memory": "Retire an existing durable memory by id when the bundle config permits writes.",
@@ -98,15 +105,37 @@ def list_event_sources() -> list[Any]:
     result needs a different projection than ordinary structured tool output.
     """
 
-    return [
-        event_source_declaration(
-            event_source_id=f"{{alias}}.{name}",
-            policies=structured_result_source_policies(),
-            description=description,
-            kind="react.tool",
+    declarations: list[Any] = []
+    for name, description in _MEMORY_TOOL_EVENT_SOURCE_DESCRIPTIONS.items():
+        policies = structured_result_source_policies()
+        if name == "read_memory":
+            policies = [
+                {
+                    "react_phase": "block_production",
+                    "event_policy_id": "react.block_production.tool_default",
+                },
+                {
+                    "react_phase": "block_production",
+                    "event_policy_id": MEMORY_READ_BLOCK_POLICY_ID,
+                },
+                {
+                    "react_phase": "timeline_projection",
+                    "event_policy_id": "react.timeline_projection.identity",
+                },
+                {
+                    "react_phase": "compaction_projection",
+                    "event_policy_id": "react.compaction_projection.identity",
+                },
+            ]
+        declarations.append(
+            event_source_declaration(
+                event_source_id=f"{{alias}}.{name}",
+                policies=policies,
+                description=description,
+                kind="react.tool",
+            )
         )
-        for name, description in _MEMORY_TOOL_EVENT_SOURCE_DESCRIPTIONS.items()
-    ]
+    return declarations
 
 
 def _ok(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -413,6 +442,57 @@ class UserMemoryTools:
         except Exception as exc:
             return _error("recent_memories_failed", str(exc))
 
+    @kernel_function(name="read_memory", description="Read one durable user memory by mem: URI or bare memory id.")
+    async def read_memory(
+        self,
+        memory_ref: Annotated[str, "Memory ref such as mem:<id>, or a bare durable memory id."],
+        visible_to_user: Annotated[str, "Optional boolean string filter: true|false|yes|no|1|0. Empty means user-visible only."] = "true",
+        scope_filter: Annotated[str, "Scope filter: current_bundle|all_user_memories|global_only|current_bundle_or_global. Empty uses bundle config default."] = "",
+        include_events: Annotated[str, "Optional boolean string. true includes recent memory evidence/update events."] = "false",
+        event_limit: Annotated[int, "Maximum event rows when include_events=true. Keep small; default 5."] = 5,
+    ) -> Annotated[Dict[str, Any], "Envelope. Success returns {ok:true,memory_ref:'mem:<id>',memory:{...}}. Failure returns {ok:false,error,message}."]:
+        try:
+            store, scope, _raw = await self._store_and_scope()
+            disabled = await self._disabled_by_user(store, scope)
+            if disabled:
+                return disabled
+            memory_id = memory_id_from_ref(memory_ref) or str(memory_ref or "").strip()
+            if not memory_id:
+                return _error("memory_ref_required", "Provide a mem:<id> ref or a memory id.")
+            # A mem:<id> URI is already a fully-qualified user-memory object
+            # reference. Resolve explicit refs across the user's visible memory
+            # scope unless the caller deliberately narrows the scope.
+            explicit_ref = str(memory_ref or "").strip().startswith("mem:")
+            default_scope_filter = "all_user_memories" if explicit_ref else self._config.default_scope_filter
+            resolved_scope_filter = normalize_scope_filter(scope_filter or default_scope_filter)
+            record = await store.get_memory(
+                scope=scope,
+                memory_id=memory_id,
+                visible_to_user=_bool_filter(visible_to_user) if str(visible_to_user or "").strip() else True,
+                scope_filter=resolved_scope_filter,
+            )
+            if record is None:
+                return _error("memory_not_found", f"Memory {memory_id!r} was not found")
+            payload = _record_payload(record)
+            result = _ok({
+                "memory_ref": f"mem:{payload['id']}",
+                "memory": payload,
+                "count": 1,
+            })
+            if _bool_filter(include_events):
+                events = await store.list_memory_events(
+                    scope=scope,
+                    memory_id=memory_id,
+                    limit=max(1, min(int(event_limit or 5), 25)),
+                    visible_to_user=_bool_filter(visible_to_user) if str(visible_to_user or "").strip() else True,
+                    scope_filter=resolved_scope_filter,
+                )
+                result["events"] = [_event_payload(event) for event in events]
+                result["events_count"] = len(events)
+            return result
+        except Exception as exc:
+            return _error("read_memory_failed", str(exc))
+
     @kernel_function(
         name="record_memory",
         description=(
@@ -701,6 +781,43 @@ async def recent_memories(
     )
 
 
+@event_source_reader(
+    namespace="mem",
+    event_source_id="{alias}.read_memory",
+    description="Resolve a mem:<id> ref into the memory.read_memory event-source payload.",
+)
+async def read_memory_event_ref(
+    *,
+    ref: str,
+    namespace: str = "mem",
+    key: str = "",
+    ctx_browser: Any = None,
+    **_context: Any,
+) -> Dict[str, Any]:
+    memory_ref = ref or (f"{namespace}:{key}" if key else "")
+    return await read_memory(memory_ref=memory_ref, scope_filter="all_user_memories", include_events="true")
+
+
+async def read_memory(
+    memory_ref: Annotated[str, "Memory ref such as mem:<id>, or a bare durable memory id."],
+    visible_to_user: Annotated[str, "Optional boolean string filter: true|false|yes|no|1|0. Empty means user-visible only."] = "true",
+    scope_filter: Annotated[str, "Scope filter: current_bundle|all_user_memories|global_only|current_bundle_or_global. Empty uses bundle config default."] = "",
+    include_events: Annotated[str, "Optional boolean string. true includes recent memory evidence/update events."] = "false",
+    event_limit: Annotated[int, "Maximum event rows when include_events=true. Keep small; default 5."] = 5,
+) -> Annotated[Dict[str, Any], "Envelope. Success returns {ok:true,memory_ref:'mem:<id>',memory:{...}}. Failure returns {ok:false,error,message}."]:
+    """Read one durable user memory for the current runtime user scope."""
+    tools = _configured_tools()
+    if tools is None:
+        return _disabled_error()
+    return await tools.read_memory(
+        memory_ref=memory_ref,
+        visible_to_user=visible_to_user,
+        scope_filter=scope_filter,
+        include_events=include_events,
+        event_limit=event_limit,
+    )
+
+
 async def record_memory(
     memory: Annotated[str, "Compact durable memory text. Put the trigger/condition first, then the rule/fact/preference."],
     context: Annotated[str, "Why/provenance/examples/disambiguation only. Do not repeat the memory text unless needed."] = "",
@@ -766,6 +883,10 @@ def list_tools() -> Dict[str, Dict[str, Any]]:
         "recent_memories": {
             "callable": recent_memories,
             "description": "Return recent durable user memories for the current user and configured scope.",
+        },
+        "read_memory": {
+            "callable": read_memory,
+            "description": "Read one durable user memory by mem: URI or bare memory id.",
         },
         "record_memory": {
             "callable": record_memory,

@@ -6,6 +6,19 @@ function percent(value: number): string {
   return `${Math.round(Math.max(0, Math.min(1, value || 0)) * 100)}%`;
 }
 
+function uniqueTerms(...groups: string[][]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  groups.flat().forEach((term) => {
+    const clean = String(term || '').trim();
+    const key = clean.toLowerCase();
+    if (!clean || seen.has(key)) return;
+    seen.add(key);
+    result.push(clean);
+  });
+  return result;
+}
+
 function memoryContextPayload(memory: MemoryEntry) {
   const ref = `mem:${memory.id}`;
   return {
@@ -32,17 +45,24 @@ function memoryContextPayload(memory: MemoryEntry) {
 function setMemoryDragData(dataTransfer: DataTransfer, memory: MemoryEntry): void {
   const payload = memoryContextPayload(memory);
   const message = {
-    type: 'task-tracker-context-focus',
+    type: 'kdcube.memory.context',
     source: 'memories-widget',
     contexts: [payload],
   };
   dataTransfer.effectAllowed = 'copy';
   dataTransfer.setData('application/json', JSON.stringify(message));
+  dataTransfer.setData('application/vnd.kdcube.memory+json', JSON.stringify({
+    type: 'kdcube.memory.drag.payload',
+    source: 'memories-widget',
+    memory_id: memory.id,
+    context: payload,
+  }));
+  dataTransfer.setData('application/vnd.kdcube.context+json', JSON.stringify(message));
   dataTransfer.setData('text/plain', memory.memory);
   dataTransfer.setData('text/uri-list', payload.ref);
   if (window.parent && window.parent !== window) {
     window.parent.postMessage({
-      type: 'task-tracker-context-drag-start',
+      type: 'kdcube.memory.drag.start',
       source: 'memories-widget',
       context: payload,
     }, '*');
@@ -52,10 +72,24 @@ function setMemoryDragData(dataTransfer: DataTransfer, memory: MemoryEntry): voi
 function clearMemoryDragData(): void {
   if (window.parent && window.parent !== window) {
     window.parent.postMessage({
-      type: 'task-tracker-context-drag-end',
+      type: 'kdcube.memory.drag.end',
       source: 'memories-widget',
     }, '*');
   }
+}
+
+function termChips(memory: MemoryEntry, limit: number) {
+  const terms = uniqueTerms(memory.labels, memory.keywords);
+  const visible = terms.slice(0, limit);
+  const hidden = Math.max(0, terms.length - visible.length);
+  return (
+    <>
+      {visible.map((term) => (
+        <span key={`${memory.id}-term-${term}`}>{term}</span>
+      ))}
+      {hidden > 0 ? <span className="more-chip">+{hidden}</span> : null}
+    </>
+  );
 }
 
 export function MemoryList() {
@@ -88,9 +122,7 @@ export function MemoryList() {
             </div>
             {memory.context ? <span className="memory-context">{memory.context}</span> : null}
             <div className="term-row compact-terms">
-              {[...memory.labels, ...memory.keywords].slice(0, 4).map((term) => (
-                <span key={`${memory.id}-term-${term}`}>{term}</span>
-              ))}
+              {termChips(memory, 4)}
             </div>
           </button>
         ))}
@@ -134,8 +166,7 @@ export function MemoryList() {
                 <span className="memory-bundle">{memory.pinned ? 'pinned' : memory.kind || memory.bundle_id || 'global'}</span>
               </div>
               <div className="term-row compact-terms">
-                {memory.labels.map((label) => <span key={`${memory.id}-label-${label}`}>{label}</span>)}
-                {memory.keywords.map((keyword) => <span key={`${memory.id}-keyword-${keyword}`}>{keyword}</span>)}
+                {termChips(memory, 6)}
               </div>
               <div className="memory-meta">
                 <span>Tier {memory.tier}</span>

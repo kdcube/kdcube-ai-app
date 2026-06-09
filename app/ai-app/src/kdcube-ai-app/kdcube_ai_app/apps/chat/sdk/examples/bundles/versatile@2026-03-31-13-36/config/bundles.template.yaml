@@ -18,6 +18,15 @@ bundles:
             allow_write: true
             default_scope_filter: current_bundle
             allow_all_user_memories: true
+            limit: 30
+        canvas:
+          artifact_prefix: canvas
+          origin_prefix: canvas
+          state_event_source_id: canvas.state
+          ui_event_type: canvas.patch.applied
+          artifact_resolver_name: canvas.bundle_artifact_storage
+          data_bus_subject: canvas.patch
+          revision_retention: 80
         execution:
           runtime:
             mode: docker
@@ -37,7 +46,20 @@ bundles:
           bundle:
             allowed_roles: []
         ui:
+          main_view:
+            src_folder: ui/scene
+            build_command: npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build
+            shared_sources:
+              canvas_component:
+                src_folder: sdk://solutions/canvas/ui/component
+                target: _shared/canvas-component
           widgets:
+            versatile_chat:
+              src_folder: sdk://solutions/chat/ui/widget
+              build_command: npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build
+            memories:
+              src_folder: sdk://context/memory/ui/widget/memories
+              build_command: npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build
             versatile_webapp:
               src_folder: ui/widgets/versatile_webapp
               build_command: npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build

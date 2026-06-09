@@ -378,6 +378,7 @@ history.
 | ReAct ContextBrowser | Lane-to-timeline folding before first render and during live turns. |
 | Bundle/workflow event callbacks | Raw accepted-event side effects such as hosting, API calls, permission checks, storage updates, or ignoring events. |
 | Event-source subsystem | Source declaration and policy lookup. It does not own transport or processor queueing. |
+| Event-source readers | Namespace-owner read hooks used by `react.read` for refs such as `mem:` or `cnv:`. They are not external-event transport and do not consume the Redis event lane. |
 | ReAct block-production policies | Decide which accepted events become durable ReAct blocks and which are consumed without timeline blocks. |
 
 ## Implementation Status

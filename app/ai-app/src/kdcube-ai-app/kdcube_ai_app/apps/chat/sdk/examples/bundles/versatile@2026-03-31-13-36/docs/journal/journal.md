@@ -2,10 +2,24 @@
 title: Versatile Bundle Journal
 kind: bundle-journal
 bundle_id: versatile@2026-03-31-13-36
-updated_at: 2026-05-16
+updated_at: 2026-06-09
 ---
 
 # Journal
+
+## 2026-06-09
+
+- Retargeted the active main view to `ui/scene` while keeping `ui/main` as a
+  legacy comparison surface.
+- Mounted the reusable SDK chat widget as `versatile_chat`, the SDK memory
+  widget as `memories`, and the SDK canvas component through the scene host.
+- Added generic canvas backend operations and Data Bus subject `canvas.patch`.
+  The reference bundle intentionally uses `canvas.*` protocol names, not
+  bundle-prefixed names.
+- Updated `config/bundles.template.yaml` to show the scene main view,
+  `versatile_chat`, `memories`, the legacy `versatile_webapp`, and the shared
+  SDK canvas component source.
+- Added `docs/design/scene-sdk-components.md` to document the component wiring.
 
 ## 2026-05-16
 

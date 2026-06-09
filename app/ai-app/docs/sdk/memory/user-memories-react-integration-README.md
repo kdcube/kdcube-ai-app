@@ -3,7 +3,7 @@ id: ks:docs/sdk/memory/user-memories-react-integration-README.md
 title: "User Memories ReAct Integration"
 summary: "How SDK user memories integrate with bundle configuration, the memory widget, ReAct announce hotsets, hybrid search, explicit reads, and future write tools."
 tags: ["sdk", "memory", "react", "announce", "widget", "hybrid-search", "rendering"]
-keywords: ["memory announce", "memory widget", "memory hotset", "hybrid memory search", "me memory id", "react memory integration", "memory rendering"]
+keywords: ["memory announce", "memory widget", "memory hotset", "hybrid memory search", "mem memory id", "react memory integration", "memory rendering"]
 see_also:
   - ks:docs/sdk/memory/how-react-remembers-README.md
   - ks:docs/sdk/memory/user-memories-overview-README.md
@@ -57,21 +57,28 @@ ReAct tool ids when registered with alias `memory`:
 ```text
 memory.search_memory
 memory.recent_memories
+memory.read_memory
 memory.record_memory
 memory.confirm_memory
 memory.retire_memory
 ```
 
-`search_memory` and `recent_memories` are read tools. `record_memory`,
-`confirm_memory`, and `retire_memory` are state-changing tools and require
-`memory.tools.allow_write=true`. The tools return structured JSON result
-envelopes and are declared as ReAct event sources through
+`search_memory`, `recent_memories`, and `read_memory` are read tools.
+`record_memory`, `confirm_memory`, and `retire_memory` are state-changing tools
+and require `memory.tools.allow_write=true`. The tools return structured JSON
+result envelopes and are declared as ReAct event sources through
 `list_event_sources()` in
 `kdcube_ai_app.apps.chat.sdk.context.memory.tools`. Their default block
 production is the shared structured-result path, so memory results render as
 ordinary tool-result blocks and do not inject files, source rows, snapshots, or
 announce entries unless a later memory-specific policy explicitly adds that
 surface.
+
+`read_memory` is also registered as the owner-domain event source reader for
+the `mem:` namespace. When the memory module is loaded into a ReAct bundle,
+`react.read(paths=["mem:mem_..."])` resolves through memory's reader and then
+renders through memory's block-production policy. ReAct does not implement a
+separate hard-coded memory renderer.
 
 ## Full Bundle Config
 
@@ -283,7 +290,7 @@ Example shape:
   format: memory text carries the trigger+rule; context is why/provenance/examples only.
   scope_filter: current_bundle
   memories: showing 1 of 1
-  - me:mem_abc123 bundle=example@1-0 tier=1 pinned=true confidence=0.95 salience=0.88 updated=2026-05-15T14:20:00Z labels=[communication-style, technical-explanations]
+  - mem:mem_abc123 bundle=example@1-0 tier=1 pinned=true confidence=0.95 salience=0.88 updated=2026-05-15T14:20:00Z labels=[communication-style, technical-explanations]
     For engineering explanations, start with the practical impact before implementation details.
     context=Created because prior summaries buried the user-visible impact. Examples: debugging notes, code reviews, implementation recaps.
 ```
@@ -304,13 +311,13 @@ when they are not rendered in the announce hotset.
 
 ## Explicit Memory Reads
 
-Planned ReAct behavior:
+Implemented ReAct behavior:
 
 ```json
 {
   "tool_id": "react.read",
   "params": {
-    "paths": ["me:mem_abc123"]
+    "paths": ["mem:mem_abc123"]
   }
 }
 ```
@@ -319,7 +326,7 @@ Expected render:
 
 ```text
 [USER MEMORY]
-path: me:mem_abc123
+path: mem:mem_abc123
 id: mem_abc123
 bundle_id: example@1-0
 kind: communication_style
@@ -347,27 +354,29 @@ evidence:
 events=2 confirmations=1 contradictions=0
 ```
 
-`me:<id>` should return the full current memory record, not just text. Evidence
-history should be a separate explicit path:
+`mem:<id>` returns the current visible memory record, not just text. Evidence
+history is bounded and should be requested explicitly when needed:
 
 ```text
-me:mem_abc123.events
+memory.read_memory(memory_ref="mem:mem_abc123", include_events=true)
 ```
 
 Discovery should not use `react.read`. If the memory is not already visible in
 announce, the agent should use memory search first. Once it has concrete memory
 ids, it can read specific ids in full.
 
-Implementation work for `me:`:
+The read path is generic:
 
 ```text
-add me: to react.read docs and dedup prefixes
-add runtime_ctx.memory_read_fn
-resolve me paths in handle_react_read
-enforce authenticated user, visibility, and configured memory scope
-render compact current state by default
-render bounded evidence only through explicit events/evidence view
+react.read(paths=["mem:mem_abc123"])
+  -> EventSourceSubsystem reader for mem:
+  -> memory.read_memory
+  -> memory.block_production.read_result
+  -> rendered memory block
 ```
+
+The reader enforces authenticated user visibility and the configured memory
+scope. The block policy renders compact current state by default.
 
 ## Agent Policy
 

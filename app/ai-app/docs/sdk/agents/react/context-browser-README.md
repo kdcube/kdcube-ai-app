@@ -8,6 +8,8 @@ see_also:
   - ks:docs/sdk/agents/react/context-layout.md
   - ks:docs/sdk/agents/react/context-progression.md
   - ks:docs/sdk/agents/react/react-context-README.md
+  - ks:docs/sdk/agents/react/react-tools-README.md
+  - ks:docs/sdk/events/event-subsystem-README.md
 ---
 # Context Browser (v2)
 
@@ -136,6 +138,25 @@ Pass `include_announce=True` to `timeline(...)` to include them.
 
 Use `browser.set_sources_pool(...)` to update the current sources pool.
 Pass `include_sources=True` to `timeline(...)` to include it.
+
+## 8) Owner-Domain Reads
+
+`ContextBrowser` supplies the current runtime scope to `react.read`. For native
+timeline/artifact refs, `react.read` reopens blocks directly. For owner-domain
+refs such as `mem:` or `cnv:`, `react.read` dispatches through the loaded
+`EventSourceSubsystem`:
+
+```text
+react.read(paths=["mem:mem_123"])
+  -> event_source_reader(namespace="mem")
+  -> owner reader uses current tenant/project/user scope
+  -> owner event-source policies produce blocks
+  -> blocks are admitted into the same current-turn timeline
+```
+
+This keeps ContextBrowser generic. It does not know how to render memory,
+canvas, task, or knowledge objects. The module that owns the namespace must
+register the reader and its block-production policies.
 
 ---
 

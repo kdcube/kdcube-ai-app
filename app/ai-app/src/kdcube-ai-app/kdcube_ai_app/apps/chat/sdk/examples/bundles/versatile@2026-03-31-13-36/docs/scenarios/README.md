@@ -2,7 +2,7 @@
 title: Versatile Runtime Scenarios
 kind: scenarios
 bundle_id: versatile@2026-03-31-13-36
-updated_at: 2026-05-12
+updated_at: 2026-06-09
 ---
 
 # Versatile Runtime Scenarios
@@ -36,6 +36,27 @@ assistant answer
 This scenario demonstrates how a bundle can combine a normal React workflow
 with bundle-local durable state. The preference store is deliberately simple:
 it is a reference pattern for storage/tool/widget integration.
+
+## Scenario 1A: KDCube Scene With SDK Components
+
+```text
+KDCube control plane
+  |
+  v
+iframe loads ui/scene
+  |
+  +-- embeds widgets/versatile_chat
+  +-- embeds widgets/memories
+  +-- renders SDK CanvasBoard
+  |
+  +-- canvas reads/uploads/actions -> bundle operations
+  +-- canvas patches -> Data Bus subject canvas.patch
+  +-- context attach/focus -> versatile_chat iframe
+```
+
+The active scene is the reference for assembling reusable SDK components in one
+bundle. See `docs/design/scene-sdk-components.md` for the exact widget and
+operation wiring.
 
 ## Scenario 2: KDCube Widget Preferences Canvas
 

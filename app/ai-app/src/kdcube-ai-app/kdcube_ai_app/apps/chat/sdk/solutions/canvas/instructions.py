@@ -36,9 +36,10 @@ provenance may appear as metadata such as `canvas_context`, but the canonical
 object ref remains the identity.
 
 Canvas read/write behavior:
-- Use the map/legend for awareness. Use `canvas.read` only when exact hidden
-  board state, full JSON, full card metadata, coordinates, or refs are needed.
-- `canvas.read(uri="canvas:<name>@<revision>")` returns exact JSON plus an
+- Use the map/legend for awareness. Use `react.read(paths=["cnv:<name>@<revision>"])`
+  only when exact hidden board state, full JSON, full card metadata,
+  coordinates, or refs are needed.
+- `react.read(paths=["cnv:<name>@<revision>"])` returns exact JSON plus an
   `agent_view`; it is not an edit. A read can refresh canvas ANNOUNCE.
 - Collaborate only through `canvas.patch` with `base_revision` set to the
   visible canvas revision. Do not edit/re-save canvas JSON directly.
@@ -50,7 +51,7 @@ Canvas read/write behavior:
 
 Card placement and ref behavior:
 - Map labels are for spatial reasoning. For patching existing cards, use
-  `card_id` values from the legend or from `canvas.read`.
+  `card_id` values from the legend or from `react.read(paths=["cnv:<name>@<revision>"])`.
 - `placement=placed` means the card is visible on the board map with a rect.
   `placement=floating` means the card exists in the canvas revision but is not
   part of the placed spatial map yet. `placement=suggested` is a pending

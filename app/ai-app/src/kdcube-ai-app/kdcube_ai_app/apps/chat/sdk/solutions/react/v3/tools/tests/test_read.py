@@ -3,10 +3,20 @@
 import pytest
 import json
 import random
+from types import ModuleType
 
+from kdcube_ai_app.apps.chat.sdk.events import EventSourceSubsystem, event_source_declaration, event_source_reader
+from kdcube_ai_app.apps.chat.sdk.solutions.react.events import block_production_policy
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.tools.read import handle_react_read
 from kdcube_ai_app.apps.chat.sdk.solutions.react.v2.tools.tests.helpers import FakeBrowser
+
+
+def _module(name: str, **attrs):
+    mod = ModuleType(name)
+    for key, value in attrs.items():
+        setattr(mod, key, value)
+    return mod
 
 
 @pytest.mark.asyncio
@@ -16,6 +26,71 @@ async def test_read_missing_paths_notice(tmp_path):
     state = {"last_decision": {"tool_call": {"params": {"paths": ["fi:turn_read.files/missing.md"]}}}}
     await handle_react_read(ctx_browser=ctx, state=state, tool_call_id="r1")
     assert any(b.get("type") == "react.notice" for b in ctx.timeline.blocks)
+
+
+@pytest.mark.asyncio
+async def test_read_dispatches_owner_namespace_through_event_source_reader(tmp_path):
+    @block_production_policy(event_policy_id="demo.block_production.read_result")
+    def demo_read_policy(target, **_):
+        blocks = target.setdefault("blocks", [])
+        ret = target.get("ret") if isinstance(target.get("ret"), dict) else {}
+        blocks.append({
+            "turn": target.get("turn_id") or "",
+            "type": "react.tool.result",
+            "call_id": target.get("tool_call_id") or "",
+            "tool_id": target.get("tool_id") or "",
+            "event_source_id": target.get("event_source_id") or "",
+            "mime": "application/json",
+            "path": ret.get("ref") or "",
+            "text": json.dumps({"resolved": ret.get("value")}, ensure_ascii=False),
+            "meta": {"tool_call_id": target.get("tool_call_id") or ""},
+        })
+        target["result_items"] = []
+        target["result_items_produced"] = True
+        target["declared_file_items"] = []
+        target["declared_file_items_produced"] = True
+        return target
+
+    @event_source_reader(namespace="demo", event_source_id="{alias}.read")
+    async def read_demo_ref(**kwargs):
+        return {"ok": True, "ref": kwargs["ref"], "value": "owner payload"}
+
+    def list_event_sources():
+        return [
+            event_source_declaration(
+                event_source_id="{alias}.read",
+                policies=[
+                    {"react_phase": "block_production", "event_policy_id": "react.block_production.tool_default"},
+                    {"react_phase": "block_production", "event_policy_id": "demo.block_production.read_result"},
+                ],
+                kind="react.tool",
+            )
+        ]
+
+    event_sources = EventSourceSubsystem(modules=[{
+        "mod": _module(
+            "demo_reader_events",
+            list_event_sources=list_event_sources,
+            read_demo_ref=read_demo_ref,
+            demo_read_policy=demo_read_policy,
+        ),
+        "alias": "demo",
+    }])
+    runtime = RuntimeCtx(turn_id="turn_read", outdir=str(tmp_path), workdir=str(tmp_path), event_sources=event_sources)
+    ctx = FakeBrowser(runtime)
+    state = {"last_decision": {"tool_call": {"params": {"paths": ["demo:item-1"]}}}}
+
+    await handle_react_read(ctx_browser=ctx, state=state, tool_call_id="r_owner")
+
+    assert any(
+        block.get("path") == "demo:item-1" and "owner payload" in (block.get("text") or "")
+        for block in ctx.timeline.blocks
+        if block.get("type") == "react.tool.result"
+    )
+    assert not any(
+        block.get("type") == "react.notice" and "read_paths_missing" in (block.get("text") or "")
+        for block in ctx.timeline.blocks
+    )
 
 
 @pytest.mark.asyncio
