@@ -638,6 +638,33 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
             "</div>"
         ]
 
+    @api(
+        alias="usage_card_widget",
+        route="operations",
+        **_api_visibility("usage_card_widget"),
+    )
+    @ui_widget(
+        icon={
+            "tailwind": "heroicons-outline:chart-bar",
+            "lucide": "Gauge",
+        },
+        alias="usage_card",
+        **_widget_visibility("usage_card"),
+    )
+    def usage_card_widget(self, **kwargs):
+        # Static fallback served when the built widget is not yet on disk.
+        # The platform routes the real UI from
+        # sdk://infra/economics/ui/widget/usage-card once the bundle build
+        # ran. Data comes from /api/economics/me/budget-breakdown, which is
+        # itself gated to authenticated users by the platform; the scene
+        # additionally hides the toggle button for anonymous visitors.
+        del kwargs
+        return [
+            "<div style=\"font-family:system-ui,sans-serif;padding:16px\">"
+            "Usage card is served from sdk://infra/economics/ui/widget/usage-card after build."
+            "</div>"
+        ]
+
     @api(method="POST", alias="canvas_attachment_upload", route="operations", **_api_visibility("canvas_attachment_upload"))
     async def canvas_attachment_upload(self, data: Optional[Dict[str, Any]] = None, **kwargs: Any) -> Dict[str, Any]:
         payload = _payload(data, **kwargs)
@@ -1267,6 +1294,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
                     "memories": {"user_types": []},
                     "versatile_chat": {"user_types": []},
                     "versatile_webapp": {"user_types": []},
+                    "usage_card": {"user_types": []},
                 },
             },
             "integrations": {
@@ -1313,6 +1341,11 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
                     "memories": {
                         "enabled": True,
                         "src_folder": "sdk://context/memory/ui/widget/memories",
+                        "build_command": "npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build",
+                    },
+                    "usage_card": {
+                        "enabled": True,
+                        "src_folder": "sdk://infra/economics/ui/widget/usage-card",
                         "build_command": "npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build",
                     },
                     "versatile_webapp": {
