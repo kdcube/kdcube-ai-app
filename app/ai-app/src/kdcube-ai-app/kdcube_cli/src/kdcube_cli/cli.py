@@ -2818,6 +2818,58 @@ def ensure_repo(console: Console, repo: str, target: Path) -> None:
     run(["git", "clone", normalized_repo, str(target)])
 
 
+def _rehydrate_staged_platform_git_repo_for_release(
+    console: Console,
+    *,
+    repo_path: Path,
+    config_dir: Path,
+) -> Path:
+    """Replace a non-git staged platform source with a git clone.
+
+    Older local-source init/refresh flows stage a file copy into
+    ``<workdir>/repo``. That is valid for local development, but a later
+    ``refresh --release`` needs git metadata so it can checkout the requested
+    ref. In that case, rehydrate only the canonical staged repo from the
+    descriptor's platform repo. Runtime data and staged descriptors stay intact.
+    """
+    assembly = installer_mod.load_release_descriptor_soft(config_dir / "assembly.yaml")
+    platform_repo = _descriptor_platform_repo(assembly, DEFAULT_REPO)
+    normalized_repo = installer_mod.normalize_git_repo_source(platform_repo)
+
+    repo_path = repo_path.resolve()
+    repo_path.parent.mkdir(parents=True, exist_ok=True)
+
+    backup: Path | None = None
+    if repo_path.exists():
+        backup_base = repo_path.with_name(f"{repo_path.name}.nongit-backup-{os.getpid()}")
+        backup = backup_base
+        suffix = 0
+        while backup.exists():
+            suffix += 1
+            backup = backup_base.with_name(f"{backup_base.name}.{suffix}")
+        console.print(
+            f"[dim]Replacing non-git staged platform source for release checkout:[/dim] "
+            f"{repo_path}"
+        )
+        shutil.move(str(repo_path), str(backup))
+
+    try:
+        console.print(f"[dim]Cloning descriptor platform repo:[/dim] {normalized_repo} -> {repo_path}")
+        run(["git", "clone", normalized_repo, str(repo_path)])
+    except Exception as exc:
+        shutil.rmtree(repo_path, ignore_errors=True)
+        if backup is not None and backup.exists():
+            shutil.move(str(backup), str(repo_path))
+        raise SystemExit(
+            f"Could not clone descriptor platform repo '{platform_repo}' into "
+            f"the staged runtime repo at {repo_path}."
+        ) from exc
+
+    if backup is not None:
+        shutil.rmtree(backup, ignore_errors=True)
+    return repo_path
+
+
 def _checkout_repo_ref(console: Console, repo_root: Path, ref: str) -> None:
     ref = str(ref or "").strip()
     if not ref:
@@ -4559,8 +4611,20 @@ def main() -> None:
             _repo = _resolve_subcommand_repo(args.path, workdir=_resolved, path_provided=_refresh_path_provided)
             if _refresh_version_selector:
                 if not _is_git_repo(_repo):
-                    raise SystemExit(
-                        f"Cannot use --latest/--upstream/--release with a non-git platform source tree: {_repo}"
+                    if _refresh_path_provided:
+                        raise SystemExit(
+                            f"Cannot use --latest/--upstream/--release with a non-git platform source tree: {_repo}"
+                        )
+                    _default_staged_repo = _default_repo_path_for_workdir(_resolved).resolve()
+                    if _repo.resolve() != _default_staged_repo:
+                        raise SystemExit(
+                            f"Cannot use --latest/--upstream/--release with a non-git platform source tree: {_repo}\n"
+                            "Pass --path <git-repo> or recreate the runtime from descriptors."
+                        )
+                    _repo = _rehydrate_staged_platform_git_repo_for_release(
+                        console,
+                        repo_path=_default_staged_repo,
+                        config_dir=_refresh_reuse_config,
                     )
                 if args.upstream:
                     _checkout_repo_upstream(console, _repo)
