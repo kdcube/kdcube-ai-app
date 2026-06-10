@@ -108,7 +108,7 @@ def test_build_decision_system_text_has_no_stale_single_tool_limit_hint():
     assert "use later rounds for the rest" not in text
     assert "Each JSON object may contain at most ONE tool_call object." in text
     assert "each action in its own separate <channel:action> instance" in text
-    assert "ref:<artifact_path_or_visible_file_path>" in text
+    assert "ref:<visible_logical_path>" in text
     assert "ref:<bound artifact path>" not in text
     assert "Default write rule: reports, briefs, HTML, Markdown, slide source" in text
     assert "must be written with react.write channel=canvas" in text
@@ -121,11 +121,11 @@ def test_build_decision_system_text_prefers_visible_document_source_refs():
         workspace_implementation="custom",
     )
     assert "Prefer generating source content with `react.write`." in text
-    assert "Preferred: then call the renderer with `content=\"ref:<external artifact path>\"`." in text
+    assert "Preferred: then call the renderer with `content=\"ref:<visible text source ref>\"`" in text
     assert "Inline renderer content is still valid when needed." in text
-    assert "internal\n  artifacts into rendering_tools.write_*" in text
+    assert "Do not bind physical paths,\n  external owner refs, or internal artifacts into rendering_tools.write_*" in text
     assert "exec output with" in text and "visibility=external" in text
-    assert "if generated content is meant for the user to see, download, approve, or use as a renderer source, make it external" in text
+    assert "If generated content is meant for the user to see, download, approve, or use" in text
     assert "Do not use `channel=\"internal\"` refs as rendering_tools.write_* source." in text
     assert "draft shape is wrong" in text
     assert "Use the input type documented by the target rendering tool." in text

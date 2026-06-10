@@ -19,6 +19,10 @@ from kdcube_ai_app.apps.chat.emitters import (
     build_relay_from_env,
 )
 from kdcube_ai_app.apps.chat.external_events import build_conversation_external_event_source
+from kdcube_ai_app.apps.chat.sdk.events.event_bus import (
+    EventLaneWakePublisher,
+    RedisEventLaneWakeEnqueuer,
+)
 from kdcube_ai_app.apps.chat.sdk.event_identity import DEFAULT_REACT_AGENT_ID, normalize_agent_id
 # from kdcube_ai_app.apps.chat.sdk.context.memory.conv_memories import ConvMemoriesStore
 from kdcube_ai_app.apps.chat.sdk.context.retrieval.ctx_rag import ContextRAGClient
@@ -659,7 +663,7 @@ class BaseWorkflow():
                 multi_action_mode=settings.AI_REACT_AGENT_MULTI_ACTION,
             )
             _apply_react_session_settings(self.runtime_ctx, settings)
-            self.runtime_ctx.external_event_source = self._external_event_source_for_runtime()
+            self._sync_runtime_external_event_bus(self.runtime_ctx)
             self.ctx_browser = ContextBrowser(
                 ctx_client=self.ctx_client,
                 logger=self.logger,
@@ -706,7 +710,7 @@ class BaseWorkflow():
                 multi_action_mode=settings.AI_REACT_AGENT_MULTI_ACTION,
             )
             _apply_react_session_settings(self.runtime_ctx, settings)
-            self.runtime_ctx.external_event_source = self._external_event_source_for_runtime()
+            self._sync_runtime_external_event_bus(self.runtime_ctx)
             self.ctx_browser = ContextBrowser(
                 ctx_client=self.ctx_client,
                 logger=self.logger,
@@ -987,13 +991,19 @@ class BaseWorkflow():
                     getattr(getattr(comm_context, "event", None), "agent_id", None)
                 )
                 runtime_ctx.bundle_storage = self._resolve_runtime_ctx_bundle_storage()
-                runtime_ctx.external_event_source = self._external_event_source_for_runtime()
+                self._sync_runtime_external_event_bus(runtime_ctx)
                 self._sync_runtime_ctx_bundle_props()
         else:
             runtime_ctx = getattr(self, "runtime_ctx", None)
             if runtime_ctx is not None:
-                runtime_ctx.external_event_source = self._external_event_source_for_runtime()
+                self._sync_runtime_external_event_bus(runtime_ctx)
         self._sync_runtime_ctx_bundle_props()
+
+    def _sync_runtime_external_event_bus(self, runtime_ctx: Any) -> None:
+        if runtime_ctx is None:
+            return
+        runtime_ctx.external_event_source = self._external_event_source_for_runtime()
+        runtime_ctx.external_event_wake_publisher = self._external_event_wake_publisher_for_runtime()
 
     def _external_event_source_for_runtime(self) -> Optional[Any]:
         redis = getattr(self, "redis", None)
@@ -1027,6 +1037,26 @@ class BaseWorkflow():
             )
         except Exception:
             return None
+
+    def _external_event_wake_publisher_for_runtime(self) -> Optional[Any]:
+        redis = getattr(self, "redis", None)
+        ctx = getattr(self, "comm_context", None)
+        if redis is None or ctx is None:
+            return None
+        try:
+            tenant = ctx.actor.tenant_id
+            project = ctx.actor.project_id
+        except Exception:
+            return None
+        if not tenant or not project:
+            return None
+        return EventLaneWakePublisher(
+            RedisEventLaneWakeEnqueuer(
+                redis=redis,
+                tenant=tenant,
+                project=project,
+            )
+        )
 
     def react_debug_timeline_enabled(self, *, default: bool = False) -> bool:
         return _react_debug_timeline_enabled(
@@ -2573,6 +2603,12 @@ class BaseWorkflow():
             self.runtime_ctx.conversation_id = scratchpad.conversation_id
             self.runtime_ctx.user_id = scratchpad.user
             try:
+                open_external_event_handler = getattr(self.ctx_browser, "open_external_event_handler", None)
+                if callable(open_external_event_handler):
+                    await open_external_event_handler()
+            except Exception:
+                self.logger.log(traceback.format_exc(), "ERROR")
+            try:
                 await self.ctx_browser.load_timeline(
                     days=365,
                 )
@@ -3001,6 +3037,14 @@ class BaseWorkflow():
 
         try:
             await self._persist_stream_artifacts()
+        except Exception:
+            self.logger.log(traceback.format_exc(), "ERROR")
+
+        try:
+            if self.ctx_browser:
+                close_external_event_handler = getattr(self.ctx_browser, "close_external_event_handler", None)
+                if callable(close_external_event_handler):
+                    await close_external_event_handler()
         except Exception:
             self.logger.log(traceback.format_exc(), "ERROR")
 

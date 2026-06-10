@@ -42,6 +42,8 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.events import (
     run_live_external_event_listener_loop,
     stamp_event_identity_many,
 )
+from kdcube_ai_app.apps.chat.sdk.events.event_bus.orchestrator import ConversationEventBusOrchestrator
+from kdcube_ai_app.apps.chat.sdk.events.event_bus.state import event_is_reactive, event_timestamp, timestamp_lte
 
 PROJECT_LOG_SLOTS = { "project_log" }
 SOURCES_POOL_ARTIFACT_TAG = f"artifact:{SOURCES_POOL_KIND}"
@@ -75,6 +77,7 @@ class ContextBrowser:
         self._external_listener_id: str = ""
         self._external_listener_turn_id: str = ""
         self._external_lease_token: str = ""
+        self._external_event_orchestrator: Optional[ConversationEventBusOrchestrator] = None
         self._external_event_listener_requested: bool = False
         self._external_apply_lock = asyncio.Lock()
         self._last_external_event_reader_result: Dict[str, Any] = {}
@@ -101,6 +104,31 @@ class ContextBrowser:
 
     def last_external_event_reader_result(self) -> Dict[str, Any]:
         return dict(self._last_external_event_reader_result or {})
+
+    def _ensure_event_bus_orchestrator(self) -> Optional[ConversationEventBusOrchestrator]:
+        source = self.external_event_source
+        if source is None:
+            return None
+        if self._external_event_orchestrator is None:
+            self._external_event_orchestrator = ConversationEventBusOrchestrator.for_source(source)
+        return self._external_event_orchestrator
+
+    def _event_bus_orchestrator(self) -> Optional[ConversationEventBusOrchestrator]:
+        return self._external_event_orchestrator
+
+    async def open_external_event_handler(self) -> bool:
+        orchestrator = self._ensure_event_bus_orchestrator()
+        if orchestrator is None:
+            return False
+        turn_id = str(self._runtime_ctx.turn_id or "").strip()
+        if not turn_id:
+            return False
+        try:
+            state = await orchestrator.open_handler(turn_id=turn_id)
+            return bool(state.is_open_for(turn_id))
+        except Exception:
+            self.log.log("[timeline.external]: failed to open event-bus handler state\n" + traceback.format_exc(), "ERROR")
+            return False
 
     async def ensure_external_event_listener(self) -> None:
         if self._timeline is None or not self._external_event_hooks or not self._external_event_listener_requested:
@@ -143,6 +171,32 @@ class ContextBrowser:
         if lease is None:
             return
         self._external_lease_token = lease.lease_token
+        orchestrator = self._event_bus_orchestrator()
+        if orchestrator is not None:
+            try:
+                state = await orchestrator.mark_consumer_active(turn_id=turn_id)
+                if state.consumer_status != "active":
+                    await release_live_external_event_owner(
+                        source=source,
+                        listener_id=self._external_listener_id,
+                        lease_token=lease.lease_token,
+                    )
+                    self._external_lease_token = ""
+                    self.log.log(
+                        f"[timeline.external]: listener start skipped because event-bus consumer is not active "
+                        f"conversation={conversation_id} turn_id={turn_id} handler_status={state.handler_status}",
+                        "INFO",
+                    )
+                    return
+            except Exception:
+                await release_live_external_event_owner(
+                    source=source,
+                    listener_id=self._external_listener_id,
+                    lease_token=lease.lease_token,
+                )
+                self._external_lease_token = ""
+                self.log.log("[timeline.external]: failed to mark event-bus consumer active\n" + traceback.format_exc(), "ERROR")
+                return
         self.log.log(
             f"[timeline.external]: owner lease acquired conversation={conversation_id} turn_id={turn_id} "
             f"listener_id={self._external_listener_id} lease_epoch={lease.lease_epoch}",
@@ -158,11 +212,103 @@ class ContextBrowser:
                 last_cursor_getter=lambda: (
                     str(self._timeline.last_external_event_id or "") if self._timeline is not None else ""
                 ),
-                apply_events=lambda events: self.apply_external_events(list(events or []), call_hooks=True),
+                apply_events=lambda events: self.apply_live_external_events(list(events or [])),
+                acknowledge=self.acknowledge_external_event_consumer,
                 log=self.log,
             ),
             name=f"react-timeline-events:{conversation_id}:{turn_id}",
         )
+
+    async def acknowledge_external_event_consumer(self) -> None:
+        orchestrator = self._event_bus_orchestrator()
+        if orchestrator is None:
+            return
+        await orchestrator.mark_consumer_active(turn_id=str(self._runtime_ctx.turn_id or ""))
+
+    async def post_save_external_event_handoff(self) -> bool:
+        source = self.external_event_source
+        orchestrator = self._event_bus_orchestrator()
+        publisher = getattr(self._runtime_ctx, "external_event_wake_publisher", None)
+        if source is None or orchestrator is None or publisher is None:
+            return False
+        try:
+            state = await orchestrator.state()
+            last_cursor = ""
+            if self._timeline is not None:
+                last_cursor = str(getattr(self._timeline, "last_external_event_id", "") or "")
+            events = await source.read_since(last_cursor or 0, limit=100)
+            for event in events or []:
+                if getattr(event, "consumed_at", None) is not None:
+                    continue
+                if not event_is_reactive(event):
+                    continue
+                if timestamp_lte(event_timestamp(event), state.last_processed_reactive_event_timestamp):
+                    continue
+                result = await publisher.publish_for_event(
+                    payload=event.task_payload_model(),
+                    event=event,
+                    tenant=getattr(source, "tenant", None),
+                    project=getattr(source, "project", None),
+                    user_id=getattr(source, "user_id", None),
+                    conversation_id=getattr(source, "conversation_id", None) or str(self._runtime_ctx.conversation_id or ""),
+                    agent_id=getattr(source, "agent_id", None) or str(self._runtime_ctx.agent_id or ""),
+                    reason="post_save_handoff",
+                )
+                if result.success:
+                    self.log.log(
+                        f"[timeline.external]: post-save handoff queued wake "
+                        f"conversation={self._runtime_ctx.conversation_id} turn_id={self._runtime_ctx.turn_id} "
+                        f"event_id={getattr(event, 'message_id', '')} event_ts={event_timestamp(event)}",
+                        "INFO",
+                    )
+                    return True
+                self.log.log(
+                    f"[timeline.external]: post-save handoff wake not queued "
+                    f"conversation={self._runtime_ctx.conversation_id} turn_id={self._runtime_ctx.turn_id} "
+                    f"event_id={getattr(event, 'message_id', '')} reason={result.reason}",
+                    "WARNING",
+                )
+                return False
+        except Exception:
+            self.log.log("[timeline.external]: failed post-save event-bus handoff\n" + traceback.format_exc(), "ERROR")
+        return False
+
+    async def close_external_event_handler(self) -> None:
+        orchestrator = self._event_bus_orchestrator()
+        if orchestrator is None:
+            return
+        try:
+            await self.post_save_external_event_handoff()
+            await orchestrator.mark_consumer_none()
+        except Exception:
+            self.log.log("[timeline.external]: failed to release event-bus consumer state\n" + traceback.format_exc(), "ERROR")
+
+    async def try_close_external_event_handler(self) -> Optional[bool]:
+        orchestrator = self._event_bus_orchestrator()
+        if orchestrator is None:
+            return None
+        try:
+            handler_processed_event_timestamp = ""
+            if self._timeline is not None:
+                handler_processed_event_timestamp = str(
+                    getattr(self._timeline, "last_render_processed_event_timestamp", "") or ""
+                )
+            decision = await orchestrator.try_close_handler(
+                turn_id=str(self._runtime_ctx.turn_id or ""),
+                handler_processed_event_timestamp=handler_processed_event_timestamp,
+            )
+            if not decision.closed:
+                self.log.log(
+                    f"[timeline.external]: handler close deferred "
+                    f"conversation={self._runtime_ctx.conversation_id} turn_id={self._runtime_ctx.turn_id} "
+                    f"reason={decision.reason} handler_processed_event_timestamp={handler_processed_event_timestamp} "
+                    f"last_processed_event_timestamp={decision.state.last_processed_event_timestamp}",
+                    "INFO",
+                )
+            return bool(decision.closed)
+        except Exception:
+            self.log.log("[timeline.external]: failed to close event-bus handler through close gate\n" + traceback.format_exc(), "ERROR")
+            return None
 
     async def stop_external_event_listener(self) -> None:
         task = self._external_event_task
@@ -367,6 +513,43 @@ class ContextBrowser:
         changed = await self._fold_external_events(call_hooks=call_hooks)
         return int(changed or 0)
 
+    async def apply_live_external_events(self, events: List[Any]) -> int:
+        return await self._accept_external_events_for_open_handler(
+            list(events or []),
+            call_hooks=True,
+        )
+
+    async def _accept_external_events_for_open_handler(self, events: List[Any], *, call_hooks: bool) -> int:
+        if not events:
+            return 0
+        orchestrator = self._event_bus_orchestrator()
+        if orchestrator is None:
+            return int(await self.apply_external_events(list(events or []), call_hooks=call_hooks) or 0)
+        changed = 0
+
+        async def _accept() -> None:
+            nonlocal changed
+            changed = int(await self.apply_external_events(list(events or []), call_hooks=call_hooks) or 0)
+
+        try:
+            decision = await orchestrator.accept_events_for_open_handler(
+                list(events or []),
+                turn_id=str(self._runtime_ctx.turn_id or ""),
+                accept=_accept,
+            )
+            if not decision.accepted:
+                self.log.log(
+                    f"[timeline.external]: live lane events left unconsumed "
+                    f"conversation={self._runtime_ctx.conversation_id} turn_id={self._runtime_ctx.turn_id} "
+                    f"reason={decision.reason} handler_status={decision.state.handler_status}",
+                    "INFO",
+                )
+                return 0
+        except Exception:
+            self.log.log("[timeline.external]: failed to accept live lane events through event-bus state\n" + traceback.format_exc(), "ERROR")
+            return 0
+        return changed
+
     async def wait_and_drain_external_events(
         self,
         *,
@@ -383,7 +566,7 @@ class ContextBrowser:
         except Exception:
             last_cursor = ""
         events = await source.wait_for_events_after(last_cursor, block_ms=max(1, int(block_ms or 1)), limit=max(1, int(limit or 1)))
-        return int(await self.apply_external_events(events, call_hooks=call_hooks) or 0)
+        return int(await self._accept_external_events_for_open_handler(list(events or []), call_hooks=call_hooks) or 0)
 
     async def _fold_external_events_initial(self) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         source = self.external_event_source
@@ -407,70 +590,90 @@ class ContextBrowser:
         current_turn_id = str(self._runtime_ctx.turn_id or "").strip()
         deferred_current_turn_blocks: List[Dict[str, Any]] = []
         deferred_current_turn_hooks: List[Dict[str, Any]] = []
-        max_seq = int(self._timeline.last_external_event_seq or 0)
-        max_cursor = str(self._timeline.last_external_event_id or "")
-        max_applied_seq = 0
-        current_prompt_texts: List[str] = []
-        for event in events:
-            blocks = await self._blocks_from_external_event(event)
-            max_seq = max(max_seq, int(getattr(event, "sequence", 0) or 0))
-            if getattr(event, "stream_id", None):
-                max_cursor = str(getattr(event, "stream_id", "") or max_cursor)
-            if not blocks:
-                continue
-            self._last_external_event_reader_result["events_materialized"] = (
-                int(self._last_external_event_reader_result.get("events_materialized") or 0) + 1
-            )
-            self._last_external_event_reader_result["blocks_materialized"] = (
-                int(self._last_external_event_reader_result.get("blocks_materialized") or 0) + len(blocks)
-            )
-            max_applied_seq = max(max_applied_seq, int(getattr(event, "sequence", 0) or 0))
-            event_turn_id = (
-                str(getattr(event, "owner_turn_id", "") or "").strip()
-                or str(getattr(event, "active_turn_id_at_ingress", "") or "").strip()
-            )
-            block_turn_ids = {
-                str(block.get("turn_id") or "").strip()
-                for block in blocks
-                if isinstance(block, dict) and str(block.get("turn_id") or "").strip()
-            }
-            is_current_turn_event = bool(current_turn_id and (event_turn_id == current_turn_id or current_turn_id in block_turn_ids))
-            if is_current_turn_event:
-                deferred_current_turn_blocks.extend(blocks)
-                deferred_current_turn_hooks.append({
-                    "type": str(getattr(event, "kind", "") or "external"),
-                    "event": event,
-                    "blocks": list(blocks),
-                })
-                for block in blocks:
-                    if not isinstance(block, dict):
-                        continue
-                    block_type = str(block.get("type") or "")
-                    if block_type == "user.prompt":
-                        text = str(block.get("text") or "").strip()
-                        if text:
-                            current_prompt_texts.append(text)
-                    if block_type == "user.prompt" or block_type.startswith("user.attachment."):
-                        self._last_external_event_reader_result["current_turn_user_input_materialized"] = True
-            else:
-                await self._timeline.contribute_async(blocks)
-                await self._emit_external_event_hooks(type=str(getattr(event, "kind", "") or "external"), event=event, blocks=blocks)
-        self._timeline.last_external_event_id = max_cursor
-        self._timeline.last_external_event_seq = max_seq
-        self._last_external_event_reader_result["max_sequence"] = max_seq
-        self._last_external_event_reader_result["max_stream_id"] = max_cursor
-        if current_prompt_texts:
-            self._last_external_event_reader_result["current_turn_prompt_text"] = "\n\n".join(current_prompt_texts)
-        if max_applied_seq and source is not None:
-            try:
-                await source.mark_consumed_up_to(
-                    max_sequence=max_applied_seq,
-                    turn_id=str(self._runtime_ctx.turn_id or ""),
+
+        async def _accept_initial() -> None:
+            max_seq = int(self._timeline.last_external_event_seq or 0)
+            max_cursor = str(self._timeline.last_external_event_id or "")
+            max_applied_seq = 0
+            current_prompt_texts: List[str] = []
+            for event in events:
+                blocks = await self._blocks_from_external_event(event)
+                max_seq = max(max_seq, int(getattr(event, "sequence", 0) or 0))
+                if getattr(event, "stream_id", None):
+                    max_cursor = str(getattr(event, "stream_id", "") or max_cursor)
+                if not blocks:
+                    continue
+                self._last_external_event_reader_result["events_materialized"] = (
+                    int(self._last_external_event_reader_result.get("events_materialized") or 0) + 1
                 )
-            except Exception:
-                self.log.log(f"[timeline.external]: failed to mark initial fold consumed {traceback.format_exc()}", "ERROR")
-        if self._timeline.blocks:
-            self._timeline.write_local()
+                self._last_external_event_reader_result["blocks_materialized"] = (
+                    int(self._last_external_event_reader_result.get("blocks_materialized") or 0) + len(blocks)
+                )
+                max_applied_seq = max(max_applied_seq, int(getattr(event, "sequence", 0) or 0))
+                event_turn_id = (
+                    str(getattr(event, "owner_turn_id", "") or "").strip()
+                    or str(getattr(event, "active_turn_id_at_ingress", "") or "").strip()
+                )
+                block_turn_ids = {
+                    str(block.get("turn_id") or "").strip()
+                    for block in blocks
+                    if isinstance(block, dict) and str(block.get("turn_id") or "").strip()
+                }
+                is_current_turn_event = bool(current_turn_id and (event_turn_id == current_turn_id or current_turn_id in block_turn_ids))
+                if is_current_turn_event:
+                    deferred_current_turn_blocks.extend(blocks)
+                    deferred_current_turn_hooks.append({
+                        "type": str(getattr(event, "kind", "") or "external"),
+                        "event": event,
+                        "blocks": list(blocks),
+                    })
+                    for block in blocks:
+                        if not isinstance(block, dict):
+                            continue
+                        block_type = str(block.get("type") or "")
+                        if block_type == "user.prompt":
+                            text = str(block.get("text") or "").strip()
+                            if text:
+                                current_prompt_texts.append(text)
+                        if block_type == "user.prompt" or block_type.startswith("user.attachment."):
+                            self._last_external_event_reader_result["current_turn_user_input_materialized"] = True
+                else:
+                    await self._timeline.contribute_async(blocks)
+                    await self._emit_external_event_hooks(type=str(getattr(event, "kind", "") or "external"), event=event, blocks=blocks)
+            self._timeline.last_external_event_id = max_cursor
+            self._timeline.last_external_event_seq = max_seq
+            self._last_external_event_reader_result["max_sequence"] = max_seq
+            self._last_external_event_reader_result["max_stream_id"] = max_cursor
+            if current_prompt_texts:
+                self._last_external_event_reader_result["current_turn_prompt_text"] = "\n\n".join(current_prompt_texts)
+            if max_applied_seq and source is not None:
+                try:
+                    await source.mark_consumed_up_to(
+                        max_sequence=max_applied_seq,
+                        turn_id=str(self._runtime_ctx.turn_id or ""),
+                    )
+                except Exception:
+                    self.log.log(f"[timeline.external]: failed to mark initial fold consumed {traceback.format_exc()}", "ERROR")
+            if self._timeline.blocks:
+                self._timeline.write_local()
+
+        orchestrator = self._event_bus_orchestrator()
+        if orchestrator is None:
+            await _accept_initial()
+        else:
+            decision = await orchestrator.accept_events_for_open_handler(
+                list(events or []),
+                turn_id=current_turn_id,
+                accept=_accept_initial,
+            )
+            if not decision.accepted:
+                self.log.log(
+                    f"[timeline.external]: initial lane events left unconsumed "
+                    f"conversation={self._runtime_ctx.conversation_id} turn_id={self._runtime_ctx.turn_id} "
+                    f"reason={decision.reason} handler_status={decision.state.handler_status}",
+                    "INFO",
+                )
+                return [], []
         return deferred_current_turn_blocks, deferred_current_turn_hooks
 
     async def _fold_external_events(self, *, call_hooks: bool) -> int:
@@ -479,7 +682,7 @@ class ContextBrowser:
             return 0
         last_cursor = self._timeline.last_external_event_id or int(self._timeline.last_external_event_seq or 0)
         events = await source.read_since(last_cursor)
-        return await self.apply_external_events(events, call_hooks=call_hooks)
+        return await self._accept_external_events_for_open_handler(list(events or []), call_hooks=call_hooks)
 
     @staticmethod
     def _parse_stream_id(stream_id: str) -> Optional[tuple[int, int]]:

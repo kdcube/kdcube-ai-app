@@ -125,6 +125,7 @@ class RuntimeCtx:
     knowledge_read_fn: Optional[KnowledgeReadFn] = None
     model_service: Optional[Any] = None
     external_event_source: Optional[Any] = None
+    external_event_wake_publisher: Optional[Any] = None
     # Runtime-only event-source policy registry populated from ToolSubsystem.
     event_sources: Optional[Any] = None
     on_before_compaction: Optional[Callable[[Dict[str, Any]], Awaitable[None]]] = None

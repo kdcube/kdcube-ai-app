@@ -2464,24 +2464,38 @@ class ReactSolverV2:
                 except Exception:
                     pass
             else:
-                final_answer_text = (decision.get("final_answer") or "").strip()
-                state["exit_reason"] = "steer" if bool(state.get("steer_finalize_mode")) else action
-                state["final_answer"] = final_answer_text
-                state["suggested_followups"] = decision.get("suggested_followups") or []
-                if working_summary_text:
-                    state["working_summary"] = working_summary_text
+                handler_closed = None
+                try_close = getattr(self.ctx_browser, "try_close_external_event_handler", None) if self.ctx_browser else None
+                if callable(try_close):
+                    handler_closed = await try_close()
+                if handler_closed is False:
+                    state["retry_decision"] = True
+                    state["exit_reason"] = None
+                    state["final_answer"] = None
+                    state["suggested_followups"] = []
                     try:
-                        self.scratchpad.react_working_summary = working_summary_text
+                        self.log.log("[react.v2] event-bus close gate deferred final answer; forcing another round", level="INFO")
                     except Exception:
                         pass
-                try:
-                    sf = state.get("suggested_followups") or []
-                    self.log.log(
-                        f"[react.v2] decision followups: count={len(sf)}",
-                        level="INFO",
-                    )
-                except Exception:
-                    pass
+                else:
+                    final_answer_text = (decision.get("final_answer") or "").strip()
+                    state["exit_reason"] = "steer" if bool(state.get("steer_finalize_mode")) else action
+                    state["final_answer"] = final_answer_text
+                    state["suggested_followups"] = decision.get("suggested_followups") or []
+                    if working_summary_text:
+                        state["working_summary"] = working_summary_text
+                        try:
+                            self.scratchpad.react_working_summary = working_summary_text
+                        except Exception:
+                            pass
+                    try:
+                        sf = state.get("suggested_followups") or []
+                        self.log.log(
+                            f"[react.v2] decision followups: count={len(sf)}",
+                            level="INFO",
+                        )
+                    except Exception:
+                        pass
 
         try:
             if notes:

@@ -280,6 +280,71 @@ def _last_block_ts(blocks: List[Dict[str, Any]]) -> str:
     return ""
 
 
+def _timestamp_epoch(value: Any) -> float:
+    text = str(value or "").strip()
+    if not text:
+        return 0.0
+    try:
+        return float(text)
+    except Exception:
+        pass
+    try:
+        parse_text = text[:-1] + "+00:00" if text.endswith("Z") else text
+        dt = _dt.datetime.fromisoformat(parse_text)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=_dt.timezone.utc)
+        return float(dt.timestamp())
+    except Exception:
+        return 0.0
+
+
+def _later_ts(left: Any, right: Any) -> str:
+    left_text = str(left or "").strip()
+    right_text = str(right or "").strip()
+    if not left_text:
+        return right_text
+    if not right_text:
+        return left_text
+    if _timestamp_epoch(right_text) >= _timestamp_epoch(left_text):
+        return right_text
+    return left_text
+
+
+def _external_event_block_ts(block: Dict[str, Any]) -> str:
+    if not isinstance(block, dict):
+        return ""
+    meta = block.get("meta") if isinstance(block.get("meta"), dict) else {}
+    event_meta = meta.get("event") if isinstance(meta.get("event"), dict) else {}
+    has_external_identity = bool(
+        meta.get("event_id")
+        or meta.get("message_id")
+        or meta.get("event_source_id")
+        or meta.get("event_kind")
+        or event_meta
+        or str(meta.get("prompt_origin") or "") == "external_event_lane"
+    )
+    if not has_external_identity:
+        return ""
+    for candidate in (
+        event_meta.get("timestamp"),
+        event_meta.get("ts"),
+        meta.get("timestamp"),
+        meta.get("ts"),
+        meta.get("created_at"),
+    ):
+        ts = _block_ts({"ts": candidate})
+        if ts:
+            return ts
+    return _block_ts(block)
+
+
+def _max_external_event_block_ts(blocks: List[Dict[str, Any]]) -> str:
+    out = ""
+    for blk in blocks or []:
+        out = _later_ts(out, _external_event_block_ts(blk))
+    return out
+
+
 def _first_user_message_ts(blocks: List[Dict[str, Any]]) -> str:
     for blk in blocks or []:
         if not isinstance(blk, dict):
@@ -1462,6 +1527,7 @@ class Timeline:
     _feedback_seen: Dict[str, str] = field(default_factory=dict, init=False, repr=False)
     _feedback_updates: List[Dict[str, Any]] = field(default_factory=list, init=False, repr=False)
     _feedback_updates_integrated: bool = field(default=False, init=False, repr=False)
+    last_render_processed_event_timestamp: str = field(default="", init=False, repr=False)
     version: int = 1
     ts: str = ""
     blocks: List[Dict[str, Any]] = None
@@ -5429,6 +5495,7 @@ class Timeline:
             timeline_blocks=blocks,
             cache_last=bool(cache_last),
         )
+        self.last_render_processed_event_timestamp = _max_external_event_block_ts(visible_blocks)
         msg_blocks = self._blocks_to_message_blocks(visible_blocks)
         if getattr(self.runtime, "debug_timeline", False):
             try:
