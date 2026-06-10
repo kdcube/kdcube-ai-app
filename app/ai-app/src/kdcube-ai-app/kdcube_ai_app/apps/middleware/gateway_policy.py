@@ -164,8 +164,20 @@ class GatewayPolicyResolver:
                 requirements=[],
             )
 
-        # default: session resolution only; no counters
-        if cls in (EndpointClass.CONNECT, EndpointClass.READ):
+        # Connection maintenance is not work admission. Socket.IO/SSE handlers
+        # gate authenticated message publication separately, while handshakes,
+        # heartbeats and long-polls must not consume anonymous request quotas.
+        if cls == EndpointClass.CONNECT:
+            return GatewayPolicy(
+                cls=cls,
+                bypass_throttling=True,
+                bypass_gate=True,
+                bypass_backpressure=True,
+                requirements=[],
+            )
+
+        # default read path: session resolution only; no backpressure
+        if cls == EndpointClass.READ:
             pol = GatewayPolicy(
                 cls=cls,
                 bypass_throttling=False,
