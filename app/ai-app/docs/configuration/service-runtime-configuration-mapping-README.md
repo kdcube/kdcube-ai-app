@@ -121,9 +121,20 @@ Gateway runtime policy itself is descriptor-owned by `gateway.yaml`.
 | `gateway.bypass_throttling_patterns.<component>` | gateway policy middleware | skips request throttling for selected READ/CONNECT endpoints |
 | `gateway.rate_limits.<component>` | `GatewayConfiguration.rate_limits` | generic request throttling per role |
 | `gateway.data_bus.ingress.publish_limits` | `GatewayConfiguration.data_bus.publish_limits` | Socket.IO `data_bus.publish` package/message/byte limits before durable stream writes |
+| `gateway.data_bus.ingress.publish_limits.<role>.enabled` | `DataBusPublishLimit.enabled` | enables/disables Socket.IO `data_bus.publish` package/message/byte limits for one resolved user role |
 
 There is no separate env-var surface for individual Data Bus publish limits.
 Change them in `gateway.yaml` or through the gateway admin config path.
+
+### Redis runtime
+
+| Runtime field | Descriptor path | Descriptor file | Modes |
+|---|---|---|---|
+| `REDIS_TOPOLOGY` | `infra.redis.topology` | `assembly.yaml` | all modes |
+
+`infra.redis.topology` uses the canonical value `standalone` in current
+reference descriptors. The Redis client factory also recognizes `cluster` and
+fails fast until Redis Cluster key-slot migration is complete.
 
 ### Bundle registry and bundle authority
 

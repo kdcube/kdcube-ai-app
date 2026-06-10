@@ -72,6 +72,7 @@ def test_config_from_dict_parses_component_scoped_data_bus_publish_limits(monkey
                 "ingress": {
                     "publish_limits": {
                         "registered": {
+                            "enabled": False,
                             "packages_per_minute": 11,
                             "messages_per_minute": 22,
                             "bytes_per_minute": 33,
@@ -94,6 +95,7 @@ def test_config_from_dict_parses_component_scoped_data_bus_publish_limits(monkey
     )
 
     limit = cfg.data_bus.get("registered")
+    assert limit.enabled is False
     assert limit.packages_per_minute == 11
     assert limit.messages_per_minute == 22
     assert limit.bytes_per_minute == 33

@@ -7,6 +7,7 @@ keywords: ["gateway control", "rate limit reset", "data bus publish limit reset"
 see_also:
   - ks:docs/service/maintenance/requests-monitoring-README.md
   - ks:docs/configuration/gateway-descriptor-README.md
+  - ks:docs/service/scale/redis-cluster-README.md
 ---
 # Gateway Control Maintenance
 
@@ -46,6 +47,23 @@ These counters protect a package path, not a request path:
 Deleting these keys clears only Data Bus publish counters. It does not clear
 generic gateway request throttling, backpressure state, durable Data Bus
 streams, or chat conversation queues.
+
+For prototyping, the app-layer Data Bus publish limiter can be disabled in
+`gateway.yaml`:
+
+```yaml
+gateway:
+  data_bus:
+    ingress:
+      publish_limits:
+        registered:
+          enabled: false
+```
+
+When disabled for a role, ingress does not create the Data Bus publish counter
+keys for sessions resolved to that role. The Socket.IO protocol checks,
+auth/session checks, bundle visibility checks, and OpenResty/proxy limits still
+apply.
 
 ## Anonymous Users
 
@@ -166,7 +184,14 @@ Relevant keys:
 ```text
 <tenant>:<project>:kdcube:system:capacity:counter
 <tenant>:<project>:kdcube:system:capacity:counter:total
+<tenant>:<project>:kdcube:system:capacity:process-index:<service_type>:<service_name>
 ```
+
+The `process-index` key is a bounded sorted set maintained by process
+heartbeats. Gateway admission reads it to compute healthy process count and
+capacity before running the Lua admission script. Do not delete it during normal
+rate-limit cleanup. Delete it only when process heartbeat keys are known stale
+and the service has been restarted or will immediately repopulate the index.
 
 Do not purge chat queues during normal rate-limit recovery. Queue purge drops
 pending work and should be reserved for explicit incident recovery.

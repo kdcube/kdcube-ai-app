@@ -574,6 +574,8 @@ def validate_gateway_config(config: GatewayConfiguration) -> list[str]:
     # Data Bus publish validation. These limits are per Socket.IO session and
     # protect a streaming package path, not HTTP request admission.
     for role, limit in config.data_bus.publish_limits.items():
+        if not isinstance(limit.enabled, bool):
+            issues.append(f"{role} data_bus.enabled must be boolean")
         for field_name in (
             "packages_per_minute",
             "messages_per_minute",

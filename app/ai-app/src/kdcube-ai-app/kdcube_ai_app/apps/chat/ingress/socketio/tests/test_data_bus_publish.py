@@ -313,6 +313,44 @@ async def test_data_bus_publish_package_message_limit_rejection_does_not_write_s
 
 
 @pytest.mark.asyncio
+async def test_data_bus_publish_limits_can_be_disabled_for_prototyping(monkeypatch):
+    redis = FakeRedis()
+    app = _app(
+        redis,
+        data_bus=DataBusSettings(
+            publish_limits={
+                "registered": DataBusPublishLimit(enabled=False, max_messages_per_package=0),
+            },
+        ),
+    )
+    _patch_data_bus_contract(monkeypatch, _manifest())
+
+    ingress = DataBusSocketIOIngress(app=app)
+    ack = await ingress.handle_publish(
+        sid="socket-1",
+        socket_session=_socket_session(),
+        data={
+            "schema": "kdcube.data_bus.ingress.v1",
+            "bundle_id": "task-tracker@1-0",
+            "messages": [
+                {
+                    "message_id": "m1",
+                    "subject": "task_tracker.canvas.patch",
+                    "object_ref": "canvas:main",
+                    "idempotency_key": "op-1",
+                    "payload": {"base_revision": 1, "operations": []},
+                }
+            ],
+        },
+    )
+
+    assert ack["status"] == "accepted"
+    stream_key = "kdcube:data-bus:tenant-a:project-a:task-tracker@1-0:messages"
+    assert len(redis.streams[stream_key]) == 1
+    assert not any(":data-bus-publish:" in key for key in redis.values)
+
+
+@pytest.mark.asyncio
 async def test_data_bus_publish_package_rate_limit_rejection_does_not_write_second_package(monkeypatch):
     redis = FakeRedis()
     app = _app(

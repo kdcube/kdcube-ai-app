@@ -57,6 +57,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.events.projection import (
     patch_timeline_segment_marks,
     produce_event_source_announce_blocks,
 )
+from kdcube_ai_app.tools.content_type import is_text_mime_type
 from kdcube_ai_app.infra.service_hub.multimodality import (
     MODALITY_DOC_MIME,
     MODALITY_IMAGE_MIME,
@@ -277,6 +278,71 @@ def _last_block_ts(blocks: List[Dict[str, Any]]) -> str:
         if ts:
             return ts
     return ""
+
+
+def _timestamp_epoch(value: Any) -> float:
+    text = str(value or "").strip()
+    if not text:
+        return 0.0
+    try:
+        return float(text)
+    except Exception:
+        pass
+    try:
+        parse_text = text[:-1] + "+00:00" if text.endswith("Z") else text
+        dt = _dt.datetime.fromisoformat(parse_text)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=_dt.timezone.utc)
+        return float(dt.timestamp())
+    except Exception:
+        return 0.0
+
+
+def _later_ts(left: Any, right: Any) -> str:
+    left_text = str(left or "").strip()
+    right_text = str(right or "").strip()
+    if not left_text:
+        return right_text
+    if not right_text:
+        return left_text
+    if _timestamp_epoch(right_text) >= _timestamp_epoch(left_text):
+        return right_text
+    return left_text
+
+
+def _external_event_block_ts(block: Dict[str, Any]) -> str:
+    if not isinstance(block, dict):
+        return ""
+    meta = block.get("meta") if isinstance(block.get("meta"), dict) else {}
+    event_meta = meta.get("event") if isinstance(meta.get("event"), dict) else {}
+    has_external_identity = bool(
+        meta.get("event_id")
+        or meta.get("message_id")
+        or meta.get("event_source_id")
+        or meta.get("event_kind")
+        or event_meta
+        or str(meta.get("prompt_origin") or "") == "external_event_lane"
+    )
+    if not has_external_identity:
+        return ""
+    for candidate in (
+        event_meta.get("timestamp"),
+        event_meta.get("ts"),
+        meta.get("timestamp"),
+        meta.get("ts"),
+        meta.get("created_at"),
+    ):
+        ts = _block_ts({"ts": candidate})
+        if ts:
+            return ts
+    return _block_ts(block)
+
+
+def _max_external_event_block_ts(blocks: List[Dict[str, Any]]) -> str:
+    out = ""
+    for blk in blocks or []:
+        out = _later_ts(out, _external_event_block_ts(blk))
+    return out
 
 
 def _first_user_message_ts(blocks: List[Dict[str, Any]]) -> str:
@@ -1461,6 +1527,7 @@ class Timeline:
     _feedback_seen: Dict[str, str] = field(default_factory=dict, init=False, repr=False)
     _feedback_updates: List[Dict[str, Any]] = field(default_factory=list, init=False, repr=False)
     _feedback_updates_integrated: bool = field(default=False, init=False, repr=False)
+    last_render_processed_event_timestamp: str = field(default="", init=False, repr=False)
     version: int = 1
     ts: str = ""
     blocks: List[Dict[str, Any]] = None
@@ -2028,6 +2095,10 @@ class Timeline:
         def _resolve_ref(val: Any, param_name: Optional[str] = None):
             if not isinstance(val, str) or not val.startswith("ref:"):
                 return val
+            is_rendering_content_ref = (
+                (tool_id or "").startswith("rendering_tools.")
+                and (param_name or "") == "content"
+            )
             ref = val[len("ref:"):].strip()
             original_ref = ref
             if (
@@ -2098,18 +2169,80 @@ class Timeline:
             # resolve via timeline
             if ref.startswith("so:") or ref.startswith("sources_pool["):
                 resolved = self.resolve_sources_pool(ref if ref.startswith("sources_pool[") else ref[3:])
+                if is_rendering_content_ref:
+                    violations.append({
+                        "code": "renderer_content_ref_not_text",
+                        "path": ref,
+                        "param": param_name,
+                        "message": "Renderer content refs must resolve to text in the renderer's requested input format.",
+                    })
+                    return None
                 return resolved
             resolved = self.resolve_artifact(ref)
             if isinstance(resolved, dict):
-                if isinstance(resolved.get("text"), str):
-                    return resolved.get("text")
-                if resolved.get("base64"):
-                    return resolved.get("base64")
                 fp = resolved.get("filepath") or ""
                 if fp:
                     txt = _read_text_from_file(fp)
                     if isinstance(txt, str):
                         return txt
+                if ref.startswith("fi:"):
+                    encoded = resolved.get("base64")
+                    mime = (resolved.get("mime") or "").strip()
+                    if encoded:
+                        if is_rendering_content_ref:
+                            if is_text_mime_type(mime):
+                                try:
+                                    import base64 as _base64
+                                    return _base64.b64decode(str(encoded)).decode("utf-8")
+                                except Exception:
+                                    pass
+                            violations.append({
+                                "code": "renderer_content_ref_not_text",
+                                "path": ref,
+                                "param": param_name,
+                                "message": "Renderer content refs must resolve to text in the renderer's requested input format.",
+                            })
+                            return None
+                        return encoded
+                    violations.append({
+                        "code": "fi_ref_not_materialized",
+                        "path": ref,
+                        "param": param_name,
+                        "message": (
+                            "This fi: ref is visible but its artifact file is not materialized locally. "
+                            "ref:fi bindings must consume artifact bytes/text, not timeline-rendered previews."
+                        ),
+                    })
+                    return None
+                text_value = resolved.get("text")
+                if isinstance(text_value, str):
+                    return text_value
+                encoded = resolved.get("base64")
+                if encoded:
+                    mime = (resolved.get("mime") or "").strip()
+                    if is_rendering_content_ref:
+                        if is_text_mime_type(mime):
+                            try:
+                                import base64 as _base64
+                                return _base64.b64decode(str(encoded)).decode("utf-8")
+                            except Exception:
+                                pass
+                        violations.append({
+                            "code": "renderer_content_ref_not_text",
+                            "path": ref,
+                            "param": param_name,
+                            "message": "Renderer content refs must resolve to text in the renderer's requested input format.",
+                        })
+                        return None
+                    return encoded
+                if is_rendering_content_ref:
+                    violations.append({
+                        "code": "renderer_content_ref_not_text",
+                        "path": ref,
+                        "param": param_name,
+                        "message": "Renderer content refs must resolve to text in the renderer's requested input format.",
+                    })
+                    return None
             return resolved
 
         def _walk(obj: Any, param_name: Optional[str] = None):
@@ -5362,6 +5495,7 @@ class Timeline:
             timeline_blocks=blocks,
             cache_last=bool(cache_last),
         )
+        self.last_render_processed_event_timestamp = _max_external_event_block_ts(visible_blocks)
         msg_blocks = self._blocks_to_message_blocks(visible_blocks)
         if getattr(self.runtime, "debug_timeline", False):
             try:
@@ -6043,6 +6177,90 @@ class Timeline:
                 "react.tool.result",
                 "assistant.completion.attempt",
             }
+
+        def _batch_id_for_render(blk: Dict[str, Any]) -> str:
+            meta_local = blk.get("meta") if isinstance(blk.get("meta"), dict) else {}
+            return str(meta_local.get("batch_id") or blk.get("batch_id") or "").strip()
+
+        def _is_user_control_block_for_render(blk: Dict[str, Any]) -> bool:
+            btype_local = str(blk.get("type") or "").strip()
+            if btype_local in {
+                "user.followup",
+                "user.steer",
+                "user.followup.preserved",
+                "user.steer.preserved",
+            }:
+                return True
+            meta_local = blk.get("meta") if isinstance(blk.get("meta"), dict) else {}
+            event_type = str(meta_local.get("event_type") or "").strip()
+            return event_type in {"event.user.followup", "event.user.steer"}
+
+        def _clone_block_for_render(blk: Dict[str, Any], *, meta_update: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+            cloned = dict(blk)
+            meta_local = dict(cloned.get("meta") if isinstance(cloned.get("meta"), dict) else {})
+            if meta_update:
+                meta_local.update(meta_update)
+            cloned["meta"] = meta_local
+            return cloned
+
+        def _coalesce_followup_batches_for_render(input_blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+            rendered_blocks: List[Dict[str, Any]] = []
+            idx = 0
+            total = len(input_blocks or [])
+            while idx < total:
+                block = input_blocks[idx]
+                batch_id = _batch_id_for_render(block)
+                if not batch_id:
+                    rendered_blocks.append(block)
+                    idx += 1
+                    continue
+                group: List[Dict[str, Any]] = []
+                while idx < total and _batch_id_for_render(input_blocks[idx]) == batch_id:
+                    group.append(input_blocks[idx])
+                    idx += 1
+                control_blocks = [candidate for candidate in group if _is_user_control_block_for_render(candidate)]
+                if len(group) <= 1 or not control_blocks:
+                    rendered_blocks.extend(group)
+                    continue
+
+                first_control = control_blocks[0]
+                control_kind = (
+                    "steer"
+                    if "steer" in str(first_control.get("type") or "").strip()
+                    else "followup"
+                )
+                header = _clone_block_for_render(
+                    first_control,
+                    meta_update={
+                        "render_batch_header_only": True,
+                        "batch_id": batch_id,
+                        "batch_event_count": len(group),
+                    },
+                )
+                header["text"] = ""
+                rendered_blocks.append(header)
+
+                for candidate in group:
+                    if _is_user_control_block_for_render(candidate):
+                        continue
+                    rendered_blocks.append(candidate)
+
+                for candidate in control_blocks:
+                    if not str(candidate.get("text") or "").strip():
+                        continue
+                    rendered_blocks.append(_clone_block_for_render(
+                        candidate,
+                        meta_update={
+                            "render_batch_text_only": True,
+                            "batch_control_kind": control_kind,
+                            "batch_id": batch_id,
+                        },
+                    ))
+            return rendered_blocks
+
+        blocks_for_render = _coalesce_followup_batches_for_render([
+            b for b in (blocks or []) if isinstance(b, dict)
+        ])
         for b in (blocks or []):
             if not isinstance(b, dict):
                 continue
@@ -6076,7 +6294,7 @@ class Timeline:
             if tool_call_id and tool_id:
                 call_id_to_tool_id[tool_call_id] = tool_id
 
-        for b in (blocks or []):
+        for b in blocks_for_render:
             if not isinstance(b, dict):
                 continue
             cache = bool(b.get("cache"))
@@ -6156,9 +6374,18 @@ class Timeline:
             }:
                 lines = []
                 ts_line = _ts_line(ts)
-                if ts_line:
+                render_batch_text_only = bool(isinstance(meta, dict) and meta.get("render_batch_text_only"))
+                render_batch_header_only = bool(isinstance(meta, dict) and meta.get("render_batch_header_only"))
+                if ts_line and not render_batch_text_only:
                     lines.append(ts_line)
-                if "followup" in btype:
+                if render_batch_text_only:
+                    if "steer" in btype:
+                        lines.append("[STEER MESSAGE]")
+                    elif "followup" in btype:
+                        lines.append("[FOLLOWUP MESSAGE]")
+                    else:
+                        lines.append("[EXTERNAL EVENT MESSAGE]")
+                elif "followup" in btype:
                     lines.append("[FOLLOWUP DURING TURN]")
                 elif "steer" in btype:
                     lines.append("[STEER DURING TURN]")
@@ -6166,11 +6393,11 @@ class Timeline:
                     lines.append("[EXTERNAL EVENT]")
                 if path:
                     lines.append(f"[path: {path}]")
-                if isinstance(meta, dict):
+                if isinstance(meta, dict) and not render_batch_text_only:
                     target_turn = str(meta.get("target_turn_id") or "").strip()
                     if target_turn:
                         lines.append(f"[target_turn_id: {target_turn}]")
-                if text:
+                if text and not render_batch_header_only:
                     lines.append(text)
                 text = "\n".join(lines).strip()
             elif btype in {"assistant.completion", "assistant.completion.attempt"}:

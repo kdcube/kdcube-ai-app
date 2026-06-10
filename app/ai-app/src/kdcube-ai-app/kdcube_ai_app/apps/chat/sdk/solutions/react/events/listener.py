@@ -6,7 +6,7 @@ from __future__ import annotations
 import asyncio
 import traceback
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Sequence
+from typing import Any, Awaitable, Callable, Optional, Sequence
 
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import RuntimeCtx
 
@@ -75,6 +75,7 @@ async def run_live_external_event_listener_loop(
     last_cursor_getter: Callable[[], str],
     apply_events: Callable[[Sequence[Any]], Awaitable[int]],
     log: Any,
+    acknowledge: Optional[Callable[[], Awaitable[None]]] = None,
 ) -> None:
     """
     Drain the live ReAct external-event lane while the current turn owns it.
@@ -103,6 +104,11 @@ async def run_live_external_event_listener_loop(
             if current_owner is None or str(getattr(current_owner, "lease_token", "") or "") != lease_token:
                 log.log("[timeline.external]: owner lease lost; stopping listener", "INFO")
                 break
+            if acknowledge is not None:
+                try:
+                    await acknowledge()
+                except Exception:
+                    log.log(f"[timeline.external]: consumer acknowledgement callback failure {traceback.format_exc()}", "ERROR")
             last_cursor = ""
             try:
                 last_cursor = str(last_cursor_getter() or "")

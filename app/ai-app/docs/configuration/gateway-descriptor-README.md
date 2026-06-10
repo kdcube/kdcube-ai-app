@@ -224,8 +224,8 @@ Validation rules:
 
 ### `data_bus.publish_limits`
 
-`data_bus.ingress.publish_limits` defines the Socket.IO
-`data_bus.publish` package admission policy.
+`data_bus.ingress.publish_limits` defines the Socket.IO `data_bus.publish`
+package admission policy.
 
 This is a streaming policy. One connected Socket.IO client can send many
 `data_bus.publish` packages and each package can carry many durable
@@ -244,6 +244,7 @@ Supported per-role fields:
 
 | Path | Type | Meaning |
 |---|---|---|
+| `enabled` | boolean | enables this role's app-layer Data Bus publish package policy; default `true`; set `false` for prototyping to bypass package/message/byte counters for that role |
 | `packages_per_minute` | integer | maximum `data_bus.publish` packages per session window; `-1` means unlimited |
 | `messages_per_minute` | integer | maximum total messages accepted from packages in the window; `-1` means unlimited |
 | `bytes_per_minute` | integer | maximum total JSON package bytes in the window; `-1` means unlimited |
@@ -287,8 +288,24 @@ Runtime consumers:
 
 Validation rules:
 
+- per-role `enabled` defaults to `true`
 - numeric limits must be `>= 0` or `-1`
 - `window_seconds` must be positive
+
+Prototype/off switch:
+
+```yaml
+gateway:
+  data_bus:
+    ingress:
+      publish_limits:
+        registered:
+          enabled: false
+```
+
+This disables only the Data Bus app-layer package/message/byte policy for
+registered sessions. The Socket.IO protocol shape checks, auth/session checks,
+bundle visibility checks, and OpenResty/proxy limits still apply.
 
 ### `service_capacity`
 

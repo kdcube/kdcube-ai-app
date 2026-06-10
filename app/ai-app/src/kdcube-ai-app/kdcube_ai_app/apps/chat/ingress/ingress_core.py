@@ -22,15 +22,17 @@ from kdcube_ai_app.apps.chat.emitters import ChatRelayCommunicator, ChatCommunic
 from kdcube_ai_app.apps.chat.sdk.protocol import (
     ExternalEventPayload, ExternalEventMeta, ExternalEventRouting, ExternalEventActor, ExternalEventUser,
     ExternalEventRequest, ExternalEventConfig, ExternalEventAccounting, ExternalEventContinuation, ExternalEvent,
-    ExternalEventLaneRef, ExternalEventLaneWakeup, ServiceCtx, ConversationCtx, external_events_text,
+    ServiceCtx, ConversationCtx, external_events_text,
     external_event_attachment_payloads, hosted_external_event_attachments,
 )
 from kdcube_ai_app.apps.chat.sdk.event_identity import (
     DEFAULT_REACT_AGENT_ID,
     build_event_logical_path,
     normalize_agent_id,
+    safe_event_lane_part,
     safe_event_object_path,
 )
+from kdcube_ai_app.apps.chat.sdk.events.event_bus import EventLaneWakePublisher
 from kdcube_ai_app.infra.accounting.envelope import build_envelope_from_session
 from kdcube_ai_app.infra.gateway.rate_limiter import RateLimitError
 from kdcube_ai_app.infra.gateway.backpressure import BackpressureError
@@ -196,6 +198,18 @@ class IngressResult:
     live_owner_detected: Optional[bool] = None
 
 
+@dataclass
+class ExternalEventBatchPublishResult:
+    events: List[Any]
+    env: Any
+    last_env: Any
+    wakeup_success: Optional[bool] = None
+    wakeup_reason: Optional[str] = None
+    wakeup_stats: Optional[Dict[str, Any]] = None
+    enqueue_ms: Optional[int] = None
+    ingress_to_enqueue_ms: Optional[int] = None
+
+
 def _message_payload(message_data: Dict[str, Any]) -> Dict[str, Any]:
     payload = message_data.get("payload")
     return payload if isinstance(payload, dict) else {}
@@ -271,6 +285,32 @@ def _first_reactive_or_first_event(events: List[Dict[str, Any]]) -> Optional[Dic
     return next((event for event in events if _external_event_is_reactive(event)), events[0])
 
 
+def _external_event_batch_id(message_data: Dict[str, Any], events: List[Dict[str, Any]]) -> str:
+    payload = _message_payload(message_data)
+    candidates: List[Any] = [
+        message_data.get("batch_id"),
+        payload.get("batch_id"),
+    ]
+    candidates.extend(event.get("batch_id") for event in events if isinstance(event, dict))
+    for value in candidates:
+        text = str(value or "").strip()
+        if text:
+            return safe_event_lane_part(text, default="")
+    return f"batch_{uuid.uuid4().hex}"
+
+
+def _stamp_external_event_batch(message_data: Dict[str, Any], events: List[Dict[str, Any]]) -> None:
+    if not events:
+        return
+    batch_id = _external_event_batch_id(message_data, events)
+    for event in events:
+        event["batch_id"] = batch_id
+    message_data["batch_id"] = batch_id
+    payload = message_data.get("payload")
+    if isinstance(payload, dict):
+        payload["batch_id"] = batch_id
+
+
 def _external_event_object_path(event: Dict[str, Any], *, event_id: str) -> str:
     logical_path = str(event.get("logical_path") or "").strip()
     marker = ".events/"
@@ -323,6 +363,7 @@ def _accept_external_events(
             )
         accepted.append(event)
     if accepted:
+        _stamp_external_event_batch(message_data, accepted)
         message_data["external_events"] = accepted
     return accepted
 
@@ -343,6 +384,8 @@ def _external_event_envelope(
         "event": dict(event),
         "is_continuation": bool(is_continuation),
     }
+    if event.get("batch_id"):
+        envelope["batch_id"] = str(event.get("batch_id") or "")
     if target:
         envelope["target"] = dict(target)
     return envelope
@@ -371,6 +414,7 @@ def _task_payload_for_external_event(
         "agent_id": normalize_agent_id(event.get("agent_id"), default=DEFAULT_REACT_AGENT_ID),
         "event_source_id": _external_event_source_id(event),
         "event_id": str(event.get("event_id") or ""),
+        "batch_id": str(event.get("batch_id") or ""),
         "logical_path": str(event.get("logical_path") or ""),
         "story_id": event.get("story_id"),
         "reactive": _external_event_is_reactive(event),
@@ -381,7 +425,7 @@ def _task_payload_for_external_event(
     return task_payload
 
 
-async def _publish_external_event_batch(
+async def _prepare_external_event_batch(
     *,
     external_event_source: Any,
     message_data: Dict[str, Any],
@@ -395,13 +439,14 @@ async def _publish_external_event_batch(
     owner_turn_id: Optional[str] = None,
     source: str = "",
 ) -> List[Any]:
-    published: List[Any] = []
+    prepared: List[Any] = []
     is_continuation = bool(active_turn_id_at_ingress or owner_turn_id)
     for event in events:
         event_text = external_events_text([event]) or ""
-        env = await external_event_source.publish(
+        env = await external_event_source.prepare_event(
             kind=kind,
             event_id=str(event.get("event_id") or "") or None,
+            batch_id=str(event.get("batch_id") or "") or None,
             explicit=explicit,
             is_continuation=is_continuation,
             target_turn_id=target_turn_id,
@@ -423,61 +468,180 @@ async def _publish_external_event_batch(
                 source=source,
             ),
         )
-        published.append(env)
-    return published
+        prepared.append(env)
+    return prepared
 
 
-def _event_lane_ref_from_envelope(
+async def _publish_external_event_batch(
     *,
-    tenant: Optional[str],
-    project: Optional[str],
-    user_id: Optional[str],
-    conversation_id: str,
-    agent_id: str,
-    event: Any,
-) -> ExternalEventLaneRef:
-    return ExternalEventLaneRef(
-        tenant=tenant,
-        project=project,
-        user_id=user_id,
-        conversation_id=conversation_id,
-        agent_id=normalize_agent_id(agent_id, default=DEFAULT_REACT_AGENT_ID),
-        event_id=str(getattr(event, "message_id", "") or "") or None,
-        sequence=int(getattr(event, "sequence", 0) or 0) or None,
-        stream_id=str(getattr(event, "stream_id", "") or "") or None,
-    )
-
-
-def _event_lane_wakeup_from_payload(
-    *,
+    external_event_source: Any,
+    message_data: Dict[str, Any],
+    text: str,
+    events: List[Dict[str, Any]],
     payload: ExternalEventPayload,
-    event: Any,
-    tenant: Optional[str],
-    project: Optional[str],
-    user_id: Optional[str],
+    kind: str = "external_event",
+    explicit: bool = True,
+    target_turn_id: Optional[str] = None,
+    active_turn_id_at_ingress: Optional[str] = None,
+    owner_turn_id: Optional[str] = None,
+    source: str = "",
+) -> List[Any]:
+    prepared = await _prepare_external_event_batch(
+        external_event_source=external_event_source,
+        message_data=message_data,
+        text=text,
+        events=events,
+        payload=payload,
+        kind=kind,
+        explicit=explicit,
+        target_turn_id=target_turn_id,
+        active_turn_id_at_ingress=active_turn_id_at_ingress,
+        owner_turn_id=owner_turn_id,
+        source=source,
+    )
+    return await external_event_source.publish_prepared_events(prepared)
+
+
+async def _publish_external_event_batch_with_atomic_wakeup(
+    *,
+    external_event_source: Any,
+    chat_queue_manager: Any,
+    session: UserSession,
+    request_context: RequestContext,
+    ingress: IngressConfig,
+    tenant_id: str,
+    project_id: str,
+    user_id: str,
     conversation_id: str,
     agent_id: str,
-    reason: str,
-) -> ExternalEventLaneWakeup:
-    return ExternalEventLaneWakeup(
-        meta=payload.meta,
-        routing=payload.routing,
-        actor=payload.actor,
-        user=payload.user,
-        config=payload.config,
-        accounting=payload.accounting,
-        continuation=payload.continuation,
-        event=payload.event,
-        bundle_call_context=dict(getattr(payload, "bundle_call_context", {}) or {}),
-        event_lane=_event_lane_ref_from_envelope(
-            tenant=tenant,
-            project=project,
+    message_data: Dict[str, Any],
+    text: str,
+    events: List[Dict[str, Any]],
+    payload: ExternalEventPayload,
+    selected_event: Dict[str, Any],
+    kind: str = "external_event",
+    explicit: bool = True,
+    target_turn_id: Optional[str] = None,
+    active_turn_id_at_ingress: Optional[str] = None,
+    owner_turn_id: Optional[str] = None,
+    source: str = "",
+) -> ExternalEventBatchPublishResult:
+    prepared = await _prepare_external_event_batch(
+        external_event_source=external_event_source,
+        message_data=message_data,
+        text=text,
+        events=events,
+        payload=payload,
+        kind=kind,
+        explicit=explicit,
+        target_turn_id=target_turn_id,
+        active_turn_id_at_ingress=active_turn_id_at_ingress,
+        owner_turn_id=owner_turn_id,
+        source=source,
+    )
+    if not prepared:
+        raise ValueError("external event batch is empty")
+
+    selected_event_id = str((selected_event or {}).get("event_id") or "")
+    env = next((item for item in prepared if item.message_id == selected_event_id), prepared[0])
+    last_env = prepared[-1]
+    try:
+        wakeup_payload = env.task_payload_model()
+    except Exception:
+        wakeup_payload = payload
+
+    enqueue_atomic = getattr(chat_queue_manager, "enqueue_chat_task_with_lane_events_atomic", None)
+    if enqueue_atomic is None:
+        return ExternalEventBatchPublishResult(
+            events=prepared,
+            env=env,
+            last_env=last_env,
+            wakeup_success=False,
+            wakeup_reason="atomic_lane_publish_unavailable",
+            wakeup_stats={},
+        )
+
+    lane_events = [
+        {
+            "event_key": external_event_source.event_key(item.message_id),
+            "event": item.to_dict(),
+        }
+        for item in prepared
+    ]
+    enqueue_started_at = time.monotonic()
+
+    async def _enqueue_wakeup(wakeup):
+        return await enqueue_atomic(
+            session.user_type,
+            wakeup.model_dump(),
+            session,
+            request_context,
+            ingress.entrypoint,
+            lane_log_key=external_event_source.log_key,
+            lane_events=lane_events,
+        )
+
+    try:
+        wakeup_result = await EventLaneWakePublisher(_enqueue_wakeup).publish_for_event(
+            payload=wakeup_payload,
+            event=env,
+            tenant=tenant_id,
+            project=project_id,
             user_id=user_id,
             conversation_id=conversation_id,
             agent_id=agent_id,
-            event=event,
-        ),
-        reason=reason,
+            reason="reactive_event",
+        )
+        success = wakeup_result.success
+        reason = wakeup_result.reason
+        stats = dict(wakeup_result.stats or {})
+    except Exception:
+        logger.exception("atomic external-event lane publish and wakeup enqueue failed")
+        success, reason, stats = False, "internal_error", {}
+
+    enqueue_ms = int((time.monotonic() - enqueue_started_at) * 1000)
+    try:
+        created_at = float(payload.meta.created_at) if payload.meta else None
+    except Exception:
+        created_at = None
+    ingress_to_enqueue_ms = None
+    if created_at:
+        try:
+            ingress_to_enqueue_ms = int((time.time() - created_at) * 1000)
+        except Exception:
+            ingress_to_enqueue_ms = None
+
+    if success:
+        stream_ids = list(stats.get("lane_stream_ids") or [])
+        if len(stream_ids) != len(prepared):
+            stats["lane_stream_id_mismatch"] = True
+            logger.error(
+                "Atomic external-event lane publish accepted but returned mismatched stream ids conversation=%s expected=%s actual=%s",
+                conversation_id,
+                len(prepared),
+                len(stream_ids),
+            )
+        try:
+            await external_event_source.apply_atomic_publish_stream_ids(
+                prepared,
+                stream_ids,
+            )
+        except Exception:
+            stats["post_accept_stream_id_apply_failed"] = True
+            logger.exception(
+                "Atomic external-event lane publish accepted but local stream-id post-processing failed conversation=%s",
+                conversation_id,
+            )
+
+    return ExternalEventBatchPublishResult(
+        events=prepared,
+        env=env,
+        last_env=last_env,
+        wakeup_success=success,
+        wakeup_reason=reason,
+        wakeup_stats=stats,
+        enqueue_ms=enqueue_ms,
+        ingress_to_enqueue_ms=ingress_to_enqueue_ms,
     )
 
 
@@ -487,6 +651,14 @@ def _resolve_conversation_owner_id(session: UserSession) -> Optional[str]:
         return None
     owner_id = str(owner_id).strip()
     return owner_id or None
+
+
+def _retry_after_for_user_type(user_type: UserType) -> int:
+    if user_type == UserType.ANONYMOUS:
+        return 30
+    if user_type == UserType.REGISTERED:
+        return 45
+    return 60
 
 
 async def _conversation_state_row_exists(
@@ -1281,8 +1453,6 @@ async def process_chat_message(
                         user_id=session.user_id or session.fingerprint or "",
                         agent_id=target_agent_id,
                     )
-                owner = await external_event_source.get_owner() if external_event_source is not None else None
-                owner_turn_id = str(owner.turn_id or "").strip() if owner else ""
                 if external_event_source is not None:
                     storage_turn_id = str(active_turn or target_turn_id or turn_id or "").strip() or turn_id
                     attachment_result = await _host_message_attachments(
@@ -1296,84 +1466,144 @@ async def process_chat_message(
                         hosted_attachments = hosted_external_event_attachments(external_events)
                     except Exception:
                         hosted_attachments = []
-                    published_events = await _publish_external_event_batch(
-                        external_event_source=external_event_source,
-                        message_data=message_data,
-                        text=text,
-                        events=external_events,
-                        payload=payload,
-                        kind="external_event",
-                        explicit=True,
-                        target_turn_id=target_turn_id,
-                        active_turn_id_at_ingress=active_turn,
-                        owner_turn_id=owner_turn_id,
-                        source=f"ingress.{ingress.transport}",
-                    )
-                    selected_event_id = str((first_reactive_or_first_event or {}).get("event_id") or "")
-                    env = next((item for item in published_events if item.message_id == selected_event_id), published_events[0])
-                    last_env = published_events[-1]
-                    live_owner_detected = bool(owner_turn_id and active_turn and owner_turn_id == str(active_turn))
+                    wakeup_success = None
+                    wakeup_reason = None
+                    wakeup_stats: Dict[str, Any] = {}
+                    if external_event_reactive:
+                        atomic_result = await _publish_external_event_batch_with_atomic_wakeup(
+                            external_event_source=external_event_source,
+                            chat_queue_manager=chat_queue_manager,
+                            session=session,
+                            request_context=request_context,
+                            ingress=ingress,
+                            tenant_id=tenant_id,
+                            project_id=project_id,
+                            user_id=session.user_id or session.fingerprint or "",
+                            conversation_id=conversation_id,
+                            agent_id=target_agent_id,
+                            message_data=message_data,
+                            text=text,
+                            events=external_events,
+                            payload=payload,
+                            selected_event=first_reactive_or_first_event or {},
+                            kind="external_event",
+                            explicit=True,
+                            target_turn_id=target_turn_id,
+                            active_turn_id_at_ingress=active_turn,
+                            owner_turn_id=None,
+                            source=f"ingress.{ingress.transport}",
+                        )
+                        published_events = atomic_result.events
+                        env = atomic_result.env
+                        last_env = atomic_result.last_env
+                        wakeup_success = atomic_result.wakeup_success
+                        wakeup_reason = atomic_result.wakeup_reason
+                        wakeup_stats = dict(atomic_result.wakeup_stats or {})
+                        if not wakeup_success:
+                            logger.warning(
+                                "Rejected external-event batch because atomic lane publish+wakeup failed conversation=%s event_id=%s reason=%s",
+                                conversation_id,
+                                env.message_id,
+                                wakeup_reason,
+                            )
+                            retry_after = _retry_after_for_user_type(session.user_type)
+                            error_message = f"System under pressure - request rejected ({wakeup_reason})"
+                            try:
+                                await chat_comm.emit_error(
+                                    svc,
+                                    conv,
+                                    error=error_message,
+                                    target_sid=ingress.stream_id,
+                                    session_id=session.session_id,
+                                )
+                            except Exception:
+                                logger.debug("Failed to emit busy continuation queue rejection", exc_info=True)
+                            try:
+                                await comm.service_event(
+                                    type="queue.enqueue_rejected",
+                                    step="enqueue",
+                                    status="error",
+                                    title="Request rejected by queue",
+                                    agent="queue",
+                                    data={
+                                        "message": error_message,
+                                        "error_type": "queue.enqueue_rejected",
+                                        "http_status": 503,
+                                        "retry_after": retry_after,
+                                        "reason": wakeup_reason,
+                                        "queue_stats": wakeup_stats,
+                                    },
+                                )
+                            except Exception:
+                                logger.debug("Failed to emit busy continuation queue rejection service event", exc_info=True)
+                            return IngressResult(
+                                ok=False,
+                                error_type="queue.enqueue_rejected",
+                                error=error_message,
+                                http_status=503,
+                                retry_after=retry_after,
+                                reason=wakeup_reason,
+                                is_continuation=True,
+                                active_turn_id=str(active_turn or "") or None,
+                                target_turn_id=target_turn_id,
+                                queued_turn_id=payload.routing.turn_id,
+                            )
+                    else:
+                        published_events = await _publish_external_event_batch(
+                            external_event_source=external_event_source,
+                            message_data=message_data,
+                            text=text,
+                            events=external_events,
+                            payload=payload,
+                            kind="external_event",
+                            explicit=True,
+                            target_turn_id=target_turn_id,
+                            active_turn_id_at_ingress=active_turn,
+                            owner_turn_id=None,
+                            source=f"ingress.{ingress.transport}",
+                        )
+                        selected_event_id = str((first_reactive_or_first_event or {}).get("event_id") or "")
+                        env = next((item for item in published_events if item.message_id == selected_event_id), published_events[0])
+                        last_env = published_events[-1]
                     logger.info(
-                        "[ingress.external] published open-turn event batch conversation=%s event_source_id=%s event_id=%s last_seq=%s count=%s active_turn=%s owner_turn=%s target_turn=%s live_owner=%s text=%r",
+                        "[ingress.external] accepted event batch conversation=%s event_source_id=%s event_id=%s last_seq=%s count=%s active_turn=%s target_turn=%s wakeup_success=%s wakeup_reason=%s text=%r",
                         conversation_id,
                         _external_event_source_id(first_reactive_or_first_event),
                         env.message_id,
                         last_env.sequence,
                         len(published_events),
                         active_turn,
-                        owner_turn_id,
                         target_turn_id,
-                        live_owner_detected,
+                        wakeup_success,
+                        wakeup_reason,
                         (text or "")[:160],
                     )
                     try:
-                        if live_owner_detected:
-                            await comm.service_event(
-                                type="event.continuation.accepted",
-                                step="event.continuation",
-                                status="completed",
-                                title="Continuation accepted",
-                                agent="ingress",
-                                data={
-                                    "event_type": str((first_reactive_or_first_event or {}).get("type") or "event.external"),
-                                    "event_source_id": _external_event_source_id(first_reactive_or_first_event),
-                                    "reactive": external_event_reactive,
-                                    "is_continuation": True,
-                                    "message_len": len(text or ""),
-                                    "attachment_count": len(hosted_attachments),
-                                    "active_turn_id": active_turn,
-                                    "event_id": env.message_id,
-                                    "event_ids": [item.message_id for item in published_events],
-                                    "event_count": len(published_events),
-                                    "event_sequence": last_env.sequence,
-                                    "target_turn_id": target_turn_id,
-                                    "live_owner_detected": True,
-                                },
-                            )
-                        else:
-                            await comm.service_event(
-                                type="event.continuation.accepted",
-                                step="event.continuation",
-                                status="completed",
-                                title="Continuation accepted",
-                                agent="ingress",
-                                data={
-                                    "event_type": str((first_reactive_or_first_event or {}).get("type") or "event.external"),
-                                    "event_source_id": _external_event_source_id(first_reactive_or_first_event),
-                                    "reactive": external_event_reactive,
-                                    "is_continuation": True,
-                                    "message_len": len(text or ""),
-                                    "attachment_count": len(hosted_attachments),
-                                    "active_turn_id": active_turn,
-                                    "queued_turn_id": payload.routing.turn_id,
-                                    "task_id": payload.meta.task_id,
-                                    "event_id": env.message_id,
-                                    "event_ids": [item.message_id for item in published_events],
-                                    "event_count": len(published_events),
-                                    "event_sequence": last_env.sequence,
-                                    "live_owner_detected": False,
-                                },
-                            )
+                        await comm.service_event(
+                            type="event.continuation.accepted",
+                            step="event.continuation",
+                            status="completed",
+                            title="Continuation accepted",
+                            agent="ingress",
+                            data={
+                                "event_type": str((first_reactive_or_first_event or {}).get("type") or "event.external"),
+                                "event_source_id": _external_event_source_id(first_reactive_or_first_event),
+                                "reactive": external_event_reactive,
+                                "is_continuation": True,
+                                "message_len": len(text or ""),
+                                "attachment_count": len(hosted_attachments),
+                                "active_turn_id": active_turn,
+                                "queued_turn_id": payload.routing.turn_id,
+                                "task_id": payload.meta.task_id,
+                                "event_id": env.message_id,
+                                "event_ids": [item.message_id for item in published_events],
+                                "event_count": len(published_events),
+                                "event_sequence": last_env.sequence,
+                                "target_turn_id": target_turn_id,
+                                "wakeup_success": wakeup_success,
+                                "wakeup_reason": wakeup_reason,
+                            },
+                        )
                     except Exception:
                         logger.debug("Failed to emit continuation accepted", exc_info=True)
                     return IngressResult(
@@ -1386,7 +1616,10 @@ async def process_chat_message(
                         queue_stats={
                             "external_event_sequence": last_env.sequence,
                             "external_event_count": len(published_events),
-                            "live_owner_detected": live_owner_detected,
+                            "queue_payload_kind": "external_event_lane_wakeup" if external_event_reactive else None,
+                            "wakeup_success": wakeup_success,
+                            "wakeup_reason": wakeup_reason,
+                            **(wakeup_stats or {}),
                         },
                         reason="external_event_accepted",
                         is_continuation=True,
@@ -1395,7 +1628,6 @@ async def process_chat_message(
                         queued_turn_id=payload.routing.turn_id,
                         event_id=env.message_id,
                         external_event_sequence=int(last_env.sequence or 0),
-                        live_owner_detected=live_owner_detected,
                     )
                 err = "External event source unavailable"
                 await chat_comm.emit_error(
@@ -1536,12 +1768,22 @@ async def process_chat_message(
         user_id=session.user_id or session.fingerprint or "",
         agent_id=target_agent_id,
     )
-    published_events = await _publish_external_event_batch(
+    atomic_result = await _publish_external_event_batch_with_atomic_wakeup(
         external_event_source=external_event_source,
+        chat_queue_manager=chat_queue_manager,
+        session=session,
+        request_context=request_context,
+        ingress=ingress,
+        tenant_id=tenant_id,
+        project_id=project_id,
+        user_id=session.user_id or session.fingerprint or "",
+        conversation_id=conversation_id,
+        agent_id=target_agent_id,
         message_data=message_data,
         text=text,
         events=external_events,
         payload=payload,
+        selected_event=first_reactive_or_first_event or {},
         kind=event_kind,
         explicit=True,
         target_turn_id=target_turn_id,
@@ -1549,51 +1791,17 @@ async def process_chat_message(
         owner_turn_id=None,
         source=f"ingress.{ingress.transport}",
     )
-    selected_event_id = str((first_reactive_or_first_event or {}).get("event_id") or "")
-    env = next((item for item in published_events if item.message_id == selected_event_id), published_events[0])
-    last_env = published_events[-1]
-    try:
-        wakeup_payload = env.task_payload_model()
-    except Exception:
-        wakeup_payload = payload
-    wakeup = _event_lane_wakeup_from_payload(
-        payload=wakeup_payload,
-        event=env,
-        tenant=tenant_id,
-        project=project_id,
-        user_id=session.user_id or session.fingerprint or "",
-        conversation_id=conversation_id,
-        agent_id=target_agent_id,
-        reason="reactive_event",
-    )
-
-    # --- Enqueue wakeup ---
-    enqueue_started_at = time.monotonic()
-    try:
-        success, reason, stats = await chat_queue_manager.enqueue_chat_task_atomic(
-            session.user_type,
-            wakeup.model_dump(),
-            session,
-            request_context,
-            ingress.entrypoint,
-        )
-    except Exception as e:
-        logger.exception("enqueue_chat_task_atomic failed: %s", e)
-        success, reason, stats = False, "internal_error", {}
-    enqueue_ms = int((time.monotonic() - enqueue_started_at) * 1000)
-    try:
-        created_at = float(payload.meta.created_at) if payload.meta else None
-    except Exception:
-        created_at = None
-    ingress_to_enqueue_ms = None
-    if created_at:
-        try:
-            ingress_to_enqueue_ms = int((time.time() - created_at) * 1000)
-        except Exception:
-            ingress_to_enqueue_ms = None
+    published_events = atomic_result.events
+    env = atomic_result.env
+    last_env = atomic_result.last_env
+    success = bool(atomic_result.wakeup_success)
+    reason = atomic_result.wakeup_reason or ""
+    stats = dict(atomic_result.wakeup_stats or {})
+    enqueue_ms = atomic_result.enqueue_ms
+    ingress_to_enqueue_ms = atomic_result.ingress_to_enqueue_ms
 
     logger.info(
-        "enqueue_chat_task_atomic wakeup result task_id=%s event_id=%s event_seq=%s user_type=%s success=%s reason=%s enqueue_ms=%s ingress_to_enqueue_ms=%s queue_stats=%s",
+        "atomic external-event lane publish+wakeup result task_id=%s event_id=%s event_seq=%s user_type=%s success=%s reason=%s enqueue_ms=%s ingress_to_enqueue_ms=%s queue_stats=%s",
         task_id,
         env.message_id,
         last_env.sequence,
@@ -1606,17 +1814,6 @@ async def process_chat_message(
     )
 
     if not success:
-        try:
-            await external_event_source.mark_failed(
-                message_id=env.message_id,
-                claimant_id="ingress.enqueue_failure",
-                reason=f"wakeup_enqueue_failed:{reason}",
-            )
-        except Exception:
-            logger.exception(
-                "failed to mark lane event failed after wakeup enqueue failure event_id=%s",
-                env.message_id,
-            )
         # rollback state since nothing will process this turn
         try:
             res_reset = await app.state.conversation_browser.set_conversation_state(
@@ -1636,13 +1833,7 @@ async def process_chat_message(
             logger.error("Failed to reset conv state after enqueue failure: %s", e)
             res_reset = {"updated_at": _iso(), "current_turn_id": payload.routing.turn_id}
 
-        retry_after = (
-            30
-            if session.user_type == UserType.ANONYMOUS
-            else 45
-            if session.user_type == UserType.REGISTERED
-            else 60
-        )
+        retry_after = _retry_after_for_user_type(session.user_type)
         try: # broadcast conv state rollback
             await chat_comm.emit_conv_status(
                 svc,
@@ -1703,21 +1894,7 @@ async def process_chat_message(
             http_status=503,
             retry_after=retry_after,
             reason=reason,
-        )
-
-    try:
-        for item in published_events:
-            await external_event_source.mark_promoted(
-                message_id=item.message_id,
-                claimant_id="ingress.initial_wakeup",
-                task_id=task_id,
-            )
-    except Exception:
-        logger.warning(
-            "Failed to mark initially queued external event wakeup as promoted conversation=%s task_id=%s",
-            conversation_id,
-            task_id,
-            exc_info=True,
+            queue_stats=stats,
         )
 
     # --- Success: emit start + ack payload ---

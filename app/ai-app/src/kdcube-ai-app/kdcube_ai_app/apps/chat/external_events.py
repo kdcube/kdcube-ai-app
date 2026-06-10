@@ -45,9 +45,37 @@ def _short_event_message_id(*, created_at: float, sequence: int) -> str:
     return f"m{_base36(millis)}{_base36(sequence)}"
 
 
+def _repair_lua_empty_list(value: Any) -> Any:
+    # Redis Lua cjson encodes an empty JSON array as an empty object after a
+    # decode/encode round trip. Keep real invalid non-empty objects invalid.
+    return [] if value == {} else value
+
+
+def _normalize_task_payload_for_model(payload: Any) -> Dict[str, Any]:
+    normalized = dict(payload or {}) if isinstance(payload, dict) else {}
+    request = normalized.get("request")
+    if isinstance(request, dict):
+        request = dict(request)
+        if "external_events" in request:
+            request["external_events"] = _repair_lua_empty_list(request.get("external_events"))
+        if "chat_history" in request:
+            request["chat_history"] = _repair_lua_empty_list(request.get("chat_history"))
+        normalized["request"] = request
+    user = normalized.get("user")
+    if isinstance(user, dict):
+        user = dict(user)
+        if "roles" in user:
+            user["roles"] = _repair_lua_empty_list(user.get("roles"))
+        if "permissions" in user:
+            user["permissions"] = _repair_lua_empty_list(user.get("permissions"))
+        normalized["user"] = user
+    return normalized
+
+
 @dataclass
 class ConversationExternalEvent:
     message_id: str
+    batch_id: str
     kind: str
     created_at: float
     sequence: int
@@ -79,6 +107,7 @@ class ConversationExternalEvent:
         return {
             "message_id": self.message_id,
             "event_id": self.message_id,
+            "batch_id": self.batch_id or "",
             "kind": str(self.kind or "external"),
             "created_at": float(self.created_at or 0.0),
             "sequence": int(self.sequence or 0),
@@ -126,6 +155,7 @@ class ConversationExternalEvent:
             )
         return cls(
             message_id=str(raw.get("message_id") or raw.get("event_id") or ""),
+            batch_id=str(raw.get("batch_id") or ""),
             kind=str(raw.get("kind") or "external"),
             created_at=float(raw.get("created_at") or 0.0),
             sequence=int(raw.get("sequence") or 0),
@@ -153,7 +183,7 @@ class ConversationExternalEvent:
     def task_payload_model(self):
         from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
 
-        return ExternalEventPayload.model_validate(self.task_payload or {})
+        return ExternalEventPayload.model_validate(_normalize_task_payload_for_model(self.task_payload))
 
 
 @dataclass
@@ -294,6 +324,42 @@ class RedisConversationExternalEventSource:
         *,
         kind: str,
         event_id: Optional[str] = None,
+        batch_id: Optional[str] = None,
+        explicit: bool = False,
+        is_continuation: Optional[bool] = None,
+        target_turn_id: Optional[str] = None,
+        active_turn_id_at_ingress: Optional[str] = None,
+        owner_turn_id: Optional[str] = None,
+        source: str = "",
+        event_source_id: str = "",
+        text: str = "",
+        payload: Optional[Dict[str, Any]] = None,
+        task_payload: Optional[Dict[str, Any]] = None,
+    ) -> ConversationExternalEvent:
+        event = await self.prepare_event(
+            kind=kind,
+            event_id=event_id,
+            batch_id=batch_id,
+            explicit=explicit,
+            is_continuation=is_continuation,
+            target_turn_id=target_turn_id,
+            active_turn_id_at_ingress=active_turn_id_at_ingress,
+            owner_turn_id=owner_turn_id,
+            source=source,
+            event_source_id=event_source_id,
+            text=text,
+            payload=payload,
+            task_payload=task_payload,
+        )
+        await self.publish_prepared_events([event])
+        return event
+
+    async def prepare_event(
+        self,
+        *,
+        kind: str,
+        event_id: Optional[str] = None,
+        batch_id: Optional[str] = None,
         explicit: bool = False,
         is_continuation: Optional[bool] = None,
         target_turn_id: Optional[str] = None,
@@ -319,6 +385,7 @@ class RedisConversationExternalEventSource:
         )
         event = ConversationExternalEvent(
             message_id=message_id,
+            batch_id=str(batch_id or ""),
             kind=str(kind or "external"),
             created_at=created_at,
             sequence=sequence,
@@ -337,6 +404,7 @@ class RedisConversationExternalEventSource:
                 task_payload,
                 kind=str(kind or "external"),
                 event_id="",
+                batch_id=str(batch_id or ""),
                 sequence=sequence,
                 event_source_id=str(event_source_id or ""),
                 is_continuation=continuation_flag,
@@ -346,31 +414,66 @@ class RedisConversationExternalEventSource:
             event.task_payload,
             kind=str(event.kind or "external"),
             event_id=event.message_id,
+            batch_id=event.batch_id,
             sequence=event.sequence,
             event_source_id=event.event_source_id,
             is_continuation=event.is_continuation,
         )
-        stream_id = await self._append_to_stream(event)
-        event.stream_id = str(stream_id or "")
-        await self._write_event(event)
-        logger.info(
-            "[external_events.publish] conversation=%s agent_id=%s kind=%s event_source_id=%s event_id=%s seq=%s stream_id=%s target_turn=%s active_turn=%s owner_turn=%s explicit=%s is_continuation=%s text=%r",
-            self.conversation_id,
-            self.agent_id,
-            event.kind,
-            event.event_source_id,
-            event.message_id,
-            event.sequence,
-            event.stream_id,
-            event.target_turn_id,
-            event.active_turn_id_at_ingress,
-            event.owner_turn_id,
-            event.explicit,
-            event.is_continuation,
-            (event.text or "")[:160],
-        )
-        await self._maybe_cleanup_retention()
         return event
+
+    async def publish_prepared_events(self, events: List[ConversationExternalEvent]) -> List[ConversationExternalEvent]:
+        for event in events or []:
+            stream_id = await self._append_to_stream(event)
+            event.stream_id = str(stream_id or "")
+            await self._write_event(event)
+            logger.info(
+                "[external_events.publish] conversation=%s agent_id=%s kind=%s event_source_id=%s event_id=%s batch_id=%s seq=%s stream_id=%s target_turn=%s active_turn=%s owner_turn=%s explicit=%s is_continuation=%s text=%r",
+                self.conversation_id,
+                self.agent_id,
+                event.kind,
+                event.event_source_id,
+                event.message_id,
+                event.batch_id,
+                event.sequence,
+                event.stream_id,
+                event.target_turn_id,
+                event.active_turn_id_at_ingress,
+                event.owner_turn_id,
+                event.explicit,
+                event.is_continuation,
+                (event.text or "")[:160],
+            )
+        if events:
+            await self._maybe_cleanup_retention()
+        return list(events or [])
+
+    async def apply_atomic_publish_stream_ids(
+        self,
+        events: List[ConversationExternalEvent],
+        stream_ids: List[str],
+    ) -> List[ConversationExternalEvent]:
+        for event, stream_id in zip(events or [], stream_ids or []):
+            event.stream_id = str(stream_id or "")
+            logger.info(
+                "[external_events.publish.atomic] conversation=%s agent_id=%s kind=%s event_source_id=%s event_id=%s batch_id=%s seq=%s stream_id=%s target_turn=%s active_turn=%s owner_turn=%s explicit=%s is_continuation=%s text=%r",
+                self.conversation_id,
+                self.agent_id,
+                event.kind,
+                event.event_source_id,
+                event.message_id,
+                event.batch_id,
+                event.sequence,
+                event.stream_id,
+                event.target_turn_id,
+                event.active_turn_id_at_ingress,
+                event.owner_turn_id,
+                event.explicit,
+                event.is_continuation,
+                (event.text or "")[:160],
+            )
+        if events:
+            await self._maybe_cleanup_retention()
+        return list(events or [])
 
     def _patch_task_payload_event(
         self,
@@ -378,6 +481,7 @@ class RedisConversationExternalEventSource:
         *,
         kind: str,
         event_id: str,
+        batch_id: str,
         sequence: int,
         event_source_id: str,
         is_continuation: bool,
@@ -392,6 +496,8 @@ class RedisConversationExternalEventSource:
         event["is_continuation"] = bool(is_continuation)
         if event_id:
             event["event_id"] = str(event_id)
+        if batch_id:
+            event["batch_id"] = str(batch_id)
         if sequence:
             event["sequence"] = int(sequence)
         payload["event"] = event

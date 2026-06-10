@@ -204,12 +204,34 @@ class _QueueManagerShouldNotRun:
 
 
 class _QueueManagerCaptures:
-    def __init__(self):
+    def __init__(self, redis):
+        self.redis = redis
         self.payloads = []
+        self.fail_reason = ""
 
     async def enqueue_chat_task_atomic(self, _user_type, payload, *_args, **_kwargs):
         self.payloads.append(payload)
         return True, "ok", {"queued": 1}
+
+    async def enqueue_chat_task_with_lane_events_atomic(
+        self,
+        _user_type,
+        payload,
+        *_args,
+        lane_log_key,
+        lane_events,
+        **_kwargs,
+    ):
+        if self.fail_reason:
+            return False, self.fail_reason, {"queued": 0, "lane_stream_ids": []}
+        stream_ids = []
+        for item in lane_events:
+            event = dict(item["event"])
+            stream_id = await self.redis.xadd(lane_log_key, {"message_id": event["message_id"]})
+            await self.redis.set(item["event_key"], json.dumps(event))
+            stream_ids.append(stream_id)
+        self.payloads.append(payload)
+        return True, "ok", {"queued": 1, "lane_stream_ids": stream_ids}
 
 
 class _DummyConversationStore:
@@ -279,7 +301,7 @@ async def test_regular_attachment_only_message_is_enqueued(_patch_ingress_depend
         conversation_browser=_IdleConversationBrowser(),
         conversation_store=_DummyConversationStore(),
     ))
-    queue = _QueueManagerCaptures()
+    queue = _QueueManagerCaptures(redis)
     session = SimpleNamespace(
         session_id="sess-1",
         user_type=UserType.REGISTERED,
@@ -336,11 +358,16 @@ async def test_regular_attachment_only_message_is_enqueued(_patch_ingress_depend
     assert events[0].kind == "external_event"
     stored = await source.get_event(result.event_id)
     assert stored is not None
-    assert stored.promoted_task_id == result.task_id
-    assert await source.claim_next_promotable(claimant_id="proc-promoter", min_idle_ms=1) is None
+    assert stored.promoted_task_id is None
+    assert stored.promoted_at is None
+    assert stored.consumed_at is None
     payload = events[0].task_payload
     accepted_events = payload["request"]["external_events"]
     assert accepted_events[0]["type"] == "event.user.attachment"
+    model = events[0].task_payload_model()
+    assert model.user.permissions == []
+    assert model.user.roles == []
+    assert model.request.chat_history == []
     attachments = [accepted_events[0]["payload"]["event"]]
     assert len(attachments) == 1
     assert attachments[0]["filename"] == "notes.txt"
@@ -356,7 +383,7 @@ async def test_idle_non_reactive_external_event_is_recorded_without_wakeup(_patc
         conversation_browser=_IdleConversationBrowser(),
         conversation_store=_DummyConversationStore(),
     ))
-    queue = _QueueManagerCaptures()
+    queue = _QueueManagerCaptures(redis)
     session = SimpleNamespace(
         session_id="sess-1",
         user_type=UserType.REGISTERED,
@@ -427,9 +454,10 @@ async def test_busy_non_reactive_external_event_is_accepted_by_open_turn(_patch_
         timezone="UTC",
     )
 
+    queue = _QueueManagerCaptures(redis)
     result = await process_chat_message(
         app=app,
-        chat_queue_manager=_QueueManagerShouldNotRun(),
+        chat_queue_manager=queue,
         chat_comm=_DummyRelay(),
         session=session,
         request_context=SimpleNamespace(user_utc_offset_min=None),
@@ -474,6 +502,7 @@ async def test_busy_message_is_stored_as_followup(_patch_ingress_dependencies):
         conversation_browser=_BusyConversationBrowser(),
         conversation_store=_DummyConversationStore(),
     ))
+    queue = _QueueManagerCaptures(redis)
     session = SimpleNamespace(
         session_id="sess-1",
         user_type=UserType.REGISTERED,
@@ -487,7 +516,7 @@ async def test_busy_message_is_stored_as_followup(_patch_ingress_dependencies):
     )
     result = await process_chat_message(
         app=app,
-        chat_queue_manager=_QueueManagerShouldNotRun(),
+        chat_queue_manager=queue,
         chat_comm=_DummyRelay(),
         session=session,
         request_context=SimpleNamespace(user_utc_offset_min=None),
@@ -511,7 +540,9 @@ async def test_busy_message_is_stored_as_followup(_patch_ingress_dependencies):
     assert result.active_turn_id == "turn-active"
     assert result.target_turn_id is None
     assert result.queued_turn_id == result.turn_id
-    assert result.live_owner_detected is False
+    assert result.live_owner_detected is None
+    assert len(queue.payloads) == 1
+    assert queue.payloads[0]["kind"] == "external_event_lane_wakeup"
 
     source = _scoped_external_source(redis)
     events = await source.read_since(0)
@@ -525,6 +556,130 @@ async def test_busy_message_is_stored_as_followup(_patch_ingress_dependencies):
     assert events[0].task_payload["event"]["kind"] == "external_event"
     assert events[0].task_payload["request"]["external_events"][0]["type"] == "event.user.followup"
     assert events[0].task_payload["continuation"]["is_continuation"] is True
+
+
+@pytest.mark.asyncio
+async def test_idle_reactive_queue_rejection_does_not_write_lane_event(_patch_ingress_dependencies):
+    redis = _MiniRedis()
+    app = SimpleNamespace(state=SimpleNamespace(
+        redis_async=redis,
+        conversation_browser=_IdleConversationBrowser(),
+        conversation_store=_DummyConversationStore(),
+    ))
+    queue = _QueueManagerCaptures(redis)
+    queue.fail_reason = "hard_limit_exceeded"
+    session = SimpleNamespace(
+        session_id="sess-1",
+        user_type=UserType.REGISTERED,
+        user_id="user-1",
+        username="user",
+        email="user@example.com",
+        fingerprint="fp-1",
+        roles=[],
+        permissions=[],
+        timezone="UTC",
+    )
+
+    result = await process_chat_message(
+        app=app,
+        chat_queue_manager=queue,
+        chat_comm=_DummyRelay(),
+        session=session,
+        request_context=SimpleNamespace(user_utc_offset_min=None),
+        message_data={
+            "conversation_id": "conv-1",
+            "external_events": [_text_event("event.user.prompt", "hello")],
+        },
+        message_text="hello",
+        ingress=IngressConfig(
+            transport="sse",
+            entrypoint="/sse/chat",
+            component="chat.sse",
+            instance_id="ingress-1",
+            stream_id="stream-1",
+        ),
+    )
+
+    assert result.ok is False
+    assert result.error_type == "queue.enqueue_rejected"
+    assert queue.payloads == []
+
+    source = _scoped_external_source(redis)
+    assert await source.read_since(0) == []
+
+
+@pytest.mark.asyncio
+async def test_busy_followup_batch_stamps_context_and_followup_events(_patch_ingress_dependencies):
+    redis = _MiniRedis()
+    app = SimpleNamespace(state=SimpleNamespace(
+        redis_async=redis,
+        conversation_browser=_BusyConversationBrowser(),
+        conversation_store=_DummyConversationStore(),
+    ))
+    session = SimpleNamespace(
+        session_id="sess-1",
+        user_type=UserType.REGISTERED,
+        user_id="user-1",
+        username="user",
+        email="user@example.com",
+        fingerprint="fp-1",
+        roles=[],
+        permissions=[],
+        timezone="UTC",
+    )
+
+    memory_event = _domain_event(
+        "event.external",
+        {
+            "context_role": "context",
+            "object_ref": "mem:mem_803986c10e324a16b05a3ba109237c7c",
+            "label": "Family facts about Elena and Timur",
+        },
+        reactive=False,
+    )
+    memory_event["event_source_id"] = "memory.context"
+    memory_event["hosted_uri"] = "mem:mem_803986c10e324a16b05a3ba109237c7c"
+
+    queue = _QueueManagerCaptures(redis)
+    result = await process_chat_message(
+        app=app,
+        chat_queue_manager=queue,
+        chat_comm=_DummyRelay(),
+        session=session,
+        request_context=SimpleNamespace(user_utc_offset_min=None),
+        message_data={
+            "conversation_id": "conv-1",
+            "external_events": [
+                memory_event,
+                _text_event("event.user.followup", "and this?"),
+            ],
+        },
+        message_text="and this?",
+        ingress=IngressConfig(
+            transport="sse",
+            entrypoint="/sse/chat",
+            component="chat.sse",
+            instance_id="ingress-1",
+            stream_id="stream-1",
+        ),
+    )
+
+    assert result.ok is True
+    assert result.reason == "external_event_accepted"
+    assert len(queue.payloads) == 1
+    assert queue.payloads[0]["kind"] == "external_event_lane_wakeup"
+
+    source = _scoped_external_source(redis)
+    events = await source.read_since(0)
+    assert len(events) == 2
+    batch_ids = {event.batch_id for event in events}
+    assert len(batch_ids) == 1
+    batch_id = next(iter(batch_ids))
+    assert batch_id.startswith("batch_")
+    assert [event.task_payload["request"]["external_events"][0]["batch_id"] for event in events] == [batch_id, batch_id]
+    assert [event.payload["event"]["batch_id"] for event in events] == [batch_id, batch_id]
+    assert events[0].task_payload["request"]["external_events"][0]["event_source_id"] == "memory.context"
+    assert events[1].task_payload["request"]["external_events"][0]["type"] == "event.user.followup"
 
 
 @pytest.mark.asyncio
@@ -559,9 +714,10 @@ async def test_busy_followup_ack_preserves_target_and_server_active_owner(_patch
         timezone="UTC",
     )
 
+    queue = _QueueManagerCaptures(redis)
     result = await process_chat_message(
         app=app,
-        chat_queue_manager=_QueueManagerShouldNotRun(),
+        chat_queue_manager=queue,
         chat_comm=_DummyRelay(),
         session=session,
         request_context=SimpleNamespace(user_utc_offset_min=None),
@@ -586,14 +742,16 @@ async def test_busy_followup_ack_preserves_target_and_server_active_owner(_patch
     assert result.active_turn_id == "turn-active"
     assert result.target_turn_id == "turn-client-visible"
     assert result.queued_turn_id == result.turn_id
-    assert result.live_owner_detected is True
+    assert result.live_owner_detected is None
+    assert len(queue.payloads) == 1
+    assert queue.payloads[0]["kind"] == "external_event_lane_wakeup"
 
     events = await source.read_since(0)
     assert len(events) == 1
     assert events[0].is_continuation is True
     assert events[0].target_turn_id == "turn-client-visible"
     assert events[0].active_turn_id_at_ingress == "turn-active"
-    assert events[0].owner_turn_id == "turn-active"
+    assert not events[0].owner_turn_id
     assert events[0].task_payload["continuation"]["is_continuation"] is True
     assert events[0].task_payload["continuation"]["target_turn_id"] == "turn-client-visible"
     assert events[0].task_payload["continuation"]["active_turn_id"] == "turn-active"
@@ -620,9 +778,10 @@ async def test_busy_followup_attachment_is_persisted_into_external_event_payload
         permissions=[],
         timezone="UTC",
     )
+    queue = _QueueManagerCaptures(redis)
     result = await process_chat_message(
         app=app,
-        chat_queue_manager=_QueueManagerShouldNotRun(),
+        chat_queue_manager=queue,
         chat_comm=_DummyRelay(),
         session=session,
         request_context=SimpleNamespace(user_utc_offset_min=None),
@@ -652,6 +811,8 @@ async def test_busy_followup_attachment_is_persisted_into_external_event_payload
     )
 
     assert result.ok is True
+    assert len(queue.payloads) == 1
+    assert queue.payloads[0]["kind"] == "external_event_lane_wakeup"
     source = _scoped_external_source(redis)
     events = await source.read_since(0)
     assert len(events) == 2
@@ -690,9 +851,10 @@ async def test_busy_attachment_only_followup_is_persisted_into_external_event_pa
         permissions=[],
         timezone="UTC",
     )
+    queue = _QueueManagerCaptures(redis)
     result = await process_chat_message(
         app=app,
-        chat_queue_manager=_QueueManagerShouldNotRun(),
+        chat_queue_manager=queue,
         chat_comm=_DummyRelay(),
         session=session,
         request_context=SimpleNamespace(user_utc_offset_min=None),
@@ -721,6 +883,8 @@ async def test_busy_attachment_only_followup_is_persisted_into_external_event_pa
     assert result.ok is True
     assert result.reason == "external_event_accepted"
     assert result.is_continuation is True
+    assert len(queue.payloads) == 1
+    assert queue.payloads[0]["kind"] == "external_event_lane_wakeup"
     source = _scoped_external_source(redis)
     events = await source.read_since(0)
     assert len(events) == 1
@@ -756,9 +920,10 @@ async def test_busy_blank_explicit_steer_is_stored(_patch_ingress_dependencies):
         permissions=[],
         timezone="UTC",
     )
+    queue = _QueueManagerCaptures(redis)
     result = await process_chat_message(
         app=app,
-        chat_queue_manager=_QueueManagerShouldNotRun(),
+        chat_queue_manager=queue,
         chat_comm=_DummyRelay(),
         session=session,
         request_context=SimpleNamespace(user_utc_offset_min=None),
@@ -779,6 +944,8 @@ async def test_busy_blank_explicit_steer_is_stored(_patch_ingress_dependencies):
     assert result.ok is True
     assert result.reason == "external_event_accepted"
     assert result.is_continuation is True
+    assert len(queue.payloads) == 1
+    assert queue.payloads[0]["kind"] == "external_event_lane_wakeup"
 
     source = _scoped_external_source(redis)
     events = await source.read_since(0)

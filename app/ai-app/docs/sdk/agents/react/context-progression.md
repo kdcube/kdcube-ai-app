@@ -5,7 +5,9 @@ summary: "How context is built and updated during a turn."
 tags: ["sdk", "agents", "react", "context", "progression"]
 keywords: ["turn progression", "fetch_ctx", "tool calls", "context updates"]
 see_also:
+  - ks:docs/sdk/agents/react/context-caching-README.md
   - ks:docs/sdk/agents/react/context-layout.md
+  - ks:docs/sdk/agents/react/micro-agents-and-subagents-README.md
   - ks:docs/sdk/agents/react/react-context-README.md
   - ks:docs/sdk/agents/react/turn-log-README.md
   - ks:docs/sdk/agents/react/session-view-README.md
@@ -13,6 +15,72 @@ see_also:
 # Context Progression & Compaction
 
 This describes how context is built and updated during a turn.
+
+## Cache Progression Across Calls
+The rendered timeline progresses across calls, but prompt-cache reuse depends
+on the exact prefix sent to the model. That prefix starts with system and
+instruction bytes before any timeline block.
+
+```
+Turn 1, main agent
+
+  [SYS main v1]
+  [timeline: prior history]
+  [current user prompt]
+  [round/tool blocks]
+  [ANNOUNCE 1 - uncached tail]
+
+  writes cache checkpoints inside the stable timeline stream
+
+
+Turn 2, same main agent, same instruction
+
+  [SYS main v1]                              same prefix start
+  [cached timeline prefix from Turn 1]        cache hit possible
+  [new current user prompt]
+  [ANNOUNCE 2 - uncached tail]                current state, not cached
+
+
+Turn 2, same timeline but per-user system suffix changed
+
+  [SYS main v1 + user-specific suffix]        different prefix bytes
+  [same cached timeline content]              cache hit is not shared
+  [ANNOUNCE 2 - uncached tail]
+
+
+Round 2, same user but selected tools changed
+
+  [SYS main v1]
+  [user suffix]
+  [tools: web, python, memory]                changed before timeline
+  [same timeline content]                     downstream cache miss
+  [ANNOUNCE 2 - uncached tail]
+
+
+Subagent call
+
+  [SYS subagent v1]                           separate prefix
+  [handoff summary / refs / copied slice]      separate cache story
+  [subtask prompt]
+```
+
+Important consequences:
+
+- A subagent is not a cheap continuation of the main agent cache. It is another
+  model request with its own system/instruction envelope and its own cache
+  checkpoints.
+- A per-user custom instruction suffix in the system/instruction envelope makes
+  the cache prefix user-specific. That may be correct for behavior, but it
+  prevents cross-user prefix sharing.
+- Tool catalogs and skill catalogs are usually rendered in the same instruction
+  envelope. If they are user-selectable or can change between rounds, cache
+  reuse after that catalog segment is lost for every changed selection.
+- Current derived state belongs in ANNOUNCE or another current tail block when
+  it must be visible on this call but should not rewrite the stable cache.
+- Adding data to a subagent requires work: generate a summary, pass refs for
+  later pull/read, or copy a precise timeline slice. The precise option is
+  cheaper at model time than copying everything, but it needs a mechanism and
+  adds latency.
 
 ## At Turn Start
 1) `ContextBrowser.load_context(...)` fetches:

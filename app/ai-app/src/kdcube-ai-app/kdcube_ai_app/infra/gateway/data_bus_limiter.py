@@ -99,6 +99,9 @@ async def check_data_bus_publish_limits(
     """
     role = _user_type(session)
     limit = gateway_config.data_bus.get(role)
+    if not limit.enabled:
+        return DataBusPublishLimitResult(ok=True)
+
     max_rejection = _check_package_maxes(
         limit=limit,
         package_bytes=package_bytes,

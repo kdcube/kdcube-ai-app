@@ -48,7 +48,6 @@ from kdcube_ai_app.apps.chat.sdk.protocol import (
     ExternalEventActor,
     ExternalEventConfig,
     ExternalEvent,
-    ExternalEventLaneRef,
     ExternalEventLaneWakeup,
     ExternalEventMeta,
     ExternalEventPayload,
@@ -59,7 +58,10 @@ from kdcube_ai_app.apps.chat.sdk.protocol import (
     ServiceCtx,
     external_event_request_start_label,
 )
-from kdcube_ai_app.apps.chat.sdk.event_identity import DEFAULT_REACT_AGENT_ID, normalize_agent_id
+from kdcube_ai_app.apps.chat.sdk.event_identity import DEFAULT_REACT_AGENT_ID, normalize_agent_id, safe_event_lane_part
+from kdcube_ai_app.apps.chat.sdk.events.event_bus import ExternalEventLaneWakeIgnored
+from kdcube_ai_app.apps.chat.sdk.events.event_bus.orchestrator import ConversationEventBusOrchestrator
+from kdcube_ai_app.apps.chat.sdk.events.event_bus.state import event_timestamp, timestamp_lte
 from kdcube_ai_app.infra.jobs.stream import (
     BACKGROUND_JOB_OPERATION,
     BACKGROUND_JOB_QUEUE_ORDER,
@@ -987,6 +989,81 @@ class EnhancedChatRequestProcessor:
     def _task_started_key(self, logical_id: str) -> str:
         return f"{self.middleware.LOCK_PREFIX}:started:{logical_id}"
 
+    def _task_conversation_lock_key(self, task_dict: Dict[str, Any]) -> Optional[str]:
+        routing = task_dict.get("routing") if isinstance(task_dict.get("routing"), dict) else {}
+        actor = task_dict.get("actor") if isinstance(task_dict.get("actor"), dict) else {}
+        user = task_dict.get("user") if isinstance(task_dict.get("user"), dict) else {}
+        conversation_id = str(routing.get("conversation_id") or routing.get("session_id") or "").strip()
+        if not conversation_id:
+            return None
+        tenant = actor.get("tenant_id") or actor.get("tenant") or ""
+        project = actor.get("project_id") or actor.get("project") or ""
+        user_id = user.get("user_id") or user.get("fingerprint") or ""
+        parts = (
+            safe_event_lane_part(tenant, default="_"),
+            safe_event_lane_part(project, default="_"),
+            safe_event_lane_part(user_id, default="_"),
+            safe_event_lane_part(conversation_id, default="_"),
+        )
+        return f"{self.middleware.LOCK_PREFIX}:conversation:{':'.join(parts)}"
+
+    def _processor_lock_token(self, logical_id: str) -> str:
+        return f"{self.middleware.instance_id}:{self.process_id}:{logical_id}"
+
+    async def _release_redis_lock(self, key: Optional[str], token: Optional[str] = None) -> bool:
+        if not key:
+            return False
+        if token:
+            evaluator = getattr(self.redis, "eval", None)
+            if callable(evaluator):
+                return bool(await evaluator(
+                    """
+                    if redis.call('GET', KEYS[1]) == ARGV[1] then
+                        return redis.call('DEL', KEYS[1])
+                    end
+                    return 0
+                    """,
+                    1,
+                    key,
+                    token,
+                ))
+            current = await self.redis.get(key)
+            if isinstance(current, bytes):
+                current = current.decode("utf-8")
+            if str(current or "") != str(token):
+                return False
+        return bool(await self.redis.delete(key))
+
+    async def _renew_redis_lock(self, key: Optional[str], token: Optional[str], ttl_seconds: int) -> bool:
+        if not key:
+            return False
+        ttl_seconds = int(ttl_seconds or self.lock_ttl_sec)
+        if token:
+            evaluator = getattr(self.redis, "eval", None)
+            if callable(evaluator):
+                return bool(await evaluator(
+                    """
+                    if redis.call('GET', KEYS[1]) == ARGV[1] then
+                        return redis.call('EXPIRE', KEYS[1], ARGV[2])
+                    end
+                    return 0
+                    """,
+                    1,
+                    key,
+                    token,
+                    str(ttl_seconds),
+                ))
+            current = await self.redis.get(key)
+            if isinstance(current, bytes):
+                current = current.decode("utf-8")
+            if str(current or "") != str(token):
+                return False
+        ttl = await self.redis.ttl(key)
+        if ttl is None or ttl < 0:
+            return False
+        await self.redis.expire(key, ttl_seconds)
+        return True
+
     async def _started_marker_exists(self, logical_id: str) -> bool:
         ttl = await self.redis.ttl(self._task_started_key(logical_id))
         return ttl is not None and ttl >= -1
@@ -1117,42 +1194,6 @@ class EnhancedChatRequestProcessor:
         resolved.bundle_call_context["event_lane_wakeup"] = wakeup.model_dump()
         return resolved
 
-    @staticmethod
-    def _wakeup_for_event_payload(
-        payload: ExternalEventPayload,
-        *,
-        event: Any,
-        reason: str = "reactive_event",
-    ) -> ExternalEventLaneWakeup:
-        event_ctx = getattr(payload, "event", None)
-        agent_id = normalize_agent_id(
-            getattr(event, "agent_id", None)
-            or getattr(event_ctx, "agent_id", None),
-            default=DEFAULT_REACT_AGENT_ID,
-        )
-        return ExternalEventLaneWakeup(
-            meta=payload.meta,
-            routing=payload.routing,
-            actor=payload.actor,
-            user=payload.user,
-            config=payload.config,
-            accounting=payload.accounting,
-            continuation=payload.continuation,
-            event=payload.event,
-            bundle_call_context=dict(getattr(payload, "bundle_call_context", {}) or {}),
-            reason=reason,
-            event_lane=ExternalEventLaneRef(
-                tenant=payload.actor.tenant_id,
-                project=payload.actor.project_id,
-                user_id=payload.user.user_id or payload.user.fingerprint or "",
-                conversation_id=payload.routing.conversation_id or payload.routing.session_id,
-                agent_id=agent_id,
-                event_id=str(getattr(event, "message_id", "") or "") or None,
-                sequence=int(getattr(event, "sequence", 0) or 0) or None,
-                stream_id=str(getattr(event, "stream_id", "") or "") or None,
-            ),
-        )
-
     async def _resolve_queue_item_payload(self, task_data: Dict[str, Any]) -> ExternalEventPayload:
         if not self._is_external_event_lane_wakeup(task_data):
             return ExternalEventPayload.model_validate(task_data)
@@ -1165,7 +1206,15 @@ class EnhancedChatRequestProcessor:
         event = await source.get_event(event_id)
         if event is None:
             raise RuntimeError(f"External event lane wakeup event not found: {event_id}")
+        orchestrator = ConversationEventBusOrchestrator.for_source(source)
+        wake_ts = event_timestamp(event)
+        state = await orchestrator.state()
+        if timestamp_lte(wake_ts, state.last_processed_reactive_event_timestamp):
+            raise ExternalEventLaneWakeIgnored("wake_already_processed")
         payload = event.task_payload_model()
+        decision = await orchestrator.schedule_consumer_from_wake(wake_event_timestamp=wake_ts)
+        if not decision.scheduled:
+            raise ExternalEventLaneWakeIgnored(decision.reason)
         return self._payload_for_lane_wakeup(payload, wakeup=wakeup, event=event)
 
     async def _mark_task_interrupted(self, task_dict: Dict[str, Any], *, reason: str) -> None:
@@ -1210,96 +1259,6 @@ class EnhancedChatRequestProcessor:
             )
         except Exception:
             logger.debug("Failed to emit interrupted error for task %s", payload.meta.task_id, exc_info=True)
-
-    async def _promote_next_external_event(self, payload: ExternalEventPayload) -> Optional[Dict[str, Any]]:
-        source = self._external_event_source_for(payload)
-        claimant_id = f"{self.middleware.instance_id}:{self.process_id}:{time.time_ns()}"
-        while True:
-            event = await source.claim_next_promotable(claimant_id=claimant_id)
-            if event is None:
-                return None
-            logger.warning(
-                "Claimed promotable external event conversation=%s current_turn=%s event_id=%s kind=%s seq=%s target_turn=%s active_turn=%s owner_turn=%s text=%r",
-                payload.routing.conversation_id,
-                payload.routing.turn_id,
-                event.message_id,
-                event.kind,
-                event.sequence,
-                event.target_turn_id,
-                event.active_turn_id_at_ingress,
-                event.owner_turn_id,
-                (event.text or "")[:160],
-            )
-
-            event_kind = str(getattr(event, "kind", "") or "").strip().lower()
-            if event_kind == "steer":
-                logger.info(
-                    "Discarding stale steer external event conversation=%s current_turn=%s event_id=%s seq=%s target_turn=%s active_turn=%s owner_turn=%s",
-                    payload.routing.conversation_id,
-                    payload.routing.turn_id,
-                    event.message_id,
-                    event.sequence,
-                    event.target_turn_id,
-                    event.active_turn_id_at_ingress,
-                    event.owner_turn_id,
-                )
-                await source.mark_failed(
-                    message_id=event.message_id,
-                    claimant_id=claimant_id,
-                    reason="steer_expired_not_promoted",
-                )
-                continue
-
-            try:
-                next_payload = event.task_payload_model()
-            except Exception:
-                logger.exception(
-                    "Dropping malformed external event payload for conversation=%s event_id=%s",
-                    payload.routing.conversation_id,
-                    event.message_id,
-                )
-                await source.mark_failed(
-                    message_id=event.message_id,
-                    claimant_id=claimant_id,
-                    reason="malformed_task_payload",
-                )
-                continue
-
-            user_type = next_payload.user.user_type
-            if hasattr(user_type, "value"):
-                user_type = user_type.value
-            ready_queue_key = self._ready_queue_key(str(user_type).lower())
-            wakeup = self._wakeup_for_event_payload(
-                next_payload,
-                event=event,
-                reason=f"promoted_{event_kind or 'external_event'}",
-            )
-            raw_payload = json.dumps(wakeup.model_dump(), ensure_ascii=False)
-
-            try:
-                await self.redis.lpush(ready_queue_key, raw_payload)
-            except Exception:
-                await source.release_claim(message_id=event.message_id, claimant_id=claimant_id)
-                raise
-
-            await source.mark_promoted(
-                message_id=event.message_id,
-                claimant_id=claimant_id,
-                task_id=str(getattr(wakeup.meta, "task_id", "") or ""),
-            )
-            logger.info(
-                "Promoted external event wakeup message_id=%s kind=%s conversation=%s turn_id=%s to %s",
-                event.message_id,
-                event.kind,
-                next_payload.routing.conversation_id,
-                next_payload.routing.turn_id,
-                ready_queue_key,
-            )
-            return {
-                "envelope": event,
-                "payload": next_payload,
-                "ready_queue_key": ready_queue_key,
-            }
 
     async def _queue_claim(self, ready_queue_key: str, inflight_queue_key: str):
         try:
@@ -1348,6 +1307,7 @@ class EnhancedChatRequestProcessor:
             inflight_queue_key: Optional[str],
             raw_payload,
             lock_key: Optional[str] = None,
+            lock_token: Optional[str] = None,
             started_key: Optional[str] = None,
             reason: str,
     ) -> bool:
@@ -1362,7 +1322,7 @@ class EnhancedChatRequestProcessor:
                         reason,
                     )
             if lock_key:
-                await self.redis.delete(lock_key)
+                await self._release_redis_lock(lock_key, lock_token)
             if started_key:
                 await self.redis.delete(started_key)
         except Exception:
@@ -1377,6 +1337,7 @@ class EnhancedChatRequestProcessor:
             inflight_queue_key: Optional[str],
             raw_payload,
             lock_key: Optional[str] = None,
+            lock_token: Optional[str] = None,
             started_key: Optional[str] = None,
             reason: str,
     ) -> bool:
@@ -1393,7 +1354,7 @@ class EnhancedChatRequestProcessor:
                         reason,
                     )
             if lock_key:
-                await self.redis.delete(lock_key)
+                await self._release_redis_lock(lock_key, lock_token)
             if started_key:
                 await self.redis.delete(started_key)
             return bool(removed)
@@ -1408,9 +1369,10 @@ class EnhancedChatRequestProcessor:
                 await self._background_jobs.ack(background_claim)
             finally:
                 lock_key = task_data.get("_lock_key")
+                lock_token = task_data.get("_lock_token")
                 started_key = task_data.get("_started_key")
                 if lock_key:
-                    await self.redis.delete(lock_key)
+                    await self._release_redis_lock(lock_key, lock_token)
                 if started_key:
                     await self.redis.delete(started_key)
             return
@@ -1418,6 +1380,7 @@ class EnhancedChatRequestProcessor:
             inflight_queue_key=task_data.get("_inflight_queue_key"),
             raw_payload=task_data.get("_raw_payload"),
             lock_key=task_data.get("_lock_key"),
+            lock_token=task_data.get("_lock_token"),
             started_key=task_data.get("_started_key"),
             reason=f"task-finished:{self._task_logical_id(task_data) or 'unknown'}",
         )
@@ -1728,9 +1691,10 @@ class EnhancedChatRequestProcessor:
             logger.error("Background job missing job_id; acked stream=%s id=%s", claim.stream_key, claim.stream_id)
             return None
         lock_key = self._task_lock_key(logical_id)
+        lock_token = self._processor_lock_token(logical_id)
         acquired = await self.redis.set(
             lock_key,
-            f"{self.middleware.instance_id}:{self.process_id}",
+            lock_token,
             nx=True,
             ex=self.lock_ttl_sec,
         )
@@ -1738,7 +1702,7 @@ class EnhancedChatRequestProcessor:
             logger.info("Background job lock held; leaving pending for retry: job_id=%s", logical_id)
             return None
         if self._stop_event.is_set() or self._host_draining:
-            await self.redis.delete(lock_key)
+            await self._release_redis_lock(lock_key, lock_token)
             return None
         self._current_load += 1
         created_at = (task_dict.get("meta") or {}).get("created_at")
@@ -1750,6 +1714,7 @@ class EnhancedChatRequestProcessor:
                 queue_wait_ms = None
         task_dict["_queue_wait_ms"] = queue_wait_ms
         task_dict["_lock_key"] = lock_key
+        task_dict["_lock_token"] = lock_token
         logger.info(
             "Process %s acquired background job %s (%s) stream=%s id=%s%s",
             self.process_id,
@@ -1813,19 +1778,45 @@ class EnhancedChatRequestProcessor:
                 continue
 
             lock_key = self._task_lock_key(logical_id)
+            lock_token = self._processor_lock_token(logical_id)
             acquired = await self.redis.set(
                 lock_key,
-                f"{self.middleware.instance_id}:{self.process_id}",
+                lock_token,
                 nx=True,
                 ex=self.lock_ttl_sec,
             )
             if acquired:
+                conversation_lock_key = self._task_conversation_lock_key(task_dict)
+                conversation_lock_token = ""
+                if conversation_lock_key:
+                    conversation_lock_token = self._processor_lock_token(logical_id)
+                    conversation_acquired = await self.redis.set(
+                        conversation_lock_key,
+                        conversation_lock_token,
+                        nx=True,
+                        ex=self.lock_ttl_sec,
+                    )
+                    if not conversation_acquired:
+                        await self._requeue_claimed_payload(
+                            ready_queue_key=queue_key,
+                            inflight_queue_key=inflight_queue_key,
+                            raw_payload=raw_payload,
+                            lock_key=lock_key,
+                            lock_token=lock_token,
+                            reason=f"conversation-lock-not-acquired:{logical_id}",
+                        )
+                        continue
+                    task_dict["_conversation_lock_key"] = conversation_lock_key
+                    task_dict["_conversation_lock_token"] = conversation_lock_token
                 if self._stop_event.is_set() or self._host_draining:
+                    if conversation_lock_key:
+                        await self._release_redis_lock(conversation_lock_key, conversation_lock_token)
                     await self._requeue_claimed_payload(
                         ready_queue_key=queue_key,
                         inflight_queue_key=inflight_queue_key,
                         raw_payload=raw_payload,
                         lock_key=lock_key,
+                        lock_token=lock_token,
                         reason=f"{'host-draining' if self._host_draining else 'processor-drain'}-after-lock:{logical_id}",
                     )
                     logger.info(
@@ -1849,6 +1840,7 @@ class EnhancedChatRequestProcessor:
                 )
                 task_dict["_queue_wait_ms"] = queue_wait_ms
                 task_dict["_lock_key"] = lock_key
+                task_dict["_lock_token"] = lock_token
                 task_dict["_queue_key"] = queue_key
                 task_dict["_ready_queue_key"] = queue_key
                 task_dict["_inflight_queue_key"] = inflight_queue_key
@@ -2409,20 +2401,26 @@ class EnhancedChatRequestProcessor:
             self,
             lock_key: str,
             *,
+            lock_token: Optional[str] = None,
             extra_keys: Optional[Iterable[str]] = None,
+            extra_locks: Optional[Dict[str, tuple[Optional[str], int]]] = None,
             extra_ttl_sec: Optional[int] = None,
     ):
         lease_keys = tuple(key for key in (extra_keys or ()) if key)
+        token_locks = {
+            str(key): value
+            for key, value in dict(extra_locks or {}).items()
+            if key
+        }
         extra_key_ttl = int(extra_ttl_sec or self.lock_ttl_sec)
 
         async def renewer():
             try:
                 while True:
                     await asyncio.sleep(self.lock_renew_sec)
-                    ttl = await self.redis.ttl(lock_key)
-                    if ttl is None or ttl < 0:
+                    renewed = await self._renew_redis_lock(lock_key, lock_token, self.lock_ttl_sec)
+                    if not renewed:
                         break
-                    await self.redis.expire(lock_key, self.lock_ttl_sec)
                     for extra_key in lease_keys:
                         try:
                             extra_ttl = await self.redis.ttl(extra_key)
@@ -2431,6 +2429,11 @@ class EnhancedChatRequestProcessor:
                             await self.redis.expire(extra_key, extra_key_ttl)
                         except Exception:
                             logger.debug("Failed to renew extra lease key %s", extra_key, exc_info=True)
+                    for extra_key, (extra_token, extra_ttl) in token_locks.items():
+                        try:
+                            await self._renew_redis_lock(extra_key, extra_token, int(extra_ttl or self.lock_ttl_sec))
+                        except Exception:
+                            logger.debug("Failed to renew extra token lock %s", extra_key, exc_info=True)
             except asyncio.CancelledError:
                 pass
 
@@ -2446,6 +2449,9 @@ class EnhancedChatRequestProcessor:
 
     async def _process_task(self, task_data: Dict[str, Any]):
         lock_key = task_data.get("_lock_key")
+        lock_token = task_data.get("_lock_token")
+        conversation_lock_key = task_data.get("_conversation_lock_key")
+        conversation_lock_token = task_data.get("_conversation_lock_token")
         current_processor_task = asyncio.current_task()
         ephemeral_active_task_registration = False
         ephemeral_task_details = False
@@ -2453,6 +2459,18 @@ class EnhancedChatRequestProcessor:
         # 1) Normalize payload
         try:
             payload = await self._resolve_queue_item_payload(task_data)
+        except ExternalEventLaneWakeIgnored as e:
+            logger.info("Ignoring external event lane wakeup: %s", e.reason)
+            try:
+                await self._ack_claimed_task(task_data)
+            finally:
+                self._current_load = max(0, self._current_load - 1)
+                if conversation_lock_key:
+                    try:
+                        await self._release_redis_lock(conversation_lock_key, conversation_lock_token)
+                    except Exception:
+                        logger.debug("Failed to release conversation lock after ignored external event lane wakeup", exc_info=True)
+                return
         except Exception as e:
             logger.error(f"Cannot normalize processor queue item: {e}")
             logger.error(traceback.format_exc())
@@ -2461,6 +2479,11 @@ class EnhancedChatRequestProcessor:
             finally:
                 # Ensure load is released even for invalid payloads
                 self._current_load = max(0, self._current_load - 1)
+                if conversation_lock_key:
+                    try:
+                        await self._release_redis_lock(conversation_lock_key, conversation_lock_token)
+                    except Exception:
+                        logger.debug("Failed to release conversation lock after invalid payload", exc_info=True)
                 return
 
         assert payload is not None
@@ -2496,6 +2519,28 @@ class EnhancedChatRequestProcessor:
             comm,
             touch=lambda kind, _task=processor_task: self._touch_task_activity(kind, task=_task),
         )
+        if str(getattr(payload.request, "operation", "") or "") != BACKGROUND_JOB_OPERATION:
+            try:
+                await self.conversation_ctx.set_conversation_state(
+                    tenant=payload.actor.tenant_id,
+                    project=payload.actor.project_id,
+                    user_id=payload.user.user_id,
+                    conversation_id=payload.routing.conversation_id,
+                    new_state="in_progress",
+                    by_instance=f"{self.middleware.instance_id}:{self.process_id}",
+                    request_id=request_id,
+                    last_turn_id=payload.routing.turn_id,
+                    require_not_in_progress=False,
+                    user_type=payload.user.user_type,
+                    bundle_id=payload.routing.bundle_id,
+                )
+            except Exception:
+                logger.debug(
+                    "Failed to refresh in-progress conversation state at task start: conversation=%s task_id=%s",
+                    payload.routing.conversation_id,
+                    task_id,
+                    exc_info=True,
+                )
 
         # 3) accounting + storage
         from kdcube_ai_app.infra.accounting.envelope import AccountingEnvelope, bind_accounting
@@ -2536,7 +2581,11 @@ class EnhancedChatRequestProcessor:
                     self._touch_task_activity("processor.started_marker")
                 async with self._lock_renewer(
                         lock_key=lock_key,
-                        extra_keys=[started_key] if started_key else None,
+                        lock_token=lock_token,
+                        extra_keys=[key for key in (started_key,) if key],
+                        extra_locks={
+                            conversation_lock_key: (conversation_lock_token, self.lock_ttl_sec)
+                        } if conversation_lock_key and conversation_lock_token else None,
                         extra_ttl_sec=self.started_marker_ttl_sec if started_key else None,
                 ):
                     exec_started_at = time.monotonic()
@@ -2607,7 +2656,6 @@ class EnhancedChatRequestProcessor:
             success = False
         finally:
             exec_ms = None
-            promoted_external_event = None
             if exec_started_at is not None:
                 try:
                     exec_ms = int((time.monotonic() - exec_started_at) * 1000)
@@ -2622,14 +2670,6 @@ class EnhancedChatRequestProcessor:
                     await self._ack_claimed_task(task_data)
             finally:
                 self._current_load = max(0, self._current_load - 1)
-            if not task_cancelled:
-                try:
-                    promoted_external_event = await self._promote_next_external_event(payload)
-                except Exception:
-                    logger.exception(
-                        "Failed to promote next external event for conversation=%s",
-                        payload.routing.conversation_id,
-                    )
             if not task_cancelled:
                 if self.queue_analytics_updater:
                     try:
@@ -2662,54 +2702,38 @@ class EnhancedChatRequestProcessor:
                 except Exception:
                     logger.debug("Failed to record task latency metrics", exc_info=True)
                 try:
-                    if promoted_external_event is not None:
-                        next_payload = promoted_external_event["payload"]
-                        next_request_id, next_svc, next_conv, _ = self._build_runtime_context(next_payload)
-                        res = await self.conversation_ctx.set_conversation_state(
-                            tenant=next_payload.actor.tenant_id,
-                            project=next_payload.actor.project_id,
-                            user_id=next_payload.user.user_id,
-                            conversation_id=next_payload.routing.conversation_id,
-                            new_state="in_progress",
-                            by_instance=f"{self.middleware.instance_id}:{self.process_id}",
-                            request_id=next_request_id,
-                            last_turn_id=next_payload.routing.turn_id,
-                            require_not_in_progress=False,
-                            user_type=next_payload.user.user_type,
-                            bundle_id=next_payload.routing.bundle_id,
-                        )
-                        await self._relay.emit_conv_status(
-                            next_svc,
-                            next_conv,
-                            routing=next_payload.routing,
-                            state="in_progress",
-                            updated_at=res["updated_at"],
-                            current_turn_id=res.get("current_turn_id"),
-                            completion="queued_next",
-                            target_sid=None,
-                        )
-                    else:
-                        res = await self.conversation_ctx.set_conversation_state(
-                            tenant=payload.actor.tenant_id, project=payload.actor.project_id, user_id=payload.user.user_id, conversation_id=payload.routing.conversation_id,
-                            new_state=("idle" if success else "error"),
-                            by_instance=f"{self.middleware.instance_id}:{self.process_id}",
-                            request_id=request_id,
-                            last_turn_id=payload.routing.turn_id,
-                            require_not_in_progress=False,
-                            user_type=payload.user.user_type,
-                            bundle_id=payload.routing.bundle_id,
-                        )
-                        # broadcast to session
-                        await self._relay.emit_conv_status(svc, conv,
-                                                         routing=payload.routing,
-                                                         state=("idle" if success else "error"),
-                                                         updated_at=res["updated_at"],
-                                                         current_turn_id=res.get("current_turn_id"),
-                                                         completion="success" if success else "error",
-                                                         target_sid=None)
+                    res = await self.conversation_ctx.set_conversation_state(
+                        tenant=payload.actor.tenant_id,
+                        project=payload.actor.project_id,
+                        user_id=payload.user.user_id,
+                        conversation_id=payload.routing.conversation_id,
+                        new_state=("idle" if success else "error"),
+                        by_instance=f"{self.middleware.instance_id}:{self.process_id}",
+                        request_id=request_id,
+                        last_turn_id=payload.routing.turn_id,
+                        require_not_in_progress=False,
+                        user_type=payload.user.user_type,
+                        bundle_id=payload.routing.bundle_id,
+                    )
+                    # broadcast to session
+                    await self._relay.emit_conv_status(
+                        svc,
+                        conv,
+                        routing=payload.routing,
+                        state=("idle" if success else "error"),
+                        updated_at=res["updated_at"],
+                        current_turn_id=res.get("current_turn_id"),
+                        completion="success" if success else "error",
+                        target_sid=None,
+                    )
                 except Exception as ex:
                     logger.error(traceback.format_exc())
             if ephemeral_task_details and current_processor_task is not None:
                 self._active_task_details.pop(current_processor_task, None)
             if ephemeral_active_task_registration and current_processor_task is not None:
                 self._active_tasks.discard(current_processor_task)
+            if conversation_lock_key:
+                try:
+                    await self._release_redis_lock(conversation_lock_key, conversation_lock_token)
+                except Exception:
+                    logger.debug("Failed to release conversation lock for task %s", task_id, exc_info=True)

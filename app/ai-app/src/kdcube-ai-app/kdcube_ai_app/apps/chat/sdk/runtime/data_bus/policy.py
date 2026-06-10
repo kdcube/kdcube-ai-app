@@ -7,9 +7,20 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Dict
 
 
+def coerce_data_bus_bool(value: Any, *, default: bool = True) -> bool:
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return str(value).strip().lower() not in {"false", "disable", "disabled", "off", "0", "no"}
+
+
 @dataclass
 class DataBusPublishLimit:
     """Socket.IO data_bus.publish package admission policy."""
+    enabled: bool = True
     packages_per_minute: int = 600
     messages_per_minute: int = 6000
     bytes_per_minute: int = 16 * 1024 * 1024
@@ -66,10 +77,13 @@ def coerce_data_bus_publish_limit(value: Any, default: DataBusPublishLimit) -> D
             raw = value.get(key)
             if raw is None or raw == "":
                 continue
-            try:
-                payload[key] = int(raw)
-            except Exception:
-                payload[key] = getattr(default, key)
+            if key == "enabled":
+                payload[key] = coerce_data_bus_bool(raw, default=getattr(default, key))
+            else:
+                try:
+                    payload[key] = int(raw)
+                except Exception:
+                    payload[key] = getattr(default, key)
     return DataBusPublishLimit(**payload)
 
 
@@ -80,7 +94,7 @@ class DataBusSettings:
 
     def __post_init__(self):
         defaults = default_data_bus_publish_limits()
-        source = self.publish_limits or {}
+        source = dict(self.publish_limits or {})
         roles: Dict[str, DataBusPublishLimit] = {}
         for role, default in defaults.items():
             roles[role] = coerce_data_bus_publish_limit(source.get(role), default)

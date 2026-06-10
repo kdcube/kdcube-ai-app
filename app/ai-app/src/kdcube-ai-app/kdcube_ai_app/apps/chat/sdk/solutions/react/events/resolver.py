@@ -34,7 +34,7 @@ def canonicalize_event_ref_for_context(ref: Any, *, conversation_id: str = "") -
 
     `fi:turn_...` is valid inside the current ReAct runtime, but durable
     cross-surface consumers such as canvas need `fi:conv_<conversation>.turn_...`.
-    React owns that rewrite because `fi:` is a React artifact/event namespace.
+    React owns that rewrite because `fi:` is a React-owned file/event namespace.
     """
     value = str(ref or "").strip()
     if not value.startswith("fi:"):
@@ -90,7 +90,7 @@ async def read_event_ref_bytes(
     Resolve bytes for a namespaced event/object ref.
 
     For now the built-in byte-backed resolver is `fi:`, which is the canonical
-    React artifact event reference. More namespaces should register here instead
+    React-owned file/event reference. More namespaces should register here instead
     of teaching bundles their storage layouts.
     """
     namespace = _ref_namespace(ref)
