@@ -29,7 +29,11 @@ export interface ChatEventReportingSettings {
     eventReportingEnabled: boolean;
 }
 
-export interface ChatSettings extends ChatScope, ChatAuthSettings, ChatRoutingSettings, ChatTransportSettings, ChatEventReportingSettings {
+export interface ChatVersionSettings {
+    versions?: { platform?: string };
+}
+
+export interface ChatSettings extends ChatScope, ChatAuthSettings, ChatRoutingSettings, ChatTransportSettings, ChatEventReportingSettings, ChatVersionSettings {
 }
 
 export interface ChatSettingsState {

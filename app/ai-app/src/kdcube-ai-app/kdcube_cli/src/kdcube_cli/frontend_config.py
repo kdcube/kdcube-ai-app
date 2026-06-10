@@ -276,6 +276,13 @@ def build_frontend_config(
     )
 
     merged["auth"] = auth
+
+    platform_ref = as_text(get_nested(assembly or {}, "platform", "ref"))
+    if platform_ref:
+        versions = copy.deepcopy(merged.get("versions") if isinstance(merged.get("versions"), dict) else {})
+        versions["platform"] = platform_ref
+        merged["versions"] = versions
+
     return merged
 
 

@@ -68,6 +68,9 @@ def _assembly_from_settings(settings: Any) -> dict[str, Any]:
         "proxy": {
             "route_prefix": settings.plain("proxy.route_prefix"),
         },
+        "platform": {
+            "ref": settings.plain("platform.ref"),
+        }
     }
     if isinstance(frontend_plain, dict):
         assembly["frontend"] = frontend_plain

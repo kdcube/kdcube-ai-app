@@ -1,5 +1,6 @@
 import {useEffect, useMemo} from "react";
 import AppRouter from "./AppRouter.tsx";
+import PlatformVersionBadge from "./components/PlatformVersionBadge.tsx";
 import './App.css'
 import {useAppDispatch, useAppSelector, useAppStore} from "./app/store.ts";
 import {
@@ -36,7 +37,10 @@ const App = () => {
         if (!settingsLoaded) {
             return null;
         }
-        return <AppRouter/>
+        return <>
+            <AppRouter/>
+            <PlatformVersionBadge/>
+        </>
     }, [settingsLoaded, settingsLoadingError])
 }
 
