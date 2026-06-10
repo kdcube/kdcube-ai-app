@@ -6,10 +6,12 @@ tags: ["sdk", "agents", "react", "instructions", "system-prompt", "lite", "confi
 keywords: ["React system instruction", "React lite instructions", "instruction_body", "instruction_blocks", "default_lite_system_instruction", "React prompt composition", "signal coverage"]
 updated_at: 2026-05-17
 see_also:
+  - ks:docs/sdk/agents/react/context-caching-README.md
   - ks:docs/sdk/agents/react/react-round-README.md
   - ks:docs/sdk/agents/react/react-tools-README.md
   - ks:docs/sdk/agents/react/context-layout.md
   - ks:docs/sdk/agents/react/context-progression.md
+  - ks:docs/sdk/agents/react/micro-agents-and-subagents-README.md
   - ks:docs/sdk/agents/react/react-announce-README.md
   - ks:docs/sdk/agents/react/shared-timeline-event-bus-steer-followup-README.md
   - ks:docs/sdk/agents/react/memory-recovery-path-README.md
@@ -45,6 +47,76 @@ The tool catalog and skill catalog are not substitutes for the instruction
 body. They tell the model what is currently available. The instruction body
 explains how to behave with the React timeline, ANNOUNCE, logical paths,
 workspace, recovery paths, tools, memory, and finalization.
+
+### Cache Consequence
+
+The composed system instruction is part of the exact model-input prefix. It is
+not a timeline block, but it still affects the prompt prefix that React sends
+before the rendered timeline.
+
+```
+[strict protocol]
+[instruction body]
+[tool/skill catalog]
+[admin or runtime customization]
+[rendered timeline prefix]
+[ANNOUNCE / current tail]
+```
+
+Changing any bytes before the rendered timeline creates a different downstream
+prompt prefix. In the current ReAct decision path, the tool catalog and skill
+catalog are text rendered in this system instruction, usually near the bottom.
+Changing them changes the system prefix before the rendered timeline. A
+per-user customization suffix therefore prevents cross-user cache sharing for
+that agent after that suffix. A subagent with a different instruction has its
+own cache story. Put volatile current state in ANNOUNCE or another tail block
+instead of appending it to the instruction body.
+
+React maps this prefix layout to explicit cache controls for Anthropic/Claude.
+For other providers, the same prompt layout still controls token shape and
+semantic stability, but React does not currently assume equivalent
+provider-side cache-control behavior.
+
+The important boundary is the first changed segment:
+
+```
+[strict protocol]                         stable for all compatible agents
+[default React instruction]               stable for all compatible agents
+[shared bundle/domain instruction]        stable for this bundle/config
+
+--- first variable segment below this line limits cache sharing ---
+
+[per-user instruction suffix]             differs by user
+[selected tool catalog]                   differs if user/runtime changes tools
+[selected skill catalog]                  differs if user/runtime changes skills
+[rendered timeline prefix]                downstream of the variable segments
+[ANNOUNCE / current tail]                 intentionally uncached
+```
+
+If the tool catalog or skill catalog is rendered inside the instruction
+envelope, it is part of the cache prefix. Letting a user select tools or skills
+therefore partitions the cache by that exact selection. Changing the selection
+between turns invalidates the downstream cache for that user. Changing it
+between rounds is worse: the same turn can no longer reuse cache points after
+the changed catalog segment.
+
+Keep the instruction envelope stable when cache sharing matters. Put changing
+current state in ANNOUNCE. Only put tool/skill catalogs in the instruction
+envelope when the model really needs that catalog for the current call, and
+expect the cache to be keyed by the exact catalog text.
+
+Be explicit about the reuse scope:
+
+- Same user reuse: later turns, later rounds, or repeated calls to the same
+  configured subagent can reuse cache only while that user's instruction/catalog
+  prefix stays identical.
+- Cross-user reuse: multiple users can share the common prefix only before any
+  per-user instruction, per-user data, or user-selected catalog segment. This is
+  valuable on Anthropic because traffic from multiple users is more likely to
+  keep a short-lived cache entry hot.
+- Subagent reuse: a subagent configured dynamically by the main agent is usually
+  a cache story inside that user's work. A ready-made/static subagent can share
+  its common prefix across users until the first user-specific segment.
 
 ## Use The Extended Default
 

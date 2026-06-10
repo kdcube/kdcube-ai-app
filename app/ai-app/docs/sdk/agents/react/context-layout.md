@@ -6,13 +6,51 @@ tags: ["sdk", "agents", "react", "context", "layout"]
 keywords: ["block stream", "rendered context", "agent view", "blocks order"]
 see_also:
   - ks:docs/sdk/agents/react/context-browser-README.md
+  - ks:docs/sdk/agents/react/context-caching-README.md
   - ks:docs/sdk/agents/react/context-progression.md
+  - ks:docs/sdk/agents/react/micro-agents-and-subagents-README.md
   - ks:docs/sdk/agents/react/react-context-README.md
+  - ks:docs/sdk/agents/react/system-instruction-README.md
 ---
 # Context Layout (Blocks)
 
 This document describes the **rendered block stream** that agents receive and how it is
 assembled each turn.
+
+## Full Model Input Shape
+The rendered timeline is only one part of the model input. Each agent call has
+an instruction envelope before the timeline.
+
+```
+MODEL INPUT
+
++----------------------------------------------------------------+
+| SYSTEM / INSTRUCTION ENVELOPE                                  |
+|  - runtime system instruction                                  |
+|  - selected agent instruction                                  |
+|  - integration/domain instruction                              |
+|  - optional custom suffixes                                    |
+|  - text-rendered tool catalog                                  |
+|  - text-rendered skill catalog                                 |
++----------------------------------------------------------------+
++----------------------------------------------------------------+
+| RENDERED BLOCK STREAM                                          |
+|  1. history blocks                                             |
+|  2. current turn user blocks                                   |
+|  3. turn progress blocks                                       |
+|  4. sources pool, optional tail                                |
+|  5. announce, optional tail                                    |
++----------------------------------------------------------------+
+```
+
+The system/instruction envelope is not addressable as a timeline path, but it
+is part of the exact prompt prefix. In the current ReAct decision path, tools
+and skills are described by catalogs rendered inside that system instruction.
+A different agent instruction, subagent instruction, per-user system suffix,
+tool catalog, or skill catalog means a different downstream prompt prefix. For
+Anthropic/Claude, React maps that prefix structure to explicit cache controls.
+For other providers, React keeps the same layout but does not currently claim
+equivalent provider cache-control behavior.
 
 ## Block Stream (per agent call)
 1) **History blocks**
@@ -60,37 +98,48 @@ This ensures prompt caching is stable even when turns are edited or hidden.
 
 ## Schematic Layout
 ```
-┌──────────────────────────┐
-│ RANGE SUMMARIES          │
-│  - conv.range.summary    │
-│  - react.note.preserved  │
-└──────────────────────────┘
-┌──────────────────────────┐
-│ HISTORY BLOCKS           │
-│  - prior user prompt     │
-│  - prior contributions   │
-│  - prior assistant       │
-│  - tool call/result      │
-└──────────────────────────┘
-┌──────────────────────────┐
-│ CURRENT TURN USER BLOCKS │
-│  - user prompt           │
-│  - user attachments      │
-└──────────────────────────┘
-┌──────────────────────────┐
-│ TURN PROGRESS LOG        │
-│  - gate/react notes      │
-│  - internal beacons      │
-│  - user.followup/steer   │
-│  - tool call/result      │
-└──────────────────────────┘
-┌──────────────────────────┐
-│ SOURCES POOL (optional)  │  ← uncached tail
-└──────────────────────────┘
-┌──────────────────────────┐
-│ ANNOUNCE (optional)      │  ← uncached tail
-└──────────────────────────┘
++--------------------------+
+| SYSTEM / INSTRUCTIONS    |
+|  - runtime instruction   |  part of model input and cache prefix
+|  - agent/domain suffixes |  not a timeline block
+|  - tool/skill catalogs   |  also part of system text in ReAct
++--------------------------+
++--------------------------+
+| RANGE SUMMARIES          |
+|  - conv.range.summary    |
+|  - react.note.preserved  |
++--------------------------+
++--------------------------+
+| HISTORY BLOCKS           |
+|  - prior user prompt     |
+|  - prior contributions   |
+|  - prior assistant       |
+|  - tool call/result      |
++--------------------------+
++--------------------------+
+| CURRENT TURN USER BLOCKS |
+|  - user prompt           |
+|  - user attachments      |
++--------------------------+
++--------------------------+
+| TURN PROGRESS LOG        |
+|  - gate/react notes      |
+|  - internal beacons      |
+|  - user.followup/steer   |
+|  - tool call/result      |
++--------------------------+
++--------------------------+
+| SOURCES POOL (optional)  |  uncached tail
++--------------------------+
++--------------------------+
+| ANNOUNCE (optional)      |  uncached tail
++--------------------------+
 ```
+
+The uncached tail is intentionally separate from the cached prefix. Fast-moving
+state such as a current board projection, selected objects, live status, or
+fresh feedback should be rendered there instead of being appended to the
+system/instruction envelope.
 
 ---
 
