@@ -11,6 +11,7 @@ from kdcube_ai_app.apps.chat.ingress.ingress_core import GatewayCheckResult, Ing
 from kdcube_ai_app.apps.chat.ingress.socketio import chat as socket_chat
 from kdcube_ai_app.apps.chat.ingress.socketio.data_bus import publish as pub
 from kdcube_ai_app.apps.chat.ingress.socketio.data_bus.publish import DataBusSocketIOIngress
+from kdcube_ai_app.apps.chat.sdk.runtime.data_bus.policy import DataBusPublishLimit, DataBusSettings
 from kdcube_ai_app.apps.chat.sdk.runtime.data_bus.types import DataBusHandlerSpec
 
 
@@ -32,6 +33,51 @@ class FakeRedis:
 
     async def get(self, key):
         return self.values.get(key)
+
+    def pipeline(self):
+        return FakePipeline(self)
+
+    async def incr(self, key):
+        self.values[key] = int(self.values.get(key) or 0) + 1
+        return self.values[key]
+
+    async def incrby(self, key, amount):
+        self.values[key] = int(self.values.get(key) or 0) + int(amount)
+        return self.values[key]
+
+    async def expire(self, key, ttl):
+        del key, ttl
+        return True
+
+
+class FakePipeline:
+    def __init__(self, redis):
+        self.redis = redis
+        self.ops = []
+
+    def incr(self, key):
+        self.ops.append(("incr", key, None))
+        return self
+
+    def incrby(self, key, amount):
+        self.ops.append(("incrby", key, amount))
+        return self
+
+    def expire(self, key, ttl):
+        self.ops.append(("expire", key, ttl))
+        return self
+
+    async def execute(self):
+        results = []
+        for op, key, value in self.ops:
+            if op == "incr":
+                results.append(await self.redis.incr(key))
+            elif op == "incrby":
+                results.append(await self.redis.incrby(key, value))
+            elif op == "expire":
+                results.append(await self.redis.expire(key, value))
+        self.ops.clear()
+        return results
 
 
 class FakeSessionManager:
@@ -100,11 +146,21 @@ def _socket_session():
     }
 
 
-def _app(redis, gateway_adapter=None):
+def _gateway_config(data_bus=None):
+    return SimpleNamespace(
+        tenant_id="tenant-a",
+        project_id="project-a",
+        data_bus=data_bus or DataBusSettings(),
+    )
+
+
+def _app(redis, gateway_adapter=None, data_bus=None):
     return SimpleNamespace(
         state=SimpleNamespace(
             redis_async=redis,
-            gateway_adapter=gateway_adapter or SimpleNamespace(gateway=SimpleNamespace()),
+            gateway_adapter=gateway_adapter or SimpleNamespace(
+                gateway=SimpleNamespace(gateway_config=_gateway_config(data_bus=data_bus))
+            ),
         )
     )
 
@@ -158,12 +214,6 @@ def _patch_data_bus_contract(monkeypatch, manifest):
     monkeypatch.setattr(pub, "load_registry", fake_load_registry)
     monkeypatch.setattr(pub, "get_bundle_props", fake_get_bundle_props)
     monkeypatch.setattr(pub, "get_settings", lambda: SimpleNamespace(TENANT="tenant-a", PROJECT="project-a"))
-
-    async def fake_run_gateway_checks(**kwargs):
-        del kwargs
-        return GatewayCheckResult(kind="ok")
-
-    monkeypatch.setattr(pub, "run_gateway_checks", fake_run_gateway_checks)
 
 
 def _async_return(value):
@@ -224,19 +274,15 @@ async def test_data_bus_publish_accepts_messages_into_bundle_stream(monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_data_bus_publish_gateway_rejection_does_not_write_stream(monkeypatch):
+async def test_data_bus_publish_package_message_limit_rejection_does_not_write_stream(monkeypatch):
     redis = FakeRedis()
-    app = _app(redis)
+    app = _app(
+        redis,
+        data_bus=DataBusSettings(publish_limits={
+            "registered": DataBusPublishLimit(max_messages_per_package=0),
+        }),
+    )
     _patch_data_bus_contract(monkeypatch, _manifest())
-
-    async def reject_gateway(**kwargs):
-        assert kwargs["endpoint"] == "/socket.io/data_bus.publish"
-        return GatewayCheckResult(
-            kind="backpressure",
-            exc=SimpleNamespace(message="capacity exhausted", retry_after=30),
-        )
-
-    monkeypatch.setattr(pub, "run_gateway_checks", reject_gateway)
 
     ingress = DataBusSocketIOIngress(app=app)
     ack = await ingress.handle_publish(
@@ -259,14 +305,54 @@ async def test_data_bus_publish_gateway_rejection_does_not_write_stream(monkeypa
 
     assert ack["status"] == "rejected"
     assert ack["accepted"] == []
-    assert ack["rejected"] == [{
-        "index": None,
-        "error": "System under pressure: capacity exhausted",
-        "error_type": "backpressure",
-        "status": 503,
-        "retry_after": 30,
-    }]
+    assert ack["rejected"][0]["error_type"] == "data_bus_limit"
+    assert ack["rejected"][0]["limit"] == "max_messages_per_package"
+    assert ack["rejected"][0]["limit_value"] == 0
+    assert ack["rejected"][0]["observed"] == 1
     assert redis.streams == {}
+
+
+@pytest.mark.asyncio
+async def test_data_bus_publish_package_rate_limit_rejection_does_not_write_second_package(monkeypatch):
+    redis = FakeRedis()
+    app = _app(
+        redis,
+        data_bus=DataBusSettings(publish_limits={
+            "registered": DataBusPublishLimit(
+                packages_per_minute=1,
+                messages_per_minute=-1,
+                bytes_per_minute=-1,
+            ),
+        }),
+    )
+    _patch_data_bus_contract(monkeypatch, _manifest())
+
+    ingress = DataBusSocketIOIngress(app=app)
+    payload = {
+        "schema": "kdcube.data_bus.ingress.v1",
+        "bundle_id": "task-tracker@1-0",
+        "messages": [
+            {
+                "message_id": "m1",
+                "subject": "task_tracker.canvas.patch",
+                "object_ref": "canvas:main",
+                "idempotency_key": "op-1",
+                "payload": {"base_revision": 1, "operations": []},
+            }
+        ],
+    }
+
+    first_ack = await ingress.handle_publish(sid="socket-1", socket_session=_socket_session(), data=payload)
+    second_payload = json.loads(json.dumps(payload))
+    second_payload["messages"][0]["message_id"] = "m2"
+    second_ack = await ingress.handle_publish(sid="socket-1", socket_session=_socket_session(), data=second_payload)
+
+    assert first_ack["status"] == "accepted"
+    assert second_ack["status"] == "rejected"
+    assert second_ack["rejected"][0]["limit"] == "packages_per_minute"
+    assert second_ack["rejected"][0]["observed"] == 2
+    stream_key = "kdcube:data-bus:tenant-a:project-a:task-tracker@1-0:messages"
+    assert len(redis.streams[stream_key]) == 1
 
 
 @pytest.mark.asyncio

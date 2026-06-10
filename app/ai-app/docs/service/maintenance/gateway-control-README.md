@@ -1,9 +1,9 @@
 ---
 id: ks:docs/service/maintenance/gateway-control-README.md
 title: "Gateway Control Maintenance"
-summary: "Operational notes for clearing gateway rate-limit and backpressure state without flushing Redis."
-tags: ["service", "maintenance", "gateway", "redis", "rate-limit", "backpressure"]
-keywords: ["gateway control", "rate limit reset", "anonymous burst limit", "redis browser", "throttling reset"]
+summary: "Operational notes for clearing gateway rate-limit, Data Bus publish-limit, and backpressure state without flushing Redis."
+tags: ["service", "maintenance", "gateway", "redis", "rate-limit", "data-bus", "backpressure"]
+keywords: ["gateway control", "rate limit reset", "data bus publish limit reset", "anonymous burst limit", "redis browser", "throttling reset"]
 see_also:
   - ks:docs/service/maintenance/requests-monitoring-README.md
   - ks:docs/configuration/gateway-descriptor-README.md
@@ -25,6 +25,27 @@ Gateway rate-limit keys are tenant/project scoped:
 
 The burst key is a short-window sorted set. The hourly key is a counter. Both
 are keyed by `session_id`, not by user type alone.
+
+## Data Bus Publish Limit Key Shape
+
+Socket.IO `data_bus.publish` uses a separate streaming policy. The keys are
+tenant/project scoped and keyed by connected `session_id` plus counter window:
+
+```text
+<tenant>:<project>:kdcube:system:ratelimit:data-bus-publish:<session_id>:<window>:packages
+<tenant>:<project>:kdcube:system:ratelimit:data-bus-publish:<session_id>:<window>:messages
+<tenant>:<project>:kdcube:system:ratelimit:data-bus-publish:<session_id>:<window>:bytes
+```
+
+These counters protect a package path, not a request path:
+
+- `packages` counts `data_bus.publish` Socket.IO emits
+- `messages` counts durable Data Bus `messages[]`
+- `bytes` counts the JSON package size accepted by ingress
+
+Deleting these keys clears only Data Bus publish counters. It does not clear
+generic gateway request throttling, backpressure state, durable Data Bus
+streams, or chat conversation queues.
 
 ## Anonymous Users
 
