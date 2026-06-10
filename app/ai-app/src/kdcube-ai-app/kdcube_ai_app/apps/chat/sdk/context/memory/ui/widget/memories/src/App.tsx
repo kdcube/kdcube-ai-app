@@ -1,35 +1,4 @@
 import { useEffect, useMemo, useState, type DragEvent } from 'react';
-
-// ─── [debug:memories-layout] temporary diagnostics ─────────────────
-// Flip to true to surface a live overlay of iframe/shell/workspace
-// heights and the in-flight memories state. Used to root-cause the
-// expanded-view sizing issues; left in the source (gated off) so the
-// next time the layout misbehaves we can re-enable it from one line.
-const DEBUG_LAYOUT = false;
-
-function DebugOverlay({ info }: { info: Record<string, string | number> }) {
-  if (!DEBUG_LAYOUT) return null;
-  return (
-    <div style={{
-      position: 'fixed',
-      top: 2,
-      right: 2,
-      zIndex: 99999,
-      padding: '4px 6px',
-      borderRadius: 4,
-      background: 'rgba(0, 0, 0, 0.82)',
-      color: '#ffe168',
-      fontFamily: 'ui-monospace, Menlo, monospace',
-      fontSize: 10,
-      lineHeight: 1.35,
-      pointerEvents: 'none',
-      whiteSpace: 'pre',
-      maxWidth: '50vw',
-    }}>
-      {Object.entries(info).map(([k, v]) => `${k}: ${v}`).join('\n')}
-    </div>
-  );
-}
 import { AppShell } from './components/AppShell';
 import { useAppDispatch, useAppSelector } from './app/hooks';
 import { settings } from './api/settings';
@@ -120,15 +89,12 @@ export default function App() {
     count,
     error,
     focusedMemoryIds,
-    loading,
     memories,
     memoryUseEnabled,
     mutationError,
     saving,
     selectedId,
-    viewMode,
   } = useAppSelector((state) => state.memories);
-  const [debugInfo, setDebugInfo] = useState<Record<string, string | number>>({});
   const initialCompact = useMemo(() => compactModeFromLocation(), []);
   const hostControls = useMemo(() => hostControlsFromLocation(), []);
   const [compact, setCompact] = useState(initialCompact);
@@ -181,70 +147,6 @@ export default function App() {
       delete document.documentElement.dataset.memoryView;
     };
   }, [compact]);
-
-  // [debug:memories-layout] Measure DOM sizes + state so we can see what
-  // the iframe is actually rendering at instead of theorizing about CSS.
-  useEffect(() => {
-    if (!DEBUG_LAYOUT) return;
-    const measure = () => {
-      const root = document.getElementById('root');
-      const shell = document.querySelector('.app-shell');
-      const filters = document.querySelector('.filters');
-      const workspace = document.querySelector('.workspace');
-      const memoryList = document.querySelector('.memory-list');
-      const sidePanel = document.querySelector('.side-panel');
-      const measured: Record<string, string | number> = {
-        win: `${window.innerWidth}x${window.innerHeight}`,
-        html: document.documentElement.clientHeight,
-        body: document.body.clientHeight,
-        root: root ? (root as HTMLElement).offsetHeight : -1,
-        shell: shell ? (shell as HTMLElement).offsetHeight : -1,
-        filters: filters ? (filters as HTMLElement).offsetHeight : -1,
-        workspace: workspace ? (workspace as HTMLElement).offsetHeight : -1,
-        memList: memoryList ? (memoryList as HTMLElement).offsetHeight : -1,
-        sidePnl: sidePanel ? (sidePanel as HTMLElement).offsetHeight : -1,
-        compact: String(compact),
-        viewMode,
-        loading: String(loading),
-        memCnt: memories.length,
-        count,
-        focused: focusedMemoryIds.length,
-        selId: selectedId ? selectedId.slice(0, 10) : 'none',
-      };
-      console.log('[debug:memories-layout]', measured);
-      setDebugInfo(measured);
-    };
-    // Defer to next animation frame so the browser has finished its
-    // re-layout pass before we read element heights — otherwise the
-    // window-resize event fires with new window.innerHeight values but
-    // document.documentElement.clientHeight is still stale, and the
-    // overlay shows `win` moving while every other field looks frozen.
-    let pending = 0;
-    const scheduleMeasure = () => {
-      if (pending) return;
-      pending = window.requestAnimationFrame(() => {
-        pending = 0;
-        measure();
-      });
-    };
-    measure();
-    const id = window.setTimeout(measure, 250);
-    window.addEventListener('resize', scheduleMeasure);
-    let ro: ResizeObserver | null = null;
-    if (typeof ResizeObserver !== 'undefined' && document.documentElement) {
-      ro = new ResizeObserver(scheduleMeasure);
-      ro.observe(document.documentElement);
-      if (document.body) ro.observe(document.body);
-      const root = document.getElementById('root');
-      if (root) ro.observe(root);
-    }
-    return () => {
-      window.clearTimeout(id);
-      if (pending) window.cancelAnimationFrame(pending);
-      window.removeEventListener('resize', scheduleMeasure);
-      if (ro) ro.disconnect();
-    };
-  }, [compact, viewMode, memories.length, count, focusedMemoryIds.length, selectedId, loading]);
 
   useEffect(() => {
     function onHostMessage(event: MessageEvent) {
@@ -388,7 +290,6 @@ export default function App() {
           {!editorMode ? <MemoryDetail onEdit={() => setEditorMode('edit')} /> : null}
         </div> : null}
       </div>
-      <DebugOverlay info={debugInfo} />
     </AppShell>
   );
 }

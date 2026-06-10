@@ -1583,11 +1583,6 @@ function App() {
       {memoryOpen ? (
         <section
           className={`memory-pane${memoryExpanded ? ' expanded' : ''}`}
-          /* [debug:memories-layout] surface the React state via a DOM
-           * attribute so we can see whether memorySize is actually
-           * reaching the pane. Remove once the resize bug is closed. */
-          data-debug-size={`${memorySize.width}x${memorySize.height}`}
-          data-debug-expanded={String(memoryExpanded)}
           style={{
             left: memoryFrame.x,
             top: memoryFrame.y,
