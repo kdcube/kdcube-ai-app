@@ -433,26 +433,43 @@ button {
   z-index: 58;
   display: grid;
   grid-template-rows: 32px minmax(0, 1fr);
-  width: min(420px, calc(100vw - 80px));
-  height: var(--memory-pane-height, min(420px, calc(100vh - 118px)));
+  /* width / height are driven from the React-side memorySize state via
+   * an inline style; the JS .memory-pane-resize handle below overrides
+   * the iframe's pointer capture so the corner stays draggable. */
   min-height: 220px;
-  min-width: 0;
-  max-width: calc(100vw - 40px);
-  max-height: calc(100vh - 72px);
+  min-width: 280px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
   background: var(--surface);
   overflow: hidden;
-  resize: both;
   box-shadow: 0 20px 42px rgba(13, 30, 44, 0.16);
 }
 
 .memory-pane.expanded {
   z-index: 70;
-  width: min(760px, calc(100vw - 64px));
-  height: min(720px, calc(100vh - 92px));
   min-height: 360px;
 }
+
+.memory-pane-resize {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 3px;
+  background:
+    linear-gradient(135deg, transparent 48%, rgba(58, 86, 114, 0.45) 50%, rgba(58, 86, 114, 0.45) 56%, transparent 58%),
+    linear-gradient(135deg, transparent 62%, rgba(58, 86, 114, 0.35) 64%, rgba(58, 86, 114, 0.35) 70%, transparent 72%);
+  cursor: nwse-resize;
+  touch-action: none;
+  /* Sit above the iframe so the drag isn't stolen by it. */
+  z-index: 4;
+  opacity: 0.85;
+}
+.memory-pane-resize:hover { opacity: 1; }
 
 .memory-pane header {
   display: flex;

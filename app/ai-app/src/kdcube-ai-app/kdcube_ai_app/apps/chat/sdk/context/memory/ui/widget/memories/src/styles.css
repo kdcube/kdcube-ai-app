@@ -59,14 +59,14 @@
 * { box-sizing: border-box; }
 
 html, body, #root {
-  min-height: 100%;
-}
-
-html[data-memory-view="compact"],
-html[data-memory-view="compact"] body,
-html[data-memory-view="compact"] #root {
-  min-height: 0;
+  /* Lock the document to the iframe viewport in both compact and
+   * expanded modes, so .expanded-shell / .compact-shell at height: 100vh
+   * gets a parent that exactly matches it. With only min-height: 100%
+   * the document can grow beyond the iframe, which collapses the flex
+   * grow of `.expanded-shell .workspace` and leaves the bottom of the
+   * widget unfilled. */
   height: 100%;
+  min-height: 0;
 }
 
 body {
@@ -97,9 +97,14 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   display: flex;
   flex-direction: column;
   gap: 8px;
-  height: 100vh;
+  height: 100%;
   min-height: 0;
-  overflow: hidden;
+  /* One outer scroll for the entire expanded view — when the iframe is
+   * shorter than the natural content, everything inside scrolls as a
+   * single column rather than each container (filters / memory-list /
+   * side-panel) scrolling on its own. */
+  overflow-y: auto;
+  overflow-x: hidden;
   padding-bottom: 12px;
 }
 
@@ -107,7 +112,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   display: flex;
   flex-direction: column;
   width: 100%;
-  height: 100vh;
+  height: 100%;
   min-height: 0;
   margin: 0;
   padding: 6px;
@@ -349,9 +354,30 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   z-index: 2;
   display: grid;
   gap: 8px;
+  /* Natural height — the outer expanded-shell scrolls when content
+   * exceeds the iframe, so each row sits at its own intrinsic size and
+   * we don't fight a flex shortfall. */
   flex: 0 0 auto;
   min-height: 0;
   overflow: visible;
+}
+
+/* Pane is short — collapse only the bulk-admin action row (Download /
+ * CSV / Delete buttons). The "Memory ids" multi-id search stays visible
+ * because it's a primary lookup surface, not a rarely-used admin action. */
+@media (max-height: 620px) {
+  .expanded-shell .memory-actions-row {
+    display: none;
+  }
+}
+@media (max-height: 480px) {
+  .expanded-shell .maintenance-toggle-row {
+    display: none;
+  }
+  .expanded-shell .warning-box {
+    padding: 6px 10px;
+    font-size: 11.5px;
+  }
 }
 
 .expanded-shell .filter-row {
@@ -835,26 +861,41 @@ textarea:focus {
 .memory-list,
 .memory-detail,
 .memory-editor {
-  min-height: 420px;
+  /* Was 420 — too tall when the iframe is short and creates an empty
+   * sea of grid below a single row. Let content drive the height; the
+   * outer expanded-shell scroll handles overflow. */
+  min-height: 0;
 }
 
 .expanded-shell .workspace {
   position: relative;
   z-index: 1;
   display: grid;
-  flex: 1 1 auto;
+  /* Fill the remaining iframe space — the memory-list/detail items no
+   * longer carry borders (see above), so growing the workspace stops
+   * producing "huge bordered empty boxes" and instead just gives the
+   * content room to breathe. If the natural content exceeds the
+   * remaining space, the outer expanded-shell scrolls. */
+  flex: 1 0 auto;
   margin-top: 0;
   min-height: 0;
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .expanded-shell .memory-list,
 .expanded-shell .memory-detail,
 .expanded-shell .memory-editor {
-  height: 100%;
+  height: auto;
   min-height: 0;
-  overflow: auto;
+  overflow: visible;
+  /* In expanded mode the workspace is the body of the widget — drop
+   * the bordered chrome on these containers so there's no "huge ugly
+   * bordered empty box". Memory rows already carry their own bottom
+   * border for visual separation. */
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .compact-memory-list {

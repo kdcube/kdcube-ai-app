@@ -388,9 +388,14 @@ function memoryIdFromSurfaceOpenRequest(request: SceneSurfaceOpenRequest): strin
 }
 
 function memoryPanelSize(expanded: boolean) {
+  // Don't viewport-clamp the enlarged preset — we observed cases where
+  // the scene window was only ~450 px tall, so the Enlarge button ended
+  // up snapping the pane to the same height as compact (because the
+  // viewport-based clamp caps height at innerHeight-92). The user can
+  // always drag smaller via the JS resize handle if they need to.
   return {
-    width: expanded ? Math.min(760, window.innerWidth - 64) : Math.min(420, window.innerWidth - 80),
-    height: expanded ? Math.min(720, window.innerHeight - 92) : Math.min(520, window.innerHeight - 118),
+    width: expanded ? 760 : Math.min(420, window.innerWidth - 80),
+    height: expanded ? 680 : Math.min(520, window.innerHeight - 118),
   }
 }
 
@@ -732,6 +737,10 @@ function App() {
   const [memoryCount, setMemoryCount] = useState<number | null>(null)
   const [memoryContentHeight, setMemoryContentHeight] = useState<number | null>(null)
   const [memoryFrame, setMemoryFrame] = useState(() => defaultMemoryFrame(chatSizing.width, true, false))
+  // Memory pane size is JS-controlled — CSS `resize: both` is blocked by
+  // the iframe overlay, so we render an explicit handle on top of the
+  // iframe and drive width/height from this state.
+  const [memorySize, setMemorySize] = useState(() => memoryPanelSize(false))
   const [usageOpen, setUsageOpen] = useState(false)
   const [usageFrame, setUsageFrame] = useState(() => defaultUsageFrame(chatSizing.width, true))
   const [userType, setUserType] = useState<string | null>(null)
@@ -914,6 +923,47 @@ function App() {
     window.addEventListener('pointercancel', finish, { once: true })
     window.addEventListener('blur', finish, { once: true })
   }, [bringPanelToFront, memoryExpanded, memoryFrame])
+
+  const startMemoryResize = useCallback((event: React.PointerEvent<HTMLElement>) => {
+    if (event.button !== 0) return
+    bringPanelToFront('memory')
+    event.preventDefault()
+    event.stopPropagation()
+    const handle = event.currentTarget
+    const startX = event.clientX
+    const startY = event.clientY
+    const startW = memorySize.width
+    const startH = memorySize.height
+    try {
+      handle.setPointerCapture?.(event.pointerId)
+    } catch {
+      /* pointer capture is best-effort */
+    }
+    document.body.classList.add('scene-moving-memory')
+    const onMove = (move: PointerEvent) => {
+      const maxW = Math.max(280, window.innerWidth - 16)
+      const maxH = Math.max(220, window.innerHeight - 16)
+      const nextW = clamp(Math.round(startW + (move.clientX - startX)), 280, maxW)
+      const nextH = clamp(Math.round(startH + (move.clientY - startY)), 220, maxH)
+      setMemorySize({ width: nextW, height: nextH })
+    }
+    const finish = () => {
+      try {
+        handle.releasePointerCapture?.(event.pointerId)
+      } catch {
+        /* may already be released */
+      }
+      document.body.classList.remove('scene-moving-memory')
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', finish)
+      window.removeEventListener('pointercancel', finish)
+      window.removeEventListener('blur', finish)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', finish, { once: true })
+    window.addEventListener('pointercancel', finish, { once: true })
+    window.addEventListener('blur', finish, { once: true })
+  }, [bringPanelToFront, memorySize.width, memorySize.height])
 
   const startUsageDrag = useCallback((event: React.PointerEvent<HTMLElement>) => {
     if ((event.target as HTMLElement).closest('button')) return
@@ -1533,9 +1583,16 @@ function App() {
       {memoryOpen ? (
         <section
           className={`memory-pane${memoryExpanded ? ' expanded' : ''}`}
+          /* [debug:memories-layout] surface the React state via a DOM
+           * attribute so we can see whether memorySize is actually
+           * reaching the pane. Remove once the resize bug is closed. */
+          data-debug-size={`${memorySize.width}x${memorySize.height}`}
+          data-debug-expanded={String(memoryExpanded)}
           style={{
             left: memoryFrame.x,
             top: memoryFrame.y,
+            width: memorySize.width,
+            height: memorySize.height,
             zIndex: panelZ.memory,
             '--memory-pane-height': `${compactMemoryPaneHeight(memoryContentHeight)}px`,
           } as CSSProperties}
@@ -1563,6 +1620,7 @@ function App() {
                   setMemoryExpanded((value) => {
                     const next = !value
                     const panel = memoryPanelSize(next)
+                    setMemorySize(panel)
                     setMemoryFrame((frame) => ({
                       x: clamp(frame.x, 8, Math.max(8, window.innerWidth - panel.width - 8)),
                       y: clamp(frame.y, 62, Math.max(62, window.innerHeight - panel.height - 8)),
@@ -1597,6 +1655,13 @@ function App() {
               syncMemoryWidgetView(memoryExpanded ? 'expanded' : 'compact')
               flushSurfaceCommand('sdk.memory.viewer')
             }}
+          />
+          <button
+            type="button"
+            className="memory-pane-resize"
+            onPointerDown={startMemoryResize}
+            title="Resize memories"
+            aria-label="Resize memories"
           />
         </section>
       ) : null}
