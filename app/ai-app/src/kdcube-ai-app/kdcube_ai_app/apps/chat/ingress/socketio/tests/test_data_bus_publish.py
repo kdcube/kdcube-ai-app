@@ -497,8 +497,7 @@ async def test_socketio_chat_message_and_data_bus_publish_coexist_without_cross_
     assert "external_events" not in record
 
 
-@pytest.mark.asyncio
-async def test_socketio_connect_accepts_scoped_federated_data_bus_token(monkeypatch):
+async def _federated_handler(monkeypatch):
     from kdcube_ai_app.apps.chat.sdk import config as sdk_config
 
     async def fake_get_secret(key, default=None, **kwargs):
@@ -542,6 +541,12 @@ async def test_socketio_connect_accepts_scoped_federated_data_bus_token(monkeypa
     handler._sid_to_session_id = {}
     handler._sid_to_tenant_project = {}
     handler._session_refcounts = {}
+    return handler, grant
+
+
+@pytest.mark.asyncio
+async def test_socketio_connect_accepts_scoped_federated_data_bus_token(monkeypatch):
+    handler, grant = await _federated_handler(monkeypatch)
 
     ok = await handler._handle_connect(
         "socket-1",
@@ -563,3 +568,46 @@ async def test_socketio_connect_accepts_scoped_federated_data_bus_token(monkeypa
     assert handler.sio.rooms == [("socket-1", grant.session.session_id)]
     assert handler.sio.saved_sessions["socket-1"]["user_session"]["user_id"] == "telegram:42"
     assert handler.sio.saved_sessions["socket-1"]["bundle_id"] == "task-tracker@1-0"
+
+
+@pytest.mark.asyncio
+async def test_federated_connect_allows_missing_origin_for_same_origin_polling(monkeypatch):
+    handler, grant = await _federated_handler(monkeypatch)
+
+    ok = await handler._handle_connect(
+        "socket-no-origin",
+        {
+            "REMOTE_ADDR": "127.0.0.1",
+            "HTTP_USER_AGENT": "pytest",
+        },
+        {
+            "tenant": "tenant-a",
+            "project": "project-a",
+            "bundle_id": "task-tracker@1-0",
+            "federated_token": grant.token,
+        },
+    )
+
+    assert ok is True
+
+
+@pytest.mark.asyncio
+async def test_federated_connect_rejects_explicitly_disallowed_origin(monkeypatch):
+    handler, grant = await _federated_handler(monkeypatch)
+
+    ok = await handler._handle_connect(
+        "socket-bad-origin",
+        {
+            "HTTP_ORIGIN": "https://attacker.example",
+            "REMOTE_ADDR": "127.0.0.1",
+            "HTTP_USER_AGENT": "pytest",
+        },
+        {
+            "tenant": "tenant-a",
+            "project": "project-a",
+            "bundle_id": "task-tracker@1-0",
+            "federated_token": grant.token,
+        },
+    )
+
+    assert ok is False
