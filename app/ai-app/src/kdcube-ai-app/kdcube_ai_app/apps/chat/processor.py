@@ -59,7 +59,7 @@ from kdcube_ai_app.apps.chat.sdk.protocol import (
     ServiceCtx,
     external_event_request_start_label,
 )
-from kdcube_ai_app.apps.chat.sdk.event_identity import DEFAULT_REACT_AGENT_ID, normalize_agent_id
+from kdcube_ai_app.apps.chat.sdk.event_identity import DEFAULT_REACT_AGENT_ID, normalize_agent_id, safe_event_lane_part
 from kdcube_ai_app.infra.jobs.stream import (
     BACKGROUND_JOB_OPERATION,
     BACKGROUND_JOB_QUEUE_ORDER,
@@ -987,6 +987,24 @@ class EnhancedChatRequestProcessor:
     def _task_started_key(self, logical_id: str) -> str:
         return f"{self.middleware.LOCK_PREFIX}:started:{logical_id}"
 
+    def _task_conversation_lock_key(self, task_dict: Dict[str, Any]) -> Optional[str]:
+        routing = task_dict.get("routing") if isinstance(task_dict.get("routing"), dict) else {}
+        actor = task_dict.get("actor") if isinstance(task_dict.get("actor"), dict) else {}
+        user = task_dict.get("user") if isinstance(task_dict.get("user"), dict) else {}
+        conversation_id = str(routing.get("conversation_id") or routing.get("session_id") or "").strip()
+        if not conversation_id:
+            return None
+        tenant = actor.get("tenant_id") or actor.get("tenant") or ""
+        project = actor.get("project_id") or actor.get("project") or ""
+        user_id = user.get("user_id") or user.get("fingerprint") or ""
+        parts = (
+            safe_event_lane_part(tenant, default="_"),
+            safe_event_lane_part(project, default="_"),
+            safe_event_lane_part(user_id, default="_"),
+            safe_event_lane_part(conversation_id, default="_"),
+        )
+        return f"{self.middleware.LOCK_PREFIX}:conversation:{':'.join(parts)}"
+
     async def _started_marker_exists(self, logical_id: str) -> bool:
         ttl = await self.redis.ttl(self._task_started_key(logical_id))
         return ttl is not None and ttl >= -1
@@ -1847,7 +1865,27 @@ class EnhancedChatRequestProcessor:
                 ex=self.lock_ttl_sec,
             )
             if acquired:
+                conversation_lock_key = self._task_conversation_lock_key(task_dict)
+                if conversation_lock_key:
+                    conversation_acquired = await self.redis.set(
+                        conversation_lock_key,
+                        f"{self.middleware.instance_id}:{self.process_id}:{logical_id}",
+                        nx=True,
+                        ex=self.lock_ttl_sec,
+                    )
+                    if not conversation_acquired:
+                        await self._requeue_claimed_payload(
+                            ready_queue_key=queue_key,
+                            inflight_queue_key=inflight_queue_key,
+                            raw_payload=raw_payload,
+                            lock_key=lock_key,
+                            reason=f"conversation-lock-not-acquired:{logical_id}",
+                        )
+                        continue
+                    task_dict["_conversation_lock_key"] = conversation_lock_key
                 if self._stop_event.is_set() or self._host_draining:
+                    if conversation_lock_key:
+                        await self.redis.delete(conversation_lock_key)
                     await self._requeue_claimed_payload(
                         ready_queue_key=queue_key,
                         inflight_queue_key=inflight_queue_key,
@@ -2473,6 +2511,7 @@ class EnhancedChatRequestProcessor:
 
     async def _process_task(self, task_data: Dict[str, Any]):
         lock_key = task_data.get("_lock_key")
+        conversation_lock_key = task_data.get("_conversation_lock_key")
         current_processor_task = asyncio.current_task()
         ephemeral_active_task_registration = False
         ephemeral_task_details = False
@@ -2488,6 +2527,11 @@ class EnhancedChatRequestProcessor:
             finally:
                 # Ensure load is released even for invalid payloads
                 self._current_load = max(0, self._current_load - 1)
+                if conversation_lock_key:
+                    try:
+                        await self.redis.delete(conversation_lock_key)
+                    except Exception:
+                        logger.debug("Failed to release conversation lock after invalid payload", exc_info=True)
                 return
 
         assert payload is not None
@@ -2523,6 +2567,28 @@ class EnhancedChatRequestProcessor:
             comm,
             touch=lambda kind, _task=processor_task: self._touch_task_activity(kind, task=_task),
         )
+        if str(getattr(payload.request, "operation", "") or "") != BACKGROUND_JOB_OPERATION:
+            try:
+                await self.conversation_ctx.set_conversation_state(
+                    tenant=payload.actor.tenant_id,
+                    project=payload.actor.project_id,
+                    user_id=payload.user.user_id,
+                    conversation_id=payload.routing.conversation_id,
+                    new_state="in_progress",
+                    by_instance=f"{self.middleware.instance_id}:{self.process_id}",
+                    request_id=request_id,
+                    last_turn_id=payload.routing.turn_id,
+                    require_not_in_progress=False,
+                    user_type=payload.user.user_type,
+                    bundle_id=payload.routing.bundle_id,
+                )
+            except Exception:
+                logger.debug(
+                    "Failed to refresh in-progress conversation state at task start: conversation=%s task_id=%s",
+                    payload.routing.conversation_id,
+                    task_id,
+                    exc_info=True,
+                )
 
         # 3) accounting + storage
         from kdcube_ai_app.infra.accounting.envelope import AccountingEnvelope, bind_accounting
@@ -2563,7 +2629,7 @@ class EnhancedChatRequestProcessor:
                     self._touch_task_activity("processor.started_marker")
                 async with self._lock_renewer(
                         lock_key=lock_key,
-                        extra_keys=[started_key] if started_key else None,
+                        extra_keys=[key for key in (started_key, conversation_lock_key) if key],
                         extra_ttl_sec=self.started_marker_ttl_sec if started_key else None,
                 ):
                     exec_started_at = time.monotonic()
@@ -2705,32 +2771,25 @@ class EnhancedChatRequestProcessor:
                             user_type=payload.user.user_type,
                             bundle_id=payload.routing.bundle_id,
                         )
-                        late_promoted_external_event = None
-                        if success:
-                            try:
-                                late_promoted_external_event = await self._promote_next_external_event(payload)
-                            except Exception:
-                                logger.exception(
-                                    "Failed late external event promotion after idle transition for conversation=%s",
-                                    payload.routing.conversation_id,
-                                )
-                        if late_promoted_external_event is not None:
-                            await self._mark_promoted_external_event_in_progress(late_promoted_external_event)
-                        else:
-                            # broadcast to session
-                            await self._relay.emit_conv_status(
-                                svc,
-                                conv,
-                                routing=payload.routing,
-                                state=("idle" if success else "error"),
-                                updated_at=res["updated_at"],
-                                current_turn_id=res.get("current_turn_id"),
-                                completion="success" if success else "error",
-                                target_sid=None,
-                            )
+                        # broadcast to session
+                        await self._relay.emit_conv_status(
+                            svc,
+                            conv,
+                            routing=payload.routing,
+                            state=("idle" if success else "error"),
+                            updated_at=res["updated_at"],
+                            current_turn_id=res.get("current_turn_id"),
+                            completion="success" if success else "error",
+                            target_sid=None,
+                        )
                 except Exception as ex:
                     logger.error(traceback.format_exc())
             if ephemeral_task_details and current_processor_task is not None:
                 self._active_task_details.pop(current_processor_task, None)
             if ephemeral_active_task_registration and current_processor_task is not None:
                 self._active_tasks.discard(current_processor_task)
+            if conversation_lock_key:
+                try:
+                    await self.redis.delete(conversation_lock_key)
+                except Exception:
+                    logger.debug("Failed to release conversation lock for task %s", task_id, exc_info=True)
