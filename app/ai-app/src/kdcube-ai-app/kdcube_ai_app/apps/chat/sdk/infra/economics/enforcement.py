@@ -99,6 +99,10 @@ class FlowPolicy:
     reservation_ttl_sec: int = 900      # configurable per flow
     lock_ttl_sec: int = 180             # configurable per flow
     emit_user_events: bool = False      # background flows log only, no UI delivery
+    # When the plan lane can't cover but the user can pay, switch to a wallet-only
+    # paid lane (re-admit paid policy + reserve wallet) instead of denying.
+    # Off by default (non-chat denies); chat / run()-on-engine sets it True.
+    allow_paid_lane_fallback: bool = False
 
 
 @dataclass
@@ -498,9 +502,21 @@ class EconomicsGuard:
             )
 
         # 2) reserve funding via the shared plan-lane flow (primary + wallet overflow)
+        from kdcube_ai_app.apps.chat.sdk.infra.economics.funding_flow import ReserveStatus
         try:
             if funding_source in ("project", "subscription") or budget_bypass:
-                await self._reserve_plan_lane(decision, r, admit=admit, funding_source=funding_source)
+                outcome = await self._reserve_plan_lane(decision, r, admit=admit, funding_source=funding_source)
+                if outcome.status is ReserveStatus.DENIED:
+                    await self._deny(
+                        code=outcome.deny_code or "no_funding_source",
+                        title="Insufficient funds",
+                        message=outcome.deny_message or f"{self.flow}: cannot fund request",
+                        user_message=MSG_NO_FUNDING,
+                        data=outcome.deny_data or {"reason": "no_funding_source"},
+                    )
+                elif outcome.status is ReserveStatus.SWITCH_TO_PAID:
+                    await self._switch_to_paid(decision, r, reason=outcome.switch_reason or "plan_tokens_exhausted_for_turn")
+                # OK -> _reserve_plan_lane stored _funding_res
             elif funding_source == "wallet":
                 # wallet-primary edge (anonymous + wallet) — not a plan lane
                 await self._reserve_wallet_or_deny(decision, r, reserve_usd=est_turn_usd, exhausted=None)
@@ -518,8 +534,8 @@ class EconomicsGuard:
         )
         return decision
 
-    async def _reserve_plan_lane(self, decision: EconomicsDecision, r: dict, *, admit: AdmitResult, funding_source: str) -> None:
-        from kdcube_ai_app.apps.chat.sdk.infra.economics.funding_flow import reserve_plan_funding
+    async def _reserve_plan_lane(self, decision: EconomicsDecision, r: dict, *, admit: AdmitResult, funding_source: str):
+        from kdcube_ai_app.apps.chat.sdk.infra.economics.funding_flow import reserve_plan_funding, ReserveStatus
 
         est_turn_tokens = int(decision.est_turn_tokens)
         budget_bypass = decision.budget_bypass
@@ -552,18 +568,65 @@ class EconomicsGuard:
         personal_can_pay = bool(wallet_can_pay or sub_can_pay)
 
         ctx = self._funding_ctx(sub_limiter)
-        res = await reserve_plan_funding(
+        outcome = await reserve_plan_funding(
             ctx, admit=admit,
             funding_source=("project" if budget_bypass else funding_source),
             budget_bypass=budget_bypass, est_turn_tokens=est_turn_tokens,
             has_wallet=bool(r["has_wallet"]), subscription_available_usd=sub_available,
             project_budget_snapshot=project_snapshot, personal_can_pay_turn=personal_can_pay,
+            allow_paid_lane_fallback=bool(self.policy.allow_paid_lane_fallback),
             ttl_sec=int(self.policy.reservation_ttl_sec),
         )
-        self._funding_ctx_obj = ctx
-        self._funding_res = res
-        decision.app_reservation_source = res.funding_source
-        decision.app_reservation_active = res.app_reservation_active
+        if outcome.status is ReserveStatus.OK:
+            res = outcome.reservation
+            self._funding_ctx_obj = ctx
+            self._funding_res = res
+            decision.app_reservation_source = res.funding_source
+            decision.app_reservation_active = res.app_reservation_active
+        return outcome
+
+    def _paid_policy(self, r: dict) -> QuotaPolicy:
+        """Policy for the paid (wallet-only) lane — payasyougo service limits."""
+        pols = getattr(self.ep, "app_quota_policies", None) or {}
+        return pols.get("payasyougo") or r.get("base_policy")
+
+    async def _switch_to_paid(self, decision: EconomicsDecision, r: dict, *, reason: str) -> None:
+        """Release the plan RL token reservation, re-admit against the paid policy,
+        and reserve wallet as the primary funding (wallet-only paid lane).
+        Mirrors run()'s _switch_plan_to_paid_or_die (minus the SSE lane_switch event,
+        which is emitted only when policy.emit_user_events)."""
+        # release the plan-lane RL token reservation + lock taken by the plan admit
+        try:
+            await self.rl.release_token_reservation(
+                bundle_id=GLOBAL_BUNDLE_ID, subject_id=self.subj,
+                reservation_id=self.scope_id, now=self.now,
+            )
+            await self.rl.release(bundle_id=GLOBAL_BUNDLE_ID, subject_id=self.subj, lock_id=self.scope_id)
+        except Exception:
+            pass
+        # the plan-lane money flow took no hold before signalling a switch
+        self._funding_res = None
+        self._funding_ctx_obj = None
+
+        paid_policy = self._paid_policy(r)
+        paid_admit = await self._admit(paid_policy, reserve_tokens=int(decision.est_turn_tokens))
+        if not paid_admit.allowed:
+            await self._deny(
+                code="paid_admit_denied_after_switch",
+                title="Rate limit exceeded",
+                message=f"{self.flow}: paid lane admit denied after switch: {paid_admit.reason or 'unknown'}",
+                user_message=MSG_DENIED_GENERIC,
+                data={"reason": paid_admit.reason, "snapshot": paid_admit.snapshot,
+                      "lane": "deny", "switch_reason": reason},
+            )
+        decision.admit = paid_admit
+        if isinstance(decision.extra, dict):
+            decision.extra["effective_policy"] = paid_policy
+        self._log("lane_switch", "switched plan -> paid", reason=reason)
+        # reserve wallet as primary (existing wallet-primary path; sets lane=paid)
+        await self._reserve_wallet_or_deny(
+            decision, r, reserve_usd=float(decision.est_turn_usd), exhausted=None,
+        )
 
     async def _on_funding_denied(self, exc: Exception) -> None:
         """Log + optionally emit a denial, then release the RL token reservation

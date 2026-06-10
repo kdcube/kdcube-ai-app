@@ -410,6 +410,54 @@ async def test_top_level_project_lifecycle_reserves_and_settles():
     assert enf.active_econ_scope() is None
 
 
+async def test_paid_lane_switch_when_primary_exhausted_and_fallback_allowed():
+    # registered + wallet, project exhausted (overdraft 0 / available 0):
+    # allow_paid_lane_fallback -> switch plan->paid, reserve wallet, settle wallet.
+    class _ZeroBudget(_Budget):
+        async def get_app_budget_balance(self):
+            return {"available_usd": 0.0, "overdraft_limit_usd": 0.0}
+
+    cp = _CP(wallet=1_000_000, plan_balance=_PlanBalance(wallet=True))
+    ep = _EP(cp=cp, rl=_RL(), budget=_ZeroBudget(), accounting_result=(1000, {"cost_total_usd": 0.02}))
+    g = EconomicsGuard(
+        ep, subject=_subject("registered"), scope_id="sw1", flow="f",
+        estimate=EconomicsEstimate(reservation_usd=0.05),
+        policy=FlowPolicy(allow_paid_lane_fallback=True),
+    )
+    decision = await g.__aenter__()
+    assert decision.lane == "paid"
+    assert decision.funding_source == "wallet"
+    assert decision.wallet_reservation_id == "sw1"
+    assert len(ep.cp_manager.user_credits_mgr.reserved) == 1   # wallet reserved as primary
+    assert ep.budget_limiter.reserved == []                    # no project hold taken
+    assert any(kind == "tok" for kind, _ in ep.rl.releases)    # plan RL reservation released
+    assert len(ep.rl.admit_calls) == 2                         # plan admit + paid re-admit
+
+    await g.__aexit__(None, None, None)
+    assert len(ep.cp_manager.user_credits_mgr.committed) == 1  # wallet committed at settle
+    assert len(ep.rl.commits) == 1
+
+
+async def test_no_paid_switch_when_fallback_disabled_denies():
+    # same setup, but allow_paid_lane_fallback=False (default non-chat) -> deny.
+    class _ZeroBudget(_Budget):
+        async def get_app_budget_balance(self):
+            return {"available_usd": 0.0, "overdraft_limit_usd": 0.0}
+
+    cp = _CP(wallet=1_000_000, plan_balance=_PlanBalance(wallet=True))
+    ep = _EP(cp=cp, rl=_RL(), budget=_ZeroBudget())
+    g = EconomicsGuard(
+        ep, subject=_subject("registered"), scope_id="sw2", flow="f",
+        estimate=EconomicsEstimate(reservation_usd=0.05),
+        policy=FlowPolicy(allow_paid_lane_fallback=False),
+    )
+    # primary exhausted but wallet can pay -> stays plan lane, wallet covers overflow (no switch, no deny)
+    decision = await g.__aenter__()
+    assert decision.lane == "plan"
+    assert len(ep.rl.admit_calls) == 1                         # no paid re-admit
+    await g.__aexit__(None, None, None)
+
+
 async def test_top_level_releases_reservation_on_accounting_failure():
     class _BadEP(_EP):
         async def run_accounting(self, **kw):
