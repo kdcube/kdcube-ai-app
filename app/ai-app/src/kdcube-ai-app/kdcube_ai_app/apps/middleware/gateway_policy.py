@@ -135,6 +135,14 @@ class GatewayPolicyResolver:
         path = request.url.path
         candidates = self._path_candidates(path)
         cls = self.classify(path)
+        bypass_throttling = bool(
+            self._bypass_throttling_patterns
+            and any(
+                pattern.match(candidate)
+                for pattern in self._bypass_throttling_patterns
+                for candidate in candidates
+            )
+        )
 
         # chat ingress for SSE/Socket.IO is gated inside transport handlers
         if cls == EndpointClass.CHAT_INGRESS and path.startswith(("/sse/", "/socket.io")):
@@ -150,7 +158,7 @@ class GatewayPolicyResolver:
         if cls == EndpointClass.CHAT_INGRESS:
             return GatewayPolicy(
                 cls=cls,
-                bypass_throttling=False,
+                bypass_throttling=bypass_throttling,
                 bypass_gate=False,
                 bypass_backpressure=False,
                 requirements=[],
@@ -165,11 +173,7 @@ class GatewayPolicyResolver:
                 bypass_backpressure=True,
                 requirements=[],
             )
-            if self._bypass_throttling_patterns and any(
-                p.match(candidate)
-                for p in self._bypass_throttling_patterns
-                for candidate in candidates
-            ):
+            if bypass_throttling:
                 return GatewayPolicy(
                     cls=pol.cls,
                     bypass_throttling=True,
