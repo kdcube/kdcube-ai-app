@@ -360,6 +360,14 @@ class CanvasStore:
         )
 
     def canvas_name(self, value: Any = None) -> str:
+        # When no canvas is named, prefer the user's last-active board (set
+        # when they switch/create a board in the UI), then fall back to main.
+        # This makes an omitted canvas — from the UI or an agent pin — land on
+        # the user's current board instead of always "main".
+        if not (value and str(value).strip()):
+            active = self.active_canvas_name()
+            if active:
+                return safe_storage_segment(active, default=DEFAULT_CANVAS_NAME)
         return safe_storage_segment(value or DEFAULT_CANVAS_NAME, default=DEFAULT_CANVAS_NAME)
 
     def canvas_id(self, *, canvas_name: str, canvas_id: Any = None) -> str:
@@ -978,12 +986,115 @@ class CanvasStore:
             )
         return deleted
 
-    def list_canvases(self, *, story_id: str = "") -> Dict[str, Any]:
+    def list_canvases(self, *, story_id: str = "", include_archived: bool = False) -> Dict[str, Any]:
         _, manifest = self._read_json(self.manifest_relpath())
         canvases = manifest.get("canvases") if isinstance(manifest.get("canvases"), Mapping) else {}
         items = [dict(item) for item in canvases.values() if isinstance(item, Mapping)]
+        if not include_archived:
+            items = [item for item in items if not item.get("archived")]
         items.sort(key=lambda item: (str(item.get("canvas_name") or ""), int(item.get("latest_revision") or 0)))
-        return {"ok": True, "user_id": self.user_id, "story_id": story_id, "canvases": items}
+        return {
+            "ok": True,
+            "user_id": self.user_id,
+            "story_id": story_id,
+            "active_canvas": str(manifest.get("active_canvas") or ""),
+            "canvases": items,
+        }
+
+    def active_canvas_name(self) -> str:
+        """The user's last-active board name, or '' if none set."""
+        try:
+            _, manifest = self._read_json(self.manifest_relpath())
+        except Exception:
+            return ""
+        if not isinstance(manifest, Mapping):
+            return ""
+        return str(manifest.get("active_canvas") or "").strip()
+
+    def _mutate_manifest(self, mutate) -> Dict[str, Any]:
+        relpath = self.manifest_relpath()
+        _, manifest = self._read_json(relpath)
+        if not isinstance(manifest, dict):
+            manifest = {}
+        if not isinstance(manifest.get("canvases"), dict):
+            manifest["canvases"] = {}
+        mutate(manifest)
+        manifest["schema"] = "kdcube.canvas.manifest.v1"
+        manifest["owner_user_id"] = self.user_id
+        manifest["updated_at"] = int(time.time())
+        self.artifacts.write(
+            relpath,
+            (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8"),
+            mime="application/json",
+            meta={"origin": f"{self.origin_prefix}.manifest"},
+        )
+        return manifest
+
+    def set_active_canvas(self, *, canvas_name: str) -> Dict[str, Any]:
+        name = safe_storage_segment(canvas_name or DEFAULT_CANVAS_NAME, default=DEFAULT_CANVAS_NAME)
+        self._mutate_manifest(lambda m: m.__setitem__("active_canvas", name))
+        return {"ok": True, "user_id": self.user_id, "active_canvas": name}
+
+    def _find_canvas_key(self, manifest: Mapping[str, Any], canvas_name: str, canvas_id: str = "") -> str:
+        canvases = manifest.get("canvases") if isinstance(manifest.get("canvases"), Mapping) else {}
+        cid = str(canvas_id or "").strip()
+        if cid and cid in canvases:
+            return cid
+        target = safe_storage_segment(canvas_name or "", default="")
+        for key, item in canvases.items():
+            if isinstance(item, Mapping) and str(item.get("canvas_name") or "") == target:
+                return key
+        return ""
+
+    def archive_canvas(self, *, canvas_name: str, canvas_id: str = "", archived: bool = True) -> Dict[str, Any]:
+        result: Dict[str, Any] = {"ok": False, "error": "canvas not found"}
+
+        def mutate(manifest: Dict[str, Any]) -> None:
+            nonlocal result
+            key = self._find_canvas_key(manifest, canvas_name, canvas_id)
+            if not key:
+                return
+            entry = dict(manifest["canvases"][key])
+            entry["archived"] = bool(archived)
+            entry["archived_at"] = int(time.time()) if archived else 0
+            manifest["canvases"][key] = entry
+            if archived and str(manifest.get("active_canvas") or "") == str(entry.get("canvas_name") or ""):
+                manifest["active_canvas"] = ""
+            result = {"ok": True, "canvas_id": key, "canvas_name": entry.get("canvas_name"), "archived": bool(archived)}
+
+        self._mutate_manifest(mutate)
+        return {"user_id": self.user_id, **result}
+
+    def delete_canvas(self, *, canvas_name: str, canvas_id: str = "") -> Dict[str, Any]:
+        result: Dict[str, Any] = {"ok": False, "error": "canvas not found"}
+        removed_id = ""
+
+        def mutate(manifest: Dict[str, Any]) -> None:
+            nonlocal result, removed_id
+            key = self._find_canvas_key(manifest, canvas_name, canvas_id)
+            if not key:
+                return
+            entry = dict(manifest["canvases"].get(key) or {})
+            removed_id = key
+            removed_name = str(entry.get("canvas_name") or "")
+            manifest["canvases"].pop(key, None)
+            if str(manifest.get("active_canvas") or "") == removed_name:
+                manifest["active_canvas"] = ""
+            result = {"ok": True, "canvas_id": key, "canvas_name": removed_name}
+
+        self._mutate_manifest(mutate)
+        # Best-effort purge of the deleted canvas's documents/objects.
+        if removed_id:
+            try:
+                prefix = self.base_relpath(canvas_id=removed_id).as_posix()
+                for name in list(self.artifacts.list(prefix)):
+                    try:
+                        self.artifacts.delete(name)
+                    except Exception:
+                        LOGGER.debug("[canvas.delete] unable to delete %s", name, exc_info=True)
+            except Exception:
+                LOGGER.debug("[canvas.delete] unable to list canvas_id=%s", removed_id, exc_info=True)
+        return {"user_id": self.user_id, **result}
 
     def read(
         self,

@@ -348,6 +348,10 @@ export interface CanvasHost {
     action: CanvasObjectActionName,
     activeCanvas: CanvasDefinition,
   ): Promise<CanvasObjectActionResponse>
+  /** Mark a board the user's last-active (so omitted-canvas pins land on it). */
+  setActiveCanvas(canvasName: string): Promise<Record<string, unknown>>
+  archiveCanvas(canvasName: string): Promise<Record<string, unknown>>
+  deleteCanvas(canvasName: string): Promise<Record<string, unknown>>
 }
 
 export function createCanvasHost(config: CanvasHostConfig): CanvasHost {
@@ -409,5 +413,11 @@ export function createCanvasHost(config: CanvasHostConfig): CanvasHost {
     loadCanvas,
     uploadCanvasAttachments: (payload, files) => uploadCanvasAttachments(ctx, payload, files),
     objectAction,
+    setActiveCanvas: (canvasName) =>
+      postOperation<Record<string, unknown>, Record<string, unknown>>(ctx, 'canvas_set_active', { story_id: storyId, canvas_name: canvasName }),
+    archiveCanvas: (canvasName) =>
+      postOperation<Record<string, unknown>, Record<string, unknown>>(ctx, 'canvas_archive', { story_id: storyId, canvas_name: canvasName }),
+    deleteCanvas: (canvasName) =>
+      postOperation<Record<string, unknown>, Record<string, unknown>>(ctx, 'canvas_delete', { story_id: storyId, canvas_name: canvasName }),
   }
 }

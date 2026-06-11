@@ -210,6 +210,40 @@ def list_canvases(*, store: CanvasStore, user_id: str, story_id: str) -> Dict[st
         return {"ok": False, "user_id": user_id, "story_id": story_id, "error": str(exc)}
 
 
+def set_active(*, payload: Mapping[str, Any], store: CanvasStore, user_id: str, story_id: str) -> Dict[str, Any]:
+    canvas_name = str(payload.get("canvas_name") or payload.get("name") or "").strip()
+    if not canvas_name:
+        return {"ok": False, "user_id": user_id, "story_id": story_id, "error": "canvas_name is required"}
+    try:
+        return {"story_id": story_id, **store.set_active_canvas(canvas_name=canvas_name)}
+    except Exception as exc:
+        return {"ok": False, "user_id": user_id, "story_id": story_id, "error": str(exc)}
+
+
+def archive(*, payload: Mapping[str, Any], store: CanvasStore, user_id: str, story_id: str) -> Dict[str, Any]:
+    canvas_name = str(payload.get("canvas_name") or payload.get("name") or "").strip()
+    canvas_id = str(payload.get("canvas_id") or "").strip()
+    archived = payload.get("archived")
+    archived_flag = True if archived is None else bool(archived)
+    if not canvas_name and not canvas_id:
+        return {"ok": False, "user_id": user_id, "story_id": story_id, "error": "canvas_name or canvas_id is required"}
+    try:
+        return {"story_id": story_id, **store.archive_canvas(canvas_name=canvas_name, canvas_id=canvas_id, archived=archived_flag)}
+    except Exception as exc:
+        return {"ok": False, "user_id": user_id, "story_id": story_id, "error": str(exc)}
+
+
+def delete(*, payload: Mapping[str, Any], store: CanvasStore, user_id: str, story_id: str) -> Dict[str, Any]:
+    canvas_name = str(payload.get("canvas_name") or payload.get("name") or "").strip()
+    canvas_id = str(payload.get("canvas_id") or "").strip()
+    if not canvas_name and not canvas_id:
+        return {"ok": False, "user_id": user_id, "story_id": story_id, "error": "canvas_name or canvas_id is required"}
+    try:
+        return {"story_id": story_id, **store.delete_canvas(canvas_name=canvas_name, canvas_id=canvas_id)}
+    except Exception as exc:
+        return {"ok": False, "user_id": user_id, "story_id": story_id, "error": str(exc)}
+
+
 def read(
     *,
     payload: Mapping[str, Any],

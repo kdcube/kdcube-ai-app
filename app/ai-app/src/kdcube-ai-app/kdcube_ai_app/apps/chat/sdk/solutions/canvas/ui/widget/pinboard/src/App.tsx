@@ -242,6 +242,39 @@ export default function App() {
     postToHost({ type: CLOSE_MESSAGE })
   }, [])
 
+  // Switching boards records the user's last-active board server-side, so an
+  // omitted-canvas pin (UI drop or agent canvas.pin) lands on it, not "main".
+  const handleCanvasChange = useCallback((name: string) => {
+    setActiveCanvasName(name)
+    if (host) void host.setActiveCanvas(name).catch(() => undefined)
+  }, [host])
+
+  // Create a new board: add an empty canvas to local state, switch to it, and
+  // make it the active board. It persists server-side on its first pin.
+  const onCreateCanvas = useCallback((name: string) => {
+    setCanvases((current) => upsertCanvasDefinition(current, emptyCanvasDefinition(name)))
+    setActiveCanvasName(name)
+    if (host) void host.setActiveCanvas(name).catch(() => undefined)
+  }, [host])
+
+  const onArchiveCanvas = useCallback((canvas: CanvasDefinition) => {
+    if (!host) return
+    const fallback = canvases.find((c) => c.name !== canvas.name)?.name || 'main'
+    void host.archiveCanvas(canvas.name)
+      .then(() => { setActiveCanvasName(fallback); return host.loadCanvas(fallback) })
+      .then((loaded) => { if (loaded.length) setCanvases(loaded) })
+      .catch(failNotice)
+  }, [host, canvases, failNotice])
+
+  const onDeleteCanvas = useCallback((canvas: CanvasDefinition) => {
+    if (!host) return
+    const fallback = canvases.find((c) => c.name !== canvas.name)?.name || 'main'
+    void host.deleteCanvas(canvas.name)
+      .then(() => { setActiveCanvasName(fallback); return host.loadCanvas(fallback) })
+      .then((loaded) => { if (loaded.length) setCanvases(loaded) })
+      .catch(failNotice)
+  }, [host, canvases, failNotice])
+
   if (!ready) {
     return <div className="boot">Loading Pin Board…</div>
   }
@@ -263,11 +296,14 @@ export default function App() {
         canvasPatchEvent={canvasPatchEvent}
         patchCanvas={patchCanvas}
         readCanvas={readCanvas}
-        onCanvasChange={setActiveCanvasName}
+        onCanvasChange={handleCanvasChange}
         onAttachCanvas={onAttachCanvas}
         onAttachCard={onAttachCard}
         onDragCard={() => undefined}
         onCloseCanvas={onCloseCanvas}
+        onCreateCanvas={onCreateCanvas}
+        onArchiveCanvas={onArchiveCanvas}
+        onDeleteCanvas={onDeleteCanvas}
         onDropFiles={onDropFiles}
         onDropText={onDropText}
         onDropContext={onDropContext}

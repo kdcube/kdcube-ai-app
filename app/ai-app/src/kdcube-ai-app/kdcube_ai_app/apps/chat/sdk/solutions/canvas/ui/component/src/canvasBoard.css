@@ -336,7 +336,9 @@ button {
   flex: 1 1 auto;
   min-height: 0;
   height: 100%;
-  overflow: hidden;
+  /* Scrollable so pins outside a small/resized window stay reachable (pan);
+     `background-attachment: local` lets the grid scroll with the content. */
+  overflow: auto;
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
   background:
@@ -344,7 +346,22 @@ button {
     linear-gradient(90deg, var(--line-soft) 1px, transparent 1px),
     var(--surface-3);
   background-size: 28px 28px;
+  background-attachment: local, local, local;
+  cursor: grab;
 }
+
+.canvas-board.panning { cursor: grabbing; }
+/* Cards keep their own pointer affordance; only the empty board reads as pannable. */
+.canvas-board > .canvas-card { cursor: default; }
+
+.canvas-board::-webkit-scrollbar { width: 10px; height: 10px; }
+.canvas-board::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 999px;
+  border: 2px solid var(--surface-3);
+}
+.canvas-board::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+.canvas-board::-webkit-scrollbar-corner { background: transparent; }
 
 .canvas-board.external-drop-ready {
   border-color: rgba(8, 189, 178, 0.72);

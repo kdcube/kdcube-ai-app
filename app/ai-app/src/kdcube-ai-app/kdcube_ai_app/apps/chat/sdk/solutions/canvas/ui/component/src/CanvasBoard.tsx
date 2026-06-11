@@ -1,8 +1,10 @@
 import {
+  Archive,
   ClipboardPenLine,
   Download,
   ExternalLink,
   FileText,
+  Frame,
   Grip,
   Info,
   Maximize2,
@@ -12,6 +14,7 @@ import {
   Paperclip,
   PenLine,
   Pin,
+  Plus,
   RotateCcw,
   Search,
   Sparkles,
@@ -46,6 +49,9 @@ export interface CanvasBoardProps {
   onAttachCard: (context: CanvasContextItem | CanvasContextItem[]) => void
   onDragCard: (context: CanvasContextItem | CanvasContextItem[] | null) => void
   onCloseCanvas: () => void
+  onCreateCanvas?: (name: string) => void
+  onArchiveCanvas?: (canvas: CanvasDefinition) => void
+  onDeleteCanvas?: (canvas: CanvasDefinition) => void
   onDropFiles: (files: File[], rect: CanvasCard['rect']) => void
   onDropText: (text: string, rect: CanvasCard['rect']) => void
   onDropContext: (context: CanvasContextItem, rect: CanvasCard['rect']) => void
@@ -288,6 +294,9 @@ export function CanvasBoard({
   onAttachCard,
   onDragCard,
   onCloseCanvas,
+  onCreateCanvas,
+  onArchiveCanvas,
+  onDeleteCanvas,
   onDropFiles,
   onDropText,
   onDropContext,
@@ -862,9 +871,12 @@ export function CanvasBoard({
     const board = boardRef.current
     if (!board) return { x: 42, y: 42, w: width, h: height }
     const bounds = board.getBoundingClientRect()
+    // The board scrolls (overflow:auto), so a viewport-relative drop point
+    // must be shifted by the current scroll offset to land at the right
+    // content coordinate.
     return {
-      x: Math.round(clamp(event.clientX - bounds.left - width / 2, 8, Math.max(8, bounds.width - width - 8))),
-      y: Math.round(clamp(event.clientY - bounds.top - height / 2, 8, Math.max(8, bounds.height - height - 8))),
+      x: Math.round(clamp(event.clientX - bounds.left - width / 2, 8, Math.max(8, bounds.width - width - 8))) + board.scrollLeft,
+      y: Math.round(clamp(event.clientY - bounds.top - height / 2, 8, Math.max(8, bounds.height - height - 8))) + board.scrollTop,
       w: width,
       h: height,
     }
@@ -875,9 +887,53 @@ export function CanvasBoard({
     if (!board) return null
     const bounds = board.getBoundingClientRect()
     return {
-      x: Math.round(clamp(event.clientX - bounds.left, 0, bounds.width)),
-      y: Math.round(clamp(event.clientY - bounds.top, 0, bounds.height)),
+      x: Math.round(clamp(event.clientX - bounds.left, 0, bounds.width)) + board.scrollLeft,
+      y: Math.round(clamp(event.clientY - bounds.top, 0, bounds.height)) + board.scrollTop,
     }
+  }
+
+  // Pan the scrolled board so the cards' bounding box comes into the current
+  // viewport — the way to reach pins that fell outside a small/resized window.
+  function fitToView() {
+    const board = boardRef.current
+    if (!board) return
+    const bounds = cardsBounds(cardsRef.current)
+    if (!bounds) {
+      board.scrollTo({ left: 0, top: 0, behavior: 'smooth' })
+      return
+    }
+    board.scrollTo({
+      left: Math.max(0, Math.round(bounds.x - 24)),
+      top: Math.max(0, Math.round(bounds.y - 24)),
+      behavior: 'smooth',
+    })
+  }
+
+  // Create a new board. The empty canvas is created in the host's state and
+  // persisted server-side on its first pin (a canvas.patch to a new name).
+  function handleCreateBoard() {
+    if (!onCreateCanvas) return
+    const raw = window.prompt('Name for the new board')
+    if (raw === null) return
+    const name = raw.trim()
+    if (!name) return
+    if (canvases.some((canvas) => canvas.name === name)) {
+      onCanvasChange(name)
+      return
+    }
+    onCreateCanvas(name)
+  }
+
+  function handleArchiveBoard() {
+    if (!onArchiveCanvas) return
+    if (!window.confirm(`Archive the board "${activeCanvas.name}"? It is hidden from the list but its pins are kept.`)) return
+    onArchiveCanvas(activeCanvas)
+  }
+
+  function handleDeleteBoard() {
+    if (!onDeleteCanvas) return
+    if (!window.confirm(`Delete the board "${activeCanvas.name}" and all its pins? This cannot be undone.`)) return
+    onDeleteCanvas(activeCanvas)
   }
 
   function marqueeFromPoints(startX: number, startY: number, endX: number, endY: number): MarqueeState {
@@ -891,6 +947,45 @@ export function CanvasBoard({
       w: Math.abs(endX - startX),
       h: Math.abs(endY - startY),
     }
+  }
+
+  // Empty-board drag: pan the scrolled board with the mouse (a hand tool) so
+  // the user can bring the part they want into the viewport. Hold Shift to
+  // rubber-band select instead.
+  function startBoardGesture(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) return
+    if (event.target !== event.currentTarget && !(event.target instanceof HTMLElement && event.target.classList.contains('canvas-grid'))) {
+      return
+    }
+    if (event.shiftKey) {
+      startMarqueeSelection(event)
+      return
+    }
+    startPan(event)
+  }
+
+  function startPan(event: ReactPointerEvent<HTMLDivElement>) {
+    const board = boardRef.current
+    if (!board) return
+    event.preventDefault()
+    const startX = event.clientX
+    const startY = event.clientY
+    const startLeft = board.scrollLeft
+    const startTop = board.scrollTop
+    board.classList.add('panning')
+    try { board.setPointerCapture(event.pointerId) } catch { /* not all browsers */ }
+    const move = (move_event: PointerEvent) => {
+      board.scrollLeft = startLeft - (move_event.clientX - startX)
+      board.scrollTop = startTop - (move_event.clientY - startY)
+    }
+    const up = () => {
+      board.classList.remove('panning')
+      try { board.releasePointerCapture(event.pointerId) } catch { /* already released */ }
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up, { once: true })
   }
 
   function startMarqueeSelection(event: ReactPointerEvent<HTMLDivElement>) {
@@ -1373,6 +1468,24 @@ export function CanvasBoard({
               ))}
             </select>
           </label>
+          {onCreateCanvas ? (
+            <button className="secondary icon-only" onClick={handleCreateBoard} title="New board">
+              <Plus size={16} />
+            </button>
+          ) : null}
+          <button className="secondary icon-only" onClick={fitToView} title="Fit pins into view">
+            <Frame size={16} />
+          </button>
+          {onArchiveCanvas ? (
+            <button className="secondary icon-only" onClick={handleArchiveBoard} title="Archive this board">
+              <Archive size={16} />
+            </button>
+          ) : null}
+          {onDeleteCanvas ? (
+            <button className="secondary icon-only" onClick={handleDeleteBoard} title="Delete this board">
+              <Trash2 size={16} />
+            </button>
+          ) : null}
           <button className="secondary" onClick={() => onAttachCanvas(canvasContext(liveCanvas))} title="Pin board to chat">
             <MessageSquarePlus size={16} />
             Pin board to chat
@@ -1425,7 +1538,7 @@ export function CanvasBoard({
           ref={boardRef}
           className={`canvas-board ${externalDropReady ? 'external-drop-ready' : ''}`}
           aria-label="Task tracker canvas board"
-          onPointerDown={startMarqueeSelection}
+          onPointerDown={startBoardGesture}
           onDragOver={(event) => {
             if (dragState) {
               event.preventDefault()
