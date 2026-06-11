@@ -249,10 +249,8 @@ class EconomicsGuard:
         self._acct_cm = None
         self._econ_token = None  # ContextVar token for the economics-scope marker
         self._subscription_limiter = None  # SubscriptionBudgetLimiter when applicable
-        self._funding_ctx_obj = None       # funding_flow.FundingContext (plan lane)
-        self._funding_res = None           # funding_flow.PlanFundingReservation (plan lane)
-        self._paid_sub_limiter = None      # SubscriptionBudgetLimiter holding the paid-lane primary
-        self._paid_sub_reservation_id = None  # subscription app-reservation id (paid lane)
+        self._funding_ctx_obj = None       # funding_flow.FundingContext (all lanes)
+        self._funding_res = None           # funding_flow.PlanFundingReservation (all lanes)
         # quota-lock state (distributed admit->reserve serialization)
         self._quota_lock_key: Optional[str] = None
         self._quota_lock_token: Optional[str] = None
@@ -781,12 +779,13 @@ class EconomicsGuard:
             self._log("reserve.subscription", "paid subscription reserve declined; falling back to wallet",
                       "WARN", error=str(e))
             return False
-        self._paid_sub_limiter = sub_limiter
-        self._paid_sub_reservation_id = reservation_id
         decision.funding_source = "subscription"
         decision.lane = "paid"
-        decision.app_reservation_source = "subscription"
-        decision.app_reservation_active = True
+        self._store_paid_funding(
+            decision, funding_source="subscription",
+            app_reservation_id=reservation_id, app_reserved_usd=app_reserved_usd,
+            subscription_limiter=sub_limiter,
+        )
         return True
 
     async def _on_funding_denied(self, exc: Exception) -> None:
@@ -811,6 +810,34 @@ class EconomicsGuard:
                 await self.rl.release(bundle_id=GLOBAL_BUNDLE_ID, subject_id=self.subj, lock_id=self.scope_id)
         except Exception:
             pass
+
+    def _store_paid_funding(
+        self, decision: EconomicsDecision, *, funding_source: str,
+        wallet_reservation_id: Optional[str] = None, wallet_reserved_tokens: int = 0,
+        app_reservation_id=None, app_reserved_usd: float = 0.0, subscription_limiter=None,
+    ) -> None:
+        """Build the PlanFundingReservation for a paid-lane hold and store it as the
+        settlement handle, so paid settle/cleanup run through the shared funding_flow
+        (single settlement owner — no per-lane settle methods on the guard)."""
+        from kdcube_ai_app.apps.chat.sdk.infra.economics.funding_flow import PlanFundingReservation
+        admit = decision.admit
+        plan_reserved = int(getattr(admit, "reserved_tokens", 0) or 0)
+        plan_resv_id = getattr(admit, "reservation_id", None)
+        self._funding_res = PlanFundingReservation(
+            funding_source=funding_source, budget_bypass=False,
+            est_turn_tokens=int(decision.est_turn_tokens),
+            plan_reservation_id=plan_resv_id, plan_reserved_tokens=plan_reserved,
+            plan_reservation_active=bool(plan_resv_id and plan_reserved > 0),
+            app_reservation_id=app_reservation_id, app_reserved_usd=float(app_reserved_usd),
+            app_reservation_active=bool(app_reservation_id),
+            wallet_reservation_id=wallet_reservation_id,
+            wallet_reserved_tokens=int(wallet_reserved_tokens),
+            wallet_reservation_active=bool(wallet_reservation_id),
+            has_wallet=bool(decision.extra.get("wallet_tokens")), paid_lane=True,
+        )
+        self._funding_ctx_obj = self._funding_ctx(subscription_limiter)
+        decision.app_reservation_source = funding_source
+        decision.app_reservation_active = True
 
     async def _reserve_wallet_or_deny(self, decision: EconomicsDecision, r: dict, *, reserve_usd: float, exhausted: Optional[str]) -> None:
         s = self.subject
@@ -858,6 +885,10 @@ class EconomicsGuard:
         decision.lane = "paid"
         decision.wallet_reservation_id = self.scope_id
         decision.wallet_reserved_tokens = tokens
+        self._store_paid_funding(
+            decision, funding_source="wallet",
+            wallet_reservation_id=self.scope_id, wallet_reserved_tokens=tokens,
+        )
 
     async def _get_subscription_limiter(self, subscription: Any):
         if self._subscription_limiter is not None:
@@ -973,8 +1004,9 @@ class EconomicsGuard:
         return int(ranked or 0), (result or {})
 
     async def _settle(self, d: EconomicsDecision, *, ranked_tokens: int, total_cost: float) -> None:
-        # Plan lane (project/subscription/bypass) -> shared funding_flow settlement
-        # (primary + wallet overflow + project absorption, via allocate_plan_wallet_settlement).
+        # All lanes (plan/subscription/project/bypass + paid wallet/subscription)
+        # settle through the shared funding_flow — single settlement owner. The paid
+        # reserve builds the same PlanFundingReservation handle as the plan lane.
         if self._funding_res is not None and self._funding_ctx_obj is not None:
             from kdcube_ai_app.apps.chat.sdk.infra.economics.funding_flow import settle_plan_funding
             plan_balance = d.extra.get("plan_balance")
@@ -987,104 +1019,16 @@ class EconomicsGuard:
                 user_budget_tokens=(wallet_tokens or None),
             )
             return
-        # paid lane, subscription-primary (after a switch): subscription budget pays
-        if self._paid_sub_reservation_id is not None and self._paid_sub_limiter is not None:
-            await self._settle_paid_subscription(d, ranked_tokens=ranked_tokens, total_cost=total_cost)
-            return
-        # wallet-primary edge (no plan-lane reservation taken)
-        await self._settle_wallet(d, ranked_tokens=ranked_tokens, total_cost=total_cost)
-
-    async def _settle_wallet(self, d: EconomicsDecision, *, ranked_tokens: int, total_cost: float) -> None:
-        s = self.subject
-        try:
-            await self.rl.commit_with_reservation(
-                bundle_id=GLOBAL_BUNDLE_ID, subject_id=self.subj,
-                tokens=int(ranked_tokens), lock_id=self.scope_id,
-                reservation_id=self.scope_id, now=self.now, inc_request=1,
-            )
-        except Exception as e:
-            self._log("rl.commit", "failed to commit rl usage", "WARN", error=str(e))
-        if d.wallet_reservation_id:
-            if int(ranked_tokens) <= 0:
-                # Nothing consumed (e.g. free-tier provider): commit_reserved_lifetime_tokens
-                # no-ops on tokens<=0 and would leave the hold 'reserved' until TTL —
-                # release it so the wallet balance frees immediately.
-                await self.cp.user_credits_mgr.release_lifetime_token_reservation(
-                    tenant=s.tenant, project=s.project, user_id=s.user_id,
-                    reservation_id=d.wallet_reservation_id, reason=f"{self.flow}: zero actual cost",
-                )
-                return
-            uncovered = await self.cp.user_credits_mgr.commit_reserved_lifetime_tokens(
-                tenant=s.tenant, project=s.project, user_id=s.user_id,
-                reservation_id=d.wallet_reservation_id, tokens=int(ranked_tokens),
-            )
-            uncovered = int(uncovered or 0)
-            if uncovered > 0 and total_cost > 0 and ranked_tokens > 0:
-                from kdcube_ai_app.apps.chat.sdk.util import safe_frac
-                shortfall = float(total_cost) * safe_frac(float(uncovered), float(ranked_tokens))
-                if shortfall > 0:
-                    await self.budget_limiter.force_project_spend(
-                        spent_usd=shortfall, bundle_id=self.bundle_id, provider=None,
-                        request_id=self.scope_id, user_id=s.user_id, note=f"{self.flow}: shortfall:wallet_paid",
-                    )
-
-    async def _settle_paid_subscription(self, d: EconomicsDecision, *, ranked_tokens: int, total_cost: float) -> None:
-        # Paid lane: payasyougo quotas applied, so RL usage commits reservation-free
-        # (no plan-quota consumption). The subscription budget pays the actual cost;
-        # the wallet stays untouched.
-        try:
-            await self.rl.commit_with_reservation(
-                bundle_id=GLOBAL_BUNDLE_ID, subject_id=self.subj,
-                tokens=int(ranked_tokens), lock_id=self.scope_id,
-                reservation_id=self.scope_id, now=self.now, inc_request=1,
-            )
-        except Exception as e:
-            self._log("rl.commit", "failed to commit rl usage", "WARN", error=str(e))
-        try:
-            if float(total_cost) > 0:
-                await self._paid_sub_limiter.commit_reserved_spend(
-                    reservation_id=self._paid_sub_reservation_id, spent_usd=float(total_cost),
-                    now=self.now, project_budget=self.budget_limiter,
-                )
-            else:
-                # nothing spent -> release the subscription hold
-                await self._paid_sub_limiter.release_reservation(
-                    reservation_id=self._paid_sub_reservation_id,
-                    note=f"{self.flow}: zero actual cost", now=self.now,
-                )
-        except Exception as e:
-            self._log("settle.subscription", "failed to commit subscription spend", "WARN", error=str(e))
+        self._log("settle", "no funding reservation to settle", "WARN")
 
     async def _cleanup_release(self, d: EconomicsDecision) -> None:
+        # All lanes hold a PlanFundingReservation -> release everything (app/wallet/RL
+        # holds + lock) through the shared funding_flow cleanup.
         if self._funding_res is not None and self._funding_ctx_obj is not None:
             from kdcube_ai_app.apps.chat.sdk.infra.economics.funding_flow import release_plan_funding
             await release_plan_funding(self._funding_ctx_obj, self._funding_res)
             return
-        if self._paid_sub_reservation_id is not None and self._paid_sub_limiter is not None:
-            try:
-                await self._paid_sub_limiter.release_reservation(
-                    reservation_id=self._paid_sub_reservation_id,
-                    note=f"{self.flow}: cleanup", now=self.now,
-                )
-            except Exception as e:
-                self._log("cleanup", "failed to release subscription reservation", "WARN", error=str(e))
-            try:
-                await self.rl.release_token_reservation(
-                    bundle_id=GLOBAL_BUNDLE_ID, subject_id=self.subj, reservation_id=self.scope_id, now=self.now,
-                )
-                await self.rl.release(bundle_id=GLOBAL_BUNDLE_ID, subject_id=self.subj, lock_id=self.scope_id)
-            except Exception:
-                pass
-            return
-        s = self.subject
-        try:
-            if d.wallet_reservation_id:
-                await self.cp.user_credits_mgr.release_lifetime_token_reservation(
-                    tenant=s.tenant, project=s.project, user_id=s.user_id,
-                    reservation_id=d.wallet_reservation_id, reason=f"{self.flow}: cleanup",
-                )
-        except Exception as e:
-            self._log("cleanup", "failed to release wallet reservation", "WARN", error=str(e))
+        # defensive: nothing reserved -> drop any RL lock/reservation tied to scope
         try:
             await self.rl.release_token_reservation(
                 bundle_id=GLOBAL_BUNDLE_ID, subject_id=self.subj, reservation_id=self.scope_id, now=self.now,

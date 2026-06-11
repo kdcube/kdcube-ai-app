@@ -95,6 +95,9 @@ class PlanFundingReservation:
     wallet_reservation_active: bool = False
 
     has_wallet: bool = False
+    # paid lane (post-switch): payasyougo quotas, primary is the wallet or the
+    # subscription budget; RL usage commits reservation-free (no plan-quota consume).
+    paid_lane: bool = False
 
 
 @dataclass
@@ -107,6 +110,11 @@ class SettlementResult:
     quota_commit_tokens: int = 0
     allocation: Optional[PlanWalletSettlementAllocation] = None
     extra_project_items: list = field(default_factory=list)
+    # wallet settlement intermediates (consumed by the caller's observability:
+    # the user_underfunded_absorbed event). wallet_consumed = wallet target - uncovered.
+    wallet_consumed_tokens: int = 0
+    user_uncovered_tokens: int = 0
+    user_uncovered_usd: float = 0.0
 
 
 class ReserveStatus(Enum):
@@ -365,6 +373,27 @@ async def settle_plan_funding(
         out.quota_commit_tokens = ranked_tokens
         return out
 
+    if funding_source == "subscription" and res.paid_lane:
+        # paid lane, subscription-primary: payasyougo quotas (RL committed
+        # reservation-free, no plan-quota consume); the subscription budget pays the
+        # actual cost; the wallet stays untouched.
+        await _commit_rl(ctx, res, tokens=ranked_tokens)
+        if res.app_reservation_active and res.app_reservation_id:
+            if total_cost > 0:
+                await ctx.subscription_limiter.commit_reserved_spend(
+                    reservation_id=res.app_reservation_id, spent_usd=float(total_cost),
+                    project_budget=ctx.budget_limiter,
+                )
+            else:
+                # nothing spent -> release the subscription hold
+                await ctx.subscription_limiter.release_reservation(
+                    reservation_id=res.app_reservation_id, note="settle: zero actual cost",
+                )
+            res.app_reservation_active = False
+        out.primary_funding_usd = float(total_cost)
+        out.quota_commit_tokens = ranked_tokens
+        return out
+
     if funding_source == "wallet":
         # paid lane: wallet is the primary funding; project absorbs any uncovered
         # shortfall (shortfall:wallet_paid). Wallet-paid tokens do NOT consume plan
@@ -405,6 +434,9 @@ async def settle_plan_funding(
         out.wallet_usd = max(float(total_cost) - float(user_uncovered_usd), 0.0)
         out.project_absorption_usd = float(user_uncovered_usd)
         out.quota_commit_tokens = ranked_tokens
+        out.wallet_consumed_tokens = max(int(ranked_tokens) - int(user_uncovered), 0)
+        out.user_uncovered_tokens = int(user_uncovered)
+        out.user_uncovered_usd = float(user_uncovered_usd)
         return out
 
     if funding_source == "none":
@@ -571,6 +603,9 @@ async def settle_plan_funding(
     out.project_absorption_usd = float(project_absorption_usd)
     out.quota_commit_tokens = int(plan_quota_commit_tokens)
     out.extra_project_items = extra_project_items
+    out.wallet_consumed_tokens = max(int(user_target_tokens) - int(user_uncovered_tokens), 0)
+    out.user_uncovered_tokens = int(user_uncovered_tokens)
+    out.user_uncovered_usd = float(user_uncovered_usd)
     return out
 
 

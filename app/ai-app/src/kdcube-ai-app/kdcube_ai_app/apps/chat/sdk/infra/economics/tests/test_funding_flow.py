@@ -341,3 +341,34 @@ async def test_settle_wallet_shortfall_absorbed_by_project():
     assert len(budget.committed) == 1
     assert out.allocation is not None
     assert out.allocation.wallet_tokens > 0
+    # wallet fully covered its target -> nothing uncovered; consumed == target
+    assert out.user_uncovered_tokens == 0
+    assert out.user_uncovered_usd == 0.0
+    assert out.wallet_consumed_tokens == int(out.allocation.wallet_tokens)
+
+
+async def test_settle_exposes_wallet_uncovered_intermediates():
+    # wallet can't fully cover its target -> the result exposes wallet_consumed /
+    # user_uncovered (tokens + usd) for the caller's underfunded event. commit_uncovered
+    # leaves a reservation-free remainder that consume_lifetime_tokens reports uncovered.
+    credits = _Credits(balance=10**9, commit_uncovered=2000, consume_uncovered=2000)
+    budget = _Budget(overdraft=0.0, available_usd=0.05)
+    ctx = _ctx(budget=budget, credits=credits)
+    res = await _resv(
+        ctx, admit=_Admit(reserved=10000), funding_source="project", budget_bypass=False,
+        est_turn_tokens=10000, has_wallet=True, subscription_available_usd=0.0,
+        project_budget_snapshot={"overdraft_limit_usd": 0.0, "available_usd": 0.05},
+        personal_can_pay_turn=True,
+    )
+    out = await ff.settle_plan_funding(
+        ctx, res, ranked_tokens=10000, total_cost_usd=0.10,
+        effective_policy=QuotaPolicy(tokens_per_month=10**9),
+        plan_has_lifetime_budget=True, user_budget_tokens=10**9,
+    )
+    target = int(out.allocation.wallet_tokens)
+    assert target >= 2000
+    assert out.user_uncovered_tokens == 2000
+    assert out.wallet_consumed_tokens == target - 2000
+    # invariant: consumed + uncovered == wallet target
+    assert out.wallet_consumed_tokens + out.user_uncovered_tokens == target
+    assert out.user_uncovered_usd == pytest.approx(out.total_cost_usd * 2000 / out.ranked_tokens, rel=1e-6)
