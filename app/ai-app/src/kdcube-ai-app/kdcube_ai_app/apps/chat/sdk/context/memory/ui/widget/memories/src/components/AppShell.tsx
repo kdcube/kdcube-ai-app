@@ -65,7 +65,7 @@ export function AppShell({
           <span>Use my memory</span>
         </label>
         {allowWrite && !compact ? (
-          <button type="button" className="primary-button" onClick={onCreate} disabled={!memoryUseEnabled}>
+          <button type="button" className="primary-button" onClick={onCreate}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6 }}>
               <path d="M12 5v14M5 12h14" />
             </svg>
@@ -77,7 +77,6 @@ export function AppShell({
             type="button"
             className="icon-button compact-add-button"
             onClick={onCreate}
-            disabled={!memoryUseEnabled}
             aria-label="Add memory"
             title="Add memory"
           >

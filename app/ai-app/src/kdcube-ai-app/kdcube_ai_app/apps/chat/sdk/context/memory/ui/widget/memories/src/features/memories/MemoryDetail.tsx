@@ -33,7 +33,7 @@ interface MemoryDetailProps {
 
 export function MemoryDetail({ onEdit }: MemoryDetailProps) {
   const dispatch = useAppDispatch();
-  const { allowWrite, eventsLoading, memories, memoryUseEnabled, saving, selectedEvents, selectedId } = useAppSelector((state) => state.memories);
+  const { allowWrite, eventsLoading, memories, saving, selectedEvents, selectedId } = useAppSelector((state) => state.memories);
   const memory = memories.find((item) => item.id === selectedId);
   const terms = memory ? uniqueTerms(memory.labels, memory.keywords) : [];
 
@@ -56,12 +56,12 @@ export function MemoryDetail({ onEdit }: MemoryDetailProps) {
 
       {allowWrite ? (
         <div className="detail-actions">
-          <button type="button" className="secondary-button" onClick={onEdit} disabled={saving || !memoryUseEnabled}>Edit</button>
+          <button type="button" className="secondary-button" onClick={onEdit} disabled={saving}>Edit</button>
           <button
             type="button"
             className="secondary-button"
             onClick={() => void dispatch(confirmMemory(memory.id)).then(() => dispatch(loadMemoryEvents(memory.id)))}
-            disabled={saving || !memoryUseEnabled}
+            disabled={saving}
           >
             Confirm
           </button>
@@ -69,7 +69,7 @@ export function MemoryDetail({ onEdit }: MemoryDetailProps) {
             type="button"
             className="secondary-button"
             onClick={() => void dispatch(pinMemory({ id: memory.id, pinned: !memory.pinned })).then(() => dispatch(loadMemoryEvents(memory.id)))}
-            disabled={saving || !memoryUseEnabled || memory.status !== 'active'}
+            disabled={saving || memory.status !== 'active'}
           >
             {memory.pinned ? 'Unpin' : 'Pin'}
           </button>

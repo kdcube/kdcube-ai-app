@@ -81,7 +81,6 @@ export function ReconciliationPanel() {
     reconciliationLoading,
     reconciliationRunning,
     reconcilerAgentType,
-    memoryUseEnabled,
     selectedSnapshotId,
     selectedReconciliationJobId,
     snapshotExport,
@@ -103,7 +102,10 @@ export function ReconciliationPanel() {
   const selectedJob = reconciliationJobs.find((job) => job.job_id === selectedReconciliationJobId);
   const selectedSnapshot = snapshots.find((snapshot) => snapshot.snapshot_id === selectedSnapshotId);
   const busy = reconciliationLoading || reconciliationRunning || reconciliationJobsLoading || snapshotLoading || restoreBusy;
-  const mutationDisabled = busy || !memoryUseEnabled;
+  // Reconciliation / snapshot restore are note-management operations, not
+  // the runtime "use my memory" switch — they stay available while memory
+  // use is off (the user may be cleaning up before re-enabling).
+  const mutationDisabled = busy;
   const downloading = downloadInProgress;
 
   async function previewRestore(snapshot: MemorySnapshot) {

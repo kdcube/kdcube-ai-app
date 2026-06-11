@@ -787,6 +787,32 @@ function App() {
     }, '*')
   }, [])
 
+  // Wake the iframe's scroll after a JS-driven resize. Parent-side this
+  // toggles pointer-events (forces the compositor to rebuild the iframe
+  // hit-test region); we also tell the widget to jiggle its own scroll
+  // position, which is what actually unsticks it (the user found that
+  // nudging the scrollbar wakes it). Both fire a few times across a
+  // short window because the iframe content is still re-laying-out right
+  // after the drag ends.
+  const nudgeMemoryFrameScroll = useCallback(() => {
+    const toggle = () => {
+      const frame = memoryFrameRef.current
+      if (frame) {
+        frame.style.pointerEvents = 'none'
+        window.requestAnimationFrame(() => {
+          if (memoryFrameRef.current) memoryFrameRef.current.style.pointerEvents = ''
+        })
+      }
+      memoryFrameRef.current?.contentWindow?.postMessage(
+        { type: 'kdcube-memory-widget-command', widget: MEMORY_WIDGET_ALIAS, action: 'wake-scroll' },
+        '*',
+      )
+    }
+    toggle()
+    window.setTimeout(toggle, 60)
+    window.setTimeout(toggle, 200)
+  }, [])
+
   const sendMemoryWidgetCommand = useCallback((command: Record<string, unknown>) => {
     const target = memoryFrameRef.current?.contentWindow
     if (!target) return false
@@ -930,16 +956,24 @@ function App() {
     event.preventDefault()
     event.stopPropagation()
     const handle = event.currentTarget
+    const pointerId = event.pointerId
     const startX = event.clientX
     const startY = event.clientY
     const startW = memorySize.width
     const startH = memorySize.height
+    // Capture on the handle: pointermove/up are then delivered to the
+    // handle itself, so we attach the listeners there (not window). A
+    // window-level pointerup can be missed when the element holds the
+    // capture, which used to leave `scene-moving-memory` (and its
+    // iframe pointer-events:none) stuck on, breaking wheel scroll until
+    // the next click. `lostpointercapture` is the guaranteed teardown.
     try {
-      handle.setPointerCapture?.(event.pointerId)
+      handle.setPointerCapture?.(pointerId)
     } catch {
       /* pointer capture is best-effort */
     }
     document.body.classList.add('scene-moving-memory')
+    let done = false
     const onMove = (move: PointerEvent) => {
       const maxW = Math.max(280, window.innerWidth - 16)
       const maxH = Math.max(220, window.innerHeight - 16)
@@ -948,22 +982,39 @@ function App() {
       setMemorySize({ width: nextW, height: nextH })
     }
     const finish = () => {
+      if (done) return
+      done = true
       try {
-        handle.releasePointerCapture?.(event.pointerId)
+        handle.releasePointerCapture?.(pointerId)
       } catch {
         /* may already be released */
       }
       document.body.classList.remove('scene-moving-memory')
-      window.removeEventListener('pointermove', onMove)
+      handle.removeEventListener('pointermove', onMove)
+      handle.removeEventListener('pointerup', finish)
+      handle.removeEventListener('pointercancel', finish)
+      handle.removeEventListener('lostpointercapture', finish)
       window.removeEventListener('pointerup', finish)
-      window.removeEventListener('pointercancel', finish)
       window.removeEventListener('blur', finish)
+      // After a JS-driven iframe resize, Chrome keeps a stale scroll
+      // hit-test region, so wheel / touchpad scroll stops routing into
+      // the iframe (the scrollbar still works because that's a direct
+      // hit). Toggling pointer-events forces the compositor to rebuild
+      // the iframe's event region. A single toggle is racy — the iframe
+      // content is often still re-laying-out at pointerup — so we fire
+      // the nudge a few times across a short window; at least one lands
+      // after the resize has settled.
+      nudgeMemoryFrameScroll()
     }
-    window.addEventListener('pointermove', onMove)
-    window.addEventListener('pointerup', finish, { once: true })
-    window.addEventListener('pointercancel', finish, { once: true })
-    window.addEventListener('blur', finish, { once: true })
-  }, [bringPanelToFront, memorySize.width, memorySize.height])
+    handle.addEventListener('pointermove', onMove)
+    handle.addEventListener('pointerup', finish)
+    handle.addEventListener('pointercancel', finish)
+    handle.addEventListener('lostpointercapture', finish)
+    // Belt and suspenders: also catch pointerup at the window in case
+    // capture was refused, and blur (alt-tab / focus loss mid-drag).
+    window.addEventListener('pointerup', finish)
+    window.addEventListener('blur', finish)
+  }, [bringPanelToFront, memorySize.width, memorySize.height, nudgeMemoryFrameScroll])
 
   const startUsageDrag = useCallback((event: React.PointerEvent<HTMLElement>) => {
     if ((event.target as HTMLElement).closest('button')) return

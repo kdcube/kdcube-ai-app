@@ -392,6 +392,23 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   min-width: 96px;
 }
 
+/* Narrow pane — the multi-column filter grids overflow their min widths
+ * and get clipped by `overflow-x: hidden`, hiding Status / Tags /
+ * Keywords / the Search button. Stack everything to a single column so
+ * every control stays visible. */
+@media (max-width: 560px) {
+  .expanded-shell .filter-row,
+  .expanded-shell .search-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .expanded-shell .id-filter-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .expanded-shell .search-row button {
+    min-width: 0;
+  }
+}
+
 .expanded-shell .warning-box,
 .expanded-shell .maintenance-toggle-row,
 .expanded-shell .error-box {
@@ -922,8 +939,12 @@ textarea:focus {
 }
 
 .tier-group h3 {
-  position: sticky;
-  top: 0;
+  /* `position: sticky` was relative to the nearest scrolling ancestor —
+   * with the outer single-scroll on `.expanded-shell`, that meant the
+   * Tier headings stuck to the top of the whole widget and ended up
+   * floating over the filter section as the user scrolled. They belong
+   * to the memory-list inline flow now; drop the sticky behaviour. */
+  position: static;
   z-index: 1;
   margin: 0;
   border-bottom: 1px solid var(--line-soft);

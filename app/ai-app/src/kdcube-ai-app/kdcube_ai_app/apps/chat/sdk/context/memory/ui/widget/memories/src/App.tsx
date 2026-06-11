@@ -148,6 +148,48 @@ export default function App() {
     };
   }, [compact]);
 
+  // When the host iframe is resized, Chrome leaves the iframe's wheel
+  // hit-test region stale, so touchpad scroll stops working until a REAL
+  // scroll happens (the user found dragging the scrollbar wakes it).
+  // We reproduce that real scroll: move the scroll container down 1px in
+  // one frame and back in the NEXT frame. Doing both in the same frame
+  // coalesces to a no-op (no scroll event, no compositor wake) — the
+  // cross-frame split is what makes it count. Triggered by the native
+  // window-resize event and by an explicit host wake-scroll command.
+  useEffect(() => {
+    const scroller = () =>
+      document.querySelector('.expanded-shell, .compact-shell') as HTMLElement | null;
+    const jiggle = () => {
+      const el = scroller();
+      if (!el || el.scrollHeight <= el.clientHeight) return;
+      const top = el.scrollTop;
+      const bumped = top === 0 ? 1 : top - 1;
+      el.scrollTop = bumped;
+      window.requestAnimationFrame(() => {
+        const back = scroller();
+        if (back) back.scrollTop = top;
+      });
+    };
+    const wakeBurst = () => {
+      jiggle();
+      window.setTimeout(jiggle, 90);
+      window.setTimeout(jiggle, 260);
+    };
+    const onHostWake = (event: MessageEvent) => {
+      const data = event.data;
+      if (!data || typeof data !== 'object') return;
+      if (data.type === 'kdcube-memory-widget-command' && data.action === 'wake-scroll') {
+        wakeBurst();
+      }
+    };
+    window.addEventListener('resize', wakeBurst);
+    window.addEventListener('message', onHostWake);
+    return () => {
+      window.removeEventListener('resize', wakeBurst);
+      window.removeEventListener('message', onHostWake);
+    };
+  }, []);
+
   useEffect(() => {
     function onHostMessage(event: MessageEvent) {
       const data = event.data;

@@ -431,8 +431,14 @@ button {
   left: 0;
   top: 0;
   z-index: 58;
-  display: grid;
-  grid-template-rows: 32px minmax(0, 1fr);
+  /* Flex column, NOT grid. A grid `1fr` row does not give the iframe a
+   * definite height to resolve `height: 100%` against (Chrome leaves it
+   * at its last size), so the iframe stayed ~486 px while the pane grew
+   * to 680 — that gap was the "empty bordered area at the bottom". The
+   * chat pane avoids this by wrapping its iframe in a flex container;
+   * we do the same directly here. */
+  display: flex;
+  flex-direction: column;
   /* width / height are driven from the React-side memorySize state via
    * an inline style; the JS .memory-pane-resize handle below overrides
    * the iframe's pointer capture so the corner stays draggable. */
@@ -445,6 +451,10 @@ button {
   background: var(--surface);
   overflow: hidden;
   box-shadow: 0 20px 42px rgba(13, 30, 44, 0.16);
+}
+
+.memory-pane > header {
+  flex: 0 0 auto;
 }
 
 .memory-pane.expanded {
@@ -531,9 +541,12 @@ button {
 }
 
 .memory-frame {
-  grid-row: 2;
+  /* Flex child filling the remaining column height. flex-grow makes the
+   * iframe element take the leftover space (replaced elements respond to
+   * flex-grow on the main axis), and min-height: 0 lets it shrink under
+   * its content box if the pane is small. */
+  flex: 1 1 auto;
   width: 100%;
-  height: 100%;
   min-height: 0;
   border: 0;
   background: var(--surface);
