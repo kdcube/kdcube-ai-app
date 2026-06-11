@@ -74,13 +74,13 @@
 
   <rect x="708" y="290" width="170" height="64" class="box" fill="#ecfdf5" stroke="#059669"/>
   <text x="793" y="312" text-anchor="middle" class="h">chat-ingress</text>
-  <text x="793" y="332" text-anchor="middle" class="small">Fargate · API/SSE :8010</text>
+  <text x="793" y="332" text-anchor="middle" class="small">Fargate · API/SSE/Socket.IO :8010</text>
   <text x="793" y="348" text-anchor="middle" class="tiny">ClamAV sidecar for uploads</text>
 
   <rect x="708" y="388" width="170" height="76" class="box" fill="#dbeafe" stroke="#2563eb"/>
   <text x="793" y="410" text-anchor="middle" class="h">chat-proc</text>
   <text x="793" y="430" text-anchor="middle" class="small">Fargate or EC2 capacity provider</text>
-  <text x="793" y="446" text-anchor="middle" class="tiny">agent runtime, queue worker</text>
+  <text x="793" y="446" text-anchor="middle" class="tiny">agent runtime, queue + Data Bus workers</text>
   <text x="793" y="460" text-anchor="middle" class="tiny">holds ECS task protection while busy</text>
 
   <rect x="498" y="398" width="170" height="56" class="box dash" fill="#f1f5f9" stroke="#64748b"/>
@@ -113,7 +113,7 @@
 
   <rect x="200" y="630" width="130" height="56" class="box dash" fill="#dcfce7" stroke="#16a34a"/>
   <text x="265" y="650" text-anchor="middle" class="h">Redis</text>
-  <text x="265" y="670" text-anchor="middle" class="small">queues, streams, sessions</text>
+  <text x="265" y="670" text-anchor="middle" class="small">queues, streams, pubsub, sessions</text>
 
   <rect x="354" y="630" width="144" height="56" class="box" fill="#ecfdf5" stroke="#059669"/>
   <text x="426" y="650" text-anchor="middle" class="h">EFS</text>

@@ -7,6 +7,8 @@ keywords: ["high-level architecture", "ingress", "proc", "gateway", "SSE", "redi
 see_also:
   - ks:docs/arch/architecture-long.md
   - ks:docs/service/comm/README-comm.md
+  - ks:docs/service/comm/conversation-event-bus-and-data-bus-README.md
+  - ks:docs/service/comm/data-bus-README.md
   - ks:docs/hosting/attachments-system.md
 ---
 # KDCube AI App — System Architecture (Short)
@@ -34,8 +36,10 @@ graph TD
   GATE -->|rate limit/backpressure| GW[Gateway + Throttling]
 
   %% Queue + Processing
-  GATE -->|enqueue| Q[Redis Queues]
+  GATE -->|enqueue chat wake/task| Q[Redis Queues]
+  GATE -->|publish data_bus messages| DBUS[Redis Data Bus Streams]
   Q --> PROC[Chat Processor Workers]
+  DBUS --> PROC
 
   %% Orchestration
   PROC --> BUNDLES[Dynamic Bundles / Workflows]
@@ -70,7 +74,7 @@ graph TD
   RT --> DDG
 
   %% Cache/Queues/PubSub
-  BUNDLES -->|cache/queues/pubsub| REDIS["(Redis / ElastiCache)"]
+  BUNDLES -->|cache/queues/streams/pubsub| REDIS["(Redis / ElastiCache)"]
 
   classDef aws fill:#e8f4ff,stroke:#7aa7d6,color:#0b2b4f;
   classDef ext fill:#f2f7ee,stroke:#8fbf7a,color:#1f3b1c;
@@ -132,8 +136,10 @@ See `architecture-long.md §2` for the full breakdown, security group topology, 
 ## 3) Supported client transports
 
 - **SSE**: primary streaming transport (current UI default)
-- **Socket.IO**: fully supported alternative
+- **Socket.IO**: fully supported alternative for chat and Data Bus publish
 - **REST**: non‑streaming endpoints (profile/admin/monitoring/etc.)
+- **Data Bus**: Socket.IO `data_bus.publish` or `POST /sse/data_bus.publish`
+  with `messages[]`; this is bundle-scoped durable inbound traffic, not chat.
 
 ---
 
@@ -150,7 +156,8 @@ See `architecture-long.md §2` for the full breakdown, security group topology, 
 
 - **Postgres**: per‑tenant + per‑project schema (prod/dev separated) + **control_plane** schema.
 - **S3** (prod): bucket per tenant/project or shared bucket with prefix segmentation; KB artifacts live here too.
-- **Redis**: cache + messaging (Pub/Sub) + rate‑limit counters.
+- **Redis**: cache, chat ready queues, conversation event lanes, Data Bus
+  streams, comm Pub/Sub relay, sessions, and rate‑limit counters.
 - **Neo4j**: optional, currently off.
 
 Processor note:
@@ -168,31 +175,55 @@ Processor note:
 
 ---
 
-## 6) Streaming flow (SSE or Socket.IO)
+## 6) Chat Streaming Flow (SSE or Socket.IO)
 
 ```mermaid
 sequenceDiagram
   participant UI as Client UI
   participant API as Chat API
+  participant Q as Redis Ready Queue
+  participant W as Proc Worker
+  participant B as Bundle / Workflow
   participant RL as Redis Relay
-  participant Q as Redis Queue
-  participant W as Worker / Bundle
 
   UI->>API: open stream (SSE / Socket.IO connect)
   UI->>API: send message (SSE / Socket.IO)
-  API->>Q: enqueue task (per user_type queue)
+  API->>Q: enqueue chat task / lane wakeup
   W->>Q: dequeue + lock
-  W->>RL: publish chat_* events to session channel
+  W->>B: run workflow
+  B->>RL: publish chat_* events to session channel
   RL-->>API: fan-out to connected stream
   API-->>UI: chat_start/step/delta/complete
 ```
 
+## 7) Data Bus Flow
+
+```mermaid
+sequenceDiagram
+  participant UI as Widget / Client
+  participant API as Chat API
+  participant DS as Redis Data Bus Stream
+  participant W as Proc Data Bus Worker
+  participant B as Bundle Handler
+  participant RL as Comm Relay
+
+  UI->>API: data_bus.publish messages[]
+  API->>API: auth + bundle visibility + publish limits
+  API->>DS: append bundle-scoped messages
+  W->>DS: read handler stream
+  W->>B: @data_bus_handler(...)
+  B-->>RL: optional reply/event
+  RL-->>UI: optional chat_service reply
+```
+
 ---
 
-## 7) Key docs
+## 8) Key docs
 
 - Comm integrations: [README-comm.md](../service/comm/README-comm.md)
 - Comm architecture: [comm-system.md](../service/comm/comm-system.md)
+- Conversation Event Bus and Data Bus: [conversation-event-bus-and-data-bus-README.md](../service/comm/conversation-event-bus-and-data-bus-README.md)
+- Data Bus: [data-bus-README.md](../service/comm/data-bus-README.md)
 - Gateway: [gateway-README.md](../service/gateway-README.md)
 - Economics: [economics-usage.md](../economics/economics-usage.md)
 - Control plane: [instance-config-README.md](../service/maintenance/instance-config-README.md)

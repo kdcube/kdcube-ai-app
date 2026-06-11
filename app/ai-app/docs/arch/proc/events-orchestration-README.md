@@ -1,8 +1,8 @@
 ---
 id: ks:docs/arch/proc/events-orchestration-README.md
 title: "Proc Events Orchestration"
-summary: "Processor-side orchestration for external events: ready-queue wakeups, lane payload resolution, live-owner promotion, and boundaries with ReAct timeline folding."
-status: draft
+summary: "Processor-side orchestration for external events: ready-queue wakeups, lane payload resolution, lane-state scheduling, and boundaries with ReAct timeline folding."
+status: active
 tags: ["arch", "proc", "events", "external-events", "redis", "processor", "react"]
 keywords:
   [
@@ -12,11 +12,12 @@ keywords:
     "event lane",
     "ready queue wakeup",
     "processor event resolution",
-    "external event promotion",
+    "conversation event lane state",
   ]
 see_also:
   - ks:docs/arch/proc/processor-arch-README.md
   - ks:docs/arch/ingress/events-inception-README.md
+  - ks:docs/sdk/events/conversation-event-lane-state-README.md
   - ks:docs/sdk/events/external-events-README.md
   - ks:docs/sdk/events/external-events-journey-and-handling-README.md
   - ks:docs/sdk/agents/react/shared-timeline-event-bus-steer-followup-README.md
@@ -50,6 +51,7 @@ Processor
   if item is ExternalEventLaneWakeup:
     read event_lane.event_id from Redis event lane
     rebuild ExternalEventPayload from event.task_payload
+    schedule/ignore the wake under the conversation lane state table T
     attach bundle_call_context.event_lane_wakeup
   else:
     validate item directly as ExternalEventPayload
@@ -65,6 +67,7 @@ The important boundary is:
 
 - the ready queue wakes proc;
 - the Redis event lane owns the ordered event body;
+- lane state `T` synchronizes proc, the handler, and the reader;
 - the bundle/ReAct runtime owns timeline folding.
 
 ## Queue Item Kinds
@@ -87,7 +90,10 @@ event_lane.sequence
 ```
 
 Processor resolves it by calling the external-event source for that lane and
-reading `event.task_payload`.
+reading `event.task_payload`. Before invoking the bundle for a wake, proc asks
+the event-bus orchestrator to schedule the conversation lane consumer from the wake
+timestamp. Duplicate, stale, or already-covered wakeups are ignored without
+mutating the lane event.
 
 ## Why The Queue Does Not Carry Request
 
@@ -117,28 +123,38 @@ When proc claims work:
 3. read the lane event by `event_id`;
 4. validate `event.task_payload` as `ExternalEventPayload`;
 5. patch the event occurrence fields from the lane event;
-6. add `bundle_call_context.event_lane_wakeup` for diagnostics;
-7. invoke the bundle through the normal reactive-entrypoint path.
+6. call `schedule_consumer_from_wake(...)` under lane state `T`;
+7. add `bundle_call_context.event_lane_wakeup` for diagnostics;
+8. invoke the bundle through the normal reactive-entrypoint path when the wake
+   schedules work.
 
 The resolved payload is still a full `ExternalEventPayload`, so communicator,
 economics, runtime context, and non-ReAct workflows can use the same processor
 execution machinery.
 
-## Live Owner And Promotion
+## Lane State, Live Reader, And Handoff
 
 Busy-conversation `followup`, `steer`, and authored `external_event` records are
 published to the same event lane.
 
-If a live ReAct owner exists, it drains the lane and folds accepted events into
-its in-memory timeline. If the live owner does not consume a promotable event,
-proc can promote the retained event after the active turn completes.
+The live ReAct handler opens the lane state for its turn. The ContextBrowser
+reader drains the lane and folds accepted events into the in-memory timeline
+only while `T.handler.status == open`. Accepting lane events and advancing
+`T.last_processed_*` happens under the same short state lock.
 
-Promotion queues an `ExternalEventLaneWakeup`, not a request copy. The promoted
-processor task therefore goes through the same resolution path as an idle
-lane-backed reactive start.
+When ReAct has a candidate final answer, its close gate compares the last event
+timestamp it rendered with `T.last_processed_event_timestamp`. If the reader
+accepted newer timeline material, the handler stays open and ReAct continues
+from the updated timeline. After the handler closes and turn artifacts persist,
+ContextBrowser performs the post-save handoff: unconsumed reactive lane work is
+woken through `EventLaneWakePublisher`.
 
-`steer` is a live control event. Proc does not promote stale steer events after
-the target turn has expired.
+That handoff queues an `ExternalEventLaneWakeup`, not a request copy. The next
+processor task therefore goes through the same resolution path as an initial
+lane-backed reactive start. Proc does not scan the lane after task completion.
+
+`steer` is a live control event. Stale steer events do not start a later turn
+after the target turn has expired.
 
 ## Non-Reactive Idle Events
 
@@ -174,5 +190,17 @@ The forward-looking scheduler design is:
 - [Design: Conversation Scheduler With Redis Streams](design/conversation-scheduler-streams-README.md)
 
 That design makes conversation ownership the scheduler unit. The current
-events-orchestration path is a smaller step: ordered lane events plus processor
-wakeups and live-owner folding.
+events-orchestration path is a smaller step: ordered lane events, lane state
+`T`, processor wakeups, reader folding, and post-save handoff.
+
+## Simulator
+
+The end-to-end event-bus simulator lives next to the focused tests:
+
+- [event-bus-simulator-README.md](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/tests/event-bus-simulator-README.md)
+- [test_event_bus_state.py](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/tests/test_event_bus_state.py)
+
+The simulator names each method after the production site it represents:
+ingress, wake publication, proc wake resolution, BaseWorkflow/ContextBrowser
+handler setup, ContextBrowser reader drain, ReAct close gate, artifact
+persistence, and post-save handoff.

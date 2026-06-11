@@ -8,7 +8,9 @@ see_also:
   - ks:docs/arch/architecture-long.md
   - ks:docs/arch/proc/longrun-protection-README.md
   - ks:docs/arch/proc/events-orchestration-README.md
+  - ks:docs/sdk/events/conversation-event-lane-state-README.md
   - ks:docs/arch/proc/design/conversation-scheduler-streams-README.md
+  - ks:docs/service/comm/data-bus-README.md
   - ks:docs/service/streams/conversation-scheduler-README.md
   - ks:docs/ops/ecs/components/proc-README.md
   - ks:docs/service/maintenance/connection-pooling-README.md
@@ -34,6 +36,7 @@ It reflects the current implementation in:
 The `proc` service is the execution side of chat processing. After ingress accepts a request, `proc` is responsible for:
 
 - claiming queued external event payloads from Redis
+- running bundle-scoped Data Bus handlers from durable Data Bus streams
 - executing the target bundle/workflow
 - publishing chat events through the relay communicator
 - updating conversation state to `idle` or `error`
@@ -63,22 +66,26 @@ All proc worker processes compete for the same Redis task queues.
 
 ```mermaid
 flowchart LR
-    INGRESS[Ingress] -->|LPUSH task payload| READY[Redis ready queues]
+    INGRESS[Ingress] -->|LPUSH task payload / lane wakeup| READY[Redis ready queues]
+    INGRESS -->|XADD data_bus messages| DBUS[Redis Data Bus streams]
     READY -->|BRPOPLPUSH claim| INFLIGHT[Redis inflight queues]
 
     subgraph PROC["Proc replica / Uvicorn workers"]
         W1[Worker 1]
         W2[Worker 2]
         WN[Worker N]
+        DBW[Data Bus runtime workers]
     end
 
     INFLIGHT --> W1
     INFLIGHT --> W2
     INFLIGHT --> WN
+    DBUS --> DBW
 
     W1 -->|bundle execution + relay events| RELAY[Redis relay/pubsub]
     W2 -->|bundle execution + relay events| RELAY
     WN -->|bundle execution + relay events| RELAY
+    DBW -->|handler replies/events| RELAY
 
     RELAY --> INGRESS
     INGRESS --> CLIENT[Client SSE]
@@ -202,9 +209,8 @@ Important:
 - the active React workflow may consume them while it is still running
 - a live consumed `followup` stays on the current turn
 - a live consumed `steer` interrupts the active generation or cancellable tool phase and then hands React a short finalize phase on the same turn
-- if the active workflow does not consume a promotable event, proc promotes the
-  next event back into the ready queue as a lane wakeup after the active turn
-  finishes
+- lane state `T` coordinates wake scheduling, live reader acceptance, handler
+  close, and post-save handoff for unconsumed reactive work
 
 ---
 
@@ -235,7 +241,8 @@ Busy-conversation continuation path:
    event source
 4. ingress emits `chat_service` with `type="queue.continuation.accepted"`
 5. the synchronous `/sse/chat` response returns `status="followup_accepted"` or `status="steer_accepted"`
-6. no item is added to the main ready queue yet unless a later promotion is needed
+6. reactive batches publish the lane event and enqueue one lane wake atomically;
+   proc may ignore the wake when a fresh active reader already owns the lane
 
 If a live React owner exists:
 - `followup` can be folded into the active turn and influence the next decision boundary
@@ -266,7 +273,8 @@ Once claimed:
 
 1. proc materializes `ExternalEventPayload`
    - if the queue item is `ExternalEventLaneWakeup`, proc first reads the lane
-     event by `event_id` and reconstructs the payload from `event.task_payload`
+     event by `event_id`, reconstructs the payload from `event.task_payload`,
+     and schedules or ignores the wake under lane state `T`
    - if the queue item is already `ExternalEventPayload`, proc validates it directly
 2. proc builds `ServiceCtx`, `ConversationCtx`, and `ChatCommunicator`
 3. if running on ECS with `ECS_AGENT_URI`, proc enables task-wide ECS scale-in protection for the busy proc task
@@ -296,14 +304,12 @@ On terminal completion:
 - success:
   - emit `chat.complete`
   - ack the inflight claim
-  - if there is no pending external event to promote:
-    - set conversation state to `idle`
-    - emit `conv_status` with `completion="success"`
-  - if there is a pending external event to promote:
-    - take exactly one oldest unconsumed event
-    - push an `ExternalEventLaneWakeup` into the normal ready queue for its user type
-    - set conversation state back to `in_progress` for the promoted turn
-    - emit `conv_status` with `completion="queued_next"`
+  - persist turn artifacts
+  - release the lane consumer after ContextBrowser post-save handoff has queued
+    a wake for any remaining unconsumed reactive lane work
+  - set conversation state to `idle` or keep/return it to work-pending state
+    according to the handoff path
+  - emit final `conv_status`
 - failure:
   - emit `chat.error`
   - ack the inflight claim
@@ -361,12 +367,10 @@ sequenceDiagram
     alt runtime owns live timeline and consumes event
         R->>M: read pending external event
         R->>R: Apply followup during active turn or stop on steer at safe checkpoint
-    else runtime does not consume event
-        P1->>M: claim next promotable external event after T1 completes
-        P1->>Q: LPUSH promoted ExternalEventLaneWakeup
-        P1-->>C: conv_status completion=queued_next
+    else event remains unconsumed after artifacts persist
+        R->>Q: post-save handoff LPUSH ExternalEventLaneWakeup
         Note over P1,P2: P2 may be the same or a different proc worker
-        P2->>Q: BRPOPLPUSH claim promoted wakeup
+        P2->>Q: BRPOPLPUSH claim handoff wakeup
         P2->>M: Resolve event.task_payload by event_id
         P2->>R: Execute next turn
     end
@@ -384,7 +388,8 @@ Current guarantees:
 - bounded parallelism per worker via `max_concurrent`
 - at most one actively executing turn per conversation because ingress currently blocks a second normal enqueue while the conversation is `in_progress`
 - busy-conversation continuation messages are preserved in ordered shared storage instead of being dropped
-- if the active workflow does not consume continuation input, proc promotes exactly one next external event back to the normal ready queue after the current turn ends
+- unconsumed reactive continuation work is handed off by ContextBrowser after
+  turn artifacts persist
 - a live consumed `steer` interrupts the active React phase immediately when possible, then React gets a short finalize phase on the same turn
 
 Current non-guarantees:
@@ -498,7 +503,7 @@ See also:
 Backpressure now counts:
 
 ```text
-ready depth + inflight depth + continuation mailbox backlog
+ready depth + inflight depth + conversation external-event lane backlog
 ```
 
 not only the ready queues.
@@ -554,15 +559,16 @@ What happens today:
   - `take_next_continuation()`
 - if the live runtime consumes a `followup` while it is running, that input stays inside the active turn
 - if the live runtime consumes a `steer` while it is running, engineering interrupts the active phase and React finishes through a short bounded finalize pass on the same turn
-- if the runtime does not consume the event, proc promotes exactly one next
-  pending event into the normal ready queue as `ExternalEventLaneWakeup` after
-  the current turn finishes
+- if reactive work remains unconsumed after turn artifacts persist,
+  ContextBrowser queues an `ExternalEventLaneWakeup` through the event-bus wake
+  publisher
 
 This is the answer to the main operational question:
 
-- no, unhandled mailbox messages are not lost
+- no, unhandled lane events are not lost
 - no, they do not stay pinned to the same proc instance
-- yes, once promoted, they are available on the normal ready queue and any proc worker can claim them
+- yes, once a handoff wake is queued, any proc worker can claim it from the
+  normal ready queue
 - the only invariant is one active conversation owner at a time, not sticky worker affinity
 
 Current message-kind rule:
@@ -626,7 +632,7 @@ So the cutover rule is:
 
 ---
 
-## 11. Remaining Gap To Full Steer/Followup
+## 11. Remaining Gap To Full Conversation Scheduler
 
 The current external-event slice is intentionally conservative.
 
@@ -635,14 +641,16 @@ What it solves:
 - safe acceptance of busy-conversation messages
 - ordered storage per conversation
 - workflow-level inspection API
-- fallback processing for non-reactive bundles through post-turn promotion
+- lane-state synchronization between proc wake scheduling, handler open/close,
+  reader acceptance, and post-save handoff
 - live followup on the same turn for React
 - immediate live steer interruption plus bounded finalize for React
 
 What it still does not provide:
 
 - a real conversation scheduler
-- a durable "wake this conversation up" mechanism independent from the current owner
+- an owner loop that keeps executing subsequent turns without returning through
+  the global user-type ready queue
 - direct processing of the next followup turn without bouncing back through the global user-type queue
 - explicit crash recovery for "pending external events but owner died"
 - a clear fairness model once one conversation keeps receiving many followups
@@ -1008,7 +1016,7 @@ The bundle/runtime is responsible for deciding whether that message kind is acti
 #### Followup
 
 - if consumed mid-turn by a reactive runtime, it is treated as live continuation input
-- if not consumed mid-turn, and later promoted into the next scheduled turn, it is still delivered as `followup`
+- if not consumed mid-turn, and later scheduled into the next turn, it is still delivered as `followup`
 - a non-reactive bundle may then choose to handle it exactly like ordinary user input, or ignore any followup-specific semantics
 
 #### Steer
@@ -1167,7 +1175,7 @@ The recommended migration is incremental.
 
 - keep `ConversationContinuationSource` as the public workflow API
 - keep explicit continuation metadata in payloads
-- keep current mailbox slice working
+- keep the current lane-state wake handoff slice working
 
 This protects bundle code from the backend change.
 
@@ -1175,7 +1183,7 @@ This protects bundle code from the backend change.
 
 - introduce a `ConversationScheduler` backend interface
 - current backend:
-  - global ready queue + mailbox promotion
+  - global ready queue + lane-state wake handoff
 - target backend:
   - shard stream + lease + mailbox stream
 
@@ -1234,9 +1242,10 @@ That architecture is now much safer for long-running workers:
 - it lets React consume those events during execution
 - it lets live followup stay on the same turn
 - it lets live steer stop the current turn at a safe checkpoint
-- it falls back to promoting the next pending event into the normal queue when no live turn consumes it
+- it uses ContextBrowser post-save handoff to wake remaining unconsumed reactive
+  lane work
 
-The next major step is no longer "improve mailbox promotion".
+The next major step is no longer "improve wake handoff".
 It is to replace the current queue-centric execution model with a real conversation scheduler:
 
 ```text

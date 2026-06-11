@@ -16,6 +16,11 @@ keywords:
     "conversation timeline",
   ]
 see_also:
+  - ks:docs/service/comm/conversation-event-bus-and-data-bus-README.md
+  - ks:docs/service/comm/data-bus-README.md
+  - ks:docs/service/comm/bus-routing-and-partitioning-README.md
+  - ks:docs/arch/proc/events-orchestration-README.md
+  - ks:docs/sdk/events/conversation-event-lane-state-README.md
   - ks:docs/sdk/events/external-events-README.md
   - ks:docs/sdk/agents/react/shared-timeline-event-bus-steer-followup-README.md
   - ks:docs/sdk/agents/react/runtime-configuration-README.md
@@ -28,6 +33,29 @@ see_also:
 This document describes how a client-side action becomes a platform event at
 chat ingress. It is the ingress-level map; ReAct-specific folding is documented
 in [Shared Timeline Event Bus for Steer and Followup](../../sdk/agents/react/shared-timeline-event-bus-steer-followup-README.md).
+
+## Conversation Bus And Data Bus Boundary
+
+Chat ingress accepts conversation events. These are routed through `/sse/chat`
+or Socket.IO `chat_message` with top-level `external_events[]`, then into the
+conversation external-event lane and ReAct workflow path.
+
+Data Bus ingress accepts bundle-owned domain messages. These are routed through
+Socket.IO `data_bus.publish` or `POST /sse/data_bus.publish` with top-level
+`messages[]`, then into bundle-scoped Data Bus Redis Streams and
+`@data_bus_handler(...)` workers.
+
+These paths can share the same browser transport, auth session, and comm reply
+relay. They do not share durable routes:
+
+| Path | Transport event | Durable route | Runtime consumer |
+| --- | --- | --- | --- |
+| Conversation bus | `/sse/chat`, Socket.IO `chat_message` | conversation external-event lane + proc wakeup | chat workflow / ReAct owner |
+| Data Bus | Socket.IO `data_bus.publish`, `POST /sse/data_bus.publish` | bundle Data Bus stream | proc-owned `@data_bus_handler(...)` worker |
+
+Use the Data Bus for bundle state mutation that should not enter
+`external_events[]`, the conversation timeline, or ReAct unless a bundle
+explicitly bridges it.
 
 ## Event Types And Lane Kinds
 
@@ -99,7 +127,7 @@ Rules:
 | Conversation state | Event family | Ingress action | ReAct wake/credit |
 |---|---|---|---|
 | Idle/new | `event.user.prompt` | Set conversation `in_progress`, host attachments as `event.user.attachment.*`, append `kind=message` to the event lane, enqueue `ExternalEventLaneWakeup`. | Normal task budget. |
-| Busy | `event.user.followup` | Append to per-conversation external-event source with `kind=followup`; active owner may consume live, otherwise proc may promote fallback task. | Reactive by default; grants bounded live iteration credit. |
+| Busy | `event.user.followup` | Append to per-conversation external-event source with `kind=followup`; the active reader may consume live, otherwise post-save handoff can queue the next lane wake. | Reactive by default; grants bounded live iteration credit. |
 | Busy | `event.user.steer` | Append to per-conversation external-event source with `kind=steer`; active owner may interrupt/finalize. | No iteration credit; control path. |
 | Idle | Authored domain event, no ingress-visible `reactive=true` | Set/verify conversation row as `idle`, append `kind=external_event` to per-conversation Redis external-event source, return `external_event_recorded`. | No wake, no credit. |
 | Busy | Authored domain event, no `reactive=true` | Append `kind=external_event` to per-conversation Redis external-event source, return `external_event_accepted`. | No wake credit. Active owner can still invoke callbacks and policy production if it drains the stream. |
@@ -153,17 +181,23 @@ For busy conversations:
 
 1. Ingress reads server conversation state.
 2. It records `active_turn_id_at_ingress`.
-3. It reads the live owner lease, when present, and records `owner_turn_id`.
-4. It appends the event to the Redis external-event source with a monotonic
-   per-conversation sequence.
-5. The active owner drains events from the Redis source and folds them into its
-   in-memory timeline.
-6. After folding, ReAct persists the resulting timeline and folded cursor.
+3. It appends the event to the Redis external-event source with a monotonic
+   per-lane sequence and an event-envelope timestamp.
+4. If the batch contains a reactive event, lane publish and wake enqueue happen
+   atomically. Rejection leaves no accepted lane event behind.
+5. Proc resolves the wake and uses lane state `T` to decide whether this wake
+   schedules a consumer or is ignored as duplicate/stale.
+6. The ContextBrowser reader drains events from the Redis source and folds them
+   into its in-memory timeline only while `T.handler.status == open`.
+7. The ReAct close gate closes the handler only after it has rendered all lane
+   events accepted by the reader.
+8. After artifacts persist, ContextBrowser performs post-save handoff for any
+   unconsumed reactive lane work and then releases `T.consumer`.
 
 This prevents two writers from mutating one in-memory timeline. Redis ordering
-prevents accepted external events from being unordered relative to each other.
-It does not yet create a single transaction across conversation state, Redis,
-and durable timeline/artifact storage.
+prevents accepted external events from being unordered relative to each other;
+lane state `T` coordinates the race between ingress wakeups, proc scheduling,
+reader acceptance, and handler close.
 
 For idle non-reactive authored events, the current implementation records only
 to the Redis external-event source and leaves the conversation state idle. That

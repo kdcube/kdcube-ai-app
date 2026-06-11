@@ -69,7 +69,8 @@ The current proc architecture works, but it is still built around a **coarse glo
 - ingress enqueues into user-type ready queues
 - proc claims one task
 - proc executes that task
-- followup/steer and mailbox promotion patch around the fact that the scheduler is not conversation-native
+- followup/steer use the conversation external-event lane, lane state `T`, and
+  wake handoff around the fact that the scheduler is not conversation-native
 
 That model becomes strained once we want all of the following at once:
 
@@ -647,7 +648,8 @@ Backends:
 
 - current:
   - global ready queue
-  - mailbox promotion
+  - conversation external-event lane
+  - lane-state wake handoff
 - target:
   - mailbox stream
   - wake stream

@@ -7,6 +7,8 @@ keywords: ["ingress", "proc", "gateway", "SSE", "redis", "storage", "economics",
 see_also:
   - ks:docs/arch/architecture-short.md
   - ks:docs/service/comm/README-comm.md
+  - ks:docs/service/comm/conversation-event-bus-and-data-bus-README.md
+  - ks:docs/service/comm/data-bus-README.md
   - ks:docs/service/auth/auth-README.md
   - ks:docs/service/proxy/proxy-ecs-ops-README.md
 ---
@@ -21,6 +23,8 @@ It reflects the current production model (SSE‑first, cookie‑based auth, Redi
 
 - **Gateway**: policy enforcement + rate limiting + backpressure before a request is accepted.
 - **Relay**: Redis Pub/Sub transport for async events.
+- **Data Bus**: durable bundle-scoped inbound messages consumed by
+  `@data_bus_handler(...)`, separate from conversation ingress.
 - **Bundle**: a dynamic workflow (agentic app) loaded from the plugin registry.
 - **Control Plane**: quotas + budgets + top‑ups + policy cache.
 - **Session**: resolved from auth tokens; used for per‑session routing.
@@ -304,6 +308,13 @@ References:
 - **Socket.IO**: `/socket.io` handshake + `chat_message`, `conv_status.get`
 - **REST**: `/profile`, admin/monitoring/control‑plane routes
 
+**Data Bus transports**
+- **Socket.IO**: `data_bus.publish` with top-level `messages[]`
+- **HTTP**: `POST /sse/data_bus.publish` with top-level `messages[]`
+
+Conversation `chat_message` and Data Bus `data_bus.publish` can reuse one
+Socket.IO connection. They route to different durable paths.
+
 Key entrypoint: [web_app.py](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/web_app.py)
 
 ---
@@ -313,6 +324,8 @@ Key entrypoint: [web_app.py](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ing
 The gateway enforces **authentication**, **rate limits**, and **backpressure** before a request is accepted:
 
 - **Gateway rate limiting** (requests / hour / etc.)
+- **Data Bus publish limits** (per-session packages/messages/bytes before
+  durable stream writes)
 - **Backpressure** (queue capacity, system protection)
 - **Circuit breakers** (system health and failure protection)
 - **Session resolution** (anonymous → registered/privileged upgrade)
@@ -325,11 +338,25 @@ Key modules:
 
 ## 6) Streaming & relay (SSE and Socket.IO)
 
-Both SSE and Socket.IO use the same **Redis relay**, which is session‑scoped.
+Chat SSE and Socket.IO use the same **Redis relay** for transient client
+delivery, but accepted chat submissions still execute through the Redis ready
+queue. Ingress accepts the message, enqueues a chat task or lane wakeup, proc
+claims that queue item, and the running bundle publishes `chat_*` events back
+through the relay.
+
+The relay is session-scoped for ordinary chat events and also supports explicit
+project-scoped service events where the platform sends them. Data Bus durable
+traffic does not use this relay for storage; it uses bundle Data Bus streams
+and may use the relay only for optional replies.
 
 ```mermaid
 graph TD
-  B[Bundles/Workers] -->|chat_* events| CR[ChatRelayCommunicator]
+  UI[Client] -->|open SSE / Socket.IO stream| API[Chat API]
+  UI -->|send chat_message or /sse/chat| API
+  API -->|LPUSH task / lane wakeup| Q[(Redis Ready Queue)]
+  Q -->|claim + lock| P[Proc Worker]
+  P -->|run| B[Bundle / Workflow]
+  B -->|chat_* events| CR[ChatRelayCommunicator]
   CR -->|pub| R[(Redis Pub/Sub)]
 
   R --> SSEH[SSEHub]
@@ -351,9 +378,10 @@ References:
 
 ---
 
-## 7) Processing pipeline (queue + worker)
+## 7) Processing Pipeline
 
-Requests are enqueued into **user‑type queues** (privileged/registered/anonymous). Workers pop fairly and apply locks.
+Chat requests and lane wakeups are enqueued into **user‑type queues**
+(privileged/registered/anonymous). Workers pop fairly and apply locks.
 
 ```mermaid
 sequenceDiagram
@@ -369,6 +397,28 @@ sequenceDiagram
 ```
 
 Key worker: [apps/chat/processor.py](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py)
+
+Data Bus messages follow a separate proc-owned stream worker path:
+
+```mermaid
+sequenceDiagram
+  participant API as Data Bus Ingress
+  participant DS as Redis Data Bus Stream
+  participant W as Proc Data Bus Worker
+  participant B as Bundle @data_bus_handler
+  participant R as Comm Relay
+
+  API->>DS: XADD bundle message
+  W->>DS: XREADGROUP handler group
+  W->>W: partition lock + retry/DLQ policy
+  W->>B: invoke handler
+  B-->>R: optional ctx.reply/event
+```
+
+Key Data Bus runtime files:
+- [socketio/data_bus/publish.py](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/socketio/data_bus/publish.py)
+- [runtime/data_bus/worker.py](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/data_bus/worker.py)
+- [runtime/data_bus/policy.py](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/data_bus/policy.py)
 
 ---
 
@@ -443,7 +493,12 @@ References:
 - Prefix segment forms the tenant/project boundary
 
 ### Redis
-- Cache + rate‑limit counters + Pub/Sub relay
+- Cache
+- chat ready/inflight queues
+- conversation external-event lanes and lane state
+- bundle Data Bus streams
+- comm Pub/Sub relay
+- sessions, proxy state, rate-limit counters, and publish-limit counters
 
 ### Neo4j
 - Optional graph context; currently off
@@ -453,7 +508,9 @@ References:
 ## 13) Inputs & payload limits
 
 - **Message/attachment limits** enforced at transport layer.
-- Socket.IO limits are configured via max buffer size; SSE uses server‑side validation.
+- Socket.IO chat limits are configured via max buffer size; SSE uses server‑side validation.
+- Socket.IO `data_bus.publish` has per-role package/message/byte limits under
+  `gateway.data_bus.ingress.publish_limits`.
 
 References:
 - [Socket.IO transport](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/socketio/chat.py)
@@ -490,6 +547,8 @@ References:
 - Chat API entrypoint: [web_app.py](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/web_app.py)
 - SSE transport: [sse/chat.py](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/sse/chat.py)
 - Socket.IO transport: [socketio/chat.py](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/socketio/chat.py)
+- Data Bus Socket.IO ingress: [socketio/data_bus/publish.py](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/ingress/socketio/data_bus/publish.py)
+- Data Bus runtime worker: [runtime/data_bus/worker.py](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/data_bus/worker.py)
 - Processor: [apps/chat/processor.py](../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py)
 - Comm subsystem: [comm-system.md](../service/comm/comm-system.md)
 - Comm integrations: [README-comm.md](../service/comm/README-comm.md)

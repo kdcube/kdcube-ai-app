@@ -7,6 +7,7 @@ keywords: ["long run protection", "started marker", "task protection", "proc dra
 see_also:
   - ks:docs/arch/proc/processor-arch-README.md
   - ks:docs/arch/proc/events-orchestration-README.md
+  - ks:docs/service/comm/data-bus-README.md
   - ks:docs/ops/ecs/components/proc-README.md
   - ks:docs/arch/ecs-service-README.md
 ---
@@ -72,6 +73,13 @@ The most important platform rule is:
 For lane-backed external events, the ready queue may contain only an
 `ExternalEventLaneWakeup`. Proc resolves the full `ExternalEventPayload` from
 the Redis event lane before the same started-marker rule applies.
+
+Data Bus handlers are also proc-owned runtime work, but they are not chat turns.
+They are admitted through bundle Data Bus streams and governed by the Data Bus
+worker contract: handler registry, partition locks, idempotency, retries, DLQ,
+and optional comm replies. They do not create conversation started markers,
+`external_events[]`, or ReAct timeline state unless a bundle explicitly bridges
+them into conversation ingress.
 
 In [processor.py](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/processor.py), proc writes a started marker before communicator start and before bundle execution proceeds.
 

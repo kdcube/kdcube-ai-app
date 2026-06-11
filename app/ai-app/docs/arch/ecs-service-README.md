@@ -44,9 +44,9 @@ auth, rate limiting, real IP handling, and security headers.
 | `web-proxy` | Fargate | `80` | OpenResty reverse proxy. Routes UI, auth, API, SSE, integration, and static paths. Applies proxy auth, security headers, rate limits, and service discovery routing. |
 | `web-ui` | Fargate | `80` | Static frontend container. Runtime frontend config is injected at startup. |
 | `proxylogin` | Fargate | `8080` | Delegated auth service. Handles OIDC/Cognito flows, session token masking/unmasking, refresh, and password-reset flows when enabled. |
-| `chat-ingress` | Fargate | `8010` | API and SSE ingress. Validates requests, applies gateway/backpressure checks, accepts uploads, and enqueues work for processors. |
+| `chat-ingress` | Fargate | `8010` | API, SSE, and Socket.IO ingress. Validates chat requests, accepts uploads, applies gateway/backpressure checks, admits Data Bus publish packages, and enqueues or streams work for processors. |
 | `clamav` | sidecar in `chat-ingress` | `3310` | Optional upload scanning sidecar used by ingress when AV scanning is enabled. |
-| `chat-proc` | Fargate or EC2 capacity provider | `8020` | Queue worker and agent runtime. Runs bundles, model calls, web search/fetch, tools, integrations, and code execution orchestration. |
+| `chat-proc` | Fargate or EC2 capacity provider | `8020` | Queue worker, Data Bus worker, and agent runtime. Runs bundles, model calls, web search/fetch, tools, integrations, `@data_bus_handler(...)`, and code execution orchestration. |
 | `metrics` | optional Fargate service | `8002` | Reads Redis/runtime stats and exports CloudWatch metrics for autoscaling and monitoring. |
 | setup tasks | one-shot Fargate tasks | n/a | Initialize database state, write bundle/config descriptors, and write proxy config into runtime storage. |
 
@@ -58,7 +58,7 @@ example `chat-ingress`, `chat-proc`, `proxylogin`, and `web-ui`.
 | Surface | Deployment mode | Used for |
 | --- | --- | --- |
 | Postgres | managed RDS or provided host | Conversation state, bundle/runtime records, memory metadata, auth support tables, and operational state. |
-| Redis | managed ElastiCache or provided host | Chat queue, inflight locks, SSE chunk stream, proxy sessions, rate limit state, and metrics inputs. |
+| Redis | managed ElastiCache or provided host | Chat queues, inflight locks, conversation event lanes/state, bundle Data Bus streams, comm relay Pub/Sub, SSE chunk stream, proxy sessions, rate-limit/publish-limit state, and metrics inputs. |
 | EFS | managed filesystem with access points | Live runtime mounts such as platform storage, bundle storage, bundle source cache, config, runtime config, git SSH material, exec workspace, react debug, proxy config, and AV database. |
 | S3 | managed bucket(s) or provided URI | Durable object storage, attachments, hosted artifacts, bundle storage URI, and execution snapshot/artifact exchange where configured. |
 | Secrets Manager / SSM | managed | Platform secrets, bundle secrets, service API keys, infra credentials, gateway config JSON, frontend config JSON, and runtime config blobs. |

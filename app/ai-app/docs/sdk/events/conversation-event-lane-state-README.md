@@ -2,7 +2,7 @@
 id: ks:docs/sdk/events/conversation-event-lane-state-README.md
 title: "Conversation Event Lane State"
 summary: "SDK/runtime reference for the Redis state record that synchronizes conversation external-event ingress, readers, handlers, and wake handoff."
-status: draft
+status: active
 tags: ["sdk", "events", "external-events", "redis", "react", "synchronization"]
 updated_at: 2026-06-10
 keywords:
@@ -228,8 +228,9 @@ The Redis enqueuer writes the wake to the normal processor ready queue for the
 tenant/project/user type. Proc resolves wake items and schedules/ignores them;
 it does not scan the lane after task completion.
 
-Focused tests:
+Focused simulator and tests:
 
 ```text
+app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/tests/event-bus-simulator-README.md
 app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/tests/test_event_bus_state.py
 ```
