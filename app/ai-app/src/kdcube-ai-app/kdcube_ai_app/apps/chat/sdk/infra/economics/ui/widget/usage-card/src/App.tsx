@@ -127,7 +127,18 @@ function accountIdentity(profile: ProfileResponse | null): string | null {
   return trimmed.length ? trimmed : null;
 }
 
+function initialCompact(): boolean {
+  try {
+    const p = new URLSearchParams(window.location.search || '');
+    const v = (p.get('view') || p.get('mode') || '').trim().toLowerCase();
+    return v === 'compact' || (p.get('compact') || '').trim() === '1';
+  } catch {
+    return false;
+  }
+}
+
 export const App: React.FC = () => {
+  const [compact, setCompact] = useState<boolean>(initialCompact);
   const [breakdown, setBreakdown] = useState<QuotaBreakdown | null>(null);
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
   const [status, setStatus] = useState<CardStatus>({ loading: false, error: null, ready: false });
@@ -185,6 +196,11 @@ export const App: React.FC = () => {
     const onMessage = (event: MessageEvent) => {
       const data = event.data;
       if (!data || typeof data !== 'object') return;
+      if (data.type === 'kdcube-set-view') {
+        if (data.view === 'expanded') setCompact(false);
+        if (data.view === 'compact') setCompact(true);
+        return;
+      }
       if (data.type !== REFRESH_MESSAGE_TYPE) return;
       scheduleRefresh();
     };
@@ -193,7 +209,7 @@ export const App: React.FC = () => {
   }, [scheduleRefresh]);
 
   return (
-    <div className={`usage-card-shell${status.loading ? ' is-loading' : ''}`}>
+    <div className={`usage-card-shell${compact ? ' usage-compact' : ''}${status.loading ? ' is-loading' : ''}`}>
       <header className="usage-card-header">
         <div className="usage-card-identity">
           <p className="eyebrow">Plan</p>
@@ -226,6 +242,20 @@ export const App: React.FC = () => {
         <div className="usage-empty">Loading…</div>
       ) : null}
       {breakdown ? (
+        compact ? (
+          <div className="usage-body usage-compact-body">
+            <div className="usage-compact-stat">
+              <span className="uc-l">This month</span>
+              <span className="uc-v">{formatUsd(breakdown.current_usage.tokens_this_month_usd)}</span>
+              <span className="uc-s">{formatCount(breakdown.current_usage.requests_this_month)} req</span>
+            </div>
+            <div className="usage-compact-stat">
+              <span className="uc-l">Today</span>
+              <span className="uc-v">{formatUsd(breakdown.current_usage.tokens_today_usd)}</span>
+              <span className="uc-s">{formatCount(breakdown.current_usage.requests_today)} req</span>
+            </div>
+          </div>
+        ) : (
         <div className="usage-body">
           <UsageWindow title="Last 60 minutes" resetAt={breakdown.reset_windows?.hour_reset_at}>
             <UsageRow
@@ -279,6 +309,7 @@ export const App: React.FC = () => {
             </div>
           ) : null}
         </div>
+        )
       ) : null}
     </div>
   );

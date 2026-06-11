@@ -1,4 +1,4 @@
-import type { DragEventHandler, ReactNode } from 'react';
+import { useEffect, useRef, type DragEventHandler, type ReactNode } from 'react';
 
 interface AppShellProps {
   children: ReactNode;
@@ -15,6 +15,8 @@ interface AppShellProps {
   dropActive?: boolean;
   hostControls?: boolean;
   saving?: boolean;
+  maintenanceOpen?: boolean;
+  onToggleMaintenance?: () => void;
 }
 
 function notifyHostWidgetFocus(): void {
@@ -41,9 +43,42 @@ export function AppShell({
   dropActive = false,
   hostControls = false,
   saving = false,
+  maintenanceOpen = false,
+  onToggleMaintenance,
 }: AppShellProps) {
+  const shellRef = useRef<HTMLElement | null>(null);
+
+  // Report the actual rendered content height to the host so a floating
+  // panel can fit to content (no empty space below a short compact list).
+  // Measuring the lowest child bottom works even when the shell is stretched
+  // to fill the iframe (scrollHeight would just return the iframe height).
+  useEffect(() => {
+    const el = shellRef.current;
+    if (!el || typeof window === 'undefined' || window.parent === window) return;
+    let raf = 0;
+    const measure = () => {
+      raf = 0;
+      const top = el.getBoundingClientRect().top;
+      let bottom = top;
+      Array.from(el.children).forEach((child) => {
+        const r = (child as HTMLElement).getBoundingClientRect();
+        if (r.bottom > bottom) bottom = r.bottom;
+      });
+      const height = Math.max(0, Math.ceil(bottom - top) + 8);
+      window.parent.postMessage({ type: 'kdcube-memory-resize', widget: 'memories', height, compact: Boolean(compact) }, '*');
+    };
+    const schedule = () => { if (!raf) raf = window.requestAnimationFrame(measure); };
+    const ro = new ResizeObserver(schedule);
+    ro.observe(el);
+    const mo = new MutationObserver(schedule);
+    mo.observe(el, { childList: true, subtree: true });
+    schedule();
+    return () => { ro.disconnect(); mo.disconnect(); if (raf) window.cancelAnimationFrame(raf); };
+  }, [compact, count]);
+
   return (
     <main
+      ref={shellRef}
       className={`app-shell ${compact ? 'compact-shell' : 'expanded-shell'} ${compact && hostControls ? 'host-controlled-shell' : ''} ${dropActive ? 'memory-drop-active' : ''}`}
       onDragLeave={onDragLeave}
       onDragOver={onDragOver}
@@ -70,6 +105,11 @@ export function AppShell({
               <path d="M12 5v14M5 12h14" />
             </svg>
             New note
+          </button>
+        ) : null}
+        {!compact && onToggleMaintenance ? (
+          <button type="button" className="secondary-button header-maintenance-button" onClick={onToggleMaintenance}>
+            {maintenanceOpen ? 'Hide maintenance' : 'Show maintenance'}
           </button>
         ) : null}
         {allowWrite && compact ? (

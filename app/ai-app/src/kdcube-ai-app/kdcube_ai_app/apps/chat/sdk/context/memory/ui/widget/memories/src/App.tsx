@@ -270,6 +270,8 @@ export default function App() {
       dropActive={dropActive}
       compact={compact}
       hostControls={hostControls}
+      maintenanceOpen={maintenanceOpen}
+      onToggleMaintenance={() => setMaintenanceOpen((open) => !open)}
       onCreate={() => setEditorMode('create')}
       onExpand={compact && !hostControls ? requestExpand : undefined}
       onToggleMemoryUse={toggleMemoryUse}
@@ -294,20 +296,7 @@ export default function App() {
         </div>
       ) : null}
       <MemoryFilters />
-      {compact ? null : (
-        <>
-          <div className="maintenance-toggle-row">
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => setMaintenanceOpen((open) => !open)}
-            >
-              {maintenanceOpen ? 'Hide maintenance' : 'Show maintenance'}
-            </button>
-          </div>
-          {maintenanceOpen ? <ReconciliationPanel /> : null}
-        </>
-      )}
+      {compact || !maintenanceOpen ? null : <ReconciliationPanel />}
       {error ? (
         <div className="error-box dismissible-error">
           <span>{error}</span>

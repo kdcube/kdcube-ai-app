@@ -116,7 +116,10 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   min-height: 0;
   margin: 0;
   padding: 6px;
-  overflow: hidden;
+  /* Scroll if content is taller than the (fit-to-content) panel; for a short
+     list the panel shrinks to fit so no scrollbar shows. */
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .sr-only {
@@ -397,12 +400,17 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
  * Keywords / the Search button. Stack everything to a single column so
  * every control stays visible. */
 @media (max-width: 560px) {
-  .expanded-shell .filter-row,
-  .expanded-shell .search-row {
+  .expanded-shell .filter-row {
     grid-template-columns: minmax(0, 1fr);
   }
+  /* Keep two columns so the Search button pairs with the last input instead
+     of dropping onto a lonely row of its own. */
+  .expanded-shell .search-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  /* Keep the input + "Show ids" button on one row for the same reason. */
   .expanded-shell .id-filter-row {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto;
   }
   .expanded-shell .search-row button {
     min-width: 0;
@@ -619,11 +627,13 @@ textarea:focus {
 
 .compact-workspace {
   display: flex;
-  flex: 1 1 auto;
+  /* Content-height (don't grow to fill the panel) so the host can fit the
+     panel to the actual list height instead of the iframe height. */
+  flex: 0 0 auto;
   flex-direction: column;
   margin-top: 6px;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 /* ─── Reconciliation panel — compact & quiet ─── */

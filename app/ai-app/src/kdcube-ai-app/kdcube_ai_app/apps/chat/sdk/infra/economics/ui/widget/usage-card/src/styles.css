@@ -265,3 +265,48 @@ p {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
+
+/* ── Super-compact view (default in a summoned panel) ───────────────── */
+.usage-compact .eyebrow,
+.usage-compact .usage-card-account {
+  display: none;
+}
+.usage-compact .usage-card-header {
+  padding-bottom: 8px;
+}
+.usage-compact .usage-card-header h2 {
+  font-size: 14px;
+}
+.usage-compact-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 0;
+}
+.usage-compact-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 9px 11px;
+  border: 1px solid var(--line, #d7e4ea);
+  border-radius: 8px;
+  background: var(--surface-2, #f7fafb);
+}
+.usage-compact-stat .uc-l {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted, #6c8aa2);
+}
+.usage-compact-stat .uc-v {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--ink, #102033);
+  font-variant-numeric: tabular-nums;
+}
+.usage-compact-stat .uc-s {
+  font-size: 11px;
+  color: var(--muted, #6c8aa2);
+  font-variant-numeric: tabular-nums;
+}
