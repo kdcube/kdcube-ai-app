@@ -14,7 +14,7 @@ keywords:
     "which doc to read next",
     "bundle docs map",
   ]
-updated_at: 2026-06-08
+updated_at: 2026-06-11
 see_also:
   - ks:docs/sdk/bundle/bundle-index-README.md
   - ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
@@ -138,6 +138,7 @@ Conditional additions:
 | How do I test the bundle? | [how-to-test-bundle-README.md](how-to-test-bundle-README.md) |
 | How do I expose APIs, widgets, MCP, cron, jobs, or Data Bus handlers? | [../bundle-platform-integration-README.md](../bundle-platform-integration-README.md) |
 | How do browser widgets communicate with bundle operations and streams? | [../bundle-client-communication-README.md](../bundle-client-communication-README.md) |
+| How do I configure Data Bus publish limits? | [../../../configuration/gateway-descriptor-README.md#data_buspublish_limits](../../../configuration/gateway-descriptor-README.md#data_buspublish_limits), [how-to-configure-and-run-bundle-README.md](how-to-configure-and-run-bundle-README.md) |
 | How do I build source-folder widgets or reuse SDK widget source? | [../bundle-widget-integration-README.md](../bundle-widget-integration-README.md), [../ui-components-lifecycle-README.md](../ui-components-lifecycle-README.md) |
 | How does ReAct see tools, skills, MCP, and generated files? | [../bundle-agent-integration-README.md](../bundle-agent-integration-README.md) |
 | How do authored external events render to timeline/ANNOUNCE? | [../bundle-events-README.md](../bundle-events-README.md), [../../agents/react/event-source/event-source-README.md](../../agents/react/event-source/event-source-README.md) |

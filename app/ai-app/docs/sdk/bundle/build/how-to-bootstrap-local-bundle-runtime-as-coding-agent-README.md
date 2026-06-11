@@ -4,7 +4,7 @@ title: "How To Bootstrap A Local Bundle Runtime As A Coding Agent"
 summary: "Tier 1 coding-agent runbook for Claude Code, Codex, or a build-with-KDCube plugin to configure a local KDCube runtime, wire a bundle through the CLI, start ngrok when public callbacks are needed, set bundle props and secrets, register Telegram webhooks, prepare Gmail OAuth settings, validate bundle events, and report only the external steps the agent cannot complete."
 tags: ["sdk", "bundle", "tier-1", "agents", "local-runtime", "cli", "ngrok", "telegram", "gmail", "oauth"]
 keywords: ["agent local bundle setup", "configure bundle with cli", "run kdcube local runtime", "telegram webhook setup", "gmail oauth local setup", "ngrok local kdcube", "bundles yaml staged descriptors", "bundles secrets yaml", "bundle events", "event sources", "artifact rehosters", "kdcube bundle command", "autonomous runtime smoke test"]
-updated_at: 2026-06-03
+updated_at: 2026-06-11
 see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
@@ -74,6 +74,9 @@ Common failure smoke checks:
   event, or resolver failures, route the agent to
   [how-to-avoid-common-bundle-integration-failures-README.md](how-to-avoid-common-bundle-integration-failures-README.md)
   instead of patching around symptoms
+- when Data Bus publish calls are rejected before the handler runs, inspect
+  `gateway.data_bus.ingress.publish_limits` in the active `gateway.yaml`;
+  these are platform ingress limits, not bundle props
 - if a bundle mounts memory, canvas, tasks, Telegram, delivery, or another
   reusable SDK subsystem, use
   [bundle-subsystem-integration-README.md](../bundle-subsystem-integration-README.md)

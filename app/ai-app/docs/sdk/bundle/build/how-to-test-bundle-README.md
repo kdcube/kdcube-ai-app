@@ -4,7 +4,7 @@ title: "How To Test A Bundle"
 summary: "Testing guide for bundle authors and QA: local syntax/suite/pytest validation, runtime reload validation, widget/API/event-source checks, scheduled-job verification, and failure diagnosis in the local runtime."
 tags: ["sdk", "bundle", "testing", "pytest", "widget", "events", "runtime", "validation"]
 keywords: ["bundle testing workflow", "shared bundle suite", "local bundle tests", "widget and api validation", "event source validation", "artifact rehoster validation", "shared sdk widget source validation", "runtime reload verification", "scheduled job checks", "bundle failure diagnosis", "manual and automated test loop", "local qa for bundles", "integration qa for bundles"]
-updated_at: 2026-06-03
+updated_at: 2026-06-11
 see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/sdk/bundle/build/how-to-write-bundle-README.md
@@ -28,6 +28,9 @@ see_also:
   - ks:docs/sdk/tools/tool-subsystem-README.md
   - ks:docs/sdk/events/event-subsystem-README.md
   - ks:docs/sdk/events/external-events-README.md
+  - ks:docs/service/comm/data-bus-README.md
+  - ks:docs/service/comm/conversation-event-bus-and-data-bus-README.md
+  - ks:docs/configuration/gateway-descriptor-README.md
   - ks:docs/sdk/agents/react/event-source/event-source-README.md
   - ks:docs/sdk/bundle/bundle-delivery-and-update-README.md
   - ks:docs/sdk/bundle/bundle-runtime-README.md
@@ -701,7 +704,37 @@ Reference:
 
 - [bundle-client-communication-README.md#non-chat-bundle-events-over-the-shared-stream](../bundle-client-communication-README.md#non-chat-bundle-events-over-the-shared-stream)
 
-### C. Cron / scheduled-job path
+### C. Data Bus handler path
+
+Verify Data Bus separately from chat and REST operations.
+
+What to validate:
+
+- the client sends top-level `messages[]` through Socket.IO
+  `data_bus.publish` or `POST /sse/data_bus.publish`
+- gateway admission accepts reasonable package/message/byte volume for the
+  resolved role
+- rejected publishes are surfaced as not accepted; the bundle handler does not
+  see rejected messages
+- the configured subject reaches the expected `@data_bus_handler(...)`
+- `object_ref` partitioning serializes same-object mutations when the handler
+  contract requires it
+- idempotency and `base_revision`/stale-update behavior are enforced in bundle
+  storage, not only in the browser
+- optional `ctx.reply.*` events reach the connected client when reply metadata
+  exists
+
+If a widget sees 429 or Data Bus publish-limit rejection during normal
+interaction, inspect `gateway.data_bus.ingress.publish_limits` in
+`gateway.yaml` before changing bundle code.
+
+References:
+
+- [Data Bus](../../../service/comm/data-bus-README.md)
+- [Conversation Event Bus And Data Bus](../../../service/comm/conversation-event-bus-and-data-bus-README.md)
+- [Gateway Descriptor: Data Bus publish limits](../../../configuration/gateway-descriptor-README.md#data_buspublish_limits)
+
+### D. Cron / scheduled-job path
 
 Cron must be tested as a separate class of runtime.
 

@@ -16,7 +16,7 @@ keywords:
     "authored external events",
     "resolver ownership",
   ]
-updated_at: 2026-06-08
+updated_at: 2026-06-11
 see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
@@ -28,6 +28,8 @@ see_also:
   - ks:docs/sdk/bundle/bundle-platform-integration-README.md
   - ks:docs/sdk/tools/custom-tools-README.md
   - ks:docs/service/comm/conversation-event-bus-and-data-bus-README.md
+  - ks:docs/service/comm/data-bus-README.md
+  - ks:docs/configuration/gateway-descriptor-README.md
   - ks:docs/sdk/solutions/event-hub/resolver-and-policy-registration-README.md
 ---
 # How To Avoid Common Bundle Integration Failures
@@ -209,11 +211,23 @@ Keep these boundaries:
 | operation progress back to current browser | shared session stream |
 | project-wide compact UI refresh | project event broadcast |
 
+Operational rules:
+
+- `data_bus.publish` is admitted before durable stream write by the gateway
+  Data Bus publish limiter.
+- Tune package/message/byte limits in `gateway.yaml` under
+  `gateway.data_bus.ingress.publish_limits`; do not put these platform limits
+  in bundle props.
+- Treat publish-limit rejection as "not accepted". The client should surface
+  the rejection and retry later or batch less aggressively; the bundle handler
+  will not see rejected messages.
+
 Read:
 
 - [Conversation Event Bus And Data Bus](../../../service/comm/conversation-event-bus-and-data-bus-README.md)
 - [Data Bus](../../../service/comm/data-bus-README.md)
 - [Bus Routing And Partitioning](../../../service/comm/bus-routing-and-partitioning-README.md)
+- [Gateway Descriptor: Data Bus publish limits](../../../configuration/gateway-descriptor-README.md#data_buspublish_limits)
 
 ## Recipe: Authored Events And Tool Result Rendering
 
@@ -305,4 +319,5 @@ Read:
 | Agent sees a JSON blob instead of useful context | missing event-source policy. |
 | `react.pull` cannot resolve a compact ref | namespace rehoster or resolver was not registered in a loaded module. |
 | UI mutation hangs or duplicates | Data Bus subject/object_ref/handler contract is incomplete. |
+| Data Bus publish gets 429 or publish-limit rejection | `gateway.data_bus.ingress.publish_limits` is too low for the widget's package rate/size, or the widget is sending too many messages instead of batching. |
 | Canvas pin cannot open/download | namespace owner resolver is not registered. |

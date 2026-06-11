@@ -4,12 +4,13 @@ title: "How To Configure And Run A Bundle"
 summary: "Current bundle-development runtime workflow: tenant/project environment setup, descriptor staging, local-path and git bundles, configuration translation, start/stop/reload loop, configuration/secret scopes, bundle events, and the rule that one machine may hold many local deployment snapshots but should not be treated as running many local compose-backed KDCubes at once."
 tags: ["sdk", "bundle", "configuration", "runtime", "cli", "bundles.yaml"]
 keywords: ["local bundle development workflow", "tenant project environment boundary", "descriptor driven runtime setup", "local path bundle loop", "git bundle loop", "bundle reload workflow", "runtime sandbox selection", "bundle config and secret scopes", "shared sdk widget sources", "bundle events", "event sources", "artifact rehosters", "bundle configurator workflow", "bundle deployer workflow", "current kdcube cli workflow", "multiple local runtime snapshots", "single active local compose deployment", "run multiple kdcubes on one machine", "kdcube bundle command", "patch bundle config cli", "patch bundle secret cli"]
-updated_at: 2026-06-03
+updated_at: 2026-06-11
 see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/configuration/bundles-descriptor-README.md
   - ks:docs/configuration/bundles-secrets-descriptor-README.md
   - ks:docs/configuration/assembly-descriptor-README.md
+  - ks:docs/configuration/gateway-descriptor-README.md
   - ks:docs/configuration/runtime-configuration-and-secrets-store-README.md
   - ks:docs/service/cicd/design/cli--as-control-plane-README.md
   - ks:docs/service/cicd/ngrok-README.md
@@ -558,7 +559,7 @@ For the exact helper contract and cloud-mode differences, use:
 
 | Scope | Typical examples | Read / write API | Live authority in the local runtime | Export / ejection path |
 |---|---|---|---|---|
-| platform/global props | ports, auth ids, storage backends, path roots | `get_settings()` for effective values; `get_plain("...")` for raw descriptor inspection; no supported write API from bundle code | staged `assembly.yaml` and `gateway.yaml` under `workdir/config/`, plus env | exported by `kdcube config export --include-platform-descriptors`; otherwise manage through the deployment descriptor set |
+| platform/global props | ports, auth ids, storage backends, path roots, gateway and Data Bus publish limits | `get_settings()` for effective values; `get_plain("...")` for raw descriptor inspection; no supported write API from bundle code | staged `assembly.yaml` and `gateway.yaml` under `workdir/config/`, plus env | exported by `kdcube config export --include-platform-descriptors`; otherwise manage through the deployment descriptor set |
 | platform/global secrets | deployment-wide API keys, auth secrets | async read: `await get_secret("canonical.key")`; no supported write API from bundle code | `secrets.yaml` only when `secrets-file` is active; otherwise the configured secrets provider | exported by `kdcube config export --include-platform-descriptors` only when the provider/export flow can reconstruct them; otherwise manage through deployment secret workflows |
 | deployment-scoped bundle props | feature flags, cron expressions, model selection, bundle UI config | read: `self.bundle_prop(...)`; write: `await set_bundle_prop(...)` | `workdir/config/bundles.yaml` when file-backed descriptor mode is active, with Redis as runtime cache | exported by `kdcube config export` to `bundles.yaml` |
 | deployment-scoped bundle secrets | webhook secrets, shared API tokens, bundle-specific credentials | async read: `await get_secret("b:...")`; write: `await set_bundle_secret(...)` | `workdir/config/bundles.secrets.yaml` only in local `secrets-file` mode; otherwise the configured secrets provider | exported by `kdcube config export` to `bundles.secrets.yaml` when the provider/export flow can reconstruct them |
@@ -831,6 +832,17 @@ These still matter to a local runtime, but they are not the main bundle authorin
 
 - `secrets.yaml` holds non-bundle service/runtime secrets for local install
 - `gateway.yaml` holds gateway config
+
+For bundles that use Data Bus from widgets or custom UIs, `gateway.yaml` also
+owns the Data Bus publish admission policy:
+
+```text
+gateway.data_bus.ingress.publish_limits
+```
+
+Those limits are per-role package/message/byte limits before durable Data Bus
+stream writes. Adjust them in the deployment descriptor set or gateway admin
+config path; do not add a parallel bundle prop for the same platform policy.
 
 For non-interactive local install, the descriptor set should be complete and internally consistent.
 

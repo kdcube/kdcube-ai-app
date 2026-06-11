@@ -4,7 +4,7 @@ title: "How To Release Bundle Content"
 summary: "Optional but recommended Tier 1 lifecycle procedure for releasing bundle/content repositories: align bundle docs, event-source contracts, config templates, release.yaml, validation, git commit/tag/push, and descriptor ref updates from a self-contained public bundle-builder workflow."
 tags: ["sdk", "bundle", "release", "content", "lifecycle", "tier-1"]
 keywords: ["bundle content release", "bundle release procedure", "release yaml", "bundle config templates", "bundle tag", "bundle descriptor ref", "shared widget source validation", "bundle events release", "event source validation", "artifact rehoster validation", "agent release workflow", "optional release procedure", "bundle lifecycle maintenance"]
-updated_at: 2026-06-03
+updated_at: 2026-06-11
 see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/sdk/bundle/build/how-to-write-bundle-README.md
@@ -62,6 +62,9 @@ Release checks for common integration failures:
 - if the release mounts or changes memory, canvas, tasks, Telegram, delivery,
   or another reusable subsystem, validate the complete subsystem surface with
   [bundle-subsystem-integration-README.md](../bundle-subsystem-integration-README.md)
+- if the release adds or changes Data Bus widget traffic, validate the expected
+  package/message/byte rate against deployment
+  `gateway.data_bus.ingress.publish_limits`
 - release notes should not bless hardcoded `localhost`, host-app domains,
   `window.top.location`, or `document.referrer` as API base sources
 

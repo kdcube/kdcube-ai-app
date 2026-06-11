@@ -4,7 +4,7 @@ title: "How To Assemble A Bundle With SDK Building Blocks"
 summary: "Tier 1 bundle-builder map for choosing reusable KDCube SDK and platform blocks before writing custom bundle services: tools, event sources, agents, storage, widgets, jobs, integrations, and solutions."
 tags: ["sdk", "bundle", "tier-1", "building-blocks", "integrations", "solutions", "tools"]
 keywords: ["bundle building blocks", "sdk integrations", "sdk solutions", "bundle assembly map", "reuse sdk components", "telegram integration", "email integration", "tasks solution", "delivery integration", "shared sdk widget components", "built in tools", "react tools", "bundle events", "event sources", "artifact rehosters"]
-updated_at: 2026-06-03
+updated_at: 2026-06-11
 see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/sdk/bundle/build/how-to-write-bundle-README.md
@@ -34,8 +34,15 @@ see_also:
   - ks:docs/sdk/bundle/bundle-transports-README.md
   - ks:docs/sdk/bundle/build/design/bundle-loader-import-isolation-README.md
   - ks:docs/sdk/bundle/bundle-widget-integration-README.md
+  - ks:docs/sdk/solutions/scene/scene-composition-README.md
+  - ks:docs/sdk/solutions/scene/scene-surface-registry-README.md
+  - ks:docs/sdk/solutions/chat/chat-widget-solution-README.md
+  - ks:docs/sdk/solutions/memory/memory-widget-solution-README.md
+  - ks:docs/sdk/solutions/canvas/canvas-sdk-solution-README.md
   - ks:docs/sdk/events/event-subsystem-README.md
   - ks:docs/sdk/agents/react/event-source/event-source-README.md
+  - ks:docs/service/comm/conversation-event-bus-and-data-bus-README.md
+  - ks:docs/service/comm/data-bus-README.md
 ---
 # How To Assemble A Bundle With SDK Building Blocks
 
@@ -132,6 +139,7 @@ ownership.
 | Widget expand to fullscreen/overlay when embedded as an iframe | host-driven `kdcube-widget-view` / `kdcube-set-view` postMessage; host promotes the same iframe (no reload) | [Frame View Contract](../bundle-widget-integration-README.md#frame-view-contract-host-driven-expand) |
 | Live events from a non-chat widget/API operation to the browser | `/sse/stream` or Socket.IO plus `KDC-Stream-ID`; bundle emits `comm.service_event(...)` from request-bound context | [Bundle Client Communication](../bundle-client-communication-README.md#non-chat-bundle-events-over-the-shared-stream), [Bundle Transports](../bundle-transports-README.md#71-communicator-output) |
 | Tenant/project widget refresh events | SSE `/sse/stream?project_events=true`; bundle emits compact `comm.project_event(...)` snapshots | [Bundle Client Communication](../bundle-client-communication-README.md#tenantproject-sse-broadcast), [Bundle Platform Integration](../bundle-platform-integration-README.md#bundle-to-client-event-scopes) |
+| Durable browser/widget mutations for bundle-owned objects | Socket.IO `data_bus.publish` or `POST /sse/data_bus.publish` with `messages[]`; bundle handles via `@data_bus_handler(...)` | [Conversation Event Bus And Data Bus](../../../service/comm/conversation-event-bus-and-data-bus-README.md), [Data Bus](../../../service/comm/data-bus-README.md), [How To Write A Bundle](how-to-write-bundle-README.md#data-bus-handler-path) |
 | Shared widget UI pieces such as User Memory and Telegram admin/channels panels | `ui.widgets.<alias>.shared_sources`; SDK source is materialized into the consuming bundle's widget build and served from that bundle's storage root | [Shared UI Source Materialization](../bundle-widget-integration-README.md#shared-ui-source-materialization) |
 | Scheduled scan and background execution | `@cron(...)`, `@on_job`, jobs stream; use Tasks Solution for saved task execution | [Scheduled Jobs](../bundle-scheduled-jobs-README.md), [Tasks SDK Solution](../../solutions/tasks-README.md) |
 | Local mutable files, generated indexes, git working copies, runtime caches | bundle storage helpers, `BundleArtifactStorage`, KV cache, git helpers | [Bundle Storage And Cache](../bundle-storage-and-cache-README.md) |
@@ -343,6 +351,47 @@ If the memory mixin or another parent class already declares
 for that existing surface. It does not create the widget by itself. Hide the
 inherited memory widget with `enabled.widget.memories: false`; replace its UI by
 configuring `ui.widgets.memories.src_folder/build_command`.
+
+### Multi-Component Host Scene
+
+Use this recipe when the product is one workspace that composes several reusable
+SDK components — for example a chat widget, the memory widget, the canvas board,
+and a usage card — into a single host page, instead of one widget per surface.
+
+```text
+host scene (ui/scene)
+  -> mounts SDK component iframes by alias (chat, memory, usage) + the canvas React component
+  -> relays the runtime CONFIG_REQUEST/RESPONSE handshake to each iframe
+  -> brokers component-to-component postMessage (context attach/focus, set-view, canvas ingress)
+  -> subscribes to the Data Bus (canvas.patch writes, accounting.usage events)
+  -> routes canvas object "open" through the resolver registry to the owning widget surface
+```
+
+The bundle owns the scene only as a composition layer:
+
+- declare each embedded component with `@ui_widget(alias=...)` (plus an `@api`
+  mount point), and point `ui.widgets.<alias>.src_folder` at the shared SDK
+  source (`sdk://solutions/chat/ui/widget`,
+  `sdk://context/memory/ui/widget/memories`,
+  `sdk://solutions/canvas/ui/component`, …);
+- serve the host page itself through `ui.main_view.src_folder: ui/scene`;
+- register the object resolvers for every namespace the scene can open
+  (`mem:`, `fi:`, `cnv:`, …) so canvas pins resolve to the right surface.
+
+The scene host does not own object semantics. It knows which iframe surface is
+mounted and how to deliver a command to it; the namespace owner's resolver
+decides what "open" or "preview" means.
+
+The working reference is the versatile bundle
+(`src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36`):
+host at `ui/scene`, aliases and resolver registry in `entrypoint.py`, and the
+bundle-local design note `docs/design/scene-sdk-components.md`.
+
+Before building one, read the composition walk-through and the routing contract:
+[Scene Composition](../../../solutions/scene/scene-composition-README.md) for the
+mount config, CONFIG handshake, and Data Bus wiring;
+[Scene Surface Registry](../../../solutions/scene/scene-surface-registry-README.md)
+for how a resolver `open` event reaches the target widget.
 
 ## Test The Assembly Boundary
 

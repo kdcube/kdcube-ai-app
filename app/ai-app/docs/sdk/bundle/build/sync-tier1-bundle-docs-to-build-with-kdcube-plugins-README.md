@@ -4,7 +4,7 @@ title: "Tier 1 Bundle Pack For Build-With-KDCube Plugins"
 summary: "Short handoff note for Claude Code and Codex plugin engineers describing the Tier 1 bundle-doc pack, bundle events, the agent task facets it must support, and the minimal integration contract."
 tags: ["sdk", "bundle", "plugins", "claude-code", "codex", "handoff", "tier-1"]
 keywords: ["tier 1 bundle pack", "build with kdcube plugin", "claude code plugin", "codex plugin", "bundle docs pack", "bundle agent facets", "shared sdk widget source", "bundle events", "event sources", "artifact rehosters", "plugin doc links update"]
-updated_at: 2026-06-03
+updated_at: 2026-06-11
 see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
@@ -21,6 +21,9 @@ see_also:
   - ks:docs/sdk/bundle/bundle-client-communication-README.md
   - ks:docs/sdk/bundle/bundle-events-README.md
   - ks:docs/sdk/bundle/bundle-transports-README.md
+  - ks:docs/service/comm/conversation-event-bus-and-data-bus-README.md
+  - ks:docs/service/comm/data-bus-README.md
+  - ks:docs/configuration/gateway-descriptor-README.md
   - ks:docs/sdk/integrations/telegram/telegram-README.md
   - ks:docs/sdk/integrations/telegram/telegram-external-prereq-README.md
   - ks:docs/sdk/integrations/browser/browser-tools-README.md
@@ -169,6 +172,12 @@ Recommended:
   for browser/backend communication, especially non-chat bundle events over
   `/sse/stream` or Socket.IO with `KDC-Stream-ID` and
   `comm.service_event(...)`
+- keep [Conversation Event Bus And Data Bus](../../../service/comm/conversation-event-bus-and-data-bus-README.md),
+  [Data Bus](../../../service/comm/data-bus-README.md), and
+  [Gateway Descriptor](../../../configuration/gateway-descriptor-README.md)
+  reachable for widget/domain mutations: Data Bus uses `messages[]`,
+  `@data_bus_handler(...)`, and gateway
+  `gateway.data_bus.ingress.publish_limits` before durable writes
 - keep [bundle-agent-integration-README.md](../bundle-agent-integration-README.md)
   reachable for React descriptors, file-producing tool contracts, MCP
   connector/server wiring, Claude Code subprocess agents, and the common

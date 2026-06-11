@@ -4,7 +4,7 @@ title: "How To Write A Bundle"
 summary: "Authoring guide for bundle creators and integrators: bundle shape, lifecycle, decorators, runtime surfaces, bundle events, configuration and storage decisions, and how to turn a product idea or existing app into a deployable bundle."
 tags: ["sdk", "bundle", "authoring", "workflow", "widget", "api", "events", "testing"]
 keywords: ["bundle authoring guide", "bundle creator path", "bundle integrator path", "end to end bundle design", "decorator selection", "runtime surface selection", "widget api mcp cron on_job choices", "bundle events", "event sources", "artifact rehosters", "shared sdk widget components", "configuration and storage decisions", "bundle lifecycle design", "reference authoring patterns"]
-updated_at: 2026-06-03
+updated_at: 2026-06-11
 see_also:
   - ks:docs/sdk/bundle/build/how-to-navigate-kdcube-docs-README.md
   - ks:docs/sdk/bundle/build/how-to-test-bundle-README.md
@@ -34,6 +34,9 @@ see_also:
   - ks:docs/sdk/events/event-subsystem-README.md
   - ks:docs/sdk/events/external-events-README.md
   - ks:docs/sdk/agents/react/event-source/event-source-README.md
+  - ks:docs/service/comm/conversation-event-bus-and-data-bus-README.md
+  - ks:docs/service/comm/data-bus-README.md
+  - ks:docs/configuration/gateway-descriptor-README.md
   - ks:docs/sdk/bundle/build/design/bundle-loader-import-isolation-README.md
   - ks:docs/sdk/storage/cache-README.md
   - ks:docs/sdk/storage/git-store-README.md
@@ -1510,6 +1513,13 @@ Rules:
 - enforce idempotency and stale revision checks in bundle storage
 - use `ctx.reply.*` only for connected-client status; state recovery should
   come from normal reads/fetches
+- design widget clients for gateway admission errors before the handler runs:
+  `data_bus.publish` can be rejected by
+  `gateway.data_bus.ingress.publish_limits` when package rate, message count,
+  or payload bytes exceed the deployment policy
+- tune Data Bus publish limits in `gateway.yaml`, not in bundle props; bundle
+  props may control bundle behavior, but platform ingress limits are deployment
+  policy
 
 Minimal pattern:
 
