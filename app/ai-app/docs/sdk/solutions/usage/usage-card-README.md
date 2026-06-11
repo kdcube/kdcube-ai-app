@@ -77,6 +77,19 @@ Each window renders one or more rows with:
 The card itself stays compact (12px base, three sections) so it can live in a
 narrow floating panel inside a scene or a sidebar.
 
+### Density modes
+
+The card renders in one of two densities:
+
+| Mode | When | Shows |
+| --- | --- | --- |
+| Super-compact | Default when summoned with `?view=compact` (or `?compact=1`) | `Plan` + account email header, then `This month` / `Today` / `Last hour`, each with `Cost` and `Requests`/`Tokens` as `used / limit` plus a thin state bar. Built to fit a small floating panel. |
+| Full | Default standalone, or after the host sends `kdcube-set-view {view:"expanded"}` | The three stacked windows above with per-row pill bars and policy hints. |
+
+A scene host flips between the two with `kdcube-set-view`; the same message the
+memory and chat widgets honor. The bar color logic is shared across both modes
+(teal healthy, gold ≥80%, red at 100%).
+
 ## Architecture
 
 ```text

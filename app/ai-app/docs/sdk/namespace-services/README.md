@@ -48,6 +48,41 @@ model-callable tools, API operations, MCP clients, Data Bus handlers, and
 scheduled jobs. The client surface is transport-neutral; each runtime chooses
 the adapter that fits the call path.
 
+## At A Glance
+
+Two bundles, one configured edge, no shared code:
+
+```text
+  PROVIDER bundle (owns task:)            CONSUMER bundle (shows task: refs)
+ ┌────────────────────────────┐         ┌─────────────────────────────────┐
+ │ NamedServiceProvider       │         │ canvas pin / chat chip / tool   │
+ │   object.search/get/action │         │   object_ref "task:issues/42"   │
+ │            ▲               │         │            │                    │
+ │ @api("named_service")      │◀────────│  NamedServiceCanvasObjectResolver│
+ │   + NamedServiceRegistry   │  bridge │  (built from config, no API code)│
+ └────────────────────────────┘         └─────────────────────────────────┘
+        owner logic lives here       in-runtime bridge keeps tenant/user/project
+
+  Consumer wires the edge in config — discovery is configured, not automatic:
+    named_services.namespaces.task.provider = { bundle_id, provider, operation }
+```
+
+## Two Resolution Tiers
+
+A canvas/chat surface resolves a pinned `object_ref` through one of two tiers,
+chosen by namespace prefix:
+
+| Tier | Namespaces | Resolver | Knows |
+| --- | --- | --- | --- |
+| Owned-concrete | `cnv:` `conv:` `mem:` (the surface's own) | the surface's own resolver | kind, preview, open — no cross-bundle call |
+| Foreign-generic | another bundle's (`task:`) | `NamedServiceCanvasObjectResolver` | nothing local — opaque `object_ref`, capabilities from config, owner answers over the bridge |
+
+The foreign-generic tier is **additive**: it registers after the concrete
+resolvers and only fires for namespaces listed in `named_services.namespaces`
+(empty by default), so it never shadows owned namespaces. It replaces what used
+to be a hard "registered elsewhere" handoff with a live cross-bundle call —
+strictly more reach for foreign refs, zero change to owned-pin semantics.
+
 ## Documents
 
 | Document | Purpose |
@@ -74,3 +109,8 @@ The current implementation is not yet a global service discovery service. A
 client bundle must be configured with the namespace provider it should call.
 MCP and Data Bus are part of the provider capabilities vocabulary, but the
 generic platform adapters are still integration work.
+
+> **Naming.** "Namespace services" is the concept. The SDK module that
+> implements it is `kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers`
+> (`NamedServiceProvider`, `NamedServiceRegistry`, `NamedServiceClient`,
+> `NamedServiceCanvasObjectResolver`). They are the same thing, not two layers.

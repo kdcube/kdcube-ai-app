@@ -44,6 +44,37 @@ identified as `fi:...`, the canvas stores `fi:...` and only `fi:...`. Download,
 preview, materialization, and rehost all go through the resolver registered for
 `fi:`.
 
+## Board Targeting
+
+A pin operation lands on a board chosen in this order:
+
+1. an explicit `canvas_id` on the operation,
+2. otherwise the user's **last-active board** (set whenever the user switches
+   boards in the Pin Board UI),
+3. otherwise the default board.
+
+This lets an agent pin to "the board the user is looking at" by simply omitting
+`canvas_id`. Board lifecycle — create, archive (hidden from the default list,
+recoverable), and delete (entry removed, artifacts purged) — is owned by the
+canvas storage layer and surfaced through the Pin Board toolbar; archived and
+deleted boards drop out of active resolution.
+
+## Owned vs Foreign Refs
+
+A pin's `object_ref` resolves through one of two tiers, picked by namespace
+prefix:
+
+- **Owned** (`cnv:`, `conv:`, `mem:`) — a concrete resolver on this surface
+  knows the kind, preview, and open semantics directly.
+- **Foreign** (a namespace another bundle owns, e.g. `task:`) — the generic
+  `NamedServiceCanvasObjectResolver` treats the ref as opaque and asks the owner
+  bundle over the in-runtime bridge. It is additive (registered after the
+  concrete resolvers, only for namespaces in `named_services.namespaces`) and
+  never shadows owned refs.
+
+See [Namespace Services](../../namespace-services/README.md) for the
+provider/consumer contract behind foreign refs.
+
 ## Pin Shape
 
 Current task-tracker fields still use `logical_path`/`storage_ref` in places.

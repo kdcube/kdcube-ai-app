@@ -457,6 +457,15 @@ URLs, `rn:` handles, or transport-specific second links. When the user clicks
 Open/Preview/Download/Rehost, canvas asks the registered resolver for that
 namespace.
 
+**Owned vs foreign namespaces.** Write a concrete resolver only for namespaces
+your bundle owns. For a namespace **another bundle** owns (e.g. a composition
+bundle showing `task:` pins from a task bundle), do **not** write a resolver —
+declare `named_services.namespaces.<ns>.provider` and let the generic
+namespace-service resolver call the owner over the in-runtime bridge. Discovery
+is configured, not automatic. See
+[Namespace Services](../namespace-services/README.md) for the provider/consumer
+contract.
+
 ### 9. Storage And Schema
 
 Each subsystem owns its storage:

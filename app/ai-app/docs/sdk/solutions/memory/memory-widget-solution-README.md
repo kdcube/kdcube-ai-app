@@ -49,13 +49,19 @@ subsystem and documented separately:
 
 | Layer | Owned by the memory solution |
 | --- | --- |
-| Widget UI | Memory list, detail, editor, filters (scope/status/tags/ids/search), reconciliation panel, compact and expanded layouts. |
+| Widget UI | Memory list, detail, editor, filters (status/tags/ids/search), reconciliation panel, compact and expanded layouts. |
 | Note management | Create, edit, confirm, pin, delete, reconcile — gated by `allow_write`, not by the "use my memory" runtime toggle. |
 | Host iframe contract | Runtime config handshake; host view changes, focus, and status through `postMessage`. |
 | Context payload | Emits a memory as a draggable `mem:` context for chat or canvas. |
 
-The bundle still owns scope policy (`current_bundle` vs `all_user_memories`),
-write permission, and whether the agent uses memories at runtime.
+The bundle still owns write permission and whether the agent uses memories at
+runtime.
+
+Scope is no longer a user-facing choice. The widget browses **all of the user's
+memories** (`all_user_memories`) and renders no scope selector. A bundle that
+disallows cross-bundle reads (`allow_all_user_memories=false`) makes the widget
+fall back to `current_bundle` automatically. The `default_scope_filter` mount
+key is inert and retained only for back-compat.
 
 ## Mounting
 
@@ -89,6 +95,7 @@ When a scene host embeds the widget, it drives layout and focus through
 | --- | --- | --- |
 | `CONFIG_REQUEST` / `CONFIG_RESPONSE` | widget ⇄ host | Runtime config handshake (base URL, tenant/project/bundle, auth). |
 | `kdcube-set-view` | host → widget | Switch between compact and expanded layout. |
+| `kdcube-memory-resize` `{height, compact}` | widget → host | Report rendered content height so a floating host can fit the panel to content (no empty space below a short compact list). Measured from the lowest child bottom, so it is correct even when the shell is stretched to fill the iframe. |
 | `kdcube-memory-widget-command` `{action: "create"}` | host → widget | Open the new-note editor. |
 | `kdcube-memory-widget-command` `{action: "open", memory_id\|object_ref}` | host → widget | Focus a specific memory in the expanded layout. |
 | `kdcube-widget-view` | widget → host | Request the host expand the pane. |

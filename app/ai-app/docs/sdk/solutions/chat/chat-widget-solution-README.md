@@ -59,6 +59,16 @@ The bundle still owns the assistant runtime, tools, resolvers, policies, and
 visibility rules. The chat widget sends events to the bundle; it does not decide
 how the agent interprets every domain object.
 
+### Send eligibility and anonymous visitors
+
+- A draft is sendable when it has **any** of typed text, attachments, or
+  attached context chips — context-only or attachment-only sends are allowed.
+  The same predicate guards both the Send button and the ⌘/Ctrl+Enter path.
+- The widget fetches the profile from the server. A non-OK `/profile` response
+  (e.g. an anonymous visitor) is treated as an **anonymous identity**, not an
+  error: the composer shows no profile-fetch error banner. Identity-gated host
+  affordances stay hidden until a signed-in profile is confirmed.
+
 ## Backend Assumptions
 
 The mounted bundle must expose the normal chatbot operations supplied by the

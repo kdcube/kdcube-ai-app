@@ -303,8 +303,14 @@ the resolver behavior in unrelated files. For example, canvas can ask
 `resolver("task").open("task:issues/...")`, but task owns what "open issue"
 means.
 
+For a namespace **another bundle** owns (`task:`), do not write a resolver —
+configure `named_services.namespaces.<ns>.provider` and let the generic
+namespace-service resolver call the owner over the runtime bridge. A bundle only
+writes a concrete resolver for namespaces it owns itself.
+
 Read:
 
+- [Namespace Services](../../namespace-services/README.md) — calling another bundle's namespace
 - [Event Hub Resolver And Policy Registration](../../solutions/event-hub/resolver-and-policy-registration-README.md)
 - [Canvas Pin Integration](../../solutions/canvas/pin-integration-README.md)
 
