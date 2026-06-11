@@ -1289,7 +1289,7 @@ export function CanvasBoard({
       <div className="canvas-header">
         <div className="canvas-title">
           <p className="canvas-title-line">
-            <span>Canvas</span>
+            <span>Pin Board</span>
             <strong>{activeCanvas.name}</strong>
             <em>{canvasStats.pins} pins</em>
             <em>{canvasStats.pendingSuggestions} pending</em>
@@ -1339,9 +1339,9 @@ export function CanvasBoard({
               ))}
             </select>
           </label>
-          <button className="secondary" onClick={() => onAttachCanvas(canvasContext(liveCanvas))}>
+          <button className="secondary" onClick={() => onAttachCanvas(canvasContext(liveCanvas))} title="Pin board to chat">
             <MessageSquarePlus size={16} />
-            Pin canvas to chat
+            Pin board to chat
           </button>
           <button className="secondary icon-only" title="Close canvas" onClick={onCloseCanvas}>
             <X size={16} />
