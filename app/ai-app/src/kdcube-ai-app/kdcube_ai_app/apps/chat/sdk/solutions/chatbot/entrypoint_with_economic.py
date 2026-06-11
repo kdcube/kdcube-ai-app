@@ -1882,7 +1882,9 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
             if effective_policy and not budget_bypass:
                 post_run_snapshot = _post_run_snapshot(
                     admit_snapshot_pre,
-                    ranked=int(plan_quota_commit_tokens) if lane == "plan" else int(ranked_tokens),
+                    # paid lane consumes 0 plan token quota (wallet/subscription pays
+                    # at payasyougo) -> the post-run snapshot must not add ranked tokens.
+                    ranked=int(plan_quota_commit_tokens) if lane == "plan" else 0,
                     reserved=int(plan_reserved_tokens_pre),
                     lane_name=lane,
                 )
@@ -1895,7 +1897,7 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
                             limit=getattr(effective_policy, "tokens_per_hour", None),
                             reserved=0,
                         )
-                        commit_tokens_for_snapshot = int(plan_quota_commit_tokens) if lane == "plan" else int(ranked_tokens)
+                        commit_tokens_for_snapshot = int(plan_quota_commit_tokens) if lane == "plan" else 0
                         post_run_snapshot["tok_hour"] = int(tok_h_now or 0) + int(commit_tokens_for_snapshot)
                         if reset_at:
                             post_run_snapshot["tok_hour_reset_at"] = int(reset_at)

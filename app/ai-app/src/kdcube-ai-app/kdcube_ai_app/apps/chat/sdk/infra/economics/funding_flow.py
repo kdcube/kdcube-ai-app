@@ -374,10 +374,11 @@ async def settle_plan_funding(
         return out
 
     if funding_source == "subscription" and res.paid_lane:
-        # paid lane, subscription-primary: payasyougo quotas (RL committed
-        # reservation-free, no plan-quota consume); the subscription budget pays the
-        # actual cost; the wallet stays untouched.
-        await _commit_rl(ctx, res, tokens=ranked_tokens)
+        # paid lane, subscription-primary: payasyougo quotas; the subscription
+        # budget pays the actual cost and the wallet stays untouched. Paid-lane
+        # usage does NOT consume plan token quota (only the request counts), so the
+        # RL commit records 0 tokens reservation-free.
+        await _commit_rl(ctx, res, tokens=0)
         if res.app_reservation_active and res.app_reservation_id:
             if total_cost > 0:
                 await ctx.subscription_limiter.commit_reserved_spend(
@@ -391,13 +392,14 @@ async def settle_plan_funding(
                 )
             res.app_reservation_active = False
         out.primary_funding_usd = float(total_cost)
-        out.quota_commit_tokens = ranked_tokens
+        out.quota_commit_tokens = 0
         return out
 
     if funding_source == "wallet":
         # paid lane: wallet is the primary funding; project absorbs any uncovered
         # shortfall (shortfall:wallet_paid). Wallet-paid tokens do NOT consume plan
-        # quota, but we record the request + tokens against RL (reservation-free).
+        # token quota (only the request counts), so the RL commit records 0 tokens
+        # reservation-free.
         user_uncovered = 0
         remaining = int(ranked_tokens)
         if res.wallet_reservation_active and res.wallet_reservation_id and res.wallet_reserved_tokens > 0:
@@ -430,10 +432,10 @@ async def settle_plan_funding(
                 spent_usd=float(user_uncovered_usd), bundle_id=ctx.bundle_id, provider=None,
                 request_id=ctx.scope_id, user_id=ctx.user_id, note="shortfall:wallet_paid",
             )
-        await _commit_rl(ctx, res, tokens=ranked_tokens)
+        await _commit_rl(ctx, res, tokens=0)
         out.wallet_usd = max(float(total_cost) - float(user_uncovered_usd), 0.0)
         out.project_absorption_usd = float(user_uncovered_usd)
-        out.quota_commit_tokens = ranked_tokens
+        out.quota_commit_tokens = 0
         out.wallet_consumed_tokens = max(int(ranked_tokens) - int(user_uncovered), 0)
         out.user_uncovered_tokens = int(user_uncovered)
         out.user_uncovered_usd = float(user_uncovered_usd)

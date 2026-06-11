@@ -494,6 +494,8 @@ async def test_paid_lane_switch_when_primary_exhausted_and_fallback_allowed():
     await g.__aexit__(None, None, None)
     assert len(ep.cp_manager.user_credits_mgr.committed) == 1  # wallet committed at settle
     assert len(ep.rl.commits) == 1
+    # paid lane consumes 0 plan token quota (wallet pays at payasyougo)
+    assert int(ep.rl.commits[-1].get("tokens") or 0) == 0
 
 
 async def test_paid_lane_wallet_zero_cost_releases_reservation():
@@ -600,6 +602,8 @@ async def test_paid_lane_switch_subscription_primary():
     assert len(sub_limiter.committed) == 1                      # subscription spend committed
     assert sub_limiter.committed[0]["spent_usd"] == 0.02
     assert ep.cp_manager.user_credits_mgr.committed == []       # wallet never charged
+    # paid lane consumes 0 plan token quota (subscription pays at payasyougo)
+    assert int(ep.rl.commits[-1].get("tokens") or 0) == 0
 
 
 async def test_paid_lane_subscription_zero_cost_releases_hold():

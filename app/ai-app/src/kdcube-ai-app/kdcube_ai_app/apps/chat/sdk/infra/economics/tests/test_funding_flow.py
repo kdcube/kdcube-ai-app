@@ -226,6 +226,9 @@ async def test_settle_wallet_primary_paid_lane():
     assert credits.committed[0]["tokens"] == 1500
     assert ctx.budget_limiter.forced == []             # no shortfall (fully covered)
     assert len(ctx.rl.commits) == 1                    # RL recorded (reservation-free)
+    # paid lane consumes 0 plan token quota (wallet pays) -> RL commits 0 tokens
+    assert int(ctx.rl.commits[0].get("tokens") or 0) == 0
+    assert out.quota_commit_tokens == 0
     assert out.wallet_usd == pytest.approx(0.015, rel=1e-6)
 
 
