@@ -17,16 +17,6 @@ class _FakeAsyncRedis:
         self.closed = True
 
 
-class _FakeSyncRedis:
-    def __init__(self, url, **kwargs):
-        self.url = url
-        self.kwargs = kwargs
-        self.closed = False
-
-    def close(self):
-        self.closed = True
-
-
 @pytest.mark.asyncio
 async def test_existing_async_helper_uses_factory_shared_cache(monkeypatch):
     await redis_client.close_all_redis_clients()
@@ -96,25 +86,16 @@ async def test_existing_create_async_helper_uses_factory_dedicated_clients(monke
 async def test_existing_close_all_closes_factory_cached_clients(monkeypatch):
     await redis_client.close_all_redis_clients()
     async_clients = []
-    sync_clients = []
 
     def _fake_async_from_url(url, **kwargs):
         client = _FakeAsyncRedis(url, **kwargs)
         async_clients.append(client)
         return client
 
-    def _fake_sync_from_url(url, **kwargs):
-        client = _FakeSyncRedis(url, **kwargs)
-        sync_clients.append(client)
-        return client
-
     monkeypatch.setattr(redis_factory.aioredis, "from_url", _fake_async_from_url)
-    monkeypatch.setattr(redis_factory.redis.Redis, "from_url", _fake_sync_from_url)
 
     redis_client.get_async_redis_client("redis://localhost:6379/0")
-    redis_client.get_sync_redis_client("redis://localhost:6379/0")
 
     await redis_client.close_all_redis_clients()
 
     assert [client.closed for client in async_clients] == [True]
-    assert [client.closed for client in sync_clients] == [True]

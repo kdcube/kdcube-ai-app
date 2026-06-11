@@ -38,7 +38,6 @@ from kdcube_ai_app.infra.service_hub.inventory import (
 )
 from kdcube_ai_app.infra.redis.client import (
     get_async_redis_client,
-    get_sync_redis_client,
     close_all_redis_clients,
     get_redis_client_name_prefix,
     get_redis_monitor,
@@ -312,7 +311,6 @@ _fastapi_adapter = None
 _pg_pool: Optional = None
 _redis_async = None
 _redis_async_decode = None
-_redis_sync = None
 
 _conv_index: Optional[ConvIndex] = None
 _conv_store: Optional[ConversationStore] = None
@@ -638,9 +636,9 @@ async def get_redis_clients():
     Return shared Redis clients for this process:
       - async (decode_responses=False)
       - async (decode_responses=True)
-      - sync
+      - legacy sync slot (None; platform Redis clients are async)
     """
-    global _redis_async, _redis_async_decode, _redis_sync
+    global _redis_async, _redis_async_decode
     max_connections = _resolve_redis_max_connections()
     created = False
     if _redis_async is None:
@@ -649,21 +647,17 @@ async def get_redis_clients():
     if _redis_async_decode is None:
         _redis_async_decode = get_async_redis_client(REDIS_URL, decode_responses=True, max_connections=max_connections)
         created = True
-    if _redis_sync is None:
-        _redis_sync = get_sync_redis_client(REDIS_URL, max_connections=max_connections)
-        created = True
     if created:
         logger.info("Redis client name prefix: %s", get_redis_client_name_prefix())
-    return _redis_async, _redis_async_decode, _redis_sync
+    return _redis_async, _redis_async_decode, None
 
 
 async def close_redis_clients():
     """Close shared Redis pools for this process (on shutdown)."""
-    global _redis_async, _redis_async_decode, _redis_sync
+    global _redis_async, _redis_async_decode
     await close_all_redis_clients()
     _redis_async = None
     _redis_async_decode = None
-    _redis_sync = None
 
 
 async def get_redis_monitor_instance():

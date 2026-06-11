@@ -183,7 +183,7 @@ async def process_kb_file_with_socket(request: Request,
         # CLIENT SIDE: Get proper task and queue names for current orchestrator
         task_info = tasks.get("KB_PROCESS")
         session_dict = session.serialize_to_dict()
-        result = orchestrator.submit_task(
+        result = await orchestrator.submit_task(
             task_name=task_info["task_name"],  # Proper name for current orchestrator
             queue=task_info["queue_name"],  # Proper queue for current orchestrator
             kdcube_path=KDCUBE_STORAGE_PATH,
@@ -273,7 +273,7 @@ async def process_kb_url_with_socket(request: Request,
         task_info = tasks.get("KB_PROCESS")
         # session_dict = session.serialize_to_dict()
 
-        result = orchestrator.submit_task(
+        result = await orchestrator.submit_task(
             task_name=task_info["task_name"],
             queue=task_info["queue_name"],
             kdcube_path=KDCUBE_STORAGE_PATH,
@@ -327,8 +327,8 @@ async def kb_health_check():
         kb_stats = kb.get_stats()
 
         # Orchestrator health
-        orchestrator_health = orchestrator.health_check()
-        queue_stats = orchestrator.get_queue_stats()
+        orchestrator_health = await orchestrator.health_check()
+        queue_stats = await orchestrator.get_queue_stats()
 
         return {
             "instance_id": INSTANCE_ID,

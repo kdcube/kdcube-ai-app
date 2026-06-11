@@ -166,12 +166,12 @@ def get_tenant_projects() -> TenantProjects:
     """Singleton TenantProjects instance."""
     return _tenant_projects
 
-def get_system_health():
+async def get_system_health():
     """Get comprehensive system health."""
     try:
         # Orchestrator health
-        orchestrator_health = get_orchestrator().health_check()
-        queue_stats = get_orchestrator().get_queue_stats()
+        orchestrator_health = await get_orchestrator().health_check()
+        queue_stats = await get_orchestrator().get_queue_stats()
 
         # Tenant health
         tenant_health = get_tenant_projects().get_tenant_health()

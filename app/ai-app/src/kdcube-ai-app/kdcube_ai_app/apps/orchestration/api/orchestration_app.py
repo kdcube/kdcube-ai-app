@@ -61,7 +61,7 @@ async def get_task_status(task_id: str,
                           user=Depends(check_requirements(RequireUser()))):
     """Get task status - works with any orchestrator!"""
     try:
-        result = orchestrator.get_task_status(task_id)
+        result = await orchestrator.get_task_status(task_id)
         return {
             "orchestrator_type": ORCHESTRATOR_TYPE,
             "task_id": task_id,
@@ -85,7 +85,7 @@ async def get_task_status(task_id: str,
 async def get_queue_stats(user=Depends(check_requirements(RequireUser()))):
     """Get queue statistics - orchestrator agnostic!"""
     try:
-        stats = orchestrator.get_queue_stats()
+        stats = await orchestrator.get_queue_stats()
         stats["timestamp"] = datetime.utcnow().isoformat()
         return stats
     except Exception as e:

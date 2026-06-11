@@ -267,7 +267,7 @@ async def get_tenant_health(
 async def get_system_health_endpoint(session: UserSession = Depends(get_kb_admin_with_acct_dep()),):
     """Get comprehensive system health."""
     try:
-        return get_system_health()
+        return await get_system_health()
     except Exception as e:
         logger.error(f"System health check failed: {e}")
         raise HTTPException(status_code=500, detail=f"System health check failed: {str(e)}")

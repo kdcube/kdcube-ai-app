@@ -13,16 +13,6 @@ class _FakeAsyncRedis:
         self.closed = True
 
 
-class _FakeSyncRedis:
-    def __init__(self, url, **kwargs):
-        self.url = url
-        self.kwargs = kwargs
-        self.closed = False
-
-    def close(self):
-        self.closed = True
-
-
 def test_factory_creates_shared_standalone_async_client(monkeypatch):
     calls = []
 
@@ -77,25 +67,11 @@ def test_factory_creates_dedicated_clients_without_cache(monkeypatch):
     assert getattr(second, "_kdcube_shared") is False
 
 
-def test_factory_creates_shared_sync_client(monkeypatch):
-    calls = []
-
-    def _fake_from_url(url, **kwargs):
-        calls.append((url, kwargs))
-        return _FakeSyncRedis(url, **kwargs)
-
-    monkeypatch.setattr(redis_factory.redis.Redis, "from_url", _fake_from_url)
+def test_factory_rejects_sync_runtime():
     factory = redis_factory.RedisClientFactory(default_topology="standalone")
-    request = factory.request("redis://localhost:6379/0", runtime="sync", decode_responses=True)
 
-    first = factory.client(request)
-    second = factory.client(request)
-
-    assert first is second
-    assert len(calls) == 1
-    assert first.kwargs["decode_responses"] is True
-    assert first.kwargs["client_name"].endswith(":sync_decode")
-    assert getattr(first, "_kdcube_shared") is True
+    with pytest.raises(ValueError):
+        factory.request("redis://localhost:6379/0", runtime="sync", decode_responses=True)
 
 
 def test_factory_uses_max_connections_resolver(monkeypatch):
@@ -140,26 +116,17 @@ def test_topology_normalization_accepts_only_canonical_names():
 @pytest.mark.asyncio
 async def test_factory_close_closes_cached_clients(monkeypatch):
     async_clients = []
-    sync_clients = []
 
     def _fake_async_from_url(url, **kwargs):
         client = _FakeAsyncRedis(url, **kwargs)
         async_clients.append(client)
         return client
 
-    def _fake_sync_from_url(url, **kwargs):
-        client = _FakeSyncRedis(url, **kwargs)
-        sync_clients.append(client)
-        return client
-
     monkeypatch.setattr(redis_factory.aioredis, "from_url", _fake_async_from_url)
-    monkeypatch.setattr(redis_factory.redis.Redis, "from_url", _fake_sync_from_url)
     factory = redis_factory.RedisClientFactory(default_topology="standalone")
 
     factory.client(factory.request("redis://localhost:6379/0", runtime="async"))
-    factory.client(factory.request("redis://localhost:6379/0", runtime="sync"))
 
     await factory.close()
 
     assert [client.closed for client in async_clients] == [True]
-    assert [client.closed for client in sync_clients] == [True]

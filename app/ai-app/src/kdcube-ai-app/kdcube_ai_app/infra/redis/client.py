@@ -2,7 +2,7 @@
 # Copyright (c) 2025 Elena Viter
 
 """
-Shared Redis client helpers (sync + async) with optional connection caps.
+Shared Redis client helpers with optional connection caps.
 
 Pool sizing is driven by gateway config: pools.redis_max_connections.
 """
@@ -14,8 +14,6 @@ import logging
 import time
 import contextlib
 from typing import Dict, Optional, Callable, Any, List
-
-import redis
 from redis.asyncio import Redis as AsyncRedis
 
 from kdcube_ai_app.infra.redis.factory import (
@@ -123,37 +121,14 @@ def get_async_redis_client(
     return factory.client(request)
 
 
-def get_sync_redis_client(
-    redis_url: str,
-    *,
-    decode_responses: bool = False,
-    max_connections: Optional[int] = None,
-) -> redis.Redis:
-    factory = _get_client_factory()
-    request = factory.request(
-        redis_url,
-        runtime=RedisClientRuntime.SYNC,
-        decode_responses=decode_responses,
-        max_connections=max_connections,
-        shared=True,
-    )
-    return factory.client(request)
-
-
 async def close_async_redis_clients() -> None:
     if _CLIENT_FACTORY is not None:
         await _CLIENT_FACTORY.close_async_clients()
 
 
-def close_sync_redis_clients() -> None:
-    if _CLIENT_FACTORY is not None:
-        _CLIENT_FACTORY.close_sync_clients()
-
-
 async def close_all_redis_clients() -> None:
     global _CLIENT_FACTORY
     await close_async_redis_clients()
-    close_sync_redis_clients()
     _CLIENT_FACTORY = None
 
 

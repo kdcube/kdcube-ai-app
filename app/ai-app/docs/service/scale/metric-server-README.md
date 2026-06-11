@@ -220,8 +220,9 @@ Redis mode now includes SSE counts:
   `kdcube:metrics:*` keys (tenant/project‑scoped).
 
 Operational note:
-- The metrics service itself still initializes the legacy shared Redis client bundle
-  (`redis_async`, `redis_async_decode`, `redis_sync`) in its own process.
+- The metrics service itself initializes the shared async Redis client bundle
+  (`redis_async`, `redis_async_decode`) in its own process. `redis_sync` is a
+  legacy state slot and remains `None`.
 - `GATEWAY_COMPONENT=proc` selects the **proc config slice** for capacity math; it does
   **not** change the metrics service’s own Redis client topology.
 

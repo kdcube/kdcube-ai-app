@@ -519,20 +519,20 @@ class _FakeRedis:
         return 0
 
 
-class _FakeSyncRedis:
+class _FakeAsyncRedis:
     def __init__(self):
         self.data = {}
 
-    def get(self, key):
+    async def get(self, key):
         return self.data.get(key)
 
-    def set(self, key, value, nx=False, ex=None):
+    async def set(self, key, value, nx=False, ex=None):
         if nx and key in self.data:
             return False
         self.data[key] = value
         return True
 
-    def eval(self, _script, _keys_count, key, token):
+    async def eval(self, _script, _keys_count, key, token):
         if self.data.get(key) == token:
             self.data.pop(key, None)
             return 1
@@ -547,8 +547,8 @@ async def test_secrets_file_manager_cross_replica_reads_current_yaml(tmp_path, m
     global_file = tmp_path / "secrets.yaml"
     global_file.write_text("services:\n  openai:\n    api_key: sk-old\n", encoding="utf-8")
 
-    fake_redis = _FakeSyncRedis()
-    monkeypatch.setattr(redis_client, "get_sync_redis_client", lambda *args, **kwargs: fake_redis)
+    fake_redis = _FakeAsyncRedis()
+    monkeypatch.setattr(redis_client, "get_async_redis_client", lambda *args, **kwargs: fake_redis)
 
     cfg = SecretsManagerConfig(
         provider="secrets-file",

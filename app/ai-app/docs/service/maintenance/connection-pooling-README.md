@@ -33,7 +33,7 @@ Each service sets `GATEWAY_COMPONENT` so it selects the **component slice** of t
     - `get_redis_clients()` →
       - `app.state.redis_async`
       - `app.state.redis_async_decode`
-      - `app.state.redis_sync`
+      - `app.state.redis_sync = None`
   - Proc:
     - `get_shared_async_redis_client()` →
       - `app.state.redis_async`
@@ -47,7 +47,7 @@ Each service sets `GATEWAY_COMPONENT` so it selects the **component slice** of t
 
 **Ingress / metrics**
 
-Each ingress or metrics worker currently creates **three shared Redis pools**:
+Each ingress or metrics worker currently creates **two shared async Redis pools**:
 
 1. `redis_async`
    - async client
@@ -55,10 +55,6 @@ Each ingress or metrics worker currently creates **three shared Redis pools**:
 2. `redis_async_decode`
    - async client
    - `decode_responses=True`
-3. `redis_sync`
-   - sync client
-   - `decode_responses=False`
-
 These are shared across gateway, SSE, monitoring, bundles, and related service paths in that process.
 
 **Proc**

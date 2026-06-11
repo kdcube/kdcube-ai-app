@@ -18,7 +18,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, Iterable, Optional, Tuple
 
-import redis
 import redis.asyncio as aioredis
 
 logger = logging.getLogger(__name__)
@@ -40,7 +39,6 @@ class RedisClientRuntime(str, Enum):
     """Python client runtime shape."""
 
     ASYNC = "async"
-    SYNC = "sync"
 
 
 class RedisFactoryError(RuntimeError):
@@ -165,7 +163,6 @@ class RedisClientFactory:
         self.default_topology = normalize_redis_topology(default_topology)
         self._max_connections_resolver = max_connections_resolver or (lambda value: value)
         self._shared_async: Dict[Tuple[Any, ...], Any] = {}
-        self._shared_sync: Dict[Tuple[Any, ...], Any] = {}
 
     def request(
         self,
@@ -202,7 +199,7 @@ class RedisClientFactory:
         if not request.shared:
             return self._open_standalone(request)
 
-        cache = self._shared_async if request.runtime == RedisClientRuntime.ASYNC else self._shared_sync
+        cache = self._shared_async
         key = _request_cache_key(request)
         existing = cache.get(key)
         if existing is not None:
@@ -213,10 +210,7 @@ class RedisClientFactory:
 
     def _open_standalone(self, request: RedisClientRequest) -> Any:
         options = self._client_options(request)
-        if request.runtime == RedisClientRuntime.ASYNC:
-            client = aioredis.from_url(request.url, **options)
-        else:
-            client = redis.Redis.from_url(request.url, **options)
+        client = aioredis.from_url(request.url, **options)
         _set_shared_marker(client, request.shared)
         logger.info(
             "Created %s %s Redis client topology=%s url=%s decode_responses=%s max_connections=%s client_name=%s",
@@ -257,17 +251,8 @@ class RedisClientFactory:
                 logger.debug("Failed to close shared async Redis client", exc_info=True)
         self._shared_async.clear()
 
-    def close_sync_clients(self) -> None:
-        for client in list(self._shared_sync.values()):
-            try:
-                client.close()
-            except Exception:
-                logger.debug("Failed to close shared sync Redis client", exc_info=True)
-        self._shared_sync.clear()
-
     async def close(self) -> None:
         await self.close_async_clients()
-        self.close_sync_clients()
 
 
 _DEFAULT_FACTORY: RedisClientFactory | None = None

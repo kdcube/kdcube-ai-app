@@ -29,6 +29,20 @@ def _first_non_empty(*values: Any) -> Optional[str]:
     return None
 
 
+async def _run_blocking_critical_section(fn) -> Any:
+    task = asyncio.create_task(asyncio.to_thread(fn))
+    cancelled = False
+    while not task.done():
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            cancelled = True
+    if cancelled:
+        task.result()
+        raise asyncio.CancelledError
+    return task.result()
+
+
 def _normalize_component_name(component: Optional[str]) -> str:
     raw = (component or "").strip().lower()
     if raw in {"proc", "processor", "worker", "chat-proc", "chat_proc"}:
@@ -523,41 +537,41 @@ class SecretsFileSecretsManager(ISecretsManager):
             merged.update(_bundle_secret_metadata(bundle_flat))
         return merged
 
-    def _get_sync_redis(self):
+    def _get_redis(self):
         if not self._redis_url:
             return None
         if self._redis is not None:
             return self._redis
         try:
-            from kdcube_ai_app.infra.redis.client import get_sync_redis_client
+            from kdcube_ai_app.infra.redis.client import get_async_redis_client
 
-            self._redis = get_sync_redis_client(self._redis_url, decode_responses=True)
+            self._redis = get_async_redis_client(self._redis_url, decode_responses=True)
         except Exception:
-            logger.debug("Failed to initialize sync Redis client for secrets-file provider", exc_info=True)
+            logger.debug("Failed to initialize Redis client for secrets-file provider", exc_info=True)
             self._redis = None
         return self._redis
 
-    def _acquire_distributed_lock(self) -> tuple[Any, str] | tuple[None, None]:
-        redis = self._get_sync_redis()
+    async def _acquire_distributed_lock(self) -> tuple[Any, str] | tuple[None, None]:
+        redis = self._get_redis()
         if redis is None:
             return None, None
         token = uuid.uuid4().hex
         start = time.time()
         while (time.time() - start) < self._LOCK_WAIT_SECONDS:
             try:
-                acquired = bool(redis.set(self._lock_key, token, nx=True, ex=self._LOCK_TTL_SECONDS))
+                acquired = bool(await redis.set(self._lock_key, token, nx=True, ex=self._LOCK_TTL_SECONDS))
             except Exception:
                 acquired = False
             if acquired:
                 return redis, token
-            time.sleep(0.25)
+            await asyncio.sleep(0.25)
         raise SecretsManagerWriteError("Failed to acquire distributed secrets-file write lock")
 
-    def _release_distributed_lock(self, redis, token: str | None) -> None:
+    async def _release_distributed_lock(self, redis, token: str | None) -> None:
         if redis is None or not token:
             return
         try:
-            redis.eval(
+            await redis.eval(
                 "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
                 1,
                 self._lock_key,
@@ -641,106 +655,107 @@ class SecretsFileSecretsManager(ISecretsManager):
         await self.delete_many([key])
 
     async def set_many(self, values: Mapping[str, str]) -> None:
+        redis, token = await self._acquire_distributed_lock()
+
         def write_values() -> None:
             with self._lock:
-                redis, token = self._acquire_distributed_lock()
-                try:
-                    global_data = (
-                        _load_yaml_mapping_from_storage(self._global_uri, missing_ok=True) if self._global_uri else None
-                    )
-                    bundle_data = (
-                        _load_yaml_mapping_from_storage(self._bundle_uri, missing_ok=True) if self._bundle_uri else None
-                    )
-                    global_dirty = False
-                    bundle_dirty = False
-                    for key, value in values.items():
-                        bundle_match = _split_bundle_secret_key(key)
-                        if bundle_match:
-                            bundle_id, tail = bundle_match
-                            if tail == "__keys":
-                                continue
-                            if bundle_data is None:
-                                raise SecretsManagerWriteError(
-                                    "BUNDLE_SECRETS_YAML is not configured for the secrets-file provider"
-                                )
-                            items = _bundle_descriptor_items(bundle_data)
-                            item = _find_bundle_item(items, bundle_id)
-                            if item is None:
-                                item = {"id": bundle_id, "secrets": {}}
-                                items.append(item)
-                            secrets = item.get("secrets")
-                            if not isinstance(secrets, dict):
-                                secrets = {}
-                                item["secrets"] = secrets
-                            _set_nested_value(secrets, tail, value)
-                            bundle_dirty = True
-                        else:
-                            if global_data is None:
-                                raise SecretsManagerWriteError(
-                                    "GLOBAL_SECRETS_YAML is not configured for the secrets-file provider"
-                                )
-                            _set_nested_value(_global_descriptor_root(global_data), key, value)
-                            global_dirty = True
-                    if global_dirty and global_data is not None:
-                        _write_yaml_mapping_to_storage(self._global_uri, global_data)
-                    if bundle_dirty and bundle_data is not None:
-                        _write_yaml_mapping_to_storage(self._bundle_uri, bundle_data)
-                finally:
-                    self._release_distributed_lock(redis, token)
+                global_data = (
+                    _load_yaml_mapping_from_storage(self._global_uri, missing_ok=True) if self._global_uri else None
+                )
+                bundle_data = (
+                    _load_yaml_mapping_from_storage(self._bundle_uri, missing_ok=True) if self._bundle_uri else None
+                )
+                global_dirty = False
+                bundle_dirty = False
+                for key, value in values.items():
+                    bundle_match = _split_bundle_secret_key(key)
+                    if bundle_match:
+                        bundle_id, tail = bundle_match
+                        if tail == "__keys":
+                            continue
+                        if bundle_data is None:
+                            raise SecretsManagerWriteError(
+                                "BUNDLE_SECRETS_YAML is not configured for the secrets-file provider"
+                            )
+                        items = _bundle_descriptor_items(bundle_data)
+                        item = _find_bundle_item(items, bundle_id)
+                        if item is None:
+                            item = {"id": bundle_id, "secrets": {}}
+                            items.append(item)
+                        secrets = item.get("secrets")
+                        if not isinstance(secrets, dict):
+                            secrets = {}
+                            item["secrets"] = secrets
+                        _set_nested_value(secrets, tail, value)
+                        bundle_dirty = True
+                    else:
+                        if global_data is None:
+                            raise SecretsManagerWriteError(
+                                "GLOBAL_SECRETS_YAML is not configured for the secrets-file provider"
+                            )
+                        _set_nested_value(_global_descriptor_root(global_data), key, value)
+                        global_dirty = True
+                if global_dirty and global_data is not None:
+                    _write_yaml_mapping_to_storage(self._global_uri, global_data)
+                if bundle_dirty and bundle_data is not None:
+                    _write_yaml_mapping_to_storage(self._bundle_uri, bundle_data)
 
-        await asyncio.to_thread(write_values)
+        try:
+            await _run_blocking_critical_section(write_values)
+        finally:
+            await self._release_distributed_lock(redis, token)
 
     async def delete_many(self, keys: Iterable[str]) -> None:
         key_list = list(keys)
+        redis, token = await self._acquire_distributed_lock()
 
         def delete_values() -> None:
             with self._lock:
-                redis, token = self._acquire_distributed_lock()
-                try:
-                    global_data = (
-                        _load_yaml_mapping_from_storage(self._global_uri, missing_ok=True) if self._global_uri else None
-                    )
-                    bundle_data = (
-                        _load_yaml_mapping_from_storage(self._bundle_uri, missing_ok=True) if self._bundle_uri else None
-                    )
-                    global_dirty = False
-                    bundle_dirty = False
-                    for key in key_list:
-                        bundle_match = _split_bundle_secret_key(key)
-                        if bundle_match:
-                            bundle_id, tail = bundle_match
-                            if tail == "__keys":
-                                continue
-                            if bundle_data is None:
-                                raise SecretsManagerWriteError(
-                                    "BUNDLE_SECRETS_YAML is not configured for the secrets-file provider"
-                                )
-                            items = _bundle_descriptor_items(bundle_data)
-                            item = _find_bundle_item(items, bundle_id)
-                            if item is None:
-                                continue
-                            secrets = item.get("secrets")
-                            if not isinstance(secrets, dict):
-                                continue
-                            _delete_nested_value(secrets, tail)
-                            if not secrets:
-                                item.pop("secrets", None)
-                            bundle_dirty = True
-                        else:
-                            if global_data is None:
-                                raise SecretsManagerWriteError(
-                                    "GLOBAL_SECRETS_YAML is not configured for the secrets-file provider"
-                                )
-                            _delete_nested_value(_global_descriptor_root(global_data), key)
-                            global_dirty = True
-                    if global_dirty and global_data is not None:
-                        _write_yaml_mapping_to_storage(self._global_uri, global_data)
-                    if bundle_dirty and bundle_data is not None:
-                        _write_yaml_mapping_to_storage(self._bundle_uri, bundle_data)
-                finally:
-                    self._release_distributed_lock(redis, token)
+                global_data = (
+                    _load_yaml_mapping_from_storage(self._global_uri, missing_ok=True) if self._global_uri else None
+                )
+                bundle_data = (
+                    _load_yaml_mapping_from_storage(self._bundle_uri, missing_ok=True) if self._bundle_uri else None
+                )
+                global_dirty = False
+                bundle_dirty = False
+                for key in key_list:
+                    bundle_match = _split_bundle_secret_key(key)
+                    if bundle_match:
+                        bundle_id, tail = bundle_match
+                        if tail == "__keys":
+                            continue
+                        if bundle_data is None:
+                            raise SecretsManagerWriteError(
+                                "BUNDLE_SECRETS_YAML is not configured for the secrets-file provider"
+                            )
+                        items = _bundle_descriptor_items(bundle_data)
+                        item = _find_bundle_item(items, bundle_id)
+                        if item is None:
+                            continue
+                        secrets = item.get("secrets")
+                        if not isinstance(secrets, dict):
+                            continue
+                        _delete_nested_value(secrets, tail)
+                        if not secrets:
+                            item.pop("secrets", None)
+                        bundle_dirty = True
+                    else:
+                        if global_data is None:
+                            raise SecretsManagerWriteError(
+                                "GLOBAL_SECRETS_YAML is not configured for the secrets-file provider"
+                            )
+                        _delete_nested_value(_global_descriptor_root(global_data), key)
+                        global_dirty = True
+                if global_dirty and global_data is not None:
+                    _write_yaml_mapping_to_storage(self._global_uri, global_data)
+                if bundle_dirty and bundle_data is not None:
+                    _write_yaml_mapping_to_storage(self._bundle_uri, bundle_data)
 
-        await asyncio.to_thread(delete_values)
+        try:
+            await _run_blocking_critical_section(delete_values)
+        finally:
+            await self._release_distributed_lock(redis, token)
 
 
 class SecretsServiceSecretsManager(ISecretsManager):

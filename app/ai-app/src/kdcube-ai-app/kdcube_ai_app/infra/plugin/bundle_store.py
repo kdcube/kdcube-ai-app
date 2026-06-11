@@ -6,6 +6,7 @@ from __future__ import annotations
 import ast
 import asyncio
 import hashlib
+import inspect
 import json, os, time, uuid, threading
 import logging
 import shutil
@@ -954,22 +955,22 @@ class _AwsBundleDescriptorStore:
             doc=safe,
         )
 
-    def _get_sync_redis(self):
+    def _get_redis(self):
         if not self._redis_url:
             return None
         if self._redis is not None:
             return self._redis
         try:
-            from kdcube_ai_app.infra.redis.client import get_sync_redis_client
+            from kdcube_ai_app.infra.redis.client import get_async_redis_client
 
-            self._redis = get_sync_redis_client(self._redis_url, decode_responses=True)
+            self._redis = get_async_redis_client(self._redis_url, decode_responses=True)
         except Exception:
-            _log.debug("Failed to initialize sync Redis client for aws bundle descriptors", exc_info=True)
+            _log.debug("Failed to initialize Redis client for aws bundle descriptors", exc_info=True)
             self._redis = None
         return self._redis
 
-    def _acquire_distributed_lock(self, secret_id: str) -> tuple[Any, str] | tuple[None, None]:
-        redis = self._get_sync_redis()
+    async def _acquire_distributed_lock(self, secret_id: str) -> tuple[Any, str] | tuple[None, None]:
+        redis = self._get_redis()
         if redis is None:
             return None, None
         token = uuid.uuid4().hex
@@ -977,20 +978,20 @@ class _AwsBundleDescriptorStore:
         start = time.time()
         while (time.time() - start) < self._LOCK_WAIT_SECONDS:
             try:
-                acquired = bool(redis.set(lock_key, token, nx=True, ex=self._LOCK_TTL_SECONDS))
+                acquired = bool(await redis.set(lock_key, token, nx=True, ex=self._LOCK_TTL_SECONDS))
             except Exception:
                 acquired = False
             if acquired:
                 return redis, token
-            time.sleep(0.25)
+            await asyncio.sleep(0.25)
         raise ValueError(f"Failed to acquire distributed aws-sm descriptor lock for {secret_id}")
 
-    def _release_distributed_lock(self, redis, token: str | None, secret_id: str) -> None:
+    async def _release_distributed_lock(self, redis, token: str | None, secret_id: str) -> None:
         if redis is None or not token:
             return
         lock_key = self._doc_lock_key(secret_id)
         try:
-            redis.eval(
+            await redis.eval(
                 "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
                 1,
                 lock_key,
@@ -1077,7 +1078,7 @@ class _AwsBundleDescriptorStore:
         )
         return reg, props_map
 
-    def save_registry(
+    async def save_registry(
         self,
         reg: "BundlesRegistry",
         props_map: Dict[str, Dict[str, Any]],
@@ -1102,34 +1103,43 @@ class _AwsBundleDescriptorStore:
             if entry is None:
                 continue
             payload = _descriptor_doc_from_entry(entry, props_map.get(bundle_id) or {})
-            with self._lock:
-                redis, token = self._acquire_distributed_lock(secret_id)
-                try:
+            def write_descriptor() -> None:
+                with self._lock:
                     self._put_secret_mapping_by_id(secret_id, payload)
-                finally:
-                    self._release_distributed_lock(redis, token, secret_id)
+
+            redis, token = await self._acquire_distributed_lock(secret_id)
+            try:
+                await _run_blocking_critical_section(write_descriptor)
+            finally:
+                await self._release_distributed_lock(redis, token, secret_id)
 
         if replace:
             for stale_bundle_id in sorted(previous_ids.difference(desired_ids)):
                 secret_id = self._bundle_descriptor_secret_id(stale_bundle_id)
-                with self._lock:
-                    redis, token = self._acquire_distributed_lock(secret_id)
-                    try:
+                def delete_descriptor() -> None:
+                    with self._lock:
                         self._delete_secret_by_id(secret_id)
-                    finally:
-                        self._release_distributed_lock(redis, token, secret_id)
+
+                redis, token = await self._acquire_distributed_lock(secret_id)
+                try:
+                    await _run_blocking_critical_section(delete_descriptor)
+                finally:
+                    await self._release_distributed_lock(redis, token, secret_id)
 
         meta_secret_id = self._bundles_meta_secret_id()
         meta_payload = {
             "default_bundle_id": _persisted_default_bundle_id(reg, persisted_ids=desired_ids),
             "bundle_ids": desired_ids,
         }
-        with self._lock:
-            redis, token = self._acquire_distributed_lock(meta_secret_id)
-            try:
+        def write_meta() -> None:
+            with self._lock:
                 self._put_secret_mapping_by_id(meta_secret_id, meta_payload)
-            finally:
-                self._release_distributed_lock(redis, token, meta_secret_id)
+
+        redis, token = await self._acquire_distributed_lock(meta_secret_id)
+        try:
+            await _run_blocking_critical_section(write_meta)
+        finally:
+            await self._release_distributed_lock(redis, token, meta_secret_id)
 
     def load_bundle_props(self, bundle_id: str) -> Dict[str, Any]:
         payload = self._get_secret_mapping_by_id(self._bundle_descriptor_secret_id(bundle_id))
@@ -1138,11 +1148,10 @@ class _AwsBundleDescriptorStore:
         props = payload.get("props")
         return dict(props) if isinstance(props, dict) else {}
 
-    def set_bundle_props(self, bundle_id: str, entry: "BundleEntry", props: Dict[str, Any]) -> None:
+    async def set_bundle_props(self, bundle_id: str, entry: "BundleEntry", props: Dict[str, Any]) -> None:
         secret_id = self._bundle_descriptor_secret_id(bundle_id)
-        with self._lock:
-            redis, token = self._acquire_distributed_lock(secret_id)
-            try:
+        def write_props() -> None:
+            with self._lock:
                 payload = self._get_secret_mapping_by_id(secret_id) or _descriptor_doc_from_entry(entry, {})
                 fresh_payload = _descriptor_doc_from_entry(entry, props or {})
                 payload.update({k: v for k, v in fresh_payload.items() if k != "props"})
@@ -1151,8 +1160,12 @@ class _AwsBundleDescriptorStore:
                 else:
                     payload.pop("props", None)
                 self._put_secret_mapping_by_id(secret_id, payload)
-            finally:
-                self._release_distributed_lock(redis, token, secret_id)
+
+        redis, token = await self._acquire_distributed_lock(secret_id)
+        try:
+            await _run_blocking_critical_section(write_props)
+        finally:
+            await self._release_distributed_lock(redis, token, secret_id)
 
 
 class _FileBundleDescriptorStore:
@@ -1538,6 +1551,26 @@ def _deep_merge_mapping(base: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str
     return merged
 
 
+async def _await_if_needed(value: Any) -> Any:
+    if inspect.isawaitable(value):
+        return await value
+    return value
+
+
+async def _run_blocking_critical_section(fn) -> Any:
+    task = asyncio.create_task(asyncio.to_thread(fn))
+    cancelled = False
+    while not task.done():
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            cancelled = True
+    if cancelled:
+        task.result()
+        raise asyncio.CancelledError
+    return task.result()
+
+
 async def _release_bundle_props_lock(redis: Any, *, lock_key: str, token: str) -> None:
     if redis is None or not token:
         return
@@ -1648,7 +1681,7 @@ async def _put_bundle_props_locked(
             entry = _reserved_bundle_entry(bundle_id)
             if entry is None:
                 entry = BundleEntry(id=bundle_id, path="")
-            store.set_bundle_props(bundle_id, entry, props)
+            await _await_if_needed(store.set_bundle_props(bundle_id, entry, props))
         await redis.set(key, json.dumps(props, ensure_ascii=False))
         try:
             await publish_props_update(
@@ -1850,7 +1883,7 @@ async def save_registry(
                         candidate = None
         if isinstance(candidate, dict) and candidate:
             effective_props[bid] = candidate
-    store.save_registry(reg, effective_props, replace=replace)
+    await _await_if_needed(store.save_registry(reg, effective_props, replace=replace))
     await redis.set(key, reg.model_dump_json())
 
 async def publish_update(redis, reg: BundlesRegistry, *, tenant: Optional[str]=None, project: Optional[str]=None, op: str="merge", actor: Optional[str]=None):

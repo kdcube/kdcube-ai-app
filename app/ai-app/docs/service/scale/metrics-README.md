@@ -49,7 +49,8 @@ Requires a valid admin session (`auth_without_pressure`).
 Proc-specific note:
 - `components.proc.pools_aggregate` may report only `postgres` and `redis_async`.
 - That is expected: proc now runs on a single steady-state shared async Redis pool per worker.
-- Ingress and metrics services can still report `redis_async_decode` and `redis_sync`.
+- Ingress and metrics services can still report `redis_async_decode`; the
+  legacy `redis_sync` state slot is expected to be `None`.
 
 **Important scopes**
 

@@ -25,7 +25,7 @@ from kdcube_ai_app.storage.observed_file_locks import (
     observed_file_lock,
     observed_file_lock_async,
 )
-from kdcube_ai_app.storage.observed_redis_locks import observed_redis_lock, observed_redis_lock_async
+from kdcube_ai_app.storage.observed_redis_locks import observed_redis_lock_async
 
 
 @dataclass
@@ -285,21 +285,6 @@ def _git_command_timeout() -> int:
     except Exception:
         return 120
 
-def _redis_client():
-    if not _redis_lock_enabled():
-        return None
-    try:
-        import redis  # type: ignore
-    except Exception:
-        return None
-    redis_url = str(getattr(get_settings(), "REDIS_URL", None) or os.environ.get("REDIS_URL") or "").strip()
-    if not redis_url:
-        return None
-    try:
-        return redis.Redis.from_url(redis_url, decode_responses=True)
-    except Exception:
-        return None
-
 def _redis_lock_key(bundle_id: str, git_ref: Optional[str]) -> str:
     tenant = "default"
     project = "default"
@@ -329,25 +314,6 @@ def _log_redis_lock_wait(key: str, metadata: Optional[Dict[str, Any]], age: Opti
         f"[git.bundle] waiting for redis bundle lock key={key} age={age_text}{lock_owner_summary(metadata)}",
         level="WARNING",
     )
-
-@contextmanager
-def _redis_bundle_lock(*, bundle_id: str, git_ref: Optional[str]) -> Iterator[None]:
-    client = _redis_client()
-    if not client:
-        yield
-        return
-    key = _redis_lock_key(bundle_id, git_ref)
-    token = os.urandom(16).hex()
-    with observed_redis_lock(
-        client=client,
-        key=key,
-        metadata=_redis_lock_metadata(bundle_id, git_ref, token),
-        ttl_seconds=_redis_lock_ttl(),
-        wait_seconds=_redis_lock_wait(),
-        on_wait=_log_redis_lock_wait,
-    ):
-        yield
-
 
 @asynccontextmanager
 async def _async_bundle_lock(
@@ -380,11 +346,11 @@ async def _async_redis_bundle_lock(*, bundle_id: str, git_ref: Optional[str]) ->
         yield
         return
     try:
-        from redis import asyncio as aioredis  # type: ignore
+        from kdcube_ai_app.infra.redis.client import create_async_redis_client
     except Exception:
         yield
         return
-    redis_url = str(getattr(get_settings(), "REDIS_URL", None) or os.environ.get("REDIS_URL") or "").strip()
+    redis_url = str(getattr(get_settings(), "REDIS_URL", None) or "").strip()
     if not redis_url:
         yield
         return
@@ -392,7 +358,11 @@ async def _async_redis_bundle_lock(*, bundle_id: str, git_ref: Optional[str]) ->
     key = _redis_lock_key(bundle_id, git_ref)
     token = os.urandom(16).hex()
     try:
-        client = aioredis.Redis.from_url(redis_url, decode_responses=True)
+        client = create_async_redis_client(
+            redis_url,
+            decode_responses=True,
+            client_name_kind="git_bundle_lock",
+        )
         async with observed_redis_lock_async(
             client=client,
             key=key,
