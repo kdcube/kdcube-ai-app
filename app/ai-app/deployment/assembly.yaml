@@ -349,6 +349,7 @@ platform:
         uvicorn_reload: false                      # UVICORN_RELOAD
         heartbeat_interval: 5                      # HEARTBEAT_INTERVAL
         cb_relay_identity: "kdcube.relay.chatbot"  # CB_RELAY_IDENTITY
+        gateway_config_force_env_on_startup: true  # GATEWAY_CONFIG_FORCE_ENV_ON_STARTUP; re-read gateway.yaml on startup over the cached Redis config
         chat_scheduler_backend: "legacy_lists"     # CHAT_SCHEDULER_BACKEND: legacy_lists | kafka
         chat_task_timeout_sec: 600                 # CHAT_TASK_TIMEOUT_SEC
         chat_task_idle_timeout_sec: 600            # CHAT_TASK_IDLE_TIMEOUT_SEC

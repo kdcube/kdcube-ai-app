@@ -292,6 +292,10 @@ class ServiceConfig(BaseModel):
     UVICORN_RELOAD: bool = False
     HEARTBEAT_INTERVAL: int = 5
     CB_RELAY_IDENTITY: str | None = None
+    # Force a re-read of gateway config from the descriptor/env on startup,
+    # overwriting the cached Redis config (descriptor-driven equivalent of the
+    # GATEWAY_CONFIG_FORCE_ENV_ON_STARTUP env var).
+    GATEWAY_CONFIG_FORCE_ENV_ON_STARTUP: bool = False
     # Proc scheduler backend selector (legacy_lists | kafka | …)
     CHAT_SCHEDULER_BACKEND: str = "legacy_lists"
     # Task timeout knobs (proc)

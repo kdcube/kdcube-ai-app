@@ -349,7 +349,7 @@ async def _run_once() -> int:
             tmp.redis_async, tmp.redis_async_decode, tmp.redis_sync = await get_redis_clients()
             tmp.gateway_adapter = get_fastapi_adapter()
             settings = get_settings()
-            if should_force_gateway_config_from_env():
+            if settings.PLATFORM.SERVICE.GATEWAY_CONFIG_FORCE_ENV_ON_STARTUP or should_force_gateway_config_from_env():
                 await apply_gateway_config_from_env(
                     gateway_adapter=tmp.gateway_adapter,
                     tenant=settings.TENANT,
@@ -434,7 +434,7 @@ async def lifespan(app: FastAPI):
         # Gateway adapter + config cache
         app.state.gateway_adapter = get_fastapi_adapter()
         settings = get_settings()
-        if should_force_gateway_config_from_env():
+        if settings.PLATFORM.SERVICE.GATEWAY_CONFIG_FORCE_ENV_ON_STARTUP or should_force_gateway_config_from_env():
             await apply_gateway_config_from_env(
                 gateway_adapter=app.state.gateway_adapter,
                 tenant=settings.TENANT,

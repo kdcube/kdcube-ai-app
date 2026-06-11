@@ -960,6 +960,7 @@ class Settings(PLATFORM_CONFIG):
                 UVICORN_RELOAD=self._resolve_bool("UVICORN_RELOAD", f"{svc_p}.uvicorn_reload", False),
                 HEARTBEAT_INTERVAL=self._resolve_int("HEARTBEAT_INTERVAL", f"{svc_p}.heartbeat_interval", 5),
                 CB_RELAY_IDENTITY=self._resolve_str("CB_RELAY_IDENTITY", f"{svc_p}.cb_relay_identity"),
+                GATEWAY_CONFIG_FORCE_ENV_ON_STARTUP=self._resolve_bool("GATEWAY_CONFIG_FORCE_ENV_ON_STARTUP", f"{svc_p}.gateway_config_force_env_on_startup", False),
                 CHAT_SCHEDULER_BACKEND=self._resolve_str("CHAT_SCHEDULER_BACKEND", f"{svc_p}.chat_scheduler_backend", "legacy_lists"),
                 CHAT_TASK_TIMEOUT_SEC=self._resolve_int("CHAT_TASK_TIMEOUT_SEC", f"{svc_p}.chat_task_timeout_sec", 600),
                 CHAT_TASK_IDLE_TIMEOUT_SEC=self._resolve_int("CHAT_TASK_IDLE_TIMEOUT_SEC", f"{svc_p}.chat_task_idle_timeout_sec", 600),

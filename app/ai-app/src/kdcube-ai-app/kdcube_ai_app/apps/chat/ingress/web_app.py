@@ -194,7 +194,7 @@ async def lifespan(app: FastAPI):
         # Initialize gateway adapter and store in app state
         app.state.gateway_adapter = get_fastapi_adapter()
         settings = get_settings()
-        if should_force_gateway_config_from_env():
+        if settings.PLATFORM.SERVICE.GATEWAY_CONFIG_FORCE_ENV_ON_STARTUP or should_force_gateway_config_from_env():
             await apply_gateway_config_from_env(
                 gateway_adapter=app.state.gateway_adapter,
                 tenant=settings.TENANT,
