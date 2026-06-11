@@ -123,7 +123,9 @@ export function normalizeCanvasPatchEvent(value: unknown): CanvasPatchUiEvent | 
   const type = stringValue(raw.type)
   if (
     type !== 'canvas.patch.applied' &&
-    type !== 'canvas.updated'
+    type !== 'canvas.updated' &&
+    !type.endsWith('.canvas.patch.applied') &&
+    !type.endsWith('.canvas.updated')
   ) return null
   const changedCards = raw.changed_cards ?? raw.changedCards
   return {
