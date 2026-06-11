@@ -838,7 +838,7 @@ export default function App() {
         target,
         defaults: CHAT_EVENT_DEFAULTS,
       })
-      if (!draftText && draftFiles.length === 0 && !isSteer) return
+      if (!draftText && draftFiles.length === 0 && draftContexts.length === 0 && !isSteer) return
 
       if (dryRunEnabled) {
         setDryRunLoading(true)

@@ -89,8 +89,19 @@ export async function fetchProfile(): Promise<ProfileInfo> {
     headers: buildRequestHeaders({ 'Content-Type': 'application/json' }),
   })
   if (!response.ok) {
-    const detail = await response.text().catch(() => response.statusText)
-    throw new Error(`Unable to fetch profile (${response.status}): ${detail}`)
+    // The public landing renders this chat for EVERYONE, so a non-OK /profile
+    // (most commonly a 429 throttle for an anonymous visitor) must not surface
+    // a scary banner. The server still tells us who the caller is even on a
+    // throttle — the body carries `user_type` / `session_id` (often nested
+    // under `detail`). Treat any failure as a best-effort anonymous profile;
+    // the visitor just gets the "Sign in to chat" affordance, no error.
+    const body = (await response.json().catch(() => null)) as Record<string, unknown> | null
+    const nested = body && typeof body.detail === 'object' && body.detail
+      ? (body.detail as Record<string, unknown>)
+      : body
+    const userType = String((nested && nested.user_type) || 'anonymous').toLowerCase() || 'anonymous'
+    const sessionId = String((nested && nested.session_id) || '')
+    return { sessionId, userType, roles: [] }
   }
 
   const data = (await response.json()) as {

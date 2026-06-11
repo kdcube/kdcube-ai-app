@@ -204,7 +204,7 @@ function ComposerImpl({
              * default textarea behaviour. */
             if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
               event.preventDefault()
-              if (!disabled && (text.trim() || files.length > 0)) {
+              if (!disabled && (text.trim() || files.length > 0 || contexts.length > 0)) {
                 onSubmit()
               }
             }
@@ -247,7 +247,7 @@ function ComposerImpl({
             <span className="k-micro hidden sm:inline">⌘↵ to send</span>
             <button
               type="button"
-              disabled={disabled || (!text.trim() && files.length === 0)}
+              disabled={disabled || (!text.trim() && files.length === 0 && contexts.length === 0)}
               onClick={onSubmit}
               className="k-btn k-primary"
             >
