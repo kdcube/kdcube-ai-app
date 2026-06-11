@@ -89,6 +89,33 @@ class _SubMgr:
         return self.sub
 
 
+class _SubLimiter:
+    """Fake SubscriptionBudgetLimiter (paid-lane primary). Inject via
+    guard._subscription_limiter before __aenter__."""
+    def __init__(self, reserve_ok: bool = True, available_usd: float = 100.0):
+        self.reserve_ok = reserve_ok
+        self.available_usd = available_usd
+        self.reserved = []
+        self.committed = []
+        self.released = []
+
+    async def reserve(self, **kw):
+        self.reserved.append(kw)
+        if not self.reserve_ok:
+            from kdcube_ai_app.apps.chat.sdk.infra.economics.project_budget import BudgetInsufficientFunds
+            raise BudgetInsufficientFunds("subscription budget exhausted")
+        return type("RR", (), {"reservation_id": kw.get("reservation_id")})()
+
+    async def commit_reserved_spend(self, **kw):
+        self.committed.append(kw)
+
+    async def release_reservation(self, **kw):
+        self.released.append(kw)
+
+    async def get_subscription_budget_balance(self):
+        return {"available_usd": self.available_usd}
+
+
 class _CP:
     def __init__(self, *, plan_balance=None, sub=None, wallet=0, policy=None):
         self._plan_balance = plan_balance or _PlanBalance(wallet=bool(wallet))
@@ -547,6 +574,72 @@ async def test_admit_rate_limit_denies_without_wallet_even_if_fallback_allowed()
         await g.__aenter__()
     assert ei.value.code == "rate_limited"
     assert len(ep.rl.admit_calls) == 1                         # no paid re-admit
+
+
+async def test_paid_lane_switch_subscription_primary():
+    # active-subscription user (with a wallet so the admit-denied switch is allowed),
+    # plan admit rate-limited -> switch to paid; the SUBSCRIPTION pays, wallet untouched.
+    cp = _CP(sub=_Sub(active=True), wallet=1_000_000, plan_balance=_PlanBalance(wallet=True))
+    ep = _EP(cp=cp, rl=_RL(deny_first=True), budget=_Budget(),
+             accounting_result=(1000, {"cost_total_usd": 0.02}))
+    sub_limiter = _SubLimiter()
+    g = EconomicsGuard(
+        ep, subject=_subject("paid"), scope_id="ps1", flow="f",
+        estimate=EconomicsEstimate(reservation_usd=0.05),
+        policy=FlowPolicy(allow_paid_lane_fallback=True),
+    )
+    g._subscription_limiter = sub_limiter                       # inject the fake paid-lane limiter
+    decision = await g.__aenter__()
+    assert decision.lane == "paid"
+    assert decision.funding_source == "subscription"
+    assert len(sub_limiter.reserved) == 1                       # subscription reserved as primary
+    assert ep.cp_manager.user_credits_mgr.reserved == []        # wallet untouched
+    assert len(ep.rl.admit_calls) == 2                          # plan deny + paid re-admit
+
+    await g.__aexit__(None, None, None)
+    assert len(sub_limiter.committed) == 1                      # subscription spend committed
+    assert sub_limiter.committed[0]["spent_usd"] == 0.02
+    assert ep.cp_manager.user_credits_mgr.committed == []       # wallet never charged
+
+
+async def test_paid_lane_subscription_zero_cost_releases_hold():
+    # paid subscription lane, zero actual cost -> release the subscription hold.
+    cp = _CP(sub=_Sub(active=True), wallet=1_000_000, plan_balance=_PlanBalance(wallet=True))
+    ep = _EP(cp=cp, rl=_RL(deny_first=True), budget=_Budget(),
+             accounting_result=(0, {"cost_total_usd": 0.0}))
+    sub_limiter = _SubLimiter()
+    g = EconomicsGuard(
+        ep, subject=_subject("paid"), scope_id="ps2", flow="f",
+        estimate=EconomicsEstimate(reservation_usd=0.05),
+        policy=FlowPolicy(allow_paid_lane_fallback=True),
+    )
+    g._subscription_limiter = sub_limiter
+    await g.__aenter__()
+    await g.__aexit__(None, None, None)
+    assert sub_limiter.committed == []
+    assert len(sub_limiter.released) == 1                       # zero-cost hold released
+
+
+async def test_paid_lane_subscription_falls_back_to_wallet():
+    # active subscription but its budget cannot reserve -> fall back to wallet-primary.
+    cp = _CP(sub=_Sub(active=True), wallet=1_000_000, plan_balance=_PlanBalance(wallet=True))
+    ep = _EP(cp=cp, rl=_RL(deny_first=True), budget=_Budget(),
+             accounting_result=(1000, {"cost_total_usd": 0.02}))
+    sub_limiter = _SubLimiter(reserve_ok=False)                 # subscription reserve declines
+    g = EconomicsGuard(
+        ep, subject=_subject("paid"), scope_id="ps3", flow="f",
+        estimate=EconomicsEstimate(reservation_usd=0.05),
+        policy=FlowPolicy(allow_paid_lane_fallback=True),
+    )
+    g._subscription_limiter = sub_limiter
+    decision = await g.__aenter__()
+    assert decision.lane == "paid"
+    assert decision.funding_source == "wallet"                 # fell back to wallet
+    assert len(sub_limiter.reserved) == 1                      # tried subscription first
+    assert sub_limiter.committed == []
+    assert len(ep.cp_manager.user_credits_mgr.reserved) == 1   # wallet reserved as primary
+    await g.__aexit__(None, None, None)
+    assert len(ep.cp_manager.user_credits_mgr.committed) == 1
 
 
 async def test_top_level_releases_reservation_on_accounting_failure():

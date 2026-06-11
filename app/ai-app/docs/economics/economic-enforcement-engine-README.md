@@ -163,16 +163,18 @@ Carries the resolved `lane` (`plan` / `paid` / `bypass`), `plan_id`,
   emitted when `emit_user_events` is on.
 - **Paid‑lane switch.** With `allow_paid_lane_fallback` on, a plan‑lane request that
   cannot be served from the plan — the plan admit is rate‑limited, or plan funding is
-  exhausted and cannot be reserved — switches to a **wallet‑only paid lane** instead
-  of denying, provided the user has a wallet: the plan reservation is released, admit
-  is retried against the pay‑as‑you‑go policy, and the wallet becomes the primary
-  funding. Off by default, so a flow denies rather than charging the wallet unless it
-  opts in.
+  exhausted and cannot be reserved — switches to the **paid lane** instead of denying,
+  provided the user can pay: the plan reservation is released and admit is retried
+  against the pay‑as‑you‑go policy. In the paid lane an active subscription pays first
+  from its budget (the wallet stays untouched); otherwise the wallet is the primary
+  funding. Off by default, so a flow denies rather than escalating to paid funding
+  unless it opts in.
 - **Settlement (guard only).** On exit, actual spend is charged across the same lanes
   as chat — plan/subscription/project first, wallet for the overflow, with project
-  budget absorbing any shortfall. A paid‑lane flow settles from the wallet (project
-  absorbs any uncovered remainder). A flow whose actual cost is zero releases its
-  holds rather than charging. Subscriptions and wallets never go negative.
+  budget absorbing any shortfall. A paid‑lane flow settles from the subscription
+  budget or the wallet (whichever is the paid primary). A flow whose actual cost is
+  zero releases its holds rather than charging. Subscriptions and wallets never go
+  negative.
 - **Quota lock.** With `enforce_quota_lock` on (and Redis available on the
   entrypoint), the admit→reserve planning window is serialized per user with a
   distributed lock, closing the read‑remaining‑quota → reserve race between concurrent
