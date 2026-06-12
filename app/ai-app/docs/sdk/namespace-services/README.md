@@ -4,7 +4,7 @@ title: "Namespace Services"
 summary: "Index and mental model for namespace-owning service providers, clients, object resolution, and bundle-to-bundle integration."
 status: design
 tags: ["sdk", "namespace-services", "providers", "clients", "resolvers", "bundles"]
-updated_at: 2026-06-11
+updated_at: 2026-06-12
 keywords:
   [
     "namespace services",
@@ -32,7 +32,7 @@ clients use that namespace without copying owner logic.
 The first concrete use case is object resolution:
 
 ```text
-task:issues/issue_123
+task:issue:issue_123
   |
   | owned by task-tracker
   v
@@ -41,10 +41,23 @@ TaskIssueNamedServiceProvider
   +-- object.search
   +-- object.get
   +-- object.schema
-  +-- object.action(open)
+  +-- object.host_file when callers need provider-owned file refs
+  +-- object.action(open/preview)
   +-- object.upsert / delete when allowed
   +-- block.produce / block.render when the namespace owns ReAct projection
 ```
+
+Namespace parsing has one platform rule:
+
+```text
+task:issue:issue_123
+│    └──── provider-owned owner key/subnamespace (`task:issue`)
+└──────── routing namespace (`task`)
+```
+
+The host uses only the routing namespace to find the provider. The provider's
+`event.resolve`, `object.get`, `object.schema`, and related operations decide
+what the owner key and remaining URI tail mean.
 
 The same provider can be consumed by canvas pins, chat context chips,
 model-callable tools, API operations, MCP clients, Data Bus handlers, and
@@ -59,7 +72,7 @@ Two bundles, one configured edge, no shared code:
   PROVIDER bundle (owns task:)            CONSUMER bundle (shows task: refs)
  ┌────────────────────────────┐         ┌─────────────────────────────────┐
  │ NamedServiceProvider       │         │ canvas pin / chat chip / tool   │
- │   object.search/get/action │         │   object_ref "task:issues/42"   │
+ │   object.search/get/action │         │   object_ref "task:issue:42"   │
  │            ▲               │         │            │                    │
  │ named_services() registry │◀────────│  NamedServiceCanvasObjectResolver│
  │ @api("named_service") API │ endpoint│  (built from config, no API code)│
@@ -82,10 +95,11 @@ chosen by namespace prefix:
 | Foreign-generic | another bundle's (`task:`) | `NamedServiceCanvasObjectResolver` | nothing local — opaque `object_ref`, capabilities from config, owner answers over the bridge |
 
 The foreign-generic tier is **additive**: it registers after the concrete
-resolvers and only fires for namespaces listed in `named_services.namespaces`
-(empty by default), so it never shadows owned namespaces. It replaces what used
-to be a hard "registered elsewhere" handoff with a live cross-bundle call —
-strictly more reach for foreign refs, zero change to owned-pin semantics.
+resolvers and only fires for namespaces listed in the consumer bundle's
+`surfaces.as_consumer` resolver config (empty by default), so it never shadows
+owned namespaces. It replaces what used to be a hard "registered elsewhere"
+handoff with a live cross-bundle call — strictly more reach for foreign refs,
+zero change to owned-pin semantics.
 
 ## Documents
 
@@ -105,17 +119,25 @@ through Named Service Discovery:
   expose a `named_service` API operation backed by that registry;
 - a provider bundle registers its providers into Redis-backed Named Service
   Discovery after its local prerequisites are ready;
-- a client bundle configures `named_services.namespaces.<namespace>.clients`
-  for the model tools and resolver surfaces allowed to use that namespace;
+- a client bundle configures `surfaces.as_consumer` for the model tools,
+  event-source/pull policies, and resolver surfaces allowed to use that
+  namespace;
 - canvas/chat object actions use a reusable resolver adapter;
-- namespace artifact refs can be rehosted through a backend rehoster that
-  streams bytes from the provider under the current auth context;
+- namespace artifact refs can be materialized by `react.pull`; the backend
+  rehoster calls the provider's `object.get` with `response_mode: stream`,
+  receives a normal named-service response plus byte chunks, and writes those
+  chunks into the ReAct `fi:` workspace under the current auth context;
 - configured namespaces can register ReAct event sources such as
-  `named_services.task`; block production delegates to the provider's
-  `block.produce` operation;
-- model-callable tools can be enabled per `clients.<client_id>.tools`;
+  `named_services.task`; URI-to-event-source routing calls the provider's
+  lightweight `event.resolve` function, then block production delegates to the
+  provider's `block.produce` operation;
+- model-callable tools can be enabled per
+  `surfaces.as_consumer.agents.<agent>.tools`;
 - model clients can call `provider.about` and `object.schema` before they
   create/update/delete an object, so entity shape stays with the provider;
+- model clients can call `host_file` when configured to create a provider-owned
+  file ref from an agent/runtime artifact, then cite that ref through a
+  provider-declared object mutation;
 - canvas/chat clients only enable namespace resolution; concrete resolver
   actions remain provider decisions;
 - same-KDCube calls prefer the `bundle_registry` transport, which calls the

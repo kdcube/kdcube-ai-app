@@ -4,7 +4,7 @@ title: "Namespace Services: Providers"
 summary: "Transport-neutral SDK concept for bundles and platform subsystems that publish namespace service provider surfaces: namespace ownership, object operations, resolvers, capabilities, relations, and integrations over API, MCP, Data Bus, or local adapters."
 status: design
 tags: ["sdk", "namespace-services", "named-service-provider", "services", "namespaces", "objects", "resolvers", "mcp", "api", "data-bus", "bundles"]
-updated_at: 2026-06-11
+updated_at: 2026-06-12
 keywords:
   [
     "named service provider",
@@ -48,10 +48,10 @@ Examples:
 
 | Provider | Typical owned refs or surface |
 | --- | --- |
-| task issue provider | `task:issues/...`, issue search, issue editor actions |
+| task issue provider | `task:issue:...`, issue search, issue editor actions |
 | memory provider | `mem:...`, memory search, memory viewer actions |
 | canvas provider | `cnv:...`, board patches, pins, board object actions |
-| ReAct artifact provider | `fi:...`, artifact preview/download/rehost |
+| ReAct artifact provider | `fi:...`, artifact preview/download/materialization |
 | document/source provider | provider-owned refs such as `docs:...` or `repo:...`, document/source search and read actions |
 
 Use **named service provider** for the top-level concept. Use **namespaced
@@ -86,7 +86,7 @@ caller bundle/widget/client runtime/scene
     receives bounded semantic result
 ```
 
-The client asks the owner. A canvas card that stores `task:issues/BUG-123`
+The client asks the owner. A canvas card that stores `task:issue:BUG-123`
 keeps that ref intact and asks the task issue provider to preview, open, edit,
 or delete it. Canvas owns board layout; the task provider owns task meaning.
 
@@ -127,11 +127,12 @@ full capability maps, or the complete provider spec; those belong to
 | --- | --- |
 | `object.list` | Browse objects in a collection with pagination. |
 | `object.search` | Search objects; default mode is hybrid when the provider supports it. |
-| `object.get` | Fetch one object by `object_ref` or owner-local id. |
+| `object.get` | Fetch one object by `object_ref` or owner-local id. With `response_mode: stream`, fetch the object's byte representation while still returning structured response metadata. |
 | `object.schema` | Return provider-defined object schemas and tool payload guidance for one object kind or ref. |
+| `object.host_file` | Host a caller-owned runtime file/ref into provider-owned storage and return the provider-owned file object/ref. |
 | `object.upsert` | Create or update one object with idempotency and revision checks. |
 | `object.delete` | Delete or archive one object with revision checks. |
-| `object.action` | Run a bounded action on an object, such as `preview`, `open`, `download`, `pin`, `rehost`, or provider-defined actions. |
+| `object.action` | Run a bounded UI or domain action on an object, such as `preview`, `open`, `download`, `pin`, or provider-defined actions. |
 | `object.resolve` | Normalize a ref into a canonical object descriptor and optional `ret.ui_event` or `ret.extra` hints. |
 
 ### Relation Operations
@@ -149,15 +150,36 @@ those foreign refs.
 
 | Operation | Purpose |
 | --- | --- |
-| `event.resolve` | Resolve an event ref or owner event payload into a semantic descriptor. |
-| `event.action` | Run a bounded action on an event ref, such as preview, open, rehost, or explain. |
+| `event.resolve` | Resolve an owner URI or event payload into lightweight routing metadata. |
+| `event.action` | Run a bounded action on an event ref, such as preview, open, or explain. |
 | `block.produce` | Produce model-visible blocks from provider-owned objects or events. |
 | `block.render` | Render provider-owned objects/events for timeline, compact history, widgets, or ANNOUNCE-style summaries. |
+
+`event.resolve` is the provider-owned URI resolver. It is a function, not a
+host-side pattern declaration. The host may dispatch `task:...` to the task
+namespace resolver, but only the provider function decides what that URI means.
+The function receives the URI as `request.object_ref` and returns a bounded
+resolution object, usually in `ret.extra`, for example:
+
+```json
+{
+  "event_source_id": "named_services.task",
+  "object_ref": "task:issue:BUG-123",
+  "object_kind": "task.issue",
+  "namespace": "task"
+}
+```
+
+The resolver must not read the object body, hit heavy storage, or materialize
+bytes. It is the routing step used before block production. Object content
+belongs to `object.get`; model-visible projection belongs to `block.produce`;
+workspace materialization belongs to streamed `object.get` through `react.pull`.
 
 These operations are the provider-side shape behind event-source readers,
 block-production policies, timeline projection policies, and renderer-specific
 resolvers. A ReAct policy may call the provider through a local resolver, API
-adapter, or future resolver directory; the operation semantics stay the same.
+adapter, or service-discovery-selected bundle operation; the operation
+semantics stay the same.
 
 ## Standard Request Fields
 
@@ -176,7 +198,7 @@ Object-oriented operations use these common request fields:
   "schema": "kdcube.named_service.request.v1",
   "provider": "task.issue",
   "namespace": "task",
-  "object_ref": "task:issues/BUG-123",
+  "object_ref": "task:issue:BUG-123",
   "object_id": "BUG-123",
   "collection": "issues",
   "cursor": null,
@@ -190,6 +212,7 @@ Object-oriented operations use these common request fields:
   "object": {},
   "base_revision": null,
   "idempotency_key": "client-op-01HX",
+  "response_mode": "json",
   "context": {}
 }
 ```
@@ -211,7 +234,7 @@ Responses are bounded and semantic.
         "provider_id": "task.issue"
       },
       "namespace": "task",
-      "object_ref": "task:issues/BUG-123",
+      "object_ref": "task:issue:BUG-123",
       "next_cursor": null,
       "revision": "rev-7",
       "capabilities": {},
@@ -227,13 +250,125 @@ Responses are bounded and semantic.
 }
 ```
 
-Large bytes, long reports, and generated artifacts should be returned as refs or
-hosted files, not as unbounded inline response payloads.
+Large bytes, long reports, and generated artifacts should be returned as refs,
+hosted files, or streamed `object.get` results, not as unbounded inline
+response payloads.
 
-When an owned namespace contains attachment refs, implement a `rehost` action
-that returns a streaming response. ReAct materializes these refs through the
-configured namespace rehoster; MCP-style metadata operations should not base64
-large files into tool results.
+### Streamed Object Reads
+
+`object.get` has two response modes:
+
+| `response_mode` | Provider return | Used by |
+| --- | --- | --- |
+| `json` or omitted | `NamedServiceResponse` | normal tools, resolvers, schema-aware clients |
+| `stream` | `NamedServiceStreamResult` | `react.pull`, future local artifact materializers, file/object transfers |
+
+`NamedServiceStreamResult` carries both:
+
+- `response`: the same `NamedServiceResponse` shape shown above, including
+  `ret.object` identity/body metadata or a structured `error`;
+- `chunks`: an async byte iterator for the object representation.
+
+Do not base64 large files into tool results and do not hide object metadata in
+HTTP headers. If access is denied or the object is missing, return a failed
+`NamedServiceResponse` in the stream result; callers such as `react.pull`
+surface that exact error to the agent.
+
+Example provider return:
+
+```python
+return NamedServiceStreamResult(
+    response=NamedServiceResponse.ok_response(
+        provider=self.provider_identity(),
+        namespace="task",
+        object_ref="task:issue:attachment:BUG-123/attachments/ta_1/v000001/evidence.md",
+        object=attachment_descriptor,
+    ),
+    chunks=artifact_store.iter_bytes(relpath),
+    filename="evidence.md",
+    media_type="text/markdown",
+)
+```
+
+### Provider-Owned File Hosting
+
+`object.host_file` is the client-to-provider file-hosting operation. It is
+separate from `object.upsert`: hosting creates a provider-owned file ref;
+upsert cites or attaches that returned ref on a provider object when the schema
+supports it.
+
+Request shape:
+
+```json
+{
+  "operation": "object.host_file",
+  "namespace": "task",
+  "object_ref": "task:issue:BUG-123",
+  "payload": {
+    "file": {
+      "ref": "fi:turn_1.files/report.md",
+      "filename": "report.md",
+      "mime": "text/markdown",
+      "description": "Investigation note"
+    }
+  }
+}
+```
+
+The request carries a file descriptor, not base64 bytes. Same-runtime providers
+may accept a runtime-local `local_path` descriptor when the transport is trusted
+and request-bound. Cross-runtime and agent-facing paths should normally use
+artifact refs such as `fi:` and let the provider materialize the source through
+platform storage under the current auth context.
+
+Response shape:
+
+```json
+{
+  "ok": true,
+  "ret": {
+    "attrs": {
+      "namespace": "task",
+      "object_ref": "task:issue:attachment:BUG-123/attachments/ta_1/v000001/report.md"
+    },
+    "object": {
+      "schema": "kdcube.named_service.object.v1",
+      "identity": {
+        "object_ref": "task:issue:attachment:BUG-123/attachments/ta_1/v000001/report.md",
+        "object_id": "ta_1",
+        "object_kind": "task.attachment",
+        "namespace": "task"
+      },
+      "meta": {},
+      "body": {
+        "filename": "report.md",
+        "mime": "text/markdown"
+      }
+    },
+    "extra": {
+      "attach_with": {
+        "tool": "named_services.upsert_object",
+        "namespace": "task",
+        "object_ref": "task:issue:BUG-123",
+        "object_json": {
+          "attachment_refs": [
+            {
+              "ref": "task:issue:attachment:BUG-123/attachments/ta_1/v000001/report.md",
+              "filename": "report.md",
+              "mime": "text/markdown"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "error": null
+}
+```
+
+Providers must enforce write/attach permission before hosting. If hosting
+fails, return a normal failed `NamedServiceResponse` so agent tools can surface
+the exact provider error.
 
 ## Object Actions And UI Routing
 
@@ -246,7 +381,7 @@ Example:
 {
   "provider": "task.issue",
   "namespace": "task",
-  "object_ref": "task:issues/BUG-123",
+  "object_ref": "task:issue:BUG-123",
   "action": "open",
   "context": {
     "source_surface": "sdk.canvas.pinboard"
@@ -262,13 +397,13 @@ Typical response:
   "ret": {
     "attrs": {
       "namespace": "task",
-      "object_ref": "task:issues/BUG-123"
+      "object_ref": "task:issue:BUG-123"
     },
     "ui_event": {
       "type": "kdcube.ui.object.open.requested",
       "subject": "ui.object.open.requested",
       "target_surface": "task_tracker.issue_editor",
-      "object_ref": "task:issues/BUG-123",
+      "object_ref": "task:issue:BUG-123",
       "mode": "focus",
       "params": {
         "issue_id": "BUG-123"
@@ -293,9 +428,11 @@ named_service_providers:
   - provider_id: task.issue
     namespace: task
     refs:
-      - task:issues/*
+      - task:issue:*
+      - task:issue:attachment:*/attachments/*
     object_kinds:
       - task.issue
+      - task.attachment
     operations:
       provider.about:
         transports: [local, api, mcp]
@@ -309,6 +446,8 @@ named_service_providers:
         transports: [local, api, mcp]
       object.schema:
         transports: [local, api, mcp]
+      object.host_file:
+        transports: [local, api, mcp, data_bus]
       object.upsert:
         transports: [local, api, mcp, data_bus]
       object.delete:
@@ -345,33 +484,115 @@ kdcube_ai_app/apps/chat/sdk/solutions/named_services_providers/
     api_client.py
 ```
 
-## Bundle Configuration Surface
+### Provider Resolver Function
 
-Named services are configured under one bundle prop root:
+Namespace URI routing is a provider function. Use
+`@event_source_resolver(namespace=...)` for same-runtime discovery, and expose
+the same function through provider `event.resolve` for named-service clients
+that reach the provider through service discovery.
 
-```yaml
-named_services:
-  namespaces:
-    task:
-      clients:
-        default_client:
-          tools:
-            allowed_operations:
-              - provider.about
-              - object.list
-              - object.search
-              - object.get
-              - object.schema
-              - object.upsert
-              - object.delete
-        canvas:
-          resolver:
-            enabled: true
+```python
+from kdcube_ai_app.apps.chat.sdk.events import event_source_resolver
+from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers import (
+    NamedServiceContext,
+    NamedServiceProvider,
+    NamedServiceRequest,
+    NamedServiceResponse,
+)
+
+@event_source_resolver(namespace="task")
+async def resolve_task_event_source(ref: str, **_) -> dict:
+    if not ref.startswith("task:"):
+        return {"ok": False, "error": "task_ref_required"}
+    return {
+        "ok": True,
+        "event_source_id": "named_services.task",
+        "object_ref": ref,
+        "object_kind": "task.attachment" if "/attachments/" in ref else "task.issue",
+        "namespace": "task",
+    }
+
+class TaskIssueProvider(NamedServiceProvider):
+    async def event_resolve(
+        self,
+        ctx: NamedServiceContext,
+        request: NamedServiceRequest,
+    ) -> NamedServiceResponse:
+        resolved = await resolve_task_event_source(request.object_ref or "")
+        if not resolved.get("ok"):
+            return NamedServiceResponse.error_response(
+                code=str(resolved.get("error") or "event_resolve_failed"),
+                message="Task event resolver failed.",
+                namespace="task",
+                object_ref=request.object_ref,
+            )
+        return NamedServiceResponse.ok_response(
+            namespace="task",
+            object_ref=resolved["object_ref"],
+            extra=resolved,
+        )
 ```
 
-`named_services.namespaces` is bundle-level: it declares which namespaces this
-bundle consumes and which clients may use model-callable tools. Provider
-location is normally resolved from Named Service Discovery.
+This resolver must not call the database, open the object, or stream bytes. It
+is the provider-owned route from `uri` to resolution metadata. Heavy reads
+belong to `object.get`; model-visible content belongs to `block.produce`.
+
+## Bundle Configuration Surface
+
+Provider registration and consumer configuration are different surfaces.
+
+Provider bundles expose code and register provider records:
+
+```text
+Provider bundle
+  @named_service_provider(...)
+  named_services() -> NamedServiceRegistry
+  @api(alias="named_service") optional transport facade
+  on_bundle_load() -> Redis Named Service Discovery registration
+```
+
+Consumer bundles decide which of those registered provider surfaces they use:
+
+```yaml
+surfaces:
+  as_consumer:
+    agents:
+      main:
+        tools:
+          - id: task_service
+            kind: named_service
+            alias: named_services
+            namespaces:
+              task:
+                allowed: [provider.about, object.search, object.schema, object.upsert, object.delete]
+        event_sources:
+          - kind: named_service
+            namespace: task
+            enabled: true
+            discovery:
+              mode: service_discovery
+            policies:
+              pull:
+                mode: provider
+                operation: object.get
+              block_production:
+                mode: provider
+                operation: block.produce
+    ui:
+      canvas:
+        resolvers:
+          - kind: named_service
+            namespace: task
+            enabled: true
+            discovery:
+              mode: service_discovery
+            allowed: [object.action]
+```
+
+`surfaces.as_consumer` declares which namespaces this bundle consumes and which
+agents, event-source policies, pull policies, and UI resolver surfaces may use
+that namespace. Provider location is normally resolved from Named Service
+Discovery.
 
 Provider bundles register their available providers into the Redis-backed
 tenant/project discovery table when the bundle is loaded and ready:
@@ -392,31 +613,29 @@ await discovery.register_registry(
 
 Named Service Discovery is a provider index. It can contain multiple providers
 for the same namespace, including providers from different bundles. Each entry
-advertises operations, object kinds, and ref patterns; the runtime chooses the
-provider per request.
+advertises operations, object kinds, and provider ref scopes so the runtime can
+choose the provider per request. Those ref scopes are not an event-source
+resolver. URI interpretation still belongs to the provider function exposed by
+`event.resolve`.
 
-`named_services.namespaces.<namespace>.clients.<client_id>.tools` is
-client-level: it controls which provider operations become model-callable tools
-for a specific named-service client surface. A bundle can expose the same
-namespace to canvas/chat resolvers while only one client receives
-model-callable tools for it.
+`surfaces.as_consumer.agents.<agent>.tools[*].namespaces.<namespace>.allowed`
+controls which provider operations become model-callable tools for a specific
+agent surface. A bundle can expose the same namespace to canvas/chat resolvers
+while only one agent receives model-callable tools for it.
 
-Client ids are not ReAct-specific. The same section can describe tool access
-for ReAct agents, Claude Code, Codex, MCP, widget, job, or other client
-runtimes once their adapters consume the provider contract. When the client is
-a ReAct agent, the client id is the agent id; it still lives under
-`clients`, because the namespace is not exclusively an agent configuration
-surface.
+Agent ids are not ReAct-specific. The same consumer-surface pattern can
+describe tool access for ReAct agents, Claude Code, Codex, MCP, widget, job,
+or other client runtimes once their adapters consume the provider contract.
 
 When a client must pin provider endpoints instead of using discovery, provider
-endpoint transport is explicit in `named_services.namespaces.<namespace>.providers`.
-The list is plural because one namespace may be split across providers by
-operation, ref, or object kind:
+endpoint transport is explicit in the namespace config that the consumer
+surface passes to the named-service adapters. The list is plural because one
+namespace may be split across providers by operation, ref, or object kind.
 
 In that `providers` list, `operations` is the provider capability contract. In
-`clients.<client_id>.tools`, `allowed_operations` controls the model-callable
-tool surface for that client. `clients.canvas.resolver.enabled` lets the canvas
-resolver call the provider for object refs; provider code decides which concrete
+an agent tool item, `allowed` controls the model-callable tool surface for that
+agent. `surfaces.as_consumer.ui.canvas.resolvers` lets the canvas resolver call
+the provider for object refs; provider code decides which concrete
 `object.action` values are accepted.
 
 | `transport` | Runtime path | Use when |
@@ -437,7 +656,7 @@ Callers use a named service client instead of hardcoding owner bundle routes.
 client = get_named_service_client()
 
 result = await client.action(
-    object_ref="task:issues/BUG-123",
+    object_ref="task:issue:BUG-123",
     action="open",
     context={"source_surface": "sdk.canvas.pinboard"},
 )
@@ -585,7 +804,7 @@ MCP:
 
 Data Bus:
   subject: named_service.task.issue.object.upsert
-  object_ref: task:issues/BUG-123
+  object_ref: task:issue:BUG-123
   payload: named service request
 
 local:
@@ -612,9 +831,11 @@ the caller is already running inside trusted bundle/platform code.
 
 ### API Local Loop
 
-The API adapter is the first concrete transport adapter. A bundle mounts a
-normal `@api(...)` operation, and that operation dispatches through the local
-named-service registry:
+The API adapter is the first concrete transport adapter. A bundle mounts one
+normal `@api(alias="named_service")` operation, and that operation dispatches
+through the local named-service registry. The helper multiplexes JSON and
+streamed reads: when the request has `response_mode: stream`, the same API
+method may return a stream-capable result.
 
 ```python
 from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers import (
@@ -667,7 +888,7 @@ raw = await call_bundle_operation(
         "operation": "object.action",
         "provider": "task.issue",
         "namespace": "task",
-        "object_ref": "task:issues/BUG-123",
+        "object_ref": "task:issue:BUG-123",
         "action": "open",
     },
 )
@@ -690,15 +911,24 @@ bundle's `canvas_object_action` operation, so the same resolver registry covers
 both surfaces.
 
 ```yaml
-named_services:
-  namespaces:
-    task: {}
+surfaces:
+  as_consumer:
+    ui:
+      canvas:
+        resolvers:
+          - kind: named_service
+            namespace: task
+            enabled: true
+            discovery:
+              mode: service_discovery
+            allowed: [object.action]
 ```
 
 In the bundle entrypoint:
 
 ```python
 from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers import (
+    named_service_canvas_resolver_namespaces,
     register_configured_named_service_canvas_resolvers,
 )
 
@@ -706,7 +936,7 @@ def _canvas_object_resolvers(self, payload, *, user_id):
     registry = build_default_canvas_resolver_registry(store)
     register_configured_named_service_canvas_resolvers(
         registry,
-        namespaces=self.bundle_prop("named_services.namespaces", {}) or {},
+        namespaces=named_service_canvas_resolver_namespaces(self.bundle_props),
         tenant=tenant,
         project=project,
         logger=_log,
@@ -755,7 +985,7 @@ It currently provides:
 - API endpoint client for named-service calls through that bridge;
 - canvas/chat object resolver adapter plus reusable config registration helper;
 - client-scoped named-service tool adapter that reads
-  `named_services.namespaces.<namespace>.clients.<client_id>.tools`;
+  `surfaces.as_consumer.agents.<agent>.tools`;
 - client constructors for current request, Data Bus context, and bundle-job
   context.
 
@@ -774,7 +1004,8 @@ When introducing a named service provider:
 - define `object.schema` for each object kind that agents may create, update,
   delete, render, or pull from;
 - define object operations and action names;
-- define `rehost` for large attachment refs that must become `fi:` artifacts;
+- define streamed `object.get` with `response_mode: stream` for large
+  attachment refs that must become `fi:` artifacts;
 - define `block.produce` / `block.render` when ReAct should project
   provider-owned objects as model-visible blocks;
 - define pagination, search mode, revision, and idempotency rules;
