@@ -115,8 +115,11 @@ A provider exposes operations grouped by scope.
 `provider.about` lets a client understand what the provider is for
 before choosing a narrower operation.
 
-Providers that expose mutation should include a concise service description,
-base object summaries, and object schema availability in `provider.about`.
+Providers that expose mutation should keep `provider.about` concise: service
+purpose, base object summaries, and a short hint to call `object.schema` for
+concrete payload fields. `provider.about` must not return full object schemas,
+full capability maps, or the complete provider spec; those belong to
+`object.schema` and `provider.capabilities`.
 
 ### Object Operations
 
