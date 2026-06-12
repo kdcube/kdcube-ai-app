@@ -107,6 +107,8 @@ interface QuotaBreakdown {
         period_end?: string | null;
         available_usd: number;
         available_tokens?: number;
+        reserved_usd?: number;
+        reserved_tokens?: number;
         spent_usd?: number;
     } | null;
 }
@@ -864,11 +866,17 @@ const UserBillingDashboard: React.FC = () => {
                             {breakdown.subscription_balance?.has_subscription && (
                                 <Card className="p-4">
                                     <h3 className="mb-3 text-sm font-semibold uppercase tracking-wider text-gray-500">Subscription Balance</h3>
-                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
                                         <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
                                             <div className="text-xs font-semibold uppercase tracking-wider text-gray-400">Available</div>
                                             <div className="mt-1 text-sm font-medium text-gray-900">
                                                 {formatUsd(breakdown.subscription_balance.available_usd)}
+                                            </div>
+                                        </div>
+                                        <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
+                                            <div className="text-xs font-semibold uppercase tracking-wider text-gray-400">Reserved</div>
+                                            <div className="mt-1 text-sm font-medium text-gray-900">
+                                                {formatUsd(breakdown.subscription_balance.reserved_usd || 0)}
                                             </div>
                                         </div>
                                         <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">

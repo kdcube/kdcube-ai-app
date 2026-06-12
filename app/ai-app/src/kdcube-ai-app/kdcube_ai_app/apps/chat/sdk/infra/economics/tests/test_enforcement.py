@@ -676,7 +676,7 @@ async def test_quota_lock_acquired_then_released_on_success():
     assert any(c["nx"] for c in ep.redis.set_calls)
     # ...and released as soon as holds were reserved (not held across the body)
     assert ep.redis.store == {}
-    assert g._quota_lock_acquired is False
+    assert g._quota_lock.acquired is False
     await g.__aexit__(None, None, None)
     assert ep.redis.store == {}
 
@@ -710,7 +710,7 @@ async def test_quota_lock_released_on_deny():
     with pytest.raises(EconomicsLimitException):
         await g.__aenter__()
     assert ep.redis.store == {}
-    assert g._quota_lock_acquired is False
+    assert g._quota_lock.acquired is False
 
 
 async def test_quota_lock_skipped_for_bypass():

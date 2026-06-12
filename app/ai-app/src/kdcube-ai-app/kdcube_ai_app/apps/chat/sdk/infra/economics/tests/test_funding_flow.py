@@ -208,6 +208,106 @@ async def test_reserve_switches_to_paid_when_primary_fails_and_fallback_allowed(
     assert ctx.cp_manager.user_credits_mgr.reserved == []  # no wallet hold (caller does it)
 
 
+# --------------------------------------------------------------------------
+# Paid-lane reserve
+# --------------------------------------------------------------------------
+async def test_reserve_paid_subscription_primary():
+    # active subscription -> subscription budget is the paid-lane primary; wallet untouched.
+    sub = _SubBudget(available_usd=100.0)
+    ctx = _ctx(sub=sub)
+    out = await ff.reserve_paid_funding(
+        ctx, admit=_Admit(reserved=2000), est_turn_tokens=2000,
+        has_active_subscription=True, has_wallet=True, wallet_can_pay_turn=True,
+    )
+    assert out.status is ff.ReserveStatus.OK
+    res = out.reservation
+    assert res.funding_source == "subscription"
+    assert res.paid_lane is True
+    assert res.app_reservation_active is True
+    assert len(sub.reserved) == 1
+    assert ctx.cp_manager.user_credits_mgr.reserved == []   # wallet untouched
+
+
+async def test_reserve_paid_subscription_falls_back_to_wallet():
+    # subscription hold declined but the wallet can pay -> wallet becomes the primary.
+    sub = _SubBudget(reserve_fail=True)
+    credits = _Credits(reserve_ok=True)
+    ctx = _ctx(sub=sub, credits=credits)
+    out = await ff.reserve_paid_funding(
+        ctx, admit=_Admit(reserved=2000), est_turn_tokens=2000,
+        has_active_subscription=True, has_wallet=True, wallet_can_pay_turn=True,
+    )
+    assert out.status is ff.ReserveStatus.OK
+    res = out.reservation
+    assert res.funding_source == "wallet"
+    assert res.wallet_reservation_active is True
+    assert res.wallet_reserved_tokens == 2000
+    assert len(credits.reserved) == 1
+
+
+async def test_reserve_paid_subcent_subscription_skips_to_wallet():
+    # est below the cent floor -> no subscription hold attempted; wallet is primary.
+    sub = _SubBudget(available_usd=100.0)
+    credits = _Credits(reserve_ok=True)
+    ctx = _ctx(sub=sub, credits=credits)
+    out = await ff.reserve_paid_funding(
+        ctx, admit=_Admit(reserved=200), est_turn_tokens=200,
+        has_active_subscription=True, has_wallet=True, wallet_can_pay_turn=True,
+    )
+    assert out.status is ff.ReserveStatus.OK
+    assert out.reservation.funding_source == "wallet"
+    assert sub.reserved == []
+    assert len(credits.reserved) == 1
+
+
+async def test_reserve_paid_subscription_failed_no_wallet_denies():
+    sub = _SubBudget(reserve_fail=True)
+    ctx = _ctx(sub=sub)
+    out = await ff.reserve_paid_funding(
+        ctx, admit=_Admit(reserved=2000), est_turn_tokens=2000,
+        has_active_subscription=True, has_wallet=False, wallet_can_pay_turn=False,
+    )
+    assert out.status is ff.ReserveStatus.DENIED
+    assert out.deny_code == "paid_subscription_reservation_failed"
+
+
+async def test_reserve_paid_wallet_primary():
+    # no subscription -> wallet is the paid-lane primary.
+    credits = _Credits(reserve_ok=True)
+    ctx = _ctx(credits=credits)
+    out = await ff.reserve_paid_funding(
+        ctx, admit=_Admit(reserved=2000), est_turn_tokens=2000,
+        has_active_subscription=False, has_wallet=True, wallet_can_pay_turn=True,
+    )
+    assert out.status is ff.ReserveStatus.OK
+    res = out.reservation
+    assert res.funding_source == "wallet"
+    assert res.wallet_reservation_active is True
+    assert res.wallet_reserved_tokens == 2000
+    assert len(credits.reserved) == 1
+
+
+async def test_reserve_paid_no_wallet_denies():
+    ctx = _ctx()
+    out = await ff.reserve_paid_funding(
+        ctx, admit=_Admit(reserved=2000), est_turn_tokens=2000,
+        has_active_subscription=False, has_wallet=False, wallet_can_pay_turn=False,
+    )
+    assert out.status is ff.ReserveStatus.DENIED
+    assert out.deny_code == "paid_no_personal_budget"
+
+
+async def test_reserve_paid_wallet_reservation_failed_denies():
+    credits = _Credits(reserve_ok=False)
+    ctx = _ctx(credits=credits)
+    out = await ff.reserve_paid_funding(
+        ctx, admit=_Admit(reserved=2000), est_turn_tokens=2000,
+        has_active_subscription=False, has_wallet=True, wallet_can_pay_turn=True,
+    )
+    assert out.status is ff.ReserveStatus.DENIED
+    assert out.deny_code == "paid_wallet_reservation_failed"
+
+
 async def test_settle_wallet_primary_paid_lane():
     # funding_source="wallet" -> wallet pays everything; project absorbs uncovered.
     credits = _Credits(consume_uncovered=0)

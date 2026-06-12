@@ -6,17 +6,20 @@
 Shared plan-lane funding reserve + settlement, extracted so a single
 implementation backs BOTH the chat run() path and the reusable EconomicsGuard.
 
-It mirrors BaseEntrypointWithEconomics.run()'s plan-lane money flow:
-  reserve:  size the primary (project|subscription) cover + reserve it, then
-            reserve wallet overflow for the remainder.
+It mirrors BaseEntrypointWithEconomics.run()'s money flow:
+  reserve_plan_funding:  plan lane — size the primary (project|subscription)
+            cover + reserve it, then reserve wallet overflow for the remainder.
+  reserve_paid_funding:  paid lane — reserve the subscription budget as primary
+            (active subscription), otherwise the wallet, with wallet fallback
+            when the subscription hold is declined.
   settle:   read fresh capacities, split the actual usage with
             allocate_plan_wallet_settlement (primary + wallet + project
             absorption), commit each source, and commit RL token quota.
 
 It deliberately contains NO event emission and NO UI insight — those are
-run()-specific concerns. reserve_plan_funding does NOT itself switch lanes: it
-returns a ReserveOutcome (OK / SWITCH_TO_PAID / DENIED) and the caller owns the
-paid-lane switch (release RL + re-admit paid + reserve wallet primary).
+run()-specific concerns. The reserve helpers do NOT switch lanes or emit denials:
+they return a ReserveOutcome (OK / SWITCH_TO_PAID / DENIED) and the caller owns
+the paid-lane switch and the denial it raises.
 
 Design: docs/economics/economic-enforcement-non-chat-v2-README.md (§4.1, §6)
 """
@@ -336,6 +339,107 @@ async def reserve_plan_funding(
                 est_turn_tokens=est_turn_tokens,
             )
 
+    return _ok(res)
+
+
+# ---------------------------------------------------------------------------
+# Paid-lane reservation (post-switch or direct paid lane)
+# ---------------------------------------------------------------------------
+async def reserve_paid_funding(
+    ctx: FundingContext,
+    *,
+    admit: Any,
+    est_turn_tokens: int,
+    has_active_subscription: bool,
+    has_wallet: bool,
+    wallet_can_pay_turn: bool,
+    ttl_sec: int = 900,
+) -> ReserveOutcome:
+    """
+    Paid-lane reservation: the subscription budget pays first (if the user has an
+    active subscription and a chargeable hold can be placed), otherwise the wallet
+    is the primary funding. Mirrors run()'s paid-lane reserve and the guard's
+    _reserve_paid_subscription + _reserve_wallet_or_deny(paid).
+
+    Non-raising: returns a ReserveOutcome (never SWITCH_TO_PAID — this IS the paid
+    lane).
+      - OK: reservation placed (paid_lane=True; use outcome.reservation).
+      - DENIED: cannot reserve subscription nor wallet. deny_code is canonical:
+          paid_no_personal_budget          -> no wallet to back the paid lane
+          paid_subscription_reservation_failed -> subscription hold declined and the
+                                               wallet cannot cover the turn either
+          paid_wallet_reservation_failed   -> wallet present but the hold was declined
+        Each caller remaps the kind onto its own denial vocabulary.
+    """
+    usd_per_token = ctx.usd_per_token
+
+    plan_reserved_tokens = int(getattr(admit, "reserved_tokens", 0) or 0)
+    plan_reservation_id = getattr(admit, "reservation_id", None)
+    plan_reservation_active = plan_reserved_tokens > 0 and plan_reservation_id is not None
+
+    res = PlanFundingReservation(
+        funding_source="wallet",
+        budget_bypass=False,
+        est_turn_tokens=int(est_turn_tokens),
+        plan_reservation_id=plan_reservation_id,
+        plan_reserved_tokens=plan_reserved_tokens,
+        plan_reservation_active=plan_reservation_active,
+        has_wallet=has_wallet,
+        paid_lane=True,
+    )
+
+    def _denied_paid(*, code: str) -> ReserveOutcome:
+        return ReserveOutcome(
+            status=ReserveStatus.DENIED, deny_code=code,
+            deny_message="Paid lane cannot reserve funds for this request.",
+            deny_data={
+                "reason": code, "funding_source": res.funding_source,
+                "min_tokens_required": int(est_turn_tokens), "lane": "paid",
+            },
+        )
+
+    # --- subscription primary --------------------------------------------
+    if has_active_subscription and ctx.subscription_limiter is not None:
+        app_reserved_usd = float(est_turn_tokens) * usd_per_token * SAFETY_MARGIN
+        if app_reserved_usd >= _MIN_RESERVE_USD:
+            app_reservation_id = uuid4()
+            try:
+                await ctx.subscription_limiter.reserve(
+                    bundle_id=ctx.bundle_id, amount_usd=float(app_reserved_usd),
+                    provider=None, request_id=ctx.scope_id, reservation_id=app_reservation_id,
+                    ttl_sec=int(ttl_sec), now=ctx.now,
+                    notes=f"paid reserve (subscription): scope={ctx.scope_id}, est_turn={est_turn_tokens}",
+                )
+                res.funding_source = "subscription"
+                res.app_reservation_id = app_reservation_id
+                res.app_reserved_usd = float(app_reserved_usd)
+                res.app_reservation_active = True
+                return _ok(res)
+            except (BudgetInsufficientFunds, ValueError) as e:
+                ctx.log("reserve.subscription", "paid subscription reserve declined; falling back to wallet",
+                        "WARN", error=str(e))
+                if not wallet_can_pay_turn:
+                    res.funding_source = "subscription"
+                    return _denied_paid(code="paid_subscription_reservation_failed")
+                # else: the wallet can cover the turn -> fall through to wallet primary
+
+    # --- wallet primary --------------------------------------------------
+    if not has_wallet:
+        return _denied_paid(code="paid_no_personal_budget")
+
+    ok = await ctx.cp_manager.user_credits_mgr.reserve_lifetime_tokens(
+        tenant=ctx.tenant, project=ctx.project, user_id=ctx.user_id,
+        reservation_id=ctx.scope_id, tokens=int(est_turn_tokens),
+        ttl_sec=int(ttl_sec), bundle_id=ctx.bundle_id,
+        notes=f"paid reserve (wallet): scope={ctx.scope_id}, est_turn={est_turn_tokens}",
+    )
+    if not ok:
+        return _denied_paid(code="paid_wallet_reservation_failed")
+
+    res.funding_source = "wallet"
+    res.wallet_reservation_id = ctx.scope_id
+    res.wallet_reserved_tokens = int(est_turn_tokens)
+    res.wallet_reservation_active = True
     return _ok(res)
 
 
