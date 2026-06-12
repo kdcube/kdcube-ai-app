@@ -130,7 +130,7 @@ services:
         source: ${HOST_MANAGED_BUNDLES_PATH?}  # host root for platform-managed bundles
         target: ${MANAGED_BUNDLES_ROOT:-/managed-bundles}
       - type: bind
-        source: ${HOST_BUNDLE_STORAGE_PATH?}   # host root for bundle shared storage (knowledge space)
+        source: ${HOST_BUNDLE_STORAGE_PATH?}   # host root for prepared bundle storage
         target: ${BUNDLE_STORAGE_ROOT?}        # e.g. /bundle-storage inside the container
       - type: bind
         source: ${HOST_GIT_SSH_KEY_PATH:-/dev/null}

@@ -69,4 +69,5 @@ docker compose up -d
 
 - `REDIS_HOST`/`POSTGRES_HOST` should point to your infra stack (often `localhost`).
 - `KDCUBE_STORAGE_PATH` and `EXEC_WORKSPACE_ROOT` should be absolute paths on your host.
-- `BUNDLE_STORAGE_ROOT` should be an absolute path if you use knowledge/doc bundles (ks:).
+- `BUNDLE_STORAGE_ROOT` should be an absolute path when bundles use prepared
+  local readonly data or managed bundle storage.

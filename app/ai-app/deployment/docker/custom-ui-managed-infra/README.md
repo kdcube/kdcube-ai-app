@@ -103,7 +103,7 @@ Backend API routes are **not** under `routesPrefix`:
 - `HOST_BUNDLES_PATH` (host) → `BUNDLES_ROOT` (container) for local path bundles
 - `HOST_MANAGED_BUNDLES_PATH` (host) → `MANAGED_BUNDLES_ROOT` (container) for managed bundles
 
-**Knowledge space storage (for doc/knowledge bundles):**
+**Prepared bundle storage (for bundle-owned readonly data and indexes):**
 
 - `HOST_BUNDLE_STORAGE_PATH` (host) → `BUNDLE_STORAGE_ROOT` (container)
 - Set `BUNDLE_STORAGE_ROOT=/bundle-storage` in `.env.proc`

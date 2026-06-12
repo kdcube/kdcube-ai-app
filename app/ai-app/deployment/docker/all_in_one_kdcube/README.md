@@ -140,7 +140,7 @@ If you use the CLI installer, it pre‑creates `./logs/chat-ingress` and
 - `HOST_BUNDLES_PATH` (host) → `BUNDLES_ROOT` (container) for local path bundles
 - `HOST_MANAGED_BUNDLES_PATH` (host) → `MANAGED_BUNDLES_ROOT` (container) for managed bundles
 
-**Knowledge space storage (doc/knowledge bundles):**
+**Prepared bundle storage (for bundle-owned readonly data and indexes):**
 
 - `HOST_BUNDLE_STORAGE_PATH` (host) → `BUNDLE_STORAGE_ROOT` (container)
 
