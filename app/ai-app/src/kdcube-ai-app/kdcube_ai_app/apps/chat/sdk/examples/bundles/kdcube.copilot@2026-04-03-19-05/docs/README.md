@@ -51,6 +51,10 @@ Bundle config:
 ```yaml
 telemetry_sink:
   endpoint_url: "https://stats.example.internal/telemetry/events"
+  # Optional. Header carrying the ingest secret. Empty -> Authorization: Bearer.
+  # Use a non-Authorization header (e.g. X-Telemetry-Token) when the receiver is
+  # behind the platform gateway, so the gateway does not JWT-parse the secret.
+  auth_header: "X-Telemetry-Token"
 ```
 
 Bundle secret:

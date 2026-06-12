@@ -37,6 +37,12 @@ bundles:
           # called. When configured, the bundle records selected comm events
           # during chat turns and posts them as one bounded batch after the turn.
           endpoint_url: ""
+          # Header that carries the static ingest secret. Empty -> legacy
+          # `Authorization: Bearer <token>`. Set to a non-Authorization header
+          # (e.g. X-Telemetry-Token) so the platform gateway does not try to
+          # JWT-parse it. Must match the receiver's ingest.public.header_name.
+          auth_header: ""
+          auth_header: ""
         integrations:
           telegram:
             enabled: false

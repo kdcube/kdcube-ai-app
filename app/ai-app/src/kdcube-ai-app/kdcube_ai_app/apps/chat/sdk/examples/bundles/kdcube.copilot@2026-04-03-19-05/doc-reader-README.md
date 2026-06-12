@@ -309,6 +309,7 @@ Config:
 ```yaml
 telemetry_sink:
   endpoint_url: "https://stats.example.internal/telemetry/events"
+  auth_header: "X-Telemetry-Token"
 ```
 
 Secret:

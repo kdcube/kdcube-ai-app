@@ -633,10 +633,12 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
             except Exception:
                 pass
             return None
+        auth_header = str(self.bundle_prop("telemetry_sink.auth_header", "Authorization") or "").strip() or "Authorization"
         return StatsTelemetrySink(
             StatsTelemetryTarget(
                 endpoint_url=endpoint_url,
                 token=token,
+                token_header=auth_header,
             ),
             source_bundle=self._bundle_id(),
         )

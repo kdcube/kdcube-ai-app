@@ -52,6 +52,7 @@ bundles:
           # bundle URLs here; paste the receiver URL exactly as it should be
           # called.
           endpoint_url: ""
+          auth_header: ""
         integrations:
           telegram:
             enabled: false
