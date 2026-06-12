@@ -99,15 +99,13 @@ Configured named-service resolvers are read from bundle props:
 named_services:
   namespaces:
     task:
-      provider:
-        bundle_id: task-tracker@1-0
-        provider: task.issue
-        operation: named_service
       clients:
         default_client:
           tools:
-            operations: [provider.about, object.list, object.search, object.get, object.action]
-            actions: [preview, open, describe]
+            allowed_operations: [provider.about, object.list, object.search, object.get, object.schema, object.upsert, object.delete]
+        canvas:
+          resolver:
+            enabled: true
 ```
 
 The SDK helper `register_configured_named_service_canvas_resolvers(...)`
@@ -115,9 +113,11 @@ registers `named_services.namespaces` into the canvas object resolver registry.
 The same registry backs the scene canvas and the chat widget object-action path
 through `canvas_object_action`.
 
-The `named_services.namespaces.<namespace>.clients` section is only for
-model-callable tools. Scene, canvas, chat, event, and block/render resolvers
-use the bundle-level namespace configuration.
+The `default_client.tools.allowed_operations` list controls model-callable
+tools. The `canvas.resolver.enabled` switch only enables generic canvas/chat
+resolution for that namespace. Canvas still sends generic actions such as
+`open`, `preview`, `describe`, and `capabilities` through the resolver; the
+owning provider decides whether each action is valid.
 
 For the task-tracker provider, `object.action(open)` returns
 `target_surface = "task_tracker.issue_editor"`. The versatile scene maps that

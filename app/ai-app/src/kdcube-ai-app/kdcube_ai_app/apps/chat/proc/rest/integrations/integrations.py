@@ -22,7 +22,7 @@ from typing import Optional, Dict, Any, Set, List, Tuple, Mapping
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse
 from pydantic import BaseModel
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
@@ -49,13 +49,26 @@ from kdcube_ai_app.apps.chat.sdk.protocol import (
     ExternalEventRequest,
 )
 from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import bind_current_request_context
+from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.discovery import (
+    RedisNamedServiceDiscovery,
+    bind_named_service_discovery,
+)
 from kdcube_ai_app.apps.chat.sdk.infra.bundle_operations import (
+    BundleNamedServiceCall,
+    BundleNamedServiceResult,
     BundleOperationCall,
+    BundleOperationStreamCall,
+    BundleOperationStreamResult,
+    bind_bundle_named_service_caller,
     bind_bundle_operation_caller,
+    bind_bundle_operation_stream_caller,
+    invoke_local_bundle_named_service,
+    invoke_local_bundle_operation_stream,
 )
 from kdcube_ai_app.apps.chat.sdk.runtime.http_ops import (
     BundleBinaryResponse,
     BundleFileResponse,
+    BundleStreamResponse,
     BundleUploadedFile,
 )
 from kdcube_ai_app.apps.chat.sdk.infra.control_plane.storage import summarize_registry_bundles
@@ -788,6 +801,13 @@ def _coerce_bundle_http_response(result: Any):
             result.path,
             media_type=result.media_type,
             filename=result.filename,
+            headers=_attachment_headers(filename=result.filename, headers=result.headers),
+            status_code=result.status_code,
+        )
+    if isinstance(result, BundleStreamResponse):
+        return StreamingResponse(
+            result.chunks,
+            media_type=result.media_type,
             headers=_attachment_headers(filename=result.filename, headers=result.headers),
             status_code=result.status_code,
         )
@@ -4207,8 +4227,33 @@ async def _call_bundle_op_inner(
                 session=session,
             )
 
-        with bind_current_request_context(comm_context, comm=runtime_comm), bind_bundle_operation_caller(
-            _call_peer_bundle_operation
+        peer_redis = _get_app_redis(request)
+        peer_pg_pool = _get_app_pg_pool(request)
+
+        async def _call_peer_bundle_operation_stream(call: BundleOperationStreamCall) -> BundleOperationStreamResult:
+            return await invoke_local_bundle_operation_stream(
+                call,
+                comm_context=comm_context,
+                redis=peer_redis,
+                pg_pool=peer_pg_pool,
+            )
+
+        async def _call_peer_bundle_named_service(call: BundleNamedServiceCall) -> BundleNamedServiceResult:
+            return await invoke_local_bundle_named_service(
+                call,
+                comm_context=comm_context,
+                redis=peer_redis,
+                pg_pool=peer_pg_pool,
+            )
+
+        with (
+            bind_current_request_context(comm_context, comm=runtime_comm),
+            bind_named_service_discovery(
+                RedisNamedServiceDiscovery(peer_redis, tenant=tenant_id, project=project_id)
+            ),
+            bind_bundle_named_service_caller(_call_peer_bundle_named_service),
+            bind_bundle_operation_caller(_call_peer_bundle_operation),
+            bind_bundle_operation_stream_caller(_call_peer_bundle_operation_stream),
         ):
             result = await _invoke_bundle_callable(fn, **extra)
     except HTTPException:

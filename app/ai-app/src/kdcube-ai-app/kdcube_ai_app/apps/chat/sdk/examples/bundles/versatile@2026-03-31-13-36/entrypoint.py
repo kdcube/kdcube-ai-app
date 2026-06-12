@@ -45,6 +45,8 @@ from kdcube_ai_app.apps.chat.sdk.solutions.chat.events.resolver import (
     resolve_conversation_ref_action,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers import (
+    register_configured_named_service_artifact_rehosters,
+    register_configured_named_service_event_sources,
     register_configured_named_service_canvas_resolvers,
 )
 from kdcube_ai_app.apps.chat.sdk.runtime.data_bus import DataBusResult, data_bus_handler
@@ -397,7 +399,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
         from kdcube_ai_app.apps.chat.sdk.events import EventSourceSubsystem
         from kdcube_ai_app.apps.chat.sdk.solutions.react.events import core as react_core_events
 
-        return EventSourceSubsystem(
+        subsystem = EventSourceSubsystem(
             modules=[
                 {
                     "name": react_core_events.__name__,
@@ -416,6 +418,20 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
             bundle_root=Path(__file__).resolve().parent,
             logger=_log,
         )
+        ident = self.runtime_identity()
+        register_configured_named_service_artifact_rehosters(
+            subsystem,
+            namespaces=self.bundle_prop("named_services.namespaces", {}) or {},
+            tenant=str(ident.get("tenant") or ""),
+            project=str(ident.get("project") or ""),
+            logger=_log,
+        )
+        register_configured_named_service_event_sources(
+            subsystem,
+            namespaces=self.bundle_prop("named_services.namespaces", {}) or {},
+            logger=_log,
+        )
+        return subsystem
 
     def _canvas_store(self, payload: Mapping[str, Any], *, user_id: str | None = None) -> CanvasStore:
         ident = self.runtime_identity()

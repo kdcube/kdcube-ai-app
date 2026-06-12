@@ -444,6 +444,7 @@ def get_external_request_processor(middleware, chat_handler, app, *, redis=None)
         queue_analytics_updater=app.state.gateway_adapter.gateway.backpressure_manager.update_queue_analytics,
         task_timeout_sec=900,
         redis=redis,
+        pg_pool=getattr(app.state, "pg_pool", None),
     )
 
 def service_health_checker(middleware):

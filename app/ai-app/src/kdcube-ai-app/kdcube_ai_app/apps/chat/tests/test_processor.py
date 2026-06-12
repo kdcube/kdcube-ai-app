@@ -16,6 +16,7 @@ from kdcube_ai_app.apps.chat.processor_scheduler_backend import (
 )
 from kdcube_ai_app.apps.chat.sdk.events.event_bus import build_event_lane_wakeup
 from kdcube_ai_app.apps.chat.sdk.events.event_bus.orchestrator import ConversationEventBusOrchestrator
+from kdcube_ai_app.apps.chat.sdk.infra.bundle_operations import call_bundle_operation
 from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import (
     bind_current_bundle_call_context_patch,
     bind_current_request_context,
@@ -474,6 +475,7 @@ def _build_processor(
         task_idle_timeout_sec=None,
         task_max_wall_time_sec=None,
         scheduler_backend=None,
+        pg_pool=None,
 ):
     middleware = SimpleNamespace(
         redis_url="redis://example",
@@ -493,6 +495,7 @@ def _build_processor(
         task_idle_timeout_sec=task_idle_timeout_sec,
         task_max_wall_time_sec=task_max_wall_time_sec,
         scheduler_backend=scheduler_backend,
+        pg_pool=pg_pool,
         host_drain_detector=_DummyHostDrainDetector(enabled=False),
     )
     processor.queue_block_timeout_sec = 0.01
@@ -1400,6 +1403,69 @@ async def test_process_task_binds_runtime_request_context(_patch_processor_depen
 
     assert captured["before"] == ("user-1", "socket-1", True, "test-context")
     assert captured["after"] == ("user-1", "socket-1", True, "test-context")
+
+
+@pytest.mark.asyncio
+async def test_process_task_binds_peer_operation_caller_with_processor_pg_pool(
+        monkeypatch,
+        _patch_processor_dependencies,
+):
+    redis = _MinimalRedis()
+    pg_pool = object()
+    captured = {}
+
+    def _fake_make_local_bundle_operation_caller(*, redis, pg_pool, comm_context):
+        captured["redis"] = redis
+        captured["pg_pool"] = pg_pool
+        captured["bundle_id"] = comm_context.routing.bundle_id
+
+        async def _caller(call):
+            captured["call"] = call
+            return {"ok": True, "bundle_id": call.bundle_id, "operation": call.operation}
+
+        return _caller
+
+    monkeypatch.setattr(
+        processor_mod,
+        "make_local_bundle_operation_caller",
+        _fake_make_local_bundle_operation_caller,
+    )
+
+    async def _handler(_payload):
+        result = await call_bundle_operation(
+            bundle_id="bundle.provider",
+            operation="named_service",
+            data={"operation": "object.get"},
+        )
+        captured["result"] = result
+        return {}
+
+    processor = _build_processor(redis, handler=_handler, pg_pool=pg_pool)
+    task_payload = _build_task_payload("peer-pool-task")
+    raw_payload = json.dumps(task_payload).encode("utf-8")
+    inflight_key = "queue:inflight:registered"
+    lock_key = "lock:peer-pool-task"
+    redis.seed_list(inflight_key, [raw_payload])
+    redis.lock_ttls[lock_key] = 300
+    processor._current_load = 1
+
+    task_data = dict(task_payload)
+    task_data["_lock_key"] = lock_key
+    task_data["_raw_payload"] = raw_payload
+    task_data["_ready_queue_key"] = "queue:registered"
+    task_data["_inflight_queue_key"] = inflight_key
+    task_data["_queue_wait_ms"] = 10
+
+    await processor._process_task(task_data)
+
+    assert captured["redis"] is redis
+    assert captured["pg_pool"] is pg_pool
+    assert captured["bundle_id"] == "bundle.demo"
+    assert captured["result"] == {
+        "ok": True,
+        "bundle_id": "bundle.provider",
+        "operation": "named_service",
+    }
 
 
 @pytest.mark.asyncio

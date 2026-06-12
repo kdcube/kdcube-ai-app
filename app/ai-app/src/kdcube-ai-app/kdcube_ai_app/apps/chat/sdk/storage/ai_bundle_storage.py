@@ -4,7 +4,7 @@
 # chatbot/storage/ai_bundle_storage.py
 
 import mimetypes
-from typing import Optional, List, Dict, Any, Union
+from typing import AsyncIterator, Optional, List, Dict, Any, Union
 from urllib.parse import urlparse
 
 from kdcube_ai_app.apps.chat.sdk.config import get_settings
@@ -112,6 +112,11 @@ class BundleArtifactStorage:
         if as_text:
             return self.backend.read_text(rel, encoding=encoding)
         return self.backend.read_bytes(rel)
+
+    async def iter_bytes(self, key: str, *, chunk_size: int = 1024 * 1024) -> AsyncIterator[bytes]:
+        rel = self._join(self._bundle_root, self._normalize_key(key))
+        async for chunk in self.backend.iter_bytes_a(rel, chunk_size=chunk_size):
+            yield chunk
 
     def list(self, prefix: str = "") -> List[str]:
         """

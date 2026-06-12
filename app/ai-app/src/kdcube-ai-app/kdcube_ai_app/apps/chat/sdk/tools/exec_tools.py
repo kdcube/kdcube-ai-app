@@ -38,7 +38,6 @@ from kdcube_ai_app.apps.chat.sdk.runtime.workspace import (
     build_items_from_diff,
     build_deleted_notices,
 )
-from kdcube_ai_app.apps.chat.sdk.runtime.snapshot import build_portable_spec
 from kdcube_ai_app.apps.chat.sdk.runtime.exec_runtime_config import resolve_exec_runtime_profile
 from kdcube_ai_app.apps.chat.sdk.config import get_settings
 from kdcube_ai_app.apps.chat.sdk.events import event_source
@@ -1327,7 +1326,7 @@ async def run_exec_tool(
         }
     except Exception:
         pass
-    spec = build_portable_spec(svc=tool_manager.svc, chat_comm=tool_manager.comm)
+    spec = tool_manager.build_portable_spec()
     comm_spec = getattr(tool_manager.comm, "_export_comm_spec_for_runtime", lambda: {})()
     exec_context = _build_exec_context_from_comm_spec(
         comm_spec=comm_spec if isinstance(comm_spec, dict) else {},

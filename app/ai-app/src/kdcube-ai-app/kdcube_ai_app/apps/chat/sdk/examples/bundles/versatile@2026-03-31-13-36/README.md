@@ -476,25 +476,26 @@ namespace resolvers for both canvas and chat object actions. For example,
 named_services:
   namespaces:
     task:
-      provider:
-        bundle_id: task-tracker@1-0
-        provider: task.issue
-        operation: named_service
       clients:
         default_client:
           tools:
-            operations: [provider.about, object.list, object.search, object.get, object.action]
-            actions: [preview, open, describe]
+            allowed_operations: [provider.about, object.list, object.search, object.get, object.schema, object.upsert, object.delete]
+        canvas:
+          resolver:
+            enabled: true
 ```
 
-The configured resolver calls the owning bundle operation through the
-request-bound local operation bridge, so it preserves the current
-tenant/project/user session without making an HTTP callback.
+The configured resolver resolves the owner through Named Service Discovery and
+then calls the owning bundle through the request-bound local bridge, so it
+preserves the current tenant/project/user session without making an HTTP
+callback. A concrete `providers` list may be added only when this bundle must
+pin one or more provider endpoints instead of using discovery.
 
-The `clients` section controls model-callable named-service tools per client.
-Canvas/chat object resolution only needs `named_services.namespaces`; tool
-exposure is intentionally scoped to the client that should use those
-operations.
+The `default_client.tools.allowed_operations` list controls model-callable
+named-service tools. The `canvas.resolver.enabled` switch only enables generic
+canvas/chat resolution for the namespace; concrete resolver actions such as
+`open` and `preview` are accepted or rejected by the owning provider at call
+time.
 
 Detailed scene wiring is documented in `docs/design/scene-sdk-components.md`.
 

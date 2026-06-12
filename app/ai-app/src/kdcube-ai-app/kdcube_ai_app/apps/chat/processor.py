@@ -29,8 +29,12 @@ from kdcube_ai_app.apps.chat.sdk.runtime.comm_ctx import (
     bind_current_task_activity_touch,
 )
 from kdcube_ai_app.apps.chat.sdk.infra.bundle_operations import (
+    bind_bundle_named_service_caller,
     bind_bundle_operation_caller,
+    bind_bundle_operation_stream_caller,
+    make_local_bundle_named_service_caller,
     make_local_bundle_operation_caller,
+    make_local_bundle_operation_stream_caller,
 )
 from kdcube_ai_app.infra.availability.health_and_heartbeat import MultiprocessDistributedMiddleware, logger
 from kdcube_ai_app.infra.aws.ecs_container_instance_drain import (
@@ -66,6 +70,10 @@ from kdcube_ai_app.apps.chat.sdk.event_identity import DEFAULT_REACT_AGENT_ID, n
 from kdcube_ai_app.apps.chat.sdk.events.event_bus import ExternalEventLaneWakeIgnored
 from kdcube_ai_app.apps.chat.sdk.events.event_bus.orchestrator import ConversationEventBusOrchestrator
 from kdcube_ai_app.apps.chat.sdk.events.event_bus.state import event_timestamp, timestamp_lte
+from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.discovery import (
+    RedisNamedServiceDiscovery,
+    bind_named_service_discovery,
+)
 from kdcube_ai_app.infra.jobs.stream import (
     BACKGROUND_JOB_OPERATION,
     BACKGROUND_JOB_QUEUE_ORDER,
@@ -386,10 +394,12 @@ class EnhancedChatRequestProcessor:
             lock_renew_sec: int = 60,
             started_marker_ttl_sec: Optional[int] = None,
             redis=None,
+            pg_pool=None,
             host_drain_detector=None,
     ):
         self.middleware = middleware
         self.redis = redis or middleware.redis
+        self.pg_pool = pg_pool if pg_pool is not None else getattr(middleware, "pg_pool", None)
         self.chat_handler = chat_handler
         self.process_id = process_id or os.getpid()
         self.max_concurrent = int(max_concurrent or 5)
@@ -2363,7 +2373,7 @@ class EnhancedChatRequestProcessor:
                                         project=project,
                                         updated_by=evt.get("updated_by"),
                                         source=evt.get("source"),
-                                        pg_pool=getattr(self.middleware, "pg_pool", None),
+                                        pg_pool=self.pg_pool,
                                         redis=self.redis,
                                     )
                                     if notified:
@@ -2613,11 +2623,31 @@ class EnhancedChatRequestProcessor:
                         }):
                             peer_bundle_caller = make_local_bundle_operation_caller(
                                 redis=self.redis,
-                                pg_pool=getattr(self.middleware, "pg_pool", None),
+                                pg_pool=self.pg_pool,
                                 comm_context=payload,
                             )
-                            with bind_current_request_context(payload, comm=tracked_comm), bind_bundle_operation_caller(
-                                peer_bundle_caller
+                            peer_bundle_stream_caller = make_local_bundle_operation_stream_caller(
+                                redis=self.redis,
+                                pg_pool=self.pg_pool,
+                                comm_context=payload,
+                            )
+                            peer_bundle_named_service_caller = make_local_bundle_named_service_caller(
+                                redis=self.redis,
+                                pg_pool=self.pg_pool,
+                                comm_context=payload,
+                            )
+                            with (
+                                bind_current_request_context(payload, comm=tracked_comm),
+                                bind_named_service_discovery(
+                                    RedisNamedServiceDiscovery(
+                                        self.redis,
+                                        tenant=getattr(payload.actor, "tenant_id", "") if payload.actor else "",
+                                        project=getattr(payload.actor, "project_id", "") if payload.actor else "",
+                                    )
+                                ),
+                                bind_bundle_named_service_caller(peer_bundle_named_service_caller),
+                                bind_bundle_operation_caller(peer_bundle_caller),
+                                bind_bundle_operation_stream_caller(peer_bundle_stream_caller),
                             ):
                                 with bind_current_task_activity_touch(
                                         lambda kind, _task=processor_task: self._touch_task_activity(

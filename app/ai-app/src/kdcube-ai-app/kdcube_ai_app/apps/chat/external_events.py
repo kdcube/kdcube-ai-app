@@ -871,7 +871,7 @@ class RedisConversationExternalEventSource:
         )
         if not updated:
             return None
-        logger.info(
+        logger.debug(
             "[external_events.owner.refresh] conversation=%s turn_id=%s listener_id=%s lease_epoch=%s",
             self.conversation_id,
             lease.turn_id,

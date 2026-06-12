@@ -229,6 +229,40 @@ class EventSourceSubsystem:
             return self.by_event_source_id(event_source_id)
         return None
 
+    def register_event_source(
+        self,
+        event_source_id: str,
+        *,
+        policies: Iterable[Mapping[str, Any]] | None = None,
+        description: str = "",
+        version: str = "",
+        kind: str = "",
+        reactive: bool | None = None,
+        iteration_credit: int | None = None,
+        module: str = "",
+        alias: str = "",
+        object_name: str = "",
+        event_policies: Mapping[str, ReactEventPolicy] | None = None,
+    ) -> None:
+        source_id = str(event_source_id or "").strip()
+        if not source_id:
+            raise ValueError("event source id is required")
+        self._register(
+            ResolvedEventSource(
+                event_source_id=source_id,
+                policies=tuple(dict(policy) for policy in (policies or ()) if isinstance(policy, Mapping)),
+                description=str(description or ""),
+                version=str(version or ""),
+                kind=str(kind or ""),
+                reactive=reactive,
+                iteration_credit=iteration_credit,
+                module=str(module or ""),
+                alias=str(alias or ""),
+                object_name=str(object_name or ""),
+                event_policies=dict(event_policies or self._event_policies),
+            )
+        )
+
     def should_merge_to_sources_pool(self, event_source_id: str) -> bool:
         source = self.by_event_source_id(event_source_id)
         return bool(
@@ -276,6 +310,34 @@ class EventSourceSubsystem:
 
     def namespace_rehoster(self, namespace: str) -> ResolvedArtifactNamespaceRehoster | None:
         return self._namespace_rehosters.get(str(namespace or "").strip().rstrip(":"))
+
+    def register_namespace_rehoster(
+        self,
+        namespace: str,
+        handler: Callable[..., Any],
+        *,
+        description: str = "",
+        version: str = "",
+        module: str = "",
+        alias: str = "",
+        object_name: str = "",
+    ) -> None:
+        ns = str(namespace or "").strip().rstrip(":")
+        if not ns:
+            raise ValueError("namespace rehoster requires namespace")
+        if not callable(handler):
+            raise TypeError("namespace rehoster handler must be callable")
+        self._register_namespace_rehoster(
+            ResolvedArtifactNamespaceRehoster(
+                namespace=ns,
+                handler=handler,
+                description=str(description or ""),
+                version=str(version or ""),
+                module=str(module or ""),
+                alias=str(alias or ""),
+                object_name=str(object_name or ""),
+            )
+        )
 
     def list_namespace_rehosters(self) -> list[dict[str, Any]]:
         return [

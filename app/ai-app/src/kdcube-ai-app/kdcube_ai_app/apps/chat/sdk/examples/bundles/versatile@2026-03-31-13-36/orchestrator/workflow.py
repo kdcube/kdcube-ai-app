@@ -9,6 +9,7 @@ from kdcube_ai_app.apps.chat.sdk.retrieval.kb_client import KBClient
 from kdcube_ai_app.apps.chat.sdk.runtime.scratchpad import CTurnScratchpad
 from kdcube_ai_app.apps.chat.sdk.solutions.canvas.instructions import CANVAS_REACT_ADDITIONAL_INSTRUCTIONS
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.base_workflow import BaseWorkflow
+from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers import named_service_namespaces
 from kdcube_ai_app.apps.chat.sdk.storage.conversation_store import ConversationStore
 from kdcube_ai_app.apps.chat.sdk.util import _tend, _tstart
 from kdcube_ai_app.apps.chat.sdk.viz import logging_helpers
@@ -63,11 +64,38 @@ def _resolve_react_ui_instructions(comm_context: ExternalEventPayload) -> str:
     return _WEB_CHAT_REACT_INSTRUCTIONS
 
 
-def _resolve_react_additional_instructions(comm_context: ExternalEventPayload) -> str:
+def _resolve_named_service_react_instructions(bundle_props: Dict[str, Any] | None) -> str:
+    namespaces = named_service_namespaces(bundle_props or {})
+    if not namespaces:
+        return ""
+    rows = []
+    for namespace, cfg in sorted(namespaces.items(), key=lambda item: str(item[0])):
+        provider = cfg.get("provider") if isinstance(cfg, dict) else {}
+        provider_id = provider.get("provider") if isinstance(provider, dict) else ""
+        bundle_id = provider.get("bundle_id") if isinstance(provider, dict) else ""
+        label = f"- `{namespace}`"
+        details = ", ".join(str(value) for value in (provider_id, bundle_id) if value)
+        rows.append(f"{label}: {details}" if details else label)
+    return """\
+Named services available to this agent:
+{rows}
+
+When a timeline event, canvas object, artifact ref, or user request mentions one of these namespaces, use the `named_services` tools instead of guessing the entity shape. Call `named_services.provider_about(namespace=...)` to understand the service and base objects. Call `named_services.object_schema(namespace=..., object_kind=... or object_ref=...)` before create/update/delete or whenever the object payload shape is unclear.
+
+Use `named_services.object_action` only for non-mutating presentation or resolution actions such as preview, open, describe, or rehost. Do not use object_action for mutations. Create/update/delete requests, including adding file refs or attachment refs to an object, must use the schema's upsert/delete tools.
+""".format(rows="\n".join(rows))
+
+
+def _resolve_react_additional_instructions(
+    comm_context: ExternalEventPayload,
+    *,
+    bundle_props: Dict[str, Any] | None = None,
+) -> str:
     blocks = [
         _resolve_react_ui_instructions(comm_context),
         MEMORY_REACT_ADDITIONAL_INSTRUCTIONS,
         CANVAS_REACT_ADDITIONAL_INSTRUCTIONS,
+        _resolve_named_service_react_instructions(bundle_props),
     ]
     return "\n\n".join(block.strip() for block in blocks if str(block or "").strip())
 
@@ -210,7 +238,10 @@ class VersatileWorkflow(BaseWorkflow):
                     custom_skills_root=skills_descriptor.CUSTOM_SKILLS_ROOT,
                     skills_visibility_agents_config=skills_descriptor.AGENTS_CONFIG or {},
                     scratchpad=scratchpad,
-                    additional_instructions=_resolve_react_additional_instructions(self.comm_context),
+                    additional_instructions=_resolve_react_additional_instructions(
+                        self.comm_context,
+                        bundle_props=self.bundle_props,
+                    ),
                 )
                 allowed_plugins = [
                     spec.get("alias")

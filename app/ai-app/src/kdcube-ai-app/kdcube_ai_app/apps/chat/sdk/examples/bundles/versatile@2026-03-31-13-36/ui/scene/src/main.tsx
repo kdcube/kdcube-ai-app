@@ -46,6 +46,7 @@ const TASKS_WIDGET_ALIAS = 'task_tracker_tasks'
 // trailing accounting event after the final delta without feeling stale.
 const USAGE_REFRESH_DEBOUNCE_MS = 800
 const USAGE_REFRESH_MESSAGE_TYPE = 'kdcube-usage-card-refresh'
+const TASK_CHANGED_MESSAGE_TYPE = 'kdcube-task-tracker-task-changed'
 const CANVAS_STORY_ID = 'versatile:main'
 const CANVAS_SUBJECT = 'canvas.patch'
 const DEFAULT_CHAT_WIDTH = 460
@@ -1317,6 +1318,37 @@ function App() {
       }
     }
   }, [ctx, isRegistered, scheduleUsageRefresh])
+
+  // Task changes are project-level service events. The scene host keeps that
+  // relay subscription and forwards a neutral message to mounted task widgets.
+  useEffect(() => {
+    if (!isRegistered || !tasksOpen) return undefined
+    let cancelled = false
+    let detach: (() => void) | undefined
+    void (async () => {
+      try {
+        const socket = await dataBusSocketFor(ctx)
+        await ensureSocketConnected(socket)
+        if (cancelled) return
+        const onService = (payload: unknown) => {
+          const env = (payload ?? {}) as { type?: string, data?: Record<string, unknown> }
+          if (env.type !== 'task_tracker.task.changed') return
+          tasksFrameRef.current?.contentWindow?.postMessage({
+            type: TASK_CHANGED_MESSAGE_TYPE,
+            data: env.data ?? {},
+          }, '*')
+        }
+        socket.on('chat_service', onService)
+        detach = () => socket.off('chat_service', onService)
+      } catch {
+        // The task widget can still refresh manually or when opened.
+      }
+    })()
+    return () => {
+      cancelled = true
+      if (detach) detach()
+    }
+  }, [ctx, isRegistered, tasksOpen])
 
   const startChatDrag = useCallback((event: React.PointerEvent<HTMLElement>) => {
     if (chatExpanded || (event.target as HTMLElement).closest('button')) return

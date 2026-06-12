@@ -14,7 +14,7 @@ from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from datetime import datetime, UTC
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import AsyncIterator, Optional, List, Dict, Any
 from urllib.parse import urlparse
 
 logger = logging.getLogger("KnowledgeBase.Storage")
@@ -86,6 +86,11 @@ class IStorageBackend(ABC):
     async def read_bytes_a(self, path: str) -> bytes:
         return await asyncio.to_thread(self.read_bytes, path)
 
+    async def iter_bytes_a(self, path: str, *, chunk_size: int = 1024 * 1024) -> AsyncIterator[bytes]:
+        data = await self.read_bytes_a(path)
+        if data:
+            yield data
+
     async def write_bytes_a(self, path: str, data: bytes, meta: Optional[dict] = None) -> None:
         return await asyncio.to_thread(self.write_bytes, path, data, meta)
 
@@ -152,6 +157,16 @@ class LocalFileSystemBackend(IStorageBackend):
 
     def read_bytes(self, path: str) -> bytes:
         return self._resolve_path(path).read_bytes()
+
+    async def iter_bytes_a(self, path: str, *, chunk_size: int = 1024 * 1024) -> AsyncIterator[bytes]:
+        resolved = self._resolve_path(path)
+        size = max(1, int(chunk_size or 1024 * 1024))
+        with resolved.open("rb") as fh:
+            while True:
+                chunk = await asyncio.to_thread(fh.read, size)
+                if not chunk:
+                    break
+                yield chunk
 
     def write_bytes(self, path: str, data: bytes,  meta: Optional[dict] = None) -> None:
         resolved = self._resolve_path(path)
@@ -552,6 +567,21 @@ class S3StorageBackend(IStorageBackend):
                 return await body.read()
             except Exception as e:
                 raise FileNotFoundError(f"Cannot read {path} from S3: {e}")
+
+    async def iter_bytes_a(self, path: str, *, chunk_size: int = 1024 * 1024) -> AsyncIterator[bytes]:
+        key = self._get_s3_key(path)
+        size = max(1, int(chunk_size or 1024 * 1024))
+        async with (await self._get_async_client()) as s3:
+            try:
+                resp = await s3.get_object(Bucket=self.bucket_name, Key=key)
+                body = resp["Body"]
+                while True:
+                    chunk = await body.read(size)
+                    if not chunk:
+                        break
+                    yield chunk
+            except Exception as e:
+                raise FileNotFoundError(f"Cannot stream {path} from S3: {e}")
 
     async def write_bytes_a(self, path: str, data: bytes, meta: Optional[dict] = None) -> None:
         key = self._get_s3_key(path)
