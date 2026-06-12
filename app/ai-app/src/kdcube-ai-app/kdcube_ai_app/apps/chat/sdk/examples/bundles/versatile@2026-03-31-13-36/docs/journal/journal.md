@@ -2,10 +2,25 @@
 title: Versatile Bundle Journal
 kind: bundle-journal
 bundle_id: versatile@2026-03-31-13-36
-updated_at: 2026-06-09
+updated_at: 2026-06-13
 ---
 
 # Journal
+
+## 2026-06-13
+
+- Adopted the SDK economics enforcement fixes from `economics_fixes`: shared
+  quota-lock handling, funding-flow-owned plan/paid reservation paths, paid
+  lane fallback, zero-cost release behavior, and subscription/wallet settlement
+  coverage now live in SDK code instead of bundle-specific handlers.
+- Kept `versatile` as the reference example bundle and did not restore removed
+  copilot/react example bundles. The useful copilot-side addition was the
+  configurable telemetry ingest header; `versatile` now exposes
+  `telemetry_sink.auth_header` in config and sends the sink token through that
+  header when configured.
+- Updated the interface notes so deployers know when to use a non-
+  Authorization telemetry header behind gateways that parse `Authorization` as
+  a platform JWT.
 
 ## 2026-06-09
 

@@ -37,6 +37,11 @@ bundles:
           # called. When configured, the bundle records selected comm events
           # during chat turns and posts them as one bounded batch after the turn.
           endpoint_url: ""
+          # Header that carries telemetry_sink.auth.token. Empty keeps the
+          # legacy Authorization: Bearer <token> shape. Prefer a non-
+          # Authorization ingest header, for example X-Telemetry-Token, when the
+          # receiver sits behind a gateway that parses Authorization as JWT.
+          auth_header: ""
         integrations:
           telegram:
             enabled: false

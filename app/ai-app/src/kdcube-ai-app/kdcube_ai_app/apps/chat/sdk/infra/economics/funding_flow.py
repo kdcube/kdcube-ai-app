@@ -6,16 +6,20 @@
 Shared plan-lane funding reserve + settlement, extracted so a single
 implementation backs BOTH the chat run() path and the reusable EconomicsGuard.
 
-It mirrors BaseEntrypointWithEconomics.run()'s plan-lane money flow:
-  reserve:  size the primary (project|subscription) cover + reserve it, then
-            reserve wallet overflow for the remainder.
+It mirrors BaseEntrypointWithEconomics.run()'s money flow:
+  reserve_plan_funding:  plan lane — size the primary (project|subscription)
+            cover + reserve it, then reserve wallet overflow for the remainder.
+  reserve_paid_funding:  paid lane — reserve the subscription budget as primary
+            (active subscription), otherwise the wallet, with wallet fallback
+            when the subscription hold is declined.
   settle:   read fresh capacities, split the actual usage with
             allocate_plan_wallet_settlement (primary + wallet + project
             absorption), commit each source, and commit RL token quota.
 
-It deliberately contains NO event emission, NO UI insight, and NO paid-lane
-switch — those are run()-specific concerns. Denials raise EconomicsLimitException
-(neutral) so both callers can translate them.
+It deliberately contains NO event emission and NO UI insight — those are
+run()-specific concerns. The reserve helpers do NOT switch lanes or emit denials:
+they return a ReserveOutcome (OK / SWITCH_TO_PAID / DENIED) and the caller owns
+the paid-lane switch and the denial it raises.
 
 Design: docs/economics/economic-enforcement-non-chat-v2-README.md (§4.1, §6)
 """
@@ -24,6 +28,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Any, Callable, Optional
 from uuid import UUID, uuid4
 
@@ -93,6 +98,9 @@ class PlanFundingReservation:
     wallet_reservation_active: bool = False
 
     has_wallet: bool = False
+    # paid lane (post-switch): payasyougo quotas, primary is the wallet or the
+    # subscription budget; RL usage commits reservation-free (no plan-quota consume).
+    paid_lane: bool = False
 
 
 @dataclass
@@ -105,6 +113,48 @@ class SettlementResult:
     quota_commit_tokens: int = 0
     allocation: Optional[PlanWalletSettlementAllocation] = None
     extra_project_items: list = field(default_factory=list)
+    # wallet settlement intermediates (consumed by the caller's observability:
+    # the user_underfunded_absorbed event). wallet_consumed = wallet target - uncovered.
+    wallet_consumed_tokens: int = 0
+    user_uncovered_tokens: int = 0
+    user_uncovered_usd: float = 0.0
+
+
+class ReserveStatus(Enum):
+    OK = "ok"                          # reservation placed (plan lane); use .reservation
+    SWITCH_TO_PAID = "switch_to_paid"  # primary can't cover; caller re-plans as paid lane
+    DENIED = "denied"                  # cannot fund and cannot pay; caller denies
+
+
+@dataclass
+class ReserveOutcome:
+    """Non-raising result of reserve_plan_funding. The caller decides what to do:
+    OK -> proceed; SWITCH_TO_PAID -> release RL + re-admit paid + reserve wallet
+    primary; DENIED -> raise/emit the denial."""
+    status: ReserveStatus
+    reservation: Optional[PlanFundingReservation] = None
+    switch_reason: Optional[str] = None
+    deny_code: Optional[str] = None
+    deny_message: str = ""
+    deny_data: dict = field(default_factory=dict)
+
+
+def _ok(res: PlanFundingReservation) -> ReserveOutcome:
+    return ReserveOutcome(status=ReserveStatus.OK, reservation=res)
+
+
+def _switch(reason: str) -> ReserveOutcome:
+    return ReserveOutcome(status=ReserveStatus.SWITCH_TO_PAID, switch_reason=reason)
+
+
+def _denied(*, code: str, message: str, funding_source: str, est_turn_tokens: int) -> ReserveOutcome:
+    return ReserveOutcome(
+        status=ReserveStatus.DENIED, deny_code=code, deny_message=message,
+        deny_data={
+            "reason": code, "funding_source": funding_source,
+            "min_tokens_required": int(est_turn_tokens), "lane": "deny",
+        },
+    )
 
 
 def _cost_for_tokens(*, tokens: int, ranked_tokens: int, total_cost: float) -> float:
@@ -134,12 +184,23 @@ async def reserve_plan_funding(
     subscription_available_usd: float,
     project_budget_snapshot: Optional[dict],
     personal_can_pay_turn: bool,
+    allow_paid_lane_fallback: bool = False,
     ttl_sec: int = 900,
-) -> PlanFundingReservation:
+) -> ReserveOutcome:
     """
     Plan-lane reservation: size the primary cover, reserve it, then reserve
-    wallet overflow. Mirrors run() (plan lane). Raises EconomicsLimitException
-    when the user cannot fund the request.
+    wallet overflow. Mirrors run() (plan lane).
+
+    Non-raising: returns a ReserveOutcome.
+      - OK: reservation placed (use outcome.reservation).
+      - SWITCH_TO_PAID: primary cannot cover and allow_paid_lane_fallback is set;
+        the caller releases RL + re-admits the paid policy + reserves wallet as
+        primary. Any partial primary money hold is released before returning.
+      - DENIED: the user cannot fund and cannot pay personally.
+
+    With allow_paid_lane_fallback=False (default, non-chat) the behavior matches
+    the previous version: a primary-exhausted user with a wallet covers the whole
+    request via wallet overflow WITHIN the plan lane (no lane switch).
     """
     usd_per_token = ctx.usd_per_token
     funding_limiter = ctx.subscription_limiter if funding_source == "subscription" else ctx.budget_limiter
@@ -184,13 +245,19 @@ async def reserve_plan_funding(
         if budget_bypass:
             pass  # admin: no money hold
         elif not personal_can_pay_turn:
-            _deny(
+            return _denied(
                 code="plan_exhausted_no_personal",
                 message="Plan funding exhausted and user cannot pay from personal credits.",
                 funding_source=funding_source,
                 est_turn_tokens=est_turn_tokens,
             )
-        # else: wallet covers the whole request via overflow below
+        elif allow_paid_lane_fallback:
+            # primary can't cover, but the user can pay -> caller switches to paid lane
+            return _switch(
+                "subscription_budget_zero_for_turn" if funding_source == "subscription"
+                else "plan_tokens_exhausted_for_turn"
+            )
+        # else: wallet covers the whole request via overflow below (plan lane)
     elif not budget_bypass:
         app_reserved_usd = float(plan_project_tokens_est) * usd_per_token * SAFETY_MARGIN
         app_reservation_id = uuid4()
@@ -213,13 +280,19 @@ async def reserve_plan_funding(
         except BudgetInsufficientFunds as e:
             ctx.log("reserve.app", "primary reservation denied", "WARN", error=str(e))
             if not personal_can_pay_turn:
-                _deny(
+                return _denied(
                     code=f"{funding_source}_budget_reservation_failed_no_personal",
                     message=f"{funding_source} funding cannot reserve and user cannot pay.",
                     funding_source=funding_source,
                     est_turn_tokens=est_turn_tokens,
                 )
-            # fall back to wallet-only for this request
+            if allow_paid_lane_fallback:
+                # primary reserve failed but the user can pay -> caller switches to paid lane
+                return _switch(
+                    "subscription_reservation_failed" if funding_source == "subscription"
+                    else "app_budget_reservation_failed"
+                )
+            # fall back to wallet-only for this request (plan lane, primary=0)
             plan_project_tokens_est = 0
 
     res.plan_project_tokens_est = int(plan_project_tokens_est)
@@ -248,7 +321,7 @@ async def reserve_plan_funding(
                     except Exception:
                         pass
                     res.app_reservation_active = False
-                _deny(
+                return _denied(
                     code="personal_reservation_failed_plan",
                     message="Insufficient personal credits to cover overflow.",
                     funding_source=funding_source,
@@ -259,27 +332,115 @@ async def reserve_plan_funding(
             res.wallet_reservation_active = True
         elif overflow_tokens_est > 0 and not has_wallet and plan_project_tokens_est <= 0 and not budget_bypass:
             # no primary cover and no wallet -> nothing can pay
-            _deny(
+            return _denied(
                 code="no_funding_source",
                 message="No plan, subscription, project, or wallet funding can cover this request.",
                 funding_source=funding_source,
                 est_turn_tokens=est_turn_tokens,
             )
 
-    return res
+    return _ok(res)
 
 
-def _deny(*, code: str, message: str, funding_source: str, est_turn_tokens: int) -> None:
-    raise EconomicsLimitException(
-        message,
-        code=code,
-        data={
-            "reason": code,
-            "funding_source": funding_source,
-            "min_tokens_required": int(est_turn_tokens),
-            "lane": "deny",
-        },
+# ---------------------------------------------------------------------------
+# Paid-lane reservation (post-switch or direct paid lane)
+# ---------------------------------------------------------------------------
+async def reserve_paid_funding(
+    ctx: FundingContext,
+    *,
+    admit: Any,
+    est_turn_tokens: int,
+    has_active_subscription: bool,
+    has_wallet: bool,
+    wallet_can_pay_turn: bool,
+    ttl_sec: int = 900,
+) -> ReserveOutcome:
+    """
+    Paid-lane reservation: the subscription budget pays first (if the user has an
+    active subscription and a chargeable hold can be placed), otherwise the wallet
+    is the primary funding. Mirrors run()'s paid-lane reserve and the guard's
+    _reserve_paid_subscription + _reserve_wallet_or_deny(paid).
+
+    Non-raising: returns a ReserveOutcome (never SWITCH_TO_PAID — this IS the paid
+    lane).
+      - OK: reservation placed (paid_lane=True; use outcome.reservation).
+      - DENIED: cannot reserve subscription nor wallet. deny_code is canonical:
+          paid_no_personal_budget          -> no wallet to back the paid lane
+          paid_subscription_reservation_failed -> subscription hold declined and the
+                                               wallet cannot cover the turn either
+          paid_wallet_reservation_failed   -> wallet present but the hold was declined
+        Each caller remaps the kind onto its own denial vocabulary.
+    """
+    usd_per_token = ctx.usd_per_token
+
+    plan_reserved_tokens = int(getattr(admit, "reserved_tokens", 0) or 0)
+    plan_reservation_id = getattr(admit, "reservation_id", None)
+    plan_reservation_active = plan_reserved_tokens > 0 and plan_reservation_id is not None
+
+    res = PlanFundingReservation(
+        funding_source="wallet",
+        budget_bypass=False,
+        est_turn_tokens=int(est_turn_tokens),
+        plan_reservation_id=plan_reservation_id,
+        plan_reserved_tokens=plan_reserved_tokens,
+        plan_reservation_active=plan_reservation_active,
+        has_wallet=has_wallet,
+        paid_lane=True,
     )
+
+    def _denied_paid(*, code: str) -> ReserveOutcome:
+        return ReserveOutcome(
+            status=ReserveStatus.DENIED, deny_code=code,
+            deny_message="Paid lane cannot reserve funds for this request.",
+            deny_data={
+                "reason": code, "funding_source": res.funding_source,
+                "min_tokens_required": int(est_turn_tokens), "lane": "paid",
+            },
+        )
+
+    # --- subscription primary --------------------------------------------
+    if has_active_subscription and ctx.subscription_limiter is not None:
+        app_reserved_usd = float(est_turn_tokens) * usd_per_token * SAFETY_MARGIN
+        if app_reserved_usd >= _MIN_RESERVE_USD:
+            app_reservation_id = uuid4()
+            try:
+                await ctx.subscription_limiter.reserve(
+                    bundle_id=ctx.bundle_id, amount_usd=float(app_reserved_usd),
+                    provider=None, request_id=ctx.scope_id, reservation_id=app_reservation_id,
+                    ttl_sec=int(ttl_sec), now=ctx.now,
+                    notes=f"paid reserve (subscription): scope={ctx.scope_id}, est_turn={est_turn_tokens}",
+                )
+                res.funding_source = "subscription"
+                res.app_reservation_id = app_reservation_id
+                res.app_reserved_usd = float(app_reserved_usd)
+                res.app_reservation_active = True
+                return _ok(res)
+            except (BudgetInsufficientFunds, ValueError) as e:
+                ctx.log("reserve.subscription", "paid subscription reserve declined; falling back to wallet",
+                        "WARN", error=str(e))
+                if not wallet_can_pay_turn:
+                    res.funding_source = "subscription"
+                    return _denied_paid(code="paid_subscription_reservation_failed")
+                # else: the wallet can cover the turn -> fall through to wallet primary
+
+    # --- wallet primary --------------------------------------------------
+    if not has_wallet:
+        return _denied_paid(code="paid_no_personal_budget")
+
+    ok = await ctx.cp_manager.user_credits_mgr.reserve_lifetime_tokens(
+        tenant=ctx.tenant, project=ctx.project, user_id=ctx.user_id,
+        reservation_id=ctx.scope_id, tokens=int(est_turn_tokens),
+        ttl_sec=int(ttl_sec), bundle_id=ctx.bundle_id,
+        notes=f"paid reserve (wallet): scope={ctx.scope_id}, est_turn={est_turn_tokens}",
+    )
+    if not ok:
+        return _denied_paid(code="paid_wallet_reservation_failed")
+
+    res.funding_source = "wallet"
+    res.wallet_reservation_id = ctx.scope_id
+    res.wallet_reserved_tokens = int(est_turn_tokens)
+    res.wallet_reservation_active = True
+    return _ok(res)
 
 
 # ---------------------------------------------------------------------------
@@ -310,6 +471,86 @@ async def settle_plan_funding(
             await ctx.budget_limiter.force_project_spend(
                 spent_usd=float(total_cost), bundle_id=ctx.bundle_id, provider=None,
                 request_id=ctx.scope_id, user_id=ctx.user_id, note="settle: admin bypass",
+            )
+        await _commit_rl(ctx, res, tokens=ranked_tokens)
+        out.primary_funding_usd = float(total_cost)
+        out.quota_commit_tokens = ranked_tokens
+        return out
+
+    if funding_source == "subscription" and res.paid_lane:
+        # paid lane, subscription-primary: payasyougo quotas; the subscription
+        # budget pays the actual cost and the wallet stays untouched. Paid-lane
+        # usage does NOT consume plan token quota (only the request counts), so the
+        # RL commit records 0 tokens reservation-free.
+        await _commit_rl(ctx, res, tokens=0)
+        if res.app_reservation_active and res.app_reservation_id:
+            if total_cost > 0:
+                await ctx.subscription_limiter.commit_reserved_spend(
+                    reservation_id=res.app_reservation_id, spent_usd=float(total_cost),
+                    project_budget=ctx.budget_limiter,
+                )
+            else:
+                # nothing spent -> release the subscription hold
+                await ctx.subscription_limiter.release_reservation(
+                    reservation_id=res.app_reservation_id, note="settle: zero actual cost",
+                )
+            res.app_reservation_active = False
+        out.primary_funding_usd = float(total_cost)
+        out.quota_commit_tokens = 0
+        return out
+
+    if funding_source == "wallet":
+        # paid lane: wallet is the primary funding; project absorbs any uncovered
+        # shortfall (shortfall:wallet_paid). Wallet-paid tokens do NOT consume plan
+        # token quota (only the request counts), so the RL commit records 0 tokens
+        # reservation-free.
+        user_uncovered = 0
+        remaining = int(ranked_tokens)
+        if res.wallet_reservation_active and res.wallet_reservation_id and res.wallet_reserved_tokens > 0:
+            reserved_target = min(int(remaining), int(res.wallet_reserved_tokens))
+            try:
+                if reserved_target > 0:
+                    reserved_uncovered = await ctx.cp_manager.user_credits_mgr.commit_reserved_lifetime_tokens(
+                        tenant=ctx.tenant, project=ctx.project, user_id=ctx.user_id,
+                        reservation_id=str(res.wallet_reservation_id), tokens=int(reserved_target),
+                    )
+                    reserved_consumed = max(int(reserved_target) - int(reserved_uncovered or 0), 0)
+                    remaining = max(remaining - reserved_consumed, 0)
+                else:
+                    # nothing consumed: commit_reserved_lifetime_tokens no-ops on tokens<=0
+                    # and would leave the hold 'reserved' until TTL -> release it explicitly.
+                    await ctx.cp_manager.user_credits_mgr.release_lifetime_token_reservation(
+                        tenant=ctx.tenant, project=ctx.project, user_id=ctx.user_id,
+                        reservation_id=str(res.wallet_reservation_id), reason="zero actual cost",
+                    )
+            finally:
+                res.wallet_reservation_active = False
+        if remaining > 0:
+            user_uncovered = await ctx.cp_manager.user_credits_mgr.consume_lifetime_tokens(
+                tenant=ctx.tenant, project=ctx.project, user_id=ctx.user_id, tokens=int(remaining),
+            )
+        user_uncovered = int(user_uncovered or 0)
+        user_uncovered_usd = _cost_for_tokens(tokens=user_uncovered, ranked_tokens=ranked_tokens, total_cost=total_cost)
+        if user_uncovered_usd > 0:
+            await ctx.budget_limiter.force_project_spend(
+                spent_usd=float(user_uncovered_usd), bundle_id=ctx.bundle_id, provider=None,
+                request_id=ctx.scope_id, user_id=ctx.user_id, note="shortfall:wallet_paid",
+            )
+        await _commit_rl(ctx, res, tokens=0)
+        out.wallet_usd = max(float(total_cost) - float(user_uncovered_usd), 0.0)
+        out.project_absorption_usd = float(user_uncovered_usd)
+        out.quota_commit_tokens = 0
+        out.wallet_consumed_tokens = max(int(ranked_tokens) - int(user_uncovered), 0)
+        out.user_uncovered_tokens = int(user_uncovered)
+        out.user_uncovered_usd = float(user_uncovered_usd)
+        return out
+
+    if funding_source == "none":
+        # no funding source resolved -> charge the project as a last resort (audit)
+        if total_cost > 0:
+            await ctx.budget_limiter.force_project_spend(
+                spent_usd=float(total_cost), bundle_id=ctx.bundle_id, provider=None,
+                request_id=ctx.scope_id, user_id=ctx.user_id, note="settle: no_funding_source",
             )
         await _commit_rl(ctx, res, tokens=ranked_tokens)
         out.primary_funding_usd = float(total_cost)
@@ -468,6 +709,9 @@ async def settle_plan_funding(
     out.project_absorption_usd = float(project_absorption_usd)
     out.quota_commit_tokens = int(plan_quota_commit_tokens)
     out.extra_project_items = extra_project_items
+    out.wallet_consumed_tokens = max(int(user_target_tokens) - int(user_uncovered_tokens), 0)
+    out.user_uncovered_tokens = int(user_uncovered_tokens)
+    out.user_uncovered_usd = float(user_uncovered_usd)
     return out
 
 

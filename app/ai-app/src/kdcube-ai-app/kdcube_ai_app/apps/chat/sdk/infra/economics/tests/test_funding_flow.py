@@ -115,6 +115,13 @@ class _CP:
         self.user_credits_mgr = credits
 
 
+async def _resv(*a, **k):
+    """reserve and unwrap the PlanFundingReservation (asserts an OK outcome)."""
+    out = await ff.reserve_plan_funding(*a, **k)
+    assert out.status is ff.ReserveStatus.OK, f"expected OK, got {out.status}"
+    return out.reservation
+
+
 def _ctx(*, rl=None, budget=None, sub=None, credits=None):
     credits = credits or _Credits()
     return ff.FundingContext(
@@ -133,7 +140,7 @@ def _ctx(*, rl=None, budget=None, sub=None, credits=None):
 # --------------------------------------------------------------------------
 async def test_reserve_project_unlimited_covers_full_no_wallet():
     ctx = _ctx(budget=_Budget(overdraft=None))
-    res = await ff.reserve_plan_funding(
+    res = await _resv(
         ctx, admit=_Admit(reserved=2000), funding_source="project", budget_bypass=False,
         est_turn_tokens=2000, has_wallet=False, subscription_available_usd=0.0,
         project_budget_snapshot={"overdraft_limit_usd": None, "available_usd": 0.0},
@@ -149,7 +156,7 @@ async def test_reserve_project_finite_overdraft_reserves_wallet_overflow():
     # available+overdraft = $0.05 -> ~4347 tokens primary (well above the $0.01
     # min-reserve floor); the remaining ~5653 overflow to wallet.
     ctx = _ctx(budget=_Budget(overdraft=0.0))
-    res = await ff.reserve_plan_funding(
+    res = await _resv(
         ctx, admit=_Admit(reserved=10000), funding_source="project", budget_bypass=False,
         est_turn_tokens=10000, has_wallet=True, subscription_available_usd=0.0,
         project_budget_snapshot={"overdraft_limit_usd": 0.0, "available_usd": 0.05},
@@ -164,7 +171,7 @@ async def test_reserve_project_finite_overdraft_reserves_wallet_overflow():
 async def test_reserve_subscription_with_wallet_overflow():
     sub = _SubBudget(available_usd=0.05)
     ctx = _ctx(sub=sub)
-    res = await ff.reserve_plan_funding(
+    res = await _resv(
         ctx, admit=_Admit(reserved=10000), funding_source="subscription", budget_bypass=False,
         est_turn_tokens=10000, has_wallet=True, subscription_available_usd=0.05,
         project_budget_snapshot=None, personal_can_pay_turn=True,
@@ -176,19 +183,193 @@ async def test_reserve_subscription_with_wallet_overflow():
 
 async def test_reserve_denies_when_primary_fails_and_no_wallet():
     ctx = _ctx(budget=_Budget(overdraft=0.0, reserve_fail=True))
-    with pytest.raises(EconomicsLimitException) as ei:
-        await ff.reserve_plan_funding(
-            ctx, admit=_Admit(reserved=2000), funding_source="project", budget_bypass=False,
-            est_turn_tokens=2000, has_wallet=False, subscription_available_usd=0.0,
-            project_budget_snapshot={"overdraft_limit_usd": 0.0, "available_usd": 1000.0},
-            personal_can_pay_turn=False,
-        )
-    assert "reservation_failed" in ei.value.code or ei.value.code == "no_funding_source"
+    out = await ff.reserve_plan_funding(
+        ctx, admit=_Admit(reserved=2000), funding_source="project", budget_bypass=False,
+        est_turn_tokens=2000, has_wallet=False, subscription_available_usd=0.0,
+        project_budget_snapshot={"overdraft_limit_usd": 0.0, "available_usd": 1000.0},
+        personal_can_pay_turn=False,
+    )
+    assert out.status is ff.ReserveStatus.DENIED
+    assert "reservation_failed" in out.deny_code or out.deny_code == "no_funding_source"
+
+
+async def test_reserve_switches_to_paid_when_primary_fails_and_fallback_allowed():
+    # primary reserve fails, user can pay, allow_paid_lane_fallback -> SWITCH_TO_PAID
+    ctx = _ctx(budget=_Budget(overdraft=0.0, reserve_fail=True))
+    out = await ff.reserve_plan_funding(
+        ctx, admit=_Admit(reserved=2000), funding_source="project", budget_bypass=False,
+        est_turn_tokens=2000, has_wallet=True, subscription_available_usd=0.0,
+        project_budget_snapshot={"overdraft_limit_usd": 0.0, "available_usd": 1000.0},
+        personal_can_pay_turn=True, allow_paid_lane_fallback=True,
+    )
+    assert out.status is ff.ReserveStatus.SWITCH_TO_PAID
+    assert out.switch_reason == "app_budget_reservation_failed"
+    assert ctx.budget_limiter.reserved == []   # no primary hold left
+    assert ctx.cp_manager.user_credits_mgr.reserved == []  # no wallet hold (caller does it)
+
+
+# --------------------------------------------------------------------------
+# Paid-lane reserve
+# --------------------------------------------------------------------------
+async def test_reserve_paid_subscription_primary():
+    # active subscription -> subscription budget is the paid-lane primary; wallet untouched.
+    sub = _SubBudget(available_usd=100.0)
+    ctx = _ctx(sub=sub)
+    out = await ff.reserve_paid_funding(
+        ctx, admit=_Admit(reserved=2000), est_turn_tokens=2000,
+        has_active_subscription=True, has_wallet=True, wallet_can_pay_turn=True,
+    )
+    assert out.status is ff.ReserveStatus.OK
+    res = out.reservation
+    assert res.funding_source == "subscription"
+    assert res.paid_lane is True
+    assert res.app_reservation_active is True
+    assert len(sub.reserved) == 1
+    assert ctx.cp_manager.user_credits_mgr.reserved == []   # wallet untouched
+
+
+async def test_reserve_paid_subscription_falls_back_to_wallet():
+    # subscription hold declined but the wallet can pay -> wallet becomes the primary.
+    sub = _SubBudget(reserve_fail=True)
+    credits = _Credits(reserve_ok=True)
+    ctx = _ctx(sub=sub, credits=credits)
+    out = await ff.reserve_paid_funding(
+        ctx, admit=_Admit(reserved=2000), est_turn_tokens=2000,
+        has_active_subscription=True, has_wallet=True, wallet_can_pay_turn=True,
+    )
+    assert out.status is ff.ReserveStatus.OK
+    res = out.reservation
+    assert res.funding_source == "wallet"
+    assert res.wallet_reservation_active is True
+    assert res.wallet_reserved_tokens == 2000
+    assert len(credits.reserved) == 1
+
+
+async def test_reserve_paid_subcent_subscription_skips_to_wallet():
+    # est below the cent floor -> no subscription hold attempted; wallet is primary.
+    sub = _SubBudget(available_usd=100.0)
+    credits = _Credits(reserve_ok=True)
+    ctx = _ctx(sub=sub, credits=credits)
+    out = await ff.reserve_paid_funding(
+        ctx, admit=_Admit(reserved=200), est_turn_tokens=200,
+        has_active_subscription=True, has_wallet=True, wallet_can_pay_turn=True,
+    )
+    assert out.status is ff.ReserveStatus.OK
+    assert out.reservation.funding_source == "wallet"
+    assert sub.reserved == []
+    assert len(credits.reserved) == 1
+
+
+async def test_reserve_paid_subscription_failed_no_wallet_denies():
+    sub = _SubBudget(reserve_fail=True)
+    ctx = _ctx(sub=sub)
+    out = await ff.reserve_paid_funding(
+        ctx, admit=_Admit(reserved=2000), est_turn_tokens=2000,
+        has_active_subscription=True, has_wallet=False, wallet_can_pay_turn=False,
+    )
+    assert out.status is ff.ReserveStatus.DENIED
+    assert out.deny_code == "paid_subscription_reservation_failed"
+
+
+async def test_reserve_paid_wallet_primary():
+    # no subscription -> wallet is the paid-lane primary.
+    credits = _Credits(reserve_ok=True)
+    ctx = _ctx(credits=credits)
+    out = await ff.reserve_paid_funding(
+        ctx, admit=_Admit(reserved=2000), est_turn_tokens=2000,
+        has_active_subscription=False, has_wallet=True, wallet_can_pay_turn=True,
+    )
+    assert out.status is ff.ReserveStatus.OK
+    res = out.reservation
+    assert res.funding_source == "wallet"
+    assert res.wallet_reservation_active is True
+    assert res.wallet_reserved_tokens == 2000
+    assert len(credits.reserved) == 1
+
+
+async def test_reserve_paid_no_wallet_denies():
+    ctx = _ctx()
+    out = await ff.reserve_paid_funding(
+        ctx, admit=_Admit(reserved=2000), est_turn_tokens=2000,
+        has_active_subscription=False, has_wallet=False, wallet_can_pay_turn=False,
+    )
+    assert out.status is ff.ReserveStatus.DENIED
+    assert out.deny_code == "paid_no_personal_budget"
+
+
+async def test_reserve_paid_wallet_reservation_failed_denies():
+    credits = _Credits(reserve_ok=False)
+    ctx = _ctx(credits=credits)
+    out = await ff.reserve_paid_funding(
+        ctx, admit=_Admit(reserved=2000), est_turn_tokens=2000,
+        has_active_subscription=False, has_wallet=True, wallet_can_pay_turn=True,
+    )
+    assert out.status is ff.ReserveStatus.DENIED
+    assert out.deny_code == "paid_wallet_reservation_failed"
+
+
+async def test_settle_wallet_primary_paid_lane():
+    # funding_source="wallet" -> wallet pays everything; project absorbs uncovered.
+    credits = _Credits(consume_uncovered=0)
+    ctx = _ctx(credits=credits)
+    res = ff.PlanFundingReservation(
+        funding_source="wallet", budget_bypass=False, est_turn_tokens=2000,
+        wallet_reservation_id="scope-1", wallet_reserved_tokens=2000, wallet_reservation_active=True,
+        has_wallet=True,
+    )
+    out = await ff.settle_plan_funding(
+        ctx, res, ranked_tokens=1500, total_cost_usd=0.015,
+        effective_policy=QuotaPolicy(tokens_per_month=10**9),
+        plan_has_lifetime_budget=True, user_budget_tokens=10**9,
+    )
+    assert len(credits.committed) == 1                 # wallet reservation committed
+    assert credits.committed[0]["tokens"] == 1500
+    assert ctx.budget_limiter.forced == []             # no shortfall (fully covered)
+    assert len(ctx.rl.commits) == 1                    # RL recorded (reservation-free)
+    # paid lane consumes 0 plan token quota (wallet pays) -> RL commits 0 tokens
+    assert int(ctx.rl.commits[0].get("tokens") or 0) == 0
+    assert out.quota_commit_tokens == 0
+    assert out.wallet_usd == pytest.approx(0.015, rel=1e-6)
+
+
+async def test_settle_wallet_zero_cost_releases_reservation():
+    # paid lane with zero actual cost (ranked_tokens=0): commit_reserved no-ops on
+    # tokens<=0, so the wallet hold must be RELEASED, not left 'reserved' until TTL.
+    credits = _Credits()
+    ctx = _ctx(credits=credits)
+    res = ff.PlanFundingReservation(
+        funding_source="wallet", budget_bypass=False, est_turn_tokens=2000,
+        wallet_reservation_id="scope-1", wallet_reserved_tokens=2000, wallet_reservation_active=True,
+        has_wallet=True,
+    )
+    out = await ff.settle_plan_funding(
+        ctx, res, ranked_tokens=0, total_cost_usd=0.0,
+        effective_policy=QuotaPolicy(tokens_per_month=10**9),
+        plan_has_lifetime_budget=True, user_budget_tokens=10**9,
+    )
+    assert credits.committed == []                     # nothing committed
+    assert len(credits.released) == 1                  # hold released
+    assert credits.released[0]["reservation_id"] == "scope-1"
+    assert res.wallet_reservation_active is False
+
+
+async def test_settle_none_charges_project_last_resort():
+    ctx = _ctx()
+    res = ff.PlanFundingReservation(funding_source="none", budget_bypass=False, est_turn_tokens=2000)
+    out = await ff.settle_plan_funding(
+        ctx, res, ranked_tokens=1000, total_cost_usd=0.02,
+        effective_policy=QuotaPolicy(tokens_per_month=10**9),
+        plan_has_lifetime_budget=False, user_budget_tokens=None,
+    )
+    assert len(ctx.budget_limiter.forced) == 1
+    assert ctx.budget_limiter.forced[0]["spent_usd"] == pytest.approx(0.02, rel=1e-6)
+    assert "no_funding_source" in ctx.budget_limiter.forced[0]["note"]
+    assert out.quota_commit_tokens == 1000
 
 
 async def test_reserve_bypass_takes_no_money_hold():
     ctx = _ctx()
-    res = await ff.reserve_plan_funding(
+    res = await _resv(
         ctx, admit=_Admit(reserved=2000), funding_source="project", budget_bypass=True,
         est_turn_tokens=2000, has_wallet=False, subscription_available_usd=0.0,
         project_budget_snapshot={"overdraft_limit_usd": None, "available_usd": 0.0},
@@ -203,7 +384,7 @@ async def test_reserve_bypass_takes_no_money_hold():
 # --------------------------------------------------------------------------
 async def test_settle_project_commits_reservation_and_rl():
     ctx = _ctx(budget=_Budget(overdraft=None, available_usd=1000.0))
-    res = await ff.reserve_plan_funding(
+    res = await _resv(
         ctx, admit=_Admit(reserved=2000), funding_source="project", budget_bypass=False,
         est_turn_tokens=2000, has_wallet=False, subscription_available_usd=0.0,
         project_budget_snapshot={"overdraft_limit_usd": None, "available_usd": 1000.0},
@@ -223,7 +404,7 @@ async def test_settle_project_commits_reservation_and_rl():
 
 async def test_settle_bypass_forces_project_and_commits_rl():
     ctx = _ctx()
-    res = await ff.reserve_plan_funding(
+    res = await _resv(
         ctx, admit=_Admit(reserved=2000), funding_source="project", budget_bypass=True,
         est_turn_tokens=2000, has_wallet=False, subscription_available_usd=0.0,
         project_budget_snapshot={"overdraft_limit_usd": None, "available_usd": 0.0},
@@ -246,7 +427,7 @@ async def test_settle_wallet_shortfall_absorbed_by_project():
     credits = _Credits(balance=10**9, commit_uncovered=0, consume_uncovered=0)
     budget = _Budget(overdraft=0.0, available_usd=0.05)
     ctx = _ctx(budget=budget, credits=credits)
-    res = await ff.reserve_plan_funding(
+    res = await _resv(
         ctx, admit=_Admit(reserved=10000), funding_source="project", budget_bypass=False,
         est_turn_tokens=10000, has_wallet=True, subscription_available_usd=0.0,
         project_budget_snapshot={"overdraft_limit_usd": 0.0, "available_usd": 0.05},
@@ -263,3 +444,34 @@ async def test_settle_wallet_shortfall_absorbed_by_project():
     assert len(budget.committed) == 1
     assert out.allocation is not None
     assert out.allocation.wallet_tokens > 0
+    # wallet fully covered its target -> nothing uncovered; consumed == target
+    assert out.user_uncovered_tokens == 0
+    assert out.user_uncovered_usd == 0.0
+    assert out.wallet_consumed_tokens == int(out.allocation.wallet_tokens)
+
+
+async def test_settle_exposes_wallet_uncovered_intermediates():
+    # wallet can't fully cover its target -> the result exposes wallet_consumed /
+    # user_uncovered (tokens + usd) for the caller's underfunded event. commit_uncovered
+    # leaves a reservation-free remainder that consume_lifetime_tokens reports uncovered.
+    credits = _Credits(balance=10**9, commit_uncovered=2000, consume_uncovered=2000)
+    budget = _Budget(overdraft=0.0, available_usd=0.05)
+    ctx = _ctx(budget=budget, credits=credits)
+    res = await _resv(
+        ctx, admit=_Admit(reserved=10000), funding_source="project", budget_bypass=False,
+        est_turn_tokens=10000, has_wallet=True, subscription_available_usd=0.0,
+        project_budget_snapshot={"overdraft_limit_usd": 0.0, "available_usd": 0.05},
+        personal_can_pay_turn=True,
+    )
+    out = await ff.settle_plan_funding(
+        ctx, res, ranked_tokens=10000, total_cost_usd=0.10,
+        effective_policy=QuotaPolicy(tokens_per_month=10**9),
+        plan_has_lifetime_budget=True, user_budget_tokens=10**9,
+    )
+    target = int(out.allocation.wallet_tokens)
+    assert target >= 2000
+    assert out.user_uncovered_tokens == 2000
+    assert out.wallet_consumed_tokens == target - 2000
+    # invariant: consumed + uncovered == wallet target
+    assert out.wallet_consumed_tokens + out.user_uncovered_tokens == target
+    assert out.user_uncovered_usd == pytest.approx(out.total_cost_usd * 2000 / out.ranked_tokens, rel=1e-6)

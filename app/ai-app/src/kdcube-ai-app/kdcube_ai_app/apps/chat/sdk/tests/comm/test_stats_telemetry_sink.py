@@ -48,6 +48,19 @@ def test_target_requires_auth_material() -> None:
         target.request_headers()
 
 
+def test_target_custom_token_header_uses_raw_secret() -> None:
+    target = StatsTelemetryTarget(
+        endpoint_url="http://localhost:8010/telemetry/events",
+        token="ingest-secret",
+        token_header="X-Telemetry-Token",
+    )
+
+    headers = target.request_headers()
+
+    assert headers["X-Telemetry-Token"] == "ingest-secret"
+    assert "Authorization" not in headers
+
+
 @pytest.mark.anyio
 async def test_react_tool_call_maps_to_tool_invoke_without_params() -> None:
     comm = _make_comm()

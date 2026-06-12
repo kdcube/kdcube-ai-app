@@ -202,6 +202,24 @@ operations are the same in both surfaces: KDCube calls
 `/operations/conversations_*`; Telegram maps them to
 `/public/telegram_conversations_*`.
 
+## Operational Telemetry Sink
+
+The reference bundle can record selected communicator events during a chat turn
+and POST one bounded batch to `config.telemetry_sink.endpoint_url` after the
+turn finishes. Configure the shared ingest secret in
+`secrets.telemetry_sink.auth.token`.
+
+By default, the sink sends the token as:
+
+```http
+Authorization: Bearer <token>
+```
+
+If the receiver sits behind a gateway that treats `Authorization` as a platform
+JWT, set `config.telemetry_sink.auth_header` to a dedicated ingest header such
+as `X-Telemetry-Token`. In that mode the SDK sends the raw token under that
+header and avoids gateway JWT parsing.
+
 ## Common Calls
 
 Bootstrap or refresh the app:

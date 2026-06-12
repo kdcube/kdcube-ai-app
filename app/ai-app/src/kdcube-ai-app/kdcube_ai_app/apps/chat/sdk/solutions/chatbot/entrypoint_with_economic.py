@@ -557,102 +557,43 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
             except Exception as e:
                 _log("analytics", "Provider analytics write failed (best-effort)", "WARN", error=str(e))
 
-        async def _quota_lock_try_acquire(key: str, token: str, ttl_sec: int) -> bool:
-            r = self.redis
-            if r is None:
-                return False
-            try:
-                ok = await r.set(key, token, nx=True, ex=ttl_sec)
-                return bool(ok)
-            except TypeError:
-                pass
-            except Exception:
-                return False
-            try:
-                ok = await r.set(key, token, nx=True, px=int(ttl_sec * 1000))
-                return bool(ok)
-            except Exception:
-                return False
-
-        async def _quota_lock_release(key: str, token: str) -> None:
-            r = self.redis
-            if r is None:
-                return
-            lua = (
-                "if redis.call('get', KEYS[1]) == ARGV[1] then "
-                "return redis.call('del', KEYS[1]) else return 0 end"
-            )
-            try:
-                await r.eval(lua, 1, key, token)
-                return
-            except TypeError:
-                try:
-                    await r.eval(lua, keys=[key], args=[token])
-                    return
-                except Exception:
-                    pass
-            except Exception:
-                pass
-            try:
-                cur = await r.get(key)
-                if cur is None:
-                    return
-                if isinstance(cur, (bytes, bytearray)):
-                    cur = cur.decode("utf-8", errors="ignore")
-                if str(cur) == str(token):
-                    await r.delete(key)
-            except Exception:
-                pass
-
-        quota_lock_key = None
-        quota_lock_token = None
-        quota_lock_acquired = False
+        # Redis mechanics + spin-wait live in the shared funding_flow QuotaLock; run()
+        # owns the redis-absent gate, the denial it raises on timeout, and its logs.
+        from kdcube_ai_app.apps.chat.sdk.infra.economics.quota_lock import (
+            QuotaLock, quota_lock_key,
+        )
+        _quota_lock = QuotaLock(self.redis)
 
         async def _acquire_quota_lock_or_deny(*, scope: str) -> None:
-            nonlocal quota_lock_key, quota_lock_token, quota_lock_acquired
             if self.redis is None:
                 _log("quota_lock", "Redis unavailable; quota_lock disabled", "WARN")
                 return
-            quota_lock_key = f"quota_lock:{tenant}:{project}:{user_id}:{scope}:{rl_bundle_id}"
-            quota_lock_token = secrets.token_hex(16)
+            key = quota_lock_key(tenant, project, user_id, scope, rl_bundle_id)
             ttl_sec = 60
-            wait_total_sec = 5.0
-            t0 = asyncio.get_event_loop().time()
-            sleep = 0.05
-            while True:
-                ok = await _quota_lock_try_acquire(quota_lock_key, quota_lock_token, ttl_sec=ttl_sec)
-                if ok:
-                    quota_lock_acquired = True
-                    _log("quota_lock", "Acquired quota_lock", key=quota_lock_key, scope=scope, ttl_sec=ttl_sec)
-                    return
-                if (asyncio.get_event_loop().time() - t0) >= wait_total_sec:
-                    _log("quota_lock", "Failed to acquire quota_lock within wait window", "WARN", key=quota_lock_key, scope=scope)
-                    await _econ_fail(
-                        code="quota_lock_timeout",
-                        title="System busy",
-                        message="Too many concurrent requests are planning quotas right now. Please retry.",
-                        event_type="rate_limit.denied",
-                        data={
-                            "reason": "quota_lock_timeout",
-                            "user_message": _build_user_message(reason="quota_lock_timeout", reset_text=None),
-                            "bundle_id": bundle_id,
-                            "subject_id": self.subj,
-                            "user_type": user_type,
-                            "lane": "deny",
-                            "scope": scope,
-                        },
-                    )
-                await asyncio.sleep(sleep)
-                sleep = min(sleep * 1.5, 0.25)
+            if await _quota_lock.acquire_blocking(key, ttl_sec=ttl_sec, wait_total_sec=5.0):
+                _log("quota_lock", "Acquired quota_lock", key=key, scope=scope, ttl_sec=ttl_sec)
+                return
+            _log("quota_lock", "Failed to acquire quota_lock within wait window", "WARN", key=key, scope=scope)
+            await _econ_fail(
+                code="quota_lock_timeout",
+                title="System busy",
+                message="Too many concurrent requests are planning quotas right now. Please retry.",
+                event_type="rate_limit.denied",
+                data={
+                    "reason": "quota_lock_timeout",
+                    "user_message": _build_user_message(reason="quota_lock_timeout", reset_text=None),
+                    "bundle_id": bundle_id,
+                    "subject_id": self.subj,
+                    "user_type": user_type,
+                    "lane": "deny",
+                    "scope": scope,
+                },
+            )
 
         async def _release_quota_lock_if_held() -> None:
-            nonlocal quota_lock_key, quota_lock_token, quota_lock_acquired
-            if quota_lock_acquired and quota_lock_key and quota_lock_token:
-                await _quota_lock_release(quota_lock_key, quota_lock_token)
-                _log("quota_lock", "Released quota_lock", key=quota_lock_key)
-            quota_lock_key = None
-            quota_lock_token = None
-            quota_lock_acquired = False
+            key = _quota_lock.key
+            if await _quota_lock.release_if_held():
+                _log("quota_lock", "Released quota_lock", key=key)
 
         await self.ensure_policies_initialized()
 
@@ -1293,81 +1234,70 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
                 await _acquire_quota_lock_or_deny(scope=scope_for_lock)
 
                 try:
-                    plan_reserved_tokens = int(getattr(admit, "reserved_tokens", 0) or 0)
-                    plan_reservation_id = getattr(admit, "reservation_id", None)
-                    plan_reservation_active = (lane == "plan" and plan_reserved_tokens > 0 and plan_reservation_id is not None)
-
-                    plan_project_tokens_est = int(plan_reserved_tokens)
-                    if funding_source == "subscription":
-                        plan_project_tokens_est = int(est_turn_tokens)
-                        if has_wallet:
-                            cap_usd = float(subscription_available_usd or 0.0)
-                            if cap_usd < 0:
-                                cap_usd = 0.0
-                            if usd_per_token > 0:
-                                cap_tokens = int(cap_usd / (usd_per_token * SAFETY_MARGIN))
-                            else:
-                                cap_tokens = 0
-                            plan_project_tokens_est = min(int(est_turn_tokens), int(cap_tokens))
-                    elif funding_source == "project" and project_budget:
-                        od_lim = project_budget.get("overdraft_limit_usd")
-                        if od_lim is not None:
-                            cap_usd = float(project_budget.get("available_usd") or 0.0) + float(od_lim or 0.0)
-                            if cap_usd < 0:
-                                cap_usd = 0.0
-                            if usd_per_token > 0:
-                                cap_tokens = int(cap_usd / (usd_per_token * SAFETY_MARGIN))
-                                plan_project_tokens_est = min(int(plan_project_tokens_est), int(cap_tokens))
-                        # od_lim == None => unlimited, keep full plan_project_tokens_est
-                    if funding_source == "subscription":
-                        overflow_tokens_est = max(int(est_turn_tokens) - int(plan_project_tokens_est), 0)
-                    else:
-                        overflow_tokens_est = max(int(est_turn_tokens) - int(plan_project_tokens_est), 0)
-                    if plan_limit is None:
-                        plan_remaining = est_turn_tokens
-                        tokens_spent_stat = f'Tokens spent from plan in this month: {int(admit.snapshot.get("tok_month", 0) or 0)}'
-                    else:
-                        tok_so_far = int(admit.snapshot.get(f"tok_{scope}", 0) or 0)
-                        tokens_spent_stat = f"Tokens spent from plan in this {scope}: {tok_so_far}"
-                        plan_remaining = max(int(plan_limit) - int(tok_so_far), 0)
-
-                    _log(
-                        "reserve.plan",
-                        "Reservation plan (plan lane)",
-                        est_turn_tokens=est_turn_tokens,
-                        tokens_spent_stat=tokens_spent_stat,
-                        plan_limit=plan_limit,
-                        plan_remaining=plan_remaining,
-                        plan_covered_tokens_est=plan_project_tokens_est,
-                        overflow_tokens_est=overflow_tokens_est,
-                        usd_per_token=usd_per_token,
+                    from kdcube_ai_app.apps.chat.sdk.infra.economics.funding_flow import (
+                        FundingContext, reserve_plan_funding, ReserveStatus,
                     )
 
-                    if plan_project_tokens_est > 0:
-                        # Budget system stores amounts in integer cents; anything below $0.01
-                        # rounds to 0 cents in _usd_to_cents() and raises ValueError in reserve().
-                        _min_reserve_usd = 1.0 / 100
-                        if float(plan_project_tokens_est) * float(usd_per_token) * SAFETY_MARGIN < _min_reserve_usd:
-                            _log(
-                                "reserve.plan",
-                                "Plan token reservation below minimum chargeable amount; treating as exhausted",
-                                "WARN",
-                                plan_project_tokens_est=plan_project_tokens_est,
-                                computed_usd=float(plan_project_tokens_est) * float(usd_per_token) * SAFETY_MARGIN,
-                                min_reserve_usd=_min_reserve_usd,
-                            )
-                            plan_project_tokens_est = 0
+                    # plan-lane reservation: the money flow is owned by the shared
+                    # funding_flow.reserve_plan_funding (single reservation owner). run()
+                    # keeps the quota-lock + lane-switch/denial SSE shell below.
+                    _reserve_ctx = FundingContext(
+                        rl=self.rl, budget_limiter=self.budget_limiter, cp_manager=self.cp_manager,
+                        tenant=tenant, project=project, user_id=user_id, subject_id=self.subj,
+                        bundle_id=bundle_id, rl_bundle_id=rl_bundle_id, scope_id=turn_id,
+                        usd_per_token=usd_per_token, now=plan_admit_now,
+                        subscription_limiter=subscription_budget_limiter,
+                        log=lambda stage, msg, level="INFO", **kv: _log(stage, msg, level, **kv),
+                    )
+                    _outcome = await reserve_plan_funding(
+                        _reserve_ctx, admit=admit, funding_source=funding_source,
+                        budget_bypass=budget_bypass, est_turn_tokens=int(est_turn_tokens),
+                        has_wallet=has_wallet, subscription_available_usd=subscription_available_usd,
+                        project_budget_snapshot=project_budget, personal_can_pay_turn=personal_can_pay_turn,
+                        allow_paid_lane_fallback=allow_paid_lane_fallback, ttl_sec=900,
+                    )
 
-                    if plan_project_tokens_est <= 0:
-                        if budget_bypass:
-                            _log(
-                                "reserve.plan",
-                                "Budget bypass: zero plan reservation; skipping paid switch",
-                                "WARN",
-                                est_turn_tokens=est_turn_tokens,
-                                plan_reserved_tokens=plan_reserved_tokens,
-                            )
-                        elif not personal_can_pay_turn:
+                    if _outcome.status is ReserveStatus.OK:
+                        _res = _outcome.reservation
+                        plan_reserved_tokens = int(_res.plan_reserved_tokens or 0)
+                        plan_reservation_id = _res.plan_reservation_id
+                        plan_reservation_active = bool(_res.plan_reservation_active)
+                        plan_project_tokens_est = int(_res.plan_project_tokens_est or 0)
+                        app_reservation_id = _res.app_reservation_id
+                        app_reserved_usd = float(_res.app_reserved_usd or 0.0)
+                        app_reservation_active = bool(_res.app_reservation_active)
+                        if _res.wallet_reservation_active:
+                            personal_reservation_id = _res.wallet_reservation_id
+                            personal_reserved_tokens = int(_res.wallet_reserved_tokens or 0)
+                            personal_reservation_active = True
+                            _log("reserve.personal", "Reserved personal overflow tokens",
+                                 reservation_id=personal_reservation_id, tokens_reserved=personal_reserved_tokens)
+
+                    elif _outcome.status is ReserveStatus.SWITCH_TO_PAID:
+                        _switch_reason = _outcome.switch_reason or "plan_tokens_exhausted_for_turn"
+                        if _switch_reason in ("subscription_budget_zero_for_turn", "subscription_reservation_failed"):
+                            _switch_title = "Switching to paid lane (wallet funding)"
+                        else:
+                            _switch_title = "Switching to personal credits"
+                        await _emit_event(
+                            type="rate_limit.lane_switch",
+                            status="running",
+                            title=_switch_title,
+                            data={
+                                "reason": _switch_reason,
+                                "bundle_id": bundle_id,
+                                "subject_id": self.subj,
+                                "user_type": user_type,
+                                "snapshot": admit.snapshot,
+                                "lane_from": "plan",
+                                "lane_to": "paid",
+                            },
+                        )
+                        await _switch_plan_to_paid_or_die(switch_reason=_switch_reason)
+
+                    else:  # ReserveStatus.DENIED
+                        _deny_code = _outcome.deny_code or "no_funding_source"
+                        if _deny_code == "plan_exhausted_no_personal":
                             payload = _build_rate_limit_payload(
                                 policy=_policy_for_insight(admit_result=admit, fallback_policy=base_policy),
                                 snapshot=admit.snapshot,
@@ -1390,173 +1320,63 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
                                     "lane": "deny",
                                 },
                             )
-                        elif funding_source == "subscription" and has_wallet:
-                            await _emit_event(
-                                type="rate_limit.lane_switch",
-                                status="running",
-                                title="Switching to paid lane (wallet funding)",
+                        elif _deny_code.endswith("_budget_reservation_failed_no_personal"):
+                            _app_reserved_usd_msg = float(est_turn_tokens) * float(usd_per_token) * SAFETY_MARGIN
+                            await _econ_fail(
+                                code=f"{funding_source}_budget_reservation_failed_no_personal",
+                                title=f"Insufficient {funding_label}",
+                                message=f"{funding_label.title()} cannot reserve plan funds and user cannot pay.",
+                                event_type="rate_limit.project_exhausted" if funding_source == "project" else "rate_limit.subscription_exhausted",
                                 data={
-                                    "reason": "subscription_budget_zero_for_turn",
+                                    "reason": f"{funding_source}_budget_reservation_failed",
                                     "bundle_id": bundle_id,
                                     "subject_id": self.subj,
                                     "user_type": user_type,
-                                    "snapshot": admit.snapshot,
-                                    "lane_from": "plan",
-                                    "lane_to": "paid",
+                                    "funding_source": funding_source,
+                                    "app_reserved_usd": _app_reserved_usd_msg,
+                                    "user_budget_tokens": user_budget_tokens,
                                 },
                             )
-                            await _switch_plan_to_paid_or_die(switch_reason="subscription_budget_zero_for_turn")
-                        elif allow_paid_lane_fallback:
-                            await _emit_event(
-                                type="rate_limit.lane_switch",
-                                status="running",
-                                title="Switching to personal credits",
+                        elif _deny_code == "personal_reservation_failed_plan":
+                            payload = _build_rate_limit_payload(
+                                policy=_policy_for_insight(admit_result=admit, fallback_policy=effective_policy),
+                                snapshot=admit.snapshot,
+                                reason=admit.reason or "plan_token_overflow",
+                                used_plan_override=admit.used_plan_override,
+                                needed_tokens=int(est_turn_tokens),
+                                remaining_tokens=int(plan_project_tokens_est),
+                            )
+                            await _econ_fail(
+                                code="personal_reservation_failed_plan",
+                                title="Insufficient personal credits",
+                                message="Insufficient personal credits to cover overflow.",
+                                event_type="rate_limit.denied",
                                 data={
-                                    "reason": "plan_tokens_exhausted_for_turn",
+                                    "reason": "personal_reservation_failed",
                                     "bundle_id": bundle_id,
                                     "subject_id": self.subj,
                                     "user_type": user_type,
-                                    "snapshot": admit.snapshot,
-                                    "lane_from": "plan",
-                                    "lane_to": "paid",
+                                    "tokens_required": int(est_turn_tokens),
+                                    "rate_limit": payload,
+                                    "lane": lane,
                                 },
                             )
-
-                            await _switch_plan_to_paid_or_die(switch_reason="plan_tokens_exhausted_for_turn")
-                        else:
-                            _log(
-                                "reserve.plan",
-                                "Plan budget exhausted; using wallet for overflow (no paid-lane switch)",
-                                "WARN",
-                                est_turn_tokens=est_turn_tokens,
-                                plan_reserved_tokens=plan_reserved_tokens,
+                        else:  # no_funding_source (and any unmapped deny)
+                            await _econ_fail(
+                                code="no_funding_source",
+                                title="No funding source",
+                                message="No plan or project funding source is available for this user type.",
+                                event_type="rate_limit.no_funding",
+                                data={
+                                    "reason": "no_funding_source",
+                                    "bundle_id": bundle_id,
+                                    "subject_id": self.subj,
+                                    "user_type": user_type,
+                                    "funding_source": funding_source,
+                                    "user_message": MSG_NO_FUNDING,
+                                    "notification_type": "error",
+                                },
                             )
-                    else:
-                        if not budget_bypass:
-                            app_reserved_usd = float(plan_project_tokens_est) * float(usd_per_token) * SAFETY_MARGIN
-                            app_reservation_id = uuid4()
-
-                            try:
-                                reserve_kwargs = dict(
-                                    reservation_id=app_reservation_id,
-                                    bundle_id=bundle_id,
-                                    provider=None,
-                                    request_id=turn_id,
-                                    amount_usd=float(app_reserved_usd),
-                                    ttl_sec=900,
-                                    notes=f"plan reserve: est_turn={est_turn_tokens}, plan_cover_est={plan_project_tokens_est}, ref=anthropic/claude-sonnet-4-5-20250929",
-                                )
-                                if funding_source == "project":
-                                    reserve_kwargs["user_id"] = user_id
-
-                                rr = await funding_limiter.reserve(**reserve_kwargs)
-                                app_reservation_active = True
-                                _log(
-                                    "reserve.app",
-                                    f"Reserved {funding_label} (plan lane)",
-                                    reservation_id=str(rr.reservation_id),
-                                    app_reserved_usd=rr.reserved_usd,
-                                    expires_at=rr.expires_at,
-                                    snapshot=dataclasses.asdict(rr.snapshot),
-                                )
-                            except BudgetInsufficientFunds as e:
-                                _log("reserve.app", f"{funding_label.title()} reservation denied", "WARN", error=str(e), app_reserved_usd=app_reserved_usd)
-
-                                if not personal_can_pay_turn:
-                                    await _econ_fail(
-                                        code=f"{funding_source}_budget_reservation_failed_no_personal",
-                                        title=f"Insufficient {funding_label}",
-                                        message=f"{funding_label.title()} cannot reserve plan funds and user cannot pay.",
-                                        event_type="rate_limit.project_exhausted" if funding_source == "project" else "rate_limit.subscription_exhausted",
-                                        data={
-                                            "reason": f"{funding_source}_budget_reservation_failed",
-                                            "bundle_id": bundle_id,
-                                            "subject_id": self.subj,
-                                            "user_type": user_type,
-                                            "funding_source": funding_source,
-                                            "app_reserved_usd": app_reserved_usd,
-                                            "user_budget_tokens": user_budget_tokens,
-                                        },
-                                    )
-
-                                if funding_source == "subscription" and has_wallet:
-                                    await _emit_event(
-                                        type="rate_limit.lane_switch",
-                                        status="running",
-                                        title="Switching to paid lane (wallet funding)",
-                                        data={
-                                            "reason": "subscription_reservation_failed",
-                                            "bundle_id": bundle_id,
-                                            "subject_id": self.subj,
-                                            "user_type": user_type,
-                                            "snapshot": admit.snapshot,
-                                            "lane_from": "plan",
-                                            "lane_to": "paid",
-                                        },
-                                    )
-                                    await _switch_plan_to_paid_or_die(switch_reason="subscription_reservation_failed")
-                                elif allow_paid_lane_fallback:
-                                    await _emit_event(
-                                        type="rate_limit.lane_switch",
-                                        status="running",
-                                        title="Switching to personal credits",
-                                        data={
-                                            "reason": "app_budget_reservation_failed",
-                                            "bundle_id": bundle_id,
-                                            "subject_id": self.subj,
-                                            "user_type": user_type,
-                                            "snapshot": admit.snapshot,
-                                            "lane_from": "plan",
-                                            "lane_to": "paid",
-                                        },
-                                    )
-                                    await _switch_plan_to_paid_or_die(switch_reason="app_budget_reservation_failed")
-                                else:
-                                    # Fall back to wallet-only for this turn
-                                    plan_project_tokens_est = 0
-                                    app_reserved_usd = 0.0
-
-                    if lane == "plan" and (funding_source != "subscription" or has_wallet):
-                        overflow_tokens_est = max(int(est_turn_tokens) - int(plan_project_tokens_est), 0)
-                        if overflow_tokens_est > 0:
-                            ok = await self.cp_manager.user_credits_mgr.reserve_lifetime_tokens(
-                                tenant=tenant,
-                                project=project,
-                                user_id=user_id,
-                                reservation_id=turn_id,
-                                tokens=int(overflow_tokens_est),
-                                ttl_sec=900,
-                                bundle_id=bundle_id,
-                                notes=f"auto-reserve: lane=plan, overflow={overflow_tokens_est}, est_turn={est_turn_tokens}",
-                            )
-                            if not ok:
-                                payload = _build_rate_limit_payload(
-                                    policy=_policy_for_insight(admit_result=admit, fallback_policy=effective_policy),
-                                    snapshot=admit.snapshot,
-                                    reason=admit.reason or "plan_token_overflow",
-                                    used_plan_override=admit.used_plan_override,
-                                    needed_tokens=int(est_turn_tokens),
-                                    remaining_tokens=int(plan_project_tokens_est),
-                                )
-                                await _econ_fail(
-                                    code="personal_reservation_failed_plan",
-                                    title="Insufficient personal credits",
-                                    message="Insufficient personal credits to cover overflow.",
-                                    event_type="rate_limit.denied",
-                                    data={
-                                        "reason": "personal_reservation_failed",
-                                        "bundle_id": bundle_id,
-                                        "subject_id": self.subj,
-                                        "user_type": user_type,
-                                        "tokens_required": int(overflow_tokens_est),
-                                        "rate_limit": payload,
-                                        "lane": lane,
-                                    },
-                                )
-                            personal_reservation_id = turn_id
-                            personal_reserved_tokens = int(overflow_tokens_est)
-                            personal_reservation_active = True
-                            _log("reserve.personal", "Reserved personal overflow tokens", reservation_id=turn_id, tokens_reserved=personal_reserved_tokens)
                 finally:
                     try:
                         await _release_quota_lock_if_held()
@@ -1564,80 +1384,60 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
                         _log("quota_lock", "Failed to release quota_lock", "WARN", error=str(ex))
 
             if lane == "paid" and not budget_bypass:
-                if has_active_subscription and funding_limiter:
-                    app_reserved_usd = float(est_turn_tokens) * float(usd_per_token) * SAFETY_MARGIN
-                    app_reservation_id = uuid4()
-                    try:
-                        rr = await funding_limiter.reserve(
-                            reservation_id=app_reservation_id,
-                            bundle_id=bundle_id,
-                            provider=None,
-                            request_id=turn_id,
-                            amount_usd=float(app_reserved_usd),
-                            ttl_sec=900,
-                            notes=f"paid reserve: est_turn={est_turn_tokens}, ref=anthropic/claude-sonnet-4-5-20250929",
-                        )
-                        app_reservation_active = True
-                        paid_funding_source = "subscription"
-                        _log(
-                            "reserve.app",
-                            "Reserved subscription balance (paid lane)",
-                            reservation_id=str(rr.reservation_id),
-                            app_reserved_usd=rr.reserved_usd,
-                            expires_at=rr.expires_at,
-                            snapshot=dataclasses.asdict(rr.snapshot),
-                        )
-                    except BudgetInsufficientFunds as e:
-                        _log(
-                            "reserve.app",
-                            "Subscription reservation denied (paid lane)",
-                            "WARN",
-                            error=str(e),
-                            app_reserved_usd=app_reserved_usd,
-                        )
-                        if not wallet_can_pay_turn:
-                            await _econ_fail(
-                                code="subscription_reservation_failed_paid",
-                                title="Insufficient subscription balance",
-                                message="Subscription balance cannot cover this request and no wallet credits are available.",
-                                event_type="rate_limit.subscription_exhausted",
-                                data={
-                                    "reason": "subscription_reservation_failed",
-                                    "bundle_id": bundle_id,
-                                    "subject_id": self.subj,
-                                    "user_type": user_type,
-                                    "tokens_required": int(est_turn_tokens),
-                                    "lane": lane,
-                                },
-                            )
+                from kdcube_ai_app.apps.chat.sdk.infra.economics.funding_flow import (
+                    FundingContext, reserve_paid_funding, ReserveStatus,
+                )
 
-                if not app_reservation_active:
-                    if not (plan_balance and plan_balance.has_lifetime_budget()):
+                # paid-lane reservation: the money flow is owned by the shared
+                # funding_flow.reserve_paid_funding (subscription primary then wallet).
+                _paid_ctx = FundingContext(
+                    rl=self.rl, budget_limiter=self.budget_limiter, cp_manager=self.cp_manager,
+                    tenant=tenant, project=project, user_id=user_id, subject_id=self.subj,
+                    bundle_id=bundle_id, rl_bundle_id=rl_bundle_id, scope_id=turn_id,
+                    usd_per_token=usd_per_token, now=plan_admit_now,
+                    subscription_limiter=subscription_budget_limiter,
+                    log=lambda stage, msg, level="INFO", **kv: _log(stage, msg, level, **kv),
+                )
+                _paid_outcome = await reserve_paid_funding(
+                    _paid_ctx, admit=admit, est_turn_tokens=int(est_turn_tokens),
+                    has_active_subscription=has_active_subscription,
+                    has_wallet=bool(plan_balance and plan_balance.has_lifetime_budget()),
+                    wallet_can_pay_turn=wallet_can_pay_turn, ttl_sec=900,
+                )
+
+                if _paid_outcome.status is ReserveStatus.OK:
+                    _res = _paid_outcome.reservation
+                    paid_funding_source = _res.funding_source
+                    if _res.funding_source == "subscription":
+                        app_reservation_id = _res.app_reservation_id
+                        app_reserved_usd = float(_res.app_reserved_usd or 0.0)
+                        app_reservation_active = True
+                        _log("reserve.app", "Reserved subscription balance (paid lane)",
+                             reservation_id=str(app_reservation_id), app_reserved_usd=app_reserved_usd)
+                    else:
+                        personal_reservation_id = _res.wallet_reservation_id
+                        personal_reserved_tokens = int(_res.wallet_reserved_tokens or 0)
+                        personal_reservation_active = True
+                        _log("reserve.personal", "Reserved personal tokens (paid lane)",
+                             reservation_id=personal_reservation_id, tokens_reserved=personal_reserved_tokens)
+                else:  # ReserveStatus.DENIED
+                    _pcode = _paid_outcome.deny_code or "paid_no_personal_budget"
+                    if _pcode == "paid_subscription_reservation_failed":
                         await _econ_fail(
-                            code="paid_lane_requires_personal_budget",
-                            title="Insufficient personal credits",
-                            message="Paid lane requires wallet credits.",
-                            event_type="rate_limit.denied",
+                            code="subscription_reservation_failed_paid",
+                            title="Insufficient subscription balance",
+                            message="Subscription balance cannot cover this request and no wallet credits are available.",
+                            event_type="rate_limit.subscription_exhausted",
                             data={
-                                "reason": "no_personal_budget",
+                                "reason": "subscription_reservation_failed",
                                 "bundle_id": bundle_id,
                                 "subject_id": self.subj,
                                 "user_type": user_type,
+                                "tokens_required": int(est_turn_tokens),
                                 "lane": lane,
                             },
                         )
-
-                    ok = await self.cp_manager.user_credits_mgr.reserve_lifetime_tokens(
-                        tenant=tenant,
-                        project=project,
-                        user_id=user_id,
-                        reservation_id=turn_id,
-                        tokens=int(est_turn_tokens),
-                        ttl_sec=900,
-                        bundle_id=bundle_id,
-                        notes=f"auto-reserve paid: lane=paid, est_turn={est_turn_tokens}",
-                    )
-                    if not ok:
+                    elif _pcode == "paid_wallet_reservation_failed":
                         await _econ_fail(
                             code="personal_reservation_failed_paid",
                             title="Insufficient personal credits",
@@ -1652,17 +1452,20 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
                                 "lane": lane,
                             },
                         )
-
-                    personal_reservation_id = turn_id
-                    personal_reserved_tokens = int(est_turn_tokens)
-                    personal_reservation_active = True
-                    paid_funding_source = "wallet"
-                    _log(
-                        "reserve.personal",
-                        "Reserved personal tokens (paid lane)",
-                        reservation_id=turn_id,
-                        tokens_reserved=personal_reserved_tokens,
-                    )
+                    else:  # paid_no_personal_budget
+                        await _econ_fail(
+                            code="paid_lane_requires_personal_budget",
+                            title="Insufficient personal credits",
+                            message="Paid lane requires wallet credits.",
+                            event_type="rate_limit.denied",
+                            data={
+                                "reason": "no_personal_budget",
+                                "bundle_id": bundle_id,
+                                "subject_id": self.subj,
+                                "user_type": user_type,
+                                "lane": lane,
+                            },
+                        )
         except EconomicsLimitException:
             await _cleanup_reservations("pre_run_fail")
             raise
@@ -1775,237 +1578,117 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
                     violations.append("tokens_per_month")
                 return violations
 
-            post_run_snapshot = None
-            post_run_violations = []
-            plan_settlement_allocation = None
-            plan_quota_commit_tokens = int(ranked_tokens) if lane == "plan" else 0
-            project_absorption_tokens = 0
-            project_absorption_usd = 0.0
+            # ---- post-run settlement: delegate the money core to funding_flow ----
+            # All lanes (plan project/subscription, paid wallet/subscription, bypass)
+            # settle through the shared funding_flow — single settlement owner. run()
+            # keeps only the observability shell below (charge.split log, underfunded
+            # event, post-run quota snapshot/warning, per-provider analytics).
+            from kdcube_ai_app.apps.chat.sdk.infra.economics.funding_flow import (
+                FundingContext, PlanFundingReservation, settle_plan_funding,
+            )
 
-            def _cost_for_tokens(tokens: int) -> float:
-                if int(tokens or 0) <= 0 or ranked_tokens <= 0 or total_cost <= 0:
-                    return 0.0
-                return float(total_cost) * safe_frac(float(tokens), float(ranked_tokens))
+            # snapshot the pre-commit RL reservation size (funding_flow finalizes it)
+            plan_reserved_tokens_pre = int(plan_reserved_tokens or 0)
 
-            if budget_bypass:
-                plan_covered_tokens = int(ranked_tokens)
-                plan_covered_usd = float(total_cost)
-                overflow_tokens = 0
-                overflow_usd = 0.0
-            elif lane == "paid" and use_subscription_funding:
-                plan_covered_tokens = int(ranked_tokens)
-                plan_covered_usd = float(total_cost)
-                overflow_tokens = 0
-                overflow_usd = 0.0
-            elif lane == "plan":
-                quota_available_tokens: Optional[int] = None
-                quota_reserved_tokens = 0
-                try:
-                    quota_capacity = await self.rl.token_capacity_for_reservation(
-                        bundle_id=rl_bundle_id,
-                        subject_id=self.subj,
-                        policy=effective_policy,
-                        reservation_id=plan_reservation_id if plan_reservation_active else None,
-                        reserved_tokens=int(plan_reserved_tokens or 0) if plan_reservation_active else 0,
-                        now=now,
-                    )
-                    quota_available_tokens = quota_capacity.get("available_tokens")
-                    quota_reserved_tokens = int(quota_capacity.get("own_reserved_tokens") or 0)
-                except Exception as ex:
-                    quota_available_tokens = 0 if plan_reservation_active else int(plan_project_tokens_est or 0)
-                    quota_reserved_tokens = int(plan_reserved_tokens or 0) if plan_reservation_active else 0
-                    _log(
-                        "charge.capacity",
-                        "Failed to read fresh quota capacity; using reservation estimate",
-                        "WARN",
-                        error=str(ex),
-                        quota_available_tokens=quota_available_tokens,
-                        quota_reserved_tokens=quota_reserved_tokens,
-                    )
-
-                primary_funding_available_usd: Optional[float] = 0.0
-                if funding_source == "project":
-                    try:
-                        fresh_project_budget = await self.budget_limiter.get_app_budget_balance()
-                        primary_funding_available_usd = float(fresh_project_budget.get("available_usd") or 0.0)
-                    except Exception as ex:
-                        primary_funding_available_usd = 0.0 if app_reservation_active else float(funding_available_usd or 0.0)
-                        _log(
-                            "charge.capacity",
-                            "Failed to read fresh project budget; using pre-run snapshot",
-                            "WARN",
-                            error=str(ex),
-                            primary_funding_available_usd=primary_funding_available_usd,
-                        )
-                elif funding_source == "subscription" and subscription_budget_limiter:
-                    try:
-                        fresh_subscription_budget = await subscription_budget_limiter.get_subscription_budget_balance()
-                        primary_funding_available_usd = float(fresh_subscription_budget.get("available_usd") or 0.0)
-                    except Exception as ex:
-                        primary_funding_available_usd = 0.0 if app_reservation_active else float(funding_available_usd or 0.0)
-                        _log(
-                            "charge.capacity",
-                            "Failed to read fresh subscription budget; using pre-run snapshot",
-                            "WARN",
-                            error=str(ex),
-                            primary_funding_available_usd=primary_funding_available_usd,
-                        )
-
-                wallet_available_tokens = 0
-                if plan_balance and plan_balance.has_lifetime_budget():
-                    try:
-                        wallet_balance = await self.cp_manager.user_credits_mgr.get_lifetime_balance(
-                            tenant=tenant,
-                            project=project,
-                            user_id=user_id,
-                        )
-                        wallet_available_tokens = int(wallet_balance or 0)
-                    except Exception as ex:
-                        wallet_available_tokens = max(
-                            int(user_budget_tokens or 0)
-                            - (int(personal_reserved_tokens or 0) if personal_reservation_active else 0),
-                            0,
-                        )
-                        _log(
-                            "charge.capacity",
-                            "Failed to read fresh wallet balance; using pre-run snapshot",
-                            "WARN",
-                            error=str(ex),
-                            wallet_available_tokens=wallet_available_tokens,
-                        )
-
-                plan_settlement_allocation = allocate_plan_wallet_settlement(
-                    PlanWalletSettlementInput(
-                        actual_tokens=int(ranked_tokens),
-                        actual_cost_usd=float(total_cost),
-                        quota_available_tokens=quota_available_tokens,
-                        quota_reserved_tokens=int(quota_reserved_tokens),
-                        primary_funding_available_usd=primary_funding_available_usd,
-                        primary_funding_reserved_usd=float(app_reserved_usd or 0.0) if app_reservation_active else 0.0,
-                        primary_funding_reserved_tokens=int(plan_project_tokens_est or 0),
-                        wallet_available_tokens=int(wallet_available_tokens),
-                        wallet_reserved_tokens=int(personal_reserved_tokens or 0) if personal_reservation_active else 0,
-                    )
-                )
-                plan_covered_tokens = int(plan_settlement_allocation.primary_funding_tokens)
-                plan_covered_usd = float(plan_settlement_allocation.primary_funding_usd)
-                overflow_tokens = max(int(ranked_tokens) - int(plan_covered_tokens), 0)
-                overflow_usd = max(float(total_cost) - float(plan_covered_usd), 0.0)
-                project_absorption_tokens = int(plan_settlement_allocation.project_absorption_tokens)
-                project_absorption_usd = float(plan_settlement_allocation.project_absorption_usd)
-                plan_quota_commit_tokens = int(plan_settlement_allocation.quota_tokens)
+            # map run()'s lane/funding onto the shared reservation's funding_source
+            if lane == "paid" and use_subscription_funding:
+                _settle_funding_source = "subscription"
+                _settle_paid_lane = True
+            elif lane == "paid":
+                _settle_funding_source = "wallet"
+                _settle_paid_lane = False
             else:
-                plan_covered_tokens = 0
-                plan_covered_usd = 0.0
-                overflow_tokens = int(ranked_tokens)
-                overflow_usd = float(total_cost)
+                _settle_funding_source = funding_source
+                _settle_paid_lane = False
+
+            _settle_res = PlanFundingReservation(
+                funding_source=_settle_funding_source,
+                budget_bypass=budget_bypass,
+                est_turn_tokens=int(est_turn_tokens),
+                plan_reservation_id=plan_reservation_id,
+                plan_reserved_tokens=int(plan_reserved_tokens or 0),
+                plan_reservation_active=bool(plan_reservation_active),
+                app_reservation_id=app_reservation_id,
+                app_reserved_usd=float(app_reserved_usd or 0.0),
+                app_reservation_active=bool(app_reservation_active),
+                plan_project_tokens_est=int(plan_project_tokens_est or 0),
+                wallet_reservation_id=personal_reservation_id,
+                wallet_reserved_tokens=int(personal_reserved_tokens or 0),
+                wallet_reservation_active=bool(personal_reservation_active),
+                has_wallet=bool(has_wallet),
+                paid_lane=_settle_paid_lane,
+            )
+            _settle_ctx = FundingContext(
+                rl=self.rl,
+                budget_limiter=self.budget_limiter,
+                cp_manager=self.cp_manager,
+                tenant=tenant,
+                project=project,
+                user_id=user_id,
+                subject_id=self.subj,
+                bundle_id=bundle_id,
+                rl_bundle_id=rl_bundle_id,
+                scope_id=turn_id,
+                usd_per_token=usd_per_token,
+                now=plan_admit_now,
+                subscription_limiter=subscription_budget_limiter,
+                log=lambda stage, msg, level="INFO", **kv: _log(stage, msg, level, **kv),
+            )
+            settlement = await settle_plan_funding(
+                _settle_ctx,
+                _settle_res,
+                ranked_tokens=int(ranked_tokens),
+                total_cost_usd=float(total_cost),
+                effective_policy=effective_policy,
+                plan_has_lifetime_budget=bool(plan_balance and plan_balance.has_lifetime_budget()),
+                user_budget_tokens=user_budget_tokens,
+            )
+
+            # funding_flow finalized the RL reservation + lock and committed every hold;
+            # mark run()'s inline handles consumed so the finally-cleanup is a no-op.
+            lock_released = True
+            plan_reservation_active = False
+            plan_reservation_id = None
+            plan_reserved_tokens = 0
+            app_reservation_active = False
+            personal_reservation_active = False
+
+            # settlement result -> the observability vars run() keeps
+            plan_settlement_allocation = settlement.allocation
+            plan_covered_usd = float(settlement.primary_funding_usd)
+            project_absorption_usd = float(settlement.project_absorption_usd)
+            plan_quota_commit_tokens = int(settlement.quota_commit_tokens)
+            wallet_consumed_tokens = int(settlement.wallet_consumed_tokens)
+            user_uncovered_tokens = int(settlement.user_uncovered_tokens)
+            user_uncovered_usd = float(settlement.user_uncovered_usd)
+            extra_project_items = list(settlement.extra_project_items or [])
+            app_spend_usd = float(settlement.primary_funding_usd)
+            user_target_tokens = int(wallet_consumed_tokens) + int(user_uncovered_tokens)
 
             _log(
                 "charge.split",
-                "Computed actual split",
+                "Computed actual split (settled via funding_flow)",
                 ranked_tokens=ranked_tokens,
-                funding_source=funding_source,
-                plan_covered_tokens=plan_covered_tokens,
-                overflow_tokens=overflow_tokens,
-                wallet_tokens=int(plan_settlement_allocation.wallet_tokens) if plan_settlement_allocation else None,
-                project_absorption_tokens=project_absorption_tokens,
-                quota_tokens=plan_quota_commit_tokens if lane == "plan" else None,
-                primary_funding_reserved_tokens=int(plan_project_tokens_est or 0) if lane == "plan" else None,
-                total_cost=total_cost,
+                funding_source=_settle_funding_source,
                 plan_covered_usd=plan_covered_usd,
-                overflow_usd=overflow_usd,
-                wallet_usd=float(plan_settlement_allocation.wallet_usd) if plan_settlement_allocation else None,
                 project_absorption_usd=project_absorption_usd,
+                quota_tokens=plan_quota_commit_tokens if lane == "plan" else None,
+                wallet_tokens=int(plan_settlement_allocation.wallet_tokens) if plan_settlement_allocation else None,
+                wallet_consumed_tokens=wallet_consumed_tokens,
+                user_uncovered_tokens=user_uncovered_tokens,
+                user_uncovered_usd=user_uncovered_usd,
+                total_cost=total_cost,
             )
 
-            if lane == "paid" and use_subscription_funding:
-                user_target_tokens = 0
-            elif lane == "paid":
-                user_target_tokens = int(ranked_tokens)
-            elif plan_settlement_allocation is not None:
-                user_target_tokens = int(plan_settlement_allocation.wallet_tokens)
-            else:
-                user_target_tokens = 0
-
-            if (
-                user_target_tokens > 0
-                and personal_reservation_active
-                and personal_reserved_tokens > 0
-                and int(user_target_tokens) > int(personal_reserved_tokens)
-            ):
-                _log(
-                    "reserve.personal",
-                    "Actual personal spend exceeded reserved amount",
-                    "WARN",
-                    lane=lane,
-                    user_target_tokens=int(user_target_tokens),
-                    personal_reserved_tokens=int(personal_reserved_tokens),
-                    overflow_tokens=int(user_target_tokens) - int(personal_reserved_tokens),
-                )
-
-            user_uncovered_tokens = 0
-            wallet_consumed_tokens = 0
-            if user_target_tokens > 0 and not budget_bypass:
-                remaining_user_target = int(user_target_tokens)
-                if personal_reservation_active and personal_reservation_id and personal_reserved_tokens > 0:
-                    rid = str(personal_reservation_id)
-                    reserved_target = min(int(remaining_user_target), int(personal_reserved_tokens))
-                    try:
-                        reserved_uncovered = await self.cp_manager.user_credits_mgr.commit_reserved_lifetime_tokens(
-                            tenant=tenant,
-                            project=project,
-                            user_id=user_id,
-                            reservation_id=rid,
-                            tokens=int(reserved_target),
-                        )
-                    finally:
-                        personal_reservation_active = False
-                    reserved_consumed = max(int(reserved_target) - int(reserved_uncovered or 0), 0)
-                    wallet_consumed_tokens += int(reserved_consumed)
-                    remaining_user_target = max(int(remaining_user_target) - int(reserved_consumed), 0)
-
-                if remaining_user_target > 0:
-                    user_uncovered_tokens = await self.cp_manager.user_credits_mgr.consume_lifetime_tokens(
-                        tenant=tenant,
-                        project=project,
-                        user_id=user_id,
-                        tokens=int(remaining_user_target),
-                    )
-                    wallet_consumed_tokens += max(int(remaining_user_target) - int(user_uncovered_tokens or 0), 0)
-
-            if personal_reservation_active and user_target_tokens <= 0 and personal_reservation_id:
-                try:
-                    await self.cp_manager.user_credits_mgr.release_lifetime_token_reservation(
-                        tenant=tenant, project=project, user_id=user_id,
-                        reservation_id=personal_reservation_id,
-                        reason="run: no_user_spend",
-                    )
-                finally:
-                    personal_reservation_active = False
-
-            user_uncovered_tokens = int(user_uncovered_tokens or 0)
-            user_uncovered_usd = _cost_for_tokens(user_uncovered_tokens)
-
-            if plan_settlement_allocation is not None and user_uncovered_tokens > 0:
-                extra_quota_room = max(
-                    int(plan_settlement_allocation.quota_capacity_tokens) - int(plan_quota_commit_tokens),
-                    0,
-                )
-                extra_quota_tokens = min(int(user_uncovered_tokens), int(extra_quota_room))
-                if extra_quota_tokens > 0:
-                    plan_quota_commit_tokens += int(extra_quota_tokens)
-                    _log(
-                        "charge.split",
-                        "Wallet shortfall reallocated to remaining plan quota",
-                        extra_quota_tokens=int(extra_quota_tokens),
-                        plan_quota_commit_tokens=int(plan_quota_commit_tokens),
-                    )
-
+            post_run_snapshot = None
+            post_run_violations = []
             if effective_policy and not budget_bypass:
                 post_run_snapshot = _post_run_snapshot(
                     admit_snapshot_pre,
-                    ranked=int(plan_quota_commit_tokens) if lane == "plan" else int(ranked_tokens),
-                    reserved=int(plan_reserved_tokens),
+                    # paid lane consumes 0 plan token quota (wallet/subscription pays
+                    # at payasyougo) -> the post-run snapshot must not add ranked tokens.
+                    ranked=int(plan_quota_commit_tokens) if lane == "plan" else 0,
+                    reserved=int(plan_reserved_tokens_pre),
                     lane_name=lane,
                 )
                 try:
@@ -2017,8 +1700,12 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
                             limit=getattr(effective_policy, "tokens_per_hour", None),
                             reserved=0,
                         )
-                        commit_tokens_for_snapshot = int(plan_quota_commit_tokens) if lane == "plan" else int(ranked_tokens)
-                        post_run_snapshot["tok_hour"] = int(tok_h_now or 0) + int(commit_tokens_for_snapshot)
+                        # settle (settle_plan_funding) has already committed this turn's tokens
+                        # before we read the rolling window, so tok_h_now is the post-commit value.
+                        # Do NOT add the commit again — that double-counted the rolling hour and
+                        # produced false post-run "tokens_per_hour exceeded" violations (routing the
+                        # turn to the exhausted path even when usage was still under the limit).
+                        post_run_snapshot["tok_hour"] = int(tok_h_now or 0)
                         if reset_at:
                             post_run_snapshot["tok_hour_reset_at"] = int(reset_at)
                 except Exception as ex:
@@ -2045,136 +1732,13 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
                 )
                 _log(
                     "charge.user",
-                    f"User underfunded post-fact; {funding_label} will absorb remainder",
+                    f"User underfunded post-fact; {funding_label} absorbed remainder",
                     "WARN",
                     lane=lane,
                     user_target_tokens=int(user_target_tokens),
                     wallet_consumed_tokens=int(wallet_consumed_tokens),
                     user_uncovered_tokens=int(user_uncovered_tokens),
                     user_uncovered_usd=float(user_uncovered_usd),
-                )
-
-            extra_project_items: list[tuple[float, str]] = []
-
-            if budget_bypass:
-                app_spend_usd = float(total_cost)
-                app_note = "post-run settle: admin bypass"
-            elif lane == "paid" and use_subscription_funding:
-                app_spend_usd = float(plan_covered_usd)
-                app_note = "post-run settle: subscription_cost"
-                if app_reservation_active and app_reserved_usd is not None and float(app_spend_usd) > float(app_reserved_usd):
-                    over = float(app_spend_usd) - float(app_reserved_usd)
-                    app_spend_usd = float(app_reserved_usd)
-                    extra_project_items.append((float(over), "shortfall:subscription_overage"))
-                if user_uncovered_usd > 0:
-                    extra_project_items.append((float(user_uncovered_usd), "shortfall:wallet_subscription"))
-            elif lane == "plan" and funding_source == "subscription":
-                app_spend_usd = float(plan_covered_usd)
-                app_note = "post-run settle: subscription_cost"
-                if project_absorption_usd > 0:
-                    extra_project_items.append((float(project_absorption_usd), "shortfall:subscription_overage"))
-                if user_uncovered_usd > 0:
-                    extra_project_items.append((float(user_uncovered_usd), "shortfall:wallet_subscription"))
-            elif lane == "plan":
-                app_spend_usd = float(plan_covered_usd)
-                app_note = "post-run settle: plan_cost"
-                if project_absorption_usd > 0:
-                    project_absorption_note = "shortfall:wallet_plan" if (has_wallet or int(user_target_tokens or 0) > 0) else "shortfall:free_plan"
-                    extra_project_items.append((float(project_absorption_usd), project_absorption_note))
-                if user_uncovered_usd > 0:
-                    extra_project_items.append((float(user_uncovered_usd), "shortfall:wallet_plan"))
-            else:
-                app_spend_usd = 0.0
-                app_note = "shortfall:wallet_paid"
-                if user_uncovered_usd > 0:
-                    extra_project_items.append((float(user_uncovered_usd), "shortfall:wallet_paid"))
-
-            if app_spend_usd > 0 or (app_reservation_active and app_reservation_id):
-                if not funding_limiter:
-                    await self.budget_limiter.force_project_spend(
-                        spent_usd=float(app_spend_usd),
-                        bundle_id=rl_bundle_id,
-                        provider=None,
-                        request_id=turn_id,
-                        user_id=user_id,
-                        note=f"{app_note}; no_funding_source",
-                    )
-                    _log(
-                        "charge.app",
-                        "Force-deducted project spend (no funding source configured)",
-                        "WARN",
-                        spent_usd=float(app_spend_usd),
-                        plan_covered_usd=float(plan_covered_usd),
-                        user_uncovered_usd=float(user_uncovered_usd),
-                    )
-                elif app_reservation_active and app_reservation_id:
-                    if funding_source == "subscription":
-                        await funding_limiter.commit_reserved_spend(
-                            reservation_id=app_reservation_id,
-                            spent_usd=float(app_spend_usd),
-                            project_budget=self.budget_limiter,
-                        )
-                    else:
-                        await funding_limiter.commit_reserved_spend(
-                            reservation_id=app_reservation_id,
-                            spent_usd=float(app_spend_usd),
-                        )
-                    app_reservation_active = False
-                    _log(
-                        "charge.app",
-                        f"Committed {funding_label} reservation (post-run settle)",
-                        reservation_id=str(app_reservation_id),
-                        spent_usd=float(app_spend_usd),
-                        plan_covered_usd=float(plan_covered_usd),
-                        user_uncovered_usd=float(user_uncovered_usd),
-                    )
-                else:
-                    if funding_source == "project":
-                        await self.budget_limiter.force_project_spend(
-                            spent_usd=float(app_spend_usd),
-                            bundle_id=bundle_id,
-                            provider=None,
-                            request_id=turn_id,
-                            user_id=user_id,
-                            note=app_note,
-                        )
-                    else:
-                        # Subscriptions never go negative. If we get here without a reservation,
-                        # charge the project budget as an overage for auditability.
-                        await self.budget_limiter.force_project_spend(
-                            spent_usd=float(app_spend_usd),
-                            bundle_id=bundle_id,
-                            provider=None,
-                            request_id=turn_id,
-                            user_id=user_id,
-                            note="shortfall:subscription_overage; no_reservation",
-                        )
-                        app_note = "shortfall:subscription_overage; no_reservation"
-                    _log(
-                        "charge.app",
-                        "Force-deducted project spend (no reservation)",
-                        spent_usd=float(app_spend_usd),
-                        plan_covered_usd=float(plan_covered_usd),
-                        user_uncovered_usd=float(user_uncovered_usd),
-                    )
-
-            for extra_spend_usd, extra_note in extra_project_items:
-                if extra_spend_usd <= 0:
-                    continue
-                await self.budget_limiter.force_project_spend(
-                    spent_usd=float(extra_spend_usd),
-                    bundle_id=bundle_id,
-                    provider=None,
-                    request_id=turn_id,
-                    user_id=user_id,
-                    note=extra_note,
-                )
-                _log(
-                    "charge.app",
-                    "Project budget absorbed shortfall",
-                    spent_usd=float(extra_spend_usd),
-                    note=extra_note,
-                    funding_source=funding_source,
                 )
 
             if app_spend_usd > 0 and total_cost > 0:
@@ -2195,51 +1759,6 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
                         now=now,
                     )
 
-            if not lock_released:
-                if lane == "plan":
-                    tokens_to_commit = int(plan_quota_commit_tokens)
-                else:
-                    tokens_to_commit = int(ranked_tokens) if ranked_tokens > 0 else int(plan_covered_tokens)
-                if lane == "plan":
-                    await self.rl.commit_with_reservation(
-                        bundle_id=rl_bundle_id,
-                        subject_id=self.subj,
-                        tokens=tokens_to_commit,
-                        lock_id=lock_id,
-                        reservation_id=plan_reservation_id,
-                        now=plan_admit_now,
-                        inc_request=1,
-                    )
-                    lock_released = True
-                    plan_reservation_active = False
-                    plan_reservation_id = None
-                    plan_reserved_tokens = 0
-                    _log(
-                        "rl.commit",
-                        "RL committed (actual tokens) and lock released (reservation finalized)",
-                        tokens=tokens_to_commit,
-                    )
-                elif lane == "paid":
-                    await self.rl.commit_with_reservation(
-                        bundle_id=rl_bundle_id,
-                        subject_id=self.subj,
-                        tokens=tokens_to_commit,
-                        lock_id=lock_id,
-                        reservation_id=None,
-                        now=plan_admit_now,
-                        inc_request=1,
-                    )
-                    lock_released = True
-                    _log(
-                        "rl.commit",
-                        "RL committed (paid lane)",
-                        tokens=tokens_to_commit,
-                    )
-                else:
-                    await self.rl.release(bundle_id=rl_bundle_id, subject_id=self.subj, lock_id=lock_id)
-                    lock_released = True
-                    _log("rl.release", "RL lock released", lane=lane)
-
             if not post_run_violations and post_run_snapshot and not budget_bypass:
                 post_insight = compute_quota_insight(
                     policy=effective_policy,
@@ -2257,34 +1776,45 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
                     or (pr_tok is not None and pr_tok < int(est_turn_tokens))
                 ):
                     if pr_mr is not None and pr_mr == 0:
-                        # Synthesize the exhausted dimension so _format_reset_time can produce a specific time
                         rem = post_insight.remaining
-                        exhausted = []
-                        if rem.get("requests_per_day") == 0 and getattr(effective_policy, "requests_per_day", None) is not None:
-                            exhausted.append("requests_per_day")
-                        if rem.get("requests_per_month") == 0 and getattr(effective_policy, "requests_per_month", None) is not None:
-                            exhausted.append("requests_per_month")
-                        if rem.get("tokens_per_hour") == 0 and getattr(effective_policy, "tokens_per_hour", None) is not None:
-                            exhausted.append("tokens_per_hour")
-                        if rem.get("tokens_per_day") == 0 and getattr(effective_policy, "tokens_per_day", None) is not None:
-                            exhausted.append("tokens_per_day")
-                        exhausted_insight = compute_quota_insight(
-                            policy=effective_policy,
-                            snapshot=post_run_snapshot,
-                            reason="|".join(exhausted) if exhausted else None,
-                            used_plan_override=admit.used_plan_override if admit else False,
-                            user_budget_tokens=user_budget_tokens,
-                            est_tokens_per_turn=est_turn_tokens,
-                        )
-                        reset_text = _format_reset_time(
-                            retry_after_sec=exhausted_insight.retry_after_sec,
-                            now=now,
-                            user_timezone=getattr(self.comm_context.user, "timezone", None) if self.comm_context and self.comm_context.user else None,
-                        ) if exhausted_insight.retry_after_sec else None
-                        if reset_text:
-                            warning_user_message = msg_warning_last_msg_reset(reset_text)
+                        req_candidates = [rem.get(k) for k in ("requests_per_day", "requests_per_month", "total_requests") if rem.get(k) is not None]
+                        request_remaining = min(req_candidates) if req_candidates else None
+                        request_exhausted = request_remaining is not None and request_remaining <= 0
+                        if (not request_exhausted) and pr_tok is not None and pr_tok > 0:
+                            # Token budget is the binding constraint and a sub-turn remainder is
+                            # left (requests still available): surface the token balance instead of
+                            # a bare "last message". Without this the low-tokens message is
+                            # unreachable — messages_remaining is always 0 once the spendable token
+                            # balance drops below one turn's estimate (total_token_remaining < est).
+                            warning_user_message = msg_warning_low_tokens(max(int(pr_tok) // 1000, 1))
                         else:
-                            warning_user_message = MSG_WARNING_LAST_MSG_SOON
+                            # Synthesize the exhausted dimension so _format_reset_time can produce a specific time
+                            exhausted = []
+                            if rem.get("requests_per_day") == 0 and getattr(effective_policy, "requests_per_day", None) is not None:
+                                exhausted.append("requests_per_day")
+                            if rem.get("requests_per_month") == 0 and getattr(effective_policy, "requests_per_month", None) is not None:
+                                exhausted.append("requests_per_month")
+                            if rem.get("tokens_per_hour") == 0 and getattr(effective_policy, "tokens_per_hour", None) is not None:
+                                exhausted.append("tokens_per_hour")
+                            if rem.get("tokens_per_day") == 0 and getattr(effective_policy, "tokens_per_day", None) is not None:
+                                exhausted.append("tokens_per_day")
+                            exhausted_insight = compute_quota_insight(
+                                policy=effective_policy,
+                                snapshot=post_run_snapshot,
+                                reason="|".join(exhausted) if exhausted else None,
+                                used_plan_override=admit.used_plan_override if admit else False,
+                                user_budget_tokens=user_budget_tokens,
+                                est_tokens_per_turn=est_turn_tokens,
+                            )
+                            reset_text = _format_reset_time(
+                                retry_after_sec=exhausted_insight.retry_after_sec,
+                                now=now,
+                                user_timezone=getattr(self.comm_context.user, "timezone", None) if self.comm_context and self.comm_context.user else None,
+                            ) if exhausted_insight.retry_after_sec else None
+                            if reset_text:
+                                warning_user_message = msg_warning_last_msg_reset(reset_text)
+                            else:
+                                warning_user_message = MSG_WARNING_LAST_MSG_SOON
                     elif pr_mr is not None and pr_mr == 1:
                         # Check if the binding constraint is requests or tokens
                         rem = post_insight.remaining

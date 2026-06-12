@@ -107,6 +107,7 @@ class StatsTelemetryTarget:
 
     endpoint_url: str
     token: str = ""
+    token_header: str = "Authorization"
     headers: Mapping[str, str] = field(default_factory=dict)
     timeout_seconds: float = 10.0
 
@@ -117,10 +118,18 @@ class StatsTelemetryTarget:
     def request_headers(self) -> Dict[str, str]:
         headers = {"Content-Type": "application/json"}
         headers.update({str(k): str(v) for k, v in dict(self.headers or {}).items()})
-        has_authorization = any(str(key).lower() == "authorization" for key in headers)
-        if self.token:
-            headers.setdefault("Authorization", f"Bearer {self.token}")
-        elif not has_authorization:
+        token_header = str(self.token_header or "Authorization").strip() or "Authorization"
+        has_token_header = any(str(key).lower() == token_header.lower() for key in headers)
+        if self.token and not has_token_header:
+            # The platform gateway only JWT-parses `Authorization: Bearer ...`. When the
+            # telemetry secret is carried under a non-Authorization header it never trips
+            # the gateway's JWT parser (no "Not enough segments" warning). Send the raw
+            # secret there; the receiver strips an optional "Bearer " prefix either way.
+            if token_header.lower() == "authorization":
+                headers[token_header] = f"Bearer {self.token}"
+            else:
+                headers[token_header] = self.token
+        elif not self.token and not has_token_header:
             raise ValueError("StatsTelemetryTarget requires a bearer token or Authorization header")
         return headers
 
