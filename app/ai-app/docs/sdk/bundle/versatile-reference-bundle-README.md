@@ -32,10 +32,10 @@ This is the bundle to study first.
 | Entry point and graph bootstrap | `entrypoint.py` |
 | React workflow orchestration | `orchestrator/workflow.py` |
 | Economics + cross-conversation memory entrypoint | `entrypoint.py` via `BaseEntrypointWithEconomicsAndMemory` |
-| Bundle-local memory/preference tools | `tools/preference_tools.py` |
+| Bundle-owned default ReAct tool policy | `consumer_surfaces.py`, `config/bundles.template.yaml` |
 | Bundle-local skills | `skills_descriptor.py` and bundle `skills/` tree |
 | Effective bundle props and defaults | `entrypoint.py`, `config/bundles.template.yaml` |
-| Bundle secrets; prefer `await get_secret("b:...")` in async code | `config/bundles.secrets.template.yaml`, `tools/preference_tools.py` |
+| Bundle secrets; prefer `await get_secret("b:...")` in async code | `config/bundles.secrets.template.yaml`, `entrypoint.py` |
 | Bundle storage layout | `preferences_store.py`, `docs/storage/README.md` |
 | Active iframe main scene | `ui/scene`, `entrypoint.py`, `docs/design/scene-sdk-components.md` |
 | SDK chat widget mount | `ui.widgets.versatile_chat` in `entrypoint.py` and `config/bundles.template.yaml` |
@@ -48,7 +48,7 @@ This is the bundle to study first.
 | Federated Data Bus claim for Telegram WebApp | `entrypoint.py:telegram_federated_data_bus_claim` |
 | Data Bus handler and browser probe | `entrypoint.py:data_bus_echo`, `ui/widgets/versatile_webapp/src/store/dataBusClient.ts` |
 | Canvas Data Bus mutation path | `entrypoint.py` handler for subject `canvas.patch` |
-| MCP connector declarations | `tools_descriptor.py` |
+| MCP connector declarations | `surfaces.as_consumer.agents.main.tools` in config |
 
 When studying the entrypoint, pay attention to lifecycle inheritance. A bundle
 that subclasses the `BaseEntrypoint` family and overrides `on_bundle_load(...)`
@@ -79,10 +79,9 @@ subagent integration:
 9. `ui/widgets/versatile_webapp/src/App.tsx`
 10. `ui/widgets/versatile_webapp/src/store/dataBusClient.ts`
 11. `ui/main/src/App.tsx`
-12. `tools_descriptor.py`
+12. `consumer_surfaces.py`
 13. `skills_descriptor.py`
-14. `tools/preference_tools.py`
-15. bundle-local tests under `tests/`
+14. bundle-local tests under `tests/`
 
 `ui/main` is no longer the active main-view reference. Keep it in the study
 order only when comparing the older bundle-owned chat implementation with the
@@ -130,8 +129,6 @@ Secret props demonstrated here include:
 - `telemetry_sink.auth.token`
 - `integrations.telegram.bot_token`
 - `integrations.telegram.webhook_secret`
-- `mcp.preferences.auth.shared_token`
-- `preferences.snapshot_hmac_key`
 
 The active main scene imports the SDK canvas component as a shared source:
 

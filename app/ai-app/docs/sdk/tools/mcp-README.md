@@ -2,8 +2,8 @@
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/tools/mcp-README.md
 title: "MCP"
 summary: "MCP tool integration: agent-scoped allow-lists, bundle-props MCP service config, named-secret auth, and runtime execution flow (host + isolated)."
-tags: ["sdk", "tools", "mcp", "runtime", "descriptor", "transport", "auth"]
-keywords: ["surfaces.as_consumer", "MCP_TOOL_SPECS", "MCP_SERVICES", "MCPToolsSubsystem", "mcp.<alias>.<tool>", "stdio", "http", "streamable-http", "sse", "oauth_gui", "tool_call"]
+tags: ["sdk", "tools", "mcp", "runtime", "transport", "auth"]
+keywords: ["surfaces.as_consumer", "MCP_SERVICES", "MCPToolsSubsystem", "mcp.<alias>.<tool>", "stdio", "http", "streamable-http", "sse", "oauth_gui", "tool_call"]
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/tools/tool-subsystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/tools/custom-tools-README.md
@@ -21,7 +21,7 @@ see_also:
 
 This document covers MCP (Model Context Protocol) as a tool provider in the SDK.
 
-For shared tool-subsystem behavior (`TOOLS_SPECS`, alias resolution, isolated supervisor flow), see [Tool Subsystem](./tool-subsystem-README.md).
+For shared tool-subsystem behavior (agent-scoped config, alias resolution, isolated supervisor flow), see [Tool Subsystem](./tool-subsystem-README.md).
 
 ## What you configure
 
@@ -62,9 +62,9 @@ Rules:
 - A concrete list is an allow-list.
 - Multiple agents can connect to the same MCP server with different allow-lists.
 
-`tools_descriptor.py` may still expose `MCP_TOOL_SPECS` as a resolved runtime
-adapter, but it should be derived from `surfaces.as_consumer` rather than being
-the authoritative source. `tools.agents` is a legacy fallback for old bundles.
+The runtime resolves MCP entries from `surfaces.as_consumer` into MCP tool specs
+with `agent_tool_config_from_bundle_props(...)`. `tools.agents` is a legacy
+fallback for old bundles.
 
 ### 2) Bundle props: `mcp.services`
 
@@ -386,7 +386,7 @@ mcp:
 ## Troubleshooting
 
 - No MCP tools in catalog:
-  - check `MCP_TOOL_SPECS` has the server alias entry.
+  - check `surfaces.as_consumer.agents.<agent>.tools` has the server alias entry.
   - check bundle props `mcp.services` has a matching `server_id` (or legacy `MCP_SERVICES` fallback).
   - validate transport fields (`command` for stdio, `url` for http/sse).
   - verify auth is not interactive (`oauth_gui`).

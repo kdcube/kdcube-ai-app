@@ -459,7 +459,8 @@ applications/playground/bundles/task-tracker@1-0/tests/test_named_service_provid
    provider-backed block production and `react.pull` materialization.
 3. Configure `surfaces.as_consumer.ui.canvas.resolvers` when canvas/chat object
    actions should resolve refs in the namespace.
-4. Extend tool specs with `extend_tool_specs_for_named_services(...)`.
+4. Declare `kind: named_service` under
+   `surfaces.as_consumer.agents.<agent>.tools`.
 5. Register artifact rehosters with
    `register_configured_named_service_artifact_rehosters(...)`.
 6. Register namespace event sources with
@@ -471,7 +472,7 @@ Current versatile reference points:
 
 ```text
 src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/entrypoint.py
-src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/tools_descriptor.py
+src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/consumer_surfaces.py
 src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/orchestrator/workflow.py
 ```
 

@@ -653,9 +653,9 @@ Behavior:
 - `MCP_SERVICES` env is still accepted only as a legacy/local-dev fallback when
   `mcp.services` is not configured in bundle props.
 
-This property works together with `MCP_TOOL_SPECS` from the bundle
-`tools_descriptor.py`:
-- `MCP_TOOL_SPECS` controls which MCP tools are exposed
+This property works together with MCP entries under
+`surfaces.as_consumer.agents.<agent>.tools`:
+- `surfaces.as_consumer` controls which MCP tools are exposed
 - `mcp.services` controls how those MCP servers are connected and authenticated
 
 Storage summary:

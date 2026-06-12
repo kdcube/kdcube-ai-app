@@ -3,7 +3,7 @@ id: repo:kdcube-ai-app/app/ai-app/docs/sdk/tools/tool-subsystem-README.md
 title: "Tool Subsystem"
 summary: "Canonical runtime flow for agent-scoped tool wiring: surfaces.as_consumer config, descriptor adapters, dynamic loading, binding, and execution in in-memory and isolated modes."
 tags: ["sdk", "tools", "subsystem", "runtime", "descriptor", "isolation", "mcp", "binding"]
-keywords: ["surfaces.as_consumer", "agent tool config", "tools_descriptor.py", "TOOLS_SPECS", "MCP_TOOL_SPECS", "TOOL_RUNTIME", "ToolSubsystem", "resolve_codegen_tools_specs", "io_tools.tool_call", "ToolStub", "py_code_exec_entry.py", "rewrite_runtime_globals_for_bundle", "bind_module_target", "_SERVICE", "_INTEGRATIONS"]
+keywords: ["surfaces.as_consumer", "agent tool config", "ToolSubsystem", "resolve_codegen_tools_specs", "io_tools.tool_call", "ToolStub", "py_code_exec_entry.py", "rewrite_runtime_globals_for_bundle", "bind_module_target", "_SERVICE", "_INTEGRATIONS"]
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/tools/custom-tools-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/tools/mcp-README.md
@@ -90,12 +90,12 @@ Named-service catalog entries render only `namespaces applicable`, so ReAct can
 see which configured namespaces support each generic tool without seeing
 provider protocol operation ids.
 
-At runtime, `agent_tool_config_from_bundle_props(...)` converts this descriptor
+At runtime, `agent_tool_config_from_bundle_props(...)` converts this config
 into:
 
 - module tool specs
 - MCP tool specs
-- `TOOL_RUNTIME` overrides
+- tool runtime overrides
 - allowed aliases
 - per-alias allowed tool names
 
@@ -103,11 +103,28 @@ ReAct passes both allowed aliases and per-alias allowed tool names to
 `ToolSubsystem`. That means a source can be loaded for one agent while another
 agent in the same bundle sees a different subset.
 
-## Descriptor adapter wiring
+## Runtime Wiring
 
-`tools_descriptor.py` is imported by bundle code and passed to `create_tool_subsystem_with_mcp(...)` as data:
+Bundle workflow code resolves the active agent config and passes the resolved
+specs to `create_tool_subsystem_with_mcp(...)`:
 
 ```python
+from kdcube_ai_app.apps.chat.sdk.runtime.tool_config import (
+    agent_tool_config_from_bundle_props,
+    bundle_props_with_default_agent_tools,
+)
+
+effective_props = bundle_props_with_default_agent_tools(
+    self.bundle_props,
+    default_bundle_props=default_as_consumer_surfaces_props(),
+)
+tool_config = agent_tool_config_from_bundle_props(
+    effective_props,
+    agent_id,
+    bundle_root=BUNDLE_ROOT,
+    default_agent_id="main",
+)
+
 tool_subsystem, _ = create_tool_subsystem_with_mcp(
     service=self.model_service,
     comm=self.comm,
@@ -115,25 +132,22 @@ tool_subsystem, _ = create_tool_subsystem_with_mcp(
     bundle_spec=self.config.ai_bundle_spec,
     context_rag_client=self.ctx_client,
     registry={"kb_client": self.kb},
-    raw_tool_specs=tools_descriptor.TOOLS_SPECS,
-    tool_runtime=getattr(tools_descriptor, "TOOL_RUNTIME", None),
-    mcp_tool_specs=getattr(tools_descriptor, "MCP_TOOL_SPECS", []),
+    raw_tool_specs=tool_config.tool_specs,
+    tool_runtime=tool_config.tool_runtime,
+    mcp_tool_specs=tool_config.mcp_tool_specs,
     mcp_env_json=os.environ.get("MCP_SERVICES") or "",
 )
 ```
 
-The subsystem does not auto-scan `tools_descriptor.py` on disk. The workflow decides what is loaded.
-
-New bundles should keep `tools_descriptor.py` thin: read
-`surfaces.as_consumer.agents.<agent_id>.tools` with
-`agent_tool_config_from_bundle_props(...)`, then pass the resolved specs to the
-runtime. This keeps tool exposure configuration-driven while preserving one code
-path for in-process and isolated execution. `tools.agents` is a legacy fallback
-for older bundles, not the preferred policy surface.
+The subsystem does not auto-scan bundle files on disk. The workflow decides what
+is loaded. New bundles should keep the authoritative tool policy in
+`surfaces.as_consumer.agents.<agent_id>.tools`; bundle code may provide fallback
+defaults, but those defaults are input to the same resolver. `tools.agents` is a
+legacy fallback for older bundles, not the preferred policy surface.
 
 ## `module` vs `ref` resolution
 
-`TOOLS_SPECS` entries are portable:
+Resolved Python tool spec entries are portable:
 - `module`: importable Python module path.
 - `ref`: file path relative to the bundle root.
 
@@ -249,7 +263,7 @@ also builds an `EventSourceSubsystem`. This registry is attached to
 `announce_production`, and `compaction_projection`.
 
 Discovery includes:
-- all loaded `TOOLS_SPECS` modules;
+- all loaded Python tool spec modules;
 - built-in ReAct source declarations such as `react.followup`, `react.steer`,
   `react.write`, and `react.memsearch`;
 - explicit `event_specs` modules passed when the workflow creates the tool
@@ -401,7 +415,7 @@ Tool modules do **not** currently get an automatic per-tool or per-bundle
 dependency installation step analogous to bundle `@venv(...)`.
 
 Current practical rule:
-- bundle-local tools loaded through `TOOLS_SPECS` are imported into the current
+- bundle-local tools loaded through resolved tool specs are imported into the current
   interpreter for that execution mode
 - in-memory tool execution means imports must resolve in the proc runtime
 - isolated tool execution means imports must resolve in the isolated runtime /

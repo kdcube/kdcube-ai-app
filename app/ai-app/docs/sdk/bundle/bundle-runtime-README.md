@@ -793,7 +793,7 @@ Relevant code:
 - `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/tool_module_bindings.py`
 
 What happens:
-1. `tools_descriptor.py` is passed into `create_tool_subsystem_with_mcp(...)`
+1. resolved agent tool specs are passed into `create_tool_subsystem_with_mcp(...)`
 2. `ToolSubsystem` resolves `module` / `ref` entries
 3. each tool module is loaded
 4. runtime binds service/integrations/registry centrally

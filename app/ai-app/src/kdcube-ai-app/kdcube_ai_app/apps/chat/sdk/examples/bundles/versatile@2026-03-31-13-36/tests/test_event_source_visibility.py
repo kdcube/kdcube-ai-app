@@ -4,36 +4,41 @@ from pathlib import Path
 
 from kdcube_ai_app.apps.chat.sdk.events import EventSourceSubsystem
 from kdcube_ai_app.apps.chat.sdk.runtime.dynamic_module_loader import load_dynamic_module_for_path
+from kdcube_ai_app.apps.chat.sdk.runtime.tool_config import agent_tool_config_from_bundle_props
+from kdcube_ai_app.apps.chat.sdk.solutions.canvas.events.defaults import default_canvas_event_source_specs
 
 
 def _bundle_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-def _load_bundle_module(name: str):
-    _mod_name, module = load_dynamic_module_for_path(_bundle_root() / name)
+def _consumer_surfaces():
+    _mod_name, module = load_dynamic_module_for_path(_bundle_root() / "consumer_surfaces.py")
     return module
 
 
 def test_canvas_event_source_visibility_is_separate_from_named_service_actions():
-    tools_descriptor = _load_bundle_module("tools_descriptor.py")
-    events_descriptor = _load_bundle_module("events_descriptor.py")
-
+    consumer_surfaces = _consumer_surfaces()
     tool_aliases = {
         str(spec.get("alias") or "")
-        for spec in (tools_descriptor.TOOLS_SPECS or [])
+        for spec in agent_tool_config_from_bundle_props(
+            consumer_surfaces.default_as_consumer_surfaces_props(),
+            "main",
+            bundle_root=_bundle_root(),
+        ).tool_specs
         if isinstance(spec, dict)
     }
     assert "canvas" in tool_aliases
 
-    tool_config = tools_descriptor.config_for_agent(
+    tool_config = agent_tool_config_from_bundle_props(
+        consumer_surfaces.default_as_consumer_surfaces_props(),
         "default_agent",
-        bundle_props=tools_descriptor.default_tools_props(),
+        bundle_root=_bundle_root(),
     )
     assert "object_action" not in (tool_config.allowed_tool_names_by_alias.get("named_services") or [])
 
     event_sources = EventSourceSubsystem(
-        event_specs=events_descriptor.EVENT_SOURCE_SPECS,
+        event_specs=default_canvas_event_source_specs(),
         bundle_root=_bundle_root(),
     )
 
@@ -43,9 +48,7 @@ def test_canvas_event_source_visibility_is_separate_from_named_service_actions()
 
 
 def test_reference_default_tool_config_uses_as_consumer_surface():
-    tools_descriptor = _load_bundle_module("tools_descriptor.py")
-
-    props = tools_descriptor.default_tools_props()
+    props = _consumer_surfaces().default_as_consumer_surfaces_props()
     assert "tools" not in props
 
     as_consumer = props["surfaces"]["as_consumer"]
@@ -55,7 +58,7 @@ def test_reference_default_tool_config_uses_as_consumer_surface():
     assert main["event_sources"] == []
     assert as_consumer["ui"]["canvas"]["resolvers"] == []
 
-    tool_config = tools_descriptor.config_for_agent("main", bundle_props=props)
+    tool_config = agent_tool_config_from_bundle_props(props, "main", bundle_root=_bundle_root())
     assert "canvas" in tool_config.allowed_plugins
     assert tool_config.allowed_tool_names_by_alias["canvas"] == ["patch"]
     assert tool_config.allowed_tool_names_by_alias["knowledge"] is None

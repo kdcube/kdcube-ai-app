@@ -521,7 +521,7 @@ fall back to `index.html` for client-side routing.
 
 If a bundle uses the React agent:
 - teach the agent bundle-specific behavior with skills
-- expose bundle tools via `tools_descriptor.py`
+- expose bundle tools via `surfaces.as_consumer.agents.<agent>.tools`
 - expose document/source access through explicit tools, namespace services,
   MCP/search surfaces, or registered rehosters
 

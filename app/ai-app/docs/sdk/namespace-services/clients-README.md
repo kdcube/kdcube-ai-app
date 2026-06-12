@@ -162,20 +162,28 @@ surfaces:
 
 ## Runtime Use
 
-Model-callable tools are added by extending a bundle's tool specs:
+Model-callable tools are added by declaring a named-service tool connection:
 
-```python
-from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers import (
-    extend_tool_specs_for_named_services,
-)
-
-def tools_for_client(client_id: str, *, bundle_props=None):
-    return extend_tool_specs_for_named_services(
-        BASE_TOOLS_SPECS,
-        bundle_props=bundle_props,
-        client_id=client_id,
-    )
+```yaml
+surfaces:
+  as_consumer:
+    agents:
+      main:
+        tools:
+          - id: task_service
+            kind: named_service
+            alias: named_services
+            namespaces:
+              task:
+                allowed:
+                  - provider.about
+                  - object.search
+                  - object.schema
+                  - object.upsert
 ```
+
+`agent_tool_config_from_bundle_props(...)` turns this config into the generic
+`named_services.*` tool module and per-tool namespace allow-lists.
 
 The current ReAct integration passes the ReAct agent id as the namespace
 service client id. Other runtimes can pass their own client id when their tool

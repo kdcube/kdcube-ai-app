@@ -13,6 +13,10 @@ from .resolver import (
     search_canvas_cards,
     build_default_canvas_resolver_registry,
 )
+from .defaults import (
+    DEFAULT_CANVAS_EVENT_SOURCE_SPECS,
+    default_canvas_event_source_specs,
+)
 from .focus_policies import (
     canvas_focus_announce_policy,
     canvas_focus_projection_policy,
@@ -45,7 +49,9 @@ __all__ = [
     "CanvasObjectResolver",
     "CanvasObjectResolverRegistry",
     "CanvasPinResolver",
+    "DEFAULT_CANVAS_EVENT_SOURCE_SPECS",
     "build_default_canvas_resolver_registry",
+    "default_canvas_event_source_specs",
     "default_handoff_resolvers",
     "list_event_sources",
     "namespace_for_ref",

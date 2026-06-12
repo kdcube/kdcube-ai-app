@@ -15,15 +15,15 @@ It intentionally demonstrates the main SDK bundle surfaces together in one place
 
 | Capability                             | Where to look                                                                              |
 |----------------------------------------|--------------------------------------------------------------------------------------------|
-| Minimal bundle contract                | `entrypoint.py`, `orchestrator/workflow.py`, `tools_descriptor.py`, `skills_descriptor.py` |
+| Minimal bundle contract                | `entrypoint.py`, `orchestrator/workflow.py`, `consumer_surfaces.py`, `skills_descriptor.py` |
 | React workflow                         | `entrypoint.py`, `orchestrator/workflow.py`, `agents/gate.py`                              |
 | Economics / quotas                     | `entrypoint.py` via `BaseEntrypointWithEconomics` and `app_quota_policies`                 |
 | Bundle props / effective config        | `entrypoint.py`, `orchestrator/workflow.py`                                                |
-| Bundle secrets via `get_secret(...)`   | `tools/preference_tools.py`                                                                |
-| Bundle-local tools                     | `tools/preference_tools.py`                                                                |
+| Bundle secrets via `get_secret(...)`   | `config/bundles.secrets.template.yaml`, `entrypoint.py`                                    |
+| Bundle-owned default tool policy       | `consumer_surfaces.py`, `config/bundles.template.yaml`                                     |
 | Bundle-local skills                    | `skills/product/preferences/SKILL.md`                                                      |
-| Shared bundle storage backend          | `preferences_store.py`, `entrypoint.py`, `orchestrator/workflow.py`, `tools/preference_tools.py` |
-| Agent tool consumers                   | `tools_descriptor.py`, `config/bundles.template.yaml`                                      |
+| Shared bundle storage backend          | `preferences_store.py`, `entrypoint.py`, `orchestrator/workflow.py`                        |
+| Agent tool consumers                   | `surfaces.as_consumer.agents.main.tools`, `consumer_surfaces.py`                           |
 | MCP tool consumers                     | `surfaces.as_consumer.agents.main.tools`                                                   |
 | Source-folder webapp widget            | `ui/widgets/versatile_webapp`, `entrypoint.py:versatile_webapp_widget`                     |
 | Active iframe main view                | `ui/scene`, `entrypoint.py` main-view config                                               |
@@ -78,14 +78,13 @@ documentation expected from real bundles:
   `ui/scene`.
 - The bundle heuristically captures preference statements from user messages while the chat is running.
 - Preferences are stored per user in the shared bundle storage backend (`AIBundleStorage`).
-- The solver can consult those preferences with the bundle-local tool:
-  - `preferences.get_preferences(recency, kwords)`
-- Natural-language capture and structured updates can be written through:
-  - `preferences.capture_preferences(text, source)`
-  - `preferences.set_preference(key, value, source)`
-- A storage-backend snapshot can be exported through:
-  - `preferences.export_preferences_snapshot(filename)`
-  - when secret `bundles.<bundle_id>.secrets.preferences.snapshot_hmac_key` is configured, the export is also signed and a `.sig.json` sidecar is written
+- The solver uses the SDK durable-memory tool surface configured under
+  `surfaces.as_consumer.agents.main.tools`:
+  - `memory.search_memory(...)`
+  - `memory.recent_memories(...)`
+  - `memory.record_memory(...)`
+  - `memory.confirm_memory(...)`
+  - `memory.retire_memory(...)`
 - The bundle demonstrates the reusable Telegram bot transport:
   - `telegram_webhook` receives Bot API updates through a public route guarded
     by Telegram's webhook secret header
@@ -192,9 +191,6 @@ bundles:
   items:
     - id: "versatile@2026-03-31-13-36"
       config:
-        preferences:
-          auto_capture: true
-          widget_max_events: 15
         execution:
           runtime:
             mode: docker
@@ -204,9 +200,6 @@ bundles:
             webhook_url: ""
             send_responses: true
         mcp:
-          preferences:
-            auth:
-              header_name: "X-Versatile-Preferences-MCP-Token"
           services:
             mcpServers:
               docs:
@@ -221,20 +214,10 @@ Telegram public APIs after BotFather/webhook setup is complete.
 
 ### Secrets
 
-This bundle demonstrates real secret usage in
-`tools/preference_tools.py:export_preferences_snapshot(...)`.
-
-It reads the bundle secret:
-
-```text
-bundles.<bundle_id>.secrets.preferences.snapshot_hmac_key
-```
-
-If that key exists, the bundle:
-
-- signs the exported snapshot with `get_secret(...)`
-- writes a JSON signature sidecar next to the snapshot
-- returns only metadata about the signature, never the secret value itself
+This bundle demonstrates real secret usage for telemetry and Telegram
+integration. `telemetry_sink.auth.token` is read with `get_secret(...)` when a
+telemetry endpoint is configured, and Telegram secrets are read by the webhook
+and Mini App integration paths.
 
 Example `bundles.secrets.yaml` snippet for CLI/CI provisioning:
 
@@ -244,32 +227,18 @@ bundles:
   items:
     - id: "versatile@2026-03-31-13-36"
       secrets:
-        mcp:
-          preferences:
-            auth:
-              shared_token: null
-        preferences:
-          snapshot_hmac_key: null
+        telemetry_sink:
+          auth:
+            token: "<RANDOM_TELEMETRY_SINK_BEARER_TOKEN>"
         integrations:
           telegram:
             bot_token: null
             webhook_secret: null
 ```
 
-The CLI injects that into the configured secrets provider under the bundle's
-canonical secret namespace:
-
-```text
-bundles.versatile@2026-03-31-13-36.secrets.preferences.snapshot_hmac_key
-```
-
-Bundle code normally reads it with the current-bundle shorthand:
-
-```python
-from kdcube_ai_app.apps.chat.sdk.config import get_secret
-
-snapshot_hmac_key = get_secret("b:preferences.snapshot_hmac_key")
-```
+The CLI injects those values into the configured secrets provider under the
+bundle's canonical secret namespace. Bundle code normally reads them with the
+current-bundle shorthand, for example `await get_secret("b:telemetry_sink.auth.token")`.
 
 Secrets-manager configuration:
 

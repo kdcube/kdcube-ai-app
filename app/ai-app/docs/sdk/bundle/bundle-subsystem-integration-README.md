@@ -67,7 +67,7 @@ For each subsystem, answer these questions:
 | Visibility | Which `visibility.*`, `enabled.*`, and decorator defaults control access? | Route returns "not visible to this user" or appears for the wrong users. |
 | UI source | Is this a method-rendered widget, source-folder widget, or shared SDK source? | Widget route returns placeholder JSON/HTML or blank static assets. |
 | APIs | Which operation aliases does the UI call? Are those aliases declared by the subsystem? | Widget loads but all operations fail with undefined/hidden operation. |
-| Agent tools | Which `surfaces.as_consumer.agents.<agent>.tools` entries must be enabled and adapted by `tools_descriptor.py`? | Agent sees context but cannot act on it. |
+| Agent tools | Which `surfaces.as_consumer.agents.<agent>.tools` entries must be enabled and resolved by SDK `tool_config.py`? | Agent sees context but cannot act on it. |
 | Instructions/skills | Which stable instructions and skills describe the subsystem object model? | Agent guesses wrong operations or edits the wrong owner. |
 | Event policies | Which event source modules render timeline/ANNOUNCE/compaction blocks? | Context is lost or appears as generic JSON. |
 | Namespace rehosters | Which namespace rehosters are registered for `react.pull` on owner refs such as `mem:` or `cnv:`? | Agent sees refs but cannot import exact content into its workspace. |
@@ -148,10 +148,11 @@ from kdcube_ai_app.apps.chat.sdk.solutions.canvas.api import canvas_api
 from kdcube_ai_app.apps.chat.sdk.solutions.canvas.tools import CanvasToolsPlugin
 ```
 
-Canvas currently uses bundle-provided API methods that call SDK helpers and a
-SDK tool module included from `tools_descriptor.py`. The reusable surface should
-stay in `kdcube_ai_app.apps.chat.sdk.solutions.canvas`; product-specific issue
-or task semantics stay in the product subsystem.
+Canvas currently uses bundle-provided API methods that call SDK helpers and an
+SDK tool module exposed through `surfaces.as_consumer` only when the model
+should call `canvas.patch`. The reusable surface should stay in
+`kdcube_ai_app.apps.chat.sdk.solutions.canvas`; product-specific issue or task
+semantics stay in the product subsystem.
 
 Canvas storage must be created with request-bound identity from the shared
 entrypoint/runtime helper, not with a bundle-private copy. Use
@@ -361,29 +362,29 @@ understand, mount the policy module that renders them.
 
 Do not conflate tools and events.
 
-| Surface | Descriptor | Meaning |
+| Surface | Runtime Input | Meaning |
 | --- | --- | --- |
-| Tool visibility | `surfaces.as_consumer.agents.<agent>.tools` resolved by `tools_descriptor.py` / `TOOLS_SPECS` | Callable functions the model may invoke. |
-| Event visibility | `events_descriptor.py` / `EVENT_SOURCE_SPECS` | Event sources, policies, event-source readers, and namespace rehosters the runtime may use. |
+| Tool visibility | `surfaces.as_consumer.agents.<agent>.tools` resolved by SDK `tool_config.py` | Callable functions the model may invoke. |
+| Event visibility | `event_source_specs` passed to ReAct | Event sources, policies, event-source readers, and namespace rehosters the runtime may use. |
 
 These surfaces are cumulative. Tool modules are also scanned for their own
 event declarations because tool calls produce events. Event-only modules are
-added through `EVENT_SOURCE_SPECS`; they do not replace tool module events and
+added through `event_source_specs`; they do not replace tool module events and
 they do not expose new model-callable tools.
 
 If one Python module contains both callable tools and event decorators, choose
 the descriptor based on the intended surface:
 
 - list it under `surfaces.as_consumer.agents.<agent>.tools` only when the model
-  should be able to call its tools; `tools_descriptor.py` should adapt that
-  config into `TOOLS_SPECS`;
-- list it in `EVENT_SOURCE_SPECS` when the runtime only needs its event
+  should be able to call its tools; SDK `tool_config.py` adapts that config
+  into runtime specs;
+- pass it through `event_source_specs` when the runtime only needs its event
   declarations, policies, readers, or rehosters.
 
 Reusable SDK subsystems should prefer a clean split: callable tools in a tool
 module, and owner-domain event readers/rehosters/policies in an event module.
 For example, a bundle can mount the canvas `cnv:` namespace rehoster through
-`events_descriptor.py` without exposing `canvas.patch` as an agent tool.
+`event_source_specs` without exposing `canvas.patch` as an agent tool.
 
 For each event-producing subsystem, define:
 
@@ -425,8 +426,7 @@ sources, such as `canvas.patch`.
 Example:
 
 ```python
-# events_descriptor.py
-EVENT_SOURCE_SPECS = [
+event_source_specs = [
     {
         "module": "kdcube_ai_app.apps.chat.sdk.solutions.canvas.events.resolver",
         "alias": "canvas",
@@ -435,19 +435,16 @@ EVENT_SOURCE_SPECS = [
 ```
 
 ```python
-# orchestrator/workflow.py
-from .. import events_descriptor, tools_descriptor
-
 react = self.build_react(
     scratchpad=scratchpad,
-    mod_tools_spec=tools_descriptor.TOOLS_SPECS,
-    event_source_specs=events_descriptor.EVENT_SOURCE_SPECS,
+    mod_tools_spec=tool_config.tool_specs,
+    event_source_specs=event_source_specs,
 )
 ```
 
 This makes `cnv:` refs importable through `react.pull` when the canvas resolver
 is registered. It does not make `canvas.patch` callable unless the canvas tool
-module is also listed in `TOOLS_SPECS`.
+module is also listed in `surfaces.as_consumer`.
 
 ### 8. Object Resolvers
 
@@ -564,10 +561,10 @@ entrypoint.py
   - register Data Bus handler for canvas patch subject
   - register object resolvers from task, memory, fi, and canvas-owned modules
 
-tools_descriptor.py
-  - include SDK canvas tool module
+surfaces.as_consumer
+  - includes SDK canvas tool module only when canvas.patch is model-callable
 
-events_descriptor.py
+event_source_specs
   - include SDK canvas event policy module
 
 configuration_defaults()
@@ -602,8 +599,8 @@ Validation:
 | Widget route returns placeholder JSON/HTML | `ui.widgets.<alias>` missing or disabled; static app not configured | Effective `ui.widgets`, widget build logs |
 | Widget icon missing | `@ui_widget` surface missing, `enabled.widget.<alias>: false`, or bundle manifest stale | Manifest widgets, bundle reload |
 | Widget loads but API calls fail | UI operation aliases not declared or hidden by API visibility | Manifest API endpoints and effective props |
-| Agent sees context but cannot act | Tool module or skill missing | `tools_descriptor.py`, `skills_descriptor.py`, tool catalog |
-| Timeline shows raw JSON | Event policy module not loaded or wrong `event_source_id` | `events_descriptor.py`, event policy ids |
+| Agent sees context but cannot act | Tool config or skill missing | `surfaces.as_consumer`, `skills_descriptor.py`, tool catalog |
+| Timeline shows raw JSON | Event policy module not loaded or wrong `event_source_id` | `event_source_specs`, event policy ids |
 | Canvas pin cannot open/download | Resolver for the ref namespace not registered | Resolver registry, canonical `object_ref` namespace |
 | Same SDK component works in one bundle but not another | One bundle copied UI/config but not entrypoint/API/tool/event/resolver layers | Run this checklist layer by layer |
 

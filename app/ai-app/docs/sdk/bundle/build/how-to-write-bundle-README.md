@@ -360,7 +360,6 @@ Add only the implementation folders the first milestone needs, for example:
   services/
   tools/
   events/
-  events_descriptor.py
   ui/
     main/
     widgets/
@@ -411,8 +410,8 @@ Skeleton file rules:
 
 Use this file split:
 
-- `events_descriptor.py` lists event modules loaded into the ReAct event-source
-  subsystem
+- workflow code passes event modules into ReAct through `event_source_specs`
+  when the runtime needs event-only readers, policies, or rehosters
 - `events/*.py` declares authored event sources, phase policy bindings, and
   artifact namespace rehosters
 - `tools/*.py` keeps tool implementations; tool functions can add
@@ -561,8 +560,9 @@ For the canonical runtime rationale and testing rule, see
 For tool-specific details, see
 [custom-tools-README.md#bundle-local-imports-from-ref-tools](../../tools/custom-tools-README.md#bundle-local-imports-from-ref-tools)
 and [tool-subsystem-README.md#relative-imports-inside-ref-tools](../../tools/tool-subsystem-README.md#relative-imports-inside-ref-tools).
-`tools_descriptor.py` should adapt `surfaces.as_consumer` into runtime specs; it
-should not be the policy source for which agent can call which tool.
+SDK `tool_config.py` should adapt `surfaces.as_consumer` into runtime specs; the
+bundle-owned config/defaults are the policy source for which agent can call
+which tool.
 
 ## 1B.3 Bundle Identity Rule
 
@@ -814,7 +814,7 @@ my_bundle/
   entrypoint.py
   orchestrator/
     workflow.py
-  tools_descriptor.py
+  consumer_surfaces.py # optional bundle-owned default tool policy
   skills_descriptor.py
   requirements.txt    # optional, but required when bundle-local venv code needs Python deps
   tools/
@@ -834,7 +834,7 @@ Required in practice:
 Usually present:
 
 - `orchestrator/workflow.py`
-- `tools_descriptor.py`
+- bundle-owned consumer-surface defaults, when code defaults are useful
 - `skills_descriptor.py`
 - `requirements.txt` when bundle-local Python deps are installed through `@venv(...)`
 
@@ -889,7 +889,7 @@ Study in this order:
 
 1. `entrypoint.py`
 2. `orchestrator/workflow.py`
-3. `tools_descriptor.py`
+3. `consumer_surfaces.py`
 4. `skills_descriptor.py`
 5. `ui/PreferencesBrowser.tsx`
 6. `ui/main/src/App.tsx`
@@ -921,7 +921,7 @@ Use React when the bundle's behavior should be driven by tools and skills.
 Do not put business behavior directly in a public webhook or REST method if the
 same behavior belongs to the agent.
 
-For the full integration map across React descriptors, bundle-served MCP, MCP
+For the full integration map across React tool config, bundle-served MCP, MCP
 client config, and Claude Code subagents, read
 [bundle-agent-integration-README.md](../bundle-agent-integration-README.md).
 
@@ -937,7 +937,7 @@ my.bundle@1-0/
   entrypoint.py
   orchestrator/
     workflow.py
-  tools_descriptor.py
+  consumer_surfaces.py
   skills_descriptor.py
   tools/
     task_tools.py
@@ -965,17 +965,19 @@ Workflow responsibilities:
 - construct the turn scratchpad
 - call `start_turn(...)`
 - persist the user message
-- call `build_react(...)` with `tools_descriptor` and `skills_descriptor`
+- resolve `surfaces.as_consumer` with SDK `tool_config.py`
+- call `build_react(...)` with resolved tool specs, event-source specs, and
+  `skills_descriptor`
 - run `react.run(...)`
 - call `react.persist_workspace()`
 - call `finish_turn(...)`
 
 Descriptor and consumer-surface rules:
 
-- expose bundle-local tools through
-  `surfaces.as_consumer.agents.<agent>.tools`; keep `tools_descriptor.py` as a
-  thin adapter that resolves the active agent config into `TOOLS_SPECS`,
-  `MCP_TOOL_SPECS`, `TOOL_RUNTIME`, `allowed_plugins`, and
+- expose bundle-local and SDK tools through
+  `surfaces.as_consumer.agents.<agent>.tools`; resolve the active agent config
+  with `agent_tool_config_from_bundle_props(...)` into Python specs, MCP specs,
+  tool runtime overrides, `allowed_plugins`, and
   `allowed_tool_names_by_alias`
 - expose skill prompts through `skills_descriptor.py`
 - remember that skill discovery is registry-wide: core SDK skills, SDK solution

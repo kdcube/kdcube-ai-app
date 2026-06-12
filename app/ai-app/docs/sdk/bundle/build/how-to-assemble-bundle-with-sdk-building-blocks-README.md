@@ -100,9 +100,9 @@ agent surface explicitly:
    instructions.
 3. Pass the composed text as `additional_instructions` when constructing ReAct.
 4. Register the subsystem tools and event visibility separately:
-   `tools_descriptor.py` exposes model-callable tools, while
-   `events_descriptor.py` adds event sources, policies, event-source readers,
-   and namespace rehosters. Instructions alone do not expose tools, render
+   `surfaces.as_consumer` exposes model-callable tools, while
+   `event_source_specs` add event sources, policies, event-source readers, and
+   namespace rehosters. Instructions alone do not expose tools, render
    timeline/ANNOUNCE blocks, or make refs resolvable.
 
 After selecting the block, keep
@@ -132,7 +132,7 @@ ownership.
 | PDF, DOCX, PPTX, PNG, HTML generation | `rendering_tools` plus public rendering skills | [SDK Tools](../../tools/sdk-tools-README.md) |
 | Isolated code execution and generated-code work | `exec_tools`, isolated runtime, tool bridge | [Bundle Agent Integration](../bundle-agent-integration-README.md), [SDK Tools](../../tools/sdk-tools-README.md) |
 | Context, attachments, hosted files, and conversation-scoped reads | `ctx_tools`, `io_tools`, hosting/runtime APIs | [Bundle Runtime](../bundle-runtime-README.md), [SDK Tools](../../tools/sdk-tools-README.md) |
-| ReAct agent with bundle tools and skills | `BaseWorkflow.build_react(...)`, `tools_descriptor.py`, `skills_descriptor.py`; skills are discovered from core SDK, SDK solution roots, and bundle `CUSTOM_SKILLS_ROOT`, then filtered by exact consumer id | [Bundle Agent Integration](../bundle-agent-integration-README.md) |
+| ReAct agent with bundle tools and skills | `BaseWorkflow.build_react(...)`, `surfaces.as_consumer`, `skills_descriptor.py`; skills are discovered from core SDK, SDK solution roots, and bundle `CUSTOM_SKILLS_ROOT`, then filtered by exact consumer id | [Bundle Agent Integration](../bundle-agent-integration-README.md) |
 | Per-role model routing and temporary model strength selection | `config.role_models` for defaults/descriptor overrides; `bundle_call_context.role_models` for one API/MCP/cron/chat/job call | [Bundle Agent Integration](../bundle-agent-integration-README.md#model-selection-for-agent-roles), [Bundle Runtime](../bundle-runtime-README.md#request-scoped-role-model-override) |
 | Bundle-served MCP endpoint | `@mcp(...)` | [Bundle Platform Integration](../bundle-platform-integration-README.md), [MCP Tools](../../tools/mcp-README.md) |
 | Claude Code subagent with scoped MCP/tools | `ClaudeCodeAgent`, `ClaudeCodeWorkspaceConfig` | [Bundle Agent Integration](../bundle-agent-integration-README.md) |
@@ -153,8 +153,8 @@ ownership.
 | File or layer | What belongs there |
 | --- | --- |
 | `entrypoint.py` | Decorators, route aliases, SDK module configuration, storage-root and user-scope hooks, product role policy. |
-| `tools_descriptor.py` | Tool aliases for SDK tool modules and bundle-local tool modules used by the agent. Bundle-local tools should use `ref: "tools/name.py"` and package-relative imports; `module` is for installed modules. |
-| `events_descriptor.py` | Event-source modules loaded into ReAct, including authored UI event declarations, policies, event-source readers, and custom artifact namespace rehosters. These are runtime/event surfaces, not callable tools. |
+| `surfaces.as_consumer` | Tool aliases for SDK tool modules and bundle-local tool modules used by the agent. Bundle-local tools should use `ref: "tools/name.py"` and package-relative imports; `module` is for installed modules. |
+| `event_source_specs` | Event-source modules loaded into ReAct, including authored UI event declarations, policies, event-source readers, and custom artifact namespace rehosters. These are runtime/event surfaces, not callable tools. |
 | `events/*.py` | Bundle-owned event-source declarations, phase policy bindings, and rehosters for domain artifact namespaces. |
 | `skills_descriptor.py` | Bundle-local skill root plus `AGENTS_CONFIG` filters for core SDK skills, SDK solution skills such as `task.*`, and bundle-local product skills. |
 | skill `tools.yaml` | Tool metadata for a skill; add `required: true` for tool ids that must exist before that skill is shown or loaded. |

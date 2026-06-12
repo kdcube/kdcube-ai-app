@@ -221,20 +221,22 @@ stable height so the canvas grid, cards, and bottom actions remain usable.
 
 ### Event Visibility Split
 
-Versatile now has an explicit `events_descriptor.py`.
+Superseded note: this was the original descriptor-based event visibility split.
+The current bundle resolves model-callable tools from `surfaces.as_consumer`
+and passes event-only modules as explicit ReAct `event_source_specs`.
 
 The rule is:
 
 ```text
-tools_descriptor.py  -> model-callable tools
-events_descriptor.py -> event sources, policies, readers, namespace rehosters
+agent tool config -> model-callable tools
+event-source specs -> event sources, policies, readers, namespace rehosters
 ```
 
 This was needed because Versatile should understand canvas-owned `cnv:` refs
 for `react.pull`, but it should not expose `canvas.patch` as an agent tool. The
 canvas namespace rehoster now comes from
 `kdcube_ai_app.apps.chat.sdk.solutions.canvas.events.resolver` through
-`EVENT_SOURCE_SPECS`.
+explicit event-source specs.
 
 The workflow passes those specs into `BaseWorkflow.build_react(...)`, and the
 entrypoint preview path uses the same specs when building an

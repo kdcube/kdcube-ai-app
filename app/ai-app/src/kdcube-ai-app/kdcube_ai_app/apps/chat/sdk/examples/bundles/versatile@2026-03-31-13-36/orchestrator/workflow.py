@@ -1,4 +1,6 @@
 import logging
+import traceback
+from pathlib import Path
 from typing import Any, Dict
 
 from kdcube_ai_app.apps.chat.emitters import ChatCommunicator
@@ -8,6 +10,11 @@ from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
 from kdcube_ai_app.apps.chat.sdk.context.memory.instructions import MEMORY_REACT_ADDITIONAL_INSTRUCTIONS
 from kdcube_ai_app.apps.chat.sdk.retrieval.kb_client import KBClient
 from kdcube_ai_app.apps.chat.sdk.runtime.scratchpad import CTurnScratchpad
+from kdcube_ai_app.apps.chat.sdk.runtime.tool_config import (
+    agent_tool_config_from_bundle_props,
+    bundle_props_with_default_agent_tools,
+)
+from kdcube_ai_app.apps.chat.sdk.solutions.canvas.events.defaults import default_canvas_event_source_specs
 from kdcube_ai_app.apps.chat.sdk.solutions.canvas.instructions import CANVAS_REACT_ADDITIONAL_INSTRUCTIONS
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.base_workflow import BaseWorkflow
 from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers import (
@@ -26,11 +33,13 @@ from kdcube_ai_app.infra.accounting import with_accounting
 from kdcube_ai_app.infra.service_hub.inventory import Config, ModelServiceBase
 from langgraph.graph import END, START, StateGraph
 
-from .. import events_descriptor, skills_descriptor, tools_descriptor
+from ..consumer_surfaces import default_as_consumer_surfaces_props
+from .. import skills_descriptor
 from ..agents.gate import GateOut as MinimalGateOut, gate_stream
 from ..resources.service_messages.resources import get_friendly_error_message
 
 LOGGER = logging.getLogger(__name__)
+BUNDLE_ROOT = Path(__file__).resolve().parents[1]
 
 # Channel-conditional ReAct instructions: the bundle decides at agent-construction
 # time which surface the user is reaching us through, and passes the matching
@@ -294,17 +303,20 @@ class VersatileWorkflow(BaseWorkflow):
 
             async def _react_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 client_id = getattr(getattr(self, "runtime_ctx", None), "agent_id", None)
-                tool_config = tools_descriptor.config_for_agent(
+                effective_bundle_props = bundle_props_with_default_agent_tools(
+                    self.bundle_props,
+                    default_bundle_props=default_as_consumer_surfaces_props(agent_id="main"),
+                )
+                tool_config = agent_tool_config_from_bundle_props(
+                    effective_bundle_props,
                     client_id,
-                    bundle_props=self.bundle_props,
-                ) if hasattr(tools_descriptor, "config_for_agent") else None
-                mod_tools_spec = tool_config.tool_specs if tool_config else tools_descriptor.TOOLS_SPECS
-                mcp_tools_spec = tool_config.mcp_tool_specs if tool_config else (getattr(tools_descriptor, "MCP_TOOL_SPECS", None) or [])
+                    bundle_root=BUNDLE_ROOT,
+                )
                 react = self.build_react(
-                    tools_runtime=tool_config.tool_runtime if tool_config else getattr(tools_descriptor, "TOOL_RUNTIME", None),
-                    mod_tools_spec=mod_tools_spec,
-                    mcp_tools_spec=mcp_tools_spec,
-                    event_source_specs=getattr(events_descriptor, "EVENT_SOURCE_SPECS", None) or [],
+                    tools_runtime=tool_config.tool_runtime,
+                    mod_tools_spec=tool_config.tool_specs,
+                    mcp_tools_spec=tool_config.mcp_tool_specs,
+                    event_source_specs=default_canvas_event_source_specs(),
                     custom_skills_root=skills_descriptor.CUSTOM_SKILLS_ROOT,
                     skills_visibility_agents_config=skills_descriptor.AGENTS_CONFIG or {},
                     scratchpad=scratchpad,
@@ -315,25 +327,10 @@ class VersatileWorkflow(BaseWorkflow):
                     ),
                 )
                 self._register_named_service_react_surfaces(client_id=client_id)
-                if tool_config:
-                    allowed_plugins = tool_config.allowed_plugins
-                    allowed_tool_names_by_alias = tool_config.allowed_tool_names_by_alias
-                else:
-                    allowed_plugins = [
-                        spec.get("alias")
-                        for spec in (mod_tools_spec or [])
-                        if spec.get("alias")
-                    ]
-                    for spec in (mcp_tools_spec or []):
-                        alias = spec.get("alias") or f"mcp_{spec.get('server_id')}"
-                        if alias:
-                            allowed_plugins.append(alias)
-                    allowed_plugins = list(dict.fromkeys([alias for alias in allowed_plugins if alias]))
-                    allowed_tool_names_by_alias = None
 
                 sr = await react.run(
-                    allowed_plugins=allowed_plugins,
-                    allowed_tool_names_by_alias=allowed_tool_names_by_alias,
+                    allowed_plugins=tool_config.allowed_plugins,
+                    allowed_tool_names_by_alias=tool_config.allowed_tool_names_by_alias,
                 )
                 try:
                     await react.persist_workspace()

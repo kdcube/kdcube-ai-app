@@ -3,7 +3,7 @@ id: repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-agent-integration-READM
 title: "Bundle Agent Integration"
 summary: "Canonical bundle guide for wiring React agents, bundle-local tools and skills, MCP connectors, bundle-served MCP endpoints, and Claude Code subagents with deployable auth and network requirements."
 tags: ["sdk", "bundle", "agents", "react", "claude-code", "tools", "skills", "mcp", "deployment"]
-keywords: ["bundle agent integration", "React tools descriptor", "skills descriptor", "MCP_TOOL_SPECS", "event_source_reader", "bundle served MCP", "Claude Code MCP", "ClaudeCodeAgent", "mcp_base_url", "agent runtime context"]
+keywords: ["bundle agent integration", "React tool config", "skills descriptor", "event_source_reader", "bundle served MCP", "Claude Code MCP", "ClaudeCodeAgent", "mcp_base_url", "agent runtime context"]
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-runtime-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
@@ -51,7 +51,7 @@ There are two different agent runtimes in this SDK surface.
 
 | Runtime | Who runs it | Tool source | Skill source | Typical use |
 | --- | --- | --- | --- | --- |
-| React | KDCube chat runtime | `surfaces.as_consumer.agents.<agent>.tools` resolved by `tools_descriptor.py`, SDK tools, MCP, named services | `skills_descriptor.py` and bundle `skills/` | normal chat turns, task execution turns, transport-backed assistant work |
+| React | KDCube chat runtime | `surfaces.as_consumer.agents.<agent>.tools` resolved by SDK `tool_config.py`, SDK tools, MCP, named services | `skills_descriptor.py` and bundle `skills/` | normal chat turns, task execution turns, transport-backed assistant work |
 | Claude Code | `claude` CLI subprocess | Claude built-ins plus Claude MCP config written into workspace | `CLAUDE.md`, Claude settings, future custom Claude skill support | scoped code/file/research subagent work, private sub-processing, specialized tool loops |
 
 Important:
@@ -83,7 +83,7 @@ different:
 | secrets | API keys, auth signing keys, OAuth client secrets | deployment/admin/user secret store | `await get_secret(...)`, including `await get_secret("u:...")` for user-scoped secrets |
 | custom instructions | product-specific operating rules | bundle code/config | React `additional_instructions`, Claude `CLAUDE.md` |
 | tools | callable capabilities | bundle descriptors or Claude config | React tool subsystem, Claude allowed tools/MCP |
-| MCP connectivity | how to reach MCP servers and authenticate | bundle config/code | `mcp.services`, `MCP_TOOL_SPECS`, `ClaudeCodeWorkspaceConfig` |
+| MCP connectivity | how to reach MCP servers and authenticate | bundle config/code | `mcp.services`, resolved MCP tool specs, `ClaudeCodeWorkspaceConfig` |
 | MCP server exposure | MCP server implemented by the bundle | bundle entrypoint | `@mcp(...)` plus bundle-owned auth |
 | streaming | progress, deltas, steps, subsystem events | agent runtime | communicator |
 | persistence | durable state, artifacts, workspace/session files | bundle/runtime | bundle storage, conversation store, Claude workspace/session store |
@@ -388,9 +388,9 @@ bundle workflow
 +-------------------------+      +------------------------+
 | ToolSubsystem           |      | EventSourceSubsystem   |
 |                         |      |                        |
-| TOOLS_SPECS             |      | EVENT_SOURCE_SPECS     |
-| MCP_TOOL_SPECS          |      | + tool module events   |
-| TOOL_RUNTIME            |      |                        |
+| resolved Python specs   |      | event_source_specs     |
+| resolved MCP specs      |      | + tool module events   |
+| tool runtime overrides  |      |                        |
 |                         |      | event declarations     |
 | model-callable catalog  |      | block policies         |
 | allowed_plugins filter  |      | projection policies    |
@@ -421,20 +421,20 @@ The split is intentional:
 | Surface | Makes visible to the model? | Used for |
 | --- | --- | --- |
 | `surfaces.as_consumer.agents.<agent>.tools` | yes | authoritative per-agent tool policy and allow-lists |
-| `TOOLS_SPECS` | yes, after policy resolution | runtime adapter for callable Python tool aliases |
-| `MCP_TOOL_SPECS` | yes, after policy resolution | runtime adapter for callable MCP tool aliases |
-| `EVENT_SOURCE_SPECS` | no | event declarations, policies, readers, namespace rehosters |
+| resolved Python tool specs | yes, after policy resolution | runtime input for callable Python tool aliases |
+| resolved MCP tool specs | yes, after policy resolution | runtime input for callable MCP tool aliases |
+| event-source specs | no | event declarations, policies, readers, namespace rehosters |
 | `additional_instructions` | text only | how the model should interpret the connected surfaces |
 | runtime hooks | no | workflow callbacks such as compaction lifecycle |
 
-Do not put a module into `TOOLS_SPECS` only to register event policies or
-namespace rehosters. If the model should not call it, put it in
-`EVENT_SOURCE_SPECS`.
+Do not put a module into an agent tool list only to register event policies or
+namespace rehosters. If the model should not call it, pass it through
+`event_source_specs`.
 
 | Input | SDK surface | Notes |
 | --- | --- | --- |
-| local Python tools | `surfaces.as_consumer.agents.<agent>.tools` + `tools_descriptor.py` adapter | exposes bundle tool modules by alias |
-| MCP tools | `surfaces.as_consumer.agents.<agent>.tools` + `MCP_TOOL_SPECS` adapter | selects which configured MCP server tools enter the catalog |
+| local Python tools | `surfaces.as_consumer.agents.<agent>.tools` + SDK `tool_config.py` resolver | exposes bundle tool modules by alias |
+| MCP tools | `surfaces.as_consumer.agents.<agent>.tools` + SDK `tool_config.py` resolver | selects which configured MCP server tools enter the catalog |
 | named-service tools | `surfaces.as_consumer.agents.<agent>.tools` with `kind: named_service` | exposes only allowed generic namespace operations; catalog shows the namespaces applicable to each tool |
 | namespace rehosters | loaded tool/event modules with `@artifact_namespace_rehoster` | lets `react.pull` import owner-domain refs such as `mem:` or `cnv:` into the ReAct workspace |
 | event policies | loaded tool/event modules with policy decorators plus event source declarations | renders external events, tool results, and reader results into timeline/ANNOUNCE/compaction |
@@ -727,7 +727,7 @@ my.bundle@1-0/
   entrypoint.py
   orchestrator/
     workflow.py
-  tools_descriptor.py
+  consumer_surfaces.py
   skills_descriptor.py
   tools/
     domain_tools.py
@@ -764,27 +764,34 @@ surfaces:
                 allowed: [provider.about, object.search, object.schema]
 ```
 
-`tools_descriptor.py` then adapts the active bundle props into runtime specs. It
-should not hardcode the agent policy:
+Runtime code adapts the active bundle props into runtime specs. It should not
+hardcode the agent policy:
 
 ```python
 from pathlib import Path
-from kdcube_ai_app.apps.chat.sdk.runtime.tool_config import agent_tool_config_from_bundle_props
+from kdcube_ai_app.apps.chat.sdk.runtime.tool_config import (
+    agent_tool_config_from_bundle_props,
+    bundle_props_with_default_agent_tools,
+)
+from .consumer_surfaces import default_as_consumer_surfaces_props
 
 BUNDLE_ROOT = Path(__file__).resolve().parent
 
-def config_for_agent(agent_id, *, bundle_props=None):
-    return agent_tool_config_from_bundle_props(
-        bundle_props or {},
-        agent_id,
-        bundle_root=BUNDLE_ROOT,
-        default_agent_id="main",
-    )
+effective_props = bundle_props_with_default_agent_tools(
+    bundle_props,
+    default_bundle_props=default_as_consumer_surfaces_props(),
+)
+tool_config = agent_tool_config_from_bundle_props(
+    effective_props,
+    agent_id,
+    bundle_root=BUNDLE_ROOT,
+    default_agent_id="main",
+)
 ```
 
-For code defaults, seed `surfaces.as_consumer` in
-`configuration_defaults()` or a descriptor helper. Do not make a standalone
-`TOOLS_SPECS` list the source of truth for what the agent can call.
+For code defaults, seed `surfaces.as_consumer` in `configuration_defaults()` or
+a bundle-owned helper such as `consumer_surfaces.py`. Do not make a standalone
+spec list the source of truth for what the agent can call.
 
 `skills_descriptor.py` exposes bundle skill roots and visibility rules:
 
@@ -867,14 +874,14 @@ React configuration sources:
 
 - `surfaces.as_consumer.agents.<agent>.tools` controls local Python, MCP, and
   named-service tool visibility for that agent
-- `tools_descriptor.py` resolves that config into runtime specs and aliases
+- SDK `tool_config.py` resolves that config into runtime specs and aliases
 - loaded modules can also contribute event-source declarations, event-source
   readers, rehosters, and policies; these are not automatically model-visible
   tools
 - event-only modules enter through `event_source_specs`; this is cumulative
   with tool-module event declarations and does not expose additional callable
   tools
-- `MCP_TOOL_SPECS` is the runtime adapter for configured MCP server tools
+- resolved MCP specs are the runtime adapter for configured MCP server tools
 - named-service tool catalog entries show `namespaces applicable` so the model
   knows which namespaces support each generic `named_services.*` tool; provider
   operation ids stay in config and provider protocol, not in ReAct prompt data
@@ -923,13 +930,11 @@ Model-facing tool contract:
   metadata"; the decision model sees the tool catalog and timeline result, so
   this contract determines whether it can plan the next step correctly
 
-Multiple agent surfaces are allowed. A bundle can keep separate descriptors for
-normal chat and scheduled job execution:
+Multiple agent surfaces are allowed. A bundle can keep separate config entries
+for normal chat and scheduled job execution:
 
 ```text
-tools_descriptor.py
 skills_descriptor.py
-job_tools_descriptor.py
 job_skills_descriptor.py
 ```
 
@@ -942,7 +947,7 @@ Do not collapse these concepts:
 
 | Concept | Config/code | Consumer |
 | --- | --- | --- |
-| MCP client config for React/KDCube tools | `config.mcp.services` plus `MCP_TOOL_SPECS` | KDCube `ToolSubsystem` |
+| MCP client config for React/KDCube tools | `config.mcp.services` plus `surfaces.as_consumer` MCP entries | KDCube `ToolSubsystem` |
 | Bundle-served MCP endpoint | `@mcp(...)` on the bundle entrypoint | external MCP clients, Claude Code, other services |
 | Claude Code MCP config | `.mcp.json` in the Claude workspace | the `claude` CLI subprocess |
 
@@ -970,12 +975,19 @@ config:
             secret: b:docs.token
 ```
 
-Then expose only the needed tools in `MCP_TOOL_SPECS`:
+Then expose only the needed tools in `surfaces.as_consumer`:
 
-```python
-MCP_TOOL_SPECS = [
-    {"server_id": "docs", "alias": "docs", "tools": ["search", "fetch"]},
-]
+```yaml
+surfaces:
+  as_consumer:
+    agents:
+      main:
+        tools:
+          - id: docs
+            kind: mcp
+            server_id: docs
+            alias: docs
+            allowed: [search, fetch]
 ```
 
 For Claude Code, the same external server must still be written into Claude's

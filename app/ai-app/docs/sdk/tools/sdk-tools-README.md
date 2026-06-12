@@ -80,8 +80,9 @@ surfaces:
 ```
 
 This makes tool exposure explicit and keeps job/regular assistant tool surfaces
-separate. `tools_descriptor.py` should adapt this config into runtime specs; it
-should not be the place where the bundle's agent tool policy is hidden.
+separate. Runtime code should adapt this config into specs with
+`agent_tool_config_from_bundle_props(...)`; descriptors should not be where the
+bundle's agent tool policy is hidden.
 
 The built-in SDK tool modules still define the callable implementations and
 Semantic Kernel metadata. They are not, by themselves, a declaration that every
@@ -357,11 +358,11 @@ This is the same runtime boundary used for:
 
 Read [Custom Tools](./custom-tools-README.md) when you want to:
 - add app-local tool modules
-- register tools in `tools_descriptor.py`
+- configure tools in `surfaces.as_consumer.agents.<agent>.tools`
 - set per-tool runtime overrides
 
 Read [Tool Subsystem](./tool-subsystem-README.md) when you want to:
-- understand `TOOLS_SPECS`, `MCP_TOOL_SPECS`, and `TOOL_RUNTIME`
+- understand resolved Python specs, MCP specs, and tool runtime overrides
 - understand how tools stay available in isolated runtimes
 - understand supervisor routing and tool IDs
 

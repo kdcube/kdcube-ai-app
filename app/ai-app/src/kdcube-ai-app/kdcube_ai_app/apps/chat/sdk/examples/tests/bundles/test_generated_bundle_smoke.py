@@ -64,7 +64,6 @@ def test_bundle_has_required_files():
     required = [
         "__init__.py",
         "entrypoint.py",
-        "tools_descriptor.py",
         "skills_descriptor.py",
     ]
     missing = [name for name in required if not (bundle_root / name).exists()]
@@ -76,8 +75,8 @@ def test_bundle_entrypoint_and_descriptors_import():
     package_name, _ = _load_package_root(bundle_root)
 
     entrypoint_mod = _load_submodule(package_name, bundle_root / "entrypoint.py", "entrypoint")
-    _load_submodule(package_name, bundle_root / "tools_descriptor.py", "tools_descriptor")
-    _load_submodule(package_name, bundle_root / "skills_descriptor.py", "skills_descriptor")
+    if (bundle_root / "skills_descriptor.py").exists():
+        _load_submodule(package_name, bundle_root / "skills_descriptor.py", "skills_descriptor")
 
     bundle_id = getattr(entrypoint_mod, "BUNDLE_ID", "")
     assert isinstance(bundle_id, str) and bundle_id.strip(), "entrypoint.py must define non-empty BUNDLE_ID"

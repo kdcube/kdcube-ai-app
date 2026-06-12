@@ -168,8 +168,8 @@ Tool visibility and event visibility are intentionally separate:
 
 | Visibility | How it is loaded | What it grants |
 |---|---|---|
-| Tool visibility | `TOOLS_SPECS` / loaded tool modules | The model can call the tool. Tool modules are also scanned for their event declarations because tool calls produce events. |
-| Event visibility | `EVENT_SOURCE_SPECS` / explicit event modules | The runtime can discover event sources, policies, event-source readers, and namespace rehosters. It does not make any callable visible to the model. |
+| Tool visibility | resolved agent tool specs | The model can call the tool. Tool modules are also scanned for their event declarations because tool calls produce events. |
+| Event visibility | `event_source_specs` / explicit event modules | The runtime can discover event sources, policies, event-source readers, and namespace rehosters. It does not make any callable visible to the model. |
 
 The two inputs are cumulative. Passing `event_source_specs` to
 `BaseWorkflow.build_react(...)` adds event-only modules to the event subsystem;
@@ -246,8 +246,8 @@ writing a bundle rehoster.
 `@artifact_namespace_rehoster` is discovered only from modules that are loaded
 into the ReAct `EventSourceSubsystem`. There are two normal bundle paths:
 
-1. A tool module listed in `tools_descriptor.py`.
-2. An event module listed in `events_descriptor.py` and passed to
+1. A tool module resolved from `surfaces.as_consumer`.
+2. An event module passed to
    `BaseWorkflow.build_react(..., event_source_specs=...)`.
 
 Tool modules are scanned automatically because `ToolSubsystem` builds
@@ -255,39 +255,32 @@ Tool modules are scanned automatically because `ToolSubsystem` builds
 loaded from `event_source_specs`; a descriptor file by itself is not scanned
 unless the workflow passes those specs into `build_react`.
 
-Do not add a module to `TOOLS_SPECS` only to make `react.pull` understand one
+Do not add a module to an agent tool list only to make `react.pull` understand one
 of its namespaces. Put the namespace rehoster in an event module and load that
-module through `EVENT_SOURCE_SPECS`.
+module through `event_source_specs`.
 
 Bundle shape:
 
 ```text
 my.bundle@1-0/
-  tools_descriptor.py
-  events_descriptor.py
+  consumer_surfaces.py
   events/
     my_artifacts.py
   orchestrator/
     workflow.py
 ```
 
-`events_descriptor.py`:
-
-```python
-EVENT_SOURCE_SPECS = [
-    {"ref": "events/my_artifacts.py", "alias": "my_artifacts"},
-]
-```
-
 Workflow handoff:
 
 ```python
-from .. import events_descriptor, tools_descriptor
+event_source_specs = [
+    {"ref": "events/my_artifacts.py", "alias": "my_artifacts"},
+]
 
 react = self.build_react(
     scratchpad,
-    mod_tools_spec=tools_descriptor.TOOLS_SPECS,
-    event_source_specs=events_descriptor.EVENT_SOURCE_SPECS,
+    mod_tools_spec=tool_config.tool_specs,
+    event_source_specs=event_source_specs,
 )
 ```
 

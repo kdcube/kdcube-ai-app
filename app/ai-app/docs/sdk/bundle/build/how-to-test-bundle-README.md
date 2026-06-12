@@ -258,15 +258,15 @@ For a React-backed bundle, prove the agent surface before manual testing:
 - `entrypoint.py` instantiates the workflow in the same shape as
   `kdcube.copilot@2026-04-03-19-05`
 - `orchestrator/workflow.py` calls `BaseWorkflow.build_react(...)`
-- `tools_descriptor.py` exposes only the tool aliases the bundle actually needs
-- bundle-local tool entries in `tools_descriptor.py` use `ref` and the tool
+- `surfaces.as_consumer` exposes only the tool aliases the bundle actually needs
+- bundle-local tool entries in `surfaces.as_consumer` use `ref` and the tool
   modules import same-bundle helpers with package-relative imports
 - `skills_descriptor.py` points to bundle-local skills
 - `skills_descriptor.py` / `job_skills_descriptor.py` visibility filters use
   the real React decision ids `solver.react.v2.decision.v2.strong` and
   `solver.react.v2.decision.v2.regular`
 - each skill has `SKILL.md`
-- each skill `tools.yaml` references real tool ids from `tools_descriptor.py`
+- each skill `tools.yaml` references real tool ids from the active agent tool config
 - distinct product concepts have distinct tool aliases
 - stateful skill `when_to_use` rules clearly separate retrieval from
   write/reconcile scenarios
@@ -415,7 +415,7 @@ Classify failures by boundary:
 
 - bundle absent, operation absent, or widget absent: descriptor, import, or
   decorator discovery failure
-- tool missing from `tool_ids`: `tools_descriptor.py`, alias, skill visibility,
+- tool missing from `tool_ids`: `surfaces.as_consumer`, alias, skill visibility,
   or React configuration failure
 - tool present but `tool_runtime_not_bound` or "tools are not bound": platform
   or bundle runtime binding failure, not a user OAuth/configuration failure
@@ -485,7 +485,7 @@ through the loader contract and lints bundle-local Python imports. Top-level
 imports of Python roots owned by the bundle directory, such as
 `from services...`, `from apps...`, or `import tools`, fail as authoring
 errors. Use package-relative imports instead. For bundle-local tool modules,
-this means `TOOLS_SPECS` should use `ref: "tools/name.py"` and the tool file
+this means `surfaces.as_consumer` should use `ref: "tools/name.py"` and the tool file
 should import same-bundle helpers with forms such as
 `from ..services.storage import Store`.
 

@@ -1,15 +1,9 @@
 from __future__ import annotations
 
-import pathlib
-from typing import Any, Dict, Mapping
+from typing import Any
 
-from kdcube_ai_app.apps.chat.sdk.runtime.tool_config import (
-    DEFAULT_AGENT_ID,
-    AgentToolConfig,
-    agent_tool_config_from_bundle_props,
-)
 
-BUNDLE_ROOT = pathlib.Path(__file__).resolve().parent
+DEFAULT_AGENT_ID = "main"
 
 DEFAULT_AGENT_TOOL_CONNECTIONS: list[dict[str, Any]] = [
     {
@@ -97,14 +91,19 @@ DEFAULT_AGENT_TOOL_CONNECTIONS: list[dict[str, Any]] = [
 ]
 
 
-def default_tools_props() -> dict[str, Any]:
+def default_agent_tool_connections() -> list[dict[str, Any]]:
+    return [dict(item) for item in DEFAULT_AGENT_TOOL_CONNECTIONS]
+
+
+def default_as_consumer_surfaces_props(*, agent_id: str = DEFAULT_AGENT_ID) -> dict[str, Any]:
+    agent_key = str(agent_id or DEFAULT_AGENT_ID).strip() or DEFAULT_AGENT_ID
     return {
         "surfaces": {
             "as_consumer": {
-                "default_agent": "main",
+                "default_agent": agent_key,
                 "agents": {
-                    "main": {
-                        "tools": list(DEFAULT_AGENT_TOOL_CONNECTIONS),
+                    agent_key: {
+                        "tools": default_agent_tool_connections(),
                         "event_sources": [],
                     },
                 },
@@ -121,58 +120,9 @@ def default_tools_props() -> dict[str, Any]:
     }
 
 
-def _with_default_tools(bundle_props: Mapping[str, Any] | None) -> dict[str, Any]:
-    props = dict(bundle_props or {})
-    surfaces = props.get("surfaces") if isinstance(props.get("surfaces"), Mapping) else {}
-    as_consumer = surfaces.get("as_consumer") if isinstance(surfaces.get("as_consumer"), Mapping) else {}
-    surfaces_agents = as_consumer.get("agents")
-    if isinstance(surfaces_agents, Mapping):
-        return props
-    tools = props.get("tools")
-    if isinstance(tools, Mapping) and isinstance(tools.get("agents"), Mapping):
-        return props
-    merged = default_tools_props()
-    merged.update(props)
-    return merged
-
-
-def config_for_agent(
-    agent_id: str | None,
-    *,
-    bundle_props: Mapping[str, Any] | None = None,
-) -> AgentToolConfig:
-    return agent_tool_config_from_bundle_props(
-        _with_default_tools(bundle_props),
-        agent_id or DEFAULT_AGENT_ID,
-        bundle_root=BUNDLE_ROOT,
-    )
-
-
-def tools_for_client(
-    client_id: str | None,
-    *,
-    bundle_props: Mapping[str, Any] | None = None,
-) -> list[dict[str, Any]]:
-    return config_for_agent(client_id, bundle_props=bundle_props).tool_specs
-
-
-def mcp_tools_for_client(
-    client_id: str | None,
-    *,
-    bundle_props: Mapping[str, Any] | None = None,
-) -> list[dict[str, Any]]:
-    return config_for_agent(client_id, bundle_props=bundle_props).mcp_tool_specs
-
-
-def tool_runtime_for_client(
-    client_id: str | None,
-    *,
-    bundle_props: Mapping[str, Any] | None = None,
-) -> dict[str, str]:
-    return config_for_agent(client_id, bundle_props=bundle_props).tool_runtime
-
-
-_DEFAULT_CONFIG = config_for_agent(DEFAULT_AGENT_ID, bundle_props=default_tools_props())
-TOOLS_SPECS: list[Dict[str, Any]] = _DEFAULT_CONFIG.tool_specs
-MCP_TOOL_SPECS: list[Dict[str, Any]] = _DEFAULT_CONFIG.mcp_tool_specs
-TOOL_RUNTIME: dict[str, str] = _DEFAULT_CONFIG.tool_runtime
+__all__ = [
+    "DEFAULT_AGENT_ID",
+    "DEFAULT_AGENT_TOOL_CONNECTIONS",
+    "default_agent_tool_connections",
+    "default_as_consumer_surfaces_props",
+]

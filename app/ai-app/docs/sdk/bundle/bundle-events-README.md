@@ -245,17 +245,14 @@ A bundle can define event sources in an event module loaded into ReAct:
 
 ```text
 my.bundle@1-0/
-  events_descriptor.py
   events/
     case_events.py
   orchestrator/
     workflow.py
 ```
 
-`events_descriptor.py`:
-
 ```python
-EVENT_SOURCE_SPECS = [
+event_source_specs = [
     {"ref": "events/case_events.py", "alias": "case_events"},
 ]
 ```
@@ -263,12 +260,10 @@ EVENT_SOURCE_SPECS = [
 `orchestrator/workflow.py`:
 
 ```python
-from .. import events_descriptor, tools_descriptor
-
 react = self.build_react(
     scratchpad,
-    mod_tools_spec=tools_descriptor.TOOLS_SPECS,
-    event_source_specs=events_descriptor.EVENT_SOURCE_SPECS,
+    mod_tools_spec=tool_config.tool_specs,
+    event_source_specs=event_source_specs,
 )
 ```
 
@@ -549,7 +544,7 @@ selection metadata.
 
 ## Minimal Bundle Checklist
 
-1. Add `events_descriptor.py` for bundle event modules.
+1. Add event modules for bundle event sources/readers/rehosters.
 2. Pass `event_source_specs` into `BaseWorkflow.build_react(...)`.
 3. Declare bundle UI event sources with `event_source_declaration(...)`.
 4. Add tool `@event_source(...)` declarations when tools need custom policy

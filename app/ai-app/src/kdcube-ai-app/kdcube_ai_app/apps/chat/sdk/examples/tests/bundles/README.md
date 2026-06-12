@@ -38,8 +38,7 @@ The test harness expects:
 Example bundle-under-test layout:
 - `__init__.py`
 - `entrypoint.py`
-- `tools_descriptor.py`
-- `skills_descriptor.py`
+- optional `skills_descriptor.py`
 
 Current entrypoint contract:
 - import `BaseEntrypoint` from `src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/chatbot/entrypoint.py`

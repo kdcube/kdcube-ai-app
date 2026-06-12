@@ -52,9 +52,9 @@ kdcube_ai_app.apps.chat.sdk.solutions.canvas
   api.py                  Bundle route/operation helpers for read, write,
                           patch, upload, search, pin read, and object action
   tools.py                Reusable Semantic Kernel ReAct write-tool module and
-                          cnv: event-source reader; include it from
-                          tools_descriptor.py as module
-                          kdcube_ai_app.apps.chat.sdk.solutions.canvas.tools
+                          cnv: event-source reader; include it through
+                          surfaces.as_consumer when the model should call
+                          canvas.patch
   tools_core.py           Reusable canvas read/patch execution core
   instructions.py         Stable additional ReAct instructions for canvas
   ids.py                  Timestamp-bearing canvas/message id helpers

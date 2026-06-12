@@ -2,8 +2,8 @@
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/tools/custom-tools-README.md
 title: "Custom Tools"
 summary: "How to author bundle-local tools and expose them through agent-scoped surfaces.as_consumer config with module/ref entries and runtime wiring."
-tags: ["sdk", "tools", "custom", "bundle", "descriptor", "semantic-kernel", "authoring", "runtime"]
-keywords: ["surfaces.as_consumer", "agent tool config", "tools_descriptor.py", "TOOLS_SPECS", "module", "ref", "alias", "kernel_function", "create_tool_subsystem_with_mcp", "tool_call", "TOOL_RUNTIME", "MCP_TOOL_SPECS", "_SERVICE", "_INTEGRATIONS", "KV_CACHE", "get_comm"]
+tags: ["sdk", "tools", "custom", "bundle", "semantic-kernel", "authoring", "runtime"]
+keywords: ["surfaces.as_consumer", "agent tool config", "module", "ref", "alias", "kernel_function", "create_tool_subsystem_with_mcp", "tool_call", "_SERVICE", "_INTEGRATIONS", "KV_CACHE", "get_comm"]
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/tools/tool-subsystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/tools/mcp-README.md
@@ -19,7 +19,7 @@ see_also:
 
 This guide covers authoring and registration of bundle-local tools.
 
-For runtime internals (descriptor resolution, supervisor flow, isolated execution), see [Tool Subsystem](./tool-subsystem-README.md).
+For runtime internals (config resolution, supervisor flow, isolated execution), see [Tool Subsystem](./tool-subsystem-README.md).
 
 ## 1) Write a tool module
 
@@ -88,19 +88,30 @@ Notes:
 - `discovery` defaults to `semantic_kernel`; only `@kernel_function` tools
   should be published to the model catalog for Python sources.
 
-`tools_descriptor.py` remains as a thin runtime adapter around this config. It
-should not be the policy source for which tools an agent sees:
+Runtime code resolves this config with the SDK helper. The config remains the
+policy source for which tools an agent sees:
 
 ```python
-from kdcube_ai_app.apps.chat.sdk.runtime.tool_config import agent_tool_config_from_bundle_props
+from kdcube_ai_app.apps.chat.sdk.runtime.tool_config import (
+    agent_tool_config_from_bundle_props,
+    bundle_props_with_default_agent_tools,
+)
 
-def config_for_agent(agent_id, *, bundle_props=None):
-    return agent_tool_config_from_bundle_props(bundle_props or {}, agent_id, bundle_root=BUNDLE_ROOT)
+effective_props = bundle_props_with_default_agent_tools(
+    self.bundle_props,
+    default_bundle_props=default_as_consumer_surfaces_props(),
+)
+tool_config = agent_tool_config_from_bundle_props(
+    effective_props,
+    agent_id,
+    bundle_root=BUNDLE_ROOT,
+    default_agent_id="main",
+)
 ```
 
-Code defaults may seed `surfaces.as_consumer` when no deployment config exists,
-but new bundle descriptors and `bundles.yaml` entries should put the agent tool
-policy under `surfaces.as_consumer.agents.<agent_id>.tools`. Legacy
+Code defaults may seed `surfaces.as_consumer` when no deployment config exists.
+Keep those defaults in the bundle, because they are bundle policy. SDK helpers
+only merge defaults and adapt the effective config into runtime specs. Legacy
 `tools.agents` is still read for old bundles only.
 
 ### Bundle-local imports from `ref` tools
@@ -143,7 +154,16 @@ Your workflow must resolve the active agent config, pass specs into subsystem
 creation, and pass both alias and per-tool allow-lists to ReAct:
 
 ```python
-tool_config = tools_descriptor.config_for_agent(agent_id, bundle_props=self.bundle_props)
+effective_props = bundle_props_with_default_agent_tools(
+    self.bundle_props,
+    default_bundle_props=default_as_consumer_surfaces_props(),
+)
+tool_config = agent_tool_config_from_bundle_props(
+    effective_props,
+    agent_id,
+    bundle_root=BUNDLE_ROOT,
+    default_agent_id="main",
+)
 
 tool_subsystem, _ = create_tool_subsystem_with_mcp(
     service=self.model_service,
@@ -613,8 +633,8 @@ async def search(query: Annotated[str, "Search query"], n: int = 5):
     ...
 ```
 
-`{alias}` resolves to the alias from `TOOLS_SPECS`, so a module registered as
-`{"ref": "tools/local_tools.py", "alias": "doc", "use_sk": True}` produces the
+`{alias}` resolves to the alias from the active Python tool spec, so a tool
+connection such as `ref: tools/local_tools.py` with `alias: doc` produces the
 event source id `doc.search`.
 
 The event source id is the semantic policy key. For tool-backed events:
@@ -687,13 +707,13 @@ def list_event_sources():
 The source id must still match the runtime tool id if the policy is meant to
 handle that tool's result.
 
-Do not use tool visibility for event-only needs. `TOOLS_SPECS` grants the model
-permission to call functions. `EVENT_SOURCE_SPECS` grants the runtime event
+Do not use tool visibility for event-only needs. Agent tool config grants the
+model permission to call functions. Event-source specs grant runtime event
 visibility: policies, event-source readers, and namespace rehosters. For
 example, if a bundle only needs `react.pull(paths=["cnv:..."])` to materialize
-canvas-owned refs, load the canvas event resolver through `EVENT_SOURCE_SPECS`;
-do not add the canvas tool module to `TOOLS_SPECS` unless the model should be
-able to call `canvas.patch`.
+canvas-owned refs, pass the canvas event resolver through `event_source_specs`;
+do not add the canvas tool module to the agent tool config unless the model
+should be able to call `canvas.patch`.
 
 ## 5) What a tool module receives at runtime
 
@@ -826,7 +846,7 @@ What is supported today:
   the runtime plus the bundle's `requirements.txt`
 
 What is **not** supported today:
-- automatic per-tool dependency installation from `tools_descriptor.py`
+- automatic per-tool dependency installation from agent tool config
 - automatic bundle-tool `requirements.txt` resolution separate from
   `@venv(...)`
 
@@ -837,13 +857,21 @@ Practical recommendation:
 - keep request-bound objects such as communicator, DB pools, and Redis clients
   outside that helper boundary
 
-## 7) Optional MCP tool sources
+## 7) Optional MCP Tool Sources
 
-```python
-MCP_TOOL_SPECS = [
-    {"server_id": "web_search", "alias": "web_search", "tools": ["web_search"]},
-    {"server_id": "docs", "alias": "docs", "tools": ["*"]},
-]
+Expose MCP tools under the same agent-scoped config surface:
+
+```yaml
+surfaces:
+  as_consumer:
+    agents:
+      main:
+        tools:
+          - id: docs
+            kind: mcp
+            server_id: docs
+            alias: docs
+            allowed: ["*"]
 ```
 
 For MCP transport/auth/runtime details, see [MCP Integration](./mcp-README.md).
@@ -851,6 +879,4 @@ For MCP transport/auth/runtime details, see [MCP Integration](./mcp-README.md).
 ## Example references
 
 - [with-isoruntime bundle](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/with-isoruntime@2026-02-16-14-00)
-- [with-isoruntime `tools_descriptor.py`](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/with-isoruntime@2026-02-16-14-00/tools_descriptor.py)
 - [with-isoruntime `tools/local_tools.py`](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/with-isoruntime@2026-02-16-14-00/tools/local_tools.py)
-- [kdcube.copilot `tools_descriptor.py`](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/kdcube.copilot@2026-04-03-19-05/tools_descriptor.py)

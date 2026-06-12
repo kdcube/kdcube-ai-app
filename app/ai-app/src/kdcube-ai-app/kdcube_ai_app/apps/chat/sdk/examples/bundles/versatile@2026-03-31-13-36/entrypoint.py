@@ -38,6 +38,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.canvas.events.resolver import (
     CallableCanvasObjectResolver,
     build_default_canvas_resolver_registry,
 )
+from kdcube_ai_app.apps.chat.sdk.solutions.canvas.events.defaults import default_canvas_event_source_specs
 from kdcube_ai_app.apps.chat.sdk.solutions.canvas.storage import CanvasStore
 from kdcube_ai_app.apps.chat.sdk.solutions.react.events.resolver import resolve_event_ref_action
 from kdcube_ai_app.apps.chat.sdk.solutions.chat.events.resolver import (
@@ -58,7 +59,7 @@ from kdcube_ai_app.infra.service_hub.inventory import BundleState, Config
 
 from .event_filter import BundleEventFilter
 from .orchestrator.workflow import VersatileWorkflow
-from . import tools_descriptor
+from .consumer_surfaces import default_as_consumer_surfaces_props
 
 BUNDLE_ID = "versatile@2026-03-31-13-36"
 WORKFLOW_NAME = "versatile"
@@ -401,7 +402,6 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
         return str(self.bundle_prop("surfaces.as_consumer.default_agent", "main") or "main").strip() or "main"
 
     def _react_event_sources(self):
-        from . import events_descriptor
         from kdcube_ai_app.apps.chat.sdk.context.memory import tools as memory_tools
         from kdcube_ai_app.apps.chat.sdk.events import EventSourceSubsystem
         from kdcube_ai_app.apps.chat.sdk.solutions.react.events import core as react_core_events
@@ -421,7 +421,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
                     "file": getattr(memory_tools, "__file__", None),
                 },
             ],
-            event_specs=getattr(events_descriptor, "EVENT_SOURCE_SPECS", None) or [],
+            event_specs=default_canvas_event_source_specs(),
             bundle_root=Path(__file__).resolve().parent,
             logger=_log,
         )
@@ -1520,7 +1520,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
                 "data_bus_subject": CANVAS_DATA_BUS_SUBJECT,
                 "revision_retention": 80,
             },
-            "surfaces": tools_descriptor.default_tools_props().get("surfaces", {}),
+            "surfaces": default_as_consumer_surfaces_props().get("surfaces", {}),
             "telemetry_sink": {
                 "endpoint_url": "",
                 "auth_header": "",

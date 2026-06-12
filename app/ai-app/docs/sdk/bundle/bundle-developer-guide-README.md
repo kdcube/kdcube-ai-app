@@ -57,7 +57,7 @@ Read in this order:
 5. [bundle-properties-and-secrets-lifecycle-README.md](bundle-properties-and-secrets-lifecycle-README.md)
 6. `entrypoint.py`
 7. `orchestrator/workflow.py`
-8. `tools_descriptor.py`
+8. bundle-owned consumer-surface defaults, when present
 9. `skills_descriptor.py`
 10. [bundle-agent-integration-README.md](bundle-agent-integration-README.md) when the bundle has React tools/skills, MCP, or Claude Code subagents
 
@@ -214,7 +214,7 @@ my_bundle/
   entrypoint.py
   orchestrator/
     workflow.py
-  tools_descriptor.py
+  consumer_surfaces.py    # optional bundle-owned default tool policy
   skills_descriptor.py
   tools/
   skills/
@@ -233,7 +233,7 @@ Required in practice:
 Usually present in real bundles:
 
 - `orchestrator/workflow.py`
-- `tools_descriptor.py`
+- bundle-owned consumer-surface defaults, when code defaults are useful
 - `skills_descriptor.py`
 
 Skills are discovered from more than the bundle folder. The active registry

@@ -107,7 +107,7 @@ Read interface and contract surfaces before changing API, payload, or
 runtime behavior:
 
 - [interface](interface)
-- [tools_descriptor.py](tools_descriptor.py)
+- [consumer_surfaces.py](consumer_surfaces.py)
 - [skills_descriptor.py](skills_descriptor.py)
 - [release.yaml](release.yaml)
 - [tests/test_preferences_canvas.py](tests/test_preferences_canvas.py)
@@ -159,9 +159,8 @@ KDCube.
 - [entrypoint.py](entrypoint.py)
 - [orchestrator/workflow.py](orchestrator/workflow.py)
 - [agents](agents)
-- [tools](tools)
+- [consumer_surfaces.py](consumer_surfaces.py)
 - [skills](skills)
-- [tools_descriptor.py](tools_descriptor.py)
 - [skills_descriptor.py](skills_descriptor.py)
 - [preferences_store.py](preferences_store.py)
 - [tests/test_preferences_canvas.py](tests/test_preferences_canvas.py)
@@ -286,7 +285,7 @@ entrypoint.py
 event_filter.py
 preferences_store.py
 skills_descriptor.py
-tools_descriptor.py
+consumer_surfaces.py
 agents/
 config/
 docs/
@@ -426,10 +425,10 @@ Keep these invariants:
   `entrypoint.py` (and `configuration_defaults()` where applicable).
   Patch values through `kdcube bundle … --set-config / --set-secret`,
   not by hand-editing staged YAML.
-- Bundle-local tools and skills are reached through
-  `surfaces.as_consumer.agents.<agent>.tools` in config, resolved by
-  `tools_descriptor.py`, and bundle-local skills remain in
-  `skills_descriptor.py`.
+- Model-visible tools are configured through
+  `surfaces.as_consumer.agents.<agent>.tools`. The bundle-owned fallback policy
+  lives in `consumer_surfaces.py`; SDK `tool_config.py` only resolves that
+  policy into runtime specs. Bundle-local skills remain in `skills_descriptor.py`.
 - `preferences_store.py` is the shared bundle storage adapter; do not
   duplicate its access pattern in tools or skills.
 - Do not store real API keys, git tokens, or Claude Code secrets in
@@ -443,7 +442,7 @@ Implemented:
 
 - Bundle entrypoint with economics + bundle props + quotas
 - ReAct workflow (`orchestrator/workflow.py`) with `agents/gate.py`
-- Bundle-local tools (`tools/preference_tools.py`) + skills
+- Bundle-owned consumer tool defaults (`consumer_surfaces.py`) + skills
   (`skills/product/preferences/`)
 - Shared bundle storage (`preferences_store.py`)
 - Agent-scoped SDK/MCP/named-service consumer tool wiring
@@ -485,7 +484,7 @@ Backend / entrypoint / orchestrator / tools / skills behavior changed:
 
 - update [entrypoint.py](entrypoint.py) docstrings and decorators
 - update [orchestrator/workflow.py](orchestrator/workflow.py)
-- update [tools_descriptor.py](tools_descriptor.py) /
+- update [consumer_surfaces.py](consumer_surfaces.py) /
   [skills_descriptor.py](skills_descriptor.py) if surfaces changed
 - update relevant docs under [docs/design](docs/design)
 - update [tests/test_preferences_canvas.py](tests/test_preferences_canvas.py)
