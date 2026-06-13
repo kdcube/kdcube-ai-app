@@ -36,6 +36,7 @@ from kdcube_ai_app.infra.plugin.bundle_registry import BundleSpec
 import kdcube_ai_app.infra.service_hub.errors as service_errors
 import kdcube_ai_app.apps.chat.sdk.tools.citations as citation_utils
 from kdcube_ai_app.apps.chat.sdk.config import get_settings, get_plain, get_secret
+from kdcube_ai_app.apps.chat.sdk.streaming.stream_policy import StreamPolicyViolation
 from kdcube_ai_app.infra.service_hub.message_utils import (
     extract_message_blocks,
     normalize_blocks,
@@ -2607,6 +2608,8 @@ class ModelServiceBase:
                 if etype == "text.delta":
                     try:
                         await on_delta(ev["text"])
+                    except StreamPolicyViolation:
+                        raise
                     except Exception as cb_err:
                         slog.log_error(cb_err, "on_delta_callback_failed")
                     final_chunks.append(ev["text"])
@@ -2628,6 +2631,8 @@ class ModelServiceBase:
                         if on_thinking:
                             try:
                                 await on_thinking(ev)
+                            except StreamPolicyViolation:
+                                raise
                             except Exception as cb_err:
                                 slog.log_error(cb_err, "on_thinking_callback_failed")
                     continue
@@ -2659,6 +2664,8 @@ class ModelServiceBase:
                                 "name": tc_name,
                                 "index": tc_index,
                             })
+                        except StreamPolicyViolation:
+                            raise
                         except Exception as cb_err:
                             slog.log_error(cb_err, "on_tool_start_callback_failed")
                     continue
@@ -2681,6 +2688,8 @@ class ModelServiceBase:
                                     "index": tc_index,
                                     "delta": delta,
                                 })
+                            except StreamPolicyViolation:
+                                raise
                             except Exception as cb_err:
                                 slog.log_error(cb_err, "on_tool_arguments_delta_callback_failed")
                     continue
@@ -2721,6 +2730,8 @@ class ModelServiceBase:
                                 "input": call["input"],
                                 "index": tc_index,
                             })
+                        except StreamPolicyViolation:
+                            raise
                         except Exception as cb_err:
                             slog.log_error(cb_err, "on_tool_use_callback_failed")
                     continue
@@ -2750,6 +2761,8 @@ class ModelServiceBase:
                     if on_tool_result_event:
                         try:
                             await on_tool_result_event({"type": "tool.search", **call})
+                        except StreamPolicyViolation:
+                            raise
                         except Exception as cb_err:
                             slog.log_error(cb_err, "on_tool_search_callback_failed")
                     continue
@@ -2771,6 +2784,8 @@ class ModelServiceBase:
                     if on_event:
                         try:
                             await on_event({"type": "citation", **ev})
+                        except StreamPolicyViolation:
+                            raise
                         except Exception as cb_err:
                             slog.log_error(cb_err, "on_citation_callback_failed")
                     continue
@@ -2789,6 +2804,8 @@ class ModelServiceBase:
                 if etype and on_event:
                     try:
                         await on_event(ev)
+                    except StreamPolicyViolation:
+                        raise
                     except Exception as cb_err:
                         slog.log_error(cb_err, "on_event_callback_failed")
 
@@ -2832,6 +2849,8 @@ class ModelServiceBase:
                 try:
                     await on_complete(ret)
                     slog.log_step("on_complete_called", {"status": "ok", "final_text_len": len(full_text)})
+                except StreamPolicyViolation:
+                    raise
                 except Exception as e:
                     slog.log_error(e, "on_complete_failed")
 
@@ -2844,6 +2863,16 @@ class ModelServiceBase:
                 tool_calls_count=len(tool_calls_list)
             )
             return ret
+
+        except StreamPolicyViolation:
+            slog.finish_operation(
+                False,
+                "stream_model_text_tracked_policy_interrupted",
+                provider=cfg.provider,
+                model=cfg.model_name,
+                role=role,
+            )
+            raise
 
         except Exception as e:
             slog.log_error(e, "stream_loop_failed")

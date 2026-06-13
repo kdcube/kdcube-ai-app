@@ -236,17 +236,17 @@ Implementation anchors:
 - `solutions/react/v3/action_overseer.py::RoundActionOverseer`
 - `solutions/react/v3/runtime.py::_decision_node_impl`
 
-`stream_with_channels` intentionally re-raises `StreamPolicyViolation`. Other
-subscriber failures are ignored so one UI helper cannot break the stream, but a
-policy violation is not a helper failure. It is a governance decision.
+`stream_with_channels` intentionally re-raises `StreamPolicyViolation`, and the
+platform model-service stream wrapper must re-raise it too. Other subscriber
+failures are ignored so one UI helper cannot break the stream, but a policy
+violation is not a helper failure. It is a governance decision and must stop
+the provider stream.
 
-Some provider/client wrappers may log an `on_delta` callback failure and still
-return the model's full raw text. The ReAct harness must still treat the
-overseer as authoritative in that case. If the post-stream parser later sees a
-denied `complete` or denied tool action in the full text, runtime routing is
-rebuilt from the overseer's accepted action table, and denied actions are
-recorded as protocol notices. The later parsed packet cannot overwrite an
-already accepted earlier tool action.
+The ReAct runtime also keeps a defensive recovery guard: if any non-conforming
+wrapper ever returns full raw text after a policy violation, routing is rebuilt
+from the overseer's accepted action table and denied actions are recorded as
+protocol notices. That guard is not the normal path; the normal path is
+immediate stream interruption.
 
 ## Example: Search Then Write
 
@@ -285,9 +285,8 @@ t10 runtime records protocol_violation.multi_action_bundle_strategy_incompatible
 The user does not wait for a large `react.write` payload to finish. The model
 stream is stopped as soon as the bad second move is identified.
 
-If the model-service wrapper reports the policy exception as a callback failure
-instead of stopping immediately, the fallback is still the same from the ReAct
-harness perspective:
+The runtime keeps the following defensive fallback for non-conforming stream
+wrappers:
 
 ```text
 overseer accepted:
