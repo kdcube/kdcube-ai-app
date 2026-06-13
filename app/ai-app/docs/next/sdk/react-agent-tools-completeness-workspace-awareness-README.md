@@ -611,11 +611,11 @@ Practical rule for generated code:
 - if code resolves `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk` and finds a useful file `runtime/execution.py` under the returned `physical_path`, it should emit logical ref `ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/execution.py` in an `OUTPUT_DIR` file or short `user.log` note
 - the agent can then use `react.read(["ks:src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/runtime/execution.py"])` in a later step
 
-For `kdcube.copilot`, this could be a bundle-local tool under:
+For a bundle-owned namespace, this can be a bundle-local tool under:
 - `tools/`
 
-and registered in:
-- `tools_descriptor.py`
+and wired through:
+- `surfaces.as_consumer.agents.<agent>.tools`
 
 This does not require silent tool overriding.
 It can be an explicit bundle tool such as:

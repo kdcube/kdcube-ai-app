@@ -486,10 +486,10 @@ events:
         - "react.skill.read"
         - "queue.continuation.accepted"
         - "timeline.external.accepted"
-        - "kdcube.copilot.workflow.turn.started"
-        - "kdcube.copilot.workflow.turn.completed"
-        - "kdcube.copilot.workflow.turn.failed"
-        - "kdcube.copilot.mcp.call"
+        - "bundle.workflow.turn.started"
+        - "bundle.workflow.turn.completed"
+        - "bundle.workflow.turn.failed"
+        - "bundle.mcp.call"
         - "chat.turn.summary"
     persist:
       # Types must be emitted through the bundle entrypoint comm. Types emitted

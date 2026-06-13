@@ -907,9 +907,7 @@ back left-to-right within each group:
 | ID token | `idToken` | (no alternate; preserve explicit `null`) |
 | App bundle id | `defaultAppBundleId` | (no alternate in the runtime-config payload; URL params accept `bundle_id` or `bundleId`) |
 
-The reference implementation lives in
-`sdk/examples/bundles/kdcube.copilot@2026-04-03-19-05/ui/widgets/copilot_webapp/src/store/settings.ts`
-and reads:
+Reference widgets should read:
 
 ```ts
 const tenant  = config.defaultTenant  || config.tenant  || config.tenant_id;
@@ -1294,7 +1292,6 @@ Use these as reference implementations for the runtime config handshake and
 operation-call shape:
 
 - [PreferencesBrowser.tsx](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/ui/PreferencesBrowser.tsx)
-- [KnowledgeBaseAdmin.tsx](../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/kdcube.copilot@2026-04-03-19-05/ui/KnowledgeBaseAdmin.tsx)
 
 Those examples are useful for runtime config and API calls. For new widgets,
 prefer the source-folder layout described above instead of embedding TSX/HTML in

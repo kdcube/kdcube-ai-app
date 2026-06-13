@@ -666,7 +666,7 @@ Stream and watchdog behavior:
 The generic runner still does not itself own repo bootstrap/publish policy. That
 is handled by the higher-level Claude workspace/session-store runtime layer.
 
-Those belong to higher-level integrations such as `kdcube.copilot`.
+Those belong to higher-level bundle integrations.
 
 ## Tests
 
@@ -687,13 +687,9 @@ Covered cases:
 - session reuse across `followup` and `steer`
 - git-backed session bootstrap/publish through `run_claude_code_turn(...)`
 
-## Intended next use
+## Intended Bundle Use
 
-The immediate consumer is the admin-only knowledge-base workflow planned for:
-
-- [src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/kdcube.copilot@2026-04-03-19-05](../../../../src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/kdcube.copilot@2026-04-03-19-05)
-
-That bundle will use this SDK runner to:
+A bundle can use this SDK runner to:
 
 - bind Claude Code execution to the current admin user
 - keep conversation continuity across turns

@@ -1,10 +1,10 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/what-you-can-do-with-kdcube-README.md
 title: "What You Can Do With KDCube"
-summary: "Dense product and builder overview of KDCube: what it is, who it is for, why bundles matter, what surfaces and runtimes it supports, and how engineers or coding agents turn code into runnable AI products."
+summary: "Dense product and builder overview of KDCube: what it is, who it is for, why bundles matter, what surfaces, namespace services, and runtimes it supports, and how engineers or coding agents turn code into governed AI products."
 tags: ["docs", "product", "overview", "sdk", "platform", "bundle", "agent", "react", "exec"]
-keywords: ["what is kdcube", "what can kdcube do", "ai product platform", "bundle runtime", "hot reload bundle", "kdcube bundle", "build ai app", "wrap existing app", "coding agent build bundle", "claude code build bundle", "local to cloud workflow", "mcp endpoint", "react agent", "announce", "steer followup", "user memory", "iso runtime", "distributed exec", "streaming widgets", "artifact provenance"]
-updated_at: 2026-05-27
+keywords: ["what is kdcube", "what can kdcube do", "ai product platform", "bundle runtime", "bundle reload", "kdcube bundle", "build ai app", "wrap existing app", "coding agent build bundle", "claude code build bundle", "local to cloud workflow", "mcp endpoint", "react agent", "flagship react runtime", "announce", "steer followup", "user memory", "namespace services", "named services", "iso runtime", "distributed exec", "streaming widgets", "artifact provenance"]
+updated_at: 2026-06-13
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/quick-start-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/README.md
@@ -12,9 +12,18 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-write-bundle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-configure-and-run-bundle-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/versatile-reference-bundle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-agent-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-platform-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-widget-integration-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/tools/named-services-tools-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/flow-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/react-state-machine-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/context-layout.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/system-instruction-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/react-tools-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/react-turn-workspace-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/react-announce-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/shared-timeline-event-bus-steer-followup-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/why/why-not-simply-tool-calling-README.md
@@ -35,7 +44,8 @@ Use KDCube when an AI system needs product structure:
 - runtime configuration and secrets
 - user and environment isolation
 - chat plus APIs plus widgets plus MCP plus scheduled work
-- tools, skills, files, artifacts, citations, memory, and provenance
+- per-agent tools and skills, files, artifacts, citations, memory, namespace
+  services, and provenance
 - a local-to-cloud delivery path that coding agents and engineers can follow
 
 ## 1. KDCube In One Paragraph
@@ -59,8 +69,9 @@ runtime = how the platform executes and observes it
 
 KDCube is useful for:
 
-- product teams building AI assistants or workflow apps
-- platform teams standardizing how AI apps are deployed
+- product teams building governed AI assistants, workbenches, or workflow apps
+- platform teams standardizing how multiple AI apps are deployed, isolated,
+  accounted, and operated
 - engineers wrapping existing apps, scripts, UIs, or webhooks into a managed
   runtime
 - teams that need local development and cloud deployment to use the same bundle
@@ -76,7 +87,7 @@ Common bundle shapes:
 
 | Product shape | KDCube surfaces |
 | --- | --- |
-| AI copilot with files and reports | chat/on-message, ReAct tools, rendering tools, hosted artifacts |
+| internal AI workbench with files, tasks, and reports | chat/on-message, ReAct tools, canvas, widgets, rendering tools, hosted artifacts |
 | internal operations tool | authenticated APIs, admin widgets, storage, role policy |
 | public integration endpoint | public `@api`, webhook auth, idempotent processing |
 | Telegram or email assistant | SDK integration, public webhook/OAuth callback, user registry, delivery |
@@ -84,6 +95,7 @@ Common bundle shapes:
 | docs or data assistant | knowledge source, MCP endpoint, search/fetch/read tools |
 | scheduled automation | `@cron`, `@on_job`, jobs stream, task/memo solution |
 | existing app wrapper | thin bundle adapter around existing backend/UI/business logic |
+| namespace provider | provider-owned refs, schemas, search/get/upsert, block rendering, canvas actions, file hosting |
 
 One bundle can expose several of these at once.
 
@@ -137,9 +149,16 @@ KDCube widget
   -> same bundle storage and user state
 ```
 
-## 6. Agent Runtime And Tools
+## 6. Flagship ReAct Runtime Model
 
-KDCube supports agents without reducing the platform to a tool-calling wrapper.
+KDCube's flagship agent runtime is ReAct: a timeline-driven runtime model for
+agents that must work with tools, files, events, memory, external namespace
+objects, and long-running work. It is the reference runtime used by the
+`versatile@2026-03-31-13-36` bundle.
+
+ReAct is not a provider-native tool-calling wrapper. The runtime owns the
+protocol shape, timeline, workspace, recovery paths, budgets, and event-source
+policies. The model is the decision module inside that runtime.
 
 The ReAct runtime is a custom channeled protocol, not a vendor tool-calling
 protocol. That is why it can carry rich events and artifacts:
@@ -165,6 +184,19 @@ ANNOUNCE is not decoration and not a cached transcript. It is the runtime's way
 to put between-turn or between-round state directly in the model's attention
 without rewriting old timeline blocks.
 
+Read the ReAct model in this order:
+
+1. [ReAct Runtime Flow](sdk/agents/react/flow-README.md)
+2. [ReAct State Machine](sdk/agents/react/react-state-machine-README.md)
+3. [ReAct Context Layout](sdk/agents/react/context-layout.md)
+4. [ReAct System Instruction](sdk/agents/react/system-instruction-README.md)
+5. [ReAct Tools](sdk/agents/react/react-tools-README.md)
+6. [ReAct Turn Workspace](sdk/agents/react/react-turn-workspace-README.md)
+7. [ReAct Event Sources](sdk/agents/react/event-source/event-source-README.md)
+8. [Why Not Simply Tool Calling](sdk/agents/react/why/why-not-simply-tool-calling-README.md)
+
+## 7. Tools, Skills, And Namespace Services
+
 Tools are SDK/bundle capabilities, not just LLM function calls:
 
 - `web_tools` search/fetch with source-pool provenance
@@ -175,13 +207,31 @@ Tools are SDK/bundle capabilities, not just LLM function calls:
 - `react.*` tools for workspace/artifact recovery, reading, patching, planning,
   and writing
 - MCP tools exposed by configured MCP servers or bundle-served MCP endpoints
-- bundle-local tools through `tools_descriptor.py`
+- named-service tools that connect an agent to configured external namespace
+  providers such as task, memory, canvas, or domain-specific systems
+- bundle-local Python tools wired per agent through
+  `surfaces.as_consumer.agents.<agent>.tools`
 
 Skills are also first-class. Platform/shared skills and custom bundle skills
 provide workflow instructions and domain guidance that the agent can load before
-using tools.
+using tools. New bundles wire skills per agent through
+`surfaces.as_consumer.agents.<agent>.skills`.
 
-## 7. Execution Runtime
+Namespace services are the bridge between bundle-owned domain systems and common
+runtime surfaces. A provider owns refs, objects, schemas, files, block rendering,
+URI resolution, and UI actions for a namespace such as `task:` or `mem:`. A
+consumer connects chat, canvas, ReAct, widgets, or MCP to that namespace by
+configuration, not by embedding provider-specific logic into shared components.
+
+See:
+
+- [Namespace Services](sdk/namespace-services/README.md)
+- [Namespace Service Integration](sdk/namespace-services/integration-README.md)
+- [Named Services Tools](sdk/tools/named-services-tools-README.md)
+- [Tool Subsystem](sdk/tools/tool-subsystem-README.md)
+- [Custom Skills](sdk/skills/custom-skills-README.md)
+
+## 8. Execution Runtime
 
 KDCube includes an execution subsystem for generated code, heavy tools, and
 tool runtimes that should not run inside the main server process.
@@ -212,7 +262,7 @@ This lets bundles use generated-code execution, rendering tools, web/search
 tools, and custom isolated helpers while preserving an auditable result
 contract.
 
-## 8. Streaming And Artifacts
+## 9. Streaming And Artifacts
 
 KDCube is designed for observable long-running work.
 
@@ -238,7 +288,7 @@ Artifacts keep provenance:
 - source-pool citation tokens and replacement
 - hosted-file metadata
 
-## 9. Memory And Continuity
+## 10. Memory And Continuity
 
 KDCube has several memory layers with different owners and lifetimes:
 
@@ -258,7 +308,7 @@ Durable user memory is a standalone subsystem. ReAct can use it by:
 User memory does not replace conversation memory. It extends the agent with
 curated, cross-conversation user facts/preferences/state.
 
-## 10. How Configuration Is Organized
+## 11. How Configuration Is Organized
 
 Use this split:
 
@@ -274,7 +324,7 @@ Use this split:
 Do not put secrets in non-secret props. Do not put per-user runtime state into
 deployment descriptors.
 
-## 11. Turning Code Into A Bundle
+## 12. Turning Code Into A Bundle
 
 When wrapping existing code, keep the boundary clean:
 
@@ -292,8 +342,8 @@ Practical rules:
 - keep business logic reusable and testable outside the bundle class
 - keep KDCube decorators and runtime calls close to `entrypoint.py`
 - expose APIs/widgets/MCP/cron/jobs through platform decorators
-- put bundle-visible tools in `tools_descriptor.py`
-- put bundle-visible skills in `skills_descriptor.py`
+- wire agent tools in `surfaces.as_consumer.agents.<agent>.tools`
+- wire agent skills in `surfaces.as_consumer.agents.<agent>.skills`
 - define deployment config in `config/bundles.template.yaml`
 - define deployment secrets in `config/bundles.secrets.template.yaml`
 - document public routes, widgets, MCP, jobs, and config in `interface/README.md`
@@ -308,7 +358,7 @@ Start with the Tier 1 bundle docs:
 5. [configuration/bundle-runtime-configuration-and-secrets-README.md](configuration/bundle-runtime-configuration-and-secrets-README.md)
 6. [sdk/bundle/build/how-to-configure-and-run-bundle-README.md](sdk/bundle/build/how-to-configure-and-run-bundle-README.md)
 
-## 12. Coding-Agent Instruction Seed
+## 13. Coding-Agent Instruction Seed
 
 Use this when asking Claude Code, Codex, or another coding agent to build a
 bundle:
@@ -329,8 +379,9 @@ Then inspect the versatile reference bundle for the nearest pattern.
 
 Build the bundle as a thin KDCube adapter around product logic:
 - entrypoint.py exposes surfaces with decorators
-- tools_descriptor.py exposes agent tools
-- skills_descriptor.py exposes agent skills
+- agents/main.py contains the primary ReAct workflow when the bundle uses ReAct
+- config/bundles.template.yaml wires agent tools under surfaces.as_consumer.agents.<agent>.tools
+- config/bundles.template.yaml wires agent skills under surfaces.as_consumer.agents.<agent>.skills
 - config templates define bundle props/secrets
 - interface docs define routes/widgets/MCP/jobs/config
 - tests verify imports, descriptors, and runtime behavior
@@ -338,23 +389,6 @@ Build the bundle as a thin KDCube adapter around product logic:
 Run locally with kdcube init/start/bundle reload using the active descriptor set.
 Do not invent runtime paths or config scopes; use the docs and reference bundle.
 ```
-
-## 13. KDCube Copilot And Docs MCP
-
-The built-in `kdcube.copilot@2026-04-03-19-05` bundle is a reference copilot
-for KDCube documentation and platform guidance. It can answer questions from
-the configured documentation knowledge source and can also expose that source
-through a bundle-served MCP endpoint:
-
-```python
-@mcp(alias="kdcube-doc", route="public")
-def kdcube_doc_mcp(self, **kwargs):
-    return self._build_doc_reader_mcp_app(name_suffix="kdcube-doc")
-```
-
-This makes the same documentation useful in two ways: as normal human-readable
-docs and as a structured knowledge source for tools, copilots, and external
-agents that speak MCP.
 
 ## 14. Implementation Limits And Honest Boundaries
 
@@ -369,7 +403,8 @@ KDCube gives a runtime contract, not magic:
 - agent quality depends on visible docs, loaded skills, available tools, and
   configured model/runtime budgets
 - durable memory writes require explicit policy and result verification
-- MCP/docs knowledge sources must point at the intended repo/ref/root
+- MCP/docs knowledge sources must point at the intended repo/ref/root when a
+  deployment exposes such a surface
 
 ## 15. Short Practical Framing
 

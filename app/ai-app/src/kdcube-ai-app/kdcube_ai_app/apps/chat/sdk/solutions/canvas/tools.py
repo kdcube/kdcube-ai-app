@@ -1,7 +1,8 @@
 """Reusable ReAct tools for the SDK canvas solution.
 
-Bundles normally include this module in `tools_descriptor.py` with alias
-`canvas` and `use_sk: true`. The exported tool id is:
+Bundles normally connect this module through
+``surfaces.as_consumer.agents.<agent>.tools`` with alias ``canvas``. The
+exported tool id is:
 
 ```text
 canvas.patch

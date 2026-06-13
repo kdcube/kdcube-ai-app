@@ -20,18 +20,6 @@ Important files:
 - `ui/widgets/telegram_miniapp` - Telegram Mini App widget source.
 - `interface/README.md` and `interface/versatile.openapi.yaml` - frontend/API contract.
 
-Removed legacy surfaces:
-
-- `ui/main`
-- `consumer_surfaces.py`
-- `preferences_store.py`
-- `tools_descriptor.py`
-- `skills_descriptor.py`
-- `events_descriptor.py`
-- `tools/preference_tools.py`
-
-Do not reintroduce those files as defaults or compatibility surfaces.
-
 ## Tool Wiring
 
 The solver tool policy is read from:

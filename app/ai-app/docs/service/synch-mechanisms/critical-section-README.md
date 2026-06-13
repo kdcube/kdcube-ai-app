@@ -114,9 +114,6 @@ kdcube_ai_app/infra/plugin/git_bundle.py
 kdcube_ai_app/infra/plugin/bundle_store.py
   raw observed file lock for shared example-bundle materialization
 
-kdcube_ai_app/apps/chat/sdk/examples/bundles/kdcube.copilot@2026-04-03-19-05/entrypoint.py
-  raw observed file lock for the documentation knowledge registry/index build
-
 applications/src/knowledge@1-0/entrypoint.py
   raw observed file lock for materializing packaged maintained knowledge into
   bundle storage and building the runtime SQLite index
@@ -182,7 +179,7 @@ Example lock-file content while held:
   "operation": "git.bundle.materialize",
   "owner_token": "7b3b5c...",
   "pid": 52302,
-  "resource_id": "git-bundle:kdcube.copilot@2026-04-03-19-05.knowledge:2026.5.13.117"
+  "resource_id": "git-bundle:knowledge@1-0.content:2026.5.13.117"
 }
 ```
 
@@ -316,13 +313,13 @@ one worker materializes; others wait or find fresh output
 The file lock is still needed even when Redis is enabled because it protects the
 actual filesystem path used for clone/fetch/checkout.
 
-### Documentation MCP / Prepared Bundle Data
+### Prepared Bundle Data
 
-The built-in `kdcube.copilot@2026-04-03-19-05` bundle is a concrete example of
-this mechanism. It exposes a public, read-only documentation MCP endpoint over
-an indexed prepared-data store. To keep that MCP endpoint fast and safe in
-local docker-compose and cloud runtimes, the bundle protects the shared prepared
-state with exclusive build guards.
+Knowledge and document-serving bundles are concrete examples of this mechanism.
+They may expose an indexed prepared-data store through APIs, tools, or MCP
+surfaces. To keep those surfaces fast and safe in local docker-compose and cloud
+runtimes, the bundle protects the shared prepared state with exclusive build
+guards.
 
 That example has two guarded phases:
 
@@ -644,8 +641,8 @@ Filesystem shape:
     <tenant>/
       <project>/
         <specific-bundle-storage-dir>/
-          .knowledge.lock               # copilot docs knowledge build lock
-          .knowledge.signature          # copilot docs knowledge build signature
+          .knowledge.lock               # prepared knowledge build lock
+          .knowledge.signature          # prepared knowledge build signature
           docs/
           index.json
           index.md

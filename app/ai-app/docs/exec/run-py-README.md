@@ -75,8 +75,8 @@ BUNDLE_STORAGE_ROOT=/bundle-storage
 
 ## Tool availability inside the sandbox
 
-Tools defined in a bundle `tools_descriptor.py` are **available in the executor**:
-- The supervisor loads tool modules using the exec launch payload. Docker passes this inline as `RUNTIME_GLOBALS_JSON`; Fargate stores it in AWS Secrets Manager and passes `KDCUBE_EXEC_PAYLOAD_SECRET_ID`, which the entrypoint resolves with `GetSecretValue` before bootstrap.
+Trusted tools configured for the active agent are **available in the executor through the supervisor**:
+- The supervisor loads the configured tool modules using the exec launch payload. Docker passes this inline as `RUNTIME_GLOBALS_JSON`; Fargate stores it in AWS Secrets Manager and passes `KDCUBE_EXEC_PAYLOAD_SECRET_ID`, which the entrypoint resolves with `GetSecretValue` before bootstrap.
 - In Docker/Fargate supervised modes, the supervisor also materializes descriptor payloads (`KDCUBE_RUNTIME_*_YAML_B64`) so bundle tools can use the normal descriptor-backed settings and secrets APIs.
 - The executor calls them via:
 

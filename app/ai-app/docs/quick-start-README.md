@@ -270,8 +270,8 @@ Use the UI/admin surfaces and CLI to check:
 - MCP endpoints are listed and callable when the bundle exposes them
 - generated files and timeline artifacts appear with expected visibility
 
-For `kdcube.copilot`, check that it answers questions from the KDCube docs and
-that its docs MCP endpoint is exposed when configured.
+For `versatile`, check that the chat route loads, configured widgets build, and
+any enabled namespace-service or MCP surfaces are listed and callable.
 
 ## 10. Coding-Agent Bootstrap Prompt
 

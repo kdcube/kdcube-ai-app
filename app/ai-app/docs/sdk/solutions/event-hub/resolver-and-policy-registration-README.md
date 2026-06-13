@@ -244,8 +244,8 @@ composition bundle
     registers resolver instances/adapters
     exposes bundle operations and widgets
 
-  tools_descriptor.py
-    exposes tools from mounted domains
+  config/bundles.template.yaml
+    wires tools and namespace-service surfaces for consuming agents
 
   agents/instructions.py
     concatenates stable additional instructions from mounted domains

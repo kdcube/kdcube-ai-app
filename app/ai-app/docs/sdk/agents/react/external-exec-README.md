@@ -74,9 +74,9 @@ Practical consequence:
 - generated code in the executor must not assume bundle code roots or bundle storage paths are directly readable
 - if code needs privileged data access, it must go through a supervisor-side tool boundary
 
-Example: `kdcube.copilot`
+Example: a bundle with a prepared local index
 
-- bundle code lives under `/bundles/kdcube.copilot@...`
+- bundle code lives under `/bundles/<bundle_id>`
 - its prepared index data lives under the per-bundle storage dir
 - its public search surface reads that physical data through its bundle resolver
 - if isolated exec loads the resolver without having run the bundle entrypoint first, the supervisor-side resolver falls back to `BUNDLE_STORAGE_DIR`

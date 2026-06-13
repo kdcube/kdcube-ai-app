@@ -581,7 +581,7 @@ Current message-kind rule:
 
 ## 10. Bundle Code Loading, Cutover, And Shared Example Bundles
 
-Processor workers do not hardcode built-in bundle directories such as `/bundles/kdcube.copilot@...`.
+Processor workers do not hardcode built-in bundle directories such as `/bundles/<bundle_id>`.
 They load bundles through the current registry entry and therefore through the current resolved `BundleSpec.path`.
 
 Current behavior:

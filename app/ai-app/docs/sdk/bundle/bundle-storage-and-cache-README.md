@@ -183,7 +183,7 @@ ReAct integration:
 
 See:
 - [docs/sdk/bundle/bundle-developer-guide-README.md](bundle-developer-guide-README.md) (on_bundle_load + usage)
-- Example bundle: `.../examples/bundles/kdcube.copilot@2026-04-03-19-05`
+- Example bundle: `.../examples/bundles/versatile@2026-03-31-13-36`
 
 ---
 

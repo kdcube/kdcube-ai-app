@@ -29,9 +29,9 @@ Prefer a local `kdcube-ai-app` checkout if you have one. Otherwise use these pub
 
 1. `https://github.com/kdcube/kdcube-ai-app/blob/main/README.md`
 2. `https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/bundle/bundle-index-README.md`
-3. `https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/bundle/bundle-reference-versatile-README.md`
-4. `https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/bundle/bundle-dev-README.md`
-5. `https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/bundle/bundle-runtime-README.md`
+3. `https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/bundle/versatile-reference-bundle-README.md`
+4. `https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/bundle/build/how-to-write-bundle-README.md`
+5. `https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/configuration/bundle-runtime-configuration-and-secrets-README.md`
 6. `https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/bundle/bundle-platform-integration-README.md`
 7. `https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/bundle/bundle-props-secrets-README.md`
 8. `https://github.com/kdcube/kdcube-ai-app/blob/main/app/ai-app/docs/sdk/bundle/bundle-node-backend-bridge-README.md`
@@ -42,8 +42,6 @@ Use these examples first:
 
 - versatile reference bundle:
   `https://github.com/kdcube/kdcube-ai-app/tree/main/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36`
-- knowledge-space and extended resolver example:
-  `https://github.com/kdcube/kdcube-ai-app/tree/main/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/kdcube.copilot@2026-04-03-19-05`
 - isolated exec example:
   `https://github.com/kdcube/kdcube-ai-app/tree/main/app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/with-isoruntime@2026-02-16-14-00`
 - public Node/TS bridge example:
@@ -51,7 +49,7 @@ Use these examples first:
 
 Default to `versatile` unless the task is specifically about:
 
-- `ks:` / custom namespace resolvers
+- namespace services / custom namespace resolvers
 - isolated exec
 - the Node/TS bridge
 

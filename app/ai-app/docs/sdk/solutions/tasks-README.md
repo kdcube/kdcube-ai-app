@@ -96,18 +96,23 @@ task.tasks  -> create/list/update/delete/link tasks and recover execution output
 task.job    -> execute one saved task and update its execution journal
 ```
 
-A bundle enables them through its `skills_descriptor.py`:
+A bundle enables them through the consuming agent's configured skills:
 
-```python
-REACT_DECISION_SKILLS = [
-    "public.*",
-    "task.tasks",
-]
-
-REACT_JOB_DECISION_SKILLS = [
-    "public.*",
-    "task.job",
-]
+```yaml
+surfaces:
+  as_consumer:
+    agents:
+      main:
+        skills:
+          consumers:
+            solver.react.v2.decision.v2.regular:
+              allow:
+                - public.*
+                - task.tasks
+            solver.react.v2.decision.v2.job:
+              allow:
+                - public.*
+                - task.job
 ```
 
 Bundles may still keep product-specific skills in their own custom skills root.

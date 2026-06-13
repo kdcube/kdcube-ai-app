@@ -104,9 +104,10 @@ imports, short ids, and skill reads for that runtime context.
    - Decision and generator code resolve skills via the active subsystem.
 
 4) Isolated execution (exec/codegen)
-   - Runtime globals include `SKILLS_DESCRIPTOR` from the active subsystem.
-   - `py_code_exec_entry.py` reads it and calls `set_skills_descriptor(...)`,
-     recreating a `SkillsSubsystem` in the isolated process.
+   - Runtime globals include a serialized skills runtime spec from the active
+     subsystem.
+   - `py_code_exec_entry.py` reads it and recreates a `SkillsSubsystem` in the
+     isolated process.
    - This works for both local subprocess isolation and Docker mode.
 
 ## Access patterns
@@ -115,7 +116,7 @@ imports, short ids, and skill reads for that runtime context.
   - `get_active_skills_subsystem()` to resolve skills
   - `build_skills_instruction_block(...)` for generator system prompts
 - Isolated runtime:
-  - `set_skills_descriptor(...)` from `SKILLS_DESCRIPTOR` in runtime globals
+  - recreate the active `SkillsSubsystem` from runtime globals
 
 ## Sources and citations
 

@@ -233,8 +233,6 @@ bundle-specific `work_kind` dispatch runs.
 
 - `versatile@2026-03-31-13-36` uses
   `BaseEntrypointWithEconomicsAndMemory`.
-- `kdcube.copilot@2026-04-03-19-05` uses
-  `BaseEntrypointWithEconomicsAndMemory`.
 - simpler examples such as `react@2026-02-10-02-44`,
   `react.mcp@2026-03-09`, and `echo.ui@2026-03-30` use `BaseEntrypoint`.
 - `eco@2026-02-18-15-06` uses `BaseEntrypointWithEconomics`.

@@ -1,7 +1,8 @@
 """Reusable cross-conversation memory tools for bundles.
 
-Bundles normally include this module in `tools_descriptor.py` with alias
-`memory` and `use_sk: true`. The exported tool ids are therefore:
+Bundles normally connect this module through
+``surfaces.as_consumer.agents.<agent>.tools`` with alias ``memory``. The
+exported tool ids are therefore:
 
 ```text
 memory.search_memory
@@ -96,7 +97,7 @@ def list_event_sources() -> list[Any]:
     """Declare ReAct event sources for the module-level memory tools.
 
     The declarations are alias-relative because the runtime tool id is produced
-    by `tools_descriptor.py`: `alias + "." + callable_name`. Current reference
+    by the configured tool alias: `alias + "." + callable_name`. Current reference
     bundles use alias `memory`, yielding ids such as `memory.search_memory`.
 
     Memory tools return JSON dictionaries with `ok`, `memory`, `memories`,

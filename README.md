@@ -16,19 +16,7 @@
   <a href="https://pypistats.org/packages/kdcube-cli">
     <img alt="PyPI downloads" src="https://img.shields.io/pypi/dm/kdcube-cli?label=downloads">
   </a>
-  <a href="https://dev.kdcube.tech/api/integrations/bundles/demo/demo-march/kdcube.copilot@2026-04-03-19-05/public/mcp/kdcube-doc">
-    <img alt="Public docs MCP endpoint" src="https://img.shields.io/badge/docs%20MCP-public-2563eb">
-  </a>
 </p>
-
-<div style="background:#fff7cc;border:1px solid #fde68a;border-radius:8px;padding:12px 16px;margin:16px 0;">
-  <strong>Documentation MCP server</strong><br>
-  Public, read-only endpoint for MCP-capable clients:
-  <br>
-  <a href="https://dev.kdcube.tech/api/integrations/bundles/demo/demo-march/kdcube.copilot@2026-04-03-19-05/public/mcp/kdcube-doc">
-    <code>https://dev.kdcube.tech/api/integrations/bundles/demo/demo-march/kdcube.copilot@2026-04-03-19-05/public/mcp/kdcube-doc</code>
-  </a>
-</div>
 
 KDCube is a self-hosted platform, SDK, runtime, and control plane for AI
 applications. It is not a workflow loop wrapped around a model. It is built
@@ -58,10 +46,10 @@ need a cloud control plane to start.
 - a platform + SDK for building new AI apps or wrapping existing systems
 - full applications, not just workflow loops: backend, frontend, APIs,
   widgets, MCP, cron, streaming, storage, and runtime control in one unit
-- a live control plane for enabling, disabling, gating, and hot-reapplying
+- a live control plane for enabling, disabling, gating, reloading, and applying
   bundles and their APIs, widgets, MCP surfaces, and jobs
-- Bundle Admin operations instead of deployment ceremony: add or update the
-  app entry, press save, and apply changes with zero downtime
+- Bundle Admin and CLI operations instead of deployment ceremony for every
+  config/code iteration
 - scalable by construction: start on one machine, then keep the same bundle
   and environment model across machines with shared Redis, Postgres, blob
   storage, and Git-backed sources
@@ -125,10 +113,9 @@ my.bundle@1-0/
   AGENTS.md
   release.yaml
   entrypoint.py
-  orchestrator/
-    workflow.py
-  tools_descriptor.py
-  skills_descriptor.py
+  agents/
+    main.py
+  services/
   tools/
   skills/
   config/
@@ -230,8 +217,6 @@ Primary reference bundle:
 
 Specialized examples:
 
-- [`kdcube.copilot@2026-04-03-19-05`](app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/kdcube.copilot@2026-04-03-19-05)
-  for bundle-defined `ks:` knowledge space and builder copilot behavior
 - [`with-isoruntime@2026-02-16-14-00`](app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/with-isoruntime@2026-02-16-14-00)
   for direct isolated exec
 - [Node/TS backend bridge doc](app/ai-app/docs/sdk/bundle/bundle-node-backend-bridge-README.md)

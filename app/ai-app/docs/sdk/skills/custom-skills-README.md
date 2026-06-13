@@ -12,8 +12,7 @@ see_also:
 # Custom Skills
 
 Bundle-local skills are configured next to the consuming agent, the same way
-tools are configured. Do not add a bundle `skills_descriptor.py` for new
-bundles.
+tools are configured.
 
 The registry still loads three skill layers:
 - core SDK skills
