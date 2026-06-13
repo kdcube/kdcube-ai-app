@@ -298,6 +298,13 @@ def test_stream_policy_recovery_keeps_accepted_search_and_drops_later_final_answ
         "final_answer": "done",
     }
     raw_search = "```json\n" + json.dumps(search_decision) + "\n```"
+    interrupted_raw = (
+        "<channel:action>"
+        + raw_search
+        + "</channel:action>"
+        + "<channel:action>```json\n"
+        + json.dumps(denied_final)
+    )
     packet = {
         "agent_response": denied_final,
         "agent_response_bundle": [search_decision, denied_final],
@@ -320,6 +327,7 @@ def test_stream_policy_recovery_keeps_accepted_search_and_drops_later_final_answ
                 },
             }
         ],
+        interrupted_raw_text=interrupted_raw,
     )
 
     assert recovered is not None
@@ -328,6 +336,8 @@ def test_stream_policy_recovery_keeps_accepted_search_and_drops_later_final_answ
     assert recovered["agent_response_bundle"][0]["action"] == "call_tool"
     assert recovered["agent_response_bundle"][0]["tool_call"]["params"]["queries"] == ["kdcube"]
     assert recovered["log"]["error"] is None
+    assert recovered["raw"] == interrupted_raw
+    assert recovered["log"]["stream_policy_interrupted_raw_len"] == len(interrupted_raw)
     assert recovered["log"]["stream_policy_recovered"] is True
     assert recovered["log"]["stream_policy_rejected_items"] == [
         {

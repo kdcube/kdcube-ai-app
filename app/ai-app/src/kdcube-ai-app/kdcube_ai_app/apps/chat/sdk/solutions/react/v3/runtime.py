@@ -1806,6 +1806,7 @@ class ReactSolverV2:
         decision_stream_instances: Dict[int, Dict[str, Any]],
         accepted_actions: List[Any],
         rejected_items: List[Dict[str, Any]],
+        interrupted_raw_text: str = "",
     ) -> Optional[Dict[str, Any]]:
         """Recover a safe decision packet after online policy rejected a later action.
 
@@ -1844,6 +1845,10 @@ class ReactSolverV2:
         log["error"] = None
         log["stream_policy_rejected_items"] = list(rejected_items)
         log["stream_policy_recovered"] = True
+        raw_text = str(interrupted_raw_text or "").strip()
+        if raw_text:
+            log["stream_policy_interrupted_raw_len"] = len(raw_text)
+            packet["raw"] = raw_text
         packet["agent_response"] = accepted_bundle[0]
         packet["agent_response_bundle"] = accepted_bundle
         packet["log"] = log
@@ -3137,6 +3142,7 @@ class ReactSolverV2:
             pass
         decision: Dict[str, Any] = {}
         stream_policy_violation: Optional[StreamPolicyViolation] = None
+        interrupted_raw_text = ""
         try:
             async with with_accounting(
                 self.ctx_browser.runtime_ctx.bundle_id,
@@ -3162,9 +3168,10 @@ class ReactSolverV2:
                 )
         except StreamPolicyViolation as exc:
             stream_policy_violation = exc
+            interrupted_raw_text = "".join(self._active_generation_raw_chunks or "").strip()
             try:
                 self.log.log(
-                    f"[react.v3] decision stream interrupted by policy: code={exc.code} extra={dict(exc.extra or {})}",
+                    f"[react.v3] decision stream interrupted by policy: code={exc.code} raw_len={len(interrupted_raw_text)} extra={dict(exc.extra or {})}",
                     "WARNING",
                 )
             except Exception:
@@ -3182,6 +3189,7 @@ class ReactSolverV2:
                 decision_stream_instances=decision_stream_instances,
                 accepted_actions=action_overseer.accepted_actions(),
                 rejected_items=policy_rejected_items,
+                interrupted_raw_text=interrupted_raw_text,
             )
             if recovered_packet is not None:
                 decision = recovered_packet
