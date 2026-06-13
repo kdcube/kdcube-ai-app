@@ -5,6 +5,7 @@ summary: "Channeled streaming protocol used by the SDK (versatile_streamer) and 
 tags: ["sdk", "streaming", "channels", "protocol", "communicator"]
 keywords: ["versatile_streamer.py", "channel schema", "delta", "answer", "status", "event routing"]
 see_also:
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/streaming/governed-streaming-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/streaming/streaming-widget-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/event-blocks-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/external-exec-README.md
@@ -24,6 +25,8 @@ The channeled streamer provides:
 - Per-channel format controls (markdown/html/json/text).
 - Per-channel citation replacement while preserving raw text in storage.
 - Optional composite streaming for managed JSON artifacts.
+- Optional governed subscribers that buffer visible deltas until a runtime
+  overseer allows the detected streamed move.
 
 This avoids ad-hoc parsing and ensures the client sees the correct channel
 content as it streams.
@@ -77,6 +80,19 @@ When routing channel output to the client, keep it simple:
 The streamer is designed to be safe with citation tokens split across chunk
 boundaries. It uses a stateful citation tokenizer per channel so `[[S:n]]`
 never leaks to the client when replacement is enabled.
+
+## Governed Subscribers
+
+Some channel subscribers do more than mirror text to a sink. They sniff a lane
+for a runtime move and hold user-visible deltas behind a gate until policy
+allows the move.
+
+```text
+channel chunk -> subscriber/sniffer -> overseer -> gate -> visible sink
+```
+
+For details, including steer interruption and harness-policy interruption, see
+[Governed Streaming](governed-streaming-README.md).
 
 ## Citation Replacement
 

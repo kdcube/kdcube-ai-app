@@ -61,6 +61,12 @@ Read in this order:
 9. `skills/` plus `surfaces.as_consumer.agents.<agent>.skills` when the bundle has local skills
 10. [bundle-agent-integration-README.md](bundle-agent-integration-README.md) when the bundle has React tools/skills, MCP, or Claude Code subagents
 
+When the bundle exposes custom or connected tools to a ReAct agent, include the
+tool strategy traits in `surfaces.as_consumer.agents.<agent>.tools`. Strategy
+traits make the tools governable by the online multi-action harness and reduce
+avoidable protocol errors. The practical authoring guide is
+[Custom Tools](../tools/custom-tools-README.md#21-make-react-tools-governable-with-strategy-traits).
+
 The assembly map is the fastest way to find reusable Tasks, Email, Telegram,
 Delivery, web/rendering/exec tools, storage, widgets, jobs, MCP, and Claude
 Code blocks before writing a bundle-local service.

@@ -7,6 +7,7 @@ keywords: ["react.read", "react.pull", "react.checkout", "react.write", "react.p
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/artifact-discovery-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/react-round-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/online-strategic-governance-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/tool-call-blocks-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/event-subsystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/namespaces-README.md
@@ -22,6 +23,12 @@ These tools are injected into the React decision runtime. They are not the same 
 - external tools such as `web_tools.*` or `rendering_tools.*`
 - bundle tools
 - exec runtime shell commands
+
+In `v3` multi-action mode, each visible tool id also participates in online
+strategic governance. The runtime resolves the tool's strategy trait, then uses
+the ordered compatibility matrix to decide whether later same-round actions can
+share the round. See
+[ReAct Online Strategic Governance](online-strategic-governance-README.md).
 
 ## Common Rules
 

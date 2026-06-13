@@ -9,6 +9,8 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/tools/mcp-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/tools/named-services-tools-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/multi-action/tool-strategy-traits-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/online-strategic-governance-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/streaming/governed-streaming-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/event-subsystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/event-source/event-source-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/event-source/block-production-README.md
@@ -86,13 +88,158 @@ Notes:
 - `ref` is relative to bundle root (portable across host and isolated runtimes).
 - `alias` becomes the tool ID prefix.
 - `allowed` is the exact callable allow-list for that agent.
-- `tool_traits` can attach per-agent runtime traits such as
-  `strategy: [exploration]`, `strategy: [exploitation]`, or
-  `strategy: [neutral]`. ReAct uses the `strategy` trait for multi-action
-  compatibility. See
-  [Tool Strategy Traits](../solutions/multi-action/tool-strategy-traits-README.md).
 - `discovery` defaults to `semantic_kernel`; only `@kernel_function` tools
   should be published to the model catalog for Python sources.
+
+## 2.1) Make ReAct tools governable with strategy traits
+
+If a tool is visible to a ReAct agent, document its strategic role with the
+`strategy` trait. This is not only catalog decoration. The ReAct harness uses
+the trait during online stream governance to decide whether same-round moves
+can safely share a round.
+
+Governed tools reduce invalid multi-action rounds:
+
+```text
+tool has strategy trait
+  -> catalog shows the trait
+  -> stream overseer can classify the move early
+  -> compatible moves pass
+  -> incompatible later moves are interrupted before large wrong payloads finish
+```
+
+If a tool has no strategy trait, the runtime treats it as `unknown`. Unknown
+tools run alone because the harness cannot prove same-round compatibility.
+That is safe, but it causes more dropped actions and retries for reactive
+agents.
+
+Use the detailed policy docs for the full matrix and stream interruption path:
+
+- [Tool Strategy Traits](../solutions/multi-action/tool-strategy-traits-README.md)
+- [ReAct Online Strategic Governance](../agents/react/online-strategic-governance-README.md)
+
+### Strategy values
+
+```text
+exploration   reads, searches, fetches, inspects, pulls
+exploitation  writes, patches, renders, upserts, deletes, hosts files
+neutral       bookkeeping that does not change the answer premise
+unknown       omitted or undiscovered strategy; runs alone
+```
+
+### Mark a bundle-local Python tool in code
+
+Use `@tool_trait(...)` when the tool has an intrinsic strategy independent of
+deployment:
+
+```python
+from typing import Annotated
+
+try:
+    from semantic_kernel.functions import kernel_function
+except Exception:
+    from semantic_kernel.utils.function_decorator import kernel_function
+
+from kdcube_ai_app.apps.chat.sdk.runtime.tool_traits import tool_trait
+
+@tool_trait(strategy=["exploration"])
+@kernel_function(name="search", description="Search bundle knowledge")
+async def search(query: Annotated[str, "Search query"], n: Annotated[int, "Max results"] = 5):
+    ...
+```
+
+Decorator traits travel with the discovered tool metadata.
+
+### Override or assign traits in the consumer config
+
+Use `tool_traits` under the agent tool connection when the strategy is a
+deployment/agent policy or when the source is external:
+
+```yaml
+surfaces:
+  as_consumer:
+    agents:
+      main:
+        tools:
+          - id: docs
+            kind: python
+            ref: tools/local_tools.py
+            alias: doc
+            discovery: semantic_kernel
+            allowed: [search, export_report]
+            tool_traits:
+              search:
+                strategy: [exploration]
+              export_report:
+                strategy: [exploitation]
+```
+
+Consumer config is authoritative for the active agent. It can add traits to
+tools that cannot be decorated and can override decorator-provided traits.
+
+### Mark connected MCP tools
+
+MCP tools cannot use Python decorators. Mark them on the MCP connection:
+
+```yaml
+- id: knowledge
+  kind: mcp
+  server_id: knowledge
+  alias: knowledge
+  allowed: ["*"]
+  tool_traits:
+    "*":
+      strategy: [exploration]
+
+- id: browser
+  kind: mcp
+  server_id: browser
+  alias: browser
+  allowed: [open_page, click, close]
+  tool_traits:
+    open_page:
+      strategy: [exploration]
+    click:
+      strategy: [exploration, exploitation]
+    close:
+      strategy: [neutral]
+```
+
+`"*"` applies to all tools from that connection. Prefer concrete tool names
+when the server exposes mixed read/write behavior.
+
+### Mark named-service tools
+
+Named-service `allowed` entries use provider operation ids, but `tool_traits`
+uses the concrete ReAct-facing tool callable names:
+
+```yaml
+- id: task_service
+  kind: named_service
+  alias: named_services
+  namespaces:
+    task:
+      allowed:
+        - provider.about
+        - object.search
+        - object.schema
+        - object.upsert
+        - object.host_file
+  tool_traits:
+    provider_about:
+      strategy: [exploration]
+    search_objects:
+      strategy: [exploration]
+    object_schema:
+      strategy: [exploration]
+    upsert_object:
+      strategy: [exploitation]
+    host_file:
+      strategy: [exploitation]
+```
+
+See [Named Services Tools](named-services-tools-README.md) for the operation
+to callable-name mapping.
 
 Runtime code resolves this config with the SDK helper. The config remains the
 policy source for which tools an agent sees:

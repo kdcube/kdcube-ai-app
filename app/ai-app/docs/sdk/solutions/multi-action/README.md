@@ -6,6 +6,8 @@ tags: ["sdk", "react", "streaming", "multi-action", "overseer", "gating"]
 keywords: ["RoundActionOverseer", "ActionStreamGate", "TimelineStreamer", "ToolContentStreamerBase", "DecisionExecCodeStreamer", "StreamPolicyViolation"]
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/multi-action/tool-strategy-traits-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/streaming/governed-streaming-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/online-strategic-governance-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/streaming/channeled-streamer-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/streaming/llm-streaming-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/streaming/streaming-widget-README.md

@@ -19,6 +19,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/react-turn-workspace-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/source-pool-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/external-exec-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/online-strategic-governance-README.md
 ---
 # End-to-end flow (React)
 
@@ -203,6 +204,13 @@ Typical loop behavior:
 - tool executes
 - runtime emits `react.tool.result`
 - React continues until it emits final answer
+
+In `v3` multi-action mode, the decision stream is governed online before tool
+execution. Stream sniffers identify action moves while they are still being
+generated; an overseer opens or denies gated output lanes according to the
+ReAct strategy policy. Incompatible later moves are interrupted early and
+recorded as protocol violations instead of being streamed to the user. See
+[ReAct Online Strategic Governance](online-strategic-governance-README.md).
 
 Plans and notices are also added as timeline blocks when relevant.
 

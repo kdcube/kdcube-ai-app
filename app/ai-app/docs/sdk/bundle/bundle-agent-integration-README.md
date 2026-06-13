@@ -447,6 +447,17 @@ namespace rehosters. If the model should not call it, pass it through
 | turn state | `scratchpad` | carries user text, attachments, conversation metadata, and current turn paths |
 | tool runtime context | bound runtime globals/helpers | tools receive service, integrations, communicator, cache, context client, and bundle scope helpers |
 
+For ReAct agents, every connected tool source should also say how its visible
+tools participate in strategic governance. Put `tool_traits.strategy` on the
+same `surfaces.as_consumer.agents.<agent>.tools` entry that exposes the tool.
+This is how the harness knows whether a move is exploration, exploitation, or
+neutral while the model stream is still being generated. It improves reactive
+agent behavior by allowing safe fanout and interrupting incompatible later
+moves before the user waits for wrong streamed output. See
+`repo:kdcube-ai-app/app/ai-app/docs/sdk/tools/custom-tools-README.md#21-make-react-tools-governable-with-strategy-traits`
+and
+`repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/online-strategic-governance-README.md`.
+
 Example:
 
 ```python

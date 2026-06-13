@@ -8,6 +8,8 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/tools/custom-tools-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/tools/mcp-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/tools/named-services-tools-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/multi-action/tool-strategy-traits-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/online-strategic-governance-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/event-subsystem-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/event-source/event-source-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/event-source/block-production-README.md
@@ -116,6 +118,14 @@ tool metadata. The `strategy` trait drives ReAct multi-action compatibility:
 MCP connections may use `"*"` as a wildcard trait for all tools from that
 server. See
 `repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/multi-action/tool-strategy-traits-README.md`.
+
+For ReAct agents, treat `tool_traits.strategy` as part of the tool connection
+contract. It gives the online governance harness enough information to accept
+safe same-round moves and interrupt incompatible later moves before their
+streamed payloads reach the user. If a visible tool has no strategy, it is
+`unknown` and runs alone. Bundle authors should mark custom and connected tools
+when they expose them to ReAct; see
+`repo:kdcube-ai-app/app/ai-app/docs/sdk/tools/custom-tools-README.md#21-make-react-tools-governable-with-strategy-traits`.
 
 At runtime, `agent_tool_config_from_bundle_props(...)` converts this config
 into:

@@ -14,6 +14,7 @@ keywords:
   - "provider-agnostic model invocation"
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/streaming/channeled-streamer-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/streaming/governed-streaming-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/accounting/accounting-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/configuration/bundle-runtime-configuration-and-secrets-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/react-state-machine-README.md
@@ -57,7 +58,10 @@ The LLM streaming layer provides:
 - provider-independent error reporting back to the caller
 
 It is not a UI streamer by itself. UI/channel streaming is layered above it by
-the channeled streamer and agent runtimes.
+the channeled streamer and agent runtimes. When a runtime needs to inspect a
+streamed move before it reaches the user, that higher layer uses governed
+streaming: channel subscribers sniff the stream, gates buffer visible deltas,
+and an overseer allows or interrupts the lane.
 
 ## Architectural Boundary
 

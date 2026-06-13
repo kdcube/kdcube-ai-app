@@ -9,6 +9,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/event-blocks-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/react-tools-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/timeline-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/agents/react/online-strategic-governance-README.md
 ---
 # React Round Model
 
@@ -17,6 +18,10 @@ This document describes the ReactRound concept and how decision attempts and too
 ## Overview
 - In production `v2`, one response corresponds to one round, and a successful round executes exactly one action.
 - In experimental `v3`, one response can request multiple actions, but accepted actions are still executed sequentially.
+- In `v3` multi-action mode, streamed action candidates are governed online:
+  first valid action survives, later candidates are checked against already
+  accepted moves, and incompatible later candidates are dropped before their
+  gated output reaches the user.
 - Each executed action still gets its own `tool_call_id`, `react.tool.call`, and `react.tool.result` blocks.
 - A round can also be a failed decision attempt with no executed action. In that case the timeline still shows:
   - `react.round.start`
