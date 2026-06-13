@@ -256,8 +256,8 @@ connector/server wiring, and Claude Code subagent requirements.
 For a React-backed bundle, prove the agent surface before manual testing:
 
 - `entrypoint.py` instantiates the workflow in the same shape as
-  `kdcube.copilot@2026-04-03-19-05`
-- `orchestrator/workflow.py` calls `BaseWorkflow.build_react(...)`
+  the versatile reference bundle
+- `agents/main.py` calls `BaseWorkflow.build_react(...)`
 - `surfaces.as_consumer` exposes only the tool aliases the bundle actually needs
 - bundle-local tool entries in `surfaces.as_consumer` use `ref` and the tool
   modules import same-bundle helpers with package-relative imports

@@ -31,7 +31,7 @@ from kdcube_ai_app.infra.service_hub.inventory import Config, ModelServiceBase
 from langgraph.graph import END, START, StateGraph
 
 from .. import skills_descriptor
-from ..agents.gate import GateOut as MinimalGateOut, gate_stream
+from .gate import GateOut as MinimalGateOut, gate_stream
 from ..resources.service_messages.resources import get_friendly_error_message
 
 LOGGER = logging.getLogger(__name__)

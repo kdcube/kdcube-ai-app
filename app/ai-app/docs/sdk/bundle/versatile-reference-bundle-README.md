@@ -30,7 +30,7 @@ This is the bundle to study first.
 | Capability | Where to look |
 | --- | --- |
 | Entry point and graph bootstrap | `entrypoint.py` |
-| React workflow orchestration | `orchestrator/workflow.py` |
+| React workflow orchestration | `agents/main.py` |
 | Economics + cross-conversation memory entrypoint | `entrypoint.py` via `BaseEntrypointWithEconomicsAndMemory` |
 | Agent and UI consumer surfaces | `config/bundles.template.yaml` under `surfaces.as_consumer` |
 | Bundle-local skills | `skills_descriptor.py` and bundle `skills/` tree |
@@ -71,7 +71,7 @@ subagent integration:
 3. `docs/design/scene-sdk-components.md`
 4. `ui/scene/src/main.tsx`
 5. `ui/scene/vite.config.js`
-6. `orchestrator/workflow.py`
+6. `agents/main.py`
 7. `docs/scenarios/README.md`
 8. `docs/storage/README.md`
 9. `services/canvas.py`

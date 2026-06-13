@@ -257,7 +257,7 @@ event_source_specs = [
 ]
 ```
 
-`orchestrator/workflow.py`:
+`agents/main.py`:
 
 ```python
 react = self.build_react(

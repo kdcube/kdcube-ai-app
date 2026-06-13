@@ -10,7 +10,7 @@ Python defaults module.
 Important files:
 
 - `entrypoint.py` - bundle entrypoint, API/widget decorators, graph bootstrap.
-- `orchestrator/workflow.py` - gate to ReAct workflow and tool catalog wiring.
+- `agents/main.py` - gate to ReAct workflow and tool catalog wiring.
 - `services/canvas.py` - canvas storage, resolver registry, object actions, Data Bus patch handling.
 - `services/telemetry.py` - comm event recording and telemetry sink delivery.
 - `config/bundles.template.yaml` - reference consumer surfaces, UI widgets, Telegram, telemetry, memory, canvas.

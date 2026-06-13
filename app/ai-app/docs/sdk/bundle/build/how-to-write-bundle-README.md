@@ -834,7 +834,7 @@ Required in practice:
 
 Usually present:
 
-- `orchestrator/workflow.py`
+- `agents/main.py`
 - `config/bundles.template.yaml` for default consumer/tool/UI policy
 - `skills_descriptor.py`
 - `requirements.txt` when bundle-local Python deps are installed through `@venv(...)`
@@ -889,7 +889,7 @@ does not cover.
 Study in this order:
 
 1. `entrypoint.py`
-2. `orchestrator/workflow.py`
+2. `agents/main.py`
 3. `config/bundles.template.yaml`
 4. `services/canvas.py`
 5. `services/telemetry.py`
@@ -1121,7 +1121,7 @@ Gate rule:
 - for simple task/memory bundles, start with a deterministic prepare step plus
   the React solver
 
-Use `kdcube.copilot@2026-04-03-19-05/orchestrator/workflow.py` as the workflow
+Use the versatile reference bundle's `agents/main.py` as the agent/workflow
 shape when in doubt.
 
 ## 4.1 Copyable Feature Snippets

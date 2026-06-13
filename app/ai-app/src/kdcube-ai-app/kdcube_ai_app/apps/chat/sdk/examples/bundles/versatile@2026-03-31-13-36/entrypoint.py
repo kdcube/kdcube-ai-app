@@ -36,7 +36,7 @@ from kdcube_ai_app.infra.plugin.bundle_loader import bundle_entrypoint, api, on_
 from kdcube_ai_app.infra.service_hub.inventory import BundleState, Config
 
 from .event_filter import BundleEventFilter
-from .orchestrator.workflow import VersatileWorkflow
+from .agents.main import VersatileWorkflow
 from .services import telemetry as telemetry_service
 from .services.canvas import CanvasRuntimeConfig, VersatileCanvasService, payload_from_call
 

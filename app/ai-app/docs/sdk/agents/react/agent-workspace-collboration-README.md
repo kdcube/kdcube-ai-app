@@ -325,7 +325,7 @@ loaded tool module for event sources and namespace rehosters.
 ```text
 Pattern B: rehoster lives in an event-only module
 
-orchestrator/workflow.py
+agents/main.py
   event_source_specs = [
       {"ref": "events/my_artifacts.py", "alias": "my_artifacts"},
   ]

@@ -15,10 +15,10 @@ It intentionally demonstrates the main SDK bundle surfaces together in one place
 
 | Capability                             | Where to look                                                                              |
 |----------------------------------------|--------------------------------------------------------------------------------------------|
-| Minimal bundle contract                | `entrypoint.py`, `orchestrator/workflow.py`, `skills_descriptor.py`                        |
-| React workflow                         | `entrypoint.py`, `orchestrator/workflow.py`, `agents/gate.py`                              |
+| Minimal bundle contract                | `entrypoint.py`, `agents/main.py`, `skills_descriptor.py`                        |
+| React workflow                         | `entrypoint.py`, `agents/main.py`, `agents/gate.py`                              |
 | Economics / quotas                     | `entrypoint.py` via `BaseEntrypointWithEconomics` and `app_quota_policies`                 |
-| Bundle props / effective config        | `entrypoint.py`, `orchestrator/workflow.py`                                                |
+| Bundle props / effective config        | `entrypoint.py`, `agents/main.py`                                                |
 | Bundle secrets via `get_secret(...)`   | `config/bundles.secrets.template.yaml`, `entrypoint.py`                                    |
 | Agent and UI consumer surfaces         | `config/bundles.template.yaml` under `surfaces.as_consumer`                                |
 | Bundle-local skills                    | `skills/product/preferences/SKILL.md`                                                      |
@@ -131,7 +131,7 @@ This bundle reads effective props with `self.bundle_prop(...)`.
 
 Concrete examples already used by `versatile`:
 
-- `self.bundle_prop("preferences.auto_capture", True)` in `orchestrator/workflow.py`
+- `self.bundle_prop("preferences.auto_capture", True)` in `agents/main.py`
 - `self.bundle_prop("execution.runtime")` in `entrypoint.py`
 - `self.bundle_prop("mcp.services")` in `entrypoint.py`
 

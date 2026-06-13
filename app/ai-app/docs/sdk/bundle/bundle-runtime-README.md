@@ -108,7 +108,7 @@ Use:
 ```python
 from .services.news import build_news_service
 from .apps.news.news_pipeline import build_news_pipeline_service
-from .orchestrator.workflow import WithReactWorkflow
+from .agents.main import WithReactWorkflow
 ```
 
 From nested bundle packages, use the corresponding relative form:
