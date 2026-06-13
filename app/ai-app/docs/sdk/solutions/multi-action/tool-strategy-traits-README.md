@@ -74,17 +74,23 @@ and later are denied categorically before matrix checks and must be retried in
 a later round.
 
 ```
-            later candidate
-accepted    exploration  exploitation  neutral  unknown
-exploration ok           no            ok       no
-exploitation no          ok            ok       no
-neutral     ok           ok            ok       no
-unknown     no           no            no       no
+                    following candidate action
+accepted earlier    exploration  exploitation  neutral  unknown
+exploration         ok           no            ok       no
+exploitation        ok           ok            ok       no
+neutral             ok           ok            ok       no
+unknown             no           no            no       no
 ```
 
 `unknown` means the runtime did not receive a precise strategy for that tool. It
 runs alone. It cannot share a round with any other action because the harness
 has no causality signal for it.
+
+The exploration/exploitation entries are intentionally asymmetric. Exploration
+followed by exploitation is rejected because the later action would consume a
+result that is not visible until the next round. Exploitation followed by
+exploration is allowed for staged work, such as writing a completed section and
+then starting additional research for the next section.
 
 ## Config Shape
 

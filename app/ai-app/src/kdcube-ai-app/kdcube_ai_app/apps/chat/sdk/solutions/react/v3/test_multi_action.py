@@ -552,6 +552,98 @@ async def test_prepare_safe_multi_action_bundle_applies_ordered_strategy_matrix(
 
 
 @pytest.mark.asyncio
+async def test_prepare_safe_multi_action_bundle_allows_exploitation_then_exploration_for_staged_work():
+    solver = _solver_stub()
+    bundle = [
+        {
+            "action": "call_tool",
+            "notes": "write completed section",
+            "tool_call": {
+                "tool_id": "react.write",
+                "params": {
+                    "path": "outputs/section.md",
+                    "channel": "canvas",
+                    "content": "Completed section.",
+                    "kind": "display",
+                },
+            },
+        },
+        {
+            "action": "call_tool",
+            "notes": "research next section",
+            "tool_call": {
+                "tool_id": "web_tools.web_search",
+                "params": {"q": "next section source"},
+            },
+        },
+    ]
+
+    accepted, error, extra = await solver._prepare_safe_multi_action_bundle(
+        bundle=bundle,
+        adapters_by_id={"web_tools.web_search": _adapter_with_strategy("exploration")},
+    )
+
+    assert error is None
+    assert extra is None
+    assert [d["tool_call"]["tool_id"] for d in accepted] == [
+        "react.write",
+        "web_tools.web_search",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_prepare_safe_multi_action_bundle_rejects_exploration_then_exploitation():
+    solver = _solver_stub()
+    bundle = [
+        {
+            "action": "call_tool",
+            "notes": "search",
+            "tool_call": {
+                "tool_id": "web_tools.web_search",
+                "params": {"q": "source"},
+            },
+        },
+        {
+            "action": "call_tool",
+            "notes": "write",
+            "tool_call": {
+                "tool_id": "react.write",
+                "params": {
+                    "path": "outputs/section.md",
+                    "channel": "canvas",
+                    "content": "Draft that would need search result.",
+                    "kind": "display",
+                },
+            },
+        },
+    ]
+
+    accepted, error, extra = await solver._prepare_safe_multi_action_bundle(
+        bundle=bundle,
+        adapters_by_id={"web_tools.web_search": _adapter_with_strategy("exploration")},
+    )
+
+    assert error is None
+    assert [d["tool_call"]["tool_id"] for d in accepted] == ["web_tools.web_search"]
+    assert extra == {
+        "rejected": [
+            {
+                "index": 1,
+                "code": "multi_action_bundle_strategy_incompatible",
+                "tool_id": "react.write",
+                "extra": {
+                    "tool_id": "react.write",
+                    "strategy": ["exploitation"],
+                    "first_index": 0,
+                    "first_tool_id": "web_tools.web_search",
+                    "first_strategy": ["exploration"],
+                },
+            }
+        ]
+    }
+
+
+@pytest.mark.asyncio
 async def test_prepare_safe_multi_action_bundle_checks_candidate_against_all_prior_accepted_actions():
     solver = _solver_stub()
     solver.MAX_ACTIONS_PER_ROUND = 3

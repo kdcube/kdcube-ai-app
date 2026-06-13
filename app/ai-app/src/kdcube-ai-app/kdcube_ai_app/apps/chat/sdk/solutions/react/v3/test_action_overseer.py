@@ -237,6 +237,69 @@ async def test_overseer_applies_ordered_strategy_matrix(first_strategy: str, lat
 
 
 @pytest.mark.asyncio
+async def test_overseer_allows_exploitation_then_exploration_for_staged_work():
+    emitted = []
+
+    async def emit_delta(**kwargs):
+        emitted.append(kwargs)
+
+    overseer = RoundActionOverseer(resolve_traits=_traits)
+    write_gate = overseer.gate_for(action_index=0, emit_delta=emit_delta)
+    search_gate = overseer.gate_for(action_index=1, emit_delta=emit_delta)
+
+    await write_gate.emit_delta(text="write buffered")
+    await overseer.observe_action_signal(
+        action_index=0,
+        action="call_tool",
+        tool_id="react.write",
+        action_gate=write_gate,
+    )
+    await search_gate.emit_delta(text="search buffered")
+    await overseer.observe_action_signal(
+        action_index=1,
+        action="call_tool",
+        tool_id="web_tools.web_search",
+        action_gate=search_gate,
+    )
+
+    assert {"text": "write buffered"} in emitted
+    assert {"text": "search buffered"} in emitted
+
+
+@pytest.mark.asyncio
+async def test_overseer_rejects_exploration_then_exploitation():
+    emitted = []
+
+    async def emit_delta(**kwargs):
+        emitted.append(kwargs)
+
+    overseer = RoundActionOverseer(resolve_traits=_traits)
+    search_gate = overseer.gate_for(action_index=0, emit_delta=emit_delta)
+    write_gate = overseer.gate_for(action_index=1, emit_delta=emit_delta)
+
+    await overseer.observe_action_signal(
+        action_index=0,
+        action="call_tool",
+        tool_id="web_tools.web_search",
+        action_gate=search_gate,
+    )
+    await write_gate.emit_delta(text="write buffered")
+
+    with pytest.raises(StreamPolicyViolation) as exc:
+        await overseer.observe_action_signal(
+            action_index=1,
+            action="call_tool",
+            tool_id="react.write",
+            action_gate=write_gate,
+        )
+
+    assert exc.value.code == "multi_action_bundle_strategy_incompatible"
+    assert exc.value.extra["first_strategy"] == ["exploration"]
+    assert exc.value.extra["strategy"] == ["exploitation"]
+    assert {"text": "write buffered"} not in emitted
+
+
+@pytest.mark.asyncio
 async def test_first_unknown_tool_is_admitted_but_later_exploration_is_denied():
     emitted = []
 

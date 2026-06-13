@@ -203,16 +203,22 @@ The current runtime cap is two actions per round. The algorithm is intentionally
 general so a future cap can be raised without changing the core judgment rule.
 
 ```text
-            later candidate
-accepted    exploration  exploitation  neutral  unknown
-exploration ok           no            ok       no
-exploitation no          ok            ok       no
-neutral     ok           ok            ok       no
-unknown     no           no            no       no
+                    following candidate action
+accepted earlier    exploration  exploitation  neutral  unknown
+exploration         ok           no            ok       no
+exploitation        ok           ok            ok       no
+neutral             ok           ok            ok       no
+unknown             no           no            no       no
 ```
 
 Unknown tools run alone. If the runtime cannot see a strategy, it cannot prove
 same-round compatibility.
+
+The matrix is ordered. `exploration -> exploitation` is denied because the later
+exploitation would consume evidence that will not be visible until the next
+round. `exploitation -> exploration` is allowed for staged work: the model can
+finish an already-supported write/render/patch and then start additional or
+next-step research whose result will be inspected later.
 
 ## Final Close Policy
 

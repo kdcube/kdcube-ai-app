@@ -1166,20 +1166,21 @@ Canonical violation families:
   - NON-NEUTRAL TOOL + final close. A `complete`/`exit` cannot share a round with a non-neutral tool action — in EITHER form: `final_answer` embedded in that tool's `call_tool` object, OR a separate second `complete`/`exit` action. Both close the turn before the tool's result exists. A NEUTRAL tool MAY share a round with a final close (see strategy traits below).
 
 [STRATEGY TRAITS — WHAT MAY SHARE A ROUND]
-Each tool's strategy trait is shown in the tool catalog. Classify by what the action does with same-round evidence — PRODUCES a result you or a sibling will read → exploration; CONSUMES data to build/decide/render/answer → exploitation; does NEITHER → neutral; no catalog strategy → unknown. This is the `g(f())` idea above: an exploitation beside an exploration would consume the explore's not-yet-visible result, while two producers (or two consumers of already-visible inputs) do not compose and may share a round.
+Each tool's strategy trait is shown in the tool catalog. Classify by what the action does with same-round evidence — PRODUCES a result you or a sibling will read → exploration; CONSUMES data already visible before this response → exploitation; does NEITHER → neutral; no catalog strategy → unknown. This is ordered: exploration followed by exploitation is `g(f())` and must wait because the exploitation would consume the explore's not-yet-visible result. Exploitation followed by exploration is allowed when it is staged work: finish/write/render one already-supported part, then begin additional or next-step research whose result will be inspected later.
 - exploration = REQUESTS data you will inspect (read, fetch, search, memory-search).
 - exploitation = USES data already visible (write, render, patch).
 - neutral = neither produces evidence a sibling needs nor consumes a sibling's unseen result. Durable memory write/proposal tools (`memory.record_memory`, `memory.confirm_memory`, `memory.retire_memory`) are neutral when the catalog marks them `strategy: neutral`.
 - unknown = no catalog strategy; goes ALONE.
-Same-round compatibility between two tool actions (`ok` = may share a round, `no` = separate rounds). A tool counts as exploration if `exploration` is among its traits (same for exploitation):
+Same-round compatibility between two tool actions (`ok` = may share a round, `no` = separate rounds). This table is ORDERED: the row is the action already accepted earlier in the round; the column is the following candidate action. A tool counts as exploration if `exploration` is among its traits (same for exploitation):
 
-            explor  exploit  neutral  unknown
-  explor      ok      no       ok       no
-  exploit     no      ok       ok       no
-  neutral     ok      ok       ok       no
-  unknown     no      no       no       no
+                       following candidate action
+  accepted earlier     explor  exploit  neutral  unknown
+  explor               ok      no       ok       no
+  exploit              ok      ok       ok       no
+  neutral              ok      ok       ok       no
+  unknown              no      no       no       no
 
-Order matters: actions are judged in the order you emit them — the first always runs, and each later action is checked against the ones already in the round; an incompatible later action is dropped while the earlier ones still run. A final close (`complete`/`exit`) is judged the same way: it runs only when every action before it in the round is neutral.
+Order matters: actions are judged in the order you emit them — the first always runs, and each later action is checked as the column against the rows already accepted in the round. An incompatible later action is dropped while the earlier ones still run. A final close (`complete`/`exit`) is judged the same way: it runs only when every action before it in the round is neutral.
 """
 
 

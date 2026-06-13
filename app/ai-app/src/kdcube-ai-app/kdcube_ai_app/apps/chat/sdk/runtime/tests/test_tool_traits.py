@@ -16,7 +16,7 @@ EXPECTED_STRATEGY_MATRIX = {
         "unknown": False,
     },
     "exploitation": {
-        "exploration": False,
+        "exploration": True,
         "exploitation": True,
         "neutral": True,
         "unknown": False,
@@ -46,3 +46,14 @@ def test_strategies_compatible_uses_matrix(first: str, second: str) -> None:
         {"strategy": [first]},
         {"strategy": [second]},
     ) is EXPECTED_STRATEGY_MATRIX[first][second]
+
+
+def test_strategy_compatibility_is_ordered_for_exploration_and_exploitation() -> None:
+    assert strategies_compatible(
+        {"strategy": ["exploration"]},
+        {"strategy": ["exploitation"]},
+    ) is False
+    assert strategies_compatible(
+        {"strategy": ["exploitation"]},
+        {"strategy": ["exploration"]},
+    ) is True

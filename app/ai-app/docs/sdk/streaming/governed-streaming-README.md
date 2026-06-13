@@ -285,6 +285,11 @@ t10 runtime records protocol_violation.multi_action_bundle_strategy_incompatible
 The user does not wait for a large `react.write` payload to finish. The model
 stream is stopped as soon as the bad second move is identified.
 
+The reverse order is different. If `react.write` is accepted first and
+`web_tools.web_search` appears second, the strategy gate allows it as staged
+work: the model can finish already-supported output and then begin next-step
+research. The search result is still not visible until the following round.
+
 The runtime keeps the following defensive fallback for non-conforming stream
 wrappers:
 

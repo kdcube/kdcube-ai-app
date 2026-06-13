@@ -19,7 +19,7 @@ STRATEGY_COMPATIBILITY_MATRIX: dict[str, dict[str, bool]] = {
         UNKNOWN_STRATEGY: False,
     },
     "exploitation": {
-        "exploration": False,
+        "exploration": True,
         "exploitation": True,
         "neutral": True,
         UNKNOWN_STRATEGY: False,

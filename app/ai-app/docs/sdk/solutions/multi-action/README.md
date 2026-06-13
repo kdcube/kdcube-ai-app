@@ -145,16 +145,16 @@ Rules:
   actions still run.
 - Current cap: a round may contain at most two actions. Action #3 and later are
   denied.
-- The compatibility matrix is ordered: rows are previously accepted actions,
-  columns are later candidate actions.
+- The compatibility matrix is ordered: rows are actions accepted earlier in the
+  round, columns are following candidate actions.
 
 ```
-            later candidate
-accepted    exploration  exploitation  neutral  unknown
-exploration ok           no            ok       no
-exploitation no          ok            ok       no
-neutral     ok           ok            ok       no
-unknown     no           no            no       no
+                    following candidate action
+accepted earlier    exploration  exploitation  neutral  unknown
+exploration         ok           no            ok       no
+exploitation        ok           ok            ok       no
+neutral             ok           ok            ok       no
+unknown             no           no            no       no
 ```
 
 - Unknown-strategy tools run alone. They cannot share a round with any other
@@ -163,8 +163,11 @@ unknown     no           no            no       no
   groups.
 - Exploration tools are compatible with exploration tools.
 - Exploitation tools are compatible with exploitation tools.
-- Exploration and exploitation tools are not compatible in the same round
-  unless a tool explicitly carries both strategy values.
+- Exploration followed by exploitation is not compatible: the later
+  exploitation would consume evidence that is not visible until the next round.
+- Exploitation followed by exploration is compatible when it represents staged
+  work: finish one already-supported part, then begin additional or next-step
+  research to inspect in a later round.
 - A final-answer action may appear only when all prior tool actions are neutral.
 - A non-neutral tool action may not appear after a final-answer action.
 

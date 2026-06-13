@@ -10,16 +10,16 @@ def test_get_workspace_implementation_guide_custom_mentions_hosting_backed_mode(
     assert "react.pull(paths=[...])" in guide
     assert 'react.checkout(mode="replace", paths=[...])' in guide or 'react.checkout(mode="replace", paths=["fi:' in guide
     assert "mode=\"overlay\"" in guide
-    assert "EXACT file ref" in guide
-    assert "binary descendants" in guide
-    assert "CUSTOM mode" in guide
-    assert "not from git" in guide
+    assert "exact file refs" in guide
+    assert "hosted binaries require exact file refs" in guide
+    assert "HOSTED ARTIFACT-HISTORY MODE" in guide
+    assert "hosting-backed artifact state" in guide
 
 
-def test_lite_workspace_profile_does_not_teach_story_snapshots_by_default():
+def test_lite_workspace_profile_teaches_generic_snapshot_paths_without_story_snapshot_block_by_default():
     text = default_lite_system_instruction("workspace")
     assert "[STORY SNAPSHOTS]" not in text
-    assert "fi:turn_<id>.snapshots/<name>" not in text
+    assert "fi:turn_<id>.snapshots/<name>" in text
 
 
 def test_lite_story_snapshots_block_is_explicit_opt_in():
@@ -34,16 +34,15 @@ def test_lite_story_snapshots_block_is_explicit_opt_in():
 def test_get_workspace_implementation_guide_git_mentions_git_backed_mode():
     guide = get_workspace_implementation_guide("git")
     assert "react.pull(paths=[...])" in guide
-    assert "EXACT file ref" in guide
-    assert "binary descendants" in guide
-    assert "GIT mode" in guide
+    assert "exact file refs" in guide
+    assert "hosted binaries require exact file refs" in guide
+    assert "GIT-BACKED ARTIFACT-HISTORY MODE" in guide
     assert "git-backed workspace lineage" in guide
     assert "local git repo" in guide
-    assert "git pull" in guide
     assert "active lineage workspace" in guide
-    assert "historical artifact view" in guide
+    assert "historical reference view" in guide
     assert 'react.checkout(mode="replace", paths=[...])' in guide or 'react.checkout(mode="replace", paths=["fi:' in guide
-    assert "runnable/searchable/testable project copy" in guide
+    assert "runnable/searchable/testable editable copy" in guide
     assert "mode=\"overlay\"" in guide
     assert "turn_<current>/files/..." in guide
     assert "previous saved workspace paths" in guide
@@ -58,13 +57,13 @@ def test_build_decision_system_text_uses_selected_workspace_implementation():
         workspace_implementation="git",
     )
     assert "react.pull(paths=[...])" in text
-    assert "EXACT file ref" in text
-    assert "binary descendants" in text
+    assert "exact file refs" in text
+    assert "hosted binaries require exact file refs" in text
     assert "local git repo" in text
     assert "Workspace activation is explicit" in text
     assert "do NOT auto-materialize old files" in text
     assert 'react.checkout(mode="replace", paths=[fi:...])' in text or 'react.checkout(mode="replace", paths=["fi:' in text
-    assert "runnable/searchable/testable project copy" in text
+    assert "runnable/searchable/testable editable copy" in text
     assert "mode=\"overlay\"" in text
     assert "turn_<current>/files/..." in text
     assert "existing top-level scope" in text
@@ -72,14 +71,14 @@ def test_build_decision_system_text_uses_selected_workspace_implementation():
     assert "current editable workspace" in text
 
 
-def test_default_decision_system_text_does_not_teach_story_snapshots():
+def test_default_decision_system_text_keeps_story_snapshot_block_opt_in():
     text = build_decision_system_text(
         adapters=[],
         infra_adapters=[],
         workspace_implementation="custom",
     )
     assert "[STORY SNAPSHOTS]" not in text
-    assert "fi:turn_<id>.snapshots/<name>" not in text
+    assert "fi:turn_<id>.snapshots/<name>" in text
 
 
 def test_build_decision_system_text_appends_agent_admin_customization():
@@ -104,21 +103,18 @@ def test_build_decision_system_text_single_action_mode_uses_action_channel_wordi
     )
     assert text.lstrip().startswith("CRITICAL: you are the agent which must")
     assert "Never emit legacy <thinking>...</thinking> tags." in text
-    assert text.index("CRITICAL: you have 4 channel types") < text.index("[CORE RESPONSIBILITIES]")
-    assert "CRITICAL: you are the agent which must for in custom protocol which you must obey." in text
-    assert "Output protocol (strict): you must produce content which represents one round" in text
-    assert "In a single round, exactly one occurrence of <channel:thinking>, <channel:action>, and <channel:code> can be included in your response." in text
-    assert "<channel:action> carries an action" in text
+    assert text.index("You have 4 channel types") < text.index("[CORE RESPONSIBILITIES]")
+    assert "Output protocol (strict): one round = exactly one <channel:thinking>, exactly one <channel:action>" in text
+    assert "<channel:action> carries one action" in text
     assert "The optional <channel:summary> may appear exactly once, and only when the action is complete or exit." in text
-    assert "Do NOT emit <channel:summary> in code execution rounds." in text
-    assert "For call_tool actions, omit <channel:summary> entirely" in text
-    assert "For complete/exit actions, include exactly one <channel:summary>" in text
-    assert "DO NOT DO THIS: Your typical error is that you make sequence of channel groups" in text
-    assert "Final answer shape only when action is complete or exit" in text
+    assert "For call_tool rounds, omit <channel:summary> entirely" in text
+    assert "For complete/exit rounds, include exactly one <channel:summary>" in text
+    assert "CRITICAL: This protocol is SINGLE-ACTION" in text
+    assert "Final answer shape (only when action is complete or exit)" in text
     assert "Goal, Outcome, Key facts, Refs" in text
-    assert "Generating the second instance of any channel in the same response means you do not understand the contract and violate it." in text
-    assert "Turn lifecycle and action causality: a turn is a sequence of rounds" in text
-    assert "There is no requirement to minimize rounds. The success criterion is correct causality" in text
+    assert "Emit EXACTLY ONE <channel:action> per response" in text
+    assert "A turn is a sequence of rounds" in text
+    assert "There is no requirement to minimize rounds. The success criterion is CORRECT CAUSALITY" in text
     assert "Use non-empty <channel:code> only immediately after an exec_tools.execute_code_python action" in text
     assert "After </channel:code>, STOP." not in text
 
@@ -130,31 +126,26 @@ def test_build_decision_system_text_safe_fanout_explains_no_intermediate_review_
         workspace_implementation="custom",
         multi_action_mode="safe_fanout",
     )
-    assert "Output protocol (strict): you must produce content which represents one round" in text
-    assert "In a single round, include exactly one <channel:thinking>, one or more <channel:action> instances" in text
+    assert "Output protocol (strict): one round = at least one <channel:thinking>, one or more <channel:action>" in text
     assert "The optional <channel:summary> may appear exactly once, and only when the response contains a single complete/exit action and no tool-call actions." in text
-    assert "<channel:action> carries an action" in text
-    assert "if one action is exec_tools.execute_code_python, put its <channel:code> immediately after that exec action" in text
-    assert "One <channel:action> ... </channel:action> instance means exactly one action." in text
-    assert "If you need multiple actions in one round, use this shape:" in text
-    assert "<channel:thinking>...short status for the whole round...</channel:thinking>" in text
+    assert "<channel:action> carries one action" in text
+    assert "If one of the actions is exec_tools.execute_code_python, put its <channel:code> immediately after that exec action" in text
+    assert "One <channel:action>...</channel:action> instance means exactly one action." in text
+    assert "When multi-action is enabled, emit each action in its own separate <channel:action> instance." in text
+    assert "<channel:thinking> ... </channel:thinking>" in text
     assert "<channel:code></channel:code>" in text
     assert "Never put > 1 JSON objects, > 1 fenced JSON blocks, or prose after the JSON inside one <channel:action> instance." in text
     assert "For call_tool-only rounds, omit <channel:summary> entirely" in text
     assert "For complete/exit rounds, include exactly one <channel:summary>" in text
     assert "Never put > 1 actions into one <channel:action> instance." in text
-    assert "When you stop generating, the runtime/engineering layer executes the requested actions sequentially" in text
-    assert "\"Already visible\" means visible before the current response begins." in text
-    assert "Anything produced, retrieved, loaded, validated, or changed earlier in the same response is NOT already visible" in text
-    assert "action B must not depend on action A's result." in text
-    assert "do not emit cross-dependent actions in one round" in text
-    assert "A prerequisite result is acknowledged only after you can see it in the timeline" in text
-    assert "Do NOT schedule search/fetch first and then a later action in the same response that depends on what that retrieval will return." in text
-    assert "Exec in multi-action: you may include exactly one exec_tools.execute_code_python action together with other actions" in text
-    assert "Exec binding: an exec_tools.execute_code_python action must be followed immediately by <channel:code>" in text
-    assert "immediately followed by complete Python in <channel:code>" in text
-    assert "Otherwise exec must be the only action in the round." in text
-    assert "Do NOT mix complete/exit with tool calls in the same multi-action response." in text
+    assert "When multi-action is enabled, emit each action in its own separate <channel:action> instance." in text
+    assert "\"Already visible\" means visible in the timeline BEFORE your current response begins." in text
+    assert "Anything you produce, retrieve, load, validate, render, or change in this same response is NOT already visible" in text
+    assert "if action B's success or content depends on action A's result, A and B cannot share a round" in text
+    assert "RETRIEVE + CONSUME the retrieval" in text
+    assert "Exec completeness: an exec_tools.execute_code_python action runs only when it has BOTH params.contract" in text
+    assert "Exec follows the strategy matrix like any other tool" in text
+    assert "complete/exit may share its round only with a NEUTRAL tool action" in text
     assert "After </channel:code>, STOP." not in text
 
 
@@ -165,10 +156,10 @@ def test_build_decision_system_text_on_enables_multi_action_protocol():
         workspace_implementation="custom",
         multi_action_mode="on",
     )
-    assert "In a single round, include exactly one <channel:thinking>, one or more <channel:action> instances" in text
+    assert "one round = at least one <channel:thinking>, one or more <channel:action>" in text
     assert "put its <channel:code> immediately after that exec action" in text
-    assert "Exec in multi-action: you may include exactly one exec_tools.execute_code_python action together with other actions" in text
-    assert "render PDF, PPTX, and DOCX from already visible source artifacts" in text
+    assert "Exec follows the strategy matrix like any other tool" in text
+    assert "Render final PDF/PPTX/DOCX/PNG deliverables with `rendering_tools.write_*`." in text
     assert "ref:<visible_logical_path>" in text
     assert "ref:<bound artifact path>" not in text
     assert "Default write rule: reports, briefs, HTML, Markdown, slide source" in text
@@ -316,7 +307,11 @@ def test_multi_action_protocol_teaches_strategy_trait_contract():
     # Positive: the new contract is taught.
     assert "A round may hold AT MOST TWO actions" in text
     assert "shown in the tool catalog" in text
-    assert "explor      ok      no       ok       no" in text  # the strategy matrix
+    assert "row is the action already accepted earlier" in text
+    assert "column is the following candidate action" in text
+    assert "explor               ok      no       ok       no" in text  # the strategy matrix
+    assert "exploit              ok      ok       ok       no" in text
+    assert "staged work" in text
     assert "are neutral when the catalog marks them" in text
     assert "memory.record_memory" in text
     assert "share its round only with a NEUTRAL tool action" in text
