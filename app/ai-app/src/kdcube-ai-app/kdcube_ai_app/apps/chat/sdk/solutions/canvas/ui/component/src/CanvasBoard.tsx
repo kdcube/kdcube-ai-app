@@ -1,5 +1,7 @@
 import {
   Archive,
+  Check,
+  Copy,
   Download,
   ExternalLink,
   FileText,
@@ -165,6 +167,40 @@ function formatCardAdded(value?: string | null): string {
   if (Number.isNaN(t.getTime())) return ''
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())} ${pad(t.getHours())}:${pad(t.getMinutes())}`
+}
+
+// Compact "added" stamp for the card footer (minute precision, no year).
+function formatCardAddedShort(value?: string | null): string {
+  if (!value) return ''
+  const t = new Date(value)
+  if (Number.isNaN(t.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${pad(t.getMonth() + 1)}-${pad(t.getDate())} ${pad(t.getHours())}:${pad(t.getMinutes())}`
+}
+
+// Copy text to the clipboard, with a fallback for iframes/older browsers.
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  if (!text) return false
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch {
+    // ignore and fall through to the legacy path
+  }
+  try {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.focus()
+    ta.select()
+    const ok = document.execCommand('copy')
+    document.body.removeChild(ta)
+    return ok
+  } catch {
+    return false
+  }
 }
 
 // Per-file size cap for files dropped/uploaded onto the board. Oversize
@@ -359,6 +395,7 @@ export function CanvasBoard({
   const [trashOpen, setTrashOpen] = useState(false)
   const [externalDropReady, setExternalDropReady] = useState(false)
   const [expandedCardId, setExpandedCardId] = useState<string>('')
+  const [copiedCardId, setCopiedCardId] = useState<string>('')
   const [descDraftByCard, setDescDraftByCard] = useState<Record<string, string>>({})
   const [commentDraftByCard, setCommentDraftByCard] = useState<Record<string, string>>({})
   const [resolverStateByCard, setResolverStateByCard] = useState<Record<string, CanvasObjectActionResponse>>({})
@@ -1655,6 +1692,8 @@ export function CanvasBoard({
             const dragged = dragState?.cardIds.includes(card.id)
             const enumTag = enumByCardId[card.id] || ''
             const addedAt = formatCardAdded(card.createdAt)
+            const addedShort = formatCardAddedShort(card.createdAt)
+            const copyUri = card.ref || ''
             const resolverState = resolverStateByCard[card.id]
             const resolverNotice = resolverNoticeByCard[card.id] || ''
             const resolverLoading = Boolean(resolverLoadingByCard[card.id])
@@ -1783,15 +1822,34 @@ export function CanvasBoard({
                   onPointerUp={clearDescriptionHold}
                   onPointerCancel={clearDescriptionHold}
                 >
-                  {addedAt ? (
-                    <p className="canvas-card-added">added <time>{addedAt}</time></p>
-                  ) : null}
                   <h3>{card.title}</h3>
                   <p>{card.summary}</p>
                 </div>
                 <span className="canvas-card-kind">
                   <Grip size={12} />
-                  {pendingSuggestion ? 'pending suggestion · ' : ''}{card.ref ? 'object.ref' : card.kind}
+                  <span className="canvas-card-kind-label">{pendingSuggestion ? 'pending suggestion · ' : ''}{card.ref ? 'object.ref' : card.kind}</span>
+                  {addedShort ? (
+                    <time className="canvas-card-time" title={`Added ${addedAt}`}>{addedShort}</time>
+                  ) : null}
+                  {copyUri ? (
+                    <button
+                      type="button"
+                      className="canvas-card-copy"
+                      title={`Copy URI\n${copyUri}`}
+                      aria-label="Copy URI"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        void copyTextToClipboard(copyUri).then((ok) => {
+                          if (!ok) return
+                          setCopiedCardId(card.id)
+                          window.setTimeout(() => setCopiedCardId((prev) => (prev === card.id ? '' : prev)), 1200)
+                        })
+                      }}
+                      onMouseDown={(event) => event.stopPropagation()}
+                    >
+                      {copiedCardId === card.id ? <Check size={12} /> : <Copy size={12} />}
+                    </button>
+                  ) : null}
                 </span>
                 <button
                   type="button"
