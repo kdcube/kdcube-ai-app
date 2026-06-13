@@ -1,85 +1,81 @@
 platform:
   repo: "kdcube-ai-app"
-  ref: "2026.6.11.415"
+  ref: "2026.6.13.435"
   description: |
-    This platform release strengthens the conversation event-bus runtime,
-    Data Bus admission control, Redis topology handling, and bundle-builder
-    documentation. It also includes recent canvas, scene, memory, and chat UI
-    improvements.
+    This platform release hardens the named-service integration layer, ReAct
+    external-object access, canvas object resolution, config-first agent
+    wiring, and the Versatile reference bundle. It also refreshes platform
+    positioning and bundle-builder documentation around current public
+    authoring concepts.
 
     Highlights
 
-    - Adds a Redis-backed conversation event-bus state table and orchestrator
-      for lane wake scheduling, handler open/close state, reader acceptance,
-      and post-save handoff.
-    - Integrates conversation lane wakeups through ingress, proc, BaseWorkflow,
-      ContextBrowser, and ReAct close gates so late followups and steers remain
-      ordered without proc-side lane scanning after task completion.
-    - Adds an event-bus simulator and focused tests that model ingress, wake
-      publication, proc wake resolution, handler setup, reader drain, ReAct
-      close, artifact persistence, and post-save handoff.
-    - Adds Redis topology configuration and a Redis client factory, with
-      standalone topology as the current default and Redis Cluster constraints
-      documented for future hardening.
-    - Reworks gateway queue-admission accounting to use indexed queue state
-      instead of broad keyspace scans.
-    - Adds app-layer Data Bus publish limits for Socket.IO and HTTP publish
-      packages, covering package rate, message count, and payload bytes before
-      durable stream writes.
-    - Propagates queue/gateway rejection details to chat clients so clients can
-      surface rate-limit, backpressure, and queue-admission failures clearly.
-    - Aligns Socket.IO chat clients on top-level `external_events[]` while
-      keeping `data_bus.publish` separate with top-level `messages[]`.
-    - Refreshes processor, ingress, ECS, system architecture, Data Bus, Redis,
-      gateway, and Tier 1 bundle-builder documentation to match the current
-      runtime contract.
-    - Improves canvas and scene surfaces, including pin board naming, canvas
-      pin interactions, file upload limits, draggable/pinnable attachments, and
-      memory pane layout behavior.
-    - Adds scene composition, memory widget, chat widget, and related solution
-      documentation updates for bundle builders.
+    - Adds provider-owned named-service resolution for namespace refs, so
+      common chat and canvas surfaces can resolve objects through service
+      discovery instead of embedding bundle-specific behavior.
+    - Tightens named-service provider and consumer contracts for object get,
+      streamed object reads, provider metadata, schemas, canvas object actions,
+      host-file flows, and error propagation.
+    - Makes ReAct external-object access cleaner: namespace refs are handled
+      through pull/materialization, with clearer artifact records and provider
+      errors surfaced back to the agent.
+    - Updates canvas integration so object cards and actions are resolved
+      generically from namespace refs, including subnamespace-style refs such
+      as task issue and attachment objects.
+    - Moves agent tool wiring to explicit `surfaces.as_consumer` config,
+      including Python tools, MCP tools, named-service tools, event sources,
+      canvas resolvers, and namespace applicability in the ReAct tool catalog.
+    - Moves agent skill visibility to the same config-first surface and keeps
+      public documentation focused on bundle-authoring config rather than
+      internal runtime handoff shapes.
+    - Integrates the SDK economics handler path with the reference Versatile
+      bundle and aligns bundle config templates, interface docs, and local
+      runtime examples.
+    - Refactors the Versatile reference bundle toward a cleaner shape:
+      `agents/main.py`, service modules, config-owned surfaces, SDK widgets,
+      and a restored Telegram Mini App widget.
+    - Removes the Versatile bundle-local preference skill and uses the SDK
+      durable-memory tools and shared memory widget as the documented path for
+      remembered facts and preferences.
+    - Refreshes top-level README and product documentation around KDCube as a
+      self-hosted governed runtime and control plane for multiple AI
+      applications.
 
     Runtime and deployment notes:
 
-    - Deployments must point the platform ref at 2026.6.11.415 to receive this
+    - Deployments must point the platform ref at 2026.6.13.435 to receive this
       update.
-    - Data Bus widget traffic is now subject to
-      `gateway.data_bus.ingress.publish_limits`; tune package, message, and
-      byte limits in `gateway.yaml`, not in bundle props.
-    - `assembly.yaml` may explicitly set `infra.redis.topology: standalone`.
-      Standalone remains the current default when omitted.
-    - Socket.IO chat traffic must keep using top-level `external_events[]`.
-      Data Bus traffic must use `data_bus.publish` with top-level `messages[]`.
-    - Conversation followup/steer recovery now relies on lane state and
-      ContextBrowser post-save handoff. Proc resolves lane wakeups but does not
-      scan the lane after task completion.
-    - Data Bus publish acknowledgements confirm ingress admission only. Handler
-      success, visibility failures, conflicts, and storage results remain
-      proc-side Data Bus results or explicit replies.
+    - Bundles that consume namespace-owned objects should declare tool,
+      event-source, and canvas surfaces under `surfaces.as_consumer`.
+    - ReAct-facing named-service tools should be exposed only for operations
+      and namespaces intended for the agent. UI-only canvas object actions
+      should stay in canvas resolver config.
+    - External namespace refs that need full inspection should be materialized
+      through pull so ReAct receives a local artifact path plus provider
+      metadata.
+    - Bundle-local skills are optional. If a bundle relies on SDK durable
+      memory, configure the SDK memory tools and widget instead of shipping a
+      duplicate preference skill.
 
     Validation and regression coverage:
 
-    - Conversation event-bus state and simulator tests were added and run
-      during development.
-    - Focused continuation, external-event, processor, Data Bus publish,
-      gateway configuration, queue-depth, and Redis factory tests were added or
-      updated.
-    - TypeScript/UI validation was performed for changed widget and scene
-      surfaces during development.
-    - Staged release diff private-name scan must pass before the release
-      commit.
+    - Focused tests were updated around tool config, skill config,
+      named-service provider behavior, ReAct pull/materialization paths,
+      canvas refs, and Versatile reference-bundle wiring during development.
+    - Task tracker and Versatile manual checks covered task refs,
+      attachment materialization, canvas actions, and memory-widget flows.
+    - Staged release diff private-name scan passes before the release commit.
 
     Changelog
 
-    - Added conversation event-bus lane state and orchestrator primitives.
-    - Integrated lane wakeups and post-save handoff through conversation
-      runtime paths.
-    - Added Data Bus publish admission limits and gateway docs.
-    - Added Redis topology factory groundwork and indexed queue admission.
-    - Propagated queue rejection details to chat clients.
-    - Updated Socket.IO chat/Data Bus client contracts.
-    - Updated processor, ingress, architecture, ECS, Data Bus, Redis, gateway,
-      and Tier 1 bundle-builder documentation.
-    - Improved canvas, scene, chat widget, and memory widget behavior.
+    - Added named-service resolver and host-file integration surfaces.
+    - Hardened object get/stream/read contracts for JSON objects and files.
+    - Updated ReAct pull handling for namespace-owned refs.
+    - Removed task-specific behavior from common canvas components.
+    - Added config-first tool and skill wiring for reference bundles.
+    - Updated named-service, tools, skills, canvas, and bundle-builder docs.
+    - Refactored Versatile bundle layout and restored Telegram Mini App widget.
+    - Removed the Versatile local preference skill in favor of SDK memory.
+    - Refreshed README and product-positioning documentation.
 config:
-    version: "2026.6.11.415"
+    version: "2026.6.13.435"

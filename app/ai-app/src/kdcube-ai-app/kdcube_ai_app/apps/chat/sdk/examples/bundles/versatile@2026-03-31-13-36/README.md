@@ -21,7 +21,7 @@ It intentionally demonstrates the main SDK bundle surfaces together in one place
 | Bundle props / effective config        | `entrypoint.py`, `agents/main.py`                                                |
 | Bundle secrets via `get_secret(...)`   | `config/bundles.secrets.template.yaml`, `entrypoint.py`                                    |
 | Agent and UI consumer surfaces         | `config/bundles.template.yaml` under `surfaces.as_consumer`                                |
-| Bundle-local skills                    | `skills/product/preferences/SKILL.md`                                                      |
+| SDK durable memory                     | `memory.*` tools, SDK memory widget, and `BaseEntrypointWithEconomicsAndMemory`            |
 | Canvas and telemetry services          | `services/canvas.py`, `services/telemetry.py`                                               |
 | Agent tool consumers                   | `surfaces.as_consumer.agents.main.tools`                                                   |
 | MCP tool consumers                     | `surfaces.as_consumer.agents.main.tools`                                                   |
@@ -66,8 +66,7 @@ documentation expected from real bundles:
 - The active main view is `ui/scene`. It is a small scene shell that embeds the
   reusable SDK chat widget as `versatile_chat` and the shared SDK canvas
   component as a scene surface.
-- Memory is handled by the SDK durable-memory subsystem and widget. The older
-  bundle-local preference storage and webapp widget sources have been removed.
+- Memory is handled by the SDK durable-memory subsystem and widget.
 - The solver uses the SDK durable-memory tool surface configured under
   `surfaces.as_consumer.agents.main.tools`:
   - `memory.search_memory(...)`
@@ -110,10 +109,9 @@ admin screen. See `docs/integrations/telegram-setup.md`.
 
 ## Durable memory storage
 
-Versatile now uses the SDK durable-memory subsystem for remembered user facts,
-preferences, and corrections. The older bundle-local preference notebook
-surface was removed; the remaining `product.preferences` skill teaches the
-solver when to consult or update the SDK memory tools.
+Versatile uses the SDK durable-memory subsystem for remembered user facts,
+preferences, and corrections. The solver reaches that memory through the
+configured SDK memory tool surface and the shared memory widget.
 
 The full storage map, including Telegram admin state, canvas state, and
 rebuildable UI output, lives in `docs/storage/README.md`.
@@ -131,7 +129,6 @@ This bundle reads effective props with `self.bundle_prop(...)`.
 
 Concrete examples already used by `versatile`:
 
-- `self.bundle_prop("preferences.auto_capture", True)` in `agents/main.py`
 - `self.bundle_prop("execution.runtime")` in `entrypoint.py`
 - `self.bundle_prop("mcp.services")` in `entrypoint.py`
 
@@ -275,9 +272,6 @@ The active source lives under `ui/scene/`. It is a scene shell that embeds the
 reusable SDK chat widget as `versatile_chat`, embeds the SDK memory widget as
 `memories`, and renders the SDK canvas component as the main work surface.
 
-The old bundle-local `ui/main/` implementation has been removed. The active
-scene inherits chat behavior from the SDK chat widget.
-
 The scene writes canvas mutations through Data Bus subject `canvas.patch` and
 keeps request/response operations such as `canvas_read`, `canvas_list`,
 `canvas_attachment_upload`, and `canvas_object_action` as bundle operations.
@@ -391,10 +385,9 @@ The bundle includes:
 
 ## Skills
 
-The bundle ships one bundle-local skill:
-
-- `product.preferences`
-  - teaches the solver to consult and update durable user memory before personalizing an answer
+Runtime skills come from SDK skill roots. Durable-memory behavior is exposed
+through the SDK memory tools configured under
+`surfaces.as_consumer.agents.main.tools`.
 
 ## Minimal vs versatile
 
@@ -403,7 +396,7 @@ The bundle ships one bundle-local skill:
 | Minimal bundle | entrypoint, compiled graph, role models, config-driven tools and skills | yes |
 | Bundle props / effective config | required for real deployments | yes |
 | Custom tools | optional | yes |
-| Custom skills | optional | yes |
+| Custom skills | optional | SDK skills only |
 | Bundle secrets via `get_secret(...)` | optional | yes |
 | Economics | optional | yes |
 | MCP tool consumers | optional | yes |
