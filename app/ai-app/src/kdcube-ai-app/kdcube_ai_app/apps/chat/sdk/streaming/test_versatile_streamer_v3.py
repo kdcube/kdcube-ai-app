@@ -519,7 +519,8 @@ async def test_stream_with_channels_v3_repeated_json_decisions_ignore_backticks_
 
 
 @pytest.mark.asyncio
-async def test_stream_with_channels_v3_action_json_string_can_mention_channel_tags():
+@pytest.mark.parametrize("fenced_json", [False, True])
+async def test_stream_with_channels_v3_backticked_channel_tags_are_payload(fenced_json):
     final_answer = (
         "**Test #2 result: still forbidden - two `<channel:action>` blocks do not change the round.**\n\n"
         "The literal syntax `<channel:action>...</channel:action>` is ordinary answer text here, "
@@ -532,7 +533,12 @@ async def test_stream_with_channels_v3_action_json_string_can_mention_channel_ta
         "final_answer": final_answer,
         "suggested_followups": [],
     }
-    full = _text_channel("thinking", "Explaining the harness result.") + _json_channel("action", payload)
+    action_channel = (
+        _json_channel("action", payload)
+        if fenced_json
+        else _text_channel("action", json.dumps(payload, ensure_ascii=True))
+    )
+    full = _text_channel("thinking", "Explaining the harness result.") + action_channel
     svc = _FakeService(_chunk_text(full, size=17))
     collector = _Collector()
 

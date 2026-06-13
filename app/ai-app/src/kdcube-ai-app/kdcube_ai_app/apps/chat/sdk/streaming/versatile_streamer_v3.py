@@ -168,15 +168,17 @@ def _find_next_valid_tag(text: str, start: int) -> Optional[re.Match[str]]:
         pos = m.start() + 1
 
 
-def _find_matching_close_outside_json_string(
+def _advance_json_channel_markup_state(
     text: str,
-    start: int,
-    channel_name: str,
-) -> Optional[re.Match[str]]:
-    i = max(0, int(start or 0))
-    in_string = False
-    escaping = False
-    expected = str(channel_name or "").lower()
+    *,
+    in_fence: bool,
+    in_inline: bool,
+    in_string: bool,
+    escaping: bool,
+    string_in_fence: bool,
+    string_in_inline: bool,
+) -> tuple[bool, bool, bool, bool, bool, bool]:
+    i = 0
     while i < len(text):
         if in_string:
             ch = text[i]
@@ -190,18 +192,152 @@ def _find_matching_close_outside_json_string(
                 continue
             if ch == '"':
                 in_string = False
+                string_in_fence = False
+                string_in_inline = False
+                i += 1
+                continue
+            if text.startswith("```", i) and not string_in_inline:
+                string_in_fence = not string_in_fence
+                i += 3
+                continue
+            if ch == "`" and not string_in_fence:
+                string_in_inline = not string_in_inline
+                i += 1
+                continue
+            i += 1
+            continue
+        if text[i] == '"':
+            in_string = True
+            escaping = False
+            string_in_fence = False
+            string_in_inline = False
+            i += 1
+            continue
+        if text.startswith("```", i) and not in_inline:
+            in_fence = not in_fence
+            i += 3
+            continue
+        if text[i] == "`" and not in_fence:
+            in_inline = not in_inline
+            i += 1
+            continue
+        i += 1
+    return in_fence, in_inline, in_string, escaping, string_in_fence, string_in_inline
+
+
+def _find_next_tag_within_json_channel(
+    text: str,
+    start: int,
+    *,
+    in_fence: bool,
+    in_inline: bool,
+    in_string: bool,
+    escaping: bool,
+    string_in_fence: bool,
+    string_in_inline: bool,
+) -> Optional[re.Match[str]]:
+    i = max(0, int(start or 0))
+    while i < len(text):
+        if in_string:
+            if not in_fence and not in_inline and not string_in_fence and not string_in_inline:
+                m = TAG_RE.match(text, i)
+                if m:
+                    return m
+            ch = text[i]
+            if escaping:
+                escaping = False
+                i += 1
+                continue
+            if ch == "\\":
+                escaping = True
+                i += 1
+                continue
+            if ch == '"':
+                in_string = False
+                string_in_fence = False
+                string_in_inline = False
+                i += 1
+                continue
+            if text.startswith("```", i) and not string_in_inline:
+                string_in_fence = not string_in_fence
+                i += 3
+                continue
+            if ch == "`" and not string_in_fence:
+                string_in_inline = not string_in_inline
                 i += 1
                 continue
             i += 1
             continue
 
-        m = CLOSE_RE.match(text, i)
-        if m and str(m.group(1) or "").lower() == expected:
-            return m
+        if not in_fence and not in_inline:
+            m = TAG_RE.match(text, i)
+            if m:
+                return m
         if text[i] == '"':
             in_string = True
+            escaping = False
+            string_in_fence = False
+            string_in_inline = False
+            i += 1
+            continue
+        if text.startswith("```", i) and not in_inline:
+            in_fence = not in_fence
+            i += 3
+            continue
+        if text[i] == "`" and not in_fence:
+            in_inline = not in_inline
+            i += 1
+            continue
         i += 1
     return None
+
+
+def _find_matching_close_in_json_channel(
+    text: str,
+    start: int,
+    channel_name: str,
+) -> Optional[re.Match[str]]:
+    i = max(0, int(start or 0))
+    expected = str(channel_name or "").lower()
+    in_fence = False
+    in_inline = False
+    in_string = False
+    escaping = False
+    string_in_fence = False
+    string_in_inline = False
+    while True:
+        m = _find_next_tag_within_json_channel(
+            text,
+            i,
+            in_fence=in_fence,
+            in_inline=in_inline,
+            in_string=in_string,
+            escaping=escaping,
+            string_in_fence=string_in_fence,
+            string_in_inline=string_in_inline,
+        )
+        if not m:
+            return None
+        (
+            in_fence,
+            in_inline,
+            in_string,
+            escaping,
+            string_in_fence,
+            string_in_inline,
+        ) = _advance_json_channel_markup_state(
+            text[i:m.start()],
+            in_fence=in_fence,
+            in_inline=in_inline,
+            in_string=in_string,
+            escaping=escaping,
+            string_in_fence=string_in_fence,
+            string_in_inline=string_in_inline,
+        )
+        close = CLOSE_RE.match(m.group(0))
+        if close and str(close.group(1) or "").lower() == expected:
+            return m
+        i = m.end()
 
 
 def _extract_valid_channel_bodies(full_raw: str, channel_name: str, *, channel_format: str = "") -> List[str]:
@@ -220,7 +356,7 @@ def _extract_valid_channel_bodies(full_raw: str, channel_name: str, *, channel_f
             continue
         body_start = match.end()
         if str(channel_format or "").lower() == "json":
-            close_match = _find_matching_close_outside_json_string(raw, body_start, channel_name)
+            close_match = _find_matching_close_in_json_channel(raw, body_start, channel_name)
         else:
             close_match = close_patt.search(raw, body_start)
             while close_match and not _is_valid_channel_tag_start_from(raw, body_start, close_match.start()):
@@ -278,67 +414,6 @@ def _find_next_tag_within_channel(
                 return m, in_fence, in_inline
         i += 1
     return None, in_fence, in_inline
-
-
-def _advance_json_string_state(
-    text: str,
-    *,
-    in_string: bool,
-    escaping: bool,
-) -> tuple[bool, bool]:
-    json_in_string = bool(in_string)
-    json_escaping = bool(escaping)
-    for ch in text or "":
-        if json_in_string:
-            if json_escaping:
-                json_escaping = False
-                continue
-            if ch == "\\":
-                json_escaping = True
-                continue
-            if ch == '"':
-                json_in_string = False
-                continue
-            continue
-        if ch == '"':
-            json_in_string = True
-    return json_in_string, json_escaping
-
-
-def _find_next_tag_outside_json_string(
-    text: str,
-    start: int,
-    *,
-    in_string: bool,
-    escaping: bool,
-) -> Optional[re.Match[str]]:
-    i = max(0, int(start or 0))
-    json_in_string = bool(in_string)
-    json_escaping = bool(escaping)
-    while i < len(text):
-        if json_in_string:
-            ch = text[i]
-            if json_escaping:
-                json_escaping = False
-                i += 1
-                continue
-            if ch == "\\":
-                json_escaping = True
-                i += 1
-                continue
-            if ch == '"':
-                json_in_string = False
-                i += 1
-                continue
-            i += 1
-            continue
-        m = TAG_RE.match(text, i)
-        if m:
-            return m
-        if text[i] == '"':
-            json_in_string = True
-        i += 1
-    return None
 
 
 def _tag_holdback() -> int:
@@ -459,6 +534,8 @@ async def stream_with_channels(
     current_in_inline = False
     current_json_in_string = False
     current_json_escaping = False
+    current_json_string_in_fence = False
+    current_json_string_in_inline = False
 
     raw_by_channel: Dict[str, List[str]] = {c.name: [] for c in channels}
     raw_by_channel_instance: Dict[str, Dict[int, List[str]]] = {c.name: {} for c in channels}
@@ -635,6 +712,7 @@ async def stream_with_channels(
     async def _close_current_channel() -> None:
         nonlocal current, current_instance, current_in_fence, current_in_inline
         nonlocal current_json_in_string, current_json_escaping
+        nonlocal current_json_string_in_fence, current_json_string_in_inline
         if current is None:
             return
         await _flush_channel_citations(current, channel_instance=current_instance)
@@ -646,10 +724,13 @@ async def stream_with_channels(
         current_in_inline = False
         current_json_in_string = False
         current_json_escaping = False
+        current_json_string_in_fence = False
+        current_json_string_in_inline = False
 
     async def _process_buffer(final: bool = False) -> None:
         nonlocal buf, cursor, current, current_instance, current_in_fence, current_in_inline
         nonlocal current_json_in_string, current_json_escaping
+        nonlocal current_json_string_in_fence, current_json_string_in_inline
         loop_guard = 0
         while True:
             loop_guard += 1
@@ -667,11 +748,15 @@ async def stream_with_channels(
             if current is None:
                 m_tag = _find_next_valid_tag(buf, cursor)
             elif _honor_json_strings_for_channel(current):
-                m_tag = _find_next_tag_outside_json_string(
+                m_tag = _find_next_tag_within_json_channel(
                     buf,
                     cursor,
+                    in_fence=current_in_fence,
+                    in_inline=current_in_inline,
                     in_string=current_json_in_string,
                     escaping=current_json_escaping,
+                    string_in_fence=current_json_string_in_fence,
+                    string_in_inline=current_json_string_in_inline,
                 )
             elif not _honor_markup_escapes_for_channel(current):
                 m_tag = TAG_RE.search(buf, cursor)
@@ -707,10 +792,21 @@ async def stream_with_channels(
                             in_inline=current_in_inline,
                         )
                     if _honor_json_strings_for_channel(current):
-                        current_json_in_string, current_json_escaping = _advance_json_string_state(
+                        (
+                            current_in_fence,
+                            current_in_inline,
+                            current_json_in_string,
+                            current_json_escaping,
+                            current_json_string_in_fence,
+                            current_json_string_in_inline,
+                        ) = _advance_json_channel_markup_state(
                             emit_now,
+                            in_fence=current_in_fence,
+                            in_inline=current_in_inline,
                             in_string=current_json_in_string,
                             escaping=current_json_escaping,
+                            string_in_fence=current_json_string_in_fence,
+                            string_in_inline=current_json_string_in_inline,
                         )
                     cursor += len(emit_now)
                 if needs_more and not final:
@@ -730,10 +826,21 @@ async def stream_with_channels(
                             in_inline=current_in_inline,
                         )
                     if _honor_json_strings_for_channel(current):
-                        current_json_in_string, current_json_escaping = _advance_json_string_state(
+                        (
+                            current_in_fence,
+                            current_in_inline,
+                            current_json_in_string,
+                            current_json_escaping,
+                            current_json_string_in_fence,
+                            current_json_string_in_inline,
+                        ) = _advance_json_channel_markup_state(
                             raw_slice,
+                            in_fence=current_in_fence,
+                            in_inline=current_in_inline,
                             in_string=current_json_in_string,
                             escaping=current_json_escaping,
+                            string_in_fence=current_json_string_in_fence,
+                            string_in_inline=current_json_string_in_inline,
                         )
                 cursor = tag_start
 
@@ -762,6 +869,8 @@ async def stream_with_channels(
                 current_in_inline = False
                 current_json_in_string = False
                 current_json_escaping = False
+                current_json_string_in_fence = False
+                current_json_string_in_inline = False
                 next_instance_by_channel[tag_name] = int(current_instance) + 1
                 subscriber_registry.ensure_instance(tag_name, int(current_instance))
                 cursor = tag_end
