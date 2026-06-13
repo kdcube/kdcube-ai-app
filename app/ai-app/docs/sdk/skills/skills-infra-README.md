@@ -53,7 +53,7 @@ surfaces:
           consumers:
             solver.react.v2.decision.v2.strong:
               enabled:
-                - product.preferences
+                - public.url-gen
 ```
 
 If `custom_root` is relative, it is resolved against the bundle root. SDK

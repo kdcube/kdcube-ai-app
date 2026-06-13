@@ -14,7 +14,7 @@ see_also:
 Bundle-local skills are configured next to the consuming agent, the same way
 tools are configured.
 
-The registry still loads three skill layers:
+The registry loads three skill layers:
 - core SDK skills
 - SDK solution skills, such as task solution skills
 - bundle-local skills from the configured `custom_root`
@@ -68,7 +68,7 @@ surfaces:
             solver.react.v2.decision.v2.strong:
               enabled:
                 - public.*
-                - product.preferences
+                - product.reply-style
             solver.react.v2.decision.v2.regular:
               disabled:
                 - task.*
@@ -96,8 +96,8 @@ surfaces:
           enabled: false
 ```
 
-This does not remove core SDK or SDK solution skills from the registry. Use
-consumer visibility filters if those also need to be hidden.
+Core SDK and SDK solution skill roots are governed by the registry layers above.
+Use consumer visibility filters to scope them for a ReAct consumer.
 
 ## Skill Files
 
@@ -111,19 +111,19 @@ Required front matter fields:
 
 ```yaml
 ---
-name: preferences
-id: preferences
-description: Use durable user preferences before personalizing answers.
+name: reply-style
+id: reply-style
+description: Apply product-specific response style before drafting customer-facing text.
 namespace: product
 version: 1.0.0
-tags: [preferences, personalization]
+tags: [style, product]
 when_to_use:
-  - The user asks for a personalized answer
+  - The user asks for customer-facing product copy
 ---
 ```
 
 The fully qualified skill id is `<namespace>.<id>`, for example
-`product.preferences`.
+`product.reply-style`.
 
 ## Tool Eligibility
 
@@ -196,4 +196,3 @@ rules into ReAct.
 
 - Registry: `app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/skills/skills_registry.py`
 - Reference bundle config: `app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/config/bundles.template.yaml`
-- Reference bundle skill: `app/ai-app/src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36/skills/product/preferences/SKILL.md`

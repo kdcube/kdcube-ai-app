@@ -29,9 +29,8 @@ assistant answer
 ```
 
 This scenario demonstrates how a bundle can combine a normal React workflow
-with SDK durable memory. The bundle-local preference store has been removed;
-the `product.preferences` skill now steers the solver toward the SDK memory
-tools when the user reveals durable preferences or asks about remembered facts.
+with SDK durable memory. The solver uses the configured SDK memory tools when
+the user reveals durable preferences or asks about remembered facts.
 
 ## Scenario 1A: KDCube Scene With SDK Components
 
