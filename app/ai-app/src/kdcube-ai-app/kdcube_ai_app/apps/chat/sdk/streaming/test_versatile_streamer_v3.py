@@ -10,6 +10,8 @@ from kdcube_ai_app.apps.chat.sdk.solutions.widgets.canvas import (
     TimelineStreamer,
 )
 from kdcube_ai_app.apps.chat.sdk.solutions.widgets.exec import DecisionExecCodeStreamer
+from kdcube_ai_app.apps.chat.sdk.solutions.react.v3.action_overseer import RoundActionOverseer
+from kdcube_ai_app.apps.chat.sdk.streaming.stream_policy import StreamPolicyViolation
 from kdcube_ai_app.apps.chat.sdk.streaming.versatile_streamer_v3 import (
     ChannelSpec,
     ChannelSubscribers,
@@ -91,6 +93,34 @@ class _PhaseAwareService(_FakeService):
     ):
         del messages, temperature, max_tokens, client_cfg, debug, role, debug_citations
         for chunk in self._chunks:
+            await on_delta(chunk)
+        self.stream_finished = True
+        await on_complete({})
+        return {"text": "".join(self._chunks), "service_error": None}
+
+
+class _InterruptAwareService(_FakeService):
+    def __init__(self, chunks):
+        super().__init__(chunks)
+        self.yielded = []
+        self.stream_finished = False
+
+    async def stream_model_text_tracked(
+        self,
+        _client,
+        messages,
+        on_delta,
+        on_complete,
+        temperature,
+        max_tokens,
+        client_cfg,
+        debug,
+        role,
+        debug_citations=False,
+    ):
+        del messages, temperature, max_tokens, client_cfg, debug, role, debug_citations
+        for chunk in self._chunks:
+            self.yielded.append(chunk)
             await on_delta(chunk)
         self.stream_finished = True
         await on_complete({})
@@ -486,6 +516,137 @@ async def test_stream_with_channels_v3_repeated_json_decisions_ignore_backticks_
         text_events = [e for e in collector.events_for_artifact(artifact_name) if e.get("text")]
         assert text_events, artifact_name
         assert not text_events[0]["after_model_stream"], artifact_name
+
+
+@pytest.mark.asyncio
+async def test_stream_with_channels_v3_action_json_string_can_mention_channel_tags():
+    final_answer = (
+        "**Test #2 result: still forbidden - two `<channel:action>` blocks do not change the round.**\n\n"
+        "The literal syntax `<channel:action>...</channel:action>` is ordinary answer text here, "
+        "not a nested protocol channel. The tail must stay visible."
+    )
+    payload = {
+        "action": "complete",
+        "notes": "",
+        "tool_call": None,
+        "final_answer": final_answer,
+        "suggested_followups": [],
+    }
+    full = _text_channel("thinking", "Explaining the harness result.") + _json_channel("action", payload)
+    svc = _FakeService(_chunk_text(full, size=17))
+    collector = _Collector()
+
+    def _factory(channel: str, instance_idx: int):
+        del channel
+        timeline = TimelineStreamer(
+            emit_delta=collector.emit,
+            agent=f"test.timeline.{instance_idx}",
+            sources_list=[],
+            notes_artifact_name=f"timeline_text.react.decision.{instance_idx}",
+            final_answer_artifact_name=f"react.final_answer.{instance_idx}",
+            plan_artifact_name=f"timeline_text.react.plan.{instance_idx}",
+        )
+        return [_wrap_json_widget(timeline)]
+
+    results, meta = await stream_with_channels(
+        svc=svc,
+        messages=["sys", "user"],
+        role="answer.generator.regular",
+        channels=[
+            ChannelSpec(name="thinking", format="markdown", replace_citations=False, emit_marker="thinking"),
+            ChannelSpec(name="action", format="json", replace_citations=False, emit_marker="answer"),
+        ],
+        emit=collector.emit,
+        agent="test.agent",
+        artifact_name="react.decision",
+        subscribers=ChannelSubscribers().subscribe_factory("action", _factory),
+        max_tokens=500,
+        temperature=0.0,
+        return_full_raw=True,
+    )
+
+    assert meta.get("service_error") is None
+    assert results["action"].instances == [json.dumps(payload, ensure_ascii=True)]
+    assert collector.text_for_artifact("react.final_answer.0") == final_answer
+
+
+@pytest.mark.asyncio
+async def test_stream_policy_interrupts_before_denied_action_channel_closes():
+    first = {
+        "action": "call_tool",
+        "notes": "search first",
+        "tool_call": {"tool_id": "web_tools.web_search", "params": {"query": "kdcube"}},
+    }
+    denied = {
+        "action": "complete",
+        "notes": "",
+        "tool_call": None,
+        "final_answer": "This should never stream or finish.",
+    }
+    tail = _text_channel("thinking", "This tail proves the provider kept going.")
+    full = _json_channel("action", first) + _json_channel("action", denied) + tail
+    chunks = _chunk_text(full, size=9)
+    svc = _InterruptAwareService(chunks)
+    collector = _Collector()
+    overseer = RoundActionOverseer(
+        resolve_traits=lambda tool_id: {"strategy": ["exploration"]} if tool_id == "web_tools.web_search" else {}
+    )
+
+    def _factory(channel: str, instance_idx: int):
+        del channel
+        action_gate = overseer.gate_for(action_index=instance_idx, emit_delta=collector.emit, lane="action")
+        answer_gate = overseer.gate_for(action_index=instance_idx, emit_delta=collector.emit, lane="final_answer")
+
+        async def _report(action: str, tool_id: str) -> None:
+            await overseer.observe_action_signal(
+                action_index=instance_idx,
+                action=action,
+                tool_id=tool_id,
+                action_gate=action_gate,
+                answer_gate=answer_gate,
+            )
+
+        async def _timeline_emit(**kwargs):
+            if kwargs.get("marker") == "answer":
+                await answer_gate.emit_delta(**kwargs)
+                return
+            await action_gate.emit_delta(**kwargs)
+
+        timeline = TimelineStreamer(
+            emit_delta=_timeline_emit,
+            agent=f"test.timeline.{instance_idx}",
+            sources_list=[],
+            notes_artifact_name=f"timeline_text.react.decision.{instance_idx}",
+            final_answer_artifact_name=f"react.final_answer.{instance_idx}",
+            plan_artifact_name=f"timeline_text.react.plan.{instance_idx}",
+            on_action_identity=_report,
+        )
+        return [_wrap_json_widget(timeline)]
+
+    with pytest.raises(StreamPolicyViolation) as exc:
+        await stream_with_channels(
+            svc=svc,
+            messages=["sys", "user"],
+            role="answer.generator.regular",
+            channels=[
+                ChannelSpec(name="thinking", format="markdown", replace_citations=False, emit_marker="thinking"),
+                ChannelSpec(name="action", format="json", replace_citations=False, emit_marker="answer"),
+            ],
+            emit=collector.emit,
+            agent="test.agent",
+            artifact_name="react.decision",
+            subscribers=ChannelSubscribers().subscribe_factory("action", _factory),
+            max_tokens=500,
+            temperature=0.0,
+            return_full_raw=True,
+        )
+
+    assert exc.value.code == "multi_action_bundle_final_answer_after_non_neutral"
+    assert not svc.stream_finished
+    assert len(svc.yielded) < len(chunks)
+    assert tail not in "".join(svc.yielded)
+    assert collector.text_for_artifact("react.final_answer.1") == ""
+    assert overseer.rejected_actions()[0]["index"] == 1
 
 
 @pytest.mark.asyncio

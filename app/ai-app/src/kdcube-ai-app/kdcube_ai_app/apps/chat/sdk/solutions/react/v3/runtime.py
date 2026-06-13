@@ -3162,6 +3162,13 @@ class ReactSolverV2:
                 )
         except StreamPolicyViolation as exc:
             stream_policy_violation = exc
+            try:
+                self.log.log(
+                    f"[react.v3] decision stream interrupted by policy: code={exc.code} extra={dict(exc.extra or {})}",
+                    "WARNING",
+                )
+            except Exception:
+                pass
             self._stash_interrupted_generation_snapshot()
         finally:
             if self._active_phase_cancelled_by_steer or self._steer_interrupt_requested:

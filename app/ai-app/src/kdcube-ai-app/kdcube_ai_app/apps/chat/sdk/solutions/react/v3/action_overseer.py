@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Mapping, Optional
 
@@ -19,6 +20,7 @@ from kdcube_ai_app.apps.chat.sdk.streaming.stream_policy import StreamPolicyViol
 EmitDelta = Callable[..., Awaitable[None]]
 TraitsResolver = Callable[[str], Mapping[str, Any]]
 DEFAULT_MAX_ACTIONS_PER_ROUND = 2
+logger = logging.getLogger(__name__)
 
 
 class ActionStreamGate:
@@ -41,6 +43,14 @@ class ActionStreamGate:
             if self._status == "denied":
                 return
             if self._status != "allowed":
+                if not self._buffer:
+                    logger.info(
+                        "[react.action_overseer.gate] buffering lane=%s index=%s marker=%s artifact=%s",
+                        self.lane,
+                        self.action_index,
+                        kwargs.get("marker"),
+                        kwargs.get("artifact_name"),
+                    )
                 self._buffer.append(dict(kwargs))
                 return
         await self._emit_delta(**kwargs)
@@ -52,13 +62,26 @@ class ActionStreamGate:
             self._status = "allowed"
             buffered = list(self._buffer)
             self._buffer.clear()
+        logger.info(
+            "[react.action_overseer.gate] allowed lane=%s index=%s flushed=%s",
+            self.lane,
+            self.action_index,
+            len(buffered),
+        )
         for item in buffered:
             await self._emit_delta(**item)
 
     async def deny(self) -> None:
         async with self._lock:
+            dropped = len(self._buffer)
             self._status = "denied"
             self._buffer.clear()
+        logger.info(
+            "[react.action_overseer.gate] denied lane=%s index=%s dropped=%s",
+            self.lane,
+            self.action_index,
+            dropped,
+        )
 
 
 @dataclass(frozen=True)
@@ -141,6 +164,13 @@ class RoundActionOverseer:
             tool_id=tool_id_text,
             traits=traits,
         )
+        logger.info(
+            "[react.action_overseer] observed index=%s action=%s tool_id=%s strategies=%s",
+            observed.index,
+            observed.action,
+            observed.tool_id or "-",
+            sorted(observed.strategies or {UNKNOWN_STRATEGY}),
+        )
 
         async with self._lock:
             previous_same_index = next((item for item in self._observed if item.index == observed.index), None)
@@ -156,6 +186,14 @@ class RoundActionOverseer:
                     self._observed.append(observed)
 
         if action_allowed:
+            logger.info(
+                "[react.action_overseer] accepted index=%s action=%s tool_id=%s answer_lane=%s previous=%s",
+                observed.index,
+                observed.action,
+                observed.tool_id or "-",
+                answer_allowed,
+                previous_same_index is not None,
+            )
             await action_gate.allow()
             if answer_gate is not None:
                 if answer_allowed:
@@ -169,6 +207,14 @@ class RoundActionOverseer:
             await answer_gate.deny()
         assert violation is not None
         code, extra = violation
+        logger.info(
+            "[react.action_overseer] rejected index=%s action=%s tool_id=%s code=%s extra=%s",
+            observed.index,
+            observed.action,
+            observed.tool_id or "-",
+            code,
+            dict(extra or {}),
+        )
         async with self._lock:
             previous_rejected = next((item for item in self._rejected if item.index == observed.index), None)
             if previous_rejected is None:
