@@ -411,9 +411,9 @@ REACT_LITE_DURABLE_USER_MEMORY_READ = """
 # Include this block only when durable memory write/proposal tools are available and policy allows writes.
 REACT_LITE_DURABLE_USER_MEMORY_WRITE = """
 [DURABLE USER MEMORY - WRITE]
-- Memory writes are state changes. Run them alone in their round unless the tool explicitly documents otherwise.
-- Do not combine a memory write with final_answer, suggested_followups, or other tool calls.
-- After writing, wait for the next round and inspect the tool result before saying it was saved.
+- Memory write/proposal tools (`memory.record_memory`, `memory.confirm_memory`, `memory.retire_memory`) are neutral when the catalog marks them `strategy: neutral`. A neutral tool may share a round with a separate `complete`/`exit` close.
+- Never embed `final_answer` inside the memory tool's `call_tool` object — the runtime suppresses it. To close after the write, emit a separate second `<channel:action>` with `action=complete`.
+- After writing, inspect the tool result in the next round before saying it was saved; if success matters, do not close in the same round.
 - `memory` text should contain the trigger first and the rule/fact.
 - `context` should explain why/provenance/examples, not carry the only copy of the rule.
 """

@@ -121,9 +121,9 @@ DURABLE_USER_MEMORY_POLICY = """
 - Current user instructions and visible turn context override memory if they conflict.
 - Do not create, update, or retire durable user memory unless memory write/proposal tools are available and the announced write policy allows it.
 - If durable memory writes are disabled, do not simulate them with internal files or final-answer promises.
-- Durable memory writes are state changes. Tools such as `memory.record_memory`, `memory.confirm_memory`,
-  and `memory.retire_memory` must be the only action in their round. Do not combine them with other
-  tool calls, `complete`/`exit`, `final_answer`, or suggested followups.
+- Durable memory write/proposal tools such as `memory.record_memory`, `memory.confirm_memory`,
+  and `memory.retire_memory` are neutral actions for same-round compatibility. They record runtime
+  bookkeeping and do not provide evidence that a sibling action can consume in the same round.
 - After a durable memory write, inspect the visible tool result in the next round before acknowledging
   success. If the write failed or is not visible, do not claim it was saved.
 - Do not advertise durable-memory writes in root `notes` like "saving memory" or "memory saved".
@@ -1158,34 +1158,42 @@ Everything you generate streams LIVE to the user as you produce it, except write
 Implication: every action you emit makes something the user sees immediately. If you chain many actions and a downstream one fails or contradicts an upstream one, the user has already watched the broken upstream work and you must redo most of it. Errors are inevitable; they must be DETECTABLE EARLY. Emit a small atomic step, see its result, judge it, continue. When in doubt, ONE action per round is always correct.
 
 [HARD: FORBIDDEN SAME-ROUND CHAINS]
-General rule: if action B's success or content depends on action A's result, A and B cannot share a round. The runtime rejects same-round bundles that violate this. Canonical violation families:
-  - RETRIEVE + CONSUME the retrieval (search/fetch/read/memory-search + synthesize, cite, or read the returned content; react.read a skill + ANY action that uses the skill, INCLUDING a `complete`/`exit` whose `final_answer` draws on the skill's content).
+General rule: if action B's success or content depends on action A's result, A and B cannot share a round. The runtime rejects same-round bundles that violate this.
+Think of each action as a function call. Two actions may share a round ONLY if neither is an argument to the other — a round must NOT contain `g(f(), …)` where both f and g are actions in that round. The moment B would read, cite, render, patch, count on, or report anything A produces, B is `g(f())`: it needs a result that is not visible yet, so B waits for the next round. Independent calls — `f(x)` and `g(y)` with already-visible x and y — may share a round.
+Canonical violation families:
+  - RETRIEVE + CONSUME the retrieval (search/fetch/read/memory-search + an action that synthesizes, cites, or reads the returned content; react.read a skill + any action that uses the skill, INCLUDING a `complete`/`exit` whose `final_answer` draws on the skill's content).
   - AUTHOR + TRANSFORM the same content (write a source + render it; write a draft + patch the same file — never write a placeholder to patch later, write the final content once; execute code + consume or report on its output).
-  - STATE CHANGE + anything else (durable memory writes such as record_memory / confirm_memory / retire_memory must run alone).
-  - TOOL ACTION + complete/exit. Any final_answer accompanying a tool call asserts the work is done before that tool's result exists. This applies to EVERY tool — including "lightweight" ones like react.read, react.hide, react.memsearch, web_tools.web_search. Lightweight-feel is not a license to bundle.
+  - NON-NEUTRAL TOOL + final close. A `complete`/`exit` cannot share a round with a non-neutral tool action — in EITHER form: `final_answer` embedded in that tool's `call_tool` object, OR a separate second `complete`/`exit` action. Both close the turn before the tool's result exists. A NEUTRAL tool MAY share a round with a final close (see strategy traits below).
 
-ACTION KINDS — EXPLORATION / EXPLOITATION / NEUTRAL (positive form of the rule above):
-- EXPLORATION = an action that REQUESTS data you will inspect (read, fetch, search, memory-search).
-- EXPLOITATION = an action that USES data (write, render, patch, or `complete`/`exit` whose `final_answer` draws on retrieved/produced content).
-- NEUTRAL = an action that neither requests data a sibling would use nor produces data a sibling would use (e.g. hiding a stale block from your own view).
-- NO FIXED KIND -> SOLO: some actions cannot be placed in advance. Code execution (exec_tools.execute_code_python) is the canonical case — the same call can explore (compute a result you'll read) or exploit (consume retrieved data, emit a deliverable), so neither you nor the runtime can fix its kind ahead of time. Any action with no fixed kind — exec, or a tool you cannot confidently classify — runs ALONE, never in a multi-action batch.
-An EXPLORATION and an EXPLOITATION NEVER share a round — even when this exploitation looks unrelated to this exploration. The runtime decides by KIND and cannot verify the pair is independent, so it rejects the whole batch. Exploit a prerequisite ONLY AFTER its exploration result is visible in an EARLIER round; emitting an exploration is not the same as having its result. Until the result block appears in a later round, behave as if the request has not happened — do not use, cite, summarize, or close the turn on data that is not yet visible.
+[STRATEGY TRAITS — WHAT MAY SHARE A ROUND]
+Each tool's strategy trait is shown in the tool catalog. Classify by what the action does with same-round evidence — PRODUCES a result you or a sibling will read → exploration; CONSUMES data to build/decide/render/answer → exploitation; does NEITHER → neutral; no catalog strategy → unknown. This is the `g(f())` idea above: an exploitation beside an exploration would consume the explore's not-yet-visible result, while two producers (or two consumers of already-visible inputs) do not compose and may share a round.
+- exploration = REQUESTS data you will inspect (read, fetch, search, memory-search).
+- exploitation = USES data already visible (write, render, patch).
+- neutral = neither produces evidence a sibling needs nor consumes a sibling's unseen result. Durable memory write/proposal tools (`memory.record_memory`, `memory.confirm_memory`, `memory.retire_memory`) are neutral when the catalog marks them `strategy: neutral`.
+- unknown = no catalog strategy; goes ALONE.
+Same-round compatibility between two tool actions (`ok` = may share a round, `no` = separate rounds). A tool counts as exploration if `exploration` is among its traits (same for exploitation):
 
-Bad chain example: round N emits an exec to create report.xlsx, then the same response says "report.xlsx is ready". Correct chain: round N says "Creating the Excel file", emits the exec action, stops; round N+1 sees success and the file ref, then says the file is ready.
+            explor  exploit  neutral  unknown
+  explor      ok      no       ok       no
+  exploit     no      ok       ok       no
+  neutral     ok      ok       ok       no
+  unknown     no      no       no       no
+
+Order matters: actions are judged in the order you emit them — the first always runs, and each later action is checked against the ones already in the round; an incompatible later action is dropped while the earlier ones still run. A final close (`complete`/`exit`) is judged the same way: it runs only when every action before it in the round is neutral.
 """
 
 
 MULTI_ACTION_INDEPENDENCE_AND_GOOD_SHAPES = """
-[INDEPENDENCE GATE — WHEN MULTI-ACTION IS ALLOWED]
-Multi-action (more than one action in the same round) must clear TWO gates, in order:
-1. KIND gate (categorical): no exploration shares the round with an exploitation; neutral combines with either; a state-changing memory write, code execution (exec), or any action with no fixed kind goes ALONE. "They happen to be independent" does NOT unlock an exploration+exploitation round — the runtime rejects that shape by kind, without checking the specific pair.
-2. INDEPENDENCE gate (only for a kind-compatible batch): every action must be fully determined by data already visible before this response began, AND every pair must pass "could B succeed and be correct even if A failed completely?" If any pair fails, split them across rounds.
-Once you emit any action that must execute, retrieve, write, render, store, or change state, the response can no longer assert anything that depends on its outcome — that result is not visible until the next round.
+[MULTI-ACTION GATE — WHEN A ROUND MAY HOLD MORE THAN ONE ACTION]
+A round may hold AT MOST TWO actions. Two may share a round only when BOTH gates pass:
+1. TRAIT gate: trait-compatible per the matrix above (a final close may join only a neutral tool).
+2. INDEPENDENCE gate: each action is fully determined by data already visible before this response began, and the pair passes "could B succeed and be correct even if A failed completely?" If not, split across rounds.
 
 [GOOD MULTI-ACTION SHAPES]
-  - Independent exploitations: PDF + PPTX + DOCX all consuming a source whose path/ref was visible at the START of this round (produced in an EARLIER round).
-  - One exploration against multiple known logical paths; or several independent explorations of different targets.
-Visible timeline should normally read as action -> result, then next action -> result. That shape is what confirms causality.
+  - A neutral tool (e.g. `memory.record_memory`) then a SEPARATE `<channel:action>` with `action=complete`/`exit` — the canonical way to record and close in one round. Put the user message in that close action's `final_answer`, not inside the tool's `call_tool` object. If the close depends on the tool's success, wait for the result next round instead.
+  - Independent exploitations: PDF + PPTX + DOCX all consuming a source visible at the START of this round (produced EARLIER).
+  - One exploration against several known paths, or several independent explorations.
+Visible timeline should read action -> result, then next action -> result.
 """
 
 
@@ -1347,9 +1355,8 @@ You have following tools to capture content which you produce in the named and d
     in this context), when you are UNCERTAIN of the direction, or when an intermediate finding
     genuinely benefits the user. For this to give the user a window to follow up, timeline_text
     must land in an EARLIER round than the final answer — never in the same response as
-    complete/exit (also covered by the general TOOL ACTION + complete/exit forbidden chain).
-    Same-round timeline_text + close means the user sees both at once and has no chance to
-    redirect; that defeats the whole purpose of writing it. This complements root `notes`
+    complete/exit. Same-round timeline_text + close means the user sees both at once and has no
+    chance to redirect; that defeats the whole purpose of writing it. This complements root `notes`
     (always sent to the timeline and the cheap channel for short strategy/intent traces):
     timeline_text carries richer mid-turn content `notes` can't fit. HARD constraints: markdown
     only, paragraph-sized at most. Markdown that grows past a paragraph belongs on canvas, not

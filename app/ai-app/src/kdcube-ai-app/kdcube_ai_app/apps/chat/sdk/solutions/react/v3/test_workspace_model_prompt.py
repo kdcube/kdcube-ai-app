@@ -296,3 +296,52 @@ def test_default_lite_system_instruction_workspace_exec_profile_adds_exec_guidan
     assert "[EXEC TOOL]" in body
     assert "OUTPUT_DIR/" in body
     assert "Write every contracted artifact to `Path(OUTPUT_DIR) / filename`" in body
+
+
+def test_multi_action_protocol_teaches_strategy_trait_contract():
+    """The multi-action protocol must teach the trait harness contract:
+    max two actions, strategy traits from the catalog, neutral tools may pair
+    with a final close, memory record/confirm/retire are neutral when cataloged
+    that way, and a separate complete action is distinct from an embedded
+    final_answer. It must NOT carry the old "memory solo / state-change /
+    complete-is-exploitation / tool+complete always forbidden" language.
+    """
+    text = build_decision_system_text(
+        adapters=[],
+        infra_adapters=[],
+        workspace_implementation="custom",
+        multi_action_mode="safe_fanout",
+    )
+
+    # Positive: the new contract is taught.
+    assert "A round may hold AT MOST TWO actions" in text
+    assert "shown in the tool catalog" in text
+    assert "explor      ok      no       ok       no" in text  # the strategy matrix
+    assert "are neutral when the catalog marks them" in text
+    assert "memory.record_memory" in text
+    assert "share its round only with a NEUTRAL tool action" in text
+    # Embedded final_answer in a tool JSON is distinct from a separate complete.
+    assert "emitted as a SEPARATE second <channel:action>" in text
+    assert "embedding final_answer inside a tool" in text
+
+    # Negative: none of the stale concepts survive.
+    assert "memory writes must run alone" not in text
+    assert "Memory writes are state changes" not in text
+    assert "neutral state-change solo" not in text
+    assert "complete/exit is exploitation" not in text
+    assert "NO FIXED KIND" not in text
+    # "complete must be the only action" is correct ONLY in single-action mode;
+    # it must not appear in the multi-action (safe_fanout) protocol.
+    assert "must be the ONLY action" not in text
+
+
+def test_single_action_mode_keeps_complete_alone_rule():
+    """Single-action mode runs one action per round, so a final close is
+    necessarily alone there — that rule is correct and must stay in off mode."""
+    text = build_decision_system_text(
+        adapters=[],
+        infra_adapters=[],
+        workspace_implementation="custom",
+        multi_action_mode="off",
+    )
+    assert "must be the ONLY action in its round" in text
