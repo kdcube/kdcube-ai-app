@@ -47,7 +47,7 @@ TOOL_SPEC = {
     ),
     "args": {
         "path": "str (FIRST FIELD). Canonical current-turn physical OUT_DIR-relative file path, e.g. turn_<current>/files/<scope>/x.py or turn_<current>/outputs/<scope>/x.html.",
-        "channel": "str (SECOND FIELD). 'canvas' (default) or 'timeline_text'.",
+        "channel": "str (SECOND FIELD). 'canvas' (default).",
         "patch": "str (THIRD FIELD). Unified diff if starts with ---/+++/@@; otherwise full replacement.",
         "kind": "str (FOURTH FIELD). 'display' or 'file'.",
     },
