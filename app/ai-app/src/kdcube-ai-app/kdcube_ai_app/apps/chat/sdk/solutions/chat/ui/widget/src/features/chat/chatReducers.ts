@@ -68,6 +68,7 @@ import type {
 import { initialState } from './chatTypes.ts'
 import { canonicalObjectRef } from './fileDrag.ts'
 import { durableHistoricalObjectRef } from './historicalRefs.ts'
+import { messageWithContextChips } from './contextChips.ts'
 
 export function addBanner(
   state: ChatState,
@@ -114,27 +115,6 @@ function canonicalPayloadRef(
     durableHistoricalObjectRef(meta.source_path, conversationId),
   )
   return ref || null
-}
-
-function userTextWithContextChips(text: string, contexts: unknown): string {
-  if (!Array.isArray(contexts) || contexts.length === 0) return text
-  if (/^([\s\S]*?)\n\n\{"context":\[[\s\S]*\]\}\s*$/.test(text)) return text
-  const chips = contexts
-    .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
-    .map((item, index) => {
-      const label =
-        (typeof item.label === 'string' && item.label.trim()) ||
-        (typeof item.ref === 'string' && item.ref.trim()) ||
-        (typeof item.kind === 'string' && item.kind.trim()) ||
-        'context'
-      const id =
-        (typeof item.id === 'string' && item.id.trim()) ||
-        (typeof item.ref === 'string' && item.ref.trim()) ||
-        `context-${index}`
-      return { ...item, id, label }
-    })
-  if (!chips.length) return text
-  return `${text.trim()}\n\n${JSON.stringify({ context: chips })}`
 }
 
 export function updateTurn(
@@ -577,7 +557,7 @@ export function hydrateHistoricalConversation(conversation: ConversationDTO): Ch
             (typeof artifact.data?.text === 'string' && artifact.data.text) ||
             (typeof payload.text === 'string' && payload.text) ||
             ''
-          const displayText = userTextWithContextChips(text, dataRecord.contexts)
+          const displayText = messageWithContextChips(text, dataRecord.contexts)
           const eventType =
             (typeof dataRecord.event_type === 'string' && dataRecord.event_type) ||
             (typeof payload.event_type === 'string' && payload.event_type) ||

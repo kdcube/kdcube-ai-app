@@ -300,7 +300,8 @@ def user_input_text_with_context_chips(text: str, contexts: List[Dict[str, Any]]
         })
     if not clean_contexts:
         return base
-    return f"{base}\n\n{json.dumps({'context': clean_contexts}, ensure_ascii=False)}"
+    payload = json.dumps({"context": clean_contexts}, ensure_ascii=False)
+    return f"{base}\n\n{payload}" if base else payload
 
 
 def context_chip_from_event_block(block: Dict[str, Any]) -> Optional[Dict[str, Any]]:

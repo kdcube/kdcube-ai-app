@@ -52,6 +52,7 @@ import {
   findActiveTurn,
   normalizeTurnAttachment,
 } from './features/chat/chatReducers.ts'
+import { messageWithContextChips } from './features/chat/contextChips.ts'
 import { messageForError } from './components/utils.ts'
 
 import { useAppDispatch, useAppSelector, useStableCallback } from './app/hooks.ts'
@@ -95,15 +96,6 @@ const CHAT_EVENT_DEFAULTS = {
   canvasSurface: CHAT_CANVAS_SURFACE,
   snapshotEventSourceId: CHAT_SNAPSHOT_EVENT_SOURCE_ID,
   snapshotSurface: CHAT_SNAPSHOT_SURFACE,
-}
-
-function userMessageWithContextChips(text: string, contexts: AttachedContext[]): string {
-  if (!contexts.length) return text
-  const chips = contexts.map((ctx) => ({
-    id: ctx.id,
-    label: ctx.label || ctx.id,
-  }))
-  return `${text || ''}\n\n${JSON.stringify({ context: chips })}`
 }
 
 function isVisibleTurn(turn: ChatTurn): boolean {
@@ -862,7 +854,7 @@ export default function App() {
        * the local user bubble also gets compact context chips so a context-only
        * send has a visible "You sent this" anchor. */
       const draftContexts = isSteer || textOverride !== undefined ? [] : snapshot.composerContexts
-      const visibleDraftText = userMessageWithContextChips(draftText, draftContexts)
+      const visibleDraftText = messageWithContextChips(draftText, draftContexts)
       const target = chatTarget(storyIdFromContexts(draftContexts))
       const externalEvents = buildExternalEventBatch(draftContexts, {
         agentId: 'main',

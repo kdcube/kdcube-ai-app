@@ -34,26 +34,7 @@ import {
   mergeOverviewEvents,
 } from './turnTabs.tsx'
 import { ChatTurnView } from './ChatTurnView.tsx'
-
-/** Split a sent user message into its visible text and any trailing
- *  `{"context":[…]}` block the composer folds in for the assistant. The block
- *  is rendered as small chips instead of raw JSON so the bubble stays clean
- *  (and short). Placeholder until the turn payload carries context as a
- *  first-class field rather than appended text. */
-function splitUserMessage(raw: string): { text: string; contexts: Array<{ id: string; label: string }> } {
-  const match = raw.match(/^([\s\S]*?)\n\n(\{"context":\[[\s\S]*\]\})\s*$/)
-  if (!match) return { text: raw, contexts: [] }
-  try {
-    const parsed = JSON.parse(match[2]) as { context?: Array<{ id?: string; label?: string }> }
-    const contexts = (parsed.context || []).map((entry) => ({
-      id: String(entry.id || ''),
-      label: String(entry.label || entry.id || ''),
-    }))
-    return { text: match[1], contexts }
-  } catch {
-    return { text: raw, contexts: [] }
-  }
-}
+import { splitContextChips } from './contextChips.ts'
 
 /** Turn-level reaction control: thumbs up/down on a completed answer.
  *  Liking is instant; disliking expands an inline optional-comment box
@@ -211,7 +192,7 @@ function TurnViewImpl({
     [turn.userAttachments, turn.additionalUserMessages],
   )
   /* Visible user text + dropped-context chips, split from the sent message. */
-  const userParsed = useMemo(() => splitUserMessage(turn.userMessage), [turn.userMessage])
+  const userParsed = useMemo(() => splitContextChips(turn.userMessage), [turn.userMessage])
 
   const stateChipClass =
     turn.state === 'error'

@@ -47,21 +47,7 @@ import type {
 } from './chatTypes.ts'
 import { canonicalObjectRef, setChatFileDragData, type ChatFileDragInput } from './fileDrag.ts'
 import { durableHistoricalObjectRef } from './historicalRefs.ts'
-
-function splitContextChips(raw: string): { text: string; contexts: Array<{ id: string; label: string }> } {
-  const match = raw.match(/^([\s\S]*?)\n\n(\{"context":\[[\s\S]*\]\})\s*$/)
-  if (!match) return { text: raw, contexts: [] }
-  try {
-    const parsed = JSON.parse(match[2]) as { context?: Array<{ id?: string; label?: string }> }
-    const contexts = (parsed.context || []).map((entry) => ({
-      id: String(entry.id || ''),
-      label: String(entry.label || entry.id || ''),
-    }))
-    return { text: match[1], contexts }
-  } catch {
-    return { text: raw, contexts: [] }
-  }
-}
+import { splitContextChips } from './contextChips.ts'
 
 function StepListImpl({ steps }: { steps: TurnStep[] }) {
   if (steps.length === 0) return null
