@@ -1,59 +1,81 @@
 platform:
   repo: "kdcube-ai-app"
-  ref: "2026.6.14.1828"
+  ref: "2026.6.15.0105"
   description: |
-    This platform release enables wildcard CORS origins for host-page
-    integrations, removes internal preview-route examples from public docs,
-    and disables browser automation tools by default in the Versatile reference
-    bundle template.
+    This platform release hardens ReAct/chat context handling, adds
+    provider-owned click/open effects for external namespace objects, and
+    improves the generic scene-orchestration contract used by chat, canvas,
+    named services, and host pages.
 
     Highlights
 
-    - Adds `allow_origin_regex` to the runtime CORS configuration model.
-    - Converts descriptor origins containing `*` into Starlette-compatible CORS
-      origin regexes, while preserving exact origins and explicit regex
-      configuration.
-    - Makes host-page runtime config fetches such as
-      `/api/cp-frontend-config` work for preview-domain families without
-      adding every preview hostname as a separate CORS origin.
-    - Documents the distinction between iframe embedding policy
-      (`proxy.frame_embedding`) and host-page fetch permission
-      (`cors.allow_origins`).
-    - Replaces internal preview-host examples in public documentation with
-      neutral `example.com` domains.
-    - Comments out `browser_tools` in the Versatile reference bundle template
-      so browser automation is not published to the default agent unless a
-      bundle author explicitly enables it.
-    - Keeps `web_tools` unchanged; only the browser automation surface is
-      disabled by default.
+    - Persists full user-input event batches for chat turns so attached context
+      chips, files, and user text remain tied to the same reactive input.
+    - Restores attached context when historical turns are fetched, including
+      context-only turns and follow-up messages loaded through the conversation
+      fetch/RAG path.
+    - Hides raw context marker JSON from chat bubbles while preserving the
+      structured context items as user-visible chips.
+    - Parses spaced context chip markers more robustly when rendering stored
+      chat turns.
+    - Fixes server turn-routing behavior in the reusable chat widget so
+      submitted turns are associated with the backend-selected target turn.
+    - Adds clickable context chips backed by the same resolver/object-action
+      machinery used by canvas pins.
+    - Introduces `default_open_effect_action` as the provider-owned declaration
+      of what a generic click/open should do for a concrete object ref.
+    - Extends common resolvers to expose provider-owned open effects:
+      ReAct `fi:` artifacts and canvas artifacts default to `download`,
+      memory and conversation refs default to `open`, and named-service canvas
+      resolvers promote provider-declared effects.
+    - Adds `kdcube-object-open` routing from the chat widget to the host scene,
+      keeping chat generic while allowing the scene to react to
+      `ui_event.target_surface`.
+    - Updates the Versatile scene to dispatch chat-origin object opens through
+      its surface registry.
+    - Adds a reusable scene-component design note that separates provider
+      effects, widget intents, and scene-owned UI reactions.
+    - Hardens `react.patch` application by improving the fallback path when the
+      system patch implementation cannot apply a generated hunk.
+    - Keeps the board information icon visible in the canvas UI.
 
     Runtime and deployment notes:
 
-    - Deployments must point the platform ref at 2026.6.14.1828 to receive this
+    - Deployments must point the platform ref at 2026.6.15.0105 to receive this
       update.
-    - Provider deployments that serve static host pages from preview domains
-      should include a wildcard origin such as
-      `https://*.preview.example.com` in `cors.allow_origins`.
-    - ECS descriptors must render `assembly.yaml -> cors` into runtime
-      `CORS_CONFIG`; older descriptor renderers that hardcode only the app
-      domain will not activate the wildcard origin.
-    - The wildcard CORS support applies to browser fetches. Iframe permission
-      is still governed by `proxy.frame_embedding` and CSP `frame-ancestors`.
+    - Namespace-service providers that want generic chat/canvas click behavior
+      should return `default_open_effect_action` from `object.resolve` for each
+      concrete object kind. Do not infer click behavior from namespace alone.
+    - Host scenes remain responsible for UI reactions. For `open`, providers
+      return `ui_event.target_surface`; scenes mount/focus the target surface
+      and send the appropriate widget command.
+    - Unknown or unregistered refs now produce bounded context-action notices
+      in the chat UI instead of exposing raw resolver failures.
+    - The chat widget remains generic: task, memory, file, and other
+      namespace-specific behavior belongs in providers and scene surface
+      registries.
 
     Validation and regression coverage:
 
-    - Added focused tests for CORS origin option derivation, covering wildcard
-      origin conversion and explicit regex preservation.
-    - Parsed the local Versatile runtime config after commenting browser tools
-      and confirmed the default agent no longer sees `browser_tools`.
+    - Built the reusable chat widget with Vite.
+    - Ran the chat context-batch TypeScript test suite.
+    - Built the Versatile scene UI with Vite.
+    - Ran ReAct event resolver tests for `fi:` artifact behavior.
+    - Ran memory resolver tests for `mem:` object open behavior.
+    - Ran task-provider resolver/action tests in the applications repository to
+      confirm issue versus attachment open effects.
+    - Checked the website scene broker syntax after adding
+      `kdcube-object-open` routing.
     - Staged release diff private-name scan passes before the release commit.
 
     Changelog
 
-    - Added CORS wildcard-origin support through `allow_origin_regex`.
-    - Documented host-page CORS vs iframe frame policy.
-    - Sanitized public integration examples to avoid internal preview routes.
-    - Disabled browser automation tools by default in the Versatile reference
-      template.
+    - Added provider-owned context open/download effects for generic UI chips.
+    - Wired chat context chips to resolver-backed object actions.
+    - Routed chat object opens through scene surface registries.
+    - Persisted and restored complete user input batches, including context.
+    - Hardened stored context rendering and `react.patch` behavior.
+    - Documented named-service provider/client responsibilities for object
+      open effects and scene reactions.
 config:
-    version: "2026.6.14.1828"
+    version: "2026.6.15.0105"
