@@ -138,6 +138,8 @@ Not every important prop is platform-reserved.
 | `events.record.persist` | yes | `BaseEntrypoint` (`_save_events_artifact`) | bundle props authority + Redis cache; falls back to `assembly.yaml -> events.record.persist` |
 | `events.record.telemetry` | yes | `BaseEntrypoint` (`_build_telemetry_selector`) | bundle props authority + Redis cache; falls back to `assembly.yaml -> events.record.telemetry` |
 | `react.default_agent.additional_instructions` | no, this is a bundle convention | only bundles/workflows that pass it into `build_react(...)` | same bundle props storage as any other non-secret prop |
+| `canvas.namespace_styles` | no, bundle-owned widget presentation | canvas board (pinboard widget), from its runtime/host config | same bundle props storage as any other non-secret prop |
+| `canvas.info_html` | no, bundle-owned widget presentation | canvas board (pinboard widget), echoed on the bundle's own `canvas_list` operation response | same bundle props storage as any other non-secret prop |
 
 ReAct bundle props are agent-scoped. The default ReAct lane uses
 `config.react.default_agent.*`; additional agents can use

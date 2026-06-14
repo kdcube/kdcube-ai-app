@@ -213,6 +213,8 @@ export interface CanvasListResponse {
   user_id?: string
   story_id?: string
   canvases?: CanvasListItem[]
+  /** Bundle-authored HTML for the board ⓘ help panel; absent → built-in default. */
+  info_html?: string
   error?: string
   status?: number
 }

@@ -22,7 +22,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import type { CanvasObjectActionName, CanvasObjectActionResponse, CanvasPatchInput, CanvasPatchOp, CanvasPatchResponse, CanvasReadInput, CanvasReadResponse } from './canvasTypes'
 import { normalizeContext, normalizeContextMessage, type CanvasContextItem } from './contextTypes'
 import { parseIngressMessage, type CanvasIngressPayload } from './ingressBridge'
@@ -70,6 +70,8 @@ export interface CanvasBoardProps {
   onDropIngress: (payload: CanvasIngressPayload, rect: CanvasCard['rect']) => void
   onObjectAction?: (card: CanvasCard, action: CanvasObjectActionName) => Promise<CanvasObjectActionResponse>
   namespaceStyles?: Record<string, CanvasNamespaceStyle | string>
+  /** HTML help shown behind the ⓘ icon. Comes from bundle config; when absent a built-in default is used. */
+  infoHtml?: string
 }
 
 interface DragState {
@@ -202,6 +204,164 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
     return false
   }
 }
+
+// --- Lightweight markdown (self-contained, no dependency) -------------------
+// Supports headings, bold/italic, inline code, code fences, links, blockquotes
+// and ordered/unordered lists — enough for canvas text, descriptions, and
+// comments without pulling a markdown library into the shared component.
+function renderInlineMarkdown(text: string): ReactNode[] {
+  const out: ReactNode[] = []
+  let rest = text
+  let key = 0
+  const re = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*\n]+\*|_[^_\n]+_)|(\[[^\]]+\]\([^)\s]+\))/
+  while (rest.length) {
+    const m = re.exec(rest)
+    if (!m) {
+      out.push(<Fragment key={key++}>{rest}</Fragment>)
+      break
+    }
+    if (m.index > 0) out.push(<Fragment key={key++}>{rest.slice(0, m.index)}</Fragment>)
+    const tok = m[0]
+    if (tok.startsWith('`')) out.push(<code key={key++}>{tok.slice(1, -1)}</code>)
+    else if (tok.startsWith('**')) out.push(<strong key={key++}>{tok.slice(2, -2)}</strong>)
+    else if (tok.startsWith('[')) {
+      const lm = /\[([^\]]+)\]\(([^)\s]+)\)/.exec(tok)
+      if (lm) out.push(<a key={key++} href={lm[2]} target="_blank" rel="noopener noreferrer">{lm[1]}</a>)
+      else out.push(<Fragment key={key++}>{tok}</Fragment>)
+    } else out.push(<em key={key++}>{tok.slice(1, -1)}</em>)
+    rest = rest.slice(m.index + tok.length)
+  }
+  return out
+}
+
+function Markdown({ text }: { text: string }) {
+  const src = (text || '').replace(/\r\n/g, '\n')
+  if (!src.trim()) return null
+  const lines = src.split('\n')
+  const blocks: ReactNode[] = []
+  let i = 0
+  let key = 0
+  const isBlockStart = (l: string) => /^(#{1,6}\s|>|[-*]\s|\d+\.\s|```)/.test(l)
+  while (i < lines.length) {
+    const line = lines[i]
+    if (line.trim() === '') { i++; continue }
+    if (/^```/.test(line)) {
+      const buf: string[] = []
+      i++
+      while (i < lines.length && !/^```/.test(lines[i])) { buf.push(lines[i]); i++ }
+      if (i < lines.length) i++
+      blocks.push(<pre key={key++}><code>{buf.join('\n')}</code></pre>)
+      continue
+    }
+    const h = /^(#{1,6})\s+(.*)$/.exec(line)
+    if (h) {
+      const lvl = Math.min(6, h[1].length + 2)
+      const Tag = (`h${lvl}` as unknown) as 'h4'
+      blocks.push(<Tag key={key++}>{renderInlineMarkdown(h[2])}</Tag>)
+      i++
+      continue
+    }
+    if (/^>\s?/.test(line)) {
+      const buf: string[] = []
+      while (i < lines.length && /^>\s?/.test(lines[i])) { buf.push(lines[i].replace(/^>\s?/, '')); i++ }
+      blocks.push(<blockquote key={key++}>{renderInlineMarkdown(buf.join(' '))}</blockquote>)
+      continue
+    }
+    if (/^[-*]\s+/.test(line)) {
+      const items: string[] = []
+      while (i < lines.length && /^[-*]\s+/.test(lines[i])) { items.push(lines[i].replace(/^[-*]\s+/, '')); i++ }
+      blocks.push(<ul key={key++}>{items.map((it, j) => <li key={j}>{renderInlineMarkdown(it)}</li>)}</ul>)
+      continue
+    }
+    if (/^\d+\.\s+/.test(line)) {
+      const items: string[] = []
+      while (i < lines.length && /^\d+\.\s+/.test(lines[i])) { items.push(lines[i].replace(/^\d+\.\s+/, '')); i++ }
+      blocks.push(<ol key={key++}>{items.map((it, j) => <li key={j}>{renderInlineMarkdown(it)}</li>)}</ol>)
+      continue
+    }
+    const buf: string[] = []
+    while (i < lines.length && lines[i].trim() !== '' && !isBlockStart(lines[i])) { buf.push(lines[i]); i++ }
+    blocks.push(<p key={key++}>{renderInlineMarkdown(buf.join(' '))}</p>)
+  }
+  return <div className="canvas-md">{blocks}</div>
+}
+
+// Reusable in-card editor: a raw textarea with a Raw/Rendered switch and
+// tick (save) / x (cancel) controls. Used for new user text, descriptions,
+// and comments so editing always happens inline, never in a browser dialog.
+function InlineMarkdownEditor({
+  value,
+  onChange,
+  onSave,
+  onCancel,
+  placeholder,
+  saveLabel,
+  saveDisabled,
+}: {
+  value: string
+  onChange: (next: string) => void
+  onSave: () => void
+  onCancel?: () => void
+  placeholder?: string
+  saveLabel?: string
+  saveDisabled?: boolean
+}) {
+  const [mode, setMode] = useState<'raw' | 'rendered'>('raw')
+  return (
+    <div className="canvas-mde" onPointerDown={(event) => event.stopPropagation()}>
+      <div className="canvas-mde-bar">
+        <div className="canvas-mde-tabs">
+          <button type="button" className={mode === 'raw' ? 'on' : ''} onClick={() => setMode('raw')}>Raw</button>
+          <button type="button" className={mode === 'rendered' ? 'on' : ''} onClick={() => setMode('rendered')}>Rendered</button>
+        </div>
+        <span className="canvas-mde-spacer" />
+        {onCancel ? (
+          <button type="button" className="canvas-mde-cancel" title="Cancel" aria-label="Cancel" onClick={onCancel}>
+            <X size={13} />
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="canvas-mde-save"
+          title={saveLabel || 'Save'}
+          aria-label={saveLabel || 'Save'}
+          disabled={saveDisabled}
+          onClick={onSave}
+        >
+          <Check size={13} />
+        </button>
+      </div>
+      {mode === 'raw' ? (
+        <textarea
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          autoFocus
+        />
+      ) : (
+        <div className="canvas-mde-preview">
+          {value.trim() ? <Markdown text={value} /> : <p className="empty">Nothing to preview.</p>}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Built-in help shown behind the ⓘ icon when the bundle config supplies no
+// `infoHtml`. Covers the general concept plus the canvas built-ins: user text,
+// attachments, and chat pins (conversations and files from chat).
+const CANVAS_DEFAULT_INFO_HTML = `
+<h3>Pin board</h3>
+<p>Keep things in quick reach — as <strong>pins</strong>, links to objects from anywhere in the system, and the assistant understands them. A pin is a proxy; the real object stays in its own app.</p>
+<p><strong>Pinning isn't sending.</strong> To use a pin in chat, drag it in — one pin for that object, or the whole board to share its top pins at once. From a pin you can also open it in its app or download it.</p>
+<h4>What goes on it</h4>
+<ul>
+  <li><strong>Your text</strong> — notes or drafts (markdown).</li>
+  <li><strong>Attachments</strong> — files you drop in.</li>
+  <li><strong>Chat pins</strong> — conversations and files from chat.</li>
+</ul>
+<p>Pins connect things to actions: once shared, the assistant can use them as sources to build on, or act on them in the apps they live in — and it can add, comment on, or refine cards.</p>
+`.trim()
 
 // Per-file size cap for files dropped/uploaded onto the board. Oversize
 // files are rejected client-side with a message rather than failing the
@@ -377,6 +537,7 @@ export function CanvasBoard({
   onDropIngress,
   onObjectAction,
   namespaceStyles,
+  infoHtml,
 }: CanvasBoardProps) {
   const boardRef = useRef<HTMLDivElement | null>(null)
   const attachmentInputRef = useRef<HTMLInputElement | null>(null)
@@ -396,6 +557,10 @@ export function CanvasBoard({
   const [externalDropReady, setExternalDropReady] = useState(false)
   const [expandedCardId, setExpandedCardId] = useState<string>('')
   const [copiedCardId, setCopiedCardId] = useState<string>('')
+  const [infoOpen, setInfoOpen] = useState(false)
+  // Local draft for a new user-text card: edited inline (markdown) before it is
+  // committed to the board, so creating text never opens a browser dialog.
+  const [textDraft, setTextDraft] = useState<{ rect: CanvasCard['rect']; text: string } | null>(null)
   const [descDraftByCard, setDescDraftByCard] = useState<Record<string, string>>({})
   const [commentDraftByCard, setCommentDraftByCard] = useState<Record<string, string>>({})
   const [resolverStateByCard, setResolverStateByCard] = useState<Record<string, CanvasObjectActionResponse>>({})
@@ -1086,10 +1251,16 @@ export function CanvasBoard({
     return findOpenRect(width, height, cards)
   }
 
-  function createUserTextCard() {
-    const text = window.prompt('Text for the new canvas card')
-    if (!text || !text.trim()) return
-    onDropText(text.trim(), newCardRect(238, 112))
+  function startTextDraft() {
+    setTextDraft({ rect: newCardRect(248, 150), text: '' })
+  }
+
+  function commitTextDraft() {
+    const draft = textDraft
+    if (!draft) return
+    const text = draft.text.trim()
+    if (text) onDropText(text, draft.rect)
+    setTextDraft(null)
   }
 
   // Drop files over the per-file size cap and surface a message naming
@@ -1495,6 +1666,15 @@ export function CanvasBoard({
         <div className="canvas-title">
           <p className="canvas-title-line">
             <span>Pin Board</span>
+            <button
+              type="button"
+              className="canvas-title-info"
+              onClick={() => setInfoOpen(true)}
+              title="What is this board?"
+              aria-label="What is this board?"
+            >
+              <Info size={14} />
+            </button>
             <strong>{activeCanvas.name}</strong>
             <em>{canvasStats.pins} pins</em>
             <em>{canvasStats.pendingSuggestions} pending</em>
@@ -1571,6 +1751,26 @@ export function CanvasBoard({
           </button>
         </div>
       </div>
+
+      {infoOpen ? (
+        <div className="canvas-info-overlay" role="dialog" aria-modal="true" aria-label="About this board" onClick={() => setInfoOpen(false)}>
+          <div className="canvas-info-panel" onClick={(event) => event.stopPropagation()}>
+            <button
+              type="button"
+              className="canvas-info-close"
+              title="Close"
+              aria-label="Close"
+              onClick={() => setInfoOpen(false)}
+            >
+              <X size={16} />
+            </button>
+            <div
+              className="canvas-info-body canvas-md"
+              dangerouslySetInnerHTML={{ __html: (infoHtml && infoHtml.trim()) ? infoHtml : CANVAS_DEFAULT_INFO_HTML }}
+            />
+          </div>
+        </div>
+      ) : null}
 
       <div className="canvas-work-surface">
         {revisionConflict ? (
@@ -1888,57 +2088,72 @@ export function CanvasBoard({
                     ) : null
                   ) : null}
                   <section className="canvas-card-flyout-desc">
-                    <h4>Description</h4>
+                    <div className="canvas-card-flyout-desc-head">
+                      <h4>Description</h4>
+                      {!isEditingDesc ? (
+                        <button
+                          type="button"
+                          className="canvas-card-flyout-pencil"
+                          title={card.description ? 'Edit description' : 'Add description'}
+                          aria-label={card.description ? 'Edit description' : 'Add description'}
+                          onClick={() => startDescriptionEdit(card)}
+                        >
+                          <PenLine size={13} />
+                        </button>
+                      ) : null}
+                    </div>
                     {isEditingDesc ? (
-                      <div className="canvas-card-flyout-edit">
-                        <textarea
-                          value={descDraft}
-                          onChange={(event) => updateDescriptionDraft(card.id, event.target.value)}
-                          placeholder="Describe this pin in your own words…"
-                          autoFocus
-                        />
-                        <div className="canvas-card-flyout-edit-actions">
-                          <button type="button" className="cancel" onClick={() => cancelDescriptionEdit(card.id)}>Cancel</button>
-                          <button type="button" className="save" onClick={() => commitDescriptionEdit(card)}>Save</button>
-                        </div>
-                      </div>
+                      <InlineMarkdownEditor
+                        value={descDraft}
+                        onChange={(value) => updateDescriptionDraft(card.id, value)}
+                        onSave={() => commitDescriptionEdit(card)}
+                        onCancel={() => cancelDescriptionEdit(card.id)}
+                        placeholder="Describe this pin… (markdown supported)"
+                        saveLabel="Save description"
+                      />
                     ) : (
                       <div className="canvas-card-flyout-view">
-                        {card.description ? (
-                          <p>{card.description}</p>
-                        ) : (
-                          <p className="empty">No description yet.</p>
-                        )}
-                        <button type="button" onClick={() => startDescriptionEdit(card)}>
-                          {card.description ? 'Edit' : '+ Add'}
-                        </button>
+                        {card.description ? <Markdown text={card.description} /> : <p className="empty">No description yet.</p>}
                       </div>
                     )}
                   </section>
                   <section className="canvas-card-flyout-comments">
                     <h4>Comments <span className="count">({card.commentsCount || 0})</span></h4>
-                    <div className="canvas-card-flyout-edit">
-                      <textarea
-                        value={commentDraft}
-                        onChange={(event) => updateCommentDraft(card.id, event.target.value)}
-                        placeholder="Add a comment…"
-                      />
-                      <div className="canvas-card-flyout-edit-actions">
-                        <button
-                          type="button"
-                          className="save"
-                          disabled={!commentDraft.trim()}
-                          onClick={() => commitComment(card)}
-                        >
-                          Post
-                        </button>
-                      </div>
-                    </div>
+                    <InlineMarkdownEditor
+                      value={commentDraft}
+                      onChange={(value) => updateCommentDraft(card.id, value)}
+                      onSave={() => commitComment(card)}
+                      placeholder="Add a comment… (markdown supported)"
+                      saveLabel="Post comment"
+                      saveDisabled={!commentDraft.trim()}
+                    />
                   </section>
                 </div>
               </article>
             )
           })}
+          {textDraft ? (
+            <article
+              className="canvas-card user-text draft expanded"
+              style={{ left: textDraft.rect.x, top: textDraft.rect.y, width: textDraft.rect.w }}
+            >
+              <div className="canvas-card-top">
+                <span className="canvas-card-origin">
+                  <PenLine size={13} />
+                  <span className="canvas-card-origin-label">new user text</span>
+                </span>
+              </div>
+              <InlineMarkdownEditor
+                value={textDraft.text}
+                onChange={(value) => setTextDraft((prev) => (prev ? { ...prev, text: value } : prev))}
+                onSave={commitTextDraft}
+                onCancel={() => setTextDraft(null)}
+                placeholder="Write text… (markdown supported)"
+                saveLabel="Create card"
+                saveDisabled={!textDraft.text.trim()}
+              />
+            </article>
+          ) : null}
         </div>
 
         <div className="canvas-create-controls" aria-label="Create canvas cards">
@@ -1947,7 +2162,7 @@ export function CanvasBoard({
             className="canvas-round-action"
             title="New user text card"
             aria-label="New user text card"
-            onClick={createUserTextCard}
+            onClick={startTextDraft}
           >
             <PenLine size={16} />
           </button>

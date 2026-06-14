@@ -360,6 +360,7 @@ export default function App() {
         onDropIngress={onDropIngress}
         onObjectAction={onObjectAction}
         namespaceStyles={settings.getCanvasNamespaceStyles() as Record<string, CanvasNamespaceStyle | string>}
+        infoHtml={host?.getBoardInfoHtml() || undefined}
       />
     </div>
   )

@@ -342,6 +342,8 @@ export interface CanvasHost {
   readCanvas(input: CanvasReadInput): Promise<CanvasReadResponse>
   /** List + read the active canvas, returning the merged definition set. */
   loadCanvas(activeCanvasName: string): Promise<CanvasDefinition[]>
+  /** Bundle-authored board help HTML, surfaced by `canvas_list`; '' until loaded. */
+  getBoardInfoHtml(): string
   uploadCanvasAttachments(payload: Record<string, unknown>, files: File[]): Promise<CanvasUploadResponse>
   objectAction(
     card: CanvasCard,
@@ -357,6 +359,9 @@ export interface CanvasHost {
 export function createCanvasHost(config: CanvasHostConfig): CanvasHost {
   const { ctx, storyId } = config
   const surface = config.surface || 'pinboard.widget'
+  // Board help HTML is bundle-authored config returned by `canvas_list`. It is
+  // board-set-level and stable, so the first non-empty value sticks.
+  let boardInfoHtml = ''
 
   const patchCanvas = async (input: CanvasPatchInput): Promise<CanvasPatchResponse> => {
     const messageId = timestampId('dbmsg')
@@ -382,6 +387,8 @@ export function createCanvasHost(config: CanvasHostConfig): CanvasHost {
     const list = await postOperation<{ story_id: string }, CanvasListResponse>(ctx, 'canvas_list', {
       story_id: storyId,
     })
+    const info = String(list.info_html ?? '').trim()
+    if (info) boardInfoHtml = info
     const listed = (list.canvases ?? []).map(canvasFromListItem)
     const main = await readCanvas({ story_id: storyId, canvas_name: activeCanvasName })
     const mainCanvas = main.ok
@@ -411,6 +418,7 @@ export function createCanvasHost(config: CanvasHostConfig): CanvasHost {
     patchCanvas,
     readCanvas,
     loadCanvas,
+    getBoardInfoHtml: () => boardInfoHtml,
     uploadCanvasAttachments: (payload, files) => uploadCanvasAttachments(ctx, payload, files),
     objectAction,
     setActiveCanvas: (canvasName) =>

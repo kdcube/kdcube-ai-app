@@ -608,6 +608,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
                 store=self._canvas_store(payload, user_id=user_id),
                 user_id=user_id,
                 story_id=story_id,
+                info_html=self.bundle_prop("canvas.info_html"),
             ),
         )
 

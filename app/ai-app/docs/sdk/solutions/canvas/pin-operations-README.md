@@ -140,6 +140,10 @@ edit card description
 add card comment
 ```
 
+The three text operations (canvas-owned text, description, comment) edit in
+place through a shared markdown editor; see the board UI affordances in
+[Canvas Module Guide](./canvas-module-guide-README.md).
+
 All cards are draggable and droppable as board objects. Resolver registration
 must not decide whether a card can be moved, resized, selected, dropped into
 chat, or dropped into the bin.

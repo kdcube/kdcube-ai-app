@@ -203,11 +203,29 @@ def search(
     return {"user_id": user_id, "story_id": story_id, **result}
 
 
-def list_canvases(*, store: CanvasStore, user_id: str, story_id: str) -> Dict[str, Any]:
+def list_canvases(
+    *,
+    store: CanvasStore,
+    user_id: str,
+    story_id: str,
+    info_html: str | None = None,
+) -> Dict[str, Any]:
+    """List the user's boards.
+
+    ``info_html`` is bundle-authored HTML for the board's ⓘ help panel. The SDK
+    is config-agnostic: the mounting bundle reads its own config and passes the
+    string in. When omitted, the board UI falls back to its built-in default
+    help text.
+    """
     try:
-        return store.list_canvases(story_id=story_id)
+        result = store.list_canvases(story_id=story_id)
     except Exception as exc:
         return {"ok": False, "user_id": user_id, "story_id": story_id, "error": str(exc)}
+    if isinstance(result, dict):
+        info = str(info_html or "").strip()
+        if info:
+            result = {**result, "info_html": info}
+    return result
 
 
 def set_active(*, payload: Mapping[str, Any], store: CanvasStore, user_id: str, story_id: str) -> Dict[str, Any]:

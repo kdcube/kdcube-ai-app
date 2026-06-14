@@ -208,6 +208,32 @@ When using an inherited widget, the alias must match the inherited
 new widget; it only tells the platform how to build/serve the already declared
 `memories` widget surface.
 
+Some subsystem widgets also read presentation config from bundle props. The
+canvas board (pinboard widget) reads a `canvas` block:
+
+```yaml
+config:
+  canvas:
+    namespace_styles: { ... }   # per-namespace pin colors/labels
+    info_html: |                # HTML shown behind the board ⓘ help icon
+      <h3>What this board is for</h3>
+      <p>…teach scene users; describe scene-specific task / memory pins…</p>
+```
+
+These are bundle-owned widget presentation props, not platform-reserved
+properties, and they reach the widget through the **bundle's own surface**, not a
+platform-wide config endpoint:
+
+- `canvas.info_html` rides the canvas integration surface — the bundle's
+  `canvas_list` operation reads `config.canvas.info_html` and echoes it on the
+  response (`canvas_api.list_canvases(..., info_html=self.bundle_prop("canvas.info_html"))`),
+  and the widget reads it from there. When absent the board shows a built-in
+  default that explains the canvas built-ins (user text, attachments, and chat
+  pins).
+- `canvas.namespace_styles` is read by the widget from its runtime/host config.
+
+See [Canvas SDK Solution](../solutions/canvas/canvas-sdk-solution-README.md).
+
 ### 3. Visibility And Enablement
 
 There are three different gates. Check all three.

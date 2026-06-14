@@ -4,7 +4,7 @@ title: "Canvas SDK Solution"
 summary: "Reusable collaborative canvas component for KDCube bundles: versioned board storage, object resolver registry, ReAct instructions/tool core, and embeddable UI component source."
 status: draft
 tags: ["sdk", "solutions", "canvas", "react", "events", "resolvers", "ui-components", "data-bus"]
-updated_at: 2026-06-08
+updated_at: 2026-06-14
 keywords:
   [
     "canvas sdk",
@@ -373,12 +373,62 @@ type CanvasPatch = (payload: CanvasPatchInput) => Promise<CanvasPatchResponse>
   onAttachCanvas={...}
   onAttachCard={...}
   onDropContext={...}
+  namespaceStyles={...}
+  infoHtml={...}
 />
 ```
 
 The UI component does not know how to download a `fi:` file or open an
 `acme:` object. It sends object actions to the bundle, and the bundle dispatches
 through the resolver registry.
+
+### Inline Editing
+
+User-authored card content is edited in place, never through a browser
+`prompt`/`confirm` dialog:
+
+- creating a new `user.text` card opens a draft card directly on the board;
+- a card description is edited from a pencil control next to the description
+  heading and saved with a tick;
+- comments use the same editor.
+
+All three use a shared markdown editor with a Raw / Rendered switch. The
+component carries a small self-contained markdown renderer (headings, bold,
+italic, inline code, fenced code, links, blockquotes, and lists), so descriptions
+and comments render as markdown without pulling a markdown library into the
+shared source.
+
+### Board Help (`infoHtml`)
+
+The board exposes an info (ⓘ) control that opens an HTML help panel telling scene
+users what the board is for. The `infoHtml` prop is the bundle-provided HTML.
+When the host passes no `infoHtml`, the component renders a built-in default that
+explains the general concept plus the canvas built-ins — user text, attachments,
+and chat pins (conversations and files produced or attached in chat). A bundle
+overrides it to also describe scene-specific pins such as task or memory pins.
+
+The help HTML travels on the canvas integration surface, not a platform-wide
+config endpoint. `api.list_canvases(...)` takes an `info_html` argument and echoes
+it on the `canvas_list` response; the SDK stays config-agnostic, so the mounting
+bundle reads its own `config.canvas.info_html` and passes it in:
+
+```python
+@api(method="POST", alias="canvas_list", route="operations", ...)
+async def canvas_list(self, data=None, **kwargs):
+    payload = payload_from_call(data, **kwargs)
+    return self._canvas_service().operation(
+        "canvas_list", payload,
+        lambda *, user_id, story_id: canvas_api.list_canvases(
+            store=self._canvas_store(payload, user_id=user_id),
+            user_id=user_id, story_id=story_id,
+            info_html=self.bundle_prop("canvas.info_html"),
+        ),
+    )
+```
+
+The pinboard widget reads `info_html` off the `canvas_list` response it already
+calls on load and passes it through as `infoHtml`. The HTML is bundle-authored and
+trusted; do not feed untrusted user input into it.
 
 ## Provider Adapter Pattern
 

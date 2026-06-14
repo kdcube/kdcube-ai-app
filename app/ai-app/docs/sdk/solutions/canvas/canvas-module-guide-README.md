@@ -143,6 +143,34 @@ kind remains `object.ref`. Those pins are documented in
 should not hardcode the meaning of host-app refs such as `acme:` beyond
 preserving them as pins and exposing them in the legend.
 
+## Board UI Affordances
+
+These are reusable behaviors of the SDK board component, independent of the
+mounting bundle.
+
+Inline content editing. User-authored content is edited on the board, never in a
+browser dialog:
+
+- creating a new `user.text` card opens a draft card in place;
+- a card description is edited from a pencil control by the description heading
+  and saved with a tick;
+- comments use the same editor.
+
+All three share a markdown editor with a Raw / Rendered switch, and descriptions
+and comments render as markdown. This is presentation only; the persisted content
+is still markdown text stored on the canvas-owned object or in the card
+description/comments, and the agent contract (`canvas.patch` with `update_card` /
+`comment_card`) is unchanged.
+
+Board help. An info (ⓘ) control opens an HTML help panel that tells scene users
+what the board is for. The host supplies the HTML; when none is supplied the
+component shows a built-in default covering the general concept plus the
+canvas built-ins (user text, attachments, and chat pins — conversations and
+files produced or attached in chat). A mounting bundle overrides the HTML to also
+describe scene-specific pins such as task or memory pins. See
+[Canvas SDK Solution](./canvas-sdk-solution-README.md) for the `infoHtml` prop and
+the `canvas.info_html` config wiring.
+
 ## Storage
 
 Canvas documents and canvas-owned card objects live behind the canvas storage
@@ -210,6 +238,12 @@ canvas_search
 
 These calls are for state management and content hosting. They do not wake
 ReAct by themselves.
+
+`canvas_list` also carries board-level presentation config the mounting bundle
+owns: it echoes the bundle's `config.canvas.info_html` (the board ⓘ help HTML) on
+its response. Bundle-level config for the board is served by the bundle through
+its own operations, never by a platform-wide config endpoint. See the board UI
+affordances above and [Canvas SDK Solution](./canvas-sdk-solution-README.md).
 
 ### 2. Conversation Context Batch
 
