@@ -81,13 +81,19 @@ async def test_write_resolves_ref_content_before_materializing(tmp_path):
     runtime = RuntimeCtx(turn_id="turn_cur", outdir=str(tmp_path), workdir=str(tmp_path))
     ctx = FakeBrowser(runtime)
     source_path = "fi:turn_prev.files/b1-german-knowledge.mmd"
+    # ref:fi bindings consume materialized bytes, so the source must be present on disk
+    # (produced this turn, or pulled). Materialize it and point the block at its physical_path.
+    source_rel = "turn_prev/files/b1-german-knowledge.mmd"
+    source_file = tmp_path / "turn_prev" / "files" / "b1-german-knowledge.mmd"
+    source_file.parent.mkdir(parents=True, exist_ok=True)
+    source_file.write_text("graph TD\nA-->B\n")
     ctx.timeline.blocks.append({
         "type": "react.tool.result",
         "turn_id": "turn_prev",
         "path": source_path,
         "mime": "text/markdown",
         "text": "graph TD\nA-->B\n",
-        "meta": {},
+        "meta": {"physical_path": source_rel},
     })
     state = {
         "last_decision": {
