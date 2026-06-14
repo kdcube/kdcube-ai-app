@@ -24,7 +24,7 @@ function normalizeContextChips(contexts: unknown): ContextChip[] {
 
 function parseContextPayload(value: string): ContextChip[] | null {
   const trimmed = value.trim()
-  if (!trimmed.startsWith('{"context":[')) return null
+  if (!/^\{\s*"context"\s*:/.test(trimmed)) return null
   try {
     const parsed = JSON.parse(trimmed) as { context?: unknown }
     const contexts = normalizeContextChips(parsed.context)
@@ -48,7 +48,7 @@ function dedupeContextChips(contexts: ContextChip[]): ContextChip[] {
 
 export function splitContextChips(raw: string): { text: string; contexts: ContextChip[] } {
   const text = String(raw || '')
-  const tail = text.match(/^([\s\S]*?)\n\n(\{"context":\[[\s\S]*\]\})\s*$/)
+  const tail = text.match(/^([\s\S]*?)\n\n(\{\s*"context"\s*:\s*\[[\s\S]*\]\s*\})\s*$/)
   if (tail) {
     const prefix = splitContextChips(tail[1])
     const contexts = parseContextPayload(tail[2])
