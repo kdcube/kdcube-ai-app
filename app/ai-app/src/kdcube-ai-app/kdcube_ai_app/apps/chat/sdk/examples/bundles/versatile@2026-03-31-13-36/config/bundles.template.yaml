@@ -110,31 +110,34 @@ bundles:
                         strategy: [exploitation]
                       write_docx:
                         strategy: [exploitation]
-                  - name: browser
-                    kind: python
-                    module: kdcube_ai_app.apps.chat.sdk.tools.browser_tools
-                    alias: browser_tools
-                    allowed: [open_page, click, fill, scroll, status, close]
-                    tool_traits:
-                      open_page:
-                        strategy: [exploration]
-                      click:
-                        strategy: [exploration, exploitation]
-                      fill:
-                        strategy: [exploration, exploitation]
-                      scroll:
-                        strategy: [exploration]
-                      status:
-                        strategy: [exploration]
-                      close:
-                        strategy: [neutral]
-                    runtime:
-                      open_page: none
-                      click: none
-                      fill: none
-                      scroll: none
-                      status: none
-                      close: none
+                  # Browser automation tools are intentionally disabled by
+                  # default for the reference agent. Uncomment when the agent
+                  # is explicitly allowed to drive a browser surface.
+                  # - name: browser
+                  #   kind: python
+                  #   module: kdcube_ai_app.apps.chat.sdk.tools.browser_tools
+                  #   alias: browser_tools
+                  #   allowed: [open_page, click, fill, scroll, status, close]
+                  #   tool_traits:
+                  #     open_page:
+                  #       strategy: [exploration]
+                  #     click:
+                  #       strategy: [exploration, exploitation]
+                  #     fill:
+                  #       strategy: [exploration, exploitation]
+                  #     scroll:
+                  #       strategy: [exploration]
+                  #     status:
+                  #       strategy: [exploration]
+                  #     close:
+                  #       strategy: [neutral]
+                  #   runtime:
+                  #     open_page: none
+                  #     click: none
+                  #     fill: none
+                  #     scroll: none
+                  #     status: none
+                  #     close: none
                   - name: knowledge
                     kind: mcp
                     server_id: knowledge

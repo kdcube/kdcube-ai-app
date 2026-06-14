@@ -7,16 +7,16 @@ def test_cors_origin_options_convert_preview_globs_to_regex():
     exact, regex = _cors_origin_options(
         SimpleNamespace(
             allow_origins=[
-                "https://dev.kdcube.tech",
-                "https://*.kdcube.tech",
+                "https://runtime.example.com",
+                "https://*.preview.example.com",
             ],
             allow_origin_regex=None,
         )
     )
 
-    assert exact == ["https://dev.kdcube.tech"]
+    assert exact == ["https://runtime.example.com"]
     assert regex is not None
-    assert "https://[^/]*\\.kdcube\\.tech" in regex
+    assert "https://[^/]*\\.preview\\.example\\.com" in regex
 
 
 def test_cors_origin_options_preserve_explicit_regex():

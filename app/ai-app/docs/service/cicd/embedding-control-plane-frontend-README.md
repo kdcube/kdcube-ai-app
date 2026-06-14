@@ -407,13 +407,12 @@ proxy:
   frame_embedding:
     mode: allowlist
     allowed_origins:
-      - https://kdcube.tech
-      - https://*.kdcube.tech
+      - https://example.com
+      - https://*.preview.example.com
 ```
 
 The wildcard subdomain source does not replace the apex entry. Keep both when
-`https://kdcube.tech` and `https://www.kdcube.tech` or another subdomain should
-be allowed.
+the apex host and one or more subdomains should be allowed.
 
 The proxy renderer should translate the descriptor into headers.
 
@@ -462,7 +461,7 @@ are valid:
 allowed_origins:
   - https://app.example.com
   - https://host-app.example.net
-  - https://*.kdcube.tech
+  - https://*.preview.example.com
 ```
 
 These are not valid frame ancestors in KDCube descriptors:
