@@ -259,6 +259,7 @@ Updates an existing current-turn materialized text file under `files/...` or `ou
 - accepted paths: current-turn artifact-root-relative paths; prefer concise paths such as `files/<scope>/file.py` or `outputs/<scope>/page.html`, not logical `fi:` paths
 - patch format: unified diff or full replacement text
 - generated unified-diff hunk counts are normalized before apply; a wrong `@@ -a,b +c,d @@` count should not force a full-file rewrite when the hunk content is otherwise correct
+- for targeted diffs, inspect the affected range with `react.read(items=[{"path": "...", "line_start": ..., "line_count": ..., "line_numbers": "disabled"}])` and copy old/context lines from that raw range
 - rendered-preview line-number prefixes are rejected; remove the viewing prefixes and retry
 - output: updated local file plus normal tool call/result blocks
 - file origin does not matter: current-turn files produced by exec, `react.write`, `react.patch`, or `react.checkout` are patchable once they exist locally

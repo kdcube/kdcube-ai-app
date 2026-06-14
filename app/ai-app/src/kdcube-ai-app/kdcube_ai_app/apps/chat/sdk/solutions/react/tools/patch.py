@@ -40,6 +40,7 @@ TOOL_SPEC = {
     "purpose": (
         "Apply a text patch to an existing current-turn materialized text file under the canonical turn_<current>/files/... or turn_<current>/outputs/... namespace and stream the patch to the user. "
         "If patch starts with ---/+++/@@ it is treated as unified diff and generated hunk counts are normalized, otherwise replaces the whole file. "
+        "For targeted diffs, use exact old/context lines from raw file content; if you need to inspect a range first, call react.read with line_numbers='disabled' on that range. "
         "Line-number prefixes from rendered previews are rejected because they are not file content. "
         "The target file must already exist locally — current-turn files produced by exec, checkout, or earlier rounds' react.write/react.patch are patchable. "
         "ANTI-PATTERN (HARD): do NOT use react.patch as a fill-in-later mechanism. If you do not have the final content right now, do NOT write a placeholder with react.write and then patch it with the real content — write the file ONCE with the final content. Patch is for genuine revisions to a file you already finished (e.g. a small correction next round, or editing a file that exec/checkout produced). Placeholder-then-patch is wasted streaming the user sees twice and is the leading cause of \"write then patch the same file in the same round\" violations. "
@@ -286,7 +287,7 @@ async def handle_react_patch(*, react: Any, ctx_browser: Any, state: Dict[str, A
             "patch_contains_preview_line_numbers",
             (
                 "react.patch input appears to include line-number prefixes copied from the rendered timeline preview. "
-                "Line numbers are viewing aids, not file content. Retry with raw file content or a unified diff whose lines do not include those prefixes."
+                "Line numbers are viewing aids, not file content. Read the exact target range with react.read line_numbers='disabled', then retry with raw file content or a unified diff whose lines do not include those prefixes."
             ),
             extra={"path": artifact_name, **preview_line_number_extra},
         )
@@ -298,9 +299,16 @@ async def handle_react_patch(*, react: Any, ctx_browser: Any, state: Dict[str, A
             source_path=source_abs,
         )
         if patched is None:
+            if err == "hunk_mismatch":
+                message = (
+                    "react.patch failed because the unified diff old/context lines did not match the target file bytes. "
+                    "Read the exact target range with react.read line_numbers='disabled', then retry a small unified diff with unchanged context copied exactly."
+                )
+            else:
+                message = "react.patch failed to apply the unified diff."
             return _fail(
                 err or "patch_failed",
-                "react.patch failed to apply the unified diff.",
+                message,
                 extra={"path": artifact_name},
             )
     else:

@@ -1078,8 +1078,9 @@ For generated HTML repair, prefer a precise ReAct loop:
 
 1. use `react.rg` to find files or suspicious text regions already materialized
    on the worker
-2. use `react.read` ranges to inspect exact snippets; timeline previews may show
-   line numbers for reading
+2. use `react.read` ranges to inspect exact snippets; when preparing a patch,
+   set `line_numbers:"disabled"` on the read item so the context lines are raw
+   file content
 3. use `react.patch` against current-turn editable text files; never include
    rendered line-number prefixes in patch or replacement content
 4. use `browser_tools.open_page`, `click`, `fill`, `scroll`, and `status` to

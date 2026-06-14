@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.common import add_block, tool_call_block
+from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.common import add_block, apply_unified_diff, tool_call_block
 from kdcube_ai_app.apps.chat.sdk.solutions.react.events import block_event_id, block_event_source_id
 from kdcube_ai_app.apps.chat.sdk.solutions.react.round import ReactRound
 import kdcube_ai_app.apps.chat.sdk.solutions.react.round as react_round
@@ -23,6 +23,71 @@ class _Ctx:
 
     def contribute(self, *, blocks):
         self.blocks.extend(blocks)
+
+
+def test_python_unified_diff_fallback_offsets_wrong_hunk_start():
+    text = "alpha\nbeta\ngamma\ndelta\n"
+    patch_text = "\n".join([
+        "--- a/demo.txt",
+        "+++ b/demo.txt",
+        "@@ -1,2 +1,3 @@",
+        " gamma",
+        "+inserted",
+        " delta",
+        "",
+    ])
+
+    patched, err = apply_unified_diff(text, patch_text)
+
+    assert err is None
+    assert patched == "alpha\nbeta\ngamma\ninserted\ndelta\n"
+
+
+def test_python_unified_diff_fallback_offsets_later_hunk_after_prior_edit():
+    text = "alpha\nbeta\ngamma\ndelta\n"
+    patch_text = "\n".join([
+        "--- a/demo.txt",
+        "+++ b/demo.txt",
+        "@@ -1,1 +1,2 @@",
+        " alpha",
+        "+inserted-a",
+        "@@ -1,1 +1,2 @@",
+        " gamma",
+        "+inserted-g",
+        "",
+    ])
+
+    patched, err = apply_unified_diff(text, patch_text)
+
+    assert err is None
+    assert patched == "alpha\ninserted-a\nbeta\ngamma\ninserted-g\ndelta\n"
+
+
+def test_python_unified_diff_fallback_requires_exact_unicode_context():
+    text = (
+        "    def test_wrong_method_on_health(self):\n"
+        "        # POST is not registered \u2192 405\n"
+        "        r = client.post(\"/health\")\n"
+        "        assert r.status_code == 405\n"
+    )
+    patch_text = "\n".join([
+        "--- a/test_app.py",
+        "+++ b/test_app.py",
+        "@@ -1,4 +1,7 @@",
+        "     def test_wrong_method_on_health(self):",
+        "         # POST is not registered -> 405",
+        "         r = client.post(\"/health\")",
+        "         assert r.status_code == 405",
+        "+",
+        "+class TestDataValidation:",
+        "+    pass",
+        "",
+    ])
+
+    patched, err = apply_unified_diff(text, patch_text)
+
+    assert patched is None
+    assert err == "hunk_mismatch"
 
 
 def test_tool_call_block_logs_payload(caplog):

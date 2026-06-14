@@ -54,11 +54,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libmagic1 \
         file \
         gosu \
+        patch \
         procps \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
 RUN which docker && docker --version
+RUN which patch && patch --version | head -n 1
 
 # Install Node.js + npm for bundle UI builds (BaseEntrypoint._ensure_ui_build)
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \

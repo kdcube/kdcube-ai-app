@@ -327,6 +327,7 @@ REACT_LITE_PATCHING = """
 [PATCHING]
 - Patch only existing current-turn text files under `turn_<current>/files/...` or `turn_<current>/outputs/...`.
 - A current-turn file produced by exec, checkout, `react.write`, or an earlier patch is patchable once it exists locally.
+- For targeted edits, read the affected range with `react.read(items=[{"path":..., "line_start":..., "line_count":..., "line_numbers":"disabled"}])` and copy context from that raw range.
 - Do not include rendered line-number prefixes in patch content.
 - If the target came from history, pull/checkout it into the current turn first, then patch the current-turn path.
 - Prefer unified diffs for targeted edits. Use full replacement only when intentionally replacing a whole file or when a targeted diff cannot match.

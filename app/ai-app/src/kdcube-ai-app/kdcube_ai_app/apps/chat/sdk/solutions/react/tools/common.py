@@ -432,6 +432,52 @@ def normalize_unified_diff_hunk_counts(patch_text: str) -> str:
     return "".join(out)
 
 
+def _diff_old_payload(line: str) -> Optional[str]:
+    if line.startswith(("\\", "+")):
+        return None
+    if line.startswith(("-", " ")):
+        return line[1:]
+    # Be tolerant of malformed blank context lines emitted by models.
+    if line in {"\n", "\r\n", ""}:
+        return line
+    return line[1:]
+
+
+def _hunk_matches_at(orig: List[str], start: int, hunk_lines: List[str]) -> bool:
+    pos = start
+    for hunk_line in hunk_lines:
+        expected = _diff_old_payload(hunk_line)
+        if expected is None:
+            continue
+        if pos >= len(orig) or orig[pos] != expected:
+            return False
+        pos += 1
+    return True
+
+
+def _find_hunk_target(orig: List[str], hunk_lines: List[str], *, requested: int, lower_bound: int) -> Optional[int]:
+    target = max(lower_bound, min(max(requested, 0), len(orig)))
+    if _hunk_matches_at(orig, target, hunk_lines):
+        return target
+
+    has_old_lines = any(_diff_old_payload(line) is not None for line in hunk_lines)
+    if not has_old_lines:
+        return target
+
+    best: Optional[int] = None
+    best_distance: Optional[int] = None
+    for candidate in range(lower_bound, len(orig) + 1):
+        if not _hunk_matches_at(orig, candidate, hunk_lines):
+            continue
+        distance = abs(candidate - requested)
+        if best is None or best_distance is None or distance < best_distance:
+            best = candidate
+            best_distance = distance
+            if distance == 0:
+                break
+    return best
+
+
 def apply_unified_diff(text: str, patch_text: str) -> tuple[Optional[str], Optional[str]]:
     """
     Apply a unified diff to text. Returns (new_text, error_message).
@@ -455,16 +501,26 @@ def apply_unified_diff(text: str, patch_text: str) -> tuple[Optional[str], Optio
                     old_start = int(old.split(",")[0].lstrip("-"))
                 except Exception:
                     return None, "invalid_hunk_header"
-                target = max(old_start - 1, 0)
+                requested_target = max(old_start - 1, 0)
+                idx += 1
+                hunk_lines: List[str] = []
+                while idx < len(diff):
+                    if diff[idx].startswith("@@"):
+                        break
+                    hunk_lines.append(diff[idx])
+                    idx += 1
+
+                target = _find_hunk_target(orig, hunk_lines, requested=requested_target, lower_bound=i)
+                if target is None:
+                    return None, "hunk_mismatch"
                 if target < i:
                     return None, "hunk_out_of_order"
                 out.extend(orig[i:target])
                 i = target
-                idx += 1
-                while idx < len(diff):
-                    dline = diff[idx]
-                    if dline.startswith("@@"):
-                        break
+
+                for dline in hunk_lines:
+                    if dline.startswith("\\"):
+                        continue
                     if dline.startswith("-"):
                         if i >= len(orig) or orig[i] != dline[1:]:
                             return None, "hunk_mismatch"
@@ -472,11 +528,13 @@ def apply_unified_diff(text: str, patch_text: str) -> tuple[Optional[str], Optio
                     elif dline.startswith("+"):
                         out.append(dline[1:])
                     else:
-                        if i >= len(orig) or orig[i] != dline[1:]:
+                        expected = _diff_old_payload(dline)
+                        if expected is None:
+                            continue
+                        if i >= len(orig) or orig[i] != expected:
                             return None, "hunk_mismatch"
                         out.append(orig[i])
                         i += 1
-                    idx += 1
                 continue
             idx += 1
         out.extend(orig[i:])
@@ -548,6 +606,7 @@ def apply_unified_diff_to_file(
 
     patch_bin = shutil.which("patch")
     if patch_bin:
+        _LOG.info("[react.patch.apply] system_patch=%s target=%s", patch_bin, target_path)
         try:
             with tempfile.TemporaryDirectory(prefix="react_patch_") as tmpdir:
                 tmpdir_path = pathlib.Path(tmpdir)
@@ -570,24 +629,39 @@ def apply_unified_diff_to_file(
                     text=True,
                 )
                 if proc.returncode == 0:
+                    _LOG.info("[react.patch.apply] system_patch_applied target=%s", target_path)
                     return candidate_path.read_text(encoding="utf-8"), rewritten_patch, None
                 msg = (proc.stderr or proc.stdout or "").strip()
+                _LOG.warning(
+                    "[react.patch.apply] system_patch_rejected target=%s returncode=%s message=%s",
+                    target_path,
+                    proc.returncode,
+                    _clip_log_text(msg, max_chars=2_000),
+                )
                 try:
                     original = target_path.read_text(encoding="utf-8")
                     patched, err = apply_unified_diff(original, rewritten_patch)
                     if patched is not None:
+                        _LOG.info("[react.patch.apply] python_fallback_applied target=%s", target_path)
                         return patched, rewritten_patch, None
+                    _LOG.warning("[react.patch.apply] python_fallback_rejected target=%s error=%s", target_path, err)
                     return None, rewritten_patch, err or msg or f"patch_failed:{proc.returncode}"
                 except Exception:
                     return None, rewritten_patch, msg or f"patch_failed:{proc.returncode}"
         except Exception as exc:
+            _LOG.warning("[react.patch.apply] system_patch_exec_failed target=%s error=%s", target_path, exc)
             return None, rewritten_patch, f"patch_exec_failed:{exc}"
 
+    _LOG.warning("[react.patch.apply] system_patch_missing target=%s; using python fallback", target_path)
     try:
         original = target_path.read_text(encoding="utf-8")
     except Exception as exc:
         return None, rewritten_patch, f"patch_target_unreadable:{exc}"
     patched, err = apply_unified_diff(original, rewritten_patch)
+    if patched is not None:
+        _LOG.info("[react.patch.apply] python_fallback_applied target=%s", target_path)
+    else:
+        _LOG.warning("[react.patch.apply] python_fallback_rejected target=%s error=%s", target_path, err)
     return patched, rewritten_patch, err
 
 
