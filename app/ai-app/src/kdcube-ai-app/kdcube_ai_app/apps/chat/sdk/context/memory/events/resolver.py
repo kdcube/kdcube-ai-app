@@ -65,6 +65,7 @@ def _base_response(*, ref: str, action: str, scope: MemoryScope | None = None) -
         "resolver": MEMORY_RESOLVER_NAME,
         "resolver_status": "implemented",
         "capabilities": memory_ref_capabilities(),
+        "default_open_effect_action": "open",
     }
     if scope is not None:
         out["user_id"] = scope.user_id

@@ -1871,11 +1871,18 @@ a { color: inherit; }
   padding: 4px 5px 4px 8px;
   font-size: 11px;
   font-weight: 700;
+  cursor: pointer;
 }
 
 .k-context-chip.is-selected {
   outline: 2px solid rgba(67, 114, 195, 0.46);
   outline-offset: 1px;
+}
+
+.k-context-chip:hover,
+.k-context-chip:focus-visible {
+  border-color: rgba(1, 190, 178, 0.55);
+  box-shadow: 0 0 0 2px rgba(198, 243, 241, 0.56);
 }
 
 .k-context-chip.canvas {

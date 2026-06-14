@@ -20,7 +20,7 @@ import type {
   FileArtifact,
   TurnTab,
 } from './chatTypes.ts'
-import type { TurnReaction } from '../../service.ts'
+import type { BannerTone, TurnReaction } from '../../service.ts'
 import {
   ArtifactFeed,
   CanvasPanel,
@@ -34,6 +34,7 @@ import {
   mergeOverviewEvents,
 } from './turnTabs.tsx'
 import { ChatTurnView } from './ChatTurnView.tsx'
+import { ContextInlineChip } from './ContextInlineChip.tsx'
 import { splitContextChips } from './contextChips.ts'
 
 /** Turn-level reaction control: thumbs up/down on a completed answer.
@@ -139,6 +140,7 @@ function TurnViewImpl({
   onFeedback,
   onFollowup,
   onDownloadError,
+  onContextActionError,
 }: {
   turn: ChatTurn
   conversationId?: string | null
@@ -147,6 +149,7 @@ function TurnViewImpl({
   onFeedback: (turnId: string, reaction: TurnReaction | null, text?: string) => void
   onFollowup: (text: string) => void
   onDownloadError: (text: string) => void
+  onContextActionError: (text: string, tone?: BannerTone) => void
 }) {
   const [activeTab, setActiveTab] = useState<TurnTab>('chat')
   const steps = useMemo(
@@ -241,16 +244,11 @@ function TurnViewImpl({
             {userParsed.contexts.length > 0 ? (
               <div className="flex flex-wrap gap-1.5 pt-1.5">
                 {userParsed.contexts.map((ctx) => (
-                  <span
+                  <ContextInlineChip
                     key={ctx.id}
-                    className="inline-flex items-center gap-1 rounded-full border border-[var(--purple)] bg-[var(--purple-pale)] px-2 py-0.5 text-[11px] font-semibold text-[var(--purple)]"
-                  >
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
-                      <line x1="7" y1="7" x2="7.01" y2="7" />
-                    </svg>
-                    {ctx.label}
-                  </span>
+                    context={ctx}
+                    onError={onContextActionError}
+                  />
                 ))}
               </div>
             ) : null}
@@ -338,7 +336,11 @@ function TurnViewImpl({
           {activeTab === 'overview' ? (
             <>
               <ThinkingBlock entries={thinkingEntries} active={turn.state === 'pending' || turn.state === 'running'} />
-              <MergedOverviewFeed events={overviewEvents} onDownloadError={onDownloadError} />
+              <MergedOverviewFeed
+                events={overviewEvents}
+                onDownloadError={onDownloadError}
+                onContextActionError={onContextActionError}
+              />
               {turn.answer ? (
                 <div className="k-msg mt-1 rounded-md border border-[var(--line-soft)] bg-[var(--surface)] px-3 py-2">
                   <MarkdownBlock content={turn.answer} />

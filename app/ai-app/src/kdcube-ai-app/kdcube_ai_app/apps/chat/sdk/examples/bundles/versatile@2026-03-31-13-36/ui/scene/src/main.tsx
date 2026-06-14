@@ -1821,6 +1821,33 @@ function App() {
           if (externalPanel && data.widget === externalPanel.widget_alias) bringPanelToFront('external')
           return
         }
+        if (data.type === 'kdcube-object-open' && event.source === chatFrameRef.current?.contentWindow) {
+          const response = asRecord(data.response) as CanvasObjectActionResponse
+          const source = asRecord(data.source)
+          const objectRef = asString(source.ref) || asString(response.object_ref) || asString(response.ref) || asString(response.ui_event?.object_ref)
+          if (!objectRef) {
+            setNotice('Open request did not include an object ref.')
+            return
+          }
+          const title = asString(source.title) || asString(response.title) || objectRef
+          const sourceCard = {
+            id: asString(source.id) || objectRef,
+            title,
+            summary: asString(source.summary) || asString(response.summary),
+            kind: asString(source.kind) || 'context',
+            ref: objectRef,
+            mime: asString(source.mime) || asString(response.mime) || 'application/octet-stream',
+            rect: { x: 0, y: 0, w: 1, h: 1 },
+          } as CanvasCard
+          console.info('[versatile:scene] chat object open request', {
+            widget: data.widget,
+            objectRef,
+            targetSurface: response.ui_event?.target_surface,
+          })
+          const result = dispatchSurfaceOpen(response, sourceCard)
+          setNotice(result.message)
+          return
+        }
         if (data.type === 'kdcube-memory-widget-status' && data.widget === MEMORY_WIDGET_ALIAS) {
           const count = Number(data.count)
           setMemoryCount(Number.isFinite(count) ? count : null)
@@ -1876,7 +1903,7 @@ function App() {
     }
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
-  }, [bringPanelToFront, externalPanel, flushSurfaceCommand, pinIngressPayloadToCanvas, pinConversationToCanvas, sendToChat])
+  }, [bringPanelToFront, dispatchSurfaceOpen, externalPanel, flushSurfaceCommand, pinIngressPayloadToCanvas, pinConversationToCanvas, sendToChat])
 
   useEffect(() => {
     syncChatWidgetView(chatExpanded ? 'expanded' : 'compact')

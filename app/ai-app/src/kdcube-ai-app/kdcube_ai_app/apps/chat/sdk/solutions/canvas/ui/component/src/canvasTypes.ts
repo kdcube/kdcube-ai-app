@@ -275,6 +275,7 @@ export interface CanvasObjectActionResponse {
   resolver?: string
   resolver_status?: string
   capabilities?: CanvasObjectCapabilities
+  default_open_effect_action?: CanvasObjectActionName
   title?: string
   summary?: string
   mime?: string

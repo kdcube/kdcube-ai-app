@@ -135,6 +135,7 @@ defaults below.
 | `kdcube-context-attach` | host → chat | Attach a board/object as a composer context chip. |
 | `kdcube-context-focus` | host → chat | Attach the focused card(s) as context. |
 | `kdcube-context-remove` | chat → host | The user removed a context chip. |
+| `kdcube-object-open` | chat → host | A chat context chip resolved an `open` object action; the scene owns the reaction and routes the resolver response by `ui_event.target_surface`. |
 | `kdcube-canvas-ingress` | chat → host → canvas | Drag a chat artifact/text onto the board. |
 | `kdcube-<widget>-command` | host → widget | A namespaced widget command (open, refresh, …). |
 

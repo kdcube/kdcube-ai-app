@@ -1,10 +1,10 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/chat/chat-widget-solution-README.md
 title: "Chat Widget Solution"
-summary: "How to mount the reusable SDK chat widget in a bundle and configure its event-source profile for ReAct, canvas, snapshots, and attachments."
+summary: "How to mount the reusable SDK chat widget in an app and configure its event-source profile for ReAct, canvas, snapshots, attachments, and context object actions."
 status: draft
 tags: ["sdk", "solutions", "chat", "widget", "bundle", "react", "external-events"]
-updated_at: 2026-06-08
+updated_at: 2026-06-15
 keywords:
   [
     "sdk chat widget",
@@ -13,6 +13,8 @@ keywords:
     "chat event source profile",
     "bundle chat widget",
     "reusable chat component",
+    "context chip object actions",
+    "canvas_object_action",
   ]
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-client-ui-README.md
@@ -20,6 +22,8 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-subsystem-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/event-hub/resolver-and-policy-registration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/scene-composition-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/scene-surface-registry-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/clients-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/memory/memory-widget-solution-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/events/external-events-README.md
 ---
@@ -50,9 +54,9 @@ sdk://solutions/chat/ui/widget
 
 | Layer | Owned by the chat solution |
 | --- | --- |
-| Widget UI | Chat transcript, composer, files, context chips, dry-run preview, reconnect control, compact/expanded host view messages. |
+| Widget UI | Chat transcript, composer, files, context chips, context-chip open/download activation, dry-run preview, reconnect control, compact/expanded host view messages. |
 | Event packaging | Converts user prompt, attachments, and attached context chips into `external_events[]`. |
-| Host iframe contract | Requests host view changes and auth prompts through `postMessage`. |
+| Host iframe contract | Requests host view changes, auth prompts, and object-open routing through `postMessage`. |
 | Mount helper | `chat_widget_ui_config()` returns the standard bundle widget config. |
 
 The bundle still owns the assistant runtime, tools, resolvers, policies, and
@@ -81,6 +85,7 @@ chatbot/ReAct solution stack:
 | stream transport | Live assistant events through SSE or Socket.IO. |
 | dry-run preview operation | Rendering `external_events[]` without invoking ReAct. |
 | file/artifact operations | Showing and dragging chat artifacts. |
+| `canvas_object_action` operation | Resolving context-chip object actions such as `capabilities`, `open`, and `download`. |
 
 The widget defaults match the task-tracker composition bundle. Other bundles
 can override the event-source profile either at build time with Vite env
@@ -141,6 +146,62 @@ This preserves the timeline:
 [SNAPSHOT REF]
 [USER MESSAGE]
 ```
+
+## Context Chip Object Actions
+
+Context chips are also clickable UI handles for the object they represent. The
+chat widget does not infer object semantics from a namespace or a card kind. It
+uses the same resolver-backed operation that canvas pins use:
+
+```text
+user clicks context chip
+  -> chat widget calls canvas_object_action(action=capabilities, object_ref)
+  -> resolver returns capabilities plus default_open_effect_action
+  -> chat runs exactly that declared effect
+       default_open_effect_action=download -> canvas_object_action(action=download)
+       default_open_effect_action=open     -> canvas_object_action(action=open)
+  -> download bytes locally OR ask the host scene to orchestrate the open reaction
+```
+
+The action source is the context object's canonical ref. A chip may carry that
+ref as `ref`, `logicalPath` / `logical_path`, `hostedUri` / `hosted_uri`,
+`object_ref`, or `event_ref`; the widget forwards the resolved `object_ref` to
+the bundle operation. The provider/resolver owns what that ref means.
+
+The provider/resolver also owns `default_open_effect_action`. It is resolved per
+concrete object, not per host surface and not per namespace as a whole. For
+example, a task provider can return `open` for `task:issue:<id>` and `download`
+for `task:issue:attachment:<id>/...`. The chat widget and pinboard should not
+infer this from `task:` or from broad capabilities.
+
+For downloads, the resolver response must contain downloadable bytes such as
+`content_base64`, plus optional `filename` and `mime`. The widget materializes
+the browser download directly.
+
+For opens, the resolver response must contain a `ui_event.target_surface`.
+The chat iframe posts the resolver response to its host using:
+
+```text
+chat widget -> host scene
+{
+  type: "kdcube-object-open",
+  widget: "<chat_widget_id>",
+  response: <resolver response>,
+  source: { id, title, kind, ref, mime }
+}
+```
+
+The host scene then uses its surface registry to turn that action result into a
+reaction: open an iframe panel, focus an already-mounted app, send a widget
+command, or show that the target surface is unavailable. This keeps memory,
+task, file, and namespace-specific behavior out of the chat component. The
+scene is the UI orchestrator; it owns reactions to actions. See
+[Scene Surface Registry](../scene/scene-surface-registry-README.md).
+
+If no resolver is configured, if the resolver does not declare
+`default_open_effect_action`, or if the chat widget is running without a host
+for an `open`, the widget shows a context-action notice and leaves the chip
+attached.
 
 ## Relation To Event Hub
 

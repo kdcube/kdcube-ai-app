@@ -240,9 +240,12 @@ website surface registry
 iframe widget command
 ```
 
-The landing page should not learn memory internals. It should mount iframe
-widgets, register their surfaces, and dispatch resolver responses by
-`target_surface`.
+The landing page should not learn memory or task internals. It should mount
+iframe widgets, register their surfaces, and dispatch resolver responses by
+`target_surface`. The provider/resolver owns the object effect declaration
+(`default_open_effect_action`). The scene owns the reaction to a resolved
+`open`: which window opens, which iframe receives the command, and how an
+unavailable target is reported.
 
 When the board itself is a standalone iframe (the `pinboard` widget) rather
 than an in-React component, the resolver `open` reaches the host one hop

@@ -143,6 +143,7 @@ class NamedServiceCanvasObjectResolver(CanvasObjectResolver):
             "message",
             "json",
             "actions",
+            "default_open_effect_action",
             "parent",
         ):
             if key in response.extra:

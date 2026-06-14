@@ -248,9 +248,19 @@ class CanvasObjectResolver:
     def capabilities_for_ref(self, ref: str) -> Dict[str, bool]:
         return {"preview": False, "open": False, "download": False, "rehost": False}
 
+    def default_open_effect_action_for_ref(self, ref: str) -> str:
+        """Action to run when a UI surface opens/clicks this object handle.
+
+        Namespace owners define this per concrete ref/object kind. A host
+        component must not infer that `open` or `download` is the right effect
+        from the namespace alone.
+        """
+        del ref
+        return ""
+
     def base_response(self, *, ref: str, action: str) -> Dict[str, Any]:
         namespace = namespace_for_ref(ref)
-        return {
+        response: Dict[str, Any] = {
             "ok": True,
             "action": action,
             "ref": ref,
@@ -260,6 +270,10 @@ class CanvasObjectResolver:
             "resolver_status": self.resolver_status,
             "capabilities": self.capabilities_for_ref(ref),
         }
+        default_open_effect_action = self.default_open_effect_action_for_ref(ref)
+        if default_open_effect_action:
+            response["default_open_effect_action"] = default_open_effect_action
+        return response
 
     async def object_action(
         self,
@@ -344,6 +358,10 @@ class CanvasArtifactResolver(CanvasObjectResolver):
 
     def capabilities_for_ref(self, ref: str) -> Dict[str, bool]:
         return {"preview": True, "open": False, "download": True, "rehost": False}
+
+    def default_open_effect_action_for_ref(self, ref: str) -> str:
+        del ref
+        return "download"
 
     async def object_action(
         self,

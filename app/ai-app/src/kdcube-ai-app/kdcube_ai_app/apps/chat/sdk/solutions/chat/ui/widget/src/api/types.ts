@@ -230,6 +230,61 @@ export interface ReactContextPreviewResponse {
   status?: number
 }
 
+export type ObjectActionName = 'capabilities' | 'describe' | 'preview' | 'open' | 'download' | 'rehost'
+
+export interface ObjectActionCapabilities {
+  preview?: boolean
+  open?: boolean
+  download?: boolean
+  rehost?: boolean
+  [key: string]: boolean | undefined
+}
+
+export interface ObjectActionUiEvent {
+  type?: string
+  subject?: string
+  request_id?: string
+  source?: string
+  object_ref?: string
+  target_surface?: string
+  mode?: string
+  title?: string
+  [key: string]: unknown
+}
+
+export interface ObjectActionResponse {
+  ok?: boolean
+  action?: string
+  ref?: string
+  object_ref?: string
+  namespace?: string
+  resolver?: string
+  resolver_status?: string
+  capabilities?: ObjectActionCapabilities
+  default_open_effect_action?: ObjectActionName
+  title?: string
+  summary?: string
+  mime?: string
+  text?: string
+  json?: unknown
+  content_base64?: string
+  filename?: string
+  size?: number
+  ui_event?: ObjectActionUiEvent
+  error?: string
+  message?: string
+  status?: number
+  [key: string]: unknown
+}
+
+export interface ResolveObjectActionParams {
+  objectRef: string
+  action: ObjectActionName
+  mime?: string | null
+  filename?: string | null
+  payload?: Record<string, unknown>
+}
+
 interface SubmitChatMessageApiResponse {
   status?: string
   task_id?: string

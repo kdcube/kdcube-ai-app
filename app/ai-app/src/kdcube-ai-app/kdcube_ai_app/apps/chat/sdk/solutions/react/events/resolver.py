@@ -240,6 +240,7 @@ async def _resolve_fi_action(
         "resolver": "react.event_ref",
         "resolver_status": "implemented",
         "capabilities": {"preview": False, "open": False, "download": True, "rehost": False},
+        "default_open_effect_action": "download",
     }
     if action in {"capabilities", "describe"}:
         return base

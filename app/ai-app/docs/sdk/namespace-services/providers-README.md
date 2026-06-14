@@ -375,6 +375,38 @@ the exact provider error.
 `object.action` is the operation family that powers canvas cards, chat context
 chips, scene summons, and widget-focused opens.
 
+`object.resolve` should also declare the click/open effect for the concrete
+object handle when one exists:
+
+```json
+{
+  "ret": {
+    "attrs": {
+      "object_ref": "task:issue:BUG-123",
+      "capabilities": { "preview": true, "open": true, "download": false }
+    },
+    "extra": {
+      "object_kind": "task.issue",
+      "actions": ["preview", "open"],
+      "default_open_effect_action": "open"
+    }
+  }
+}
+```
+
+`default_open_effect_action` is provider-owned and ref/object-kind-specific.
+It answers "what action should a generic UI run when the user opens/clicks this
+object handle?" It is not inferred by the host surface and it is not a single
+namespace-wide value. For example, the same `task` namespace can return `open`
+for `task:issue:<id>` and `download` for
+`task:issue:attachment:<id>/attachments/...`.
+
+For `open`, the provider returns the effect result, including
+`ui_event.target_surface` and enough object payload for that surface. The host
+scene owns the reaction: mounting/focusing an app iframe, sending a widget
+command, or reporting that the target surface is unavailable. Do not encode
+host-specific UI behavior into the chat/canvas component.
+
 Example:
 
 ```json
@@ -1007,8 +1039,9 @@ When introducing a named service provider:
 - define object operations and action names;
 - define `object.resolve` as lightweight URI resolution. It should parse the
   provider-owned ref and return canonical `object_ref`, `object_kind`, parent
-  refs, capabilities/actions, and cheap display metadata. It must not read large
-  object bodies or stream bytes.
+  refs, capabilities/actions, `default_open_effect_action` when a generic UI
+  can open/click the object handle, and cheap display metadata. It must not read
+  large object bodies or stream bytes.
 - implement `object.action` as `action(object_ref, action, payload)`. The
   provider must parse `object_ref` on every call, branch by object kind, enforce
   auth, and return a bounded result. Do not let an attachment ref fall through to

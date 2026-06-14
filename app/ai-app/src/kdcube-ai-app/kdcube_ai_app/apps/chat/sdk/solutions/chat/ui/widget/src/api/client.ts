@@ -17,9 +17,11 @@ import {
 } from './transport.ts'
 import type {
   ConversationDTO,
+  ObjectActionResponse,
   ConversationSummary,
   ReactContextPreviewParams,
   ReactContextPreviewResponse,
+  ResolveObjectActionParams,
   SubmitChatMessageParams,
   SubmitChatMessageResponse,
   TurnReaction,
@@ -50,6 +52,34 @@ interface SubmitChatMessageApiResponse {
   external_event_sequence?: number | null
   live_owner_detected?: boolean | null
   message?: string
+}
+
+export class ObjectActionRequestError extends Error {
+  readonly action: string
+  readonly objectRef: string
+  readonly code?: string
+  readonly status?: number
+
+  constructor({
+    action,
+    objectRef,
+    detail,
+    code,
+    status,
+  }: {
+    action: string
+    objectRef: string
+    detail: string
+    code?: string
+    status?: number
+  }) {
+    super(`Object action ${action} failed for ${objectRef}: ${detail}`)
+    this.name = 'ObjectActionRequestError'
+    this.action = action
+    this.objectRef = objectRef
+    this.code = code
+    this.status = status
+  }
 }
 
 export function buildEventSubmission(params: SubmitChatMessageParams, tenant: string, project: string): Record<string, unknown> {
@@ -369,7 +399,7 @@ function base64ToBlob(value: string, mime: string): Blob {
   return new Blob([bytes], { type: mime || 'application/octet-stream' })
 }
 
-export async function downloadObjectRef(objectRef: string, filename: string, mime?: string | null): Promise<void> {
+export async function resolveObjectAction(params: ResolveObjectActionParams): Promise<ObjectActionResponse> {
   const { tenant, project } = requireScope()
   const response = await fetch(operationsUrl('canvas_object_action', settings.getBundleId(), tenant, project), {
     method: 'POST',
@@ -377,27 +407,62 @@ export async function downloadObjectRef(objectRef: string, filename: string, mim
     headers: buildRequestHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({
       data: {
-        action: 'download',
-        object_ref: objectRef,
-        mime: mime || undefined,
+        ...(params.payload || {}),
+        action: params.action,
+        object_ref: params.objectRef,
+        mime: params.mime || undefined,
+        filename: params.filename || undefined,
       },
     }),
   })
   const payload = await response.json().catch(() => null) as Record<string, unknown> | null
   const body = payload && typeof payload === 'object' && 'canvas_object_action' in payload
-    ? payload.canvas_object_action as Record<string, unknown>
+    ? payload.canvas_object_action as ObjectActionResponse
     : payload
   if (!response.ok || !body || body.ok === false) {
+    const code = body && typeof body === 'object'
+      ? String(body.error || body.code || '')
+      : ''
     const detail = body && typeof body === 'object'
       ? String(body.message || body.error || response.statusText)
       : response.statusText
-    throw new Error(`Could not download ${objectRef}: ${detail}`)
+    const status = body && typeof body.status === 'number' ? body.status : response.status
+    throw new ObjectActionRequestError({
+      action: params.action,
+      objectRef: params.objectRef,
+      detail,
+      code: code || undefined,
+      status,
+    })
   }
+  return body as ObjectActionResponse
+}
+
+export function downloadObjectActionResult(
+  body: ObjectActionResponse,
+  fallbackFilename: string,
+  fallbackMime?: string | null,
+): void {
   const contentBase64 = typeof body.content_base64 === 'string' ? body.content_base64 : ''
   if (!contentBase64) {
-    throw new Error(`Resolver did not return downloadable bytes for ${objectRef}.`)
+    throw new Error('Resolver did not return downloadable bytes.')
   }
-  const resolvedMime = typeof body.mime === 'string' && body.mime ? body.mime : mime || 'application/octet-stream'
-  const resolvedFilename = typeof body.filename === 'string' && body.filename ? body.filename : filename
+  const resolvedMime = typeof body.mime === 'string' && body.mime ? body.mime : fallbackMime || 'application/octet-stream'
+  const resolvedFilename = typeof body.filename === 'string' && body.filename ? body.filename : fallbackFilename
   downloadBlobAsFile(base64ToBlob(contentBase64, resolvedMime), resolvedFilename)
+}
+
+export async function downloadObjectRef(objectRef: string, filename: string, mime?: string | null): Promise<void> {
+  const body = await resolveObjectAction({
+    action: 'download',
+    objectRef,
+    filename,
+    mime,
+  })
+  try {
+    downloadObjectActionResult(body, filename, mime)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`Could not download ${objectRef}: ${message}`)
+  }
 }

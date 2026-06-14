@@ -238,6 +238,14 @@ The client bundle does not configure provider-specific resolver semantics here:
 `surfaces.as_consumer.ui.canvas.resolvers` only opts the namespace and canvas
 operation families into use. `object.resolve` resolves a concrete ref into
 metadata, parent refs, capabilities, and cheap display information.
+When present, `default_open_effect_action` tells a generic UI what to run when
+the user opens/clicks that specific object handle. The consumer must treat this
+as provider-owned object semantics; do not infer it from namespace, host
+surface, or broad capabilities.
+For `open`, the host scene still owns the UI reaction. It uses the returned
+`ui_event.target_surface` to focus/mount the concrete app surface and send that
+surface's command. This keeps provider object semantics separate from host UI
+orchestration.
 `object.action` runs explicit UI actions such as `open`, `preview`, or
 `download`. The owning provider decides which actions are accepted for the
 concrete object ref.

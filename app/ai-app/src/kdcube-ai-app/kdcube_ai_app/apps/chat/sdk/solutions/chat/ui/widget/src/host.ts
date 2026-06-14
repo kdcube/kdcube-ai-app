@@ -97,6 +97,26 @@ export function requestAuthRequired(): void {
   }
 }
 
+export interface HostObjectOpenPayload {
+  response: Record<string, unknown>
+  source: Record<string, unknown>
+}
+
+export function requestHostObjectOpen(payload: HostObjectOpenPayload): boolean {
+  try {
+    if (typeof window === 'undefined' || window.parent === window) return false
+    window.parent.postMessage({
+      type: 'kdcube-object-open',
+      widget: CHAT_WIDGET_ID,
+      response: payload.response,
+      source: payload.source,
+    }, '*')
+    return true
+  } catch {
+    return false
+  }
+}
+
 /**
  * True in any KDCube-hosted/dev context — standalone (top-level), or a
  * same-origin KDCube frame such as the control plane (whether the bundle

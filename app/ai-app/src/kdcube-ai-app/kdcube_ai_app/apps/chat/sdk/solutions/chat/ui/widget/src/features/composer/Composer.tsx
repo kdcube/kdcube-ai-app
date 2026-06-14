@@ -5,9 +5,11 @@
 import { memo, useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent } from 'react'
 import { formatBytes } from '../../components/utils.ts'
 import type { AttachedContext } from '../chat/chatTypes.ts'
+import type { BannerTone } from '../../service.ts'
 import { recognizeContextMessage } from '../../host.ts'
 import { CHAT_CONTEXT_ATTACH_MESSAGE } from '../../settings.ts'
 import { recognizeContextPayload } from '../context/contextMessages.ts'
+import { activateContextPin, contextPinActionNotice } from '../chat/contextPinActions.ts'
 
 const CONTEXT_DROP_MIME_TYPES = [
   'application/vnd.kdcube.context+json',
@@ -61,6 +63,7 @@ function ComposerImpl({
   onContextsAdd,
   onContextRemove,
   onContextRemoveMany,
+  onContextActionError,
   onSubmit,
   onStop,
 }: {
@@ -76,6 +79,7 @@ function ComposerImpl({
   onContextsAdd: (contexts: AttachedContext[]) => void
   onContextRemove: (id: string) => void
   onContextRemoveMany: (ids: string[]) => void
+  onContextActionError: (text: string, tone?: BannerTone) => void
   onSubmit: () => void
   onStop: () => void
 }) {
@@ -114,8 +118,20 @@ function ComposerImpl({
     }
   }
 
+  function activateContext(ctx: AttachedContext) {
+    activateContextPin(ctx).catch((error) => {
+      const notice = contextPinActionNotice(error)
+      onContextActionError(notice.text, notice.tone)
+    })
+  }
+
   function handleContextChipClick(ctx: AttachedContext, event: MouseEvent<HTMLSpanElement>) {
     if ((event.target as HTMLElement).closest('button')) return
+    if (!event.metaKey && !event.ctrlKey) {
+      event.preventDefault()
+      activateContext(ctx)
+      return
+    }
     setSelectedContextIds((current) => {
       if (event.metaKey || event.ctrlKey) {
         return current.includes(ctx.id)
@@ -124,6 +140,12 @@ function ComposerImpl({
       }
       return [ctx.id]
     })
+  }
+
+  function handleContextChipKeyDown(ctx: AttachedContext, event: KeyboardEvent<HTMLSpanElement>) {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    activateContext(ctx)
   }
 
   function handleComposerDragOver(event: DragEvent<HTMLDivElement>) {
@@ -156,9 +178,11 @@ function ComposerImpl({
                 key={ctx.id}
                 className={`k-context-chip ${contextChipClass(ctx)} ${selectedContextIdSet.has(ctx.id) ? 'is-selected' : ''}`}
                 title={ctx.summary || ctx.label}
+                role="button"
                 tabIndex={0}
                 aria-selected={selectedContextIdSet.has(ctx.id)}
                 onClick={(event) => handleContextChipClick(ctx, event)}
+                onKeyDown={(event) => handleContextChipKeyDown(ctx, event)}
               >
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />

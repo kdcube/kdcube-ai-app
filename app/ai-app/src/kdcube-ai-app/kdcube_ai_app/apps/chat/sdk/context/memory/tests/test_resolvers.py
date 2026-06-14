@@ -84,6 +84,7 @@ def test_memory_resolver_open_returns_ui_open_event():
     ))
 
     assert result["ok"] is True
+    assert result["default_open_effect_action"] == "open"
     assert result["ui_event"]["target_surface"] == "sdk.memory.viewer"
     assert result["ui_event"]["memory_id"] == "mem_1"
 

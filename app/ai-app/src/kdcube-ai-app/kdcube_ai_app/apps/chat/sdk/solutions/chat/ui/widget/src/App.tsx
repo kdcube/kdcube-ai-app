@@ -1140,6 +1140,12 @@ export default function App() {
   const handleTurnDownloadError = useStableCallback((text: string) => {
     dispatch(chatActions.pushBanner({ tone: 'error', text: `Download failed: ${text}` }))
   })
+  const handleContextActionError = useStableCallback((text: string, tone: BannerTone = 'warning') => {
+    dispatch(chatActions.pushBanner({
+      tone,
+      text: tone === 'error' ? `Context action failed: ${text}` : text,
+    }))
+  })
   /* Thumbs up/down on an assistant turn. Optimistic — reflect the choice
    * immediately, persist in the background, and revert + warn on failure.
    * `reaction === null` clears. Feedback is a signed-in action, but turns
@@ -1725,6 +1731,7 @@ export default function App() {
                         reaction={state.feedback[turn.id] ?? null}
                         onFeedback={handleTurnFeedback}
                         onDownloadError={handleTurnDownloadError}
+                        onContextActionError={handleContextActionError}
                         onFollowup={handleTurnFollowup}
                       />
                     ))}
@@ -1815,6 +1822,7 @@ export default function App() {
                   onContextsAdd={handleContextsAdd}
                   onContextRemove={handleContextRemove}
                   onContextRemoveMany={handleContextRemoveMany}
+                  onContextActionError={handleContextActionError}
                   onSubmit={handleComposerSubmit}
                   onStop={handleComposerStop}
                 />

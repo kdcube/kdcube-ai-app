@@ -72,6 +72,7 @@ def _base_response(*, ref: str, action: str) -> dict[str, Any]:
         "resolver": CONVERSATION_RESOLVER_NAME,
         "resolver_status": "implemented",
         "capabilities": conversation_ref_capabilities(),
+        "default_open_effect_action": "open",
     }
 
 

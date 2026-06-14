@@ -17,7 +17,7 @@ import {
   downloadBlobAsFile,
   downloadObjectRef,
 } from '../../service.ts'
-import type { StepStatus } from '../../service.ts'
+import type { BannerTone, StepStatus } from '../../service.ts'
 import {
   formatBytes,
   formatTime,
@@ -47,6 +47,7 @@ import type {
 } from './chatTypes.ts'
 import { canonicalObjectRef, setChatFileDragData, type ChatFileDragInput } from './fileDrag.ts'
 import { durableHistoricalObjectRef } from './historicalRefs.ts'
+import { ContextInlineChip } from './ContextInlineChip.tsx'
 import { splitContextChips } from './contextChips.ts'
 
 function StepListImpl({ steps }: { steps: TurnStep[] }) {
@@ -881,9 +882,11 @@ function ArtifactFeedImpl({ artifacts }: { artifacts: Artifact[] }) {
 function FollowupMessageBlockImpl({
   message,
   onDownloadError,
+  onContextActionError,
 }: {
   message: AdditionalUserMessage
   onDownloadError?: (text: string) => void
+  onContextActionError?: (text: string, tone?: BannerTone) => void
 }) {
   const isSteer = message.eventType === 'event.user.steer'
   const text = message.text || (isSteer ? 'Stop requested' : '')
@@ -901,16 +904,11 @@ function FollowupMessageBlockImpl({
         {parsed.contexts.length > 0 ? (
           <div className="flex flex-wrap gap-1.5 pt-1.5">
             {parsed.contexts.map((ctx) => (
-              <span
+              <ContextInlineChip
                 key={ctx.id}
-                className="inline-flex items-center gap-1 rounded-full border border-[var(--purple)] bg-[var(--purple-pale)] px-2 py-0.5 text-[11px] font-semibold text-[var(--purple)]"
-              >
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
-                  <line x1="7" y1="7" x2="7.01" y2="7" />
-                </svg>
-                {ctx.label}
-              </span>
+                context={ctx}
+                onError={onContextActionError}
+              />
             ))}
           </div>
         ) : null}
@@ -967,9 +965,11 @@ export function mergeOverviewEvents(
 function MergedOverviewFeedImpl({
   events,
   onDownloadError,
+  onContextActionError,
 }: {
   events: OverviewEvent[]
   onDownloadError?: (text: string) => void
+  onContextActionError?: (text: string, tone?: BannerTone) => void
 }) {
   if (events.length === 0) return null
   /* Each artifact pass goes through ArtifactFeed with a one-element list so
@@ -983,6 +983,7 @@ function MergedOverviewFeedImpl({
               key={event.key}
               message={event.message}
               onDownloadError={onDownloadError}
+              onContextActionError={onContextActionError}
             />
           )
         }

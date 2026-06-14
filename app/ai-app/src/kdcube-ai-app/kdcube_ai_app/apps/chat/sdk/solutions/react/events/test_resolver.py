@@ -91,6 +91,7 @@ async def test_resolve_event_ref_action_allows_current_turn_fi_refs_when_not_req
     assert result["ok"] is True
     assert result["object_ref"] == ref
     assert result["capabilities"]["download"] is True
+    assert result["default_open_effect_action"] == "download"
 
 
 def test_canonicalize_event_ref_for_context_adds_conversation_to_current_turn_fi_refs():
