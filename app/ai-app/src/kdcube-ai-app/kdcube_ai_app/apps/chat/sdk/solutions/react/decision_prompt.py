@@ -13,7 +13,9 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterable, List, Optional
 
-from kdcube_ai_app.apps.chat.sdk.skills.instructions.shared_instructions import (
+# NOTE: switched to the deduplicated `instructions` module for testing.
+# Revert by changing `.instructions` back to `.shared_instructions`.
+from kdcube_ai_app.apps.chat.sdk.skills.instructions.instructions import (
     PROMPT_EXFILTRATION_GUARD,
     INTERNAL_AGENT_JOURNAL_GUARD,
     ATTACHMENT_AWARENESS_IMPLEMENTER,

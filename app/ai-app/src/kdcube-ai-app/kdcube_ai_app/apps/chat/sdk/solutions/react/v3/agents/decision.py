@@ -22,7 +22,9 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.decision_prompt import (
     compose_decision_system_text,
     head_tail_preview,
 )
-from kdcube_ai_app.apps.chat.sdk.skills.instructions.shared_instructions import (
+# NOTE: switched to the deduplicated `instructions` module for testing.
+# Revert by changing `.instructions` back to `.shared_instructions`.
+from kdcube_ai_app.apps.chat.sdk.skills.instructions.instructions import (
     ACTION_CAUSALITY_AND_STRATEGY,
     MULTI_ACTION_INDEPENDENCE_AND_GOOD_SHAPES,
 )
