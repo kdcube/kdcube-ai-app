@@ -961,14 +961,13 @@ class ReactSolverV2:
         sources_getter = None
         if self.ctx_browser:
             sources_getter = lambda: list(self.ctx_browser.sources_pool or [])
+        # Each completion attempt is its own answer: restart the streamed delta
+        # index at 0 so the client can tell two answers in the same turn apart
+        # (a follow-up that produces a second final answer must render as a new
+        # message, not append to the previous one). A monotonic index across the
+        # turn made the client merge them. `_react_answer_delta_idx` is still
+        # tracked below as a high-water mark but no longer seeds the start index.
         final_answer_start_index = 0
-        try:
-            final_answer_start_index = max(
-                0,
-                int(getattr(self.scratchpad, "_react_answer_delta_idx", 0) or 0),
-            )
-        except Exception:
-            final_answer_start_index = 0
         self.scratchpad._latest_streamed_notes_started_at = None
         if stream_final_answer:
             self.scratchpad._latest_streamed_final_answer_started_at = None

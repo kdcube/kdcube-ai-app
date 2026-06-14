@@ -921,7 +921,11 @@ def test_mk_timeline_streamer_hides_provisional_final_answer_by_default():
     assert "final_answer" not in target_names
 
 
-def test_mk_timeline_streamer_uses_existing_answer_index_for_final_answer_stream():
+def test_mk_timeline_streamer_restarts_answer_index_per_completion_attempt():
+    # Each completion attempt is its own answer: the streamed final-answer delta
+    # index restarts at 0 regardless of any prior accumulated index, so the
+    # client renders a second final answer in the same turn as a new message
+    # instead of appending to the previous one.
     solver = _solver_stub()
     solver.comm = SimpleNamespace(delta=_noop_async)
     solver.ctx_browser = None
@@ -929,7 +933,7 @@ def test_mk_timeline_streamer_uses_existing_answer_index_for_final_answer_stream
 
     _fn, streamer = solver._mk_timeline_streamer("decision", stream_final_answer=True)
 
-    assert streamer.next_index("final_answer") == 3
+    assert streamer.next_index("final_answer") == 0
 
 
 @pytest.mark.asyncio
