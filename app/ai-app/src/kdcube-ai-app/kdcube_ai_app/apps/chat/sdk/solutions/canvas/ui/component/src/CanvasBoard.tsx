@@ -1158,12 +1158,13 @@ export function CanvasBoard({
   }
 
   function dragDataForCards(inputCards: CanvasCard[]): string {
-    const contexts = contextsForCards(inputCards)
-    if (contexts.length === 1) return JSON.stringify(contexts[0])
+    // Canonical context-pin envelope: always the plural `contexts: [...]` shape
+    // (even for one card), so every consumer (canvas drop, chat composer) reads
+    // it uniformly. A bare/singular payload fell through to text on drop.
     return JSON.stringify({
-      type: 'kdcube-canvas-context-focus',
+      type: 'kdcube.context.attach',
       source: 'sdk-canvas',
-      contexts,
+      contexts: contextsForCards(inputCards),
     })
   }
 
@@ -2299,7 +2300,8 @@ export function CanvasBoard({
                               event.stopPropagation()
                               onDragCard(attachment)
                               event.dataTransfer.effectAllowed = 'copy'
-                              event.dataTransfer.setData('application/json', JSON.stringify(attachment))
+                              // Canonical context-pin envelope (always plural `contexts`).
+                              event.dataTransfer.setData('application/json', JSON.stringify({ type: 'kdcube.context.attach', contexts: [attachment] }))
                               event.dataTransfer.setData('text/plain', attachment.label)
                               if (attachment.logical_path || attachment.ref || attachment.hosted_uri) {
                                 event.dataTransfer.setData('text/uri-list', attachment.logical_path || attachment.ref || attachment.hosted_uri || '')
