@@ -1,9 +1,9 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/chat/chat-widget-solution-README.md
 title: "Chat Widget Solution"
-summary: "How to mount the reusable SDK chat widget in an app and configure its event-source profile for ReAct, canvas, snapshots, attachments, and context object actions."
+summary: "How to mount the reusable SDK chat widget in an app, configure its event-source profile, and reuse its headless engine (useChatEngine + ChatStoreProvider) to skin the chat with a custom UI or drive the backend from an external client."
 status: draft
-tags: ["sdk", "solutions", "chat", "widget", "bundle", "react", "external-events"]
+tags: ["sdk", "solutions", "chat", "widget", "bundle", "react", "external-events", "headless", "useChatEngine"]
 updated_at: 2026-06-15
 keywords:
   [
@@ -15,6 +15,11 @@ keywords:
     "reusable chat component",
     "context chip object actions",
     "canvas_object_action",
+    "useChatEngine",
+    "ChatStoreProvider",
+    "headless chat engine",
+    "custom chat UI",
+    "reuse chat backend",
   ]
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-client-ui-README.md
@@ -72,6 +77,99 @@ how the agent interprets every domain object.
   (e.g. an anonymous visitor) is treated as an **anonymous identity**, not an
   error: the composer shows no profile-fetch error banner. Identity-gated host
   affordances stay hidden until a signed-in profile is confirmed.
+
+## Reusing the chat: headless engine + custom UI
+
+The widget is split into a **headless engine** and a **view**, so you can keep
+all of the chat orchestration and replace only the look:
+
+| Layer | Source | Reusable as-is |
+| --- | --- | --- |
+| State machine | `features/chat/chatSlice.ts` + `chatReducers.ts` (Redux Toolkit) | turns the SSE/socket envelope stream into the turn model |
+| Transport | `api/` (`client.ts`, `sseTransport.ts`, `socketTransport.ts`, `types.ts`) | operations + streaming wire layer |
+| Engine | `app/useChatEngine.tsx` | transport wiring, the send pipeline (+ serialization queue), conversation lifecycle, host-message handling, SSE/auth boot, context attach/remove, feedback, downloads, and host view-form state |
+| View | `App.tsx` (default) | the only part you replace for a custom skin |
+
+### Goal API
+
+```tsx
+import { ChatStoreProvider, useChatEngine } from 'sdk://solutions/chat/ui/widget/src/app'
+
+<ChatStoreProvider config={/* optional */}>
+  <MyOwnChatUI />     {/* renders anything; calls useChatEngine() inside */}
+</ChatStoreProvider>
+```
+
+`ChatStoreProvider` provides the Redux store and **boots the engine once**.
+`useChatEngine()` (called by any descendant) returns the engine:
+
+```ts
+const {
+  state,            // the chat Redux state (turns, conversations, banners, composer…)
+  send,             // (textOverride?, reactiveEventType?) => void — send the draft
+  steer,            // () => void — interrupt-and-redirect the active turn
+  loadConversation, // (conversationId) => void
+  newChat,          // () => void
+  setHostView,      // ('compact' | 'expanded') => void — sets the form AND messages the host
+  attachContext,    // (ctx | ctx[]) => void — add host context chips to the composer
+  removeContext,    // (id | id[]) => void — remove chips + sync the host
+  openContextChip,  // (ctx) => void — activate a chip via its resolver default effect
+  downloadFile,     // (ref, filename?, mime?) => void
+  submitFeedback,   // (turnId, reaction, text?) => void
+  hostView,         // 'compact' | 'expanded'
+} = useChatEngine()
+```
+
+It also returns the extras the default view needs (`ready`, `bootError`,
+`authed`, `kdcubePreview`, `bundleId`, `deleteConversation`,
+`refreshConversationList`, `handleReconnect`, `pinConversationToCanvas`,
+`promptLogin`, `setHostViewLocal`, and a `dryRun` bundle). A minimal custom UI
+only needs `state` + `send`.
+
+### Build a custom UI
+
+Replace `App.tsx` with your own view; reuse everything else unchanged:
+
+```tsx
+function MyOwnChatUI() {
+  const { state, send } = useChatEngine()
+  return (
+    <div>
+      {state.turns.map((t) => <MyTurn key={t.id} turn={t} />)}
+      <MyComposer value={state.composerText} onSend={() => send()} />
+    </div>
+  )
+}
+```
+
+Re-theming the default view needs no code at all — every component styles from
+the `:root` design tokens in `index.css`; override the tokens (the widget runs
+in an iframe, so the override must live in the widget's own build).
+
+### The `config` prop
+
+`config` is optional `Partial<AppSettings>` (`baseUrl`, `tenant`, `project`,
+`defaultBundleId`, `accessToken`, `idToken`, `idTokenHeader`). When **omitted**,
+the engine keeps the default behavior: it resolves base URL / tenant / project /
+bundle / auth from query params, the served route, and the parent-frame CONFIG
+handshake. When **provided**, an external host can drive the engine directly
+without the iframe handshake — applied to `settings` before the engine boots.
+
+### Reuse only the backend (no React engine)
+
+If you are building outside React (or in another stack) and want only the
+server side, you do not use this engine at all — you target the documented wire
+contract (operations + SSE/Socket.IO + the streaming envelope patterns). The
+engine's `api/` layer is a reference implementation of that contract. See
+[Bundle Client Communication](../../bundle/bundle-client-communication-README.md).
+
+### Caveat: single store instance
+
+The store is currently a module singleton, so two `<ChatStoreProvider>`
+instances on one page share one chat state — correct for the single-widget
+embed. Making it multi-instance safe (a store per provider) is a follow-up:
+move `configureStore` into the provider and thread a store ref to the few
+imperative `store.getState()` reads in the engine.
 
 ## Backend Assumptions
 
