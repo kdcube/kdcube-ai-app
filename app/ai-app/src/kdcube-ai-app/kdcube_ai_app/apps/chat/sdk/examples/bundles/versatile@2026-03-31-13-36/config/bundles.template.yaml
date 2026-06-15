@@ -270,12 +270,12 @@ bundles:
             src_folder: ui/scene
             build_command: npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build
             shared_sources:
-              canvas_component:
+              components_react_canvas:
                 src_folder: sdk://solutions/canvas/ui/component
-                target: _shared/canvas-component
-              scene_runtime:
+                target: _shared/components-react/canvas
+              components_core_scene:
                 src_folder: sdk://solutions/scene
-                target: _shared/scene-runtime
+                target: _shared/components-core/scene
           widgets:
             versatile_chat:
               src_folder: sdk://solutions/chat/ui/widget
@@ -300,8 +300,8 @@ bundles:
               src_folder: sdk://solutions/canvas/ui/widget/pinboard
               build_command: npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build
               shared_sources:
-                canvas_component:
+                components_react_canvas:
                   src_folder: sdk://solutions/canvas/ui/component
-                  target: _shared/canvas-component
+                  target: _shared/components-react/canvas
         mcp:
           services: {}

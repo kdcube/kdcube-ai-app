@@ -26,14 +26,14 @@ import {
   type CanvasReadInput,
   type CanvasReadResponse,
   type CanvasUploadResponse,
-} from '@kdcube/canvas-component'
+} from '@kdcube/components-react/canvas'
 import {
   createSceneRuntime,
   providerSurfaceCommandFromOpen,
   type SceneDispatchResult,
   type SceneSurfaceOpenRequest,
   type SceneSurfaceRegistration,
-} from '@kdcube/scene-runtime'
+} from '@kdcube/components-core/scene'
 import { Archive, Bot, Gauge, ListTodo, Maximize2, Minimize2, Plus, X } from 'lucide-react'
 import React, { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -883,6 +883,8 @@ function App() {
   const externalFrameRef = useRef<HTMLIFrameElement | null>(null)
   const usageFrameRef = useRef<HTMLIFrameElement | null>(null)
   const usageRefreshTimerRef = useRef<number | null>(null)
+  const memoryReadyRef = useRef(false)
+  const externalReadyRef = useRef(false)
   const panelZCursorRef = useRef(FLOATING_PANEL_BASE_Z + 4)
   const isRegistered = userType != null && userType !== 'anonymous'
   const externalPanel = sceneConfig.external_panels[0] ?? null
@@ -1011,42 +1013,43 @@ function App() {
   const surfaceRegistry = useMemo<Record<string, SceneSurfaceRegistration>>(() => {
     const registry: Record<string, SceneSurfaceRegistration> = {
       'sdk.memory.viewer': {
-      label: 'memory viewer',
-      ensureOpen: () => openMemoryWidget(true),
-      postCommand: sendMemoryWidgetCommand,
-      commandFromOpen: (request) => {
-        const memoryId = memoryIdFromSurfaceOpenRequest(request)
-        if (!memoryId) return null
-        return {
-          action: 'open',
-          object_ref: request.uiEvent.object_ref || request.response.object_ref || request.response.ref || `mem:${memoryId}`,
-          memory_id: memoryId,
-        }
-      },
+        label: 'memory viewer',
+        ensureOpen: () => openMemoryWidget(true),
+        isReady: () => memoryReadyRef.current,
+        postCommand: sendMemoryWidgetCommand,
+        commandFromOpen: (request) => {
+          const memoryId = memoryIdFromSurfaceOpenRequest(request)
+          if (!memoryId) return null
+          return {
+            action: 'open',
+            object_ref: request.uiEvent.object_ref || request.response.object_ref || request.response.ref || `mem:${memoryId}`,
+            memory_id: memoryId,
+          }
+        },
       },
       'sdk.chat.viewer': {
-      label: 'chat',
-      ensureOpen: () => {
-        // Open + front, but keep the pane's current compact/expanded form —
-        // opening a conversation is content-only.
-        bringPanelToFront('chat')
-        setChatOpen(true)
-      },
-      postCommand: sendChatWidgetCommand,
-      commandFromOpen: (request) => {
-        const ev = request.uiEvent
-        const conversationId = String(ev.conversation_id || '').trim()
-        if (!conversationId) return null
-        return {
-          action: 'load-conversation',
-          conversation_id: conversationId,
-          tenant: ev.tenant,
-          project: ev.project,
-          user_id: ev.user_id,
-          bundle_id: ev.bundle_id,
-          agent: ev.agent,
-        }
-      },
+        label: 'chat',
+        ensureOpen: () => {
+          // Open + front, but keep the pane's current compact/expanded form —
+          // opening a conversation is content-only.
+          bringPanelToFront('chat')
+          setChatOpen(true)
+        },
+        postCommand: sendChatWidgetCommand,
+        commandFromOpen: (request) => {
+          const ev = request.uiEvent
+          const conversationId = String(ev.conversation_id || '').trim()
+          if (!conversationId) return null
+          return {
+            action: 'load-conversation',
+            conversation_id: conversationId,
+            tenant: ev.tenant,
+            project: ev.project,
+            user_id: ev.user_id,
+            bundle_id: ev.bundle_id,
+            agent: ev.agent,
+          }
+        },
       },
     }
     if (externalPanel) {
@@ -1054,6 +1057,7 @@ function App() {
         registry[targetSurface] = {
           label: surface.label || externalPanel.label,
           ensureOpen: () => openExternalWidget(Boolean(surface.expanded)),
+          isReady: () => externalReadyRef.current,
           postCommand: sendExternalWidgetCommand,
           commandFromOpen: (request) => {
             if (surface.command) return { ...surface.command }
@@ -1787,6 +1791,7 @@ function App() {
           return
         }
         if (data.type === 'kdcube-memory-widget-status' && data.widget === MEMORY_WIDGET_ALIAS) {
+          memoryReadyRef.current = true
           const count = Number(data.count)
           setMemoryCount(Number.isFinite(count) ? count : null)
           flushSurfaceCommand('sdk.memory.viewer')
@@ -2120,6 +2125,7 @@ function App() {
               <button
                 type="button"
                 onClick={() => {
+                  memoryReadyRef.current = false
                   setMemoryOpen(false)
                   setMemoryExpanded(false)
                 }}
@@ -2136,6 +2142,7 @@ function App() {
             title="Versatile memories"
             src={memoryWidgetUrl(ctx, false)}
             onLoad={() => {
+              memoryReadyRef.current = false
               syncMemoryWidgetView(memoryExpanded ? 'expanded' : 'compact')
               flushSurfaceCommand('sdk.memory.viewer')
             }}
@@ -2190,6 +2197,7 @@ function App() {
               <button
                 type="button"
                 onClick={() => {
+                  externalReadyRef.current = false
                   setExternalOpen(false)
                   setExternalExpanded(false)
                 }}
@@ -2206,6 +2214,7 @@ function App() {
             title={externalPanel.title || externalPanel.label}
             src={externalWidgetUrl(ctx, externalPanel, false)}
             onLoad={() => {
+              externalReadyRef.current = true
               syncExternalWidgetView(externalExpanded ? 'expanded' : 'compact')
               Object.keys(externalPanel.surfaces || {}).forEach((surface) => flushSurfaceCommand(surface))
             }}

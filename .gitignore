@@ -231,3 +231,4 @@ app/ai-app/ui/chat-web-app/src/**/*.js
 /app/ai-app/docs/sdk/agents/react/design/
 /app/ai-app/docs/sdk/solutions/timeline/design/
 /app/ai-app/docs/service/cicd/design/
+/app/ai-app/docs/sdk/components/design/

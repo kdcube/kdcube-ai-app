@@ -1,94 +1,149 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/scene-surface-registry-README.md
 title: "Scene Surface Registry"
-summary: "How a scene host composes iframe widgets, resolver-owned object actions, and local widget commands without hardcoding object semantics in canvas or chat."
+summary: "How a scene host routes resolver-owned object actions to registered UI surfaces without hardcoding namespace or widget semantics."
 status: draft
-tags: ["sdk", "solutions", "scene", "widgets", "iframe", "resolvers", "canvas", "chat", "memory"]
-updated_at: 2026-06-09
+tags: ["sdk", "solutions", "scene", "surfaces", "resolvers", "named-services"]
+updated_at: 2026-06-15
 keywords:
   [
     "scene surface registry",
     "target_surface",
-    "iframe widget composition",
-    "canvas object open",
-    "widget postMessage",
+    "object open",
+    "surface command",
     "object_ref",
     "resolver response",
+    "default_open_effect_action",
   ]
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/namespace-services/providers-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/scene-composition-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/canvas/pin-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/event-hub/resolver-and-policy-registration-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/chat/chat-widget-solution-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/memory/memory-widget-solution-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-subsystem-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-widget-integration-README.md
 ---
 # Scene Surface Registry
 
-A scene is a host page that composes several SDK widgets into one workspace.
-Examples are the versatile scene, the task-tracker app shell, and the future
-landing-page scene in `website/index.html`.
+Read these words first:
 
-The scene should not know how to read a memory, open a task, download a ReAct
-artifact, or interpret a canvas object. It should know only which iframe widget
-surface is mounted and how to deliver a command to that widget.
+| Term | Meaning |
+| --- | --- |
+| App | The product/bundle that owns the user experience. |
+| Scene | The app-owned UX composition layer: one page or widget shell that connects several UI parts. |
+| Host | The browser page/component that runs the scene. |
+| Surface | One UI part inside the scene: iframe widget, in-page component, external panel, or another view. |
+| Source surface | The surface where the user starts an action. |
+| Target surface | The surface that should react. |
+| Scene runtime | The host's routing helper: surface registry, dispatch, queueing, readiness. |
+| Object ref | A stable handle owned by a namespace, for example `task:issue:ticket_123`. |
+| Namespace | The owner prefix of an object ref, for example `task`, `memo`, `fi`, or an app-defined namespace. |
+| Namespace provider / resolver | Backend owner of object meaning. It decides what an object ref means and which UI effect should happen. |
+| `target_surface` | The provider's instruction to the scene: which registered UI surface should receive the open command. |
+| Surface adapter | Host-side code that maps the generic scene command into the concrete message/callback the target surface understands. |
+
+A scene is a UX composition layer that connects multiple subsystem surfaces into
+one workspace. A surface can be an iframe widget, an in-page component, a
+floating panel, or any other view the host can open and command.
+
+The scene runtime contract is generic. KDCube ships an SDK implementation, but a
+product can implement the same contract in its own scene. The generic runtime
+must not know how to read a namespace object, open an app-specific entity,
+download a file, or interpret a ref. It knows only this:
+
+```text
+resolver response -> target_surface -> registered host surface -> command
+```
+
+The concrete app decides which surfaces exist. A scene with no task UI should
+not contain task behavior. A scene with no memory UI should not contain memory
+behavior. The runtime stays the same.
+
+High-level communication:
+
+```text
+User
+  example: person clicks an object chip/card
+  |
+  v
+Source surface
+  example: card list, context chip, board card
+  |
+  | asks backend what "open this object_ref" means
+  | example: object_ref = "task:issue:ticket_123"
+  v
+Namespace provider / resolver
+  example: provider for namespace "task"
+  |
+  | returns ui_event.target_surface
+  | example: target_surface = "app.issue.viewer"
+  v
+Scene host + scene runtime
+  example: host page with createSceneRuntime()
+  |
+  | routes to registered surface adapter
+  | example: adapter registered for "app.issue.viewer"
+  v
+Target surface
+  example: issue viewer iframe or in-page details component
+  |
+  | loads/renders object using its own API contract
+  | example: reads ticket_123 and displays details/editor
+  v
+User sees the object opened in the scene
+```
 
 ## Ownership
 
 | Concern | Owner |
 | --- | --- |
-| Object identity | The originating namespace, for example `mem:`, `task:`, `fi:`, `cnv:`. |
-| Object semantics | The namespace owner's named service provider or resolver. |
-| Canvas board layout | Canvas. |
-| Chat event packaging | Chat widget. |
-| Widget mounting and z-order | Scene host. |
-| Local iframe focus/open command | Scene surface registry. |
-| Actual widget behavior | The target widget. |
+| Object identity | The originating namespace, for example `fi:`, `cnv:`, or an app-owned namespace such as `task:`. |
+| Object semantics | The namespace owner's named-service provider or resolver. |
+| Open-effect declaration | The namespace owner, usually through `default_open_effect_action`. |
+| Surface mounting and z-order | Scene host. |
+| Local open/focus command | Scene surface registry plus host adapter. |
+| Actual UI behavior | The target surface. |
 
-The same object ref must keep the same identity as it moves between widgets:
+The same object ref must keep the same identity as it moves between surfaces:
 
 ```text
-mem:mem_123
-  -> memory widget row
-  -> canvas card object_ref
-  -> chat context chip object_ref
+task:issue:ticket_123
+  -> source surface object_ref
+  -> context chip object_ref
+  -> board/card object_ref
   -> resolver action object_ref
 ```
 
-Canvas and chat are not allowed to rewrite `mem:` into a canvas-specific or
-chat-specific identity. They may attach presentation metadata, but ownership
-stays with memory.
+The host may attach presentation metadata, but it must not rewrite the object
+into a host-specific identity. Ownership stays with the namespace.
 
 ## Open Flow
 
-When the user presses **Open** on a canvas card, the standard flow is a named
-service provider `object.action`. Existing composition bundles may expose a
-compatibility operation such as `canvas_object_action`, but that operation
-should delegate to the namespace owner.
+When a user opens an object, the source surface asks the namespace owner for an
+open effect. The provider returns a UI event naming the target scene surface.
+The scene routes by `target_surface` and forwards a command.
+
+Concrete example using an app-owned namespace:
 
 ```text
-canvas card
-  object_ref = mem:mem_123
+source surface
+  object_ref = task:issue:ticket_123
         |
         v
-object.action({ action: "open", object_ref: "mem:mem_123" })
+object.action({ action: "open", object_ref: "task:issue:ticket_123" })
         |
         v
-memory named service provider / resolver
+task namespace provider / resolver
         |
         v
 {
   ok: true,
-  object_ref: "mem:mem_123",
+  object_ref: "task:issue:ticket_123",
   ui_event: {
     type: "kdcube.ui.object.open.requested",
     subject: "ui.object.open.requested",
-    target_surface: "sdk.memory.viewer",
-    object_ref: "mem:mem_123",
-    memory_id: "mem_123",
-    mode: "focus"
+    target_surface: "app.issue.viewer",
+    object_ref: "task:issue:ticket_123",
+    mode: "expanded"
   }
 }
         |
@@ -96,29 +151,107 @@ memory named service provider / resolver
 scene surface registry
         |
         v
-mounted memory iframe receives:
+registered surface receives:
 {
-  type: "kdcube-memory-widget-command",
-  widget: "memories",
   action: "open",
-  object_ref: "mem:mem_123",
-  memory_id: "mem_123"
+  object_ref: "task:issue:ticket_123",
+  view: "expanded"
 }
 ```
 
-The scene routes by `target_surface`. The scene does not inspect memory storage
-or call memory APIs directly. The memory widget receives the command and uses
-its own API operations to load and focus the selected memory.
+This example is intentionally about the contract, not about task behavior. The
+scene does not know what an issue is. The provider knows which surface should
+open it. The registered surface knows how to load and present it.
 
-Opening an object must focus that object. For example, opening `mem:mem_123`
-should not merely reveal the memories widget; it should put the widget into a
-focused view for `mem_123`. The widget may show a local escape hatch such as
-`Back to list`, but the requested object is the active target until the user
-clears that focus.
+## Full Signaling Journey
+
+The scene is a frontend orchestrator, but the object meaning lives behind the
+namespace provider. A complete object-open journey has frontend and backend
+parts:
+
+```text
+FRONTEND                                             BACKEND
+
+User
+ |
+ | 1. clicks "open" on an object ref
+ v
+Source surface
+ iframe/component
+ |
+ | 2. calls an app operation with the object action request
+ |    { action: "open", object_ref: "task:issue:ticket_123" }
+ v
+App operation facade ------------------------------> Namespace provider
+ (same app backend)                                  / resolver
+ |                                                    |
+ | 3. delegates by namespace                          | 4. resolves open effect
+ |    object.action(...)                              |    owns task: semantics
+ |                                                    v
+ | <--------------------------------------------------+
+ | 5. provider response
+ |    {
+ |      object_ref,
+ |      ui_event: {
+ |        target_surface: "app.issue.viewer",
+ |        object_ref,
+ |        mode: "expanded"
+ |      }
+ |    }
+ v
+Source surface
+ |
+ | 6. notifies parent scene
+ |    postMessage({
+ |      type: "kdcube-object-open",
+ |      response,
+ |      source
+ |    })
+ v
+Scene host frontend
+ |
+ | 7. sceneRuntime.routeMessage(event)
+ |      -> normalize response
+ |      -> read ui_event.target_surface
+ |      -> find registered surface adapter
+ |      -> ensureOpen(request)
+ |      -> commandFromOpen(request)
+ |      -> queue if !isReady(request)
+ |      -> postCommand(command, request)
+ v
+Target surface
+ iframe/component
+ |
+ | 8. receives surface-owned command
+ |    {
+ |      type: "app-surface-command",
+ |      action: "open",
+ |      object_ref: "task:issue:ticket_123",
+ |      view: "expanded"
+ |    }
+ |
+ | 9. loads what it needs, using its own API contract
+ v
+Target surface operation --------------------------> Namespace provider
+ |                                                    / app backend
+ | <--------------------------------------------------+
+ |
+ v
+Target surface renders the object
+```
+
+Some hosts can choose to perform steps 2-5 in the scene host instead of in the
+source surface. In that case the host calls the app operation, receives the same
+provider response, and then calls `scene.dispatchSurfaceOpen(response, source)`.
+The registry path from step 7 onward is identical.
+
+The important boundary is that the generic runtime only knows step 7. It does
+not know what `task:` means, what endpoint the target surface calls, or what the
+target surface renders.
 
 ## Registry Shape
 
-The shared SDK runtime exposes this registry from:
+The shared SDK runtime exposes the registry from:
 
 ```text
 src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/scene/src
@@ -127,8 +260,7 @@ src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/scene/src
 A scene host registers each reachable surface with `createSceneRuntime()`:
 
 ```ts
-// The host aliases this import to sdk://solutions/scene/src.
-import { createSceneRuntime } from "@kdcube/scene-runtime"
+import { createSceneRuntime } from "@kdcube/components-core/scene"
 
 type SceneSurfaceRegistration = {
   label?: string
@@ -147,30 +279,26 @@ type SceneSurfaceRegistration = {
 }
 ```
 
-Example registration:
+Concrete host registration:
 
 ```ts
-const surfaces = {
-  "sdk.memory.viewer": {
-    label: "memory viewer",
-    ensureOpen: () => setMemoryOpen(true),
-    postCommand: (command) =>
-      postToMemoryIframe({
-        type: "kdcube-memory-widget-command",
-        widget: "memories",
-        ...command,
-      }),
-    commandFromOpen: ({ uiEvent }) => ({
-      action: "open",
-      object_ref: uiEvent.object_ref,
-      memory_id: uiEvent.memory_id,
-    }),
-  },
-}
-
 const scene = createSceneRuntime()
-Object.entries(surfaces).forEach(([targetSurface, registration]) => {
-  scene.registerSurface(targetSurface, registration)
+
+scene.registerSurface("app.issue.viewer", {
+  label: "issue viewer",
+  ensureOpen: () => setIssuePanelOpen(true),
+  isReady: () => issuePanelReady,
+  postCommand: (command) =>
+    postToIssueSurface({
+      type: "app-surface-command",
+      surface: "app.issue.viewer",
+      ...command,
+    }),
+  commandFromOpen: ({ uiEvent }) => ({
+    action: "open",
+    object_ref: uiEvent.object_ref,
+    view: uiEvent.mode || "expanded",
+  }),
 })
 ```
 
@@ -180,32 +308,28 @@ The dispatch helper is generic:
 resolver response
   -> read ui_event.target_surface
   -> find scene registry entry
-  -> ensure widget is mounted/open
-  -> queue command until iframe is ready if needed
-  -> post command to iframe
+  -> ensure surface is mounted/open
+  -> queue command until surface is ready if needed
+  -> post command to surface
 ```
-
-The same runtime handles object-open messages emitted by chat context chips
-(`kdcube-object-open`) and standalone pinboard widgets
-(`kdcube-pinboard-open`). The host may route those events through
-`scene.routeMessage(event, ...)`, or call `scene.dispatchSurfaceOpen(response,
-source)` directly after it receives a provider resolver response.
 
 Host-originated commands use the same queue and readiness path:
 
 ```ts
-scene.queueSurfaceCommand("sdk.memory.viewer", { action: "create" })
+scene.queueSurfaceCommand("app.issue.viewer", {
+  action: "create",
+})
 ```
 
-Use this when the scene itself has a UI affordance, such as a `Create memory`
-button, and still wants the target widget to receive the command through the
-same `ensureOpen -> queue -> flush` mechanics as resolver opens.
+Use this when the scene itself has a UI affordance and still wants the target
+surface to receive the command through the same `ensureOpen -> queue -> flush`
+mechanics as resolver opens.
 
 If no surface is registered, the host should keep the object intact and show a
 clear UI notice:
 
 ```text
-No widget surface is registered for sdk.memory.viewer.
+No widget surface is registered for app.issue.viewer.
 ```
 
 The dispatch result is always bounded:
@@ -228,58 +352,57 @@ type SceneDispatchResult =
     }
 ```
 
-## Iframe Readiness
+## Readiness
 
-Iframes are asynchronous. A resolver action can happen before the target widget
-has loaded. The scene host must queue one pending command per target surface and
-flush it when the widget reports readiness.
+Mounted surfaces are asynchronous. A resolver action can happen before the
+target iframe or component is ready. The scene host queues one pending command
+per target surface and flushes it when `isReady` returns true.
 
-Minimum status message:
+For an iframe surface, readiness can be driven by any widget-owned status
+message:
 
 ```json
 {
-  "type": "kdcube-memory-widget-status",
-  "widget": "memories",
-  "count": 5
+  "type": "app-surface-status",
+  "surface": "app.issue.viewer",
+  "ready": true
 }
 ```
 
-The exact status payload is widget-owned. The scene only needs enough to know
-that the iframe can receive a command.
+The exact status payload is surface-owned. The scene only needs enough local
+state to know whether `postCommand` can receive the pending command.
 
-## Data Bus Role
+## Transport
 
-Data Bus is not the local iframe focus mechanism.
-
-Use `postMessage` for same-page iframe commands:
+Use `postMessage` or a direct component callback for same-page surface commands:
 
 ```text
-scene host -> mounted iframe widget
+scene host -> mounted surface
 ```
 
-Use Data Bus or bundle operations for backend/runtime work:
+Use Data Bus or app operations for backend/runtime work:
 
 ```text
-widget -> bundle operation
-widget -> Data Bus subject
+surface -> app operation
+surface -> Data Bus subject
 resolver -> backend object action
 processor/runtime -> data/event publication
 ```
 
-For example, a canvas patch can use Data Bus because it mutates durable bundle
-state. Opening an already mounted memory widget is local UI routing, so the
-scene should use the surface registry and `postMessage`.
+For example, a durable state patch can use Data Bus because it mutates shared
+runtime state. Opening an already mounted detail surface is local UI routing, so
+the scene should use the surface registry and the local surface transport.
 
-If a future resolver target is not mounted in the current page, the scene may
-mount it, queue the command, and flush after readiness. If the scene cannot mount
-the target, it should report `target_surface_unavailable`.
+If a resolver target is not mounted in the current page, the scene may mount it,
+queue the command, and flush after readiness. If the scene cannot mount the
+target, it should report `target_surface_unavailable`.
 
-## Website Landing Page
+## Host Integration
 
-The future `website/index.html` scene should follow the same model:
+Any host page follows the same model:
 
 ```text
-landing chip / canvas card / chat context
+source interaction
         |
         v
 object_ref + action
@@ -288,76 +411,19 @@ object_ref + action
 resolver response with target_surface
         |
         v
-website surface registry
+scene surface registry
         |
         v
-iframe widget command
+surface command
 ```
 
-The landing page should not learn memory or task internals. It should mount
-iframe widgets, register their surfaces, and dispatch resolver responses by
-`target_surface`. The provider/resolver owns the object effect declaration
+The provider/resolver owns the object effect declaration
 (`default_open_effect_action`). The scene owns the reaction to a resolved
-`open`: which window opens, which iframe receives the command, and how an
+`open`: which panel opens, which surface receives the command, and how an
 unavailable target is reported.
 
-When the board itself is a standalone iframe (the `pinboard` widget) rather
-than an in-React component, the resolver `open` reaches the host one hop
-further out: the widget runs the provider-backed object action itself, then
-forwards the resolver's `target_surface` to its parent as a
-`kdcube-pinboard-open` postMessage. The host feeds that `target_surface` into
-this same registry — the routing contract is unchanged, only the board-to-host
-transport is a postMessage. See the host-broker contract in
-[Scene Composition](scene-composition-README.md#the-canvas-board-as-a-standalone-widget).
-
-## Current Implementation
-
-The reusable headless registry is implemented in the SDK scene runtime. The
-versatile scene is the reference host that wires concrete iframe/panel
-reactions into that model:
-
-```text
-sdk.memory.viewer -> memory iframe
-task_tracker.issue_list -> task-tracker task list/search iframe, compact form
-task_tracker.issue_editor -> task-tracker task list/search iframe, expanded form
-```
-
-This replaces the older canvas action branch that checked for memory directly.
-Additional surfaces should be added by registering another `target_surface`
-entry rather than changing canvas or chat behavior.
-
-Task-tracker issue opens currently route to the reusable list/search widget.
-The widget selects the requested issue and presents the expanded detail form;
-the owning task editor/wizard can be added as another registered surface when
-that iframe command contract is available.
-
-The memory widget also implements focused object mode. A command like:
-
-```json
-{
-  "type": "kdcube-memory-widget-command",
-  "widget": "memories",
-  "action": "open",
-  "object_ref": "mem:mem_123",
-  "memory_id": "mem_123"
-}
-```
-
-loads the selected memory, filters the visible list to that memory, selects it,
-and exposes `Back to list` to return to normal memory browsing.
-
-The same focused-object behavior supports multiple ids:
-
-```json
-{
-  "type": "kdcube-memory-widget-command",
-  "widget": "memories",
-  "action": "open",
-  "object_refs": ["mem:mem_123", "mem:mem_456"]
-}
-```
-
-Dropping one or more `mem:` canvas pins onto the memories widget follows the
-same path. The widget extracts canonical `mem:` refs from generic context
-payloads, focuses those ids, loads each memory, and shows only that focused set
-until the user selects `Back to list`.
+When a source surface is itself an iframe, the resolver `open` may reach the
+host one hop further out: the iframe runs the provider-backed object action,
+then forwards the resolver's `target_surface` to its parent by `postMessage`.
+The host feeds that `target_surface` into the same registry. The routing
+contract is unchanged; only the source-to-host transport differs.

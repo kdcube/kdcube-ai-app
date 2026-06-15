@@ -3,7 +3,7 @@
  * component's stylesheet (tokens + reset + `.canvas-*` rules); this file
  * only frames it to fill the iframe.
  */
-@import '@kdcube/canvas-component/canvasBoard.css';
+@import '@kdcube/components-react/canvas/canvasBoard.css';
 
 .pinboard-shell {
   display: grid;

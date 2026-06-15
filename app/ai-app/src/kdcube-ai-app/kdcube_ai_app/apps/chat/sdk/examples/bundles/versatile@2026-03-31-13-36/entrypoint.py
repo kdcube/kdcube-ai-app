@@ -1233,13 +1233,13 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
                     "src_folder": "ui/scene",
                     "build_command": "npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build",
                     "shared_sources": {
-                        "canvas_component": {
+                        "components_react_canvas": {
                             "src_folder": "sdk://solutions/canvas/ui/component",
-                            "target": "_shared/canvas-component",
+                            "target": "_shared/components-react/canvas",
                         },
-                        "scene_runtime": {
+                        "components_core_scene": {
                             "src_folder": "sdk://solutions/scene",
-                            "target": "_shared/scene-runtime",
+                            "target": "_shared/components-core/scene",
                         },
                     },
                 },
@@ -1281,9 +1281,9 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
                         "src_folder": "sdk://solutions/canvas/ui/widget/pinboard",
                         "build_command": "npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build",
                         "shared_sources": {
-                            "canvas_component": {
+                            "components_react_canvas": {
                                 "src_folder": "sdk://solutions/canvas/ui/component",
-                                "target": "_shared/canvas-component",
+                                "target": "_shared/components-react/canvas",
                             },
                         },
                     },
@@ -1330,17 +1330,17 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
         )
         shared_sources = dict(main_view_cfg.get("shared_sources") or {})
         shared_sources.setdefault(
-            "canvas_component",
+            "components_react_canvas",
             {
                 "src_folder": "sdk://solutions/canvas/ui/component",
-                "target": "_shared/canvas-component",
+                "target": "_shared/components-react/canvas",
             },
         )
         shared_sources.setdefault(
-            "scene_runtime",
+            "components_core_scene",
             {
                 "src_folder": "sdk://solutions/scene",
-                "target": "_shared/scene-runtime",
+                "target": "_shared/components-core/scene",
             },
         )
         main_view_cfg["shared_sources"] = shared_sources

@@ -35,7 +35,7 @@ import {
   type CanvasPatchInput,
   type CanvasPatchResponse,
   type CanvasPatchUiEvent,
-} from '@kdcube/canvas-component'
+} from '@kdcube/components-react/canvas'
 import { settings } from './api/settings'
 import { createCanvasHost, type CanvasHost, type RouteContext } from './api/canvasHost'
 

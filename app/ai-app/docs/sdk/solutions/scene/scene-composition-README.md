@@ -1,68 +1,126 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/scene-composition-README.md
 title: "Scene Composition"
-summary: "How a bundle assembles a host scene from reusable SDK components — iframe mounts by alias, the runtime CONFIG handshake, the component-to-component postMessage broker, and the Data Bus wiring. The routing of resolver object-opens lives in the surface registry doc."
+summary: "How an app assembles a host scene from configured UI surfaces, shared scene runtime sources, config handshakes, local message routing, and optional Data Bus subscriptions."
 status: draft
-tags: ["sdk", "solutions", "scene", "widget", "iframe", "composition", "data-bus", "postmessage"]
-updated_at: 2026-06-11
+tags: ["sdk", "solutions", "scene", "surface", "widget", "iframe", "composition", "data-bus", "postmessage"]
+updated_at: 2026-06-15
 keywords:
   [
     "scene composition",
     "host scene",
     "ui.main_view src_folder",
+    "ui.main_view shared_sources",
+    "components_core_scene",
     "ui.widgets alias",
     "CONFIG_REQUEST CONFIG_RESPONSE",
-    "kdcube-context-attach",
-    "kdcube-set-view",
-    "kdcube-canvas-ingress",
-    "canvas.patch data bus",
+    "target_surface",
     "multi component scene",
   ]
 see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/scene/scene-surface-registry-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/chat/chat-widget-solution-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/memory/memory-widget-solution-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/canvas/canvas-sdk-solution-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/usage/usage-card-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-widget-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/ui-components-lifecycle-README.md
-  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/versatile-reference-bundle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/service/comm/data-bus-README.md
 ---
 # Scene Composition
 
-A scene is a host page that composes several reusable SDK components into one
-workspace. The versatile bundle is the reference: a chat widget, the memory
-widget, the canvas board, and a usage card, mounted side by side and wired to
-talk to each other.
+Read these words first:
 
-This doc is the assembly walk-through — what the host declares, how each
-embedded component receives its runtime config, the message contract the host
-brokers between components, and the Data Bus subscriptions. It does **not**
-re-explain how a canvas object `open` reaches its target widget; that routing
-contract is [Scene Surface Registry](scene-surface-registry-README.md).
+| Term | Meaning |
+| --- | --- |
+| App | The product/bundle that owns the user experience. |
+| Scene | The app-owned UX composition layer: one page or widget shell that connects several UI parts. |
+| Host | The browser page/component that runs the scene. |
+| Surface | One UI part inside the scene: iframe widget, in-page component, external panel, or another view. |
+| Source surface | The surface where the user starts an action. |
+| Target surface | The surface that should react. |
+| Scene runtime | A small routing helper used by the host: surface registry, dispatch, queueing, readiness. |
+| Namespace provider / resolver | Backend owner of object meaning. It decides what an object ref means and which UI effect should happen. |
 
-For the per-component mount details, read each component's own doc:
-[Chat Widget](../chat/chat-widget-solution-README.md),
-[Memory Widget](../memory/memory-widget-solution-README.md),
-[Canvas SDK Solution](../canvas/canvas-sdk-solution-README.md),
-[Usage Card](../usage/usage-card-README.md).
+A scene is an app-owned UX composition layer. It lets a product connect several
+subsystems into one coherent workspace without making each subsystem know about
+all the others. Those surfaces are chosen by the app. They may be SDK widgets,
+app widgets, in-page components, external iframe panels, or any combination of
+those.
+
+KDCube ships a reusable SDK scene runtime for this pattern. A product can use
+that runtime, wrap it, or implement the same contract in its own scene. The
+contract is generic: it does not require chat, canvas, memory, tasks, metrics,
+or any other specific component. The host scene supplies the visual shell and
+registers whichever surfaces it actually contains.
+
+This doc explains the assembly pattern:
+
+```text
+app config
+  -> host scene source
+  -> shared scene runtime source
+  -> configured surfaces
+  -> runtime config handshake
+  -> local surface commands
+  -> optional Data Bus subscriptions
+```
+
+Object-open routing is covered separately in
+[Scene Surface Registry](scene-surface-registry-README.md).
+
+High-level communication:
+
+```text
+User
+  example: person clicks an object chip/card
+  |
+  v
+Scene host page
+  example: app main page or embedded app widget
+  |
+  | mounts + configures
+  v
+Surfaces in the scene
+  example: issue viewer iframe, metrics panel, chat widget, board component
+  |
+  | local postMessage/callbacks for UI coordination
+  v
+Scene runtime registry
+  example: createSceneRuntime().registerSurface("app.issue.viewer", ...)
+  |
+  | routes by target_surface
+  v
+Target surface
+  example: "app.issue.viewer" receives { action: "open", object_ref: ... }
+
+When object meaning is needed:
+
+Source surface or host
+  example: card/chip with object_ref "task:issue:ticket_123"
+  -> app backend operation
+     example: object.action({ action: "open", object_ref })
+  -> namespace provider / resolver
+     example: provider for namespace "task"
+  -> response with ui_event.target_surface
+     example: target_surface = "app.issue.viewer"
+  -> scene runtime registry
+     example: surface adapter is found and opened
+  -> target surface command
+     example: postMessage({ action: "open", object_ref, view: "expanded" })
+```
 
 ## What The Host Owns
 
 | Concern | Owner |
 | --- | --- |
-| Which components are mounted and where | Scene host |
-| Component runtime config delivery (auth, base URL, tenant/project/bundle) | Scene host relay |
-| Component-to-component messages (attach, focus, set-view, ingress) | Scene host broker |
-| Panel size / drag / z-order | Scene host |
-| Object identity and semantics (`mem:`, `fi:`, `cnv:`, …) | The owning namespace resolver |
-| What a component renders and how it behaves | The embedded component |
+| Which surfaces are mounted | Scene host. |
+| Where those surfaces render | Scene host. |
+| Runtime config delivery | Scene host relay. |
+| Local surface messages | Scene host broker. |
+| Panel size, drag, z-order, shell CSS | Scene host. |
+| Object identity and semantics | Namespace provider/resolver. |
+| What a surface renders and how it behaves | The target surface. |
 
-The host is a composition and transport layer. It never reads a memory, opens a
-conversation, or interprets a canvas object — it relays config and routes
-commands.
+The host is a composition and transport layer. It does not read objects or
+implement namespace behavior. It relays config and routes commands.
 
 ## Reusable Runtime
 
@@ -75,207 +133,224 @@ src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/scene/src
   types.ts      message, registration, and dispatch result types
 ```
 
-This runtime intentionally has no React dependency and no page layout. It owns
-only the generic orchestration kernel:
+The runtime has no React dependency and no page layout. It owns only the
+orchestration kernel:
 
 ```text
-child widget message / resolver response
-  -> normalize object-open or pinboard-open request
+surface message / resolver response
+  -> normalize object-open request
   -> read Provider.ui_event.target_surface
   -> find host-registered surface
   -> ask the host adapter to open/focus/mount that surface
-  -> queue and flush the domain widget command
+  -> queue and flush the surface command
 ```
 
-The concrete host still owns all visual reaction details: floating windows,
-rails, iframe refs, panel size, CSS, branding, login, and which surfaces are
-available in that composition. A bundle main UI, a nested bundle widget, and an
-external website page can therefore reuse the same scene runtime while keeping
-different views.
+A main app UI, a nested app widget, and an external website page can reuse this
+runtime while keeping different markup, CSS, surfaces, and auth shell.
 
-## Mounting Components
+## Configure The Scene Source
 
-Each embedded component is a declared bundle surface pointed at a shared SDK
-source. In the bundle entrypoint, declare the alias; in `configuration_defaults`,
-point it at the source and serve the host page itself.
+The app declares the scene host as its `ui.main_view`. If the host imports the
+shared scene runtime, add it as a shared source so the UI build receives the
+runtime under a stable local import path.
+
+```yaml
+ui:
+  main_view:
+    src_folder: ui/scene
+    shared_sources:
+      components_core_scene:
+        src_folder: sdk://solutions/scene
+        target: _shared/components-core/scene
+      components_react_canvas:
+        src_folder: sdk://solutions/canvas/ui/component
+        target: _shared/components-react/canvas
+  widgets:
+    issue_viewer:
+      src_folder: ui/widgets/issue_viewer
+    project_metrics:
+      src_folder: ui/widgets/project_metrics
+```
+
+Inside the scene build, alias the runtime import to that shared source:
+
+```ts
+import { createSceneRuntime } from "@kdcube/components-core/scene"
+import { CanvasBoard } from "@kdcube/components-react/canvas"
+```
+
+The concrete alias is host-build tooling. Conceptually,
+`@kdcube/components-core/*` is for headless/runtime logic and
+`@kdcube/components-react/*` is for React wrappers or React-hosted components.
+
+## Declare App Surfaces
+
+Every surface the scene can command needs two pieces:
+
+1. A configured UI source or component mount.
+2. A runtime surface registration.
+
+For example, an app may expose an issue viewer widget:
 
 ```python
-@api(alias="versatile_chat", route="operations", **_api_visibility("versatile_chat"))
-@ui_widget(alias="versatile_chat", **_widget_visibility("versatile_chat"))
-def versatile_chat_widget(self, **kwargs):
+@ui_widget(alias="issue_viewer", **_widget_visibility("issue_viewer"))
+def issue_viewer_widget(self, **kwargs):
     del kwargs
-    return ["<div>Chat is served from sdk://solutions/chat/ui/widget after build.</div>"]
+    return ["<div>Issue viewer is served from ui/widgets/issue_viewer after build.</div>"]
 ```
 
-```python
-# configuration_defaults
-"ui": {
-    "main_view": {"src_folder": "ui/scene"},          # the host scene page
-    "widgets": {
-        "versatile_chat": {"src_folder": "sdk://solutions/chat/ui/widget"},
-        "memories":       {"src_folder": "sdk://context/memory/ui/widget/memories"},
-        "usage_card":     {"src_folder": "sdk://infra/economics/ui/widget/usage-card"},
-        # the canvas board is available two ways: compiled into the scene as a
-        # React component (below), AND as a standalone `pinboard` widget iframe
-        # any host can broker — see "The Canvas Board As A Standalone Widget".
-        "pinboard":       {"src_folder": "sdk://solutions/canvas/ui/widget/pinboard"},
-    },
-}
+And then register the surface in the scene host:
+
+```ts
+const scene = createSceneRuntime()
+
+scene.registerSurface("app.issue.viewer", {
+  label: "issue viewer",
+  ensureOpen: () => setIssuePanelOpen(true),
+  isReady: () => issuePanelReady,
+  postCommand: (command) =>
+    postToIssueViewer({
+      type: "app-surface-command",
+      surface: "app.issue.viewer",
+      ...command,
+    }),
+  commandFromOpen: ({ uiEvent }) => ({
+    action: "open",
+    object_ref: uiEvent.object_ref,
+    view: uiEvent.mode || "expanded",
+  }),
+})
 ```
 
-The host page (`ui/scene`) embeds each widget alias as an `<iframe>` and the
-canvas board as an in-page React component. For the discovery → build → serve
-lifecycle of these sources, see
-[UI Components Lifecycle](../../bundle/ui-components-lifecycle-README.md).
+This is a concrete example, not a required component. If your scene does not
+mount an issue viewer, do not register `app.issue.viewer`.
 
 ## Runtime Config Handshake
 
-Each embedded widget boots without knowing its base URL, tenant, project,
-bundle, or auth material. On mount it asks the host for them; the host replies.
+Embedded iframe surfaces usually boot without knowing the base URL, tenant,
+project, app id, or auth material. On mount they ask the host for config; the
+host replies.
 
 ```text
-widget iframe                         scene host
-   |  CONFIG_REQUEST  ───────────────▶ |
-   |   { identity, requestedFields }   |
-   |                                   |  resolves runtime config
-   |  ◀───────────────  CONFIG_RESPONSE|
-   |   { identity, config }            |
-   v                                   |
+surface iframe                       scene host
+   |  CONFIG_REQUEST  --------------> |
+   |   { identity, requestedFields }  |
+   |                                  | resolves runtime config
+   |  <-------------- CONFIG_RESPONSE |
+   |   { identity, config }           |
+   v                                  |
  builds API URLs + auth headers
 ```
 
-The host relays `CONFIG_RESPONSE` to the requesting iframe by matching the
-`identity` the widget sent. Every iframe in the scene shares this same relay —
-the host keeps a reference to each `contentWindow` and answers whichever one
-asked. This is the standard widget contract from
+The host replies to the requesting surface by matching the request identity and
+the frame/source that sent it. This is the standard widget contract from
 [Bundle Widget Integration](../../bundle/bundle-widget-integration-README.md).
 
-## Component-To-Component Messages
+## Local Surface Messages
 
-The host brokers a small set of `postMessage` types between components. Names
-are configurable per bundle (the chat widget exposes them as
-`chat_context_attach_message`, etc.); the versatile scene uses the `kdcube-*`
-defaults below.
+This section is an implementation boundary for any scene runtime, including the
+SDK implementation KDCube ships. The generic runtime is only a typed
+switchboard: it handles `target_surface`, registered surface adapters, queueing,
+readiness, and dispatch results. Component-specific message names and payload
+fields live in the host adapter and the target surface.
 
-| Message | Direction | Purpose |
+In practice:
+
+```text
+generic runtime:
+  target_surface + SceneSurfaceRegistration + command queue
+
+host adapter:
+  maps generic command -> concrete postMessage/callback payload
+
+target surface:
+  owns the message name, fields, loading behavior, and visual result
+```
+
+So a scene may broker any local message types the included surfaces require,
+but those messages stay scoped to the concrete surface contract. Adding a new
+surface should add or configure a new surface adapter, not add component
+knowledge to `sdk://solutions/scene`.
+
+Typical categories:
+
+| Message kind | Direction | Purpose |
 | --- | --- | --- |
-| `CONFIG_REQUEST` / `CONFIG_RESPONSE` | widget ⇄ host | Runtime config handshake (above). |
-| `kdcube-set-view` | host → widget | Switch a widget between compact and expanded layout. |
-| `kdcube-context-attach` | host → chat | Attach a board/object as a composer context chip. |
-| `kdcube-context-focus` | host → chat | Attach the focused card(s) as context. |
-| `kdcube-context-remove` | chat → host | The user removed a context chip. |
-| `kdcube-object-open` | chat → host | A chat context chip resolved an `open` object action; the scene owns the reaction and routes the resolver response by `ui_event.target_surface`. |
-| `kdcube-canvas-ingress` | chat → host → canvas | Drag a chat artifact/text onto the board. |
-| `kdcube-<widget>-command` | host → widget | A namespaced widget command (open, refresh, …). |
+| `CONFIG_REQUEST` / `CONFIG_RESPONSE` | surface <-> host | Runtime config handshake. |
+| view command | host -> surface | Switch compact/expanded/focused view. |
+| object-open command | host -> surface | Tell a registered surface to open an object ref. |
+| context/selection event | surface -> host or host -> surface | Move selected context between surfaces. |
+| ingress event | surface -> host -> surface | Transfer dropped or selected content. |
 
-Context chips are **separate events**, never appended to the user prompt — the
-chat widget keeps them as distinct timeline entries (see
-[Chat Widget Solution](../chat/chat-widget-solution-README.md#context-flow)).
+The exact message names are app/surface-owned. The scene runtime only requires
+the surface adapter functions registered with `createSceneRuntime()`.
 
 ## Data Bus Subscriptions
 
-Durable, ordered, cross-component state flows over the Socket.IO Data Bus, not
-postMessage. The scene host subscribes to the subjects its components produce.
+Durable, ordered, cross-component state can flow over the Socket.IO Data Bus.
+Use it for backend/runtime state, not for local focus commands.
 
-| Subject | Partition | Produced by | The host does |
-| --- | --- | --- | --- |
-| `canvas.patch` | `object_ref` | Canvas writes | Apply the revision and re-render the board. |
-| `accounting.usage` | — | Platform accounting | Nudge the usage card to re-fetch. |
+```text
+local focus/open:
+  scene host -> mounted surface
 
-Use generic subject names (`canvas.*`), not bundle-prefixed ones — the scene is
-demonstrating reusable SDK components, so the protocol names stay generic. For
-the Data Bus delivery model see [Data Bus](../../../service/comm/data-bus-README.md).
-
-## Opening Objects From The Board
-
-When the user opens a canvas pin, the host does not interpret the object. It
-calls the pin's namespace resolver (`canvas_object_action`), receives a
-`ui_event` naming a `target_surface`, and delivers a command to that surface.
-That dispatch — surface registry, `target_surface` mapping, and per-widget
-command shape — is its own contract:
-[Scene Surface Registry](scene-surface-registry-README.md).
-
-Namespace resolvers can be configured instead of hardcoded in the composition
-bundle. A task card can resolve through the task-tracker bundle like this:
-
-```yaml
-named_services:
-  namespaces:
-    task:
-      provider:
-        bundle_id: task-tracker@1-0
-        provider: task.issue
-        operation: named_service
+durable/runtime state:
+  surface -> app operation
+  surface -> Data Bus subject
+  processor/runtime -> Data Bus subject
 ```
 
-The bundle registers those config entries with
-`register_configured_named_service_canvas_resolvers(...)`. The same resolver is
-used by the scene canvas and by the chat widget's object-action path, because
-both call the bundle's `canvas_object_action` operation.
+The app decides which subjects matter. Examples:
 
-## The Canvas Board As A Standalone Widget
+```yaml
+scene_subscriptions:
+  - subject: app.issue.updated
+    partition: object_ref
+  - subject: accounting.usage
+```
 
-The canvas board ships **two ways** from one component
-(`sdk://solutions/canvas/ui/component`):
+If a scene has no surface that needs these subjects, it should not subscribe.
 
-1. **In-scene React component** — the versatile scene imports `CanvasBoard`
-   and wires it inline. Use this when the board lives inside a host you also
-   build in React and you want the tightest integration.
-2. **Standalone `pinboard` widget** (`sdk://solutions/canvas/ui/widget/pinboard`)
-   — the same `CanvasBoard` hosted as its own iframe. Use this when a host
-   brokers each surface as a separate iframe rather than embedding a whole
-   React scene: a non-React page, or an external host such as a product
-   landing page that wants the board next to a few other widgets.
+## Object Opens
 
-Both paths share the same two framework-free building blocks, so the board
-behaves identically in either host:
+When a source surface asks to open an object, the source or backend calls the
+namespace resolver. The resolver response contains `ui_event.target_surface`.
+The scene then dispatches that response through the surface registry.
 
-| Building block | What it is | Lives in |
-| --- | --- | --- |
-| `canvasHost.ts` | A React-free `createCanvasHost(ctx, storyId)` factory: the canvas `operations/*` REST calls (read / list / object-action / attachment-upload) plus the Socket.IO Data Bus `canvas.patch` publish-and-wait. | the `pinboard` widget's `api/` (the scene keeps an equivalent inline copy) |
-| `canvasBoard.css` | The board's own stylesheet — design tokens, reset, and every `.canvas-*` rule — so it renders the same in any iframe. | the canvas component package (`canvasBoard.css`) |
+Example provider response for an app-owned namespace:
 
-### Host-broker contract for the standalone widget
+```json
+{
+  "ok": true,
+  "object_ref": "task:issue:ticket_123",
+  "ui_event": {
+    "type": "kdcube.ui.object.open.requested",
+    "target_surface": "app.issue.viewer",
+    "object_ref": "task:issue:ticket_123",
+    "mode": "expanded"
+  }
+}
+```
 
-A standalone board cannot reach the chat or memory surfaces itself — those are
-sibling iframes the host owns. So it does the canvas-local work inline (pin a
-drop, patch, preview) and **posts the cross-surface intents to its parent**,
-which routes them exactly like the in-scene broker routes the equivalent
-in-scene calls. Same model as [What The Host Owns](#what-the-host-owns); only
-the transport differs (postMessage across the iframe boundary instead of a
-React callback).
+The scene still does not know what a task issue is. It knows that
+`app.issue.viewer` is registered, opens that surface, and passes the normalized
+command to it. The target surface decides whether that means a read-only detail
+view, an editor, a wizard, or something else.
 
-| Message (from the board) | The host should | In-scene equivalent |
-| --- | --- | --- |
-| `CONFIG_REQUEST` (identity `PINBOARD_WIDGET`) | Reply `CONFIG_RESPONSE` with runtime config. | Same handshake as every widget. |
-| `kdcube-pinboard-attach` `{ mode, contexts }` | Attach the card(s) to chat (`focus`/`attach`), or load a conversation (`open-conversation`). | `kdcube-context-focus` / `kdcube-context-attach`. |
-| `kdcube-pinboard-open` `{ target_surface, ui_event }` | Route the resolver `open` to that surface. | [Opening Objects From The Board](#opening-objects-from-the-board). |
-| `kdcube-pinboard-close` | Hide / dismiss the board panel. | Panel close in the scene host. |
+## Reference Implementation
 
-The widget defaults its canvas story to `<bundle>:main` (overridable with a
-`?story_id=` query param), so a board hosted in the same bundle as the scene
-reads and writes the **same** canvas — a pin made in the standalone widget
-shows up in the scene's board and vice versa.
-
-## Reference
-
-The versatile bundle is the working scene:
+The versatile app has a working host scene that imports the shared runtime and
+registers concrete surfaces chosen by that app:
 
 ```text
 src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/examples/bundles/versatile@2026-03-31-13-36
-  ui/scene/src/main.tsx          host page: iframe mounts, CONFIG relay, message broker, Data Bus
-  entrypoint.py                  @ui_widget aliases, configuration_defaults, canvas resolver registry
-  docs/design/scene-sdk-components.md   bundle-local design note
-
-src/kdcube-ai-app/kdcube_ai_app/apps/chat/sdk/solutions/canvas/ui
-  component/src/CanvasBoard.tsx   the shared board (in-scene component AND widget host it)
-  component/src/canvasBoard.css   component-owned board styles, reused by any host
-  widget/pinboard/                standalone `pinboard` widget app
-    src/App.tsx                   mounts CanvasBoard, emits the host-broker intents
-    src/api/canvasHost.ts         React-free operations + Data Bus factory
-    src/api/settings.ts           CONFIG bridge (identity PINBOARD_WIDGET)
+  ui/scene/src/main.tsx
+  ui/scene/vite.config.js
+  config/bundles.template.yaml
+  entrypoint.py
 ```
 
-The tier-1 builder entry point for this pattern is the *Multi-Component Host
-Scene* recipe in
-[How To Assemble A Bundle With SDK Building Blocks](../../bundle/build/how-to-assemble-bundle-with-sdk-building-blocks-README.md).
+Use it as an implementation reference for the mechanics: shared source wiring,
+CONFIG relay, iframe refs, readiness, `createSceneRuntime()`, and
+`registerSurface(...)`. Do not copy its surface list as the definition of what a
+scene is.

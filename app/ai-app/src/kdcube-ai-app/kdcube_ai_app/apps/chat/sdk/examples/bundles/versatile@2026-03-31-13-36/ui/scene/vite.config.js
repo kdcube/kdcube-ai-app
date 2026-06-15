@@ -8,7 +8,7 @@ import { defineConfig } from 'vite'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
 
-const materializedCanvasComponent = path.resolve(__dirname, '_shared/canvas-component/src/index.ts')
+const materializedComponentsReactCanvas = path.resolve(__dirname, '_shared/components-react/canvas/src/index.ts')
 const envCanvasComponent = process.env.KDCUBE_CANVAS_COMPONENT_SRC
   ? path.resolve(process.env.KDCUBE_CANVAS_COMPONENT_SRC)
   : ''
@@ -17,7 +17,7 @@ const repoCanvasComponent = path.resolve(
   '../../../../..',
   'solutions/canvas/ui/component/src/index.ts',
 )
-const materializedSceneRuntime = path.resolve(__dirname, '_shared/scene-runtime/src/index.ts')
+const materializedComponentsCoreScene = path.resolve(__dirname, '_shared/components-core/scene/src/index.ts')
 const envSceneRuntime = process.env.KDCUBE_SCENE_RUNTIME_SRC
   ? path.resolve(process.env.KDCUBE_SCENE_RUNTIME_SRC)
   : ''
@@ -27,11 +27,11 @@ const repoSceneRuntime = path.resolve(
   'solutions/scene/src/index.ts',
 )
 
-const canvasComponentEntry = fs.existsSync(materializedCanvasComponent)
-  ? materializedCanvasComponent
+const canvasComponentEntry = fs.existsSync(materializedComponentsReactCanvas)
+  ? materializedComponentsReactCanvas
   : envCanvasComponent || repoCanvasComponent
-const sceneRuntimeEntry = fs.existsSync(materializedSceneRuntime)
-  ? materializedSceneRuntime
+const sceneRuntimeEntry = fs.existsSync(materializedComponentsCoreScene)
+  ? materializedComponentsCoreScene
   : envSceneRuntime || repoSceneRuntime
 
 export default defineConfig({
@@ -39,8 +39,8 @@ export default defineConfig({
   base: './',
   resolve: {
     alias: [
-      { find: '@kdcube/canvas-component', replacement: canvasComponentEntry },
-      { find: '@kdcube/scene-runtime', replacement: sceneRuntimeEntry },
+      { find: '@kdcube/components-react/canvas', replacement: canvasComponentEntry },
+      { find: '@kdcube/components-core/scene', replacement: sceneRuntimeEntry },
       { find: 'lucide-react', replacement: require.resolve('lucide-react') },
       { find: /^react$/, replacement: require.resolve('react') },
       { find: /^react-dom$/, replacement: require.resolve('react-dom') },

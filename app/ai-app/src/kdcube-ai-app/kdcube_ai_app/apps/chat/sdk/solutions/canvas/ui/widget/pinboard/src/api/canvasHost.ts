@@ -27,7 +27,7 @@ import {
   type CanvasReadInput,
   type CanvasReadResponse,
   type CanvasUploadResponse,
-} from '@kdcube/canvas-component'
+} from '@kdcube/components-react/canvas'
 
 export interface RouteContext {
   tenant: string

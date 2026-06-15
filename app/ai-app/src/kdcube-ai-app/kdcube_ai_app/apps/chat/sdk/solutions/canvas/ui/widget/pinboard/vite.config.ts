@@ -9,21 +9,21 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
 
 // The Pin Board widget hosts the canvas component (the same component the
-// multi-widget scene mounts). Resolve it the way the scene does: prefer a
-// materialized copy the bundle build may stage under `_shared/`, then an
-// explicit env override, then the in-repo source two directories up.
-const materializedCanvasComponent = path.resolve(__dirname, '_shared/canvas-component/src/index.ts')
+// multi-widget scene mounts). Resolve it through the future package boundary:
+// prefer a materialized copy the bundle build may stage under `_shared/`,
+// then an explicit env override, then the in-repo source two directories up.
+const materializedComponentsReactCanvas = path.resolve(__dirname, '_shared/components-react/canvas/src/index.ts')
 const envCanvasComponent = process.env.KDCUBE_CANVAS_COMPONENT_SRC
   ? path.resolve(process.env.KDCUBE_CANVAS_COMPONENT_SRC)
   : ''
 const repoCanvasComponent = path.resolve(__dirname, '../../component/src/index.ts')
 
-const canvasComponentEntry = fs.existsSync(materializedCanvasComponent)
-  ? materializedCanvasComponent
+const canvasComponentEntry = fs.existsSync(materializedComponentsReactCanvas)
+  ? materializedComponentsReactCanvas
   : envCanvasComponent || repoCanvasComponent
 
 // The board's stylesheet lives next to the component entry. Resolve the
-// `@kdcube/canvas-component/canvasBoard.css` subpath explicitly (the entry
+// component stylesheet subpath explicitly (the entry
 // alias points at `index.ts`, so a subpath import would not find it) and
 // keep it ahead of the general alias so the more specific match wins.
 const canvasComponentCss = path.resolve(path.dirname(canvasComponentEntry), 'canvasBoard.css')
@@ -33,8 +33,8 @@ export default defineConfig({
   base: './',
   resolve: {
     alias: [
-      { find: '@kdcube/canvas-component/canvasBoard.css', replacement: canvasComponentCss },
-      { find: '@kdcube/canvas-component', replacement: canvasComponentEntry },
+      { find: '@kdcube/components-react/canvas/canvasBoard.css', replacement: canvasComponentCss },
+      { find: '@kdcube/components-react/canvas', replacement: canvasComponentEntry },
       { find: 'lucide-react', replacement: require.resolve('lucide-react') },
       { find: /^react$/, replacement: require.resolve('react') },
       { find: /^react-dom$/, replacement: require.resolve('react-dom') },
