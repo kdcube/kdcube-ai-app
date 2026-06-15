@@ -40,6 +40,7 @@ import type {
   Artifact,
   CanvasArtifact,
   FileArtifact,
+  NamedServiceSearchItem,
   TimelineEntry,
   TimelineEntryKind,
   TurnAttachment,
@@ -49,6 +50,8 @@ import { canonicalObjectRef, setChatFileDragData, type ChatFileDragInput } from 
 import { durableHistoricalObjectRef } from './historicalRefs.ts'
 import { ContextInlineChip } from './ContextInlineChip.tsx'
 import { splitContextChips } from './contextChips.ts'
+import { activateContextPin, contextPinActionNotice } from './contextPinActions.ts'
+import { setContextDragData } from '../context/contextMessages.ts'
 
 function StepListImpl({ steps }: { steps: TurnStep[] }) {
   if (steps.length === 0) return null
@@ -571,6 +574,22 @@ function ArtifactFeedImpl({ artifacts }: { artifacts: Artifact[] }) {
 
   const sortedArtifacts = artifacts.slice().sort((left, right) => left.timestamp - right.timestamp)
 
+  function namedServiceSearchItemRef(item: NamedServiceSearchItem): string {
+    const raw = item.object_ref || item.ref || item.id
+    return typeof raw === 'string' ? raw : ''
+  }
+
+  function namedServiceContext(item: NamedServiceSearchItem): Record<string, unknown> {
+    const ref = namedServiceSearchItemRef(item)
+    return {
+      ...item,
+      kind: item.kind || 'object.ref',
+      id: item.id || ref,
+      label: item.label || item.title || ref || 'result',
+      ref,
+    }
+  }
+
   return (
     <div className="flex flex-col gap-2 pt-1">
       {sortedArtifacts.map((artifact) => {
@@ -738,6 +757,80 @@ function ArtifactFeedImpl({ artifacts }: { artifacts: Artifact[] }) {
                       <MarkdownBlock content={artifact.reportContent} compact />
                     </div>
                   </details>
+                ) : null}
+              </div>
+            </details>
+          )
+        }
+
+        if (artifact.kind === 'named_service_search') {
+          const scope = artifact.searchScope || artifact.namespace || 'namespace'
+          return (
+            <details key={`${artifact.kind}-${artifact.searchId}`} className="k-workitem k-tint-green" open>
+              <summary className="k-workitem-head">
+                <span className="k-workitem-icon">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+                    <line x1="7" y1="7" x2="7.01" y2="7" />
+                  </svg>
+                </span>
+                <span className="k-workitem-title">
+                  <span className="k-text">{artifact.title || 'Namespace search'}</span>
+                  <span className="k-micro">
+                    {scope} · {artifact.items.length} result{artifact.items.length === 1 ? '' : 's'}
+                  </span>
+                </span>
+                <span className="k-workitem-meta">{formatTime(artifact.timestamp)}</span>
+                <CaretIcon />
+              </summary>
+              <div className="k-workitem-body">
+                {artifact.query ? (
+                  <div className="k-query-row">
+                    <span className="k-micro">query</span>
+                    <span className="k-query-chip">{artifact.query}</span>
+                  </div>
+                ) : null}
+                {artifact.items.length > 0 ? (
+                  <div className="k-result-list">
+                    {artifact.items.slice(0, 8).map((item, idx) => {
+                      const context = namedServiceContext(item)
+                      const ref = namedServiceSearchItemRef(item)
+                      const label = item.label || item.title || ref || 'Search result'
+                      const subtitle = item.object_kind || item.search_scope || item.namespace || 'object'
+                      return (
+                        <button
+                          key={`${ref || label}-${idx}`}
+                          type="button"
+                          draggable={Boolean(ref)}
+                          className="k-result-row text-left"
+                          title={item.summary || label}
+                          onClick={() => {
+                            activateContextPin(context).catch((error) => {
+                              const notice = contextPinActionNotice(error)
+                              console.warn('[kdcube.chat] named-service search result action failed:', notice.text)
+                            })
+                          }}
+                          onDragStart={(event) => {
+                            if (!ref) return
+                            setContextDragData(event.dataTransfer, context)
+                          }}
+                        >
+                          <span className="k-workitem-icon" aria-hidden="true">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+                              <line x1="7" y1="7" x2="7.01" y2="7" />
+                            </svg>
+                          </span>
+                          <div className="k-result-main">
+                            <span className="k-result-title">{label}</span>
+                            <span className="k-result-host">{subtitle}</span>
+                            {item.summary ? <span className="k-result-body">{item.summary}</span> : null}
+                          </div>
+                          <span className="k-result-tag">[{idx + 1}]</span>
+                        </button>
+                      )
+                    })}
+                  </div>
                 ) : null}
               </div>
             </details>

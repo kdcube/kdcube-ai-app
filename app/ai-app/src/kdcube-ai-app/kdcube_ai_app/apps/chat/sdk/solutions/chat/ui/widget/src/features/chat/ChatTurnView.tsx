@@ -29,6 +29,8 @@ import type {
   CodeExecArtifact,
   FileArtifact,
   LinkArtifact,
+  NamedServiceSearchArtifact,
+  NamedServiceSearchItem,
   ServiceErrorArtifact,
   TimelineArtifact,
   TimelineEntry,
@@ -44,6 +46,8 @@ import {
 import { FaviconImg } from '../../components/Favicon.tsx'
 import { FileExtIcon, fileExtension, fileKind } from '../../components/FileExtIcon.tsx'
 import { canonicalObjectRef, setChatFileDragData } from './fileDrag.ts'
+import { activateContextPin, contextPinActionNotice } from './contextPinActions.ts'
+import { setContextDragData } from '../context/contextMessages.ts'
 
 /* ---------------------------------------------------------------------- */
 /*  Chat view                                                             */
@@ -208,6 +212,99 @@ function ChatWebSearchBlockImpl({ artifact }: { artifact: WebSearchArtifact }) {
               <MarkdownBlock content={artifact.reportContent} compact />
             </div>
           </details>
+        ) : null}
+      </div>
+    </details>
+  )
+}
+
+function namedServiceSearchItemRef(item: NamedServiceSearchItem): string {
+  const raw = item.object_ref || item.ref || item.id
+  return typeof raw === 'string' ? raw : ''
+}
+
+function namedServiceContext(item: NamedServiceSearchItem): Record<string, unknown> {
+  return {
+    ...item,
+    kind: item.kind || 'object.ref',
+    id: item.id || namedServiceSearchItemRef(item),
+    label: item.label || item.title || namedServiceSearchItemRef(item) || 'result',
+    ref: namedServiceSearchItemRef(item),
+  }
+}
+
+function ChatNamedServiceSearchBlockImpl({
+  artifact,
+  onError,
+}: {
+  artifact: NamedServiceSearchArtifact
+  onError: (text: string) => void
+}) {
+  const scope = artifact.searchScope || artifact.namespace || 'namespace'
+  return (
+    <details className="k-workitem k-tint-green" open>
+      <summary className="k-workitem-head">
+        <span className="k-workitem-icon" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+            <line x1="7" y1="7" x2="7.01" y2="7" />
+          </svg>
+        </span>
+        <span className="k-workitem-title">
+          <span className="k-text">{artifact.title || 'Namespace search'}</span>
+          <span className="k-micro">{scope} · {artifact.items.length} result{artifact.items.length === 1 ? '' : 's'}</span>
+        </span>
+        <span className="k-workitem-meta">{formatTime(artifact.timestamp)}</span>
+        <CaretIcon />
+      </summary>
+      <div className="k-workitem-body">
+        {artifact.query ? (
+          <div className="k-query-row">
+            <span className="k-micro">query</span>
+            <span className="k-query-chip">{artifact.query}</span>
+          </div>
+        ) : null}
+        {artifact.items.length > 0 ? (
+          <div className="k-result-list">
+            {artifact.items.slice(0, 8).map((item, idx) => {
+              const context = namedServiceContext(item)
+              const ref = namedServiceSearchItemRef(item)
+              const label = item.label || item.title || ref || 'Search result'
+              const subtitle = item.object_kind || item.search_scope || item.namespace || 'object'
+              return (
+                <button
+                  key={`${ref || label}-${idx}`}
+                  type="button"
+                  draggable={Boolean(ref)}
+                  className="k-result-row text-left"
+                  title={item.summary || label}
+                  onClick={() => {
+                    activateContextPin(context).catch((error) => {
+                      const notice = contextPinActionNotice(error)
+                      onError(notice.text)
+                    })
+                  }}
+                  onDragStart={(event) => {
+                    if (!ref) return
+                    setContextDragData(event.dataTransfer, context)
+                  }}
+                >
+                  <span className="k-workitem-icon" aria-hidden="true">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+                      <line x1="7" y1="7" x2="7.01" y2="7" />
+                    </svg>
+                  </span>
+                  <div className="k-result-main">
+                    <span className="k-result-title">{label}</span>
+                    <span className="k-result-host">{subtitle}</span>
+                    {item.summary ? <span className="k-result-body">{item.summary}</span> : null}
+                  </div>
+                  <span className="k-result-tag">[{idx + 1}]</span>
+                </button>
+              )
+            })}
+          </div>
         ) : null}
       </div>
     </details>
@@ -512,6 +609,7 @@ function ChatArtifactRowImpl({
 }) {
   switch (artifact.kind) {
     case 'web_search': return <ChatWebSearchBlock artifact={artifact} />
+    case 'named_service_search': return <ChatNamedServiceSearchBlock artifact={artifact} onError={onDownloadError} />
     case 'web_fetch':  return <ChatWebFetchBlock artifact={artifact} />
     case 'code_exec':  return <ChatCodeExecBlock artifact={artifact} />
     case 'canvas':     return <ChatCanvasBlock artifact={artifact} />
@@ -619,6 +717,7 @@ function ChatTurnViewImpl({
 
 export const ChatThinkingTimeline = memo(ChatThinkingTimelineImpl)
 export const ChatWebSearchBlock = memo(ChatWebSearchBlockImpl)
+export const ChatNamedServiceSearchBlock = memo(ChatNamedServiceSearchBlockImpl)
 export const ChatWebFetchBlock = memo(ChatWebFetchBlockImpl)
 export const ChatCodeExecBlock = memo(ChatCodeExecBlockImpl)
 export const ChatCanvasBlock = memo(ChatCanvasBlockImpl)

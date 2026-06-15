@@ -569,6 +569,20 @@ where code executes, which surface executes it, and which part is customized.
    result:
      success -> bounded NamedServiceResponse JSON or pull materialization rows
      failure -> provider error code/message preserved in the tool result
+   side effect for object.search:
+     emit subsystem artifact sub_type = named_service.search_results
+     payload.items[] = generic context handles:
+       ref/object_ref, label, summary, namespace, object_kind, mime
+
+        |
+        +--> Capable browser client
+             executor: chat/scene/widget reducer and renderer
+             surface: optional search-result UI
+             customized: no namespace semantics
+             work:
+               render result rows as context objects
+               click -> normal object.action resolver path
+               drag  -> normal context attach/pin path
 
         |
         v

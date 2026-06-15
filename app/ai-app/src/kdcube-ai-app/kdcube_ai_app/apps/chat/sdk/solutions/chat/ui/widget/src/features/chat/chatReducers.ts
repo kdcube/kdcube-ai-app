@@ -52,6 +52,8 @@ import type {
   CodeExecStatus,
   FileArtifact,
   LinkArtifact,
+  NamedServiceSearchArtifact,
+  NamedServiceSearchItem,
   ServiceErrorArtifact,
   TimelineArtifact,
   TimelineEntry,
@@ -248,6 +250,8 @@ export function timelineTitleForMarker(marker: string, fallbackName?: string | n
 
 export function timelineTitleForSubsystem(subtype: string, fallbackName?: string | null): string {
   switch (subtype) {
+    case 'named_service.search_results':
+      return fallbackName || 'Named-service search results'
     case 'web_search.filtered_results':
       return fallbackName || 'Web search results'
     case 'web_search.html_view':
@@ -1260,6 +1264,27 @@ export function applyChatDelta(state: ChatState, env: ChatDeltaEnvelope): ChatSt
             timelineFormat = 'markdown'
           }
           artifacts = upsertArtifact(artifacts, (artifact) => artifact.kind === 'web_search' && artifact.searchId === searchId, nextArtifact)
+        } else if (subtype === 'named_service.search_results') {
+          const searchId = String(env.extra?.search_id || artifactName)
+          const parsed = safeJsonParse<Record<string, unknown>>(textDelta, {})
+          const nextArtifact: NamedServiceSearchArtifact = {
+            kind: 'named_service_search',
+            timestamp,
+            searchId,
+            name: artifactName,
+            title,
+            namespace: typeof parsed.namespace === 'string' ? parsed.namespace : undefined,
+            searchScope: typeof parsed.search_scope === 'string' ? parsed.search_scope : undefined,
+            query: typeof parsed.query === 'string' ? parsed.query : undefined,
+            items: Array.isArray(parsed.items) ? (parsed.items as NamedServiceSearchItem[]) : [],
+          }
+          artifacts = upsertArtifact(
+            artifacts,
+            (artifact) => artifact.kind === 'named_service_search' && artifact.searchId === searchId,
+            nextArtifact,
+          )
+          timelineBody = prettyJson(parsed)
+          timelineFormat = 'json'
         } else if (subtype === 'web_fetch.results') {
           const executionId = String(env.extra?.execution_id || artifactName)
           const parsed = safeJsonParse<Record<string, unknown>>(textDelta, {})

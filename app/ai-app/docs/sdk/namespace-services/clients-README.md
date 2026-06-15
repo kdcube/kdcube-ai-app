@@ -367,6 +367,16 @@ pull, not the default ReAct-facing way to read provider object content. The
 generic `object.upsert` and `object.delete` tools intentionally do not encode
 domain-specific fields; the provider owns those schemas.
 
+When ReAct calls `named_services.search_objects`, the tool still returns the
+provider response to the model, and the runtime also emits a generic
+`named_service.search_results` subsystem artifact. That artifact contains
+context-compatible object handles (`ref`/`object_ref`, label, summary,
+namespace, object kind, MIME when known). UI surfaces that understand context
+chips may render those hits as clickable/draggable results and route clicks
+through the normal `object.action` resolver. ReAct instructions and tool
+annotations must not promise that a specific UI surface exists; the result
+artifact is a side channel for capable clients.
+
 When an agent has a file in its own runtime and needs that file represented in
 the provider's namespace, it should call `named_services.host_file` if the tool
 catalog lists the target namespace as applicable. The provider returns its own

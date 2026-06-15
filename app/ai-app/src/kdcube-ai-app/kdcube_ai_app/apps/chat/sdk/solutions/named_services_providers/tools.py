@@ -17,6 +17,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
     build_logical_artifact_path,
     split_physical_artifact_path,
 )
+from kdcube_ai_app.apps.chat.sdk.solutions.widgets.named_service_search import NamedServiceSearchResultsWidget
 
 from .client_tools import (
     named_service_namespace_client_tools_config,
@@ -502,7 +503,7 @@ async def search_objects(
         parsed_filters = _json_object(filters, field_name="filters")
     except ValueError as exc:
         return _error("named_service_tool_params_invalid", str(exc))
-    return await _call(
+    result = await _call(
         namespace=namespace,
         tool_name="search_objects",
         operation=OBJECT_SEARCH,
@@ -511,6 +512,27 @@ async def search_objects(
         limit=max(1, min(int(limit or 10), 50)),
         filters=parsed_filters,
     )
+    if result.get("ok"):
+        try:
+            from kdcube_ai_app.apps.chat.sdk.runtime import comm_ctx
+
+            widget = NamedServiceSearchResultsWidget(
+                emit_delta=comm_ctx.delta,
+                artifact_name=f"named_service.search_results.{_base_namespace(namespace)}",
+            )
+            await widget.send_search_results(
+                namespace=_base_namespace(namespace),
+                search_scope=_normalize_namespace(namespace),
+                query=str(query or "").strip(),
+                filters=parsed_filters,
+                result=result,
+            )
+        except Exception:
+            LOGGER.warning(
+                "Named-service search result subsystem emission failed",
+                exc_info=True,
+            )
+    return result
 
 
 async def get_object(

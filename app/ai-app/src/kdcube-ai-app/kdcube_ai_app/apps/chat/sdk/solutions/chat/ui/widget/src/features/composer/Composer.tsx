@@ -8,11 +8,11 @@ import type { AttachedContext } from '../chat/chatTypes.ts'
 import type { BannerTone } from '../../service.ts'
 import { recognizeContextMessage } from '../../host.ts'
 import { CHAT_CONTEXT_ATTACH_MESSAGE } from '../../settings.ts'
-import { recognizeContextPayload } from '../context/contextMessages.ts'
+import { KDCUBE_CONTEXT_MIME_TYPE, recognizeContextPayload } from '../context/contextMessages.ts'
 import { activateContextPin, contextPinActionNotice } from '../chat/contextPinActions.ts'
 
 const CONTEXT_DROP_MIME_TYPES = [
-  'application/vnd.kdcube.context+json',
+  KDCUBE_CONTEXT_MIME_TYPE,
   'application/json',
 ]
 

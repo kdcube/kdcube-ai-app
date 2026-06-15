@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 from typing import Any
 
@@ -91,6 +92,14 @@ class FakeDiscoveryRedis:
     async def persist(self, key):
         self.persist_calls.append(str(key))
         return True
+
+
+class FakeComm:
+    def __init__(self) -> None:
+        self.deltas: list[dict[str, Any]] = []
+
+    async def delta(self, **kwargs):
+        self.deltas.append(dict(kwargs))
 
 
 def _canonical_issue_object(ref: str = "task:issue:BUG-123", title: str = "Issue") -> dict[str, Any]:
@@ -1767,6 +1776,83 @@ async def test_named_service_client_tool_preserves_scoped_namespace_with_base_po
 
     assert result["ok"] is True
     assert calls
+
+
+@pytest.mark.asyncio
+async def test_search_objects_emits_context_compatible_search_results_widget():
+    props = {
+        "named_services": {
+            "namespaces": {
+                "task": {
+                    "providers": [
+                        {
+                            "transport": "bundle_operation",
+                            "bundle_id": "task-tracker@1-0",
+                            "provider": "task.issue",
+                            "operations": ["object.search"],
+                        }
+                    ],
+                    "clients": {
+                        "main": {
+                            "tools": {
+                                "allowed_operations": ["object.search"],
+                            },
+                        },
+                    },
+                }
+            },
+        }
+    }
+    comm = FakeComm()
+
+    async def _caller(call):
+        assert call.data["namespace"] == "task:attachment"
+        assert call.data["context"]["base_namespace"] == "task"
+        return {
+            "named_service": {
+                "ok": True,
+                "ret": {
+                    "attrs": {
+                        "namespace": "task:attachment",
+                        "next_cursor": None,
+                    },
+                    "items": [
+                        _canonical_issue_object(
+                            ref="task:issue:BUG-123",
+                            title="Broken auth flow",
+                        )
+                    ],
+                },
+            }
+        }
+
+    named_service_client_tools.bind_registry({"bundle_props": props, "client_id": "main"})
+    try:
+        with bind_bundle_operation_caller(_caller), bind_current_request_context(None, comm=comm):
+            result = await named_service_client_tools.search_objects(
+                namespace="task:attachment",
+                query="auth",
+                limit=5,
+            )
+    finally:
+        named_service_client_tools.bind_registry({})
+
+    assert result["ok"] is True
+    assert len(comm.deltas) == 1
+    event = comm.deltas[0]
+    assert event["marker"] == "subsystem"
+    assert event["sub_type"] == "named_service.search_results"
+    assert event["namespace"] == "task"
+    assert event["search_scope"] == "task:attachment"
+    payload = json.loads(event["text"])
+    assert payload["type"] == "named_service.search_results"
+    assert payload["namespace"] == "task"
+    assert payload["search_scope"] == "task:attachment"
+    assert payload["query"] == "auth"
+    assert payload["items"][0]["kind"] == "object.ref"
+    assert payload["items"][0]["object_ref"] == "task:issue:BUG-123"
+    assert payload["items"][0]["event_source_id"] == "named_services.task"
+    assert payload["items"][0]["label"] == "Broken auth flow"
 
 
 @pytest.mark.asyncio

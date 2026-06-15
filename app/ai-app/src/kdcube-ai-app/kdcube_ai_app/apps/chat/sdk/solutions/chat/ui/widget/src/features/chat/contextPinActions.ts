@@ -11,7 +11,7 @@ import {
 import type { AttachedContext } from './chatTypes.ts'
 import type { ContextChip } from './contextChips.ts'
 
-type ActionableContext = AttachedContext | ContextChip
+export type ActionableContext = AttachedContext | ContextChip
 
 export class ContextPinActionError extends Error {
   readonly tone: BannerTone

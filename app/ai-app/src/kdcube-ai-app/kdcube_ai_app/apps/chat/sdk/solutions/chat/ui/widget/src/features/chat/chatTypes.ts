@@ -113,6 +113,37 @@ export interface WebFetchArtifact {
   items: WebFetchItem[]
 }
 
+export interface NamedServiceSearchItem {
+  id: string
+  kind: string
+  label: string
+  title?: string | null
+  summary?: string | null
+  ref?: string | null
+  object_ref?: string | null
+  namespace?: string | null
+  search_scope?: string | null
+  object_kind?: string | null
+  event_source_id?: string | null
+  mime?: string | null
+  filename?: string | null
+  score?: number
+  data?: Record<string, unknown>
+  [key: string]: unknown
+}
+
+export interface NamedServiceSearchArtifact {
+  kind: 'named_service_search'
+  timestamp: number
+  searchId: string
+  name: string
+  title?: string | null
+  namespace?: string
+  searchScope?: string
+  query?: string
+  items: NamedServiceSearchItem[]
+}
+
 export interface CodeExecContractItem {
   filename: string
   description?: string | null
@@ -205,6 +236,7 @@ export type Artifact =
   | CanvasArtifact
   | WebSearchArtifact
   | WebFetchArtifact
+  | NamedServiceSearchArtifact
   | CodeExecArtifact
   | ServiceErrorArtifact
 

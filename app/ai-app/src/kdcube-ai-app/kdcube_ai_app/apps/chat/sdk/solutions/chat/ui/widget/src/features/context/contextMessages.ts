@@ -24,6 +24,7 @@ export interface ContextMessageTypes {
   remove: string
 }
 
+export const KDCUBE_CONTEXT_MIME_TYPE = 'application/vnd.kdcube.context+json'
 const GENERIC_CONTEXT_ATTACH = 'kdcube.context.attach'
 const GENERIC_CONTEXT_FOCUS = 'kdcube.context.focus'
 const GENERIC_CONTEXT_REMOVE = 'kdcube.context.remove'
@@ -135,4 +136,18 @@ export function recognizeContextRemovalWithTypes(data: unknown, types: ContextMe
   return rawIds
     .map((id) => String(id || '').trim())
     .filter(Boolean)
+}
+
+export function setContextDragData(dataTransfer: DataTransfer, context: RecognizedContext | Record<string, unknown>): void {
+  const label = String(
+    (context as Record<string, unknown>).label ||
+    (context as Record<string, unknown>).title ||
+    (context as Record<string, unknown>).ref ||
+    (context as Record<string, unknown>).id ||
+    'context',
+  )
+  dataTransfer.effectAllowed = 'copy'
+  dataTransfer.setData(KDCUBE_CONTEXT_MIME_TYPE, JSON.stringify({ context }))
+  dataTransfer.setData('application/json', JSON.stringify({ type: GENERIC_CONTEXT_ATTACH, context }))
+  dataTransfer.setData('text/plain', label)
 }
