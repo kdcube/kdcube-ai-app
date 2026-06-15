@@ -1,81 +1,141 @@
 platform:
   repo: "kdcube-ai-app"
-  ref: "2026.6.15.0105"
+  ref: "2026.6.15.1435"
   description: |
-    This platform release hardens ReAct/chat context handling, adds
-    provider-owned click/open effects for external namespace objects, and
-    improves the generic scene-orchestration contract used by chat, canvas,
-    named services, and host pages.
+    This release starts the shared component split for KDCube UI surfaces and
+    makes the Versatile scene the first concrete consumer of that direction.
+    Scene, canvas, and chat now move toward the future
+    `@kdcube/components-core/*` and `@kdcube/components-react/*` package
+    boundary while existing bundles continue to build from in-tree SDK sources.
+
+    The practical outcome is that bundle authors can keep shipping today, while
+    KDCube begins separating reusable headless engines from React reference
+    views. A scene can coordinate chat, canvas, memory, pinboard, and other
+    surfaces through a registry instead of embedding component-specific routing
+    directly in one page.
 
     Highlights
 
-    - Persists full user-input event batches for chat turns so attached context
-      chips, files, and user text remain tied to the same reactive input.
-    - Restores attached context when historical turns are fetched, including
-      context-only turns and follow-up messages loaded through the conversation
-      fetch/RAG path.
-    - Hides raw context marker JSON from chat bubbles while preserving the
-      structured context items as user-visible chips.
-    - Parses spaced context chip markers more robustly when rendering stored
-      chat turns.
-    - Fixes server turn-routing behavior in the reusable chat widget so
-      submitted turns are associated with the backend-selected target turn.
-    - Adds clickable context chips backed by the same resolver/object-action
-      machinery used by canvas pins.
-    - Introduces `default_open_effect_action` as the provider-owned declaration
-      of what a generic click/open should do for a concrete object ref.
-    - Extends common resolvers to expose provider-owned open effects:
-      ReAct `fi:` artifacts and canvas artifacts default to `download`,
-      memory and conversation refs default to `open`, and named-service canvas
-      resolvers promote provider-declared effects.
-    - Adds `kdcube-object-open` routing from the chat widget to the host scene,
-      keeping chat generic while allowing the scene to react to
-      `ui_event.target_surface`.
-    - Updates the Versatile scene to dispatch chat-origin object opens through
-      its surface registry.
-    - Adds a reusable scene-component design note that separates provider
-      effects, widget intents, and scene-owned UI reactions.
-    - Hardens `react.patch` application by improving the fallback path when the
-      system patch implementation cannot apply a generated hunk.
-    - Keeps the board information icon visible in the canvas UI.
+    - Introduces a reusable scene runtime under the SDK. The runtime provides
+      the core mechanics a host page needs to register surfaces, track whether
+      they are ready, queue local messages until a target surface can receive
+      them, and dispatch scene-level UI effects through a consistent registry.
+    - Refactors the Versatile scene onto that runtime. The page still decides
+      which surfaces exist and how the UX reacts, but the routing mechanics are
+      no longer hardwired into the scene component itself.
+    - Establishes the future shared component import boundary in live bundle
+      code: `@kdcube/components-core/scene` for the headless scene runtime and
+      `@kdcube/components-react/canvas` for the React canvas wrapper.
+    - Keeps the current delivery model working by materializing SDK sources
+      into package-shaped `_shared/components-*` folders during bundle builds.
+      This lets the code use the future package names before the npm packages
+      become the source of truth.
+    - Extracts the reusable chat widget engine into `ChatStoreProvider` and
+      `useChatEngine`. Transport wiring, send-message behavior, conversation
+      loading, new-chat lifecycle, target-turn handling, and host-view state now
+      live behind a headless hook instead of being coupled to the rendered
+      `App.tsx` view.
+    - Preserves the existing chat widget UX while preparing a cleaner path for
+      fully skinnable chat clients: future consumers should be able to reuse
+      KDCube chat state and transport while replacing the React view and CSS.
+    - Aligns the canvas pinboard widget with the same canvas component boundary
+      used by the scene. Pinboard now imports canvas APIs and board styles
+      through `@kdcube/components-react/canvas`, including
+      `@kdcube/components-react/canvas/canvasBoard.css`.
+    - Removes the old active canvas/scene import names from the scene and
+      pinboard build paths, avoiding ambiguity while the component packaging
+      work continues.
+    - Keeps the canvas board information control visible and removes a
+      duplicate close affordance, improving the board controls without changing
+      the canvas data model.
+
+    Component architecture direction:
+
+    - Headless logic belongs in `@kdcube/components-core/<component>`.
+      This includes state machines, stores, runtime registries, transport
+      adapters, protocol handling, and framework-neutral controllers.
+    - React wrappers and reference UI belong in
+      `@kdcube/components-react/<component>`. These wrappers are the default UI
+      implementation used by KDCube bundles, but they should not be the only way
+      to consume the component.
+    - Until the npm packages are ready, bundles continue to consume SDK sources
+      through `sdk://` materialization. The important change in this release is
+      the public import boundary: bundle code now speaks the package-shaped
+      names that the real packages will later provide.
+    - Scene, canvas, and chat are being migrated independently. This avoids a
+      large, risky switch and lets each component keep one clear migration path.
+
+    Scene behavior:
+
+    - A scene is the host-level composition layer for multiple surfaces. It can
+      mount direct React components, iframe widgets, or other UI surfaces, and
+      it decides how local interactions become user-visible reactions.
+    - The scene runtime owns generic registry and dispatch mechanics. It does
+      not know about a specific task, memory, canvas, or chat domain.
+    - Surfaces register themselves with ids and capabilities. When an event
+      targets a surface, the scene runtime routes the message to the registered
+      target or queues it until the target is ready.
+    - The Versatile scene uses this to coordinate the canvas board and widget
+      surfaces without making the generic runtime depend on those concrete
+      surfaces.
+
+    Chat component direction:
+
+    - The chat widget now has a headless engine boundary in the existing SDK
+      source tree. `App.tsx` becomes a view over `useChatEngine()` rather than
+      the place where transport, lifecycle, and rendering are all mixed.
+    - This is a staging step toward `@kdcube/components-core/chat` and
+      `@kdcube/components-react/chat`.
+    - Existing bundle integration remains compatible: the widget still builds
+      and runs as before, but the implementation is now shaped for reuse by a
+      custom host UI.
+
+    Canvas and pinboard:
+
+    - The canvas React component remains sourced from the SDK for now, but
+      consumers import it through `@kdcube/components-react/canvas`.
+    - Pinboard now uses the same import and shared-source target as the
+      Versatile scene, which removes the previous mismatch between what the
+      bundle entrypoint materialized and what the pinboard build expected.
+    - Canvas board CSS is resolved through the new package-shaped subpath, so
+      consumers do not need to know the internal SDK source layout.
 
     Runtime and deployment notes:
 
-    - Deployments must point the platform ref at 2026.6.15.0105 to receive this
+    - Deployments must point the platform ref at 2026.6.15.1435 to receive this
       update.
-    - Namespace-service providers that want generic chat/canvas click behavior
-      should return `default_open_effect_action` from `object.resolve` for each
-      concrete object kind. Do not infer click behavior from namespace alone.
-    - Host scenes remain responsible for UI reactions. For `open`, providers
-      return `ui_event.target_surface`; scenes mount/focus the target surface
-      and send the appropriate widget command.
-    - Unknown or unregistered refs now produce bounded context-action notices
-      in the chat UI instead of exposing raw resolver failures.
-    - The chat widget remains generic: task, memory, file, and other
-      namespace-specific behavior belongs in providers and scene surface
-      registries.
-
-    Validation and regression coverage:
-
-    - Built the reusable chat widget with Vite.
-    - Ran the chat context-batch TypeScript test suite.
-    - Built the Versatile scene UI with Vite.
-    - Ran ReAct event resolver tests for `fi:` artifact behavior.
-    - Ran memory resolver tests for `mem:` object open behavior.
-    - Ran task-provider resolver/action tests in the applications repository to
-      confirm issue versus attachment open effects.
-    - Checked the website scene broker syntax after adding
-      `kdcube-object-open` routing.
-    - Staged release diff private-name scan passes before the release commit.
+    - Versatile `main_view.shared_sources` should materialize
+      `components_core_scene` to `_shared/components-core/scene`.
+    - Versatile `main_view.shared_sources` and pinboard widget shared sources
+      should materialize `components_react_canvas` to
+      `_shared/components-react/canvas`.
+    - Bundle UI code should use `@kdcube/components-core/scene` and
+      `@kdcube/components-react/canvas` as the import names. Do not add new
+      imports using the old scene/canvas package names.
+    - This release does not require bundle authors to depend on the future npm
+      packages yet. The current release keeps resolving those imports to
+      materialized SDK sources.
 
     Changelog
 
-    - Added provider-owned context open/download effects for generic UI chips.
-    - Wired chat context chips to resolver-backed object actions.
-    - Routed chat object opens through scene surface registries.
-    - Persisted and restored complete user input batches, including context.
-    - Hardened stored context rendering and `react.patch` behavior.
-    - Documented named-service provider/client responsibilities for object
-      open effects and scene reactions.
+    - Added reusable scene runtime primitives for surface registration,
+      readiness, queued dispatch, and typed local surface messages.
+    - Refactored the Versatile scene to use the reusable scene runtime.
+    - Documented scene composition, surface registry responsibilities, and the
+      current SDK-to-package transition model.
+    - Extracted the chat widget headless engine into `ChatStoreProvider` and
+      `useChatEngine`.
+    - Updated chat widget documentation to describe the new headless engine
+      boundary.
+    - Aligned Versatile scene shared sources with
+      `_shared/components-core/scene` and `_shared/components-react/canvas`.
+    - Aligned pinboard shared sources and Vite aliases with
+      `_shared/components-react/canvas`.
+    - Updated pinboard imports and CSS imports to
+      `@kdcube/components-react/canvas`.
+    - Removed active old-name scene/canvas aliases from the scene and pinboard
+      build paths.
+    - Kept the canvas board information icon visible and removed the duplicate
+      close control.
 config:
-    version: "2026.6.15.0105"
+    version: "2026.6.15.1435"
