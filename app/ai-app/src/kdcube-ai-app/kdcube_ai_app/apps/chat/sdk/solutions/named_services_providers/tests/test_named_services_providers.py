@@ -1836,6 +1836,71 @@ async def test_named_service_client_tool_hosts_nonlocal_file_ref():
 
 
 @pytest.mark.asyncio
+async def test_named_service_client_tool_normalizes_physical_external_attachment_ref():
+    props = {
+        "named_services": {
+            "namespaces": {
+                "task": {
+                    "providers": [
+                        {
+                            "transport": "bundle_operation",
+                            "bundle_id": "task-tracker@1-0",
+                            "provider": "task.issue",
+                            "operations": ["object.host_file"],
+                        }
+                    ],
+                    "clients": {
+                        "main": {
+                            "tools": {
+                                "allowed_operations": ["object.host_file"],
+                            },
+                        },
+                    },
+                }
+            },
+        }
+    }
+    calls = []
+
+    async def _caller(call):
+        calls.append(call)
+        assert call.data["operation"] == "object.host_file"
+        assert call.data["payload"]["file"] == {
+            "ref": "fi:turn_1.external.external_event.attachments/evt_1/Design.md",
+            "filename": "Design.md",
+            "mime": "text/markdown",
+            "description": "Design document attached by user",
+            "source": "artifact_ref",
+        }
+        return {
+            "named_service": {
+                "ok": True,
+                "ret": {
+                    "attrs": {
+                        "namespace": "task",
+                        "object_ref": "task:issue:attachment:BUG-123/attachments/ta_1/v000001/Design.md",
+                    },
+                },
+            }
+        }
+
+    named_service_client_tools.bind_registry({"bundle_props": props, "client_id": "main"})
+    with bind_bundle_operation_caller(_caller):
+        result = await named_service_client_tools.host_file(
+            namespace="task",
+            object_ref="task:issue:BUG-123",
+            file_ref="turn_1/external/external_event/attachments/evt_1/Design.md",
+            filename="Design.md",
+            mime="text/markdown",
+            description="Design document attached by user",
+        )
+
+    assert result["ok"] is True
+    assert result["ret"]["attrs"]["object_ref"].endswith("/Design.md")
+    assert calls
+
+
+@pytest.mark.asyncio
 async def test_named_service_client_tool_reads_object_schema():
     props = {
         "named_services": {

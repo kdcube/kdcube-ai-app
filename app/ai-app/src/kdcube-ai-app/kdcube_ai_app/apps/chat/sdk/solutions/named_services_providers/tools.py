@@ -13,6 +13,10 @@ from urllib.parse import unquote, urlparse
 
 from kdcube_ai_app.apps.chat.sdk.event_identity import DEFAULT_REACT_AGENT_ID, normalize_agent_id
 from kdcube_ai_app.apps.chat.sdk.runtime.workdir_discovery import resolve_output_dir, resolve_workdir
+from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
+    build_logical_artifact_path,
+    split_physical_artifact_path,
+)
 
 from .client_tools import (
     named_service_namespace_client_tools_config,
@@ -149,6 +153,13 @@ def _is_within(path: pathlib.Path, roots: list[pathlib.Path]) -> bool:
     return False
 
 
+def _logical_ref_from_physical_artifact_path(value: str) -> str:
+    turn_id, namespace, relpath = split_physical_artifact_path(value)
+    if turn_id and namespace and relpath:
+        return build_logical_artifact_path(turn_id=turn_id, namespace=namespace, relpath=relpath)
+    return ""
+
+
 def _runtime_roots() -> list[pathlib.Path]:
     roots: list[pathlib.Path] = []
     for resolver in (resolve_output_dir, resolve_workdir):
@@ -189,8 +200,13 @@ def _host_file_payload(
     else:
         candidate = pathlib.Path(raw_ref)
 
+    logical_ref = _logical_ref_from_physical_artifact_path(raw_ref)
     roots = _runtime_roots()
     if not roots:
+        if logical_ref:
+            file_payload["ref"] = logical_ref
+            file_payload.setdefault("source", "artifact_ref")
+            return {"file": file_payload, **dict(extra_payload or {})}
         raise ValueError("local file refs require a bound ReAct output/workdir context")
 
     candidates: list[pathlib.Path]
@@ -201,6 +217,10 @@ def _host_file_payload(
 
     selected = next((path.resolve() for path in candidates if path.exists() and path.is_file()), None)
     if selected is None:
+        if logical_ref:
+            file_payload["ref"] = logical_ref
+            file_payload.setdefault("source", "artifact_ref")
+            return {"file": file_payload, **dict(extra_payload or {})}
         raise FileNotFoundError(f"local file ref was not found in the runtime output/workdir: {raw_ref}")
     if not _is_within(selected, roots):
         raise PermissionError("local file refs must resolve under the current ReAct output/workdir roots")
