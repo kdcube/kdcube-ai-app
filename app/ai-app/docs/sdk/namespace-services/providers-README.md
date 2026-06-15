@@ -246,14 +246,21 @@ concrete payload fields. `provider.about` must not return full object schemas,
 full capability maps, or the complete provider spec; those belong to
 `object.schema` and `provider.capabilities`.
 
+Providers that expose more than one searchable object space should also declare
+bounded `search_scopes` in `provider.about`. A search scope names the namespace
+string that clients may pass to `object.search`, the object kind it returns,
+whether it is the default for the base namespace, and a compact filter summary.
+The base namespace remains valid when the consumer config allows `object.search`;
+the provider decides and documents what that default search means.
+
 ### Object Operations
 
 | Operation | Purpose |
 | --- | --- |
 | `object.list` | Browse objects in a collection with pagination. |
-| `object.search` | Search objects; default mode is hybrid when the provider supports it. |
+| `object.search` | Search objects; default mode is hybrid when the provider supports it. Providers may accept the configured base namespace or provider-declared scoped namespaces. |
 | `object.get` | Fetch one object by `object_ref` or owner-local id. With `response_mode: stream`, fetch the object's byte representation while still returning structured response metadata. |
-| `object.schema` | Return provider-defined object schemas and tool payload guidance for one object kind or ref. |
+| `object.schema` | Return provider-defined object schemas, search/filter contracts, and tool payload guidance for one object kind or ref. |
 | `object.host_file` | Host a caller-owned runtime file/ref into provider-owned storage and return the provider-owned file object/ref. |
 | `object.upsert` | Create or update one object with idempotency and revision checks. |
 | `object.delete` | Delete or archive one object with revision checks. |

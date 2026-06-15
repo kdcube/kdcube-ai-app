@@ -185,7 +185,7 @@ class TaskIssueProvider(NamedServiceProvider):
             "ok": True,
             "ret": {
                 "items": [_canonical_issue_object(title=request.query)],
-                "attrs": {"next_cursor": None},
+                "attrs": {"next_cursor": None, "namespace_seen": request.namespace},
             },
         }
 
@@ -1332,6 +1332,19 @@ async def test_client_routes_by_namespace_for_search():
 
 
 @pytest.mark.asyncio
+async def test_client_routes_scoped_namespace_through_base_provider_for_search():
+    registry = NamedServiceRegistry()
+    registry.register(TaskIssueProvider())
+    client = NamedServiceClient(registry)
+
+    response = await client.search(namespace="task:attachment", query="evidence")
+
+    assert response.ok is True
+    assert response.attrs["namespace_seen"] == "task:attachment"
+    assert response.items[0]["body"]["title"] == "evidence"
+
+
+@pytest.mark.asyncio
 async def test_unknown_provider_returns_bounded_error_response():
     client = NamedServiceClient(NamedServiceRegistry())
 
@@ -1692,6 +1705,67 @@ async def test_named_service_client_tool_uses_client_policy_and_cursor():
 
     assert result["ok"] is True
     assert result["ret"]["attrs"]["next_cursor"] == "page-3"
+    assert calls
+
+
+@pytest.mark.asyncio
+async def test_named_service_client_tool_preserves_scoped_namespace_with_base_policy():
+    props = {
+        "named_services": {
+            "namespaces": {
+                "task": {
+                    "providers": [
+                        {
+                            "transport": "bundle_operation",
+                            "bundle_id": "task-tracker@1-0",
+                            "provider": "task.issue",
+                            "operations": ["object.search"],
+                        }
+                    ],
+                    "clients": {
+                        "main": {
+                            "tools": {
+                                "allowed_operations": ["object.search"],
+                            },
+                        },
+                    },
+                }
+            },
+        }
+    }
+    calls = []
+
+    async def _caller(call):
+        calls.append(call)
+        assert call.data["operation"] == "object.search"
+        assert call.data["namespace"] == "task:attachment"
+        assert call.data["context"]["base_namespace"] == "task"
+        assert call.data["query"] == "Design"
+        return {
+            "named_service": {
+                "ok": True,
+                "ret": {
+                    "attrs": {
+                        "namespace": "task:attachment",
+                        "next_cursor": None,
+                    },
+                    "items": [],
+                },
+            }
+        }
+
+    named_service_client_tools.bind_registry({"bundle_props": props, "client_id": "main"})
+    try:
+        with bind_bundle_operation_caller(_caller):
+            result = await named_service_client_tools.search_objects(
+                namespace="task:attachment",
+                query="Design",
+                limit=5,
+            )
+    finally:
+        named_service_client_tools.bind_registry({})
+
+    assert result["ok"] is True
     assert calls
 
 

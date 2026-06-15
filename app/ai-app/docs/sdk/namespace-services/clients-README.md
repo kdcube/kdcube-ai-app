@@ -120,8 +120,14 @@ model-callable named-service tools are visible to that agent. If a UI resolver
 surface is allowed to call `object.action`, the provider remains authoritative
 for the concrete action name it accepts or rejects.
 
+The configured namespace is the base namespace used for policy and endpoint
+resolution. A provider may advertise narrower scoped namespaces for specific
+operations, especially search. In that case, the client still authorizes the
+base namespace, while the request preserves the full scoped namespace so the
+provider can choose the right object space.
+
 The namespace `pull` policy is separate from model-callable tools. A client may
-allow `react.pull` to materialize `task:` refs through provider `object.get`
+allow `react.pull` to materialize provider refs through provider `object.get`
 without exposing the generic `named_services.get_object` tool to the agent.
 
 ## Consumer Contract For All Surfaces
@@ -350,14 +356,14 @@ The current ReAct integration passes the ReAct agent id as the namespace
 service client id. Other runtimes can pass their own client id when their tool
 adapters are wired.
 
-Agents should use `provider.about` to learn what a namespace service is for and
-`object.schema` to learn the shape of concrete objects before mutation. For
-ReAct specifically, fully reading any object from an external namespace means
-`react.pull(<external_ref>)` first, then `react.read(<materialized fi:...>)`.
-This applies even when the external object is JSON or markdown, not only when
+Agents should use `provider.about.search_scopes[]` to choose the searchable ref
+scope and default search semantics. Use `object.schema` for exact body fields
+and filters. For ReAct specifically, fully reading a provider-owned namespace ref means
+`react.pull(<provider_ref>)` first, then `react.read(<materialized fi:...>)`.
+This applies even when the provider object is JSON or markdown, not only when
 it is a binary file. The provider decides the materialized representation and
 MIME. `named_services.get_object` is the provider operation behind configured
-pull, not the default ReAct-facing way to read external object content. The
+pull, not the default ReAct-facing way to read provider object content. The
 generic `object.upsert` and `object.delete` tools intentionally do not encode
 domain-specific fields; the provider owns those schemas.
 

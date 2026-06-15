@@ -71,6 +71,10 @@ class NamedServiceRegistry:
         ns = str(namespace or "").strip().lower()
         provider_ids = self._namespace_index.get(ns) or []
         if not provider_ids:
+            base_ns = namespace_for_ref(ns)
+            if base_ns and base_ns != ns:
+                provider_ids = self._namespace_index.get(base_ns) or []
+        if not provider_ids:
             return None
         if len(provider_ids) == 1:
             return self._providers[provider_ids[0]]

@@ -479,7 +479,7 @@ where code executes, which surface executes it, and which part is customized.
    emits:
      action = call_tool
      tool_id = named_services.search_objects
-     params.namespace = task
+     params.namespace = <configured namespace or provider-declared scoped namespace>
 
         |
         v
@@ -501,7 +501,7 @@ where code executes, which surface executes it, and which part is customized.
    surface: Consumer.config.surfaces.as_consumer.agents.<agent>.tools
    customized: yes, per consumer app and agent
    owns:
-     namespace allow-list = task
+     namespace allow-list = <configured base namespace>
      visible operations = provider.about, object.search, object.host_file,
                           object.upsert, object.delete, ...
    maps provider operations to generic tool names:
@@ -517,10 +517,11 @@ where code executes, which surface executes it, and which part is customized.
 4. Generic named-service tool adapter
    executor: kdcube_ai_app...named_services_providers.tools
    surface: ToolSubsystem module call
-   customized: configured namespace/provider endpoints, not task semantics
+   customized: configured namespace/provider endpoints, not provider object semantics
    builds:
      NamedServiceRequest.operation = object.search OR object.host_file OR ...
-     NamedServiceRequest.namespace = task
+     NamedServiceRequest.namespace = original tool namespace argument
+     NamedServiceRequest.context.base_namespace = configured base namespace
      NamedServiceRequest.object_ref = tool params object_ref, when present
      NamedServiceRequest.context.source = named_services.client_tool
      NamedServiceRequest.context.auth = current ReAct request/session
@@ -533,28 +534,28 @@ where code executes, which surface executes it, and which part is customized.
    surface: service discovery + bundle_registry/bundle_operation transport
    customized: provider endpoint config/discovery entry
    work:
-     Discovery.resolve(operation, task, object_ref)
-       -> Discovery.entry(provider_id=task.issue, bundle_id=task-tracker@1-0)
+     Discovery.resolve(operation, base_namespace, object_ref)
+       -> Discovery.entry(provider_id=<provider id>, bundle_id=<provider app>)
      bundle_registry:
-       call TaskTrackerEntrypoint.named_services() in-process
+       call ProviderEntrypoint.named_services() in-process
      bundle_operation:
-       call TaskTrackerEntrypoint.@api(alias="named_service", route="operations")
+       call ProviderEntrypoint.@api(alias="named_service", route="operations")
 
         |
         v
 
 6. Provider app backend
-   executor: TaskIssueNamedServiceProvider.<operation>(ctx, request)
-   surface: provider registry/API surface inside task-tracker app
-   customized: yes, provider owns task semantics
+   executor: provider NamedServiceProvider.<operation>(ctx, request)
+   surface: provider registry/API surface inside provider app
+   customized: yes, provider owns namespace and object semantics
    examples:
      object.search:
-       query task storage/index and return bounded task descriptors
+       query provider storage/index and return bounded object descriptors
      object.host_file:
        read caller file descriptor under auth, store provider attachment,
-       return Provider.object_ref for the new task attachment
+       return Provider.object_ref for the new provider-owned file object
      object.upsert:
-       validate task.issue schema and mutate the issue
+       validate provider schema and mutate the object
      object.get(response_mode=stream):
        stream provider-owned object bytes for react.pull
 
@@ -584,8 +585,8 @@ Important ownership rules:
   `provider.about` and `object.schema`.
 - The consumer app decides which named-service tools and namespaces the agent
   may call.
-- The named-service tool adapter does not know how task issues or task
-  attachments work. It only builds `NamedServiceRequest`.
+- The named-service tool adapter does not know how provider objects or scoped
+  searches work. It only builds `NamedServiceRequest`.
 - The provider app owns object parsing, permissions, search, mutation,
   hosting, streamed bytes, and any domain-specific error.
 - Large bytes do not ride inside generic tool JSON. `react.pull` uses

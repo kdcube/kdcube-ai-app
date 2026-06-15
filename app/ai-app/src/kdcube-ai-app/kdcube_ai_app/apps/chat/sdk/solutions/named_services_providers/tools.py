@@ -36,6 +36,7 @@ from .types import (
     OBJECT_UPSERT,
     PROVIDER_ABOUT,
     NamedServiceRequest,
+    namespace_for_ref,
 )
 
 
@@ -240,16 +241,21 @@ def _normalize_namespace(namespace: Any) -> str:
     return str(namespace or "").strip().lower().rstrip(":")
 
 
+def _base_namespace(namespace: Any) -> str:
+    ns = _normalize_namespace(namespace)
+    return namespace_for_ref(ns) or ns
+
+
 def _client_namespace_policy(namespace: str) -> Mapping[str, Any]:
     return named_service_namespace_client_tools_config(
         _bundle_props(),
-        namespace=namespace,
+        namespace=_base_namespace(namespace),
         client_id=_client_id(),
     )
 
 
 def _namespace_config(namespace: str) -> Mapping[str, Any]:
-    raw = named_service_namespaces(_bundle_props()).get(namespace)
+    raw = named_service_namespaces(_bundle_props()).get(_base_namespace(namespace))
     return raw if isinstance(raw, Mapping) else {}
 
 
@@ -289,25 +295,28 @@ def _action_allowed(namespace: str, action: str) -> bool:
 
 
 def _endpoint(namespace: str) -> NamedServiceEndpoint | Dict[str, Any]:
-    namespace_cfg = _namespace_config(namespace)
+    base_ns = _base_namespace(namespace)
+    namespace_cfg = _namespace_config(base_ns)
     if not namespace_cfg:
         return _error(
             "named_service_namespace_not_configured",
-            f"Namespace {namespace!r} is not configured under named_services.namespaces.",
-            namespace=namespace,
+            f"Namespace {base_ns!r} is not configured under named_services.namespaces.",
+            namespace=base_ns,
+            requested_namespace=namespace,
         )
-    policy = _client_namespace_policy(namespace)
+    policy = _client_namespace_policy(base_ns)
     if not policy:
         return _error(
             "named_service_client_namespace_not_allowed",
-            f"Client {_client_id()!r} is not configured to use namespace {namespace!r}.",
-            namespace=namespace,
+            f"Client {_client_id()!r} is not configured to use namespace {base_ns!r}.",
+            namespace=base_ns,
+            requested_namespace=namespace,
             client_id=_client_id(),
         )
-    provider_configs = named_service_namespace_provider_configs(_bundle_props(), namespace=namespace)
+    provider_configs = named_service_namespace_provider_configs(_bundle_props(), namespace=base_ns)
     if not provider_configs:
-        return NamedServiceEndpoint(namespace=namespace)
-    return NamedServiceEndpoint.from_provider_configs(provider_configs, namespace=namespace)
+        return NamedServiceEndpoint(namespace=base_ns)
+    return NamedServiceEndpoint.from_provider_configs(provider_configs, namespace=base_ns)
 
 
 async def _call(
@@ -331,21 +340,24 @@ async def _call(
     payload: Mapping[str, Any] | None = None,
 ) -> Dict[str, Any]:
     ns = _normalize_namespace(namespace)
+    base_ns = _base_namespace(ns)
     if not ns:
         return _error("named_service_namespace_required", "namespace is required")
-    if not _operation_allowed(ns, operation):
+    if not _operation_allowed(base_ns, operation):
         return _error(
             "named_service_tool_not_allowed_for_client",
-            f"Client {_client_id()!r} is not configured to call tool {tool_name!r} on namespace {ns!r}.",
-            namespace=ns,
+            f"Client {_client_id()!r} is not configured to call tool {tool_name!r} on namespace {base_ns!r}.",
+            namespace=base_ns,
+            requested_namespace=ns,
             tool=tool_name,
             client_id=_client_id(),
         )
-    if action and not _action_allowed(ns, action):
+    if action and not _action_allowed(base_ns, action):
         return _error(
             "named_service_action_not_allowed_for_client",
-            f"Client {_client_id()!r} is not configured to call action {action!r} on namespace {ns!r}.",
-            namespace=ns,
+            f"Client {_client_id()!r} is not configured to call action {action!r} on namespace {base_ns!r}.",
+            namespace=base_ns,
+            requested_namespace=ns,
             action=action,
             client_id=_client_id(),
         )
@@ -407,6 +419,7 @@ async def _call(
         context={
             "source": "named_services.client_tool",
             "client_id": _client_id(),
+            "base_namespace": base_ns,
         },
         payload=dict(payload or {}),
     )
@@ -445,7 +458,7 @@ async def _call(
 
 
 async def provider_about(
-    namespace: Annotated[str, "Configured named-service namespace, for example 'task'."],
+    namespace: Annotated[str, "Configured named-service namespace, for example 'sensor'."],
 ) -> Annotated[Dict[str, Any], "Named service response envelope."]:
     """Describe a configured named-service provider."""
 
@@ -453,8 +466,8 @@ async def provider_about(
 
 
 async def list_objects(
-    namespace: Annotated[str, "Configured named-service namespace, for example 'task'."],
-    collection: Annotated[str, "Optional provider collection, for example 'issues'."] = "",
+    namespace: Annotated[str, "Configured named-service namespace or provider-declared scoped namespace, for example 'sensor' or 'sensor:temperature'."],
+    collection: Annotated[str, "Optional namespace-service collection."] = "",
     cursor: Annotated[str, "Optional pagination cursor from a previous response."] = "",
     limit: Annotated[int, "Maximum objects to return. Keep this bounded."] = 20,
     filters: Annotated[str, "Optional JSON object with provider-specific filters."] = "",
@@ -477,8 +490,8 @@ async def list_objects(
 
 
 async def search_objects(
-    namespace: Annotated[str, "Configured named-service namespace, for example 'task'."],
-    query: Annotated[str, "Search query. Providers should use hybrid search when available."],
+    namespace: Annotated[str, "Configured named-service namespace or provider-declared searchable scoped namespace, for example 'sensor:temperature' or 'sensor:humidity:aggr'."],
+    query: Annotated[str, "Search query. Namespace about/schema declares per-scope semantics and filters."],
     limit: Annotated[int, "Maximum objects to return. Keep this bounded."] = 10,
     cursor: Annotated[str, "Optional pagination cursor from a previous response."] = "",
     filters: Annotated[str, "Optional JSON object with provider-specific filters."] = "",
@@ -501,8 +514,8 @@ async def search_objects(
 
 
 async def get_object(
-    namespace: Annotated[str, "Configured named-service namespace, for example 'task'."],
-    object_ref: Annotated[str, "Canonical object ref, for example 'task:issue:BUG-123'."] = "",
+    namespace: Annotated[str, "Configured named-service namespace or provider-declared scoped namespace, for example 'sensor' or 'sensor:temperature'."],
+    object_ref: Annotated[str, "Canonical namespace object ref, for example 'sensor:temperature:reading-123'."] = "",
     object_id: Annotated[str, "Owner-local object id when object_ref is not known."] = "",
     include: Annotated[str, "Optional JSON list of extra fields or relations to include."] = "",
 ) -> Annotated[Dict[str, Any], "Named service response envelope with object."]:
@@ -523,15 +536,15 @@ async def get_object(
 
 
 async def host_file(
-    namespace: Annotated[str, "Configured named-service namespace, for example 'task'."],
+    namespace: Annotated[str, "Configured named-service namespace or provider-declared scoped namespace, for example 'sensor'."],
     file_ref: Annotated[str, "A fi:/ef: artifact ref or a local file path under the current ReAct output/workdir."],
-    object_ref: Annotated[str, "Optional provider object/container ref, for example 'task:issue:BUG-123'."] = "",
-    object_id: Annotated[str, "Optional provider object/container id when object_ref is not known."] = "",
+    object_ref: Annotated[str, "Optional namespace object/container ref, for example 'sensor:temperature:reading-123'."] = "",
+    object_id: Annotated[str, "Optional namespace object/container id when object_ref is not known."] = "",
     filename: Annotated[str, "Optional filename override for the hosted file."] = "",
     mime: Annotated[str, "Optional MIME type override."] = "",
-    description: Annotated[str, "Optional provider-visible file description."] = "",
-    payload: Annotated[str, "Optional JSON object with provider-specific hosting options."] = "",
-) -> Annotated[Dict[str, Any], "Named service response envelope with the provider-owned hosted object/ref."]:
+    description: Annotated[str, "Optional namespace-service-visible file description."] = "",
+    payload: Annotated[str, "Optional JSON object with namespace-service-specific hosting options."] = "",
+) -> Annotated[Dict[str, Any], "Named service response envelope with the hosted namespace object/ref."]:
     """Host one runtime file/ref in a configured named-service namespace."""
 
     try:
@@ -556,8 +569,8 @@ async def host_file(
 
 
 async def object_schema(
-    namespace: Annotated[str, "Configured named-service namespace, for example 'task'."],
-    object_kind: Annotated[str, "Provider object kind, for example 'task.issue' or 'task.attachment'."] = "",
+    namespace: Annotated[str, "Configured named-service namespace or provider-declared scoped namespace, for example 'sensor' or 'sensor:humidity:aggr'."],
+    object_kind: Annotated[str, "Namespace object kind, for example 'sensor.temperature' or 'sensor.humidity.aggr'."] = "",
     object_ref: Annotated[str, "Canonical object ref when asking for the schema of a concrete ref."] = "",
 ) -> Annotated[Dict[str, Any], "Named service response envelope with schema and usage guidance."]:
     """Return provider-defined schema and tool payload guidance for objects in a namespace."""
@@ -577,10 +590,10 @@ async def object_schema(
 
 
 async def object_action(
-    namespace: Annotated[str, "Configured named-service namespace, for example 'task'."],
-    object_ref: Annotated[str, "Canonical object ref, for example 'task:issue:BUG-123'."],
-    action: Annotated[str, "Bounded provider action, for example preview, open, or describe."] = "preview",
-    payload: Annotated[str, "Optional JSON object with provider-specific action payload."] = "",
+    namespace: Annotated[str, "Configured named-service namespace or provider-declared scoped namespace, for example 'sensor' or 'sensor:temperature'."],
+    object_ref: Annotated[str, "Canonical namespace object ref, for example 'sensor:temperature:reading-123'."],
+    action: Annotated[str, "Bounded namespace action, for example preview, open, download, or describe."] = "preview",
+    payload: Annotated[str, "Optional JSON object with namespace-service-specific action payload."] = "",
 ) -> Annotated[Dict[str, Any], "Named service response envelope with ret.object, ret.extra, or ret.ui_event."]:
     """Run a bounded action against one object in a configured namespace."""
 
@@ -599,7 +612,7 @@ async def object_action(
 
 
 async def upsert_object(
-    namespace: Annotated[str, "Configured named-service namespace, for example 'task'."],
+    namespace: Annotated[str, "Configured named-service namespace or provider-declared scoped namespace, for example 'sensor'."],
     object_json: Annotated[str, "JSON object to create or update."],
     object_ref: Annotated[str, "Canonical object ref when updating an existing object."] = "",
     object_id: Annotated[str, "Owner-local object id when object_ref is not known."] = "",
@@ -625,7 +638,7 @@ async def upsert_object(
 
 
 async def delete_object(
-    namespace: Annotated[str, "Configured named-service namespace, for example 'task'."],
+    namespace: Annotated[str, "Configured named-service namespace or provider-declared scoped namespace, for example 'sensor'."],
     object_ref: Annotated[str, "Canonical object ref to delete or archive."],
     base_revision: Annotated[str, "Optional expected revision for optimistic concurrency."] = "",
     payload: Annotated[str, "Optional JSON object with provider-specific delete/archive options."] = "",
