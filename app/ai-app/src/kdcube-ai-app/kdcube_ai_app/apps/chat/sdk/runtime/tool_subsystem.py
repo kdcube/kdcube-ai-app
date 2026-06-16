@@ -541,9 +541,19 @@ class ToolSubsystem:
             return
         self._named_service_metadata_refreshed = True
         if "named_services" not in self._mods_by_alias:
+            try:
+                self.log.log("[named_services.tool_metadata] skip: named_services module not loaded", level="INFO")
+            except Exception:
+                pass
             return
         if not self._named_service_tools_configured():
+            try:
+                self.log.log("[named_services.tool_metadata] skip: named-service tools not configured", level="INFO")
+            except Exception:
+                pass
             return
+        namespaces: List[str] = []
+        entries: List[Any] = []
         try:
             from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers import (
                 named_service_namespaces,
@@ -556,7 +566,15 @@ class ToolSubsystem:
             namespaces = sorted(named_service_namespaces(bundle_props if isinstance(bundle_props, Mapping) else {}).keys())
             redis = self.registry.get("redis")
             tenant, project = self._request_scope()
-            entries = []
+            try:
+                self.log.log(
+                    "[named_services.tool_metadata] discovery refresh start: "
+                    f"tenant={tenant or '<missing>'} project={project or '<missing>'} "
+                    f"redis_present={redis is not None} namespaces={namespaces}",
+                    level="INFO",
+                )
+            except Exception:
+                pass
             if redis is not None and tenant and project and namespaces:
                 discovery = RedisNamedServiceDiscovery(redis, tenant=tenant, project=project)
                 seen: set[tuple[str, str]] = set()
@@ -569,14 +587,44 @@ class ToolSubsystem:
                         entries.append(entry)
             if entries:
                 self.registry["named_service_discovery_entries"] = entries
+            discovery_summary: List[str] = []
+            for entry in entries:
+                spec = getattr(entry, "spec", None)
+                if spec is None:
+                    continue
+                provider_id = str(getattr(spec, "provider_id", "") or "")
+                bundle_id = str(getattr(spec, "bundle_id", "") or "")
+                entry_namespaces = list(getattr(spec, "namespaces", None) or ())
+                entry_scopes = [
+                    str(getattr(scope, "namespace", "") or "")
+                    for scope in (getattr(spec, "search_scopes", None) or ())
+                    if str(getattr(scope, "namespace", "") or "").strip()
+                ]
+                discovery_summary.append(
+                    f"{bundle_id or '<no-bundle>'}/{provider_id or '<no-provider>'}"
+                    f" namespaces={entry_namespaces} search_scopes={entry_scopes}"
+                )
+            try:
+                self.log.log(
+                    "[named_services.tool_metadata] discovery refresh done: "
+                    f"entries={len(entries)} details={discovery_summary}",
+                    level="INFO",
+                )
+            except Exception:
+                pass
         except Exception:
             try:
-                self.log.debug("failed to refresh named-service discovery metadata", exc_info=True)
+                self.log.log("[named_services.tool_metadata] failed to refresh discovery metadata", level="WARNING")
+                self.log.logger.debug("failed to refresh named-service discovery metadata", exc_info=True)
             except Exception:
                 pass
 
         modrec = self._mods_by_alias.get("named_services")
         if not modrec:
+            try:
+                self.log.log("[named_services.tool_metadata] skip: named_services module record missing after discovery", level="INFO")
+            except Exception:
+                pass
             return
         mod = modrec.get("mod")
         try:
@@ -591,9 +639,36 @@ class ToolSubsystem:
                 },
             )
             raw_tools = mod.list_tools() if hasattr(mod, "list_tools") else {}
+            search_meta = raw_tools.get("search_objects") if isinstance(raw_tools, Mapping) else None
+            search_scopes = search_meta.get("search_scopes_by_namespace") if isinstance(search_meta, Mapping) else None
+            search_scope_counts = {
+                str(namespace): len(scopes) if isinstance(scopes, list) else 0
+                for namespace, scopes in (search_scopes or {}).items()
+            } if isinstance(search_scopes, Mapping) else {}
+            try:
+                self.log.log(
+                    "[named_services.tool_metadata] list_tools snapshot: "
+                    f"tools={list(raw_tools.keys()) if isinstance(raw_tools, Mapping) else '<non-mapping>'} "
+                    f"search_scope_counts={search_scope_counts}",
+                    level="INFO",
+                )
+            except Exception:
+                pass
         except Exception:
+            try:
+                self.log.log("[named_services.tool_metadata] list_tools failed", level="WARNING")
+                self.log.logger.debug("failed to build named-service tool metadata", exc_info=True)
+            except Exception:
+                pass
             return
         if not isinstance(raw_tools, Mapping):
+            try:
+                self.log.log(
+                    f"[named_services.tool_metadata] skip: list_tools returned {type(raw_tools).__name__}",
+                    level="INFO",
+                )
+            except Exception:
+                pass
             return
         for entry in self.tools_info:
             if str(entry.get("plugin_alias") or "") != "named_services":
@@ -602,11 +677,26 @@ class ToolSubsystem:
             tool_name = tool_id.rsplit(".", 1)[-1] if "." in tool_id else tool_id
             raw = raw_tools.get(tool_name)
             if not isinstance(raw, Mapping):
+                try:
+                    self.log.log(
+                        f"[named_services.tool_metadata] no raw metadata for tool={tool_id}",
+                        level="INFO",
+                    )
+                except Exception:
+                    pass
                 continue
             metadata = dict(entry.get("metadata") or {})
             doc = entry.setdefault("doc", {})
             if not isinstance(doc, dict):
+                try:
+                    self.log.log(
+                        f"[named_services.tool_metadata] skip tool={tool_id}: doc is {type(doc).__name__}",
+                        level="INFO",
+                    )
+                except Exception:
+                    pass
                 continue
+            applied_keys: List[str] = []
             for key in ("namespaces_applicable", "search_scopes_by_namespace"):
                 value = raw.get(key)
                 if value in (None, "", []):
@@ -615,9 +705,26 @@ class ToolSubsystem:
                     continue
                 metadata[key] = value
                 doc[key] = value
+                applied_keys.append(key)
             if metadata:
                 entry["metadata"] = metadata
                 doc["metadata"] = metadata
+            if tool_name == "search_objects":
+                scopes = doc.get("search_scopes_by_namespace")
+                scope_counts = {
+                    str(namespace): len(items) if isinstance(items, list) else 0
+                    for namespace, items in (scopes or {}).items()
+                } if isinstance(scopes, Mapping) else {}
+                try:
+                    self.log.log(
+                        "[named_services.tool_metadata] applied tool doc: "
+                        f"tool={tool_id} applied_keys={applied_keys} "
+                        f"namespaces={doc.get('namespaces_applicable')} "
+                        f"search_scope_counts={scope_counts}",
+                        level="INFO",
+                    )
+                except Exception:
+                    pass
 
     def react_tools_cached(self, *,
                            allowed_plugins: Optional[List[str]] = None,

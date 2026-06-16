@@ -323,7 +323,8 @@ def _snapshot_search_scopes() -> Dict[str, list[Dict[str, Any]]]:
         for namespace, raw_scopes in registry_scopes.items():
             _add_search_scopes(out, base_namespace=str(namespace), raw_scopes=raw_scopes)
 
-    for entry in REGISTRY.get("named_service_discovery_entries") or ():
+    discovery_entries = list(REGISTRY.get("named_service_discovery_entries") or ())
+    for entry in discovery_entries:
         spec = getattr(entry, "spec", None)
         if spec is None and isinstance(entry, Mapping):
             spec = entry.get("spec") or entry
@@ -348,7 +349,39 @@ def _snapshot_search_scopes() -> Dict[str, list[Dict[str, Any]]]:
                 base_namespace=str(provider_config.get("namespace") or namespace),
                 raw_scopes=provider_config.get("search_scopes") or provider_config.get("searchScopes"),
             )
-    return {namespace: scopes for namespace, scopes in out.items() if scopes}
+    result = {namespace: scopes for namespace, scopes in out.items() if scopes}
+    try:
+        entry_summaries: list[str] = []
+        for entry in discovery_entries:
+            spec = getattr(entry, "spec", None)
+            if spec is None and isinstance(entry, Mapping):
+                spec = entry.get("spec") or entry
+            provider_id = (
+                str(getattr(spec, "provider_id", "") or "")
+                if spec is not None and not isinstance(spec, Mapping)
+                else str((spec or {}).get("provider_id") or "")
+            )
+            scopes = (
+                getattr(spec, "search_scopes", None)
+                if spec is not None and not isinstance(spec, Mapping)
+                else (spec or {}).get("search_scopes") or (spec or {}).get("searchScopes")
+            )
+            scope_names = [
+                str(getattr(scope, "namespace", "") or (scope.get("namespace") if isinstance(scope, Mapping) else "") or "")
+                for scope in (scopes or ())
+                if str(getattr(scope, "namespace", "") or (scope.get("namespace") if isinstance(scope, Mapping) else "") or "").strip()
+            ]
+            entry_summaries.append(f"{provider_id or '<no-provider>'}:{scope_names}")
+        LOGGER.info(
+            "[named_services.tools.search_scopes] registry_keys=%s discovery_entries=%s entry_scopes=%s result_counts=%s",
+            sorted(str(key) for key in REGISTRY.keys()),
+            len(discovery_entries),
+            entry_summaries,
+            {namespace: len(scopes) for namespace, scopes in result.items()},
+        )
+    except Exception:
+        LOGGER.debug("failed to log named-service search-scope snapshot", exc_info=True)
+    return result
 
 
 def _action_allowed(namespace: str, action: str) -> bool:

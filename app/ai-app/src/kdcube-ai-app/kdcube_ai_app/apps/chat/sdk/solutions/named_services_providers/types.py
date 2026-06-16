@@ -289,9 +289,19 @@ class NamedServiceSearchScope:
             return value
         if isinstance(value, str):
             return cls(namespace=value)
-        if not isinstance(value, Mapping):
-            raise TypeError("search scope must be a string or mapping")
-        data = dict(value or {})
+        if isinstance(value, Mapping):
+            data = dict(value or {})
+        else:
+            namespace = getattr(value, "namespace", None)
+            if namespace is None:
+                raise TypeError("search scope must be a string, mapping, or scope-like object")
+            data = {
+                "namespace": namespace,
+                "label": getattr(value, "label", None),
+                "object_kind": getattr(value, "object_kind", None),
+                "description": getattr(value, "description", None),
+                "filters_schema": getattr(value, "filters_schema", None),
+            }
         namespace = (
             data.get("namespace")
             or data.get("scope")

@@ -52,6 +52,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers import (
     named_service_canvas_resolver_namespaces,
     named_service_provider,
     named_service_namespaces,
+    normalize_search_scopes,
     register_configured_named_service_artifact_rehosters,
     register_configured_named_service_canvas_resolvers,
     register_configured_named_service_event_sources,
@@ -1531,6 +1532,31 @@ def test_named_service_provider_spec_serializes_search_scopes():
     assert restored.search_scopes[0].object_kind == "sensor.temperature"
 
 
+def test_search_scope_normalizer_accepts_scope_like_objects():
+    scopes = normalize_search_scopes(
+        [
+            SimpleNamespace(
+                namespace="sensor:temperature",
+                label="temperature readings",
+                object_kind="sensor.temperature",
+                description="temperature sensor readings",
+                filters_schema={"room": {"type": "string"}},
+            )
+        ],
+        default_namespace="sensor",
+    )
+
+    assert [scope.to_dict() for scope in scopes] == [
+        {
+            "namespace": "sensor:temperature",
+            "label": "temperature readings",
+            "object_kind": "sensor.temperature",
+            "description": "temperature sensor readings",
+            "filters_schema": {"room": {"type": "string"}},
+        }
+    ]
+
+
 def test_named_service_tool_catalog_hides_operations_not_allowed_for_client():
     props = {
         "named_services": {
@@ -1702,6 +1728,72 @@ def test_named_service_tool_catalog_adds_search_scopes_from_discovery_snapshot()
             {
                 "namespace": "sensor:humidity:aggr",
                 "label": "humidity aggregates",
+            },
+        ],
+    }
+
+
+def test_named_service_tool_catalog_accepts_scope_like_discovery_objects():
+    props = {
+        "surfaces": {
+            "as_consumer": {
+                "agents": {
+                    "main": {
+                        "tools": [
+                            {
+                                "kind": "named_service",
+                                "alias": "named_services",
+                                "namespaces": {
+                                    "sensor": {
+                                        "allowed": ["object.search"],
+                                    },
+                                },
+                            },
+                        ],
+                    },
+                },
+            },
+        },
+    }
+    discovery_entry = SimpleNamespace(
+        spec=SimpleNamespace(
+            provider_id="sensor.provider",
+            bundle_id="sensor-app@1-0",
+            namespace="sensor",
+            namespaces=("sensor",),
+            operations={"object.search": {"transports": ["bundle_registry"]}},
+            search_scopes=[
+                SimpleNamespace(
+                    namespace="sensor:temperature",
+                    label="temperature readings",
+                    object_kind="sensor.temperature",
+                    description="temperature sensor readings",
+                    filters_schema={"room": {"type": "string"}},
+                ),
+            ],
+        )
+    )
+
+    named_service_client_tools.bind_registry(
+        {
+            "bundle_props": props,
+            "client_id": "main",
+            "named_service_discovery_entries": [discovery_entry],
+        }
+    )
+    try:
+        catalog = named_service_client_tools.list_tools()
+    finally:
+        named_service_client_tools.bind_registry({})
+
+    assert catalog["search_objects"]["search_scopes_by_namespace"] == {
+        "sensor": [
+            {
+                "namespace": "sensor:temperature",
+                "label": "temperature readings",
+                "object_kind": "sensor.temperature",
+                "description": "temperature sensor readings",
+                "filters_schema": {"room": {"type": "string"}},
             },
         ],
     }
