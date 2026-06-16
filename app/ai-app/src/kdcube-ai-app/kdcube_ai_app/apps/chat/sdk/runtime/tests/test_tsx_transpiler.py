@@ -53,3 +53,18 @@ export default function UserManagementAdmin() {
     assert "function UserManagementAdmin()" in html
     assert "root.render(<UserManagementAdmin />);" in html
     assert "root.render(<Card />);" not in html
+
+
+def test_client_side_tsx_transpiler_pins_runtime_cdn_versions():
+    html = ClientSideTSXTranspiler.tsx_to_html(
+        """
+export default function Widget() {
+    return <div>Hello</div>;
+}
+""",
+        title="Test Widget",
+    )
+
+    assert "https://unpkg.com/@babel/standalone@7.28.5/babel.min.js" in html
+    assert "https://unpkg.com/@babel/standalone/babel.min.js" not in html
+    assert "https://unpkg.com/react@18/umd/react.production.min.js" not in html

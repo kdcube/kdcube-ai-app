@@ -168,6 +168,13 @@ class ClientSideTSXTranspiler:
     No Chromium or Node.js needed - pure client-side!
     """
 
+    TAILWIND_URL = "https://cdn.tailwindcss.com/3.4.17"
+    REACT_URL = "https://unpkg.com/react@18.3.1/umd/react.production.min.js"
+    REACT_DOM_URL = "https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"
+    CHART_JS_URL = "https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"
+    CHART_DATALABELS_URL = "https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"
+    BABEL_URL = "https://unpkg.com/@babel/standalone@7.28.5/babel.min.js"
+
     @staticmethod
     def tsx_to_html(tsx_code: str, title: str = "TSX Component") -> str:
         """
@@ -237,19 +244,53 @@ class ClientSideTSXTranspiler:
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{title}</title>
-    
+
+    <script>
+        window.__kdcubeShowWidgetError = function(message, detail) {{
+            const loading = document.getElementById('loading');
+            const errorDisplay = document.getElementById('error-display');
+            if (loading) loading.style.display = 'none';
+            if (errorDisplay) {{
+                errorDisplay.style.display = 'block';
+                errorDisplay.textContent = message + (detail ? '\\n\\n' + detail : '');
+            }} else {{
+                window.__kdcubeWidgetPendingError = {{ message: message, detail: detail || '' }};
+            }}
+            console.error('[kdcube widget]', message, detail || '');
+        }};
+        window.__kdcubeFlushWidgetError = function() {{
+            if (!window.__kdcubeWidgetPendingError) return;
+            const pending = window.__kdcubeWidgetPendingError;
+            window.__kdcubeWidgetPendingError = null;
+            window.__kdcubeShowWidgetError(pending.message, pending.detail);
+        }};
+        window.addEventListener('error', function(e) {{
+            const message = e && e.message ? e.message : 'Script/resource load error';
+            const detailParts = [];
+            if (e && e.filename) detailParts.push('file: ' + e.filename);
+            if (e && e.lineno) detailParts.push('line: ' + e.lineno + (e.colno ? ':' + e.colno : ''));
+            if (e && e.error && e.error.stack) detailParts.push(e.error.stack);
+            window.__kdcubeShowWidgetError('TSX widget error: ' + message, detailParts.join('\\n'));
+        }});
+        window.addEventListener('unhandledrejection', function(e) {{
+            const reason = e && e.reason;
+            const detail = reason && reason.stack ? reason.stack : String(reason || '');
+            window.__kdcubeShowWidgetError('TSX widget async error', detail);
+        }});
+    </script>
+
     <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="{ClientSideTSXTranspiler.TAILWIND_URL}" onerror="window.__kdcubeShowWidgetError('Failed to load Tailwind runtime', this.src)"></script>
     
     <!-- React 18 -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script crossorigin src="{ClientSideTSXTranspiler.REACT_URL}" onerror="window.__kdcubeShowWidgetError('Failed to load React runtime', this.src)"></script>
+    <script crossorigin src="{ClientSideTSXTranspiler.REACT_DOM_URL}" onerror="window.__kdcubeShowWidgetError('Failed to load ReactDOM runtime', this.src)"></script>
     
     <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+    <script src="{ClientSideTSXTranspiler.CHART_JS_URL}" onerror="window.__kdcubeShowWidgetError('Failed to load Chart.js runtime', this.src)"></script>
+    <script src="{ClientSideTSXTranspiler.CHART_DATALABELS_URL}" onerror="window.__kdcubeShowWidgetError('Failed to load Chart.js datalabels plugin', this.src)"></script>
     <!-- Babel Standalone -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="{ClientSideTSXTranspiler.BABEL_URL}" onerror="window.__kdcubeShowWidgetError('Failed to load Babel TypeScript runtime', this.src)"></script>
     <!-- Configure Babel for TypeScript -->
     <script>
         if (typeof Babel !== 'undefined') {{
@@ -264,6 +305,8 @@ class ClientSideTSXTranspiler:
                     }}]
                 ]
             }});
+        }} else {{
+            window.__kdcubeShowWidgetError('Babel TypeScript runtime is not available', '{ClientSideTSXTranspiler.BABEL_URL}');
         }}
     </script>
     
@@ -298,7 +341,17 @@ class ClientSideTSXTranspiler:
     <div id="root"></div>
     <div id="error-display"></div>
 
+    <script>
+        window.__kdcubeFlushWidgetError();
+    </script>
+
     <script type="text/babel" data-presets="custom-typescript">
+        if (typeof React === 'undefined') {{
+            throw new Error('React runtime is not available');
+        }}
+        if (typeof ReactDOM === 'undefined') {{
+            throw new Error('ReactDOM runtime is not available');
+        }}
         const {{ useState, useEffect, useRef, useMemo, useCallback }} = React;
         
         // Hide loading indicator
@@ -306,20 +359,6 @@ class ClientSideTSXTranspiler:
         if (loading) loading.style.display = 'none';
         
         {tsx_code}
-    </script>
-    <script>
-        // Error handler
-        window.addEventListener('error', function(e) {{
-            const loading = document.getElementById('loading');
-            const errorDisplay = document.getElementById('error-display');
-            
-            if (loading) loading.style.display = 'none';
-            if (errorDisplay) {{
-                errorDisplay.style.display = 'block';
-                errorDisplay.textContent = 'TSX Compilation Error:\\n\\n' + e.message + '\\n\\n' + (e.error?.stack || '');
-            }}
-            console.error('TSX Error:', e);
-        }});
     </script>
 </body>
 </html>"""
