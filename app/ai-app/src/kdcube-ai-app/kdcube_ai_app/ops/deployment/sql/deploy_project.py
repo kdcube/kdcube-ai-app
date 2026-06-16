@@ -60,3 +60,12 @@ if __name__ == "__main__":
     step_provision(tenant, project, "chatbot")
     step_provision(tenant, project, "knowledge_base")
     # step_deprovision(tenant, project, "knowledge_base")
+
+    # Seed default economics (separate concern from schema deployment).
+    # Non-fatal: the runtime keeps a defensive quota fallback, so a seeding
+    # failure must not block schema provisioning.
+    try:
+        from kdcube_ai_app.ops.deployment.economics import seed_economics
+        seed_economics(tenant, project)
+    except Exception as e:
+        print(f"[deploy_project] WARNING economics seeding failed (non-fatal): {e}")

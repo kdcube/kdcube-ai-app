@@ -433,7 +433,7 @@ Behaviour:
 - rebuilds platform Docker images when `--build` is given;
 - restarts the stack (unless `--no-restart` is passed);
 - never modifies `assembly.yaml`, `secrets.yaml`, `bundles.yaml`,
-  `bundles.secrets.yaml`, or `gateway.yaml`.
+  `bundles.secrets.yaml`, `gateway.yaml`, or `economics.yaml`.
 
 This replaces the older pattern of re-running `kdcube init` on an existing
 workdir, which used to silently reseed descriptors under some flag
@@ -500,8 +500,8 @@ kdcube bundle config apply \
 This is a user/operator descriptor-sync workflow, not a platform refresh and
 not routine agent bootstrap. It stages only `bundles.yaml` and optional
 `bundles.secrets.yaml` into the active runtime config directory. It does not
-touch `assembly.yaml`, `gateway.yaml`, or platform `secrets.yaml`, and it does
-not rebuild images or restart Docker.
+touch `assembly.yaml`, `gateway.yaml`, platform `secrets.yaml`, or
+`economics.yaml`, and it does not rebuild images or restart Docker.
 
 Host local bundle paths in seed descriptors are translated to runtime-visible
 `/bundles/...` paths before staging. With `--reload`, changed declared bundle
@@ -534,7 +534,9 @@ kdcube config import \
 ```
 
 With `--include-platform-descriptors`, export writes `assembly.yaml`,
-`secrets.yaml`, `gateway.yaml`, `bundles.yaml`, and `bundles.secrets.yaml`.
+`secrets.yaml`, `gateway.yaml`, `economics.yaml`, `bundles.yaml`, and
+`bundles.secrets.yaml`. For what `economics.yaml` owns, see
+[economics-descriptor-README.md](../../economics/economics-descriptor-README.md).
 
 Exported descriptors are shaped for review and re-seeding, not as a byte-for-byte
 copy of the container runtime files:

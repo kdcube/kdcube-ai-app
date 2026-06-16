@@ -8,6 +8,10 @@ services:
     env_file:
       - path: ${KDCUBE_CONFIG_DIR:-.}/.env.postgres.setup
         required: false
+    environment:
+      - PLATFORM_DESCRIPTORS_DIR=/config
+    volumes:
+      - ${KDCUBE_CONFIG_DIR:-.}:/config
     networks:
       - kdcube-internal
       - kdcube-secrets

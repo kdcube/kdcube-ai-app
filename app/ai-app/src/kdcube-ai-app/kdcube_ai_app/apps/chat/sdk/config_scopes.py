@@ -122,6 +122,39 @@ def _load_assembly_plain(dotted_path: str) -> Any:
     )
 
 
+def _load_economics_plain(dotted_path: str) -> Any:
+    return _resolve_dotted_value(
+        _load_plain_yaml(
+            _descriptor_path(
+                env_name="ECONOMICS_YAML_DESCRIPTOR_PATH",
+                filename="economics.yaml",
+                default="/config/economics.yaml",
+            )
+        ),
+        dotted_path,
+    )
+
+
+def economics_reservation_default(floor: str = "chat") -> float | None:
+    """
+    Platform reservation floor default (USD) from economics.yaml. Cached by file
+    mtime (via _load_plain_yaml), so descriptor edits are picked up without a
+    restart.
+
+    A scalar is the canonical form (`reservation.<floor>: 2.0`); a `{amount: ...}`
+    mapping is tolerated. Returns the amount only when it is a positive number;
+    a value <= 0, missing, or unparseable means "no floor" (None).
+    """
+    node = _load_economics_plain(f"reservation.{floor}")
+    if isinstance(node, dict):
+        node = node.get("amount")
+    try:
+        amount = float(node) if node is not None else None
+    except (TypeError, ValueError):
+        return None
+    return amount if (amount is not None and amount > 0) else None
+
+
 def _load_global_secret_plain(dotted_path: str) -> Any:
     data = _load_plain_yaml(
         _descriptor_path(

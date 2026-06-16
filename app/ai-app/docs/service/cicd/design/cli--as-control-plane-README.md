@@ -189,7 +189,7 @@ kdcube refresh \
 ```
 
 `refresh` never modifies `assembly.yaml`, `secrets.yaml`, `bundles.yaml`,
-`bundles.secrets.yaml`, or `gateway.yaml`. When no targeting flags are given
+`bundles.secrets.yaml`, `gateway.yaml`, or `economics.yaml`. When no targeting flags are given
 and no defaults are set, refresh targets the currently-recorded running
 deployment. `--latest`, `--upstream`, and `--release <ref>` reuse the existing
 runtime descriptors but select a new platform source before rebuild/restart.

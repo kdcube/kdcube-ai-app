@@ -303,6 +303,12 @@ class TopUpAppBudgetRequest(BaseModel):
     notes: Optional[str] = Field(None)
 
 
+class SetReservationRequest(BaseModel):
+    """Set a reservation floor (USD) for a surface. amount <= 0 disables the floor."""
+    floor: str = Field("chat", description="Reservation surface (only 'chat' today)")
+    amount: float = Field(..., description="USD floor; <= 0 disables the floor")
+
+
 # ============================================================================
 # Helper Functions
 # ============================================================================
@@ -334,6 +340,19 @@ def _get_control_plane_manager(ctx):
     # Cache on router state
     ctx.state.control_plane_manager = mgr
     return mgr
+
+
+async def _sync_economics_descriptor_best_effort(mgr, settings) -> None:
+    """
+    Mirror live economics (DB) into economics.yaml after an admin mutation, so a
+    later deploy-time re-seed does not regress runtime changes. Best-effort: the
+    descriptor sync never fails the admin request.
+    """
+    try:
+        from kdcube_ai_app.apps.chat.sdk.infra.economics.descriptor import sync_economics_descriptor
+        await sync_economics_descriptor(mgr, tenant=settings.TENANT, project=settings.PROJECT)
+    except Exception as e:
+        logger.warning(f"[economics.descriptor] write-back skipped: {e}")
 
 
 # ============================================================================
@@ -829,6 +848,7 @@ async def upsert_subscription_plan(
         created_by=session.username or session.user_id,
         notes=payload.notes,
     )
+    await _sync_economics_descriptor_best_effort(mgr, settings)
     return {"status": "ok", "plan": plan.__dict__}
 
 @router.get("/subscriptions/periods/{user_id}")
@@ -1348,6 +1368,7 @@ async def set_quota_policy(
             f"[set_quota_policy] {settings.TENANT}/{settings.PROJECT}/{payload.plan_id}: "
             f"policy updated by {session.username or session.user_id}"
         )
+        await _sync_economics_descriptor_best_effort(mgr, settings)
 
         return {
             "status": "ok",
@@ -1441,6 +1462,7 @@ async def set_budget_policy(
             f"[set_budget_policy] {settings.TENANT}/{settings.PROJECT}/{payload.provider}: "
             f"policy updated by {session.username or session.user_id}"
         )
+        await _sync_economics_descriptor_best_effort(mgr, settings)
 
         return {
             "status": "ok",
@@ -1452,6 +1474,92 @@ async def set_budget_policy(
         }
     except Exception as e:
         logger.exception(f"[set_budget_policy] Failed for {payload.provider}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# Reservation surfaces (descriptor-backed; live runtime source)
+# ============================================================================
+
+@router.get("/economics/reservation")
+async def get_reservation_surfaces(
+        session: UserSession = Depends(auth_without_pressure())
+):
+    """
+    Current reservation floors (USD) from the economics descriptor. These are
+    read live by the runtime per turn; a value <= 0 disables the floor.
+    """
+    from kdcube_ai_app.apps.chat.sdk.infra.economics.descriptor import read_reservation
+    return {"status": "ok", "reservation": read_reservation()}
+
+
+@router.post("/economics/reservation", status_code=201)
+async def set_reservation_surface(
+        payload: SetReservationRequest,
+        session: UserSession = Depends(auth_without_pressure())
+):
+    """
+    Set a reservation floor and write it straight into the economics descriptor
+    so bundles pick it up live (and a re-seed does not regress it).
+    """
+    try:
+        from kdcube_ai_app.apps.chat.sdk.infra.economics.descriptor import (
+            sync_economics_descriptor, read_reservation,
+        )
+        mgr = _get_control_plane_manager(router)
+        settings = get_settings()
+        floor = (payload.floor or "chat").strip() or "chat"
+        ok = await sync_economics_descriptor(
+            mgr, tenant=settings.TENANT, project=settings.PROJECT,
+            reservation_overrides={floor: float(payload.amount)},
+        )
+        if not ok:
+            raise HTTPException(status_code=500, detail="Failed to write economics descriptor")
+        logger.info(
+            f"[set_reservation] {settings.TENANT}/{settings.PROJECT} {floor}={payload.amount} "
+            f"by {session.username or session.user_id}"
+        )
+        return {"status": "ok", "reservation": read_reservation()}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("[set_reservation] Failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/economics/reservation/{floor}")
+async def delete_reservation_surface(
+        floor: str,
+        session: UserSession = Depends(auth_without_pressure())
+):
+    """
+    Remove a reservation floor from the economics descriptor entirely. The
+    surface then inherits the platform/bundle default (instead of being pinned).
+    """
+    try:
+        from kdcube_ai_app.apps.chat.sdk.infra.economics.descriptor import (
+            sync_economics_descriptor, read_reservation,
+        )
+        mgr = _get_control_plane_manager(router)
+        settings = get_settings()
+        floor = (floor or "").strip()
+        if not floor:
+            raise HTTPException(status_code=400, detail="Reservation floor is required")
+        ok = await sync_economics_descriptor(
+            mgr, tenant=settings.TENANT, project=settings.PROJECT,
+            reservation_deletes=[floor],
+        )
+        if not ok:
+            raise HTTPException(status_code=500, detail="Failed to write economics descriptor")
+        logger.info(
+            f"[delete_reservation] {settings.TENANT}/{settings.PROJECT} {floor} "
+            f"by {session.username or session.user_id}"
+        )
+        return {"status": "ok", "reservation": read_reservation()}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("[delete_reservation] Failed")
         raise HTTPException(status_code=500, detail=str(e))
 
 

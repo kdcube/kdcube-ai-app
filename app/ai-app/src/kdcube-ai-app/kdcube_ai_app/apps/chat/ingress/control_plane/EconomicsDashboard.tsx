@@ -99,6 +99,10 @@ interface AppBudgetBalance {
     balance_usd: number;
     lifetime_added_usd: number;
     lifetime_spent_usd: number;
+    available_usd?: number | null;
+    reserved_usd?: number | null;
+    overdraft_limit_usd?: number | null;
+    overdraft_used_usd?: number | null;
 }
 
 interface AppBudgetSpending {
@@ -744,6 +748,31 @@ class EconomicsAPI {
 
     async listQuotaPolicies(): Promise<{ status: string; count: number; policies: QuotaPolicy[] }> {
         const response = await this.fetchWithAuth(this.getFullUrl('/policies/quota'));
+        return response.json();
+    }
+
+    async getReservation(): Promise<{ status: string; reservation: Record<string, number> }> {
+        const response = await this.fetchWithAuth(this.getFullUrl('/economics/reservation'));
+        return response.json();
+    }
+
+    async setReservation(floor: string, amount: number): Promise<any> {
+        const response = await this.fetchWithAuth(
+            this.getFullUrl('/economics/reservation'),
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ floor, amount }),
+            },
+        );
+        return response.json();
+    }
+
+    async deleteReservation(floor: string): Promise<any> {
+        const response = await this.fetchWithAuth(
+            this.getFullUrl(`/economics/reservation/${encodeURIComponent(floor)}`),
+            { method: 'DELETE' },
+        );
         return response.json();
     }
 
@@ -1638,6 +1667,9 @@ const EconomicsAdmin: React.FC = () => {
     const [quotaPolicies, setQuotaPolicies] = useState<QuotaPolicy[]>([]);
     const [budgetPolicies, setBudgetPolicies] = useState<BudgetPolicy[]>([]);
     const [appBudget, setAppBudget] = useState<AppBudget | null>(null);
+    const [reservation, setReservation] = useState<Record<string, number>>({});
+    const [reservationFloor, setReservationFloor] = useState<string>('chat');
+    const [reservationAmount, setReservationAmount] = useState<string>('');
 
     // Forms - Grant Trial
     const [trialUserId, setTrialUserId] = useState<string>('');
@@ -1830,7 +1862,7 @@ const EconomicsAdmin: React.FC = () => {
     }, [api, configStatus]);
 
     const loadDataForView = async (mode: string) => {
-        const needsData = ['quotaPolicies', 'budgetPolicies', 'appBudget', 'subscriptions'].includes(mode);
+        const needsData = ['quotaPolicies', 'budgetPolicies', 'appBudget', 'subscriptions', 'reservation'].includes(mode);
         if (!needsData) return;
 
         setLoadingData(true);
@@ -1846,6 +1878,9 @@ const EconomicsAdmin: React.FC = () => {
             } else if (mode === 'appBudget') {
                 const balance = await api.getAppBudgetBalance();
                 setAppBudget(balance);
+            } else if (mode === 'reservation') {
+                const res = await api.getReservation();
+                setReservation(res.reservation || {});
             } else if (mode === 'subscriptions') {
                 const res = await api.listSubscriptionPlans({ limit: 200, offset: 0, activeOnly: false });
                 setSubscriptionPlans(res.plans || []);
@@ -2020,6 +2055,48 @@ const EconomicsAdmin: React.FC = () => {
             setPolicyNotes('');
 
             await loadDataForView('quotaPolicies');
+        } catch (err) {
+            setError((err as Error).message);
+        } finally {
+            setLoadingAction(false);
+        }
+    };
+
+    const handleSetReservation = async (e: React.FormEvent) => {
+        e.preventDefault();
+        clearMessages();
+        setLoadingAction(true);
+        try {
+            const floor = (reservationFloor || 'chat').trim() || 'chat';
+            const amount = parseFloat(reservationAmount);
+            if (Number.isNaN(amount)) {
+                throw new Error('Enter a numeric reservation amount (USD). Use <= 0 to disable the floor.');
+            }
+            const res = await api.setReservation(floor, amount);
+            setReservation(res.reservation || {});
+            setReservationAmount('');
+            setSuccess(
+                amount > 0
+                    ? `Reservation floor for ${floor} set to $${amount.toFixed(2)}`
+                    : `Reservation floor for ${floor} disabled`,
+            );
+        } catch (err) {
+            setError((err as Error).message);
+        } finally {
+            setLoadingAction(false);
+        }
+    };
+
+    const handleDeleteReservation = async (floor: string) => {
+        if (!window.confirm(`Remove the "${floor}" reservation floor? The surface will inherit the platform/bundle default.`)) {
+            return;
+        }
+        clearMessages();
+        setLoadingAction(true);
+        try {
+            const res = await api.deleteReservation(floor);
+            setReservation(res.reservation || {});
+            setSuccess(`Reservation floor "${floor}" removed.`);
         } catch (err) {
             setError((err as Error).message);
         } finally {
@@ -2520,6 +2597,7 @@ const EconomicsAdmin: React.FC = () => {
         { id: 'lookup', label: 'Lookup Balance' },
         { id: 'quotaBreakdown', label: 'User Budget Breakdown' },
         { id: 'quotaPolicies', label: 'Plan Limits' },
+        { id: 'reservation', label: 'Reservation Floors' },
         { id: 'budgetPolicies', label: 'Project Budget Policies' },
         { id: 'lifetimeCredits', label: 'Lifetime Credits' },
         { id: 'appBudget', label: 'App Budget' },
@@ -3412,10 +3490,10 @@ const EconomicsAdmin: React.FC = () => {
                                     <Callout tone="neutral" title="Meaning">
                                         This is the default quota envelope for a plan (free/payasyougo/admin). Daily is calendar day, hourly is a rolling 60‑minute window, and monthly is a rolling 30‑day window (anchored to first usage per bundle).
                                     </Callout>
-                                    <Callout tone="neutral" title="Reservation Floor (Per Bundle)">
-                                        The minimum reservation amount is configured per bundle via bundle props:
-                                        <span className="font-mono"> economics.reservation_amount_dollars</span>.
-                                        This is not set in the economics UI.
+                                    <Callout tone="neutral" title="Reservation Floor">
+                                        The platform reservation floor is set in the <span className="font-semibold">Reservation Floors</span> tab
+                                        (stored in the economics descriptor, picked up live). A bundle can still override per surface via
+                                        bundle props <span className="font-mono"> economics.reservation.&lt;floor&gt;</span>.
                                     </Callout>
                                     {economicsRef && (
                                         <div className="text-xs text-gray-500">
@@ -3589,6 +3667,7 @@ const EconomicsAdmin: React.FC = () => {
                                                     <th className="px-6 py-4 text-left font-semibold">Plan ID</th>
                                                     <th className="px-6 py-4 text-right font-semibold">Max concurrent</th>
                                                     <th className="px-6 py-4 text-right font-semibold">Req/day</th>
+                                                    <th className="px-6 py-4 text-right font-semibold">Req/month</th>
                                                     <th className="px-6 py-4 text-right font-semibold">Tok/hour</th>
                                                     <th className="px-6 py-4 text-right font-semibold">Tok/day</th>
                                                     <th className="px-6 py-4 text-right font-semibold">Tok/month</th>
@@ -3604,6 +3683,7 @@ const EconomicsAdmin: React.FC = () => {
                                                         <td className="px-6 py-4 font-semibold text-gray-900">{policy.plan_id}</td>
                                                         <td className="px-6 py-4 text-right text-gray-700">{policy.max_concurrent ?? '—'}</td>
                                                         <td className="px-6 py-4 text-right text-gray-700">{policy.requests_per_day ?? '—'}</td>
+                                                        <td className="px-6 py-4 text-right text-gray-700">{policy.requests_per_month ?? '—'}</td>
                                                         <td className="px-6 py-4 text-right text-gray-700">{policy.tokens_per_hour?.toLocaleString() ?? '—'}</td>
                                                         <td className="px-6 py-4 text-right text-gray-700">{policy.tokens_per_day?.toLocaleString() ?? '—'}</td>
                                                         <td className="px-6 py-4 text-right text-gray-700">{policy.tokens_per_month?.toLocaleString() ?? '—'}</td>
@@ -3626,6 +3706,94 @@ const EconomicsAdmin: React.FC = () => {
                                     {quotaPolicies.length > 0 && quotaPolicies[0].reference_model && (
                                         <div className="pt-3 text-xs text-gray-500">
                                             Reference: {quotaPolicies[0].reference_model}
+                                        </div>
+                                    )}
+                                </CardBody>
+                            </Card>
+                        </div>
+                    )}
+
+                    {viewMode === 'reservation' && (
+                        <div className="space-y-6">
+                            <Card>
+                                <CardHeader
+                                    title="Reservation Floors"
+                                    subtitle="Platform default per-turn reservation floor (USD). Read live by bundles each turn."
+                                />
+                                <CardBody className="space-y-6">
+                                    <Callout tone="neutral" title="Meaning">
+                                        The reservation floor is the minimum USD reserved before a turn runs. It is stored in the
+                                        economics descriptor (not the database) and is picked up live by running bundles. A value of
+                                        <span className="font-mono"> 0 or less disables</span> the floor (estimate falls back to tokens).
+                                        A bundle can override per surface via bundle props
+                                        <span className="font-mono"> economics.reservation.&lt;floor&gt;</span>; omitting it inherits this default.
+                                        Only <span className="font-mono">chat</span> is consumed today.
+                                    </Callout>
+
+                                    <form onSubmit={handleSetReservation} className="space-y-5">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <Input
+                                                label="Surface"
+                                                value={reservationFloor}
+                                                onChange={(e) => setReservationFloor(e.target.value)}
+                                                placeholder="chat"
+                                            />
+                                            <Input
+                                                label="Amount (USD)  •  ≤ 0 disables"
+                                                type="number"
+                                                value={reservationAmount}
+                                                onChange={(e) => setReservationAmount(e.target.value)}
+                                                placeholder="2.0"
+                                            />
+                                        </div>
+                                        <Button type="submit" disabled={loadingAction}>
+                                            Save reservation floor
+                                        </Button>
+                                    </form>
+                                </CardBody>
+                            </Card>
+
+                            <Card>
+                                <CardHeader title="Current floors" subtitle={`${Object.keys(reservation).length} surface(s)`} />
+                                <CardBody>
+                                    {loadingData ? (
+                                        <LoadingSpinner />
+                                    ) : Object.keys(reservation).length === 0 ? (
+                                        <EmptyState message="No reservation floors configured." icon="🪙" />
+                                    ) : (
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-sm">
+                                                <thead className="bg-gray-50 border-b border-gray-200/70">
+                                                <tr className="text-gray-600">
+                                                    <th className="px-6 py-4 text-left font-semibold">Surface</th>
+                                                    <th className="px-6 py-4 text-right font-semibold">Floor (USD)</th>
+                                                    <th className="px-6 py-4 text-left font-semibold">State</th>
+                                                    <th className="px-6 py-4 text-right font-semibold">Actions</th>
+                                                </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-gray-200/70">
+                                                {Object.entries(reservation).map(([floor, amount]) => (
+                                                    <tr key={floor} className="hover:bg-gray-50/70 transition-colors">
+                                                        <td className="px-6 py-4 font-semibold text-gray-900">{floor}</td>
+                                                        <td className="px-6 py-4 text-right text-gray-700">
+                                                            {Number(amount) > 0 ? `$${Number(amount).toFixed(2)}` : '—'}
+                                                        </td>
+                                                        <td className="px-6 py-4 text-gray-600">
+                                                            {Number(amount) > 0 ? 'enabled' : 'disabled'}
+                                                        </td>
+                                                        <td className="px-6 py-4 text-right">
+                                                            <Button
+                                                                variant="danger"
+                                                                onClick={() => handleDeleteReservation(floor)}
+                                                                disabled={loadingAction}
+                                                            >
+                                                                Remove
+                                                            </Button>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                                </tbody>
+                                            </table>
                                         </div>
                                     )}
                                 </CardBody>
@@ -3882,6 +4050,15 @@ const EconomicsAdmin: React.FC = () => {
                                                 <StatCard label="Current balance" value={`$${Number(appBudget.balance.balance_usd || 0).toFixed(2)}`} />
                                                 <StatCard label="Lifetime added" value={`$${Number(appBudget.balance.lifetime_added_usd || 0).toFixed(2)}`} />
                                                 <StatCard label="Lifetime spent" value={`$${Number(appBudget.balance.lifetime_spent_usd || 0).toFixed(2)}`} />
+                                                <StatCard
+                                                    label="Overdraft limit"
+                                                    value={appBudget.balance.overdraft_limit_usd == null
+                                                        ? 'Unlimited'
+                                                        : `$${Number(appBudget.balance.overdraft_limit_usd).toFixed(2)}`}
+                                                />
+                                                {appBudget.balance.available_usd != null && (
+                                                    <StatCard label="Available" value={`$${Number(appBudget.balance.available_usd).toFixed(2)}`} />
+                                                )}
                                             </div>
 
                                             <div className="rounded-2xl border border-gray-200/70 bg-gray-50 p-5">
@@ -5269,7 +5446,7 @@ Shortfall ledger notes:
                         </div>
                     )}
                     {/* Data lists loading indicator (global hint) */}
-                    {(viewMode === 'quotaPolicies' || viewMode === 'budgetPolicies' || viewMode === 'appBudget') && loadingData && (
+                    {(viewMode === 'quotaPolicies' || viewMode === 'budgetPolicies' || viewMode === 'appBudget' || viewMode === 'reservation') && loadingData && (
                         <div className="text-center text-sm text-gray-500">Loading…</div>
                     )}
 

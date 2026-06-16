@@ -45,7 +45,7 @@ CLI_LOCK_FILE = Path.home() / ".kdcube" / "cli-lock.json"
 DEFAULT_REPO_DIRNAME = "repo"
 DOCKER_STATUS_TIMEOUT_SECONDS = 20
 DOCKER_CLEAN_TIMEOUT_SECONDS = 120
-PLATFORM_DESCRIPTOR_FILENAMES = ("assembly.yaml", "secrets.yaml", "gateway.yaml")
+PLATFORM_DESCRIPTOR_FILENAMES = ("assembly.yaml", "secrets.yaml", "gateway.yaml", "economics.yaml")
 STANDARD_INIT_SECRET_PROMPTS: tuple[tuple[str, str], ...] = (
     ("services.openai.api_key", "OpenAI API key"),
     ("services.anthropic.api_key", "Anthropic API key"),

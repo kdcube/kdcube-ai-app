@@ -1,0 +1,55 @@
+# ---------------------------------------------------------------------------
+# Economics descriptor (per tenant/project).
+#
+# Seeded once after deployment by the postgres-setup job (see
+# ops/deployment/economics). Tenant/project are NOT declared here — they are
+# resolved from settings (TENANT_ID / PROJECT_ID).
+#
+# enforce:
+#   false → seed only what is missing (operator/admin edits are preserved)
+#   true  → realign every listed entity to these defaults (incl. lowering a
+#           field back to null / unlimited)
+#
+# Mandatory quota policies (anonymous / free / payasyougo / admin) and the
+# subscription plans free / admin are always seeded from a built-in baseline
+# even if omitted below; entries here override that baseline per field.
+# budget_policies have no baseline and are seeded only for the keys listed here.
+# ---------------------------------------------------------------------------
+version: 1
+enforce: false
+
+# Reservation floor defaults (USD). Only `chat` is consumed at runtime today.
+# Scalar value: a positive number enables the floor; <= 0 disables it. A bundle
+# overrides via bundles.yaml -> config.economics.reservation.<floor> (a bundle
+# value <= 0 disables the floor for that bundle; omitting it inherits this default).
+reservation:
+  chat: 2.0
+
+# Project budget policy. Only the overdraft limit is seeded; the running
+# balance is NEVER touched here (fund it via the admin UI / app-budget topup).
+# overdraft_limit_usd: null = unlimited overdraft.
+project_budget:
+  overdraft_limit_usd: 0.0
+
+# plan_id -> quota policy. null/omitted dimension = unlimited.
+quota_policies:
+  anonymous:  { max_concurrent: 1,  requests_per_day: 2,   requests_per_month: 60,
+                tokens_per_hour: 150000, tokens_per_day: 1500000, tokens_per_month: 20000000 }
+  free:       { max_concurrent: 2,  requests_per_day: 100, requests_per_month: 30000,
+                tokens_per_hour: 133333, tokens_per_day: 333333,  tokens_per_month: 666666 }
+  payasyougo: { max_concurrent: 4,  requests_per_day: 200, requests_per_month: 6000 }
+  admin:      { max_concurrent: 10 }
+
+# provider -> budget policy (spending limits, USD). null = unlimited dimension.
+budget_policies:
+  anthropic:  { usd_per_hour: 10.0, usd_per_day: 200.0, usd_per_month: 5000.0 }
+  openai:     { usd_per_hour: 5.0,  usd_per_day: 100.0, usd_per_month: 2000.0 }
+  brave:      { usd_per_hour: 1.0,  usd_per_day: 20.0,  usd_per_month: 500.0 }
+  duckduckgo: { usd_per_hour: null, usd_per_day: null,  usd_per_month: null }
+
+# plan_id -> subscription catalog entry.
+# free + admin are baked-in baseline (always seeded; entries here override per
+# field). Any other plan_id is opt-in. provider ∈ {internal, stripe};
+# stripe requires stripe_price_id.
+subscription_plans:
+  free: { provider: internal, monthly_price_cents: 0, active: true }
