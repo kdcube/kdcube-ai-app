@@ -4,7 +4,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.common import add_block, apply_unified_diff, tool_call_block
+from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.common import (
+    add_block,
+    apply_unified_diff,
+    diagnose_unified_diff_mismatch,
+    tool_call_block,
+)
 from kdcube_ai_app.apps.chat.sdk.solutions.react.events import block_event_id, block_event_source_id
 from kdcube_ai_app.apps.chat.sdk.solutions.react.round import ReactRound
 import kdcube_ai_app.apps.chat.sdk.solutions.react.round as react_round
@@ -88,6 +93,39 @@ def test_python_unified_diff_fallback_requires_exact_unicode_context():
 
     assert patched is None
     assert err == "hunk_mismatch"
+
+
+def test_unified_diff_mismatch_diagnostic_reports_expected_and_actual_context():
+    text = (
+        "    def test_wrong_method_on_health(self):\n"
+        "        # POST is not registered \u2192 405\n"
+        "        r = client.post(\"/health\")\n"
+        "        assert r.status_code == 405\n"
+    )
+    patch_text = "\n".join([
+        "--- a/test_app.py",
+        "+++ b/test_app.py",
+        "@@ -1,4 +1,7 @@",
+        "     def test_wrong_method_on_health(self):",
+        "         # POST is not registered -> 405",
+        "         r = client.post(\"/health\")",
+        "         assert r.status_code == 405",
+        "+",
+        "+class TestDataValidation:",
+        "+    pass",
+        "",
+    ])
+
+    diagnostic = diagnose_unified_diff_mismatch(text, patch_text)
+
+    assert diagnostic["hunk_index"] == 1
+    assert diagnostic["requested_start_line"] == 1
+    mismatch = diagnostic["first_mismatch"]
+    assert mismatch["patch_line"] == 5
+    assert mismatch["target_line"] == 2
+    assert "-> 405" in mismatch["expected"]
+    assert "\u2192 405" in mismatch["actual"]
+    assert diagnostic["matched_old_context_lines_at_requested_start"] == 1
 
 
 def test_tool_call_block_logs_payload(caplog):

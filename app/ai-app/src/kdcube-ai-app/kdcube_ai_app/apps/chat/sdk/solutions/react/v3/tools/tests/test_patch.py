@@ -474,6 +474,66 @@ async def test_patch_failure_emits_result_block(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_patch_hunk_mismatch_emits_actionable_diagnostic(tmp_path):
+    runtime = RuntimeCtx(turn_id="turn_new", outdir=str(tmp_path), workdir=str(tmp_path))
+    ctx = FakeBrowser(runtime)
+
+    target = tmp_path / "turn_new" / "files" / "demo" / "test_app.py"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        "    def test_wrong_method_on_health(self):\n"
+        "        # POST is not registered \u2192 405\n"
+        "        r = client.post(\"/health\")\n"
+        "        assert r.status_code == 405\n",
+        encoding="utf-8",
+    )
+    patch_text = "\n".join([
+        "--- a/test_app.py",
+        "+++ b/test_app.py",
+        "@@ -1,4 +1,7 @@",
+        "     def test_wrong_method_on_health(self):",
+        "         # POST is not registered -> 405",
+        "         r = client.post(\"/health\")",
+        "         assert r.status_code == 405",
+        "+",
+        "+class TestDataValidation:",
+        "+    pass",
+        "",
+    ])
+    state = {
+        "last_decision": {
+            "tool_call": {
+                "params": {
+                    "path": "files/demo/test_app.py",
+                    "channel": "canvas",
+                    "patch": patch_text,
+                    "kind": "display",
+                }
+            }
+        },
+        "outdir": str(tmp_path),
+    }
+
+    await handle_react_patch(react=FakeReact(), ctx_browser=ctx, state=state, tool_call_id="p_mismatch")
+
+    assert "TestDataValidation" not in target.read_text(encoding="utf-8")
+    json_blocks = [
+        b for b in ctx.timeline.blocks
+        if b.get("type") == "react.tool.result" and b.get("mime") == "application/json"
+    ]
+    assert json_blocks
+    payload = json.loads(json_blocks[-1]["text"])
+    assert payload["ok"] is False
+    assert payload["error"] == "hunk_mismatch"
+    assert payload["suggested_read"]["path"] == "turn_new/files/demo/test_app.py"
+    assert payload["suggested_read"]["line_numbers"] == "disabled"
+    mismatch = payload["mismatch_diagnostic"]["first_mismatch"]
+    assert "-> 405" in mismatch["expected"]
+    assert "\u2192 405" in mismatch["actual"]
+    assert "smaller unified diff" in payload["message"]
+
+
+@pytest.mark.asyncio
 async def test_patch_rejects_unmaterialized_historical_file(tmp_path):
     runtime = RuntimeCtx(turn_id="turn_new", outdir=str(tmp_path), workdir=str(tmp_path))
     ctx = FakeBrowser(runtime)

@@ -543,6 +543,124 @@ def apply_unified_diff(text: str, patch_text: str) -> tuple[Optional[str], Optio
         return None, f"apply_failed:{exc}"
 
 
+def _short_patch_line(value: Optional[str], *, max_chars: int = 240) -> str:
+    if value is None:
+        return "<end-of-file>"
+    text = value.rstrip("\r\n")
+    if len(text) <= max_chars:
+        return text
+    return f"{text[:max_chars]}…"
+
+
+def _hunk_first_mismatch(
+    orig: List[str],
+    start: int,
+    hunk_lines: List[str],
+    *,
+    patch_line_start: int,
+) -> tuple[int, Optional[Dict[str, Any]]]:
+    pos = start
+    matched = 0
+    for offset, hunk_line in enumerate(hunk_lines):
+        expected = _diff_old_payload(hunk_line)
+        if expected is None:
+            continue
+        if pos >= len(orig) or orig[pos] != expected:
+            return matched, {
+                "patch_line": patch_line_start + offset,
+                "target_line": pos + 1,
+                "expected": _short_patch_line(expected),
+                "actual": _short_patch_line(orig[pos] if pos < len(orig) else None),
+            }
+        matched += 1
+        pos += 1
+    return matched, None
+
+
+def diagnose_unified_diff_mismatch(text: str, patch_text: str) -> Dict[str, Any]:
+    """
+    Return compact, model-actionable diagnostics for a unified-diff mismatch.
+
+    The ReAct model cannot inspect byte-level hunk matching. When a hunk misses,
+    provide the first non-matching old/context line and the target line that was
+    actually present so the next action can read a smaller exact range.
+    """
+    try:
+        orig = text.splitlines(keepends=True)
+        diff = patch_text.splitlines(keepends=True)
+        idx = 0
+        hunk_index = 0
+        lower_bound = 0
+        best: Optional[Dict[str, Any]] = None
+        while idx < len(diff):
+            line = diff[idx]
+            if not line.startswith("@@"):
+                idx += 1
+                continue
+            hunk_index += 1
+            header = line.rstrip("\r\n")
+            try:
+                parts = header.split()
+                old_start = int(parts[1].split(",")[0].lstrip("-"))
+            except Exception:
+                return {
+                    "hunk_index": hunk_index,
+                    "reason": "invalid_hunk_header",
+                    "hunk_header": header,
+                }
+            requested_target = max(old_start - 1, 0)
+            hunk_start_line = idx + 2  # one-based line number of first hunk body line
+            idx += 1
+            hunk_lines: List[str] = []
+            while idx < len(diff):
+                if diff[idx].startswith("@@"):
+                    break
+                hunk_lines.append(diff[idx])
+                idx += 1
+
+            target = _find_hunk_target(orig, hunk_lines, requested=requested_target, lower_bound=lower_bound)
+            if target is not None:
+                lower_bound = target
+                for hunk_line in hunk_lines:
+                    expected = _diff_old_payload(hunk_line)
+                    if expected is not None:
+                        lower_bound += 1
+                continue
+
+            requested_matched, requested_mismatch = _hunk_first_mismatch(
+                orig,
+                max(lower_bound, min(requested_target, len(orig))),
+                hunk_lines,
+                patch_line_start=hunk_start_line,
+            )
+            old_context_lines = sum(1 for item in hunk_lines if _diff_old_payload(item) is not None)
+            first_expected = next((_diff_old_payload(item) for item in hunk_lines if _diff_old_payload(item) is not None), None)
+            exact_first_line_matches: List[int] = []
+            if first_expected is not None:
+                for line_no, original_line in enumerate(orig, start=1):
+                    if original_line == first_expected:
+                        exact_first_line_matches.append(line_no)
+                        if len(exact_first_line_matches) >= 8:
+                            break
+            diagnostic: Dict[str, Any] = {
+                "hunk_index": hunk_index,
+                "hunk_header": header,
+                "requested_start_line": requested_target + 1,
+                "target_line_count": len(orig),
+                "old_context_lines": old_context_lines,
+                "matched_old_context_lines_at_requested_start": requested_matched,
+                "first_mismatch": requested_mismatch,
+                "first_old_context_line": _short_patch_line(first_expected),
+                "first_old_context_line_matches": exact_first_line_matches,
+            }
+            if best is None or requested_matched > int(best.get("matched_old_context_lines_at_requested_start") or -1):
+                best = diagnostic
+            return best
+        return {"reason": "no_hunks_found"}
+    except Exception as exc:
+        return {"reason": "diagnostic_failed", "error": str(exc)}
+
+
 def rewrite_unified_diff_paths(
     *,
     patch_text: str,
@@ -604,9 +722,20 @@ def apply_unified_diff_to_file(
     )
     rewritten_patch = normalize_unified_diff_hunk_counts(rewritten_patch)
 
+    try:
+        original = target_path.read_text(encoding="utf-8")
+    except Exception as exc:
+        return None, rewritten_patch, f"patch_target_unreadable:{exc}"
+
+    patched, err = apply_unified_diff(original, rewritten_patch)
+    if patched is not None:
+        _LOG.info("[react.patch.apply] python_exact_applied target=%s", target_path)
+        return patched, rewritten_patch, None
+    _LOG.warning("[react.patch.apply] python_exact_rejected target=%s error=%s", target_path, err)
+
     patch_bin = shutil.which("patch")
     if patch_bin:
-        _LOG.info("[react.patch.apply] system_patch=%s target=%s", patch_bin, target_path)
+        _LOG.info("[react.patch.apply] system_patch_exact=%s target=%s", patch_bin, target_path)
         try:
             with tempfile.TemporaryDirectory(prefix="react_patch_") as tmpdir:
                 tmpdir_path = pathlib.Path(tmpdir)
@@ -620,8 +749,7 @@ def apply_unified_diff_to_file(
                         "--quiet",
                         "--forward",
                         "--reject-file=-",
-                        "--fuzz=3",
-                        "-l",
+                        "--fuzz=0",
                         str(candidate_path),
                         str(patch_path),
                     ],
@@ -629,39 +757,21 @@ def apply_unified_diff_to_file(
                     text=True,
                 )
                 if proc.returncode == 0:
-                    _LOG.info("[react.patch.apply] system_patch_applied target=%s", target_path)
+                    _LOG.info("[react.patch.apply] system_patch_exact_applied target=%s", target_path)
                     return candidate_path.read_text(encoding="utf-8"), rewritten_patch, None
                 msg = (proc.stderr or proc.stdout or "").strip()
                 _LOG.warning(
-                    "[react.patch.apply] system_patch_rejected target=%s returncode=%s message=%s",
+                    "[react.patch.apply] system_patch_exact_rejected target=%s returncode=%s message=%s",
                     target_path,
                     proc.returncode,
                     _clip_log_text(msg, max_chars=2_000),
                 )
-                try:
-                    original = target_path.read_text(encoding="utf-8")
-                    patched, err = apply_unified_diff(original, rewritten_patch)
-                    if patched is not None:
-                        _LOG.info("[react.patch.apply] python_fallback_applied target=%s", target_path)
-                        return patched, rewritten_patch, None
-                    _LOG.warning("[react.patch.apply] python_fallback_rejected target=%s error=%s", target_path, err)
-                    return None, rewritten_patch, err or msg or f"patch_failed:{proc.returncode}"
-                except Exception:
-                    return None, rewritten_patch, msg or f"patch_failed:{proc.returncode}"
+                return None, rewritten_patch, err or msg or f"patch_failed:{proc.returncode}"
         except Exception as exc:
             _LOG.warning("[react.patch.apply] system_patch_exec_failed target=%s error=%s", target_path, exc)
             return None, rewritten_patch, f"patch_exec_failed:{exc}"
 
-    _LOG.warning("[react.patch.apply] system_patch_missing target=%s; using python fallback", target_path)
-    try:
-        original = target_path.read_text(encoding="utf-8")
-    except Exception as exc:
-        return None, rewritten_patch, f"patch_target_unreadable:{exc}"
-    patched, err = apply_unified_diff(original, rewritten_patch)
-    if patched is not None:
-        _LOG.info("[react.patch.apply] python_fallback_applied target=%s", target_path)
-    else:
-        _LOG.warning("[react.patch.apply] python_fallback_rejected target=%s error=%s", target_path, err)
+    _LOG.warning("[react.patch.apply] system_patch_missing target=%s; python_exact already rejected error=%s", target_path, err)
     return patched, rewritten_patch, err
 
 
