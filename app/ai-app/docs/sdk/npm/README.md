@@ -41,11 +41,14 @@ Future adapters (`@kdcube/components-angular`, `…-vanilla`) slot in with no co
    - [Host event bus](./components-core/host-event-bus-README.md) — the events the engine bubbles to the host.
    - [Context-pin contract](./components-core/context-pin-contract-README.md) — the cross-component drag contract.
 2. **React package** — [`components-react/README.md`](./components-react/README.md) — `ChatStoreProvider` + hooks.
+3. **Widget integration & deployment** — [`widget-integration-README.md`](./widget-integration-README.md) — the SDK chat widget's local/package engine switch, the `npm://` build path, and how the package source ships into the image.
 
 ## How it's consumed (three stories)
 
-- **Our bundles** — `sdk://solutions/chat/ui/widget` becomes a thin consumer of
-  `@kdcube/components-react/chat` + a scene/iframe host-bridge adapter. (In progress.)
+- **Our bundles** — `sdk://solutions/chat/ui/widget` can run on the package engine via
+  a single opt-in knob (default stays the in-tree engine); the package source ships in
+  the app image and is materialized via `npm://`. See
+  [widget integration & deployment](./widget-integration-README.md).
 - **External React, no iframe** — install both packages, wrap with
   `<ChatStoreProvider config>`, render your own UI, handle bubbled events.
 - **Non-React host** — install `@kdcube/components-core`, `createChatEngine(config)`,
@@ -60,5 +63,7 @@ switches: `docs/sdk/solutions/chat/chat-widget-solution-README.md`.
 - [x] Chat engine ported into `@kdcube/components-core/chat`.
 - [x] React bindings in `@kdcube/components-react/chat`.
 - [x] Context-pin contract in `@kdcube/components-core`.
-- [ ] Repoint the SDK widget at the packages + iframe host-bridge.
+- [x] SDK widget consumes the packages via an opt-in engine switch + iframe host-bridge ([details](./widget-integration-README.md)).
+- [x] Package source ships in the runtime image (app tree + `npm://`).
+- [ ] Make the package engine the default once validated across environments.
 - [ ] Publish / workspace-link for external consumers.
