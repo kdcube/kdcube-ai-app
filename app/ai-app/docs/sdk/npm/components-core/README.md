@@ -45,6 +45,23 @@ JS calls it directly — none need to know Redux.
 | `@kdcube/components-core/chat` | the chat engine: `createChatEngine`, protocol types, store/slice/reducers, transport |
 | `@kdcube/components-core/canvas` | (next) |
 
+## Namespace Presentation Helpers
+
+Namespace colors are app-owned presentation metadata, not chat-owned or
+canvas-owned state. The core chat export therefore includes small, headless
+helpers for deriving presentation from a context item:
+
+- `NamespaceStyleMap` / `NamespaceVisualStyle`
+- `contextNamespace(context)`
+- `namespaceStyleVars(namespace, namespaceStyles)`
+- `contextChipStyle(context, namespaceStyles)`
+- `contextChipClass(context)`
+
+The helpers only turn an already-supplied namespace style map into CSS variable
+values and stable classes. They do not fetch config, resolve objects, or invent
+fallback colors. A host, scene, or widget must pass the namespace style map from
+its app/runtime configuration.
+
 ## Concepts
 
 - [Chat engine](./chat-engine-README.md) — `createChatEngine(config)`: the controller

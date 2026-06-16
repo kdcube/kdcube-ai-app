@@ -57,6 +57,26 @@ function MyChatUI() {
 Everything the engine can do (config, the controller surface, the event bus) is in the
 core docs: [`../components-core/README.md`](../components-core/README.md).
 
+## Namespace Styles
+
+The default chat shell accepts `namespaceStyles`, the same app-level namespace
+presentation map used by other scene surfaces:
+
+```tsx
+<Chat
+  namespaceStyles={{
+    mem: { label: 'Memory', color: '#159947', background: '#eaf8ef' },
+    task: { label: 'Task', color: '#2563eb', background: '#eff6ff' },
+  }}
+/>
+```
+
+The map is keyed by root namespace. Chat applies it to context chips, named
+service search results, composer attachments, and turn overview/follow-up
+rendering through the core helpers. The package does not fetch this map from an
+iframe or from canvas; the host/app runtime supplies it from the same config that
+other mounted surfaces receive.
+
 ## Build / verify
 
 ```sh

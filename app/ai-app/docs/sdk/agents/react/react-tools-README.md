@@ -265,6 +265,46 @@ Updates an existing current-turn materialized text file under `files/...` or `ou
 - file origin does not matter: current-turn files produced by exec, `react.write`, `react.patch`, or `react.checkout` are patchable once they exist locally
 - older files are never patched in place; materialize with `react.pull` if needed, then use `react.checkout` for historical `files/...` refs you need to edit and patch the resulting current-turn path
 
+When a unified diff cannot be applied exactly, `react.patch` returns a
+structured `hunk_mismatch` diagnostic. Treat this as a context mismatch, not as
+permission to guess. The `expected` value is the old/context line from the
+patch; `actual` is the target file line at the first mismatch. The suggested
+read is a raw range without line-number prefixes, suitable for copying exact
+context into the next diff.
+
+Example mismatch result:
+
+```json
+{
+  "error": "hunk_mismatch",
+  "mismatch_diagnostic": {
+    "hunk_index": 1,
+    "requested_start_line": 1,
+    "first_mismatch": {
+      "patch_line": 5,
+      "target_line": 2,
+      "expected": "        # POST is not registered -> 405",
+      "actual": "        # POST is not registered → 405"
+    }
+  },
+  "suggested_read": {
+    "path": "turn_new/files/demo/test_app.py",
+    "line_start": 1,
+    "line_count": 12,
+    "line_numbers": "disabled"
+  }
+}
+```
+
+Recovery loop:
+
+1. Read the suggested range with `react.read(items=[suggested_read])`.
+2. Copy old/context lines exactly from that raw read, including punctuation,
+   whitespace, and Unicode characters.
+3. Retry a small unified diff against the current-turn path.
+4. Use full-file replacement only for intentional whole-file rewrites or after
+   a targeted diff remains impractical.
+
 Use it when the file already exists and React wants a targeted edit instead of a full rewrite. Prefer unified diff for targeted changes; use full replacement only for intentional whole-file rewrites or when a targeted diff still cannot match the file. Do not use `react.write` just to register an existing file for patching.
 
 ### `react.memsearch`

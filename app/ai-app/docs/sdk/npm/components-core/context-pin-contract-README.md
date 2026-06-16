@@ -61,6 +61,12 @@ for one item:
 backend wire may still call it `object_ref`, but the producer maps it to `ref` **once**,
 at the producer boundary.
 
+Presentation is deliberately outside this drag payload. A context pin carries
+identity (`ref`) and optional display hints, but namespace color/badge styling
+comes from the app-level namespace style map supplied to each surface. Do not
+hide a broken namespace contract by coloring a card from hardcoded `mem`/`task`
+fallbacks or from the source surface that produced the drag.
+
 ## Rules
 
 ```ts
