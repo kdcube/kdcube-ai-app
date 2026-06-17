@@ -524,6 +524,25 @@ Do not add fallback top-level imports such as `from services...`,
 `from apps...`, or `import tools` for bundle-local code. They can collide with
 other bundles in the same processor process.
 
+In particular, do not "guard" a relative import with a `try/except ImportError`
+that falls back to a top-level import:
+
+```python
+# WRONG — the except branch is a top-level bundle-local import
+try:
+    from .services.storage import UserMemoryStorage
+except ImportError:  # the comment usually claims "flat / top-level module load"
+    from services.storage import UserMemoryStorage
+```
+
+A bundle is always loaded as a Python package, so the package-relative import
+always resolves — there is no flat-load case to fall back to. Keep only the
+relative import. The shared bundle suite check
+`test_bundle_python_uses_package_relative_bundle_local_imports` rejects the
+top-level import even when it is hidden inside an `except` branch, so this fails
+at release validation. See
+[how-to-avoid-common-bundle-integration-failures-README.md#recipe-bundle-local-python-imports](how-to-avoid-common-bundle-integration-failures-README.md#recipe-bundle-local-python-imports).
+
 The same rule applies to tools. In `surfaces.as_consumer.agents.<agent>.tools`,
 declare bundle-local tools with file-based `ref` entries:
 

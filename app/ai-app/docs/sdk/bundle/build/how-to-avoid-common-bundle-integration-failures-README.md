@@ -81,6 +81,35 @@ Do not import bundle-local folders as top-level packages such as `services`,
 `apps`, `tools`, or `resources`. This includes bundle-local tool modules and
 helpers loaded from configured tool refs.
 
+The most seductive form of this mistake is a `try/except ImportError` fallback.
+It looks defensive, but the `except` branch is a top-level bundle-local import,
+so it is the same violation, just hidden:
+
+```python
+# WRONG — the except branch is a top-level bundle-local import
+try:
+    from .services.storage import IssueStore
+except ImportError:  # comment usually claims "loaded as a top-level module"
+    from services.storage import IssueStore
+```
+
+There is no flat-import case to support: **a bundle is always loaded as a Python
+package**, so the package-relative form always resolves and the fallback is never
+reached. Worse, if it ever were reached it could bind to another bundle's
+already-loaded `services`/`tools` module. Delete the `try/except` and keep only
+the package-relative import:
+
+```python
+from .services.storage import IssueStore
+```
+
+This is enforced: the shared bundle suite check
+`test_bundle_python_uses_package_relative_bundle_local_imports` (run it alone with
+`run_bundle_suite ... -k import_contract`) flags every top-level bundle-local
+import, including one inside an `except` branch. If a package-relative import
+raises `ImportError`, that is a real structure bug to fix — not something to paper
+over with a fallback.
+
 For configured tool refs:
 
 | Tool source | `surfaces.as_consumer` shape |
