@@ -20,6 +20,18 @@ bundles:
             allow_all_user_memories: true
             limit: 30
         namespace_styles:
+          fi:
+            label: file
+            color: "#ca8a04"
+            border: "#ca8a04"
+            focus: "#facc15"
+            background: "#fffbeb"
+          cnv:
+            label: canvas
+            color: "#7c3aed"
+            border: "#7c3aed"
+            focus: "#a78bfa"
+            background: "#f5f3ff"
           mem:
             label: memory
             color: "#16a34a"

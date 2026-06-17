@@ -1876,10 +1876,10 @@ a { color: inherit; }
   max-width: min(238px, 100%);
   min-width: 0;
   flex: 0 1 auto;
-  border: 1px solid var(--ctx-border, rgba(67, 114, 195, 0.28));
+  border: 1px solid var(--ctx-border, var(--ctx-kind-border, rgba(67, 114, 195, 0.28)));
   border-radius: 8px;
-  background: var(--ctx-bg, #eef5ff);
-  color: var(--ctx-ink, var(--blue-dark));
+  background: var(--ctx-bg, var(--ctx-kind-bg, #eef5ff));
+  color: var(--ctx-ink, var(--ctx-kind-ink, var(--blue-dark)));
   padding: 4px 5px 4px 8px;
   font-size: 11px;
   font-weight: 700;
@@ -1887,68 +1887,76 @@ a { color: inherit; }
 }
 
 .k-context-chip.is-selected {
-  outline: 2px solid var(--ctx-focus, rgba(67, 114, 195, 0.46));
+  outline: 2px solid var(--ctx-focus, var(--ctx-kind-focus, rgba(67, 114, 195, 0.46)));
   outline-offset: 1px;
 }
 
 .k-context-chip:hover,
 .k-context-chip:focus-visible {
-  border-color: var(--ctx-border, rgba(1, 190, 178, 0.55));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ctx-focus, #c6f3f1) 32%, transparent);
+  border-color: var(--ctx-border, var(--ctx-kind-border, rgba(1, 190, 178, 0.55)));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ctx-focus, var(--ctx-kind-focus, #c6f3f1)) 32%, transparent);
 }
 
 .k-context-chip.canvas {
-  border-color: rgba(107, 99, 254, 0.25);
-  background: var(--purple-pale);
-  color: #4540be;
+  --ctx-kind-border: rgba(107, 99, 254, 0.25);
+  --ctx-kind-bg: var(--purple-pale);
+  --ctx-kind-ink: #4540be;
+  --ctx-kind-focus: rgba(107, 99, 254, 0.34);
 }
 
 .k-context-chip.canvas-card,
 .k-context-chip.canvas-pin,
 .k-context-chip.pin {
-  border-color: rgba(67, 114, 195, 0.24);
-  background: #edf4ff;
-  color: #24508f;
+  --ctx-kind-border: rgba(67, 114, 195, 0.24);
+  --ctx-kind-bg: #edf4ff;
+  --ctx-kind-ink: #24508f;
+  --ctx-kind-focus: rgba(67, 114, 195, 0.34);
 }
 
 .k-context-chip.user-text,
 .k-context-chip.agent-text {
-  border-color: rgba(1, 190, 178, 0.3);
-  background: #e7fbf9;
-  color: #08766f;
+  --ctx-kind-border: rgba(1, 190, 178, 0.3);
+  --ctx-kind-bg: #e7fbf9;
+  --ctx-kind-ink: #08766f;
+  --ctx-kind-focus: rgba(1, 190, 178, 0.34);
 }
 
 .k-context-chip.wizard,
 .k-context-chip.snapshot {
-  border-color: rgba(240, 188, 46, 0.34);
-  background: #fff7d8;
-  color: #8a6500;
+  --ctx-kind-border: rgba(240, 188, 46, 0.34);
+  --ctx-kind-bg: #fff7d8;
+  --ctx-kind-ink: #8a6500;
+  --ctx-kind-focus: rgba(240, 188, 46, 0.38);
 }
 
 .k-context-chip.issue-ref {
-  border-color: rgba(67, 114, 195, 0.28);
-  background: #edf4ff;
-  color: #24508f;
+  --ctx-kind-border: rgba(67, 114, 195, 0.28);
+  --ctx-kind-bg: #edf4ff;
+  --ctx-kind-ink: #24508f;
+  --ctx-kind-focus: rgba(67, 114, 195, 0.34);
 }
 
 .k-context-chip.user-attachment,
 .k-context-chip.file {
-  border-color: rgba(247, 96, 154, 0.3);
-  background: #ffeaf3;
-  color: #a92c61;
+  --ctx-kind-border: rgba(247, 96, 154, 0.3);
+  --ctx-kind-bg: #ffeaf3;
+  --ctx-kind-ink: #a92c61;
+  --ctx-kind-focus: rgba(247, 96, 154, 0.34);
 }
 
 .k-context-chip.memory {
-  border-color: rgba(82, 176, 68, 0.3);
-  background: #eaf8e7;
-  color: #2b6f32;
+  --ctx-kind-border: rgba(82, 176, 68, 0.3);
+  --ctx-kind-bg: #eaf8e7;
+  --ctx-kind-ink: #2b6f32;
+  --ctx-kind-focus: rgba(82, 176, 68, 0.34);
 }
 
 .k-context-chip.source,
 .k-context-chip.search-result {
-  border-color: rgba(240, 188, 46, 0.34);
-  background: #fff8dc;
-  color: #806100;
+  --ctx-kind-border: rgba(240, 188, 46, 0.34);
+  --ctx-kind-bg: #fff8dc;
+  --ctx-kind-ink: #806100;
+  --ctx-kind-focus: rgba(240, 188, 46, 0.38);
 }
 
 .k-context-chip-text {

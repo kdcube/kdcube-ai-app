@@ -360,6 +360,22 @@ function base64ToBlob(value: string, mime: string): Blob {
   return new Blob([bytes], { type: mime || 'application/octet-stream' })
 }
 
+function downloadUrlAsFile(runtime: EngineRuntime | undefined, downloadUrl: string, filename: string): void {
+  const href = runtime ? resolveDownloadUrl(runtime, downloadUrl) : downloadUrl
+  const anchor = document.createElement('a')
+  anchor.href = href
+  anchor.download = filename
+  anchor.rel = 'noopener'
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+}
+
+function resolveDownloadUrl(runtime: EngineRuntime, downloadUrl: string): string {
+  if (/^https?:\/\//i.test(downloadUrl)) return downloadUrl
+  return new URL(downloadUrl, runtime.baseUrl).toString()
+}
+
 export async function resolveObjectAction(runtime: EngineRuntime, params: ResolveObjectActionParams): Promise<ObjectActionResponse> {
   const { tenant, project } = requireScope(runtime)
   const response = await fetch(operationsUrl(runtime, 'canvas_object_action', runtime.bundleId, tenant, project), {
@@ -403,13 +419,19 @@ export function downloadObjectActionResult(
   body: ObjectActionResponse,
   fallbackFilename: string,
   fallbackMime?: string | null,
+  runtime?: EngineRuntime,
 ): void {
+  const downloadUrl = typeof body.download_url === 'string' ? body.download_url.trim() : ''
+  const resolvedFilename = typeof body.filename === 'string' && body.filename ? body.filename : fallbackFilename
+  if (downloadUrl) {
+    downloadUrlAsFile(runtime, downloadUrl, resolvedFilename)
+    return
+  }
   const contentBase64 = typeof body.content_base64 === 'string' ? body.content_base64 : ''
   if (!contentBase64) {
-    throw new Error('Resolver did not return downloadable bytes.')
+    throw new Error('Resolver did not return downloadable content.')
   }
   const resolvedMime = typeof body.mime === 'string' && body.mime ? body.mime : fallbackMime || 'application/octet-stream'
-  const resolvedFilename = typeof body.filename === 'string' && body.filename ? body.filename : fallbackFilename
   downloadBlobAsFile(base64ToBlob(contentBase64, resolvedMime), resolvedFilename)
 }
 
@@ -421,7 +443,7 @@ export async function downloadObjectRef(runtime: EngineRuntime, objectRef: strin
     mime,
   })
   try {
-    downloadObjectActionResult(body, filename, mime)
+    downloadObjectActionResult(body, filename, mime, runtime)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     throw new Error(`Could not download ${objectRef}: ${message}`)

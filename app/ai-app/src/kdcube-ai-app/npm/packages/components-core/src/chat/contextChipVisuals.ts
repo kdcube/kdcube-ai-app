@@ -64,8 +64,11 @@ function namespaceFromRef(ref: string): string {
 
 export function contextNamespace(context: unknown): string {
   const item = asContextLike(context)
+  const data = asContextLike(item.data)
   const explicit = rootNamespace(text(item.namespace))
   if (explicit) return explicit
+  const nested = rootNamespace(text(data.namespace))
+  if (nested) return nested
   return namespaceFromRef(objectRef(item))
 }
 
@@ -116,6 +119,7 @@ export function contextChipStyle(
 
 export function contextChipClass(context: unknown): string {
   const item = asContextLike(context)
+  const data = asContextLike(item.data)
   const ref = objectRef(item)
   const classes = [
     text(item.kind),
@@ -123,6 +127,8 @@ export function contextChipClass(context: unknown): string {
     text(item.card_type),
     text(item.namespace),
     text(item.object_kind),
+    text(data.namespace),
+    text(data.object_kind),
     ...namespaceClassesFromRef(ref),
   ]
   return Array.from(new Set(classes.map(safeClass).filter(Boolean))).join(' ')

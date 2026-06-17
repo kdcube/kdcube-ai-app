@@ -20,5 +20,8 @@ export default defineConfig({
     'react-markdown',
     'remark-gfm',
     'remark-breaks',
+    '@kdcube/components-core/chat',
+    '@kdcube/components-core/scene',
+    '@kdcube/components-core/canvas',
   ],
 })

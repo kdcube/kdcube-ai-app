@@ -7,6 +7,8 @@ export interface RecognizedContext {
   summary?: string
   ref?: string
   object_ref?: string
+  namespace?: string
+  object_kind?: string
   logicalPath?: string
   hostedUri?: string
   mime?: string
@@ -120,6 +122,12 @@ function normalizeContext(ctx: Record<string, unknown>, index = 0): RecognizedCo
       ? String(ctx.object_ref)
       : ctx.objectRef != null
         ? String(ctx.objectRef)
+        : undefined,
+    namespace: ctx.namespace != null ? String(ctx.namespace) : undefined,
+    object_kind: ctx.object_kind != null
+      ? String(ctx.object_kind)
+      : ctx.objectKind != null
+        ? String(ctx.objectKind)
         : undefined,
     logicalPath: ctx.logicalPath != null
       ? String(ctx.logicalPath)

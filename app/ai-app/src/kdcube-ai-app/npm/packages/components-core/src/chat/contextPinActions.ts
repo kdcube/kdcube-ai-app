@@ -178,7 +178,7 @@ export async function activateContextPin(
     mime,
   })
   if (action === 'download') {
-    downloadObjectActionResult(response, filename, mime)
+    downloadObjectActionResult(response, filename, mime, runtime)
     return
   }
   if (action === 'open') {

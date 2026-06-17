@@ -467,6 +467,8 @@ export function cardContext(canvas: CanvasDefinition, card: CanvasCard): CanvasC
     label: `${card.id} ${card.title}`,
     summary: card.summary,
     ref,
+    namespace,
+    object_kind: objectKind,
     logical_path: ref,
     mime: card.mime,
     canvas_id: canvas.id,
