@@ -19,6 +19,8 @@ from uuid import uuid4, UUID
 
 from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
 from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint import BaseEntrypoint
+from kdcube_ai_app.apps.chat.sdk.infra.economics.defaults import DEFAULT_QUOTA_POLICIES
+from kdcube_ai_app.apps.chat.sdk.config_scopes import economics_reservation_default
 from kdcube_ai_app.infra.plugin.bundle_loader import on_reactive_event
 from kdcube_ai_app.infra.service_hub.inventory import Config, _mid
 from kdcube_ai_app.apps.chat.sdk.infra.economics.events_resources import (
@@ -116,101 +118,26 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
         if pg_pool is not None or redis is not None:
             self._bind_economics_runtime()
 
-    @property
-    def configuration(self) -> Dict[str, Any]:
-        config = dict(super().configuration)
-        econ = dict(config.get("economics") or {})
-        econ.setdefault("reservation_amount_dollars", 2.0)
-        config["economics"] = econ
-        return config
-
-
     async def ensure_policies_initialized(self):
         """
-        Ensure policies are seeded from bundle configuration (one-time operation).
-        Optional hook for bundles that seed policies from config.
-        Run from a master bundle only.
-        Override in subclasses as needed.
+        Deprecated no-op. Default economics is now seeded at deploy time by the
+        postgres-setup job from the economics.yaml descriptor (see
+        docs/economics/economics-descriptor-seeding-README.md), not from bundle
+        runtime. Kept as a shim so existing bundle callers do not break.
         """
-        if self._policies_initialized:
-            return
-
-        tenant = self.settings.TENANT
-        project = self.settings.PROJECT
-        bundle_id = self.config.ai_bundle_spec.id
-
-        self._policies_initialized = \
-            await self.cp_manager.tenant_project_plan_quota_policies_initialize_from_master_app(tenant=tenant,
-                                                                                                  project=project,
-                                                                                                  bundle_id=bundle_id,
-                                                                                                  app_quota_policies=self.app_quota_policies,
-                                                                                                  app_budget_policies=self.app_budget_policies)
+        self._policies_initialized = True
+        return True
 
     @property
     def app_quota_policies(self):
-        from kdcube_ai_app.apps.chat.sdk.infra.economics.policy import QuotaPolicy
-
-        anonymous_policy = QuotaPolicy(
-            max_concurrent=1,
-            requests_per_day=2,
-            requests_per_month=60,
-            total_requests=None,
-            tokens_per_hour=150_000,
-            tokens_per_day=1_500_000,
-            tokens_per_month=20_000_000,
-        )
-        return {
-            "anonymous": anonymous_policy,
-            "free": QuotaPolicy(
-                max_concurrent=2,
-                requests_per_day=100,
-                requests_per_month=30000,
-                total_requests=None,
-                tokens_per_hour=133_333,
-                tokens_per_day=333_333,
-                tokens_per_month=666_666,
-            ),
-            "payasyougo": QuotaPolicy(
-                max_concurrent=4,
-                requests_per_day=200,
-                requests_per_month=6000,
-                total_requests=None,
-            ),
-            "admin": QuotaPolicy(
-                max_concurrent=10,
-            )
-        }
-
-    @property
-    def app_budget_policies(self):
-        from kdcube_ai_app.apps.chat.sdk.infra.economics.policy import ProviderBudgetPolicy
-
-        return {
-            "anthropic": ProviderBudgetPolicy(
-                provider="anthropic",
-                usd_per_hour=10.0,
-                usd_per_day=200.0,
-                usd_per_month=5000.0,
-            ),
-            "openai": ProviderBudgetPolicy(
-                provider="openai",
-                usd_per_hour=5.0,
-                usd_per_day=100.0,
-                usd_per_month=2000.0,
-            ),
-            "brave": ProviderBudgetPolicy(
-                provider="brave",
-                usd_per_hour=1.0,
-                usd_per_day=20.0,
-                usd_per_month=500.0,
-            ),
-            "duckduckgo": ProviderBudgetPolicy(
-                provider="duckduckgo",
-                usd_per_hour=None,
-                usd_per_day=None,
-                usd_per_month=None,
-            ),
-        }
+        """
+        Platform default quota policies for the four baked-in plans
+        (anonymous/free/payasyougo/admin). Sourced from the shared defaults
+        module — the single source of truth shared with the deploy-time seeder.
+        Subclasses may still override. Used as a defensive runtime fallback and
+        by the non-chat enforcement engine.
+        """
+        return dict(DEFAULT_QUOTA_POLICIES)
 
     async def execute_core(self, *, state: Dict[str, Any], thread_id: str, params: Dict[str, Any]):
         raise NotImplementedError("execute_core() must be implemented by subclasses")
@@ -595,8 +522,6 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
             if await _quota_lock.release_if_held():
                 _log("quota_lock", "Released quota_lock", key=key)
 
-        await self.ensure_policies_initialized()
-
         self._turn_id = self._turn_id or _mid("turn")
         turn_id = self._turn_id
         lock_id = turn_id
@@ -642,11 +567,22 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
         except Exception:
             output_budget = DEFAULT_OUTPUT_BUDGET
         output_budget = max(500, min(output_budget, DEFAULT_OUTPUT_BUDGET))
+        # Chat reservation floor. Bundle prop economics.reservation.chat (scalar
+        # USD; legacy economics.reservation_amount_dollars also accepted) wins:
+        # a positive value enables the floor, a value <= 0 disables it (→ token
+        # based estimate). If the bundle does not define it, inherit the platform
+        # default from economics.yaml (which already returns positive-or-None).
         reservation_amount_dollars = None
         try:
-            raw_reservation = econ_props.get("reservation_amount_dollars")
-            if raw_reservation is not None:
-                reservation_amount_dollars = float(raw_reservation)
+            res_node = (econ_props.get("reservation") or {}).get("chat")
+            if isinstance(res_node, dict):  # tolerate {amount: ...}
+                res_node = res_node.get("amount")
+            b_amount = res_node if res_node is not None else econ_props.get("reservation_amount_dollars")
+            if b_amount is not None:
+                b_amount = float(b_amount)
+                reservation_amount_dollars = b_amount if b_amount > 0 else None
+            else:
+                reservation_amount_dollars = economics_reservation_default("chat")
         except Exception:
             reservation_amount_dollars = None
 

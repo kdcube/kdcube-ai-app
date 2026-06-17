@@ -14,6 +14,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/configuration/secrets-descriptor-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/configuration/gateway-descriptor-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/configuration/service-runtime-configuration-mapping-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/economics/economics-descriptor-README.md
 ---
 # Descriptors
 
@@ -24,6 +25,7 @@ These are the supported deployment descriptors:
 - `bundles.secrets.yaml`
 - `secrets.yaml`
 - `gateway.yaml`
+- `economics.yaml`
 
 Descriptor documentation lives in `docs/configuration/`, one page per
 descriptor. Each page now includes:
@@ -47,6 +49,7 @@ Descriptor pages:
 - [bundles-secrets-descriptor-README.md](../../configuration/bundles-secrets-descriptor-README.md)
 - [secrets-descriptor-README.md](../../configuration/secrets-descriptor-README.md)
 - [gateway-descriptor-README.md](../../configuration/gateway-descriptor-README.md)
+- [economics-descriptor-README.md](../../economics/economics-descriptor-README.md)
 
 This page explains the part that differs by run mode: what the descriptors mean,
 which files are authoritative, and which `assembly.yaml` sections matter.
@@ -153,6 +156,7 @@ Typical use:
 | `bundles.secrets.yaml` | file authority only in `secrets-file` mode | file authority only in `secrets-file` mode | export/import format; in `aws-sm` live bundle secrets authority is grouped AWS SM docs |
 | `secrets.yaml` | file authority only in `secrets-file` mode; otherwise installer input | file authority only in `secrets-file` mode | deployment input; actual live authority depends on provider |
 | `gateway.yaml` | staged and rendered into runtime gateway config | pointed to explicitly if the process should load/render it | deployment input rendered into runtime config |
+| `economics.yaml` | staged into `workdir/config/economics.yaml`; seeded into the project economics tables and runtime-readable | pointed to by `ECONOMICS_YAML_DESCRIPTOR_PATH` | deployment input on EFS `/config`; seeded and runtime-readable |
 
 ## Rules that should stay stable
 
@@ -161,6 +165,8 @@ Typical use:
 - `bundles.secrets.yaml` is for bundle secrets
 - `secrets.yaml` is for platform/global secrets
 - `gateway.yaml` is for gateway config only
+- `economics.yaml` is for per tenant/project economics defaults (seeded into the
+  economics tables; reservation floor read at runtime)
 - local host paths belong only to local run modes
 - do not copy local `assembly.paths.*` values into AWS descriptors
 
@@ -188,5 +194,6 @@ provider. See [Bundle Session Auth](../auth/bundle-session-auth-README.md).
   - [bundles-secrets-descriptor-README.md](../../configuration/bundles-secrets-descriptor-README.md)
   - [secrets-descriptor-README.md](../../configuration/secrets-descriptor-README.md)
   - [gateway-descriptor-README.md](../../configuration/gateway-descriptor-README.md)
+  - [economics-descriptor-README.md](../../economics/economics-descriptor-README.md)
 - Runtime env and descriptor mapping:
   - [service-runtime-configuration-mapping-README.md](../../configuration/service-runtime-configuration-mapping-README.md)

@@ -10,6 +10,9 @@ services:
         required: false
     environment:
       - POSTGRES_HOST=postgres-db
+      - PLATFORM_DESCRIPTORS_DIR=/config
+    volumes:
+      - ${KDCUBE_CONFIG_DIR:-.}:/config
     depends_on:
       postgres-db:
         condition: service_healthy

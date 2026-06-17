@@ -1138,6 +1138,31 @@ def stage_gateway_descriptor(
     ensure_gateway_template(target_path, ai_app_root)
 
 
+def ensure_economics_template(target_path: Path, ai_app_root: Path) -> bool:
+    if target_path.exists():
+        return True
+    src = ai_app_root / "deployment/economics.yaml"
+    if not src.exists():
+        return False
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(src, target_path)
+    return True
+
+
+def stage_economics_descriptor(
+    target_path: Path,
+    *,
+    source_path: Optional[Path],
+    ai_app_root: Path,
+) -> bool:
+    if source_path and source_path.exists():
+        if target_path.resolve() != source_path.resolve():
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source_path, target_path)
+        return True
+    return ensure_economics_template(target_path, ai_app_root)
+
+
 def stage_descriptor_directory(
     target_dir: Path,
     *,
@@ -1209,6 +1234,13 @@ def stage_descriptor_directory(
     )
     have_gateway = gateway_target.exists()
 
+    economics_target = target_dir / "economics.yaml"
+    have_economics = stage_economics_descriptor(
+        economics_target,
+        source_path=_source("economics.yaml"),
+        ai_app_root=ai_app_root,
+    )
+
     assembly = load_release_descriptor(assembly_target)
     bundles = load_release_descriptor(bundles_target) if have_bundles and bundles_target.exists() else {}
     bundles_secrets = (
@@ -1225,6 +1257,7 @@ def stage_descriptor_directory(
         "bundles_path": bundles_target if have_bundles else None,
         "bundles_secrets_path": bundles_secrets_target if have_bundles_secrets else None,
         "gateway_path": gateway_target if have_gateway else None,
+        "economics_path": economics_target if have_economics else None,
         "assembly": assembly,
         "bundles_data": bundles,
         "bundles_secrets_data": bundles_secrets,
@@ -1235,6 +1268,7 @@ def stage_descriptor_directory(
         "have_bundles": have_bundles,
         "have_bundles_secrets": have_bundles_secrets,
         "have_gateway": have_gateway,
+        "have_economics": have_economics,
     }
 
 
