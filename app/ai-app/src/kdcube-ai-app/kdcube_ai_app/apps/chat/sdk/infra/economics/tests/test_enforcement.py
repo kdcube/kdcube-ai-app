@@ -256,6 +256,14 @@ class _EP:
         return self._acct
 
 
+class _ListLogger:
+    def __init__(self):
+        self.messages = []
+
+    def log(self, message: str, level: str = "INFO"):
+        self.messages.append((level, message))
+
+
 def _subject(role="registered"):
     return EconomicsSubject(tenant="t", project="p", user_id="u1", user_type=role, timezone="UTC")
 
@@ -466,6 +474,23 @@ async def test_top_level_project_lifecycle_reserves_and_settles():
     assert len(ep.rl.commits) == 1
     assert ep.run_accounting_calls and ep.run_accounting_calls[0]["turn_id"] == "scope-xyz"
     assert enf.active_econ_scope() is None
+
+
+async def test_economics_guard_emits_centralized_trace_messages():
+    ep = _ep(accounting=(1000, {"cost_total_usd": 0.03}))
+    ep.logger = _ListLogger()
+    g = EconomicsGuard(ep, subject=_subject("registered"), scope_id="trace-1", flow="memory.search",
+                       estimate=EconomicsEstimate(reservation_usd=0.05))
+
+    await g.__aenter__()
+    await g.__aexit__(None, None, None)
+
+    trace_lines = [msg for _level, msg in ep.logger.messages if "[economics.enforcement]" in msg]
+    assert any('"stage": "plan_resolved"' in msg for msg in trace_lines)
+    assert any('"stage": "reserve_ok"' in msg for msg in trace_lines)
+    assert any('"stage": "accounting_bound"' in msg for msg in trace_lines)
+    assert any('"stage": "settle_start"' in msg for msg in trace_lines)
+    assert any('"stage": "settle"' in msg for msg in trace_lines)
 
 
 async def test_paid_lane_switch_when_primary_exhausted_and_fallback_allowed():

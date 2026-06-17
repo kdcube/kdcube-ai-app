@@ -4,9 +4,9 @@
 solution, not just one bundle's service.
 
 It derives the two runtime dependencies from the host entrypoint:
-  - the embedder, `entrypoint.models_service.embed_texts`, and
-  - the economics guard, `entrypoint.search_semantic_guard(flow=...)` — the SAME
-    verify-only `economic_preflight` gate memory and task-tracker search use.
+  - the raw embedder, `entrypoint.models_service.embed_texts`, for index writes, and
+  - the search model-service facade, `entrypoint.search_model_service(flow=...)`,
+    for query embeddings that need economics enforcement and settlement.
 
 A bundle's canvas mount then needs no bespoke embed/guard code:
 
@@ -16,7 +16,7 @@ A bundle's canvas mount then needs no bespoke embed/guard code:
     await pins.search(store=s, user_id=u, payload=p)  # on query (read-only)
 
 Indexing (embedding) happens on updates; search is read-only and embeds only the
-query (degrading to lexical when the guard denies). See `pin_search`/`pin_index`.
+query (degrading to lexical when the facade declines). See `pin_search`/`pin_index`.
 """
 from __future__ import annotations
 
@@ -93,23 +93,28 @@ class CanvasPinSearch:
             raise RuntimeError("models_service.embed_texts is not available for canvas pin search")
         return embed_texts
 
-    def _guard(self):
-        """The shared economics guard, if the host entrypoint provides it
-        (chat-derived bundles do). None → search stays ungated → lexical-capable."""
-        guard_factory = getattr(self.entrypoint, "search_semantic_guard", None)
-        return guard_factory(flow=self.flow) if callable(guard_factory) else None
+    def _model_service(self):
+        factory = getattr(self.entrypoint, "search_model_service", None)
+        if callable(factory):
+            try:
+                service = factory(flow=self.flow)
+                if service is not None:
+                    return service
+            except Exception:
+                self.logger.warning("[canvas.pins] search model service unavailable; using raw model service", exc_info=True)
+        return getattr(self.entrypoint, "models_service", None)
 
     async def index(self, *, store: Any, user_id: str, payload: Mapping[str, Any]) -> dict:
         return await index_pins(
             store=store, user_id=user_id, payload=payload,
-            embed_fn=self._embed_fn(), dim=self.dim,
+            embed_fn=self._embed_fn(), model_service=self._model_service(), dim=self.dim,
             vector_backend=self.vector_backend, vector_store=self.vector_store,
         )
 
     async def clear(self, *, store: Any, user_id: str, payload: Mapping[str, Any]) -> dict:
         return await clear_pins(
             store=store, user_id=user_id, payload=payload,
-            embed_fn=self._embed_fn(), dim=self.dim,
+            embed_fn=self._embed_fn(), model_service=self._model_service(), dim=self.dim,
             vector_backend=self.vector_backend, vector_store=self.vector_store,
         )
 
@@ -124,9 +129,9 @@ class CanvasPinSearch:
                 pass
         return await search_pins(
             store=store, user_id=user_id, payload=payload,
-            embed_fn=self._embed_fn(), dim=self.dim,
+            embed_fn=self._embed_fn(), model_service=self._model_service(), dim=self.dim,
             vector_backend=self.vector_backend, vector_store=self.vector_store,
-            semantic_guard=self._guard(), min_semantic_score=floor,
+            semantic_guard=None, min_semantic_score=floor,
         )
 
 

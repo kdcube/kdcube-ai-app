@@ -25,6 +25,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/build/how-to-release-bundle-content-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-client-communication-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-events-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-economics-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-transports-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/integrations/telegram/telegram-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/integrations/telegram/telegram-external-prereq-README.md
@@ -825,6 +826,12 @@ bundles:
 `tools` controls memory search/read/write tools, `widget` controls user CRUD,
 and reconciliation/snapshots control maintenance and restore flows. The bundle
 must derive from the memory entrypoint mixin for this config to have effect.
+
+Economics-enabled bundles use the entrypoint family and surface wiring described
+in [Bundle Economics Integration](../bundle-economics-integration-README.md).
+Descriptor config supplies deployment props such as
+`config.economics.reservation_amount_dollars`; searchable components receive
+`entrypoint.search_model_service(flow=...)` from code, not from descriptor YAML.
 
 ### `bundles.secrets.yaml`
 

@@ -28,6 +28,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-client-communication-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-events-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-entrypoint-classes-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-economics-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-subsystem-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-platform-integration-README.md
@@ -126,6 +127,7 @@ ownership.
 | Durable user memories, memory widget, memory tools, reconciliation, and `mem:` refs | `MemoryEntrypointMixin` / `BaseEntrypointWithMemory` plus `kdcube_ai_app.apps.chat.sdk.context.memory` | [Bundle Subsystem Integration](../bundle-subsystem-integration-README.md), [User Memories Overview](../../memory/user-memories-overview-README.md) |
 | Versioned collaborative board, pins, canvas tools, canvas ANNOUNCE/timeline policies, and object resolver registry | `kdcube_ai_app.apps.chat.sdk.solutions.canvas` | [Canvas SDK Solution](../../solutions/canvas/canvas-sdk-solution-README.md), [Bundle Subsystem Integration](../bundle-subsystem-integration-README.md) |
 | Saved tasks, schedules, fresh executions, execution journals, output recovery | `kdcube_ai_app.apps.chat.sdk.solutions.tasks` | [Tasks SDK Solution](../../solutions/tasks-README.md) |
+| Economics-aware chat turns, semantic search, memory reconciliation, canvas pin search, and task execution | `BaseEntrypointWithEconomics`, `search_model_service(flow=...)`, and `EconomicsGuard` | [Bundle Economics Integration](../bundle-economics-integration-README.md), [Economic Enforcement Engine](../../../economics/economic-enforcement-engine-README.md) |
 | Gmail/iCloud accounts, OAuth/settings, email attachment materialization, Email MCP, Claude Code email processing | `kdcube_ai_app.apps.chat.sdk.integrations.email` | [Email Integration](../../integrations/email/README.md) |
 | Telegram webhook, Bot API rendering, progress streaming, Mini App auth, widget operations, user registry, signed downloads | `kdcube_ai_app.apps.chat.sdk.integrations.telegram` | [Telegram Integration](../../integrations/telegram/README.md) |
 | Local public HTTPS origin for provider callbacks, Telegram webhooks, OAuth callbacks, and remote-control style integrations while KDCube runs on localhost | one ngrok HTTPS URL through a local reverse proxy into frontend, ingress, and proc | [Serving Local KDCube With Ngrok](../../../service/cicd/ngrok-README.md) |

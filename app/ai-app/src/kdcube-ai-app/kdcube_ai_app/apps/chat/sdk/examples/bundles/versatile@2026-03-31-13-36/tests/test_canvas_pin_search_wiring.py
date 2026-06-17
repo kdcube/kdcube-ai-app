@@ -41,6 +41,19 @@ class _Entrypoint:
         _guard.flow = flow
         return _guard
 
+    def search_model_service(self, *, flow: str):
+        class _ModelService:
+            async def embed_texts(self, texts):
+                return await _embed_texts(texts)
+
+            async def embed_search_query(self, query: str, *, flow: str | None = None):
+                self.flow = flow
+                return [float(len(str(query))) + 100.0]
+
+        service = _ModelService()
+        service.flow = flow
+        return service
+
     def runtime_identity(self):
         return {"tenant": "demo", "project": "project"}
 
@@ -92,9 +105,10 @@ async def test_canvas_search_awaits_pin_search_with_economics_guard(monkeypatch)
     assert result["ok"] is True
     assert seen["user_id"] == "u-1"
     assert "story_id" not in seen
-    assert await seen["semantic_guard"]("alpha") is True
-    assert seen["semantic_guard"].flow == "canvas.pins.search"
+    assert seen["semantic_guard"] is None
     assert await seen["embed_fn"](["alpha"]) == [[5.0]]
+    assert seen["model_service"].flow == "canvas.pins.search"
+    assert await seen["model_service"].embed_search_query("alpha") == [105.0]
 
 
 @pytest.mark.asyncio

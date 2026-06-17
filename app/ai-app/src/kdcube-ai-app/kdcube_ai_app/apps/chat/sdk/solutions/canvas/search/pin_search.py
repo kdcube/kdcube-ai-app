@@ -10,7 +10,9 @@ Two ops, deliberately split by frequency:
   pin material.
 - `search_pins` — **read-only**, called per query (far more frequent than updates).
   It does NOT sync or re-embed pins; it searches the already-built index and only
-  embeds the *query* (gated by `semantic_guard` → degrades to lexical on denial).
+  embeds the *query* through `model_service.embed_search_query(...)` when available
+  (or the legacy `semantic_guard`/`embed_fn` path for older callers). Economics
+  enforcement and settlement live behind the model-service facade.
 
 Why index on update, not search: searches are frequent and we must not rebuild the
 index every time. And we don't know when a pinned object's *source* data changes —
@@ -83,6 +85,7 @@ def _build_index(
     vector_backend: str = "faiss-local",
     min_semantic_score: float = DEFAULT_MIN_SEMANTIC_SCORE,
     vector_store: Optional[VectorStore] = None, semantic_guard: Optional[Any] = None,
+    model_service: Optional[Any] = None,
 ) -> PinSearchIndex:
     db_path = pin_index_db_path(store, user_id)
     # An explicit instance wins (tests / advanced); otherwise build a per-user
@@ -91,6 +94,7 @@ def _build_index(
     return PinSearchIndex(
         db_path=db_path,
         embed_fn=embed_fn,
+        model_service=model_service,
         dim=dim,
         vector_store=vs,
         semantic_guard=semantic_guard,
@@ -104,6 +108,7 @@ async def index_pins(
     user_id: str,
     payload: Mapping[str, Any],
     embed_fn: EmbedFn,
+    model_service: Optional[Any] = None,
     dim: int = DEFAULT_EMBEDDING_DIM,
     vector_backend: str = "faiss-local",
     vector_store: Optional[VectorStore] = None,
@@ -122,7 +127,10 @@ async def index_pins(
 
     cards = canvas.get("cards") or []
     db_path = pin_index_db_path(store, user_id)
-    index = _build_index(store, user_id, embed_fn=embed_fn, dim=dim, vector_backend=vector_backend, vector_store=vector_store)
+    index = _build_index(
+        store, user_id, embed_fn=embed_fn, model_service=model_service, dim=dim,
+        vector_backend=vector_backend, vector_store=vector_store,
+    )
     try:
         async with observed_file_lock_async(
             lock_path=db_path.with_name(db_path.name + ".lock"),
@@ -146,6 +154,7 @@ async def clear_pins(
     user_id: str,
     payload: Mapping[str, Any],
     embed_fn: EmbedFn,
+    model_service: Optional[Any] = None,
     dim: int = DEFAULT_EMBEDDING_DIM,
     vector_backend: str = "faiss-local",
     vector_store: Optional[VectorStore] = None,
@@ -153,7 +162,10 @@ async def clear_pins(
     """Clear one board from the pin index. Call after a board delete."""
     board_id = _resolve_board(store, payload)
     db_path = pin_index_db_path(store, user_id)
-    index = _build_index(store, user_id, embed_fn=embed_fn, dim=dim, vector_backend=vector_backend, vector_store=vector_store)
+    index = _build_index(
+        store, user_id, embed_fn=embed_fn, model_service=model_service, dim=dim,
+        vector_backend=vector_backend, vector_store=vector_store,
+    )
     try:
         async with observed_file_lock_async(
             lock_path=db_path.with_name(db_path.name + ".lock"),
@@ -174,6 +186,7 @@ async def search_pins(
     user_id: str,
     payload: Mapping[str, Any],
     embed_fn: EmbedFn,
+    model_service: Optional[Any] = None,
     dim: int = DEFAULT_EMBEDDING_DIM,
     semantic_guard: Optional[Any] = None,
     min_semantic_score: float = DEFAULT_MIN_SEMANTIC_SCORE,
@@ -181,8 +194,9 @@ async def search_pins(
     vector_store: Optional[VectorStore] = None,
 ) -> dict:
     """Read-only hybrid search over a user's already-indexed pins (indexing happens
-    on canvas updates via `index_pins`). Embeds only the query — gated by
-    `semantic_guard`; on denial the search degrades to lexical + recency.
+    on canvas updates via `index_pins`). Embeds only the query through the supplied
+    model service when available; if the model service declines the query embed,
+    search degrades to lexical + recency.
     `payload`: {query, limit?, canvas_name?/canvas_id?, all_boards?, kinds?, namespaces?}."""
     query = str(payload.get("query") or "").strip()
     try:
@@ -199,6 +213,7 @@ async def search_pins(
         store, user_id, embed_fn=embed_fn, dim=dim,
         vector_backend=vector_backend, min_semantic_score=min_semantic_score,
         vector_store=vector_store, semantic_guard=semantic_guard,
+        model_service=model_service,
     )
 
     # Self-heal: if this board has no indexed docs (never indexed — e.g. pins

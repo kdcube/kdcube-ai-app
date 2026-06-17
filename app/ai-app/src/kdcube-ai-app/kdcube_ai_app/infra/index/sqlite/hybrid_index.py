@@ -38,6 +38,10 @@ SearchMode = Literal["hybrid", "lexical", "semantic"]
 logger = logging.getLogger("kdcube.index.hybrid")
 
 
+class _SemanticSkipped(Exception):
+    pass
+
+
 class HybridIndex:
     def __init__(self, config: IndexConfig) -> None:
         self.cfg = config
@@ -80,6 +84,13 @@ class HybridIndex:
         self._set_meta(conn, "data_version", self._get_int(conn, "data_version", 0) + 1)
 
     # ---- writes ----
+    async def _embed_documents(self, texts: Sequence[str]) -> List[List[float]]:
+        model_service = self.cfg.model_service
+        embed_texts = getattr(model_service, "embed_texts", None)
+        if callable(embed_texts):
+            return await embed_texts(list(texts))
+        return await self.cfg.embed_fn(texts)
+
     async def upsert(self, docs: Iterable[Document]) -> None:
         docs = list(docs)
         if not docs:
@@ -96,7 +107,7 @@ class HybridIndex:
         to_embed = [d for d in docs if existing.get(d.id) != d.text]
         vec_by_id: Dict[str, List[float]] = {}
         if to_embed:
-            vectors = await self.cfg.embed_fn([d.text for d in to_embed])
+            vectors = await self._embed_documents([d.text for d in to_embed])
             vec_by_id = {d.id: v for d, v in zip(to_embed, vectors)}
 
         now = time.time()
@@ -191,6 +202,11 @@ class HybridIndex:
         if do_semantic:
             try:
                 rankings["semantic"] = await self._semantic(query, limit, filters)
+            except _SemanticSkipped:
+                rankings.pop("semantic", None)
+                if not do_lexical:
+                    with self._conn() as conn:
+                        rankings["lexical"] = self._lexical(conn, query, limit, filters)
             except Exception:
                 # Semantic factor unavailable at runtime (embedder/vector-store
                 # error). Degrade gracefully instead of failing the whole search.
@@ -267,14 +283,25 @@ class HybridIndex:
                 return False  # fail closed: never pay for a query the guard couldn't clear
         return True
 
-    async def _embed_query(self, query: str) -> List[float]:
+    async def _embed_query(self, query: str) -> List[float] | None:
         """Embed a query once; cache it (LRU) so repeats — pagination, debounced
         typeahead, the same term across boards — don't re-pay the embedder."""
         cache = self._qcache
         if query in cache:
             cache.move_to_end(query)
             return cache[query]
-        vec = (await self.cfg.embed_fn([query]))[0]
+        model_service = self.cfg.model_service
+        embed_search_query = getattr(model_service, "embed_search_query", None)
+        if callable(embed_search_query):
+            vec = await embed_search_query(query)
+            if vec is None:
+                return None
+        else:
+            embed_texts = getattr(model_service, "embed_texts", None)
+            if callable(embed_texts):
+                vec = (await embed_texts([query]))[0]
+            else:
+                vec = (await self.cfg.embed_fn([query]))[0]
         cache[query] = vec
         if len(cache) > max(1, self.cfg.query_cache_size):
             cache.popitem(last=False)
@@ -283,6 +310,8 @@ class HybridIndex:
     async def _semantic(self, query, limit, filters) -> List[str]:
         await self.ensure_built()
         qvec = await self._embed_query(query)
+        if qvec is None:
+            raise _SemanticSkipped()
         hits = self.cfg.vector_store.search(qvec, limit)
         floor = self.cfg.min_semantic_score
         order = [rid for rid, score in hits if score > floor]

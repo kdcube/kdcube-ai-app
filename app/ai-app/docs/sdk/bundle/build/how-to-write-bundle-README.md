@@ -20,6 +20,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-developer-guide-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/versatile-reference-bundle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-entrypoint-classes-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-economics-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-agent-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-platform-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-client-communication-README.md
@@ -406,6 +407,11 @@ Skeleton file rules:
   `ui.widgets.<alias>.src_folder` can be present while no static artifacts are
   built or served. The family includes the bare base plus economics and memory
   variants; see [Bundle Entrypoint Classes](../bundle-entrypoint-classes-README.md)
+- if the bundle has a chat/agent turn, semantic query embedding, task execution,
+  or background job that spends quota/money, wire the appropriate economics
+  surface from [Bundle Economics Integration](../bundle-economics-integration-README.md):
+  `BaseEntrypointWithEconomics`, `search_model_service(flow=...)`, or
+  `EconomicsGuard`
 - when such an entrypoint overrides `on_bundle_load(...)`, preserve
   `await super().on_bundle_load(**kwargs)` so startup preload builds configured
   UI before live widget traffic

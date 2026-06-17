@@ -52,6 +52,30 @@ These decorators wrap model/back‑end calls and emit an `AccountingEvent` with:
 - `success` and `error_message`
 - **context snapshot** taken from `AccountingContext`
 
+For semantic search, the economics feasibility check and the accounting event are
+separate steps. Searchable components should receive a model-service facade rather
+than separate guard/embed callbacks. The facade exposes `embed_texts(...)` for
+document/index material and `embed_search_query(query, flow=...)` for query
+embeddings. The actual discharge requires the embedding call to go through an
+accounting-aware model service and then through a settlement owner:
+
+- chat-turn search: the search service guard settles the tracked embedding event
+  at the service boundary;
+- standalone UI/API search: wrap the embedding call in `EconomicsGuard`, which
+  binds accounting under the guard scope and settles on exit.
+
+An `EconomicsGuard` marks only its own local settlement scope. A nested guard
+inside another guard can verify and let the active guard settle, but the chat
+runner is not a generic reducer for child service reservations. Custom embedding
+backends also emit `embedding` events; a non-zero dollar charge requires a
+matching provider/model entry in the accounting price table.
+
+Runtime enforcement can be traced centrally with the log marker
+`[economics.enforcement]`. Search for that marker together with a flow name such
+as `memory.search`, `canvas.pins.search`, `task_tracker.issue.search`,
+`memory.reconciler`, or `tasks` to verify admission, reservation, accounting
+binding, settlement, denial, and lexical fallback behavior.
+
 ### 1.2 Context + enrichment
 
 Every event carries a context snapshot derived from `AccountingContext` (stored in async‑safe `contextvars`). The system flattens selected context keys into the event root using `CONTEXT_EXPORT_KEYS` and keeps the full context under `context`.

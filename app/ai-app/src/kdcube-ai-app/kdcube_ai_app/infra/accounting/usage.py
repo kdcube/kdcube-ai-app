@@ -590,6 +590,45 @@ def _approx_tokens_by_chars(text: str) -> Dict[str, int]:
     toks = max(1, len(text or "") // 4)
     return {"prompt_tokens": toks, "completion_tokens": 0, "total_tokens": toks}
 
+def estimate_embedding_tokens(text: str, *, min_tokens: int = 1) -> int:
+    """Estimate embedding input tokens with the shared chars/4 accounting heuristic."""
+    toks = int(_approx_tokens_by_chars(text).get("total_tokens") or 0)
+    return max(int(min_tokens or 0), toks)
+
+def embedding_price_usd_per_1m(
+        *,
+        provider: str = "openai",
+        model: str = "text-embedding-3-small",
+        pricing_table=None,
+) -> float:
+    """Return the configured USD / 1M token rate for an embedding service."""
+    row = _find_emb_price(provider, model, pricing_table=pricing_table)
+    if row:
+        return float(row.get("tokens_1M", 0.0) or 0.0)
+    return 0.0
+
+def quote_embedding_usd(
+        texts: List[str] | tuple[str, ...],
+        *,
+        provider: str = "openai",
+        model: str = "text-embedding-3-small",
+        min_tokens_per_text: int = 1,
+        pricing_table=None,
+) -> float:
+    """Estimate embedding USD for the requested provider/model and text batch."""
+    tokens = sum(
+        estimate_embedding_tokens(str(text or ""), min_tokens=min_tokens_per_text)
+        for text in (texts or [])
+    )
+    if tokens <= 0:
+        return 0.0
+    rate = embedding_price_usd_per_1m(
+        provider=provider,
+        model=model,
+        pricing_table=pricing_table,
+    )
+    return float(tokens) / 1_000_000.0 * float(rate or 0.0)
+
 def _structured_usage_extractor(result, *_a, **_kw) -> ServiceUsage:
     """track_llm usage_extractor for dicts returned by call_model_with_structure."""
     try:

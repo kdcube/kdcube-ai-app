@@ -118,12 +118,14 @@ class PinSearchIndex:
         db_path: str | Path,
         embed_fn: EmbedFn,
         dim: int,
+        model_service: Any | None = None,
         vector_store: VectorStore | None = None,
         **index_kwargs: Any,
     ) -> None:
         self.index = HybridIndex(IndexConfig(
             db_path=Path(db_path),
             embed_fn=embed_fn,
+            model_service=model_service,
             dim=dim,
             vector_store=vector_store or BruteForceVectorStore(),
             **index_kwargs,

@@ -22,7 +22,7 @@ from langchain_core.messages import SystemMessage, HumanMessage, BaseMessage, AI
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from kdcube_ai_app.apps.chat.reg import MODEL_CONFIGS, EMBEDDERS, model_caps
-from kdcube_ai_app.infra.accounting import track_llm
+from kdcube_ai_app.infra.accounting import track_embedding, track_llm
 from kdcube_ai_app.infra.accounting.usage import (
     _structured_usage_extractor,
     _norm_usage_dict,
@@ -3032,6 +3032,26 @@ class CustomEmbeddings(Embeddings):
         self.endpoint = endpoint; self.model = model; self.size = size
         self.logger = AgentLogger("CustomEmbeddings")
 
+    @track_embedding(
+        provider_extractor=lambda _result, self, *_args, **_kwargs: "custom",
+        model_extractor=lambda _result, self, *_args, **_kwargs: str(getattr(self, "model", "") or "custom"),
+        usage_extractor=lambda result, _self, texts, **_kwargs: ServiceUsage(
+            embedding_tokens=sum(
+                int(_approx_tokens_by_chars(str(text or "")).get("total_tokens") or 0)
+                for text in (texts or [])
+            ),
+            embedding_dimensions=max(
+                (len(vec) for vec in (result or []) if isinstance(vec, list)),
+                default=0,
+            ),
+            requests=max(1, len(texts or [])),
+        ),
+        metadata_extractor=lambda _result, self, texts, **_kwargs: {
+            "text_count": len(texts or []),
+            "embedding_size": getattr(self, "size", None),
+            "endpoint": getattr(self, "endpoint", ""),
+        },
+    )
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         out = []
         for t in texts:

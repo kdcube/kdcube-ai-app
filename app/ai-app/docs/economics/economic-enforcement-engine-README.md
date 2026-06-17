@@ -123,6 +123,75 @@ except EconomicsLimitException:
     use_cheaper_path()    # e.g. skip the expensive model call, fall back
 ```
 
+## Semantic Search Embeddings
+
+Semantic search has two valid economics shapes:
+
+| Search location | Guarding shape | Settlement owner |
+| --- | --- | --- |
+| Concrete service call inside a chat turn | `EconomicsGuard` around the query embed | the service guard reserves, binds accounting, and settles the embedding event at the service boundary |
+| Standalone UI/API search | `async with EconomicsGuard(...): await embed_texts(...)` | the guard reserves, binds accounting, and settles the embedding event when the block exits |
+
+An active `EconomicsGuard` marks only its own local settlement scope. A nested
+guard entered inside that scope degrades to verify-only and lets the active guard
+settle the tracked events. The chat runner itself is not a generic parent reducer
+for arbitrary child service reservations.
+
+The preferred component integration is a model-service facade:
+
+- components receive one `model_service` dependency;
+- `model_service.embed_texts([...])` embeds document/index material through the
+  normal accounting-aware model service;
+- `model_service.embed_search_query(query, flow=...)` wraps the actual query
+  embedding in `EconomicsGuard`. The semantic-search facade returns `None` on
+  economics denial so callers can degrade to lexical search; services without a
+  fallback can let `EconomicsLimitException` interrupt the operation instead.
+
+`make_semantic_search_guard(...)` remains as a legacy predicate for callers that
+still have a guard hook. New searchable components should prefer the model-service
+facade (`EconomicSearchModelService`, typically exposed by an entrypoint as
+`search_model_service(flow=...)`).
+
+The reservation amount for semantic query embeddings is computed from the requested
+embedding provider/model in `price_table()` and the shared accounting token estimate:
+
+```
+reservation_usd = max(0.000001, estimated_tokens * embedding_tokens_1M / 1_000_000)
+estimated_tokens = max(16, chars / 4) per embedded text
+```
+
+For `openai/text-embedding-3-small` at `$0.02 / 1M tokens`, short queries usually
+hit the `$0.000001` floor. Larger batches scale with the same price-table rate.
+Custom/self-hosted embedding backends emit embedding usage events too; they charge
+non-zero dollars only when their provider/model is represented in the price table.
+
+## Enforcement Traces
+
+All `EconomicsGuard` and semantic-search facade paths emit centralized runtime
+logs with the marker:
+
+```text
+[economics.enforcement]
+```
+
+The trace payload includes `flow`, `scope_id`, `subject_id`, tenant/project,
+user id/type, and the stage-specific fields. Current stages:
+
+| Stage | Meaning |
+| --- | --- |
+| `preflight_start` / `preflight_ok` | verify-only feasibility check |
+| `plan_resolved` | resolved role, plan, funding lane, and reservation estimate |
+| `admit` | quota admission evaluated and token reservation state known |
+| `reserve_ok` | funding reservation created |
+| `accounting_bound` | accounting context bound under the operation scope |
+| `accounting_run_start` / `accounting_run_done` | usage collected for settlement |
+| `settle_start` / `settle` | actual spend settled and remaining reservation released |
+| `deny` | operation rejected by economics policy |
+| `deny_cleanup` | reservations/locks are being released after a denial path |
+
+Semantic-search economics denial logs a facade-level fallback line and returns
+`None` to the caller, allowing lexical-only search when the component supports it.
+
 ## Contracts
 
 ### `EconomicsEstimate` — reservation size

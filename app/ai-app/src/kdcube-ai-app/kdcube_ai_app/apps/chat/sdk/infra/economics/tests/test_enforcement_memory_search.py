@@ -1,11 +1,10 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Elena Viter
 
-"""Phase-4 wiring tests: memory semantic search -> economic_preflight + BM25 downgrade.
+"""Phase-4 wiring tests: memory semantic search -> metered embedder + BM25 downgrade.
 
 Exercises the search economics helpers added to the memory entrypoint without
-standing up the store/embedder. `economic_preflight` is monkeypatched to drive
-the allow / limit branches; methods are called unbound against a light stub.
+standing up the store/embedder. Methods are called unbound against a light stub.
 """
 
 from __future__ import annotations
@@ -30,12 +29,14 @@ class _Config:
 class _StubSearchEP:
     """Minimal stand-in for the memory entrypoint, synchronous (widget) shape."""
 
-    def __init__(self, *, economics=True, user_type="registered", user_id="u1", reservation=0.01):
+    def __init__(self, *, economics=True, user_type="registered", user_id="u1", reservation=None, deny=False):
         self.cp_manager = object() if economics else None
         self.rl = object() if economics else None
         self.budget_limiter = object() if economics else None
         self._reservation = reservation
+        self._deny = deny
         self.embed_calls: list[str] = []
+        self.metered_flows: list[str] = []
         self.comm_context = types.SimpleNamespace(
             actor=types.SimpleNamespace(tenant_id="t", project_id="p"),
             user=types.SimpleNamespace(user_id=user_id, user_type=user_type),
@@ -45,11 +46,27 @@ class _StubSearchEP:
         self.config = _Config()
 
     def _memory_widget_config(self):
-        return {"search_reservation_amount_dollars": self._reservation}
+        return {"search_reservation_amount_dollars": self._reservation} if self._reservation is not None else {}
 
     async def _memory_embed_one(self, text):
         self.embed_calls.append(text)
         return [0.1, 0.2, 0.3]
+
+    def search_model_service(self, *, flow: str):
+        if not self._memory_economics_enabled():
+            return None
+
+        stub = self
+
+        class _ModelService:
+            async def embed_search_query(self, text: str, *, flow: str | None = None):
+                stub.metered_flows.append(flow or "")
+                if stub._deny:
+                    raise EconomicsLimitException("rate limited", code="rate_limited")
+                stub.embed_calls.append(str(text))
+                return [0.1, 0.2, 0.3]
+
+        return _ModelService()
 
     # delegate to the real mixin implementations
     def _memory_economics_enabled(self):
@@ -61,8 +78,8 @@ class _StubSearchEP:
     def _memory_effective_user_type(self, default="registered"):
         return M._memory_effective_user_type(self, default)
 
-    def _memory_search_reservation_usd(self):
-        return M._memory_search_reservation_usd(self)
+    def _memory_search_reservation_usd(self, query: str = ""):
+        return M._memory_search_reservation_usd(self, query)
 
     def _memory_search_econ_subject(self):
         return M._memory_search_econ_subject(self)
@@ -73,8 +90,8 @@ class _StubSearchEP:
 
 def test_search_reservation_usd_from_config_and_default():
     assert M._memory_search_reservation_usd(_StubSearchEP(reservation=0.03)) == 0.03
-    # bad value -> default
-    assert M._memory_search_reservation_usd(_StubSearchEP(reservation="nope")) == 0.01
+    # bad value -> price-table estimate floor for text-embedding-3-small
+    assert M._memory_search_reservation_usd(_StubSearchEP(reservation="nope"), "hello") == 1e-6
 
 
 def test_search_subject_uses_session_role():
@@ -107,29 +124,16 @@ async def test_economics_disabled_embeds_without_preflight(monkeypatch):
     assert ep.embed_calls == ["hello"]
 
 
-async def test_preflight_ok_embeds(monkeypatch):
-    seen = {}
-
-    async def _pf(entrypoint, *, subject, estimate, flow, policy=None):
-        seen["flow"] = flow
-        seen["reservation"] = estimate.reservation_usd
-        seen["role"] = subject.user_type
-        return object()
-
-    monkeypatch.setattr(enf, "economic_preflight", _pf)
+async def test_metered_embedder_ok_embeds():
     ep = _StubSearchEP(user_type="paid", reservation=0.02)
     out = await ep._memory_search_embed_or_downgrade("query text")
     assert out == [0.1, 0.2, 0.3]
     assert ep.embed_calls == ["query text"]
-    assert seen == {"flow": "memory.search", "reservation": 0.02, "role": "paid"}
+    assert ep.metered_flows == ["memory.search"]
 
 
-async def test_economics_limit_downgrades_to_bm25(monkeypatch):
-    async def _pf(*a, **k):
-        raise EconomicsLimitException("rate limited", code="rate_limited")
-
-    monkeypatch.setattr(enf, "economic_preflight", _pf)
-    ep = _StubSearchEP()
+async def test_economics_limit_downgrades_to_bm25():
+    ep = _StubSearchEP(deny=True)
     out = await ep._memory_search_embed_or_downgrade("query text")
     assert out is None             # query_embedding=None -> store falls back to FTS/BM25
     assert ep.embed_calls == []    # embedding cost was NOT paid

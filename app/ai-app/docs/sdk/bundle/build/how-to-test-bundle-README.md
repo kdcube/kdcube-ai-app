@@ -18,6 +18,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-entrypoint-classes-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-properties-and-secrets-lifecycle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-subsystem-integration-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-economics-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/versatile-reference-bundle-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-widget-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-events-README.md
@@ -396,6 +397,7 @@ development it is usually under the dev workspace:
 ```bash
 LOG_DIR="${KDCUBE_DEV_WORKSPACE:-$HOME/.kdcube/dev-workspace}/log"
 rg -n "<bundle-id>|<tool-id>|bundle.on_load|allowed_plugins|tool_ids|tool_runtime_not_bound|on_job" "$LOG_DIR"
+rg -n "\\[economics\\.enforcement\\]|memory.search|canvas.pins.search|task_tracker.issue.search|memory.reconciler|tasks" "$LOG_DIR"
 ```
 
 Replace `<bundle-id>` and `<tool-id>` with the failing bundle and tool aliases.
@@ -416,6 +418,9 @@ Prove the sequence:
   (KDCube-authenticated, Telegram/public, cron, or `@on_job`)
 - `bundle_call_context` or job payload contains expected runtime ids for job
   tools instead of those ids being supplied by the model
+- economics-enabled surfaces show `[economics.enforcement]` traces for
+  admission, reservation, accounting binding, settlement, or denial; semantic
+  search denial shows the documented lexical fallback path
 - the turn timeline contains the events needed by the transport adapter
 
 Classify failures by boundary:

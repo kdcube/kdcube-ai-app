@@ -52,6 +52,7 @@ class IndexConfig:
     embed_fn: EmbedFn
     dim: int
     vector_store: VectorStore
+    model_service: Any | None = None
     weights: FusionWeights = field(default_factory=FusionWeights)
     rrf_k: int = 60
     recency_half_life_days: float = 30.0

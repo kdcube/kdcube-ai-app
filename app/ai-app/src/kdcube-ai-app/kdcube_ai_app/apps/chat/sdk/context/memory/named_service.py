@@ -508,7 +508,9 @@ class MemoryNamedServiceProvider(NamedServiceProvider):
         bundle_id: str | None = None,
         allow_write: bool = False,
         default_scope_filter: str = "current_bundle",
+        model_service: Any | None = None,
         embedding_factory: EmbeddingFactory | None = None,
+        search_embedding_factory: EmbeddingFactory | None = None,
         embedding_enabled: bool = True,
         ensure_schema: bool = False,
     ) -> None:
@@ -517,7 +519,9 @@ class MemoryNamedServiceProvider(NamedServiceProvider):
         self._scope_factory = scope_factory
         self._allow_write = bool(allow_write)
         self._default_scope_filter = normalize_scope_filter(default_scope_filter)
+        self._model_service = model_service
         self._embedding_factory = embedding_factory
+        self._search_embedding_factory = search_embedding_factory
         self._embedding_enabled = bool(embedding_enabled)
         self._ensure_schema = bool(ensure_schema)
 
@@ -534,16 +538,51 @@ class MemoryNamedServiceProvider(NamedServiceProvider):
         if callable(ensure):
             await ensure()
 
-    async def _embedding(self, query: str) -> Sequence[float] | None:
-        if not self._embedding_enabled or self._embedding_factory is None or not _text(query):
+    async def _embedding_with(self, factory: EmbeddingFactory | None, query: str) -> Sequence[float] | None:
+        if not self._embedding_enabled or factory is None or not _text(query):
             return None
         try:
-            value = self._embedding_factory(query)
+            value = factory(query)
             if inspect.isawaitable(value):
                 value = await value
             return value if value is not None else None
         except Exception:
             return None
+
+    async def _embedding(self, query: str) -> Sequence[float] | None:
+        if self._embedding_enabled and self._model_service is not None and _text(query):
+            embed_texts = getattr(self._model_service, "embed_texts", None)
+            if callable(embed_texts):
+                try:
+                    vectors = embed_texts([query])
+                    if inspect.isawaitable(vectors):
+                        vectors = await vectors
+                    return vectors[0] if vectors else None
+                except Exception:
+                    return None
+        return await self._embedding_with(self._embedding_factory, query)
+
+    async def _search_embedding(self, query: str) -> Sequence[float] | None:
+        if self._embedding_enabled and self._model_service is not None and _text(query):
+            embed_query = getattr(self._model_service, "embed_search_query", None)
+            if callable(embed_query):
+                try:
+                    value = embed_query(query, flow="memory.search")
+                    if inspect.isawaitable(value):
+                        value = await value
+                    return value if value is not None else None
+                except Exception:
+                    return None
+            embed_texts = getattr(self._model_service, "embed_texts", None)
+            if callable(embed_texts):
+                try:
+                    vectors = embed_texts([query])
+                    if inspect.isawaitable(vectors):
+                        vectors = await vectors
+                    return vectors[0] if vectors else None
+                except Exception:
+                    return None
+        return await self._embedding_with(self._search_embedding_factory or self._embedding_factory, query)
 
     def _scope_filter(self, request: NamedServiceRequest, *, default: str | None = None) -> str:
         return normalize_scope_filter(
@@ -666,7 +705,7 @@ class MemoryNamedServiceProvider(NamedServiceProvider):
         effective_semantic_weight = float(
             (factor_weights or {}).get("semantic_weight", DEFAULT_MEMORY_SCORING.semantic_weight)
         )
-        query_embedding = None if effective_semantic_weight <= 0 else await self._embedding(query)
+        query_embedding = None if effective_semantic_weight <= 0 else await self._search_embedding(query)
         search_request = MemorySearchRequest(
             scope=self._scope(ctx),
             query=query,
@@ -1136,7 +1175,9 @@ def make_memory_named_service_provider(
     bundle_id: str | None = None,
     allow_write: bool = False,
     default_scope_filter: str = "current_bundle",
+    model_service: Any | None = None,
     embedding_factory: EmbeddingFactory | None = None,
+    search_embedding_factory: EmbeddingFactory | None = None,
     embedding_enabled: bool = True,
     ensure_schema: bool = False,
 ) -> MemoryNamedServiceProvider:
@@ -1146,7 +1187,9 @@ def make_memory_named_service_provider(
         bundle_id=bundle_id,
         allow_write=allow_write,
         default_scope_filter=default_scope_filter,
+        model_service=model_service,
         embedding_factory=embedding_factory,
+        search_embedding_factory=search_embedding_factory,
         embedding_enabled=embedding_enabled,
         ensure_schema=ensure_schema,
     )

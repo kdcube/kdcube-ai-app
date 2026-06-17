@@ -133,6 +133,39 @@ async def _run_guard() -> None:
     print("test_guard: ALL PASS")
 
 
+async def _run_model_service_query_embed() -> None:
+    calls = {"doc": 0, "query": 0}
+
+    async def doc_embed(texts):
+        calls["doc"] += len(texts)
+        return await fake_embed(texts)
+
+    class _ModelService:
+        async def embed_texts(self, texts):
+            return await doc_embed(texts)
+
+        async def embed_search_query(self, query: str, *, flow: str | None = None):
+            del flow
+            calls["query"] += 1
+            return (await fake_embed([query]))[0]
+
+    with tempfile.TemporaryDirectory() as d:
+        idx = HybridIndex(IndexConfig(
+            db_path=Path(d) / "q.sqlite",
+            embed_fn=doc_embed,
+            model_service=_ModelService(),
+            dim=len(VOCAB),
+            vector_store=BruteForceVectorStore(),
+        ))
+        await idx.upsert([Document(id="d1", text="alpha beta")])
+        assert calls == {"doc": 1, "query": 0}
+
+        await idx.search("alpha", top_k=5)
+        assert calls == {"doc": 1, "query": 1}
+
+    print("test_model_service_query_embed: ALL PASS")
+
+
 def test_hybrid_index():
     asyncio.run(_run_all())
 
@@ -141,6 +174,11 @@ def test_guard():
     asyncio.run(_run_guard())
 
 
+def test_model_service_query_embed():
+    asyncio.run(_run_model_service_query_embed())
+
+
 if __name__ == "__main__":
     asyncio.run(_run_all())
     asyncio.run(_run_guard())
+    asyncio.run(_run_model_service_query_embed())

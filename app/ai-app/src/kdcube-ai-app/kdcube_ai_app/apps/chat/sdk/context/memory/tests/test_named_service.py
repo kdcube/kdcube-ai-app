@@ -113,13 +113,15 @@ class _Store:
         return self.record
 
 
-def _provider_with_store(store: _Store, *, embedding_factory=None):
+def _provider_with_store(store: _Store, *, model_service=None, embedding_factory=None, search_embedding_factory=None):
     return make_memory_named_service_provider(
         store_factory=lambda ctx: store,
         scope_factory=lambda ctx: MemoryScope(tenant="tenant-a", project="project-a", user_id="user-a", bundle_id="bundle@1"),
         bundle_id="bundle@1",
         allow_write=True,
+        model_service=model_service,
         embedding_factory=embedding_factory,
+        search_embedding_factory=search_embedding_factory,
     )
 
 
@@ -247,6 +249,41 @@ async def test_positive_semantic_weight_still_embeds() -> None:
     assert response.ok is True
     assert embed_calls == ["legal commercial"]
     assert store.search_requests[0].query_embedding == [0.1, 0.2, 0.3]
+
+
+@pytest.mark.asyncio
+async def test_memory_search_uses_model_service_search_query() -> None:
+    store = _Store()
+    write_calls: list[str] = []
+    search_calls: list[tuple[str, str | None]] = []
+
+    def write_embed(text: str):
+        write_calls.append(text)
+        return [0.1]
+
+    class _ModelService:
+        async def embed_search_query(self, text: str, *, flow: str | None = None):
+            search_calls.append((text, flow))
+            return [0.9]
+
+    response = await _provider_with_store(
+        store,
+        model_service=_ModelService(),
+        embedding_factory=write_embed,
+    ).object_search(
+        NamedServiceContext(tenant="tenant-a", project="project-a", user_id="user-a"),
+        NamedServiceRequest(
+            operation="object.search",
+            namespace="mem",
+            query="legal commercial",
+            limit=5,
+        ),
+    )
+
+    assert response.ok is True
+    assert write_calls == []
+    assert search_calls == [("legal commercial", "memory.search")]
+    assert store.search_requests[0].query_embedding == [0.9]
 
 
 @pytest.mark.asyncio

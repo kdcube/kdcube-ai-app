@@ -438,6 +438,7 @@ class MemoryEntrypointMixin:
             bundle_id=getattr(bundle_spec, "id", None) or "",
             allow_write=self._memory_named_service_write_enabled(),
             default_scope_filter=self._memory_named_service_default_scope_filter(),
+            model_service=self.search_model_service(flow="memory.search"),
             embedding_enabled=_truthy(tools_cfg.get("embedding_enabled"), True),
             ensure_schema=_truthy(widget_cfg.get("ensure_schema"), True),
         )
@@ -3469,18 +3470,47 @@ class MemoryEntrypointMixin:
             and getattr(self, "budget_limiter", None)
         )
 
-    def _memory_search_reservation_usd(self) -> float:
+    def _embedding_provider_model(self) -> tuple[str, str]:
+        """Configured embedding provider/model used for search estimates."""
+        model_service = getattr(self, "models_service", None)
+        emb_model = getattr(model_service, "_emb_model", None)
+        provider = ""
+        model = ""
+        try:
+            provider_obj = getattr(getattr(emb_model, "provider", None), "provider", None)
+            provider = str(getattr(provider_obj, "value", provider_obj) or "").strip()
+            model = str(getattr(emb_model, "systemName", "") or "").strip()
+        except Exception:
+            provider = ""
+            model = ""
+        if provider and model:
+            return provider, model
+        cfg = getattr(getattr(model_service, "config", None), "embedder_config", None)
+        if isinstance(cfg, dict):
+            provider = str(cfg.get("provider") or "").strip()
+            model = str(cfg.get("model_name") or cfg.get("model") or "").strip()
+        return provider or "openai", model or "text-embedding-3-small"
+
+    def _memory_search_reservation_usd(self, query: str = "") -> float:
         """Feasibility-gate amount for a memory semantic-search embedding call.
 
-        Cheap by design — memory search uses a verify-only economic_preflight
-        (no reservation, no settle); this only sizes the est used to decide
-        whether the user can afford the embedding before paying for it.
+        Explicit config wins. Otherwise the estimate is price-table based for the
+        configured embedding provider/model and the query text.
         """
         cfg = self._memory_widget_config()
         try:
-            return float(cfg.get("search_reservation_amount_dollars") or 0.01)
+            configured = cfg.get("search_reservation_amount_dollars")
+            if configured not in (None, ""):
+                return float(configured)
         except Exception:
-            return 0.01
+            pass
+        try:
+            from kdcube_ai_app.apps.chat.sdk.infra.economics.search_guard import embedding_reservation_usd
+
+            provider, model = self._embedding_provider_model()
+            return embedding_reservation_usd(query, provider=provider, model=model)
+        except Exception:
+            return 1e-6
 
     def _memory_search_econ_subject(self):
         """EconomicsSubject for synchronous widget search.
@@ -3521,9 +3551,9 @@ class MemoryEntrypointMixin:
         )
 
     def search_semantic_guard(self, *, flow: str):
-        """Reusable async `semantic_guard` for any feature's semantic search — the
-        SAME economics gate memory search uses (verify-only `economic_preflight`).
-        Plug into `IssueService` / `PinSearchIndex` / `HybridIndex`'s `semantic_guard`.
+        """Legacy async `semantic_guard` for components that still expose a
+        guard-only hook. Prefer `search_model_service(flow=...)` for new search
+        integrations so the query embed call and settlement stay coupled.
         Returns None when economics isn't enabled or the user is anonymous (search
         stays on, ungated); on denial the search degrades to lexical + recency."""
         if not self._memory_economics_enabled():
@@ -3534,47 +3564,69 @@ class MemoryEntrypointMixin:
             subject = self._economics_search_subject()
             if not (subject.tenant and subject.project and subject.user_id and subject.user_id != "anonymous"):
                 return None
-            return make_semantic_search_guard(self, subject=subject, flow=flow)
+            provider, model = self._embedding_provider_model()
+            return make_semantic_search_guard(self, subject=subject, provider=provider, model=model, flow=flow)
         except Exception:
             logger.warning("[economics] semantic search guard unavailable; search ungated", exc_info=True)
             return None
 
-    async def _memory_search_embed_or_downgrade(self, query: str) -> Optional[Sequence[float]]:
-        """Embed the query for semantic ranking, gated by economics.
+    def search_model_service(self, *, flow: str):
+        """Model-service facade for searchable components.
 
-        Runs a verify-only economic_preflight (flow="memory.search") before
-        paying for the embedding. On an economics limit (rate/funding), returns
-        None so MemoryStore.search falls back to keyword/BM25 (Postgres FTS):
-        the user still gets results, only semantic ranking is opted out. The
-        guard's nested-detection (active econ scope -> preflight nested) keeps
-        this safe if ever invoked inside an already-accountable flow.
+        Components receive this single dependency. Query embeddings are guarded
+        and settled by the facade; document embeddings use the underlying model
+        service and its normal accounting path.
+        """
+        if not self._memory_economics_enabled():
+            return getattr(self, "models_service", None)
+        try:
+            from kdcube_ai_app.apps.chat.sdk.infra.economics.search_guard import EconomicSearchModelService
+
+            subject = self._economics_search_subject()
+            if not (subject.tenant and subject.project and subject.user_id and subject.user_id != "anonymous"):
+                return getattr(self, "models_service", None)
+            provider, model = self._embedding_provider_model()
+            return EconomicSearchModelService(
+                entrypoint=self,
+                model_service=self.models_service,
+                subject=subject,
+                provider=provider,
+                model=model,
+                default_flow=flow,
+            )
+        except Exception:
+            logger.warning("[economics] search model service unavailable; embedding ungated", exc_info=True)
+            return getattr(self, "models_service", None)
+
+    async def _memory_search_embed_or_downgrade(self, query: str) -> Optional[Sequence[float]]:
+        """Embed the query for semantic ranking through the search model service.
+
+        The facade reserves/settles around the actual query embed when there is
+        no parent economics scope; inside a parent scope it verifies and lets the
+        parent settle. On an economics limit, return None so MemoryStore.search
+        falls back to keyword/BM25 ranking.
         """
         normalized = str(query or "").strip()
         if not normalized:
             return None
         if self._memory_economics_enabled():
-            from kdcube_ai_app.apps.chat.sdk.infra.economics.enforcement import (
-                economic_preflight,
-                EconomicsEstimate,
-                FlowPolicy,
-            )
             from kdcube_ai_app.apps.chat.sdk.infra.economics.policy import EconomicsLimitException
 
             subject = self._memory_search_econ_subject()
             if subject.tenant and subject.project and subject.user_id and subject.user_id != "anonymous":
                 try:
-                    await economic_preflight(
-                        self,
-                        subject=subject,
-                        estimate=EconomicsEstimate(reservation_usd=self._memory_search_reservation_usd()),
-                        flow="memory.search",
-                        policy=FlowPolicy(enforce_concurrency=False, emit_user_events=False),
-                    )
+                    model_service = self.search_model_service(flow="memory.search")
+                    embed_query = getattr(model_service, "embed_search_query", None)
+                    if callable(embed_query):
+                        return await embed_query(normalized, flow="memory.search")
                 except EconomicsLimitException as exc:
                     logger.info(
                         "[memory.search] economics limit; degrading to keyword/BM25: user=%s code=%s",
                         subject.user_id, getattr(exc, "code", "rate_limited"),
                     )
+                    return None
+                except Exception:
+                    logger.warning("[memory.search] metered embedder failed; degrading to keyword/BM25", exc_info=True)
                     return None
         return await self._memory_embed_one(normalized)
 

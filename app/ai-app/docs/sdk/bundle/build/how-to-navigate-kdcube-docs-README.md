@@ -32,6 +32,7 @@ see_also:
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-events-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-widget-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-entrypoint-classes-README.md
+  - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/bundle-economics-integration-README.md
   - repo:kdcube-ai-app/app/ai-app/docs/sdk/bundle/versatile-reference-bundle-README.md
 ---
 # How To Navigate KDCube Bundle Docs
@@ -122,6 +123,7 @@ Conditional additions:
 | Authored external events, custom event policies, snapshots, artifact rehosters | [../bundle-events-README.md](../bundle-events-README.md) |
 | Widget source folders, static widget builds, shared SDK UI source | [../bundle-widget-integration-README.md](../bundle-widget-integration-README.md) and [../ui-components-lifecycle-README.md](../ui-components-lifecycle-README.md) |
 | Entrypoint inheritance, mixins, singleton behavior, request context | [../bundle-entrypoint-classes-README.md](../bundle-entrypoint-classes-README.md) |
+| Chat turns, semantic search, task execution, or background jobs that spend money/quota | [../bundle-economics-integration-README.md](../bundle-economics-integration-README.md) |
 | Release tag, descriptor ref, release validation | [how-to-release-bundle-content-README.md](how-to-release-bundle-content-README.md) |
 | Agent should configure and run local KDCube | [how-to-bootstrap-local-bundle-runtime-as-coding-agent-README.md](how-to-bootstrap-local-bundle-runtime-as-coding-agent-README.md) |
 
@@ -136,6 +138,7 @@ Conditional additions:
 | How does one bundle call another bundle's objects/actions (e.g. canvas shows a `task:` pin)? | [../../namespace-services/README.md](../../namespace-services/README.md) |
 | How do I write or structure a bundle? | [how-to-write-bundle-README.md](how-to-write-bundle-README.md) |
 | Which entrypoint base or mixin should I use? | [../bundle-entrypoint-classes-README.md](../bundle-entrypoint-classes-README.md) |
+| How do I make semantic search or a background job economically enforced? | [../bundle-economics-integration-README.md](../bundle-economics-integration-README.md) |
 | How do code defaults, `bundles.yaml`, admin props, and secrets merge? | [../bundle-properties-and-secrets-lifecycle-README.md](../bundle-properties-and-secrets-lifecycle-README.md) |
 | Where do platform settings vs bundle props vs user state belong? | [../../../configuration/bundle-runtime-configuration-and-secrets-README.md](../../../configuration/bundle-runtime-configuration-and-secrets-README.md) |
 | How do I run or reload a bundle locally? | [how-to-configure-and-run-bundle-README.md](how-to-configure-and-run-bundle-README.md) |

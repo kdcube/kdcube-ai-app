@@ -22,6 +22,8 @@ Design: docs/economics/economic-enforcement-non-chat-v2-README.md
 from __future__ import annotations
 
 import dataclasses
+import json
+import logging
 import math
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -61,11 +63,23 @@ _MIN_RESERVE_USD = 1.0 / 100
 _ECON_SCOPE_ACTIVE: ContextVar[Optional[str]] = ContextVar(
     "kdcube_econ_scope_active", default=None
 )
+_TRACE_LOGGER = logging.getLogger(__name__)
+_LOG_LEVELS = {
+    "DEBUG": logging.DEBUG,
+    "INFO": logging.INFO,
+    "WARN": logging.WARNING,
+    "WARNING": logging.WARNING,
+    "ERROR": logging.ERROR,
+}
 
 
 def active_econ_scope() -> Optional[str]:
     """Return the scope_id of the economics scope currently settling, if any."""
     return _ECON_SCOPE_ACTIVE.get()
+
+
+def _level_no(level: str) -> int:
+    return _LOG_LEVELS.get(str(level or "INFO").upper(), logging.INFO)
 
 
 # ----------------------------------------------------------------------------
@@ -255,10 +269,27 @@ class EconomicsGuard:
 
     # -- logging / events -----------------------------------------------------
     def _log(self, stage: str, msg: str, level: str = "INFO", **kv):
+        payload = {
+            "stage": str(stage or ""),
+            "message": str(msg or ""),
+            "flow": self.flow,
+            "scope_id": self.scope_id,
+            "subject_id": self.subj,
+            "tenant": self.subject.tenant,
+            "project": self.subject.project,
+            "user_id": self.subject.user_id,
+            "user_type": self.subject.user_type,
+            **(kv or {}),
+        }
+        try:
+            trace = "[economics.enforcement] " + json.dumps(payload, sort_keys=True, default=str)
+        except Exception:
+            trace = f"[economics.enforcement] stage={stage} flow={self.flow} scope_id={self.scope_id} message={msg} data={kv!r}"
+        _TRACE_LOGGER.log(_level_no(level), trace)
         if self.logger is None:
             return
         try:
-            self.logger.log(f"[econ-guard:{self.flow}] {stage} | {msg} | {kv}", level)
+            self.logger.log(trace, level)
         except Exception:
             pass
 
@@ -330,9 +361,9 @@ class EconomicsGuard:
         parent_scope = active_econ_scope()
         if parent_scope:
             # Already inside a settling economics scope (guard-in-guard): verify
-            # only, the parent settles. NOTE: a bare accounting context (e.g. a
+            # only, the active guard settles. NOTE: a bare accounting context (e.g. a
             # background-job worker binding turn_id) does NOT count here.
-            self._log("nested", "degrading to preflight; parent settles", parent_scope=parent_scope)
+            self._log("nested", "degrading to preflight; active guard settles", parent_scope=parent_scope)
             self.decision = await self._preflight(nested=True)
             return self.decision
 
@@ -460,6 +491,13 @@ class EconomicsGuard:
 
     async def _preflight(self, *, nested: bool) -> EconomicsDecision:
         """Verify-only: resolve + admit, no reservation, no accounting binding."""
+        self._log(
+            "preflight_start",
+            "verify-only economics check",
+            nested=bool(nested),
+            estimate_reservation_usd=self.estimate.reservation_usd,
+            estimate_min_tokens=self.estimate.min_tokens,
+        )
         r = await self._resolve_plan_and_funding()
         admit = await self._admit(r["base_policy"])
         if not admit.allowed and not r["budget_bypass"]:
@@ -479,7 +517,7 @@ class EconomicsGuard:
                 user_message=MSG_NO_FUNDING,
                 data={"reason": "no_funding_source", "funding_source": "none"},
             )
-        return EconomicsDecision(
+        decision = EconomicsDecision(
             lane="bypass" if r["budget_bypass"] else ("paid" if funding_source == "wallet" else "plan"),
             plan_id=r["plan_id"],
             funding_source=funding_source,
@@ -491,6 +529,17 @@ class EconomicsGuard:
             scope_id=self.scope_id,
             admit=admit,
         )
+        self._log(
+            "preflight_ok",
+            "economics feasible",
+            nested=bool(nested),
+            lane=decision.lane,
+            plan_id=decision.plan_id,
+            funding_source=decision.funding_source,
+            est_turn_usd=round(float(decision.est_turn_usd or 0.0), 6),
+            est_turn_tokens=int(decision.est_turn_tokens or 0),
+        )
+        return decision
 
     def _funding_summary(self, r: dict) -> Tuple[str, float]:
         if r["budget_bypass"]:
@@ -508,6 +557,19 @@ class EconomicsGuard:
         est_turn_tokens = int(r["est_turn_tokens"])
         budget_bypass = r["budget_bypass"]
         funding_source, available_usd = self._funding_summary(r)
+        self._log(
+            "plan_resolved",
+            "resolved economics plan and funding lane",
+            role=r.get("role"),
+            plan_id=r.get("plan_id"),
+            funding_source=funding_source,
+            budget_bypass=bool(budget_bypass),
+            est_turn_usd=round(float(r.get("est_turn_usd") or 0.0), 6),
+            est_turn_tokens=est_turn_tokens,
+            has_wallet=bool(r.get("has_wallet")),
+            has_active_subscription=bool(r.get("has_active_subscription")),
+            project_budget_allowed=bool(r.get("project_budget_allowed")),
+        )
 
         # Serialize the admit->reserve planning window per user (reserving surfaces
         # only; no-op unless policy.enforce_quota_lock + redis). Acquired BEFORE
@@ -518,6 +580,14 @@ class EconomicsGuard:
         try:
             # 1) verify quota AND reserve RL plan tokens at the start (full run() parity)
             admit = await self._admit(r["base_policy"], reserve_tokens=est_turn_tokens)
+            self._log(
+                "admit",
+                "quota admit evaluated",
+                allowed=bool(getattr(admit, "allowed", False)),
+                reason=getattr(admit, "reason", None),
+                reserved_tokens=int(getattr(admit, "reserved_tokens", 0) or 0),
+                reservation_id=getattr(admit, "reservation_id", None),
+            )
 
             est_turn_usd = float(r["est_turn_usd"])
             decision = EconomicsDecision(
@@ -579,9 +649,27 @@ class EconomicsGuard:
                         elif outcome.status is ReserveStatus.SWITCH_TO_PAID:
                             await self._switch_to_paid(decision, r, reason=outcome.switch_reason or "plan_tokens_exhausted_for_turn")
                         # OK -> _reserve_plan_lane stored _funding_res
+                        if self._funding_res is not None:
+                            self._log(
+                                "reserve_ok",
+                                "reserved funding",
+                                lane=decision.lane,
+                                funding_source=decision.funding_source,
+                                reservation_source=decision.app_reservation_source,
+                                app_reservation_active=bool(decision.app_reservation_active),
+                                plan_reservation_active=bool(getattr(self._funding_res, "plan_reservation_active", False)),
+                                wallet_reservation_active=bool(getattr(self._funding_res, "wallet_reservation_active", False)),
+                            )
                     elif funding_source == "wallet":
                         # wallet-primary edge (anonymous + wallet) — not a plan lane
                         await self._reserve_wallet_or_deny(decision, r, reserve_usd=est_turn_usd, exhausted=None)
+                        self._log(
+                            "reserve_ok",
+                            "reserved wallet funding",
+                            funding_source=decision.funding_source,
+                            wallet_reservation_id=decision.wallet_reservation_id,
+                            wallet_reserved_tokens=decision.wallet_reserved_tokens,
+                        )
                 except EconomicsLimitException as exc:
                     await self._on_funding_denied(exc)
                     raise
@@ -647,6 +735,15 @@ class EconomicsGuard:
             self._funding_res = res
             decision.app_reservation_source = res.funding_source
             decision.app_reservation_active = res.app_reservation_active
+            self._log(
+                "reserve_plan_lane",
+                "funding reservation created",
+                funding_source=res.funding_source,
+                app_reservation_active=bool(res.app_reservation_active),
+                wallet_reservation_active=bool(res.wallet_reservation_active),
+                plan_reservation_active=bool(res.plan_reservation_active),
+                est_turn_usd=round(float(decision.est_turn_usd or 0.0), 6),
+            )
         return outcome
 
     def _paid_policy(self, r: dict) -> QuotaPolicy:
@@ -739,7 +836,7 @@ class EconomicsGuard:
         """Log + optionally emit a denial, then release the RL token reservation
         taken by admit (the funding flow releases its own money holds before raising)."""
         code = getattr(exc, "code", "denied")
-        self._log("deny", str(exc), "WARN", code=code)
+        self._log("deny_cleanup", "releasing holds after economics denial", "WARN", code=code, error=str(exc))
         await self._emit_denial(
             code=code, title="Insufficient funds",
             data={**(getattr(exc, "data", {}) or {}), "flow": self.flow,
@@ -900,6 +997,14 @@ class EconomicsGuard:
             },
         )
         self._acct_cm.__enter__()
+        self._log(
+            "accounting_bound",
+            "accounting context bound",
+            request_id=self.scope_id,
+            conversation_id=self.scope_id,
+            turn_id=self.scope_id,
+            bundle_id=self.bundle_id,
+        )
 
     def _unbind_accounting(self) -> None:
         if self._acct_cm is not None:
@@ -912,7 +1017,7 @@ class EconomicsGuard:
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> bool:
         d = self.decision
         if d is None or d.nested:
-            return False  # nested: parent settles; nothing bound here
+            return False  # nested: active guard settles; nothing bound here
 
         try:
             ranked_tokens, cost_result = await self._run_accounting()
@@ -939,6 +1044,7 @@ class EconomicsGuard:
 
     async def _run_accounting(self) -> Tuple[int, dict]:
         usage_from = self.now.date().isoformat()
+        self._log("accounting_run_start", "collecting usage for settlement", usage_from=usage_from)
         ranked, result = await self.ep.run_accounting(
             tenant=self.subject.tenant,
             project=self.subject.project,
@@ -948,12 +1054,26 @@ class EconomicsGuard:
             turn_id=self.scope_id,
             usage_from=usage_from,
         )
+        self._log(
+            "accounting_run_done",
+            "usage collected",
+            ranked_tokens=int(ranked or 0),
+            cost_total_usd=round(float((result or {}).get("cost_total_usd") or 0.0), 6),
+        )
         return int(ranked or 0), (result or {})
 
     async def _settle(self, d: EconomicsDecision, *, ranked_tokens: int, total_cost: float) -> None:
         # All lanes (plan/subscription/project/bypass + paid wallet/subscription)
         # settle through the shared funding_flow — single settlement owner. The paid
         # reserve builds the same PlanFundingReservation handle as the plan lane.
+        self._log(
+            "settle_start",
+            "settling economics reservation",
+            lane=d.lane,
+            funding_source=d.funding_source,
+            ranked_tokens=int(ranked_tokens or 0),
+            total_cost_usd=round(float(total_cost or 0.0), 6),
+        )
         if self._funding_res is not None and self._funding_ctx_obj is not None:
             from kdcube_ai_app.apps.chat.sdk.infra.economics.funding_flow import settle_plan_funding
             plan_balance = d.extra.get("plan_balance")
