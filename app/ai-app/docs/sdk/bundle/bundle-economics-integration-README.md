@@ -34,10 +34,12 @@ this page shows how a bundle wires the engine through SDK building blocks.
 | Surface | Existing bundle/example | Enforcement shape | Runtime result |
 | --- | --- | --- | --- |
 | Chat or agent turn | any entrypoint derived from `BaseEntrypointWithEconomics` | `BaseEntrypointWithEconomics.run(...)` reserves, binds accounting, runs the turn, and settles usage | turn is admitted, denied, or charged at the chat-run boundary |
-| Memory named-service search | versatile memory provider, namespace `mem` | provider receives `entrypoint.search_model_service(flow="memory.search")`; query embedding calls `embed_search_query(...)` | query embedding reserves and settles locally; denial returns no query vector and memory search ranks with lexical/text factors |
+| Memory named-service search | versatile memory provider, namespace `mem` | provider receives `entrypoint.search_model_service(flow="memory.search")`; query embedding calls `embed_search_query(...)` | inside a chat turn, the query embedding is verify-only and charged by the parent turn; as standalone UI/API search, it reserves and settles under a `memory_search_<id>` operation; denial returns no query vector and memory search ranks with lexical/text factors |
 | Memory reconciliation | memory mixin reconciliation jobs | `EconomicsGuard(flow="memory.reconciler")` around the reconciliation job | job starts only after economics admission; job usage settles under the reconciliation scope |
-| Canvas pin search | canvas solution `CanvasPinSearch` | search service receives `entrypoint.search_model_service(flow="canvas.pins.search")`; hybrid index calls `embed_search_query(...)` | query embedding reserves and settles locally; denial skips the semantic arm and keeps lexical/recency ranking |
-| Custom searchable SDK component | any component that accepts a `model_service` | the entrypoint passes `search_model_service(flow="<your.surface>.search")` into the component; the component calls `embed_search_query(...)` | query embedding reserves and settles locally; denial falls back to lexical/recency ranking |
+| Canvas pin search | canvas solution `CanvasPinSearch` | search service receives `entrypoint.search_model_service(flow="canvas.pins.search")`; hybrid index calls `embed_search_query(...)` | standalone pinboard search reserves and settles under a `canvas_pins_search_<id>` operation; denial skips the semantic arm and keeps lexical/recency ranking |
+| Task issue search | task tracker named-service scope `task` / `task:issue` | issue service receives `entrypoint.search_model_service(flow="task_tracker.issue.search")`; issue search calls `embed_search_query(...)` | inside a chat turn, the query embedding is charged by the parent turn; standalone issue search settles under a `task_tracker.issue.search` operation; denial falls back to lexical/recency ranking |
+| Task attachment search | task tracker named-service scope `task:attachment` | metadata scan over issue attachments and parent issue metadata | no semantic embedding spend is incurred; logs show `semantic_embedding=False` |
+| Custom searchable SDK component | any component that accepts a `model_service` | the entrypoint passes `search_model_service(flow="<your.surface>.search")` into the component; the component calls `embed_search_query(...)` | inside an active economics scope, the parent settles; outside one, the query embedding reserves and settles locally; denial falls back to lexical/recency ranking |
 | Task execution | tasks solution run-now / due execution, including `task-and-memo-app@1-0` and `user-automation@1-0` | `_task_verify_economics(...)` checks feasibility before enqueue/run; the actual ReAct work routes through the economics entrypoint | denied tasks are cancelled before work; admitted task React work is charged by the economic entrypoint |
 | Task list/search operations | tasks solution `tasks_search` and `task_executions_search` in task-and-memo and user-automation | SQLite FTS5/BM25 only | no semantic embedding spend is incurred; no semantic search guard is needed for these APIs |
 
@@ -59,7 +61,10 @@ await model_service.embed_search_query(query, flow="your.surface.search")
 `embed_texts(...)` is for document/index material and uses the underlying
 accounting-aware model service. `embed_search_query(...)` wraps the actual query
 embedding in `EconomicsGuard`, using the requested embedding provider/model and
-the accounting price table to size the reservation.
+the accounting price table to size the reservation. When an active parent
+economics scope exists, the guard performs a verify-only check and the tracked
+embedding event stays in that parent accounting turn. Without a parent scope,
+the guard creates an operation scope and settles it locally.
 
 The reservation estimate is:
 
@@ -153,6 +158,7 @@ for the actual agent work.
 | Canvas pin search | `kdcube_ai_app/apps/chat/sdk/solutions/canvas/search/service.py` | `CanvasPinSearch._model_service()` resolving `entrypoint.search_model_service(flow=self.flow)` |
 | Generic hybrid index | `kdcube_ai_app/infra/index/sqlite/hybrid_index.py` | `_embed_query(...)` calling `model_service.embed_search_query(...)` and skipping semantic ranking when it returns `None` |
 | Enforcement core + search guard | `kdcube_ai_app/apps/chat/sdk/infra/economics/enforcement.py` and `infra/economics/search_guard.py` | the central enforcement state machine, and the `embed_search_query(...)` guard wrapper that reserves/settles per query and returns `None` on denial |
+| Task tracker issue search | private applications repo, task tracker `issues/service.py` | `_embed_search(...)` calling `model_service.embed_search_query(..., flow="task_tracker.issue.search")`; attachment search logs metadata-only execution |
 | Task execution economics | `kdcube_ai_app/apps/chat/sdk/solutions/tasks/operations.py` | `_task_verify_economics(...)` before execution and later ReAct work through the economics entrypoint |
 
 ## Logs And Verification

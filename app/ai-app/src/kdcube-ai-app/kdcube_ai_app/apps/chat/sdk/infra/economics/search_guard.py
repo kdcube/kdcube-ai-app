@@ -187,7 +187,20 @@ class EconomicSearchModelService:
                     min_tokens=max(1, estimate_embedding_tokens(text, min_tokens=16)),
                 ),
                 policy=self.policy,
-            ):
+            ) as decision:
+                if bool(getattr(decision, "nested", False)):
+                    from kdcube_ai_app.infra import accounting as acct
+
+                    async with acct.with_accounting(
+                        flow_name,
+                        request_id=scope_id,
+                        metadata={
+                            "flow": flow_name,
+                            "scope_id": scope_id,
+                        },
+                    ):
+                        vectors = await self.model_service.embed_texts([text])
+                        return vectors[0] if vectors else None
                 vectors = await self.model_service.embed_texts([text])
                 return vectors[0] if vectors else None
         except EconomicsLimitException as exc:

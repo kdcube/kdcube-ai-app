@@ -59,16 +59,19 @@ document/index material and `embed_search_query(query, flow=...)` for query
 embeddings. The actual discharge requires the embedding call to go through an
 accounting-aware model service and then through a settlement owner:
 
-- chat-turn search: the search service guard settles the tracked embedding event
-  at the service boundary;
-- standalone UI/API search: wrap the embedding call in `EconomicsGuard`, which
-  binds accounting under the guard scope and settles on exit.
+- chat-turn search: the chat processor has already bound the real
+  `conversation_id`/`turn_id`; `BaseEntrypointWithEconomics.run(...)` marks the
+  active parent economics scope, so the search guard performs a verify-only
+  check and the embedding event stays in the parent turn for turn settlement.
+- standalone UI/API search: there is no parent chat turn; `EconomicsGuard` binds
+  accounting under an operation scope such as `canvas_pins_search_<id>` or
+  `memory_search_<id>` and settles that operation on exit.
 
-An `EconomicsGuard` marks only its own local settlement scope. A nested guard
-inside another guard can verify and let the active guard settle, but the chat
-runner is not a generic reducer for child service reservations. Custom embedding
-backends also emit `embedding` events; a non-zero dollar charge requires a
-matching provider/model entry in the accounting price table.
+An `EconomicsGuard` marks its own local settlement scope. A nested guard inside
+an active economics scope verifies feasibility and leaves the accounting event in
+the active scope. Custom embedding backends also emit `embedding` events; a
+non-zero dollar charge requires a matching provider/model entry in the accounting
+price table.
 
 Runtime enforcement can be traced centrally with the log marker
 `[economics.enforcement]`. Search for that marker together with a flow name such

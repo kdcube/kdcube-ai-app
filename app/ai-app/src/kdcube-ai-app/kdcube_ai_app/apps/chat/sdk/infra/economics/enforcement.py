@@ -25,6 +25,7 @@ import dataclasses
 import json
 import logging
 import math
+from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -76,6 +77,16 @@ _LOG_LEVELS = {
 def active_econ_scope() -> Optional[str]:
     """Return the scope_id of the economics scope currently settling, if any."""
     return _ECON_SCOPE_ACTIVE.get()
+
+
+@contextmanager
+def bind_economics_scope(scope_id: str):
+    """Mark the current logical execution as already settled by a parent flow."""
+    token = _ECON_SCOPE_ACTIVE.set(str(scope_id or ""))
+    try:
+        yield _ECON_SCOPE_ACTIVE.get()
+    finally:
+        _ECON_SCOPE_ACTIVE.reset(token)
 
 
 def _level_no(level: str) -> int:

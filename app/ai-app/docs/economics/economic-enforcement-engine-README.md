@@ -129,13 +129,15 @@ Semantic search has two valid economics shapes:
 
 | Search location | Guarding shape | Settlement owner |
 | --- | --- | --- |
-| Concrete service call inside a chat turn | `EconomicsGuard` around the query embed | the service guard reserves, binds accounting, and settles the embedding event at the service boundary |
+| Concrete service call inside a chat turn | active parent economics scope plus `EconomicsGuard` around the query embed | the guard performs verify-only admission and the parent chat turn settles the embedding event |
 | Standalone UI/API search | `async with EconomicsGuard(...): await embed_texts(...)` | the guard reserves, binds accounting, and settles the embedding event when the block exits |
 
-An active `EconomicsGuard` marks only its own local settlement scope. A nested
-guard entered inside that scope degrades to verify-only and lets the active guard
-settle the tracked events. The chat runner itself is not a generic parent reducer
-for arbitrary child service reservations.
+An active `EconomicsGuard` marks its own local settlement scope. The economics
+chat runner marks the chat turn as the active parent scope while it executes the
+bundle core. A nested search guard entered inside that scope degrades to
+verify-only and leaves the tracked embedding event in the parent accounting
+context. A search call outside an active parent scope creates and settles an
+operation scope such as `memory_search_<id>` or `canvas_pins_search_<id>`.
 
 The preferred component integration is a model-service facade:
 

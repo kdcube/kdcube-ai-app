@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 from dataclasses import dataclass, asdict
 from kdcube_ai_app.apps.chat.sdk.config import get_settings
@@ -1932,7 +1933,17 @@ class RateCalculator(AccountingCalculator):
                     continue
 
                 events.append(ev)
-        else:
+
+        if not use_memory_cache or not events:
+            if use_memory_cache and not events:
+                logger.info(
+                    "Turn cache empty; falling back to accounting storage "
+                    "(tenant=%s, project=%s, conv=%s, turn=%s)",
+                    tenant_id,
+                    project_id,
+                    conversation_id,
+                    turn_id,
+                )
             # --- SLOW PATH: read from storage with prefix optimization ---
             if date_from or date_to:
                 from datetime import timedelta
@@ -2096,7 +2107,17 @@ class RateCalculator(AccountingCalculator):
                     continue
 
                 events.append(ev)
-        else:
+
+        if not use_memory_cache or not events:
+            if use_memory_cache and not events:
+                logger.info(
+                    "Turn cache empty; falling back to accounting storage for agent usage "
+                    "(tenant=%s, project=%s, conv=%s, turn=%s)",
+                    tenant_id,
+                    project_id,
+                    conversation_id,
+                    turn_id,
+                )
             # --- SLOW PATH: read from storage with prefix optimization ---
             if date_from or date_to:
                 from datetime import timedelta
@@ -2497,6 +2518,19 @@ class RateCalculator(AccountingCalculator):
             ref_model=ref_model,
         )
         llm_equivalent_tokens = equiv["llm_equivalent_tokens"]
+        ref_out_price_1m = float((equiv.get("reference") or {}).get("ref_out_price_1M") or 0.0)
+        billable_equivalent_tokens_float = 0.0
+        if cost_total_usd > 0.0 and ref_out_price_1m > 0.0:
+            billable_equivalent_tokens_float = float(cost_total_usd) * 1_000_000.0 / ref_out_price_1m
+        billable_equivalent_tokens = int(math.ceil(billable_equivalent_tokens_float)) if billable_equivalent_tokens_float > 0.0 else 0
+        embedding_tokens = sum(
+            int(item.get("spent", {}).get("tokens", 0) or 0)
+            for item in rollup if item.get("service") == "embedding"
+        )
+        web_search_queries = sum(
+            int(item.get("spent", {}).get("search_queries", 0) or 0)
+            for item in rollup if item.get("service") == "web_search"
+        )
 
         # 7. Return complete result
         return {
@@ -2511,6 +2545,10 @@ class RateCalculator(AccountingCalculator):
                 "total_input_tokens": total_input_tokens,
                 "weighted_tokens": weighted_tokens,
                 "llm_equivalent_tokens": llm_equivalent_tokens,
+                "billable_equivalent_tokens": billable_equivalent_tokens,
+                "billable_equivalent_tokens_float": billable_equivalent_tokens_float,
+                "embedding_tokens": embedding_tokens,
+                "web_search_queries": web_search_queries,
                 "llm_equiv_debug": equiv
             },
         }

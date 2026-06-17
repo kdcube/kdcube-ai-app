@@ -300,6 +300,13 @@ def test_active_econ_scope_none_by_default():
     assert enf.active_econ_scope() is None
 
 
+def test_bind_economics_scope_sets_and_restores():
+    assert enf.active_econ_scope() is None
+    with enf.bind_economics_scope("turn-123"):
+        assert enf.active_econ_scope() == "turn-123"
+    assert enf.active_econ_scope() is None
+
+
 def test_accounting_context_alone_is_not_an_econ_scope():
     # A bare accounting context (as a background-job worker binds) must NOT be
     # treated as a settling economics parent — otherwise top-level background

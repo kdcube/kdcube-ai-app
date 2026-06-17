@@ -2110,7 +2110,11 @@ class BaseEntrypoint:
         token_summary = result["token_summary"]
 
         weighted_tokens = token_summary["weighted_tokens"]
-        ranked_tokens = token_summary.get("llm_equivalent_tokens") or token_summary["weighted_tokens"]
+        ranked_tokens = (
+            token_summary.get("billable_equivalent_tokens")
+            or token_summary.get("llm_equivalent_tokens")
+            or token_summary["weighted_tokens"]
+        )
 
         self.logger.log(
             f"[Conversation id: {thread_id}; Turn id: {turn_id}] "
@@ -2122,7 +2126,7 @@ class BaseEntrypoint:
         )
         self.logger.log(
             f"[Conversation id: {thread_id}; Turn id: {turn_id}] "
-            f"Weighted tokens (LLM only): {weighted_tokens}; Equivalent tokens: {ranked_tokens}"
+            f"Weighted tokens (LLM only): {weighted_tokens}; Billable equivalent tokens: {ranked_tokens}"
         )
         self.logger.log(
             f"[Conversation id: {thread_id}; Turn id: {turn_id}] "

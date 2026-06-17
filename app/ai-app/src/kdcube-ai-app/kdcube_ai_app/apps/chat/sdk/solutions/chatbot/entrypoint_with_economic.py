@@ -224,6 +224,7 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
             GLOBAL_BUNDLE_ID,
         )
         from kdcube_ai_app.apps.chat.sdk.infra.economics.policy import QuotaPolicy, EconomicsLimitException
+        from kdcube_ai_app.apps.chat.sdk.infra.economics.enforcement import bind_economics_scope
         from kdcube_ai_app.apps.chat.sdk.infra.economics.limiter import _merge_policy_with_plan_override
         from kdcube_ai_app.apps.chat.sdk.infra.economics.project_budget import BudgetInsufficientFunds
         from kdcube_ai_app.apps.chat.sdk.infra.economics.settlement_allocation import (
@@ -1451,7 +1452,9 @@ class BaseEntrypointWithEconomics(BaseEntrypoint):
             _log("exec", "Invoking execute_core", lane=lane, usage_from=usage_from)
             _log("economics", "--- END PRE-RUN ECONOMICS ---")
 
-            result = await self.execute_core(state=state, thread_id=thread_id, params=params)
+            parent_scope_id = str(turn_id or thread_id or request_id or "")
+            with bind_economics_scope(parent_scope_id):
+                result = await self.execute_core(state=state, thread_id=thread_id, params=params)
 
             _log("economics", "--- START POST-RUN ECONOMICS ---")
             _log("exec", "execute_core completed", lane=lane)
