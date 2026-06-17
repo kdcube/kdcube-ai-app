@@ -3,11 +3,12 @@
 
 from __future__ import annotations
 
+import json
 import time
 import uuid
 import datetime as _dt
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import kdcube_ai_app.apps.chat.sdk.solutions.react.call as react_tools
 from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.common import add_block
@@ -100,9 +101,164 @@ def _tool_result_status(result_state: Any) -> tuple[str, int, str]:
     return status, error_count, error_code
 
 
-async def _emit_react_tool_call_event(
+def _step_suffix(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return uuid.uuid4().hex[:12]
+    out = []
+    for ch in raw[:96]:
+        out.append(ch if ch.isalnum() or ch in {"_", "-", "."} else "_")
+    return "".join(out) or uuid.uuid4().hex[:12]
+
+
+def _json_preview(value: Any, *, max_text: int = 6000, max_items: int = 40, max_depth: int = 5) -> Tuple[Any, bool]:
+    truncated = False
+
+    def _walk(item: Any, depth: int) -> Any:
+        nonlocal truncated
+        if depth >= max_depth:
+            truncated = True
+            return {"__truncated__": True, "type": type(item).__name__}
+        if item is None or isinstance(item, (bool, int, float)):
+            return item
+        if isinstance(item, str):
+            if len(item) > max_text:
+                truncated = True
+                return item[:max_text] + f"... [truncated {len(item) - max_text} chars]"
+            return item
+        if isinstance(item, (bytes, bytearray, memoryview)):
+            truncated = True
+            try:
+                size = len(item)
+            except Exception:
+                size = 0
+            return {"__bytes__": True, "size_bytes": size}
+        if isinstance(item, dict):
+            out: Dict[str, Any] = {}
+            for index, (key, val) in enumerate(item.items()):
+                if index >= max_items:
+                    truncated = True
+                    out["__truncated_keys__"] = max(0, len(item) - max_items)
+                    break
+                out[str(key)] = _walk(val, depth + 1)
+            return out
+        if isinstance(item, (list, tuple, set)):
+            seq = list(item)
+            out = [_walk(val, depth + 1) for val in seq[:max_items]]
+            if len(seq) > max_items:
+                truncated = True
+                out.append({"__truncated_items__": len(seq) - max_items})
+            return out
+        truncated = True
+        return repr(item)
+
+    return _walk(value, 0), truncated
+
+
+def _tool_error_payload(result_state: Any = None, exception: Optional[BaseException] = None) -> Optional[Dict[str, Any]]:
+    if exception is not None:
+        return {
+            "code": exception.__class__.__name__,
+            "message": str(exception),
+            "exception_type": exception.__class__.__name__,
+        }
+    if not isinstance(result_state, dict):
+        return None
+    err = result_state.get("error")
+    if err:
+        if isinstance(err, dict):
+            preview, truncated = _json_preview(err, max_text=2000, max_items=20, max_depth=4)
+            out = preview if isinstance(preview, dict) else {"message": str(preview)}
+            if truncated:
+                out["truncated"] = True
+            return out
+        return {"message": str(err)}
+    last_tool_result = result_state.get("last_tool_result")
+    if isinstance(last_tool_result, list):
+        errors = []
+        for item in last_tool_result:
+            if isinstance(item, dict) and item.get("error"):
+                errors.append(item.get("error"))
+        if errors:
+            preview, truncated = _json_preview(errors, max_text=2000, max_items=10, max_depth=4)
+            return {
+                "items": preview,
+                **({"truncated": True} if truncated else {}),
+            }
+    return None
+
+
+def _tool_result_payload(result_state: Any = None, exception: Optional[BaseException] = None) -> Dict[str, Any]:
+    if exception is not None:
+        return {
+            "result": None,
+            "result_truncated": False,
+            "error": _tool_error_payload(exception=exception),
+        }
+    payload: Dict[str, Any] = {}
+    if isinstance(result_state, dict):
+        last_tool_result = result_state.get("last_tool_result")
+        if last_tool_result is not None:
+            result_preview, result_truncated = _json_preview(last_tool_result)
+            payload["result"] = result_preview
+            payload["result_truncated"] = bool(result_truncated)
+        else:
+            state_preview, state_truncated = _json_preview({
+                key: result_state.get(key)
+                for key in ("exit_reason", "error", "final_answer", "suggested_followups")
+                if key in result_state
+            })
+            payload["result"] = state_preview
+            payload["result_truncated"] = bool(state_truncated)
+        error_payload = _tool_error_payload(result_state=result_state)
+        if error_payload is not None:
+            payload["error"] = error_payload
+    else:
+        result_preview, result_truncated = _json_preview(result_state)
+        payload["result"] = result_preview
+        payload["result_truncated"] = bool(result_truncated)
+    return payload
+
+
+def _tool_event_markdown(
+    *,
+    tool_id: str,
+    tool_call_id: str,
+    phase: str,
+    status: str,
+    data: Dict[str, Any],
+) -> str:
+    title = "Tool call generated" if phase == "call" else "Tool result"
+    lines = [
+        f"**{title}:** `{tool_id or 'unknown'}`",
+        f"- call: `{tool_call_id}`",
+        f"- status: `{status}`",
+    ]
+    if phase == "result":
+        if data.get("error"):
+            lines.append("- error:")
+            try:
+                err_text = json.dumps(data.get("error"), ensure_ascii=False, indent=2)
+            except Exception:
+                err_text = str(data.get("error"))
+            lines.append(f"```json\n{err_text[:2000]}\n```")
+        if "result" in data:
+            try:
+                result_text = json.dumps(data.get("result"), ensure_ascii=False, indent=2)
+            except Exception:
+                result_text = str(data.get("result"))
+            if len(result_text) > 4000:
+                result_text = result_text[:4000] + "\n... [truncated]"
+            lines.append("- result:")
+            lines.append(f"```json\n{result_text}\n```")
+    return "\n".join(lines)
+
+
+async def _emit_react_tool_event(
     *,
     react: Any,
+    event_type: str,
+    phase: str,
     tool_id: str,
     tool_call_id: str,
     params: Any,
@@ -117,12 +273,15 @@ async def _emit_react_tool_call_event(
     if not callable(service_event):
         return
     result_status, error_count, error_code = _tool_result_status(result_state)
-    if status == "completed" and result_status == "error":
+    if phase == "result" and status == "completed" and result_status == "error":
         status = "error"
+    step = f"{event_type}.{_step_suffix(tool_call_id)}"
     data: Dict[str, Any] = {
         "tool_id": tool_id,
         "tool_call_id": tool_call_id,
         "tool_family": "react" if tool_id.startswith("react.") else "external",
+        "phase": phase,
+        "executed": phase == "result" and status != "rejected",
         "params": _tool_params_summary(params),
         "duration_ms": max(0, int(duration_ms)),
     }
@@ -134,14 +293,83 @@ async def _emit_react_tool_call_event(
         data["error_code"] = error_code
     if exception is not None:
         data["exception_type"] = exception.__class__.__name__
+    if phase == "result":
+        data.update(_tool_result_payload(result_state=result_state, exception=exception))
     try:
         result = service_event(
-            type="react.tool.call",
-            step="react.tool.call",
+            type=event_type,
+            step=step,
             status=status,
-            title="ReAct Tool Call",
+            title="ReAct Tool Call" if phase == "call" else "ReAct Tool Result",
             agent="react.tool",
             data=data,
+            markdown=_tool_event_markdown(
+                tool_id=tool_id,
+                tool_call_id=tool_call_id,
+                phase=phase,
+                status=status,
+                data=data,
+            ),
+            auto_markdown=False,
+        )
+        if hasattr(result, "__await__"):
+            await result
+    except Exception:
+        return
+
+
+async def emit_react_tool_rejected_event(
+    *,
+    react: Any,
+    tool_id: str = "",
+    tool_call_id: str = "",
+    params: Any = None,
+    iteration: Optional[int] = None,
+    code: str,
+    message: str = "",
+    index: Optional[int] = None,
+    parent_tool_call_id: str = "",
+    extra: Optional[Dict[str, Any]] = None,
+) -> None:
+    comm = getattr(react, "comm", None)
+    service_event = getattr(comm, "service_event", None) if comm is not None else None
+    if not callable(service_event):
+        return
+    call_id = tool_call_id or parent_tool_call_id or uuid.uuid4().hex[:12]
+    data: Dict[str, Any] = {
+        "tool_id": tool_id or "",
+        "tool_call_id": call_id,
+        "parent_tool_call_id": parent_tool_call_id or "",
+        "tool_family": "react" if str(tool_id or "").startswith("react.") else "external",
+        "phase": "rejected",
+        "executed": False,
+        "params": _tool_params_summary(params),
+        "error": {
+            "code": code,
+            "message": message or code,
+        },
+    }
+    if iteration is not None:
+        data["iteration"] = int(iteration)
+    if index is not None:
+        data["action_index"] = int(index)
+    if extra:
+        data["extra"] = _json_preview(extra, max_text=2000, max_items=20, max_depth=4)[0]
+    try:
+        result = service_event(
+            type="react.tool.rejected",
+            step=f"react.tool.rejected.{_step_suffix(call_id)}{'.' + str(index) if index is not None else ''}",
+            status="error",
+            title="ReAct Tool Rejected",
+            agent="react.tool",
+            data=data,
+            markdown=(
+                f"**Tool action rejected:** `{tool_id or 'unknown'}`\n"
+                f"- call: `{call_id}`\n"
+                f"- code: `{code}`\n"
+                f"- executed: `false`\n"
+                f"- message: {message or code}"
+            ),
             auto_markdown=False,
         )
         if hasattr(result, "__await__"):
@@ -327,6 +555,15 @@ class ReactRound:
         if not tool_id:
             state["exit_reason"] = "error"
             state["error"] = {"where": "tool_execution", "error": "missing_tool_id", "managed": True}
+            await emit_react_tool_rejected_event(
+                react=react,
+                tool_id="",
+                tool_call_id=tool_call_id,
+                params=tool_call.get("params") if isinstance(tool_call, dict) else None,
+                iteration=state.get("pending_tool_origin_iteration"),
+                code="missing_tool_id",
+                message="tool_call.tool_id is missing for action=call_tool.",
+            )
             return state
         ctx_browser = react.ctx_browser
         runtime_ctx = getattr(ctx_browser, "runtime_ctx", None)
@@ -367,11 +604,24 @@ class ReactRound:
             return await react_tools.handle_external_tool(react=react, ctx_browser=ctx_browser, state=state, tool_call_id=tool_call_id)
 
         started_ms = int(time.time() * 1000)
+        await _emit_react_tool_event(
+            react=react,
+            event_type="react.tool.call",
+            phase="call",
+            tool_id=tool_id,
+            tool_call_id=tool_call_id,
+            params=tool_call.get("params"),
+            iteration=tool_iteration,
+            status="started",
+            duration_ms=0,
+        )
         try:
             result_state = await _dispatch_tool_call()
         except Exception as exc:
-            await _emit_react_tool_call_event(
+            await _emit_react_tool_event(
                 react=react,
+                event_type="react.tool.result",
+                phase="result",
                 tool_id=tool_id,
                 tool_call_id=tool_call_id,
                 params=tool_call.get("params"),
@@ -383,8 +633,10 @@ class ReactRound:
             raise
         else:
             status, _, _ = _tool_result_status(result_state)
-            await _emit_react_tool_call_event(
+            await _emit_react_tool_event(
                 react=react,
+                event_type="react.tool.result",
+                phase="result",
                 tool_id=tool_id,
                 tool_call_id=tool_call_id,
                 params=tool_call.get("params"),

@@ -79,7 +79,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.widgets.conversation_turn_work_status
 import kdcube_ai_app.apps.chat.sdk.tools.tools_insights as tools_insights
 from kdcube_ai_app.apps.chat.sdk.tools import citations as citations_module
 from kdcube_ai_app.apps.chat.sdk.solutions.react.plan import apply_plan_updates
-from kdcube_ai_app.apps.chat.sdk.solutions.react.round import ReactRound
+from kdcube_ai_app.apps.chat.sdk.solutions.react.round import ReactRound, emit_react_tool_rejected_event
 from kdcube_ai_app.apps.chat.sdk.solutions.react.proto import ReactStateSnapshot
 
 
@@ -1444,7 +1444,7 @@ class ReactSolverV2:
             diagnostic = diagnostic[:1800].rstrip() + "..."
         return summary, diagnostic
 
-    def _record_failed_decision_attempt(
+    async def _record_failed_decision_attempt(
         self,
         *,
         iteration: int,
@@ -1495,8 +1495,35 @@ class ReactSolverV2:
             )
         except Exception:
             pass
+        try:
+            decision = None
+            if isinstance(decision_packet, dict):
+                decision = decision_packet.get("agent_response")
+                if not isinstance(decision, dict):
+                    bundle = decision_packet.get("agent_response_bundle")
+                    if isinstance(bundle, list):
+                        decision = next((item for item in bundle if isinstance(item, dict)), None)
+            decision = decision if isinstance(decision, dict) else {}
+            tool_call = decision.get("tool_call") if isinstance(decision.get("tool_call"), dict) else {}
+            event_tool_id = (tool_id or tool_call.get("tool_id") or "").strip()
+            await emit_react_tool_rejected_event(
+                react=self,
+                tool_id=event_tool_id,
+                tool_call_id=tool_call_id,
+                params=tool_call.get("params") if isinstance(tool_call, dict) else None,
+                iteration=iteration,
+                code=code,
+                message=notice_message,
+                extra={
+                    "reason": reason or code,
+                    "notice_code": notice_code,
+                    **(notice_extra or {}),
+                },
+            )
+        except Exception:
+            pass
 
-    def _record_dropped_multi_action_items(
+    async def _record_dropped_multi_action_items(
         self,
         *,
         iteration: int,
@@ -1519,6 +1546,9 @@ class ReactSolverV2:
             extra = item.get("extra") if isinstance(item.get("extra"), dict) else {}
             if item.get("tool_id") and "tool_id" not in extra:
                 extra = {**extra, "tool_id": item.get("tool_id")}
+            tool_call = decision.get("tool_call") if isinstance(decision.get("tool_call"), dict) else {}
+            event_tool_id = str(item.get("tool_id") or tool_call.get("tool_id") or "").strip()
+            event_tool_call_id = str(tool_call.get("tool_call_id") or f"{parent_tool_call_id}.{idx}").strip()
             notice_message = self._protocol_violation_message(
                 code=code,
                 decision=decision,
@@ -1541,6 +1571,21 @@ class ReactSolverV2:
                         "iteration": iteration,
                         "partial_multi_action": True,
                     },
+                )
+            except Exception:
+                pass
+            try:
+                await emit_react_tool_rejected_event(
+                    react=self,
+                    tool_id=event_tool_id,
+                    tool_call_id=event_tool_call_id,
+                    parent_tool_call_id=parent_tool_call_id,
+                    params=tool_call.get("params") if isinstance(tool_call, dict) else None,
+                    iteration=iteration,
+                    index=idx,
+                    code=code,
+                    message=f"Action #{idx + 1} was not run. {notice_message}",
+                    extra={**extra, "index": idx},
                 )
             except Exception:
                 pass
@@ -1673,7 +1718,7 @@ class ReactSolverV2:
         except Exception:
             pass
 
-    def _record_dropped_action_parse_items(
+    async def _record_dropped_action_parse_items(
         self,
         *,
         iteration: int,
@@ -1711,6 +1756,24 @@ class ReactSolverV2:
                         "rel": "call",
                         "iteration": iteration,
                         "partial_multi_action": True,
+                    },
+                )
+            except Exception:
+                pass
+            try:
+                await emit_react_tool_rejected_event(
+                    react=self,
+                    tool_id="",
+                    tool_call_id=f"{parent_tool_call_id}.{idx}",
+                    parent_tool_call_id=parent_tool_call_id,
+                    params=None,
+                    iteration=iteration,
+                    index=idx,
+                    code="multi_action_bundle_invalid_item",
+                    message=message,
+                    extra={
+                        "parser_error": error_text,
+                        **({"raw_preview": raw_preview} if raw_preview else {}),
                     },
                 )
             except Exception:
@@ -3301,7 +3364,7 @@ class ReactSolverV2:
                 extra=extra,
             )
             try:
-                self._record_failed_decision_attempt(
+                await self._record_failed_decision_attempt(
                     iteration=iteration,
                     tool_call_id=pending_tool_call_id,
                     code=code,
@@ -3429,7 +3492,7 @@ class ReactSolverV2:
                 decision={},
             )
             try:
-                self._record_failed_decision_attempt(
+                await self._record_failed_decision_attempt(
                     iteration=iteration,
                     tool_call_id=pending_tool_call_id,
                     code="action_schema_error",
@@ -3475,7 +3538,7 @@ class ReactSolverV2:
                     extra=packet_validation_extra,
                 )
                 try:
-                    self._record_failed_decision_attempt(
+                    await self._record_failed_decision_attempt(
                         iteration=iteration,
                         tool_call_id=pending_tool_call_id,
                         code=packet_validation_error,
@@ -3503,14 +3566,14 @@ class ReactSolverV2:
                 decision = {"action": "exit", "final_answer": "Decision validation failed."}
 
             if decision_parse_error_items and decision_bundle:
-                self._record_dropped_action_parse_items(
+                await self._record_dropped_action_parse_items(
                     iteration=iteration,
                     parent_tool_call_id=pending_tool_call_id,
                     parse_errors=decision_parse_error_items,
                 )
 
             if stream_policy_rejected_items and decision_bundle:
-                self._record_dropped_multi_action_items(
+                await self._record_dropped_multi_action_items(
                     iteration=iteration,
                     parent_tool_call_id=pending_tool_call_id,
                     rejected=stream_policy_rejected_items,
@@ -3533,7 +3596,7 @@ class ReactSolverV2:
                         extra=bundle_extra,
                     )
                     try:
-                        self._record_failed_decision_attempt(
+                        await self._record_failed_decision_attempt(
                             iteration=iteration,
                             tool_call_id=pending_tool_call_id,
                             code=bundle_error,
@@ -3568,7 +3631,7 @@ class ReactSolverV2:
                     rejected_items = (bundle_extra or {}).get("rejected") if isinstance(bundle_extra, dict) else None
                     suppressed_items = (bundle_extra or {}).get("suppressed") if isinstance(bundle_extra, dict) else None
                     if isinstance(rejected_items, list) and rejected_items:
-                        self._record_dropped_multi_action_items(
+                        await self._record_dropped_multi_action_items(
                             iteration=iteration,
                             parent_tool_call_id=pending_tool_call_id,
                             rejected=rejected_items,
@@ -3644,7 +3707,7 @@ class ReactSolverV2:
                         state=state,
                     )
                     try:
-                        self._record_failed_decision_attempt(
+                        await self._record_failed_decision_attempt(
                             iteration=iteration,
                             tool_call_id=pending_tool_call_id,
                             code=validation_error,
@@ -3746,15 +3809,16 @@ class ReactSolverV2:
             if not bundle_mode:
                 exec_only_ids = {"ctx_tools.fetch_ctx"}
                 if action == "call_tool" and tool_id in exec_only_ids:
+                    notice_message = self._protocol_violation_message(
+                        code="tool_not_allowed_in_react",
+                        decision=decision,
+                        state=state,
+                        extra={"tool_id": tool_id},
+                    )
                     try:
                         self.ctx_browser.contribute_notice(
                             code="protocol_violation.tool_not_allowed_in_react",
-                            message=self._protocol_violation_message(
-                                code="tool_not_allowed_in_react",
-                                decision=decision,
-                                state=state,
-                                extra={"tool_id": tool_id},
-                            ),
+                            message=notice_message,
                             extra={"tool_id": tool_id, "iteration": iteration},
                             call_id=pending_tool_call_id,
                             meta={"rel": "call"},
@@ -3763,6 +3827,19 @@ class ReactSolverV2:
                         pass
                     try:
                         self.log.log(f"[react.v3] tool_not_allowed_in_react: {tool_id}", level="ERROR")
+                    except Exception:
+                        pass
+                    try:
+                        await emit_react_tool_rejected_event(
+                            react=self,
+                            tool_id=tool_id,
+                            tool_call_id=pending_tool_call_id,
+                            params=tool_call.get("params") if isinstance(tool_call, dict) else None,
+                            iteration=iteration,
+                            code="tool_not_allowed_in_react",
+                            message=notice_message,
+                            extra={"tool_id": tool_id},
+                        )
                     except Exception:
                         pass
                     retries = int(state.get("decision_retries") or 0)
@@ -3802,14 +3879,15 @@ class ReactSolverV2:
                     if verdict.get("ok"):
                         state["session_log"].append(protocol_entry)
                     else:
+                        notice_message = self._protocol_violation_message(
+                            code="tool_call_invalid",
+                            decision=decision,
+                            state=state,
+                        )
                         try:
                             self.ctx_browser.contribute_notice(
                                 code="protocol_violation.tool_call_invalid",
-                                message=self._protocol_violation_message(
-                                    code="tool_call_invalid",
-                                    decision=decision,
-                                    state=state,
-                                ),
+                                message=notice_message,
                                 extra={
                                     "violations": verdict.get("violations") or [],
                                     "tool_id": verdict.get("tool_id"),
@@ -3828,6 +3906,22 @@ class ReactSolverV2:
                         except Exception:
                             pass
                         state["session_log"].append(protocol_entry)
+                        try:
+                            await emit_react_tool_rejected_event(
+                                react=self,
+                                tool_id=str(verdict.get("tool_id") or tool_id or "").strip(),
+                                tool_call_id=pending_tool_call_id,
+                                params=tool_call.get("params") if isinstance(tool_call, dict) else None,
+                                iteration=iteration,
+                                code="tool_call_invalid",
+                                message=notice_message,
+                                extra={
+                                    "violations": verdict.get("violations") or [],
+                                    "tool_id": verdict.get("tool_id"),
+                                },
+                            )
+                        except Exception:
+                            pass
                         retries = int(state.get("decision_retries") or 0)
                         if retries < int(state.get("max_iterations") or 0):
                             state["decision_retries"] = retries + 1
@@ -3888,14 +3982,15 @@ class ReactSolverV2:
                     })
 
                 if sig_status == "red":
+                    notice_message = self._protocol_violation_message(
+                        code="tool_signature_red",
+                        decision=decision,
+                        state=state,
+                    )
                     try:
                         self.ctx_browser.contribute_notice(
                             code="protocol_violation.tool_signature_red",
-                            message=self._protocol_violation_message(
-                                code="tool_signature_red",
-                                decision=decision,
-                                state=state,
-                            ),
+                            message=notice_message,
                             extra={"violations": sig_issues, "tool_id": tool_id, "iteration": iteration},
                             call_id=pending_tool_call_id,
                             meta={"rel": "call"},
@@ -3912,6 +4007,19 @@ class ReactSolverV2:
                     if protocol_entry is not None:
                         protocol_entry["ok"] = False
                         protocol_entry["violations"] = (protocol_entry.get("violations") or []) + (sig_issues or [])
+                    try:
+                        await emit_react_tool_rejected_event(
+                            react=self,
+                            tool_id=tool_id,
+                            tool_call_id=pending_tool_call_id,
+                            params=filtered_params,
+                            iteration=iteration,
+                            code="tool_signature_red",
+                            message=notice_message,
+                            extra={"violations": sig_issues, "tool_id": tool_id},
+                        )
+                    except Exception:
+                        pass
                     retries = int(state.get("decision_retries") or 0)
                     if retries < int(state.get("max_iterations") or 0):
                         state["decision_retries"] = retries + 1

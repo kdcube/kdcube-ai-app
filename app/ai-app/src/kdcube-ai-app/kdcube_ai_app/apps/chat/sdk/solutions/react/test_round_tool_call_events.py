@@ -49,24 +49,33 @@ async def test_react_round_emits_redacted_tool_call_event(monkeypatch, tmp_path)
 
     await ReactRound.execute(react, state)
 
-    assert len(comm.events) == 1
-    event = comm.events[0]
-    assert event["type"] == "react.tool.call"
-    assert event["status"] == "completed"
-    assert event["data"]["tool_id"] == "react.rg"
-    assert event["data"]["tool_call_id"] == "tc_rg"
-    assert event["data"]["iteration"] == 2
-    assert event["data"]["params"]["redacted"] is True
-    assert event["data"]["params"]["query_len"] == len("sensitive search text")
-    assert event["data"]["params"]["paths_count"] == 2
-    assert event["data"]["params"]["path_prefixes"] == ["fi:", "sk:"]
-    assert event["data"]["params"]["item_path_prefixes"] == ["ks:"]
-    assert "sensitive search text" not in json.dumps(event, ensure_ascii=False)
+    assert len(comm.events) == 2
+    call_event, result_event = comm.events
+    assert call_event["type"] == "react.tool.call"
+    assert call_event["step"] == "react.tool.call.tc_rg"
+    assert call_event["status"] == "started"
+    assert call_event["data"]["phase"] == "call"
+    assert call_event["data"]["executed"] is False
+    assert call_event["data"]["tool_id"] == "react.rg"
+    assert call_event["data"]["tool_call_id"] == "tc_rg"
+    assert call_event["data"]["iteration"] == 2
+    assert call_event["data"]["params"]["redacted"] is True
+    assert call_event["data"]["params"]["query_len"] == len("sensitive search text")
+    assert call_event["data"]["params"]["paths_count"] == 2
+    assert call_event["data"]["params"]["path_prefixes"] == ["fi:", "sk:"]
+    assert call_event["data"]["params"]["item_path_prefixes"] == ["ks:"]
+    assert result_event["type"] == "react.tool.result"
+    assert result_event["step"] == "react.tool.result.tc_rg"
+    assert result_event["status"] == "completed"
+    assert result_event["data"]["phase"] == "result"
+    assert result_event["data"]["executed"] is True
+    assert result_event["data"]["result"] == []
+    assert "sensitive search text" not in json.dumps(comm.events, ensure_ascii=False)
 
 
 @pytest.mark.asyncio
 async def test_react_round_tool_call_event_reports_managed_error(monkeypatch, tmp_path):
-    async def _fake_pull(*, ctx_browser, state, tool_call_id):
+    async def _fake_pull(*, react, ctx_browser, state, tool_call_id):
         state["last_tool_result"] = [{"error": {"code": "pull_failed"}}]
         return state
 
@@ -88,8 +97,71 @@ async def test_react_round_tool_call_event_reports_managed_error(monkeypatch, tm
 
     await ReactRound.execute(react, state)
 
-    event = comm.events[0]
-    assert event["type"] == "react.tool.call"
+    assert [event["type"] for event in comm.events] == ["react.tool.call", "react.tool.result"]
+    event = comm.events[-1]
+    assert event["step"] == "react.tool.result.tc_pull"
     assert event["status"] == "error"
+    assert event["data"]["executed"] is True
     assert event["data"]["error_count"] == 1
     assert event["data"]["error_code"] == "pull_failed"
+    assert event["data"]["error"]["items"] == [{"code": "pull_failed"}]
+    assert event["data"]["result"] == [{"error": {"code": "pull_failed"}}]
+
+
+@pytest.mark.asyncio
+async def test_react_round_uses_distinct_steps_for_multiple_tool_calls(monkeypatch, tmp_path):
+    async def _fake_rg(*, ctx_browser, state, tool_call_id):
+        state["last_tool_result"] = [{"ok": True, "call": tool_call_id}]
+        return state
+
+    monkeypatch.setattr(round_mod.react_tools, "handle_react_rg", _fake_rg)
+
+    runtime = RuntimeCtx(turn_id="turn_tool", outdir=str(tmp_path), workdir=str(tmp_path))
+    ctx = FakeBrowser(runtime)
+    comm = _FakeComm()
+    react = SimpleNamespace(ctx_browser=ctx, comm=comm)
+
+    for call_id in ("tc_a", "tc_b"):
+        await ReactRound.execute(react, {
+            "last_decision": {
+                "tool_call": {
+                    "tool_id": "react.rg",
+                    "tool_call_id": call_id,
+                    "params": {"query": "x"},
+                },
+            },
+        })
+
+    assert [event["step"] for event in comm.events] == [
+        "react.tool.call.tc_a",
+        "react.tool.result.tc_a",
+        "react.tool.call.tc_b",
+        "react.tool.result.tc_b",
+    ]
+    assert len({event["step"] for event in comm.events}) == 4
+
+
+@pytest.mark.asyncio
+async def test_react_round_emits_rejected_event_for_missing_tool_id(tmp_path):
+    runtime = RuntimeCtx(turn_id="turn_tool", outdir=str(tmp_path), workdir=str(tmp_path))
+    ctx = FakeBrowser(runtime)
+    comm = _FakeComm()
+    react = SimpleNamespace(ctx_browser=ctx, comm=comm)
+
+    result = await ReactRound.execute(react, {
+        "pending_tool_call_id": "tc_missing",
+        "last_decision": {
+            "tool_call": {
+                "params": {"query": "x"},
+            },
+        },
+    })
+
+    assert result["exit_reason"] == "error"
+    assert len(comm.events) == 1
+    event = comm.events[0]
+    assert event["type"] == "react.tool.rejected"
+    assert event["step"] == "react.tool.rejected.tc_missing"
+    assert event["status"] == "error"
+    assert event["data"]["executed"] is False
+    assert event["data"]["error"]["code"] == "missing_tool_id"
