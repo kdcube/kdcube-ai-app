@@ -165,7 +165,7 @@ def create_auth_manager():
         logger.info("Using CognitoAuthManager for authentication")
         return CognitoAuthManager(send_validation_error_details=True)
 
-    if provider in {"session", "bundle", "bundle-session"}:
+    if provider in {"bundle", "bundle-session"}:
         # Docs: repo:./app/ai-app/docs/service/auth/bundle-session-auth-README.md
         from kdcube_ai_app.auth.bundle import BundleSessionAuthManager
         logger.info("Using BundleSessionAuthManager for authentication")
