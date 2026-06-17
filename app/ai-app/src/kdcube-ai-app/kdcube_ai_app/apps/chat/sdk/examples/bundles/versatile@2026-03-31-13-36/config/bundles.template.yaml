@@ -341,15 +341,17 @@ bundles:
             build_command: npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build
             shared_sources:
               components_react_canvas:
-                src_folder: sdk://solutions/canvas/ui/component
+                src_folder: npm://components-react/src/canvas
                 target: _shared/components-react/canvas
               components_core_scene:
                 src_folder: sdk://solutions/scene
                 target: _shared/components-core/scene
           widgets:
+            # Chat is package-only — `engine` expands to the npm:// shared sources +
+            # build env (solutions/chat/backend.apply_chat_widget_engine).
             versatile_chat:
               src_folder: sdk://solutions/chat/ui/widget
-              build_command: npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build
+              engine: package-ui
             memories:
               src_folder: sdk://context/memory/ui/widget/memories
               build_command: npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build
@@ -371,7 +373,7 @@ bundles:
               build_command: npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build
               shared_sources:
                 components_react_canvas:
-                  src_folder: sdk://solutions/canvas/ui/component
+                  src_folder: npm://components-react/src/canvas
                   target: _shared/components-react/canvas
         mcp:
           services: {}

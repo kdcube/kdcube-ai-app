@@ -1229,7 +1229,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
                     "build_command": "npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build",
                     "shared_sources": {
                         "components_react_canvas": {
-                            "src_folder": "sdk://solutions/canvas/ui/component",
+                            "src_folder": "npm://components-react/src/canvas",
                             "target": "_shared/components-react/canvas",
                         },
                         "components_core_scene": {
@@ -1280,7 +1280,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
                         "build_command": "npm install --no-package-lock && OUTDIR=<VI_BUILD_DEST_ABSOLUTE_PATH> npm run build",
                         "shared_sources": {
                             "components_react_canvas": {
-                                "src_folder": "sdk://solutions/canvas/ui/component",
+                                "src_folder": "npm://components-react/src/canvas",
                                 "target": "_shared/components-react/canvas",
                             },
                         },
@@ -1330,7 +1330,7 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
         shared_sources.setdefault(
             "components_react_canvas",
             {
-                "src_folder": "sdk://solutions/canvas/ui/component",
+                "src_folder": "npm://components-react/src/canvas",
                 "target": "_shared/components-react/canvas",
             },
         )

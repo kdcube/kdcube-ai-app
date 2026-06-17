@@ -8,15 +8,26 @@ import { defineConfig } from 'vite'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
 
-const materializedComponentsReactCanvas = path.resolve(__dirname, '_shared/components-react/canvas/src/index.ts')
+function findInWorkspace(start, rel) {
+  let dir = start
+  for (let i = 0; i < 16; i++) {
+    const candidate = path.resolve(dir, rel)
+    if (fs.existsSync(candidate)) return candidate
+    const parent = path.resolve(dir, '..')
+    if (parent === dir) break
+    dir = parent
+  }
+  return ''
+}
+
+// Canvas = the npm @kdcube/components-react/canvas package. The bundle build
+// materializes it next to this config under _shared/; a plain-checkout fallback walks
+// up to the workspace npm/packages. (Files sit at the package root — no src/ subdir.)
+const materializedComponentsReactCanvas = path.resolve(__dirname, '_shared/components-react/canvas/index.ts')
 const envCanvasComponent = process.env.KDCUBE_CANVAS_COMPONENT_SRC
   ? path.resolve(process.env.KDCUBE_CANVAS_COMPONENT_SRC)
   : ''
-const repoCanvasComponent = path.resolve(
-  __dirname,
-  '../../../../..',
-  'solutions/canvas/ui/component/src/index.ts',
-)
+const repoCanvasComponent = findInWorkspace(__dirname, 'npm/packages/components-react/src/canvas/index.ts')
 const materializedComponentsCoreScene = path.resolve(__dirname, '_shared/components-core/scene/src/index.ts')
 const envSceneRuntime = process.env.KDCUBE_SCENE_RUNTIME_SRC
   ? path.resolve(process.env.KDCUBE_SCENE_RUNTIME_SRC)

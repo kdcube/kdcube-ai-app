@@ -8,15 +8,27 @@ import { defineConfig } from 'vite'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
 
-// The Pin Board widget hosts the canvas component (the same component the
-// multi-widget scene mounts). Resolve it through the future package boundary:
-// prefer a materialized copy the bundle build may stage under `_shared/`,
-// then an explicit env override, then the in-repo source two directories up.
-const materializedComponentsReactCanvas = path.resolve(__dirname, '_shared/components-react/canvas/src/index.ts')
+// The Pin Board widget hosts the canvas component — the npm
+// @kdcube/components-react/canvas package (same component the multi-widget scene
+// mounts). The bundle build materializes it under `_shared/`; a plain-checkout
+// fallback walks up to the workspace npm/packages. (Files sit at the package root.)
+function findInWorkspace(start: string, rel: string): string {
+  let dir = start
+  for (let i = 0; i < 16; i++) {
+    const candidate = path.resolve(dir, rel)
+    if (fs.existsSync(candidate)) return candidate
+    const parent = path.resolve(dir, '..')
+    if (parent === dir) break
+    dir = parent
+  }
+  return ''
+}
+
+const materializedComponentsReactCanvas = path.resolve(__dirname, '_shared/components-react/canvas/index.ts')
 const envCanvasComponent = process.env.KDCUBE_CANVAS_COMPONENT_SRC
   ? path.resolve(process.env.KDCUBE_CANVAS_COMPONENT_SRC)
   : ''
-const repoCanvasComponent = path.resolve(__dirname, '../../component/src/index.ts')
+const repoCanvasComponent = findInWorkspace(__dirname, 'npm/packages/components-react/src/canvas/index.ts')
 
 const canvasComponentEntry = fs.existsSync(materializedComponentsReactCanvas)
   ? materializedComponentsReactCanvas
