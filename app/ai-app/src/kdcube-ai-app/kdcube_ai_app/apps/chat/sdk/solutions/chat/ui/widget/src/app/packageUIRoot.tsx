@@ -17,12 +17,15 @@
  */
 import type { ReactNode } from 'react'
 import { Chat } from '@kdcube/components-react/chat'
+import type { NamespaceStyleMap } from '@kdcube/components-core/chat'
 import { PackageChatRoot } from './packageEngine.tsx'
 import { CHAT_BRAND_LABEL, settings } from '../settings.ts'
 import { isHostEmbedMode, isKdcubePreviewContext } from '../host.ts'
 
 /** Renders inside PackageChatRoot (after config resolves), so `settings` is
- *  populated when we read tenant/project for the account label. */
+ *  populated when we read tenant/project + namespace styles. `setupParentListener`
+ *  awaits `loadNamespaceStyles` before resolving, so the styles are present here on
+ *  first render — the in-tree path reads the same singleton, just live per render. */
 function PackageChatUI() {
   return (
     <Chat
@@ -30,6 +33,9 @@ function PackageChatUI() {
       accountLabel={`${settings.getTenant() || 'tenant'} / ${settings.getProject() || 'project'}`}
       embedded={isHostEmbedMode()}
       kdcubePreview={isKdcubePreviewContext()}
+      // Namespace-owned colors for context chips — without this the package chat
+      // renders chips uncolored (the in-tree components read this singleton directly).
+      namespaceStyles={settings.getNamespaceStyles() as NamespaceStyleMap}
     />
   )
 }

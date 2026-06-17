@@ -1239,6 +1239,9 @@ class VersatileEntrypoint(BaseEntrypointWithEconomicsAndMemory):
                     },
                 },
                 "widgets": {
+                    # Engine selection is config-driven in the bundle config
+                    # (bundles.yaml `versatile_chat.engine: local|package|package-ui`),
+                    # expanded by the build pipeline. This is just the code-side default.
                     "versatile_chat": chat_widget_ui_config(),
                     "memories": {
                         "enabled": True,

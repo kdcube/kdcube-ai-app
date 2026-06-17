@@ -289,10 +289,10 @@ function TurnViewImpl({
         <div className="k-tabsbar">
         <div className="k-tabs">
           {([
-            /* Chat is the default visual; sits first per design. */
-            ['chat', 'Chat', null],
-            ['overview', 'Overview', null],
-            ['timeline', 'Timeline', turn.timeline.length || null],
+            /* The conversational answer view, labeled "Timeline" per design.
+             * The legacy 'overview' and 'timeline' tabs are intentionally hidden
+             * (their panes remain below but are unreachable). */
+            ['chat', 'Timeline', null],
             ['steps', 'Steps', steps.length || null],
             ['canvases', 'Artifacts', canvases.length || null],
             ['links', 'Links', turnLinks.length || null],

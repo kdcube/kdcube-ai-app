@@ -48,6 +48,10 @@ export interface EngineConfig {
   auth?: EngineAuth
   /** Default 'auto' (prefer Socket.IO, fall back to SSE). */
   transport?: TransportKind
+  /** Initial host view the engine boots with. The host adapter chooses this
+   *  (e.g. 'compact' for an embedded iframe tile, 'expanded' standalone). The
+   *  engine just carries the value — it never detects the host. Default 'expanded'. */
+  initialHostView?: 'compact' | 'expanded'
 }
 
 export function resolveAuthMode(config: EngineConfig): AuthMode {

@@ -89,4 +89,13 @@ export default defineConfig({
     outDir: process.env.OUTDIR || 'dist',
     emptyOutDir: true,
   },
+  // Build-time stamp so you can SEE which chat implementation actually built:
+  // `in-tree` (App.tsx + local engine), `package-engine` (npm engine, in-tree UI),
+  // or `package-ui` (npm engine + npm <Chat/>). Surfaced on <html data-kdcube-chat-impl>
+  // and in the console by main.tsx.
+  define: {
+    __KDCUBE_CHAT_IMPL__: JSON.stringify(
+      USE_PACKAGE_UI ? 'package-ui' : USE_PACKAGE_ENGINE ? 'package-engine' : 'in-tree',
+    ),
+  },
 })

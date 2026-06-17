@@ -159,7 +159,7 @@ export function createChatEngine(config: EngineConfig): ChatEngine {
     ready: false,
     authed: false,
     bootError: null,
-    hostView: 'expanded',
+    hostView: config.initialHostView ?? 'expanded',
     dryRun: { enabled: false, loading: false, preview: null, error: null },
   }
   const statusListeners = new Set<() => void>()

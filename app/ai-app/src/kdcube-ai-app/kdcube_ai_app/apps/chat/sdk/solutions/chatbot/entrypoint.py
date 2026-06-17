@@ -39,6 +39,7 @@ from kdcube_ai_app.apps.chat.sdk.runtime.local_sidecars import (
     update_local_sidecar_runtime_metadata as update_runtime_local_sidecar_runtime_metadata,
 )
 from kdcube_ai_app.apps.chat.sdk.viz.patch_platform_dashboard import patch_dashboard
+from kdcube_ai_app.apps.chat.sdk.solutions.chat import apply_chat_widget_engine
 from kdcube_ai_app.infra.plugin.bundle_loader import api, on_reactive_event, ui_widget
 from kdcube_ai_app.infra.service_hub.inventory import (
     APP_STATE_KEYS,
@@ -561,6 +562,32 @@ class BaseEntrypoint:
             return None
         return install_args
 
+    @staticmethod
+    def _build_env_from_command(command: str) -> Dict[str, str]:
+        """Lift inline ``VAR=val`` assignments on the BUILD step (after the last
+        ``&&``) into env vars — e.g. ``… && VITE_CHAT_UI=package npm run build``.
+
+        The direct-build path runs the package.json ``build`` script with a fixed
+        env, so without lifting these they are silently dropped (which is why the
+        chat engine switch never reached vite). OUTDIR-family is excluded — it is
+        already injected into the build env explicitly.
+        """
+        skip = {"OUTDIR", "VI_BUILD_DEST_ABSOLUTE_PATH", "VITE_BUILD_DEST_ABSOLUTE_PATH", "VITE_APP_OUT_DIR"}
+        normalized = re.sub(r"\s+", " ", str(command or "").strip())
+        build_part = normalized.split("&&")[-1].strip()
+        try:
+            tokens = shlex.split(build_part)
+        except ValueError:
+            return {}
+        out: Dict[str, str] = {}
+        for token in tokens:
+            match = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$", token)
+            if not match:
+                break  # first non-assignment token is the command itself
+            if match.group(1) not in skip:
+                out[match.group(1)] = match.group(2)
+        return out
+
     def _resolve_ui_src_path(self, *, src_folder: str, bundle_root: str) -> pathlib.Path:
         raw = str(src_folder or "").strip()
         if raw.startswith("sdk://") or raw.startswith("bundle://"):
@@ -710,6 +737,9 @@ class BaseEntrypoint:
         Extracted from `_ensure_static_ui_app_build` so the route layer can
         cheaply compare signatures without invoking the build itself.
         """
+        # Expand a config-driven `engine:` selector (chat widget) into the concrete
+        # build_command + shared_sources; no-op for every other widget config.
+        cfg = apply_chat_widget_engine(cfg)
         src_folder = str(cfg.get("src_folder") or cfg.get("source_dir") or "").strip()
         build_command = str(cfg.get("build_command") or "").strip()
         if not src_folder or not build_command:
@@ -783,6 +813,10 @@ class BaseEntrypoint:
 
         from kdcube_ai_app.infra.plugin.bundle_once import run_once_for_shared_bundle_storage
 
+        # Config-driven `engine:` → build_command + shared_sources (chat widget);
+        # no-op for other widgets. Mirrors compute_ui_widget_signature so the
+        # signature and the build agree on the expanded command.
+        cfg = apply_chat_widget_engine(cfg)
         src_folder = str(cfg.get("src_folder") or cfg.get("source_dir") or "").strip()
         build_command = str(cfg.get("build_command") or "").strip()
 
@@ -876,6 +910,11 @@ class BaseEntrypoint:
                             env["PATH"] = bin_path + ":" + env.get("PATH", "")
                             break
                 env["PATH"] = str(tmp_src / "node_modules" / ".bin") + ":" + env.get("PATH", "")
+                # Lift inline build-step env (e.g. VITE_CHAT_UI=package) into the
+                # subprocess env. The direct-build path runs the package.json script,
+                # so inline assignments on `npm run build` would otherwise be lost.
+                for _env_key, _env_val in self._build_env_from_command(final_command).items():
+                    env[_env_key] = _env_val
 
                 async def _run_build_process(args: Optional[list[str]] = None, shell_command: Optional[str] = None):
                     if args:

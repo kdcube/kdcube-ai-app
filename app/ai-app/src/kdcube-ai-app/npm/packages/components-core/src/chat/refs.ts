@@ -29,6 +29,18 @@ export function canonicalObjectRef(...refs: Array<string | null | undefined>): s
   return ''
 }
 
+/** A durable `fi:` ref opens by direct download; every other namespace ref opens
+ *  through its resolver (object.action). Mirrors the in-tree widget's fileDrag. */
+export function isDirectDownloadObjectRef(ref: string): boolean {
+  return String(ref || '').trim().startsWith('fi:') && isDurableFiRef(ref)
+}
+
+/** The leading namespace token of an object ref (`task:issue:1` → `task`), or "". */
+export function namespaceFromObjectRef(ref: string): string {
+  const match = String(ref || '').trim().match(/^([a-z][a-z0-9_.-]*):/i)
+  return match?.[1]?.toLowerCase() || ''
+}
+
 export function durableHistoricalObjectRef(value: unknown, conversationId?: string): string | null {
   const ref = typeof value === 'string' ? value.trim() : ''
   if (!ref) return null

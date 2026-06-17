@@ -44,6 +44,12 @@ function buildEngineConfig(): EngineConfig {
       project: settings.getProject(),
       bundleId: settings.getBundleId() || BUILT_BUNDLE_ID,
     },
+    // Boot compact when embedded in a host iframe (the compact tile), expanded
+    // standalone — matching the in-tree widget (useChatEngine's initial hostView).
+    // Without this the package engine defaulted to 'expanded', so the embedded chat
+    // rendered the wide/sidebar layout in the compact iframe.
+    initialHostView:
+      typeof window !== 'undefined' && window.parent !== window ? 'compact' : 'expanded',
     // Token mode with live-reading callbacks: returns null for anonymous (so the
     // request falls back to the cookie via credentials:'include') and the tokens
     // once the host re-posts config with them — covering the anon→authed handoff.

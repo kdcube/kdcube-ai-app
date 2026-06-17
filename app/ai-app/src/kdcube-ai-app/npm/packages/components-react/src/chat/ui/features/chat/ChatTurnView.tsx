@@ -46,7 +46,7 @@ import {
 } from './turnTabs.tsx'
 import { FaviconImg } from '../../components/Favicon.tsx'
 import { FileExtIcon, fileExtension, fileKind } from '../../components/FileExtIcon.tsx'
-import { canonicalObjectRef, contextChipStyle, namespaceStyleVars } from '@kdcube/components-core/chat'
+import { canonicalObjectRef, contextChipStyle, isDirectDownloadObjectRef, namespaceFromObjectRef, namespaceStyleVars } from '@kdcube/components-core/chat'
 import { setChatFileDragData } from '../../support/fileDrag.ts'
 import { setContextDragData } from '../../support/contextDrop.ts'
 
@@ -531,33 +531,66 @@ function ChatTimelineBlockImpl({ artifact }: { artifact: TimelineArtifact }) {
 function ChatFileBlockImpl({
   artifact,
   onError,
+  namespaceStyles = {},
 }: {
   artifact: FileArtifact
   onError: (text: string) => void
+  namespaceStyles?: NamespaceStyleMap
 }) {
   const vm = useChatViewModel()
   const [downloading, setDownloading] = useState(false)
   const ext = fileExtension(artifact.filename)
   const kind = fileKind(ext)
   const pinRef = canonicalObjectRef(artifact.objectRef, artifact.logicalPath)
-  const canDownload = Boolean(pinRef)
+  // A durable `fi:` artifact downloads directly; any other namespace ref OPENS
+  // through its resolver (object.action) — matching the in-tree widget.
+  const isDirectDownload = Boolean(pinRef && isDirectDownloadObjectRef(pinRef))
+  const canActivate = Boolean(pinRef)
+  const namespace = namespaceFromObjectRef(pinRef)
+  const namespaceVars = namespace
+    ? (namespaceStyleVars(namespace, namespaceStyles) as CSSProperties | undefined)
+    : undefined
+  const actionLabel = isDirectDownload ? 'Download' : 'Open'
+  const extLabel = isDirectDownload ? kind.label : (namespace ? namespace.toUpperCase() : kind.label)
   const subtitle = artifact.description || artifact.mime || pinRef || ''
-  const handle = async () => {
-    if (!canDownload || downloading) return
-    try {
-      setDownloading(true)
-      vm.downloadFile(pinRef, artifact.filename, artifact.mime ?? undefined)
-    } catch (error) {
-      onError(messageForError(error))
-    } finally {
-      setDownloading(false)
+  const handle = () => {
+    if (!canActivate || downloading) return
+    if (isDirectDownload) {
+      try {
+        setDownloading(true)
+        vm.downloadFile(pinRef, artifact.filename, artifact.mime ?? undefined)
+      } catch (error) {
+        onError(messageForError(error))
+      } finally {
+        setDownloading(false)
+      }
+      return
     }
+    // Open via the resolver. The engine runs the action and surfaces any failure as
+    // a banner, so there's no local error plumbing (and openContextChip is void).
+    vm.openContextChip({
+      id: pinRef,
+      kind: 'object.ref',
+      label: artifact.filename || pinRef,
+      title: artifact.filename || pinRef,
+      summary: artifact.description || undefined,
+      ref: pinRef,
+      object_ref: pinRef,
+      mime: artifact.mime,
+      namespace: namespace || undefined,
+      data: {
+        source: 'chat.file_artifact',
+        object_ref: pinRef,
+        filename: artifact.filename,
+        mime: artifact.mime,
+      },
+    } as Parameters<typeof vm.openContextChip>[0])
   }
   return (
     <button
       type="button"
       draggable={Boolean(pinRef)}
-      onClick={() => void handle()}
+      onClick={() => handle()}
       onDragStart={(event) => {
         if (!pinRef) return
         setChatFileDragData(event.dataTransfer, {
@@ -570,10 +603,11 @@ function ChatFileBlockImpl({
       }}
       disabled={!pinRef || downloading}
       className="k-chat-file"
+      style={namespaceVars}
       title={
         pinRef
-          ? (canDownload ? `Download ${artifact.filename}; drag to attach or pin` : `Drag ${artifact.filename} to attach or pin`)
-          : (canDownload ? `Download ${artifact.filename}` : artifact.filename)
+          ? `${actionLabel} ${artifact.filename}; drag to attach or pin`
+          : artifact.filename
       }
     >
       <span className="k-chat-file-icon" aria-hidden="true">
@@ -583,16 +617,16 @@ function ChatFileBlockImpl({
         <span className="k-chat-file-name">{artifact.filename}</span>
         {subtitle ? <span className="k-chat-file-sub">{subtitle}</span> : null}
       </span>
-      <span className="k-chat-file-ext">{kind.label}</span>
+      <span className="k-chat-file-ext">{extLabel}</span>
       <span className="k-chat-file-action">
         {downloading ? (
-          'Downloading…'
-        ) : canDownload ? (
+          isDirectDownload ? 'Downloading…' : 'Opening…'
+        ) : canActivate ? (
           <>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
             </svg>
-            <span>Download</span>
+            <span>{actionLabel}</span>
           </>
         ) : (
           'Unavailable'
@@ -637,7 +671,7 @@ function ChatArtifactRowImpl({
      *  small footnote section below the answer — not as bordered cards in
      *  the chronological flow. */
     case 'citation':   return null
-    case 'file':       return <ChatFileBlock artifact={artifact} onError={onDownloadError} />
+    case 'file':       return <ChatFileBlock artifact={artifact} onError={onDownloadError} namespaceStyles={namespaceStyles} />
     case 'service_error': return <ChatServiceErrorBlock artifact={artifact} />
     default:           return null
   }

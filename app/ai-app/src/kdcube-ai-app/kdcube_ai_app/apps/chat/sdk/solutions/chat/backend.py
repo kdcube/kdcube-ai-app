@@ -37,6 +37,27 @@ DEFAULT_CHAT_WIDGET_SHARED_SOURCES = {
 DEFAULT_CHAT_WIDGET_ENGINE = "local"
 
 
+def _with_chat_vite_env(command: str, env: Mapping[str, Any]) -> str:
+    """Scope VITE_* env to the BUILD step.
+
+    A leading ``VAR=x npm install && … npm run build`` sets ``VAR`` only for
+    ``npm install`` — vite (``npm run build``) never sees it. So inject the env
+    inline right before ``npm run build`` (the same position ``OUTDIR`` uses, which
+    is why output dir works but the engine switch silently didn't). Falls back to a
+    whole-command prefix if there's no recognizable build step.
+    """
+    prefix = " ".join(
+        f"{key}={shlex.quote(str(value))}"
+        for key, value in (env or {}).items()
+        if str(key).startswith("VITE_") and value is not None
+    )
+    if not prefix:
+        return command
+    if "npm run build" in command:
+        return command.replace("npm run build", f"{prefix} npm run build", 1)
+    return f"{prefix} {command}"
+
+
 def chat_widget_ui_config(
     *,
     enabled: bool = True,
@@ -75,14 +96,7 @@ def chat_widget_ui_config(
     if vite_env:
         merged_env.update(vite_env)
 
-    if merged_env:
-        env_prefix = " ".join(
-            f"{key}={shlex.quote(str(value))}"
-            for key, value in merged_env.items()
-            if str(key).startswith("VITE_") and value is not None
-        )
-        if env_prefix:
-            build_command = f"{env_prefix} {build_command}"
+    build_command = _with_chat_vite_env(build_command, merged_env)
 
     config: dict[str, Any] = {
         "enabled": enabled,
@@ -101,10 +115,49 @@ def chat_widget_ui_config(
     return config
 
 
+def apply_chat_widget_engine(cfg: Mapping[str, Any]) -> dict[str, Any]:
+    """Expand a chat-widget config's ``engine`` selector into the concrete
+    ``build_command`` (VITE env prefix) + ``npm://`` ``shared_sources`` — so a
+    bundle config (e.g. ``bundles.yaml``) can say one field::
+
+        versatile_chat:
+          src_folder: sdk://solutions/chat/ui/widget
+          engine: package-ui        # local | package | package-ui
+
+    instead of hand-writing the build command and shared sources (and juggling
+    commented blocks). Returns a shallow copy with ``engine`` consumed.
+
+    **No-op when there is no ``engine`` key** — every other widget config and any
+    explicit ``build_command`` is returned untouched, so this is safe to call on
+    every widget in the generic build pipeline.
+    """
+    out = dict(cfg or {})
+    if "engine" not in out:
+        return out
+    engine_norm = str(out.pop("engine") or "").strip().lower()
+    use_package = engine_norm in ("package", "package-ui")
+    use_package_ui = engine_norm == "package-ui"
+
+    env: dict[str, str] = {}
+    if use_package:
+        env["VITE_CHAT_ENGINE"] = "package"
+    if use_package_ui:
+        env["VITE_CHAT_UI"] = "package"
+
+    command = str(out.get("build_command") or DEFAULT_CHAT_WIDGET_BUILD_COMMAND)
+    out["build_command"] = _with_chat_vite_env(command, env)
+    out.setdefault("src_folder", CHAT_WIDGET_SDK_SOURCE)
+    # Package engine needs the npm:// sources materialized; local carries none.
+    if use_package and "shared_sources" not in out:
+        out["shared_sources"] = dict(DEFAULT_CHAT_WIDGET_SHARED_SOURCES)
+    return out
+
+
 __all__ = [
     "CHAT_WIDGET_SDK_SOURCE",
     "DEFAULT_CHAT_WIDGET_BUILD_COMMAND",
     "DEFAULT_CHAT_WIDGET_SHARED_SOURCES",
     "DEFAULT_CHAT_WIDGET_ENGINE",
     "chat_widget_ui_config",
+    "apply_chat_widget_engine",
 ]
