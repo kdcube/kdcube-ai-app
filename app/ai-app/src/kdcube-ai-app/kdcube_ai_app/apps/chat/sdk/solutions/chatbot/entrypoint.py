@@ -2068,6 +2068,7 @@ class BaseEntrypoint:
         thread_id: str,
         turn_id: str,
         usage_from: str,
+        emit_turn_event: bool = True,
     ):
         """Calculate and report turn costs using calculator."""
         settings = get_settings()
@@ -2154,24 +2155,25 @@ class BaseEntrypoint:
             llm_output_sum=token_summary["llm_output_sum"],
         )
 
-        await self.comm.event(
-            agent="accounting",
-            type="accounting.usage",
-            title=f"💰 Turn Cost: ${cost_total_usd:.6f}",
-            step="accounting",
-            data={
-                "breakdown": cost_breakdown,
-                "cost_total_usd": cost_total_usd,
-                "weighted_tokens": weighted_tokens,
-                "ranked_tokens": ranked_tokens,
-                "total_input_tokens": token_summary["total_input_tokens"],
-                "llm_output_sum": token_summary["llm_output_sum"],
-                "summary": compact_summary,
-                "agent_costs": agent_costs,
-            },
-            markdown=full_markdown,
-            status="completed",
-        )
+        if emit_turn_event:
+            await self.comm.event(
+                agent="accounting",
+                type="accounting.usage",
+                title=f"💰 Turn Cost: ${cost_total_usd:.6f}",
+                step="accounting",
+                data={
+                    "breakdown": cost_breakdown,
+                    "cost_total_usd": cost_total_usd,
+                    "weighted_tokens": weighted_tokens,
+                    "ranked_tokens": ranked_tokens,
+                    "total_input_tokens": token_summary["total_input_tokens"],
+                    "llm_output_sum": token_summary["llm_output_sum"],
+                    "summary": compact_summary,
+                    "agent_costs": agent_costs,
+                },
+                markdown=full_markdown,
+                status="completed",
+            )
 
         await self.comm.service_event(
             type="accounting.usage",
@@ -2203,6 +2205,7 @@ class BaseEntrypoint:
         thread_id: str,
         turn_id: str,
         usage_from: str,
+        emit_turn_event: bool = True,
     ):
         return await self.apply_accounting(
             tenant=tenant,
@@ -2212,6 +2215,7 @@ class BaseEntrypoint:
             thread_id=thread_id,
             turn_id=turn_id,
             usage_from=usage_from,
+            emit_turn_event=emit_turn_event,
         )
 
     # ---------- Optional SDK services ----------

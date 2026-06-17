@@ -304,6 +304,34 @@ function historicalEventData(row: Record<string, unknown>): Record<string, unkno
   return {}
 }
 
+function conversationFromRecord(row: Record<string, unknown>): Record<string, unknown> | null {
+  return row.conversation && typeof row.conversation === 'object'
+    ? row.conversation as Record<string, unknown>
+    : null
+}
+
+function historicalEventMatchesTurn(row: Record<string, unknown>, conversationId: string, turnId: string): boolean {
+  const conversation = conversationFromRecord(row)
+  if (!conversation) return true
+  const rowConversationId = typeof conversation.conversation_id === 'string' ? conversation.conversation_id : ''
+  const rowTurnId = typeof conversation.turn_id === 'string' ? conversation.turn_id : ''
+  if (rowConversationId && rowConversationId !== conversationId) return false
+  if (rowTurnId && rowTurnId !== turnId) return false
+  return true
+}
+
+function isAccountingStep(env: ChatStepEnvelope): boolean {
+  return String(env.type || '') === 'accounting.usage' || env.event?.step === 'accounting'
+}
+
+function eventTargetsExistingTurn(state: ChatState, env: ChatStepEnvelope): boolean {
+  const conversationId = env.conversation?.conversation_id || ''
+  const turnId = env.conversation?.turn_id || ''
+  if (!turnId) return false
+  if (state.conversationId && conversationId && conversationId !== state.conversationId) return false
+  return state.turns.some((turn) => turn.id === turnId)
+}
+
 function parseRecordTextJson(row: Record<string, unknown>): Record<string, unknown> | null {
   const text = typeof row.text === 'string' ? row.text : ''
   if (!text.trim() || !/^\s*[{[]/.test(text)) return null
@@ -760,10 +788,18 @@ export function hydrateHistoricalConversation(conversation: ConversationDTO): Ch
             const row = item as Record<string, unknown>
             const type = historicalEventType(row)
             const data = historicalEventData(row)
-            if (type === 'accounting.usage' && typeof data.cost_total_usd === 'number') {
+            if (
+              type === 'accounting.usage'
+              && typeof data.cost_total_usd === 'number'
+              && historicalEventMatchesTurn(row, conversation.conversation_id, turnDto.turn_id)
+            ) {
               costUsd = data.cost_total_usd
             }
-            if (type === 'chat.turn.summary' && typeof data.elapsed_ms === 'number') {
+            if (
+              type === 'chat.turn.summary'
+              && typeof data.elapsed_ms === 'number'
+              && historicalEventMatchesTurn(row, conversation.conversation_id, turnDto.turn_id)
+            ) {
               elapsedMs = data.elapsed_ms
             }
           }
@@ -961,6 +997,14 @@ export function applyChatStep(state: ChatState, env: ChatStepEnvelope): ChatStat
   if (env.event?.step === 'conversation_title') {
     const title = typeof env.data?.title === 'string' ? env.data.title.trim() : ''
     return title ? { ...state, conversationTitle: title } : state
+  }
+  /* Service/project broadcasts are delivered to every SSE subscriber. Chat
+   * consumes accounting as a turn step only when it targets an existing local
+   * turn. Server-side producers should also avoid sending non-chat accounting
+   * over the chat_step route; this guard protects older or mixed deployments.
+   * Next ownership field to add server-side: origin_agent_id / target_surface_ref. */
+  if (isAccountingStep(env) && !eventTargetsExistingTurn(state, env)) {
+    return state
   }
   const syncedState = syncConversationFromEnvelope(
     ensureTurn(state, env.conversation.turn_id, timestampValue(env.timestamp)),

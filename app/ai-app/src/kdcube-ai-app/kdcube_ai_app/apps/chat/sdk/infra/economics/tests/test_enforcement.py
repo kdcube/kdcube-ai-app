@@ -480,6 +480,7 @@ async def test_top_level_project_lifecycle_reserves_and_settles():
     assert len(ep.budget_limiter.committed) == 1
     assert len(ep.rl.commits) == 1
     assert ep.run_accounting_calls and ep.run_accounting_calls[0]["turn_id"] == "scope-xyz"
+    assert ep.run_accounting_calls[0]["emit_turn_event"] is False
     assert enf.active_econ_scope() is None
 
 

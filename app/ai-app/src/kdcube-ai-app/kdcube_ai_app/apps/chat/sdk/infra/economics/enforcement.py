@@ -1064,6 +1064,7 @@ class EconomicsGuard:
             thread_id=self.scope_id,
             turn_id=self.scope_id,
             usage_from=usage_from,
+            emit_turn_event=False,
         )
         self._log(
             "accounting_run_done",

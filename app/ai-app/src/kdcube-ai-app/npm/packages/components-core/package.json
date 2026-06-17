@@ -29,6 +29,8 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "test:chat": "npm run build && node --test tests/chat-accounting-scope.test.mjs",
     "test:scene": "npm run build && node --test tests/scene-runtime.test.mjs",
     "typecheck": "tsc --noEmit"
   },
