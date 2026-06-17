@@ -18,7 +18,7 @@ from kdcube_ai_app.apps.chat.sdk.streaming.stream_policy import StreamPolicyViol
 
 
 EmitDelta = Callable[..., Awaitable[None]]
-TraitsResolver = Callable[[str], Mapping[str, Any]]
+TraitsResolver = Callable[..., Mapping[str, Any]]
 DEFAULT_MAX_ACTIONS_PER_ROUND = 2
 logger = logging.getLogger(__name__)
 
@@ -90,6 +90,7 @@ class ObservedAction:
     action: str
     tool_id: str
     traits: dict[str, Any]
+    tool_params: dict[str, Any] | None = None
 
     @property
     def strategies(self) -> set[str]:
@@ -154,15 +155,18 @@ class RoundActionOverseer:
         tool_id: str,
         action_gate: ActionStreamGate,
         answer_gate: Optional[ActionStreamGate] = None,
+        tool_params: Optional[Mapping[str, Any]] = None,
     ) -> ObservedAction:
         action_text = str(action or "").strip()
         tool_id_text = str(tool_id or "").strip()
-        traits = self._traits_for(action_text, tool_id_text)
+        params_dict = dict(tool_params or {}) if isinstance(tool_params, Mapping) else None
+        traits = self._traits_for(action_text, tool_id_text, params_dict)
         observed = ObservedAction(
             index=int(action_index or 0),
             action=action_text,
             tool_id=tool_id_text,
             traits=traits,
+            tool_params=params_dict,
         )
         logger.info(
             "[react.action_overseer] observed index=%s action=%s tool_id=%s strategies=%s",
@@ -233,11 +237,14 @@ class RoundActionOverseer:
     def rejected_actions(self) -> list[dict[str, Any]]:
         return [item.as_dict() for item in self._rejected]
 
-    def _traits_for(self, action: str, tool_id: str) -> dict[str, Any]:
+    def _traits_for(self, action: str, tool_id: str, tool_params: Optional[Mapping[str, Any]] = None) -> dict[str, Any]:
         if action in {"complete", "exit"}:
             return {STRATEGY_TRAIT: ["exploitation"]}
         if action == "call_tool" and tool_id:
-            return dict(self._resolve_traits(tool_id) or {})
+            try:
+                return dict(self._resolve_traits(tool_id, tool_params) or {})
+            except TypeError:
+                return dict(self._resolve_traits(tool_id) or {})
         return {}
 
     def _violation_for(self, observed: ObservedAction) -> tuple[str, dict[str, Any]] | None:

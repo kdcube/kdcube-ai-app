@@ -116,6 +116,13 @@ task:issue:ticket_123
 The host may attach presentation metadata, but it must not rewrite the object
 into a host-specific identity. Ownership stays with the namespace.
 
+Visual identity follows the same rule. Namespace colors and badges are app-level
+presentation metadata keyed by the root namespace (`mem`, `task`, `fi`, `cnv`,
+and so on). A scene may pass that already-owned `namespaceStyles` map into
+surfaces it mounts, but the metadata is not scene-owned and not canvas-owned.
+The style affects presentation only; resolver dispatch still uses the canonical
+object ref and the namespace provider still owns the object's behavior.
+
 ## Open Flow
 
 When a user opens an object, the source surface asks the namespace owner for an
@@ -248,6 +255,12 @@ The registry path from step 7 onward is identical.
 The important boundary is that the generic runtime only knows step 7. It does
 not know what `task:` means, what endpoint the target surface calls, or what the
 target surface renders.
+
+The same boundary applies to search results and context pins. A result found in
+chat, dragged to canvas, and then opened from the board should keep the same
+`object_ref`; the source surface, scene host, and target surface may add local
+presentation metadata, but none of them should replace the ref with a
+surface-local identity.
 
 ## Registry Shape
 

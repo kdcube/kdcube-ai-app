@@ -248,10 +248,13 @@ def _named_service_namespace_agent_tools_config(
         raw = namespaces.get(namespace_key)
         if not isinstance(raw, Mapping):
             continue
+        out: dict[str, Any] = {}
         allowed_operations = raw.get("allowed") or raw.get("allowed_operations") or raw.get("operations")
         if isinstance(allowed_operations, Sequence) and not isinstance(allowed_operations, (str, bytes)):
-            return {"allowed_operations": [str(item) for item in allowed_operations if str(item or "").strip()]}
-        return {}
+            out["allowed_operations"] = [str(item) for item in allowed_operations if str(item or "").strip()]
+        if isinstance(raw.get("tool_traits"), Mapping):
+            out["tool_traits"] = dict(raw.get("tool_traits") or {})
+        return out
 
     agents = _get_path(bundle_props or {}, "tools.agents", {})
     if not isinstance(agents, Mapping):
@@ -271,10 +274,13 @@ def _named_service_namespace_agent_tools_config(
             raw = namespaces.get(namespace_key)
             if not isinstance(raw, Mapping):
                 continue
+            out: dict[str, Any] = {}
             allowed_operations = raw.get("allowed") or raw.get("allowed_operations") or raw.get("operations")
             if isinstance(allowed_operations, Sequence) and not isinstance(allowed_operations, (str, bytes)):
-                return {"allowed_operations": [str(item) for item in allowed_operations if str(item or "").strip()]}
-            return {}
+                out["allowed_operations"] = [str(item) for item in allowed_operations if str(item or "").strip()]
+            if isinstance(raw.get("tool_traits"), Mapping):
+                out["tool_traits"] = dict(raw.get("tool_traits") or {})
+            return out
     return {}
 
 

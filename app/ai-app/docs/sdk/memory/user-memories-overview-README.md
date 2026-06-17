@@ -98,6 +98,74 @@ When a bundle inherits `MemoryEntrypointMixin`, the memory widget source folder
 and build command are provided by defaults; descriptors usually only need
 `ui.widgets.memories.enabled=true`.
 
+## Named-Service Interface
+
+The memory subsystem exposes durable memories through the named-service
+namespace `mem`. The public object is the memory record:
+
+```text
+object_kind: memory.record
+canonical ref: mem:record:<memory_id>
+search scopes: mem, mem:record
+```
+
+The record's `kind` field is an open vocabulary. The current recommended
+values are:
+
+```text
+fact
+preference
+decision
+constraint
+communication_style
+anchor
+spec
+milestone
+state
+```
+
+These values are guidance, not a closed enum. Providers and clients may use
+other normalized lowercase values when needed. Labels and keywords are also
+record fields/facets. Do not model `mem:preference`, `mem:label`, or
+`mem:keyword` as separate object namespaces.
+
+Memory events remain internal provenance/history rows. They are not advertised
+as a named-service object kind or search scope. A reader that needs provenance
+can request the parent memory record with `include=["events"]`; the returned
+events are embedded related data, not openable/searchable `mem:event` objects.
+
+For ReAct-facing named-service tools, memory write operations normally use:
+
+```text
+named_services.upsert_object(namespace="mem", object_json={...})
+named_services.object_action(namespace="mem", object_ref="mem:record:<id>", action="confirm")
+named_services.object_action(namespace="mem", object_ref="mem:record:<id>", action="retire")
+```
+
+Older `me:<id>` and `mem:<id>` refs may still appear in historical context and
+are accepted as aliases by the provider. New surfaces and tool results should
+emit only `mem:record:<id>`.
+
+Consumer bundle config may override the generic named-service tool strategy
+for the `mem` namespace. In the reference configuration, `upsert_object` and
+`object_action` are neutral for `mem` while the same generic tools can remain
+exploitative for other namespaces.
+
+For ReAct-facing tools, do not expose generic `named_services.get_object` for
+`mem` unless the bundle intentionally wants direct object reads as model-callable
+tools. The preferred exact-read path is:
+
+```text
+react.pull(paths=["mem:record:<id>"])
+  -> memory event-source pull policy calls provider object.get
+  -> current turn receives an fi: workspace artifact
+  -> react.read / react.rg inspects that artifact
+```
+
+The provider still implements `object.get` because pull policies, UI resolvers,
+and canvas/chat object actions need it. The distinction is only about which
+operation is exposed as a model-callable ReAct tool.
+
 ## Storage Model
 
 Postgres is authoritative. The platform provisioning scripts install the
@@ -495,9 +563,9 @@ Good announce shape:
 
 ```text
 [USER MEMORY HOTSET]
-  - me:mem_abc tier=1 conf=0.91 updated=2026-05-10 labels=style
+  - mem:record:mem_2026-05-10-09-11-12-123456789 tier=1 conf=0.91 updated=2026-05-10 labels=style
     User prefers concise technical answers.
-  - me:mem_def tier=1 conf=0.86 updated=2026-05-08 labels=delivery
+  - mem:record:mem_2026-05-08-16-03-44-987654321 tier=1 conf=0.86 updated=2026-05-08 labels=delivery
     User prefers Telegram for short reports.
 ```
 
@@ -512,12 +580,12 @@ enough information to improve the answer and decide whether to create a new
 memory, confirm an existing memory, or refine an existing memory. It should not
 receive the full event trail by default.
 
-Default search results and default `me:<memory_id>` reads should expose:
+Default search results and default `mem:record:<memory_id>` reads should expose:
 
 ```text
 id
 memory
-context, short/capped for search and full current context for explicit me:<id>
+context, short/capped for search and full current context for explicit mem:record:<id>
 kind
 visibility
 status
@@ -542,7 +610,7 @@ Search results may include short context and count details so the agent can
 choose between update and create:
 
 ```text
-me:mem_abc
+mem:record:mem_2026-05-10-09-11-12-123456789
 memory: User prefers concise technical answers.
 context: Especially for engineering/debugging tasks.
 labels: style, engineering
@@ -554,11 +622,11 @@ updated: 2026-05-10 last_confirmed: 2026-05-10 revision: 5
 ```
 
 Evidence events are lazy. They must not be included in default search results,
-hotsets, or default `me:<id>` renders. Expose them only through an explicit
+hotsets, or default `mem:record:<id>` renders. Expose them only through an explicit
 evidence view, for example:
 
 ```text
-me:mem_abc?view=evidence
+mem:record:mem_2026-05-10-09-11-12-123456789?view=evidence
 memory.get_evidence(id="mem_abc", limit=5)
 ```
 

@@ -568,6 +568,15 @@ body.scene-moving-memory .memory-frame {
   pointer-events: none;
 }
 
+.memory-pane.drop-active .memory-frame {
+  pointer-events: none;
+}
+
+.memory-pane.drop-active {
+  outline: 2px dashed rgba(8, 189, 178, 0.42);
+  outline-offset: -4px;
+}
+
 .external-pane {
   position: fixed;
   left: 0;
@@ -650,6 +659,15 @@ body.scene-moving-memory .memory-frame {
 
 body.scene-moving-external .external-frame {
   pointer-events: none;
+}
+
+.external-pane.drop-active .external-frame {
+  pointer-events: none;
+}
+
+.external-pane.drop-active {
+  outline: 2px dashed rgba(8, 189, 178, 0.42);
+  outline-offset: -4px;
 }
 
 .usage-pane {

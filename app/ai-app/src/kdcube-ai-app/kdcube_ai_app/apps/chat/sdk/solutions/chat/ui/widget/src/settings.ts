@@ -6,6 +6,7 @@ export interface AppSettings {
   tenant: string
   project: string
   defaultBundleId: string | null
+  namespaceStyles: Record<string, unknown>
 }
 
 const PLACEHOLDER_BASE_URL = '{{CHAT_BASE_URL}}'
@@ -73,6 +74,13 @@ interface RuntimeConfigPayload {
   auth?: {
     idTokenHeaderName?: string
   }
+  namespace_styles?: Record<string, unknown>
+  namespaceStyles?: Record<string, unknown>
+}
+
+interface BundleUiConfigPayload {
+  namespace_styles?: Record<string, unknown>
+  namespaceStyles?: Record<string, unknown>
 }
 
 function isPlaceholder(value: string | null | undefined): boolean {
@@ -130,6 +138,7 @@ class SettingsManager {
     tenant: PLACEHOLDER_TENANT,
     project: PLACEHOLDER_PROJECT,
     defaultBundleId: PLACEHOLDER_BUNDLE,
+    namespaceStyles: {},
   }
 
   private configReceivedCallback: (() => void) | null = null
@@ -168,6 +177,10 @@ class SettingsManager {
     return this.settings.defaultBundleId
   }
 
+  getNamespaceStyles(): Record<string, unknown> {
+    return this.settings.namespaceStyles || {}
+  }
+
   needsRuntimeConfig(): boolean {
     return (
       isPlaceholder(this.settings.baseUrl) ||
@@ -196,6 +209,10 @@ class SettingsManager {
     if (tenant) updates.tenant = tenant
     if (project) updates.project = project
     if (config.defaultAppBundleId !== undefined) updates.defaultBundleId = config.defaultAppBundleId
+    const namespaceStyles = config.namespace_styles || config.namespaceStyles
+    if (namespaceStyles && typeof namespaceStyles === 'object') {
+      updates.namespaceStyles = namespaceStyles
+    }
 
     if (Object.keys(updates).length === 0) {
       return false
@@ -229,6 +246,45 @@ class SettingsManager {
     }
   }
 
+  async loadNamespaceStyles(): Promise<boolean> {
+    const tenant = this.getTenant()
+    const project = this.getProject()
+    const bundleId = this.getBundleId()
+    if (!tenant || !project || !bundleId) return false
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 1200)
+    try {
+      const alias = 'namespace_presentation_config'
+      const response = await fetch(
+        `${this.getBaseUrl()}/api/integrations/bundles/${encodeURIComponent(tenant)}/${encodeURIComponent(project)}/${encodeURIComponent(bundleId)}/operations/${alias}`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          cache: 'no-store',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+            ...(this.getAccessToken() ? { Authorization: `Bearer ${this.getAccessToken()}` } : {}),
+            ...(this.getIdToken() ? { [this.getIdTokenHeader()]: this.getIdToken() as string } : {}),
+          },
+          body: JSON.stringify({ data: {} }),
+          signal: controller.signal,
+        },
+      )
+      if (!response.ok) return false
+      const payload = await response.json().catch(() => null) as Record<string, unknown> | null
+      const body = payload && typeof payload === 'object' && alias in payload
+        ? payload[alias] as BundleUiConfigPayload
+        : payload as BundleUiConfigPayload | null
+      if (!body || typeof body !== 'object') return false
+      return this.updateFromRuntimeConfig(body as RuntimeConfigPayload, { notify: false })
+    } catch {
+      return false
+    } finally {
+      window.clearTimeout(timeout)
+    }
+  }
+
   onConfigReceived(cb: () => void): void {
     this.configReceivedCallback = cb
   }
@@ -245,7 +301,7 @@ class SettingsManager {
         accessToken: null,
         idToken: null,
       })
-      return Promise.resolve(true)
+      return this.loadNamespaceStyles().then(() => true).catch(() => true)
     }
 
     window.addEventListener('message', (event: MessageEvent) => {
@@ -256,6 +312,7 @@ class SettingsManager {
       if (!config) return
 
       this.updateFromRuntimeConfig(config)
+      void this.loadNamespaceStyles()
     })
 
     if (this.needsRuntimeConfig()) {
@@ -264,7 +321,9 @@ class SettingsManager {
         const finish = (ready: boolean) => {
           if (resolved) return
           resolved = true
-          resolve(ready)
+          void this.loadNamespaceStyles()
+            .catch(() => undefined)
+            .finally(() => resolve(ready))
         }
         const requestParentConfig = () => {
           window.parent.postMessage(
@@ -303,7 +362,7 @@ class SettingsManager {
       })
     }
 
-    return Promise.resolve(true)
+    return this.loadNamespaceStyles().then(() => true).catch(() => true)
   }
 }
 

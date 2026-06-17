@@ -64,6 +64,7 @@ export async function fetchProfileSessionId(sessionId?: string | null): Promise<
 
 export interface ProfileInfo {
   sessionId: string
+  userId: string | null
   /** Server-authoritative identity. `'anonymous'` for unauthenticated
    *  visitors; an authenticated user type otherwise. May be null if the
    *  server omits it. */
@@ -79,6 +80,7 @@ export async function fetchProfile(): Promise<ProfileInfo> {
   if (isStandaloneDevChat()) {
     return {
       sessionId: 'standalone-dev-session',
+      userId: null,
       userType: 'anonymous',
       roles: [],
     }
@@ -101,11 +103,16 @@ export async function fetchProfile(): Promise<ProfileInfo> {
       : body
     const userType = String((nested && nested.user_type) || 'anonymous').toLowerCase() || 'anonymous'
     const sessionId = String((nested && nested.session_id) || '')
-    return { sessionId, userType, roles: [] }
+    const userId = String((nested && (nested.user_id || nested.userId || nested.sub || nested.id)) || '').trim() || null
+    return { sessionId, userId, userType, roles: [] }
   }
 
   const data = (await response.json()) as {
     session_id?: string | null
+    user_id?: string | null
+    userId?: string | null
+    sub?: string | null
+    id?: string | null
     user_type?: string | null
     roles?: unknown
   }
@@ -114,6 +121,7 @@ export async function fetchProfile(): Promise<ProfileInfo> {
   }
   return {
     sessionId: data.session_id,
+    userId: String(data.user_id || data.userId || data.sub || data.id || '').trim() || null,
     userType: data.user_type ?? null,
     roles: Array.isArray(data.roles) ? data.roles.filter((r): r is string => typeof r === 'string') : [],
   }

@@ -166,6 +166,13 @@ button {
   background: transparent;
 }
 
+/* The pin-search bar is a third in-flow grid child (header, search, work
+ * surface). Give it its own auto row so the board keeps the 1fr track and
+ * doesn't collapse to zero height. */
+.canvas-panel.has-search {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
 .notice + .canvas-panel {
   grid-row: 2 / -1;
 }
@@ -1620,4 +1627,268 @@ button {
 
 .canvas-info-body h3:first-child {
   margin-top: 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * Pin search — a search bar below the toolbar; results apply a temporary
+ * board filter (non-matches recede, matches highlight), with explicit restore.
+ * ───────────────────────────────────────────────────────────────────────── */
+.canvas-search {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--surface-3);
+}
+.canvas-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.canvas-search-field {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1 1 220px;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--muted);
+}
+.canvas-search-field:focus-within {
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px var(--focus);
+}
+.canvas-search-field input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+}
+.canvas-search-clear {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.canvas-search-clear:hover { background: var(--surface-2); color: var(--ink); }
+
+.canvas-search-scope {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  padding: 2px;
+  flex: none;
+}
+.canvas-search-scope button {
+  height: 22px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--muted);
+  padding: 0 9px;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.canvas-search-scope button.active {
+  background: var(--teal);
+  color: #fff;
+}
+.canvas-search-go {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 16px;
+  border: 1px solid var(--teal);
+  border-radius: var(--r-md);
+  background: var(--teal);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.canvas-search-go:hover:not(:disabled) {
+  background: var(--teal-dark);
+  border-color: var(--teal-dark);
+}
+.canvas-search-go:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* Results dropdown + restore bar */
+.canvas-search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.canvas-search-filterbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-2);
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-md);
+  padding: 5px 10px;
+}
+.canvas-search-hint { color: var(--muted); font-size: 11px; }
+.canvas-search-clearall {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--teal);
+  background: var(--surface);
+  color: var(--teal-dark);
+  border-radius: var(--r-sm);
+  padding: 3px 9px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.canvas-search-clearall:hover { background: var(--surface-3); }
+
+.canvas-search-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.canvas-search-list li + li { border-top: 1px solid var(--line-soft); }
+.canvas-search-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 7px 10px;
+  cursor: pointer;
+}
+.canvas-search-row:hover { background: var(--surface-3); }
+.canvas-search-row-body { min-width: 0; flex: 1 1 auto; display: flex; flex-direction: column; gap: 1px; }
+.canvas-search-row-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.canvas-search-row-sub { font-size: 11px; color: var(--muted); }
+.canvas-search-row-score { flex: none; font-size: 11px; font-weight: 800; color: var(--text-2); }
+.canvas-search-empty { color: var(--muted); font-size: 12px; padding: 6px 4px; }
+
+/* Search-filter mode on the board: non-matches recede, matches come forward. */
+.canvas-panel.is-searching .canvas-card.search-dim { opacity: 0.12; pointer-events: none; }
+.canvas-panel.is-searching .canvas-card.search-match {
+  z-index: 6;
+  box-shadow: 0 0 0 2px var(--teal), 0 6px 18px rgba(8, 118, 111, 0.18);
+}
+
+/* ─── Board dialogs (custom, replacing browser prompt/confirm) ─── */
+.canvas-modal-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(13, 30, 44, 0.28);
+  backdrop-filter: blur(1px);
+  padding: 16px;
+}
+.canvas-modal {
+  width: min(380px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: 0 16px 48px rgba(13, 30, 44, 0.22);
+  padding: 18px 18px 16px;
+}
+.canvas-modal h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ink);
+}
+.canvas-modal p {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.canvas-modal-input {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+.canvas-modal-input:focus {
+  outline: 0;
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px var(--focus);
+}
+.canvas-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.canvas-modal-actions button {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: var(--r-md);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+}
+.canvas-modal-go {
+  border-color: var(--teal) !important;
+  background: var(--teal) !important;
+  color: #fff !important;
+}
+.canvas-modal-go:disabled { opacity: 0.55; cursor: default; }
+.canvas-modal-danger {
+  border-color: var(--red) !important;
+  background: var(--red) !important;
+  color: #fff !important;
 }

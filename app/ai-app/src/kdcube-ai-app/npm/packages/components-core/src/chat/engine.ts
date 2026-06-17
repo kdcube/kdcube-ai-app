@@ -78,6 +78,37 @@ const CHAT_EVENT_DEFAULTS = {
   snapshotSurface: 'chat_wizard',
 }
 
+function conversationContext(input: {
+  tenant: string
+  project: string
+  userId: string | null
+  bundleId: string
+  agent: string
+  conversationId: string
+  title: string
+}) {
+  const userSegment = (input.userId && input.userId.trim()) || 'me'
+  const agent = input.agent.trim() || 'main'
+  const ref = `conv:${input.tenant}/${input.project}/${userSegment}/${input.bundleId}/${agent}/${input.conversationId}`
+  return {
+    id: ref,
+    kind: 'conversation',
+    namespace: 'conv',
+    label: input.title,
+    title: input.title,
+    summary: input.title,
+    ref,
+    object_ref: ref,
+    logical_path: ref,
+    mime: 'application/vnd.kdcube.conversation+json;version=1',
+    data: {
+      conversation_id: input.conversationId,
+      bundle_id: input.bundleId,
+      agent,
+    },
+  }
+}
+
 /** Map a raw send failure to a concise, friendly one-liner + tone. */
 function describeSendError(raw: string): { text: string; tone: BannerTone } {
   if (/\b413\b/.test(raw) || /entity too large/i.test(raw)) {
@@ -154,6 +185,7 @@ export function createChatEngine(config: EngineConfig): ChatEngine {
   let reconnectTimer: number | null = null
   let reconnectAttempt = 0
   let sessionId: string | null = null
+  let profileUserId: string | null = null
   let streamId: string | null = null
   let sendQueue: Promise<void> = Promise.resolve()
   let disposed = false
@@ -600,15 +632,29 @@ export function createChatEngine(config: EngineConfig): ChatEngine {
   const pinConversationToCanvas = () => {
     const conversationId = getChat().conversationId
     if (!conversationId) return
+    const title = getChat().conversationTitle || 'Conversation'
+    const context = conversationContext({
+      tenant: runtime.tenant,
+      project: runtime.project,
+      userId: profileUserId,
+      bundleId: runtime.bundleId,
+      agent: 'main',
+      conversationId,
+      title,
+    })
     emitter.emit('pin-conversation', {
       conversationId,
-      title: getChat().conversationTitle || 'Conversation',
+      title,
+      ref: context,
+      context,
+      contexts: [context],
     })
   }
 
   const resolveAuthAndConnect = async () => {
     const profile = await fetchProfile(runtime)
     sessionId = profile.sessionId
+    profileUserId = profile.userId
     dispatch(chatActions.setSessionId(profile.sessionId))
     const userType = (profile.userType || '').toLowerCase()
     let isAuthed: boolean

@@ -111,11 +111,20 @@ async def test_memory_event_reader_resolves_explicit_refs_across_user_memory_sco
 
     monkeypatch.setattr(module, "read_memory", fake_read_memory)
 
-    result = await module.read_memory_event_ref(ref="mem:mem_1")
+    result = await module.read_memory_event_ref(ref="mem:record:mem_1")
 
     assert result["ok"] is True
     assert calls == [{
-        "object_ref": "mem:mem_1",
+        "object_ref": "mem:record:mem_1",
         "scope_filter": "all_user_memories",
         "include_events": "true",
     }]
+
+    legacy = await module.read_memory_event_ref(ref="me:mem_1", namespace="me")
+
+    assert legacy["ok"] is True
+    assert calls[-1] == {
+        "object_ref": "me:mem_1",
+        "scope_filter": "all_user_memories",
+        "include_events": "true",
+    }

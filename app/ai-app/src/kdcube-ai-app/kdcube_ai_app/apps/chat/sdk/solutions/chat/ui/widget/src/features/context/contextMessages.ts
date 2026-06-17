@@ -4,6 +4,7 @@ export interface RecognizedContext {
   label: string
   summary?: string
   ref?: string
+  object_ref?: string
   logicalPath?: string
   hostedUri?: string
   mime?: string
@@ -28,17 +29,54 @@ export const KDCUBE_CONTEXT_MIME_TYPE = 'application/vnd.kdcube.context+json'
 const GENERIC_CONTEXT_ATTACH = 'kdcube.context.attach'
 const GENERIC_CONTEXT_FOCUS = 'kdcube.context.focus'
 const GENERIC_CONTEXT_REMOVE = 'kdcube.context.remove'
+const REF_KEYS = [
+  'ref',
+  'object_ref',
+  'objectRef',
+  'logical_path',
+  'logicalPath',
+  'hosted_uri',
+  'hostedUri',
+  'event_ref',
+  'eventRef',
+  'uri',
+  'canonical_uri',
+]
 
 function compactId(value: unknown, fallback: string): string {
   const raw = String(value || '').trim()
   return raw || fallback
 }
 
+function stringValue(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function contextObjectRef(context: Record<string, unknown>): string {
+  for (const key of REF_KEYS) {
+    const value = stringValue(context[key])
+    if (value) return value
+  }
+  const data = context.data && typeof context.data === 'object' ? context.data as Record<string, unknown> : null
+  if (data) {
+    for (const key of REF_KEYS) {
+      const value = stringValue(data[key])
+      if (value) return value
+    }
+  }
+  return ''
+}
+
+function postParentDragMessage(message: Record<string, unknown>): void {
+  if (typeof window === 'undefined' || !window.parent || window.parent === window) return
+  window.parent.postMessage(message, '*')
+}
+
 function normalizeContext(ctx: Record<string, unknown>, index = 0): RecognizedContext | null {
   const kind = String(ctx.kind || ctx.type || '').trim()
   if (!kind) return null
   const label = String(ctx.label || ctx.title || ctx.name || kind).trim()
-  const ref = ctx.ref ?? ctx.logical_path ?? ctx.logicalPath
+  const ref = ctx.ref ?? ctx.object_ref ?? ctx.objectRef ?? ctx.logical_path ?? ctx.logicalPath
   const id = compactId(ctx.id || ctx.context_id || ref, `${kind}:${index}`)
   const data = ctx.data && typeof ctx.data === 'object' ? ctx.data as Record<string, unknown> : undefined
   const revisionRaw = ctx.revision
@@ -53,6 +91,11 @@ function normalizeContext(ctx: Record<string, unknown>, index = 0): RecognizedCo
     label: label || id,
     summary: ctx.summary != null ? String(ctx.summary) : undefined,
     ref: ref != null ? String(ref) : undefined,
+    object_ref: ctx.object_ref != null
+      ? String(ctx.object_ref)
+      : ctx.objectRef != null
+        ? String(ctx.objectRef)
+        : undefined,
     logicalPath: ctx.logicalPath != null
       ? String(ctx.logicalPath)
       : ctx.logical_path != null
@@ -139,20 +182,35 @@ export function recognizeContextRemovalWithTypes(data: unknown, types: ContextMe
 }
 
 export function setContextDragData(dataTransfer: DataTransfer, context: RecognizedContext | Record<string, unknown>): void {
+  const rawContext = context as Record<string, unknown>
   const label = String(
-    (context as Record<string, unknown>).label ||
-    (context as Record<string, unknown>).title ||
-    (context as Record<string, unknown>).ref ||
-    (context as Record<string, unknown>).id ||
+    rawContext.label ||
+    rawContext.title ||
+    rawContext.ref ||
+    rawContext.id ||
     'context',
   )
+  const ref = contextObjectRef(rawContext)
+  const envelope = { type: GENERIC_CONTEXT_ATTACH, source: 'chat-widget', contexts: [context] }
+  const json = JSON.stringify(envelope)
   dataTransfer.effectAllowed = 'copy'
   // Canonical context-drag shape is the plural `contexts: [...]` envelope so the
   // SAME payload is recognized by both the chat composer (recognizeContextPayload)
   // and the canvas drop (normalizeContextMessage). Emitting singular `context`
   // here let canvas drops fall through to text -> a generic `cnv:` card instead of
   // the native object ref.
-  dataTransfer.setData(KDCUBE_CONTEXT_MIME_TYPE, JSON.stringify({ contexts: [context] }))
-  dataTransfer.setData('application/json', JSON.stringify({ type: GENERIC_CONTEXT_ATTACH, contexts: [context] }))
+  dataTransfer.setData(KDCUBE_CONTEXT_MIME_TYPE, json)
+  dataTransfer.setData('application/json', json)
   dataTransfer.setData('text/plain', label)
+  if (ref) {
+    dataTransfer.setData('text/uri-list', ref)
+  }
+  postParentDragMessage({
+    type: 'kdcube-context-drag-start',
+    source: 'chat-widget',
+    context,
+  })
+  window.addEventListener('dragend', () => {
+    postParentDragMessage({ type: 'kdcube-context-drag-end', source: 'chat-widget' })
+  }, { once: true })
 }

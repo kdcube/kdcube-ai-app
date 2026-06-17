@@ -7,9 +7,10 @@
  * `canvas_patch`.
  *
  * Two ingress payloads pass through this bridge:
- *   - `chat.artifact`: the user dragged an agent-produced file from chat.
- *     The card pins the existing `fi:` (incl. cross-conversation
- *     `fi:conv_<id>...`) ref verbatim; no rehosting.
+ *   - `chat.artifact`: the user dragged an agent-produced object row from
+ *     chat. Durable `fi:` refs become file cards; other namespace refs become
+ *     `object.ref` cards. In both cases the ref flows through verbatim; no
+ *     rehosting.
  *   - `chat.assistant.text`: the user dragged assistant response text from
  *     chat. The bundle rehosts the text as a versioned `cnv:` `agent.text`
  *     object.
@@ -27,13 +28,14 @@ export const INGRESS_MESSAGE_TYPE = 'kdcube-canvas-ingress'
 
 export type CanvasIngressKind = 'chat.artifact' | 'chat.assistant.text'
 
-/** Chat artifact drop. The chat iframe already knows the `fi:` ref of the
- *  artifact (its own client built the listing); the main UI never resolves
- *  it. */
+/** Chat artifact/object drop. The chat iframe already knows the canonical
+ *  resolver ref of the row (its own client built the listing); the main UI
+ *  never resolves it. */
 export interface CanvasIngressArtifactPayload {
   kind: 'chat.artifact'
-  /** Versioned `fi:` ref to the artifact. Cross-conversation
-   *  refs (`fi:conv_<id>.turn_<id>...`) flow through verbatim. */
+  /** Canonical resolver ref. Cross-conversation file refs
+   *  (`fi:conv_<id>.turn_<id>...`) and namespace refs such as
+   *  `mem:record:<id>` flow through verbatim. */
   ref: string
   mime: string
   filename?: string

@@ -4,9 +4,12 @@ export interface CanvasContextItem {
   label: string
   summary?: string
   ref?: string
+  object_ref?: string
   logical_path?: string
   hosted_uri?: string
   mime?: string
+  namespace?: string
+  object_kind?: string
   canvas_id?: string
   canvas_name?: string
   revision?: number
@@ -52,15 +55,27 @@ export function normalizeContext(value: unknown): CanvasContextItem | null {
   const kind = stringValue(raw.kind)
   const label = stringValue(raw.label ?? raw.title)
   if (!id || !kind || !label) return null
+  const objectRef = stringValue(
+    raw.object_ref ??
+    raw.objectRef ??
+    raw.ref ??
+    raw.logical_path ??
+    raw.logicalPath ??
+    raw.hosted_uri ??
+    raw.hostedUri,
+  )
   return {
     id,
     kind,
     label,
-    summary: stringValue(raw.summary),
-    ref: stringValue(raw.ref),
-    logical_path: stringValue(raw.logical_path ?? raw.logicalPath),
+    summary: stringValue(raw.summary ?? raw.content_preview ?? raw.preview),
+    ref: stringValue(raw.ref) ?? objectRef,
+    object_ref: objectRef,
+    logical_path: stringValue(raw.logical_path ?? raw.logicalPath) ?? objectRef,
     hosted_uri: stringValue(raw.hosted_uri ?? raw.hostedUri),
     mime: stringValue(raw.mime),
+    namespace: stringValue(raw.namespace),
+    object_kind: stringValue(raw.object_kind ?? raw.objectKind ?? raw.cardType ?? raw.card_type),
     canvas_id: stringValue(raw.canvas_id ?? raw.canvasId),
     canvas_name: stringValue(raw.canvas_name ?? raw.canvasName),
     revision: numberValue(raw.revision),

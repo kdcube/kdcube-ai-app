@@ -27,7 +27,18 @@ from .scoring import (
 )
 from .store import UserMemoryStore
 from .tools import UserMemoryTools, UserMemoryToolConfig, make_user_memory_tools
-from .instructions import MEMORY_REACT_ADDITIONAL_INSTRUCTIONS
+from .instructions import MEMORY_REACT_ADDITIONAL_INSTRUCTIONS, resolve_memory_react_additional_instructions
+from .named_service import (
+    KNOWN_MEMORY_KINDS,
+    MEMORY_RECORD_SCHEMA,
+    MEMORY_SEARCH_SCOPES,
+    MemoryNamedServiceProvider,
+    NAMESPACE,
+    OBJECT_KIND,
+    PROVIDER_ID,
+    make_memory_named_service_provider,
+    memory_named_service_spec,
+)
 from .events.resolver import (
     MEMORY_OBJECT_NAMESPACE,
     MEMORY_RESOLVER_NAME,
@@ -59,12 +70,20 @@ __all__ = [
     "MemoryScopeFilter",
     "MemorySignal",
     "MEMORY_REACT_ADDITIONAL_INSTRUCTIONS",
+    "resolve_memory_react_additional_instructions",
     "normalize_scope_filter",
     "normalize_terms",
     "MemoryReconciliationActionType",
     "UserMemoryStore",
     "UserMemoryToolConfig",
     "UserMemoryTools",
+    "KNOWN_MEMORY_KINDS",
+    "MEMORY_RECORD_SCHEMA",
+    "MEMORY_SEARCH_SCOPES",
+    "MemoryNamedServiceProvider",
+    "NAMESPACE",
+    "OBJECT_KIND",
+    "PROVIDER_ID",
     "MemoryReconciliationAction",
     "MemoryReconciliationCandidate",
     "MemoryReconciliationOut",
@@ -76,7 +95,9 @@ __all__ = [
     "compute_freshness_score",
     "compute_memory_scores",
     "compute_tier",
+    "make_memory_named_service_provider",
     "make_user_memory_tools",
+    "memory_named_service_spec",
     "MEMORY_OBJECT_NAMESPACE",
     "MEMORY_RESOLVER_NAME",
     "memory_id_from_ref",

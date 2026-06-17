@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent } from 'react';
 import { useAppDispatch, useAppSelector } from '../../app/hooks';
 import {
   clearMemoryFocus,
@@ -8,18 +8,25 @@ import {
   loadMemories,
   loadMemoryEvents,
   normalizeMemoryRefs,
-  setKeywordsFilter,
-  setLabelsFilter,
   setQuery,
   setStatus,
 } from './memoriesSlice';
 
-export function MemoryFilters() {
+interface MemoryFiltersProps {
+  maintenanceOpen?: boolean;
+}
+
+// A search string is treated as an ID lookup (not hybrid text search) when it
+// carries any `mem:` / `me:` reference token — pasting one or many memory uris
+// runs the same id-focus path the chat-open and pinboard-drop gestures use.
+function looksLikeMemoryIds(text: string): boolean {
+  return /(^|[\s,;])(mem|me):/i.test(text);
+}
+
+export function MemoryFilters({ maintenanceOpen = false }: MemoryFiltersProps) {
   const dispatch = useAppDispatch();
   const {
     focusedMemoryIds,
-    keywordsFilter,
-    labelsFilter,
     memories,
     query,
     status,
@@ -27,16 +34,26 @@ export function MemoryFilters() {
     loading,
   } = useAppSelector((state) => state.memories);
   const compact = viewMode === 'compact';
-  const hasFilters = Boolean(query.trim() || labelsFilter.trim() || keywordsFilter.trim() || status !== 'active');
+  const hasFilters = Boolean(query.trim() || status !== 'active');
   const focusedMemory = focusedMemoryIds.length === 1 ? memories.find((memory) => memory.id === focusedMemoryIds[0]) : undefined;
-  const [idsText, setIdsText] = useState('');
-
-  useEffect(() => {
-    setIdsText(focusedMemoryIds.map((id) => `mem:${id}`).join(', '));
-  }, [focusedMemoryIds.join('|')]);
+  const idMode = looksLikeMemoryIds(query);
 
   function submit(event: FormEvent) {
     event.preventDefault();
+    const text = query.trim();
+    if (looksLikeMemoryIds(text)) {
+      const memoryIds = normalizeMemoryRefs(text);
+      if (memoryIds.length) {
+        // ID lookup — same focus path as chat-open / pinboard-drop. Clear the
+        // hybrid query first (setQuery also resets focus), then set the focus.
+        dispatch(setQuery(''));
+        dispatch(focusMemories(memoryIds));
+        void dispatch(loadMemories()).then(() => {
+          void dispatch(loadMemoryEvents(memoryIds[0]));
+        });
+        return;
+      }
+    }
     void dispatch(loadMemories());
   }
 
@@ -65,15 +82,6 @@ export function MemoryFilters() {
     void dispatch(loadMemories());
   }
 
-  function showMemoryIds() {
-    const memoryIds = normalizeMemoryRefs(idsText);
-    if (!memoryIds.length) return;
-    dispatch(focusMemories(memoryIds));
-    void dispatch(loadMemories()).then(() => {
-      void dispatch(loadMemoryEvents(memoryIds[0]));
-    });
-  }
-
   return (
     <form className={`filters ${compact ? 'compact-filters' : ''}`} onSubmit={submit}>
       {focusedMemoryIds.length ? (
@@ -94,65 +102,67 @@ export function MemoryFilters() {
           </button>
         </div>
       ) : null}
-      {compact ? null : <div className="filter-row">
-        <label>
-          <span>Status</span>
-          <select value={status} onChange={(event) => dispatch(setStatus(event.target.value))}>
+      {/* One line: status filter + a single search box. Free text → hybrid
+        * (semantic + lexical + recency); a value carrying mem: ids → id lookup. */}
+      <div className="filter-bar">
+        {compact ? null : (
+          <select
+            className="status-select"
+            aria-label="Status"
+            value={status}
+            onChange={(event) => dispatch(setStatus(event.target.value))}
+          >
             <option value="active">Active</option>
             <option value="weakened">Weakened</option>
             <option value="unsupported">Unsupported</option>
             <option value="retired">Retired</option>
             <option value="any">Any</option>
           </select>
-        </label>
-      </div>}
-      {compact ? null : <div className="id-filter-row">
-        <input
-          value={idsText}
-          onChange={(event) => setIdsText(event.target.value)}
-          placeholder="Memory ids, for example mem:mem_a, mem:mem_b"
-        />
-        <button type="button" className="secondary-button" disabled={loading} onClick={showMemoryIds}>
-          Show ids
-        </button>
-      </div>}
-      <div className="search-row">
-        <input
-          value={query}
-          onChange={(event) => dispatch(setQuery(event.target.value))}
-          placeholder={compact ? 'Search memories...' : 'Semantic search'}
-        />
-        {compact ? null : <input
-          value={labelsFilter}
-          onChange={(event) => dispatch(setLabelsFilter(event.target.value))}
-          placeholder="Tags"
-        />}
-        {compact ? null : <input
-          value={keywordsFilter}
-          onChange={(event) => dispatch(setKeywordsFilter(event.target.value))}
-          placeholder="Keywords"
-        />}
-        <button type="submit" disabled={loading}>
-          Search
-        </button>
+        )}
+        <div className="memory-search">
+          <input
+            value={query}
+            onChange={(event) => dispatch(setQuery(event.target.value))}
+            placeholder={compact ? 'Search memories…' : 'Search memories — or paste mem: ids'}
+          />
+          {query ? (
+            <button
+              type="button"
+              className="memory-search-clear"
+              title="Clear search"
+              aria-label="Clear search"
+              onClick={() => {
+                dispatch(setQuery(''));
+                void dispatch(loadMemories());
+              }}
+            >
+              ×
+            </button>
+          ) : null}
+          <button type="submit" className="memory-search-go" disabled={loading}>
+            {idMode ? 'Show ids' : 'Search'}
+          </button>
+        </div>
       </div>
-      {compact ? null : <div className="memory-actions-row">
-        <button type="button" className="secondary-button" disabled={loading} onClick={() => void runExport('json', false)}>
-          Download matching JSON
-        </button>
-        <button type="button" className="secondary-button" disabled={loading} onClick={() => void runExport('json', true)}>
-          Download all JSON
-        </button>
-        <button type="button" className="secondary-button" disabled={loading} onClick={() => void runExport('csv', false)}>
-          CSV
-        </button>
-        <button type="button" className="danger-button" disabled={loading} onClick={() => void runDelete(false)}>
-          {hasFilters ? 'Delete matching' : 'Delete active'}
-        </button>
-        <button type="button" className="danger-button" disabled={loading} onClick={() => void runDelete(true)}>
-          Delete all
-        </button>
-      </div>}
+      {!compact && maintenanceOpen ? (
+        <div className="memory-actions-row">
+          <button type="button" className="secondary-button" disabled={loading} onClick={() => void runExport('json', false)}>
+            Download matching JSON
+          </button>
+          <button type="button" className="secondary-button" disabled={loading} onClick={() => void runExport('json', true)}>
+            Download all JSON
+          </button>
+          <button type="button" className="secondary-button" disabled={loading} onClick={() => void runExport('csv', false)}>
+            CSV
+          </button>
+          <button type="button" className="danger-button" disabled={loading} onClick={() => void runDelete(false)}>
+            {hasFilters ? 'Delete matching' : 'Delete active'}
+          </button>
+          <button type="button" className="danger-button" disabled={loading} onClick={() => void runDelete(true)}>
+            Delete all
+          </button>
+        </div>
+      ) : null}
     </form>
   );
 }

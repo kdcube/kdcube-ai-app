@@ -33,6 +33,22 @@ def _adapter_with_strategy(*strategies: str):
     return {"doc": {"tool_traits": {"strategy": list(strategies)}}}
 
 
+def _adapter_with_namespace_strategy_override(
+    *,
+    default_strategy: str,
+    namespace: str,
+    override_strategy: str,
+):
+    return {
+        "doc": {
+            "tool_traits": {"strategy": [default_strategy]},
+            "tool_traits_by_namespace": {
+                namespace: {"strategy": [override_strategy]},
+            },
+        }
+    }
+
+
 def _matrix_tool(strategy: str, index: int) -> dict:
     return {
         "action": "call_tool",
@@ -1163,6 +1179,95 @@ async def test_prepare_safe_multi_action_bundle_carries_final_answer_after_neutr
     assert error is None
     assert [d["tool_call"]["tool_id"] for d in accepted] == ["memory.record_memory"]
     assert extra == {"final_decision": final_decision, "final_index": 1}
+
+
+@pytest.mark.asyncio
+async def test_prepare_safe_multi_action_bundle_uses_namespace_trait_override_for_final_close():
+    solver = _solver_stub()
+    final_decision = {
+        "action": "complete",
+        "final_answer": "Saved.",
+        "suggested_followups": [],
+    }
+    bundle = [
+        {
+            "action": "call_tool",
+            "notes": "record memory through named service",
+            "tool_call": {
+                "tool_id": "named_services.upsert_object",
+                "params": {
+                    "namespace": "mem",
+                    "object_json": "{\"text\":\"prefers short answers\"}",
+                },
+            },
+        },
+        final_decision,
+    ]
+
+    accepted, error, extra = await solver._prepare_safe_multi_action_bundle(
+        bundle=bundle,
+        adapters_by_id={
+            "named_services.upsert_object": _adapter_with_namespace_strategy_override(
+                default_strategy="exploitation",
+                namespace="mem",
+                override_strategy="neutral",
+            )
+        },
+    )
+
+    assert error is None
+    assert [d["tool_call"]["tool_id"] for d in accepted] == ["named_services.upsert_object"]
+    assert extra == {"final_decision": final_decision, "final_index": 1}
+
+
+@pytest.mark.asyncio
+async def test_prepare_safe_multi_action_bundle_keeps_default_trait_for_other_namespaces():
+    solver = _solver_stub()
+    bundle = [
+        {
+            "action": "call_tool",
+            "notes": "update task through named service",
+            "tool_call": {
+                "tool_id": "named_services.upsert_object",
+                "params": {
+                    "namespace": "task",
+                    "object_json": "{\"title\":\"Fix docs\"}",
+                },
+            },
+        },
+        {
+            "action": "complete",
+            "final_answer": "Saved.",
+            "suggested_followups": [],
+        },
+    ]
+
+    accepted, error, extra = await solver._prepare_safe_multi_action_bundle(
+        bundle=bundle,
+        adapters_by_id={
+            "named_services.upsert_object": _adapter_with_namespace_strategy_override(
+                default_strategy="exploitation",
+                namespace="mem",
+                override_strategy="neutral",
+            )
+        },
+    )
+
+    assert error is None
+    assert [d["tool_call"]["tool_id"] for d in accepted] == ["named_services.upsert_object"]
+    assert extra == {
+        "rejected": [
+            {
+                "index": 1,
+                "code": "multi_action_bundle_final_answer_after_non_neutral",
+                "extra": {
+                    "first_index": 0,
+                    "first_tool_id": "named_services.upsert_object",
+                    "first_strategy": ["exploitation"],
+                },
+            }
+        ]
+    }
 
 
 @pytest.mark.asyncio

@@ -58,6 +58,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.widgets.canvas import (
 from kdcube_ai_app.apps.chat.sdk.runtime.tool_subsystem import ToolSubsystem
 from kdcube_ai_app.apps.chat.sdk.runtime.tool_traits import (
     UNKNOWN_STRATEGY,
+    normalize_tool_traits,
     strategies_compatible,
     strategy_values,
 )
@@ -1010,7 +1011,7 @@ class ReactSolverV2:
         plan_artifact_name: Optional[str] = None,
         iteration: Optional[int] = None,
         emit_delta: Optional[Callable[..., Awaitable[None]]] = None,
-        on_action_identity: Optional[Callable[[str, str], Awaitable[None]]] = None,
+        on_action_identity: Optional[Callable[..., Awaitable[None]]] = None,
     ) -> tuple[Callable[[str], Awaitable[None]], TimelineStreamer]:
         sources_getter = None
         if self.ctx_browser:
@@ -1870,6 +1871,39 @@ class ReactSolverV2:
         return {}
 
     @staticmethod
+    def _adapter_tool_traits_by_namespace(adapter: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+        if not isinstance(adapter, dict):
+            return {}
+        for source in (
+            adapter.get("tool_traits_by_namespace"),
+            (adapter.get("doc") or {}).get("tool_traits_by_namespace") if isinstance(adapter.get("doc"), dict) else None,
+            (adapter.get("metadata") or {}).get("tool_traits_by_namespace") if isinstance(adapter.get("metadata"), dict) else None,
+            ((adapter.get("doc") or {}).get("metadata") or {}).get("tool_traits_by_namespace")
+            if isinstance(adapter.get("doc"), dict) and isinstance((adapter.get("doc") or {}).get("metadata"), dict)
+            else None,
+        ):
+            if not isinstance(source, dict):
+                continue
+            out: Dict[str, Dict[str, Any]] = {}
+            for namespace, traits in source.items():
+                ns = str(namespace or "").strip().lower().rstrip(":")
+                normalized = normalize_tool_traits(traits)
+                if ns and normalized:
+                    out[ns] = normalized
+            if out:
+                return out
+        return {}
+
+    @staticmethod
+    def _namespace_from_tool_params(tool_params: Optional[Dict[str, Any]]) -> str:
+        if not isinstance(tool_params, dict):
+            return ""
+        namespace = str(tool_params.get("namespace") or "").strip().lower().rstrip(":")
+        if not namespace:
+            return ""
+        return namespace.split(":", 1)[0].strip()
+
+    @staticmethod
     def _react_native_tool_traits(tool_id: str) -> Dict[str, Any]:
         tid = str(tool_id or "").strip()
         if not tid:
@@ -1887,11 +1921,21 @@ class ReactSolverV2:
         tool_id: str,
         *,
         adapters_by_id: Optional[Dict[str, Dict[str, Any]]] = None,
+        tool_params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         tid = str(tool_id or "").strip()
         if not tid:
             return {}
-        adapter_traits = self._adapter_tool_traits((adapters_by_id or {}).get(tid) or {})
+        adapter = (adapters_by_id or {}).get(tid) or {}
+        namespace = self._namespace_from_tool_params(tool_params)
+        if namespace:
+            traits_by_namespace = self._adapter_tool_traits_by_namespace(adapter)
+            namespace_traits = traits_by_namespace.get(str(tool_params.get("namespace") or "").strip().lower().rstrip(":"))
+            if not namespace_traits:
+                namespace_traits = traits_by_namespace.get(namespace)
+            if namespace_traits:
+                return namespace_traits
+        adapter_traits = self._adapter_tool_traits(adapter)
         if adapter_traits:
             return adapter_traits
         return self._react_native_tool_traits(tid)
@@ -1901,16 +1945,26 @@ class ReactSolverV2:
         tool_id: str,
         *,
         adapters_by_id: Optional[Dict[str, Dict[str, Any]]] = None,
+        tool_params: Optional[Dict[str, Any]] = None,
     ) -> Set[str]:
-        return set(strategy_values(self._tool_traits_for_id(tool_id, adapters_by_id=adapters_by_id)))
+        return set(strategy_values(self._tool_traits_for_id(
+            tool_id,
+            adapters_by_id=adapters_by_id,
+            tool_params=tool_params,
+        )))
 
     def _is_known_multi_action_tool(
         self,
         tool_id: str,
         *,
         adapters_by_id: Optional[Dict[str, Dict[str, Any]]] = None,
+        tool_params: Optional[Dict[str, Any]] = None,
     ) -> bool:
-        strategies = self._tool_strategy_values(tool_id, adapters_by_id=adapters_by_id)
+        strategies = self._tool_strategy_values(
+            tool_id,
+            adapters_by_id=adapters_by_id,
+            tool_params=tool_params,
+        )
         return bool(strategies)
 
     @staticmethod
@@ -2111,6 +2165,7 @@ class ReactSolverV2:
                 continue
             tool_call = decision.get("tool_call") or {}
             tool_id = (tool_call.get("tool_id") or "").strip()
+            tool_params = tool_call.get("params") if isinstance(tool_call.get("params"), dict) else {}
             exec_complete_in_bundle = (
                 allow_single_exec_with_code
                 and len(exec_indices) == 1
@@ -2120,10 +2175,18 @@ class ReactSolverV2:
             if tools_insights.is_exec_tool(tool_id) and not exec_complete_in_bundle:
                 _reject(idx, "multi_action_bundle_unsafe_tool", {"tool_id": tool_id}, decision)
                 continue
-            if accepted and not self._is_known_multi_action_tool(tool_id, adapters_by_id=adapters_by_id):
+            if accepted and not self._is_known_multi_action_tool(
+                tool_id,
+                adapters_by_id=adapters_by_id,
+                tool_params=tool_params,
+            ):
                 _reject(idx, "multi_action_bundle_unsafe_tool", {
                     "tool_id": tool_id,
-                    "strategy": sorted(self._tool_strategy_values(tool_id, adapters_by_id=adapters_by_id) or {UNKNOWN_STRATEGY}),
+                    "strategy": sorted(self._tool_strategy_values(
+                        tool_id,
+                        adapters_by_id=adapters_by_id,
+                        tool_params=tool_params,
+                    ) or {UNKNOWN_STRATEGY}),
                 }, decision)
                 continue
             verdict = self._validate_tool_call_protocol(
@@ -2170,14 +2233,24 @@ class ReactSolverV2:
                     continue
                 tc = a_decision.get("tool_call") if isinstance(a_decision.get("tool_call"), dict) else {}
                 tool_id = str(tc.get("tool_id") or "").strip()
-                traits = self._tool_traits_for_id(tool_id, adapters_by_id=adapters_by_id)
+                tool_params = tc.get("params") if isinstance(tc.get("params"), dict) else {}
+                traits = self._tool_traits_for_id(
+                    tool_id,
+                    adapters_by_id=adapters_by_id,
+                    tool_params=tool_params,
+                )
                 strategies = sorted(strategy_values(traits) or {UNKNOWN_STRATEGY})
                 for prev_idx, prev_decision in zip(accepted_idxs[:pos], accepted[:pos]):
                     if prev_idx in drop_idxs:
                         continue
                     prev_tc = prev_decision.get("tool_call") if isinstance(prev_decision.get("tool_call"), dict) else {}
                     prev_tool_id = str(prev_tc.get("tool_id") or "").strip()
-                    prev_traits = self._tool_traits_for_id(prev_tool_id, adapters_by_id=adapters_by_id)
+                    prev_params = prev_tc.get("params") if isinstance(prev_tc.get("params"), dict) else {}
+                    prev_traits = self._tool_traits_for_id(
+                        prev_tool_id,
+                        adapters_by_id=adapters_by_id,
+                        tool_params=prev_params,
+                    )
                     if strategies_compatible(prev_traits, traits):
                         continue
                     drop_idxs.add(a_idx)
@@ -2288,7 +2361,12 @@ class ReactSolverV2:
                         continue
                     tc = a_decision.get("tool_call") if isinstance(a_decision.get("tool_call"), dict) else {}
                     tid = str(tc.get("tool_id") or "").strip()
-                    strategies = self._tool_strategy_values(tid, adapters_by_id=adapters_by_id)
+                    tool_params = tc.get("params") if isinstance(tc.get("params"), dict) else {}
+                    strategies = self._tool_strategy_values(
+                        tid,
+                        adapters_by_id=adapters_by_id,
+                        tool_params=tool_params,
+                    )
                     if strategies == {"neutral"}:
                         continue
                     drop_idxs.add(a_idx)
@@ -2321,7 +2399,12 @@ class ReactSolverV2:
                     continue
                 tc = a_decision.get("tool_call") if isinstance(a_decision.get("tool_call"), dict) else {}
                 tid = str(tc.get("tool_id") or "").strip()
-                strategies = self._tool_strategy_values(tid, adapters_by_id=adapters_by_id)
+                tool_params = tc.get("params") if isinstance(tc.get("params"), dict) else {}
+                strategies = self._tool_strategy_values(
+                    tid,
+                    adapters_by_id=adapters_by_id,
+                    tool_params=tool_params,
+                )
                 if strategies != {"neutral"}:
                     non_neutral = (a_idx, tid, strategies or {UNKNOWN_STRATEGY})
                     break
@@ -2845,9 +2928,10 @@ class ReactSolverV2:
         }
         adapters_by_id_for_stream = self._adapters_index(state.get("adapters") or [])
         action_overseer = RoundActionOverseer(
-            resolve_traits=lambda tool_id: self._tool_traits_for_id(
+            resolve_traits=lambda tool_id, tool_params=None: self._tool_traits_for_id(
                 tool_id,
                 adapters_by_id=adapters_by_id_for_stream,
+                tool_params=dict(tool_params or {}) if isinstance(tool_params, dict) else None,
             ),
             max_actions=self.MAX_ACTIONS_PER_ROUND,
         )
@@ -2921,13 +3005,18 @@ class ReactSolverV2:
                     return
                 await action_gate.emit_delta(**kwargs)
 
-            async def _report_action_identity(action: str, tool_id: str) -> None:
+            async def _report_action_identity(
+                action: str,
+                tool_id: str,
+                tool_params: Optional[Dict[str, Any]] = None,
+            ) -> None:
                 await action_overseer.observe_action_signal(
                     action_index=safe_idx,
                     action=action,
                     tool_id=tool_id,
                     action_gate=action_gate,
                     answer_gate=answer_gate,
+                    tool_params=tool_params,
                 )
 
             try:

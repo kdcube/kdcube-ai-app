@@ -76,6 +76,47 @@ async def test_final_answer_gate_opens_after_neutral_tool():
 
 
 @pytest.mark.asyncio
+async def test_final_answer_gate_uses_namespace_trait_override():
+    emitted = []
+
+    async def emit_delta(**kwargs):
+        emitted.append(kwargs)
+
+    def traits(tool_id: str, params=None):
+        if tool_id != "named_services.upsert_object":
+            return {}
+        namespace = (params or {}).get("namespace")
+        if namespace == "mem":
+            return {"strategy": ["neutral"]}
+        return {"strategy": ["exploitation"]}
+
+    overseer = RoundActionOverseer(resolve_traits=traits)
+    upsert_gate = overseer.gate_for(action_index=0, emit_delta=emit_delta)
+    upsert_answer_gate = overseer.gate_for(action_index=0, emit_delta=emit_delta, lane="final_answer")
+    final_gate = overseer.gate_for(action_index=1, emit_delta=emit_delta)
+    final_answer_gate = overseer.gate_for(action_index=1, emit_delta=emit_delta, lane="final_answer")
+
+    await overseer.observe_action_signal(
+        action_index=0,
+        action="call_tool",
+        tool_id="named_services.upsert_object",
+        tool_params={"namespace": "mem"},
+        action_gate=upsert_gate,
+        answer_gate=upsert_answer_gate,
+    )
+    await final_answer_gate.emit_delta(marker="answer", text="Saved.")
+    await overseer.observe_action_signal(
+        action_index=1,
+        action="complete",
+        tool_id="",
+        action_gate=final_gate,
+        answer_gate=final_answer_gate,
+    )
+
+    assert {"marker": "answer", "text": "Saved."} in emitted
+
+
+@pytest.mark.asyncio
 async def test_final_answer_gate_is_denied_after_non_neutral_tool():
     emitted = []
 

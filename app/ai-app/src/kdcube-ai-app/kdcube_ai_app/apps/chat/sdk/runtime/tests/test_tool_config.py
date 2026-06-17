@@ -47,6 +47,7 @@ def test_agent_tool_config_translates_named_service_operations_to_agent_tools() 
         "object_schema",
         "upsert_object",
         "delete_object",
+        "object_action",
     ]
 
 

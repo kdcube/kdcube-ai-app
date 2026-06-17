@@ -20,7 +20,7 @@ function uniqueTerms(...groups: string[][]): string[] {
 }
 
 function memoryContextPayload(memory: MemoryEntry) {
-  const ref = `mem:${memory.id}`;
+  const ref = `mem:record:${memory.id}`;
   return {
     id: ref,
     kind: 'memory',

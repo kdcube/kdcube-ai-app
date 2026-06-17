@@ -303,7 +303,7 @@ def test_build_announce_text_includes_read_only_memory_hotset(tmp_path):
     assert "policy: read-only durable user memory" in announce_text
     assert "format: memory text carries the trigger+rule; context is why/provenance/examples only." in announce_text
     assert "scope_filter: current_bundle" in announce_text
-    assert "me:mem_1" in announce_text
+    assert "mem:record:mem_1" in announce_text
     assert "bundle=demo@marketing" in announce_text
     assert "The user prefers concise engineering explanations" in announce_text
     assert "context=Observed across React protocol debugging turns." in announce_text

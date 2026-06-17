@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import re
+from dataclasses import dataclass, fields, replace
 from datetime import datetime, timezone
 from typing import Any, Mapping, Optional, Sequence
 
@@ -215,6 +216,41 @@ def compute_tier(
     return 3
 
 
+@dataclass(frozen=True)
+class MemoryScoringConfig:
+    """Memory-native relevance knobs.
+
+    Memory search uses one clamped weighted sum over factor scores. These
+    weights intentionally do not map to task-tracker's RRF scoring config.
+    """
+
+    semantic_weight: float = 0.30
+    text_weight: float = 0.22
+    label_weight: float = 0.13
+    salience_weight: float = 0.11
+    importance_weight: float = 0.08
+    confidence_weight: float = 0.07
+    freshness_weight: float = 0.05
+    confirmation_weight: float = 0.04
+    half_life_days: float = 45.0
+    min_relevance_score: float = 0.0
+
+    def merged(self, **overrides: Optional[float]) -> "MemoryScoringConfig":
+        allowed = {f.name for f in fields(self)}
+        clean: dict[str, float] = {}
+        for key, value in overrides.items():
+            if key not in allowed or value is None:
+                continue
+            try:
+                clean[key] = float(value)
+            except (TypeError, ValueError):
+                continue
+        return replace(self, **clean) if clean else self
+
+
+DEFAULT_MEMORY_SCORING = MemoryScoringConfig()
+
+
 def compute_memory_scores(
     *,
     status: str,
@@ -327,7 +363,8 @@ def rank_candidate(
     requested_keywords: Sequence[str],
     row: Mapping[str, Any],
     text_rank: float = 0.0,
-    half_life_days: float = 45.0,
+    half_life_days: Optional[float] = None,
+    config: MemoryScoringConfig = DEFAULT_MEMORY_SCORING,
     now: Optional[datetime] = None,
 ) -> tuple[float, dict[str, float]]:
     labels = row.get("labels") or []
@@ -341,21 +378,21 @@ def rank_candidate(
     freshness = compute_freshness_score(
         row.get("last_event_at") or row.get("updated_at"),
         now=now,
-        half_life_days=half_life_days,
+        half_life_days=config.half_life_days if half_life_days is None else half_life_days,
     )
     importance = clamp(float(row.get("importance_score") or 0.0))
     confidence = clamp(float(row.get("confidence_score") or 0.0))
     salience = clamp(float(row.get("salience_score") or 0.0))
     confirmation = clamp(float(row.get("confirmation_rate") or 0.0))
     score = clamp(
-        0.30 * semantic
-        + 0.22 * text
-        + 0.13 * label
-        + 0.11 * salience
-        + 0.08 * importance
-        + 0.07 * confidence
-        + 0.05 * freshness
-        + 0.04 * confirmation
+        config.semantic_weight * semantic
+        + config.text_weight * text
+        + config.label_weight * label
+        + config.salience_weight * salience
+        + config.importance_weight * importance
+        + config.confidence_weight * confidence
+        + config.freshness_weight * freshness
+        + config.confirmation_weight * confirmation
     )
     return score, {
         "semantic": semantic,

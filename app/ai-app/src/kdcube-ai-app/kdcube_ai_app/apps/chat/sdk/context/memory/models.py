@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, Literal, Optional, Sequence
+from typing import Any, Dict, Iterable, Literal, Mapping, Optional, Sequence
 
 
 MemorySearchMode = Literal[
@@ -146,6 +146,7 @@ class MemorySearchRequest:
     query_embedding: Optional[Sequence[float]] = None
     min_relevance_score: float = 0.0
     half_life_days: float = 45.0
+    factor_weights: Optional[Mapping[str, float]] = None
 
 
 @dataclass(frozen=True)

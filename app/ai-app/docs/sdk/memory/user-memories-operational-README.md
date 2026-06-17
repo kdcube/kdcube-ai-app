@@ -350,15 +350,16 @@ confirmation rate, tier, and pinned status.
 
 ## Rendering A Specific Memory
 
-Rendering `me:<memory_id>` is a fast read path. It should use
+Rendering `mem:record:<memory_id>` is a fast read path. It should use
 `user_memory_entries` as the source of truth for the current memory state.
 Reconstructing a memory by replaying all events is not part of the normal
-render path.
+render path. Older `me:<memory_id>` and `mem:<memory_id>` refs are accepted as
+legacy aliases, but new refs should be emitted as `mem:record:<memory_id>`.
 
 Default render flow:
 
 ```text
-me:<memory_id>
+mem:record:<memory_id>
   |
   +-- parse memory id
   +-- derive authenticated scope: tenant/project/user_id/bundle policy
@@ -408,7 +409,7 @@ the user or decide whether to confirm/update a memory.
 Explicit evidence view:
 
 ```text
-me:<memory_id>?view=evidence
+mem:record:<memory_id>?view=evidence
 memory.get_evidence(id=<memory_id>, limit=5)
 ```
 
@@ -428,7 +429,7 @@ or materially rewriting an important memory. Keep the event limit small and
 bounded.
 
 If a memory is merged, render should report the merge and point to
-`me:<merged_into_id>` instead of silently hiding the old id.
+`mem:record:<merged_into_id>` instead of silently hiding the old id.
 
 ## Announce Hotset Query
 

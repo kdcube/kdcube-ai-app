@@ -271,6 +271,20 @@ ref as `ref`, `logicalPath` / `logical_path`, `hostedUri` / `hosted_uri`,
 `object_ref`, or `event_ref`; the widget forwards the resolved `object_ref` to
 the bundle operation. The provider/resolver owns what that ref means.
 
+The same canonical-ref normalization drives chip labels and visual identity.
+The widget derives the visual class from the root namespace of the resolved ref,
+not from the source surface that produced the chip. For example,
+`mem:record:<id>` is a `mem` chip and `task:issue:<id>` /
+`task:attachment:<id>` are `task` chips. App CSS or config may map those root
+namespaces to colors; the chat component should not hardcode memory, task, or
+provider semantics.
+
+Because context chips are persisted and replayed through the conversation
+timeline, every producer should use the same canonical context-pin shape:
+`{ type: "kdcube.context.attach", contexts: [...] }`, with each context carrying
+one canonical `ref`. Compatibility aliases are accepted on read, but new
+producers should not invent per-surface URI fields.
+
 The provider/resolver also owns `default_open_effect_action`. It is resolved per
 concrete object, not per host surface and not per namespace as a whole. For
 example, a task provider can return `open` for `task:issue:<id>` and `download`
@@ -312,7 +326,8 @@ attached.
 
 The chat widget packages events, but event semantics come from event domains.
 For example, `fi:` artifacts are resolved by the ReAct artifact domain,
-`mem:` by memory, `task:` by the task subsystem, and `cnv:` by canvas.
+`mem:` by the memory named-service provider, `task:` by the task subsystem, and
+`cnv:` by canvas.
 
 The composition bundle imports those domains and registers their resolvers and
 policies. The chat widget remains a transport and UI surface.

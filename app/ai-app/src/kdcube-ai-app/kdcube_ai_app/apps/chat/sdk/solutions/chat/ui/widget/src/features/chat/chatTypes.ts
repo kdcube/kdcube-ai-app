@@ -201,6 +201,7 @@ export interface AttachedContext {
   label: string
   summary?: string
   ref?: string
+  object_ref?: string
   logicalPath?: string
   hostedUri?: string
   mime?: string

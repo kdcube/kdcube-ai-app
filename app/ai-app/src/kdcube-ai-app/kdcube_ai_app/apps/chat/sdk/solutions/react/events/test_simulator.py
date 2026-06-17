@@ -97,7 +97,7 @@ async def test_preview_payload_uses_memory_context_policy_for_mem_refs(tmp_path)
 
     assert result["ok"] is True
     assert "[MEMORY CONTEXT]" in result["rendered_text"]
-    assert "object_ref: mem:mem_1" in result["rendered_text"]
+    assert "object_ref: mem:record:mem_1" in result["rendered_text"]
     assert "label: Excel with openpyxl charts" in result["rendered_text"]
     assert "kind: memory" not in result["rendered_text"]
 

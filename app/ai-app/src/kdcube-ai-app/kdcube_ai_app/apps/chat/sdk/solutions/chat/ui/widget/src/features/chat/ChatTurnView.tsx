@@ -45,9 +45,11 @@ import {
 } from './turnTabs.tsx'
 import { FaviconImg } from '../../components/Favicon.tsx'
 import { FileExtIcon, fileExtension, fileKind } from '../../components/FileExtIcon.tsx'
-import { canonicalObjectRef, setChatFileDragData } from './fileDrag.ts'
+import { canonicalObjectRef, isDirectDownloadObjectRef, namespaceFromObjectRef, setChatFileDragData } from './fileDrag.ts'
 import { activateContextPin, contextPinActionNotice } from './contextPinActions.ts'
 import { setContextDragData } from '../context/contextMessages.ts'
+import { namespaceStyleVars, contextChipStyle } from './contextChipVisuals.ts'
+import { settings } from '../../settings.ts'
 
 /* ---------------------------------------------------------------------- */
 /*  Chat view                                                             */
@@ -224,12 +226,16 @@ function namedServiceSearchItemRef(item: NamedServiceSearchItem): string {
 }
 
 function namedServiceContext(item: NamedServiceSearchItem): Record<string, unknown> {
+  const ref = namedServiceSearchItemRef(item)
+  const objectKind = item.object_kind || item.kind || item.search_scope || item.namespace
   return {
     ...item,
-    kind: item.kind || 'object.ref',
-    id: item.id || namedServiceSearchItemRef(item),
-    label: item.label || item.title || namedServiceSearchItemRef(item) || 'result',
-    ref: namedServiceSearchItemRef(item),
+    kind: 'object.ref',
+    object_kind: objectKind,
+    id: item.id || ref,
+    label: item.label || item.title || ref || 'result',
+    ref,
+    object_ref: ref,
   }
 }
 
@@ -241,8 +247,9 @@ function ChatNamedServiceSearchBlockImpl({
   onError: (text: string) => void
 }) {
   const scope = artifact.searchScope || artifact.namespace || 'namespace'
+  const namespaceVars = namespaceStyleVars(scope, settings.getNamespaceStyles())
   return (
-    <details className="k-workitem k-tint-green" open>
+    <details className="k-workitem k-namespace-tint" style={namespaceVars} open>
       <summary className="k-workitem-head">
         <span className="k-workitem-icon" aria-hidden="true">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -276,7 +283,8 @@ function ChatNamedServiceSearchBlockImpl({
                   key={`${ref || label}-${idx}`}
                   type="button"
                   draggable={Boolean(ref)}
-                  className="k-result-row text-left"
+                  className="k-result-row text-left k-namespace-row"
+                  style={contextChipStyle(context, settings.getNamespaceStyles())}
                   title={item.summary || label}
                   onClick={() => {
                     activateContextPin(context).catch((error) => {
@@ -520,24 +528,56 @@ function ChatTimelineBlockImpl({ artifact }: { artifact: TimelineArtifact }) {
  *  stay behind the resolver boundary. */
 function ChatFileBlockImpl({
   artifact,
-  onError,
+  onDownloadError,
+  onContextActionError,
 }: {
   artifact: FileArtifact
-  onError: (text: string) => void
+  onDownloadError: (text: string) => void
+  onContextActionError: (text: string) => void
 }) {
   const [downloading, setDownloading] = useState(false)
   const ext = fileExtension(artifact.filename)
   const kind = fileKind(ext)
   const pinRef = canonicalObjectRef(artifact.objectRef, artifact.logicalPath)
-  const canDownload = Boolean(pinRef)
+  const isDirectDownload = Boolean(pinRef && isDirectDownloadObjectRef(pinRef))
+  const canActivate = Boolean(pinRef)
+  const namespace = namespaceFromObjectRef(pinRef)
+  const namespaceVars = namespace ? namespaceStyleVars(namespace, settings.getNamespaceStyles()) : undefined
+  const actionLabel = isDirectDownload ? 'Download' : 'Open'
+  const extLabel = isDirectDownload ? kind.label : (namespace ? namespace.toUpperCase() : kind.label)
   const subtitle = artifact.description || artifact.mime || pinRef || ''
   const handle = async () => {
-    if (!canDownload || downloading) return
+    if (!canActivate || downloading) return
     try {
       setDownloading(true)
-      await downloadObjectRef(pinRef, artifact.filename, artifact.mime)
+      if (isDirectDownload) {
+        await downloadObjectRef(pinRef, artifact.filename, artifact.mime)
+      } else {
+        await activateContextPin({
+          id: pinRef,
+          kind: 'object.ref',
+          label: artifact.filename || pinRef,
+          title: artifact.filename || pinRef,
+          summary: artifact.description || undefined,
+          ref: pinRef,
+          object_ref: pinRef,
+          mime: artifact.mime,
+          namespace: namespace || undefined,
+          data: {
+            source: 'chat.file_artifact',
+            object_ref: pinRef,
+            filename: artifact.filename,
+            mime: artifact.mime,
+          },
+        })
+      }
     } catch (error) {
-      onError(messageForError(error))
+      if (isDirectDownload) {
+        onDownloadError(messageForError(error))
+      } else {
+        const notice = contextPinActionNotice(error)
+        onContextActionError(notice.text)
+      }
     } finally {
       setDownloading(false)
     }
@@ -559,10 +599,11 @@ function ChatFileBlockImpl({
       }}
       disabled={!pinRef || downloading}
       className="k-chat-file"
+      style={namespaceVars}
       title={
         pinRef
-          ? (canDownload ? `Download ${artifact.filename}; drag to attach or pin` : `Drag ${artifact.filename} to attach or pin`)
-          : (canDownload ? `Download ${artifact.filename}` : artifact.filename)
+          ? `${actionLabel} ${artifact.filename}; drag to attach or pin`
+          : artifact.filename
       }
     >
       <span className="k-chat-file-icon" aria-hidden="true">
@@ -572,16 +613,16 @@ function ChatFileBlockImpl({
         <span className="k-chat-file-name">{artifact.filename}</span>
         {subtitle ? <span className="k-chat-file-sub">{subtitle}</span> : null}
       </span>
-      <span className="k-chat-file-ext">{kind.label}</span>
+      <span className="k-chat-file-ext">{extLabel}</span>
       <span className="k-chat-file-action">
         {downloading ? (
-          'Downloading…'
-        ) : canDownload ? (
+          isDirectDownload ? 'Downloading…' : 'Opening…'
+        ) : canActivate ? (
           <>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
             </svg>
-            <span>Download</span>
+            <span>{actionLabel}</span>
           </>
         ) : (
           'Unavailable'
@@ -603,13 +644,15 @@ function ChatServiceErrorBlockImpl({ artifact }: { artifact: ServiceErrorArtifac
 function ChatArtifactRowImpl({
   artifact,
   onDownloadError,
+  onContextActionError,
 }: {
   artifact: Artifact
   onDownloadError: (text: string) => void
+  onContextActionError: (text: string) => void
 }) {
   switch (artifact.kind) {
     case 'web_search': return <ChatWebSearchBlock artifact={artifact} />
-    case 'named_service_search': return <ChatNamedServiceSearchBlock artifact={artifact} onError={onDownloadError} />
+    case 'named_service_search': return <ChatNamedServiceSearchBlock artifact={artifact} onError={onContextActionError} />
     case 'web_fetch':  return <ChatWebFetchBlock artifact={artifact} />
     case 'code_exec':  return <ChatCodeExecBlock artifact={artifact} />
     case 'canvas':     return <ChatCanvasBlock artifact={artifact} />
@@ -624,7 +667,7 @@ function ChatArtifactRowImpl({
      *  small footnote section below the answer — not as bordered cards in
      *  the chronological flow. */
     case 'citation':   return null
-    case 'file':       return <ChatFileBlock artifact={artifact} onError={onDownloadError} />
+    case 'file':       return <ChatFileBlock artifact={artifact} onDownloadError={onDownloadError} onContextActionError={onContextActionError} />
     case 'service_error': return <ChatServiceErrorBlock artifact={artifact} />
     default:           return null
   }
@@ -633,9 +676,11 @@ function ChatArtifactRowImpl({
 function ChatMergedFeedImpl({
   events,
   onDownloadError,
+  onContextActionError,
 }: {
   events: OverviewEvent[]
   onDownloadError: (text: string) => void
+  onContextActionError: (text: string) => void
 }) {
   if (events.length === 0) return null
   return (
@@ -655,6 +700,7 @@ function ChatMergedFeedImpl({
             key={event.key}
             artifact={event.artifact}
             onDownloadError={onDownloadError}
+            onContextActionError={onContextActionError}
           />
         )
       })}
@@ -667,11 +713,13 @@ function ChatTurnViewImpl({
   sendingDisabled,
   onFollowup,
   onDownloadError,
+  onContextActionError,
 }: {
   turn: ChatTurn
   sendingDisabled: boolean
   onFollowup: (text: string) => void
   onDownloadError: (text: string) => void
+  onContextActionError: (text: string) => void
 }) {
   const thinkingEntries = useMemo(
     () => turn.timeline.filter((entry) => entry.kind === 'thinking'),
@@ -688,7 +736,7 @@ function ChatTurnViewImpl({
   return (
     <div className="k-chat-view">
       <ChatThinkingTimeline entries={thinkingEntries} streaming={isStreaming} />
-      <ChatMergedFeed events={overviewEvents} onDownloadError={onDownloadError} />
+      <ChatMergedFeed events={overviewEvents} onDownloadError={onDownloadError} onContextActionError={onContextActionError} />
       {turn.state === 'error' ? (
         <div className="k-notice k-error">
           <span>{turn.error || 'Request failed.'}</span>

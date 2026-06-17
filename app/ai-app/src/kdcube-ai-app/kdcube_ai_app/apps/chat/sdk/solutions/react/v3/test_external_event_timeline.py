@@ -335,7 +335,7 @@ async def test_browser_renders_followup_batch_as_one_section(tmp_path):
         followup_message_idx = text.index("[FOLLOWUP MESSAGE]")
         assert followup_section_idx < memory_idx < attachment_idx < followup_message_idx
         assert text.count("[FOLLOWUP DURING TURN]") == 1
-        assert "object_ref: mem:mem_1" in text
+        assert "object_ref: mem:record:mem_1" in text
         assert "and this?" in text
     finally:
         await browser.stop_external_event_listener()

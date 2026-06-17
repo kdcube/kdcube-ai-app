@@ -178,11 +178,16 @@ Named-service tools also show applicable namespaces:
 ```
 Scope:
     • namespaces applicable: task, memo
-    • strategy: exploration
+    • strategy: exploitation (default)
+    • strategy overrides by namespace:
+        - memo: neutral
 ```
 
 The model sees concrete tool ids and traits. Provider operation ids remain a
-configuration/provider protocol detail.
+configuration/provider protocol detail. For named-service tools, the default
+trait is configured at the named-service connection level. A namespace block can
+override the trait for that generic tool; ReAct uses the override only when the
+action's `params.namespace` selects that namespace.
 
 ## Runtime Use
 

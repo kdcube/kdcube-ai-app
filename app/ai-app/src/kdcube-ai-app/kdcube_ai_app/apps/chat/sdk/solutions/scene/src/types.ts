@@ -43,6 +43,20 @@ export interface SceneSurfaceOpenRequest {
   message?: SceneRecord
 }
 
+export interface SceneContextItem extends SceneRecord {
+  id?: string
+  ref?: string
+  object_ref?: string
+  logical_path?: string
+  namespace?: string
+  kind?: string
+  label?: string
+  title?: string
+  summary?: string
+  mime?: string
+  data?: SceneRecord
+}
+
 export interface SceneSurfaceRegistration {
   label?: string
   ensureOpen?: (request: SceneSurfaceOpenRequest) => void

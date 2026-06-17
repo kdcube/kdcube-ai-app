@@ -34,10 +34,11 @@ type RuntimeConfigPayload = {
   tenant_id?: string;
   project?: string;
   project_id?: string;
-  canvas?: {
-    namespace_styles?: Record<string, unknown>;
-    namespaceStyles?: Record<string, unknown>;
-  };
+  namespace_styles?: Record<string, unknown>;
+  namespaceStyles?: Record<string, unknown>;
+};
+
+type NamespacePresentationConfigPayload = {
   namespace_styles?: Record<string, unknown>;
   namespaceStyles?: Record<string, unknown>;
 };
@@ -81,7 +82,7 @@ class Settings {
     tenant: PLACEHOLDER_TENANT,
     project: PLACEHOLDER_PROJECT,
     bundleId: PLACEHOLDER_BUNDLE_ID,
-    canvasNamespaceStyles: {} as Record<string, unknown>,
+    namespaceStyles: {} as Record<string, unknown>,
   };
 
   getBaseUrl(): string {
@@ -114,20 +115,15 @@ class Settings {
     return isPlaceholder(this.values.idToken) ? null : (this.values.idToken || null);
   }
 
-  getCanvasNamespaceStyles(): Record<string, unknown> {
-    return { ...this.values.canvasNamespaceStyles };
+  getNamespaceStyles(): Record<string, unknown> {
+    return { ...this.values.namespaceStyles };
   }
 
   private applyRuntimeConfig(config: RuntimeConfigPayload): boolean {
     const tenant = config.defaultTenant || config.tenant || config.tenant_id;
     const project = config.defaultProject || config.project || config.project_id;
     const idTokenHeader = config.idTokenHeader || config.idTokenHeaderName || config.auth?.idTokenHeaderName;
-    const canvasNamespaceStyles = (
-      config.canvas?.namespace_styles ||
-      config.canvas?.namespaceStyles ||
-      config.namespace_styles ||
-      config.namespaceStyles
-    );
+    const namespaceStyles = config.namespace_styles || config.namespaceStyles;
     this.values = {
       ...this.values,
       baseUrl: config.baseUrl || this.values.baseUrl,
@@ -137,9 +133,9 @@ class Settings {
       tenant: tenant || this.values.tenant,
       project: project || this.values.project,
       bundleId: config.defaultAppBundleId || this.values.bundleId,
-      canvasNamespaceStyles: canvasNamespaceStyles || this.values.canvasNamespaceStyles,
+      namespaceStyles: namespaceStyles || this.values.namespaceStyles,
     };
-    return Boolean(tenant || project || config.baseUrl || config.accessToken !== undefined || config.idToken !== undefined || idTokenHeader || config.defaultAppBundleId || canvasNamespaceStyles);
+    return Boolean(tenant || project || config.baseUrl || config.accessToken !== undefined || config.idToken !== undefined || idTokenHeader || config.defaultAppBundleId || namespaceStyles);
   }
 
   private needsRuntimeConfig(): boolean {
@@ -170,9 +166,51 @@ class Settings {
     }
   }
 
+  private async loadNamespaceStyles(): Promise<boolean> {
+    const tenant = this.getTenant();
+    const project = this.getProject();
+    const bundleId = this.getBundleId();
+    if (!tenant || !project || !bundleId) return false;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 1200);
+    try {
+      const alias = 'namespace_presentation_config';
+      const response = await fetch(
+        `${this.getBaseUrl()}/api/integrations/bundles/${encodeURIComponent(tenant)}/${encodeURIComponent(project)}/${encodeURIComponent(bundleId)}/operations/${alias}`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          cache: 'no-store',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+            ...(this.getAccessToken() ? { Authorization: `Bearer ${this.getAccessToken()}` } : {}),
+            ...(this.getIdToken() ? { [this.getIdTokenHeader()]: this.getIdToken() as string } : {}),
+          },
+          body: JSON.stringify({ data: {} }),
+          signal: controller.signal,
+        },
+      );
+      if (!response.ok) return false;
+      const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
+      const body = payload && typeof payload === 'object' && alias in payload
+        ? payload[alias] as NamespacePresentationConfigPayload
+        : payload as NamespacePresentationConfigPayload | null;
+      if (!body || typeof body !== 'object') return false;
+      const styles = body.namespace_styles || body.namespaceStyles;
+      if (!styles || typeof styles !== 'object') return false;
+      this.values = { ...this.values, namespaceStyles: styles };
+      return true;
+    } catch {
+      return false;
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }
+
   setupParentListener(): Promise<boolean> {
     if (!this.needsRuntimeConfig()) {
-      return Promise.resolve(true);
+      return this.loadNamespaceStyles().then(() => true).catch(() => true);
     }
 
     let resolveReady: ((value: boolean) => void) | null = null;
@@ -180,7 +218,7 @@ class Settings {
     const finish = (ready: boolean) => {
       if (resolved) return;
       resolved = true;
-      resolveReady?.(ready);
+      this.loadNamespaceStyles().catch(() => false).finally(() => resolveReady?.(ready));
     };
 
     window.addEventListener('message', (event: MessageEvent) => {
@@ -196,7 +234,7 @@ class Settings {
           type: 'CONFIG_REQUEST',
           data: {
             identity: WIDGET_IDENTITY,
-            requestedFields: ['baseUrl', 'accessToken', 'idToken', 'idTokenHeader', 'defaultTenant', 'defaultProject', 'defaultAppBundleId', 'namespaceStyles', 'namespace_styles', 'canvas'],
+            requestedFields: ['baseUrl', 'accessToken', 'idToken', 'idTokenHeader', 'defaultTenant', 'defaultProject', 'defaultAppBundleId', 'namespaceStyles', 'namespace_styles'],
           },
         }, '*');
         window.setTimeout(() => finish(true), 3000);

@@ -288,9 +288,8 @@ The backend registers resolvers for namespaces the scene can display:
 | Namespace | Owner |
 | --- | --- |
 | `fi:` | ReAct event/artifact resolver |
-| `mem:` | memory subsystem resolver |
 | `cnv:` | canvas-owned object resolver |
-| configured namespaces, for example `task:` | named-service provider resolver |
+| configured named-service namespaces, for example `mem:` or `task:` | named-service provider resolver |
 
 The canvas card or chat context chip stores one canonical object ref. The
 resolver owns preview, download, open, and rehost behavior.
@@ -303,6 +302,9 @@ surfaces:
     ui:
       canvas:
         resolvers:
+        - kind: named_service
+          namespace: mem
+          allowed: [object.action]
         - kind: named_service
           namespace: task
           allowed: [object.action]

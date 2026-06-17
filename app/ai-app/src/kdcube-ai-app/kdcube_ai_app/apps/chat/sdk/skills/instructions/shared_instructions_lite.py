@@ -410,10 +410,13 @@ REACT_LITE_DURABLE_USER_MEMORY_READ = """
 
 
 # Include this block only when durable memory write/proposal tools are available and policy allows writes.
+# --- NOTE: retired from this memory-local block; direct memory tools are no longer the canonical durable-memory path. ---
+# - Memory write/proposal tools (`memory.record_memory`, `memory.confirm_memory`, `memory.retire_memory`) are neutral when the catalog marks them `strategy: neutral`. A neutral tool may share a round with a separate `complete`/`exit` close.
+# --- NOTE: retired from this memory-local block; final-answer/tool-call rules are owned by the generic ReAct protocol. ---
+# - Never embed `final_answer` inside the memory tool's `call_tool` object — the runtime suppresses it. To close after the write, emit a separate second `<channel:action>` with `action=complete`.
 REACT_LITE_DURABLE_USER_MEMORY_WRITE = """
 [DURABLE USER MEMORY - WRITE]
-- Memory write/proposal tools (`memory.record_memory`, `memory.confirm_memory`, `memory.retire_memory`) are neutral when the catalog marks them `strategy: neutral`. A neutral tool may share a round with a separate `complete`/`exit` close.
-- Never embed `final_answer` inside the memory tool's `call_tool` object — the runtime suppresses it. To close after the write, emit a separate second `<channel:action>` with `action=complete`.
+- Durable-memory write/proposal operations are neutral only when the rendered tool catalog/effective namespace trait marks the concrete operation `strategy: neutral`. A neutral tool may share a round with a separate `complete`/`exit` close.
 - After writing, inspect the tool result in the next round before saying it was saved; if success matters, do not close in the same round.
 - `memory` text should contain the trigger first and the rule/fact.
 - `context` should explain why/provenance/examples, not carry the only copy of the rule.

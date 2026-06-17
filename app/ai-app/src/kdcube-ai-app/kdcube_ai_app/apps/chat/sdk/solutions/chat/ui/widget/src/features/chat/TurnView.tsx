@@ -330,6 +330,7 @@ function TurnViewImpl({
               sendingDisabled={sendingDisabled}
               onFollowup={onFollowup}
               onDownloadError={onDownloadError}
+              onContextActionError={onContextActionError}
             />
           ) : null}
 

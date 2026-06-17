@@ -28,6 +28,7 @@ _NAMED_SERVICE_OPERATION_TO_TOOL = {
     "object.schema": "object_schema",
     "object.upsert": "upsert_object",
     "object.host_file": "host_file",
+    "object.action": "object_action",
     "object.delete": "delete_object",
 }
 

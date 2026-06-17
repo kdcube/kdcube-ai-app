@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from kdcube_ai_app.apps.chat.sdk.context.memory.models import normalize_scope_filter, normalize_terms
+import pytest
+
+from kdcube_ai_app.apps.chat.sdk.context.memory.models import MemoryScope, MemorySearchRequest, normalize_scope_filter, normalize_terms
 from kdcube_ai_app.apps.chat.sdk.context.memory.scoring import (
     build_canonical_key,
     compute_confirmation_rate,
@@ -13,6 +15,7 @@ from kdcube_ai_app.apps.chat.sdk.context.memory.scoring import (
     search_query_terms,
     token_overlap_score,
 )
+from kdcube_ai_app.apps.chat.sdk.context.memory.store import UserMemoryStore
 
 
 def test_normalize_terms_deduplicates_and_strips() -> None:
@@ -122,3 +125,88 @@ def test_rank_candidate_combines_text_labels_and_salience() -> None:
     assert parts["text"] > 0
     assert parts["labels"] == 1.0
     assert parts["confidence"] == 0.9
+
+
+class _RankOnlyMemoryStore(UserMemoryStore):
+    def __init__(self, rows):
+        super().__init__(pg_pool=object(), tenant="tenant-a", project="project-a")
+        self._rows = rows
+
+    def _require_pool(self):
+        return object()
+
+    async def _fetch_candidates(self, request):
+        return list(self._rows)
+
+
+def _search_row(memory_id: str, *, memory: str, search_text: str, semantic_score: float) -> dict:
+    now = datetime(2026, 6, 16, 12, 0, tzinfo=timezone.utc)
+    return {
+        "id": memory_id,
+        "tenant": "tenant-a",
+        "project": "project-a",
+        "user_id": "user-a",
+        "bundle_id": "bundle@1",
+        "memory": memory,
+        "search_text": search_text,
+        "kind": "fact",
+        "status": "active",
+        "visibility": "user",
+        "labels": [],
+        "keywords": [],
+        "tier": 2,
+        "pinned": False,
+        "confidence_score": 0.8,
+        "importance_score": 0.8,
+        "freshness_score": 1.0,
+        "salience_score": 0.8,
+        "confirmation_rate": 0.8,
+        "evidence_count": 1,
+        "update_count": 1,
+        "confirmation_count": 1,
+        "contradiction_count": 0,
+        "created_at": now,
+        "updated_at": now,
+        "last_event_at": now,
+        "semantic_score": semantic_score,
+        "text_rank": 0.0,
+        "revision": 1,
+    }
+
+
+@pytest.mark.asyncio
+async def test_memory_search_factor_weights_can_reorder_same_candidates() -> None:
+    store = _RankOnlyMemoryStore(
+        [
+            _search_row(
+                "text-match",
+                memory="Legal relationship document wording preference",
+                search_text="Legal relationship document wording preference",
+                semantic_score=0.0,
+            ),
+            _search_row(
+                "semantic-match",
+                memory="Commercial drafting preference",
+                search_text="Commercial drafting preference",
+                semantic_score=0.4,
+            ),
+        ]
+    )
+    request = MemorySearchRequest(
+        scope=MemoryScope(tenant="tenant-a", project="project-a", user_id="user-a", bundle_id="bundle@1"),
+        query="legal relationship document",
+        limit=2,
+    )
+
+    default_results = await store.search(request)
+    tuned_results = await store.search(
+        MemorySearchRequest(
+            scope=request.scope,
+            query=request.query,
+            limit=2,
+            factor_weights={"semantic_weight": 1.0},
+        )
+    )
+
+    assert [result.memory.id for result in default_results] == ["text-match", "semantic-match"]
+    assert [result.memory.id for result in tuned_results] == ["semantic-match", "text-match"]

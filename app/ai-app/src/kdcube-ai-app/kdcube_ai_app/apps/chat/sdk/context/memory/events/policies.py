@@ -16,6 +16,7 @@ from kdcube_ai_app.apps.chat.sdk.solutions.react.events import (
 from kdcube_ai_app.apps.chat.sdk.solutions.react.events.policies.rendering_common import (
     EVENT_RENDER_POLICY_META_KEY,
 )
+from .resolver import canonical_memory_ref, memory_id_from_ref, memory_ref
 
 
 MEMORY_CONTEXT_BLOCK_POLICY_ID = "memory.block_production.context_event"
@@ -39,13 +40,14 @@ def _ret_mapping(target: Mapping[str, Any]) -> dict[str, Any]:
 
 def _object_ref(payload: Mapping[str, Any]) -> str:
     ref = str(payload.get("object_ref") or payload.get("ref") or "").strip()
-    if ref.startswith("mem:"):
-        return ref
+    canonical = canonical_memory_ref(ref)
+    if canonical:
+        return canonical
     memory = payload.get("memory")
     if isinstance(memory, Mapping):
         memory_id = str(memory.get("id") or "").strip()
         if memory_id:
-            return f"mem:{memory_id}"
+            return memory_ref(memory_id)
     return ref
 
 
@@ -81,8 +83,9 @@ def _context_object_ref(target: Mapping[str, Any], event_data: Mapping[str, Any]
         event_data.get("id"),
     ):
         ref = str(value or "").strip()
-        if ref.startswith("mem:"):
-            return ref
+        canonical = canonical_memory_ref(ref)
+        if canonical:
+            return canonical
     return ""
 
 
@@ -169,7 +172,7 @@ def _memory_text(payload: Mapping[str, Any]) -> str:
 
 @block_production_policy(
     event_policy_id=MEMORY_CONTEXT_BLOCK_POLICY_ID,
-    description="Render an attached mem:<id> context occurrence as a memory-owned timeline fact.",
+    description="Render an attached mem:record:<id> context occurrence as a memory-owned timeline fact.",
 )
 def memory_context_block_policy(
     target: MutableMapping[str, Any],
@@ -239,11 +242,11 @@ def memory_context_block_policy(
 
 @compaction_event_policy(
     event_policy_id=MEMORY_CONTEXT_COMPACTION_POLICY_ID,
-    description="Render mem:<id> context occurrences compactly for compaction.",
+    description="Render mem:record:<id> context occurrences compactly for compaction.",
 )
 @timeline_projection_policy(
     event_policy_id=MEMORY_CONTEXT_RENDER_POLICY_ID,
-    description="Render mem:<id> context occurrences as memory-owned timeline facts.",
+    description="Render mem:record:<id> context occurrences as memory-owned timeline facts.",
 )
 def memory_context_render_policy(
     timeline: list[MutableMapping[str, Any]],
@@ -266,8 +269,10 @@ def memory_context_render_policy(
         payload = _parse_json_object(block.get("text"))
         if not payload:
             continue
-        object_ref = str(payload.get("object_ref") or payload.get("event_ref") or payload.get("hosted_uri") or "").strip()
-        if not object_ref.startswith("mem:"):
+        object_ref = canonical_memory_ref(
+            str(payload.get("object_ref") or payload.get("event_ref") or payload.get("hosted_uri") or "").strip()
+        )
+        if not object_ref:
             continue
         lines = ["[MEMORY CONTEXT]"]
         path = str(block.get("path") or payload.get("logical_path") or "").strip()
@@ -304,7 +309,7 @@ def memory_context_render_policy(
 
 @block_production_policy(
     event_policy_id=MEMORY_READ_BLOCK_POLICY_ID,
-    description="Render memory.read_memory as a memory-owned mem:<id> fact block.",
+    description="Render memory.read_memory as a memory-owned mem:record:<id> fact block.",
 )
 def memory_read_block_policy(
     target: MutableMapping[str, Any],

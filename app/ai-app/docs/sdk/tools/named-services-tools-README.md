@@ -42,6 +42,15 @@ surfaces:
                   - object.host_file
                   - object.upsert
                   - object.delete
+              front-door:
+                allowed:
+                  - provider.about
+                  - object.search
+                  - object.get
+                  - object.upsert
+                tool_traits:
+                  upsert_object:
+                    strategy: [neutral]
             tool_traits:
               provider_about:
                 strategy: [exploration]
@@ -57,11 +66,6 @@ surfaces:
                 strategy: [exploitation]
               delete_object:
                 strategy: [exploitation]
-              front-door:
-                allowed:
-                  - provider.about
-                  - object.search
-                  - object.get
 ```
 
 `kind: named_service` does not name a provider bundle. Provider location comes
@@ -69,7 +73,10 @@ from service discovery or explicit provider config on the namespace. The
 consumer config says which namespace operations this agent is allowed to call.
 `tool_traits` is keyed by the concrete ReAct-facing named-service tool names,
 not by provider operation ids. The strategy trait is used by ReAct multi-action
-policy.
+policy. Connection-level `tool_traits` define the default trait for the generic
+tool. A namespace may also define `tool_traits` next to `allowed`; that
+namespace-specific trait is used only when the model calls the tool with that
+namespace in `params.namespace`.
 
 ## Catalog Shape
 
@@ -86,6 +93,8 @@ and the rendered ReAct catalog includes scope fields:
 - `provider search scopes`: provider-declared scoped namespaces that may be
   passed to `named_services.search_objects(namespace=...)` for that base
   namespace.
+- `strategy overrides by namespace`: namespace-specific effective traits for
+  the same generic tool, when configured.
 
 Example rendered catalog entry:
 

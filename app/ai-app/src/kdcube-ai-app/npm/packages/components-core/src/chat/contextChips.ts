@@ -10,19 +10,49 @@ export interface ContextChip {
   [key: string]: unknown
 }
 
+function text(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function refFromContext(item: Record<string, unknown>): string {
+  const data = item.data && typeof item.data === 'object' && !Array.isArray(item.data)
+    ? item.data as Record<string, unknown>
+    : {}
+  const keys = ['ref', 'object_ref', 'objectRef', 'logicalPath', 'logical_path', 'hostedUri', 'hosted_uri', 'event_ref', 'uri', 'canonical_uri']
+  for (const key of keys) {
+    const value = text(item[key])
+    if (value) return value
+  }
+  for (const key of keys) {
+    const value = text(data[key])
+    if (value) return value
+  }
+  return ''
+}
+
+function compactLabelFromRef(ref: string): string {
+  const clean = ref.split(/[?#]/, 1)[0].trim()
+  const parts = clean.split(':')
+  if (parts.length >= 3) return parts.slice(2).join(':') || clean
+  if (parts.length === 2) return parts[1] || clean
+  return clean
+}
+
 function normalizeContextChips(contexts: unknown): ContextChip[] {
   if (!Array.isArray(contexts)) return []
   return contexts
     .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
     .map((item, index) => {
+      const ref = refFromContext(item)
+      const rawLabel = text(item.label)
       const label =
-        (typeof item.label === 'string' && item.label.trim()) ||
-        (typeof item.ref === 'string' && item.ref.trim()) ||
-        (typeof item.kind === 'string' && item.kind.trim()) ||
+        (rawLabel && rawLabel !== ref ? rawLabel : '') ||
+        (ref ? compactLabelFromRef(ref) : '') ||
+        text(item.kind) ||
         'context'
       const id =
-        (typeof item.id === 'string' && item.id.trim()) ||
-        (typeof item.ref === 'string' && item.ref.trim()) ||
+        text(item.id) ||
+        ref ||
         `context-${index}`
       return { ...item, id, label }
     })

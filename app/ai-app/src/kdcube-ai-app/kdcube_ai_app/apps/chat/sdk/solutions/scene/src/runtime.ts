@@ -7,6 +7,7 @@ import {
   type SceneDispatchErrorCode,
   type SceneDispatchResult,
   type SceneDispatchSuccess,
+  type SceneContextItem,
   type SceneMessageEvent,
   type SceneMessageRouteOptions,
   type SceneRecord,
@@ -36,6 +37,54 @@ export function asSceneString(value: unknown): string {
 
 export function isSceneRecord(value: unknown): value is SceneRecord {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value))
+}
+
+export function canonicalObjectRef(value: unknown): string {
+  const record = asSceneRecord(value)
+  const data = asSceneRecord(record.data)
+  return (
+    asSceneString(record.object_ref) ||
+    asSceneString(record.ref) ||
+    asSceneString(record.logical_path) ||
+    asSceneString(record.logicalPath) ||
+    asSceneString(record.hosted_uri) ||
+    asSceneString(record.hostedUri) ||
+    asSceneString(data.object_ref) ||
+    asSceneString(data.ref) ||
+    asSceneString(data.logical_path)
+  )
+}
+
+export function rootNamespaceFromRef(ref: unknown): string {
+  const match = asSceneString(ref).match(/^([A-Za-z][A-Za-z0-9_.-]*):/)
+  return match ? match[1].toLowerCase() : ''
+}
+
+export function normalizeSceneContext(value: unknown): SceneContextItem | null {
+  if (!isSceneRecord(value)) return null
+  const ref = canonicalObjectRef(value)
+  if (!ref) return null
+  const context: SceneContextItem = { ...value }
+  context.id = asSceneString(context.id) || ref
+  context.ref = ref
+  context.object_ref = ref
+  context.logical_path = asSceneString(context.logical_path) || ref
+  context.namespace = asSceneString(context.namespace) || rootNamespaceFromRef(ref)
+  return context
+}
+
+export function contextFromSceneMessage(message: unknown): SceneContextItem | null {
+  const data = asSceneRecord(message)
+  const contexts = Array.isArray(data.contexts)
+    ? data.contexts
+    : data.context !== undefined
+      ? [data.context]
+      : []
+  for (const item of contexts) {
+    const context = normalizeSceneContext(item)
+    if (context) return context
+  }
+  return normalizeSceneContext(data)
 }
 
 export function targetSurfaceFromOpenResponse(response: unknown): string {

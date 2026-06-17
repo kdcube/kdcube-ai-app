@@ -98,14 +98,19 @@ function PackageEngineHost({ children }: { children: ReactNode }) {
           source: (r.source as Record<string, unknown>) || {},
         })
       }),
-      engine.on('pin-conversation', ({ conversationId, title }) => {
+      engine.on('pin-conversation', ({ conversationId, title, context, contexts, ref }) => {
         if (typeof window === 'undefined' || window.parent === window) return
+        const ctx = (context || ref || null) as Record<string, unknown> | null
         window.parent.postMessage({
           type: 'kdcube-pin-conversation',
           source: 'versatile.chat',
           conversation_id: conversationId,
           title: title || 'Conversation',
           agent: 'main',
+          context: ctx,
+          contexts: contexts || (ctx ? [ctx] : undefined),
+          ref: typeof ctx?.ref === 'string' ? ctx.ref : undefined,
+          object_ref: typeof ctx?.object_ref === 'string' ? ctx.object_ref : undefined,
         }, '*')
       }),
       engine.on('canvas-patch', ({ event }) => {

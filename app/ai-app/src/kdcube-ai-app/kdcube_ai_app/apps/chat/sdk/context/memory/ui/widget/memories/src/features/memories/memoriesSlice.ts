@@ -137,6 +137,8 @@ function terms(value: string): string[] {
 export function normalizeMemoryRef(value: string): string {
   const trimmed = String(value || '').trim();
   if (!trimmed) return '';
+  if (trimmed.startsWith('mem:record:')) return trimmed.slice('mem:record:'.length).trim();
+  if (trimmed.startsWith('me:')) return trimmed.slice(3).trim();
   return trimmed.startsWith('mem:') ? trimmed.slice(4).trim() : trimmed;
 }
 

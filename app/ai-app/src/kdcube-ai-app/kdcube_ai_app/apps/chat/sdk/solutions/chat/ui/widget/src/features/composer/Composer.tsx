@@ -7,9 +7,10 @@ import { formatBytes } from '../../components/utils.ts'
 import type { AttachedContext } from '../chat/chatTypes.ts'
 import type { BannerTone } from '../../service.ts'
 import { recognizeContextMessage } from '../../host.ts'
-import { CHAT_CONTEXT_ATTACH_MESSAGE } from '../../settings.ts'
+import { CHAT_CONTEXT_ATTACH_MESSAGE, settings } from '../../settings.ts'
 import { KDCUBE_CONTEXT_MIME_TYPE, recognizeContextPayload } from '../context/contextMessages.ts'
 import { activateContextPin, contextPinActionNotice } from '../chat/contextPinActions.ts'
+import { contextChipClass, contextChipStyle } from '../chat/contextChipVisuals.ts'
 
 const CONTEXT_DROP_MIME_TYPES = [
   KDCUBE_CONTEXT_MIME_TYPE,
@@ -18,11 +19,6 @@ const CONTEXT_DROP_MIME_TYPES = [
 
 function contextTypeLabel(ctx: AttachedContext): string {
   return ctx.cardType || ctx.kind
-}
-
-function contextChipClass(ctx: AttachedContext): string {
-  const classes = [ctx.kind, ctx.cardType].filter(Boolean)
-  return classes.map((item) => String(item).replace('.', '-')).join(' ')
 }
 
 function parseDroppedContexts(dataTransfer: DataTransfer): AttachedContext[] {
@@ -177,6 +173,7 @@ function ComposerImpl({
               <span
                 key={ctx.id}
                 className={`k-context-chip ${contextChipClass(ctx)} ${selectedContextIdSet.has(ctx.id) ? 'is-selected' : ''}`}
+                style={contextChipStyle(ctx, settings.getNamespaceStyles())}
                 title={ctx.summary || ctx.label}
                 role="button"
                 tabIndex={0}

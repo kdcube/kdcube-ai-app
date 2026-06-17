@@ -368,11 +368,19 @@ Scope:
           - sensor:humidity:aggr - humidity aggregates
 ```
 
+For any named-service tool, the consumer can define default `tool_traits` at the
+connection level and namespace-specific `tool_traits` inside a namespace block.
+When a model calls a generic named-service tool, ReAct validates the action with
+the effective trait for `params.namespace`; if no namespace override exists, the
+connection default applies.
+
 The namespace passed to `named_services.search_objects(namespace=...)` is the
 search scope. A scoped namespace searches that provider-declared object space.
 If the rendered tool catalog does not provide enough semantics, agents should
 call `named_services.provider_about(namespace=...)` for provider guidance and
-`named_services.object_schema(...)` for exact body fields and filters.
+`named_services.object_schema(...)` for exact body fields and filters. A scope's
+filters may include an optional `factor_weights` object for per-query relevance
+tuning — see [Providers → Search Scope Filters And Relevance Tuning](./providers-README.md#search-scope-filters-and-relevance-tuning).
 
 For ReAct specifically, fully reading a provider-owned namespace ref means
 `react.pull(<provider_ref>)` first, then `react.read(<materialized fi:...>)`.

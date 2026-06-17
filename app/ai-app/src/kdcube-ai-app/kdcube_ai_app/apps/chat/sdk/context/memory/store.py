@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, Optional, Sequence
@@ -21,7 +22,14 @@ from .models import (
     normalize_terms,
     normalize_visibility,
 )
-from .scoring import build_canonical_key, compute_memory_scores, event_weight, rank_candidate, search_query_terms
+from .scoring import (
+    DEFAULT_MEMORY_SCORING,
+    build_canonical_key,
+    compute_memory_scores,
+    event_weight,
+    rank_candidate,
+    search_query_terms,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +63,11 @@ def _schema_from_scope(tenant: str, project: str) -> str:
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _new_memory_id(now: Optional[datetime] = None) -> str:
+    ts = (now or _utc_now()).strftime("%Y-%m-%d-%H-%M-%S")
+    return f"mem_{ts}-{time.time_ns() % 1_000_000_000:09d}"
 
 
 def _coerce_datetime(value: Any, *, default: Optional[datetime] = None) -> datetime:
@@ -402,10 +415,14 @@ class UserMemoryStore:
         now = _utc_now()
         results: list[MemorySearchResult] = []
         relevance_requested = bool(str(request.query or "").strip() or normalize_terms(request.labels) or normalize_terms(request.keywords))
-        try:
-            min_relevance_score = max(0.0, min(1.0, float(request.min_relevance_score or 0.0)))
-        except Exception:
-            min_relevance_score = 0.0
+        scoring_overrides: dict[str, float] = {
+            "half_life_days": request.half_life_days,
+            "min_relevance_score": request.min_relevance_score,
+        }
+        if request.factor_weights:
+            scoring_overrides.update(dict(request.factor_weights))
+        scoring = DEFAULT_MEMORY_SCORING.merged(**scoring_overrides)
+        min_relevance_score = max(0.0, min(1.0, float(scoring.min_relevance_score or 0.0)))
         for row in rows:
             if mode == "recent":
                 score = 1.0
@@ -437,7 +454,7 @@ class UserMemoryStore:
                     requested_keywords=request.keywords,
                     row=row,
                     text_rank=float(row.get("text_rank") or 0.0),
-                    half_life_days=request.half_life_days,
+                    config=scoring,
                     now=now,
                 )
                 if relevance_requested and min_relevance_score > 0:
@@ -2170,7 +2187,7 @@ class UserMemoryStore:
             last_event_at=now,
             pinned=bool(signal.get("pinned")),
         )
-        memory_id = f"mem_{uuid.uuid4().hex}"
+        memory_id = _new_memory_id(now)
         row = await con.fetchrow(
             f"""
             INSERT INTO {self.schema}.{MEMORY_TABLE} (

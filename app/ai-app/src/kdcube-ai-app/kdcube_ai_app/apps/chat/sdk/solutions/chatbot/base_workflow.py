@@ -907,6 +907,7 @@ class BaseWorkflow():
                 last_event_at = getattr(memory, "last_event_at", None)
                 compact.append({
                     "id": str(getattr(memory, "id", "") or ""),
+                    "object_ref": f"mem:record:{str(getattr(memory, 'id', '') or '')}",
                     "bundle_id": str(getattr(mem_scope, "bundle_id", "") or ""),
                     "memory": str(getattr(memory, "memory", "") or ""),
                     "context": str(getattr(memory, "context", "") or ""),

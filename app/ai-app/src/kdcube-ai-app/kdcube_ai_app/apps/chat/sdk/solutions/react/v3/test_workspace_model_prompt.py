@@ -292,8 +292,7 @@ def test_default_lite_system_instruction_workspace_exec_profile_adds_exec_guidan
 def test_multi_action_protocol_teaches_strategy_trait_contract():
     """The multi-action protocol must teach the trait harness contract:
     max two actions, strategy traits from the catalog, neutral tools may pair
-    with a final close, memory record/confirm/retire are neutral when cataloged
-    that way, and a separate complete action is distinct from an embedded
+    with a final close, namespace-specific neutral overrides are honored, and a separate complete action is distinct from an embedded
     final_answer. It must NOT carry the old "memory solo / state-change /
     complete-is-exploitation / tool+complete always forbidden" language.
     """
@@ -312,8 +311,8 @@ def test_multi_action_protocol_teaches_strategy_trait_contract():
     assert "explor               ok      no       ok       no" in text  # the strategy matrix
     assert "exploit              ok      ok       ok       no" in text
     assert "staged work" in text
-    assert "are neutral when the catalog marks them" in text
-    assert "memory.record_memory" in text
+    assert "effective namespace trait marks the concrete operation" in text
+    assert "memory.record_memory" not in text
     assert "share its round only with a NEUTRAL tool action" in text
     # Embedded final_answer in a tool JSON is distinct from a separate complete.
     assert "emitted as a SEPARATE second <channel:action>" in text

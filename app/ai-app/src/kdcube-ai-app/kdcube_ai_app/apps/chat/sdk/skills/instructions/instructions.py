@@ -107,28 +107,28 @@ INTERNAL_NOTES_CONSUMER = """
 - Treat them as high‑signal memory beacons. Use them when planning or answering when relevant.
 """
 
-DURABLE_USER_MEMORY_POLICY = """
-[DURABLE USER MEMORY — POLICY]
-- Durable user memory is user-visible, editable, and cross-conversation.
-- It is not the same as Internal Memory Beacons.
-- Use durable user memory only for stable user-visible facts, preferences, durable decisions, reusable anchors, specs, milestones, or long-lived state.
-- Durable memory authoring rule: `memory` = compact trigger first + rule; `context` = why this exists / provenance / examples only.
-- Current user instructions and visible turn context override memory if they conflict.
-- Do not create, update, or retire durable user memory unless memory write/proposal tools are available and the announced write policy allows it.
-- If durable memory writes are disabled, do not simulate them with internal files or final-answer promises.
-- Durable memory write/proposal tools such as `memory.record_memory`, `memory.confirm_memory`,
-  and `memory.retire_memory` are neutral actions for same-round compatibility. They record runtime
-  bookkeeping and do not provide evidence that a sibling action can consume in the same round.
-- After a durable memory write, inspect the visible tool result in the next round before acknowledging
-  success. If the write failed or is not visible, do not claim it was saved.
-- Do not advertise durable-memory writes in root `notes` like "saving memory" or "memory saved".
-  `notes` are user-visible; repeated memory/protocol-recovery notes make the assistant look stuck.
-  If the user asked you to remember something, acknowledge it once in a later clean final_answer
-  only after the write result is visible and successful.
-- For current-task or current-conversation recovery, use Internal Memory Beacons instead.
-- If proposal-only mode is enabled, proposals are not active memory; they require user, reconciler, or policy confirmation.
-- If explicit-user-request mode is enabled, write/propose durable memory only when the user explicitly asks to remember, forget, update, save, or pin something.
-"""
+# --- NOTE: durable user memory policy moved to kdcube_ai_app.apps.chat.sdk.context.memory.instructions so the memory component contributes it only when memory/named-service memory is configured. ---
+# [DURABLE USER MEMORY — POLICY]
+# - Durable user memory is user-visible, editable, and cross-conversation.
+# - It is not the same as Internal Memory Beacons.
+# - Use durable user memory only for stable user-visible facts, preferences, durable decisions, reusable anchors, specs, milestones, or long-lived state.
+# - Durable memory authoring rule: `memory` = compact trigger first + rule; `context` = why this exists / provenance / examples only.
+# - Current user instructions and visible turn context override memory if they conflict.
+# - Do not create, update, or retire durable user memory unless memory write/proposal tools are available and the announced write policy allows it.
+# - If durable memory writes are disabled, do not simulate them with internal files or final-answer promises.
+# - Durable memory write/proposal tools such as `memory.record_memory`, `memory.confirm_memory`,
+#   and `memory.retire_memory` are neutral actions for same-round compatibility. They record runtime
+#   bookkeeping and do not provide evidence that a sibling action can consume in the same round.
+# - After a durable memory write, inspect the visible tool result in the next round before acknowledging
+#   success. If the write failed or is not visible, do not claim it was saved.
+# - Do not advertise durable-memory writes in root `notes` like "saving memory" or "memory saved".
+#   `notes` are user-visible; repeated memory/protocol-recovery notes make the assistant look stuck.
+#   If the user asked you to remember something, acknowledge it once in a later clean final_answer
+#   only after the write result is visible and successful.
+# - For current-task or current-conversation recovery, use Internal Memory Beacons instead.
+# - If proposal-only mode is enabled, proposals are not active memory; they require user, reconciler, or policy confirmation.
+# - If explicit-user-request mode is enabled, write/propose durable memory only when the user explicitly asks to remember, forget, update, save, or pin something.
+DURABLE_USER_MEMORY_POLICY = ""
 
 EXTERNAL_TURN_EVENTS_GUIDE = """
 [LIVE TURN EVENTS — FOLLOWUP & STEER]
@@ -931,6 +931,8 @@ REACT_SKILL_SELECTION_GUIDE = """
   only the output-format skills needed to package the result.
 """
 
+# --- NOTE: retired memory-specific strategy wording; generic ReAct now refers to catalog/effective namespace traits. ---
+# - neutral = neither produces evidence a sibling needs nor consumes a sibling's unseen result. Durable memory write/proposal tools (`memory.record_memory`, `memory.confirm_memory`, `memory.retire_memory`) are neutral when the catalog marks them `strategy: neutral`.
 ACTION_CAUSALITY_AND_STRATEGY = """
 [ROUND / ACTION CAUSALITY — CRITICAL STRATEGY RULE (HARD)]
 This block is about WHEN actions may share a round, not about how to format them. It is the strategic foundation; the rest of your protocol is the technique.
@@ -959,7 +961,7 @@ Canonical violation families:
 Each tool's strategy trait is shown in the tool catalog. Classify by what the action does with same-round evidence — PRODUCES a result you or a sibling will read → exploration; CONSUMES data already visible before this response → exploitation; does NEITHER → neutral; no catalog strategy → unknown. This is ordered: exploration followed by exploitation is `g(f())` and must wait because the exploitation would consume the explore's not-yet-visible result. Exploitation followed by exploration is allowed when it is staged work: finish/write/render one already-supported part, then begin additional or next-step research whose result will be inspected later.
 - exploration = REQUESTS data you will inspect (read, fetch, search, memory-search).
 - exploitation = USES data already visible (write, render, patch).
-- neutral = neither produces evidence a sibling needs nor consumes a sibling's unseen result. Durable memory write/proposal tools (`memory.record_memory`, `memory.confirm_memory`, `memory.retire_memory`) are neutral when the catalog marks them `strategy: neutral`.
+- neutral = neither produces evidence a sibling needs nor consumes a sibling's unseen result. Component-owned or named-service operations are neutral only when the rendered tool catalog/effective namespace trait marks the concrete operation `strategy: neutral`.
 - unknown = no catalog strategy; goes ALONE.
 Same-round compatibility between two tool actions (`ok` = may share a round, `no` = separate rounds). This table is ORDERED: the row is the action already accepted earlier in the round; the column is the following candidate action. A tool counts as exploration if `exploration` is among its traits (same for exploitation):
 
@@ -974,6 +976,8 @@ Order matters: actions are judged in the order you emit them — the first alway
 """
 
 
+# --- NOTE: retired memory-specific good-shape example; durable memory now contributes its own named-service guidance when configured. ---
+#   - A neutral tool (e.g. `memory.record_memory`) then a SEPARATE `<channel:action>` with `action=complete`/`exit` — the canonical way to record and close in one round. Put the user message in that close action's `final_answer`, not inside the tool's `call_tool` object. If the close depends on the tool's success, wait for the result next round instead.
 MULTI_ACTION_INDEPENDENCE_AND_GOOD_SHAPES = """
 [MULTI-ACTION GATE — WHEN A ROUND MAY HOLD MORE THAN ONE ACTION]
 A round may hold AT MOST TWO actions. Two may share a round only when BOTH gates pass:
@@ -981,7 +985,7 @@ A round may hold AT MOST TWO actions. Two may share a round only when BOTH gates
 2. INDEPENDENCE gate: each action is fully determined by data already visible before this response began, and the pair passes "could B succeed and be correct even if A failed completely?" If not, split across rounds.
 
 [GOOD MULTI-ACTION SHAPES]
-  - A neutral tool (e.g. `memory.record_memory`) then a SEPARATE `<channel:action>` with `action=complete`/`exit` — the canonical way to record and close in one round. Put the user message in that close action's `final_answer`, not inside the tool's `call_tool` object. If the close depends on the tool's success, wait for the result next round instead.
+  - A neutral tool (for example, a durable-memory named-service write whose namespace-specific catalog trait is neutral) then a SEPARATE `<channel:action>` with `action=complete`/`exit` — the canonical way to record and close in one round. Put the user message in that close action's `final_answer`, not inside the tool's `call_tool` object. If the close depends on the tool's success, wait for the result next round instead.
   - Independent exploitations: PDF + PPTX + DOCX all consuming a source visible at the START of this round (produced EARLIER).
   - One exploration against several known paths, or several independent explorations.
 Visible timeline should read action -> result, then next action -> result.

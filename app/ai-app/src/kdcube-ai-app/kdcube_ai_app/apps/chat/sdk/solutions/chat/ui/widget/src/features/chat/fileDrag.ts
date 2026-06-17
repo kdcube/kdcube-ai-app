@@ -10,6 +10,15 @@ export function isDurableFiRef(ref: string): boolean {
   return DURABLE_FI_REF.test(ref)
 }
 
+export function isDirectDownloadObjectRef(ref: string): boolean {
+  return String(ref || '').trim().startsWith('fi:') && isDurableFiRef(ref)
+}
+
+export function namespaceFromObjectRef(ref: string): string {
+  const match = String(ref || '').trim().match(/^([a-z][a-z0-9_.-]*):/i)
+  return match?.[1]?.toLowerCase() || ''
+}
+
 export interface ChatFileDragInput {
   ref: string
   filename: string
@@ -47,6 +56,11 @@ export function chatFileDragMessage(input: ChatFileDragInput) {
   }
 }
 
+function postParentDragMessage(message: Record<string, unknown>): void {
+  if (typeof window === 'undefined' || !window.parent || window.parent === window) return
+  window.parent.postMessage(message, '*')
+}
+
 export function setChatFileDragData(dataTransfer: DataTransfer, input: ChatFileDragInput): void {
   const message = chatFileDragMessage(input)
   dataTransfer.effectAllowed = 'copy'
@@ -55,4 +69,12 @@ export function setChatFileDragData(dataTransfer: DataTransfer, input: ChatFileD
   if (input.ref) {
     dataTransfer.setData('text/uri-list', input.ref)
   }
+  postParentDragMessage({
+    type: 'kdcube-canvas-ingress-drag-start',
+    source: 'chat-widget',
+    payload: message.payload,
+  })
+  window.addEventListener('dragend', () => {
+    postParentDragMessage({ type: 'kdcube-canvas-ingress-drag-end', source: 'chat-widget' })
+  }, { once: true })
 }

@@ -10,13 +10,32 @@ from ..store import UserMemoryStore
 
 MEMORY_RESOLVER_NAME = "sdk.memory"
 MEMORY_OBJECT_NAMESPACE = "mem"
+MEMORY_RECORD_REF_PREFIX = "mem:record:"
 
 
 def memory_id_from_ref(ref: str) -> str:
     value = str(ref or "").strip()
+    value = value.split("?", 1)[0].split("#", 1)[0].strip("/")
+    if value.startswith(MEMORY_RECORD_REF_PREFIX):
+        return value[len(MEMORY_RECORD_REF_PREFIX):].strip("/")
     if value.startswith("mem:"):
-        return value.split(":", 1)[1].split("?", 1)[0].split("#", 1)[0].strip("/")
+        return value.split(":", 1)[1].strip("/")
+    if value.startswith("me:"):
+        return value.split(":", 1)[1].strip("/")
     return ""
+
+
+def memory_ref(memory_id: str) -> str:
+    clean = str(memory_id or "").strip().split("?", 1)[0].split("#", 1)[0].strip("/")
+    return f"{MEMORY_RECORD_REF_PREFIX}{clean}" if clean else ""
+
+
+def canonical_memory_ref(ref_or_id: str, *, allow_bare: bool = False) -> str:
+    raw = str(ref_or_id or "").strip()
+    memory_id = memory_id_from_ref(ref_or_id)
+    if not memory_id and allow_bare:
+        memory_id = raw.split("?", 1)[0].split("#", 1)[0].strip("/")
+    return memory_ref(memory_id)
 
 
 def memory_ref_capabilities() -> dict[str, bool]:
@@ -26,7 +45,7 @@ def memory_ref_capabilities() -> dict[str, bool]:
 def memory_record_to_object_payload(record: MemoryRecord) -> dict[str, Any]:
     return {
         "id": record.id,
-        "object_ref": f"mem:{record.id}",
+        "object_ref": memory_ref(record.id),
         "scope": {
             "tenant": record.scope.tenant,
             "project": record.scope.project,
@@ -95,11 +114,13 @@ async def resolve_memory_ref_action(
     ).strip()
     action = str(payload.get("action") or "capabilities").strip().lower()
     scope = scope.normalized()
-    base = _base_response(ref=ref, action=action, scope=scope)
+
+    memory_id = memory_id_from_ref(ref)
+    canonical_ref = memory_ref(memory_id) if memory_id else ref
+    base = _base_response(ref=canonical_ref, action=action, scope=scope)
     if action in {"capabilities", "describe"}:
         return base
 
-    memory_id = memory_id_from_ref(ref)
     if not memory_id:
         return {**base, "ok": False, "error": "object_ref_required", "status": 400}
 
@@ -132,7 +153,7 @@ async def resolve_memory_ref_action(
                 "type": "kdcube.ui.object.open.requested",
                 "subject": "ui.object.open.requested",
                 "source": "object_resolver",
-                "object_ref": ref,
+                "object_ref": memory_ref(record.id),
                 "target_surface": "sdk.memory.viewer",
                 "mode": "focus",
                 "memory_id": record.id,
@@ -144,8 +165,11 @@ async def resolve_memory_ref_action(
 
 __all__ = [
     "MEMORY_OBJECT_NAMESPACE",
+    "MEMORY_RECORD_REF_PREFIX",
     "MEMORY_RESOLVER_NAME",
+    "canonical_memory_ref",
     "memory_id_from_ref",
+    "memory_ref",
     "memory_record_to_object_payload",
     "memory_ref_capabilities",
     "resolve_memory_ref_action",

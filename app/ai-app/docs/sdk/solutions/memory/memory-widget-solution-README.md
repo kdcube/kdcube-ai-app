@@ -4,7 +4,7 @@ title: "Memory Widget Solution"
 summary: "How to mount the reusable SDK memory widget in a bundle, the host postMessage commands it accepts, its drag/context payload, and how mem: pins resolve. Memory semantics (tiers, reconciliation, snapshots) live in the memory operational docs."
 status: draft
 tags: ["sdk", "solutions", "memory", "widget", "bundle", "iframe", "data-bus"]
-updated_at: 2026-06-11
+updated_at: 2026-06-17
 keywords:
   [
     "sdk memory widget",
@@ -62,6 +62,76 @@ memories** (`all_user_memories`) and renders no scope selector. A bundle that
 disallows cross-bundle reads (`allow_all_user_memories=false`) makes the widget
 fall back to `current_bundle` automatically. The `default_scope_filter` mount
 key is inert and retained only for back-compat.
+
+## Search Ranking
+
+The widget search path is not the named-service tool path. It calls the bundle
+operation `memories_widget_data`, which builds a `MemorySearchRequest` and then
+uses the same backend store/scorer as named-service memory search:
+
+```text
+memory widget UI
+  -> memories_widget_data
+  -> UserMemoryStore.search()
+  -> rank_candidate()
+```
+
+For non-empty queries, `rank_candidate()` computes one clamped weighted sum:
+
+```text
+score = clamp(
+  0.30 * semantic
++ 0.22 * text
++ 0.13 * label
++ 0.11 * salience
++ 0.08 * importance
++ 0.07 * confidence
++ 0.05 * freshness
++ 0.04 * confirmation
+)
+```
+
+The factors are:
+
+| Factor | Meaning |
+| --- | --- |
+| `semantic` | Embedding/cosine similarity when the query embedding is available. |
+| `text` | Max of PostgreSQL text rank and token-overlap score. |
+| `label` | Label/keyword overlap with requested labels or keywords. |
+| `salience` | Stored memory salience score. |
+| `importance` | Stored memory importance score. |
+| `confidence` | Stored memory confidence score. |
+| `freshness` | Recency decay from `last_event_at` or `updated_at`; default half-life is 45 days. |
+| `confirmation` | Stored confirmation rate. |
+
+If semantic embedding is unavailable or denied by economics, the widget search
+still runs with lexical/text recall and the remaining stored quality factors.
+
+Semantic can also be turned **off** deliberately: a `factor_weights.semantic_weight`
+of `0` (or less) drops the semantic factor from the sum **and skips the query embed
+entirely** — no embedder cost — so the search ranks on text + labels + the stored
+quality factors. This is the graceful "no embeddings / no budget" choice. Because
+memory ranks with a weighted sum (not a floor-based hybrid index), the off switch is
+the **weight = 0**, not a negative `min_relevance_score`; `min_relevance_score` is a
+separate floor on the final query relevance, not on the semantic factor.
+
+The widget applies one additional user-facing relevance guard for non-empty
+queries: `memory.widget.search_min_relevance_score`, default `0.58`. This is a
+floor over direct query relevance:
+
+```text
+max(semantic, text, label)
+```
+
+That means a memory can have high salience or importance but still be excluded
+from widget query results when it does not match the user's search text,
+embedding, labels, or keywords strongly enough. Named-service memory search
+does not apply the widget's `0.58` default unless the caller passes its own
+`min_relevance_score` filter.
+
+The named-service path can expose per-call `factor_weights` for `mem` /
+`mem:record`. The widget currently does not expose those tuning knobs in its UI
+request; it uses the default memory weights plus the widget relevance floor.
 
 ## Mounting
 

@@ -42,8 +42,8 @@ configured through `FusionWeights` / `IndexConfig`.
 
 | Ranker | Source | Always runs? |
 |---|---|---|
-| **lexical** | SQLite FTS5 `bm25` over the document text | yes (and is the degraded fallback) |
-| **semantic** | cosine over embed-on-write vectors | only when the economical guard clears |
+| **lexical** | **SQLite FTS5** `bm25` over the document text | yes (and is the degraded fallback) |
+| **semantic** | cosine over embed-on-write vectors — **FAISS** `IndexFlatIP` on L2-normalized vectors (inner product = cosine). The index file lives on the shared filesystem (EFS), so it is shared across the cluster; maintenance (rebuild/write) is serialized with a cluster critical section keyed on the index scope (for canvas pins: per-user, since one index file holds all of a user's boards). A Redis-cached faiss store is the alternative when no shared FS is available. | only when enabled (`min_semantic_score >= 0`) **and** the economical guard clears |
 | **recency** | exponential decay on the document timestamp | in `hybrid` mode, over the fused candidate set |
 
 ## Recency decay
@@ -97,11 +97,31 @@ nothing. The knobs (`IndexConfig`):
 ```python
 semantic_enabled: bool = True       # master switch
 semantic_min_chars: int = 2         # don't embed trivial queries
-min_semantic_score: float = 0.0     # drop cosine hits at/below this floor
-                                    # (vector search always returns something)
+min_semantic_score: float = 0.0     # semantic relevance floor — see regimes below
 semantic_guard: Callable[[str], bool | Awaitable[bool]] | None = None
 query_cache_size: int = 128         # LRU of query -> vector (don't re-embed repeats)
 ```
+
+### `min_semantic_score` — one knob, three regimes
+
+Vector search **always returns the nearest rows** (every document has some positive
+cosine to any query), so `min_semantic_score` is not a weight — it is the
+semantic arm's **match boundary**:
+
+| Value | Meaning |
+|---|---|
+| `< 0` (e.g. `-1`) | **Semantic factor OFF** — the arm is skipped entirely; search runs on lexical + recency only, at **no embed cost**. The explicit "semantic unavailable / don't consider it" choice for a scope with no embeddings or no budget. |
+| `= 0` (default) | Semantic **on, no floor** — keeps every nearest row. Fine for a *ranked-list* UX; for a *match/no-match* (filter / dim) UX this lets an unrelated query match the whole collection. |
+| `> 0` (e.g. `0.3`) | Semantic **on, with floor** — drops hits at/below this cosine. Use for filter/dim UX where "no match" must mean nothing is highlighted. |
+
+Turning the factor off is safe because **lexical has its own intrinsic boundary**
+(a document either contains the query tokens or it doesn't) and **recency only
+reranks the matched candidate set** — it never widens it. So disabling semantic
+narrows you to lexical relevance; it never produces the "everything matches" result.
+
+The semantic arm is also **fail-soft**: if the embedder or vector store errors at
+query time, the search logs and degrades to lexical rather than failing — runtime
+"semantic unavailable" is handled the same graceful way as an explicit `-1`.
 
 `semantic_guard` is the budget/quota hook. It may be **sync or async**, and it
 **fails closed** — any error means "skip the paid embed." Because it can be async,
@@ -123,7 +143,7 @@ All three share this scoring and differ only by `flow` and how they compose
 
 | Collection | Flow label | Notes |
 |---|---|---|
-| **Canvas pins** | `canvas.pins.search` | per-user SQLite + brute-force vectors; indexes the card-level snapshot on canvas update; see [Pin Integration](../canvas/pin-integration-README.md) |
+| **Canvas pins** | `canvas.pins.search` | per-user SQLite + per-user faiss (`pins.index.faiss`); indexes the card-level snapshot on canvas update; see [Pin Integration](../canvas/pin-integration-README.md) |
 | **Task-tracker issues** | `task_tracker.issue.search` | gates both issue search and duplicate-candidate detection |
 | **Memory search** | memory flow | the original `_memory_search_embed_or_downgrade` pattern this generalizes |
 

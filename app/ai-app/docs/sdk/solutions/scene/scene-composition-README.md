@@ -116,11 +116,16 @@ Source surface or host
 | Runtime config delivery | Scene host relay. |
 | Local surface messages | Scene host broker. |
 | Panel size, drag, z-order, shell CSS | Scene host. |
+| Namespace visual styles | Scene host config, passed through to surfaces by root namespace. |
 | Object identity and semantics | Namespace provider/resolver. |
 | What a surface renders and how it behaves | The target surface. |
 
 The host is a composition and transport layer. It does not read objects or
 implement namespace behavior. It relays config and routes commands.
+Namespace styles are presentation hints only. A scene may color `mem:*` cards
+green and `task:*` cards blue, but that does not make the scene responsible for
+memory or task semantics; object actions still go through the namespace
+provider/resolver.
 
 ## Reusable Runtime
 
@@ -336,6 +341,11 @@ The scene still does not know what a task issue is. It knows that
 `app.issue.viewer` is registered, opens that surface, and passes the normalized
 command to it. The target surface decides whether that means a read-only detail
 view, an editor, a wizard, or something else.
+
+The same composition rule applies when the source object started as a search
+result or context chip. The object keeps one canonical `object_ref`; the scene
+only preserves that identity, applies optional root-namespace presentation
+styles, and routes the provider-declared UI event to the registered surface.
 
 ## Reference Implementation
 

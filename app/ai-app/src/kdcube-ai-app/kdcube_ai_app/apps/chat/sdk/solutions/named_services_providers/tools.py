@@ -12,6 +12,7 @@ from typing import Annotated, Any, Dict, Mapping
 from urllib.parse import unquote, urlparse
 
 from kdcube_ai_app.apps.chat.sdk.event_identity import DEFAULT_REACT_AGENT_ID, normalize_agent_id
+from kdcube_ai_app.apps.chat.sdk.runtime.tool_traits import normalize_tool_traits
 from kdcube_ai_app.apps.chat.sdk.runtime.workdir_discovery import resolve_output_dir, resolve_workdir
 from kdcube_ai_app.apps.chat.sdk.solutions.react.artifacts import (
     build_logical_artifact_path,
@@ -382,6 +383,35 @@ def _snapshot_search_scopes() -> Dict[str, list[Dict[str, Any]]]:
     except Exception:
         LOGGER.debug("failed to log named-service search-scope snapshot", exc_info=True)
     return result
+
+
+def _snapshot_tool_traits_by_namespace(
+    *,
+    tool_name: str,
+    namespaces: list[str],
+) -> Dict[str, Dict[str, Any]]:
+    """Return namespace-specific effective trait overrides for one tool."""
+
+    tool_key = str(tool_name or "").strip()
+    if not tool_key:
+        return {}
+    out: Dict[str, Dict[str, Any]] = {}
+    for namespace in namespaces:
+        ns = _base_namespace(namespace)
+        if not ns:
+            continue
+        policy = named_service_namespace_client_tools_config(
+            _bundle_props(),
+            namespace=ns,
+            client_id=_client_id(),
+        )
+        raw_tool_traits = policy.get("tool_traits") if isinstance(policy, Mapping) else None
+        if not isinstance(raw_tool_traits, Mapping):
+            continue
+        traits = normalize_tool_traits(raw_tool_traits.get(tool_key) or {})
+        if traits:
+            out[ns] = traits
+    return out
 
 
 def _action_allowed(namespace: str, action: str) -> bool:
@@ -824,8 +854,6 @@ def list_tools() -> Dict[str, Dict[str, Any]]:
     visible: Dict[str, Dict[str, Any]] = {}
     search_scopes_by_namespace = _snapshot_search_scopes()
     for tool_name, meta in tools.items():
-        if tool_name == "object_action":
-            continue
         operation = _TOOL_OPERATIONS.get(tool_name)
         if not operation:
             continue
@@ -843,6 +871,12 @@ def list_tools() -> Dict[str, Dict[str, Any]]:
                 }
                 if visible_search_scopes:
                     tool_meta["search_scopes_by_namespace"] = visible_search_scopes
+            tool_traits_by_namespace = _snapshot_tool_traits_by_namespace(
+                tool_name=tool_name,
+                namespaces=applicable_namespaces,
+            )
+            if tool_traits_by_namespace:
+                tool_meta["tool_traits_by_namespace"] = tool_traits_by_namespace
             visible[tool_name] = {
                 **tool_meta,
             }

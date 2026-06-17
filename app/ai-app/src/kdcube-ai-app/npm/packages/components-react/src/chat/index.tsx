@@ -17,6 +17,4 @@
  * feature parity with the in-tree SDK widget UI.
  */
 export * from './binding.tsx'
-export { Chat } from './ui/index.ts'
-export { useChatViewModel } from './ui/context.tsx'
-export type { ChatViewModel } from './ui/viewModel.ts'
+export { Chat, type ChatProps, ChatShell, type ChatShellProps, useChatViewModel, type ChatViewModel } from './ui/index.ts'

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import re
 from typing import Awaitable, Callable, Dict, List, Optional, Any
 
 from kdcube_ai_app.apps.chat.sdk.solutions.react.tools.common import infer_format_from_path
@@ -650,7 +651,7 @@ class TimelineStreamer:
         plan_marker: str = "timeline_text",
         plan_format: str = "markdown",
         plan_artifact_name: str = "timeline_text.react.plan",
-        on_action_identity: Optional[Callable[[str, str], Awaitable[None]]] = None,
+        on_action_identity: Optional[Callable[..., Awaitable[None]]] = None,
     ) -> None:
         self.emit_delta = emit_delta
         self.agent = agent
@@ -742,8 +743,53 @@ class TimelineStreamer:
         tool_id = (self.tool_id_value or "").strip()
         if action == "call_tool" and not tool_id:
             return
+        tool_params = self._current_tool_params()
+        if action == "call_tool" and self._is_named_service_tool_id(tool_id) and not tool_params.get("namespace"):
+            return
         self.action_identity_reported = True
-        await self.on_action_identity(action, tool_id)
+        try:
+            await self.on_action_identity(action, tool_id, tool_params)
+        except TypeError:
+            await self.on_action_identity(action, tool_id)
+
+    @staticmethod
+    def _is_named_service_tool_id(tool_id: str) -> bool:
+        tid = str(tool_id or "").strip()
+        if not tid.startswith("named_services."):
+            return False
+        tool_name = tid.rsplit(".", 1)[-1]
+        return tool_name in {
+            "provider_about",
+            "list_objects",
+            "search_objects",
+            "get_object",
+            "host_file",
+            "object_schema",
+            "object_action",
+            "upsert_object",
+            "delete_object",
+        }
+
+    def _current_tool_params(self) -> Dict[str, Any]:
+        raw = (self.raw_json_buffer or "").strip()
+        if raw:
+            try:
+                parsed = json.loads(raw)
+            except Exception:
+                parsed = None
+            if isinstance(parsed, dict):
+                tool_call = parsed.get("tool_call") if isinstance(parsed.get("tool_call"), dict) else {}
+                params = tool_call.get("params") if isinstance(tool_call.get("params"), dict) else {}
+                if isinstance(params, dict):
+                    return dict(params)
+            match = re.search(r'"namespace"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', raw)
+            if match:
+                try:
+                    namespace = json.loads(f'"{match.group(1)}"')
+                except Exception:
+                    namespace = match.group(1)
+                return {"namespace": namespace}
+        return {}
 
     def _sources_signature(self, sources_list: List[Dict[str, object]]) -> tuple[int, int, int]:
         if not sources_list:

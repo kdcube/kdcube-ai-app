@@ -41,7 +41,7 @@ export interface HostEventMap {
   /** The component requests a host-level view change (compact/expanded/…). */
   'view-change': { view: string }
   /** The user asked to pin the active conversation to a board/canvas. */
-  'pin-conversation': { conversationId: string; title?: string; ref?: ObjectRef }
+  'pin-conversation': { conversationId: string; title?: string; ref?: ObjectRef; context?: ObjectRef; contexts?: ObjectRef[] }
   /** A backend canvas patch arrived on the chat stream; forward it to a board. */
   'canvas-patch': { event: Record<string, unknown> }
   /** Attached context chip(s) were removed; the host may sync the source surface. */

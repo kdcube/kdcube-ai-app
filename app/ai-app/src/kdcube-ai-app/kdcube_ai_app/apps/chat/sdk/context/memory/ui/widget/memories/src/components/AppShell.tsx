@@ -90,55 +90,57 @@ export function AppShell({
           {compact ? null : <h1>Memory notes</h1>}
           <p>{compact ? `${count} in scope` : `${count} records in scope`}</p>
         </div>
-        <label className={`memory-use-toggle ${compact ? 'sr-only' : ''}`}>
-          <input
-            type="checkbox"
-            checked={memoryUseEnabled}
-            onChange={onToggleMemoryUse}
-            disabled={saving}
-          />
-          <span>Use my memory</span>
-        </label>
-        {allowWrite && !compact ? (
-          <button type="button" className="primary-button" onClick={onCreate}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6 }}>
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-            New note
-          </button>
-        ) : null}
-        {!compact && onToggleMaintenance ? (
-          <button type="button" className="secondary-button header-maintenance-button" onClick={onToggleMaintenance}>
-            {maintenanceOpen ? 'Hide maintenance' : 'Show maintenance'}
-          </button>
-        ) : null}
-        {allowWrite && compact ? (
-          <button
-            type="button"
-            className="icon-button compact-add-button"
-            onClick={onCreate}
-            aria-label="Add memory"
-            title="Add memory"
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-          </button>
-        ) : null}
-        {compact && onExpand ? (
-          <button
-            type="button"
-            className="icon-button compact-expand-button"
-            onClick={onExpand}
-            aria-label="Expand memories"
-            title="Expand memories"
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M8 3H3v5M16 3h5v5M21 16v5h-5M3 16v5h5" />
-              <path d="M3 3l7 7M21 3l-7 7M21 21l-7-7M3 21l7-7" />
-            </svg>
-          </button>
-        ) : null}
+        <div className="app-header-actions">
+          <label className={`memory-use-toggle ${compact ? 'sr-only' : ''}`}>
+            <input
+              type="checkbox"
+              checked={memoryUseEnabled}
+              onChange={onToggleMemoryUse}
+              disabled={saving}
+            />
+            <span>Use my memory</span>
+          </label>
+          {allowWrite && !compact ? (
+            <button type="button" className="primary-button" onClick={onCreate}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 6 }}>
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              New note
+            </button>
+          ) : null}
+          {!compact && onToggleMaintenance ? (
+            <button type="button" className="secondary-button header-maintenance-button" onClick={onToggleMaintenance}>
+              {maintenanceOpen ? 'Hide maintenance' : 'Show maintenance'}
+            </button>
+          ) : null}
+          {allowWrite && compact ? (
+            <button
+              type="button"
+              className="icon-button compact-add-button"
+              onClick={onCreate}
+              aria-label="Add memory"
+              title="Add memory"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+            </button>
+          ) : null}
+          {compact && onExpand ? (
+            <button
+              type="button"
+              className="icon-button compact-expand-button"
+              onClick={onExpand}
+              aria-label="Expand memories"
+              title="Expand memories"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M8 3H3v5M16 3h5v5M21 16v5h-5M3 16v5h5" />
+                <path d="M3 3l7 7M21 3l-7 7M21 21l-7-7M3 21l7-7" />
+              </svg>
+            </button>
+          ) : null}
+        </div>
       </header>}
       {children}
     </main>

@@ -32,7 +32,7 @@ function hostControlsFromLocation(): boolean {
 
 function memRefsFromValue(value: unknown): string[] {
   if (!value || typeof value !== 'object') {
-    if (typeof value === 'string' && value.trim().startsWith('mem:')) return [value.trim()];
+    if (typeof value === 'string' && (value.trim().startsWith('mem:') || value.trim().startsWith('me:'))) return [value.trim()];
     return [];
   }
   const raw = value as Record<string, unknown>;
@@ -45,11 +45,14 @@ function memRefsFromValue(value: unknown): string[] {
     raw.id,
     data.object_ref,
     data.memory_id,
-  ].filter((item): item is string => typeof item === 'string' && item.trim());
-  const refs = direct.flatMap((item) => item.trim().startsWith('mem:') ? [item.trim()] : []);
+  ].filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+  const refs = direct.flatMap((item) => {
+    const text = item.trim();
+    return text.startsWith('mem:') || text.startsWith('me:') ? [text] : [];
+  });
   const kind = String(raw.kind || raw.type || '').trim();
   const rawMemoryId = typeof data.memory_id === 'string' ? data.memory_id.trim() : '';
-  if (kind.includes('memory') && rawMemoryId) refs.push(`mem:${normalizeMemoryRefs(rawMemoryId)[0] || rawMemoryId}`);
+  if (kind.includes('memory') && rawMemoryId) refs.push(`mem:record:${normalizeMemoryRefs(rawMemoryId)[0] || rawMemoryId}`);
   return refs;
 }
 
@@ -295,7 +298,7 @@ export default function App() {
           Memory use is off. Existing notes remain visible for review, export, or deletion.
         </div>
       ) : null}
-      <MemoryFilters />
+      <MemoryFilters maintenanceOpen={maintenanceOpen} />
       {compact || !maintenanceOpen ? null : <ReconciliationPanel />}
       {error ? (
         <div className="error-box dismissible-error">

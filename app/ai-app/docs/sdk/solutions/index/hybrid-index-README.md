@@ -64,14 +64,17 @@ future searchable collection.
 ```python
 from kdcube_ai_app.infra.index.sqlite import (
     HybridIndex, IndexConfig, Document, SearchHit, FusionWeights,
-    BruteForceVectorStore, LocalFaissStore, CachedFaissStore,
+    BruteForceVectorStore,
 )
+from kdcube_ai_app.infra.index.faiss import LocalFaissStore, CachedFaissStore
 
 idx = HybridIndex(IndexConfig(
     db_path=Path(".../collection.index.sqlite"),
     embed_fn=model_service.embed_texts,    # async batch embedder: List[str] -> List[List[float]]
     dim=1536,                              # text-embedding-3-small
-    vector_store=BruteForceVectorStore(),  # or LocalFaissStore(path) / CachedFaissStore(cache, scope)
+    vector_store=LocalFaissStore(".../collection.index.faiss"),   # production: file-backed faiss
+    #            CachedFaissStore(cache, scope)                   # cross-process / Redis-cached faiss
+    #            BruteForceVectorStore()                          # no-dep fallback (tests / no-faiss envs)
 ))
 
 await idx.upsert([Document(id="a:1", text="...", metadata={"board": "b1"}, timestamp=...)])
@@ -142,23 +145,28 @@ vectors, so they are interchangeable with no other change. Pick by scale:
 
 | Backend | Deps | Persistence | Use for |
 |---|---|---|---|
-| `BruteForceVectorStore` | none | volatile (in-memory) | per-user / per-board scales (tens–thousands of docs); fully testable without faiss |
-| `LocalFaissStore(path)` | faiss + numpy | file next to the SQLite | larger single-process / shared-filesystem collections |
-| `CachedFaissStore(cache, scope)` | faiss + numpy | cross-process via `FaissProjectCache` (Redis-coordinated) | collections shared across workers |
+| `LocalFaissStore(path)` | faiss + numpy | file next to the SQLite (on EFS → shared across the cluster) | **production default** — file-backed faiss; maintenance guarded by a [critical section](../../../service/synch-mechanisms/critical-section-README.md) on the scope |
+| `CachedFaissStore(cache, scope)` | faiss + numpy | cross-process via `FaissProjectCache` (Redis-coordinated) | deployments with no shared filesystem |
+| `BruteForceVectorStore` | none | volatile (in-memory) | no-dep fallback for tests / no-faiss envs — **not a production path** |
 
-`faiss` and `numpy` are optional imports; the brute-force default needs neither, so
-the index is importable and unit-testable in any environment. The faiss stores use
-`IndexFlatIP + IDMap2` (exact inner product on normalized vectors = cosine).
+`faiss` and `numpy` are optional imports; the brute-force fallback needs neither, so
+the index is importable and unit-testable in any environment without faiss installed.
+The faiss stores use `IndexFlatIP + IDMap2` (exact inner product on normalized
+vectors = cosine).
 
 ## Search modes and degradation
 
 `search(query, mode="hybrid"|"lexical"|"semantic")` defaults to `hybrid`. The
 semantic pass is **economically gated** (the embedder call costs money): if the
 guard denies or the query is trivial, the semantic pass is skipped and the query
-degrades to lexical + recency — still returning results, at no embed cost. A repeated
+degrades to lexical + recency — still returning results, at no embed cost. The
+semantic factor can also be turned **off** outright (`min_semantic_score < 0`, e.g.
+`-1`) for a scope with no embeddings/budget, and it is **fail-soft**: a runtime
+embedder/vector error degrades to lexical instead of failing the search. A repeated
 query is served from a small LRU query→vector cache (pagination, debounced typeahead,
-the same term across boards do not re-pay the embedder). The gating knobs and the
-fusion math are in [Hybrid Scoring](./hybrid-scoring-README.md).
+the same term across boards do not re-pay the embedder). The gating knobs (including
+the three `min_semantic_score` regimes) and the fusion math are in
+[Hybrid Scoring](./hybrid-scoring-README.md).
 
 ## What it does not do
 

@@ -1,6 +1,8 @@
 import { activateContextPin, contextPinActionNotice } from './contextPinActions.ts'
 import type { ContextChip } from './contextChips.ts'
+import { contextChipClass, contextChipStyle } from './contextChipVisuals.ts'
 import type { BannerTone } from '../../service.ts'
+import { settings } from '../../settings.ts'
 
 export function ContextInlineChip({
   context,
@@ -19,7 +21,8 @@ export function ContextInlineChip({
   return (
     <button
       type="button"
-      className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-[var(--purple)] bg-[var(--purple-pale)] px-2 py-0.5 text-[11px] font-semibold text-[var(--purple)] hover:bg-white"
+      className={`k-context-chip ${contextChipClass(context)}`}
+      style={contextChipStyle(context, settings.getNamespaceStyles())}
       title={typeof context.summary === 'string' ? context.summary : context.label}
       onClick={handleActivate}
     >
@@ -27,7 +30,9 @@ export function ContextInlineChip({
         <path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
         <line x1="7" y1="7" x2="7.01" y2="7" />
       </svg>
-      {context.label}
+      <span className="k-context-chip-text">
+        <strong>{context.label}</strong>
+      </span>
     </button>
   )
 }

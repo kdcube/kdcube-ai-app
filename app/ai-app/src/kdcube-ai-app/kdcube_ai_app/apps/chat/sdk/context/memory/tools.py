@@ -46,7 +46,7 @@ from typing import Annotated, Any, Awaitable, Callable, Dict, Optional, Sequence
 from kdcube_ai_app.apps.chat.sdk.events import artifact_namespace_rehoster, event_source_declaration, event_source_reader
 from kdcube_ai_app.apps.chat.sdk.solutions.react.events import structured_result_source_policies
 
-from .events.resolver import memory_id_from_ref
+from .events.resolver import memory_id_from_ref, memory_ref
 from .events.policies import (  # noqa: F401 - discovered by event-source subsystem
     MEMORY_CONTEXT_BLOCK_POLICY_ID,
     MEMORY_CONTEXT_COMPACTION_POLICY_ID,
@@ -86,7 +86,7 @@ _MEMORY_TOOL_EVENT_SOURCE_DESCRIPTIONS: Dict[str, str] = {
         "Search durable cross-conversation user memory and return structured memory or event rows."
     ),
     "recent_memories": "Return recent durable user memories for the current configured scope.",
-    "read_memory": "Read one durable user memory by mem: URI or bare memory id.",
+    "read_memory": "Read one durable user memory by mem:record URI or bare memory id.",
     "record_memory": "Create or refine durable user memory when the bundle config permits writes.",
     "confirm_memory": "Confirm an existing durable memory by id when the bundle config permits writes.",
     "retire_memory": "Retire an existing durable memory by id when the bundle config permits writes.",
@@ -132,7 +132,7 @@ def list_event_sources() -> list[Any]:
                     "event_policy_id": MEMORY_CONTEXT_COMPACTION_POLICY_ID,
                 },
             ],
-            description="Attached durable user-memory context refs such as mem:<id>.",
+            description="Attached durable user-memory context refs such as mem:record:<id>.",
             kind="event.context",
         )
     ]
@@ -248,6 +248,7 @@ def _record_payload(result: Any) -> Dict[str, Any]:
     memory = nested_memory if hasattr(nested_memory, "id") and hasattr(nested_memory, "scope") else result
     payload = {
         "id": memory.id,
+        "object_ref": memory_ref(str(memory.id)),
         "scope": {
             "tenant": memory.scope.tenant,
             "project": memory.scope.project,
@@ -472,15 +473,15 @@ class UserMemoryTools:
         except Exception as exc:
             return _error("recent_memories_failed", str(exc))
 
-    @kernel_function(name="read_memory", description="Read one durable user memory by mem: URI or bare memory id.")
+    @kernel_function(name="read_memory", description="Read one durable user memory by mem:record URI or bare memory id.")
     async def read_memory(
         self,
-        object_ref: Annotated[str, "Memory object ref such as mem:<id>, or a bare durable memory id."],
+        object_ref: Annotated[str, "Memory object ref such as mem:record:<id>, or a bare durable memory id."],
         visible_to_user: Annotated[str, "Optional boolean string filter: true|false|yes|no|1|0. Empty means user-visible only."] = "true",
         scope_filter: Annotated[str, "Scope filter: current_bundle|all_user_memories|global_only|current_bundle_or_global. Empty uses bundle config default."] = "",
         include_events: Annotated[str, "Optional boolean string. true includes recent memory evidence/update events."] = "false",
         event_limit: Annotated[int, "Maximum event rows when include_events=true. Keep small; default 5."] = 5,
-    ) -> Annotated[Dict[str, Any], "Envelope. Success returns {ok:true,object_ref:'mem:<id>',memory:{...}}. Failure returns {ok:false,error,message}."]:
+    ) -> Annotated[Dict[str, Any], "Envelope. Success returns {ok:true,object_ref:'mem:record:<id>',memory:{...}}. Failure returns {ok:false,error,message}."]:
         try:
             store, scope, _raw = await self._store_and_scope()
             LOGGER.info(
@@ -505,11 +506,11 @@ class UserMemoryTools:
             memory_id = memory_id_from_ref(object_ref) or str(object_ref or "").strip()
             if not memory_id:
                 LOGGER.info("[memory.read_memory] missing_object_ref object_ref=%s user_id=%s", object_ref, scope.user_id)
-                return _error("object_ref_required", "Provide a mem:<id> object_ref or a memory id.")
-            # A mem:<id> URI is already a fully-qualified user-memory object
+                return _error("object_ref_required", "Provide a mem:record:<id> object_ref or a memory id.")
+            # A mem:record:<id> URI is already a fully-qualified user-memory object
             # reference. Resolve explicit refs across the user's visible memory
             # scope unless the caller deliberately narrows the scope.
-            explicit_ref = str(object_ref or "").strip().startswith("mem:")
+            explicit_ref = str(object_ref or "").strip().startswith(("mem:", "me:"))
             default_scope_filter = "all_user_memories" if explicit_ref else self._config.default_scope_filter
             resolved_scope_filter = normalize_scope_filter(scope_filter or default_scope_filter)
             LOGGER.info(
@@ -538,7 +539,7 @@ class UserMemoryTools:
                 return _error("memory_not_found", f"Memory {memory_id!r} was not found")
             payload = _record_payload(record)
             result = _ok({
-                "object_ref": f"mem:{payload['id']}",
+                "object_ref": memory_ref(str(payload["id"])),
                 "memory": payload,
                 "count": 1,
             })
@@ -856,7 +857,12 @@ async def recent_memories(
 @event_source_reader(
     namespace="mem",
     event_source_id="{alias}.read_memory",
-    description="Resolve a mem:<id> ref into the memory.read_memory event-source payload.",
+    description="Resolve a mem:record:<id> ref into the memory.read_memory event-source payload.",
+)
+@event_source_reader(
+    namespace="me",
+    event_source_id="{alias}.read_memory",
+    description="Resolve a legacy me:<id> ref into the memory.read_memory event-source payload.",
 )
 async def read_memory_event_ref(
     *,
@@ -871,12 +877,12 @@ async def read_memory_event_ref(
 
 
 async def read_memory(
-    object_ref: Annotated[str, "Memory object ref such as mem:<id>, or a bare durable memory id."],
+    object_ref: Annotated[str, "Memory object ref such as mem:record:<id>, or a bare durable memory id."],
     visible_to_user: Annotated[str, "Optional boolean string filter: true|false|yes|no|1|0. Empty means user-visible only."] = "true",
     scope_filter: Annotated[str, "Scope filter: current_bundle|all_user_memories|global_only|current_bundle_or_global. Empty uses bundle config default."] = "",
     include_events: Annotated[str, "Optional boolean string. true includes recent memory evidence/update events."] = "false",
     event_limit: Annotated[int, "Maximum event rows when include_events=true. Keep small; default 5."] = 5,
-) -> Annotated[Dict[str, Any], "Envelope. Success returns {ok:true,object_ref:'mem:<id>',memory:{...}}. Failure returns {ok:false,error,message}."]:
+) -> Annotated[Dict[str, Any], "Envelope. Success returns {ok:true,object_ref:'mem:record:<id>',memory:{...}}. Failure returns {ok:false,error,message}."]:
     """Read one durable user memory for the current runtime user scope."""
     tools = _configured_tools()
     if tools is None:
@@ -897,7 +903,11 @@ def _safe_rehost_segment(value: str, *, default: str = "memory") -> str:
 
 @artifact_namespace_rehoster(
     namespace="mem",
-    description="Materialize a mem:<id> ref as a JSON snapshot in the current ReAct artifact workspace.",
+    description="Materialize a mem:record:<id> ref as a JSON snapshot in the current ReAct artifact workspace.",
+)
+@artifact_namespace_rehoster(
+    namespace="me",
+    description="Materialize a legacy me:<id> memory ref as a JSON snapshot in the current ReAct artifact workspace.",
 )
 async def rehost_memory_ref(
     *,
@@ -1018,7 +1028,7 @@ def list_tools() -> Dict[str, Dict[str, Any]]:
         },
         "read_memory": {
             "callable": read_memory,
-            "description": "Read one durable user memory by mem: URI or bare memory id.",
+            "description": "Read one durable user memory by mem:record URI or bare memory id.",
         },
         "record_memory": {
             "callable": record_memory,

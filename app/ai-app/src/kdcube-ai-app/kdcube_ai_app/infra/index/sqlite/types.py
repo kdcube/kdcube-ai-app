@@ -56,9 +56,15 @@ class IndexConfig:
     rrf_k: int = 60
     recency_half_life_days: float = 30.0
     overfetch: int = 5  # per-ranker candidate multiplier before fusion
-    # Drop semantic hits at or below this cosine similarity so clearly-unrelated
-    # docs don't leak in via the always-returns-something vector search. Default 0.0
-    # requires positive similarity; raise (e.g. 0.2) to gate weak matches.
+    # Semantic relevance floor — three regimes on one knob:
+    #   < 0 (e.g. -1) : turn the semantic factor OFF entirely — search runs on
+    #                   lexical + recency only (no embed call). The explicit
+    #                   "semantic unavailable / don't consider it" choice.
+    #   = 0 (default) : semantic ON, no floor — keeps every nearest row. Fine for a
+    #                   ranked-list UX; for a match/no-match (filter/dim) UX this
+    #                   lets the always-returns-something vector search match all.
+    #   > 0 (e.g. 0.3): semantic ON, drop hits at/below this cosine similarity so
+    #                   clearly-unrelated docs don't leak in. Use for filter UX.
     min_semantic_score: float = 0.0
 
     # --- economical guard on semantic search (the embedder call costs money) ---

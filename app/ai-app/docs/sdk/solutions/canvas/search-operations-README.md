@@ -1,7 +1,7 @@
 ---
 id: repo:kdcube-ai-app/app/ai-app/docs/sdk/solutions/canvas/search-operations-README.md
 title: "Canvas Pin Search Operations"
-summary: "The pin-board search contract: exactly what text is indexed per card (the card-level snapshot, not the source object), when the index is built, the vector backends (faiss-local default vs brute-force) and their files, the economical guard, and the observability logs."
+summary: "The pin-board search contract: exactly what text is indexed per card (the card-level snapshot, not the source object), when the per-user index is built (one index across all of a user's boards), the faiss vector backend and its files on shared storage, the semantic floor (incl. turning semantic off), the economical guard, and the observability logs."
 status: active
 tags: ["sdk", "solutions", "canvas", "pins", "search", "index", "faiss", "embeddings", "hybrid-search"]
 keywords:
@@ -66,12 +66,21 @@ filename, description, or a comment.
 
 - **On canvas update** (pin add / edit / remove) — `CanvasPinSearch.index` embeds the
   changed cards and (re)builds the vector index, serialized per user with the
-  runtime's observed file lock. This is the only place that pays the embedder for
-  pin material. Embed-on-write: only new/changed cards are embedded.
+  runtime's observed file lock. Because the index file lives on shared storage (EFS),
+  that lock is the **cluster critical section** that keeps two replicas from rebuilding
+  the same per-user index at once — see
+  [synchronization mechanisms](../../../service/synch-mechanisms/critical-section-README.md).
+  This is the only place that pays the embedder for pin material. Embed-on-write: only
+  new/changed cards are embedded.
 - **Lazily on search (self-heal)** — if the active board has zero indexed docs (pins
   predate the indexing wiring, or a fresh process), `canvas_search` builds the index
   from the live cards before searching. Bounds the "search finds nothing because
   nothing was ever indexed" failure; cheap on later searches (embed-on-write).
+
+**Layout-only patches are skipped.** A pure drag / resize (a `canvas_patch` whose ops
+are all `move_card` / `resize_card`) changes no indexed text — `card_text` excludes
+placement — so the index op is skipped entirely: no embed, no re-sync, no lock taken.
+Dragging a card never triggers reindexing. A patch with any content op still indexes.
 
 Search itself is read-only and embeds only the **query**, gated by the economical
 guard (see below).
@@ -82,9 +91,9 @@ The index persists to a per-user SQLite DB; the vector backend is pluggable:
 
 | Backend | Selector | Files (per user) | Notes |
 |---|---|---|---|
-| **faiss (file-backed)** | `faiss-local` (default) | `pins.index.sqlite` + `pins.index.faiss` | persists across processes/workers; needs faiss + numpy |
-| brute-force | `bruteforce` | `pins.index.sqlite` only | pure-python, in-memory rebuild; no faiss dep (tests / no-faiss envs) |
-| faiss (cross-process) | `faiss-cached` | via `FaissProjectCache` | Redis-coordinated; advanced |
+| **faiss (file-backed)** | `faiss-local` (default) | `pins.index.sqlite` + `pins.index.faiss` | the production path. On shared storage (EFS) the files are shared across the cluster; needs faiss + numpy |
+| faiss (cross-process) | `faiss-cached` | via `FaissProjectCache` | Redis-coordinated faiss for deployments with no shared FS |
+| brute-force | `bruteforce` | `pins.index.sqlite` only | no-dep fallback for tests / no-faiss envs — not a production path |
 
 Backend resolution order: explicit `vector_backend` arg → bundle prop
 `canvas.pin_search_backend` → **`faiss-local`**. Files live under:
@@ -109,6 +118,17 @@ trivial query), search degrades to lexical + recency at zero embed cost. Indexin
 (write-side embeds) is never gated; the board always stays indexed. Tuning knobs
 (weights, RRF k, recency half-life, semantic floor) are in
 [hybrid scoring](../index/hybrid-scoring-README.md).
+
+### Semantic floor / turning semantic off
+
+`CanvasPinSearch(min_semantic_score=…)` (or bundle prop
+`canvas.pin_search_min_semantic_score`, or a per-call `payload["min_semantic_score"]`)
+sets the semantic relevance floor — default `0.30` so an unrelated query doesn't
+match the whole board (the filter/dim UX needs a real boundary). Pass a **negative**
+value (e.g. `-1`) to turn the semantic factor **off** entirely and run on lexical +
+recency only — for a bundle with no embeddings or no budget. The three regimes
+(`< 0` off / `= 0` no-floor / `> 0` floor) are documented in
+[hybrid scoring](../index/hybrid-scoring-README.md#min_semantic_score--one-knob-three-regimes).
 
 ## Observability
 

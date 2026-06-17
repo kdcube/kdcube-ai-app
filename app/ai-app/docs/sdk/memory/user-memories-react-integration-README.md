@@ -51,8 +51,9 @@ In this phase, the user widget is the primary write surface. ReAct can see
 memories through announce when configured, but conversational write tools should
 remain disabled until memory-write policy is explicitly enabled.
 
-When `memory.tools.enabled=true`, the SDK memory tool module exposes these
-ReAct tool ids when registered with alias `memory`:
+The older direct memory tool module can still be enabled for compatibility. When
+`memory.tools.enabled=true`, that module exposes these ReAct tool ids when
+registered with alias `memory`:
 
 ```text
 memory.search_memory
@@ -76,9 +77,25 @@ surface.
 
 Memory also registers a `mem:` namespace rehoster. When exact saved memory
 content is needed, ReAct imports the owner ref with
-`react.pull(paths=["mem:mem_..."])`; the pull result returns a normal `fi:`
+`react.pull(paths=["mem:record:mem_..."])`; the pull result returns a normal `fi:`
 artifact mirror that can be inspected with `react.read`, `react.rg`, or
 exec/code. ReAct does not implement a separate hard-coded memory renderer.
+
+The preferred current contract is the named-service contract:
+
+```text
+named_services.search_objects(namespace="mem", query="...")
+named_services.list_objects(namespace="mem", ...)
+named_services.object_schema(namespace="mem", ...)
+named_services.upsert_object(namespace="mem", object_json={...})
+named_services.object_action(namespace="mem", object_ref="mem:record:<id>", action="confirm")
+named_services.object_action(namespace="mem", object_ref="mem:record:<id>", action="retire")
+```
+
+Direct exact reads should still use `react.pull` followed by `react.read`. The
+memory provider implements `object.get`, but model-facing bundle config should
+usually leave `named_services.get_object` unavailable for `mem`, matching the
+same pull/read pattern used by other object namespaces.
 
 ## Full Bundle Config
 
@@ -290,7 +307,7 @@ Example shape:
   format: memory text carries the trigger+rule; context is why/provenance/examples only.
   scope_filter: current_bundle
   memories: showing 1 of 1
-  - mem:mem_abc123 bundle=example@1-0 tier=1 pinned=true confidence=0.95 salience=0.88 updated=2026-05-15T14:20:00Z labels=[communication-style, technical-explanations]
+  - mem:record:mem_2026-05-15-14-20-00-123456789 bundle=example@1-0 tier=1 pinned=true confidence=0.95 salience=0.88 updated=2026-05-15T14:20:00Z labels=[communication-style, technical-explanations]
     For engineering explanations, start with the practical impact before implementation details.
     context=Created because prior summaries buried the user-visible impact. Examples: debugging notes, code reviews, implementation recaps.
 ```
@@ -317,7 +334,7 @@ Implemented ReAct behavior:
 {
   "tool_id": "react.read",
   "params": {
-    "paths": ["mem:mem_abc123"]
+    "paths": ["mem:record:mem_2026-05-15-14-20-00-123456789"]
   }
 }
 ```
@@ -326,8 +343,8 @@ Expected render:
 
 ```text
 [USER MEMORY]
-path: mem:mem_abc123
-id: mem_abc123
+path: mem:record:mem_2026-05-15-14-20-00-123456789
+id: mem_2026-05-15-14-20-00-123456789
 bundle_id: example@1-0
 kind: communication_style
 status: active
@@ -354,11 +371,11 @@ evidence:
 events=2 confirmations=1 contradictions=0
 ```
 
-`mem:<id>` returns the current visible memory record, not just text. Evidence
+`mem:record:<id>` returns the current visible memory record, not just text. Evidence
 history is bounded and should be requested explicitly when needed:
 
 ```text
-memory.read_memory(object_ref="mem:mem_abc123", include_events=true)
+memory.read_memory(object_ref="mem:record:mem_2026-05-15-14-20-00-123456789", include_events=true)
 ```
 
 Discovery should not use direct reads. If the memory is not already visible in
@@ -368,7 +385,7 @@ ids, it can pull specific ids in full when exact content is needed.
 The exact-content path is generic:
 
 ```text
-react.pull(paths=["mem:mem_abc123"])
+react.pull(paths=["mem:record:mem_2026-05-15-14-20-00-123456789"])
   -> EventSourceSubsystem namespace rehoster for mem:
   -> memory owner reads the authenticated memory record
   -> memory snapshot is mirrored into a ReAct fi: artifact

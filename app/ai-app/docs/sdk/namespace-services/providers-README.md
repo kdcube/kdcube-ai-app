@@ -150,6 +150,35 @@ scene hosts, and ReAct do not know that a `task:` attachment downloads while a
 `task:` issue opens an editor. They call `object.resolve` or `object.action`
 and follow the provider-returned contract.
 
+## Provider Schemas
+
+`object.schema` is the provider-owned contract for object body fields,
+filters, actions, and returned object shapes. Use it to describe both strict
+validation and softer semantic guidance.
+
+For closed values, use normal schema `enum` semantics. A caller should assume
+unknown values are rejected.
+
+For extensible values, do not use `enum`. Mark the field as an open vocabulary
+in the description and include provider metadata such as
+`x-kdcube-known-values` or `x-kdcube-suggested-values`. This tells agents and
+clients which values are already meaningful while preserving the provider's
+ability to accept new normalized values.
+
+```json
+{
+  "type": "string",
+  "description": "Open vocabulary classification. Known values include ...",
+  "examples": ["fact", "preference"],
+  "x-kdcube-known-values": ["fact", "preference"]
+}
+```
+
+Open vocabulary fields are still fields or facets on an object. They are not
+new namespaces and not separate object families unless the provider also
+advertises a concrete `object_kind`, ref grammar, capabilities, and operations
+for them.
+
 ## Provider Execution Surfaces
 
 A **provider app** is the app or subsystem that owns the namespace and
@@ -285,6 +314,36 @@ class SensorProvider(NamedServiceProvider):
 The same shape can be supplied through explicit provider config when discovery
 is not available. Prefer provider registration when the provider app is loaded
 in the runtime because it keeps the object-space contract with the provider.
+
+### Search Scope Filters And Relevance Tuning
+
+A search scope may declare a `filters` schema — the params a client can pass to
+`object.search` for that scope (state, tags, date ranges, …). Advertise them so
+the agent tool catalog and `object.schema` surface them.
+
+A hybrid-search provider (semantic + lexical + recency) may also expose an
+optional **`factor_weights`** object filter so a caller can tune relevance per
+query without a redeploy. Unset keys keep the subsystem default, so omitting it
+never changes behavior. Canonical shape (as the task issue scope declares it):
+
+| Key | Type / range | Default | Meaning |
+|---|---|---|---|
+| `lexical_weight` | number, ≥ 0 | 0.55 | keyword (bm25) ranker weight; relative |
+| `semantic_weight` | number, ≥ 0 | 0.45 | embedding (cosine) ranker weight; relative |
+| `recency_weight` | number, ≥ 0 | 0.25 | recency ranker weight; relative, 0 = ignore recency |
+| `rrf_k` | number, ≥ 1 | 60.0 | RRF constant (larger = flatter) |
+| `recency_half_life_days` | number, > 0 | 21.0 | days until recency score halves |
+| `min_semantic_score` | number, 0.0–1.0 | 0.30 | cosine-similarity floor; raise to tighten |
+
+The three ranker weights are **relative** (only their ratio matters); set one to
+`0` to disable that ranker. `min_semantic_score` floors semantic hits so an
+unrelated query returns few/none instead of every nearest row. Defaults are the
+declaring subsystem's — each provider documents its own.
+
+Memory declares its own `factor_weights` set for its additive weighted-sum
+scorer (`semantic`, `text`, `label`, `salience`, `importance`, `confidence`,
+`freshness`, `confirmation`, plus `half_life_days` and
+`min_relevance_score`); it is not RRF and has no `rrf_k`.
 
 ### Object Operations
 

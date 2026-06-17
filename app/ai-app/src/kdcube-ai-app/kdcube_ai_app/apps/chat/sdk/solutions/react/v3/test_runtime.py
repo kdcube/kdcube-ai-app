@@ -77,6 +77,7 @@ def test_tool_catalog_renders_named_service_namespace_scope():
                 ],
             },
             "tool_traits": {"strategy": ["exploration"]},
+            "tool_traits_by_namespace": {"memo": {"strategy": ["neutral"]}},
         },
         is_async=True,
         return_annotation="JSON",
@@ -99,13 +100,16 @@ def test_tool_catalog_renders_named_service_namespace_scope():
     assert prompt_catalog[0]["doc"]["namespaces_applicable"] == ["task", "memo"]
     assert prompt_catalog[0]["doc"]["search_scopes_by_namespace"]["task"][1]["namespace"] == "task:attachment"
     assert prompt_catalog[0]["doc"]["tool_traits"] == {"strategy": ["exploration"]}
+    assert prompt_catalog[0]["doc"]["tool_traits_by_namespace"] == {"memo": {"strategy": ["neutral"]}}
     assert "named service operation" not in rendered
     assert "object.search" not in rendered
     assert "namespaces applicable: task, memo" in rendered
     assert "provider search scopes:" in rendered
     assert "task:issue — task issues" in rendered
     assert "task:attachment — task attachments/files" in rendered
-    assert "strategy: exploration" in rendered
+    assert "strategy: exploration (default)" in rendered
+    assert "strategy overrides by namespace:" in rendered
+    assert "memo: neutral" in rendered
 
 
 def test_validate_decision_rejects_tool_call_with_final_answer():

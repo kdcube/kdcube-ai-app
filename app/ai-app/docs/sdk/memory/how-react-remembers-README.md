@@ -198,7 +198,7 @@ discoverable indirectly through summaries or turn indexes.
 | Internal file artifact | `react.write(channel="internal", scratchpad=false)` or internal tool output | No | Not inline by default | `react.read("fi:<...>")` if exact path is known; discover via turn index if indexed | File may persist, but content is not promoted as a note; old timeline references can be compacted | Conversation/turn artifact scoped | Larger private scratch material or internal source files that should not be shown to the user |
 | `react.memsearch` | Tool over conversation index | Tool result is internal | Only when agent calls it | `react.memsearch(mode=..., scope="conversation"|"user", targets=["summary","user","assistant","attachment","notes"])`, then read returned `ws:`, `ar:`, `fi:`, `tc:` refs | Not memory itself; searches persisted indexes and turn catalog while retention/TTL allows | Explicitly supports conversation scope or user scope; user scope may recover indexed turns from other conversations | Find the turn or artifact when the path is not already known |
 | Turn index: `ar:<turn_id>.react.turn.index` | `react.read` resolver from persisted turn log/artifact metadata | Internal | Only when read | `react.read(["ar:<turn_id>.react.turn.index"])` | Reconstructed from persisted turn log metadata | Conversation/turn scoped | Discover exact refs inside a known turn |
-| Durable user memory hotset | SDK memory store and widget | Yes by default | Yes only when memory announce is enabled | Announce hotset, future `me:<id>` reads, widget/API search | Not part of timeline compaction; stored in Postgres | Yes | Stable user-visible facts, preferences, durable decisions, reusable anchors, specs, and milestones that should affect future conversations |
+| Durable user memory hotset | SDK memory store and widget | Yes by default | Yes only when memory announce is enabled | Announce hotset, `mem:record:<id>` reads, widget/API search | Not part of timeline compaction; stored in Postgres | Yes | Stable user-visible facts, preferences, durable decisions, reusable anchors, specs, and milestones that should affect future conversations |
 | Durable user memory search | SDK memory tools/widget | Yes for widget, internal for agent tools | Only when called or rendered in announce | Widget search, future memory search/read tools | Independent of ReAct pruning | Yes | Retrieve durable user memory by hybrid search, labels, keywords, recency, salience, confidence |
 
 ## Internal Memory Beacons
@@ -459,7 +459,7 @@ Examples:
 The user lives in Wuppertal, Germany.
 When summarizing engineering work, start with the practical impact.
 The user prefers neutral examples in product documentation.
-For project X, the canonical board brief template is me:<id> / fi:<path>.
+For project X, the canonical board brief template is mem:record:<id> / fi:<path>.
 The user-approved integration decision for product Y is to keep auth external.
 ```
 

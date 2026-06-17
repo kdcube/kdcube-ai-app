@@ -25,6 +25,13 @@ import { resolve } from 'node:path'
  */
 const USE_PACKAGE_ENGINE =
   (process.env.VITE_CHAT_ENGINE || '').toLowerCase() === 'package'
+// `VITE_CHAT_UI=package` goes one step further than the engine flag: it renders the
+// package's own `<Chat/>` UI (via `src/app/packageUIRoot.tsx`) instead of the in-tree
+// `App.tsx`. It implies the package engine. Either flag pulls the `@kdcube/*` packages
+// into the graph (and needs the materialized `_shared/` sources).
+const USE_PACKAGE_UI =
+  (process.env.VITE_CHAT_UI || '').toLowerCase() === 'package'
+const USE_PACKAGE = USE_PACKAGE_ENGINE || USE_PACKAGE_UI
 
 function findWorkspacePackages(start: string): string | null {
   let dir = start
@@ -50,10 +57,10 @@ function pkgSrc(materializedName: string, packageName: string): string {
 const engineRoot = resolve(
   __dirname,
   'src/app',
-  USE_PACKAGE_ENGINE ? 'packageEngine.tsx' : 'localEngineRoot.tsx',
+  USE_PACKAGE_UI ? 'packageUIRoot.tsx' : USE_PACKAGE_ENGINE ? 'packageEngine.tsx' : 'localEngineRoot.tsx',
 )
 
-const kdcubeAliases = USE_PACKAGE_ENGINE
+const kdcubeAliases = USE_PACKAGE
   ? (() => {
       const CORE = pkgSrc('components_core', 'components-core')
       const REACT = pkgSrc('components_react', 'components-react')

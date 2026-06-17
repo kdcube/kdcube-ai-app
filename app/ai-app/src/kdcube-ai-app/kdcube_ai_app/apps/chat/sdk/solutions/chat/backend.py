@@ -49,19 +49,29 @@ def chat_widget_ui_config(
 ) -> dict[str, Any]:
     """Return a bundle ``config.ui.widgets.<alias>`` entry for the chat widget.
 
-    ``engine`` is the single switch between the in-tree engine (``"local"``,
-    default) and the framework-agnostic package engine (``"package"``). Selecting
-    ``"package"`` both sets ``VITE_CHAT_ENGINE=package`` and materializes the
-    ``@kdcube/components-*`` source via ``npm://`` ``shared_sources``; ``"local"``
-    does neither. Pass ``shared_sources`` explicitly to override the default set.
+    ``engine`` selects the chat implementation:
+
+      - ``"local"`` (default) — in-tree engine + in-tree ``App.tsx`` UI; no npm://.
+      - ``"package"`` — framework-agnostic package engine + in-tree UI
+        (``VITE_CHAT_ENGINE=package``).
+      - ``"package-ui"`` — package engine **and** the package's own ``<Chat/>`` UI
+        (``VITE_CHAT_ENGINE=package`` + ``VITE_CHAT_UI=package``).
+
+    ``"package"`` and ``"package-ui"`` materialize the ``@kdcube/components-*`` source
+    via ``npm://`` ``shared_sources``; ``"local"`` carries no ``npm://`` reference.
+    Pass ``shared_sources`` explicitly to override the default set.
     """
 
-    use_package = str(engine or "").strip().lower() == "package"
+    engine_norm = str(engine or "").strip().lower()
+    use_package = engine_norm in ("package", "package-ui")
+    use_package_ui = engine_norm == "package-ui"
 
     # Merge the engine selector into the Vite env (explicit vite_env wins).
     merged_env: dict[str, Any] = {}
     if use_package:
         merged_env["VITE_CHAT_ENGINE"] = "package"
+    if use_package_ui:
+        merged_env["VITE_CHAT_UI"] = "package"
     if vite_env:
         merged_env.update(vite_env)
 

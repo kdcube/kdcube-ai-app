@@ -54,7 +54,12 @@ def _deep_merge_missing(target: Dict[str, Any], defaults: Dict[str, Any]) -> Dic
 
 def _memory_id_from_ref(value: Any) -> str:
     ref = str(value or "").strip()
-    return ref[4:].strip() if ref.startswith("mem:") else ref
+    ref = ref.split("?", 1)[0].split("#", 1)[0].strip("/")
+    if ref.startswith("mem:record:"):
+        return ref[len("mem:record:"):].strip("/")
+    if ref.startswith(("mem:", "me:")):
+        return ref.split(":", 1)[1].strip("/")
+    return ref
 
 
 _memory_reconciliation_locks_guard = threading.Lock()
@@ -147,6 +152,55 @@ class MemoryEntrypointMixin:
         memory_cfg = self._memory_config()
         widget_cfg = memory_cfg.get("widget") if isinstance(memory_cfg.get("widget"), dict) else {}
         return widget_cfg if isinstance(widget_cfg, dict) else {}
+
+    def _memory_named_service_enabled(self) -> bool:
+        memory_cfg = self._memory_config()
+        return _truthy(memory_cfg.get("enabled"), False)
+
+    def _memory_agent_named_service_allows(self, operation: str) -> bool:
+        operation = str(operation or "").strip()
+        if not operation:
+            return False
+        props = getattr(self, "bundle_props", None) or {}
+        surfaces = props.get("surfaces") if isinstance(props, dict) else {}
+        as_consumer = surfaces.get("as_consumer") if isinstance(surfaces, dict) else {}
+        agents = as_consumer.get("agents") if isinstance(as_consumer, dict) else {}
+        if not isinstance(agents, dict):
+            return False
+        for agent_cfg in agents.values():
+            tools = agent_cfg.get("tools") if isinstance(agent_cfg, dict) else []
+            if not isinstance(tools, list):
+                continue
+            for tool_cfg in tools:
+                if not isinstance(tool_cfg, dict) or tool_cfg.get("kind") != "named_service":
+                    continue
+                namespaces = tool_cfg.get("namespaces")
+                mem_cfg = namespaces.get("mem") if isinstance(namespaces, dict) else None
+                if not isinstance(mem_cfg, dict):
+                    continue
+                allowed = {str(item).strip() for item in (mem_cfg.get("allowed") or []) if str(item).strip()}
+                if operation in allowed:
+                    return True
+        return False
+
+    def _memory_named_service_write_enabled(self) -> bool:
+        memory_cfg = self._memory_config()
+        tools_cfg = memory_cfg.get("tools") if isinstance(memory_cfg.get("tools"), dict) else {}
+        if _truthy(tools_cfg.get("allow_write"), False):
+            return True
+        return any(
+            self._memory_agent_named_service_allows(operation)
+            for operation in ("object.upsert", "object.delete", "object.action")
+        )
+
+    def _memory_named_service_default_scope_filter(self) -> str:
+        memory_cfg = self._memory_config()
+        tools_cfg = memory_cfg.get("tools") if isinstance(memory_cfg.get("tools"), dict) else {}
+        widget_cfg = memory_cfg.get("widget") if isinstance(memory_cfg.get("widget"), dict) else {}
+        value = tools_cfg.get("default_scope_filter") or widget_cfg.get("default_scope_filter") or "current_bundle"
+        from kdcube_ai_app.apps.chat.sdk.context.memory import normalize_scope_filter
+
+        return normalize_scope_filter(str(value or "current_bundle"))
 
     def _memory_widget_enabled(self) -> bool:
         memory_cfg = self._memory_config()
@@ -343,6 +397,18 @@ class MemoryEntrypointMixin:
             bundle_id=getattr(bundle_spec, "id", None) or "",
         ).normalized()
 
+    def _memory_named_service_scope(self, ctx):
+        from kdcube_ai_app.apps.chat.sdk.context.memory import MemoryScope
+
+        current = self._memory_scope()
+        bundle_spec = getattr(getattr(self, "config", None), "ai_bundle_spec", None)
+        return MemoryScope(
+            tenant=str(getattr(ctx, "tenant", "") or current.tenant or "").strip(),
+            project=str(getattr(ctx, "project", "") or current.project or "").strip(),
+            user_id=str(getattr(ctx, "user_id", "") or current.user_id or "anonymous").strip(),
+            bundle_id=str(getattr(ctx, "bundle_id", "") or getattr(bundle_spec, "id", None) or current.bundle_id or "").strip(),
+        ).normalized()
+
     def _memory_store(self):
         from kdcube_ai_app.apps.chat.sdk.context.memory import UserMemoryStore
 
@@ -350,6 +416,74 @@ class MemoryEntrypointMixin:
             raise RuntimeError("memory widget requires pg_pool")
         scope = self._memory_scope()
         return UserMemoryStore(pg_pool=self.pg_pool, tenant=scope.tenant, project=scope.project)
+
+    def _memory_named_service_store(self, ctx):
+        from kdcube_ai_app.apps.chat.sdk.context.memory import UserMemoryStore
+
+        if self.pg_pool is None:
+            raise RuntimeError("memory named service requires pg_pool")
+        scope = self._memory_named_service_scope(ctx)
+        return UserMemoryStore(pg_pool=self.pg_pool, tenant=scope.tenant, project=scope.project)
+
+    def _memory_named_service_provider(self):
+        from kdcube_ai_app.apps.chat.sdk.context.memory.named_service import make_memory_named_service_provider
+
+        bundle_spec = getattr(getattr(self, "config", None), "ai_bundle_spec", None)
+        memory_cfg = self._memory_config()
+        widget_cfg = memory_cfg.get("widget") if isinstance(memory_cfg.get("widget"), dict) else {}
+        tools_cfg = memory_cfg.get("tools") if isinstance(memory_cfg.get("tools"), dict) else {}
+        return make_memory_named_service_provider(
+            store_factory=self._memory_named_service_store,
+            scope_factory=self._memory_named_service_scope,
+            bundle_id=getattr(bundle_spec, "id", None) or "",
+            allow_write=self._memory_named_service_write_enabled(),
+            default_scope_filter=self._memory_named_service_default_scope_filter(),
+            embedding_enabled=_truthy(tools_cfg.get("embedding_enabled"), True),
+            ensure_schema=_truthy(widget_cfg.get("ensure_schema"), True),
+        )
+
+    def named_services(self):
+        from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.registry import NamedServiceRegistry
+
+        super_factory = getattr(super(), "named_services", None)
+        registry = super_factory() if callable(super_factory) else None
+        if registry is None:
+            registry = NamedServiceRegistry()
+        if not isinstance(registry, NamedServiceRegistry):
+            raise RuntimeError(f"named_services() returned {type(registry).__name__}, expected NamedServiceRegistry")
+        if self._memory_named_service_enabled():
+            registry.register(self._memory_named_service_provider())
+        return registry
+
+    async def _register_memory_named_service_discovery(self) -> None:
+        if not self._memory_named_service_enabled() or self.redis is None:
+            return
+        actor = getattr(self.comm_context, "actor", None)
+        tenant = str(getattr(actor, "tenant_id", None) or getattr(self.settings, "TENANT", "") or "").strip()
+        project = str(getattr(actor, "project_id", None) or getattr(self.settings, "PROJECT", "") or "").strip()
+        bundle_spec = getattr(getattr(self, "config", None), "ai_bundle_spec", None)
+        bundle_id = str(getattr(bundle_spec, "id", None) or "").strip()
+        if not tenant or not project or not bundle_id:
+            return
+        from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.discovery import RedisNamedServiceDiscovery
+
+        registry = self.named_services()
+        entries = await RedisNamedServiceDiscovery(self.redis, tenant=tenant, project=project).register_registry(
+            registry,
+            bundle_id=bundle_id,
+        )
+        try:
+            self.logger.log(
+                f"[memory.named_services.discovery] registered providers={len(entries)} bundle={bundle_id}",
+                "INFO",
+            )
+        except Exception:
+            logger.info("[memory.named_services.discovery] registered providers=%s bundle=%s", len(entries), bundle_id)
+
+    async def on_bundle_load(self, **kwargs) -> None:
+        await super().on_bundle_load(**kwargs)
+        await self._register_memory_named_service_discovery()
+        return None
 
     async def _memory_user_preferences(self) -> Dict[str, Any]:
         store = self._memory_store()

@@ -581,12 +581,15 @@ function ArtifactFeedImpl({ artifacts }: { artifacts: Artifact[] }) {
 
   function namedServiceContext(item: NamedServiceSearchItem): Record<string, unknown> {
     const ref = namedServiceSearchItemRef(item)
+    const objectKind = item.object_kind || item.kind || item.search_scope || item.namespace
     return {
       ...item,
-      kind: item.kind || 'object.ref',
+      kind: 'object.ref',
+      object_kind: objectKind,
       id: item.id || ref,
       label: item.label || item.title || ref || 'result',
       ref,
+      object_ref: ref,
     }
   }
 

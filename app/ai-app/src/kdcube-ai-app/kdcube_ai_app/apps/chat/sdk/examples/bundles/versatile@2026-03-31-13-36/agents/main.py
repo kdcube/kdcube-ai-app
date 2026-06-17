@@ -7,7 +7,7 @@ from kdcube_ai_app.apps.chat.emitters import ChatCommunicator
 from kdcube_ai_app.apps.chat.sdk.context.vector.conv_index import ConvIndex
 from kdcube_ai_app.apps.chat.sdk.context.vector.conv_ticket_store import ConvTicketStore
 from kdcube_ai_app.apps.chat.sdk.protocol import ExternalEventPayload
-from kdcube_ai_app.apps.chat.sdk.context.memory.instructions import MEMORY_REACT_ADDITIONAL_INSTRUCTIONS
+from kdcube_ai_app.apps.chat.sdk.context.memory.instructions import resolve_memory_react_additional_instructions
 from kdcube_ai_app.apps.chat.sdk.retrieval.kb_client import KBClient
 from kdcube_ai_app.apps.chat.sdk.runtime.scratchpad import CTurnScratchpad
 from kdcube_ai_app.apps.chat.sdk.runtime.skill_config import agent_skill_config_from_bundle_props
@@ -119,7 +119,7 @@ def _resolve_react_additional_instructions(
 ) -> str:
     blocks = [
         _resolve_react_ui_instructions(comm_context),
-        MEMORY_REACT_ADDITIONAL_INSTRUCTIONS,
+        resolve_memory_react_additional_instructions(bundle_props or {}, client_id=client_id or "main"),
         CANVAS_REACT_ADDITIONAL_INSTRUCTIONS,
         _resolve_named_service_react_instructions(bundle_props, client_id=client_id),
     ]

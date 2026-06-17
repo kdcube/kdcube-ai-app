@@ -138,7 +138,8 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 6px 12px;
   padding: 0 0 8px;
   border-bottom: 1px solid var(--line);
   margin-bottom: 10px;
@@ -167,7 +168,25 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 }
 
 .app-title-block {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
   min-width: 0;
+  margin-right: auto;
+}
+
+/* Title + "N records in scope" sit on one baseline so the whole header — title
+ * and the Use my memory / New note / Show maintenance controls — is a single
+ * compact line. */
+.app-title-block h1 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.app-title-block p {
+  margin: 0;
+  white-space: nowrap;
 }
 
 .compact-shell .app-title-block {
@@ -352,6 +371,94 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   white-space: nowrap;
 }
 
+/* One-line header controls: Use my memory · New note · Show maintenance */
+.app-header-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-left: auto;
+}
+.app-header-actions .memory-use-toggle {
+  margin-left: 0;
+}
+.app-header-actions > button {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* One-line filter bar: status select + a single search box */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.filter-bar .status-select {
+  flex: none;
+  width: 130px;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink);
+  padding: 0 8px;
+  font-size: 13px;
+}
+.memory-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  padding: 0 5px 0 10px;
+}
+.memory-search:focus-within {
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px var(--teal-pale);
+}
+.memory-search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+}
+.memory-search-clear {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 17px;
+  line-height: 1;
+}
+.memory-search-clear:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.memory-search-go {
+  flex: none;
+  height: 26px;
+  padding: 0 14px;
+}
+.memory-search-go:disabled {
+  opacity: 0.6;
+}
+
 .expanded-shell .filters {
   position: relative;
   z-index: 2;
@@ -513,6 +620,7 @@ textarea:focus {
 /* ─── Buttons ─── */
 .primary-button,
 .search-row button,
+.memory-search-go,
 .editor-actions button[type="submit"] {
   display: inline-flex;
   align-items: center;
@@ -529,6 +637,7 @@ textarea:focus {
 }
 .primary-button:hover:not(:disabled),
 .search-row button:hover:not(:disabled),
+.memory-search-go:hover:not(:disabled),
 .editor-actions button[type="submit"]:hover:not(:disabled) {
   background: var(--teal-dark);
   border-color: var(--teal-dark);
@@ -1430,7 +1539,6 @@ input[type="range"] { accent-color: var(--teal); }
     grid-template-columns: 1fr;
   }
 
-  .app-header,
   .reconcile-head {
     align-items: flex-start;
     flex-direction: column;

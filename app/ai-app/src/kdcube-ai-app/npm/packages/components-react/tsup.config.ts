@@ -10,5 +10,13 @@ export default defineConfig({
   clean: true,
   sourcemap: true,
   treeshake: true,
-  external: ['react', 'react-dom', 'react-redux', '@kdcube/components-core'],
+  external: [
+    'react',
+    'react-dom',
+    'react-redux',
+    '@kdcube/components-core',
+    'react-markdown',
+    'remark-gfm',
+    'remark-breaks',
+  ],
 })

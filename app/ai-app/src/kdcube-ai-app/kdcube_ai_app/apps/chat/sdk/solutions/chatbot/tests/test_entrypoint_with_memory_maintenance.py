@@ -10,15 +10,33 @@ from kdcube_ai_app.apps.chat.sdk.solutions.chatbot.entrypoint_with_memory import
     MEMORY_RECONCILIATION_WORK_KIND,
     MemoryEntrypointMixin,
 )
+from kdcube_ai_app.apps.chat.sdk.solutions.named_services_providers.discovery import RedisNamedServiceDiscovery
 
 
 class _RedisStub:
     def __init__(self):
         self.values = {}
+        self.sets = {}
         self.deleted = []
 
     async def get(self, key):
         return self.values.get(key)
+
+    async def set(self, key, value, ex=None):
+        self.values[key] = value
+        return True
+
+    async def sadd(self, key, *values):
+        bucket = self.sets.setdefault(key, set())
+        before = len(bucket)
+        bucket.update(values)
+        return len(bucket) - before
+
+    async def smembers(self, key):
+        return set(self.sets.get(key, set()))
+
+    async def expire(self, key, ttl):
+        return True
 
     async def delete(self, key):
         self.deleted.append(key)
@@ -102,6 +120,39 @@ class _MemoryHarness(MemoryEntrypointMixin):
         self.redis = _RedisStub()
         self.store = _FakeMemoryStore()
         self.comm_context = None
+        self.pg_pool = object()
+        self.settings = SimpleNamespace(TENANT="tenant-a", PROJECT="project-a")
+        self.config = SimpleNamespace(ai_bundle_spec=SimpleNamespace(id="bundle@1"))
+        self.bundle_props = {
+            "surfaces": {
+                "as_consumer": {
+                    "agents": {
+                        "main": {
+                            "tools": [
+                                {
+                                    "kind": "named_service",
+                                    "namespaces": {
+                                        "mem": {
+                                            "allowed": [
+                                                "provider.about",
+                                                "object.list",
+                                                "object.search",
+                                                "object.get",
+                                                "object.schema",
+                                                "object.upsert",
+                                                "object.action",
+                                                "object.delete",
+                                            ]
+                                        }
+                                    },
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+        self.logger = SimpleNamespace(log=lambda *args, **kwargs: None)
 
     @property
     def configuration(self):
@@ -111,6 +162,11 @@ class _MemoryHarness(MemoryEntrypointMixin):
                 "widget": {
                     "enabled": True,
                     "allow_all_user_memories": True,
+                },
+                "tools": {
+                    "enabled": True,
+                    "allow_write": False,
+                    "default_scope_filter": "current_bundle",
                 },
                 "snapshots": {
                     "enabled": True,
@@ -134,6 +190,9 @@ class _MemoryHarness(MemoryEntrypointMixin):
         )
 
     def _memory_store(self):
+        return self.store
+
+    def _memory_named_service_store(self, ctx):
         return self.store
 
     def _memory_reconciliation_storage(self):
@@ -179,6 +238,37 @@ def _deep_update(target, updates):
         else:
             target[key] = value
     return target
+
+
+def test_memory_mixin_exposes_mem_named_service_registry():
+    harness = _MemoryHarness()
+
+    registry = harness.named_services()
+    entry = registry.resolve_namespace("mem")
+
+    assert entry is not None
+    assert entry.spec.provider_id == "sdk.memory"
+    assert "mem" in entry.spec.namespaces
+    assert {scope.namespace for scope in entry.spec.search_scopes} == {"mem"}
+    assert entry.spec.object_kinds == ("memory.record",)
+    provider = entry.provider
+    assert provider._allow_write is True
+
+
+@pytest.mark.asyncio
+async def test_memory_mixin_publishes_mem_named_service_discovery():
+    harness = _MemoryHarness()
+    await harness._register_memory_named_service_discovery()
+
+    discovery = RedisNamedServiceDiscovery(harness.redis, tenant="tenant-a", project="project-a")
+    entries = await discovery.providers(namespace="mem")
+
+    assert len(entries) == 1
+    assert entries[0].spec.provider_id == "sdk.memory"
+    assert entries[0].endpoint["bundle_id"] == "bundle@1"
+    assert entries[0].endpoint["registry_method"] == "named_services"
+    assert {scope.namespace for scope in entries[0].spec.search_scopes} == {"mem"}
+    assert entries[0].spec.object_kinds == ("memory.record",)
 
 
 @pytest.mark.asyncio

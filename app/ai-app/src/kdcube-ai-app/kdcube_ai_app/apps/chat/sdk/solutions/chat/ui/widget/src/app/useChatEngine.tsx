@@ -103,6 +103,37 @@ const CHAT_EVENT_DEFAULTS = {
   snapshotSurface: CHAT_SNAPSHOT_SURFACE,
 }
 
+function conversationContext(input: {
+  tenant: string
+  project: string
+  userId: string | null
+  bundleId: string
+  agent: string
+  conversationId: string
+  title: string
+}) {
+  const userSegment = (input.userId && input.userId.trim()) || 'me'
+  const agent = input.agent.trim() || 'main'
+  const ref = `conv:${input.tenant}/${input.project}/${userSegment}/${input.bundleId}/${agent}/${input.conversationId}`
+  return {
+    id: ref,
+    kind: 'conversation',
+    namespace: 'conv',
+    label: input.title,
+    title: input.title,
+    summary: input.title,
+    ref,
+    object_ref: ref,
+    logical_path: ref,
+    mime: 'application/vnd.kdcube.conversation+json;version=1',
+    data: {
+      conversation_id: input.conversationId,
+      bundle_id: input.bundleId,
+      agent,
+    },
+  }
+}
+
 function forwardCanvasPatchEvent(env: ChatStepEnvelope) {
   if (env.event?.step !== CHAT_CANVAS_PATCH_STEP) return
   if (!env.data || typeof env.data !== 'object') return
@@ -234,6 +265,7 @@ function useChatEngineImpl(): ChatEngine {
   const reconnectTimerRef = useRef<number | null>(null)
   const reconnectAttemptRef = useRef(0)
   const sessionIdRef = useRef<string | null>(null)
+  const profileUserIdRef = useRef<string | null>(null)
   const streamIdRef = useRef<string | null>(null)
   const sendQueueRef = useRef<Promise<void>>(Promise.resolve())
   const [dryRunEnabled, setDryRunEnabled] = useState(false)
@@ -781,18 +813,34 @@ function useChatEngineImpl(): ChatEngine {
     const conversationId = stateRef.current.conversationId
     if (!conversationId) return
     if (!window.parent || window.parent === window) return
+    const title = stateRef.current.conversationTitle || 'Conversation'
+    const bundleId = settings.getBundleId() || BUILT_BUNDLE_ID
+    const context = conversationContext({
+      tenant: settings.getTenant(),
+      project: settings.getProject(),
+      userId: profileUserIdRef.current,
+      bundleId,
+      agent: 'main',
+      conversationId,
+      title,
+    })
     window.parent.postMessage({
       type: 'kdcube-pin-conversation',
       source: 'versatile.chat',
       conversation_id: conversationId,
-      title: stateRef.current.conversationTitle || 'Conversation',
+      title,
       agent: 'main',
+      context,
+      contexts: [context],
+      ref: context.ref,
+      object_ref: context.object_ref,
     }, '*')
   }
 
   const resolveAuthAndConnect = async () => {
     const profile = await fetchProfile()
     sessionIdRef.current = profile.sessionId
+    profileUserIdRef.current = profile.userId
     dispatch(chatActions.setSessionId(profile.sessionId))
     const userType = (profile.userType || '').toLowerCase()
     const isAuthed = userType

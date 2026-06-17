@@ -873,6 +873,7 @@ def build_announce_memory_lines(*, runtime_ctx: Optional[RuntimeCtx]) -> List[st
         if not isinstance(row, dict):
             continue
         memory_id = str(row.get("id") or "").strip() or "unknown"
+        object_ref = str(row.get("object_ref") or "").strip() or f"mem:record:{memory_id}"
         bundle_id = str(row.get("bundle_id") or "").strip()
         bundle_label = bundle_id or "global"
         tier = row.get("tier")
@@ -899,7 +900,7 @@ def build_announce_memory_lines(*, runtime_ctx: Optional[RuntimeCtx]) -> List[st
         if updated:
             metrics.append(f"updated={updated[:19]}")
         metric_text = (" " + " ".join(metrics)) if metrics else ""
-        lines.append(f"  - me:{memory_id} bundle={bundle_label}{metric_text}{label_text}")
+        lines.append(f"  - {object_ref} bundle={bundle_label}{metric_text}{label_text}")
         text = str(row.get("memory") or "").strip()
         if text:
             lines.append(f"    {_shorten(' '.join(text.split()), 220)}")
@@ -1611,6 +1612,9 @@ def build_tool_catalog(adapters: Optional[List[Dict[str, Any]]] = None,
         search_scopes_by_namespace = doc.get("search_scopes_by_namespace") or metadata.get("search_scopes_by_namespace")
         if isinstance(search_scopes_by_namespace, dict) and search_scopes_by_namespace:
             item["search_scopes_by_namespace"] = dict(search_scopes_by_namespace)
+        tool_traits_by_namespace = doc.get("tool_traits_by_namespace") or metadata.get("tool_traits_by_namespace")
+        if isinstance(tool_traits_by_namespace, dict) and tool_traits_by_namespace:
+            item["tool_traits_by_namespace"] = dict(tool_traits_by_namespace)
         tool_traits = doc.get("tool_traits") or metadata.get("tool_traits")
         if isinstance(tool_traits, dict) and tool_traits:
             item["tool_traits"] = dict(tool_traits)
@@ -1649,6 +1653,7 @@ def build_tools_block(
         constraints = tool.get("constraints", [])
         namespaces_applicable = tool.get("namespaces_applicable")
         search_scopes_by_namespace = tool.get("search_scopes_by_namespace")
+        tool_traits_by_namespace = tool.get("tool_traits_by_namespace")
         tool_traits = tool.get("tool_traits") if isinstance(tool.get("tool_traits"), dict) else {}
 
         async_txt = " [async]" if is_async else ""
@@ -1683,7 +1688,19 @@ def build_tools_block(
                     values = trait_value if isinstance(trait_value, list) else [trait_value]
                     text = ", ".join(str(item) for item in values if str(item or "").strip())
                     if text:
+                        if trait_name == "strategy" and isinstance(tool_traits_by_namespace, dict) and tool_traits_by_namespace:
+                            text = f"{text} (default)"
                         lines.append(f"       • {trait_name}: {text}")
+            if isinstance(tool_traits_by_namespace, dict) and tool_traits_by_namespace:
+                lines.append("       • strategy overrides by namespace:")
+                for namespace, traits in tool_traits_by_namespace.items():
+                    if not isinstance(traits, dict):
+                        continue
+                    strategy = traits.get("strategy")
+                    values = strategy if isinstance(strategy, list) else [strategy]
+                    text = ", ".join(str(item) for item in values if str(item or "").strip())
+                    if text:
+                        lines.append(f"           - {namespace}: {text}")
             lines.append("")
 
         if args:

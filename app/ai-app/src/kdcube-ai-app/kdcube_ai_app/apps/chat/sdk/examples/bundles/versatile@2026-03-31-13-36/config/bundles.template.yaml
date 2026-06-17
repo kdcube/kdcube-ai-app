@@ -19,6 +19,19 @@ bundles:
             default_scope_filter: current_bundle
             allow_all_user_memories: true
             limit: 30
+        namespace_styles:
+          mem:
+            label: memory
+            color: "#16a34a"
+            border: "#16a34a"
+            focus: "#22c55e"
+            background: "#ecfdf5"
+          task:
+            label: task
+            color: "#2563eb"
+            border: "#2563eb"
+            focus: "#60a5fa"
+            background: "#eff6ff"
         canvas:
           artifact_prefix: canvas
           origin_prefix: canvas
@@ -43,30 +56,33 @@ bundles:
                     module: kdcube_ai_app.apps.chat.sdk.tools.ctx_tools
                     alias: ctx_tools
                     allowed: [merge_sources, fetch_ctx]
-                  - name: memory
-                    kind: python
-                    module: kdcube_ai_app.apps.chat.sdk.context.memory.tools
-                    alias: memory
-                    allowed:
-                      - search_memory
-                      - recent_memories
-                      - read_memory
-                      - record_memory
-                      - confirm_memory
-                      - retire_memory
-                    tool_traits:
-                      search_memory:
-                        strategy: [exploration]
-                      recent_memories:
-                        strategy: [exploration]
-                      read_memory:
-                        strategy: [exploration]
-                      record_memory:
-                        strategy: [neutral]
-                      confirm_memory:
-                        strategy: [neutral]
-                      retire_memory:
-                        strategy: [neutral]
+                  # Legacy direct memory tools are kept here as the migration
+                  # template, but ReAct should use the generic named_services.*
+                  # connection below for durable user memories.
+                  # - name: memory
+                  #   kind: python
+                  #   module: kdcube_ai_app.apps.chat.sdk.context.memory.tools
+                  #   alias: memory
+                  #   allowed:
+                  #     - search_memory
+                  #     - recent_memories
+                  #     - read_memory
+                  #     - record_memory
+                  #     - confirm_memory
+                  #     - retire_memory
+                  #   tool_traits:
+                  #     search_memory:
+                  #       strategy: [exploration]
+                  #     recent_memories:
+                  #       strategy: [exploration]
+                  #     read_memory:
+                  #       strategy: [exploration]
+                  #     record_memory:
+                  #       strategy: [neutral]
+                  #     confirm_memory:
+                  #       strategy: [neutral]
+                  #     retire_memory:
+                  #       strategy: [neutral]
                   - name: canvas
                     kind: python
                     module: kdcube_ai_app.apps.chat.sdk.solutions.canvas.tools
@@ -146,6 +162,44 @@ bundles:
                     tool_traits:
                       "*":
                         strategy: [exploration]
+                  - name: memory_service
+                    kind: named_service
+                    alias: named_services
+                    namespaces:
+                      mem:
+                        # object.get is intentionally not exposed as a model-callable
+                        # named_service tool. Existing mem:record refs must be bound
+                        # with react.pull; the pull policy below calls provider
+                        # object.get and materializes an fi: artifact for
+                        # react.read/ranged reads.
+                        allowed:
+                          - provider.about
+                          - object.list
+                          - object.search
+                          - object.schema
+                          - object.upsert
+                          - object.action
+                          - object.delete
+                        tool_traits:
+                          upsert_object:
+                            strategy: [neutral]
+                          object_action:
+                            strategy: [neutral]
+                    tool_traits:
+                      provider_about:
+                        strategy: [exploration]
+                      list_objects:
+                        strategy: [exploration]
+                      search_objects:
+                        strategy: [exploration]
+                      object_schema:
+                        strategy: [exploration]
+                      upsert_object:
+                        strategy: [exploitation]
+                      object_action:
+                        strategy: [exploitation]
+                      delete_object:
+                        strategy: [exploitation]
                   # Add namespace-owned provider tools here when this agent
                   # should read or mutate external objects. Keep object.get
                   # out of the agent-facing tool set when pull is configured;
@@ -194,14 +248,31 @@ bundles:
                 #       pull:
                 #         mode: provider
                 #         operation: object.get
-                event_sources: []
+                event_sources:
+                  - kind: named_service
+                    namespace: mem
+                    enabled: true
+                    discovery:
+                      mode: service_discovery
+                    policies:
+                      pull:
+                        mode: provider
+                        operation: object.get
             ui:
               canvas:
                 # Add namespace resolver operations here when canvas or chat
                 # object cards should delegate open/preview/download-style
                 # actions to the owning provider.
+                resolvers:
+                  - kind: named_service
+                    namespace: mem
+                    enabled: true
+                    discovery:
+                      mode: service_discovery
+                    allowed:
+                      - object.resolve
+                      - object.action
                 # Example:
-                # resolvers:
                 #   - kind: named_service
                 #     namespace: task
                 #     enabled: true
@@ -210,7 +281,6 @@ bundles:
                 #     allowed:
                 #       - object.resolve
                 #       - object.action
-                resolvers: []
               scene:
                 external_panels: []
         execution:

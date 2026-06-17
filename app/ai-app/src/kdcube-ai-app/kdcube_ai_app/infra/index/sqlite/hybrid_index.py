@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import logging
 import re
 import sqlite3
 import time
@@ -33,6 +34,8 @@ from .schema import SCHEMA_SQL
 from .types import Document, IndexConfig, SearchHit
 
 SearchMode = Literal["hybrid", "lexical", "semantic"]
+
+logger = logging.getLogger("kdcube.index.hybrid")
 
 
 class HybridIndex:
@@ -186,7 +189,16 @@ class HybridIndex:
             with self._conn() as conn:
                 rankings["lexical"] = self._lexical(conn, query, limit, filters)
         if do_semantic:
-            rankings["semantic"] = await self._semantic(query, limit, filters)
+            try:
+                rankings["semantic"] = await self._semantic(query, limit, filters)
+            except Exception:
+                # Semantic factor unavailable at runtime (embedder/vector-store
+                # error). Degrade gracefully instead of failing the whole search.
+                logger.warning("[hybrid_index] semantic arm failed; degrading to lexical", exc_info=True)
+                rankings.pop("semantic", None)
+                if not do_lexical:  # pure-semantic mode → run lexical as the fallback
+                    with self._conn() as conn:
+                        rankings["lexical"] = self._lexical(conn, query, limit, filters)
 
         with self._conn() as conn:
             recency = None
@@ -230,9 +242,17 @@ class HybridIndex:
         return [r["id"] for r in rows]
 
     async def _semantic_allowed(self, query: str) -> bool:
-        """Economical guard: only spend the embedder call when it's worth it.
-        The guard may be sync or async (e.g. an economics `economic_preflight`)."""
+        """Whether to run the semantic arm. Returns False (→ lexical + recency only,
+        no embed call) when the factor is turned off or not worth/allowed to spend:
+          - master switch off, or
+          - `min_semantic_score < 0` — the explicit "don't consider the semantic
+            factor" sentinel (semantic unavailable / deliberately disabled), or
+          - the query is too short to embed, or
+          - the economical guard denies (sync or async; e.g. `economic_preflight`).
+        Fails closed: any guard error → skip semantic."""
         if not self.cfg.semantic_enabled:
+            return False
+        if self.cfg.min_semantic_score < 0:
             return False
         if len(str(query or "").strip()) < self.cfg.semantic_min_chars:
             return False

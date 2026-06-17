@@ -106,7 +106,9 @@ For `named_service`, `allowed` uses named-service operation ids such as
 `object.search` and `object.upsert`; `allowed_operations` remains accepted for
 older descriptors. Canvas-only presentation resolution stays under
 `surfaces.as_consumer.ui.canvas.resolvers`, not under the agent tool connection.
-`object.action` is not exposed to ReAct agents as a normal tool.
+`object.action` is not part of the default read-only tool set, but it can be
+exposed to ReAct agents when a namespace explicitly lists `object.action` in
+the agent tool policy.
 Named-service catalog entries render only `namespaces applicable`, so ReAct can
 see which configured namespaces support each generic tool without seeing
 provider protocol operation ids.

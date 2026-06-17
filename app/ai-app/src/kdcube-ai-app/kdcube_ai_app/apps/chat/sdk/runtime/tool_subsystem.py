@@ -302,6 +302,7 @@ class ToolSubsystem:
             "examples",
             "namespaces_applicable",
             "search_scopes_by_namespace",
+            "tool_traits_by_namespace",
             "tool_traits",
         ):
             if source.get(key) not in (None, "", []):
@@ -645,11 +646,18 @@ class ToolSubsystem:
                 str(namespace): len(scopes) if isinstance(scopes, list) else 0
                 for namespace, scopes in (search_scopes or {}).items()
             } if isinstance(search_scopes, Mapping) else {}
+            trait_override_counts = {}
+            if isinstance(raw_tools, Mapping):
+                for tool_name, tool_meta in raw_tools.items():
+                    overrides = tool_meta.get("tool_traits_by_namespace") if isinstance(tool_meta, Mapping) else None
+                    if isinstance(overrides, Mapping) and overrides:
+                        trait_override_counts[str(tool_name)] = len(overrides)
             try:
                 self.log.log(
                     "[named_services.tool_metadata] list_tools snapshot: "
                     f"tools={list(raw_tools.keys()) if isinstance(raw_tools, Mapping) else '<non-mapping>'} "
-                    f"search_scope_counts={search_scope_counts}",
+                    f"search_scope_counts={search_scope_counts} "
+                    f"trait_override_counts={trait_override_counts}",
                     level="INFO",
                 )
             except Exception:
@@ -697,7 +705,7 @@ class ToolSubsystem:
                     pass
                 continue
             applied_keys: List[str] = []
-            for key in ("namespaces_applicable", "search_scopes_by_namespace"):
+            for key in ("namespaces_applicable", "search_scopes_by_namespace", "tool_traits_by_namespace"):
                 value = raw.get(key)
                 if value in (None, "", []):
                     metadata.pop(key, None)
@@ -721,6 +729,15 @@ class ToolSubsystem:
                         f"tool={tool_id} applied_keys={applied_keys} "
                         f"namespaces={doc.get('namespaces_applicable')} "
                         f"search_scope_counts={scope_counts}",
+                        level="INFO",
+                    )
+                except Exception:
+                    pass
+            elif "tool_traits_by_namespace" in applied_keys:
+                try:
+                    self.log.log(
+                        "[named_services.tool_metadata] applied namespace trait overrides: "
+                        f"tool={tool_id} namespaces={list((doc.get('tool_traits_by_namespace') or {}).keys())}",
                         level="INFO",
                     )
                 except Exception:
@@ -1138,7 +1155,7 @@ class ToolSubsystem:
         }
         if isinstance(raw, dict):
             metadata: Dict[str, Any] = {}
-            for key in ("namespaces_applicable", "search_scopes_by_namespace"):
+            for key in ("namespaces_applicable", "search_scopes_by_namespace", "tool_traits_by_namespace"):
                 if raw.get(key) not in (None, "", []):
                     metadata[key] = raw.get(key)
             if metadata:
